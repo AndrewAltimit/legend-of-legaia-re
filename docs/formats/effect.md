@@ -105,7 +105,22 @@ Inline sprite atlas entries (between `buffer+8` and pack0) are 8 bytes each. The
 +7  u8  ?        ; unknown / reserved
 ```
 
-The texel rectangle is `(u, v)..(u+w-1, v+h-1)`. A typical entry is a 32×32 sprite (`w=h=0x20`) with `tpage=0x7680` (page base (0,0), 8-bit colour mode) and a per-effect CLUT id. The pixels live in VRAM; the upload source for those texels is not yet pinned (PROT 0872 is **not** a plain TIM pack), so the engine renders the billboard geometry/animation now and gains real texels once that upload path is traced - an open thread alongside the effect-ID → name mapping below.
+The texel rectangle is `(u, v)..(u+w-1, v+h-1)`. A typical entry is a 32×32 sprite (`w=h=0x20`) with `tpage=0x7680` (page base (0,0), 8-bit colour mode) and a per-effect CLUT id. The pixels live in VRAM, uploaded once at battle load from the sibling **`etim.dat`** file in the same `befect_data` cluster (see "Battle effect cluster" below). The atlas only carries the VRAM coordinates; the actual texel bytes are blitted by the battle scene loader.
+
+### Battle effect cluster (`befect_data`, CDNAME 872) + texel-upload source
+
+`efect.dat` (the atlas + anim + script 2-pack) is one of four files in the `befect_data` cluster the battle scene loader `FUN_800520F0` pulls in. `FUN_800520F0` is a sequential state machine (sub-state byte at `gp+0xa59`); each state loads one file through the dual-mode loader - retail opens the dev-path string, debug uses a PROT index (`FUN_8003e8a8`):
+
+| Loader state / case | Dev-path string | Role |
+|---|---|---|
+| case `0x8` | `h:\prot\battle\etim.dat` (`0x80015358`) | **Effect sprite texels.** The TIM-image pack the sprite atlas samples. |
+| case `0xb` | `h:\prot\battle\etmd.dat` (`0x80015370`) | Effect 3D models (Legaia TMDs; registered via `FUN_80026b4c`, which asserts magic `0x80000002`). |
+| case `0xb` | `h:\prot\battle\vdf.dat` (`0x80015388`) | VDF buffer (asset type `0x07`, appended via `FUN_8001fbcc`). |
+| case `0xc` | `data\battle\efect.dat` (`0x800153a0`) | The 2-pack above; initialised by `FUN_801DE914` (offset fixup only - no texel upload). |
+
+**The texels come from `etim.dat`, not from `efect.dat`.** After `etim.dat` is read into the load buffer, loader **state `9`** (`LAB_800526c8` in `FUN_800520F0`) walks it as an `asset::pack` (`u32 count` + `u32 word_offsets[count]`) and calls **`FUN_800198e0`** on each entry. `FUN_800198e0` is the engine's general packed-image → VRAM uploader: it reads a per-chunk tag/flag word, builds a PSX `RECT` `(x, y, w, h)`, and calls **`FUN_800583c8` = `LoadImage`** (`0x800156d4`) to DMA the pixels into VRAM, maintaining a CLUT cache at `0x8007BEC0`. (The same routine the title / menu / save overlays and the type-`0x01` CLUT walker `FUN_8001fe70` use.) The atlas's `tpage` / `clut` fields then address whatever VRAM page `etim.dat`'s blits populated.
+
+**Extraction caveat - the cluster slices overlap.** The per-entry PROT extractor does *not* cleanly separate the four logical files. "PROT 0873" at offset `0x2000` is byte-identical to the start of "PROT 0874," and the real `efect.dat` 2-pack is only the first ~`0x2000` of "PROT 0873" (`pack0@0x488`, `pack1@0x900`, structures ending by `0x1bf8`). So the four files are packed within a contiguous streamed cluster region and don't align to the extractor's TOC-derived entry boundaries. Decoding `etim.dat`'s exact blit RECTs - and uploading real effect texels engine-side - needs a corrected cluster extraction that follows the loader's per-file open/read offsets rather than the naive per-entry slice. (Earlier notes said the texel source was "unknown / PROT 0872 is not a plain TIM pack"; extracted-0872's first entries are ~96-byte geometry records, so it is not a TIM pack - but the texel source is `etim.dat` via `LoadImage`; it is the extraction boundary that is wrong, not the source.)
 
 ### Consumer cluster
 
@@ -142,6 +157,7 @@ Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 
 ### Open questions
 
 - **Effect-ID → human effect name.** Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". Reachable by tracing call sites of `FUN_801DFDF8` in damage / battle-action code.
+- **`etim.dat` byte layout + blit RECTs.** The texel-upload *path* is pinned (`etim.dat` → `FUN_800198e0` → `LoadImage`), but the exact on-disc bytes need a cluster-aware extraction (see the overlap caveat above) before the per-sprite VRAM destination rectangles can be decoded and replayed engine-side.
 - **summon.dat / readef.dat formats.** Not yet decoded.
 
 ## Field-pack format (magic `0x01059B84`)
