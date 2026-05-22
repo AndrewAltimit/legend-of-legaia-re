@@ -148,6 +148,11 @@ pub struct LegaiaViewer {
     /// the SCUS extract or LUT scan didn't surface a match (raw
     /// PROT.DAT load, regional variant, modded disc).
     fog_lut: Option<Vec<u8>>,
+    /// Item-name table (`PTR_DAT_8007436C`) decoded from `SCUS_942.54` at
+    /// load time. Resolves a monster record's raw `drop_item` id into a
+    /// readable name for the enemy table. `None` on raw PROT.DAT loads (no
+    /// SCUS) - the page then falls back to the raw id.
+    item_names: Option<legaia_asset::item_names::ItemNameTable>,
 }
 
 #[wasm_bindgen]
@@ -169,6 +174,7 @@ impl LegaiaViewer {
             continent: None,
             worldmap_menu: None,
             fog_lut: None,
+            item_names: None,
         })
     }
 
@@ -181,6 +187,7 @@ impl LegaiaViewer {
 
         self.worldmap_menu = None;
         self.fog_lut = None;
+        self.item_names = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -216,6 +223,18 @@ impl LegaiaViewer {
                     ));
                 } else {
                     console_log("fog_lut::find skipped: no LUT signature in SCUS");
+                }
+                // Decode the item-name table so the enemy table can show drop
+                // names instead of raw ids. Silent on failure (regional build
+                // with a different table address) - the page falls back to ids.
+                if let Some(table) = legaia_asset::item_names::ItemNameTable::from_scus(&scus) {
+                    console_log(&format!(
+                        "Decoded item-name table from SCUS ({} named ids)",
+                        table.named_count()
+                    ));
+                    self.item_names = Some(table);
+                } else {
+                    console_log("item_names::from_scus skipped: table not found in SCUS");
                 }
             }
             extracted
@@ -960,6 +979,14 @@ impl LegaiaViewer {
             Ok(r) => r,
             Err(e) => return format!("{{\"error\":\"monster archive decode failed: {e}\"}}"),
         };
+        // Resolve a raw drop id into its in-game name via the SCUS item-name
+        // table (present only on full-disc loads). `null` falls the JS back to
+        // the raw id.
+        let drop_name = |id: u8| -> Option<&str> {
+            (id != 0)
+                .then(|| self.item_names.as_ref().and_then(|t| t.name(id)))
+                .flatten()
+        };
         let arr: Vec<serde_json::Value> = records
             .into_iter()
             .map(|r| {
@@ -973,6 +1000,7 @@ impl LegaiaViewer {
                     "gold": r.gold,
                     "exp": r.exp,
                     "drop_item": r.drop_item,
+                    "drop_item_name": drop_name(r.drop_item),
                     "drop_chance_pct": r.drop_chance_pct,
                     "spells": r.spells.iter().map(|s| serde_json::json!({
                         "id": s.id,

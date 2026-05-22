@@ -24,6 +24,7 @@ pub mod data_field_truncated;
 pub mod effect_bundle;
 pub mod field_pack;
 pub mod init_pak;
+pub mod item_names;
 pub mod kingdom_bundle;
 pub mod man_section;
 pub mod menu_glyph_atlas;

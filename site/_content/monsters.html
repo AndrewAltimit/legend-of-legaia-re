@@ -102,7 +102,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th data-key="castable" class="col-name" title="Offensive castable spells (entry id 0x0C–0x1F) with SP cost (entry +0x74); the AI rolls these when current SP ≥ cost">Spells (SP)</th>
             <th data-key="exp" title="Base EXP reward (record +0x46); retail scales x3/4 and splits among the party">EXP</th>
             <th data-key="gold" title="Base gold reward (record +0x44); a lone enemy yields floor((gold>>1)/2)">Gold</th>
-            <th data-key="drop_chance" title="Drop item id @ drop chance % (record +0x48 / +0x49)">Drop</th>
+            <th data-key="drop_chance" title="Drop item @ drop chance % (record +0x48 / +0x49). The item name is resolved from the SCUS item-name table (PTR_DAT_8007436C) when a full disc image is loaded; a raw PROT.DAT load shows the raw id (#NN).">Drop</th>
             <th class="col-mesh" title="Click a row to view the enemy's embedded 3D battle model (TMD at archive-block +0x04)">3D</th>
           </tr>
         </thead>
@@ -111,7 +111,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </div>
   </div>
 
-  <p class="hint">All six stats are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the formula consumers name them — <strong>ATK</strong> (attacker offense), <strong>DEF↑/DEF↓</strong> (the two defense facets, selected by attack move index), <strong>AGL</strong> (accuracy/evasion roll seed), <strong>SPD</strong> (turn-order initiative seed), and <strong>SP</strong> (the spirit/action gauge the AI spends selecting spells). <strong>EXP / Gold / Drop</strong> are the victory-spoils fields (record <code>+0x44..+0x49</code>); these are the <em>base</em> values - the retail spoils formula scales them (EXP &times;3/4 split among the party; a lone enemy's gold yields <code>floor((gold&gt;&gt;1)/2)</code>). Drop shows <code>#item-id @ chance%</code>. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
+  <p class="hint">All six stats are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the formula consumers name them — <strong>ATK</strong> (attacker offense), <strong>DEF↑/DEF↓</strong> (the two defense facets, selected by attack move index), <strong>AGL</strong> (accuracy/evasion roll seed), <strong>SPD</strong> (turn-order initiative seed), and <strong>SP</strong> (the spirit/action gauge the AI spends selecting spells). <strong>EXP / Gold / Drop</strong> are the victory-spoils fields (record <code>+0x44..+0x49</code>); these are the <em>base</em> values - the retail spoils formula scales them (EXP &times;3/4 split among the party; a lone enemy's gold yields <code>floor((gold&gt;&gt;1)/2)</code>). Drop shows <code>item-name @ chance%</code>; the name is resolved from the <code>SCUS_942.54</code> item-name table (<code>PTR_DAT_8007436C</code>) decoded at load time, falling back to <code>#item-id</code> when only a raw <code>PROT.DAT</code> is loaded. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
 </section>
 
 <section class="doc-section">
@@ -154,7 +154,17 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       castable: (r.spells || []).filter(sp => sp.castable).length,
       exp: r.exp ?? 0, gold: r.gold ?? 0,
       drop_item: r.drop_item ?? 0, drop_chance: r.drop_chance_pct ?? 0,
+      // Resolved from the SCUS item-name table when a full disc image is
+      // loaded; null on raw PROT.DAT loads (then we show the raw id).
+      drop_item_name: r.drop_item_name ?? null,
     };
+  }
+
+  // Drop cell text: prefer the resolved item name, fall back to the raw id.
+  function fmtDrop(r) {
+    if (!r.drop_item) return '—';
+    const label = r.drop_item_name || ('#' + r.drop_item);
+    return label + ' @ ' + r.drop_chance + '%';
   }
 
   function fmtSpells(spells) {
@@ -200,7 +210,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         <td class="col-name ${r.castable ? '' : 'dim'}">${escapeHtml(fmtSpells(r.spells))}</td>
         <td>${r.exp}</td>
         <td>${r.gold}</td>
-        <td class="${r.drop_item ? '' : 'dim'}">${r.drop_item ? ('#' + r.drop_item + '@' + r.drop_chance + '%') : '—'}</td>
+        <td class="col-name ${r.drop_item ? '' : 'dim'}">${escapeHtml(fmtDrop(r))}</td>
         <td class="col-mesh" title="View 3D model">${r.id === selectedId ? '▾' : '▸'}</td>
       </tr>`).join('');
 
