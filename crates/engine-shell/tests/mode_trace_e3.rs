@@ -29,8 +29,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_shell::mode_trace_oracle::{
-    build_engine_mode_trace, first_mode_trace_divergence, load_runtime_mode_trace_from_save,
-    save_ram_fingerprint,
+    build_engine_mode_trace_field_live, first_mode_trace_divergence,
+    load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
 use legaia_mednafen::ScenarioManifest;
 
@@ -150,7 +150,10 @@ fn mode_trace_e3_all_scenarios_converge() {
 
     let mut failures = Vec::new();
     for (label, scene_name, save_path) in &qualifying {
-        let trace = build_engine_mode_trace(scene_name, &extracted, None, FRAMES)
+        // All `expected_active_scene` scenarios are field scenes, so drive the
+        // engine into the field the way the windowed host does (cold boot ->
+        // enter_field_live -> Field) rather than letting it sit in Title.
+        let trace = build_engine_mode_trace_field_live(scene_name, &extracted, None, FRAMES, &[])
             .unwrap_or_else(|e| panic!("scenario {label:?}: build engine mode-trace: {e:#}"));
         let retail = load_runtime_mode_trace_from_save(save_path)
             .unwrap_or_else(|e| panic!("scenario {label:?}: load retail snapshot: {e:#}"));

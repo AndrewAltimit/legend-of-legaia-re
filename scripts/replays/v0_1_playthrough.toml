@@ -14,20 +14,23 @@ pad = 0
 
 # v0.1 Phase 1 (current): the engine drives a cold boot into Field/town01
 # via BootSession::enter_field_live and stays there, converging against the
-# field-phase retail snapshot (mc7, game_mode 0x03 -> Field). The Circle
-# press at frame 103 is the seed for the deferred Battle leg.
+# clean pre-battle town01 field snapshot (v0_1_pre_battle_tetsu: Vahn in front
+# of his house, game_mode 0x03 -> Field). This is the cold-boot-reproducible
+# field anchor. The Tetsu-battle saves (loading/start/menu/submenu) are all
+# BattleMode (game_mode 0x15) and the engine cannot cold-boot into BattleMode,
+# so they are not valid Field-convergence anchors.
 [[expected]]
 frame = 250
 scene_mode = "Field"
 active_scene = "town01"
 
-# DEFERRED Battle leg (tracked, not yet asserted): reaching BattleMode here
-# is the scripted Tetsu tutorial fight, which is gated on mc7's story state -
-# a cold boot into town01 record 0 produces no Tetsu dialogue, and town
-# scenes have a 0% random-encounter rate. It needs mc7's save state seeded
-# into the clean-room World so the trigger is armed, then the field-VM
-# dialogue-accept -> scripted-encounter install -> Field->Battle transition.
-# When that lands, add:
+# DEFERRED Battle leg (tracked, not yet asserted): the scripted Tetsu
+# tutorial fight. The retail ground-truth for it is catalogued as the
+# BattleMode anchors v0_1_battle_loading_tetsu (D0) / v0_1_battle_start_tetsu
+# (D) / v0_1_battle_command_menu (D+) / v0_1_battle_command_submenu (D++).
+# Reproducing it needs the pre-battle field state (this anchor) carried
+# forward through the field-VM dialogue-accept -> scripted-encounter install
+# -> Field->Battle transition. When that lands, add:
 #   [[expected]]
 #   frame = 250
 #   scene_mode = "Battle"

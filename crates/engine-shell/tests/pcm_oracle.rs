@@ -81,6 +81,20 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
+/// Repo-relative `saves/library` root, if present. Holds the immutable,
+/// fingerprint-named save backups that the manifest's `backup_fingerprint`
+/// field points at, so a scenario resolves to a stable copy rather than the
+/// wipe-prone live `.mc{slot}`.
+fn library_dir() -> Option<PathBuf> {
+    for c in ["saves/library", "../saves/library", "../../saves/library"] {
+        let d = PathBuf::from(c);
+        if d.is_dir() {
+            return Some(d);
+        }
+    }
+    None
+}
+
 #[test]
 fn pcm_oracle_all_scenarios_engine_not_silent_when_retail_audible() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -102,7 +116,7 @@ fn pcm_oracle_all_scenarios_engine_not_silent_when_retail_audible() {
         let Some(scene_name) = scn.expected_active_scene.as_deref() else {
             continue;
         };
-        let Ok(save_path) = manifest.save_path(scn.slot) else {
+        let Ok(save_path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
             continue;
         };
         if !save_path.exists() {
