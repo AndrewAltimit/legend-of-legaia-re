@@ -73,15 +73,45 @@
     <tbody>
       <tr>
         <td>Encounter record carrier</td>
-        <td><code>open</code></td>
-        <td>Pin which PROT entry holds the per-scene encounter-record array (or confirm the carrier is per-actor and there is no array). Record shape + reader (<code>FUN_801DA51C</code> body <code>0x801DA620..0x801DA678</code>) + writer family are settled.</td>
+        <td><code>resolved (no array)</code></td>
+        <td>Decompile of <code>FUN_801DE840</code> shows install handlers all use <code>pbVar43 = param_1 + param_2</code> (the current opcode pointer in the field-VM script bytecode); each scripted encounter is its own dispatcher-op site (cases <code>0x37</code>/<code>0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>), with monster count/ids inline as the trailing operand bytes. There is no separate encounter-record table on disc. See the <a href="../formats/encounter.html">encounter format</a> writer table.</td>
         <td><code>project_encounter_record_format.md</code></td>
+      </tr>
+      <tr>
+        <td>Random-encounter trigger path</td>
+        <td><code>resolved</code></td>
+        <td><code>FUN_801D9E1C</code> is the per-step roll function (rate counter <code>_DAT_8007B5FC</code>, scaled by config <code>_DAT_8007B5F8</code>). On counter underflow it picks a formation from the matching region's RNG range and installs <code>actor[+0x94] = formation_table_base + 1 + id * stride</code>, raising bit <code>0x80000</code>. The per-scene control block at <code>_DAT_801C6EA4 + 0x20/0x24/0x28</code> is populated by <code>FUN_8003A110</code> ("Mesworks set encount group table") from the MAN asset (type 0x03) buffered at <code>_DAT_8007B898</code>.</td>
+        <td><code>project_random_encounter_trigger_path.md</code></td>
+      </tr>
+      <tr>
+        <td>Encounter MAN sub-section layout</td>
+        <td><code>resolved</code></td>
+        <td><code>FUN_8003AEB0</code> is fully decoded: it walks the MAN multi-section header (sections at MAN offsets <code>+0x22, +0x24, +0x26, +0x28</code>, signed 16-bit LE) and <code>legaia_engine_core::encounter_man::scene_encounter_from_man</code> reads the encounter section straight from disc bytes, wiring per-scene <code>EncounterTable</code>s for the standalone towns + kingdom-bundle scenes. The region-table section is the per-scene control block <code>_DAT_801c6ea4 + 0x4</code> count-prefixed array of 18-byte records: <code>byte[0]</code> kind selector, <code>bytes[1..4]</code> tile-space bounding box <code>[minX, minZ, maxX, maxZ]</code> queried by <code>FUN_801dba20(tileX, tileZ)</code> (<code>tile = (player_pos - 0x40) &gt;&gt; 7</code>), <code>bytes[5..17]</code> payload (sub-split still open), consumed by the field camera arrival handler <code>FUN_801dbec4</code> + camera-config <code>FUN_801dbc20</code>. Residual: the world-overview actor-placement section <code>FUN_8003A1E4</code> consumes is decoded separately.</td>
+        <td><code>project_man_section_decoded.md</code></td>
       </tr>
       <tr>
         <td>Super / Miracle Arts trigger logic</td>
         <td><code>open</code></td>
         <td>Port the find/replace trigger matcher into <code>engine-vm</code> battle action. Tables and constants are in <code>legaia-art</code>; the trigger SM driving "find string in queue &rarr; replace" is not yet ported.</td>
         <td><code>project_arts_system.md</code></td>
+      </tr>
+      <tr>
+        <td>Seru-magic summon visual (e.g. Tail Fire)</td>
+        <td><code>dispatch + overlay structure resolved; flame-mesh index open</code></td>
+        <td>The 3D summon visual is a <strong>per-summon code overlay</strong>, not an opcode and not <code>befect_data</code>. Battle SM <code>FUN_801E295C</code> state <code>0x29</code>: for a spell id <code>actor[+0x1df]</code> in <code>0x81..0x8b</code> it sets <code>_DAT_8007ba2c = PTR_801f6734[id-0x81]</code> and calls <code>FUN_8003EC70(id-0x79)</code> (overlay loader B &rarr; PROT <code>id-0x79+0x381</code>), i.e. <strong>PROT 905..915</strong> (Gimard <em>Tail Fire</em> &rarr; PROT 905). The overlay embeds <strong>no TMD geometry</strong>; it is a move-VM scene-graph whose init stages ~22 records via <code>FUN_80021B04</code> over a record table (file <code>0x180C..~0x1E5C</code>, stride ~<code>0x58</code>), each <code>[i16 model_sel][u16 flags][move-VM bytecode]</code> animated by <code>FUN_80023070</code>. The meshes are the separately-loaded <code>DAT_8007C018</code> library; the flame draws as <code>POLY_GT3/GT4</code> from the <code>etim</code> page (832,256) 4bpp with CLUT-animated row 478. The fire mesh-set is the 10 etim-baking models <code>DAT_8007C018[23..32]</code>; the active flame at the captured frame is <code>DAT_8007C018[26]</code>. The TMD library is <strong>PROT 871</strong> (<code>etmd.dat</code>, a 30-TMD <code>asset::pack</code>, CDNAME-mislabeled <code>sound_data</code>), loaded at battle init by <code>FUN_800520F0</code> &mdash; the real <code>etmd.dat</code> is 871, not 874 &sect;0. The flicker is CLUT/palette cycling, not model cycling. <strong>Remaining:</strong> the load path + VRAM target of the PROT 870 flame-texture atlas, and (engine) loading PROT 871 + rendering <code>[26]</code> with CLUT animation instead of the 874 &sect;0 stand-in.</td>
+        <td><code>project_effect_pool_draw_bridge.md</code></td>
+      </tr>
+      <tr>
+        <td>Per-spell magic power / multiplier</td>
+        <td><code>open</code></td>
+        <td>Decode the per-summon battle effect script reached via <code>PTR_801f6734[id - 0x81]</code> (the <code>efect.dat</code> path) &mdash; that's where each Seru spell's damage is produced. There is confirmed to be <strong>no</strong> static per-spell power: SCUS spell-table bytes <code>+5..+8</code> are zero, the whole player block <code>0x81..=0x8b</code> shares <code>cat=0x32/sub=0</code>, cast-begin state <code>0x28</code> reads only MP + capture flag + name, and the static atk/def kernel <code>FUN_801ec3e4</code> is melee-only. The engine <code>base_power</code> stays an MP-scaled placeholder until then.</td>
+        <td><code>project_spell_table_pinned.md</code></td>
+      </tr>
+      <tr>
+        <td>Arts command sequence &mdash; independent source</td>
+        <td><code>resolved</code></td>
+        <td>The SCUS arts-name table (<code>DAT_80075EC4</code>) glyph string is byte-exact ground truth for every art's directional command; <code>legaia_art::ArtsOracle</code> exposes it, and disc-gated contract tests validate both the best-effort PROT <code>0x05C4</code> <code>parse_record</code> command-decode and the curated gamedata <code>directions</code>/<code>ap</code> columns against it (one documented walkthrough error: Hyper Elbow).</td>
+        <td><code>project_arts_name_table_pinned.md</code></td>
       </tr>
       <tr>
         <td>Seru growth-rate extraction</td>
@@ -92,8 +122,14 @@
       <tr>
         <td>Monster stat-record archive source</td>
         <td><code>resolved</code></td>
-        <td>The monster archive is <strong>PROT entry <code>0867_battle_data</code></strong> (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots at <code>(id-1)*0x14000</code>, each <code>[u32 dec_size][LZS]</code> decoding to a block whose head is the <code>FUN_80054CB0</code> stat record (name <code>@0x00</code>, XP/drop <code>@0x04</code>, HP <code>@0x0C</code>, MP <code>@0x10</code>, stat u16s <code>@0x0E/0x12/0x14/0x16/0x18/0x1A</code>, magic count <code>@0x4A</code>). Pinned by a live-battle PCSX-Redux watchpoint (<code>autorun_monster_record_source.lua</code>) &mdash; relative seek <code>(id-1)*40</code> sectors + <code>disc_read</code> CdlLOC &rarr; PROT.DAT <code>0x38AF000</code> = entry 867; three records match live actor stats byte-for-byte. The <code>monster_data</code> label (PROT 869) is a stub. Parser <code>legaia_asset::monster_archive</code>; bridge <code>catalog_from_monster_archive</code> wired into <code>enter_field_scene</code>. Residual: the <code>stat1..stat5</code> name split and the <code>+0x04</code> XP/drop sub-record layout aren't fully decoded.</td>
+        <td>The monster archive is <strong>PROT entry <code>0867_battle_data</code></strong> (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots at <code>(id-1)*0x14000</code>, each <code>[u32 dec_size][LZS]</code> decoding to a block whose head is the <code>FUN_80054CB0</code> stat record (name <code>@0x00</code>, HP <code>@0x0C</code>, MP <code>@0x10</code>, stat u16s <code>@0x0E/0x12/0x14/0x16/0x18/0x1A</code>, magic count <code>@0x4A</code>, spell-ptr array <code>@0x4C</code>). Pinned by a live-battle PCSX-Redux watchpoint (<code>autorun_monster_record_source.lua</code>) &mdash; relative seek <code>(id-1)*40</code> sectors + <code>disc_read</code> CdlLOC &rarr; PROT.DAT <code>0x38AF000</code> = entry 867; three records match live actor stats byte-for-byte. The <code>monster_data</code> label (PROT 869) is a stub. Parser <code>legaia_asset::monster_archive</code>; bridge <code>catalog_from_monster_archive</code> wired into <code>enter_field_scene</code>. The record is now fully decoded: all six stats are named (ATK/DEF&uarr;/DEF&darr;/AGL/SPD/SP), rewards are inline at <code>+0x44..0x49</code>, and <code>+0x04</code> is the monster's <strong>battle-model TMD</strong> offset (not XP/drop &mdash; see the mesh thread below).</td>
         <td><code>project_monster_stat_archive.md</code></td>
+      </tr>
+      <tr>
+        <td>Monster mesh + texture pool</td>
+        <td><code>resolved</code></td>
+        <td>The monster's 3D battle model is a <a href="../formats/tmd.html">Legaia TMD</a> embedded in each PROT 867 archive block at the offset in stat record <code>+0x04</code> (installed at battle-actor <code>+0x230</code>; the <code>0x1C</code>-stride records <code>FUN_80049858</code>/<code>FUN_800495C8</code> walk are its object table). <strong>186/194 slots parse cleanly.</strong> The texture/CLUT pool at record <code>+0x08</code> is decoded from the battle loader <code>FUN_80055468</code>: a <code>0x1E0</code>-byte region of fifteen 16-colour CLUTs followed by a 4bpp page (always 256 rows tall, 128 or 256 texels wide; palette = <code>cba &amp; 0x3F</code>). Byte-exact vs pool sizes; renders to recognizable atlases. The on-disc CBA/TSB are nominal defaults the loader relocates per slot, so the raw pool does not appear verbatim in a battle VRAM dump &mdash; the loader layout is the ground truth. Parser <code>legaia_asset::monster_archive::{mesh, MonsterMesh::texture}</code>; CLI <code>--obj</code> + <code>--texture-png</code>; WASM accessors drive the enemy-table page's per-row WebGL viewer (textured + directional-lit).</td>
+        <td><code>project_monster_mesh_source.md</code></td>
       </tr>
       <tr>
         <td>Terra slot-3 / story-flag overlap</td>
@@ -106,6 +142,51 @@
         <td><code>falsified</code></td>
         <td><code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in field-pack schema slots; the encounter-record path lives at <code>actor[+0x94]</code>.</td>
         <td><code>project_navmesh_negative_finding.md</code></td>
+      </tr>
+      <tr>
+        <td>Scripted Tetsu encounter &rarr; Battle (v0.1 oracle Battle leg)</td>
+        <td><code>open</code></td>
+        <td>The v0.1 oracle reaches Field/town01 from a cold boot (<code>BootSession::enter_field_live</code>), but <strong>not</strong> Battle: town01 has a 0% random rate (<code>town.set_trigger_rate(0)</code>) and a cold boot into record 0 produces no Tetsu dialogue &mdash; the tutorial trigger is gated on mc7's story state, and the field VM picks its event-script record from story state absent at cold boot. Closing it needs (1) seeding mc7's RAM (story flags + armed trigger + field record) into the clean-room <code>World</code>, then (2) a field-VM scripted-encounter-install path that emits a <code>FieldEvent</code> the live loop consumes (the engine field-VM port's <code>actor[+0x94]</code> is "saved PC", <em>not</em> retail's encounter carrier).</td>
+        <td><code>project_v0_1_oracle_phase1.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="field-locomotion">
+  <h2>Field / locomotion</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Town/field free-movement locomotion</td>
+        <td><code>resolved</code></td>
+        <td>The player free-movement controller is <code>FUN_801d01b0</code> (field overlay 0897), pinned by a runtime write-watchpoint on <code>*(0x8007c364) + 0x14/0x18</code> (<code>autorun_player_pos_watch.lua</code>). It camera-remaps the held pad (<code>func_0x800467e8</code> + <code>FUN_80046494</code> &rarr; direction bits <code>&amp; 0xf000</code>), computes a per-frame speed (<code>base_step * player[+0x72] &gt;&gt; 12 * DAT_1f800393</code>, with terrain-slow + diagonal modifiers), then steps the player position 2 units at a time with per-axis collision via <code>FUN_801cfe4c</code>. Sets facing <code>player[+0x26]</code>. Full write-up in <a href="../subsystems/field-locomotion.html">field locomotion</a>. The <code>801db81c..801dbf9c</code> cluster previously suspected here is the field <em>camera</em> system, not movement.</td>
+        <td><code>project_field_locomotion_integrator.md</code></td>
+      </tr>
+      <tr>
+        <td>Field collision-map source</td>
+        <td><code>resolved</code></td>
+        <td>The collision grid at <code>*(_DAT_1f8003ec) + 0x4000</code> (1 byte/128-unit tile, high nibble = 4 sub-cell wall bits) is <strong>painted by the field-VM <code>0x4C</code> opcode, outer-nibble 7</strong> (<code>op0</code> &isin; <code>0x70..0x7F</code>, handler <code>0x801e1c64</code>): a rectangular wall-paint with inline operands <code>[4C, 0x7s, col0, row0, col1, row1, mask]</code>, sub-op = clear-walkable / block-all / clear-mask / set-mask. So collision walls are authored in the scene event script, not a separate disc blob &mdash; same inline-operand pattern as encounters / tile-board. The <code>+0x4000</code> byte's <strong>low nibble is a floor-elevation tier</strong> &mdash; a 4-bit index into a 16-entry <code>short</code> height LUT at scratchpad <code>0x1f80035c</code>, filled at scene entry by <code>FUN_8003aeb0</code> from the MAN header and consumed by the object spawn iterator <code>FUN_8003a55c</code> to offset each placed object's Y. The <code>+0x8000</code> region is <strong>not</strong> a terrain-flag grid (corrected) &mdash; it is a per-tile <code>u16</code> object/attribute map (low 9 bits = object-record index; bit <code>0x400</code> = footprint flag). See <a href="../subsystems/field-locomotion.html#where-the-collision-grid-comes-from">field locomotion</a>. Residual: the <code>+0x4000</code> zero-init site (likely a wholesale memset by the scene-boot allocator).</td>
+        <td><code>project_field_locomotion_integrator.md</code></td>
+      </tr>
+      <tr>
+        <td>Tile-board grid mode</td>
+        <td><code>resolved (re-scoped)</code></td>
+        <td>The <code>_DAT_8007b450</code>/<code>DAT_801f35c0</code>/<code>801ef2b0</code> tile-grid walk is a puzzle / board minigame (procedural <code>rand</code>-filled board, per-cell drawn tiles), not town locomotion. Documented in <a href="../subsystems/tile-board.html">tile-board</a>. Open sub-questions: which minigames use it; whether any board is fixed (inline-script cells) vs. always procedural; the inline cell-array offset.</td>
+        <td><code>project_tile_board_grid.md</code></td>
+      </tr>
+      <tr>
+        <td>game_mode 0x03 = field/town gameplay</td>
+        <td><code>resolved (mapping); model open</code></td>
+        <td><code>_DAT_8007B83C</code> = 0x03 is the in-town / on-field gameplay mode. Pinned empirically by two independent retail captures (the <code>v0_1_pre_battle_tetsu</code> save and the runtime-pinned free-movement controller on <code>map03</code>), both at 0x03. <code>engine_core::mode::GameMode::scene_mode()</code> maps <code>MainMode (3) &rarr; SceneMode::Field</code> accordingly, and the <code>mode_trace_e3</code> + <code>v0_1_playthrough</code> oracles drive the engine into the field. <strong>Open:</strong> the broader <code>engine_core::mode</code> model still runs <code>MainMode</code> via <code>TitleHandler</code> and labels index 3 "options menu" / treats <code>MapdispMode</code> (12/13) as the field &mdash; contradicted by the saves. Reconciling which retail handler the dispatcher runs for each index is the remaining work.</td>
+        <td><code>project_mode_table_structure.md</code></td>
+      </tr>
+      <tr>
+        <td>Engine VRAM byte-exactness for town01</td>
+        <td><code>open</code></td>
+        <td><code>vram_oracle_e1</code> (byte-exact texpage region, <code>y &gt;= 256</code>) fails for <code>town01</code>: the engine's targeted-upload pre-pass leaves the texpage row 256 zero where retail has texture data (engine <code>0x0000</code> vs retail <code>0x2D6B</code>). The town01 targeted-upload keep-rate is ~78.6%, not byte-exact. Closing it means the static <code>build_targeted</code> pre-pass must reproduce the full per-scene CLUT + texture upload set retail performs at scene entry. Disc-gated; skip-passes in CI.</td>
+        <td><code>project_town01_targeted_upload_fix.md</code></td>
       </tr>
     </tbody>
   </table>

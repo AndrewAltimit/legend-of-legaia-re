@@ -105,7 +105,7 @@
 <tr>
 <td><code>0xC5 XX</code></td>
 <td>2</td>
-<td>Substitute spell name from 2D table at <code>DAT_80075EC4</code>, keyed by <code>(XX&gt;&gt;6, XX&amp;0x3F)</code>.</td>
+<td>Substitute <strong>Tactical Art name</strong> from the <a href="art-data.html#arts-name-table">arts-name table</a> at <code>DAT_80075EC4</code>, keyed by <code>(character = XX&gt;&gt;6, art index = XX&amp;0x3F)</code>. (Despite the "spell" naming this is the per-character <em>art</em> table, not magic - magic names use <code>0xC3</code>.)</td>
 </tr>
 <tr>
 <td><code>0xC6 XX</code></td>

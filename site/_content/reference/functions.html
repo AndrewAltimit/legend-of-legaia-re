@@ -14,6 +14,7 @@
         <li><code>FUN_8003E4E8</code> - boot-time TOC loader; reads first 3 sectors of PROT.DAT into <code>0x801C70F0</code></li>
         <li><code>FUN_8003E8A8</code> - LBA resolver against the in-RAM TOC</li>
         <li><code>FUN_8003E6BC</code> - path-based file opener (<code>data\battle\efect.dat</code> etc.)</li>
+        <li><code>FUN_8003EBE4</code> / <code>FUN_8003EC70</code> - overlay loaders A / B; <code>param + 0x381</code> &rarr; PROT index, two overlays resident at once. Loader B pages in the <strong>per-summon Seru-magic overlays</strong>: a player Seru-magic cast (spell id in <code>0x81..0x8b</code>) calls <code>FUN_8003EC70(id - 0x79)</code> &rarr; PROT 905..915 (Gimard <em>Tail Fire</em> &rarr; PROT 905). The summon's 3D models live in those overlays + the PROT 871 model library, <em>not</em> in <code>befect_data</code>.</li>
         <li><code>FUN_8001F05C</code> - asset-type dispatcher</li>
         <li><code>FUN_80020224</code> - descriptor-pair walker</li>
         <li><code>FUN_8002541C</code> - streaming-asset driver</li>
@@ -79,7 +80,8 @@
         <li><code>FUN_801DA6B4</code> - battle actor display-state controller; opacity + pose flags for alive actors</li>
         <li><code>FUN_801DB81C</code> - next-valid-target scan; <code>actor[+0x14C] != 0</code> &amp; no death/stone</li>
         <li><code>FUN_801ED710</code> - records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
-        <li><code>FUN_800520F0</code> - battle scene loader</li>
+        <li><code>FUN_800520F0</code> - battle scene loader; sequential state machine that pulls the <code>befect_data</code> cluster (etim texels, etmd effect models registered via <code>FUN_80026B4C</code>, vdf, efect.dat) and the PROT 871 effect-model library into <code>DAT_8007C018[3..32]</code></li>
+        <li><code>FUN_80026B4C</code> - TMD validate + register (asserts magic <code>0x80000002</code>); stores into the global TMD table <code>DAT_8007C018</code></li>
         <li><code>FUN_8004E2F0</code> - battle range / line-of-sight</li>
         <li><code>FUN_80054CB0</code> - monster init</li>
         <li><code>FUN_80042558</code> - per-frame stat aggregator</li>

@@ -6,7 +6,7 @@
 
 <aside class="notice warn">
   <div class="notice-title">Block names can be misleading</div>
-  A block name describes the developer's organisation, not necessarily the runtime semantics of every entry inside. <code>0972/0973_move_program_no</code> doesn't match the <code>move.mdt</code> consumer layout; <code>xxx_dat</code> holds overlay code; large clusters can be reordered post-name-assignment. When the block name conflicts with the bytes, trust the bytes. Re-derive structure from the leading magic and the loader-call constant in SCUS, not from the CDNAME label.
+  A block name describes the developer's organisation, not necessarily the runtime semantics of every entry inside. <code>0972/0973_move_program_no</code> doesn't match the <code>move.mdt</code> consumer layout; <code>xxx_dat</code> holds overlay code; <code>bat_back_dat 895</code> is actually the boot-time <code>init.pak</code> bundle, not battle background data. When the block name conflicts with the bytes, trust the bytes. Re-derive structure from the leading magic and the loader-call constant in SCUS, not from the CDNAME label.
 </aside>
 
 <section class="doc-section" id="overview">
@@ -39,6 +39,7 @@
     <li>The <code>vab_01</code> cluster (1072..1194) really does carry VAB headers - 119 of 123 entries match the <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> shape, the standard distributed-bank layout.</li>
     <li>The <code>0972/0973_move_program_no</code> entries are flat 128-byte record arrays that <strong>don't</strong> match the <code>move.mdt</code> runtime buffer layout the consumer expects (see <a href="mdt.html">MDT</a>) - same name, different structure.</li>
     <li>The <code>xxx_dat</code> block (901..969) holds runtime overlay code blobs (see <a href="mips-overlay.html">MIPS overlay</a> and <a href="overlay-ptr-table.html">overlay pointer-table</a>).</li>
+    <li>The <code>bat_back_dat 895</code> slot is the boot-time <code>init.pak</code> bundle, not "battle background data" &mdash; it carries the four publisher-logo TIMs (PROKION / Contrail / SCEA Presents / WARNING) plus the boot-time debug-string pool. See <a href="../subsystems/boot.html">boot &mdash; boot init.pak (PROT 0895)</a>.</li>
   </ul>
 </section>
 

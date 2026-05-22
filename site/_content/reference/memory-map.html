@@ -140,7 +140,7 @@
 <section class="doc-section">
   <h2>Notes</h2>
   <ul>
-    <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen (0971), town (0897), battle (0898), menu, options/0896.</li>
+    <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen, town (PROT 0897), battle (PROT 0898), menu, and options (PROT 0896 = 0897 + a 36 KB prefix). The PROT entry the title screen loads from is still an open thread.</li>
     <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to in-heap structs. The battle context at <code>0x8007BD24</code> is the canonical example - Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
     <li>The PROT TOC at <code>0x801C70F0</code> is loaded from disc at boot. Sam's earlier TOC math used a wrong offset (<code>toc[p+5]-toc[p+2]</code> instead of <code>toc[p+5]-toc[p+3]+4</code>); fixing it shifted classification of hundreds of entries.</li>
   </ul>
@@ -208,7 +208,7 @@ const DETAILS = {
   },
   'overlay-mid': {
     title: 'Overlay code',
-    body: `<p>Where the actual game-mode code lives. Title overlay (0971), town overlay (0897, the largest at ~190 KB containing the field VM), battle overlay (0898 with the battle action state machine), menu overlay (the inventory / equip / spell screens). Different overlays are mutually exclusive - battle and town never coexist.</p>`
+    body: `<p>Where the actual game-mode code lives. Title overlay, town overlay (PROT 0897, the largest at ~190 KB containing the field VM), battle overlay (PROT 0898 with the battle action state machine), menu overlay (the inventory / equip / spell screens). Different overlays are mutually exclusive - battle and town never coexist.</p>`
   },
   'overlay-extended': {
     title: 'Extended overlay region',

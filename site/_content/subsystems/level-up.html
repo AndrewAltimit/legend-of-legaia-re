@@ -6,17 +6,17 @@
 
 <section class="doc-section" id="xp-table">
   <h2>XP table</h2>
-  <p>The 98 per-level XP increments stored at <code>SCUS_942.54 0x8007123C</code> (u16 LE, L1&rarr;2 first) run from 50 (L1&rarr;2) through 656 (L98&rarr;99). <code>retail_xp_table()</code> prefix-sums these into cumulative totals used by <code>grant_xp</code>. Selected milestones:</p>
+  <p>The 98 per-level XP increments stored at <code>SCUS_942.54 0x8007123C</code> (u16 LE, L1&rarr;2 first) run from 50 (L1&rarr;2) through 656 (L98&rarr;99), stepping in 6-XP increments at the low end (L2&rarr;3 = 56, L3&rarr;4 = 62, &hellip;). <code>retail_xp_table()</code> prefix-sums these into cumulative totals used by <code>grant_xp</code>; <code>LevelUpTracker::default()</code> uses it and the table can be overridden via <code>with_xp_table(Vec&lt;u32&gt;)</code>. The cumulative totals are verified by <code>legaia_save::RETAIL_XP_CUMULATIVE</code> + the <code>level_for_cumulative_xp</code> round-trip. Selected milestones:</p>
   <table>
-    <thead><tr><th>Level</th><th>Cumulative XP to reach</th></tr></thead>
+    <thead><tr><th>Level</th><th>Cumulative XP to reach (from level 1)</th></tr></thead>
     <tbody>
       <tr><td>2</td><td>50</td></tr>
       <tr><td>3</td><td>106</td></tr>
-      <tr><td>5</td><td>281</td></tr>
-      <tr><td>10</td><td>765</td></tr>
-      <tr><td>20</td><td>2780</td></tr>
-      <tr><td>50</td><td>17925</td></tr>
-      <tr><td>99</td><td>61444</td></tr>
+      <tr><td>5</td><td>312</td></tr>
+      <tr><td>10</td><td>949</td></tr>
+      <tr><td>20</td><td>3093</td></tr>
+      <tr><td>50</td><td>14655</td></tr>
+      <tr><td>99</td><td>34663</td></tr>
     </tbody>
   </table>
 </section>
@@ -73,6 +73,7 @@
   <pre><code>801d4440  lbu t2,0x185(t2)        ; load count from char_rec[+0x185]
 801d4454  lbu v0,0x185(t1)
 801d445c  slt v0,s6,v0            ; loop while s6 &lt; count
+801d4480  addu a0,t1,s6
 801d4498  lbu v1,0x1(s2)          ; spell-table[+1] = id
 801d449c  lbu v0,0x186(a0)        ; load id from char_rec[+0x186 + s6]
 801d44a4  beq v1,v0,...           ; match against the spell-table</code></pre>
@@ -121,11 +122,11 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><strong>Per-Seru stat grants.</strong> <em>Status:</em> writer-search across the captured <code>magic_level_up</code> overlay returned <strong>negative</strong> for code-side <code>sb</code>/<code>sh</code> writes targeting the documented record offsets (<code>+0x10E</code>, <code>+0x11C..+0x12C</code>, <code>+0x130</code>, <code>+0x161</code>). A follow-up grep for any read at <code>+0x74(reg)</code> across the same overlay surfaces five hits - but each one reads a 32-bit battle-state flag the SCUS-side handler <code>FUN_800480D8</code> writes with the constant <code>0x80808080</code> (<code>lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)</code>), not a stat-grant pointer. The "Seru struct +0x74 pointer dereference" hypothesis is <strong>not supported</strong> by the current capture set; cross-character delta search across PROT.DAT also fails to surface the table. The grant table likely lives in a still-uncaptured overlay (battle-data init or the Seru-equip path) or is encoded inline in a Seru PROT entry. Engine-side scaffold at <code>engine_core::seru_stats</code> still installs a flat curve summed across the equipped Seru - replace with <code>StatGrowthCurve::PerLevel</code> when the table is pinned.</li>
+    <li><strong>Per-Seru stat grants.</strong> Vahn / Noa / Gala have distinct HP/MP growth via their Seru rosters. <em>Status:</em> writer-search across the captured <code>magic_level_up</code> overlay returned <strong>negative</strong> for code-side <code>sb</code>/<code>sh</code> writes targeting the documented record offsets (<code>+0x10E</code>, <code>+0x11C..+0x12C</code>, <code>+0x130</code>, <code>+0x161</code>). A follow-up grep for any read at <code>+0x74(reg)</code> across the same overlay surfaces five hits - but each one reads a 32-bit battle-state flag the SCUS-side handler <code>FUN_800480D8</code> writes with the constant <code>0x80808080</code> (<code>lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)</code>), not a stat-grant pointer. The "Seru struct +0x74 pointer dereference" hypothesis is <strong>not supported</strong> by the current capture set; cross-character delta search across PROT.DAT also fails to surface the table (the candidate cluster at PROT.DAT byte offset <code>0x033E9000</code> is animation-curve data, not stat grants). A new battle scene-init save pair (mc1 = <code>map01</code> field with encounter armed; mc2 = <code>map01</code> battle initiated) pins the <strong>post-load residency window</strong> of the battle scene-init pipeline (codified as <code>engine_core::capture_observations::battle_init_overlay</code>) - but the loader function itself (the helper that reads PROT entry <code>0x05C4</code> + sibling Seru blobs and decompresses the per-Seru stat-grant data into RAM) has already finished by the time the post-load save is captured. The loader resides in an overlay slice that needs a mid-execution capture (between the field&rarr;battle game-mode flip and the post-load state) which the current Mednafen workflow can't generate without manual frame-stepping. Engine-side scaffold at <code>engine_core::seru_stats</code> (<code>SeruStatGrant</code> + <code>SeruStatTable</code> + <code>LevelUpTracker::with_seru_roster</code>) still installs a flat curve summed across the equipped Seru - replace with <code>StatGrowthCurve::PerLevel</code> when the table is pinned.</li>
     <li><strong><code>+0x120</code> stat-cap accessor renaming.</strong> Captures pin the per-stat cap constant 100 at <code>+0x120</code> (u16 LE). The existing <code>CharacterRecord::stat_cap</code> reads <code>+0x11A</code>, which is a live stat slot. Tracked separately.</li>
     <li><strong>Battle actor field map <code>+0x14C&ndash;+0x176</code>.</strong> Current HP at <code>+0x14C</code>, max HP at <code>+0x14E</code>; <code>+0x150/152/154/156</code> semantics not fully traced.</li>
     <li><strong>Pin the retail XP divisor.</strong> The current port splits the monster XP pool equally among surviving party members (integer divide, remainder dropped; dead members get zero). A LUI+ADDIU sweep across <code>SCUS_942.54</code> and every captured overlay does not surface a static reader for the XP table at <code>0x8007123C</code>, so the reader lives in an uncaptured overlay slice or uses a runtime-computed index. Re-verify the divisor + dead-member exclusion when the gap closes; helpers <code>ghidra/scripts/find_xp_table_readers.py</code> + <code>find_xp_table_all_overlays.py</code> stay around for the re-scan.</li>
-    <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters. Only HP/MP are tracked in the current port.</li>
+    <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters. Only HP/MP are tracked in the current port; other stats are handled by the per-character record's stat aggregator (<code>FUN_80042558</code>).</li>
   </ul>
 </section>
 
