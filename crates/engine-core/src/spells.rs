@@ -434,6 +434,13 @@ impl SpellCatalog {
             (0x53, "Monster Burst", 12, SpellTarget::AllEnemies, 60),
             (0x60, "Monster Guard", 10, SpellTarget::SelfOnly, 0),
             (0x6f, "Monster Spit", 9, SpellTarget::OneEnemy, 80),
+            // Boss-phase block - the spells the multi-phase scripted cases pick
+            // by battle-mode (`ctx+0x28A`); see [`crate::monster_ai`] id `0xB6`.
+            (0xa1, "Boss Nova", 30, SpellTarget::AllEnemies, 120),
+            (0xa2, "Boss Phase I", 20, SpellTarget::SelfOnly, 0),
+            (0xa3, "Boss Phase II", 24, SpellTarget::SelfOnly, 0),
+            (0xa4, "Boss Phase III", 28, SpellTarget::SelfOnly, 0),
+            (0xa5, "Boss Smite", 26, SpellTarget::OneEnemy, 100),
         ] {
             let effect = if dmg > 0 {
                 SpellEffect::Damage {

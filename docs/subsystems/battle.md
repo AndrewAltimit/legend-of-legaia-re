@@ -265,6 +265,10 @@ The clean-room engine ports it across `engine-core`:
 - `monster_ai::apply_recent_target_ring` is the post-switch anti-repeat ring.
 - `World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
   `monster_setup` hook.
+- `World::advance_battle_mode` is the `ctx+0x28a` writer - the battle-action SM's
+  `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), the boss phase-transition
+  pseudo-action. Advancing the mode walks a multi-phase boss to its next
+  scripted cast on the following turn (`World::battle_mode` reads the counter).
 
 The picker drives the live loop's monster turns, folding a chosen cast through
 `cast_spell_on_slots` (the shared player/monster cast path) and parking the SM at
@@ -272,14 +276,27 @@ The picker drives the live loop's monster turns, folding a chosen cast through
 catalog knows the id (the disc spell table, or the clean-room monster block in
 `SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
 
+**The two AI gates.** The `ctx+0x28a` battle-mode counter and the `actor+0x16e &
+0x380` flag are distinct, and only the first is a monster behaviour the AI flips:
+
+- **`ctx+0x28a` (battle mode)** gates the multi-phase boss cases. Its writer is
+  the SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), a scripted phase-transition
+  action a boss issues at an HP/script boundary - **ported as
+  `World::advance_battle_mode`**, so those cases activate once a boss script
+  drives a transition (proven by the `0xB6` phase-walk test). `0` until then.
+- **`actor+0x16e & 0x380`** is **not** a monster flag. `FUN_80047430` sets it
+  only on **party** slots (`slot < 3`) whose status word `+0x00` has bit `0x2000`
+  (Confuse/Charm), delegating that party member to the AI target resolver
+  `FUN_801E7320`; the resolver runs only when it is set. A normal monster keeps
+  `0x380` **clear**, so its `!ai380` scripted-cast cases fire and `monster_setup`
+  stays dormant - exactly what the engine does (monster actors carry
+  `field_flags == 0`). The set-`0x380` path (AI-driven party members) is a
+  separate status-effect feature, not a flag the monster AI sets.
+
 **Remaining gaps** (documented in `monster_ai`): a few cases touch actor fields
 the engine doesn't model yet - monster `0x8A`'s `actor+0x170` charge counter, the
 `'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
-preload for spell ids `0x2E/0x2F`. The `ctx+0x28a` battle-mode flag (gating the
-boss/scripted-mode cases) and the `actor+0x16e & 0x380` AI flag (gating the
-`FUN_801E7320` hook, set by `FUN_80047430` when the monster record's flags dword
-`+0x00` has bit `0x2000`) default to `0` in normal battles - none of the AI/SM
-functions write them, so those cases stay dormant until the writers are wired.
+preload for spell ids `0x2E/0x2F`.
 
 ## Stat aggregator (`FUN_80042558`)
 

@@ -23,11 +23,23 @@
 //!   clean-room monster block added to [`crate::spells::SpellCatalog::vanilla`]).
 //!   Otherwise the engine falls back to a physical strike, matching the retail
 //!   shape (the picked action is simply unaffordable / unknown).
-//! - `ctx+0x28a` battle-mode flags ([`MonsterAiState::mode_flags`]) and the
-//!   `actor+0x16e & 0x380` AI flag default to `0` in the engine (their retail
-//!   writers - `FUN_80047430` for `0x380` - are separate); cases gated on those
-//!   stay dormant until those writers are wired, which is faithful (they are
-//!   special boss / scripted-battle modes).
+//! - `ctx+0x28a` battle-mode flags ([`MonsterAiState::mode_flags`]) gate the
+//!   multi-phase boss cases (`0xA8`, `0xB4`, `0xB5`, `0xB6`, `0xA2..=0xA4`, …).
+//!   The retail writer is the battle-action SM's `case 0xFF`
+//!   (`_DAT_8007BD24[0x28A] += 1`); it is ported as
+//!   [`crate::world::World::advance_battle_mode`], which a boss phase-transition
+//!   action calls so the next turn's [`decide`] reads the bumped mode and the
+//!   phase's scripted casts come alive.
+//! - The `actor+0x16e & 0x380` AI flag is **not** a missing monster writer.
+//!   `FUN_80047430` sets it only on **party** slots (slot `< 3`) whose status
+//!   word `+0x00` has bit `0x2000` (Confuse/Charm), delegating that party member
+//!   to the AI; the target resolver `FUN_801E7320` (`monster_setup`) is reached
+//!   only when it is set. A normal monster keeps `0x380` **clear**, so its
+//!   `!ai380` scripted-cast cases fire and the resolver stays dormant - which is
+//!   exactly what the engine does (monster actors carry `field_flags == 0`). So
+//!   the `!ai380` gates are faithful as-is; the path behind a set `0x380`
+//!   (AI-driven party members) is a separate status-effect feature, not a flag
+//!   the monster AI flips.
 //! - The per-monster cooldown latches (`DAT_801C8FE0`) are armed by the cases;
 //!   the retail clear site is outside the picker, so [`MonsterAiState`] is reset
 //!   at battle start and the host clears the latches between rounds.
@@ -63,8 +75,10 @@ pub struct MonsterAiState {
     pub flag_bd84: u8,
     /// `DAT_8007BDBC[0..4]` - the recent-target ring (anti-repeat targeting).
     pub recent_targets: [u8; 4],
-    /// `ctx+0x28a` - battle-mode flags. Bit 0 gates many boss/scripted cases.
-    /// `0` in normal battles (retail writer not yet traced).
+    /// `ctx+0x28a` - battle-mode counter. Bit 0 (and `% 3`, exact value) gate
+    /// the multi-phase boss cases. Advanced by
+    /// [`crate::world::World::advance_battle_mode`] (the battle-action SM's
+    /// `case 0xFF`); `0` until a boss phase transition fires.
     pub mode_flags: u8,
     /// Per-slot scratch for monster `0xB3`'s `record+0x1C` queue-armed byte
     /// (`0x16`/`0x17`); modelled here rather than on the record.
@@ -129,8 +143,10 @@ pub struct MonsterAiCtx {
     pub party_count: u8,
     /// `ctx[+1]` monster count.
     pub monster_count: u8,
-    /// `actor+0x16E` field flags at entry (`local_40`). Bits `0x380` =
-    /// AI-flagged (gates many cases). `0` in the current engine.
+    /// `actor+0x16E` field flags at entry (`local_40`). Bit set `0x380` =
+    /// "this turn is delegated to the AI target resolver" (set by `FUN_80047430`
+    /// only on Charm/Confuse'd party members). A normal monster keeps it clear,
+    /// so its `!ai380` scripted-cast cases fire - `0` in the current engine.
     pub field_flags: u16,
     /// Count of living party members with non-zero MP (for monster `0xA7`).
     pub allies_with_mp: u8,
@@ -552,6 +568,44 @@ mod tests {
         assert_eq!(second.spell_id, 0xb4);
         assert_eq!(second.target_class, 8, "all enemies");
         assert_eq!(state.counter(), 0, "counter decremented");
+    }
+
+    #[test]
+    fn battle_mode_selects_boss_phase_spell() {
+        // Monster 0xB6 is a pure boss-phase case: it always casts, but which
+        // spell depends on the battle-mode counter (`ctx+0x28a`). Advancing the
+        // mode (the SM's `case 0xFF`) walks it through its phase spells.
+        let c = ctx(0xb6, 200, 200, 250);
+        let phase = |mode: u8| {
+            let mut s = MonsterAiState::new();
+            s.mode_flags = mode;
+            decide(&c, &mut s, &mut || 0u32)
+                .expect("0xB6 always casts")
+                .spell_id
+        };
+        assert_eq!(phase(0), 0xa2, "mode 0 -> phase I");
+        assert_eq!(phase(1), 0xa3, "mode 1 -> phase II");
+        assert_eq!(phase(2), 0xa4, "mode 2 -> phase III");
+        assert_eq!(phase(3), 0xa5, "mode 3 -> smite a party slot");
+        assert_eq!(phase(4), 0xa1, "mode 4+ -> all-enemy nova");
+    }
+
+    #[test]
+    fn boss_case_dormant_until_mode_advances() {
+        // Monster 0xA8 keeps to its plain self-buff while the mode is even
+        // (`!mode1`); once a phase transition flips bit 0 it switches to the
+        // counter-driven all-enemy cast.
+        let mut state = MonsterAiState::new();
+        let mut rng = || 0u32;
+        let c = ctx(0xa8, 200, 200, 250);
+        assert_eq!(
+            decide(&c, &mut state, &mut rng).unwrap().spell_id,
+            0xaf,
+            "mode 0 -> self buff"
+        );
+        state.mode_flags = 1;
+        let phased = decide(&c, &mut state, &mut rng).unwrap();
+        assert_eq!(phased.target_class, 8, "phased -> all enemies");
     }
 
     #[test]

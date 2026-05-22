@@ -4741,6 +4741,28 @@ impl World {
         MonsterAction::Physical { target }
     }
 
+    /// The live battle-mode counter (`ctx+0x28A`, `_DAT_8007BD24[0x28A]`).
+    ///
+    /// This is the boss/scripted-mode gate the per-monster AI `switch` reads:
+    /// multi-phase bosses (`0xA8`, `0xB4`, `0xB5`, `0xB6`, `0xA2..=0xA4`, …)
+    /// change which spell they cast as it advances. `0` in a normal battle.
+    pub fn battle_mode(&self) -> u8 {
+        self.monster_ai_state.mode_flags
+    }
+
+    /// Advance the battle-mode counter by one - the faithful port of the
+    /// battle-action SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), the
+    /// boss-phase-transition pseudo-action. A boss script issues action `0xFF`
+    /// when the fight crosses a scripted phase boundary; the next monster turn's
+    /// [`Self::pick_monster_action`] then reads the bumped mode through
+    /// [`crate::monster_ai::decide`], activating that phase's scripted casts.
+    /// The retail counter is a byte, so it wraps at `0xFF`.
+    ///
+    /// PORT: FUN_801E295C
+    pub fn advance_battle_mode(&mut self) {
+        self.monster_ai_state.mode_flags = self.monster_ai_state.mode_flags.wrapping_add(1);
+    }
+
     /// Target **class** the generic core picks for a monster casting `def`, by
     /// the spell's [`crate::spells::SpellTarget`] shape (monster's perspective:
     /// enemies = party band, allies = monster band). Single-enemy → a random
@@ -8569,6 +8591,46 @@ mod tests {
             (3..=4).contains(&t),
             "class 1 -> living monster slot, got {t}"
         );
+    }
+
+    /// `advance_battle_mode` (the SM `case 0xFF` writer for `ctx+0x28A`) flips a
+    /// multi-phase boss from its first-phase cast to its phased cast on the next
+    /// turn. Monster id `0xB6` always casts, picking its spell purely by mode.
+    #[test]
+    fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
+        use crate::monster_catalog::MonsterDef;
+        use crate::spells::SpellCatalog;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        // A clean-room boss at monster slot 1 with id 0xB6 (no own magic - it
+        // casts purely off its scripted phase table).
+        world
+            .monster_catalog
+            .insert(MonsterDef::new(0xb6, "Boss", 400, 50));
+        world.actors[0].battle.max_hp = 300;
+        world.actors[0].battle.hp = 300;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = 400;
+        world.actors[1].battle.hp = 400;
+        world.actors[1].battle.mp = 250;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(0xb6);
+        world.rng_state = 1;
+
+        assert_eq!(world.battle_mode(), 0, "fresh battle starts in phase 0");
+        world.take_monster_turn(1);
+        assert_eq!(world.actors[1].battle.params[0], 0xa2, "phase 0 cast");
+
+        // A scripted phase transition advances the mode; next turn is phase I.
+        world.advance_battle_mode();
+        assert_eq!(world.battle_mode(), 1);
+        world.take_monster_turn(1);
+        assert_eq!(world.actors[1].battle.params[0], 0xa3, "phase 1 cast");
     }
 
     #[test]
