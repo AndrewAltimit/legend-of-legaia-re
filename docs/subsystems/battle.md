@@ -221,22 +221,50 @@ the relocated mesh to the actor. `play-window --live-loop` / `--player-battle`
 does this on each `Field → Battle` transition (against a throwaway clone of the
 field VRAM, restored on the way back) so the enemy is drawn, not a stand-in.
 
-### Monster AI action selection (clean-room engine)
+### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
 
-On a monster's turn the clean-room loop chooses between a physical strike and a
-spell cast rather than always striking. `World::take_monster_turn` consults the
-monster's own castable spell ids - the `+0x21..=+0x23` global magic-attack array
-carried onto `MonsterDef::magic_attacks` - and keeps only the entries that
-resolve to an offensive (`SpellEffect::Damage`) spell in the active catalog that
-the monster can currently afford from its live MP. It then rolls the
-deterministic replay RNG (`World::next_rng`): roughly one eligible turn in three
-casts (single-target spells pick a living party victim, `AllEnemies` spells hit
-the whole party), folding through the same `cast_spell_on_slots` path the player
-magic command uses, and parks the SM at `EndOfAction` so the loop cycles. A
-monster with no castable spell consumes no RNG and arms the prior generic strike,
-so spell-less encounters stay bit-identical. The retail per-monster AI-parameter
-hook `FUN_801E7320` (`monster_setup`) is still a no-op; this engine-side chooser
-stands in for it until that overlay routine is traced.
+Retail monster AI is two routines in the battle overlay:
+
+- **`FUN_801E9FD4` - action picker.** Called per monster from `FUN_801DABA4`
+  (`recompute_battle_order`). Its **generic decision core** counts the live
+  global magic ids in the monster record's `+0x21..=+0x23` array, rolls
+  `rand % (1 + live_count)`; a `0` selects a physical strike (target
+  `rand % party_count`), otherwise it picks magic id `magic[roll-1]`, gates on
+  affordability (`actor[+0x150] MP < spell_table[id*0xC + 3]` cost), and resolves
+  the target by the spell's shape byte `spell_table[id*0xC + 2] & 0x60`
+  (`0x40` = one enemy → random party member; `0x60` = all enemies → class `8`;
+  `0x20` = all allies → class `9`; `0x00` = one ally → most-weakened-ally HP
+  scan). After the core, a large per-monster-type `switch` on the AI-type byte
+  `DAT_8007BD0C[slot]` can **override** the choice with bespoke scripted casts
+  (hard-coded ids `0x50/0x51/0x52/0x53/0x6f/0x40`, cooldowns in `DAT_801C8FE0`).
+- **`FUN_801E7320` - target resolver.** Called from the action SM
+  (`FUN_801E295C`) at `ActionSeed` as the `monster_setup` hook, but only for
+  monster actors with `actor[+0x16e] & 0x380 != 0`. It reads the targeting class
+  the picker left in `actor[+0x1DD]` and expands it: class `0..2` → a living
+  monster slot (`rand % monster_count + party_count`); class `3..6` → a living
+  party slot (`rand % party_count`); class `8`/other → a `rand % 3` gate
+  selecting all-target codes `8`/`9` or self. ctx fields: `ctx[+0]` = party
+  count, `ctx[+1]` = monster count, `ctx[+0x13]` = active slot. Dumps:
+  `ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`,
+  `overlay_battle_action_801e7320.txt`.
+
+The clean-room engine ports the parts that are fully grounded in traced data:
+`World::pick_monster_action` is the action picker's generic core (real RNG, real
+`magic_attacks`, spell-shape targeting through the catalog's `SpellTarget`), and
+`World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
+`monster_setup` hook. The picker drives the live loop's monster turns, folding a
+chosen cast through `cast_spell_on_slots` (the shared player/monster cast path)
+and parking the SM at `EndOfAction`.
+
+**Open / deferred** (gated on tracing where the per-monster AI-type byte
+`DAT_8007BD0C` is populated): the per-monster-type scripted-cast `switch`, the
+multi-art spirit/SP chain queue at `actor+0x1DF`, the `'#'`-marked spell-entry
+scan, and the `ctx+0x28a` battle-mode overrides. Until grounded, the engine runs
+the generic (AI-type 0) path. The owner of the `actor+0x16e & 0x380` flag that
+gates `FUN_801E7320` is also outside these four functions (none of them write
+`+0x16e`); in the engine monsters carry `field_flags == 0`, so the picker's own
+target stands and the resolver is exercised directly (and via the hook once the
+flag source is wired).
 
 ## Stat aggregator (`FUN_80042558`)
 

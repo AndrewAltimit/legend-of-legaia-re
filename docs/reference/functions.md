@@ -213,6 +213,9 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 | `801DFDF8` | Effect-bundle public spawn API (battle overlay): `(byte effect_id, short* world_pos, ushort angle)`. |
 | `801E0088` | Effect-bundle per-frame walker (battle overlay). |
 | `801F17F8` | `summon.dat` / `readef.dat` streaming loader (battle overlay). |
+| `801E9FD4` | **Monster-AI action picker** (battle overlay; the magic-capture-overlay dump at the same address is a different routine). Called per monster from `FUN_801DABA4`. Generic core: rolls `rand % (1 + live_magic_count)` over the record's `+0x21..=+0x23` global magic ids → physical strike or a cast (gated on MP `actor[+0x150]` vs `spell_table[id*0xC+3]`), target by shape `spell_table[id*0xC+2] & 0x60`. Then a per-monster-type `switch` on the AI-type byte `DAT_8007BD0C[slot]` overrides with scripted casts. Writes `actor[+0x1DD]` (target/class), `+0x1DE` (action kind), `+0x1DF..` (chosen id / SP chain queue). Generic core ported as `engine-core::World::pick_monster_action`; the AI-type-switch is deferred on tracing `DAT_8007BD0C`. `overlay_battle_action_801e9fd4.txt`. |
+| `801E7320` | **Monster-AI target resolver** - the `monster_setup` hook (`FUN_801E295C` `ActionSeed`, gated on `actor[+0x16e] & 0x380`). Expands the targeting class in `actor[+0x1DD]`: class `0..2` → living monster slot (`rand % ctx[+1] + party`), `3..6` → living party slot (`rand % ctx[+0]`), `8`/other → `rand%3` gate for all-target codes `8`/`9` / self. Ported exactly as `engine-core::World::resolve_monster_target`. `overlay_battle_action_801e7320.txt`. |
+| `801DABA4` | **`recompute_battle_order`** - drives `FUN_801E9FD4` per monster while recomputing turn order. `overlay_battle_action_801daba4.txt`. |
 
 ### Ra-Seru capture overlay
 
