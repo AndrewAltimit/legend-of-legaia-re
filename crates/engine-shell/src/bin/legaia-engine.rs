@@ -3536,6 +3536,11 @@ struct PlayWindowApp {
     /// to `events` and the close handler flushes a `j-replay-v1` file
     /// to disk. `None` in plain `play-window` runs.
     record_log: Option<RecordLog>,
+    /// Field-live options (live loop / player-driven battle / battle BGM)
+    /// captured at startup, so the boot-UI NEW GAME handler can re-enter the
+    /// opening cutscene scene (`opdeene`) with the same arming the startup
+    /// `enter_field_live` used.
+    field_live_opts: legaia_engine_shell::boot::FieldLiveOpts,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -3650,17 +3655,29 @@ impl PlayWindowApp {
                     match outcome {
                         TitleOutcome::NewGame => {
                             // Mirror the retail NEW GAME → field-launch
-                            // (master mode 2 → mode 3): establish a fresh
-                            // slate and seed the starting party (Vahn) from the
-                            // disc's SCUS template, then reveal the already-
-                            // booted opening scene (town01). See
-                            // docs/subsystems/boot.md "New Game boot chain".
+                            // (master mode 2 → mode 3): establish a fresh slate
+                            // and seed the starting party (Vahn) from the disc's
+                            // SCUS template, then enter the prologue cutscene
+                            // scene `opdeene` (the front-end launcher's opening
+                            // scene id, verified live), which hands off to the
+                            // interactive `town01`. See docs/subsystems/boot.md
+                            // "New Game boot chain".
                             self.session.begin_new_game();
-                            log::info!(
-                                "new game: seeded party_count={}, scene='{}'",
-                                self.session.host.world.party_count,
-                                legaia_asset::new_game::OPENING_SCENE,
-                            );
+                            let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+                            match self
+                                .session
+                                .enter_field_live(cutscene, &self.field_live_opts)
+                            {
+                                Ok(mode) => log::info!(
+                                    "new game: seeded party_count={}, entered opening cutscene \
+                                     '{cutscene}' (mode={mode:?})",
+                                    self.session.host.world.party_count,
+                                ),
+                                Err(e) => log::warn!(
+                                    "new game: enter opening cutscene '{cutscene}' failed ({e:#}); \
+                                     staying on the pre-booted scene"
+                                ),
+                            }
                             self.boot_ui = BootUiState::Inactive;
                         }
                         TitleOutcome::Continue => {
@@ -6784,15 +6801,19 @@ fn cmd_play_window_with_record(
             ctrl.debug_enabled = true;
             ctrl.view_mode = 1;
         }
-    } else {
+    }
+    // Field-live arming, built once and reused: at startup for the direct path
+    // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
+    let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {
+        live_loop,
+        player_battle,
+        battle_bgm,
+    };
+    if !world_map {
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
         // drivers via `BootSession::enter_field_live`.
-        let opts = legaia_engine_shell::boot::FieldLiveOpts {
-            live_loop,
-            player_battle,
-            battle_bgm,
-        };
+        let opts = field_live_opts.clone();
         match session.enter_field_live(scene, &opts) {
             Ok(mode) => log::info!("play-window: entered field scene '{scene}' (mode={mode:?})"),
             Err(e) => log::warn!("play-window: enter_field_live('{scene}') failed: {e:#}"),
@@ -7110,6 +7131,7 @@ fn cmd_play_window_with_record(
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),
         record_log: record_to.map(RecordLog::from_target),
+        field_live_opts,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

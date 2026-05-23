@@ -39,9 +39,14 @@
 //! spirit-gauge value all at once; the per-character archetypes
 //! (`Noa = 120`, `Gala = 80`) read as agility, so this module names it `agl`.
 //!
-//! The starting (interactive) scene a New Game enters is `town01` (Rim Elm) -
-//! [`OPENING_SCENE`]; the executable's default map-name buffer holds the
-//! literal `"town01"` past the same boot chain.
+//! A New Game's first scene is the prologue cutscene `opdeene`
+//! ([`OPENING_CUTSCENE_SCENE`]) - the in-engine 3D "It was the Seru."
+//! Genesis-tree narration. The front-end launcher (`init_game` in the title
+//! overlay) writes that scene id into the active-scene-name buffer
+//! (`0x8007050C`); a `new_game_cutscene_intro_a` save state reads back
+//! `"opdeene"` there, and the later Rim Elm states read `"town01"`. The
+//! cutscene hands off to the interactive scene `town01` (Rim Elm) -
+//! [`OPENING_SCENE`].
 
 /// RAM address of the starting-party template (Vahn's record base).
 pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
@@ -58,7 +63,14 @@ pub const NAME_LEN: usize = 10;
 /// Number of roster records the template carries (Vahn, Noa, Gala, Terra).
 pub const PARTY_RECORDS: usize = 4;
 
-/// CDNAME label of the interactive opening scene a New Game enters (Rim Elm).
+/// CDNAME label of the prologue cutscene a New Game enters first (the
+/// in-engine "It was the Seru." Genesis-tree narration). Written as the
+/// opening scene id by the front-end launcher (`init_game`), verified live in
+/// the `new_game_cutscene_intro_a` save state. Hands off to [`OPENING_SCENE`].
+pub const OPENING_CUTSCENE_SCENE: &str = "opdeene";
+
+/// CDNAME label of the interactive opening scene a New Game reaches after the
+/// prologue cutscene ([`OPENING_CUTSCENE_SCENE`]) - Rim Elm.
 pub const OPENING_SCENE: &str = "town01";
 
 /// PSX-EXE `t_addr` -> file-offset resolver. `SCUS_942.54` loads its data
