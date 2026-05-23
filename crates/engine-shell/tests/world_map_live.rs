@@ -343,3 +343,81 @@ fn world_map_walking_onto_real_portal_transitions() {
         "at least one overworld portal must be exercised"
     );
 }
+
+/// A real overworld NPC carrying inline dialog text opens its message when
+/// talked to: teleport the player onto a classified `Npc` entity that has a
+/// `text_id`, press confirm, and assert the world's `current_dialog` opens on
+/// that message — the same `text_id` the host then renders through
+/// `SceneHost::open_pending_dialog`. Portals are walk-onto; NPCs are talk-to.
+#[test]
+fn world_map_talking_to_real_npc_opens_dialogue() {
+    use legaia_engine_core::world::WorldMapEntityConfig;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // map01 / map02 each classify at least one NPC that carries inline dialog
+    // text in its placement script.
+    let mut tested_any = false;
+    for scene in ["map01", "map02"] {
+        let cfg = BootConfig {
+            scene: scene.into(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let opts = FieldLiveOpts::default();
+        session
+            .enter_world_map_live(scene, &opts)
+            .expect("enter_world_map_live");
+
+        let world = &mut session.host.world;
+        let npc = world
+            .world_map_entity_configs
+            .iter()
+            .enumerate()
+            .find_map(|(i, c)| match c {
+                WorldMapEntityConfig::Npc {
+                    text_id: Some(t), ..
+                } => Some((i, *t)),
+                _ => None,
+            });
+        let Some((idx, text_id)) = npc else {
+            eprintln!("[{scene}] no talkable NPC entity installed");
+            continue;
+        };
+        let (nx, nz) = world.world_map_entity_positions[idx];
+        if let Some(slot) = world.player_actor_slot {
+            let a = &mut world.actors[slot as usize];
+            a.move_state.world_x = nx;
+            a.move_state.world_z = nz;
+        }
+        // Don't count the teleport as a tile crossing (avoids a stray region
+        // roll flipping us into Battle before the confirm).
+        world.world_map_last_tile = None;
+
+        // Settle a no-input frame so the confirm press is a clean edge, then talk.
+        world.set_pad(0);
+        let _ = world.tick();
+        world.set_pad(PadButton::Cross.mask());
+        let _ = world.tick();
+
+        let opened = world.current_dialog.as_ref().map(|d| d.text_id);
+        eprintln!("[{scene}] NPC #{idx} text_id={text_id} -> opened={opened:?}");
+        assert_eq!(
+            opened,
+            Some(text_id),
+            "[{scene}] talking to the NPC opens its dialogue"
+        );
+        tested_any = true;
+    }
+    assert!(
+        tested_any,
+        "at least one overworld NPC with dialog text must be exercised"
+    );
+}

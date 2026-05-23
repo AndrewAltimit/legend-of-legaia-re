@@ -178,10 +178,23 @@ via `install_world_map_entities_with_configs`):
   player-position-in-zone trigger) drives the SM to its transition state and
   surfaces a `FieldEvent::WorldMapTransition { target_map, slot }` for the host
   to load the target scene.
-- `Npc { interact_id }` - surfaces a `FieldEvent::FieldInteract` with that id.
+- `Npc { interact_id, text_id }` - surfaces a `FieldEvent::FieldInteract` with
+  that id. When the placement script carries inline dialog text (a `0x3F`
+  Dialog op), `text_id` is its MES message: `tick_world_map` opens it (sets
+  `World::current_dialog` + emits `FieldEvent::OpenDialog`) when the player
+  presses confirm while standing within one tile of the entity, and dismisses
+  it on the next confirm/cancel press. This is the overworld talk-to path -
+  portals are walk-onto, NPCs are talk-to. (On the field the per-entity field
+  VM runs the `0x3F` itself; the overworld has no per-entity VM ticking, so the
+  world owns the open/dismiss directly.)
 
 Entities without a config fall back to the shared formation and a generic
 interaction.
+
+The "player walking" gate that suppresses the talk-to / interaction path reads
+the d-pad direction bits (Up/Right/Down/Left), the same bits the locomotion
+step consumes - not the face buttons, so a confirm press is never mistaken for
+movement.
 
 ### Overworld player movement + region-keyed encounters
 

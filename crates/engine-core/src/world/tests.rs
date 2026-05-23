@@ -811,8 +811,8 @@ fn world_map_idle_entity_interacts_only_when_player_stationary() {
     // Encounters disabled so only the interaction path can fire.
     world.set_world_map_encounter(false, 50, 0, 64);
 
-    // Player moving (d-pad held): no interaction.
-    world.set_pad(0x1000);
+    // Player moving (d-pad direction held): no interaction.
+    world.set_pad(crate::input::PadButton::Up.mask());
     let _ = world.tick();
     assert!(
         !world
@@ -954,7 +954,10 @@ fn world_map_walking_onto_npc_does_not_transition() {
     world.install_field_player(0);
     world.set_world_map_encounter(false, 50, 0, 64);
     world.install_world_map_entities_at(vec![(
-        WorldMapEntityConfig::Npc { interact_id: 4 },
+        WorldMapEntityConfig::Npc {
+            interact_id: 4,
+            text_id: None,
+        },
         (448, 448),
     )]);
     world.actors[0].move_state.world_x = 448;
@@ -978,6 +981,7 @@ fn world_map_npc_config_surfaces_interact_id() {
     world.enter_world_map();
     world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Npc {
         interact_id: 7,
+        text_id: None,
     }]);
     world.set_world_map_encounter(false, 50, 0, 64);
     // Stationary player: the idle entity interacts.
@@ -988,6 +992,71 @@ fn world_map_npc_config_surfaces_interact_id() {
         .into_iter()
         .any(|e| matches!(e, FieldEvent::FieldInteract { interact_id: 7, .. }));
     assert!(interacted, "the NPC surfaces its configured interact id");
+}
+
+/// Talking to an adjacent NPC that carries inline dialog text opens its MES
+/// message on a confirm press (sets `current_dialog` + emits `OpenDialog`); a
+/// later confirm/cancel press dismisses it (emits `DialogDismissed`).
+#[test]
+fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
+    let cross = crate::input::PadButton::Cross.mask();
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.set_world_map_encounter(false, 50, 0, 64);
+    world.install_world_map_entities_at(vec![(
+        WorldMapEntityConfig::Npc {
+            interact_id: 4,
+            text_id: Some(0x12),
+        },
+        (576, 448), // one tile east of the player (448 >> 7 == 3, 576 >> 7 == 4)
+    )]);
+    world.actors[0].move_state.world_x = 448;
+    world.actors[0].move_state.world_z = 448;
+
+    // Settle a frame with no input so the next Cross press is a clean edge.
+    world.set_pad(0);
+    let _ = world.tick();
+    assert!(world.current_dialog.is_none(), "no box before talking");
+
+    // Confirm press next to the NPC opens its dialogue.
+    world.set_pad(cross);
+    let _ = world.tick();
+    assert_eq!(
+        world.current_dialog.as_ref().map(|d| d.text_id),
+        Some(0x12),
+        "talk-to opens the NPC's MES text"
+    );
+    assert!(
+        world
+            .drain_field_events()
+            .into_iter()
+            .any(|e| matches!(e, FieldEvent::OpenDialog { text_id: 0x12, .. })),
+        "talk-to emits OpenDialog for the host to render"
+    );
+
+    // Cross held across the frame boundary is not a fresh edge (edges advance
+    // on `set_pad`): the box stays up.
+    world.set_pad(cross);
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "no dismiss without a new edge"
+    );
+
+    // Release then press again to dismiss.
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(cross);
+    let _ = world.tick();
+    assert!(world.current_dialog.is_none(), "confirm dismisses the box");
+    assert!(
+        world
+            .drain_field_events()
+            .into_iter()
+            .any(|e| matches!(e, FieldEvent::DialogDismissed)),
+        "dismiss emits DialogDismissed"
+    );
 }
 
 // ---- tile-board step + collision (A2) ----

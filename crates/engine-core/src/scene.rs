@@ -1696,11 +1696,13 @@ impl SceneHost {
                                     target_map: target_map as u16,
                                 }
                             }
-                            PlacementKind::Npc { interact_id, .. } => {
-                                crate::world::WorldMapEntityConfig::Npc {
-                                    interact_id: interact_id.unwrap_or(0),
-                                }
-                            }
+                            PlacementKind::Npc {
+                                interact_id,
+                                dialog_text_id,
+                            } => crate::world::WorldMapEntityConfig::Npc {
+                                interact_id: interact_id.unwrap_or(0),
+                                text_id: dialog_text_id,
+                            },
                             PlacementKind::Plain => return None,
                         };
                         Some((cfg, (p.world_x, p.world_z)))
