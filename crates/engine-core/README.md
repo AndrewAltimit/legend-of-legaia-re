@@ -131,6 +131,19 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The
   town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
   indexed formation-table install path (see `encounter_record`).
+- **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
+  entity SM (`legaia_engine_vm::world_map`) in `SceneMode::Field` as well as
+  on the overworld. `install_field_carriers([FieldCarrierConfig])` places the
+  scene's carriers; a `ScriptedEncounter { formation_id }` sits Idle (towns
+  run a 0% random rate, so its host gate disables self-firing) until
+  `engage_field_carrier(idx)` — the dialogue-accept stand-in — advances it
+  Idle → Activating. The next `tick_field_carriers` runs the state-1 formation
+  copy + the `case 2/3` fall-through battle handoff, resolving the carrier's
+  MAN formation by index and flipping Field → Battle (returning to the field
+  on victory). The Rim Elm Tetsu fight is `formation_id`
+  `RIM_ELM_TRAINING_FORMATION_ID` (4); the carrier identity within the MAN
+  actor-placement partition and the bytecode that advances its state remain
+  open RE threads.
 - `cutscene` - FMV index ↔ `MV*.STR` filename mapping. The retail
   field-VM `0x4C 0xE2` op writes a 16-bit FMV index to
   `_DAT_8007BA78` and kicks game mode `StrInit` (26); the world

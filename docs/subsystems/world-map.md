@@ -137,6 +137,27 @@ at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
 adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
 between PROT entries `0x367` and `0x36D`.
 
+#### Clean-room port — both overworld and field
+
+The same SM serves overworld entities **and** field-resident carriers. The
+clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
+`legaia_engine_core::World` ticks it in two modes:
+
+- `SceneMode::WorldMap` via `tick_world_map` (roaming-encounter zones / town
+  portals).
+- `SceneMode::Field` via `tick_field_carriers`, for the scene's MAN-placed
+  carriers. A `FieldCarrierConfig::ScriptedEncounter { formation_id }` sits
+  Idle (towns run a 0% random rate, so its `encounter_enabled` host gate is
+  `false` and it never self-fires) until `World::engage_field_carrier` — the
+  dialogue-accept stand-in — advances it Idle → Activating. The next
+  `tick_field_carriers` then runs the state-1 body (`on_activating`, the
+  `entity[+0x94]` formation copy) immediately followed by the `case 2/3`
+  fall-through (`on_scene_transition`, the `_DAT_8007B83C = 8` battle handoff),
+  resolving the carrier's MAN formation by index and flipping Field → Battle.
+  The Rim Elm Tetsu fight is `formation_id` 4. The carrier identity within the
+  MAN actor-placement partition, and the field-VM bytecode that advances its
+  state, remain open (see [`reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+
 The clean-room engine ports this SM as `legaia_engine_vm::world_map::step`
 (host trait `WorldMapEntityHost`). `legaia_engine_core::World` drives one
 `WorldMapEntityCtx` per installed overworld entity each `SceneMode::WorldMap`

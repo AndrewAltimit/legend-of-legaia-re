@@ -1180,6 +1180,42 @@ pub struct World {
     /// a field encounter to [`SceneMode::Field`]). Defaults to
     /// [`SceneMode::Field`].
     pub battle_return_mode: SceneMode,
+
+    /// Per-entity **field** state machines - the same `FUN_801DA51C` SM the
+    /// overworld uses ([`vm::world_map`]), but ticked in [`SceneMode::Field`]
+    /// for the scene's MAN-placed actors. A scripted-encounter carrier (the
+    /// Rim Elm Tetsu fight) sits Idle until [`Self::engage_field_carrier`]
+    /// (the dialogue-accept) advances it to `Activating`; the next
+    /// [`Self::tick_field_carriers`] then copies its formation and launches the
+    /// battle, mirroring retail's state-1 `entity[+0x94]` copy + `case 2/3`
+    /// fall-through battle handoff. Empty unless
+    /// [`Self::install_field_carriers`] seeded them.
+    pub field_carriers: Vec<vm::world_map::WorldMapEntityCtx>,
+
+    /// Per-carrier role config, paired by index with [`Self::field_carriers`].
+    pub field_carrier_configs: Vec<FieldCarrierConfig>,
+
+    /// Field carrier battle pending resolution: the MAN `formation_id` a
+    /// carrier SM latched on its scene-transition this frame. Drained at the
+    /// end of [`Self::tick_field_carriers`] to flip Field -> Battle. `None`
+    /// between transitions.
+    pub pending_field_carrier_battle: Option<u16>,
+}
+
+/// Per-field-carrier role. The retail engine builds one record per MAN-placed
+/// scene entity; this is the clean-room slice the field entity SM acts on.
+/// Paired by index with [`World::field_carriers`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldCarrierConfig {
+    /// A **scripted-encounter carrier**: engaging it (the dialogue-accept)
+    /// advances its `FUN_801DA51C` SM to its scene-transition, which selects
+    /// MAN formation `formation_id` (by index, so the scene's merged monster
+    /// stats stand) and launches the battle. The Rim Elm Tetsu tutorial fight
+    /// is `formation_id` [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`].
+    ScriptedEncounter { formation_id: u16 },
+    /// A plain interactable NPC. Surfaces a
+    /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
+    Npc { interact_id: u8 },
 }
 
 /// Per-overworld-entity role. The retail engine builds one record per on-map
@@ -1418,6 +1454,9 @@ impl World {
             world_map_player_walking: false,
             pending_world_map_encounter: None,
             battle_return_mode: SceneMode::Field,
+            field_carriers: Vec::new(),
+            field_carrier_configs: Vec::new(),
+            pending_field_carrier_battle: None,
         }
     }
 
@@ -3148,6 +3187,7 @@ impl World {
                 self.step_field();
                 self.tick_tile_board();
                 self.step_field_locomotion();
+                self.tick_field_carriers();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
                 }
@@ -3339,6 +3379,82 @@ impl World {
             formation_id,
             reset_to,
         };
+    }
+
+    /// Place the scene's field entity SMs (all Idle). One
+    /// [`vm::world_map::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
+    /// scripted-encounter carrier can be advanced via
+    /// [`Self::engage_field_carrier`] and ticked by
+    /// [`Self::tick_field_carriers`]. Replaces any previously installed set.
+    ///
+    /// This is the field-mode counterpart to
+    /// [`Self::install_world_map_entities_with_configs`]; retail builds the
+    /// same per-entity records from the scene's MAN actor-placement partition.
+    pub fn install_field_carriers(&mut self, configs: Vec<FieldCarrierConfig>) {
+        self.field_carriers = (0..configs.len())
+            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .collect();
+        self.field_carrier_configs = configs;
+        self.pending_field_carrier_battle = None;
+    }
+
+    /// Host signal that the player engaged field carrier `idx` (accepted the
+    /// Tetsu "Come at me!" dialogue / pressed confirm on the NPC). Advances the
+    /// carrier's `FUN_801DA51C` SM from Idle to **Activating** and drains its
+    /// countdown to zero, so the next [`Self::tick_field_carriers`] runs the
+    /// state-1 body in full: `on_activating` (formation copy) immediately
+    /// followed by the `case 2/3` fall-through scene-transition (battle
+    /// handoff). No-op for an out-of-range index or a non-Idle carrier.
+    ///
+    /// Mirrors retail's scripted state-0 -> state-1 advance (towns are 0%
+    /// random, so the Tetsu carrier never self-advances via the encounter
+    /// roll; the dialogue script drives it).
+    ///
+    /// REF: FUN_801DA51C
+    pub fn engage_field_carrier(&mut self, idx: usize) {
+        if let Some(ctx) = self.field_carriers.get_mut(idx)
+            && ctx.state == vm::world_map::EntityState::Idle as u16
+        {
+            ctx.state = vm::world_map::EntityState::Activating as u16;
+        }
+    }
+
+    /// Step every installed field carrier SM one frame (the field-mode use of
+    /// the ported `FUN_801DA51C`), then resolve a latched scripted-encounter
+    /// transition into a battle. No-op when no carriers are installed.
+    ///
+    /// The entity list is taken out of the world so the SM's host bridge can
+    /// borrow `&mut World` (same pattern as [`Self::tick_world_map`]).
+    ///
+    /// REF: FUN_801DA51C
+    fn tick_field_carriers(&mut self) {
+        if self.field_carriers.is_empty() {
+            return;
+        }
+        let mut carriers = std::mem::take(&mut self.field_carriers);
+        for (idx, ctx) in carriers.iter_mut().enumerate() {
+            let mut host = FieldCarrierHostImpl { world: self };
+            vm::world_map::step(idx, ctx, &mut host);
+        }
+        self.field_carriers = carriers;
+
+        if let Some(formation_id) = self.pending_field_carrier_battle.take() {
+            self.begin_field_carrier_battle(formation_id);
+        }
+    }
+
+    /// Resolve a field carrier's latched `formation_id` against
+    /// [`Self::formation_table`] and flip Field -> Battle, snapshotting the
+    /// field context so [`Self::finish_battle`] returns to [`SceneMode::Field`].
+    /// No-op when the id isn't registered.
+    fn begin_field_carrier_battle(&mut self, formation_id: u16) {
+        // Reuse the field-encounter battle entry: a carrier transition is a
+        // forced encounter against a registered MAN formation.
+        self.begin_encounter_battle(crate::encounter::EncounterRoll {
+            formation_id,
+            row_index: 0,
+            roll_q8: 0,
+        });
     }
 
     /// Resolve `formation_id` against [`Self::formation_table`] and flip from
@@ -6344,6 +6460,89 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
     fn on_interact(&mut self, entity_idx: usize) {
         let interact_id = match self.world.world_map_entity_configs.get(entity_idx) {
             Some(WorldMapEntityConfig::Npc { interact_id }) => *interact_id,
+            _ => 0,
+        };
+        self.world
+            .pending_field_events
+            .push(FieldEvent::FieldInteract {
+                interact_id,
+                slot: entity_idx as u8,
+            });
+    }
+    fn encounter_counter_is_sentinel(&self) -> bool {
+        false
+    }
+    fn clear_encounter_counter(&mut self) {}
+}
+
+/// Bridge between the ported `FUN_801DA51C` SM and a [`World`] **field**
+/// carrier (the same SM the overworld bridge drives, but ticked in
+/// [`SceneMode::Field`] for MAN-placed scene entities). Constructed per
+/// [`World::tick_field_carriers`]; the carrier `Vec` is taken out of the world
+/// while the SM runs.
+///
+/// The discriminating difference from [`WorldMapEntityHostImpl`]: field
+/// carriers never fire a *random* encounter (towns run a 0% rate), so
+/// `encounter_enabled` is `false` and the carrier only advances when
+/// [`World::engage_field_carrier`] moves it to `Activating`. Its state-1 body
+/// then `on_activating` -> installs the MAN formation by index, and the
+/// fall-through `on_scene_transition` -> latches the battle handoff.
+struct FieldCarrierHostImpl<'a> {
+    world: &'a mut World,
+}
+
+impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
+    fn activation_gate_open(&self) -> bool {
+        true
+    }
+    fn encounter_countdown(&self) -> i8 {
+        // The dialogue-accept (`engage_field_carrier`) leaves the carrier at
+        // Activating with a zero countdown, so the next tick runs the state-1
+        // body to completion. Report 0 so a freshly-engaged carrier transitions
+        // immediately rather than draining a stale counter.
+        0
+    }
+    fn set_encounter_countdown(&mut self, _v: i8) {}
+    fn encounter_enabled(&self) -> bool {
+        // Scripted carriers are not random encounters - the Idle state must
+        // never self-fire. Advancement is entirely via `engage_field_carrier`.
+        false
+    }
+    fn on_encounter(&mut self, _entity_idx: usize, _resolver_result: u32) {}
+    fn on_activating(&mut self, _entity_idx: usize) {
+        // State-1 `entity[+0x94]` formation copy. Retail copies the carrier's
+        // formation into the global cell here; the clean-room world latches it
+        // in `on_scene_transition` (same state-1 tick) and resolves it from
+        // `formation_table` directly at the end of the carrier tick, so no
+        // persistent encounter session is created (a re-rolling session would
+        // re-fire after the battle returns). No-op.
+    }
+    fn on_scene_transition(&mut self, entity_idx: usize) {
+        // `case 2/3` fall-through battle handoff (`_DAT_8007b83c = 8`): latch
+        // the carrier's MAN formation (by index, so the scene's merged monster
+        // stats stand) for direct resolution at the end of the tick.
+        if let Some(FieldCarrierConfig::ScriptedEncounter { formation_id }) =
+            self.world.field_carrier_configs.get(entity_idx).cloned()
+        {
+            self.world.pending_field_carrier_battle = Some(formation_id);
+        }
+    }
+    fn dialog_active(&self) -> bool {
+        self.world.current_dialog.is_some()
+    }
+    fn player_walking(&self) -> bool {
+        // Report "player walking" so the SM's proximity-interact path stays
+        // suppressed: the clean-room world has no player-near-NPC model yet, so
+        // a field carrier is engaged explicitly via `engage_field_carrier`
+        // rather than by the SM's auto-interact gate (which would otherwise
+        // re-fire `on_interact` every frame once its cooldown bit latched).
+        true
+    }
+    fn on_interact(&mut self, entity_idx: usize) {
+        // Reached only once a future proximity model opens the gate; surfaces
+        // the carrier's interaction id for the host.
+        let interact_id = match self.world.field_carrier_configs.get(entity_idx) {
+            Some(FieldCarrierConfig::Npc { interact_id }) => *interact_id,
             _ => 0,
         };
         self.world
@@ -11596,6 +11795,114 @@ mod tests {
             world.on_field_step(),
             "forced-rate session triggers on the next step"
         );
+    }
+
+    #[test]
+    fn field_carrier_engage_launches_battle_and_returns_to_field() {
+        use crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
+        use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Field;
+        world.live_gameplay_loop = true; // auto-resolve the battle leg
+        world.set_active_scene_label("town01");
+        // A capable lone party member so the battle can resolve.
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 80);
+        // town01's Tetsu row: formation index 4 = lone monster id 0x4F.
+        world.formation_table.insert(FormationDef::new(
+            RIM_ELM_TRAINING_FORMATION_ID,
+            vec![FormationSlot::new(0x4F)],
+        ));
+        let mut cat = MonsterCatalog::new();
+        cat.insert(MonsterDef::new(0x4F, "Tetsu", 999, 40));
+        world.set_monster_catalog(cat);
+
+        // Place one scripted-encounter carrier (the Tetsu NPC) - the field-mode
+        // use of the FUN_801DA51C SM.
+        world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
+            formation_id: RIM_ELM_TRAINING_FORMATION_ID,
+        }]);
+
+        // Idle: ticking does NOT launch a battle (towns are 0% random; the
+        // carrier waits for the dialogue-accept).
+        world.tick();
+        assert_eq!(
+            world.mode,
+            SceneMode::Field,
+            "an idle scripted carrier never self-fires"
+        );
+        assert_eq!(world.field_carriers[0].state, 0, "carrier still Idle");
+
+        // The dialogue-accept advances the carrier to Activating; the next tick
+        // runs the state-1 body (formation copy) and the case 2/3 fall-through
+        // (battle handoff), flipping Field -> Battle, tagged to return to field.
+        world.engage_field_carrier(0);
+        world.tick();
+        assert_eq!(world.mode, SceneMode::Battle);
+        assert_eq!(world.battle_return_mode, SceneMode::Field);
+        assert!(world.field_return.is_some());
+        let formation = world.active_formation.as_ref().expect("active formation");
+        assert_eq!(
+            formation.slots[0].monster_id, 0x4F,
+            "Tetsu in the enemy slot"
+        );
+        assert_eq!(
+            world.field_carriers[0].state,
+            vm::world_map::EntityState::Terminal as u16,
+            "carrier retired to Terminal after the transition"
+        );
+
+        // Drive the fight to completion; it must return to the field.
+        let mut returned = false;
+        for _ in 0..8000 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                returned = true;
+                break;
+            }
+        }
+        assert!(returned, "battle resolves");
+        assert_eq!(world.mode, SceneMode::Field, "returns to the field");
+        // The carrier stays Terminal - the scripted fight fires exactly once.
+        assert_eq!(
+            world.field_carriers[0].state,
+            vm::world_map::EntityState::Terminal as u16
+        );
+    }
+
+    #[test]
+    fn field_carrier_unengaged_never_fires() {
+        use crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Field;
+        world.set_active_scene_label("town01");
+        world.formation_table.insert(FormationDef::new(
+            RIM_ELM_TRAINING_FORMATION_ID,
+            vec![FormationSlot::new(0x4F)],
+        ));
+        world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
+            formation_id: RIM_ELM_TRAINING_FORMATION_ID,
+        }]);
+
+        // Many idle ticks must never flip into battle (no random rate).
+        for _ in 0..256 {
+            world.tick();
+            assert_eq!(world.mode, SceneMode::Field);
+        }
+        assert!(world.field_return.is_none());
+        assert!(world.pending_field_carrier_battle.is_none());
     }
 
     #[test]
