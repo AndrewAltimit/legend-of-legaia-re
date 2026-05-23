@@ -6362,10 +6362,13 @@ impl ApplicationHandler for PlayWindowApp {
                         .spawn_debug_effect_model(pos, model_index);
                     return;
                 }
-                // `N`: open the name-entry overlay for the lead character. A
-                // dev hand-trigger - the opening `town01` script's field-VM op
-                // that opens it during the establishing sequence is still an
-                // open RE thread; this exercises the ported overlay end-to-end.
+                // `N`: open the name-entry overlay for the lead character. The
+                // NEW GAME flow now opens it automatically at the `opdeene` ->
+                // `town01` opening hand-off (see the prologue-handoff block
+                // below); this key is a dev hand-trigger to exercise the ported
+                // overlay outside that flow. The exact in-script field-VM op
+                // that opens it mid-establishing-sequence is still an open RE
+                // thread.
                 if matches!(code, KeyCode::KeyN)
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()
@@ -6454,7 +6457,22 @@ impl ApplicationHandler for PlayWindowApp {
                     {
                         match self.session.enter_field_live(target, &self.field_live_opts) {
                             Ok(mode) => {
-                                log::info!("prologue handoff: entered '{target}' (mode={mode:?})")
+                                log::info!("prologue handoff: entered '{target}' (mode={mode:?})");
+                                // Faithful opening order: the retail `town01`
+                                // opening runs an establishing camera + Vahn's
+                                // scripted walk-out, then the "Select your name."
+                                // prompt (master mode 0x03; see boot.md "Name-entry
+                                // overlay"). The engine doesn't yet tick that
+                                // in-scene cutscene timeline (per-mesh placement is
+                                // still open), so we open the naming prompt right
+                                // at the opening hand-off - the prompt's ORDER in
+                                // the new-game flow is correct even though the exact
+                                // in-script field-VM trigger op is still being RE'd.
+                                // Gated tightly: `take_prologue_handoff` only fires
+                                // on the NEW GAME `opdeene` -> `town01` opening, so
+                                // this never re-prompts on a normal `town01` visit.
+                                // Seeded with the template default `Vahn`.
+                                self.session.host.world.open_name_entry(0);
                             }
                             Err(e) => {
                                 log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
