@@ -266,6 +266,43 @@ pub fn world_map_camera_mvp(
     proj * view
 }
 
+/// Camera MVP for an in-engine cutscene (the `opdeene` opening prologue),
+/// framing the cutscene's look-at target from a fixed cinematic vantage.
+///
+/// Unlike [`orbit_camera_mvp`] (which slowly rotates around the player) this is
+/// a static cinematic shot: the eye sits above and in front of `look_at` at a
+/// distance derived from the scene AABB, so the framing tracks wherever the
+/// cutscene directs the camera while staying sized to the loaded geometry. The
+/// `look_at` point comes from the cutscene timeline's executed op-`0x45` Camera
+/// Configure params (the pinned X/Z camera target, params 6 / 8); the engine
+/// reads them from `World::camera_state` and supplies them here.
+///
+/// Geometry uses the same PSX Y-down convention as [`orbit_camera_mvp`] and
+/// [`world_map_camera_mvp`]: the eye is pushed to *negative* Y to sit above the
+/// target, with `+Y` as the look-at up vector.
+pub fn cutscene_camera_mvp(
+    look_at: [f32; 3],
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+    aspect: f32,
+) -> Mat4 {
+    let center = Vec3::from(look_at);
+    let lo = Vec3::from(aabb_lo);
+    let hi = Vec3::from(aabb_hi);
+    let radius = ((hi - lo).length() * 0.5).max(1.0);
+    // Slightly tighter than the orbit framing so the cinematic shot fills more
+    // of the screen. The op-`0x45` eye / distance params are not yet pinned, so
+    // this vantage is an approximation (see `docs/subsystems/cutscene.md`).
+    let distance = radius / 30f32.to_radians().tan() * 1.2;
+    // Three-quarter vantage: in front (`+Z`) and above (`-Y` under Y-down).
+    let eye = center + Vec3::new(0.0, -distance * 0.45, distance);
+    let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    let near = (distance * 0.05).max(0.1);
+    let far = distance * 4.0 + 1000.0;
+    let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+    proj * view
+}
+
 #[cfg(test)]
 mod camera_tests {
     use super::*;
@@ -313,5 +350,21 @@ mod camera_tests {
         let zoomed_out = world_map_camera_mvp(LO, HI, 0, -100_000, 0, 0, 1.5);
         assert!(finite(&zoomed_in));
         assert!(finite(&zoomed_out));
+    }
+
+    #[test]
+    fn cutscene_camera_mvp_is_finite() {
+        let m = cutscene_camera_mvp([0.0, 0.0, 0.0], LO, HI, 16.0 / 9.0);
+        assert!(finite(&m));
+    }
+
+    #[test]
+    fn cutscene_camera_tracks_its_look_at() {
+        // Re-targeting the camera (the pinned op-0x45 X/Z params changing)
+        // must change the projection - the shot follows the cutscene target.
+        let a = cutscene_camera_mvp([0.0, 0.0, 0.0], LO, HI, 1.5);
+        let b = cutscene_camera_mvp([500.0, 0.0, -300.0], LO, HI, 1.5);
+        assert_ne!(a.to_cols_array(), b.to_cols_array());
+        assert!(finite(&b));
     }
 }

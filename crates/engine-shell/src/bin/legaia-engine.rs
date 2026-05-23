@@ -5269,6 +5269,46 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
+    /// Look-at target for the cutscene camera: the X/Z the cutscene timeline's
+    /// executed op-`0x45` Camera Configure staged (the pinned params 6 / 8,
+    /// read from `World::camera_state`), with the Y taken from the lead actor
+    /// (the cutscene anchor). Any axis the cutscene hasn't configured yet falls
+    /// back to the lead actor's position, or the scene-AABB centre when no
+    /// actor is placed - so the shot is framed sensibly before the first
+    /// Camera Configure op runs.
+    fn cutscene_look_at(&self) -> [f32; 3] {
+        let world = &self.session.host.world;
+        let params = &world.camera_state.params;
+        // params 6 / 8 are the camera-target X / Z, stored as signed-16 words.
+        let target_x = params
+            .iter()
+            .find(|p| p.slot == 6)
+            .map(|p| p.value as i16 as f32);
+        let target_z = params
+            .iter()
+            .find(|p| p.slot == 8)
+            .map(|p| p.value as i16 as f32);
+        let (px, py, pz) = world
+            .actors
+            .first()
+            .filter(|a| a.active || a.tmd_binding.is_some())
+            .map(|a| {
+                (
+                    a.move_state.world_x as f32,
+                    a.move_state.world_y as f32,
+                    a.move_state.world_z as f32,
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                    (self.scene_aabb.0[1] + self.scene_aabb.1[1]) * 0.5,
+                    (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+                )
+            });
+        [target_x.unwrap_or(px), py, target_z.unwrap_or(pz)]
+    }
+
     fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.session.host.world.actors[slot];
         let pos = Vec3::new(
@@ -6773,8 +6813,10 @@ impl ApplicationHandler for PlayWindowApp {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
                     // World-map mode frames the loaded map with the
-                    // controller-driven camera (azimuth / zoom / pan);
-                    // every other mode uses the orbit camera.
+                    // controller-driven camera (azimuth / zoom / pan); an active
+                    // in-engine cutscene (opdeene opening prologue) frames the
+                    // cutscene's executed op-0x45 camera target; every other mode
+                    // uses the orbit camera.
                     let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
                     let cam = if in_world_map {
                         let (az, zoom, px, pz) = self
@@ -6792,6 +6834,13 @@ impl ApplicationHandler for PlayWindowApp {
                             zoom,
                             px,
                             pz,
+                            aspect,
+                        )
+                    } else if self.session.host.world.cutscene_timeline.is_some() {
+                        legaia_engine_render::window::cutscene_camera_mvp(
+                            self.cutscene_look_at(),
+                            self.scene_aabb.0,
+                            self.scene_aabb.1,
                             aspect,
                         )
                     } else {
