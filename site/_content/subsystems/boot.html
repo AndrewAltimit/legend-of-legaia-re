@@ -212,3 +212,13 @@ _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
   </table>
   <p>Neither flag has a writer in <code>SCUS_942.54</code>. The input dispatcher <code>FUN_8001822C</code> reads them but doesn't write them. The writers must live in an unswept overlay (most likely the option-menu / cheat-menu cluster), and TCRF GameShark codes confirm both flags are runtime-writable.</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/prot.html">PROT.DAT TOC</a>
+    <a href="asset-loader.html">Asset loader</a>
+    <a href="../tooling/extraction.html">Extraction pipeline</a>
+  </div>
+</section>

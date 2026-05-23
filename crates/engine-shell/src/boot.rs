@@ -226,6 +226,11 @@ impl BootSession {
 
         if opts.live_loop || opts.player_battle {
             world.live_gameplay_loop = true;
+            // Equipped-gear bonuses fold onto party attack/defense at battle
+            // entry (no-op until a real roster with non-zero stats is loaded).
+            world.set_equipment_table(
+                legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table(),
+            );
         }
         world.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {

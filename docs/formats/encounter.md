@@ -137,6 +137,27 @@ Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](
 | `mc2` (in-battle, `map01`) | `04 04 00 00` | Two-slot encounter, both slots monster id `0x04`. |
 | `mc3` (post-battle, `suimon`) | `0A 0D 00 00` | Two-slot encounter, monsters `0x0A` and `0x0D`. |
 
+### Worked example: the Rim Elm training fight
+
+The game's opening battle — the training fight in Rim Elm (`town01`) — is a
+scripted **single-monster** encounter. The opponent is monster archive id
+`0x4F` ("Tetsu"); it is the only monster in the formation. Reading the
+formation cell across the training-fight capture corpus shows the install
+boundary cleanly:
+
+| Capture phase (`town01`) | `0x8007BD0C..0F` | Interpretation |
+|---|---|---|
+| Pre-battle field (free movement, before the fight) | `00 00 00 00` | No formation installed — the cell is clear. |
+| Battle loading (`game_mode 0x15`, graphics not yet drawn) | `4F 00 00 00` | One-monster formation: id `0x4F` in slot 0. |
+| Battle running (graphics / command menu / submenu) | `4F 00 00 00` | Same lone-monster formation. |
+| Post-battle field (back to `game_mode 0x03`) | `4F 00 00 00` | Cell retains the last formation until the next install (it is cleared only at the next encounter, not on victory). |
+
+So the formation copy happens at battle entry, exactly as the reader above
+describes: the cell is empty in the field and carries the lone id `0x4F`
+from battle-load onward. The clean-room engine builds this with
+`EncounterRecord::rim_elm_training()` (`RIM_ELM_TRAINING_OPPONENT_ID = 0x4F`,
+in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs)).
+
 ## Random-encounter trigger path
 
 The script-VM install opcodes above describe **scripted** encounter

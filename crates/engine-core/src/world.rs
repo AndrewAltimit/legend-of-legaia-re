@@ -986,6 +986,12 @@ pub struct World {
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
 
+    /// Per-item battle-stat modifier table (weapon / armor / accessory
+    /// bonuses). Empty by default; install via [`World::set_equipment_table`]
+    /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
+    /// party combatant's attack / defense at battle entry.
+    pub equipment_table: crate::battle_stats::EquipmentTable,
+
     /// Battle-scoped monster-AI state (cooldowns / phase counter / recent-target
     /// ring) read & written by the per-monster-id scripted-cast picker
     /// ([`crate::monster_ai::decide`]). Reset on each battle enter.
@@ -1144,6 +1150,13 @@ pub struct World {
     /// Driven each [`SceneMode::WorldMap`] tick by [`Self::tick_world_map`].
     pub world_map_entities: Vec<vm::world_map::WorldMapEntityCtx>,
 
+    /// Per-entity role config, paired by index with [`Self::world_map_entities`].
+    /// Empty (or shorter than the entity list) means an entity has no specific
+    /// role: its encounters fall back to [`Self::world_map_encounter`]'s shared
+    /// formation and it surfaces a plain interaction. Installed together with
+    /// the entities via [`Self::install_world_map_entities_with_configs`].
+    pub world_map_entity_configs: Vec<WorldMapEntityConfig>,
+
     /// Shared overworld encounter-rate state - the retail globals the
     /// world-map entity SM reads (`DAT_8007b604` countdown, `DAT_8007b5f8`
     /// enable flag) plus the formation an overworld encounter spawns.
@@ -1167,6 +1180,26 @@ pub struct World {
     /// a field encounter to [`SceneMode::Field`]). Defaults to
     /// [`SceneMode::Field`].
     pub battle_return_mode: SceneMode,
+}
+
+/// Per-overworld-entity role. The retail engine builds one record per on-map
+/// entity from the scene's entity table; this is the clean-room slice the
+/// gameplay SM acts on - an encounter zone spawns its own formation, a portal
+/// targets a scene, an NPC just surfaces an interaction. Paired by index with
+/// [`World::world_map_entities`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorldMapEntityConfig {
+    /// A roaming-encounter zone: when the shared countdown drains while this
+    /// entity is the one that fires, it spawns `formation_id` (instead of the
+    /// map-wide [`WorldMapEncounterState::formation_id`]).
+    EncounterZone { formation_id: u16 },
+    /// A town / dungeon portal: engaging it (via
+    /// [`World::engage_world_map_entity`]) transitions to `target_map`,
+    /// surfaced as [`crate::field_events::FieldEvent::WorldMapTransition`].
+    Portal { target_map: u16 },
+    /// A plain interactable (NPC / signpost). Surfaces a
+    /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
+    Npc { interact_id: u8 },
 }
 
 /// Shared overworld encounter-rate state read by the world-map entity SM.
@@ -1363,6 +1396,7 @@ impl World {
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
+            equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
             vdf_buffer: None,
@@ -1379,6 +1413,7 @@ impl World {
             field_return: None,
             field_last_tile: None,
             world_map_entities: Vec::new(),
+            world_map_entity_configs: Vec::new(),
             world_map_encounter: WorldMapEncounterState::default(),
             world_map_player_walking: false,
             pending_world_map_encounter: None,
@@ -2726,6 +2761,61 @@ impl World {
         self.monster_catalog = catalog;
     }
 
+    /// Install the per-item battle-stat modifier table (weapon / armor /
+    /// accessory bonuses). Boot wires this once; [`Self::seed_party_battle_stats`]
+    /// folds the equipped items onto each party combatant at battle entry.
+    pub fn set_equipment_table(&mut self, table: crate::battle_stats::EquipmentTable) {
+        self.equipment_table = table;
+    }
+
+    /// Seed each party combatant's battle attack / defense from the roster's
+    /// live stats plus equipped-gear bonuses.
+    ///
+    /// For every party slot whose roster record carries real stats (live
+    /// attack `> 0`), this resolves a [`crate::battle_stats::BattleStats`] from
+    /// the character's base attack / UDF / LDF and the modifiers of the items
+    /// in its equipment slots ([`crate::battle_stats::compute_battle_stats_default`]
+    /// against [`Self::equipment_table`]), then writes
+    /// [`Self::battle_attack`] (= resolved attack) and
+    /// [`Self::battle_defense_split`] (= resolved UDF / LDF). Slots with a
+    /// zeroed roster record are left untouched, so synthetic battles that set
+    /// `battle_attack` directly keep their values.
+    ///
+    /// Called automatically from the live-loop battle entry; also public so a
+    /// host can refresh stats after an equipment change without re-entering the
+    /// battle.
+    pub fn seed_party_battle_stats(&mut self) {
+        let pc = self.party_count.min(3) as usize;
+        for slot in 0..pc {
+            let Some(rec) = self.roster.members.get(slot) else {
+                continue;
+            };
+            let live = rec.live_stats();
+            // A zeroed roster carries no real stats; don't clobber any value a
+            // synthetic battle set directly.
+            if live.atk == 0 {
+                continue;
+            }
+            let record = crate::battle_stats::StatRecord {
+                base_attack: live.atk,
+                base_udf: live.udf,
+                base_ldf: live.ldf,
+                base_accuracy: live.agl,
+                base_evasion: live.agl,
+                equip: rec.equipment().slots,
+            };
+            let stats = crate::battle_stats::compute_battle_stats_default(
+                &record,
+                &self.equipment_table,
+                &[],
+            );
+            if let Some(s) = self.battle_attack.get_mut(slot) {
+                *s = stats.atk;
+            }
+            self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
+        }
+    }
+
     /// Install a formation + monster catalog pair. Boot wires this once;
     /// engines read it at battle-load time.
     pub fn set_formation_table(
@@ -3094,6 +3184,37 @@ impl World {
         self.world_map_entities = (0..count)
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
+        self.world_map_entity_configs.clear();
+    }
+
+    /// Seed overworld entities with per-entity [`WorldMapEntityConfig`]s. One
+    /// state machine (Idle) is created per config, so encounter zones spawn
+    /// their own formation and portals carry their own target map. Replaces any
+    /// previously installed set.
+    pub fn install_world_map_entities_with_configs(&mut self, configs: Vec<WorldMapEntityConfig>) {
+        self.world_map_entities = (0..configs.len())
+            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .collect();
+        self.world_map_entity_configs = configs;
+    }
+
+    /// Host signal that the player engaged overworld entity `idx` (walked onto
+    /// a portal tile / pressed confirm on it). Drives the entity SM straight to
+    /// its scene-transition state so the next [`Self::tick_world_map`] fires the
+    /// transition; a [`WorldMapEntityConfig::Portal`] then surfaces a
+    /// [`crate::field_events::FieldEvent::WorldMapTransition`] with its target
+    /// map. No-op for an out-of-range index.
+    ///
+    /// This is the clean-room stand-in for retail's per-entity
+    /// player-position-in-zone trigger (the engine has no overworld player
+    /// placement yet); it mirrors the arm-via-API shape of the scripted-field
+    /// encounter seam.
+    pub fn engage_world_map_entity(&mut self, idx: usize) {
+        if let Some(ctx) = self.world_map_entities.get_mut(idx) {
+            // State 2 = Transitioning: the SM fires `on_scene_transition` and
+            // retires the entity on the next tick.
+            ctx.state = vm::world_map::EntityState::Transitioning as u16;
+        }
     }
 
     /// Configure the shared overworld encounter rate. `enabled` is the master
@@ -3875,6 +3996,9 @@ impl World {
             // previous battle that placed an enemy in this slot.
             a.battle_monster_id = None;
         }
+        // Fold the roster's live stats + equipped-gear bonuses onto the party
+        // combatants' attack / defense (no-op for a zeroed roster).
+        self.seed_party_battle_stats();
         // Clear any monster-slot SPD left over from a previous battle so the
         // initiative gate only sees this formation's speeds.
         for s in self.battle_speed.iter_mut().skip(party_count as usize) {
@@ -6068,26 +6192,44 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
     fn encounter_enabled(&self) -> bool {
         self.world.world_map_encounter.enabled
     }
-    fn on_encounter(&mut self, _entity_idx: usize, _resolver_result: u32) {
-        // Latch the configured formation for resolution into a battle at the
-        // end of the world-map tick, and pace the next encounter by resetting
-        // the shared countdown.
-        self.world.pending_world_map_encounter = Some(self.world.world_map_encounter.formation_id);
+    fn on_encounter(&mut self, entity_idx: usize, _resolver_result: u32) {
+        // Latch a formation for resolution into a battle at the end of the
+        // world-map tick. Prefer this entity's own encounter-zone formation;
+        // fall back to the map-wide shared formation. Pace the next encounter
+        // by resetting the shared countdown.
+        let formation_id = match self.world.world_map_entity_configs.get(entity_idx) {
+            Some(WorldMapEntityConfig::EncounterZone { formation_id }) => *formation_id,
+            _ => self.world.world_map_encounter.formation_id,
+        };
+        self.world.pending_world_map_encounter = Some(formation_id);
         self.world.world_map_encounter.countdown = self.world.world_map_encounter.reset_to;
     }
     fn on_activating(&mut self, _entity_idx: usize) {
         // Pending scene/portal data copy - no engine-side scene buffer yet.
     }
     fn on_scene_transition(&mut self, entity_idx: usize) {
-        // A town-portal entity reached the transition state. Surfaced as an
-        // interaction event for the host to resolve into a scene load (the
-        // per-portal target map id is a separate world-map RE thread).
-        self.world
-            .pending_field_events
-            .push(FieldEvent::FieldInteract {
-                interact_id: 0xFF,
-                slot: entity_idx as u8,
-            });
+        // A portal entity reached the transition state. When it carries a
+        // target map, surface the richer transition event; otherwise fall back
+        // to the generic interaction marker.
+        match self.world.world_map_entity_configs.get(entity_idx) {
+            Some(WorldMapEntityConfig::Portal { target_map }) => {
+                let target_map = *target_map;
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::WorldMapTransition {
+                        target_map,
+                        slot: entity_idx as u8,
+                    });
+            }
+            _ => {
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::FieldInteract {
+                        interact_id: 0xFF,
+                        slot: entity_idx as u8,
+                    });
+            }
+        }
     }
     fn dialog_active(&self) -> bool {
         self.world.current_dialog.is_some()
@@ -6096,10 +6238,14 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         self.world.world_map_player_walking
     }
     fn on_interact(&mut self, entity_idx: usize) {
+        let interact_id = match self.world.world_map_entity_configs.get(entity_idx) {
+            Some(WorldMapEntityConfig::Npc { interact_id }) => *interact_id,
+            _ => 0,
+        };
         self.world
             .pending_field_events
             .push(FieldEvent::FieldInteract {
-                interact_id: 0,
+                interact_id,
                 slot: entity_idx as u8,
             });
     }
@@ -7325,6 +7471,94 @@ mod tests {
             .iter()
             .any(|e| matches!(e, FieldEvent::FieldInteract { interact_id: 0, .. }));
         assert!(interacted, "a stationary player interacts with the entity");
+    }
+
+    /// An encounter-zone entity spawns its OWN formation, not the map-wide
+    /// shared one.
+    #[test]
+    fn world_map_encounter_zone_uses_its_own_formation() {
+        use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.live_gameplay_loop = true;
+        world.enter_world_map();
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 80);
+        // Register both the zone's formation (9) and a decoy shared one (7).
+        world
+            .formation_table
+            .insert(FormationDef::new(9, vec![FormationSlot::new(100)]));
+        world
+            .formation_table
+            .insert(FormationDef::new(7, vec![FormationSlot::new(101)]));
+        let mut cat = MonsterCatalog::new();
+        cat.insert(MonsterDef::new(100, "Zone Slug", 20, 4));
+        cat.insert(MonsterDef::new(101, "Decoy", 20, 4));
+        world.set_monster_catalog(cat);
+        // Entity 0 is an encounter zone for formation 9; shared formation is 7.
+        world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::EncounterZone {
+            formation_id: 9,
+        }]);
+        world.set_world_map_encounter(true, 0, 7, 64);
+
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Battle);
+        assert_eq!(
+            world.active_formation.as_ref().map(|f| f.formation_id),
+            Some(9),
+            "the zone's own formation spawns, not the shared one"
+        );
+    }
+
+    /// Engaging a portal entity surfaces a `WorldMapTransition` carrying the
+    /// portal's target map id.
+    #[test]
+    fn world_map_portal_engage_surfaces_target_map() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Portal {
+            target_map: 5,
+        }]);
+        // Encounters off so only the transition path can fire.
+        world.set_world_map_encounter(false, 50, 0, 64);
+
+        world.engage_world_map_entity(0);
+        let _ = world.tick();
+        let transitioned = world.drain_field_events().into_iter().any(|e| {
+            matches!(
+                e,
+                FieldEvent::WorldMapTransition {
+                    target_map: 5,
+                    slot: 0
+                }
+            )
+        });
+        assert!(transitioned, "the portal surfaces its target map");
+    }
+
+    /// An NPC-config entity surfaces its configured interaction id.
+    #[test]
+    fn world_map_npc_config_surfaces_interact_id() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Npc {
+            interact_id: 7,
+        }]);
+        world.set_world_map_encounter(false, 50, 0, 64);
+        // Stationary player: the idle entity interacts.
+        world.set_pad(0);
+        let _ = world.tick();
+        let interacted = world
+            .drain_field_events()
+            .into_iter()
+            .any(|e| matches!(e, FieldEvent::FieldInteract { interact_id: 7, .. }));
+        assert!(interacted, "the NPC surfaces its configured interact id");
     }
 
     // ---- tile-board step + collision (A2) ----
@@ -11078,6 +11312,63 @@ mod tests {
         assert!(world.encounter.is_none());
         // Too short to even hold the count byte -> parse fails.
         assert_eq!(world.install_scripted_encounter(&[0, 0]), None);
+    }
+
+    #[test]
+    fn seed_party_battle_stats_folds_live_stats_and_equipment() {
+        use crate::battle_stats::{EquipmentTable, ItemModifier};
+        use legaia_save::EquipmentSlots;
+        use legaia_save::character::LiveStats;
+
+        let mut world = World::new();
+        let mut party = legaia_save::Party::zeroed(1);
+        party.members[0].set_live_stats(LiveStats {
+            agl: 12,
+            atk: 30,
+            udf: 10,
+            ldf: 8,
+            spd: 5,
+            int: 4,
+        });
+        let mut slots = [0u8; 8];
+        slots[0] = 5; // a weapon in the first slot
+        party.members[0].set_equipment(EquipmentSlots { slots });
+        world.load_party(party);
+
+        // Item 5 grants +7 attack, +3 UDF, +2 LDF.
+        let mut table = EquipmentTable::new();
+        table.set(
+            5,
+            ItemModifier {
+                atk: 7,
+                udf: 3,
+                ldf: 2,
+                acc: 0,
+                eva: 0,
+                ability_bits: [0; 32],
+            },
+        );
+        world.set_equipment_table(table);
+
+        world.seed_party_battle_stats();
+        assert_eq!(world.battle_attack[0], 37, "30 base + 7 weapon");
+        assert_eq!(
+            world.battle_defense_split[0],
+            Some((13, 10)),
+            "(10+3) UDF, (8+2) LDF"
+        );
+    }
+
+    #[test]
+    fn seed_party_battle_stats_skips_zeroed_roster() {
+        // A synthetic battle sets battle_attack directly then loads a zeroed
+        // roster; seeding must not clobber the manual value.
+        let mut world = World::new();
+        world.set_battle_attack(0, 60);
+        world.load_party(legaia_save::Party::zeroed(3));
+        world.seed_party_battle_stats();
+        assert_eq!(world.battle_attack[0], 60, "zeroed roster leaves it intact");
+        assert_eq!(world.battle_defense_split[0], None);
     }
 
     #[test]

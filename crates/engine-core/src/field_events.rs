@@ -161,6 +161,13 @@ pub enum FieldEvent {
     /// instantiator returns when `FUN_80020DE0` hands back zero). The
     /// dropped record is included so engines can log / diagnose.
     ActorSpawnFailed { record: Vec<u8> },
+    /// A world-map portal entity reached its scene-transition state. `slot` is
+    /// the overworld entity index; `target_map` is the scene the portal leads
+    /// to (the per-portal target map id the entity was configured with via
+    /// [`crate::world::WorldMapEntityConfig::Portal`]). Engines drain this to
+    /// load `target_map` and leave the overworld. Carries the richer target id
+    /// the generic [`Self::FieldInteract`] cannot.
+    WorldMapTransition { target_map: u16, slot: u8 },
 }
 
 impl FieldEvent {
@@ -196,6 +203,9 @@ impl FieldEvent {
             FieldEvent::PartyRemove { char_id } => format!("PartyRemove({char_id})"),
             FieldEvent::FieldInteract { interact_id, slot } => {
                 format!("FieldInteract(id={interact_id}, slot={slot})")
+            }
+            FieldEvent::WorldMapTransition { target_map, slot } => {
+                format!("WorldMapTransition(target_map={target_map}, slot={slot})")
             }
             FieldEvent::SceneRegisterWrite {
                 slot_10,
