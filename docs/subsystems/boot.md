@@ -265,6 +265,24 @@ Mode `0x01` jumps directly to the post-dispatch tail (no-op for that frame). The
 
 The JT, state-struct field offsets, and observed `state[+0x204] = N` transitions are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs). Four modes are semantically labelled: `Init` (`0x00` — entry init that routes to `Phase02` or `AttractDelay`), `Idle` (`0x01` — body-tail no-op), `AttractIdle` (`0x10` — Press-Start poll), `AttractDelay` (`0x11` — pre-attract delay). The other 21 carry `Phase0xNN` placeholders with traced-transition docstrings; the module's `STATE_204_WRITES` table holds the full graph. Notably, **Phase06 writes `_DAT_8007B83C = 0x02` at `0x801DFC00`** — the title-screen → main-game master-mode transition (exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`).
 
+### Name-entry overlay
+
+The *"Select your name."* screen (default `Vahn`) runs **after** the field launches, as a menu overlay invoked during the `town01` opening (master mode `0x03`, captured in the `name_input_ui` save state). It is part of the field/dialog overlay (loaded at `0x801C0000`), not a title sub-mode. Pinned addresses (live in `name_input_ui`):
+
+| Datum | Address | Notes |
+|---|---|---|
+| Character grid | `0x801F29F0` | Flat ASCII, 6 rows × 17 bytes: `ABCDE\|abcde\|12345`, `FGHIJ\|fghij\|67890`, `KLMNO\|klmno\|!?#%&`, `PQRST\|pqrst\|.,'<>`, `UVWXY\|uvwxy\|+-*/=`, `Z␣␣␣␣\|z␣␣␣␣\|:;()~`, NUL-terminated. Three column-groups of 5 (`\|` = `0x7C` separators); spaces pad the short Z/z row → 15 cols × 6 rows. |
+| Live name buffer | `0x801F2A6C` | The name being edited (`Vahn` by default). |
+| Cursor index | `0x80077B88` | Grid position `0..101`; `row = cursor/17`, `col = cursor%17`. Bounds-checked `< 0x66`. |
+| Mode flag | `0x80077B94` | |
+| Name-edit state ptr | `0x80077A50` | Name length at `+1`. |
+| Prompts | `0x801CF698`+ | "Is this name okay?", "Cannot enter that name.", "Tell me my name.", "Select your name.", "[Nameless]". |
+
+Two functions carry the screen:
+
+- **`FUN_801E6B34`** (render) — draws the 6×17 grid (skipping `|` / space) via the glyph drawer `FUN_80036888`, plus the current name, the blinking caret (the `Vahn_` underscore, measured with MES `FUN_8003CA38` + width `FUN_80035F04`), and the box frames (`FUN_8002C69C`).
+- **`FUN_801F03F0`** (state machine) — substate at `struct+0x54`, dispatched through a **5-entry jump table at `0x801CF71C`**: `0x801F0444` (init → cursor + flag, advances), `0x801F0480` (interactive: cursor move + char select, calls the renderer), and `0x801F095C` / `0x801F09C0` / `0x801F097C` (the confirm "Is this name okay?" path). The per-substate input bits, the char-commit-into-buffer / BS logic, the commit-to-character-record on Select, and the field-VM trigger that opens the overlay are still to be traced.
+
 ### Sprite-emit helpers
 
 The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in [`legaia_engine_vm::title_prim`](../../crates/engine-vm/src/title_prim.rs):
