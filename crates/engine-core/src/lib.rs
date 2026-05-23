@@ -54,6 +54,7 @@ pub mod options;
 pub mod overlay_loader;
 pub mod publisher_logos;
 pub mod ram_map;
+pub mod region_encounter;
 pub mod retail_magic;
 pub mod save_menu_atlas;
 pub mod save_select;

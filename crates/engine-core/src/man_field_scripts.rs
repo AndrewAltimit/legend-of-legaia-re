@@ -48,7 +48,7 @@
 //! hypothesis against the indexed-formation-table hypothesis
 //! (see [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
-use legaia_asset::man_section::ManFile;
+use legaia_asset::man_section::{ActorPlacement, ManFile};
 use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, YieldKind};
 
 use crate::encounter_record::EncounterRecord;
@@ -205,6 +205,103 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
         });
     }
     out
+}
+
+/// The interactive role of a placed actor ([`ActorPlacement`]), inferred by
+/// scanning its per-entity field-VM script for the opcodes that give it
+/// behaviour.
+///
+/// Retail has no static "entity kind" field: a placed actor's behaviour is
+/// whatever its script does. This classifies by the script's distinguishing
+/// opcodes ([`classify_placements`]):
+///
+/// - a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`) → a
+///   [`Portal`](Self::Portal) whose target map id is `op0 - 100`;
+/// - a **dialog** (`0x3F`) or **field interact** (`0x3E` with `op0 < 100`) and
+///   no warp → an [`Npc`](Self::Npc);
+/// - none of those → [`Plain`](Self::Plain) (a moving / animated / model-only
+///   actor, e.g. the lead-actor slot or a decorative NPC).
+///
+/// The scan is a *linear* disassembly (the same over-approximating walk
+/// [`walk_partition1_scripts`] uses): it sees every opcode-shaped byte in the
+/// record, not only the ones a particular control-flow path reaches, so a warp
+/// anywhere in the record marks the actor a portal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlacementKind {
+    /// The script warps to another scene. `target_map` is the field-VM map id
+    /// (`op0 - 100`), resolvable through the same `MapIdResolver` a
+    /// `scene_transition` uses.
+    Portal { target_map: u8 },
+    /// The script opens dialog and/or triggers a field interaction but never
+    /// warps - a talk-to NPC / sign / event trigger.
+    Npc {
+        dialog_text_id: Option<u16>,
+        interact_id: Option<u8>,
+    },
+    /// No warp / dialog / interact opcode: a decorative or script-only actor
+    /// (movement, animation, model preload, the lead-actor slot).
+    Plain,
+}
+
+/// Classify every partition-1 actor placement by scanning its field-VM script.
+///
+/// Pairs each [`ManFile::actor_placements`] entry with the
+/// [`PlacementKind`] its script implies. The script is walked from the
+/// placement's `script_pc0`, bounded by the same record-end ceiling
+/// [`walk_partition1_scripts`] uses, so the scan never spills into the next
+/// record or the encounter section.
+pub fn classify_placements(man_file: &ManFile, man: &[u8]) -> Vec<(ActorPlacement, PlacementKind)> {
+    man_file
+        .actor_placements(man)
+        .into_iter()
+        .map(|p| {
+            let kind = classify_placement(man_file, man, &p);
+            (p, kind)
+        })
+        .collect()
+}
+
+/// Classify a single placement by scanning its script. See [`PlacementKind`].
+pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> PlacementKind {
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return PlacementKind::Plain;
+    }
+    let body = &man[start..end];
+    let mut dialog_text_id = None;
+    let mut interact_id = None;
+    for insn in LinearWalker::new(body, p.script_pc0).flatten() {
+        match insn.info {
+            // A warp wins outright: the actor is a portal.
+            InsnInfo::WarpOrInteract {
+                op0, is_warp: true, ..
+            } => {
+                return PlacementKind::Portal {
+                    target_map: op0.wrapping_sub(100),
+                };
+            }
+            InsnInfo::WarpOrInteract {
+                op1,
+                is_warp: false,
+                ..
+            } => {
+                interact_id.get_or_insert(op1);
+            }
+            InsnInfo::Dialog { text_id, .. } => {
+                dialog_text_id.get_or_insert(text_id);
+            }
+            _ => {}
+        }
+    }
+    if dialog_text_id.is_some() || interact_id.is_some() {
+        PlacementKind::Npc {
+            dialog_text_id,
+            interact_id,
+        }
+    } else {
+        PlacementKind::Plain
+    }
 }
 
 /// One field-VM **global-flag write** (`GFLAG_SET` / `GFLAG_CLEAR`, opcodes
@@ -472,6 +569,91 @@ mod tests {
         assert_eq!(record.count, 1);
         assert_eq!(record.monster_ids[0], 0x4F);
         assert!(site.matches_tetsu());
+    }
+
+    /// Build a MAN with two partition-1 records: record 0 (the scene
+    /// controller, skipped by `actor_placements`) and record 1 (a placed actor
+    /// whose `[N=0][model][actions][tx][tz]` header is followed by `script`).
+    fn man_with_placement_script(script: &[u8]) -> (ManFile, Vec<u8>) {
+        let data_region_offset = 0x40usize;
+        // Record 0: a minimal controller (`N=0`, header, halt).
+        let rec0: &[u8] = &[0x00, 0, 0, 0, 0, 0x21];
+        // Record 1: N=0, model=5, actions=0, tile (3,4), then the script.
+        let mut rec1 = vec![0x00, 0x05, 0x00, 0x03, 0x04];
+        rec1.extend_from_slice(script);
+
+        let off0 = 0u32;
+        let off1 = rec0.len() as u32;
+        let mut man = vec![0u8; data_region_offset];
+        man.extend_from_slice(rec0);
+        man.extend_from_slice(&rec1);
+
+        let header = ManHeader {
+            status_flags: 0,
+            low_flag: false,
+            depth_lut: [0; 16],
+            partition_counts: [0, 2, 0],
+            u24_at_28: 0,
+        };
+        let man_file = ManFile {
+            header,
+            partitions: [vec![], vec![off0, off1], vec![]],
+            data_region_offset,
+            sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+                offset: man.len(),
+                length: 0,
+            }),
+        };
+        (man_file, man)
+    }
+
+    #[test]
+    fn classify_warp_script_is_a_portal() {
+        // `0x3E` with op0 = 110 (>= 100) is a warp to map id 110 - 100 = 10.
+        let (mf, man) = man_with_placement_script(&[0x3E, 110, 0, 0, 0, 0]);
+        let placements = mf.actor_placements(&man);
+        assert_eq!(placements.len(), 1, "record 0 is the controller");
+        assert_eq!(
+            classify_placement(&mf, &man, &placements[0]),
+            PlacementKind::Portal { target_map: 10 }
+        );
+    }
+
+    #[test]
+    fn classify_interact_script_is_an_npc() {
+        // `0x3E` with op0 < 100 is a field interact at index op1.
+        let (mf, man) = man_with_placement_script(&[0x3E, 0x05, 0x07, 0x21]);
+        let placements = mf.actor_placements(&man);
+        assert_eq!(
+            classify_placement(&mf, &man, &placements[0]),
+            PlacementKind::Npc {
+                dialog_text_id: None,
+                interact_id: Some(0x07),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_plain_script_has_no_interaction() {
+        // A bare halt: no warp / dialog / interact.
+        let (mf, man) = man_with_placement_script(&[0x21]);
+        let placements = mf.actor_placements(&man);
+        assert_eq!(
+            classify_placement(&mf, &man, &placements[0]),
+            PlacementKind::Plain
+        );
+    }
+
+    #[test]
+    fn classify_warp_wins_over_a_preceding_dialog() {
+        // A talk-then-warp script (interact first, warp after) classifies as a
+        // portal - the warp is the defining behaviour.
+        let (mf, man) = man_with_placement_script(&[0x3E, 0x01, 0x09, 0x3E, 105, 0, 0, 0, 0]);
+        let placements = mf.actor_placements(&man);
+        assert_eq!(
+            classify_placement(&mf, &man, &placements[0]),
+            PlacementKind::Portal { target_map: 5 }
+        );
     }
 
     /// Build a minimal one-partition-2-record MAN whose single record is a

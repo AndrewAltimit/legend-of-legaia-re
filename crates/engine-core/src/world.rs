@@ -107,6 +107,59 @@ const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 /// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
 pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 
+/// Remap a screen-space d-pad delta into overworld direction bits using the
+/// world-map camera azimuth, so "screen up" always walks away from the camera
+/// and "screen right" walks screen-right regardless of how the map is framed.
+///
+/// Mirrors retail `func_0x800467e8`, which remaps the held pad through the same
+/// camera yaw the renderer frames the overworld with. `azimuth` is PSX angle
+/// units (`4096` = full turn) — the
+/// [`WorldMapController`](crate::world_map::WorldMapController) azimuth the
+/// renderer's `world_map_camera_mvp` orbits the eye by:
+/// `eye = center + (d·cosθ, -0.7d, d·sinθ)`, `θ = azimuth / 4096 · τ`.
+///
+/// The world→screen axes are taken **from the real camera matrix, not from a
+/// hand-derived "away from camera" guess**: under the renderer's Y-down
+/// (eye at `-Y`, `+Y` up-vector) convention the on-screen vertical axis is
+/// inverted relative to the eye→centre direction, so the verified mapping is
+/// screen-up → world `(cosθ, sinθ)` and screen-right → world `(sinθ, -cosθ)`.
+/// The `world_map_camera_relative_*` tests in `crates/engine-shell` project the
+/// chosen world direction back through `world_map_camera_mvp` and assert it
+/// moves the right way on screen for every azimuth, so this stays in lock-step
+/// with the camera.
+///
+/// `sx` is the screen-right delta (`+1` = Right pressed), `sy` the
+/// screen-up delta (`+1` = Up pressed). Returns the post-remap convention
+/// bits (`0x1000` = Z+, `0x4000` = Z-, `0x2000` = X+, `0x8000` = X-), quantised
+/// to 8 directions (a world axis is taken when its component is within ~22.5°
+/// of that axis); `0` when nothing is held.
+pub fn world_map_camera_relative_bits(azimuth: i32, sx: i32, sy: i32) -> u16 {
+    if sx == 0 && sy == 0 {
+        return 0;
+    }
+    let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = theta.sin_cos();
+    // screen-up    -> world ( cosθ, sinθ)   (verified against world_map_camera_mvp)
+    // screen-right -> world ( sinθ, -cosθ)
+    let wx = (sx as f32) * sin + (sy as f32) * cos;
+    let wz = -(sx as f32) * cos + (sy as f32) * sin;
+    // sin(22.5°): within this band of an axis the press is treated as cardinal;
+    // beyond it (a rotated framing) both bits set and the player walks diagonally.
+    const T: f32 = 0.382_683_43;
+    let mut bits = 0u16;
+    if wz > T {
+        bits |= 0x1000; // Z+
+    } else if wz < -T {
+        bits |= 0x4000; // Z-
+    }
+    if wx > T {
+        bits |= 0x2000; // X+
+    } else if wx < -T {
+        bits |= 0x8000; // X-
+    }
+    bits
+}
+
 /// Starting gold (money) a New Game grants the party.
 ///
 /// The retail new-game data-init `FUN_80034A6C` writes the party-gold global
@@ -1212,6 +1265,16 @@ pub struct World {
     /// the entities via [`Self::install_world_map_entities_with_configs`].
     pub world_map_entity_configs: Vec<WorldMapEntityConfig>,
 
+    /// Per-entity overworld world position `(x, z)`, paired by index with
+    /// [`Self::world_map_entities`]. Populated only by
+    /// [`Self::install_world_map_entities_at`] (the disc placement seeding);
+    /// the config-only installers leave it empty. When present, it drives the
+    /// **auto-engage-on-walkover** trigger in [`Self::tick_world_map`]: the
+    /// player stepping onto a `Portal` entity's tile fires its transition with
+    /// no host call, the clean-room stand-in for retail's per-entity
+    /// player-position-in-zone check.
+    pub world_map_entity_positions: Vec<(i16, i16)>,
+
     /// Shared overworld encounter-rate state - the retail globals the
     /// world-map entity SM reads (`DAT_8007b604` countdown, `DAT_8007b5f8`
     /// enable flag) plus the formation an overworld encounter spawns.
@@ -1228,6 +1291,21 @@ pub struct World {
     /// of [`Self::tick_world_map`] to flip into [`SceneMode::Battle`]. `None`
     /// between encounters.
     pub pending_world_map_encounter: Option<u16>,
+
+    /// Region-keyed random-encounter state for the overworld (the
+    /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
+    /// [`Self::tick_world_map`] rolls it once per 128-unit tile the player
+    /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
+    /// `None` on a camera-only world map (no region data routed).
+    pub world_map_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
+
+    /// Player tile (`world >> 7`) at the previous overworld step check, for
+    /// per-tile step detection. `None` until the first world-map tick seeds it.
+    pub world_map_last_tile: Option<(i32, i32)>,
+
+    /// Overworld player walk speed in world units per frame (per held d-pad
+    /// direction). Default [`Self::WORLD_MAP_PLAYER_SPEED`].
+    pub world_map_player_speed: i16,
 
     /// Scene mode to return to when the current battle finishes. Captured at
     /// the transition into [`SceneMode::Battle`]; [`Self::finish_battle`]
@@ -1563,9 +1641,13 @@ impl World {
             field_last_tile: None,
             world_map_entities: Vec::new(),
             world_map_entity_configs: Vec::new(),
+            world_map_entity_positions: Vec::new(),
             world_map_encounter: WorldMapEncounterState::default(),
             world_map_player_walking: false,
             pending_world_map_encounter: None,
+            world_map_region_tracker: None,
+            world_map_last_tile: None,
+            world_map_player_speed: Self::WORLD_MAP_PLAYER_SPEED,
             battle_return_mode: SceneMode::Field,
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
@@ -3264,12 +3346,24 @@ impl World {
                 self.current_capture_banner = None;
             }
         }
-        // Advance the opening-cutscene narration's per-page timer; clear it
-        // once the last page finishes so the prologue hand-off gate releases.
-        if let Some(narration) = &mut self.cutscene_narration
-            && !narration.tick(1)
-        {
-            self.cutscene_narration = None;
+        // Advance the opening-cutscene narration. A confirm press (Cross /
+        // Circle) skips to the next page early, mirroring the retail text
+        // balloon (which advances on confirm or its dwell timer, whichever is
+        // first); otherwise the per-page dwell timer auto-advances it so the
+        // cutscene plays unattended. Clear it once the last page finishes so
+        // the prologue hand-off gate releases. (Edge-triggered: the same press
+        // can't run through multiple pages in one frame.)
+        let narration_confirm = self.input.just_pressed(input::PadButton::Cross)
+            || self.input.just_pressed(input::PadButton::Circle);
+        if let Some(narration) = &mut self.cutscene_narration {
+            let still_on_screen = if narration_confirm {
+                narration.skip_page()
+            } else {
+                narration.tick(1)
+            };
+            if !still_on_screen {
+                self.cutscene_narration = None;
+            }
         }
         match self.mode {
             SceneMode::Battle => {
@@ -3399,6 +3493,12 @@ impl World {
         const WORLD_MAP_DPAD: u16 = 0x1000 | 0x2000 | 0x4000 | 0x8000;
         self.world_map_player_walking = pad & WORLD_MAP_DPAD != 0;
 
+        // Move the player first, then auto-engage any portal the player just
+        // walked onto (sets its SM to Transitioning), so the entity SM step
+        // below fires the portal's transition the *same* tick.
+        self.step_world_map_locomotion();
+        self.auto_engage_world_map_portals();
+
         if !self.world_map_entities.is_empty() {
             // Take the entity list out so the SM's host bridge can borrow the
             // world mutably (mirrors the monster-AI-state borrow window).
@@ -3408,12 +3508,148 @@ impl World {
                 vm::world_map::step(idx, ctx, &mut host);
             }
             self.world_map_entities = entities;
+        }
 
-            // Resolve a latched overworld encounter into a battle.
-            if let Some(formation_id) = self.pending_world_map_encounter.take() {
-                self.begin_world_map_encounter(formation_id);
+        // The region-keyed random-encounter roll (the `FUN_801D9E1C` path): on
+        // each 128-unit tile crossing, roll the active region. No-op without a
+        // region tracker, so a camera-only world map is unchanged.
+        self.live_world_map_tick();
+
+        // Resolve a latched overworld encounter into a battle. Runs for both
+        // the entity-SM countdown path and the region-roll path.
+        if let Some(formation_id) = self.pending_world_map_encounter.take() {
+            self.begin_world_map_encounter(formation_id);
+        }
+    }
+
+    /// Overworld player walk speed in world units per frame (per held d-pad
+    /// direction). The field player moves ~8 units/frame
+    /// ([`FIELD_BASE_STEP`]); the overworld uses the same baseline.
+    pub const WORLD_MAP_PLAYER_SPEED: i16 = 8;
+
+    /// Move the overworld player actor from the held d-pad, bounded by the
+    /// scene's walkability grid.
+    ///
+    /// Held d-pad is remapped through the overworld camera azimuth
+    /// ([`world_map_camera_relative_bits`]) so "screen up" walks away from the
+    /// follow camera and "screen right" walks screen-right regardless of how
+    /// the map is rotated — the same camera-relative remap retail's
+    /// `func_0x800467e8` applies, and the counterpart to the field's
+    /// [`Self::decode_field_direction`].
+    ///
+    /// Collision is **not** a separate unknown: the retail world-map-walk
+    /// overlay's locomotion is the same `FUN_801d01b0` as the field, colliding
+    /// against the same `_DAT_1f8003ec + 0x4000` walkability grid
+    /// ([`Self::field_tile_is_wall`]) which [`crate::scene::SceneHost::enter_field_scene`]
+    /// already loads from the scene's MAP file. Stepping runs through the shared
+    /// [`Self::advance_with_collision`], so walls stop the overworld player
+    /// exactly as on the field.
+    ///
+    /// No-op without a live player actor, while a dialog owns the frame, in the
+    /// top-view debug camera, or while the player's movement-disabled flag
+    /// (`+0x10 & 0x80000`) is set (encounter queued / cutscene owns the player).
+    fn step_world_map_locomotion(&mut self) {
+        if self.current_dialog.is_some() {
+            return;
+        }
+        // In the top-view debug camera the d-pad scrolls the camera
+        // ([`WorldMapController::tick`]); only walk the player in walk mode.
+        if self
+            .world_map_ctrl
+            .as_ref()
+            .is_some_and(|c| c.is_top_view())
+        {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return;
+        }
+        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
+            return;
+        }
+        // Held d-pad → camera-relative direction bits. `sx`/`sy` are the raw
+        // screen deltas (right / forward); the azimuth remap rotates them into
+        // world space against the overworld follow camera.
+        let pad = self.input.pad();
+        let mut sx = 0i32;
+        let mut sy = 0i32;
+        if pad & input::PadButton::Up.mask() != 0 {
+            sy += 1;
+        }
+        if pad & input::PadButton::Down.mask() != 0 {
+            sy -= 1;
+        }
+        if pad & input::PadButton::Right.mask() != 0 {
+            sx += 1;
+        }
+        if pad & input::PadButton::Left.mask() != 0 {
+            sx -= 1;
+        }
+        let azimuth = self.world_map_ctrl.as_ref().map(|c| c.azimuth).unwrap_or(0);
+        let dir_bits = world_map_camera_relative_bits(azimuth, sx, sy);
+        if dir_bits == 0 {
+            return;
+        }
+        let speed = self.world_map_player_speed.max(1) as i32;
+        self.advance_with_collision(slot, dir_bits, speed);
+    }
+
+    /// Per-tile overworld step → region-keyed encounter roll (the world-map
+    /// counterpart to [`Self::live_field_tick`]).
+    ///
+    /// A "step" is the player actor crossing into a new 128-unit tile
+    /// (`world >> 7`); each step drives one
+    /// [`crate::region_encounter::RegionEncounterTracker::on_step`] against the
+    /// player's current position. A trigger latches
+    /// [`Self::pending_world_map_encounter`], which [`Self::tick_world_map`]
+    /// resolves into a battle. The RNG comes from the world's shared
+    /// deterministic source, drawn only on the trigger branch, so replays stay
+    /// bit-identical. No-op without a player actor or region tracker.
+    fn live_world_map_tick(&mut self) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (wx, wz) = match self.actors.get(slot as usize) {
+            Some(a) => (a.move_state.world_x, a.move_state.world_z),
+            None => return,
+        };
+        let tile = ((wx as i32) >> 7, (wz as i32) >> 7);
+        let crossed = match self.world_map_last_tile {
+            Some(prev) if prev != tile => {
+                self.world_map_last_tile = Some(tile);
+                true
+            }
+            None => {
+                self.world_map_last_tile = Some(tile);
+                false
+            }
+            _ => false,
+        };
+        if !crossed {
+            return;
+        }
+        // Roll the active region. Take the tracker out so the RNG closure can
+        // borrow `self` (same pattern as the entity-SM borrow window).
+        if let Some(mut tracker) = self.world_map_region_tracker.take() {
+            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            self.world_map_region_tracker = Some(tracker);
+            if let Some(roll) = roll {
+                self.pending_world_map_encounter = Some(roll.formation_id as u16);
             }
         }
+    }
+
+    /// Route the scene's region-keyed encounter table onto the overworld so
+    /// [`Self::tick_world_map`] rolls random encounters per region. Resets the
+    /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
+    pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
+        self.world_map_region_tracker =
+            Some(crate::region_encounter::RegionEncounterTracker::new(table));
+        self.world_map_last_tile = None;
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so
@@ -3438,6 +3674,76 @@ impl World {
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
         self.world_map_entity_configs = configs;
+        self.world_map_entity_positions.clear();
+    }
+
+    /// Seed overworld entities with a per-entity config **and** world position.
+    /// One Idle state machine per `(config, position)`. The positions enable
+    /// the auto-engage-on-walkover trigger in [`Self::tick_world_map`] (the
+    /// player stepping onto a `Portal` entity's tile fires it). Replaces any
+    /// previously installed set. This is the disc-placement seeding path
+    /// ([`crate::scene::SceneHost::enter_world_map_scene`] feeds it the
+    /// classified actor placements + their spawn positions).
+    pub fn install_world_map_entities_at(
+        &mut self,
+        entities: Vec<(WorldMapEntityConfig, (i16, i16))>,
+    ) {
+        self.world_map_entities = (0..entities.len())
+            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .collect();
+        self.world_map_entity_positions = entities.iter().map(|(_, pos)| *pos).collect();
+        self.world_map_entity_configs = entities.into_iter().map(|(cfg, _)| cfg).collect();
+    }
+
+    /// Auto-engage any `Portal` overworld entity the player is standing on.
+    ///
+    /// The clean-room stand-in for retail's per-entity player-position-in-zone
+    /// trigger: a portal whose placement tile (`pos >> 7`) matches the player's
+    /// current tile is driven to its transition state, exactly as a host
+    /// [`Self::engage_world_map_entity`] call would, so the next SM step fires
+    /// the [`crate::field_events::FieldEvent::WorldMapTransition`]. Only `Idle`
+    /// portals are engaged, so a portal fires once per visit and the player can
+    /// stand on the tile without re-triggering. NPC entities are *not*
+    /// auto-engaged (they are talk-to, not walk-onto). No-op without entity
+    /// positions, a player actor, or while a dialog owns the frame.
+    fn auto_engage_world_map_portals(&mut self) {
+        if self.current_dialog.is_some() || self.world_map_entity_positions.is_empty() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (px, pz) = match self.actors.get(slot as usize) {
+            Some(a) => (
+                (a.move_state.world_x as i32) >> 7,
+                (a.move_state.world_z as i32) >> 7,
+            ),
+            None => return,
+        };
+        // Collect the portals the player is standing on (still Idle), then
+        // engage them — separated so the immutable scan drops before the
+        // mutable `engage` borrow.
+        let mut to_engage: Vec<usize> = Vec::new();
+        for (idx, ctx) in self.world_map_entities.iter().enumerate() {
+            if ctx.state != vm::world_map::EntityState::Idle as u16 {
+                continue;
+            }
+            if !matches!(
+                self.world_map_entity_configs.get(idx),
+                Some(WorldMapEntityConfig::Portal { .. })
+            ) {
+                continue;
+            }
+            let Some(&(ex, ez)) = self.world_map_entity_positions.get(idx) else {
+                continue;
+            };
+            if (ex as i32) >> 7 == px && (ez as i32) >> 7 == pz {
+                to_engage.push(idx);
+            }
+        }
+        for idx in to_engage {
+            self.engage_world_map_entity(idx);
+        }
     }
 
     /// Host signal that the player engaged overworld entity `idx` (walked onto
@@ -3447,10 +3753,11 @@ impl World {
     /// [`crate::field_events::FieldEvent::WorldMapTransition`] with its target
     /// map. No-op for an out-of-range index.
     ///
-    /// This is the clean-room stand-in for retail's per-entity
-    /// player-position-in-zone trigger (the engine has no overworld player
-    /// placement yet); it mirrors the arm-via-API shape of the scripted-field
-    /// encounter seam.
+    /// Hosts can call this directly; [`Self::auto_engage_world_map_portals`]
+    /// also calls it each tick for any `Portal` entity the player has walked
+    /// onto (the engine-driven trigger), so an entity installed with a position
+    /// via [`Self::install_world_map_entities_at`] fires on walk-over without a
+    /// host call.
     pub fn engage_world_map_entity(&mut self, idx: usize) {
         if let Some(ctx) = self.world_map_entities.get_mut(idx) {
             // State 2 = Transitioning: the SM fires `on_scene_transition` and
@@ -4099,6 +4406,15 @@ impl World {
         if self.current_dialog.is_some() || self.tile_board.is_some() {
             return;
         }
+        // Lock pad-driven locomotion while an opening-cutscene timeline owns
+        // the scene (the establishing camera sweep + name-entry). During the
+        // sweep the script drives the lead actor through its own MoveTo ops;
+        // the pad must not also walk the player out from under the cinematic
+        // camera. Releases the frame the timeline drops (matches retail, where
+        // free-roam control returns only after the opening choreography ends).
+        if self.cutscene_timeline_active() {
+            return;
+        }
         let Some(slot) = self.player_actor_slot else {
             return;
         };
@@ -4130,8 +4446,21 @@ impl World {
             return;
         }
 
-        // Step loop: advance FIELD_STEP_UNIT per iteration with per-axis
-        // collision, committing only the axes that stay clear.
+        self.advance_with_collision(slot, dir_bits, speed);
+    }
+
+    /// Advance actor `slot` by `speed` world units in the direction encoded by
+    /// `dir_bits` (post-remap convention: `0x1000`=Z+, `0x4000`=Z-,
+    /// `0x2000`=X+, `0x8000`=X-), stepping [`FIELD_STEP_UNIT`] at a time and
+    /// committing only the axes that stay off a wall in
+    /// [`World::field_collision_grid`]. X collision uses the just-committed Z
+    /// so a diagonal move can't tunnel through a wall corner.
+    ///
+    /// Shared by [`Self::step_field_locomotion`] and
+    /// [`Self::step_world_map_locomotion`]: retail `FUN_801d01b0` is the same
+    /// routine in both the field and world-map-walk overlays, and both collide
+    /// against the same `_DAT_1f8003ec + 0x4000` walkability grid.
+    fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let mut remaining = speed;
         while remaining > 0 {
             let ms = &self.actors[slot].move_state;

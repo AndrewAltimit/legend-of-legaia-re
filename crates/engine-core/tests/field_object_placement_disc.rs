@@ -79,7 +79,9 @@ fn town01_placements_reproduce_building_anchors() {
         .field_floor_height_lut(&index)
         .expect("read floor LUT")
         .expect("town01 MAN carries a floor LUT");
-    let nib = vahns_house.floor_nibble.expect("Vahn's house tile floor nibble");
+    let nib = vahns_house
+        .floor_nibble
+        .expect("Vahn's house tile floor nibble");
     let world_y = -(lut[(nib & 0x0F) as usize] as i32) + vahns_house.y_off as i32;
     assert_eq!(world_y, -192, "Vahn's house world Y from floor LUT");
     if let Some(windmill) = placements.iter().find(|p| p.obj_idx == 96) {

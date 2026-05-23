@@ -321,6 +321,79 @@ pub fn cutscene_camera_mvp(
     proj * view
 }
 
+/// Smooths the cutscene camera between Camera Configure beats.
+///
+/// [`cutscene_camera_mvp`] frames whatever the timeline's *current* op-`0x45`
+/// params decode to, so each new beat re-targets the shot instantly and the
+/// camera snaps. Retail's GTE camera eases toward the new focus/heading over a
+/// handful of frames; this holds the last rendered `(look_at, yaw, fov)` and
+/// eases it toward the live target each frame, so beats blend instead of cut.
+///
+/// Frame-rate-agnostic by design: the caller passes the per-frame easing factor
+/// `t` (0..=1), so a faster redraw cadence simply converges sooner. Yaw eases
+/// along the shortest arc so a wrap across ±π doesn't spin the long way round.
+/// [`Self::reset`] makes the next [`Self::approach`] snap directly to the
+/// target — call it when a cutscene (re)starts so the opening shot doesn't
+/// sweep in from a stale pose.
+#[derive(Debug, Clone, Default)]
+pub struct CutsceneCameraInterp {
+    look_at: [f32; 3],
+    yaw: f32,
+    fov: f32,
+    initialized: bool,
+}
+
+impl CutsceneCameraInterp {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Drop the held pose so the next [`Self::approach`] snaps to its target.
+    pub fn reset(&mut self) {
+        self.initialized = false;
+    }
+
+    /// Ease the held camera toward `target` by `t` (clamped to `0..=1`) and
+    /// return the smoothed `(look_at, yaw, fov)`. The first call after a reset
+    /// (or construction) snaps directly to the target.
+    pub fn approach(
+        &mut self,
+        target_look_at: [f32; 3],
+        target_yaw: f32,
+        target_fov: f32,
+        t: f32,
+    ) -> ([f32; 3], f32, f32) {
+        if !self.initialized {
+            self.look_at = target_look_at;
+            self.yaw = target_yaw;
+            self.fov = target_fov;
+            self.initialized = true;
+            return (self.look_at, self.yaw, self.fov);
+        }
+        let t = t.clamp(0.0, 1.0);
+        for (cur, &tgt) in self.look_at.iter_mut().zip(target_look_at.iter()) {
+            *cur += (tgt - *cur) * t;
+        }
+        // Shortest-arc yaw ease so a wrap across ±π takes the short way.
+        let delta = wrap_pi(target_yaw - self.yaw);
+        self.yaw = wrap_pi(self.yaw + delta * t);
+        self.fov += (target_fov - self.fov) * t;
+        (self.look_at, self.yaw, self.fov)
+    }
+}
+
+/// Wrap an angle (radians) into `(-π, π]`.
+fn wrap_pi(a: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let mut a = a % TAU;
+    if a > PI {
+        a -= TAU;
+    } else if a <= -PI {
+        a += TAU;
+    }
+    a
+}
+
 #[cfg(test)]
 mod camera_tests {
     use super::*;
@@ -407,5 +480,61 @@ mod camera_tests {
         assert_ne!(base.to_cols_array(), zoomed.to_cols_array());
         let clamped = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, LO, HI, 1.5);
         assert!(finite(&clamped));
+    }
+
+    #[test]
+    fn cutscene_interp_first_call_snaps_to_target() {
+        let mut it = CutsceneCameraInterp::new();
+        let (la, yaw, fov) = it.approach([100.0, 0.0, -50.0], 1.0, 0.8, 0.2);
+        assert_eq!(la, [100.0, 0.0, -50.0]);
+        assert_eq!(yaw, 1.0);
+        assert_eq!(fov, 0.8);
+    }
+
+    #[test]
+    fn cutscene_interp_eases_toward_a_changed_beat() {
+        let mut it = CutsceneCameraInterp::new();
+        // Snap to beat A.
+        it.approach([0.0, 0.0, 0.0], 0.0, 1.0, 0.25);
+        // Beat B re-targets; one ease step covers a fraction, not all of it.
+        let (la, _, fov) = it.approach([100.0, 0.0, 0.0], 0.0, 2.0, 0.25);
+        assert!(
+            (la[0] - 25.0).abs() < 1e-3,
+            "look_at eased 25% -> {}",
+            la[0]
+        );
+        assert!((fov - 1.25).abs() < 1e-3, "fov eased 25% -> {fov}");
+        // Repeated steps converge toward the target.
+        for _ in 0..200 {
+            it.approach([100.0, 0.0, 0.0], 0.0, 2.0, 0.25);
+        }
+        let (la, _, fov) = it.approach([100.0, 0.0, 0.0], 0.0, 2.0, 0.25);
+        assert!((la[0] - 100.0).abs() < 1e-2);
+        assert!((fov - 2.0).abs() < 1e-2);
+    }
+
+    #[test]
+    fn cutscene_interp_yaw_takes_shortest_arc() {
+        use std::f32::consts::PI;
+        let mut it = CutsceneCameraInterp::new();
+        // Start just below +π, target just above -π (i.e. ~6° apart across the
+        // wrap). The ease must move the short way (toward +π / over the seam),
+        // never unwind ~352° the long way.
+        it.approach([0.0, 0.0, 0.0], PI - 0.05, 1.0, 0.5);
+        let (_, yaw, _) = it.approach([0.0, 0.0, 0.0], -PI + 0.05, 1.0, 0.5);
+        // Halfway across a ~0.1 rad arc lands near ±π, not near 0.
+        assert!(
+            yaw.abs() > PI - 0.1,
+            "shortest arc stays near the seam: {yaw}"
+        );
+    }
+
+    #[test]
+    fn cutscene_interp_reset_resnaps() {
+        let mut it = CutsceneCameraInterp::new();
+        it.approach([0.0, 0.0, 0.0], 0.0, 1.0, 0.25);
+        it.reset();
+        let (la, _, _) = it.approach([500.0, 0.0, 0.0], 0.0, 0.25, 0.25);
+        assert_eq!(la, [500.0, 0.0, 0.0], "reset snaps the next approach");
     }
 }

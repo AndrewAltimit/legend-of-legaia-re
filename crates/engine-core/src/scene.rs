@@ -409,6 +409,27 @@ pub fn is_fmv_trigger_field_scene(label: &str) -> bool {
     FMV_TRIGGER_FIELD_SCENES.contains(&label)
 }
 
+/// Return `true` if a CDNAME label is an overworld (world-map) scene.
+///
+/// Legaia's three kingdom overworlds are `map01` / `map02` / `map03`; they are
+/// the only CDNAME `mapNN` labels. The overworld shares game mode `0x03` with
+/// towns and fields (see `docs/subsystems/field-locomotion.md` "Town / field
+/// parity") - retail does not give it a distinct mode. It distinguishes the
+/// overworld by the scene's own code overlay: the kingdom bundles carry a
+/// world-map-overlay slot (type byte `0x05`, see
+/// `docs/formats/world-map-overlay.md`) that towns/dungeons lack. The engine
+/// classifies by the stable CDNAME label, which is `map` followed by two
+/// digits for exactly these three scenes. A scene that classifies as a world
+/// map is entered through [`SceneHost::enter_world_map_scene`] (which seeds the
+/// region-keyed encounter table + world-map camera) instead of the plain
+/// field path.
+pub fn is_world_map_scene(label: &str) -> bool {
+    match label.strip_prefix("map") {
+        Some(rest) => rest.len() == 2 && rest.bytes().all(|b| b.is_ascii_digit()),
+        None => false,
+    }
+}
+
 /// Engine-override CDNAME→MV cutscene map.
 ///
 /// The retail table lives in the FMV-cutscene overlay (game modes 26/27,
@@ -816,6 +837,39 @@ impl Scene {
             scene_label,
             &man_bytes,
         ))
+    }
+
+    /// The scene's NPC / actor placement list, decoded from the MAN
+    /// partition-1 records (retail `FUN_8003A1E4` per-record actor spawn).
+    ///
+    /// Each [`ActorPlacement`](legaia_asset::man_section::ActorPlacement) is one
+    /// placed entity: its spawn tile/world position, model index, action count,
+    /// and the byte offset of its field-VM script (the script that later
+    /// installs the entity's encounter record or portal behaviour). This is the
+    /// source the engine seeds overworld entities from on the world-map path;
+    /// the entity *kind* (encounter zone / portal / NPC) lives in the per-entity
+    /// script and is not classified here.
+    ///
+    /// Returns `Ok(None)` when the scene has no `scene_asset_table` bundle / the
+    /// MAN payload doesn't decode - the same detector gap
+    /// [`Self::field_man_entry_script`] documents. An empty `Vec` means the MAN
+    /// decoded but places no actors (partition 1 holds only the controller).
+    pub fn field_actor_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::man_section::ActorPlacement>>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        else {
+            return Ok(None);
+        };
+        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+            return Ok(None);
+        };
+        Ok(Some(man.actor_placements(&man_bytes)))
     }
 
     /// The scene's decoded MAN payload bytes (retail `_DAT_8007B898`), or
@@ -1580,10 +1634,110 @@ impl SceneHost {
         Ok(())
     }
 
+    /// Enter `name` as the **overworld** (world-map) scene.
+    ///
+    /// The counterpart to [`Self::enter_field_scene`] for the three kingdom
+    /// overworld scenes ([`is_world_map_scene`]). It runs the full field-entry
+    /// load first - the world-map-walk overlay shares the field's locomotion,
+    /// walkability grid, and asset pipeline (see
+    /// `docs/subsystems/world-map.md`) - then:
+    ///
+    /// 1. Routes the region-keyed random-encounter table from the scene's MAN
+    ///    ([`crate::region_encounter::region_encounter_table_from_man`]) onto
+    ///    the overworld via [`crate::world::World::set_world_map_regions`], so
+    ///    `tick_world_map`'s per-tile roll fires real encounters.
+    /// 2. Switches the world into [`crate::world::SceneMode::WorldMap`]
+    ///    (installs the camera controller); the player actor + collision grid
+    ///    that `enter_field_scene` set up stay in place.
+    ///
+    /// 3. Installs the scene's **interactive overworld entities** - the
+    ///    portals (town/dungeon entrances) and dialog NPCs decoded from the
+    ///    MAN actor-placement table and classified by their field-VM scripts
+    ///    ([`crate::man_field_scripts::classify_placements`]). Decorative /
+    ///    model-only placements are skipped; the entity *kind* comes from the
+    ///    per-entity script, so this is disc-sourced, not synthetic.
+    ///
+    /// The random-encounter driver (the region table) is fully sourced from
+    /// the MAN; the per-entity auto-engage trigger (walk onto a portal tile)
+    /// is still host-driven via [`crate::world::World::engage_world_map_entity`].
+    pub fn enter_world_map_scene(&mut self, name: &str) -> Result<()> {
+        // Full field-entry load: resources, walkability grid, player, monster
+        // catalog, scene label. Leaves the world in `Field` mode.
+        self.enter_field_scene(name, 0)?;
+        // Decode the MAN once, then derive the region table + the typed entity
+        // configs from it while only `self.scene` / `self.index` are borrowed
+        // (both immutable), so the owned results outlive the borrow before the
+        // mutable `world` accesses below.
+        let man_bytes = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten());
+        let table = man_bytes
+            .as_ref()
+            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
+        // Each interactive placement → (config, spawn world position). The
+        // positions drive the auto-engage-on-walkover trigger; Plain
+        // (decorative / model-only) placements are skipped.
+        let entities: Vec<(crate::world::WorldMapEntityConfig, (i16, i16))> = man_bytes
+            .as_ref()
+            .and_then(|man| {
+                legaia_asset::man_section::parse(man)
+                    .ok()
+                    .map(|mf| (mf, man))
+            })
+            .map(|(mf, man)| {
+                use crate::man_field_scripts::PlacementKind;
+                crate::man_field_scripts::classify_placements(&mf, man)
+                    .into_iter()
+                    .filter_map(|(p, kind)| {
+                        let cfg = match kind {
+                            PlacementKind::Portal { target_map } => {
+                                crate::world::WorldMapEntityConfig::Portal {
+                                    target_map: target_map as u16,
+                                }
+                            }
+                            PlacementKind::Npc { interact_id, .. } => {
+                                crate::world::WorldMapEntityConfig::Npc {
+                                    interact_id: interact_id.unwrap_or(0),
+                                }
+                            }
+                            PlacementKind::Plain => return None,
+                        };
+                        Some((cfg, (p.world_x, p.world_z)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(table) = table {
+            log::info!(
+                "world-map '{name}': routed {} encounter region(s)",
+                table.regions.len()
+            );
+            self.world.set_world_map_regions(table);
+        }
+        if !entities.is_empty() {
+            log::info!(
+                "world-map '{name}': installed {} interactive entit(ies) from placements",
+                entities.len()
+            );
+            self.world.install_world_map_entities_at(entities);
+        }
+        // Switch to world-map mode (idempotent; keeps the installed player +
+        // collision grid).
+        self.world.enter_world_map();
+        Ok(())
+    }
+
     /// One frame: tick the world, materialize any actor-spawn requests
     /// queued by the field VM's `0x4C 0x80` opcode, then process any
     /// pending `scene_transition(map_id)` request. Returns the
     /// [`SceneTickEvent`] describing what happened.
+    ///
+    /// A transition whose resolved scene is an overworld scene
+    /// ([`is_world_map_scene`]) routes through [`Self::enter_world_map_scene`]
+    /// (world-map mode + region table) instead of the plain field path, so the
+    /// boot/transition path seeds the overworld the same way the explicit
+    /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         let _ = self.world.tick();
         self.world
@@ -1591,7 +1745,11 @@ impl SceneHost {
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {
                 Some(name) => {
-                    self.enter_field_scene(&name, 0)?;
+                    if is_world_map_scene(&name) {
+                        self.enter_world_map_scene(&name)?;
+                    } else {
+                        self.enter_field_scene(&name, 0)?;
+                    }
                     return Ok(SceneTickEvent::SceneEntered { name });
                 }
                 None => {
@@ -1891,6 +2049,24 @@ fn seed_effect_vram_from_befect_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn world_map_scene_classifier_matches_only_the_kingdom_overworlds() {
+        // The three kingdom overworld scenes.
+        assert!(is_world_map_scene("map01"));
+        assert!(is_world_map_scene("map02"));
+        assert!(is_world_map_scene("map03"));
+        // Towns, dungeons, cutscene/FMV labels are not overworlds.
+        for label in [
+            "town01", "town0b", "chitei2", "jou", "uru2", "opdeene", "opmap01", "battle", "map1",
+            "map001", "mapxx", "world", "",
+        ] {
+            assert!(
+                !is_world_map_scene(label),
+                "{label} must not classify as world map"
+            );
+        }
+    }
 
     /// Disc-gated: the `etim.dat` effect-sprite TIMs (PROT 0874 section 2)
     /// decode and upload into a software VRAM, populating the fire-sprite tile

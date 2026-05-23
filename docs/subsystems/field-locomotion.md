@@ -157,6 +157,8 @@ drives animation; it does not pick geometry. See
 
 The controller is selected by **game mode**: mode `0x03` loads the field overlay (`overlay_0897`), which contains the single free-movement controller `FUN_801d01b0`. `FUN_801d01b0` was runtime-pinned on a walkable field scene (`map03`, mode `0x03`). Rim Elm — scene `town01` — also runs at game mode `0x03` (see `scripts/scenarios.toml`, the `v0_1_pre_battle_tetsu` anchor), so it loads the same overlay and the same controller. The shared scene-entry init `FUN_8003aeb0` corroborates this: it has an explicit `town_mode` debug-string branch and configures the same player actor (`_DAT_8007c364`: speed mult `+0x72 = 0x1000`, `+0x6a = 8`) for both towns and fields. So town locomotion is `FUN_801d01b0`, identical to the field.
 
+The **overworld walk mode** shares it too. The world-map-walk overlay's locomotion is byte-for-byte the same `FUN_801d01b0` (same collision `FUN_801cfe4c`, same `_DAT_1f8003ec + 0x4000` grid); only the loaded overlay and grid contents differ. The three kingdom overworld scenes (`map01`/`map02`/`map03`) carry real wall data in that grid (≈ 7968 / 2283 / 3837 high-nibble wall sub-cells), so the overworld is bounded by the same tile-wall mechanism as towns — it is not a separate walkability format. See [`world-map.md`](world-map.md#overworld-collision--walkability).
+
 ## Engine port
 
 The clean-room engine loads the base grid directly from the field map file. `SceneHost::enter_field_scene` resolves the `.MAP` entry via `Scene::field_map_index` — the unique CDNAME-block entry whose **extended on-disc footprint** is exactly `0x12000` bytes — and copies its `+0x4000..+0x8000` region into `World::field_collision_grid` (`World::load_field_collision_grid`). The grid byte format (high nibble = sub-cell wall bits, low nibble = floor-elevation tier) matches the runtime 1:1, so it copies verbatim; the field-VM `0x4C` nibble-7 hook then layers deltas on top as the prescript runs.
@@ -188,6 +190,10 @@ This corrects a prior assumption that towns like Rim Elm (`town01`) had no rando
 ### Per-step encounter roll in the live loop
 
 When `World::live_gameplay_loop` is set, locomotion feeds the encounter system directly: `World::live_field_tick` treats the player crossing into a new 128-unit collision tile (`pos >> 7`) as one *step* and drives a single `World::on_field_step` roll, mirroring the retail per-step counter rather than rolling every frame. A successful roll transitions `Field → Battle`; on victory the field actor table is restored and the player resumes where they stood. See the [live gameplay loop](battle.md#live-gameplay-loop--field--battle-in-tick) section in `battle.md` for the full round trip.
+
+### Input is locked during an opening-cutscene timeline
+
+`World::step_field_locomotion` is gated on `current_dialog`, an active tile-board, the per-actor movement-disabled flag (`move_state.flags & 0x0008_0000`), **and** an active opening-cutscene timeline (`World::cutscene_timeline_active`). During the `town01` opening's establishing sweep the spawned [cutscene timeline](cutscene.md) drives the lead actor through its own MoveTo ops, so the pad must not also walk the player out from under the cinematic camera. Control returns the frame the timeline drops — matching retail, where free-roam input is accepted only after the opening choreography ends.
 
 ## Open
 

@@ -3725,6 +3725,10 @@ struct PlayWindowApp {
     /// `Some`, world ticks are suspended and the window shows the video; the
     /// world resumes once the frames drain.
     cutscene: Option<WindowedCutscene>,
+    /// Eases the in-engine cutscene camera between Camera Configure beats so
+    /// the opening choreography blends instead of cutting. Reset (snaps) while
+    /// no cutscene timeline is active.
+    cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -6815,6 +6819,21 @@ impl ApplicationHandler for PlayWindowApp {
                 // and swap the VRAM. Must run before the render borrows
                 // `uploaded_vram` below (this method may re-upload it).
                 self.sync_battle_render();
+                // Ease the in-engine cutscene camera between Camera Configure
+                // beats. Done here (outside the renderer borrow below) so the
+                // interpolator can take `&mut self`; while no cutscene timeline
+                // owns the scene the interp is reset so the next opening shot
+                // snaps in rather than sweeping from a stale pose.
+                let cutscene_cam = if self.session.host.world.mode != SceneMode::WorldMap
+                    && self.session.host.world.cutscene_timeline_active()
+                {
+                    let (look_at, yaw, fov) = self.cutscene_view();
+                    // ~0.15/frame ease => a few-frame blend at the redraw cadence.
+                    Some(self.cutscene_cam_interp.approach(look_at, yaw, fov, 0.15))
+                } else {
+                    self.cutscene_cam_interp.reset();
+                    None
+                };
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     self.win.renderer.as_ref(),
                     self.uploaded_vram.as_ref(),
@@ -6829,25 +6848,44 @@ impl ApplicationHandler for PlayWindowApp {
                     // uses the orbit camera.
                     let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
                     let cam = if in_world_map {
-                        let (az, zoom, px, pz) = self
-                            .session
-                            .host
-                            .world
+                        let world = &self.session.host.world;
+                        let (az, zoom, px, pz, walk_mode) = world
                             .world_map_ctrl
                             .as_ref()
-                            .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z))
-                            .unwrap_or((0, 0, 0, 0));
+                            .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z, !c.is_top_view()))
+                            .unwrap_or((0, 0, 0, 0, true));
+                        // In walk mode the camera follows the player: pan so the
+                        // framing centre tracks the player's world position
+                        // (the AABB-relative offset world_map_camera_mvp adds to
+                        // its centre). Top-view debug keeps the controller scroll.
+                        let (pan_x, pan_z) = if walk_mode {
+                            let center = [
+                                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+                            ];
+                            world
+                                .player_actor_slot
+                                .and_then(|s| world.actors.get(s as usize))
+                                .map(|a| {
+                                    (
+                                        (a.move_state.world_x as f32 - center[0]) as i32,
+                                        (a.move_state.world_z as f32 - center[1]) as i32,
+                                    )
+                                })
+                                .unwrap_or((px, pz))
+                        } else {
+                            (px, pz)
+                        };
                         legaia_engine_render::window::world_map_camera_mvp(
                             self.scene_aabb.0,
                             self.scene_aabb.1,
                             az,
                             zoom,
-                            px,
-                            pz,
+                            pan_x,
+                            pan_z,
                             aspect,
                         )
-                    } else if self.session.host.world.cutscene_timeline_active() {
-                        let (look_at, yaw, fov) = self.cutscene_view();
+                    } else if let Some((look_at, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
                             look_at,
                             yaw,
@@ -7437,19 +7475,6 @@ fn cmd_play_window_with_record(
         Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
         None => BootSession::open(extracted_root, &cfg)?,
     };
-    if world_map {
-        // Installs the controller; World::tick drives it from the pad
-        // routed via world.set_pad each frame.
-        session.host.world.enter_world_map();
-        // Start in the navigable top-view so the player can orbit / zoom /
-        // pan the map immediately (L1/R1 rotate, the dpad pans, the
-        // shoulder/face zoom bits change height). Without this the
-        // controller stays in walk mode and ignores camera input.
-        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
-            ctrl.debug_enabled = true;
-            ctrl.view_mode = 1;
-        }
-    }
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {
@@ -7457,6 +7482,25 @@ fn cmd_play_window_with_record(
         player_battle,
         battle_bgm,
     };
+    if world_map {
+        // Load the scene's resources, route its region-keyed encounter table
+        // onto the overworld, install the player, and enter world-map mode
+        // (camera controller included). World::tick drives locomotion + the
+        // per-tile encounter roll from the pad routed via world.set_pad.
+        match session.enter_world_map_live(scene, &field_live_opts) {
+            Ok(mode) => {
+                log::info!("play-window: entered world-map scene '{scene}' (mode={mode:?})")
+            }
+            Err(e) => log::warn!("play-window: enter_world_map_live('{scene}') failed: {e:#}"),
+        }
+        // Start in walk mode so the d-pad walks the overworld player (and the
+        // per-tile encounter roll fires). The top-view debug camera (orbit /
+        // zoom / pan) stays reachable via the toggle combo (debug_enabled).
+        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
+            ctrl.debug_enabled = true;
+            ctrl.view_mode = 0;
+        }
+    }
     if !world_map {
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
@@ -7786,6 +7830,7 @@ fn cmd_play_window_with_record(
         // runs can't read the ISO STR here, so leave it `None` (drains no-op).
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
         cutscene: None,
+        cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

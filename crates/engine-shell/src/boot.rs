@@ -291,6 +291,58 @@ impl BootSession {
         Ok(world.mode)
     }
 
+    /// Enter a world-map scene live: load the scene's resources, route its
+    /// region-keyed encounter table onto the overworld, install the player
+    /// actor, and switch into [`SceneMode::WorldMap`].
+    ///
+    /// The window's `--world-map` flag used to call [`World::enter_world_map`]
+    /// directly, which only installs the camera controller (a camera-only
+    /// debug viewer). This is the playable counterpart to [`Self::enter_field_live`]:
+    /// it loads the scene through [`SceneHost::enter_field_scene`] (which seeds
+    /// the formation table + monster catalog from the MAN, so overworld
+    /// encounters resolve to real monsters), builds the
+    /// [`RegionEncounterTable`](legaia_engine_core::region_encounter::RegionEncounterTable)
+    /// from the same MAN, routes it via
+    /// [`World::set_world_map_regions`], installs the field player so
+    /// `tick_world_map`'s locomotion + per-tile encounter roll run, and enters
+    /// world-map mode with the live loop armed.
+    ///
+    /// Soft-fails like [`Self::enter_field_live`]: a scene that fails to load
+    /// logs and continues into world-map mode without a region table (camera
+    /// only). Returns the active [`SceneMode`].
+    pub fn enter_world_map_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
+        // The scene load + region routing + world-map mode now live in
+        // `SceneHost::enter_world_map_scene`, so the natural boot/transition
+        // path (`SceneHost::tick` auto-routing an overworld scene) and this
+        // explicit `--world-map` entry seed the overworld identically. This
+        // wrapper only layers the live-loop / battle options on top.
+        match self.host.enter_world_map_scene(scene) {
+            Ok(()) => log::info!("entered world-map scene '{scene}' (overworld seeded)"),
+            Err(e) => {
+                log::warn!(
+                    "enter_world_map_scene('{scene}') failed ({e:#}); world map camera-only"
+                );
+                // Still switch into world-map mode so the window has a camera.
+                self.host.world.set_active_scene_label(scene);
+                self.host.world.enter_world_map();
+            }
+        }
+
+        let world = &mut self.host.world;
+        world.live_gameplay_loop = true;
+        world.set_equipment_table(
+            legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table(),
+        );
+        world.set_battle_bgm(opts.battle_bgm);
+        if opts.player_battle {
+            world.battle_player_driven = true;
+            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
+        }
+        Ok(world.mode)
+    }
+
     /// Enter a field scene live, then seed the world from a saved game.
     ///
     /// [`Self::enter_field_live`] cold-boots the scene at record 0 (a fresh

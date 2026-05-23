@@ -382,6 +382,70 @@ fn locomotion_deterministic_across_identical_pad_stream() {
 }
 
 #[test]
+fn cutscene_narration_confirm_press_skips_page() {
+    let mut world = World::new();
+    world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
+    world.open_cutscene_narration(vec!["Page 1".into(), "Page 2".into()]);
+    let idx = |w: &World| w.cutscene_narration.as_ref().map(|n| n.current_index());
+    assert_eq!(idx(&world), Some(0));
+
+    // No press: a single tick does not advance (the dwell is 120 frames).
+    world.set_pad(0);
+    let _ = world.tick();
+    assert_eq!(idx(&world), Some(0));
+
+    // A just-pressed confirm (Cross) skips to the next page.
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(idx(&world), Some(1));
+
+    // Holding the same button is not a new edge - it must not skip again.
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(idx(&world), Some(1));
+
+    // Release, then a fresh press past the last page completes the narration
+    // (so the prologue hand-off gate releases).
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(input::PadButton::Circle.mask());
+    let _ = world.tick();
+    assert!(
+        world.cutscene_narration.is_none(),
+        "confirm past the last page completes the narration"
+    );
+}
+
+#[test]
+fn locomotion_gated_while_cutscene_timeline_active() {
+    use crate::cutscene_timeline::CutsceneTimeline;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_z = 200;
+    // An opening-cutscene timeline owns the scene (establishing sweep). A
+    // non-empty body so it is not immediately `done`.
+    world.cutscene_timeline = Some(CutsceneTimeline::new(vec![0x21, 0x2E, 0x1A], 0));
+    assert!(world.cutscene_timeline_active());
+    world.set_pad(input::PadButton::Up.mask());
+    world.step_field_locomotion();
+    assert_eq!(
+        world.actors[0].move_state.world_z, 200,
+        "pad-driven walk is locked while the cutscene timeline owns the scene"
+    );
+    // Once the timeline finishes, free-roam control returns.
+    if let Some(tl) = world.cutscene_timeline.as_mut() {
+        tl.done = true;
+    }
+    assert!(!world.cutscene_timeline_active());
+    world.step_field_locomotion();
+    assert_eq!(
+        world.actors[0].move_state.world_z, 208,
+        "locomotion resumes the frame the timeline drops"
+    );
+}
+
+#[test]
 fn world_tick_drives_per_actor_move_vm() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -516,6 +580,164 @@ fn world_map_without_entities_never_encounters() {
     world.set_world_map_encounter(true, 0, 7, 64);
     // No install_world_map_entities call.
     for _ in 0..10 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.mode, SceneMode::WorldMap);
+    assert!(world.pending_world_map_encounter.is_none());
+}
+
+/// Walking the overworld player across tiles rolls the region-keyed encounter
+/// (the `FUN_801D9E1C` port) and flips Field-less straight into a battle that
+/// returns to the world map.
+#[test]
+fn world_map_region_walk_triggers_battle() {
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.live_gameplay_loop = true;
+    world.enter_world_map();
+    // Frame the camera at a quarter turn (azimuth 1024) so the camera-relative
+    // remap maps a held Right cleanly to world +X (keeps this test's "walk +X
+    // across tiles" intent readable; at the default azimuth 0 Right maps to -Z).
+    if let Some(ctrl) = world.world_map_ctrl.as_mut() {
+        ctrl.azimuth = 1024;
+    }
+    world.install_field_player(0); // player_actor_slot = 0, actor active
+    world.actors[0].battle.hp = 400;
+    world.actors[0].battle.max_hp = 400;
+    world.actors[0].battle.liveness = 1;
+    world.set_battle_attack(0, 80);
+
+    // Formation 5 spawns one weak monster (id 100).
+    world
+        .formation_table
+        .insert(FormationDef::new(5, vec![FormationSlot::new(100)]));
+    let mut cat = MonsterCatalog::new();
+    cat.insert(MonsterDef::new(100, "Test Slug", 20, 4));
+    world.set_monster_catalog(cat);
+
+    // One region covering tiles (0,0)..(20,20), high rate, rolling formation 5.
+    let mut table = RegionEncounterTable::new("test");
+    table.regions.push(EncounterRegion {
+        tile_x_min: 0,
+        tile_z_min: 0,
+        tile_x_max: 20,
+        tile_z_max: 20,
+        rate_increment: 255,
+        formation_base: 5,
+        formation_count: 1,
+    });
+    world.set_world_map_regions(table);
+
+    // Hold Right; the player walks +X, crossing 128-unit tiles. Each crossing
+    // rolls the region; the high rate triggers within a couple of tiles.
+    world.set_pad(input::PadButton::Right.mask());
+    let mut entered_battle = false;
+    for _ in 0..200 {
+        let _ = world.tick();
+        if world.mode == SceneMode::Battle {
+            entered_battle = true;
+            break;
+        }
+    }
+    assert!(
+        entered_battle,
+        "walking the overworld triggers a region encounter"
+    );
+    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+}
+
+/// The overworld player is bounded by the scene's walkability grid, exactly
+/// like the field: the retail world-map-walk overlay's locomotion is the same
+/// `FUN_801d01b0` + `FUN_801cfe4c` against the same `_DAT_1f8003ec + 0x4000`
+/// grid. With every tile walled the player cannot move in any direction.
+#[test]
+fn world_map_locomotion_blocked_by_full_wall_grid() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    // Wall every tile (sub=1 sets all four sub-cell bits across the grid).
+    world.paint_field_collision(1, (0, 0x80), (0, 0x80), 0);
+    world.actors[0].move_state.world_x = 400;
+    world.actors[0].move_state.world_z = 400;
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.actors[0].move_state.world_x, 400,
+        "walled in: no X move"
+    );
+    assert_eq!(
+        world.actors[0].move_state.world_z, 400,
+        "walled in: no Z move"
+    );
+}
+
+/// With no walls, the overworld player walks freely. At the default walk-mode
+/// camera azimuth (`0`) the camera sits on `+X` looking `-X`, so "screen up"
+/// (away from the camera) walks the player `-X` - the camera-relative remap,
+/// not a raw `+Z`.
+#[test]
+fn world_map_locomotion_walks_when_clear() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.reset_field_collision_grid(); // present but all-walkable
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 250;
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    // speed 8 -> four 2-unit steps, all clear: Up at azimuth 0 walks +X (screen
+    // up), so x: 200 -> 208, z unchanged.
+    assert_eq!(world.actors[0].move_state.world_x, 208);
+    assert_eq!(world.actors[0].move_state.world_z, 250);
+}
+
+/// The camera-relative remap rotates the held d-pad through the overworld
+/// camera azimuth. Spot-check the cardinal framings against the
+/// `world_map_camera_mvp` geometry (eye at `center + (d·cosθ, _, d·sinθ)`):
+/// at azimuth 0 the camera is on `+X`, so "screen up" walks `-X`; a 3/4-turn
+/// azimuth puts it on `-Z`, so "screen up" walks `+Z`.
+#[test]
+fn world_map_camera_relative_bits_rotates_with_azimuth() {
+    use crate::world::world_map_camera_relative_bits;
+    // Expectations are the camera-verified screen axes (screen-up -> world
+    // (cosθ, sinθ), screen-right -> world (sinθ, -cosθ)); the engine-shell
+    // projection test confirms these move the right way on screen.
+    // No input -> no bits.
+    assert_eq!(world_map_camera_relative_bits(0, 0, 0), 0);
+    // Azimuth 0: Up (screen up) -> X+ (0x2000), Right -> Z- (0x4000).
+    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x2000);
+    assert_eq!(world_map_camera_relative_bits(0, 1, 0), 0x4000);
+    // Azimuth 1024 (quarter turn): Up -> Z+ (0x1000).
+    assert_eq!(world_map_camera_relative_bits(1024, 0, 1), 0x1000);
+    // Azimuth 2048 (half turn): Up -> X- (0x8000).
+    assert_eq!(world_map_camera_relative_bits(2048, 0, 1), 0x8000);
+    // Azimuth 3072 (3/4 turn): Up -> Z- (0x4000), Right -> X- (0x8000).
+    assert_eq!(world_map_camera_relative_bits(3072, 0, 1), 0x4000);
+    assert_eq!(world_map_camera_relative_bits(3072, 1, 0), 0x8000);
+    // A diagonal framing (1/8 turn) maps a single screen press to two world
+    // axes (the player walks diagonally).
+    let diag = world_map_camera_relative_bits(512, 0, 1);
+    assert_eq!(
+        diag.count_ones(),
+        2,
+        "rotated framing -> diagonal world move"
+    );
+}
+
+/// A camera-only world map (no entities, no region tracker) never encounters,
+/// even while the player walks.
+#[test]
+fn world_map_without_regions_or_entities_never_encounters() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.set_pad(input::PadButton::Right.mask());
+    for _ in 0..500 {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::WorldMap);
@@ -677,6 +899,76 @@ fn world_map_portal_engage_surfaces_target_map() {
         )
     });
     assert!(transitioned, "the portal surfaces its target map");
+}
+
+/// Walking the overworld player onto a portal entity's tile auto-engages it
+/// (no host `engage_world_map_entity` call) and surfaces its target map.
+#[test]
+fn world_map_walking_onto_portal_auto_engages() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    // Encounters off so only the transition path can fire.
+    world.set_world_map_encounter(false, 50, 0, 64);
+    // A portal at tile (3,3) -> world (3*128 + 64 = 448, 448).
+    world.install_world_map_entities_at(vec![(
+        WorldMapEntityConfig::Portal { target_map: 9 },
+        (448, 448),
+    )]);
+
+    // Player starts two tiles to the -X side, on the same row as the portal.
+    world.actors[0].move_state.world_x = 448 - 256;
+    world.actors[0].move_state.world_z = 448;
+
+    // Hold the d-pad direction that walks +X at the default azimuth (0):
+    // "screen up" maps to +X there (see the camera-relative remap).
+    world.set_pad(input::PadButton::Up.mask());
+    let mut transitioned = false;
+    for _ in 0..200 {
+        let _ = world.tick();
+        if world.drain_field_events().into_iter().any(|e| {
+            matches!(
+                e,
+                FieldEvent::WorldMapTransition {
+                    target_map: 9,
+                    slot: 0
+                }
+            )
+        }) {
+            transitioned = true;
+            break;
+        }
+    }
+    assert!(
+        transitioned,
+        "walking onto the portal tile auto-fires its transition"
+    );
+}
+
+/// Auto-engage is portal-only: walking onto an NPC entity's tile does NOT fire
+/// a transition (NPCs are talk-to, not walk-onto).
+#[test]
+fn world_map_walking_onto_npc_does_not_transition() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.set_world_map_encounter(false, 50, 0, 64);
+    world.install_world_map_entities_at(vec![(
+        WorldMapEntityConfig::Npc { interact_id: 4 },
+        (448, 448),
+    )]);
+    world.actors[0].move_state.world_x = 448;
+    world.actors[0].move_state.world_z = 448; // standing on the NPC tile
+    world.set_pad(0);
+    let _ = world.tick();
+    let transitioned = world
+        .drain_field_events()
+        .into_iter()
+        .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. }));
+    assert!(
+        !transitioned,
+        "an NPC is not auto-engaged by walking onto its tile"
+    );
 }
 
 /// An NPC-config entity surfaces its configured interaction id.

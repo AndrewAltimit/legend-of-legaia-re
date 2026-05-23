@@ -181,10 +181,153 @@ via `install_world_map_entities_with_configs`):
 - `Npc { interact_id }` - surfaces a `FieldEvent::FieldInteract` with that id.
 
 Entities without a config fall back to the shared formation and a generic
-interaction. Two retail threads remain open: the per-region encounter table
-(`FUN_800243F0` → the MAN region table) that would pick the formation from the
-player's overworld position, and seeding overworld entities from the boot path
-(today they are installed through the API).
+interaction.
+
+### Overworld player movement + region-keyed encounters
+
+The overworld now has a moving player and a position-routed random-encounter
+roll. `tick_world_map` walks the player actor from the held d-pad
+(`World::step_world_map_locomotion`, direct screen-axis mapping at
+`World::WORLD_MAP_PLAYER_SPEED` units/frame) and, on each 128-unit tile the
+player crosses (`World::live_world_map_tick`, mirroring the field
+`live_field_tick`), rolls the scene's region-keyed encounter table
+(`World::set_world_map_regions`). That table is the clean-room port of
+`FUN_801D9E1C` ([`region_encounter`](../formats/encounter.md#engine-port-region-keyed-roll)):
+the player's tile selects the first region whose AABB contains it, the region's
+rate increment depletes a step counter, and a `<= 0` counter rolls a formation
+from the region's `[base, base + count)` slice and latches
+`pending_world_map_encounter` - which the same tick resolves into a
+`SceneMode::WorldMap → SceneMode::Battle` transition that returns to the
+overworld. A camera-only world map (no region table routed) is unchanged.
+
+In walk mode the native `play-window` camera **follows the player**: it passes
+the player's AABB-relative world position as the `pan` offset to
+[`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs), so
+the framing centre tracks the player as they walk; the top-view debug camera
+keeps the controller's free scroll.
+
+### Overworld collision / walkability
+
+Overworld walkability is **not** a separate format. The world-map-walk overlay's
+free-movement controller is byte-for-byte the field locomotion integrator
+`FUN_801d01b0`, and it collides through the same `FUN_801cfe4c` against the same
+per-scene walkability grid at `*(_DAT_1f8003ec) + 0x4000` (see
+[`field-locomotion.md`](field-locomotion.md)). The three kingdom overworld
+scenes carry real wall data in that grid: the `0x12000`-byte field-map block's
+`+0x4000..+0x8000` region holds thousands of wall sub-cells (map01 ≈ 7968,
+map02 ≈ 2283, map03 ≈ 3837 high-nibble bits). The engine loads it through the
+same [`Scene::field_collision_grid`](../../crates/engine-core/src/scene.rs)
+path as the field and steps the overworld player through the shared
+`World::advance_with_collision`, so walls stop the player exactly as on the
+field.
+
+### Camera-relative movement remap
+
+The held d-pad is remapped through the overworld camera azimuth so "screen up"
+walks the player toward the top of the screen and "screen right" walks
+screen-right, regardless of how the map is framed — the same camera-relative
+remap retail's `func_0x800467e8` applies (it feeds the pad through the camera
+yaw the renderer uses). `World::world_map_camera_relative_bits(azimuth, sx, sy)`
+rotates the screen delta into world space against the same azimuth
+[`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs) frames
+the eye with (`eye = center + (d·cosθ, -0.7d, d·sinθ)`). Because the renderer's
+Y-down convention inverts the on-screen vertical axis relative to the eye→centre
+direction, the world→screen axes are taken from the **real camera matrix, not a
+hand-derived guess**: a disc-free projection test
+(`crates/engine-shell/tests/world_map_camera_remap.rs`) projects the chosen
+world direction back through `world_map_camera_mvp` and asserts it moves the
+right way on screen for every azimuth, keeping the remap in lock-step with the
+camera. The native `play-window` feeds the same controller azimuth to both the
+camera and the remap, so they cannot drift.
+
+### Boot-path seeding
+
+The overworld seeds itself on the natural scene-transition path, not just the
+explicit `--world-map` entry. The overworld shares game mode `0x03` with
+towns/fields, so retail distinguishes it by the loaded scene; the engine
+mirrors that with [`is_world_map_scene`](../../crates/engine-core/src/scene.rs)
+(the three kingdom `mapNN` labels). When the field VM issues a
+`scene_transition(map_id)` that resolves to an overworld scene,
+[`SceneHost::tick`](../../crates/engine-core/src/scene.rs) routes it through
+`SceneHost::enter_world_map_scene` instead of the plain field path:
+`enter_field_scene` (resources + walkability grid + player) followed by routing
+the region-keyed encounter table from the scene's MAN and switching into
+`SceneMode::WorldMap`. The `--world-map` window flag and `enter_world_map_live`
+now delegate to the same `enter_world_map_scene`, so both entries seed
+identically.
+
+### Entity / actor placement table
+
+The scene's on-map entities (NPCs, landmarks, the towns/portals you enter) are
+the **MAN partition-1 actor-placement records**, decoded by `FUN_8003A1E4` and
+ported as
+[`ManFile::actor_placements`](../../crates/asset/src/man_section.rs) /
+[`Scene::field_actor_placements`](../../crates/engine-core/src/scene.rs). The
+scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over partition-1 records
+`1..N1` (record `0` is the scene-entry controller whose script is the
+[scene-entry system script](field-locomotion.md)). Each record is:
+
+```
+[u8 local_count N][N × 2 bytes locals][u8 model][u8 action_count][u8 tile_x][u8 tile_z][field-VM script…]
+```
+
+- **model** `< 0xF0` indexes the kingdom-TMD pool from `DAT_8007b6f8`; `>= 0xF0`
+  selects a special model from `_DAT_8007b824` (the lead-actor / party slot, and
+  sets the actor's `0x1000000` flag).
+- **tile_x / tile_z**: bits 0–6 are the 128-unit tile column / row; bit 7 shifts
+  the spawn a half-tile. World position is `(b & 0x7F)·128 + (bit7 ? 128 : 64)`.
+- the actor's field-VM **script** starts at `record + 1 + 2N + 4` with the
+  record base as its buffer; the actor's encounter record (`+0x94`) is
+  initialised to `-1` and set later by that script.
+
+Real scenes decode cleanly: `town01` places 52 actors, the kingdom overworlds
+`map01`/`map02`/`map03` place 8 / 7 / 19 (several parked at tile `(127,127)` —
+preloaded models the script repositions). So the placement gives **position +
+model + script pointer** for every entity.
+
+#### Classifying the entity kind from its script
+
+Retail has no static "entity kind" field — a placed actor *is* what its script
+does. [`classify_placements`](../../crates/engine-core/src/man_field_scripts.rs)
+linearly disassembles each placement's per-entity interaction script (records
+`1..` are the actor interaction scripts) and reads the kind off its
+distinguishing opcodes:
+
+- a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`) → a
+  **Portal** whose target is the field-VM map id `op0 - 100` (its scene-name
+  table lives in an uncaptured overlay, so the id is reported raw);
+- a **dialog** (`0x3F`) or **field interact** (`0x3E` with `op0 < 100`) and no
+  warp → an **NPC** (sign / talk-to / event trigger);
+- none of those → **Plain** (a moving / animated / model-only actor, e.g. the
+  lead-actor slot).
+
+The walk is the same over-approximating linear disassembly the encounter-arm
+hunt uses (it reads every opcode-shaped byte, not only one control-flow path),
+so a warp anywhere in the record marks the actor a portal. Real data: `town01`
+classifies 14 NPCs / 38 plain, the overworlds carry a handful of warp portals
+(`map02`/`map03` each expose one to a field map id).
+
+`SceneHost::enter_world_map_scene` seeds these typed entities on the
+boot/transition path via [`World::install_world_map_entities_at`]: each Portal /
+NPC placement installs a matching
+[`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) **with its spawn
+position** (Plain placements are skipped). So overworld portals + NPCs are
+**disc-sourced**, not synthetic.
+
+#### Auto-engage on walk-over
+
+The portals fire themselves. [`World::auto_engage_world_map_portals`] runs each
+`tick_world_map` (right after locomotion, before the entity-SM step): any
+`Portal` entity whose placement tile (`pos >> 7`) matches the player's current
+tile is driven to its transition state — exactly what a host
+[`World::engage_world_map_entity`] call does — so the same tick's SM step
+surfaces the [`FieldEvent::WorldMapTransition`] with the portal's target map and
+the host loads the destination. Only `Idle` portals are engaged (a portal fires
+once per visit; standing on the tile doesn't re-trigger). NPCs are **not**
+auto-engaged — they are talk-to, driven by the SM's idle-interact path, not
+walk-onto. The clean-room stand-in for retail's per-entity
+player-position-in-zone check; the region table (the random-encounter driver)
+is the other half of overworld gameplay, fully boot-path seeded.
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see
