@@ -339,9 +339,12 @@ impl BootSession {
         }
 
         let world = &mut self.host.world;
-        // Install the overworld player so locomotion + the per-tile encounter
-        // roll run; then enter world-map mode (installs the camera controller).
-        world.install_field_player(0);
+        // `enter_field_scene` already installed slot 0 as the field player and
+        // loaded the per-scene walkability grid. Do NOT re-install here:
+        // `install_field_player` ends with `reset_field_collision_grid`, which
+        // would wipe the overworld's walls (the kingdom maps carry thousands of
+        // wall sub-cells) and leave the player roaming unbounded. Just enter
+        // world-map mode (installs the camera controller).
         world.enter_world_map();
         world.live_gameplay_loop = true;
         world.set_equipment_table(

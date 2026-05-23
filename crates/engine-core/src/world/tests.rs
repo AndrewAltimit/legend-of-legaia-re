@@ -645,6 +645,45 @@ fn world_map_region_walk_triggers_battle() {
     assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
 }
 
+/// The overworld player is bounded by the scene's walkability grid, exactly
+/// like the field: the retail world-map-walk overlay's locomotion is the same
+/// `FUN_801d01b0` + `FUN_801cfe4c` against the same `_DAT_1f8003ec + 0x4000`
+/// grid. A wall on the tile the player would step into stops the walk.
+#[test]
+fn world_map_locomotion_stops_at_wall() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 250;
+    // Block the tile the +Z walk would cross into at z=256 (same setup as the
+    // field `locomotion_stops_at_wall` test; the grid + stepper are shared).
+    world.paint_field_collision(1, (1, 2), (2, 3), 0);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    // 250 -> 252 -> 254, then the 256 candidate lands in the blocked tile and
+    // is rejected. Without the wall it would reach 258.
+    assert_eq!(world.actors[0].move_state.world_z, 254);
+    assert_eq!(world.actors[0].move_state.world_x, 200);
+}
+
+/// With no walls, the overworld player walks freely (the collision wiring only
+/// blocks where the grid actually has walls).
+#[test]
+fn world_map_locomotion_walks_when_clear() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.reset_field_collision_grid(); // present but all-walkable
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 250;
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    // speed 8 -> four 2-unit steps, all clear: 250 -> 258.
+    assert_eq!(world.actors[0].move_state.world_z, 258);
+    assert_eq!(world.actors[0].move_state.world_x, 200);
+}
+
 /// A camera-only world map (no entities, no region tracker) never encounters,
 /// even while the player walks.
 #[test]

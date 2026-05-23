@@ -64,7 +64,20 @@ fn world_map_live_installs_regions_and_player() {
         .map(|t| t.table().regions.len())
         .unwrap_or(0);
     assert!(regions > 0, "map03 routes encounter regions ({regions})");
-    eprintln!("[map03] world-map live: {regions} regions, player installed");
+    // Report whether the overworld scene actually carries a walkability grid
+    // (the same `_DAT_1f8003ec + 0x4000` source the field uses). A non-empty
+    // grid means the overworld collision path is genuinely exercised; an empty
+    // grid means the scene has no MAP block and the player roams unbounded.
+    let wall_nibbles: usize = world
+        .field_collision_grid
+        .iter()
+        .map(|b| (b >> 4).count_ones() as usize)
+        .sum();
+    eprintln!(
+        "[map03] world-map live: {regions} regions, player installed, \
+         collision grid {} bytes ({wall_nibbles} wall sub-cells)",
+        world.field_collision_grid.len()
+    );
 }
 
 #[test]
@@ -145,4 +158,49 @@ fn world_map_live_walk_reaches_battle() {
         "walking the overworld in-region reaches a battle within the budget"
     );
     assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+}
+
+/// Every kingdom overworld scene loads a **non-empty** walkability grid into
+/// the live world after `enter_world_map_live`.
+///
+/// The overworld walk overlay's locomotion is the same `FUN_801d01b0` +
+/// `FUN_801cfe4c` as the field, colliding against the same
+/// `_DAT_1f8003ec + 0x4000` grid — and the three kingdom maps carry thousands
+/// of wall sub-cells in that grid. This guards the regression where a redundant
+/// `install_field_player` after scene load reset the grid to zeros and left the
+/// overworld player roaming unbounded.
+#[test]
+fn overworld_scenes_load_nonempty_walkability_grid() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    for scene in ["map01", "map02", "map03"] {
+        let cfg = BootConfig {
+            scene: scene.into(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let opts = FieldLiveOpts::default();
+        session
+            .enter_world_map_live(scene, &opts)
+            .expect("enter_world_map_live");
+        let walls: usize = session
+            .host
+            .world
+            .field_collision_grid
+            .iter()
+            .map(|b| (b >> 4).count_ones() as usize)
+            .sum();
+        eprintln!("[{scene}] live walkability grid: {walls} wall sub-cells");
+        assert!(
+            walls > 0,
+            "{scene}: overworld must keep its walkability grid (got {walls} walls — \
+             a re-install likely zeroed it)"
+        );
+    }
 }

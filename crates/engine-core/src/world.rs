@@ -3460,16 +3460,26 @@ impl World {
     /// ([`FIELD_BASE_STEP`]); the overworld uses the same baseline.
     pub const WORLD_MAP_PLAYER_SPEED: i16 = 8;
 
-    /// Move the overworld player actor from the held d-pad.
+    /// Move the overworld player actor from the held d-pad, bounded by the
+    /// scene's walkability grid.
     ///
     /// Direct screen-axis mapping (Up → `+Z`, Down → `-Z`, Right → `+X`,
     /// Left → `-X`), matching the field locomotion axis convention; the
     /// camera-relative remap the field controller applies
     /// ([`Self::decode_field_direction`]) is a follow-up once the world-map
-    /// follow camera is wired. No collision grid is loaded for the overworld,
-    /// so movement is unbounded for now (overworld walkability is a separate
-    /// open RE thread, like the field grid was). No-op without a live player
-    /// actor or while a dialog owns the frame.
+    /// follow camera feeds an azimuth.
+    ///
+    /// Collision is **not** a separate unknown: the retail world-map-walk
+    /// overlay's locomotion is the same `FUN_801d01b0` as the field, colliding
+    /// against the same `_DAT_1f8003ec + 0x4000` walkability grid
+    /// ([`Self::field_tile_is_wall`]) which [`crate::scene::SceneHost::enter_field_scene`]
+    /// already loads from the scene's MAP file. Stepping runs through the shared
+    /// [`Self::advance_with_collision`], so walls stop the overworld player
+    /// exactly as on the field.
+    ///
+    /// No-op without a live player actor, while a dialog owns the frame, in the
+    /// top-view debug camera, or while the player's movement-disabled flag
+    /// (`+0x10 & 0x80000`) is set (encounter queued / cutscene owns the player).
     fn step_world_map_locomotion(&mut self) {
         if self.current_dialog.is_some() {
             return;
@@ -3490,28 +3500,27 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return;
         }
-        let pad = self.input.pad();
-        let speed = self.world_map_player_speed.max(1);
-        let mut dx = 0i16;
-        let mut dz = 0i16;
-        if pad & input::PadButton::Up.mask() != 0 {
-            dz = dz.saturating_add(speed);
-        }
-        if pad & input::PadButton::Down.mask() != 0 {
-            dz = dz.saturating_sub(speed);
-        }
-        if pad & input::PadButton::Right.mask() != 0 {
-            dx = dx.saturating_add(speed);
-        }
-        if pad & input::PadButton::Left.mask() != 0 {
-            dx = dx.saturating_sub(speed);
-        }
-        if dx == 0 && dz == 0 {
+        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
             return;
         }
-        let ms = &mut self.actors[slot].move_state;
-        ms.world_x = ms.world_x.saturating_add(dx);
-        ms.world_z = ms.world_z.saturating_add(dz);
+        // Held d-pad → post-remap direction bits (one bit per axis sign).
+        let pad = self.input.pad();
+        let mut dir_bits = 0u16;
+        if pad & input::PadButton::Up.mask() != 0 {
+            dir_bits |= 0x1000; // Z+
+        } else if pad & input::PadButton::Down.mask() != 0 {
+            dir_bits |= 0x4000; // Z-
+        }
+        if pad & input::PadButton::Right.mask() != 0 {
+            dir_bits |= 0x2000; // X+
+        } else if pad & input::PadButton::Left.mask() != 0 {
+            dir_bits |= 0x8000; // X-
+        }
+        if dir_bits == 0 {
+            return;
+        }
+        let speed = self.world_map_player_speed.max(1) as i32;
+        self.advance_with_collision(slot, dir_bits, speed);
     }
 
     /// Per-tile overworld step → region-keyed encounter roll (the world-map
@@ -4291,8 +4300,21 @@ impl World {
             return;
         }
 
-        // Step loop: advance FIELD_STEP_UNIT per iteration with per-axis
-        // collision, committing only the axes that stay clear.
+        self.advance_with_collision(slot, dir_bits, speed);
+    }
+
+    /// Advance actor `slot` by `speed` world units in the direction encoded by
+    /// `dir_bits` (post-remap convention: `0x1000`=Z+, `0x4000`=Z-,
+    /// `0x2000`=X+, `0x8000`=X-), stepping [`FIELD_STEP_UNIT`] at a time and
+    /// committing only the axes that stay off a wall in
+    /// [`World::field_collision_grid`]. X collision uses the just-committed Z
+    /// so a diagonal move can't tunnel through a wall corner.
+    ///
+    /// Shared by [`Self::step_field_locomotion`] and
+    /// [`Self::step_world_map_locomotion`]: retail `FUN_801d01b0` is the same
+    /// routine in both the field and world-map-walk overlays, and both collide
+    /// against the same `_DAT_1f8003ec + 0x4000` walkability grid.
+    fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let mut remaining = speed;
         while remaining > 0 {
             let ms = &self.actors[slot].move_state;

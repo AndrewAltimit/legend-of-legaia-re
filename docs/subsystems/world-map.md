@@ -206,10 +206,23 @@ the player's AABB-relative world position as the `pan` offset to
 the framing centre tracks the player as they walk; the top-view debug camera
 keeps the controller's free scroll.
 
-Two retail threads remain open: overworld **collision / walkability** (the
-player currently moves unbounded; the overworld walkability source is a separate
-RE thread, like the field grid was), the camera-relative movement remap (today
-the d-pad maps directly to world axes; the field controller remaps through the
+### Overworld collision / walkability
+
+Overworld walkability is **not** a separate format. The world-map-walk overlay's
+free-movement controller is byte-for-byte the field locomotion integrator
+`FUN_801d01b0`, and it collides through the same `FUN_801cfe4c` against the same
+per-scene walkability grid at `*(_DAT_1f8003ec) + 0x4000` (see
+[`field-locomotion.md`](field-locomotion.md)). The three kingdom overworld
+scenes carry real wall data in that grid: the `0x12000`-byte field-map block's
+`+0x4000..+0x8000` region holds thousands of wall sub-cells (map01 ≈ 7968,
+map02 ≈ 2283, map03 ≈ 3837 high-nibble bits). The engine loads it through the
+same [`Scene::field_collision_grid`](../../crates/engine-core/src/scene.rs)
+path as the field and steps the overworld player through the shared
+`World::advance_with_collision`, so walls stop the player exactly as on the
+field.
+
+Two retail threads remain open: the camera-relative movement remap (today the
+d-pad maps directly to world axes; the field controller remaps through the
 camera azimuth), and seeding overworld entities + the region table from the boot
 path (today they are installed through the API / the `--world-map` entry).
 
