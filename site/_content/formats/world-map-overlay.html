@@ -391,3 +391,13 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
     A further static narrowing: the <code>FUN_8001F05C</code> case-2 "freeze" sub-path (<code>if (param_3 == 1) { _DAT_8007B704 = size; _DAT_8007B824 = pack_count; }</code>) is the sole SCUS <code>sw</code> writer of <code>_DAT_8007B824</code> (at PC <code>0x8001F2F8</code>). The freeze sets the persistent-base index that <code>FUN_8001E1B4</code> later reads to reset the install cursor (<code>DAT_8007B774 = _DAT_8007B824</code>), so a non-zero <code>_DAT_8007B824</code> would mark slots <code>[0..pack_count-1]</code> as carried across mode transitions. A corpus grep over every call site shows zero static SCUS callers of <code>FUN_8001F05C</code> pass <code>param_3 == 1</code> (the three direct callers - <code>FUN_80020224</code>, <code>FUN_8002541C</code>, and <code>overlay_baka_fighter_801d4c50</code> - pass <code>s6</code>, <code>0</code>, and <code>0</code> respectively), and zero dumped overlay callers of <code>FUN_80020224</code> pass <code>param_1 == 1</code>. So either the freeze path is in an overlay not yet captured, or <code>_DAT_8007B824</code> stays at its BSS-init value of zero throughout retail play and every mode rebuilds the TMD pool from index 0 (in which case the "persistent slots" semantic is vestigial, not load-bearing). The dynamic probe should also break on <code>_DAT_8007B824</code> writes to settle which case holds.</li>
   </ol>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/world-map.html">World map</a>
+    <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a>
+    <a href="tmd.html">Legaia TMD</a>
+  </div>
+</section>

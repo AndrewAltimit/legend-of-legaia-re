@@ -56,3 +56,13 @@
   <h2>Cross-save corroboration</h2>
   <p>The <code>mednafen-state vram-dump</code> CLI extracts the raw 1 MiB VRAM blob. Row 479 starts at byte offset <code>0xEF800</code> (= <code>479 * 2048</code>). Slicing 32 bytes at <code>0xEF800 + slot * 32</code> gives one CLUT slot. <code>scripts/mednafen/bracket-writer.py</code> automates sequential-save diffs across VRAM rows + RAM regions to bracket the moment-of-write for any target. See <a href="../tooling/mednafen-automation.html">mednafen-automation.html</a>.</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="tim.html">PSX TIM</a>
+    <a href="../subsystems/renderer.html">Renderer</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+  </div>
+</section>
