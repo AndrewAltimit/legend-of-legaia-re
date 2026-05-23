@@ -1650,29 +1650,74 @@ impl SceneHost {
     ///    (installs the camera controller); the player actor + collision grid
     ///    that `enter_field_scene` set up stay in place.
     ///
-    /// Overworld **entity** records (portals / fixed encounter zones) are not
-    /// seeded here: in retail they are installed by the field-VM ops that run
-    /// against the scene's entity table, which the engine does not yet parse -
-    /// a separate open thread. The region table (the random-encounter driver)
-    /// is fully sourced from the MAN.
+    /// 3. Installs the scene's **interactive overworld entities** - the
+    ///    portals (town/dungeon entrances) and dialog NPCs decoded from the
+    ///    MAN actor-placement table and classified by their field-VM scripts
+    ///    ([`crate::man_field_scripts::classify_placements`]). Decorative /
+    ///    model-only placements are skipped; the entity *kind* comes from the
+    ///    per-entity script, so this is disc-sourced, not synthetic.
+    ///
+    /// The random-encounter driver (the region table) is fully sourced from
+    /// the MAN; the per-entity auto-engage trigger (walk onto a portal tile)
+    /// is still host-driven via [`crate::world::World::engage_world_map_entity`].
     pub fn enter_world_map_scene(&mut self, name: &str) -> Result<()> {
         // Full field-entry load: resources, walkability grid, player, monster
         // catalog, scene label. Leaves the world in `Field` mode.
         self.enter_field_scene(name, 0)?;
-        // Build the region table while only `self.scene` / `self.index` are
-        // borrowed (both immutable), so the owned table outlives the borrow
-        // before the mutable `world` access below.
-        let table = self
+        // Decode the MAN once, then derive the region table + the typed entity
+        // configs from it while only `self.scene` / `self.index` are borrowed
+        // (both immutable), so the owned results outlive the borrow before the
+        // mutable `world` accesses below.
+        let man_bytes = self
             .scene
             .as_ref()
-            .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
-            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, &man));
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten());
+        let table = man_bytes
+            .as_ref()
+            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
+        let entity_configs: Vec<crate::world::WorldMapEntityConfig> = man_bytes
+            .as_ref()
+            .and_then(|man| {
+                legaia_asset::man_section::parse(man)
+                    .ok()
+                    .map(|mf| (mf, man))
+            })
+            .map(|(mf, man)| {
+                use crate::man_field_scripts::PlacementKind;
+                crate::man_field_scripts::classify_placements(&mf, man)
+                    .into_iter()
+                    .filter_map(|(_, kind)| match kind {
+                        PlacementKind::Portal { target_map } => {
+                            Some(crate::world::WorldMapEntityConfig::Portal {
+                                target_map: target_map as u16,
+                            })
+                        }
+                        PlacementKind::Npc { interact_id, .. } => {
+                            Some(crate::world::WorldMapEntityConfig::Npc {
+                                interact_id: interact_id.unwrap_or(0),
+                            })
+                        }
+                        // Decorative / model-only actors are not interactive
+                        // entities.
+                        PlacementKind::Plain => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         if let Some(table) = table {
             log::info!(
                 "world-map '{name}': routed {} encounter region(s)",
                 table.regions.len()
             );
             self.world.set_world_map_regions(table);
+        }
+        if !entity_configs.is_empty() {
+            log::info!(
+                "world-map '{name}': installed {} interactive entit(ies) from placements",
+                entity_configs.len()
+            );
+            self.world
+                .install_world_map_entities_with_configs(entity_configs);
         }
         // Switch to world-map mode (idempotent; keeps the installed player +
         // collision grid).

@@ -285,12 +285,36 @@ Real scenes decode cleanly: `town01` places 52 actors, the kingdom overworlds
 preloaded models the script repositions). So the placement gives **position +
 model + script pointer** for every entity.
 
-What remains open is the entity **kind** (encounter zone / portal / NPC): that
-is encoded in the per-entity field-VM script (the `entity[+0x94]` encounter-record
-installs and scene-transition ops below), which the engine does not execute at
-placement time yet. So the engine still installs *typed* overworld entities
-through the API (`install_world_map_entities*`); the region table (the
-random-encounter driver) is fully boot-path seeded.
+#### Classifying the entity kind from its script
+
+Retail has no static "entity kind" field — a placed actor *is* what its script
+does. [`classify_placements`](../../crates/engine-core/src/man_field_scripts.rs)
+linearly disassembles each placement's per-entity interaction script (records
+`1..` are the actor interaction scripts) and reads the kind off its
+distinguishing opcodes:
+
+- a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`) → a
+  **Portal** whose target is the field-VM map id `op0 - 100` (its scene-name
+  table lives in an uncaptured overlay, so the id is reported raw);
+- a **dialog** (`0x3F`) or **field interact** (`0x3E` with `op0 < 100`) and no
+  warp → an **NPC** (sign / talk-to / event trigger);
+- none of those → **Plain** (a moving / animated / model-only actor, e.g. the
+  lead-actor slot).
+
+The walk is the same over-approximating linear disassembly the encounter-arm
+hunt uses (it reads every opcode-shaped byte, not only one control-flow path),
+so a warp anywhere in the record marks the actor a portal. Real data: `town01`
+classifies 14 NPCs / 38 plain, the overworlds carry a handful of warp portals
+(`map02`/`map03` each expose one to a field map id).
+
+`SceneHost::enter_world_map_scene` now seeds these typed entities on the
+boot/transition path: each Portal / NPC placement installs a matching
+[`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) (Plain
+placements are skipped). So overworld portals + NPCs are **disc-sourced**, not
+synthetic. What remains host-driven is the per-entity **auto-engage trigger**
+(walking onto a portal tile fires the transition) — today a host calls
+[`World::engage_world_map_entity`](../../crates/engine-core/src/world.rs); the
+region table (the random-encounter driver) is fully boot-path seeded.
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see

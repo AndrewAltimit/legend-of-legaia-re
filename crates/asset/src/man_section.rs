@@ -925,7 +925,11 @@ mod tests {
         assert_eq!(p.tile_z, 4);
         assert_eq!(p.world_x, 3 * 128 + 128, "X bit-7 set shifts a half-tile");
         assert_eq!(p.world_z, 4 * 128 + 64, "Z bit-7 clear -> tile centre");
-        assert_eq!(p.script_pc0, 1 + 2 + 4, "1 prefix + local_count*2 + 4 header");
+        assert_eq!(
+            p.script_pc0,
+            1 + 2 + 4,
+            "1 prefix + local_count*2 + 4 header"
+        );
         assert_eq!(p.record_offset, man.data_region_offset);
     }
 

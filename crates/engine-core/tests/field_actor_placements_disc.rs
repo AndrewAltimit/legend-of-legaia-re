@@ -92,3 +92,69 @@ fn man_actor_placements_decode_for_real_scenes() {
         "the town + overworld scenes must decode actor placements (got {total_with_placements})"
     );
 }
+
+#[test]
+fn placement_scripts_classify_into_kinds() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open prot index"));
+
+    let mut any_portal = false;
+    let mut any_npc = false;
+    for label in ["town01", "map01", "map02", "map03"] {
+        let Ok(scene) = Scene::load(&index, label) else {
+            continue;
+        };
+        let Ok(Some(man_bytes)) = scene.field_man_payload(&index) else {
+            eprintln!("[{label}] no MAN");
+            continue;
+        };
+        let Ok(man) = parse_man(&man_bytes) else {
+            eprintln!("[{label}] MAN parse failed");
+            continue;
+        };
+        let classified = classify_placements(&man, &man_bytes);
+        let portals = classified
+            .iter()
+            .filter(|(_, k)| matches!(k, PlacementKind::Portal { .. }))
+            .count();
+        let npcs = classified
+            .iter()
+            .filter(|(_, k)| matches!(k, PlacementKind::Npc { .. }))
+            .count();
+        let plain = classified
+            .iter()
+            .filter(|(_, k)| matches!(k, PlacementKind::Plain))
+            .count();
+        any_portal |= portals > 0;
+        any_npc |= npcs > 0;
+        eprintln!("[{label}] {portals} portal(s), {npcs} npc(s), {plain} plain");
+        for (p, k) in &classified {
+            if let PlacementKind::Portal { target_map } = k {
+                // `target_map` is the raw field-VM map id (`op0 - 100`); its
+                // scene-name table lives in an uncaptured overlay, so don't
+                // resolve it through CDNAME here (that index is unrelated).
+                eprintln!(
+                    "    portal #{} at tile ({},{}) -> field map id {target_map}",
+                    p.index, p.tile_x, p.tile_z
+                );
+            }
+        }
+    }
+    // Real data has both: towns are full of dialog NPCs, the overworld carries
+    // a handful of warp portals.
+    assert!(any_npc, "a populated town must classify dialog NPCs");
+    assert!(
+        any_portal,
+        "the overworld must classify at least one warp portal"
+    );
+}
