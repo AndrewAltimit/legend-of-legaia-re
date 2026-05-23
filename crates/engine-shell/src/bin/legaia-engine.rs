@@ -5269,25 +5269,33 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
-    /// Look-at target for the cutscene camera: the X/Z the cutscene timeline's
-    /// executed op-`0x45` Camera Configure staged (the pinned params 6 / 8,
-    /// read from `World::camera_state`), with the Y taken from the lead actor
-    /// (the cutscene anchor). Any axis the cutscene hasn't configured yet falls
-    /// back to the lead actor's position, or the scene-AABB centre when no
-    /// actor is placed - so the shot is framed sensibly before the first
-    /// Camera Configure op runs.
-    fn cutscene_look_at(&self) -> [f32; 3] {
+    /// Camera parameters for the cutscene shot, decoded from the cutscene
+    /// timeline's executed op-`0x45` Camera Configure params (read from
+    /// `World::camera_state`, committed by `FUN_801DE084`). Returns
+    /// `(look_at, yaw_radians, fov_radians)`:
+    ///
+    /// - **look_at**: the camera focus. Retail stores the *negated* focus X / Z
+    ///   in params 6 / 8 (`_DAT_80089118` / `_DAT_80089120` = the GTE
+    ///   translation `-focus`; the follow-cam `FUN_801DBE9C` sets them to
+    ///   `-(anchor X/Z)`), so X / Z are negated back to world space here; Y
+    ///   (param 7) is stored un-negated. Any axis the cutscene hasn't staged
+    ///   yet falls back to the lead actor (the cutscene anchor), then the
+    ///   scene-AABB centre.
+    /// - **yaw**: param 1 (`_DAT_8007b792`, camera yaw), PSX `4096` = full turn.
+    /// - **fov**: derived from param 9 (`_DAT_8007b6f4`), which retail writes to
+    ///   the GTE H projection register - the focal length. PSX projects onto a
+    ///   ~240-tall frame, so the vertical FOV is `2*atan(120 / H)`. Inferred;
+    ///   falls back to 60 deg when the param is absent or degenerate.
+    fn cutscene_view(&self) -> ([f32; 3], f32, f32) {
+        use std::f32::consts::TAU;
         let world = &self.session.host.world;
         let params = &world.camera_state.params;
-        // params 6 / 8 are the camera-target X / Z, stored as signed-16 words.
-        let target_x = params
-            .iter()
-            .find(|p| p.slot == 6)
-            .map(|p| p.value as i16 as f32);
-        let target_z = params
-            .iter()
-            .find(|p| p.slot == 8)
-            .map(|p| p.value as i16 as f32);
+        let param = |slot: u8| {
+            params
+                .iter()
+                .find(|p| p.slot == slot)
+                .map(|p| p.value as i16 as f32)
+        };
         let (px, py, pz) = world
             .actors
             .first()
@@ -5306,7 +5314,17 @@ impl PlayWindowApp {
                     (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
                 )
             });
-        [target_x.unwrap_or(px), py, target_z.unwrap_or(pz)]
+        let look_at = [
+            param(6).map(|v| -v).unwrap_or(px),
+            param(7).unwrap_or(py),
+            param(8).map(|v| -v).unwrap_or(pz),
+        ];
+        let yaw = param(1).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
+        let fov = param(9)
+            .filter(|&h| h > 1.0)
+            .map(|h| 2.0 * (120.0 / h).atan())
+            .unwrap_or(60f32.to_radians());
+        (look_at, yaw, fov)
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
@@ -6837,8 +6855,11 @@ impl ApplicationHandler for PlayWindowApp {
                             aspect,
                         )
                     } else if self.session.host.world.cutscene_timeline.is_some() {
+                        let (look_at, yaw, fov) = self.cutscene_view();
                         legaia_engine_render::window::cutscene_camera_mvp(
-                            self.cutscene_look_at(),
+                            look_at,
+                            yaw,
+                            fov,
                             self.scene_aabb.0,
                             self.scene_aabb.1,
                             aspect,
