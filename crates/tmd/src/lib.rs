@@ -263,39 +263,63 @@ pub fn parse(buf: &[u8]) -> Result<Tmd> {
             scale,
         };
 
-        // Resolve and read vertices.
-        let mut vertices = Vec::with_capacity(n_vert as usize);
+        // Resolve and read vertices. Validate the byte range with checked
+        // arithmetic BEFORE allocating: `n_vert` is an unverified u32 from the
+        // buffer, so a bogus value (e.g. a non-TMD candidate that happened to
+        // pass the magic check) would otherwise overflow `Vec::with_capacity`
+        // (capacity-overflow panic) or, on 32-bit targets, overflow the
+        // `* VECTOR_SIZE` byte-count entirely. The scanner relies on `parse`
+        // returning `Err` for junk, never panicking.
+        let mut vertices = Vec::new();
         if n_vert > 0 {
-            let start = ptr_base + vert_top as usize;
-            let end = start + (n_vert as usize) * VECTOR_SIZE;
-            if end > buf.len() {
+            let start = ptr_base
+                .checked_add(vert_top as usize)
+                .filter(|&s| s <= buf.len());
+            let range = start.and_then(|s| {
+                (n_vert as usize)
+                    .checked_mul(VECTOR_SIZE)
+                    .and_then(|n| s.checked_add(n))
+                    .filter(|&e| e <= buf.len())
+                    .map(|_| s)
+            });
+            let Some(start) = range else {
                 bail!(
-                    "object {} vertices [{}..{}) overruns buffer ({})",
+                    "object {} vertices (top {}, count {}) overruns buffer ({})",
                     i,
-                    start,
-                    end,
+                    vert_top,
+                    n_vert,
                     buf.len()
                 );
-            }
+            };
+            vertices.reserve(n_vert as usize);
             for v in 0..n_vert as usize {
                 vertices.push(read_vector(buf, start + v * VECTOR_SIZE)?);
             }
         }
 
-        // Normals (same shape as vertices).
-        let mut normals = Vec::with_capacity(n_normal as usize);
+        // Normals (same shape as vertices; same checked-before-alloc guard).
+        let mut normals = Vec::new();
         if n_normal > 0 {
-            let start = ptr_base + normal_top as usize;
-            let end = start + (n_normal as usize) * VECTOR_SIZE;
-            if end > buf.len() {
+            let start = ptr_base
+                .checked_add(normal_top as usize)
+                .filter(|&s| s <= buf.len());
+            let range = start.and_then(|s| {
+                (n_normal as usize)
+                    .checked_mul(VECTOR_SIZE)
+                    .and_then(|n| s.checked_add(n))
+                    .filter(|&e| e <= buf.len())
+                    .map(|_| s)
+            });
+            let Some(start) = range else {
                 bail!(
-                    "object {} normals [{}..{}) overruns buffer ({})",
+                    "object {} normals (top {}, count {}) overruns buffer ({})",
                     i,
-                    start,
-                    end,
+                    normal_top,
+                    n_normal,
                     buf.len()
                 );
-            }
+            };
+            normals.reserve(n_normal as usize);
             for v in 0..n_normal as usize {
                 normals.push(read_vector(buf, start + v * VECTOR_SIZE)?);
             }
@@ -355,7 +379,11 @@ fn walk_psx_primitives(
     end: usize,
     n_primitive: usize,
 ) -> std::result::Result<Vec<PrimHeader>, String> {
-    let mut out = Vec::with_capacity(n_primitive);
+    // No `with_capacity(n_primitive)`: `n_primitive` is an unverified u32 from
+    // the object header, so a junk value would overflow the allocation. The
+    // loop bails as soon as `pos` overruns the section, so growth is bounded
+    // by the real section size regardless.
+    let mut out = Vec::new();
     let mut pos = start;
     for p in 0..n_primitive {
         if pos + PRIM_HEADER_SIZE > end {
@@ -485,6 +513,30 @@ mod tests {
         buf.extend_from_slice(&0x8000_0041u32.to_le_bytes());
         buf.extend_from_slice(&0u32.to_le_bytes());
         buf.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert!(parse(&buf).is_err());
+    }
+
+    /// A candidate that passes the header magic but carries a junk
+    /// `n_vert` / `n_primitive` (e.g. a non-TMD blob the scanner probed)
+    /// must return `Err`, never panic with a capacity overflow. The asset
+    /// TMD scanner calls `parse` on every magic hit across whole PROT
+    /// entries (including LZS-decompressed sections), so a panic here takes
+    /// down the disc load / web viewer.
+    #[test]
+    fn rejects_bogus_lengths_without_panicking() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes()); // id (magic)
+        buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+        buf.extend_from_slice(&1u32.to_le_bytes()); // nobj
+        // One object whose counts are absurd u32s.
+        buf.extend_from_slice(&40u32.to_le_bytes()); // vert_top
+        buf.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // n_vert (junk)
+        buf.extend_from_slice(&56u32.to_le_bytes()); // normal_top
+        buf.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // n_normal (junk)
+        buf.extend_from_slice(&28u32.to_le_bytes()); // prim_top
+        buf.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // n_primitive (junk)
+        buf.extend_from_slice(&0i32.to_le_bytes()); // scale
+        buf.resize(buf.len() + 64, 0);
         assert!(parse(&buf).is_err());
     }
 
