@@ -111,6 +111,39 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
   through `World::use_item`.
+- `tactical_arts_editor` - the field-menu Arts screen: `ChainEditor`
+  (Browsing → Editing → Naming → Done) composes a directional chain into
+  a per-character `ChainLibrary`. `World::chain_library` /
+  `World::store_chain_library` bridge that library to `World.saved_chains`,
+  so a chain authored in the menu serializes with `save_full` and is
+  offered in the next battle via `build_battle_arts_rows` - the same path
+  whether it was edited live or loaded from a save (`SavedChain::to_record`
+  / `from_record` pack to the `Command` byte alphabet the battle side reads).
+- `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
+  field-VM scripts (record 0 = scene-entry system script, records 1.. =
+  per-actor interaction scripts). `walk_partition1_scripts` bounds each
+  record to its own bytes, runs the `legaia_engine_vm::field_disasm`
+  linear walker from each record's `1 + N*2 + 4` first-opcode offset, and
+  reports every `Yield` site with the inline encounter-record
+  (`[reserved×3][count][ids]`) decoded from its trailing window. This is
+  the scripted-encounter hunt's faithful discriminator: it surfaces a real
+  inline `[count][ids]` arm at a decoded opcode boundary instead of the
+  byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The
+  town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
+  indexed formation-table install path (see `encounter_record`).
+- **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
+  entity SM (`legaia_engine_vm::world_map`) in `SceneMode::Field` as well as
+  on the overworld. `install_field_carriers([FieldCarrierConfig])` places the
+  scene's carriers; a `ScriptedEncounter { formation_id }` sits Idle (towns
+  run a 0% random rate, so its host gate disables self-firing) until
+  `engage_field_carrier(idx)` — the dialogue-accept stand-in — advances it
+  Idle → Activating. The next `tick_field_carriers` runs the state-1 formation
+  copy + the `case 2/3` fall-through battle handoff, resolving the carrier's
+  MAN formation by index and flipping Field → Battle (returning to the field
+  on victory). The Rim Elm Tetsu fight is `formation_id`
+  `RIM_ELM_TRAINING_FORMATION_ID` (4); the carrier identity within the MAN
+  actor-placement partition and the bytecode that advances its state remain
+  open RE threads.
 - `cutscene` - FMV index ↔ `MV*.STR` filename mapping. The retail
   field-VM `0x4C 0xE2` op writes a 16-bit FMV index to
   `_DAT_8007BA78` and kicks game mode `StrInit` (26); the world

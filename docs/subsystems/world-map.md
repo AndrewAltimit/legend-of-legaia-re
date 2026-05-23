@@ -111,11 +111,52 @@ cell from a per-encounter record pointed at by `entity[+0x94]`:
 3. Copy `entity[+0x94][+0x4 .. +0x4 + monster_count]` into the formation
    cell, byte-for-byte.
 
+This copy runs in **SM state 1** (`entity[+0x8A] == 1`). The same invocation
+clears `entity[+0x94]`, sets `entity[+0x88] = 0`, advances `entity[+0x8A]` to
+`2`, and then **falls through** the `case 2/3` arm, which writes
+`_DAT_8007B83C = 8` (the game-mode handoff that launches the battle), sets
+`entity[+0x8A] = 4`, and clears the `0x80000` "encounter active" flag on the
+player context (`_DAT_8007C364[+0x10]`, which state 1 had raised). So the
+formation install and the battle launch happen in the **same tick** the
+carrier reaches state 1. State 0 reaches state 1 either via the random roll
+`FUN_801D9E1C` (which sets `+0x88`/`+0x8A`/`+0x94` from the rolled formation
+index) or — in a 0%-random town like `town01` — via a scripted advance from
+the scene's interaction bytecode.
+
+The carrier `entity_ptr` (`param_1`) is a **dedicated field entity**, distinct
+from the player context `_DAT_8007C364`: the routine reads `param_1[+0x8A]` /
+`param_1[+0x94]` but writes the `0x80000` flag onto `_DAT_8007C364` separately,
+and the player-context object (corpus-stable at `0x80083794`) carries no clean
+`+0x8A`/`+0x94` SM. The loop reaches the carrier through the per-entity
+update-function-pointer dispatch (no direct `jal`), so the carrier is one of
+the scene's MAN-placed entities, not the player.
+
 The encounter-record format consumed here is documented in
 [`formats/encounter.md`](../formats/encounter.md). The 4-byte formation cell
 at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
 adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
 between PROT entries `0x367` and `0x36D`.
+
+#### Clean-room port — both overworld and field
+
+The same SM serves overworld entities **and** field-resident carriers. The
+clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
+`legaia_engine_core::World` ticks it in two modes:
+
+- `SceneMode::WorldMap` via `tick_world_map` (roaming-encounter zones / town
+  portals).
+- `SceneMode::Field` via `tick_field_carriers`, for the scene's MAN-placed
+  carriers. A `FieldCarrierConfig::ScriptedEncounter { formation_id }` sits
+  Idle (towns run a 0% random rate, so its `encounter_enabled` host gate is
+  `false` and it never self-fires) until `World::engage_field_carrier` — the
+  dialogue-accept stand-in — advances it Idle → Activating. The next
+  `tick_field_carriers` then runs the state-1 body (`on_activating`, the
+  `entity[+0x94]` formation copy) immediately followed by the `case 2/3`
+  fall-through (`on_scene_transition`, the `_DAT_8007B83C = 8` battle handoff),
+  resolving the carrier's MAN formation by index and flipping Field → Battle.
+  The Rim Elm Tetsu fight is `formation_id` 4. The carrier identity within the
+  MAN actor-placement partition, and the field-VM bytecode that advances its
+  state, remain open (see [`reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
 The clean-room engine ports this SM as `legaia_engine_vm::world_map::step`
 (host trait `WorldMapEntityHost`). `legaia_engine_core::World` drives one

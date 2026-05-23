@@ -20,7 +20,7 @@ use legaia_engine_core::encounter_record::{
     RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
 };
 use legaia_engine_core::monster_catalog::catalog_from_monster_archive;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::world::{FieldCarrierConfig, SceneMode};
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 
 const SCENE: &str = "town01";
@@ -236,5 +236,89 @@ fn training_reaches_battle_via_man_formation_index() {
     assert_eq!(
         world.actors[monster_slot].battle.max_hp, 999,
         "Tetsu's real HP merged from the disc archive at scene entry"
+    );
+}
+
+/// The field-resident carrier SM path: place a scripted-encounter carrier in
+/// the cold-booted town01 (the field-mode use of `FUN_801DA51C`), advance it
+/// via `engage_field_carrier` (the dialogue-accept stand-in), and let the
+/// per-frame `tick_field_carriers` run the state-1 formation copy + the
+/// `case 2/3` fall-through battle handoff. This drives the transition through
+/// the actual entity SM rather than a manual `install_man_formation` +
+/// `on_field_step`, against the real per-scene MAN formation table.
+#[test]
+fn training_reaches_battle_via_field_carrier_sm() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // Place the Tetsu carrier (formation index 4 = lone monster 0x4F, loaded
+    // from town01's real MAN at scene entry).
+    session
+        .host
+        .world
+        .install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
+            formation_id: RIM_ELM_TRAINING_FORMATION_ID,
+        }]);
+
+    // Idle carrier never self-fires (town01 is 0% random): several ticks stay
+    // in the field.
+    for _ in 0..16 {
+        let _ = session.tick().expect("tick");
+        assert_eq!(
+            session.host.world.mode,
+            SceneMode::Field,
+            "idle carrier waits"
+        );
+    }
+
+    // The dialogue-accept advances the carrier; the SM runs the transition and
+    // flips Field -> Battle within a couple of ticks.
+    session.host.world.engage_field_carrier(0);
+    let mut reached_battle = false;
+    for _ in 0..8 {
+        let _ = session.tick().expect("tick");
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(
+        reached_battle,
+        "engaging the field carrier flips Field -> Battle via the SM"
+    );
+
+    // The enemy slot is Tetsu with the real archive HP merged at scene entry.
+    let world = &session.host.world;
+    assert_eq!(world.battle_return_mode, SceneMode::Field);
+    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "Tetsu's real HP via the carrier SM path"
     );
 }

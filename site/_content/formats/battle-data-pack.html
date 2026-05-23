@@ -150,3 +150,14 @@ mednafen-state clut-trace \
     <li><strong>Runtime asset-loader chain</strong>: <code>FUN_8001E890</code> is misleadingly named &ldquo;DATA_FIELD player loader&rdquo; &mdash; its retail-PROT branch targets PROT 876 (<code>player_data</code>) but those bytes are a streaming-format VAB + TIM_LIST + SEQ payload with <strong>no TMDs</strong>. The 5 character TMDs that end up at <code>DAT_8007C018[0..4]</code> actually originate from <strong>PROT 0874</strong> (<code>befect_data</code>) section 0 &mdash; see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay &sect; Disc-side source of [0..4]</a> for the byte-equality proof against a live RAM dump. What <code>FUN_8001E890</code> <em>does</em> do that&apos;s visible at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>. The exact dispatch site that routes PROT 0874 section 0 through <code>FUN_8001F05C case 2</code> &rarr; <code>FUN_80026B4C</code> is open work (item 4 in <code>world-map-overlay</code> &sect; Open work).</li>
   </ul>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="tmd.html">Legaia TMD</a>
+    <a href="tim.html">PSX TIM</a>
+    <a href="lzs.html">LZS compression</a>
+    <a href="../subsystems/battle.html">Battle scene</a>
+  </div>
+</section>

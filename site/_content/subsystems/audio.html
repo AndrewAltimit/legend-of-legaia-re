@@ -308,3 +308,14 @@
   <p>The byte-level layouts of <code>.MAP / .PCH / .spk / .dpk / .pac</code> are still TBD. The dispatch chain <em>into</em> them is fully traced; the next move is to read the body of <code>FUN_8001FA88</code> for the <code>.dpk</code> byte layout (specifically the field accesses on <code>_DAT_8007B8D0</code> after the path-based opener returns - <code>_DAT_8007B8D0 + 2</code> is read as a <code>ushort</code> and used as a divisor, almost certainly a record count).</p>
   <p>Eventual home: a <code>crates/sound</code> companion to <code>crates/vab</code>.</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/vab.html">VAB sound bank</a>
+    <a href="../formats/seq.html">SEQ sequence</a>
+    <a href="../formats/sound-driver.html">Sound-driver outputs</a>
+    <a href="cutscene.html">Cutscene / STR</a>
+  </div>
+</section>

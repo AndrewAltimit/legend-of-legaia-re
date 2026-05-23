@@ -58,6 +58,33 @@ impl SavedChain {
             .collect::<Vec<_>>()
             .join(" ")
     }
+
+    /// Lower this editor-side chain into the on-save record shape
+    /// ([`legaia_save::SavedChainRecord`]) for `char_slot`. The directional
+    /// [`Command`]s pack to their `as_byte` values (1=L, 2=R, 3=D, 4=U),
+    /// which is exactly what [`crate::battle_arts::synthetic_power`] and
+    /// `chain_matches_record` consume on the battle side.
+    pub fn to_record(&self, char_slot: u8) -> legaia_save::SavedChainRecord {
+        legaia_save::SavedChainRecord {
+            char_slot,
+            name: self.name.clone(),
+            sequence: self.sequence.iter().map(|c| c.as_byte()).collect(),
+        }
+    }
+
+    /// Lift an on-save record back into an editor-side chain. Non-directional
+    /// / terminator bytes (anything outside `1..=4`, including the `0`
+    /// terminator) are dropped, mirroring the editor's input alphabet.
+    pub fn from_record(rec: &legaia_save::SavedChainRecord) -> Self {
+        Self {
+            name: rec.name.clone(),
+            sequence: rec
+                .sequence
+                .iter()
+                .filter_map(|&b| Command::from_byte(b))
+                .collect(),
+        }
+    }
 }
 
 /// Per-character chain library.
@@ -138,6 +165,34 @@ impl ChainLibrary {
             return None;
         }
         Some(list.remove(index))
+    }
+
+    /// Flatten the whole library into the cross-character record list the
+    /// engine save block carries ([`legaia_save::SaveExtV2::saved_chains`]).
+    /// Slots are emitted in ascending `char_slot` order, each character's
+    /// chains in saved order, so a round-trip through
+    /// [`Self::from_records`] is order-stable.
+    pub fn to_records(&self) -> Vec<legaia_save::SavedChainRecord> {
+        let mut slots: Vec<&u8> = self.slots.keys().collect();
+        slots.sort_unstable();
+        slots
+            .into_iter()
+            .flat_map(|&slot| self.slots[&slot].iter().map(move |c| c.to_record(slot)))
+            .collect()
+    }
+
+    /// Rebuild a library from the flat record list, grouping by `char_slot`.
+    /// Records beyond [`Self::MAX_SLOTS`] for a character are dropped (the
+    /// retail per-character cap).
+    pub fn from_records(records: &[legaia_save::SavedChainRecord]) -> Self {
+        let mut lib = Self::new();
+        for rec in records {
+            let list = lib.slots.entry(rec.char_slot).or_default();
+            if list.len() < Self::MAX_SLOTS {
+                list.push(SavedChain::from_record(rec));
+            }
+        }
+        lib
     }
 }
 
@@ -863,5 +918,68 @@ mod tests {
             EditorPhase::Editing { working } => assert_eq!(working.len(), ChainLibrary::MAX_LEN),
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn saved_chain_record_roundtrip_preserves_name_and_directions() {
+        let chain = SavedChain::new(
+            "Combo",
+            vec![Command::Left, Command::Up, Command::Up, Command::Down],
+        );
+        let rec = chain.to_record(2);
+        assert_eq!(rec.char_slot, 2);
+        assert_eq!(rec.name, "Combo");
+        // 1=Left, 4=Up, 4=Up, 3=Down.
+        assert_eq!(rec.sequence, vec![1, 4, 4, 3]);
+        assert_eq!(SavedChain::from_record(&rec), chain);
+    }
+
+    #[test]
+    fn from_record_drops_terminator_and_nondirectional_bytes() {
+        let rec = legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "x".into(),
+            // 2=Right, 0=terminator, 9=garbage, 3=Down.
+            sequence: vec![2, 0, 9, 3],
+        };
+        let chain = SavedChain::from_record(&rec);
+        assert_eq!(chain.sequence, vec![Command::Right, Command::Down]);
+    }
+
+    #[test]
+    fn library_records_roundtrip_groups_by_slot_in_order() {
+        let mut lib = lib();
+        lib.save(0, SavedChain::new("a", vec![Command::Left; 4]))
+            .unwrap();
+        lib.save(2, SavedChain::new("b", vec![Command::Right; 3]))
+            .unwrap();
+        lib.save(0, SavedChain::new("c", vec![Command::Up; 5]))
+            .unwrap();
+
+        let records = lib.to_records();
+        // Slot 0's two chains come first (saved order), then slot 2's one.
+        let by_slot: Vec<(u8, &str)> = records
+            .iter()
+            .map(|r| (r.char_slot, r.name.as_str()))
+            .collect();
+        assert_eq!(by_slot, vec![(0, "a"), (0, "c"), (2, "b")]);
+
+        let rebuilt = ChainLibrary::from_records(&records);
+        assert_eq!(rebuilt.saved(0), lib.saved(0));
+        assert_eq!(rebuilt.saved(2), lib.saved(2));
+        assert_eq!(rebuilt.total_count(), 3);
+    }
+
+    #[test]
+    fn from_records_caps_each_slot_at_max() {
+        let records: Vec<legaia_save::SavedChainRecord> = (0..ChainLibrary::MAX_SLOTS + 4)
+            .map(|i| legaia_save::SavedChainRecord {
+                char_slot: 1,
+                name: format!("c{i}"),
+                sequence: vec![1, 2, 3],
+            })
+            .collect();
+        let lib = ChainLibrary::from_records(&records);
+        assert_eq!(lib.saved(1).len(), ChainLibrary::MAX_SLOTS);
     }
 }

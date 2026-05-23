@@ -690,13 +690,18 @@ impl Scene {
     /// script_start`) and `pc0` is the first opcode's offset into that slice.
     /// Feed both to [`crate::world::World::load_field_script_at`].
     ///
-    /// Returns `Ok(None)` for scenes whose static bundle carries no MAN
-    /// asset - notably standalone [`Class::SceneEventScripts`] scenes such as
-    /// `town01`, whose runtime `_DAT_8007B898` source is fed at load time and
-    /// is not present in the static bundle. Those scenes keep running
-    /// event-script record 0 instead. Only the kingdom-bundle
-    /// [`Class::SceneScriptedAssetTable`] scenes (e.g. `map03`) carry the MAN
-    /// inline.
+    /// Resolves for any scene whose `scene_asset_table` / `scene_scripted_
+    /// asset_table` bundle carries a MAN - which includes `town01` and the
+    /// other `count=6` [`Class::SceneAssetTable`] field scenes, not just the
+    /// kingdom-bundle [`Class::SceneScriptedAssetTable`] scenes. (`town01`'s
+    /// bundle is PROT entry 4, class `SceneAssetTable`; its MAN scene-entry
+    /// script lives at MAN offset 3075, `pc0 = 11`.) `_DAT_8007B898` is the
+    /// runtime decompressed-MAN buffer; for these scenes it is exactly this
+    /// bundle MAN, so the script source is present in the static bundle.
+    ///
+    /// Returns `Ok(None)` only when [`crate::scene_bundle::find_bundle`] finds
+    /// no `scene_asset_table` bundle, or when the MAN's partition 1 is empty.
+    /// Those scenes fall back to the event-script record-0 load.
     ///
     /// Note that the entry script's `0x4C` nibble-7 wall-paint deltas are
     /// gated behind system-flag tests, so they only fire once the world's
@@ -1209,12 +1214,14 @@ impl SceneHost {
         // scene-entry logic (actor placement, BGM, conditional wall deltas)
         // never runs. The retail per-frame driver `FUN_8003ab2c` builds the
         // system script from the MAN asset's partition[1][0]; resolve and run
-        // that instead. Only kingdom-bundle scenes carry the MAN in their
-        // static bundle - standalone `SceneEventScripts` scenes (e.g. town01)
-        // return `None` here and keep the record-0 load above as a fallback
-        // until their runtime `_DAT_8007B898` source is pinned. Flag-gated
-        // nibble-7 wall deltas in the entry script still need seeded story
-        // flags to fire; the base grid loaded above is independent.
+        // that instead. This resolves for any `scene_asset_table` bundle that
+        // carries a MAN - including `town01` and the other `count=6`
+        // `SceneAssetTable` field scenes, not just the kingdom bundles. (For
+        // those scenes the runtime `_DAT_8007B898` MAN buffer IS this bundle
+        // MAN, so the source is in the static bundle.) Only scenes with no
+        // bundle MAN keep the record-0 fallback above. Flag-gated nibble-7
+        // wall deltas in the entry script still need seeded story flags to
+        // fire; the base grid loaded above is independent.
         let entry_script = match self.scene.as_ref() {
             Some(scene) => match scene.field_man_entry_script(&self.index) {
                 Ok(v) => v,

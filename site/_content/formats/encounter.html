@@ -112,7 +112,7 @@
     </tbody>
   </table>
   <p>The formation copy happens at battle entry: the cell is empty in the field and carries the lone id <code>0x4F</code> from battle-load onward.</p>
-  <p><strong>The id <code>0x4F</code> is not an inline script literal &mdash; it is a per-scene formation index.</strong> A scan of town01's field-VM event-script records finds no <code>[count=1][0x4F]</code> install operand anywhere (the <code>0x4F</code> bytes in the bulk payload are high-entropy asset data, not bytecode). The lone-<code>0x4F</code> formation is <strong>town01 MAN formation index 4</strong>. The per-scene formations load from the scene's MAN asset into a contiguous 8-byte-stride table (<code>[3 reserved][count: 0..4][&le;4 ids]</code>); in the live "talk to Tetsu / Come at me!" save state that table reads <code>[04][07][0a][3f 3e 3e 3e][<strong>4f</strong>][0a 0a][3d 3d]</code> &mdash; byte-identical to the engine's MAN parse (which yields exactly these 7 formations, <code>formation_id</code> 4 = <code>[0x4F]</code>). The scripted carrier selects this formation <em>by index</em> (it points <code>actor[+0x94]</code> at the row; <code>FUN_801DA51C</code> copies the count-1 record into the cell on the dialogue-accept), which is why the cell shows the lone <code>0x4F</code> while no inline operand carries it.</p>
+  <p><strong>The id <code>0x4F</code> is not an inline script literal &mdash; it is a per-scene formation index.</strong> Two independent surveys of town01's bytecode find no <code>[count=1][0x4F]</code> install operand anywhere: (1) the <code>scene_event_scripts</code> prescript at PROT entry 3 (the <code>0x4F</code> bytes in the bulk payload are high-entropy asset data, not bytecode); and (2) the scene's <strong>MAN partition-1 field-VM scripts</strong> walked <strong>opcode-aware</strong> with the field-VM disassembler. The walk lands on every <code>0x37</code>/<code>0x41</code> yield byte and decodes the trailing <code>[count][ids]</code> window at each &mdash; across 53 records and 71 yield sites, <strong>zero</strong> carry the <code>[1][0x4F]</code> Tetsu signature. Every window that decodes is a <code>count=0</code> artifact from the walker stepping into embedded MES dialog text (the windows are plain ASCII: <code>1F 64 6F 20</code> = "do&nbsp;", <code>1F 56 61</code> = "Va", &hellip;). That is precisely the false positive a naive byte-scan produces; the opcode-aware walk distinguishes a real arm boundary from a dialog byte. See the disc-gated test <code>town01_p1_arm_sites.rs</code> and the <code>legaia-engine man-scripts</code> survey CLI. The lone-<code>0x4F</code> formation is instead <strong>town01 MAN formation index 4</strong>. The per-scene formations load from the scene's MAN asset into a contiguous 8-byte-stride table (<code>[3 reserved][count: 0..4][&le;4 ids]</code>); in the live "talk to Tetsu / Come at me!" save state that table reads <code>[04][07][0a][3f 3e 3e 3e][<strong>4f</strong>][0a 0a][3d 3d]</code> &mdash; byte-identical to the engine's MAN parse (which yields exactly these 7 formations, <code>formation_id</code> 4 = <code>[0x4F]</code>). The scripted carrier selects this formation <em>by index</em> (it points <code>actor[+0x94]</code> at the row; <code>FUN_801DA51C</code> copies the count-1 record into the cell on the dialogue-accept), which is why the cell shows the lone <code>0x4F</code> while no inline operand carries it.</p>
   <p>The clean-room engine reaches this fight through the same indexed table: a cold boot loads town01's MAN formations (with the monster archive's real stats merged at scene entry), and <code>World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)</code> (<code>= 4</code>) installs the existing row as the forced next encounter &mdash; no re-encoded record, the scene's merged stats stand (Tetsu's HP 999). <code>EncounterRecord::rim_elm_training()</code> remains for the hand-built <code>[count=1][0x4F]</code> window used by the arm-seam path.</p>
 </section>
 
@@ -232,4 +232,14 @@ encounter: formation_stride=8, condition_stride=4, region_stride=12;
     <li><a href="../subsystems/world-map.html">subsystems / world-map</a> &mdash; world-map controller integration.</li>
     <li><a href="../subsystems/script-vm.html">subsystems / script-vm</a> &mdash; the dispatcher op-handler family that installs the pointer.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle.html">Battle scene</a>
+    <a href="../subsystems/script-vm.html">Field/event VM</a>
+    <a href="../reference/gamedata.html">Game-data tables</a>
+  </div>
 </section>
