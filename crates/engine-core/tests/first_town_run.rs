@@ -190,6 +190,7 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::MoveTo { .. } => "MoveTo",
             FieldEvent::ExecMove { .. } => "ExecMove",
             FieldEvent::FmvTrigger { .. } => "FmvTrigger",
+            FieldEvent::ScriptedEncounter { .. } => "ScriptedEncounter",
             FieldEvent::ActorAllocate { .. } => "ActorAllocate",
             FieldEvent::ActorSpawned { .. } => "ActorSpawned",
             FieldEvent::ActorSpawnFailed { .. } => "ActorSpawnFailed",

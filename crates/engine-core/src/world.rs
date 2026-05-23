@@ -684,6 +684,29 @@ pub struct World {
     /// retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
 
+    /// Pending scripted-encounter install (field-VM bare arm-encounter op
+    /// `0x37`/`0x41`). When that op runs and [`Self::scripted_encounter_armed`]
+    /// is set, the host records the bounded record window overlaying the opcode
+    /// here; the field-step driver drains it after the VM borrow ends and feeds
+    /// it to [`Self::install_scripted_encounter`]. `None` between installs.
+    ///
+    /// Retail writes the install opcode pointer into `actor[+0x94]`
+    /// (`0x801DEEDC`) and the 5-state `FUN_801DA51C` SM reads it as a formation
+    /// record once it reaches the encounter-confirm state. There is no
+    /// dedicated encounter opcode - the consuming entity SM is the
+    /// discriminator. `scripted_encounter_armed` is the engine-side stand-in
+    /// for "the active entity is an encounter carrier" until the per-scene
+    /// carrier identity / SM-confirm trigger is pinned from disc bytecode.
+    pub pending_scripted_encounter: Option<Vec<u8>>,
+
+    /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
+    /// treated as a scripted-encounter install: the record window overlaying
+    /// the opcode is parsed as an [`crate::encounter_record::EncounterRecord`]
+    /// and installed via [`Self::install_scripted_encounter`], which then
+    /// disarms (fire-once). Default `false` so generic script yields are never
+    /// mistaken for encounter arms. See [`Self::arm_scripted_encounter`].
+    pub scripted_encounter_armed: bool,
+
     /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
     /// world consumes a [`Self::pending_fmv_trigger`] at the top of a
     /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
@@ -1293,6 +1316,8 @@ impl World {
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_fmv_trigger: None,
+            pending_scripted_encounter: None,
+            scripted_encounter_armed: false,
             active_fmv: None,
             cutscene_return_mode: None,
             pending_field_events: Vec::new(),
@@ -2746,6 +2771,54 @@ impl World {
         let tracker = EncounterTracker::new(table);
         self.encounter = Some(EncounterSession::new(tracker));
         Some(formation_id)
+    }
+
+    /// Arm (or disarm) the scripted-encounter consumer.
+    ///
+    /// While armed, the field VM's bare arm-encounter op (`0x37`/`0x41`) hands
+    /// the record window overlaying the opcode to the host, which parses it as
+    /// an [`crate::encounter_record::EncounterRecord`] and routes it through
+    /// [`Self::install_scripted_encounter`]. See
+    /// [`Self::scripted_encounter_armed`] for why this gate exists (there is no
+    /// dedicated encounter opcode; the consuming entity SM is the retail
+    /// discriminator).
+    pub fn arm_scripted_encounter(&mut self, on: bool) {
+        self.scripted_encounter_armed = on;
+    }
+
+    /// Install a scripted encounter from the inline bytecode window the field
+    /// VM forwarded at the bare arm-encounter op (`0x37`/`0x41`); the record
+    /// overlays the opcode (`[opcode][op1][op2][count][ids..]`).
+    ///
+    /// The window is parsed as an [`crate::encounter_record::EncounterRecord`]
+    /// (`[flag][_][_][count][ids..]`) and, when it carries at least one
+    /// monster, installed against the active scene via
+    /// [`Self::install_encounter_from_record`] - so the next
+    /// [`Self::on_field_step`] flips Field -> Battle. Emits a
+    /// [`FieldEvent::ScriptedEncounter`] for engine visibility regardless of
+    /// whether the parse yielded a non-empty formation.
+    ///
+    /// Returns the synthesized `formation_id`, or `None` if the window did not
+    /// parse into a non-empty record.
+    ///
+    /// PORT: FUN_801DA51C (the `[+4 + slot]` record-overlay reader)
+    pub fn install_scripted_encounter(&mut self, record_bytes: &[u8]) -> Option<u16> {
+        self.pending_field_events
+            .push(FieldEvent::ScriptedEncounter {
+                record: record_bytes.to_vec(),
+            });
+        let record = crate::encounter_record::EncounterRecord::parse(record_bytes)?;
+        if record.is_empty() {
+            return None;
+        }
+        let scene = self.active_scene_label.clone();
+        let id = self.install_encounter_from_record(&scene, &record);
+        // Fire-once: retail clears `entity[+0x94]` after the formation copy so
+        // the arm fires exactly once. Disarm the engine-side carrier flag too.
+        if id.is_some() {
+            self.scripted_encounter_armed = false;
+        }
+        id
     }
 
     /// Field-step trigger. Engines call this once per "the player walked
@@ -5653,7 +5726,20 @@ impl World {
                 self.field_pc = *pc;
             }
         }
+        // The field-VM borrow has ended; install any scripted encounter the
+        // op 0x34 sub-2 forwarded-PC capture queued this step.
+        self.drain_pending_scripted_encounter();
         Some(res)
+    }
+
+    /// Drain a queued scripted-encounter install (set by the `+0x94`
+    /// forwarded-PC capture host hook) into the active encounter session.
+    /// No-op when nothing is queued. Called by [`Self::step_field`] once the
+    /// field-VM borrow has ended.
+    pub fn drain_pending_scripted_encounter(&mut self) {
+        if let Some(record) = self.pending_scripted_encounter.take() {
+            self.install_scripted_encounter(&record);
+        }
     }
 }
 
@@ -6063,6 +6149,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // step returns so the bytecode swap doesn't invalidate the
         // borrow we're stepping through.
         self.world.pending_scene_transition = Some(map_id);
+    }
+
+    fn is_scripted_encounter_armed(&self) -> bool {
+        self.world.scripted_encounter_armed
+    }
+
+    fn install_scripted_encounter(&mut self, window: &[u8]) {
+        // Queue the record window for the field-step driver to install after
+        // the VM borrow ends (we can't mutate the encounter session while the
+        // field bytecode is still borrowed).
+        self.world.pending_scripted_encounter = Some(window.to_vec());
     }
 
     fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
@@ -10922,6 +11019,83 @@ mod tests {
             session.tracker().table().entries[0].formation_id,
             formation_id
         );
+    }
+
+    #[test]
+    fn install_scripted_encounter_parses_window_and_arms_battle() {
+        let mut world = World::new();
+        world.set_formation_table(
+            crate::monster_catalog::vanilla_formation_table(),
+            crate::monster_catalog::vanilla_monster_catalog(),
+        );
+        world.set_active_scene_label("town01");
+        world.mode = SceneMode::Field;
+        world.arm_scripted_encounter(true);
+        // Record window overlaying the arm opcode: [op][op1][op2][count=2][ids..].
+        let window = [0x37u8, 0x00, 0x00, 0x02, 0x4F, 0x50, 0x00, 0x00];
+        let formation_id = world
+            .install_scripted_encounter(&window)
+            .expect("non-empty record installs a formation");
+        // Fire-once: a successful install disarms the carrier flag.
+        assert!(!world.scripted_encounter_armed);
+        // Formation registered with the window's two ids.
+        let formation = world
+            .formation_table
+            .formation(formation_id)
+            .expect("formation registered");
+        assert_eq!(formation.slots.len(), 2);
+        assert_eq!(formation.slots[0].monster_id, 0x4F);
+        assert_eq!(formation.slots[1].monster_id, 0x50);
+        // Session installed at the forced-high rate.
+        assert_eq!(
+            world
+                .encounter
+                .as_ref()
+                .unwrap()
+                .tracker()
+                .table()
+                .trigger_rate_q8,
+            0xFF
+        );
+        // Event surfaced for engine visibility.
+        assert!(world.pending_field_events.iter().any(|e| matches!(
+            e,
+            FieldEvent::ScriptedEncounter { record } if record == &window
+        )));
+        // The very next field step flips Field -> a triggered encounter.
+        assert!(
+            world.on_field_step(),
+            "forced-rate roll triggers the battle"
+        );
+    }
+
+    #[test]
+    fn install_scripted_encounter_empty_or_short_window_returns_none() {
+        let mut world = World::new();
+        world.set_active_scene_label("town01");
+        // count = 0 -> empty record -> no install.
+        assert_eq!(world.install_scripted_encounter(&[0, 0, 0, 0]), None);
+        assert!(world.encounter.is_none());
+        // Too short to even hold the count byte -> parse fails.
+        assert_eq!(world.install_scripted_encounter(&[0, 0]), None);
+    }
+
+    #[test]
+    fn drain_pending_scripted_encounter_only_when_queued() {
+        let mut world = World::new();
+        world.set_formation_table(
+            crate::monster_catalog::vanilla_formation_table(),
+            crate::monster_catalog::vanilla_monster_catalog(),
+        );
+        world.set_active_scene_label("town01");
+        // Nothing queued -> no-op.
+        world.drain_pending_scripted_encounter();
+        assert!(world.encounter.is_none());
+        // Queue a window (as the armed forwarded-PC hook would) and drain.
+        world.pending_scripted_encounter = Some(vec![0, 0, 0, 1, 0x12, 0, 0, 0]);
+        world.drain_pending_scripted_encounter();
+        assert!(world.pending_scripted_encounter.is_none());
+        assert!(world.encounter.is_some());
     }
 
     #[test]
