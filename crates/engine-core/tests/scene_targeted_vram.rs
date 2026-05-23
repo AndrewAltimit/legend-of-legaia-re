@@ -56,25 +56,45 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
     }
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
 
-    let (res, upload_stats) =
-        SceneResources::build_targeted(&scene, &shared_refs).expect("build_targeted town01");
+    // Field-load model: the town's environment geometry is the LZS-packed
+    // mesh pack inside the scene_asset_table (now parsed by the TMD scan),
+    // and retail's field loader DMA-uploads every TIM in the scene. This is
+    // exactly the build `enter_field_scene` uses.
+    let (res, upload_stats) = SceneResources::build_targeted_with_options(
+        &scene,
+        &shared_refs,
+        BuildOptions {
+            kind: SceneLoadKind::Field,
+            upload_all_tims: true,
+        },
+    )
+    .expect("build town01 field");
 
+    // The town's environment geometry (>100 meshes) must load - the whole
+    // point of the LZS-section TMD scan. A regression that drops back to the
+    // raw-only scanner would leave the field with a near-empty pool.
     assert!(
-        !res.tmds.is_empty(),
-        "town01 should have at least one parsed TMD"
+        res.tmds.len() >= 100,
+        "town01 field pool should carry the LZS-packed environment geometry \
+         (got {} TMDs; expected >=100)",
+        res.tmds.len()
     );
     assert!(
         upload_stats.uploaded_tims > 0,
-        "targeted upload should have contributed at least one TIM block (had {} candidates)",
+        "field upload should have contributed at least one TIM block (had {} candidates)",
         upload_stats.total_tims
     );
 
     // Walk every TMD's prim filter and aggregate keep / drop counts.
     let mut total_kept = 0usize;
     let mut total_textured = 0usize;
+    let (mut mc, mut cdm, mut mtp) = (0usize, 0usize, 0usize);
     for rtmd in &res.tmds {
         let (_mesh, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
         total_kept += stats.kept;
+        mc += stats.missing_clut;
+        cdm += stats.clut_depth_mismatch;
+        mtp += stats.missing_texture_page;
         total_textured += stats.kept
             + stats.missing_clut
             + stats.clut_depth_mismatch
@@ -87,25 +107,24 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
     };
 
     eprintln!(
-        "town01 targeted: kept={} textured={} ratio={:.1}%",
+        "town01 field (upload_all_tims): TMDs={} kept={} textured={} ratio={:.1}% \
+         (missing_clut={mc} depth_mismatch={cdm} missing_page={mtp})",
+        res.tmds.len(),
         total_kept,
         total_textured,
-        100.0 * keep_ratio
+        100.0 * keep_ratio,
     );
 
-    // Floor: the targeted-upload CLUT pass uses merge-zeros semantics
-    // (`Vram::upload_tim_partial_opts(..., merge_clut_zeros: true)`) so
-    // multiple scene-pack TIMs that target the same CLUT row but each
-    // populate a different subset of the 16-color slots can coexist.
-    // For town01 specifically, 7 row-479 TIMs across entries 6..9 split
-    // into "full" (slots 0..14) and "partial" (slots 0..7); without
-    // merge mode the partials' zero entries clobber the full uploads
-    // and the keep ratio drops back to 78.6%. Anything below 90% here
-    // indicates a regression in the prim-filter / targeted-upload
-    // pipeline or the merge semantics.
+    // Floor: with every TIM uploaded (retail's field-load behaviour) the
+    // town meshes find their texture pages and CLUTs, so the prim filter
+    // keeps the vast majority. A render-targeted upload only covers the
+    // pages the first-frame meshes sample and drops ~75% of the town
+    // geometry's prims (missing texture page); a drop below 90% here means
+    // either the field build regressed to targeted upload or the
+    // LZS-section geometry stopped parsing.
     assert!(
         keep_ratio >= 0.90,
-        "town01 targeted prim keep ratio dropped to {:.1}% (kept={} of textured={})",
+        "town01 field-load keep ratio dropped to {:.1}% (kept={} of textured={})",
         100.0 * keep_ratio,
         total_kept,
         total_textured
@@ -159,7 +178,9 @@ fn town01_field_mode_skips_battle_only_scene_tmd_stream() {
         &shared_refs,
         BuildOptions {
             kind: SceneLoadKind::Field,
-            ..Default::default()
+            // Retail field-load model: DMA every TIM (see the keep-ratio
+            // assertion below - the town meshes sample the whole atlas).
+            upload_all_tims: true,
         },
     )
     .expect("build_targeted town01 field");
@@ -182,15 +203,19 @@ fn town01_field_mode_skips_battle_only_scene_tmd_stream() {
         battle_stats.total_tims
     );
 
-    // Field mode also drops the battle-only TMDs from the parsed
-    // pool. Town01's only TMDs (per the current parser coverage)
-    // are scene_tmd_stream battle character meshes, so field mode
-    // produces an empty TMD pool - any future field-NPC parser
-    // additions will lift this strictly above zero, and that's a
-    // deliberate update.
+    // Field mode drops the battle-only `scene_tmd_stream` meshes (the 7
+    // character meshes in entries 6..9) but KEEPS the town's environment
+    // geometry (the LZS-packed mesh pack in the scene_asset_table). So the
+    // field pool is non-empty AND strictly smaller than battle mode, which
+    // additionally includes the battle character meshes.
+    assert!(
+        !field.tmds.is_empty(),
+        "field-mode TMD pool should carry the town environment geometry, not be empty"
+    );
     assert!(
         field.tmds.len() < battle.tmds.len(),
-        "field-mode TMD pool should be smaller than battle-mode (field={} battle={})",
+        "field-mode TMD pool should be smaller than battle-mode by the battle \
+         character meshes (field={} battle={})",
         field.tmds.len(),
         battle.tmds.len()
     );

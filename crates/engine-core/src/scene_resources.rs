@@ -410,8 +410,26 @@ impl SceneResources {
                 let skip_scene_tmd_stream = kind.excludes_scene_tmd_stream()
                     && scene_tmd_stream::is_scene_tmd_stream(bytes);
                 if !skip_scene_tmd_stream {
-                    for hit in tmd_scan::scan_buffer(bytes) {
-                        let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
+                    // Scan raw bytes AND any LZS-decompressed sections. A
+                    // field/town `scene_asset_table` entry stores its
+                    // environment geometry (the town's many building / prop
+                    // meshes) as TMDs packed inside LZS streams - the raw-only
+                    // scanner can't see them, so the field pool came up nearly
+                    // empty and the town rendered as a single stray mesh. The
+                    // TIM pass below already walks `scan_entry`'s LZS sections;
+                    // the TMD pass now matches it. (The `scene_tmd_stream` skip
+                    // above still drops battle-character meshes in field mode.)
+                    let scan = tmd_scan::scan_entry(bytes);
+                    for (source, hit) in &scan.hits {
+                        let src: &[u8] = match source {
+                            tmd_scan::Source::Raw => bytes,
+                            tmd_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
+                        };
+                        let end = hit.offset + hit.byte_len;
+                        if end > src.len() {
+                            continue;
+                        }
+                        let payload = src[hit.offset..end].to_vec();
                         if let Ok(tmd) = legaia_tmd::parse(&payload) {
                             tmds.push(ResolvedTmd {
                                 entry_idx: entry.idx,

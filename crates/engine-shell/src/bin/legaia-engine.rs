@@ -7215,20 +7215,21 @@ fn cmd_play_window_with_record(
             }
         }
         let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-        // Use Battle kind so scene_tmd_stream entries are *included*:
-        // most town/field scenes ship their party-character meshes
-        // inside scene_tmd_stream-shaped entries, and the engine has
-        // no separate field-geometry dispatch yet. Switching to
-        // `SceneLoadKind::Field` (which retail uses for field-load)
-        // strips those TMDs and leaves the scene with zero meshes.
-        // Matches the diagnostic `info` subcommand. Revisit when a
-        // field-geometry dispatch lands.
+        // Field-load model (matches retail FUN_8001F7C0 + the engine's
+        // `enter_field_scene`): `SceneLoadKind::Field` skips the battle-
+        // character `scene_tmd_stream` meshes, and the TMD scan now pulls
+        // the town's environment geometry out of the scene_asset_table's
+        // LZS-packed mesh pack (previously invisible to the raw scanner,
+        // which left the field with a single stray battle mesh). Upload
+        // every TIM, as retail's field loader DMAs the whole atlas - the
+        // town meshes sample texture pages across all of VRAM, so a
+        // render-targeted upload drops most of their prims.
         let (res, _stats) = SceneResources::build_targeted_with_options(
             s,
             &shared_refs,
             BuildOptions {
-                kind: SceneLoadKind::Battle,
-                ..Default::default()
+                kind: SceneLoadKind::Field,
+                upload_all_tims: true,
             },
         )?;
         res
