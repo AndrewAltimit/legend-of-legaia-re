@@ -46,6 +46,7 @@ pub mod mode;
 pub mod monster_ai;
 pub mod monster_catalog;
 pub mod move_buffer_host;
+pub mod name_entry;
 pub mod new_game;
 pub mod options;
 pub mod overlay_loader;

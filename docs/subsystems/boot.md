@@ -66,10 +66,14 @@ The title-screen NEW GAME selection is the entry point into modes 2/3:
 
 The mode-transition control flow is mirrored in `crates/engine-vm/src/title_overlay.rs` (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3, `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `crates/engine-core/src/world.rs` (`World::begin_new_game`). `FUN_801D6704` itself is generic field entry, used for every scene transition, and reads the *fresh-state seed* a new game establishes (starting party stats, gold, starting scene id) from globals rather than seeding it.
 
-The seed's two visible halves are now pinned:
+The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the boot mode initializer `FUN_8001DCF8`). It establishes the new-game world state:
 
-- **Starting party.** A static template in `SCUS_942.54` holds each roster member's opening stats + name; the seed expands it into the live per-character records at `0x80084708 + n*0x414`. The table is `[8×u16 stats][10-byte name]` per record (Vahn, Noa, Gala, Terra), parsed by [`legaia_asset::new_game`](../formats/new-game-table.md). Vahn's row (HP 180 / MP 20 / AGL 100 / ATK 24 / uDEF 16 / lDEF 12 / SPD 19 / INT 9) is byte-validated against an early `town01` save state.
-- **Opening scene.** The default map-name buffer holds the literal `"town01"` (Rim Elm) — the interactive scene a New Game enters. `FUN_8001D424` (the global reset/init) leaves the buffer at `town01` and reads an optional dev `initmap.txt` override when the debug flag `_DAT_8007B8C2` is clear.
+- **Gold.** Party gold (`_DAT_8008459C`, the word the battle-victory reward writer `FUN_8004F0E8` credits) is set to a hardcoded **`500`** — a constant in the init routine, not a field of the starting-party template. Mirror: `NEW_GAME_STARTING_GOLD` in `crates/engine-core/src/world.rs`.
+- **Story flags.** The routine zeroes a ~`0x200`-byte story-flag region, so a New Game starts with every story flag clear. (`World::begin_new_game` matches this.)
+- **Starting party.** `FUN_80034A6C` calls `FUN_800560B4`, which expands a static `SCUS_942.54` template into the live per-character records (stride `0x414`). The template is `[8×u16 stats][10-byte name]` per record (Vahn, Noa, Gala, Terra), parsed by [`legaia_asset::new_game`](../formats/new-game-table.md). Vahn's row (HP 180 / MP 20 / AGL 100 / ATK 24 / uDEF 16 / lDEF 12 / SPD 19 / INT 9) is byte-validated against an early `town01` save state. `FUN_800560B4` copies the template's **default name** (`Vahn`) into the record. This default is what the downstream **name-entry** screen (the *"Select your name."* character grid, save-state `name_input_ui`) pre-fills and lets the player overwrite — that screen fires in the field/event flow after the opening, not here. (The front-end launcher's `s_opdeene` write is the opening *scene id*, not a name — see the sub-mode dispatcher section.)
+- **Opening scene.** The default map-name buffer holds the literal `"town01"` (Rim Elm) — the interactive scene a New Game enters. `FUN_8001D424` (the global reset/init) leaves the buffer at `town01` and reads an optional dev `initmap.txt` override when the debug flag `_DAT_8007B8C2` is clear. The data seed does not itself set the scene.
+
+`FUN_801D6704` then reads this seeded state from globals during the field scene init; it is generic field entry used for every scene transition, not new-game-specific.
 
 **The title screen is not one of the 28 modes** — its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2).
 
@@ -257,7 +261,60 @@ The first ~250 instructions of `FUN_801DD35C` set up per-frame state (input read
 
 Mode `0x01` jumps directly to the post-dispatch tail (no-op for that frame). The eligible attract-fire mode is the one whose handler runs through the countdown decrement at `0x801DDCCC` (mode `0x10` per the cutscene-trigger watchpoint capture).
 
+**This sub-mode SM is the front-end title-menu + memory-card manager + new-game/continue launcher** — not an opening-narration/name-entry sequence. Full C-decomp of `FUN_801DD35C` (a `switch` over sub-mode `DAT_801f0204`, cases `0x00..0x18`) shows every state is title-menu or memory-card UI: the strings are all card/save messages (`s_Now_checking_MEMORY_CARD`, `s_Do_you_wish_to_format`, `s_Load_successful`, `s_No_Legend_of_Legaia_data_on_this`, …) and `FUN_801E3EE0`/`FUN_801E36C4` are the centered card-message text+box drawers (used for "Now checking MEMORY CARD", "Load/Save successful"). Sub-mode `0x10` is the **menu** (2-option cursor `_DAT_8007B820`, up/down `pad & 0x4000/0x1000`, confirm `0x844`; idle timeout → master-mode `0x1A` = attract/opening FMV). `0x15` is the **card-check** poll (counter to `0x259`, "Now checking" / "An error occurred" + retry). Menu confirm → fade sub-mode `0x16` → `init_game` (`0x06`, `0x801DFB5C`). NEW GAME and CONTINUE both funnel **menu → fade → init_game → master-mode 2 (field)**; `init_game` writes the **opening scene id** `opdeene` (the prologue cutscene, CDNAME/PROT #748) into the active-scene-name buffers (`0x8007050C` / `0x80084548`) — verified live: at the `new_game_cutscene_intro_a` save the scene name is `opdeene`, and at the later Rim Elm saves it is `town01`. (`s_opdeene` is therefore the opening *scene id*, not a player name.) There is **no opening narration and no name-entry anywhere in this front-end SM** — the engine's "menu → `begin_new_game` → field" jump is faithful to retail's *front-end*. The opening narration and the name-entry happen **downstream of the field launch**, not as title sub-modes. The captured opening order (save-state corpus `new_game_cutscene_intro_a` / `rim_elm_zoom_intro` / `vahn_walks_out` / `name_input_ui` in [`scripts/scenarios.toml`](../../scripts/scenarios.toml)) is: an **engine-rendered 3D cutscene** (low-poly actors around the Genesis tree with subtitle text, *"It was the Seru."* — not an STR FMV) → an establishing 3D shot of Rim Elm → Vahn standing outside his house → the **name-entry menu overlay** (*"Select your name."*, character grid, default `Vahn`) → free roam. All four opening states are master mode `0x03` (field RUN): the first field scene is `opdeene` (the cutscene), which hands off to `town01` (Rim Elm) where the establishing camera, Vahn's scripted walk-out, and the name-entry menu overlay run. The new-game data-init (`FUN_80034A6C`, gold/flags/stats) runs before this. The `opdeene`→`town01` handoff is the **scene-change-packet** path described below; the name-entry is the menu overlay described below; the intro 3D cutscene scene itself is still being traced.
+
 The JT, state-struct field offsets, and observed `state[+0x204] = N` transitions are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs). Four modes are semantically labelled: `Init` (`0x00` — entry init that routes to `Phase02` or `AttractDelay`), `Idle` (`0x01` — body-tail no-op), `AttractIdle` (`0x10` — Press-Start poll), `AttractDelay` (`0x11` — pre-attract delay). The other 21 carry `Phase0xNN` placeholders with traced-transition docstrings; the module's `STATE_204_WRITES` table holds the full graph. Notably, **Phase06 writes `_DAT_8007B83C = 0x02` at `0x801DFC00`** — the title-screen → main-game master-mode transition (exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`).
+
+### opdeene → town01 handoff (scene-change packet)
+
+The opening cutscene scene `opdeene` advances to `town01` (Rim Elm) through a **name-based scene-change packet**, not the map-id door-warp (the `0x3E`/`FUN_80025980` path below). Confirmed empirically: the WARP handler backs up the active scene name into `0x8007BAE8`, but that buffer is **empty in the `town01` opening saves**, so the door-warp never fired for this transition.
+
+The mechanism, traced through the field/cutscene overlay:
+
+- **`FUN_8001FD44(name_ptr)`** — the scene-change-packet API. Copies the target scene name into `0x8007050C`, syncs it to the active buffer `0x80084548` via **`FUN_8001D7F8`**, and (gated on the dev/debug flag `_DAT_8007B8C2`) stages the load. The error string `s_ERR_CHANGE_PACKET` guards re-entry while a previous packet is pending (`_DAT_8007BA3C`). It takes a single argument — the `a1`/`3` the decompiler shows at the opening call site is dead (the body never reads `a1`). The next field-init (`FUN_801D6704`) reads `0x80084548` and loads the named scene.
+- **`FUN_801D1344`** — the per-frame field/cutscene controller that issues the opening handoff. It fires a **one-shot, flag-gated, pad-gated** block:
+
+  ```c
+  if (_DAT_8007b868 == 0 && (_DAT_1f800394 & 0x4000000) && (_DAT_8007b850 & 0x100)) {
+      FUN_801d58f0(2, 0, 0xffffff, 0, 0x3c, -1);   // fade out
+      _DAT_80073ef4 = 0xec0;  _DAT_80073ef8 = 0x2dc0;   // town01 entry coords
+      _DAT_1f800394 &= 0xfbffffff;                  // clear bit 0x4000000 (fire-once)
+      func_0x8001fd44(s_town01_801ce82c, 3);        // next scene = "town01"
+  }
+  ```
+
+  The target name **`"town01"` is hardcoded as the overlay literal at `0x801CE82C`** — that is why a scan of `opdeene`'s per-scene data (MAN + event scripts) finds no scene-name string. The pad bit `_DAT_8007B850 & 0x100` is the player's confirm-to-continue after the *"It was the Seru."* prologue.
+
+  **Trigger flag (`_DAT_1F800394 & 0x4000000`, bit 26).** Set by the field VM's generic scratchpad-bit opcode **`GFLAG_SET` (op `0x2E`, operand `0x1A`)** — the dispatcher in `FUN_801DE840` runs `_DAT_1f800394 |= 1 << (idx & 0x1f)`; `idx = 0x1A` is bit 26. The only `GFLAG_SET 26` in `opdeene`'s decoded MAN is **not** in the partition-1 per-actor/scene-entry scripts; it lives in the **last record of the MAN's third record partition** (partition index 2, count 19; record start at MAN file offset `0xA47`, the `2E 1A` at `0xA5E`). That record is a cutscene-timeline script: the `GFLAG_SET 26` is immediately followed by a `Camera Configure` op and an actor `MoveTo`, i.e. the prologue's closing camera/actor staging arms the handoff just before returning control to the player. (Earlier notes guessing a `0x4C` MenuCtrl sub-op in record 0 are falsified — there is no `0x2E`/`0x2F` byte anywhere in record 0.)
+
+The executable's **default** scene name is also `town01`: `FUN_8001D424` reads the dev file `initmap.txt` and copies 16 bytes into `0x8007050C`. `init_game` overrides this with `opdeene` for a real New Game; the gated handoff above then sets it back to `town01`.
+
+**Clean-room port.** [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) mirrors the `FUN_801D1344` gate: while the active scene is `opdeene` and the trigger bit ([`PROLOGUE_HANDOFF_FLAG`] = `0x0400_0000` in [`World::story_flags`], the engine's `_DAT_1F800394` mirror) is set, a confirm press clears the bit (fire-once) and returns `town01`. The windowed host arms the bit on NEW-GAME entry into `opdeene` ([`World::arm_prologue_handoff`]) — standing in for the not-yet-replayed cutscene-timeline `GFLAG_SET 26` — and, on the `Some(target)`, runs `BootSession::enter_field_live(target)` (the engine's scene-change-packet equivalent).
+
+### Name-entry overlay
+
+The *"Select your name."* screen (default `Vahn`) runs **after** the field launches, as a menu overlay invoked during the `town01` opening (master mode `0x03`, captured in the `name_input_ui` save state). It is part of the field/dialog overlay (loaded at `0x801C0000`), not a title sub-mode. Pinned addresses (live in `name_input_ui`):
+
+| Datum | Address | Notes |
+|---|---|---|
+| Character grid | `0x801F29F0` | Flat ASCII, 6 rows × 17 bytes: `ABCDE\|abcde\|12345`, `FGHIJ\|fghij\|67890`, `KLMNO\|klmno\|!?#%&`, `PQRST\|pqrst\|.,'<>`, `UVWXY\|uvwxy\|+-*/=`, `Z␣␣␣␣\|z␣␣␣␣\|:;()~`, NUL-terminated. Three column-groups of 5 (`\|` = `0x7C` separators); spaces pad the short Z/z row → 15 cols × 6 rows. |
+| Live name buffer | `0x801F2A6C` | The name being edited (`Vahn` by default). |
+| Cursor index | `0x8007BB88` | Linear position over a **7-row × 17-col** navigation space (`0..0x77` = 119), wrapped modulo `0x77`. Cells `0..0x66` (102) are the glyph rows; `0x66..0x77` are the control row. `row = cursor/17`, `col = cursor%17`. |
+| Pad edge bits | `0x8007BB84` | Just-pressed mask for this frame (d-pad tested as `0x1000`/`0x4000`/`0x2000`, confirm via the button-mask table AND-ed with held pad `0x8007B874`). |
+| Char-record pointer | `0x8007B450` | Live character record being named; the active char index is the byte at `+1`, scaled by stride `0x414`; the committed name lands at `record + 0x86F`. |
+| Prompts | `0x801CF698`+ | "Is this name okay?", "Cannot enter that name.", "Tell me my name.", "Select your name.", "[Nameless]". |
+
+Two functions carry the screen:
+
+- **`FUN_801E6B34`** (render) — draws the 6×17 grid (skipping `|` / space) via the glyph drawer `FUN_80036888`, plus the current name, the blinking caret (the `Vahn_` underscore, measured with MES `FUN_8003CA38` + width `FUN_80035F04`), and the box frames (`FUN_8002C69C`).
+- **`FUN_801F03F0`** (state machine) — substate at `struct+0x54`, dispatched through a **5-entry jump table at `0x801CF71C`**:
+  - `0x801F0444` **init** — sets the active flag and advances to interactive.
+  - `0x801F0480` **interactive** — d-pad deltas `-0x11` (up) / `+0x11` (down) / `+1` (right) / `-1` (left); after each move the cursor wraps modulo `0x77` and **skips non-selectable cells** (the `|`=`0x7C` separators in the glyph rows) in the direction of travel. Confirm resolves the cell: a glyph cell appends its character to the name (length-bounded by the proportional-font pixel width, cap `0x39`=57 px); a control-row cell runs its action via the row's sentinel bytes — `0x66` = **Backspace** (truncate one glyph), `0x64` = **Space**, `0x65` = **End** (gated on a non-empty name via the `blez` check → advances to confirm).
+  - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** — the "Is this name okay?" Yes/No prompt; Yes commits the name into `record+0x86F` and exits, No returns to interactive.
+
+The control row (grid row 6) tiles those sentinel bytes across its columns: `00 00 | 66×6 | 64×6 | 65×3` (filler / Backspace / Space / End).
+
+**Clean-room engine port.** The whole SM is ported as a standalone overlay in [`legaia_engine_core::name_entry`](../../crates/engine-core/src/name_entry.rs) (`NameEntry` + `NameEntryState` + `Control`), driven on the world by `World::open_name_entry` / `step_name_entry` (committing into `World::party_names`) and rendered through [`legaia_engine_render::name_entry_draws_for`](../../crates/engine-render/src/lib.rs). The one remaining open thread is the **field-VM op** that opens the overlay during the `town01` opening sequence; the engine exposes `open_name_entry` for a host to call (a dev key in `legaia-engine play-window`) until that trigger is pinned.
 
 ### Sprite-emit helpers
 

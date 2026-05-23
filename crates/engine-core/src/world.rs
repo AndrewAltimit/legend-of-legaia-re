@@ -89,6 +89,40 @@ const FIELD_STEP_UNIT: i32 = 2;
 /// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
 const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 
+/// Cold field-entry player spawn coordinate (both X and Z).
+///
+/// On a non-warp (cold) field scene entry, the per-scene initializer
+/// `FUN_801D6704` creates the player actor at actor coords
+/// `(0xA40, 0, 0xA40)` - the centre of the camera's `0x20`-tile view window
+/// (`func_0x80024c88(&local_68=...)`, with the `sVar13`/`sVar14` sub-tile
+/// terms zero for a cold entry). Warp entries (`_DAT_8007b8b8 == 2`) override
+/// X/Z from the saved transition coords `_DAT_80084568`/`_DAT_8008456C`.
+///
+/// Cold entry only ever happens for the New Game opening scene (`town01`,
+/// Rim Elm), so this doubles as Vahn's authored opening spawn. See
+/// `ghidra/scripts/funcs/overlay_0897_801d6704.txt` (the
+/// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
+pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
+
+/// Starting gold (money) a New Game grants the party.
+///
+/// The retail new-game data-init `FUN_80034A6C` writes the party-gold global
+/// `_DAT_8008459C` (the same word the battle-victory reward writer
+/// `FUN_8004F0E8` credits) to a hardcoded `500` - it is a constant in the
+/// init routine, not a field of the starting-party template. The same routine
+/// also zeroes the story-flag region and calls the stat seed `FUN_800560B4`.
+/// See `ghidra/scripts/funcs/80034a6c.txt`.
+pub const NEW_GAME_STARTING_GOLD: i32 = 500;
+
+/// Scratchpad flag-word bit (`_DAT_1F800394 & 0x0400_0000`, bit 26) that
+/// the opening cutscene `opdeene` raises to arm the handoff to Rim Elm
+/// (`town01`). Retail sets it with field-VM `GFLAG_SET 26` (op `0x2E`
+/// operand `0x1A`) at the end of the prologue cutscene timeline, and the
+/// per-frame field controller `FUN_801D1344` consumes it (with the
+/// confirm-press gate) to issue the name-based scene change. See
+/// [`World::arm_prologue_handoff`] / [`World::take_prologue_handoff`].
+pub const PROLOGUE_HANDOFF_FLAG: u32 = 0x0400_0000;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
@@ -1200,6 +1234,19 @@ pub struct World {
     /// end of [`Self::tick_field_carriers`] to flip Field -> Battle. `None`
     /// between transitions.
     pub pending_field_carrier_battle: Option<u16>,
+
+    /// Per-party-slot display names. Seeded from the starting-party template
+    /// at [`Self::seed_starting_party`] and overwritten by the name-entry
+    /// overlay ([`Self::open_name_entry`]). Indexed by party slot; a slot with
+    /// no entry falls back to the template name at the call site.
+    pub party_names: Vec<String>,
+
+    /// Active name-entry overlay session, or `None` when no name is being
+    /// entered. Installed by [`Self::open_name_entry`] (the opening `town01`
+    /// script's lead-character prompt) and driven by
+    /// [`Self::step_name_entry`]; on commit the name lands in
+    /// [`Self::party_names`].
+    pub name_entry: Option<crate::name_entry::NameEntry>,
 }
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
@@ -1457,6 +1504,8 @@ impl World {
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
             pending_field_carrier_battle: None,
+            party_names: Vec::new(),
+            name_entry: None,
         }
     }
 
@@ -1477,19 +1526,30 @@ impl World {
     /// engine's mapping of master mode 3. Distinct from the Continue path,
     /// which instead hydrates the world from a save slot.
     ///
-    /// This does **not** itself seed the starting party stats, gold, or
-    /// opening scene id — in retail those come from a separate new-game-init
-    /// routine that runs before mode 2, and `FUN_801D6704` reads them from
-    /// globals. The starting party half is pinned: a caller with the disc's
-    /// `SCUS_942.54` calls [`World::seed_starting_party`] (see
-    /// [`crate::new_game`]) right after this to drop Vahn into slot 0, and
-    /// enters the opening scene (`town01`) through the normal scene-load path.
+    /// Gold and the story-flag clear mirror the retail new-game data-init
+    /// `FUN_80034A6C`: it zeroes the story-flag region and writes party gold
+    /// (`_DAT_8008459C`) to a hardcoded [`NEW_GAME_STARTING_GOLD`] = 500. The
+    /// starting party stats come from [`World::seed_starting_party`] (the
+    /// `FUN_800560B4` template expansion `FUN_80034A6C` calls), which a caller
+    /// with the disc's `SCUS_942.54` invokes right after this to drop Vahn into
+    /// slot 0. Retail's front-end (`FUN_801DD35C`) goes title-menu -> fade ->
+    /// `init_game` -> master-mode 2 (field) directly, with no narration or
+    /// name-entry sub-mode; `init_game` sets the opening scene to `opdeene` (the
+    /// prologue cutscene), which hands off to `town01` (Rim Elm). The opening
+    /// narration and the name-entry screen ("Select your name." character grid)
+    /// are downstream field/event/menu-overlay steps after the field launches,
+    /// not modeled here yet; this seed just copies the template's default name
+    /// (`Vahn`).
     // REF: FUN_80025B64
     // REF: FUN_801D6704
+    // REF: FUN_801DD35C
+    // REF: FUN_80034A6C
+    // REF: FUN_800560B4
+    // REF: FUN_8004F0E8
     pub fn begin_new_game(&mut self) {
         self.story_flags = 0;
         self.story_flag_bits.clear();
-        self.money = 0;
+        self.money = NEW_GAME_STARTING_GOLD;
         self.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_fmv_trigger = None;
@@ -1508,6 +1568,106 @@ impl World {
     /// the current scene without re-walking the [`crate::scene::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+    }
+
+    /// Display name for a party slot - the name-entry result if one was
+    /// committed, otherwise the template default seeded at
+    /// [`Self::seed_starting_party`]. Empty string when the slot is unknown.
+    pub fn party_name(&self, slot: usize) -> &str {
+        self.party_names.get(slot).map(String::as_str).unwrap_or("")
+    }
+
+    /// Open the name-entry overlay for `slot`, seeded with the slot's current
+    /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
+    /// script's lead-character naming prompt. The host drives it each frame
+    /// with [`Self::step_name_entry`] and renders from [`Self::name_entry`].
+    pub fn open_name_entry(&mut self, slot: usize) {
+        let initial = self.party_name(slot).to_string();
+        self.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
+    }
+
+    /// `true` while the name-entry overlay is active.
+    pub fn name_entry_active(&self) -> bool {
+        self.name_entry.is_some()
+    }
+
+    /// Advance the active name-entry overlay by one input frame. On commit
+    /// (the player confirms "Is this name okay?") the entered name is written
+    /// into [`Self::party_names`] for the entry's slot, the session is closed,
+    /// and `true` is returned so the host can resume the field script.
+    /// Returns `false` while the overlay stays open (or when none is active).
+    pub fn step_name_entry(&mut self, input: crate::name_entry::NameEntryInput) -> bool {
+        let Some(entry) = self.name_entry.as_mut() else {
+            return false;
+        };
+        entry.step(input);
+        if entry.state == crate::name_entry::NameEntryState::Done {
+            let slot = entry.char_index;
+            let name = entry.committed_name();
+            if self.party_names.len() <= slot {
+                self.party_names.resize(slot + 1, String::new());
+            }
+            self.party_names[slot] = name;
+            self.name_entry = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Arm the prologue cutscene -> Rim Elm handoff.
+    ///
+    /// In retail the opening cutscene scene `opdeene` runs a scripted
+    /// timeline (a field-VM record in the MAN's third record partition)
+    /// that ends with `GFLAG_SET 26` - field-VM op `0x2E` with operand
+    /// `0x1A`, which sets bit 26 (`0x0400_0000`) of the scratchpad flag
+    /// word `_DAT_1F800394` (the engine's [`Self::story_flags`]) right
+    /// after staging the closing camera + actor moves. Once that bit is
+    /// set, the per-frame field controller `FUN_801D1344` waits for the
+    /// player's confirm press and then issues a name-based scene-change
+    /// packet to `town01` (see [`Self::take_prologue_handoff`]).
+    ///
+    /// The engine doesn't yet replay that cutscene timeline (only record
+    /// 0 of the scene runs), so callers arm the bit explicitly when they
+    /// enter `opdeene` live. This sets exactly the flag the retail
+    /// `GFLAG_SET 26` would, so the downstream gate stays faithful.
+    // REF: FUN_801D1344
+    pub fn arm_prologue_handoff(&mut self) {
+        self.story_flags |= PROLOGUE_HANDOFF_FLAG;
+    }
+
+    /// Poll the prologue cutscene -> Rim Elm handoff gate.
+    ///
+    /// Faithful port of the one-shot block in `FUN_801D1344`:
+    ///
+    /// ```c
+    /// if (_DAT_8007b868 == 0 && (_DAT_1f800394 & 0x4000000) && (_DAT_8007b850 & 0x100)) {
+    ///     ... fade; town01 entry coords (0xec0, 0x2dc0); ...
+    ///     _DAT_1f800394 &= 0xfbffffff;            // fire-once: clear bit 26
+    ///     func_0x8001fd44(s_town01_801ce82c, 3);  // name-based scene change
+    /// }
+    /// ```
+    ///
+    /// Returns the handoff target scene ([`legaia_asset::new_game::OPENING_SCENE`]
+    /// = `town01`) once - when the active scene is the prologue cutscene
+    /// ([`legaia_asset::new_game::OPENING_CUTSCENE_SCENE`] = `opdeene`),
+    /// the trigger bit is set ([`Self::arm_prologue_handoff`]), and the
+    /// caller reports a confirm-button press this frame. Clears the bit so
+    /// it fires once, exactly as retail clears `0x4000000`. Returns `None`
+    /// otherwise. The host issues the actual scene change (the engine's
+    /// equivalent of the scene-change packet) on a `Some`.
+    // REF: FUN_801D1344
+    // REF: FUN_8001FD44
+    pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
+        if confirm
+            && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+            && self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
+        {
+            self.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+            Some(legaia_asset::new_game::OPENING_SCENE)
+        } else {
+            None
+        }
     }
 
     /// Install the VDF ("set_mime") buffer for the active scene. The bytes
@@ -11926,12 +12086,50 @@ mod tests {
         assert_eq!(world.mode, SceneMode::Field);
         assert_eq!(world.story_flags, 0);
         assert!(world.story_flag_bits.is_empty());
-        assert_eq!(world.money, 0);
+        // New-game gold is the retail constant (FUN_80034A6C), not zero.
+        assert_eq!(world.money, NEW_GAME_STARTING_GOLD);
         assert!(world.inventory.is_empty());
         assert!(!world.scripted_encounter_armed);
         assert!(world.encounter.is_none());
         assert!(!world.game_over);
         assert_eq!(world.play_time_seconds, 0);
+    }
+
+    #[test]
+    fn prologue_handoff_fires_once_on_confirm_in_opdeene() {
+        let mut world = World::new();
+        world.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
+
+        // Not armed yet: confirm does nothing.
+        assert_eq!(world.take_prologue_handoff(true), None);
+
+        world.arm_prologue_handoff();
+        assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+
+        // Armed but no confirm: stays in the cutscene.
+        assert_eq!(world.take_prologue_handoff(false), None);
+        assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+
+        // Armed + confirm: hands off to town01 and clears the bit (fire-once).
+        assert_eq!(
+            world.take_prologue_handoff(true),
+            Some(legaia_asset::new_game::OPENING_SCENE)
+        );
+        assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+
+        // A second confirm does not re-fire.
+        assert_eq!(world.take_prologue_handoff(true), None);
+    }
+
+    #[test]
+    fn prologue_handoff_only_fires_in_the_cutscene_scene() {
+        let mut world = World::new();
+        // Armed, confirm pressed, but the active scene is not `opdeene`.
+        world.set_active_scene_label(legaia_asset::new_game::OPENING_SCENE);
+        world.arm_prologue_handoff();
+        assert_eq!(world.take_prologue_handoff(true), None);
+        // Bit is left intact for the gate to fire only in `opdeene`.
+        assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
     }
 
     // ------------------------------------------------------------------

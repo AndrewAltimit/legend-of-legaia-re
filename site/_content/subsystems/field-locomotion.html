@@ -29,6 +29,16 @@
   <p>World coordinates are plain <code>s16</code> in 1-unit resolution; one collision tile is <code>0x80</code> (128) units. The field camera derives its origin by negating these.</p>
 </section>
 
+<section class="doc-section" id="spawn">
+  <h2>Spawn position on scene entry</h2>
+  <p>The player's spawn position is set by the per-scene initializer <code>FUN_801D6704</code>, not by the locomotion controller. Two cases, selected by the field-entry mode global <code>_DAT_8007b8b8</code>:</p>
+  <ul>
+    <li><strong>Cold entry (<code>== 0</code>).</strong> The player actor is created at actor coords <strong><code>(0xA40, 0, 0xA40)</code></strong> &mdash; the centre of the camera's <code>0x20</code>-tile view window &mdash; while the camera is seeded onto the MAN anchor and then follows the player. Cold entry only ever happens for the New Game opening scene (<code>town01</code>, Rim Elm), so this is effectively Vahn's authored opening spawn (byte-checked walkable against town01's base collision grid).</li>
+    <li><strong>Warp entry (<code>== 2</code>).</strong> The spawn carries the sub-tile offset of the saved transition coords <code>_DAT_80084568</code>/<code>_DAT_8008456C</code>, so the player lands at the destination door instead of the window centre.</li>
+  </ul>
+  <p>Engine mirror: <code>FIELD_COLD_SPAWN_XZ</code>, applied in <code>SceneHost::enter_field_scene</code>.</p>
+</section>
+
 <section class="doc-section" id="per-frame">
   <h2>Per-frame flow</h2>
   <ol>

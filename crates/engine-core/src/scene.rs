@@ -1189,6 +1189,18 @@ impl SceneHost {
         // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
+        // Cold field entry: place the player at the retail cold-boot spawn.
+        // `FUN_801D6704` creates the player actor at the camera-window centre
+        // `(0xA40, 0, 0xA40)` on a non-warp entry; for the New Game opening
+        // (town01) this is Vahn's authored Rim Elm spawn, and it also seeds the
+        // follow camera onto the right region. Engines that arrive via a warp
+        // override X/Z from the saved transition coords before the first tick.
+        // See [`crate::world::FIELD_COLD_SPAWN_XZ`].
+        if let Some(player) = self.world.actors.get_mut(0) {
+            player.move_state.world_x = crate::world::FIELD_COLD_SPAWN_XZ;
+            player.move_state.world_y = 0;
+            player.move_state.world_z = crate::world::FIELD_COLD_SPAWN_XZ;
+        }
         // Load the per-scene base collision/floor grid from the field map
         // file (retail `DATA\FIELD\<scene>.MAP`, the unique 0x12000-byte block
         // entry). The grid is the file's `+0x4000..+0x8000` region; the

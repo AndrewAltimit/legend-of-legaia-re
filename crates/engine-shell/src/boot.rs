@@ -190,11 +190,12 @@ impl BootSession {
     /// starting party (Vahn) from the boot source's `SCUS_942.54` template.
     ///
     /// Mirrors the retail NEW GAME → field-launch chain (master mode 2 → 3,
-    /// see `docs/subsystems/boot.md`). The interactive opening scene
-    /// ([`legaia_asset::new_game::OPENING_SCENE`] = `town01`) is entered through
-    /// the usual [`BootSession::enter_field_live`] path; this call only resets
-    /// and seeds the world state. When the SCUS template isn't available the
-    /// world keeps its default scaffold party so the slice stays runnable.
+    /// see `docs/subsystems/boot.md`). The opening scene
+    /// ([`legaia_asset::new_game::OPENING_CUTSCENE_SCENE`] = `opdeene`, the
+    /// prologue cutscene, which hands off to `town01`) is entered through the
+    /// usual [`BootSession::enter_field_live`] path; this call only resets and
+    /// seeds the world state. When the SCUS template isn't available the world
+    /// keeps its default scaffold party so the slice stays runnable.
     pub fn begin_new_game(&mut self) {
         self.host.world.begin_new_game();
         if let Some(starting) = &self.starting_party {

@@ -1304,6 +1304,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-render",
+ "legaia-engine-vm",
  "legaia-font",
  "legaia-iso",
  "legaia-mdec",

@@ -76,6 +76,9 @@ impl World {
         self.load_party(Party {
             members: vec![starting_record(vahn)],
         });
+        // Seed the display name from the template; the name-entry overlay
+        // overwrites slot 0 when the player names the lead character.
+        self.party_names = vec![vahn.name.clone()];
         self.seed_party_battle_stats();
     }
 }
@@ -163,6 +166,58 @@ mod tests {
             "Vahn should advance forward (Z+) when Up is held; z0={z0}, z1={}",
             world.actors[0].move_state.world_z
         );
+    }
+
+    #[test]
+    fn name_entry_overwrites_the_seeded_lead_name() {
+        use crate::name_entry::{NameEntryInput, NameEntryState};
+        let mut world = World::new();
+        world.begin_new_game();
+        world.seed_starting_party(&StartingParty::from_members(vec![vahn()]));
+        assert_eq!(
+            world.party_name(0),
+            "Vahn",
+            "template seeds the default name"
+        );
+
+        // Open the overlay, backspace the whole default, then type "Noa".
+        world.open_name_entry(0);
+        assert!(world.name_entry_active());
+        for _ in 0..4 {
+            world.step_name_entry(NameEntryInput {
+                cancel: true,
+                ..Default::default()
+            });
+        }
+        // 'N' = row 2 col 3 = cell 37; 'o' = row 2 col 10 = cell 44;
+        // 'a' = row 0 col 6 = cell 6. Drive the cursor + confirm each.
+        let typed = [(37usize, 'N'), (44, 'o'), (6, 'a')];
+        for (cell, g) in typed {
+            world.name_entry.as_mut().unwrap().cursor = cell;
+            assert_eq!(world.name_entry.as_ref().unwrap().glyph_at(cell), Some(g));
+            world.step_name_entry(NameEntryInput {
+                confirm: true,
+                ..Default::default()
+            });
+        }
+        // Move to End and confirm twice (End -> Confirm -> Done).
+        let end = crate::name_entry::CHAR_CELLS + 16;
+        world.name_entry.as_mut().unwrap().cursor = end;
+        world.step_name_entry(NameEntryInput {
+            confirm: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            world.name_entry.as_ref().unwrap().state,
+            NameEntryState::Confirm
+        );
+        let committed = world.step_name_entry(NameEntryInput {
+            confirm: true,
+            ..Default::default()
+        });
+        assert!(committed, "Yes-confirm commits + closes the overlay");
+        assert!(!world.name_entry_active());
+        assert_eq!(world.party_name(0), "Noa");
     }
 
     #[test]

@@ -180,6 +180,17 @@ enum Cmd {
         /// inline record.
         #[arg(long)]
         all: bool,
+        /// Print the full field-VM opcode disassembly of one partition-1
+        /// record (by index; record 0 is the scene-entry system script).
+        /// Useful for tracing scene-entry / cutscene / dialog flow.
+        #[arg(long)]
+        disasm_record: Option<usize>,
+        /// Write the decoded (LZS-decompressed) MAN payload to this path so it
+        /// can be scanned for embedded literals (e.g. a scripted scene-change
+        /// target name). The scene-entry script + every partition's bytecode
+        /// live in this blob.
+        #[arg(long)]
+        dump_man: Option<PathBuf>,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -951,7 +962,16 @@ fn main() -> Result<()> {
             extracted_root,
             disc,
             all,
-        } => cmd_man_scripts(&scene, &extracted_root, disc.as_deref(), all),
+            disasm_record,
+            dump_man,
+        } => cmd_man_scripts(
+            &scene,
+            &extracted_root,
+            disc.as_deref(),
+            all,
+            disasm_record,
+            dump_man.as_deref(),
+        ),
         Cmd::VramOracle {
             scene,
             extracted_root,
@@ -1772,6 +1792,8 @@ fn cmd_man_scripts(
     extracted_root: &Path,
     disc: Option<&Path>,
     all: bool,
+    disasm_record: Option<usize>,
+    dump_man: Option<&Path>,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
     use legaia_engine_core::scene_bundle;
@@ -1788,6 +1810,16 @@ fn cmd_man_scripts(
     let man = scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
         .with_context(|| format!("scene '{scene_name}' MAN payload did not decode"))?;
     let man_file = legaia_asset::man_section::parse(&man)?;
+
+    if let Some(path) = dump_man {
+        std::fs::write(path, &man)
+            .with_context(|| format!("write decoded MAN to {}", path.display()))?;
+        println!(
+            "wrote decoded MAN payload ({} bytes) to {}",
+            man.len(),
+            path.display()
+        );
+    }
 
     let records = walk_partition1_scripts(&man_file, &man);
     println!(
@@ -1846,6 +1878,36 @@ fn cmd_man_scripts(
         "summary: {} yield sites, {} decode as inline records, {} match the Tetsu signature",
         total_yields, total_records, tetsu,
     );
+
+    if let Some(target) = disasm_record {
+        use legaia_engine_vm::field_disasm::{LinearWalker, format_instruction};
+        let rec = records
+            .iter()
+            .find(|r| r.index == target)
+            .with_context(|| format!("no partition-1 record with index {target}"))?;
+        let end = rec.script_start + rec.body_len;
+        let body = man
+            .get(rec.script_start..end)
+            .with_context(|| format!("record {target} body slice out of range"))?;
+        println!(
+            "\n--- disasm P1[{}] (start=0x{:05X} pc0={} body={}b) ---",
+            rec.index, rec.script_start, rec.pc0, rec.body_len,
+        );
+        for insn in LinearWalker::new(body, rec.pc0) {
+            match insn {
+                Ok(insn) => println!(
+                    "  0x{:05X} (+0x{:04X})  {}",
+                    rec.script_start + insn.pc,
+                    insn.pc,
+                    format_instruction(&insn, body),
+                ),
+                Err((pc, e)) => {
+                    println!("  0x{:05X} [decode stopped: {e:?}]", rec.script_start + pc);
+                    break;
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -3499,6 +3561,11 @@ struct PlayWindowApp {
     /// to `events` and the close handler flushes a `j-replay-v1` file
     /// to disk. `None` in plain `play-window` runs.
     record_log: Option<RecordLog>,
+    /// Field-live options (live loop / player-driven battle / battle BGM)
+    /// captured at startup, so the boot-UI NEW GAME handler can re-enter the
+    /// opening cutscene scene (`opdeene`) with the same arming the startup
+    /// `enter_field_live` used.
+    field_live_opts: legaia_engine_shell::boot::FieldLiveOpts,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -3613,17 +3680,38 @@ impl PlayWindowApp {
                     match outcome {
                         TitleOutcome::NewGame => {
                             // Mirror the retail NEW GAME → field-launch
-                            // (master mode 2 → mode 3): establish a fresh
-                            // slate and seed the starting party (Vahn) from the
-                            // disc's SCUS template, then reveal the already-
-                            // booted opening scene (town01). See
-                            // docs/subsystems/boot.md "New Game boot chain".
+                            // (master mode 2 → mode 3): establish a fresh slate
+                            // and seed the starting party (Vahn) from the disc's
+                            // SCUS template, then enter the prologue cutscene
+                            // scene `opdeene` (the front-end launcher's opening
+                            // scene id, verified live), which hands off to the
+                            // interactive `town01`. See docs/subsystems/boot.md
+                            // "New Game boot chain".
                             self.session.begin_new_game();
-                            log::info!(
-                                "new game: seeded party_count={}, scene='{}'",
-                                self.session.host.world.party_count,
-                                legaia_asset::new_game::OPENING_SCENE,
-                            );
+                            let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+                            match self
+                                .session
+                                .enter_field_live(cutscene, &self.field_live_opts)
+                            {
+                                Ok(mode) => {
+                                    // Arm the cutscene -> Rim Elm handoff. Retail's
+                                    // opdeene timeline sets this flag (GFLAG_SET 26)
+                                    // when the prologue narration finishes; the engine
+                                    // doesn't replay that timeline yet, so arm it on
+                                    // entry. The confirm-gated transition fires in the
+                                    // field tick below (World::take_prologue_handoff).
+                                    self.session.host.world.arm_prologue_handoff();
+                                    log::info!(
+                                        "new game: seeded party_count={}, entered opening cutscene \
+                                         '{cutscene}' (mode={mode:?})",
+                                        self.session.host.world.party_count,
+                                    )
+                                }
+                                Err(e) => log::warn!(
+                                    "new game: enter opening cutscene '{cutscene}' failed ({e:#}); \
+                                     staying on the pre-booted scene"
+                                ),
+                            }
                             self.boot_ui = BootUiState::Inactive;
                         }
                         TitleOutcome::Continue => {
@@ -5936,6 +6024,43 @@ impl PlayWindowApp {
         {
             out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
+        // Name-entry overlay: the opening `town01` lead-character naming prompt.
+        if let Some(entry) = &self.session.host.world.name_entry {
+            use legaia_engine_core::name_entry::{CHAR_CELLS, GRID, GRID_COLS};
+            let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
+                (
+                    Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
+                    None,
+                )
+            } else {
+                // Map the control-row column to a button index (Back=0/Space=1/End=2)
+                // via the cell's resolved action.
+                use legaia_engine_core::name_entry::Control;
+                let ctrl = entry.control_at(entry.cursor);
+                let idx = match ctrl {
+                    Some(Control::Backspace) => Some(0),
+                    Some(Control::Space) => Some(1),
+                    Some(Control::End) => Some(2),
+                    _ => None,
+                };
+                (None, idx)
+            };
+            let view = legaia_engine_render::NameEntryView {
+                grid_rows: &GRID,
+                control_labels: &["Back", "Space", "End"],
+                name: &entry.name,
+                grid_cursor,
+                control_cursor,
+                confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
+                confirm_yes: entry.confirm_yes,
+                caret_on: (self.session.host.world.frame / 16).is_multiple_of(2),
+            };
+            out.extend(legaia_engine_render::name_entry_draws_for(
+                &self.font,
+                &view,
+                (32, 24),
+            ));
+        }
         out
     }
 }
@@ -6049,6 +6174,18 @@ impl ApplicationHandler for PlayWindowApp {
                         .spawn_debug_effect_model(pos, model_index);
                     return;
                 }
+                // `N`: open the name-entry overlay for the lead character. A
+                // dev hand-trigger - the opening `town01` script's field-VM op
+                // that opens it during the establishing sequence is still an
+                // open RE thread; this exercises the ported overlay end-to-end.
+                if matches!(code, KeyCode::KeyN)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                    && !self.session.host.world.name_entry_active()
+                {
+                    self.session.host.world.open_name_entry(0);
+                    return;
+                }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {
                     let prev = self.pad;
@@ -6084,6 +6221,47 @@ impl ApplicationHandler for PlayWindowApp {
                     // Start in field opens the pause menu. Edge-detect so a
                     // held key doesn't auto-reopen.
                     let pressed_edge = self.pad & !self.prev_pad;
+                    // Name-entry overlay is modal: while it's open the field is
+                    // frozen and every pad edge routes into the entry SM (one
+                    // cell / glyph per press). Mirrors the opening `town01`
+                    // naming prompt, which suspends the field VM.
+                    if self.session.host.world.name_entry_active() {
+                        let p = pressed_edge;
+                        let input = legaia_engine_core::name_entry::NameEntryInput {
+                            up: p & 0x0010 != 0,
+                            down: p & 0x0040 != 0,
+                            left: p & 0x0080 != 0,
+                            right: p & 0x0020 != 0,
+                            confirm: p & 0x4000 != 0, // Cross
+                            cancel: p & 0x1000 != 0,  // Triangle
+                        };
+                        self.session.host.world.step_name_entry(input);
+                        // Keep the frame counter advancing so the caret blinks.
+                        self.session.host.world.frame =
+                            self.session.host.world.frame.wrapping_add(1);
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
+                    // Prologue cutscene -> Rim Elm handoff. While in `opdeene`
+                    // with the trigger armed, a confirm press (Cross) hands off
+                    // to `town01`, mirroring FUN_801D1344's flag + pad gate.
+                    if let Some(target) = self
+                        .session
+                        .host
+                        .world
+                        .take_prologue_handoff(pressed_edge & 0x4000 != 0)
+                    {
+                        match self.session.enter_field_live(target, &self.field_live_opts) {
+                            Ok(mode) => {
+                                log::info!("prologue handoff: entered '{target}' (mode={mode:?})")
+                            }
+                            Err(e) => {
+                                log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
+                            }
+                        }
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
                     if pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
                         let view_money = self.session.host.world.money;
                         let play_secs = self.session.host.world.play_time_seconds;
@@ -6747,15 +6925,19 @@ fn cmd_play_window_with_record(
             ctrl.debug_enabled = true;
             ctrl.view_mode = 1;
         }
-    } else {
+    }
+    // Field-live arming, built once and reused: at startup for the direct path
+    // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
+    let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {
+        live_loop,
+        player_battle,
+        battle_bgm,
+    };
+    if !world_map {
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
         // drivers via `BootSession::enter_field_live`.
-        let opts = legaia_engine_shell::boot::FieldLiveOpts {
-            live_loop,
-            player_battle,
-            battle_bgm,
-        };
+        let opts = field_live_opts.clone();
         match session.enter_field_live(scene, &opts) {
             Ok(mode) => log::info!("play-window: entered field scene '{scene}' (mode={mode:?})"),
             Err(e) => log::warn!("play-window: enter_field_live('{scene}') failed: {e:#}"),
@@ -7073,6 +7255,7 @@ fn cmd_play_window_with_record(
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),
         record_log: record_to.map(RecordLog::from_target),
+        field_live_opts,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
