@@ -3,8 +3,13 @@
 //! [`walk_partition1_scripts`] surveys partition 1 (the encounter hunt);
 //! [`walk_partition_gflag_sites`] is the partition-agnostic companion that
 //! collects global-flag writes (used for the opening prologue's partition-2
-//! `GFLAG_SET 26` hand-off arm). Both share the same `[u8 N][N*2 locals]
-//! [4-byte header]` record prefix and the same [`LinearWalker`] decode.
+//! `GFLAG_SET 26` hand-off arm), both via the same [`LinearWalker`] decode.
+//!
+//! The record **header** is partition-specific. Partitions 0/1 use the
+//! `[u8 N][N*2 locals][4-byte header]` prefix below. Partition 2 (the
+//! cutscene-timeline records) instead opens with a Shift-JIS name and three
+//! condition-list gates - see [`partition2_record_script_offset`] and
+//! [`partition_record_span`], decoded from the dispatcher `FUN_8003BDE0`.
 //!
 //! Partition 1 of a scene MAN (the "actor-placement / scripts" partition)
 //! holds one field-VM script per record:
@@ -243,17 +248,53 @@ fn partition_record_offset(
     (abs < man_len).then_some(abs)
 }
 
+/// First-opcode offset of a **partition-2 named-record** (the cutscene-timeline
+/// records), relative to the record start in `body`.
+///
+/// Partition-2 records are not the partition-1 `[u8 N][N*2 locals][4-byte
+/// header]` shape - they open with a Shift-JIS **name** and three
+/// condition-list gates that the dispatcher `FUN_8003BDE0` walks before the
+/// script proper:
+///
+/// ```text
+/// [u8 name_len]                 ; name length in CHARACTERS
+/// [name_len * 2 bytes]          ; SJIS name (no separate terminator)
+/// [u8 C0][C0 bytes]             ; cond-block 0 (byte-granular; skipped)
+/// [u8 C1][C1 * u16]             ; cond-block 1 (story-flag OR gate)
+/// [u8 C2][C2 * u16]             ; cond-block 2 (story-flag AND gate)
+/// <script…>                     ; first field-VM opcode
+/// ```
+///
+/// So the entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`.
+/// Returns `None` if a count byte lies past the record body. For `opdeene`'s
+/// record 18 (`name_len=6` "Opening", all three blocks empty) this is `0x10`,
+/// the `0x34` EFFECT op that opens the prologue timeline.
+// REF: FUN_8003BDE0
+fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
+    let name_len = *body.first()? as usize;
+    let mut cur = 1 + name_len * 2; // name field (chars * 2, no terminator)
+    let c0 = *body.get(cur)? as usize;
+    cur += 1 + c0; // cond-block 0: 1 byte per unit
+    let c1 = *body.get(cur)? as usize;
+    cur += 1 + c1 * 2; // cond-block 1: u16 per unit
+    let c2 = *body.get(cur)? as usize;
+    cur += 1 + c2 * 2; // cond-block 2: u16 per unit
+    Some(cur)
+}
+
 /// The byte span of `partition`'s record `index` as a field-VM script:
 /// `(script_start, pc0, body_len)`, where `script_start` is the absolute
-/// MAN offset of the record, `pc0` the first-opcode offset relative to it
-/// (`1 + N*2 + 4`), and `body_len` the bounded body length (clamped so the
-/// walk does not spill into the next record or a sibling section).
+/// MAN offset of the record, `pc0` the first-opcode offset relative to it,
+/// and `body_len` the bounded body length (clamped so the walk does not spill
+/// into the next record or a sibling section).
+///
+/// The header shape is partition-specific: partition 2 (the cutscene-timeline
+/// records) uses the named-record header decoded by
+/// [`partition2_record_script_offset`] (`FUN_8003BDE0`); the other partitions
+/// use the `[u8 N][N*2 locals][4-byte header]` prefix (`pc0 = 1 + N*2 + 4`).
 ///
 /// `None` when the partition / index is out of range, the offset lands past
-/// the buffer, or the record's prefix already overruns its bound. This is
-/// the partition-agnostic span the disassembler needs to render any
-/// record's instruction stream (partition 2's cutscene-timeline records as
-/// readily as partition 1's per-actor scripts).
+/// the buffer, or the record's header already overruns its bound.
 pub fn partition_record_span(
     man_file: &ManFile,
     man: &[u8],
@@ -261,9 +302,14 @@ pub fn partition_record_span(
     index: usize,
 ) -> Option<(usize, usize, usize)> {
     let script_start = partition_record_offset(man_file, man.len(), partition, index)?;
-    let n = *man.get(script_start).unwrap_or(&0) as usize;
-    let pc0 = 1 + n * 2 + 4;
     let end = record_end_bound(man_file, man.len(), script_start);
+    let body = man.get(script_start..end)?;
+    let pc0 = if partition == 2 {
+        partition2_record_script_offset(body)?
+    } else {
+        let n = *body.first().unwrap_or(&0) as usize;
+        1 + n * 2 + 4
+    };
     if script_start + pc0 >= end {
         return None;
     }
@@ -477,6 +523,33 @@ mod tests {
         // The other partitions carry no records, hence no sites.
         assert!(walk_partition_gflag_sites(&man_file, &man, 0).is_empty());
         assert!(walk_partition_gflag_sites(&man_file, &man, 1).is_empty());
+    }
+
+    #[test]
+    fn partition2_named_record_script_offset_matches_the_formula() {
+        // name_len=6 (12 SJIS bytes), all three cond-blocks empty -> 0x10,
+        // the opdeene record-18 shape.
+        let mut body = vec![0x06];
+        body.extend_from_slice(&[0xAA; 12]); // 6 SJIS chars
+        body.extend_from_slice(&[0x00, 0x00, 0x00]); // C0=C1=C2=0
+        body.push(0x34); // first opcode
+        assert_eq!(partition2_record_script_offset(&body), Some(0x10));
+
+        // Non-empty blocks: name_len=2 (4 bytes), C0=3 (3 bytes), C1=1 (2
+        // bytes), C2=2 (4 bytes) -> 1 + 4 + (1+3) + (1+2) + (1+4) = 17.
+        let mut body = vec![0x02, 0xAA, 0xAA, 0xAA, 0xAA];
+        body.push(0x03); // C0 = 3
+        body.extend_from_slice(&[0x11, 0x22, 0x33]);
+        body.push(0x01); // C1 = 1 u16
+        body.extend_from_slice(&[0x44, 0x55]);
+        body.push(0x02); // C2 = 2 u16
+        body.extend_from_slice(&[0x66, 0x77, 0x88, 0x99]);
+        body.push(0x21); // first opcode
+        assert_eq!(partition2_record_script_offset(&body), Some(17));
+        assert_eq!(body[17], 0x21);
+
+        // A count byte past the end returns None rather than panicking.
+        assert_eq!(partition2_record_script_offset(&[0x06]), None);
     }
 
     #[test]

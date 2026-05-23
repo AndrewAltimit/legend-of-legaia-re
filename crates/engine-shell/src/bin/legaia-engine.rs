@@ -6399,7 +6399,9 @@ impl PlayWindowApp {
         {
             let gold = [1.0f32, 0.92, 0.6, 1.0];
             let center_x = (w / 2) as i32;
-            let top_y = (h as i32 - 56).max(0);
+            // Retail draws the subtitle at Y=180 on a 240px-tall virtual
+            // screen (FUN_8003C764) - 3/4 down; scale to the real surface.
+            let top_y = (h as i32 * 3 / 4).min(h as i32 - 16).max(0);
             out.extend(legaia_engine_render::cutscene_narration_draws_for(
                 &self.font, text, center_x, top_y, gold,
             ));

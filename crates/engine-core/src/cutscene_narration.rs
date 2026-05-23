@@ -17,9 +17,11 @@
 //! first and the Rim Elm hand-off follows, mirroring the retail opening order.
 
 /// Default frames each narration page stays on screen before auto-advancing.
-/// At ~60 fps this is ~2.5 s, comfortable reading pace for a single subtitle
-/// line; a confirm press advances sooner.
-pub const DEFAULT_PAGE_FRAMES: u32 = 150;
+/// Pinned to retail: the on-screen text actor's display timer is seeded to
+/// `0x78` = 120 frames (≈2.0 s at 60 fps) in `FUN_8003C764` (the text-balloon
+/// spawner the `0x4C` narration op routes to). A confirm press advances sooner.
+// REF: FUN_8003C764
+pub const DEFAULT_PAGE_FRAMES: u32 = 120;
 
 /// A running narration: an ordered list of subtitle pages plus the cursor and
 /// per-page timer that walk them.

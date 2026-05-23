@@ -52,10 +52,22 @@ fn opdeene_timeline_carries_two_inline_narration_blocks() {
         .expect("opdeene has a MAN payload");
     let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
 
-    let (script_start, _pc0, body_len) =
+    let (script_start, pc0, body_len) =
         partition_record_span(&man_file, &man, TIMELINE_PARTITION, TIMELINE_RECORD)
             .expect("opdeene cutscene-timeline record span");
     let body = &man[script_start..script_start + body_len];
+
+    // The partition-2 named-record header decodes to entry PC 0x10 (name "6
+    // chars" + three empty condition-blocks), where the timeline opens with
+    // op 0x34 EFFECT, immediately followed by GFLAG_SET 26 at +0x17. This
+    // ground-truths the named-record header walk against the disc.
+    assert_eq!(pc0, 0x10, "partition-2 named-record entry PC");
+    assert_eq!(body[pc0], 0x34, "timeline opens with op 0x34 (EFFECT)");
+    assert_eq!(
+        (body[0x17], body[0x18]),
+        (0x2E, 0x1A),
+        "GFLAG_SET 26 follows the opening EFFECT op"
+    );
 
     let blocks = parse_narration(body);
     for (i, b) in blocks.iter().enumerate() {
