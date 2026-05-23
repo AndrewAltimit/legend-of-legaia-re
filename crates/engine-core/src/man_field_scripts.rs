@@ -1,4 +1,10 @@
-//! Opcode-aware walk of a scene MAN's partition-1 field-VM scripts.
+//! Opcode-aware walk of a scene MAN's field-VM scripts.
+//!
+//! [`walk_partition1_scripts`] surveys partition 1 (the encounter hunt);
+//! [`walk_partition_gflag_sites`] is the partition-agnostic companion that
+//! collects global-flag writes (used for the opening prologue's partition-2
+//! `GFLAG_SET 26` hand-off arm). Both share the same `[u8 N][N*2 locals]
+//! [4-byte header]` record prefix and the same [`LinearWalker`] decode.
 //!
 //! Partition 1 of a scene MAN (the "actor-placement / scripts" partition)
 //! holds one field-VM script per record:
@@ -38,7 +44,7 @@
 //! (see [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
 use legaia_asset::man_section::ManFile;
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker, YieldKind};
+use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, YieldKind};
 
 use crate::encounter_record::EncounterRecord;
 
@@ -196,6 +202,100 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
     out
 }
 
+/// One field-VM **global-flag write** (`GFLAG_SET` / `GFLAG_CLEAR`, opcodes
+/// `0x2E` / `0x2F`) found while walking a MAN partition's records as
+/// field-VM scripts, annotated with the scratchpad flag bit it touches.
+///
+/// The global-flag bank is `_DAT_1F800394` (the engine's
+/// [`crate::world::World::story_flags`]); op `0x2E` sets `1 << bit`, op
+/// `0x2F` clears it. The opening prologue's `opdeene` cutscene-timeline
+/// record ends with `GFLAG_SET 26`, the write the `town01` hand-off gate
+/// (`FUN_801D1344`) waits on - see
+/// [`crate::world::PROLOGUE_HANDOFF_FLAG`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GFlagSite {
+    /// Absolute byte offset of the `GFLAG` opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// The opcode byte (`0x2E` set, `0x2F` clear).
+    pub opcode: u8,
+    /// `true` for `GFLAG_SET` (`0x2E`), `false` for `GFLAG_CLEAR` (`0x2F`).
+    pub set: bool,
+    /// Scratchpad flag bit the op touches (`0..31`).
+    pub bit: u8,
+}
+
+/// The script `script_start` of `partition`'s record `index`, computed from
+/// the partition's u24 record-offset table against the MAN data region.
+/// `None` when the partition or index is out of range or the offset lands
+/// past the buffer.
+fn partition_record_offset(
+    man_file: &ManFile,
+    man_len: usize,
+    partition: usize,
+    index: usize,
+) -> Option<usize> {
+    let off = *man_file.partitions.get(partition)?.get(index)? as usize;
+    let abs = man_file.data_region_offset.checked_add(off)?;
+    (abs < man_len).then_some(abs)
+}
+
+/// Walk every record of `partition` (`0..3`) as a field-VM script and
+/// collect its global-flag write sites (`GFLAG_SET` / `GFLAG_CLEAR`).
+///
+/// This is the partition-agnostic companion to [`walk_partition1_scripts`]:
+/// the encounter hunt cares about partition 1's yield sites, the opening
+/// prologue cares about partition 2's cutscene-timeline `GFLAG_SET`. Both
+/// share the same `[u8 N][N*2 locals][4-byte header]` record prefix and the
+/// same opcode-aware [`LinearWalker`] decode, so a `GFLAG` site is reported
+/// only at a real instruction boundary - not at an operand / SJIS byte that
+/// happens to equal `0x2E`.
+pub fn walk_partition_gflag_sites(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+) -> Vec<GFlagSite> {
+    let count = man_file
+        .header
+        .partition_counts
+        .get(partition)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    let mut out = Vec::new();
+    for index in 0..count {
+        let Some(script_start) = partition_record_offset(man_file, man.len(), partition, index)
+        else {
+            continue;
+        };
+        let n = *man.get(script_start).unwrap_or(&0) as usize;
+        let pc0 = 1 + n * 2 + 4;
+        let end = record_end_bound(man_file, man.len(), script_start);
+        if script_start + pc0 >= end {
+            continue;
+        }
+        let body = &man[script_start..end];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            if let InsnInfo::GFlag { kind, bit } = insn.info
+                && kind != FlagKind::Test
+            {
+                out.push(GFlagSite {
+                    abs_pc: script_start + insn.pc,
+                    partition,
+                    record: index,
+                    opcode: insn.opcode,
+                    set: kind == FlagKind::Set,
+                    bit,
+                });
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +363,57 @@ mod tests {
         assert_eq!(record.count, 1);
         assert_eq!(record.monster_ids[0], 0x4F);
         assert!(site.matches_tetsu());
+    }
+
+    /// Build a minimal one-partition-2-record MAN whose single record is a
+    /// field-VM script ending in `GFLAG_SET 26` (op `0x2E`, operand `0x1A`) -
+    /// the opening prologue's `town01` hand-off arm.
+    fn synthetic_man_with_gflag_set_26() -> (ManFile, Vec<u8>) {
+        let data_region_offset = 0x40usize;
+        let p2_0 = 0u32;
+        let script_start = data_region_offset + p2_0 as usize;
+
+        // Record prefix: N=0 -> pc0 = 5. Then GFLAG_SET 26.
+        let mut man = vec![0u8; script_start];
+        man.push(0x00); // N = 0
+        man.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // 4-byte header
+        man.push(0x2E); // GFLAG_SET
+        man.push(0x1A); // bit 26
+        man.push(0x48); // a trailing no-op so the walk has a clean boundary
+
+        let header = ManHeader {
+            status_flags: 0,
+            low_flag: false,
+            depth_lut: [0; 16],
+            partition_counts: [0, 0, 1],
+            u24_at_28: 0,
+        };
+        let man_file = ManFile {
+            header,
+            partitions: [vec![], vec![], vec![p2_0]],
+            data_region_offset,
+            sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+                offset: man.len(),
+                length: 0,
+            }),
+        };
+        (man_file, man)
+    }
+
+    #[test]
+    fn walks_partition2_and_finds_gflag_set_26() {
+        let (man_file, man) = synthetic_man_with_gflag_set_26();
+        let sites = walk_partition_gflag_sites(&man_file, &man, 2);
+        assert_eq!(sites.len(), 1, "one GFLAG site");
+        let site = sites[0];
+        assert_eq!(site.partition, 2);
+        assert_eq!(site.record, 0);
+        assert_eq!(site.opcode, 0x2E);
+        assert!(site.set);
+        assert_eq!(site.bit, 26);
+        // The other partitions carry no records, hence no sites.
+        assert!(walk_partition_gflag_sites(&man_file, &man, 0).is_empty());
+        assert!(walk_partition_gflag_sites(&man_file, &man, 1).is_empty());
     }
 
     #[test]

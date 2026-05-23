@@ -191,6 +191,12 @@ enum Cmd {
         /// live in this blob.
         #[arg(long)]
         dump_man: Option<PathBuf>,
+        /// Walk a partition's records as field-VM scripts and report their
+        /// global-flag writes (`GFLAG_SET`/`GFLAG_CLEAR`). Partition 2 holds
+        /// the cutscene-timeline records (e.g. opdeene's `GFLAG_SET 26`
+        /// town01 hand-off arm). Reported at real opcode boundaries.
+        #[arg(long)]
+        gflag_partition: Option<usize>,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -964,6 +970,7 @@ fn main() -> Result<()> {
             all,
             disasm_record,
             dump_man,
+            gflag_partition,
         } => cmd_man_scripts(
             &scene,
             &extracted_root,
@@ -971,6 +978,7 @@ fn main() -> Result<()> {
             all,
             disasm_record,
             dump_man.as_deref(),
+            gflag_partition,
         ),
         Cmd::VramOracle {
             scene,
@@ -1794,8 +1802,11 @@ fn cmd_man_scripts(
     all: bool,
     disasm_record: Option<usize>,
     dump_man: Option<&Path>,
+    gflag_partition: Option<usize>,
 ) -> Result<()> {
-    use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
+    use legaia_engine_core::man_field_scripts::{
+        walk_partition_gflag_sites, walk_partition1_scripts,
+    };
     use legaia_engine_core::scene_bundle;
 
     let index = open_index_from_args(extracted_root, disc)?;
@@ -1906,6 +1917,25 @@ fn cmd_man_scripts(
                     break;
                 }
             }
+        }
+    }
+
+    if let Some(partition) = gflag_partition {
+        let sites = walk_partition_gflag_sites(&man_file, &man, partition);
+        println!(
+            "\n--- GFLAG writes in partition {partition} ({} sites) ---",
+            sites.len(),
+        );
+        for s in &sites {
+            println!(
+                "  P{}[{}] GFLAG.{} bit={:<2} @ 0x{:05X} (op 0x{:02X})",
+                s.partition,
+                s.record,
+                if s.set { "Set  " } else { "Clear" },
+                s.bit,
+                s.abs_pc,
+                s.opcode,
+            );
         }
     }
     Ok(())
@@ -3053,6 +3083,43 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
     Ok(decoded)
 }
 
+/// Decode a raw PSX STR file (2048-byte sectors) into RGBA video frames.
+/// Shared by `play-str` and the windowed in-flow cutscene driver.
+fn decode_str_frames(str_path: &Path) -> Result<Vec<legaia_mdec::VideoFrame>> {
+    use legaia_mdec::{MdecDecoder, VideoFrame, str_sector::StrFrameAssembler};
+    let data = std::fs::read(str_path).with_context(|| format!("read {}", str_path.display()))?;
+    let n_sectors = data.len() / 2048;
+    let mut asm = StrFrameAssembler::new();
+    let mut frames: Vec<VideoFrame> = Vec::new();
+    for i in 0..n_sectors {
+        let sector = &data[i * 2048..(i + 1) * 2048];
+        if let Some((hdr, bs)) = asm.push_sector(sector)? {
+            let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
+            match dec.decode_frame(&bs) {
+                Ok(rgba) => frames.push(VideoFrame {
+                    rgba,
+                    width: hdr.width as u32,
+                    height: hdr.height as u32,
+                    frame_number: hdr.frame_number,
+                }),
+                Err(e) => log::warn!("frame {}: decode error: {e}", hdr.frame_number),
+            }
+        }
+    }
+    Ok(frames)
+}
+
+/// Windowed in-flow cutscene playback state: the decoded STR frames the
+/// field VM's FMV-trigger op resolved to, plus the current frame cursor and
+/// the live GPU upload. Held on [`PlayWindowApp`] while the world sits in
+/// [`SceneMode::Cutscene`]; the world resumes (`finish_cutscene`) once the
+/// frames drain. Mirrors [`StrPlayerApp`]'s one-frame-per-redraw pacing.
+struct WindowedCutscene {
+    frames: Vec<legaia_mdec::VideoFrame>,
+    idx: usize,
+    uploaded: Option<legaia_engine_render::UploadedTexture>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_play(
     scene: &str,
@@ -3566,6 +3633,16 @@ struct PlayWindowApp {
     /// opening cutscene scene (`opdeene`) with the same arming the startup
     /// `enter_field_live` used.
     field_live_opts: legaia_engine_shell::boot::FieldLiveOpts,
+    /// Extracted-root directory, retained so the in-flow cutscene driver can
+    /// resolve a field-VM FMV trigger's `MV*.STR` file (mirrors the headless
+    /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
+    /// where the STR lives in the ISO and the cutscene drains as a no-op.
+    extracted_root: Option<std::path::PathBuf>,
+    /// Active windowed cutscene playback, when the field VM has flipped the
+    /// world into [`SceneMode::Cutscene`] and the resolved STR decoded. While
+    /// `Some`, world ticks are suspended and the window shows the video; the
+    /// world resumes once the frames drain.
+    cutscene: Option<WindowedCutscene>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -3694,13 +3771,13 @@ impl PlayWindowApp {
                                 .enter_field_live(cutscene, &self.field_live_opts)
                             {
                                 Ok(mode) => {
-                                    // Arm the cutscene -> Rim Elm handoff. Retail's
-                                    // opdeene timeline sets this flag (GFLAG_SET 26)
-                                    // when the prologue narration finishes; the engine
-                                    // doesn't replay that timeline yet, so arm it on
-                                    // entry. The confirm-gated transition fires in the
-                                    // field tick below (World::take_prologue_handoff).
-                                    self.session.host.world.arm_prologue_handoff();
+                                    // The cutscene -> Rim Elm handoff is now armed
+                                    // inside `enter_field_scene` by walking opdeene's
+                                    // MAN cutscene-timeline for the real `GFLAG_SET 26`
+                                    // write (World::arm_prologue_handoff_from_man), so
+                                    // no blind arm is needed here. The confirm-gated
+                                    // transition still fires in the field tick below
+                                    // (World::take_prologue_handoff).
                                     log::info!(
                                         "new game: seeded party_count={}, entered opening cutscene \
                                          '{cutscene}' (mode={mode:?})",
@@ -4156,6 +4233,89 @@ impl PlayWindowApp {
                     .is_some_and(|a| a.tmd_ref.is_some());
                 if has_tmd {
                     self.pending_dynamic_mesh_slots.push(slot);
+                }
+            }
+        }
+    }
+
+    /// Start windowed cutscene playback when the world has flipped into
+    /// [`SceneMode::Cutscene`] (a field-VM FMV-trigger op fired). Resolves the
+    /// active FMV's `MV*.STR` under the extracted root and decodes its frames;
+    /// a cut/missing slot, an unresolvable path, or a disc-only run drains the
+    /// trigger immediately via `finish_cutscene` (no-op), matching the headless
+    /// `play` loop. Leaves `self.cutscene = None` when nothing starts.
+    fn try_start_windowed_cutscene(&mut self) {
+        let Some(fmv_id) = self.session.host.world.active_fmv() else {
+            return;
+        };
+        let started = match (
+            self.extracted_root.as_ref(),
+            self.session.host.world.active_fmv_str_filename(),
+        ) {
+            (Some(root), Some(rel)) => {
+                let path = root.join(rel);
+                match decode_str_frames(&path) {
+                    Ok(frames) if !frames.is_empty() => {
+                        log::info!(
+                            "cutscene: playing fmv_id={fmv_id} {rel} ({} frames)",
+                            frames.len()
+                        );
+                        self.cutscene = Some(WindowedCutscene {
+                            frames,
+                            idx: 0,
+                            uploaded: None,
+                        });
+                        true
+                    }
+                    Ok(_) => {
+                        log::warn!("cutscene: fmv_id={fmv_id} {rel} decoded no frames; skipping");
+                        false
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "cutscene: fmv_id={fmv_id} {} decode failed ({e:#}); skipping",
+                            path.display()
+                        );
+                        false
+                    }
+                }
+            }
+            (None, _) => {
+                log::info!("cutscene: fmv_id={fmv_id} (no extracted root / disc-only); skipping");
+                false
+            }
+            (_, None) => {
+                log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
+                false
+            }
+        };
+        if !started {
+            // Drain the trigger so the field resumes next frame.
+            self.session.host.world.finish_cutscene();
+        }
+    }
+
+    /// Render the active cutscene's current frame and advance the cursor.
+    /// One frame per redraw (mirrors [`StrPlayerApp`]); the drain check at the
+    /// top of the redraw handler resumes the field once `idx` passes the end.
+    fn render_windowed_cutscene(&mut self) {
+        let Some(renderer) = self.win.renderer.as_ref() else {
+            return;
+        };
+        if let Some(c) = self.cutscene.as_mut() {
+            if let Some(f) = c.frames.get(c.idx) {
+                match renderer.upload_texture(&f.rgba, f.width, f.height) {
+                    Ok(tex) => c.uploaded = Some(tex),
+                    Err(e) => log::warn!("cutscene upload: {e}"),
+                }
+                c.idx += 1;
+            }
+            match c.uploaded.as_ref() {
+                Some(tex) => {
+                    let _ = renderer.render(RenderTarget::Texture(tex));
+                }
+                None => {
+                    let _ = renderer.render(RenderTarget::Clear);
                 }
             }
         }
@@ -6209,7 +6369,20 @@ impl ApplicationHandler for PlayWindowApp {
                 // Drain up to 4 ticks per render frame so we never spiral
                 // but can still catch up from minor vsync jitter.
                 let ticks = self.win.drain_ticks(dt, 4);
-                for _ in 0..ticks {
+                // In-flow windowed cutscene: when the field VM's FMV-trigger
+                // op flips the world into SceneMode::Cutscene and the STR has
+                // decoded, suspend world ticks and play the video in-window.
+                // Once its frames drain, resume the field (`finish_cutscene`).
+                if self
+                    .cutscene
+                    .as_ref()
+                    .is_some_and(|c| c.idx >= c.frames.len())
+                {
+                    self.session.host.world.finish_cutscene();
+                    self.cutscene = None;
+                }
+                let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
+                for _ in 0..run_ticks {
                     // When the boot UI is active, route input there and skip
                     // the scene tick - the player hasn't entered the world
                     // yet (or has paused into save-select).
@@ -6312,6 +6485,20 @@ impl ApplicationHandler for PlayWindowApp {
                     // carries a `tmd_ref` queue a render-pass mesh upload
                     // so spawn-record actors appear in the scene.
                     self.drain_and_route_field_events();
+                }
+                // A tick this frame may have flipped the world into
+                // SceneMode::Cutscene (field-VM FMV-trigger op). Start
+                // windowed STR playback if so; a cut/missing slot drains the
+                // trigger as a no-op (mirrors the headless `play` loop).
+                if self.cutscene.is_none() {
+                    self.try_start_windowed_cutscene();
+                }
+                // While a cutscene plays, the window shows the video and the
+                // scene render is skipped entirely.
+                if self.cutscene.is_some() {
+                    self.render_windowed_cutscene();
+                    self.win.request_redraw();
+                    return;
                 }
                 // On a Field<->Battle transition, upload/drop monster meshes
                 // and swap the VRAM. Must run before the render borrows
@@ -7256,6 +7443,10 @@ fn cmd_play_window_with_record(
         options_state: legaia_engine_core::options::OptionsState::default(),
         record_log: record_to.map(RecordLog::from_target),
         field_live_opts,
+        // In-flow cutscene STR resolves from the extracted root; disc-only
+        // runs can't read the ISO STR here, so leave it `None` (drains no-op).
+        extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
+        cutscene: None,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
@@ -7431,35 +7622,9 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
 // ── STR video player ────────────────────────────────────────────────────────
 
 fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()> {
-    use legaia_mdec::{MdecDecoder, VideoFrame, str_sector::StrFrameAssembler};
-
-    let data = std::fs::read(str_file).with_context(|| format!("read {}", str_file.display()))?;
-    if data.len() % 2048 != 0 {
-        log::warn!(
-            "play-str: file size {} is not a multiple of 2048",
-            data.len()
-        );
-    }
-    let n_sectors = data.len() / 2048;
-
-    // Pre-decode all frames into RGBA buffers.
-    let mut asm = StrFrameAssembler::new();
-    let mut frames: Vec<VideoFrame> = Vec::new();
-    for i in 0..n_sectors {
-        let sector = &data[i * 2048..(i + 1) * 2048];
-        if let Some((hdr, bs)) = asm.push_sector(sector)? {
-            let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
-            match dec.decode_frame(&bs) {
-                Ok(rgba) => frames.push(VideoFrame {
-                    rgba,
-                    width: hdr.width as u32,
-                    height: hdr.height as u32,
-                    frame_number: hdr.frame_number,
-                }),
-                Err(e) => log::warn!("frame {}: decode error: {e}", hdr.frame_number),
-            }
-        }
-    }
+    // Pre-decode all frames into RGBA buffers (shared with the in-flow
+    // windowed cutscene driver).
+    let frames = decode_str_frames(str_file)?;
     if frames.is_empty() {
         anyhow::bail!("no video frames found in {}", str_file.display());
     }

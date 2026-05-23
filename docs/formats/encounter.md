@@ -178,7 +178,10 @@ install operand anywhere:
    interaction records desync into dialog — itself evidence the encounter arm is
    not script-borne. See the disc-gated regression test
    `crates/engine-core/tests/town01_p1_arm_sites.rs` and the
-   `legaia-engine man-scripts --scene <name>` survey CLI.
+   `legaia-engine man-scripts --scene <name>` survey CLI (its
+   `--gflag-partition <n>` flag walks any partition's records for
+   `GFLAG_SET`/`GFLAG_CLEAR` writes — e.g. partition 2 surfaces the opening
+   prologue's cutscene-timeline `GFLAG_SET 26` town01 hand-off arm).
 
 Instead, the lone-`0x4F` formation is **town01 MAN formation index 4**. The per-scene formations load from
 the scene's MAN asset into a contiguous **8-byte-stride** table

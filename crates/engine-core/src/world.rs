@@ -121,7 +121,13 @@ pub const NEW_GAME_STARTING_GOLD: i32 = 500;
 /// per-frame field controller `FUN_801D1344` consumes it (with the
 /// confirm-press gate) to issue the name-based scene change. See
 /// [`World::arm_prologue_handoff`] / [`World::take_prologue_handoff`].
-pub const PROLOGUE_HANDOFF_FLAG: u32 = 0x0400_0000;
+pub const PROLOGUE_HANDOFF_FLAG: u32 = 1 << PROLOGUE_HANDOFF_BIT;
+
+/// Scratchpad flag-bit index (`26`) of [`PROLOGUE_HANDOFF_FLAG`]. This is
+/// the operand of the prologue cutscene's `GFLAG_SET` op (`0x2E 0x1A`); the
+/// data-driven arm [`World::arm_prologue_handoff_from_man`] matches a MAN
+/// `GFLAG_SET` against this bit.
+pub const PROLOGUE_HANDOFF_BIT: u32 = 26;
 
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
@@ -1634,6 +1640,38 @@ impl World {
     // REF: FUN_801D1344
     pub fn arm_prologue_handoff(&mut self) {
         self.story_flags |= PROLOGUE_HANDOFF_FLAG;
+    }
+
+    /// Arm the prologue -> Rim Elm hand-off **only when** the scene's MAN
+    /// cutscene timeline actually issues the `GFLAG_SET 26` write the retail
+    /// hand-off gate waits on.
+    ///
+    /// This is the data-driven companion to [`Self::arm_prologue_handoff`]:
+    /// instead of blindly raising the bit on scene entry, the engine walks
+    /// the scene MAN's partition-2 records (the cutscene timelines) for a
+    /// `GFLAG_SET` of [`PROLOGUE_HANDOFF_BIT`] via
+    /// [`crate::man_field_scripts::walk_partition_gflag_sites`] and arms only
+    /// when it is present - so a cutscene scene that never issues that write
+    /// can never produce a false hand-off. Returns `true` when it armed.
+    ///
+    /// The engine doesn't yet tick `opdeene`'s partition-2 cutscene records
+    /// frame-by-frame (the camera + actor `MoveTo`s that precede the flag
+    /// write), so this confirms the arming op exists in the real disc
+    /// bytecode and sets exactly the bit the executed `GFLAG_SET` would.
+    /// Pairs with [`Self::take_prologue_handoff`] for the confirm-press gate.
+    // REF: FUN_801D1344
+    pub fn arm_prologue_handoff_from_man(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) -> bool {
+        let armed = crate::man_field_scripts::walk_partition_gflag_sites(man_file, man, 2)
+            .iter()
+            .any(|s| s.set && s.bit as u32 == PROLOGUE_HANDOFF_BIT);
+        if armed {
+            self.arm_prologue_handoff();
+        }
+        armed
     }
 
     /// Poll the prologue cutscene -> Rim Elm handoff gate.
