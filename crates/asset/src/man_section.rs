@@ -455,6 +455,102 @@ impl ManFile {
         }
         Some((script_start, pc0))
     }
+
+    /// Decode every NPC / actor placement in partition 1 (`FUN_8003A1E4`).
+    ///
+    /// PORT: FUN_8003A1E4
+    ///
+    /// The scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over
+    /// partition-1 records `1..N1` (record `0` is the scene-entry controller
+    /// whose script is the [`Self::scene_entry_script`]; it is not a placed
+    /// entity). Each placed record shares the same prefix shape as the entry
+    /// script - `[u8 local_count N][N × 2 bytes][4-byte placement header][script]`
+    /// - and the 4-byte header is the actor's spawn data:
+    ///
+    /// | byte | meaning |
+    /// |---|---|
+    /// | +0 | model index. `< 0xF0` indexes the kingdom-TMD pool from base `DAT_8007b6f8`; `>= 0xF0` selects a special model from `_DAT_8007b824` (and sets the actor's `0x1000000` flag). |
+    /// | +1 | move/action count (installed into actor `+0x5c`). |
+    /// | +2 | tile X: `(b & 0x7F)` tile column; bit 7 shifts the spawn a half-tile. |
+    /// | +3 | tile Z: same encoding for the row. |
+    ///
+    /// World position is `(b & 0x7F) * 128 + (if bit7 { 128 } else { 64 })` per
+    /// axis (the actor sits at tile centre, or the next half-tile when bit 7 is
+    /// set). The actor's field-VM script starts at `record + 1 + 2*N + 4` with
+    /// the record base as its buffer; that script is what later installs the
+    /// entity's encounter record (`actor[+0x94]`, initialised to `-1` here) or
+    /// portal behaviour, so the placement gives **position + model + script
+    /// pointer**, not the entity's kind. Returns one entry per readable record,
+    /// in partition order.
+    pub fn actor_placements(&self, man: &[u8]) -> Vec<ActorPlacement> {
+        let n1 = self.header.partition_counts[1].max(0) as usize;
+        (1..n1)
+            .filter_map(|index| self.actor_placement(man, index))
+            .collect()
+    }
+
+    /// Decode a single partition-1 placement record, or `None` when the index
+    /// is out of range / the 4-byte placement header runs past the buffer.
+    /// `index` is partition-1-relative (index `0` is the scene-entry
+    /// controller; see [`Self::actor_placements`]).
+    pub fn actor_placement(&self, man: &[u8], index: usize) -> Option<ActorPlacement> {
+        let record_offset = self.actor_placement_record_offset(index, man.len())?;
+        let local_count = *man.get(record_offset)? as usize;
+        let header = record_offset.checked_add(1 + local_count * 2)?;
+        let model_index = *man.get(header)?;
+        let action_count = *man.get(header + 1)?;
+        let bx = *man.get(header + 2)?;
+        let bz = *man.get(header + 3)?;
+        let pos = |b: u8| -> i16 {
+            let tile = ((b & 0x7F) as i16) * 0x80;
+            tile + if b & 0x80 != 0 { 0x80 } else { 0x40 }
+        };
+        Some(ActorPlacement {
+            index,
+            record_offset,
+            local_count,
+            model_index,
+            special_model: model_index >= 0xF0,
+            action_count,
+            tile_x: bx & 0x7F,
+            tile_z: bz & 0x7F,
+            world_x: pos(bx),
+            world_z: pos(bz),
+            script_pc0: 1 + local_count * 2 + 4,
+        })
+    }
+}
+
+/// One placed NPC / actor decoded from the MAN partition-1 list
+/// (`FUN_8003A1E4`). See [`ManFile::actor_placements`] for the byte layout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ActorPlacement {
+    /// Partition-1 record index (`1..N1`; index 0 is the scene controller).
+    pub index: usize,
+    /// Absolute byte offset of the record in the MAN buffer. This is also the
+    /// actor's script buffer base (retail `actor[+0x90]`).
+    pub record_offset: usize,
+    /// `N` two-byte local entries preceding the placement header.
+    pub local_count: usize,
+    /// Raw model byte (`>= 0xF0` selects a special model; see
+    /// [`Self::special_model`]).
+    pub model_index: u8,
+    /// `true` when `model_index >= 0xF0` (special-model base + `0x1000000`
+    /// actor flag).
+    pub special_model: bool,
+    /// Move / action-script count installed into actor `+0x5c`.
+    pub action_count: u8,
+    /// Tile column (`world_x >> 7`).
+    pub tile_x: u8,
+    /// Tile row (`world_z >> 7`).
+    pub tile_z: u8,
+    /// Spawn world X (tile centre, or next half-tile when the X bit-7 is set).
+    pub world_x: i16,
+    /// Spawn world Z.
+    pub world_z: i16,
+    /// Byte offset (relative to `record_offset`) of the actor's first field-VM
+    /// opcode (`1 + 2*local_count + 4`).
+    pub script_pc0: usize,
 }
 
 fn u24_le(buf: &[u8], pos: usize) -> u32 {
@@ -786,6 +882,71 @@ mod tests {
         // Section 5 terminator: 3 zero bytes.
         buf.extend_from_slice(&[0, 0, 0]);
         buf
+    }
+
+    #[test]
+    fn actor_placement_decodes_position_model_and_script_offset() {
+        // Minimal MAN: N0=1, N1=2 (partition-1 record 0 = scene controller,
+        // record 1 = one placed actor), N2=0.
+        let mut buf = vec![0u8; 0x2B];
+        buf[0] = 0xB2;
+        buf[1] = 0x01;
+        buf[0x22..0x24].copy_from_slice(&1i16.to_le_bytes()); // N0
+        buf[0x24..0x26].copy_from_slice(&2i16.to_le_bytes()); // N1
+        buf[0x26..0x28].copy_from_slice(&0i16.to_le_bytes()); // N2
+        // Section 0 sits 8 bytes into the data region (after the placement record).
+        buf[0x28] = 8;
+        // Record table: 3 records (N0+N1+N2) of 3 bytes; all point at data
+        // region offset 0 (the placement record - record 0 / P1[0] reuse it,
+        // they aren't exercised here).
+        buf.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        // data region (offset 0x34): the placement record for P1[1].
+        //   local_count=1, 2 local bytes, model=5, actions=2,
+        //   tile_x=0x83 (tile 3 + half), tile_z=0x04 (tile 4), script halt 0x21
+        buf.extend_from_slice(&[0x01, 0xAA, 0xBB, 0x05, 0x02, 0x83, 0x04, 0x21]);
+        // Six zero-length section prefixes (sections 0..=4 + terminator).
+        buf.extend_from_slice(&[0u8; 18]);
+
+        let man = parse(&buf).expect("parse");
+        assert_eq!(man.header.partition_counts, [1, 2, 0]);
+        let placements = man.actor_placements(&buf);
+        assert_eq!(
+            placements.len(),
+            1,
+            "record 0 is the controller; only record 1 is a placement"
+        );
+        let p = &placements[0];
+        assert_eq!(p.index, 1);
+        assert_eq!(p.local_count, 1);
+        assert_eq!(p.model_index, 5);
+        assert!(!p.special_model);
+        assert_eq!(p.action_count, 2);
+        assert_eq!(p.tile_x, 3);
+        assert_eq!(p.tile_z, 4);
+        assert_eq!(p.world_x, 3 * 128 + 128, "X bit-7 set shifts a half-tile");
+        assert_eq!(p.world_z, 4 * 128 + 64, "Z bit-7 clear -> tile centre");
+        assert_eq!(p.script_pc0, 1 + 2 + 4, "1 prefix + local_count*2 + 4 header");
+        assert_eq!(p.record_offset, man.data_region_offset);
+    }
+
+    #[test]
+    fn actor_placement_flags_special_model() {
+        // A model byte >= 0xF0 marks the special-model (lead-actor) slot.
+        let mut buf = vec![0u8; 0x2B];
+        buf[0] = 0xB2;
+        buf[0x22..0x24].copy_from_slice(&1i16.to_le_bytes()); // N0
+        buf[0x24..0x26].copy_from_slice(&2i16.to_le_bytes()); // N1
+        buf[0x28] = 6; // section 0 after the 6-byte placement record
+        buf.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        // local_count=0, model=0xF2, actions=0, tile_x=0, tile_z=0
+        buf.extend_from_slice(&[0x00, 0xF2, 0x00, 0x00, 0x00, 0x21]);
+        buf.extend_from_slice(&[0u8; 18]);
+
+        let man = parse(&buf).expect("parse");
+        let p = &man.actor_placements(&buf)[0];
+        assert_eq!(p.model_index, 0xF2);
+        assert!(p.special_model);
+        assert_eq!(p.script_pc0, 1 + 4, "local_count 0 -> script at +5");
     }
 
     #[test]

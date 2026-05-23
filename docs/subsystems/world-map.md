@@ -256,12 +256,41 @@ the region-keyed encounter table from the scene's MAN and switching into
 now delegate to the same `enter_world_map_scene`, so both entries seed
 identically.
 
-One retail thread remains open: seeding overworld **entity** records (portals /
-fixed encounter zones). In retail these are installed by field-VM op handlers
-running against the scene's entity table; the engine does not yet parse that
-table, so entities are still installed through the API
-(`install_world_map_entities*`). The region table (the random-encounter driver)
-is fully boot-path seeded.
+### Entity / actor placement table
+
+The scene's on-map entities (NPCs, landmarks, the towns/portals you enter) are
+the **MAN partition-1 actor-placement records**, decoded by `FUN_8003A1E4` and
+ported as
+[`ManFile::actor_placements`](../../crates/asset/src/man_section.rs) /
+[`Scene::field_actor_placements`](../../crates/engine-core/src/scene.rs). The
+scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over partition-1 records
+`1..N1` (record `0` is the scene-entry controller whose script is the
+[scene-entry system script](field-locomotion.md)). Each record is:
+
+```
+[u8 local_count N][N × 2 bytes locals][u8 model][u8 action_count][u8 tile_x][u8 tile_z][field-VM script…]
+```
+
+- **model** `< 0xF0` indexes the kingdom-TMD pool from `DAT_8007b6f8`; `>= 0xF0`
+  selects a special model from `_DAT_8007b824` (the lead-actor / party slot, and
+  sets the actor's `0x1000000` flag).
+- **tile_x / tile_z**: bits 0–6 are the 128-unit tile column / row; bit 7 shifts
+  the spawn a half-tile. World position is `(b & 0x7F)·128 + (bit7 ? 128 : 64)`.
+- the actor's field-VM **script** starts at `record + 1 + 2N + 4` with the
+  record base as its buffer; the actor's encounter record (`+0x94`) is
+  initialised to `-1` and set later by that script.
+
+Real scenes decode cleanly: `town01` places 52 actors, the kingdom overworlds
+`map01`/`map02`/`map03` place 8 / 7 / 19 (several parked at tile `(127,127)` —
+preloaded models the script repositions). So the placement gives **position +
+model + script pointer** for every entity.
+
+What remains open is the entity **kind** (encounter zone / portal / NPC): that
+is encoded in the per-entity field-VM script (the `entity[+0x94]` encounter-record
+installs and scene-transition ops below), which the engine does not execute at
+placement time yet. So the engine still installs *typed* overworld entities
+through the API (`install_world_map_entities*`); the region table (the
+random-encounter driver) is fully boot-path seeded.
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see

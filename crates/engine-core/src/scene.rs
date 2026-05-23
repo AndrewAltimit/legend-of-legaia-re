@@ -839,6 +839,39 @@ impl Scene {
         ))
     }
 
+    /// The scene's NPC / actor placement list, decoded from the MAN
+    /// partition-1 records (retail `FUN_8003A1E4` per-record actor spawn).
+    ///
+    /// Each [`ActorPlacement`](legaia_asset::man_section::ActorPlacement) is one
+    /// placed entity: its spawn tile/world position, model index, action count,
+    /// and the byte offset of its field-VM script (the script that later
+    /// installs the entity's encounter record or portal behaviour). This is the
+    /// source the engine seeds overworld entities from on the world-map path;
+    /// the entity *kind* (encounter zone / portal / NPC) lives in the per-entity
+    /// script and is not classified here.
+    ///
+    /// Returns `Ok(None)` when the scene has no `scene_asset_table` bundle / the
+    /// MAN payload doesn't decode - the same detector gap
+    /// [`Self::field_man_entry_script`] documents. An empty `Vec` means the MAN
+    /// decoded but places no actors (partition 1 holds only the controller).
+    pub fn field_actor_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::man_section::ActorPlacement>>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        else {
+            return Ok(None);
+        };
+        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+            return Ok(None);
+        };
+        Ok(Some(man.actor_placements(&man_bytes)))
+    }
+
     /// The scene's decoded MAN payload bytes (retail `_DAT_8007B898`), or
     /// `Ok(None)` when the scene has no `scene_asset_table` bundle / the MAN
     /// payload doesn't decode - the same detector gap
