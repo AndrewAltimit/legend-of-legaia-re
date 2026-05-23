@@ -404,10 +404,19 @@ impl<'a> KeyframeReader<'a> {
         if record.len() < RECORD_HEADER_SIZE {
             bail!("record too small for header");
         }
-        let kf_offset = RECORD_HEADER_SIZE + 8 * bone_count;
-        let kf_end = kf_offset
-            .checked_add(BoneKeyframe::SIZE * bone_count)
-            .ok_or_else(|| anyhow::anyhow!("keyframe table size overflows"))?;
+        // Use checked arithmetic throughout: `bone_count` is supplied by
+        // the caller (and ultimately derived from attacker-controlled mesh
+        // metadata in offline tooling), so a huge value must produce an
+        // `Err`, not an unchecked-multiply / unchecked-add overflow panic.
+        let overflow = || anyhow::anyhow!("keyframe table size overflows");
+        let output_bytes = 8usize.checked_mul(bone_count).ok_or_else(overflow)?;
+        let kf_offset = RECORD_HEADER_SIZE
+            .checked_add(output_bytes)
+            .ok_or_else(overflow)?;
+        let kf_bytes = BoneKeyframe::SIZE
+            .checked_mul(bone_count)
+            .ok_or_else(overflow)?;
+        let kf_end = kf_offset.checked_add(kf_bytes).ok_or_else(overflow)?;
         if kf_end > record.len() {
             bail!(
                 "record ({} bytes) too small for keyframe table at +0x{:X} for {} bones (need {} bytes)",

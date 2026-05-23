@@ -145,9 +145,12 @@ impl StrFrameAssembler {
         let to_copy = payload.len().min(remaining);
         self.payload.extend_from_slice(&payload[..to_copy]);
 
-        // Check if the frame is complete
+        // Check if the frame is complete. `chunk_number` is an
+        // attacker-controlled u16 from the sector header; `chunk_no + 1`
+        // would overflow (panic in debug) when it is 0xFFFF, so use a
+        // saturating add.
         let chunk_no = hdr.chunk_number;
-        if chunk_no + 1 >= self.chunks_expected {
+        if chunk_no.saturating_add(1) >= self.chunks_expected {
             let full_header = self.header.take().unwrap();
             let bs = std::mem::take(&mut self.payload);
             self.current_frame = None;
@@ -251,5 +254,51 @@ mod tests {
         assert_eq!(hdr.frame_number, 10);
         assert_eq!(hdr.frame_size_bytes, 8000);
         assert_eq!(payload.len(), SECTOR_PAYLOAD_BYTES);
+    }
+
+    #[test]
+    fn parse_video_sector_rejects_short_buffer() {
+        // Below the 32-byte header: must Err, not panic on the header reads.
+        assert!(parse_video_sector(&[]).is_err());
+        assert!(parse_video_sector(&[0u8; 31]).is_err());
+    }
+
+    #[test]
+    fn parse_video_sector_accepts_minimal_32_byte_buffer() {
+        // Exactly 32 bytes (header, zero payload) with a valid magic must
+        // parse and yield an empty payload slice.
+        let mut s = vec![0u8; SECTOR_HEADER_BYTES];
+        s[0..2].copy_from_slice(&VIDEO_SECTOR_MAGIC.to_le_bytes());
+        let (_, payload) = parse_video_sector(&s).unwrap().unwrap();
+        assert!(payload.is_empty());
+    }
+
+    #[test]
+    fn push_sector_with_max_chunk_number_does_not_overflow() {
+        // chunk_number = 0xFFFF would overflow `chunk_no + 1`; the saturating
+        // add must keep this from panicking and complete the frame.
+        let s = make_sector(0xFFFF, 1, 0, 0);
+        let mut asm = StrFrameAssembler::new();
+        let result = asm.push_sector(&s).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn push_sector_clamps_payload_to_frame_size() {
+        // frame_size_bytes smaller than one sector's payload: the assembler
+        // must not under/over-run when copying the limited payload.
+        let s = make_sector(0, 1, 7, 10);
+        let mut asm = StrFrameAssembler::new();
+        let (_, bs) = asm.push_sector(&s).unwrap().unwrap();
+        assert_eq!(bs.len(), 10);
+    }
+
+    #[test]
+    fn push_sector_ignores_garbage_non_video_sector() {
+        // A 2048-byte buffer of pure garbage (non-matching magic) is skipped
+        // without panicking.
+        let mut asm = StrFrameAssembler::new();
+        let junk = vec![0xABu8; SECTOR_DATA_BYTES];
+        assert!(asm.push_sector(&junk).unwrap().is_none());
     }
 }

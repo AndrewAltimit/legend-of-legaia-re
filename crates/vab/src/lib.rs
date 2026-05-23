@@ -158,7 +158,11 @@ pub fn parse_header(buf: &[u8], offset: usize) -> Result<VabHeader> {
     if ps == 0 || ps > 128 {
         bail!("VAB programs count out of range: {}", ps);
     }
-    if vs == 0 || vs as usize > VAG_TABLE_ENTRIES {
+    // `vs` indexes `vag_table[1..=vs]`, so the last entry read is index
+    // `vs`. The table has exactly `VAG_TABLE_ENTRIES` (256) slots, indices
+    // `0..=255`, so `vs` must be strictly less than the table size or the
+    // sample-size lookup would read past the table.
+    if vs == 0 || vs as usize >= VAG_TABLE_ENTRIES {
         bail!("VAB samples count out of range: {}", vs);
     }
     Ok(VabHeader {
@@ -182,17 +186,47 @@ pub fn parse(buf: &[u8], offset: usize) -> Result<VabReport> {
     let ps = header.ps as usize;
     let vs = header.vs as usize;
 
-    let prog_off = offset + VAB_HEADER_SIZE;
-    let tone_off = prog_off + PROGRAMS_TABLE_SIZE;
-    let table_off = tone_off + TONE_SIZE * TONES_PER_PROGRAM * ps;
-    let vag_bodies_off = table_off + 2 * VAG_TABLE_ENTRIES;
+    // Compute every section offset with checked arithmetic so a hostile
+    // header can't overflow into a small (and thus passing) value. `ps` is
+    // bounded to <=128 by `parse_header`, so these products are tiny, but
+    // keeping the math checked is cheap and defends against future bound
+    // changes.
+    let overflow = || anyhow::anyhow!("VAB section offsets overflow usize");
+    let prog_off = offset.checked_add(VAB_HEADER_SIZE).ok_or_else(overflow)?;
+    let tone_off = prog_off
+        .checked_add(PROGRAMS_TABLE_SIZE)
+        .ok_or_else(overflow)?;
+    let tones_bytes = TONE_SIZE
+        .checked_mul(TONES_PER_PROGRAM)
+        .and_then(|n| n.checked_mul(ps))
+        .ok_or_else(overflow)?;
+    let table_off = tone_off.checked_add(tones_bytes).ok_or_else(overflow)?;
+    let vag_bodies_off = table_off
+        .checked_add(2 * VAG_TABLE_ENTRIES)
+        .ok_or_else(overflow)?;
 
-    if offset + header.fsize as usize > buf.len() {
+    // The declared `fsize` must fit, AND the fixed-layout sections
+    // (programs + tones + VAG table) must themselves fit within the buffer.
+    // `fsize` is attacker-controlled and can be smaller than the layout
+    // demands, so checking it alone is not enough to make the section
+    // slices below safe.
+    let vab_end = offset
+        .checked_add(header.fsize as usize)
+        .ok_or_else(overflow)?;
+    if vab_end > buf.len() {
         bail!(
             "VAB at 0x{:X} claims fsize {} but only {} bytes remain",
             offset,
             header.fsize,
-            buf.len() - offset
+            buf.len().saturating_sub(offset)
+        );
+    }
+    if vag_bodies_off > buf.len() {
+        bail!(
+            "VAB at 0x{:X} header/tone/table sections ({} bytes) overrun buffer ({} bytes)",
+            offset,
+            vag_bodies_off.saturating_sub(offset),
+            buf.len()
         );
     }
 
@@ -264,15 +298,18 @@ pub fn parse(buf: &[u8], offset: usize) -> Result<VabReport> {
     let mut samples = Vec::with_capacity(vs);
     let mut cursor = vag_bodies_off;
     for i in 0..vs {
+        // `vs < VAG_TABLE_ENTRIES` (checked in parse_header) guarantees
+        // `i + 1 <= vs < 256`, so this index is always in `entries`.
         let size_units = entries[i + 1] as usize;
         let size = size_units * 8;
-        if cursor + size > offset + header.fsize as usize {
+        let sample_end = cursor.checked_add(size).ok_or_else(overflow)?;
+        if sample_end > vab_end {
             bail!(
                 "VAG sample {} (size {}) overruns VAB region (vab end = 0x{:X}, sample end = 0x{:X})",
                 i,
                 size,
-                offset + header.fsize as usize,
-                cursor + size
+                vab_end,
+                sample_end
             );
         }
         samples.push(VagSampleSpan {
@@ -280,7 +317,7 @@ pub fn parse(buf: &[u8], offset: usize) -> Result<VabReport> {
             byte_offset: cursor,
             size,
         });
-        cursor += size;
+        cursor = sample_end;
     }
 
     Ok(VabReport {
@@ -353,7 +390,19 @@ pub fn decode_vag(buf: &[u8]) -> Result<Vec<i16>> {
                 };
                 // Sign-extend 4-bit signed nibble.
                 let s = ((nibble as i8) << 4) >> 4;
-                let mut sample = (s as i32) << (12 - shift);
+                // Canonical SPU-ADPCM gain: `(s << 12) >> shift`. Written
+                // this way (rather than `s << (12 - shift)`) so a hostile
+                // `shift > 12` can't trigger a negative/oversized shift
+                // panic. For the valid range (shift <= 12) the two forms
+                // are identical. `shift` is `header_byte & 0x0F` so it is
+                // always in `0..=15`; clamp the degenerate `>= 16` case the
+                // same way the XA decoder does for safety.
+                let shifted: i32 = if shift >= 16 {
+                    0
+                } else {
+                    ((s as i32) << 12) >> shift
+                };
+                let mut sample = shifted;
                 sample += (prev1 * f0 + prev2 * f1 + 32) >> 6;
                 let clamped = sample.clamp(i16::MIN as i32, i16::MAX as i32);
                 out.push(clamped as i16);

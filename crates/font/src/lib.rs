@@ -300,7 +300,9 @@ impl Font {
                         max_x = pen_x;
                     }
                     pen_x = 0;
-                    pen_y += LINE_HEIGHT as i32;
+                    // Saturating: a pathologically long all-newline input must
+                    // not overflow the i32 pen cursor (panic in debug builds).
+                    pen_y = pen_y.saturating_add(LINE_HEIGHT as i32);
                 }
                 // 0xCE = inline-escape (variable / string substitution),
                 // 0xCF = color-change. Both consume the next byte. The
@@ -322,7 +324,7 @@ impl Font {
                             atlas_y: ay,
                         });
                     }
-                    pen_x += self.advance_of(c) as i32;
+                    pen_x = pen_x.saturating_add(self.advance_of(c) as i32);
                 }
                 _ => {
                     // Unprintable / out-of-range bytes (0x01..0x1F minus
@@ -336,7 +338,7 @@ impl Font {
         Layout {
             glyphs,
             advance_x: max_x.max(0) as u32,
-            advance_y: pen_y as u32 + LINE_HEIGHT,
+            advance_y: (pen_y.max(0) as u32).saturating_add(LINE_HEIGHT),
         }
     }
 
@@ -391,7 +393,7 @@ impl Font {
                 continue;
             }
             if c == b' ' {
-                if line_w + self.advance_of(c) > box_width_px {
+                if line_w.saturating_add(self.advance_of(c)) > box_width_px {
                     // Soft-break instead of emitting a trailing space.
                     out.push(NEWLINE);
                     line_w = 0;
@@ -399,7 +401,7 @@ impl Font {
                     continue;
                 }
                 out.push(c);
-                line_w += self.advance_of(c);
+                line_w = line_w.saturating_add(self.advance_of(c));
                 i += 1;
                 continue;
             }
@@ -415,10 +417,10 @@ impl Font {
                     j += 2;
                     continue;
                 }
-                word_w += self.advance_of(cj);
+                word_w = word_w.saturating_add(self.advance_of(cj));
                 j += 1;
             }
-            if line_w > 0 && line_w + word_w > box_width_px {
+            if line_w > 0 && line_w.saturating_add(word_w) > box_width_px {
                 // Trim trailing space if the previous emit was one.
                 if matches!(out.last(), Some(&b' ')) {
                     out.pop();
@@ -427,7 +429,7 @@ impl Font {
                 line_w = 0;
             }
             out.extend_from_slice(&text[i..j]);
-            line_w += word_w;
+            line_w = line_w.saturating_add(word_w);
             i = j;
         }
         out
@@ -444,7 +446,15 @@ fn decode_atlas_png(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
     let (rgba, w, h) = match info.color_type {
         png::ColorType::Rgba => (buf, info.width, info.height),
         png::ColorType::Rgb => {
-            let mut out = Vec::with_capacity((info.width * info.height * 4) as usize);
+            // `info.width * info.height * 4` is u32 arithmetic that could
+            // overflow on a malicious header; compute the reserve as u64 and
+            // saturate to usize so we never panic on the capacity hint. The
+            // actual data is bounded by the already-decoded `buf`.
+            let cap = (info.width as u64)
+                .saturating_mul(info.height as u64)
+                .saturating_mul(4);
+            let mut out =
+                Vec::with_capacity(usize::try_from(cap).unwrap_or(0).min(buf.len() / 3 * 4));
             for px in buf.chunks_exact(3) {
                 out.extend_from_slice(&[px[0], px[1], px[2], 255]);
             }
@@ -737,5 +747,102 @@ mod tests {
     fn escape_table_returns_error_when_missing_field() {
         let json = r#"{"unrelated": 42}"#;
         assert!(EscapeTable::from_json(json).is_err());
+    }
+
+    #[test]
+    fn escape_table_rejects_non_json_garbage() {
+        // Truncated / non-JSON input must Err, not panic.
+        assert!(EscapeTable::from_json("").is_err());
+        assert!(EscapeTable::from_json("{not json").is_err());
+        assert!(EscapeTable::from_json("\u{0}\u{1}\u{2}").is_err());
+    }
+
+    #[test]
+    fn layout_empty_input_yields_empty_layout() {
+        let f = synthetic_for_tests();
+        let layout = f.layout(&[]);
+        assert!(layout.glyphs.is_empty());
+        assert_eq!(layout.advance_x, 0);
+        assert_eq!(layout.advance_y, LINE_HEIGHT);
+    }
+
+    #[test]
+    fn layout_all_bytes_does_not_panic() {
+        // Every possible byte value in one string: control bytes, escape
+        // opcodes (with and without trailing operand), printables. Must not
+        // panic and must produce a bounded layout.
+        let f = synthetic_for_tests();
+        let all: Vec<u8> = (1u16..=255).map(|b| b as u8).collect(); // skip 0 (terminator)
+        let layout = f.layout(&all);
+        // Bounded glyph count: at most one per byte.
+        assert!(layout.glyphs.len() <= all.len());
+    }
+
+    #[test]
+    fn layout_trailing_escape_with_no_operand_is_safe() {
+        // 0xCE at the very end has no operand byte to consume.
+        let f = synthetic_for_tests();
+        let layout = f.layout(&[b'A', 0xCE]);
+        assert_eq!(layout.glyphs.len(), 1);
+    }
+
+    #[test]
+    fn wrap_bytes_on_garbage_does_not_panic() {
+        let f = synthetic_for_tests();
+        let junk: Vec<u8> = (0..512).map(|i| (i * 7 + 1) as u8).collect();
+        // Tiny box width forces many wrap decisions on arbitrary bytes.
+        let wrapped = f.wrap_bytes(&junk, 4);
+        // Output is bounded (input + inserted newlines, no infinite growth).
+        assert!(wrapped.len() <= junk.len() * 2 + 16);
+    }
+
+    #[test]
+    fn wrap_bytes_zero_box_width_terminates() {
+        // A zero-width box is a degenerate input; wrapping must still
+        // terminate and not loop forever.
+        let f = synthetic_for_tests();
+        let wrapped = f.wrap_bytes(b"hello world", 0);
+        assert!(!wrapped.is_empty());
+    }
+
+    #[test]
+    fn parse_widths_csv_rejects_malformed_lines() {
+        let dir = std::env::temp_dir().join("legaia-font-fuzz");
+        let _ = std::fs::create_dir_all(&dir);
+
+        // A line with no comma after the header row → Err.
+        let bad = dir.join("bad_no_comma.csv");
+        std::fs::write(&bad, "header\nnocommahere\n").unwrap();
+        assert!(parse_widths_csv(&bad).is_err());
+
+        // A line with a non-hex char field → Err.
+        let bad2 = dir.join("bad_hex.csv");
+        std::fs::write(&bad2, "header\nZZ,1,x,8\n").unwrap();
+        assert!(parse_widths_csv(&bad2).is_err());
+
+        // A line with a non-numeric width → Err.
+        let bad3 = dir.join("bad_width.csv");
+        std::fs::write(&bad3, "header\n0x41,65,A,notanumber\n").unwrap();
+        assert!(parse_widths_csv(&bad3).is_err());
+
+        let _ = std::fs::remove_file(&bad);
+        let _ = std::fs::remove_file(&bad2);
+        let _ = std::fs::remove_file(&bad3);
+    }
+
+    #[test]
+    fn parse_widths_csv_accepts_well_formed_synthetic() {
+        let dir = std::env::temp_dir().join("legaia-font-fuzz");
+        let _ = std::fs::create_dir_all(&dir);
+        let good = dir.join("good.csv");
+        // header row skipped; one valid data row for 'A' (0x41) width 12.
+        std::fs::write(
+            &good,
+            "char_hex,char_dec,char_repr,width_px\n0x41,65,\"A\",12\n",
+        )
+        .unwrap();
+        let widths = parse_widths_csv(&good).unwrap();
+        assert_eq!(widths[0x41], 12);
+        let _ = std::fs::remove_file(&good);
     }
 }

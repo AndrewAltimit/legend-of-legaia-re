@@ -38,7 +38,17 @@ impl RawDisc {
 
     pub fn read_user_data(&mut self, lba: u32, count: u32, out: &mut Vec<u8>) -> io::Result<()> {
         out.clear();
-        out.reserve(count as usize * USER_DATA_SIZE);
+        // `count` can be derived from an attacker-controlled directory size.
+        // Use a checked multiply and only pre-reserve up to the bytes that
+        // could actually be present on disc; the per-sector `read_exact`
+        // below still errors out cleanly if the extent runs past EOF, so we
+        // never need to speculatively allocate the full claimed size.
+        let want_bytes = (count as u64).saturating_mul(USER_DATA_SIZE as u64);
+        let on_disc_bytes = self
+            .sector_count
+            .saturating_mul(USER_DATA_SIZE as u64)
+            .min(want_bytes);
+        out.reserve(usize::try_from(on_disc_bytes).unwrap_or(0));
         let mut sector = [0u8; SECTOR_SIZE];
         self.file
             .seek(SeekFrom::Start(lba as u64 * SECTOR_SIZE as u64))?;

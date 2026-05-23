@@ -520,6 +520,73 @@ mod tests {
     }
 
     #[test]
+    fn decode_empty_input_is_ok_and_empty() {
+        // Zero groups: valid (multiple of 128) and yields no samples.
+        let (samples, report) = decode(&[], DecodeOptions::default()).unwrap();
+        assert!(samples.is_empty());
+        assert_eq!(report.n_groups, 0);
+    }
+
+    #[test]
+    fn decode_one_byte_input_is_err() {
+        // Not a multiple of the 128-byte sound-group size.
+        assert!(decode(&[0u8], DecodeOptions::default()).is_err());
+    }
+
+    #[test]
+    fn decode_all_ones_group_does_not_panic() {
+        // Every parameter byte = 0xFF (filter nibble = 0xF > 3) → the group is
+        // classified invalid and zero-filled; range nibbles never trigger an
+        // out-of-range shift panic.
+        let buf = vec![0xFFu8; SOUND_GROUP_BYTES];
+        let (samples, report) = decode(&buf, DecodeOptions::default()).unwrap();
+        assert_eq!(report.n_groups_skipped, 1);
+        assert_eq!(samples.len(), UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT);
+        assert!(samples.iter().all(|&s| s == 0));
+    }
+
+    #[test]
+    fn decode_huge_range_nibble_does_not_overflow_shift() {
+        // Valid filter (0) but range nibble 0xF (= 15) in every param byte.
+        // The decoder must apply the range shift without UB and stay bounded.
+        let mut buf = vec![0u8; SOUND_GROUP_BYTES];
+        for b in buf.iter_mut().take(UNITS_PER_GROUP_4BIT) {
+            *b = 0x0F; // filter=0, range=15
+        }
+        // Fill sample nibbles with max magnitude to push the predictor.
+        for b in buf.iter_mut().skip(16) {
+            *b = 0xFF;
+        }
+        let (samples, _) = decode(&buf, DecodeOptions::default()).unwrap();
+        assert_eq!(samples.len(), UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT);
+    }
+
+    #[test]
+    fn decode_garbage_multiple_of_128_does_not_panic() {
+        // Pseudo-random-ish bytes across several groups: any mix of valid /
+        // invalid groups must decode to a bounded buffer without panicking.
+        let buf: Vec<u8> = (0..(SOUND_GROUP_BYTES * 5))
+            .map(|i| (i.wrapping_mul(31).wrapping_add(7)) as u8)
+            .collect();
+        let (samples, report) = decode(&buf, DecodeOptions::default()).unwrap();
+        assert_eq!(report.n_groups, 5);
+        assert_eq!(samples.len(), 5 * UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT);
+    }
+
+    #[test]
+    fn streaming_decoder_handles_garbage_without_panic() {
+        let buf: Vec<u8> = (0..(SOUND_GROUP_BYTES * 3))
+            .map(|i| (i.wrapping_mul(131).wrapping_add(17)) as u8)
+            .collect();
+        let mut dec = StreamingDecoder::new(DecodeOptions::default());
+        let mut out = Vec::new();
+        dec.feed(&buf, &mut out).unwrap();
+        // Feed a trailing partial group; it must be buffered, not panic.
+        dec.feed(&[0u8; 50], &mut out).unwrap();
+        assert_eq!(dec.pending_bytes(), 50);
+    }
+
+    #[test]
     fn wav_writes_valid_riff_header() {
         let samples = vec![0i16; 100];
         let tmp = std::env::temp_dir().join("legaia_xa_test.wav");

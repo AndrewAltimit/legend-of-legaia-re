@@ -63,9 +63,24 @@ fn parse_name(b: &[u8]) -> String {
     }
 }
 
+/// Largest directory-extent size we'll honour from an on-disc record, in
+/// bytes. The 32-bit `size` field of a directory record is attacker-
+/// controlled; a junk value near `u32::MAX` would otherwise drive
+/// [`RawDisc::read_user_data`] to reserve/read ~8 TiB before the underlying
+/// read fails. Real ISO9660 directories are a handful of 2 KiB blocks; 64 MiB
+/// is far past any plausible directory while keeping the allocation bounded.
+const MAX_DIRECTORY_BYTES: u32 = 64 * 1024 * 1024;
+
 pub fn list_directory(disc: &mut RawDisc, dir: &DirectoryRecord) -> Result<Vec<DirectoryRecord>> {
     if !dir.is_dir {
         bail!("not a directory: {}", dir.name);
+    }
+    if dir.size > MAX_DIRECTORY_BYTES {
+        bail!(
+            "directory extent {} bytes exceeds the {} byte sanity limit",
+            dir.size,
+            MAX_DIRECTORY_BYTES
+        );
     }
     let sector_count = dir.size.div_ceil(USER_DATA_SIZE as u32);
     let mut buf = Vec::new();
@@ -107,8 +122,15 @@ pub fn walk_files(
     disc: &mut RawDisc,
     root: &DirectoryRecord,
 ) -> Result<Vec<(String, DirectoryRecord)>> {
+    use std::collections::HashSet;
+
     let mut out = Vec::new();
     let mut stack = vec![(String::new(), root.clone())];
+    // A malformed disc can contain a directory record whose `lba` points at an
+    // ancestor (or itself), which would make this descent loop forever. Track
+    // the directory extents we've already entered and skip any we revisit.
+    let mut visited: HashSet<u32> = HashSet::new();
+    visited.insert(root.lba);
     while let Some((prefix, dir)) = stack.pop() {
         let mut entries = list_directory(disc, &dir)?;
         // Stable order: directories pushed last so files come out
@@ -121,7 +143,11 @@ pub fn walk_files(
                 format!("{}/{}", prefix, entry.name)
             };
             if entry.is_dir {
-                stack.push((path, entry));
+                // Only descend into a directory extent once. Prevents an
+                // unbounded loop on a cyclic / self-referential directory tree.
+                if visited.insert(entry.lba) {
+                    stack.push((path, entry));
+                }
             } else {
                 out.push((path, entry));
             }

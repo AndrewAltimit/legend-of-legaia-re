@@ -475,6 +475,20 @@ impl MdecDecoder {
                 h
             );
         }
+        // Upper bound on dimensions. STR sector headers carry width/height as
+        // u16 fields; a junk/truncated header can claim a 65535×65535 frame
+        // which would attempt a multi-gigabyte `vec![0u8; w*h*4]` allocation
+        // (capacity-overflow / OOM) before any decode happens. PSX MDEC output
+        // never exceeds 640×480-class frames, so cap generously at 4096 per
+        // axis and reject anything larger as malformed.
+        const MAX_DIM: usize = 4096;
+        if w > MAX_DIM || h > MAX_DIM {
+            bail!(
+                "MDEC: frame dimensions {}×{} exceed the {MAX_DIM}px-per-axis limit",
+                w,
+                h
+            );
+        }
 
         // Parse the 4-byte BS header: u16 n_words, u16 qs.
         let (qs, bs_payload) = if bs.len() >= 4 {
@@ -608,6 +622,47 @@ mod tests {
         assert!(dec.decode_frame(&[]).is_err());
         let dec2 = MdecDecoder::new(16, 0);
         assert!(dec2.decode_frame(&[]).is_err());
+    }
+
+    #[test]
+    fn decode_frame_rejects_oversized_dimensions_without_allocating() {
+        // A junk STR header can claim a near-u16::MAX frame; that must be
+        // rejected (Err, not a multi-gigabyte allocation / OOM panic).
+        // 65520 = largest multiple of 16 below u16::MAX, so it passes the
+        // alignment check and exercises the new MAX_DIM bound.
+        let dec = MdecDecoder::new(65520, 65520);
+        assert!(dec.decode_frame(&[0u8; 4]).is_err());
+    }
+
+    #[test]
+    fn decode_frame_accepts_max_dim_boundary() {
+        // 4096×16 sits exactly on the MAX_DIM axis cap and must still decode.
+        let dec = MdecDecoder::new(4096, 16);
+        let out = dec
+            .decode_frame(&[0u8; 8])
+            .expect("4096-wide frame decodes");
+        assert_eq!(out.len(), 4096 * 16 * 4);
+    }
+
+    #[test]
+    fn decode_frame_tolerates_truncated_and_junk_payloads() {
+        // Empty, sub-header, and garbage payloads must all return a
+        // correctly-sized buffer (zero-filled where the bitstream ran out)
+        // rather than panicking on a VLC over-read.
+        let dec = MdecDecoder::new(16, 16);
+        for bs in [
+            vec![],
+            vec![0u8; 1],
+            vec![0u8; 3],    // shorter than the 4-byte BS header
+            vec![0xFFu8; 4], // header only, no payload
+            (0..64).map(|i| i as u8).collect::<Vec<u8>>(), // arbitrary junk
+            vec![0xFFu8; 200], // all-ones payload exercises long VLC paths
+        ] {
+            let out = dec
+                .decode_frame(&bs)
+                .expect("decode never errors on valid dims");
+            assert_eq!(out.len(), 16 * 16 * 4);
+        }
     }
 
     #[test]
