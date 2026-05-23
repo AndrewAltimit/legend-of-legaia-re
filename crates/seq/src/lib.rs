@@ -282,9 +282,15 @@ pub fn read_vlq(buf: &[u8], pos: usize) -> Result<(u32, usize)> {
     let mut value: u32 = 0;
     let mut consumed: usize = 0;
     loop {
+        // `pos` is a public, caller-supplied offset, so guard the index
+        // arithmetic against usize overflow (a junk `pos == usize::MAX`
+        // would otherwise panic in debug before the bounds `get` runs).
+        let idx = pos
+            .checked_add(consumed)
+            .ok_or_else(|| anyhow::anyhow!("VLQ: offset overflow at +{}", pos))?;
         let b = *buf
-            .get(pos + consumed)
-            .ok_or_else(|| anyhow::anyhow!("VLQ: short read at +{}", pos + consumed))?;
+            .get(idx)
+            .ok_or_else(|| anyhow::anyhow!("VLQ: short read at +{}", idx))?;
         consumed += 1;
         value = (value << 7) | (b & 0x7F) as u32;
         if b & 0x80 == 0 {
