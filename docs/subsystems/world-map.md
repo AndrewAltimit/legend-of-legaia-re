@@ -221,10 +221,28 @@ path as the field and steps the overworld player through the shared
 `World::advance_with_collision`, so walls stop the player exactly as on the
 field.
 
-Two retail threads remain open: the camera-relative movement remap (today the
-d-pad maps directly to world axes; the field controller remaps through the
-camera azimuth), and seeding overworld entities + the region table from the boot
-path (today they are installed through the API / the `--world-map` entry).
+### Camera-relative movement remap
+
+The held d-pad is remapped through the overworld camera azimuth so "screen up"
+walks the player toward the top of the screen and "screen right" walks
+screen-right, regardless of how the map is framed — the same camera-relative
+remap retail's `func_0x800467e8` applies (it feeds the pad through the camera
+yaw the renderer uses). `World::world_map_camera_relative_bits(azimuth, sx, sy)`
+rotates the screen delta into world space against the same azimuth
+[`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs) frames
+the eye with (`eye = center + (d·cosθ, -0.7d, d·sinθ)`). Because the renderer's
+Y-down convention inverts the on-screen vertical axis relative to the eye→centre
+direction, the world→screen axes are taken from the **real camera matrix, not a
+hand-derived guess**: a disc-free projection test
+(`crates/engine-shell/tests/world_map_camera_remap.rs`) projects the chosen
+world direction back through `world_map_camera_mvp` and asserts it moves the
+right way on screen for every azimuth, keeping the remap in lock-step with the
+camera. The native `play-window` feeds the same controller azimuth to both the
+camera and the remap, so they cannot drift.
+
+One retail thread remains open: seeding overworld entities + the region table
+from the boot path (today they are installed through the API / the
+`--world-map` entry).
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see

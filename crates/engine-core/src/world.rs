@@ -107,6 +107,59 @@ const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 /// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
 pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 
+/// Remap a screen-space d-pad delta into overworld direction bits using the
+/// world-map camera azimuth, so "screen up" always walks away from the camera
+/// and "screen right" walks screen-right regardless of how the map is framed.
+///
+/// Mirrors retail `func_0x800467e8`, which remaps the held pad through the same
+/// camera yaw the renderer frames the overworld with. `azimuth` is PSX angle
+/// units (`4096` = full turn) — the
+/// [`WorldMapController`](crate::world_map::WorldMapController) azimuth the
+/// renderer's `world_map_camera_mvp` orbits the eye by:
+/// `eye = center + (d·cosθ, -0.7d, d·sinθ)`, `θ = azimuth / 4096 · τ`.
+///
+/// The world→screen axes are taken **from the real camera matrix, not from a
+/// hand-derived "away from camera" guess**: under the renderer's Y-down
+/// (eye at `-Y`, `+Y` up-vector) convention the on-screen vertical axis is
+/// inverted relative to the eye→centre direction, so the verified mapping is
+/// screen-up → world `(cosθ, sinθ)` and screen-right → world `(sinθ, -cosθ)`.
+/// The `world_map_camera_relative_*` tests in `crates/engine-shell` project the
+/// chosen world direction back through `world_map_camera_mvp` and assert it
+/// moves the right way on screen for every azimuth, so this stays in lock-step
+/// with the camera.
+///
+/// `sx` is the screen-right delta (`+1` = Right pressed), `sy` the
+/// screen-up delta (`+1` = Up pressed). Returns the post-remap convention
+/// bits (`0x1000` = Z+, `0x4000` = Z-, `0x2000` = X+, `0x8000` = X-), quantised
+/// to 8 directions (a world axis is taken when its component is within ~22.5°
+/// of that axis); `0` when nothing is held.
+pub fn world_map_camera_relative_bits(azimuth: i32, sx: i32, sy: i32) -> u16 {
+    if sx == 0 && sy == 0 {
+        return 0;
+    }
+    let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = theta.sin_cos();
+    // screen-up    -> world ( cosθ, sinθ)   (verified against world_map_camera_mvp)
+    // screen-right -> world ( sinθ, -cosθ)
+    let wx = (sx as f32) * sin + (sy as f32) * cos;
+    let wz = -(sx as f32) * cos + (sy as f32) * sin;
+    // sin(22.5°): within this band of an axis the press is treated as cardinal;
+    // beyond it (a rotated framing) both bits set and the player walks diagonally.
+    const T: f32 = 0.382_683_43;
+    let mut bits = 0u16;
+    if wz > T {
+        bits |= 0x1000; // Z+
+    } else if wz < -T {
+        bits |= 0x4000; // Z-
+    }
+    if wx > T {
+        bits |= 0x2000; // X+
+    } else if wx < -T {
+        bits |= 0x8000; // X-
+    }
+    bits
+}
+
 /// Starting gold (money) a New Game grants the party.
 ///
 /// The retail new-game data-init `FUN_80034A6C` writes the party-gold global
@@ -3463,11 +3516,12 @@ impl World {
     /// Move the overworld player actor from the held d-pad, bounded by the
     /// scene's walkability grid.
     ///
-    /// Direct screen-axis mapping (Up → `+Z`, Down → `-Z`, Right → `+X`,
-    /// Left → `-X`), matching the field locomotion axis convention; the
-    /// camera-relative remap the field controller applies
-    /// ([`Self::decode_field_direction`]) is a follow-up once the world-map
-    /// follow camera feeds an azimuth.
+    /// Held d-pad is remapped through the overworld camera azimuth
+    /// ([`world_map_camera_relative_bits`]) so "screen up" walks away from the
+    /// follow camera and "screen right" walks screen-right regardless of how
+    /// the map is rotated — the same camera-relative remap retail's
+    /// `func_0x800467e8` applies, and the counterpart to the field's
+    /// [`Self::decode_field_direction`].
     ///
     /// Collision is **not** a separate unknown: the retail world-map-walk
     /// overlay's locomotion is the same `FUN_801d01b0` as the field, colliding
@@ -3503,19 +3557,26 @@ impl World {
         if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
             return;
         }
-        // Held d-pad → post-remap direction bits (one bit per axis sign).
+        // Held d-pad → camera-relative direction bits. `sx`/`sy` are the raw
+        // screen deltas (right / forward); the azimuth remap rotates them into
+        // world space against the overworld follow camera.
         let pad = self.input.pad();
-        let mut dir_bits = 0u16;
+        let mut sx = 0i32;
+        let mut sy = 0i32;
         if pad & input::PadButton::Up.mask() != 0 {
-            dir_bits |= 0x1000; // Z+
-        } else if pad & input::PadButton::Down.mask() != 0 {
-            dir_bits |= 0x4000; // Z-
+            sy += 1;
+        }
+        if pad & input::PadButton::Down.mask() != 0 {
+            sy -= 1;
         }
         if pad & input::PadButton::Right.mask() != 0 {
-            dir_bits |= 0x2000; // X+
-        } else if pad & input::PadButton::Left.mask() != 0 {
-            dir_bits |= 0x8000; // X-
+            sx += 1;
         }
+        if pad & input::PadButton::Left.mask() != 0 {
+            sx -= 1;
+        }
+        let azimuth = self.world_map_ctrl.as_ref().map(|c| c.azimuth).unwrap_or(0);
+        let dir_bits = world_map_camera_relative_bits(azimuth, sx, sy);
         if dir_bits == 0 {
             return;
         }

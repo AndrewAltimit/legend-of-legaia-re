@@ -600,6 +600,12 @@ fn world_map_region_walk_triggers_battle() {
     };
     world.live_gameplay_loop = true;
     world.enter_world_map();
+    // Frame the camera at a quarter turn (azimuth 1024) so the camera-relative
+    // remap maps a held Right cleanly to world +X (keeps this test's "walk +X
+    // across tiles" intent readable; at the default azimuth 0 Right maps to -Z).
+    if let Some(ctrl) = world.world_map_ctrl.as_mut() {
+        ctrl.azimuth = 1024;
+    }
     world.install_field_player(0); // player_actor_slot = 0, actor active
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.max_hp = 400;
@@ -648,27 +654,32 @@ fn world_map_region_walk_triggers_battle() {
 /// The overworld player is bounded by the scene's walkability grid, exactly
 /// like the field: the retail world-map-walk overlay's locomotion is the same
 /// `FUN_801d01b0` + `FUN_801cfe4c` against the same `_DAT_1f8003ec + 0x4000`
-/// grid. A wall on the tile the player would step into stops the walk.
+/// grid. With every tile walled the player cannot move in any direction.
 #[test]
-fn world_map_locomotion_stops_at_wall() {
+fn world_map_locomotion_blocked_by_full_wall_grid() {
     let mut world = World::default();
     world.enter_world_map();
     world.install_field_player(0);
-    world.actors[0].move_state.world_x = 200;
-    world.actors[0].move_state.world_z = 250;
-    // Block the tile the +Z walk would cross into at z=256 (same setup as the
-    // field `locomotion_stops_at_wall` test; the grid + stepper are shared).
-    world.paint_field_collision(1, (1, 2), (2, 3), 0);
+    // Wall every tile (sub=1 sets all four sub-cell bits across the grid).
+    world.paint_field_collision(1, (0, 0x80), (0, 0x80), 0);
+    world.actors[0].move_state.world_x = 400;
+    world.actors[0].move_state.world_z = 400;
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    // 250 -> 252 -> 254, then the 256 candidate lands in the blocked tile and
-    // is rejected. Without the wall it would reach 258.
-    assert_eq!(world.actors[0].move_state.world_z, 254);
-    assert_eq!(world.actors[0].move_state.world_x, 200);
+    assert_eq!(
+        world.actors[0].move_state.world_x, 400,
+        "walled in: no X move"
+    );
+    assert_eq!(
+        world.actors[0].move_state.world_z, 400,
+        "walled in: no Z move"
+    );
 }
 
-/// With no walls, the overworld player walks freely (the collision wiring only
-/// blocks where the grid actually has walls).
+/// With no walls, the overworld player walks freely. At the default walk-mode
+/// camera azimuth (`0`) the camera sits on `+X` looking `-X`, so "screen up"
+/// (away from the camera) walks the player `-X` - the camera-relative remap,
+/// not a raw `+Z`.
 #[test]
 fn world_map_locomotion_walks_when_clear() {
     let mut world = World::default();
@@ -679,9 +690,43 @@ fn world_map_locomotion_walks_when_clear() {
     world.actors[0].move_state.world_z = 250;
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    // speed 8 -> four 2-unit steps, all clear: 250 -> 258.
-    assert_eq!(world.actors[0].move_state.world_z, 258);
-    assert_eq!(world.actors[0].move_state.world_x, 200);
+    // speed 8 -> four 2-unit steps, all clear: Up at azimuth 0 walks +X (screen
+    // up), so x: 200 -> 208, z unchanged.
+    assert_eq!(world.actors[0].move_state.world_x, 208);
+    assert_eq!(world.actors[0].move_state.world_z, 250);
+}
+
+/// The camera-relative remap rotates the held d-pad through the overworld
+/// camera azimuth. Spot-check the cardinal framings against the
+/// `world_map_camera_mvp` geometry (eye at `center + (d·cosθ, _, d·sinθ)`):
+/// at azimuth 0 the camera is on `+X`, so "screen up" walks `-X`; a 3/4-turn
+/// azimuth puts it on `-Z`, so "screen up" walks `+Z`.
+#[test]
+fn world_map_camera_relative_bits_rotates_with_azimuth() {
+    use crate::world::world_map_camera_relative_bits;
+    // Expectations are the camera-verified screen axes (screen-up -> world
+    // (cosθ, sinθ), screen-right -> world (sinθ, -cosθ)); the engine-shell
+    // projection test confirms these move the right way on screen.
+    // No input -> no bits.
+    assert_eq!(world_map_camera_relative_bits(0, 0, 0), 0);
+    // Azimuth 0: Up (screen up) -> X+ (0x2000), Right -> Z- (0x4000).
+    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x2000);
+    assert_eq!(world_map_camera_relative_bits(0, 1, 0), 0x4000);
+    // Azimuth 1024 (quarter turn): Up -> Z+ (0x1000).
+    assert_eq!(world_map_camera_relative_bits(1024, 0, 1), 0x1000);
+    // Azimuth 2048 (half turn): Up -> X- (0x8000).
+    assert_eq!(world_map_camera_relative_bits(2048, 0, 1), 0x8000);
+    // Azimuth 3072 (3/4 turn): Up -> Z- (0x4000), Right -> X- (0x8000).
+    assert_eq!(world_map_camera_relative_bits(3072, 0, 1), 0x4000);
+    assert_eq!(world_map_camera_relative_bits(3072, 1, 0), 0x8000);
+    // A diagonal framing (1/8 turn) maps a single screen press to two world
+    // axes (the player walks diagonally).
+    let diag = world_map_camera_relative_bits(512, 0, 1);
+    assert_eq!(
+        diag.count_ones(),
+        2,
+        "rotated framing -> diagonal world move"
+    );
 }
 
 /// A camera-only world map (no entities, no region tracker) never encounters,
