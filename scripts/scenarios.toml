@@ -460,33 +460,33 @@ topics = ["save screen", "menu overlay"]
 [[scenarios]]
 slot = 255
 label = "new_game_cutscene_intro_a"
-description = "First in-game (engine-rendered, NOT STR-video) cutscene after the player picks NEW GAME. The cutscene is the engine-side opening narrative leading into Rim Elm."
+description = "First in-game (engine-rendered, NOT STR-video) cutscene after the player picks NEW GAME: low-poly actors around the Genesis tree with subtitle text (\"It was the Seru.\"). Engine-side opening narrative leading into Rim Elm."
 phase = "cutscene"
-# pcsx_redux_sstate = "..."   # uncomment after capture
+backup_fingerprint = "1966a3c192fa0c0c3a8bfb7dff38256c2b06563ff8c5df0642a35bf6d6975c65"
 topics = ["new game", "in-engine cutscene", "intro"]
 
 [[scenarios]]
 slot = 255
 label = "rim_elm_zoom_intro"
-description = "Special 3D camera view zooming in on Vahn's house in Rim Elm; in-engine cinematic, not a regular field scene. Distinct camera path / actor scripting from interactive Rim Elm."
+description = "Establishing 3D camera view of Rim Elm (town on a cliff above the sea, Vahn's house among the huts); in-engine cinematic, not a regular field scene. Distinct camera path / actor scripting from interactive Rim Elm."
 phase = "field"
-# pcsx_redux_sstate = "..."   # uncomment after capture
+backup_fingerprint = "35927453f61bb246369fb0c991cbd76326c5afb08e56da91bbc1134d1cfca357"
 topics = ["new game", "Rim Elm intro", "cinematic camera"]
 
 [[scenarios]]
 slot = 255
 label = "vahn_walks_out"
-description = "Scripted Vahn animation: walks out of his house at the start of the intro sequence. Actor VM driving a fixed motion path."
+description = "Vahn (player model, blue hair) standing on the step outside his house at the start of the intro sequence. Actor VM driving a fixed motion path."
 phase = "field"
-# pcsx_redux_sstate = "..."   # uncomment after capture
+backup_fingerprint = "9e9448e8a5aab75e393638340a4b22a6b327418439be3ee658672917a0c2b413"
 topics = ["new game", "scripted actor motion", "intro"]
 
 [[scenarios]]
 slot = 255
 label = "name_input_ui"
-description = "Name-entry UI open (default 'Vahn'). Distinct menu overlay; text-entry SM with character grid + cursor."
+description = "Name-entry UI open (\"Select your name.\", default 'Vahn'). Character grid: A-Z / a-z / 0-9 / symbols, with BS + Select; portrait of Vahn at left. Distinct menu overlay; text-entry SM with character grid + cursor. Fires AFTER the field opens (intro -> Rim Elm -> Vahn outside house -> THIS), not in the title front-end."
 phase = "menu"
-# pcsx_redux_sstate = "..."   # uncomment after capture
+backup_fingerprint = "a14afa511de1abef6399abebf792e9f5b7ea669d4d60ad48e15be0b53b341a68"
 topics = ["new game", "name input", "menu overlay"]
 
 [[scenarios]]
