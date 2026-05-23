@@ -119,6 +119,18 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   offered in the next battle via `build_battle_arts_rows` - the same path
   whether it was edited live or loaded from a save (`SavedChain::to_record`
   / `from_record` pack to the `Command` byte alphabet the battle side reads).
+- `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
+  field-VM scripts (record 0 = scene-entry system script, records 1.. =
+  per-actor interaction scripts). `walk_partition1_scripts` bounds each
+  record to its own bytes, runs the `legaia_engine_vm::field_disasm`
+  linear walker from each record's `1 + N*2 + 4` first-opcode offset, and
+  reports every `Yield` site with the inline encounter-record
+  (`[reserved×3][count][ids]`) decoded from its trailing window. This is
+  the scripted-encounter hunt's faithful discriminator: it surfaces a real
+  inline `[count][ids]` arm at a decoded opcode boundary instead of the
+  byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The
+  town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
+  indexed formation-table install path (see `encounter_record`).
 - `cutscene` - FMV index ↔ `MV*.STR` filename mapping. The retail
   field-VM `0x4C 0xE2` op writes a 16-bit FMV index to
   `_DAT_8007BA78` and kicks game mode `StrInit` (26); the world

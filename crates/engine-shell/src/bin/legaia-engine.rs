@@ -153,6 +153,34 @@ enum Cmd {
         #[arg(long, default_value_t = 4)]
         max_sources: usize,
     },
+    /// Walk a scene's MAN partition-1 field-VM scripts (the per-actor
+    /// interaction scripts; record 0 is the scene-entry system script) with
+    /// the opcode-aware disassembler and report every `Yield` site whose
+    /// trailing window decodes as an inline encounter record
+    /// (`[reserved×3][count][monster_ids]`).
+    ///
+    /// This is the scripted-encounter hunt: it distinguishes a real inline
+    /// `[count][ids]` arm at a decoded opcode boundary from the byte-scan
+    /// false positives (every `0x37`/`0x41` byte in dialog text). For
+    /// town01 the survey finds no inline literal — the opening Tetsu fight
+    /// installs via the indexed formation table instead.
+    ManScripts {
+        /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
+        #[arg(long)]
+        scene: String,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
+        /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Print every partition-1 record (including the dialog-heavy
+        /// interaction scripts), not just records carrying a decodable
+        /// inline record.
+        #[arg(long)]
+        all: bool,
+    },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
     /// save state. Reports per-64x64-tile overlap and writes a
@@ -918,6 +946,12 @@ fn main() -> Result<()> {
             runtime_vram.as_deref(),
             max_sources,
         ),
+        Cmd::ManScripts {
+            scene,
+            extracted_root,
+            disc,
+            all,
+        } => cmd_man_scripts(&scene, &extracted_root, disc.as_deref(), all),
         Cmd::VramOracle {
             scene,
             extracted_root,
@@ -1731,6 +1765,88 @@ fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
             "vram-oracle: provide either `--scenario <label>` or both `--scene` + `--runtime-vram`"
         ),
     }
+}
+
+fn cmd_man_scripts(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    all: bool,
+) -> Result<()> {
+    use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
+    use legaia_engine_core::scene_bundle;
+
+    let index = open_index_from_args(extracted_root, disc)?;
+    let scene =
+        Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
+    let bundle = scene_bundle::find_bundle(&scene).with_context(|| {
+        format!("scene '{scene_name}' has no scene_asset_table bundle (no MAN)")
+    })?;
+    let entry_bytes = index
+        .entry_bytes_extended(bundle.entry_idx())
+        .with_context(|| format!("entry bytes for PROT[{}]", bundle.entry_idx()))?;
+    let man = scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        .with_context(|| format!("scene '{scene_name}' MAN payload did not decode"))?;
+    let man_file = legaia_asset::man_section::parse(&man)?;
+
+    let records = walk_partition1_scripts(&man_file, &man);
+    println!(
+        "scene '{}' (PROT[{}]): {} partition-1 records, counts {:?}",
+        scene.name,
+        bundle.entry_idx(),
+        records.len(),
+        man_file.header.partition_counts,
+    );
+
+    let mut total_yields = 0usize;
+    let mut total_records = 0usize;
+    let mut tetsu = 0usize;
+    for rec in &records {
+        total_yields += rec.arm_sites.len();
+        let candidates: Vec<_> = rec.encounter_arm_candidates().collect();
+        total_records += candidates.len();
+        let show = all || !candidates.is_empty() || rec.index == 0;
+        if show {
+            println!(
+                "  P1[{:3}] start=0x{:05X} pc0={:3} body={:5}b insns={:4} errs={:3} yields={} candidates={}",
+                rec.index,
+                rec.script_start,
+                rec.pc0,
+                rec.body_len,
+                rec.insn_count,
+                rec.decode_errors,
+                rec.arm_sites.len(),
+                candidates.len(),
+            );
+        }
+        for site in &rec.arm_sites {
+            let Some(record) = site.record else { continue };
+            if site.matches_tetsu() {
+                tetsu += 1;
+            }
+            if show {
+                println!(
+                    "      yield 0x{:02X}{} @ 0x{:05X}  window={:02X?}  -> count={} ids={:02X?}{}",
+                    site.opcode,
+                    if site.wide { "(wide)" } else { "" },
+                    site.abs_pc,
+                    site.window,
+                    record.count,
+                    &record.monster_ids[..record.count as usize],
+                    if site.matches_tetsu() {
+                        "  <<< Tetsu (count=1 id=0x4F)"
+                    } else {
+                        ""
+                    },
+                );
+            }
+        }
+    }
+    println!(
+        "summary: {} yield sites, {} decode as inline records, {} match the Tetsu signature",
+        total_yields, total_records, tetsu,
+    );
+    Ok(())
 }
 
 struct ResolvedVram {

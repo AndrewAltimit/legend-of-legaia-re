@@ -39,6 +39,7 @@ pub mod inventory_use;
 pub mod items;
 pub mod key_rebind;
 pub mod levelup;
+pub mod man_field_scripts;
 pub mod menu_glyph_atlas;
 pub mod menu_runtime;
 pub mod mode;

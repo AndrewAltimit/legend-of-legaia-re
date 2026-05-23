@@ -157,11 +157,30 @@ describes: the cell is empty in the field and carries the lone id `0x4F`
 from battle-load onward.
 
 **The id `0x4F` is not an inline script literal — it is a per-scene formation
-index.** A scan of town01's field-VM event-script records (the `scene_event_scripts`
-prescript at PROT entry 3) finds no `[count=1][0x4F]` install operand anywhere: the
-small structured records carry no such pattern, and the `0x4F` bytes in the bulk
-payload are high-entropy asset data, not bytecode. Instead, the lone-`0x4F`
-formation is **town01 MAN formation index 4**. The per-scene formations load from
+index.** Two independent surveys of town01's bytecode find no `[count=1][0x4F]`
+install operand anywhere:
+
+1. The `scene_event_scripts` prescript at PROT entry 3 — the small structured
+   records carry no such pattern, and the `0x4F` bytes in the bulk payload are
+   high-entropy asset data, not bytecode.
+2. The scene's **MAN partition-1 field-VM scripts** (record 0 = scene-entry system
+   script, records 1.. = per-actor interaction scripts) walked **opcode-aware** with
+   the field-VM disassembler (`legaia_engine_vm::field_disasm` driving
+   `legaia_engine_core::man_field_scripts::walk_partition1_scripts`). The walk lands
+   on every `0x37`/`0x41` yield byte and decodes the trailing `[count][ids]` window
+   at each: across 53 records and 71 yield sites, **zero** carry the `[1][0x4F]`
+   Tetsu signature. Every window that decodes is a `count=0` artifact from the
+   walker stepping into embedded MES dialog text (the windows are plain ASCII —
+   `1F 64 6F 20` = `"do "`, `1F 56 61` = `"Va"`, …). This is exactly the false
+   positive a naive `0x37`/`0x41` byte-scan produces; the opcode-aware walk is what
+   distinguishes a real arm boundary from a dialog byte. The system entry script
+   (record 0) decodes near-cleanly (a real executable stream), while the
+   interaction records desync into dialog — itself evidence the encounter arm is
+   not script-borne. See the disc-gated regression test
+   `crates/engine-core/tests/town01_p1_arm_sites.rs` and the
+   `legaia-engine man-scripts --scene <name>` survey CLI.
+
+Instead, the lone-`0x4F` formation is **town01 MAN formation index 4**. The per-scene formations load from
 the scene's MAN asset into a contiguous **8-byte-stride** table
 (`[3 reserved][count: 0..4][≤4 ids]`) resident in the field work area; in the live
 "talk to Tetsu / Come at me!" save state that table reads:
