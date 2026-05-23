@@ -64,6 +64,16 @@ fn town01_placements_reproduce_building_anchors() {
         (4864, 3208),
         "Vahn's house world position"
     );
+    // Mesh selection (byte-verified against the live actor's geometry): the
+    // house (id 137, >=120) draws scene-pack mesh 36 via the record's +0x10
+    // field; the windmill (id 96, in the 93..=118 band) draws mesh 91 (96-5).
+    assert_eq!(vahns_house.pack_index, Some(36), "Vahn's house pack mesh");
+    if let Some(windmill) = placements.iter().find(|p| p.obj_idx == 96) {
+        assert_eq!(windmill.pack_index, Some(91), "windmill pack mesh (96-5)");
+    }
+    if let Some(obj230) = placements.iter().find(|p| p.obj_idx == 230) {
+        assert_eq!(obj230.pack_index, Some(15), "obj230 pack mesh (+0x10)");
+    }
 
     // Every placement lands on-grid with the placed flag set, and within the
     // ~16384-unit town extent (128 tiles * 128 units).

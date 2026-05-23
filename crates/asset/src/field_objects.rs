@@ -60,6 +60,12 @@ pub const OBJECT_GRID_OFFSET: usize = 0x8000;
 pub const OBJECT_INDEX_MASK: u16 = 0x1FF;
 /// Object-record `+0x12` flag bit marking the tile as a placed/visible object.
 pub const FLAG_PLACED: u16 = 0x4;
+/// Object ids `93..=118` are the "field-actor" band: their mesh is selected
+/// positionally (`pack_index = obj_idx - FIELD_ACTOR_PACK_BIAS`) rather than
+/// from the record's `+0x10` field. These map to the last meshes of the pack.
+pub const FIELD_ACTOR_BAND: std::ops::RangeInclusive<u16> = 93..=118;
+/// Subtracted from an object id in [`FIELD_ACTOR_BAND`] to get its pack index.
+pub const FIELD_ACTOR_PACK_BIAS: u16 = 5;
 
 /// One `0x20`-byte object record (only the fields `FUN_8003A55C` consumes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +80,9 @@ pub struct ObjectRecord {
     pub col_delta: i8,
     /// `+0x07` signed row delta to the footprint anchor.
     pub row_delta: i8,
+    /// `+0x10` `u16`: scene_asset_table TMD pack index for the object's mesh
+    /// (the geometry id), for objects outside [`FIELD_ACTOR_BAND`].
+    pub pack_index_field: u16,
     /// `+0x12` flags; bit [`FLAG_PLACED`] gates spawning.
     pub flags: u16,
 }
@@ -90,6 +99,7 @@ impl ObjectRecord {
             z_off: i16::from_le_bytes([r[0x04], r[0x05]]),
             col_delta: r[0x06] as i8,
             row_delta: r[0x07] as i8,
+            pack_index_field: u16::from_le_bytes([r[0x10], r[0x11]]),
             flags: u16::from_le_bytes([r[0x12], r[0x13]]),
         })
     }
@@ -97,6 +107,26 @@ impl ObjectRecord {
     /// `true` when the record's placed flag is set.
     pub fn is_placed(&self) -> bool {
         self.flags & FLAG_PLACED != 0
+    }
+}
+
+/// The scene_asset_table TMD pack index this object draws, or `None` for
+/// objects whose mesh is NOT in the scene pack (the protagonist / NPC ids
+/// `1/2/3`, whose geometry lives in the shared player/NPC pack).
+///
+/// Two cases, byte-verified against a live `town01` save:
+/// - object ids in [`FIELD_ACTOR_BAND`] (`93..=118`) select positionally:
+///   `pack_index = obj_idx - FIELD_ACTOR_PACK_BIAS` (the last pack meshes);
+/// - every other id uses the record's `+0x10` field ([`ObjectRecord::pack_index_field`]).
+///
+/// `anim_id` (resolved separately via the MAN script) only drives animation;
+/// it does not pick geometry.
+pub fn pack_mesh_index(obj_idx: u16, rec: &ObjectRecord) -> Option<u16> {
+    match obj_idx {
+        // Protagonist / NPC meshes: not in the scene pack.
+        1..=3 => None,
+        id if FIELD_ACTOR_BAND.contains(&id) => Some(id - FIELD_ACTOR_PACK_BIAS),
+        _ => Some(rec.pack_index_field),
     }
 }
 
@@ -120,6 +150,10 @@ pub struct Placement {
     /// Low nibble of the collision/floor grid byte at the anchor tile (the
     /// floor-height tier), or `None` when the grid region is absent.
     pub floor_nibble: Option<u8>,
+    /// scene_asset_table TMD pack index for this object's mesh (see
+    /// [`pack_mesh_index`]), or `None` for protagonist / NPC ids whose mesh is
+    /// not in the scene pack.
+    pub pack_index: Option<u16>,
     /// The record's flags (placed bit already confirmed set).
     pub flags: u16,
 }
@@ -178,6 +212,7 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,
                 floor_nibble,
+                pack_index: pack_mesh_index(obj_idx, &rec),
                 flags: rec.flags,
             });
         }
@@ -215,19 +250,38 @@ mod tests {
 
     #[test]
     fn parse_placements_emits_placed_tiles_only() {
-        // Build a synthetic field map: one placed record (idx 1), grid cell
-        // (row 25, col 38) -> idx 1, every other cell -> idx 0 (unplaced).
+        // Build a synthetic field map: one placed record (idx 137, the Vahn's-
+        // house id: >=120 so its mesh comes from the +0x10 field), grid cell
+        // (row 25, col 38) -> idx 137, every other cell -> idx 0 (unplaced,
+        // since record 0 has no placed flag).
         let mut map = vec![0u8; 0x12000];
-        let r = &mut map[OBJECT_RECORD_STRIDE..OBJECT_RECORD_STRIDE * 2];
+        let r = &mut map[OBJECT_RECORD_STRIDE * 137..OBJECT_RECORD_STRIDE * 138];
         r[0x00..0x02].copy_from_slice(&(-64i16).to_le_bytes());
         r[0x04..0x06].copy_from_slice(&56i16.to_le_bytes());
+        r[0x10..0x12].copy_from_slice(&36u16.to_le_bytes()); // pack mesh index
         r[0x12..0x14].copy_from_slice(&0x0004u16.to_le_bytes()); // placed
         let cell = OBJECT_GRID_OFFSET + (25 * GRID_DIM + 38) * 2;
-        map[cell..cell + 2].copy_from_slice(&1u16.to_le_bytes());
+        map[cell..cell + 2].copy_from_slice(&137u16.to_le_bytes());
         let p = parse_placements(&map);
         assert_eq!(p.len(), 1);
-        assert_eq!(p[0].obj_idx, 1);
+        assert_eq!(p[0].obj_idx, 137);
         assert_eq!((p[0].col, p[0].row), (38, 25));
         assert_eq!((p[0].world_x, p[0].world_z), (4864, 3208));
+        assert_eq!(p[0].pack_index, Some(36));
+    }
+
+    #[test]
+    fn pack_mesh_index_rule() {
+        let mut rec = ObjectRecord::parse(&[0u8; OBJECT_RECORD_STRIDE], 0).unwrap();
+        rec.pack_index_field = 15;
+        // >= 120 and == 83 use the +0x10 field.
+        assert_eq!(pack_mesh_index(230, &rec), Some(15));
+        assert_eq!(pack_mesh_index(83, &rec), Some(15));
+        // Field-actor band 93..=118 is positional (obj_idx - 5).
+        assert_eq!(pack_mesh_index(96, &rec), Some(91));
+        assert_eq!(pack_mesh_index(118, &rec), Some(113));
+        // Protagonist / NPC ids draw from a different pool.
+        assert_eq!(pack_mesh_index(1, &rec), None);
+        assert_eq!(pack_mesh_index(3, &rec), None);
     }
 }
