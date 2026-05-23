@@ -586,6 +586,80 @@ fn world_map_without_entities_never_encounters() {
     assert!(world.pending_world_map_encounter.is_none());
 }
 
+/// Walking the overworld player across tiles rolls the region-keyed encounter
+/// (the `FUN_801D9E1C` port) and flips Field-less straight into a battle that
+/// returns to the world map.
+#[test]
+fn world_map_region_walk_triggers_battle() {
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.live_gameplay_loop = true;
+    world.enter_world_map();
+    world.install_field_player(0); // player_actor_slot = 0, actor active
+    world.actors[0].battle.hp = 400;
+    world.actors[0].battle.max_hp = 400;
+    world.actors[0].battle.liveness = 1;
+    world.set_battle_attack(0, 80);
+
+    // Formation 5 spawns one weak monster (id 100).
+    world
+        .formation_table
+        .insert(FormationDef::new(5, vec![FormationSlot::new(100)]));
+    let mut cat = MonsterCatalog::new();
+    cat.insert(MonsterDef::new(100, "Test Slug", 20, 4));
+    world.set_monster_catalog(cat);
+
+    // One region covering tiles (0,0)..(20,20), high rate, rolling formation 5.
+    let mut table = RegionEncounterTable::new("test");
+    table.regions.push(EncounterRegion {
+        tile_x_min: 0,
+        tile_z_min: 0,
+        tile_x_max: 20,
+        tile_z_max: 20,
+        rate_increment: 255,
+        formation_base: 5,
+        formation_count: 1,
+    });
+    world.set_world_map_regions(table);
+
+    // Hold Right; the player walks +X, crossing 128-unit tiles. Each crossing
+    // rolls the region; the high rate triggers within a couple of tiles.
+    world.set_pad(input::PadButton::Right.mask());
+    let mut entered_battle = false;
+    for _ in 0..200 {
+        let _ = world.tick();
+        if world.mode == SceneMode::Battle {
+            entered_battle = true;
+            break;
+        }
+    }
+    assert!(
+        entered_battle,
+        "walking the overworld triggers a region encounter"
+    );
+    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+}
+
+/// A camera-only world map (no entities, no region tracker) never encounters,
+/// even while the player walks.
+#[test]
+fn world_map_without_regions_or_entities_never_encounters() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.set_pad(input::PadButton::Right.mask());
+    for _ in 0..500 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.mode, SceneMode::WorldMap);
+    assert!(world.pending_world_map_encounter.is_none());
+}
+
 /// An installed overworld entity whose shared countdown reaches zero (with
 /// encounters enabled) fires an encounter that resolves into a battle, and
 /// the battle is tagged to return to the overworld - not the field.

@@ -1229,6 +1229,21 @@ pub struct World {
     /// between encounters.
     pub pending_world_map_encounter: Option<u16>,
 
+    /// Region-keyed random-encounter state for the overworld (the
+    /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
+    /// [`Self::tick_world_map`] rolls it once per 128-unit tile the player
+    /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
+    /// `None` on a camera-only world map (no region data routed).
+    pub world_map_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
+
+    /// Player tile (`world >> 7`) at the previous overworld step check, for
+    /// per-tile step detection. `None` until the first world-map tick seeds it.
+    pub world_map_last_tile: Option<(i32, i32)>,
+
+    /// Overworld player walk speed in world units per frame (per held d-pad
+    /// direction). Default [`Self::WORLD_MAP_PLAYER_SPEED`].
+    pub world_map_player_speed: i16,
+
     /// Scene mode to return to when the current battle finishes. Captured at
     /// the transition into [`SceneMode::Battle`]; [`Self::finish_battle`]
     /// restores it (an overworld encounter returns to [`SceneMode::WorldMap`],
@@ -1566,6 +1581,9 @@ impl World {
             world_map_encounter: WorldMapEncounterState::default(),
             world_map_player_walking: false,
             pending_world_map_encounter: None,
+            world_map_region_tracker: None,
+            world_map_last_tile: None,
+            world_map_player_speed: Self::WORLD_MAP_PLAYER_SPEED,
             battle_return_mode: SceneMode::Field,
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
@@ -3420,12 +3438,125 @@ impl World {
                 vm::world_map::step(idx, ctx, &mut host);
             }
             self.world_map_entities = entities;
+        }
 
-            // Resolve a latched overworld encounter into a battle.
-            if let Some(formation_id) = self.pending_world_map_encounter.take() {
-                self.begin_world_map_encounter(formation_id);
+        // Overworld free-movement + the region-keyed random-encounter roll
+        // (the `FUN_801D9E1C` path). Moves the player actor with the d-pad and,
+        // on each 128-unit tile crossing, rolls the active region. Both no-op
+        // without a player actor / region tracker, so a camera-only world map
+        // is unchanged.
+        self.step_world_map_locomotion();
+        self.live_world_map_tick();
+
+        // Resolve a latched overworld encounter into a battle. Runs for both
+        // the entity-SM countdown path and the region-roll path.
+        if let Some(formation_id) = self.pending_world_map_encounter.take() {
+            self.begin_world_map_encounter(formation_id);
+        }
+    }
+
+    /// Overworld player walk speed in world units per frame (per held d-pad
+    /// direction). The field player moves ~8 units/frame
+    /// ([`FIELD_BASE_STEP`]); the overworld uses the same baseline.
+    pub const WORLD_MAP_PLAYER_SPEED: i16 = 8;
+
+    /// Move the overworld player actor from the held d-pad.
+    ///
+    /// Direct screen-axis mapping (Up → `+Z`, Down → `-Z`, Right → `+X`,
+    /// Left → `-X`), matching the field locomotion axis convention; the
+    /// camera-relative remap the field controller applies
+    /// ([`Self::decode_field_direction`]) is a follow-up once the world-map
+    /// follow camera is wired. No collision grid is loaded for the overworld,
+    /// so movement is unbounded for now (overworld walkability is a separate
+    /// open RE thread, like the field grid was). No-op without a live player
+    /// actor or while a dialog owns the frame.
+    fn step_world_map_locomotion(&mut self) {
+        if self.current_dialog.is_some() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return;
+        }
+        let pad = self.input.pad();
+        let speed = self.world_map_player_speed.max(1);
+        let mut dx = 0i16;
+        let mut dz = 0i16;
+        if pad & input::PadButton::Up.mask() != 0 {
+            dz = dz.saturating_add(speed);
+        }
+        if pad & input::PadButton::Down.mask() != 0 {
+            dz = dz.saturating_sub(speed);
+        }
+        if pad & input::PadButton::Right.mask() != 0 {
+            dx = dx.saturating_add(speed);
+        }
+        if pad & input::PadButton::Left.mask() != 0 {
+            dx = dx.saturating_sub(speed);
+        }
+        if dx == 0 && dz == 0 {
+            return;
+        }
+        let ms = &mut self.actors[slot].move_state;
+        ms.world_x = ms.world_x.saturating_add(dx);
+        ms.world_z = ms.world_z.saturating_add(dz);
+    }
+
+    /// Per-tile overworld step → region-keyed encounter roll (the world-map
+    /// counterpart to [`Self::live_field_tick`]).
+    ///
+    /// A "step" is the player actor crossing into a new 128-unit tile
+    /// (`world >> 7`); each step drives one
+    /// [`crate::region_encounter::RegionEncounterTracker::on_step`] against the
+    /// player's current position. A trigger latches
+    /// [`Self::pending_world_map_encounter`], which [`Self::tick_world_map`]
+    /// resolves into a battle. The RNG comes from the world's shared
+    /// deterministic source, drawn only on the trigger branch, so replays stay
+    /// bit-identical. No-op without a player actor or region tracker.
+    fn live_world_map_tick(&mut self) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (wx, wz) = match self.actors.get(slot as usize) {
+            Some(a) => (a.move_state.world_x, a.move_state.world_z),
+            None => return,
+        };
+        let tile = ((wx as i32) >> 7, (wz as i32) >> 7);
+        let crossed = match self.world_map_last_tile {
+            Some(prev) if prev != tile => {
+                self.world_map_last_tile = Some(tile);
+                true
+            }
+            None => {
+                self.world_map_last_tile = Some(tile);
+                false
+            }
+            _ => false,
+        };
+        if !crossed {
+            return;
+        }
+        // Roll the active region. Take the tracker out so the RNG closure can
+        // borrow `self` (same pattern as the entity-SM borrow window).
+        if let Some(mut tracker) = self.world_map_region_tracker.take() {
+            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            self.world_map_region_tracker = Some(tracker);
+            if let Some(roll) = roll {
+                self.pending_world_map_encounter = Some(roll.formation_id as u16);
             }
         }
+    }
+
+    /// Route the scene's region-keyed encounter table onto the overworld so
+    /// [`Self::tick_world_map`] rolls random encounters per region. Resets the
+    /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
+    pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
+        self.world_map_region_tracker =
+            Some(crate::region_encounter::RegionEncounterTracker::new(table));
+        self.world_map_last_tile = None;
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so

@@ -181,9 +181,30 @@ via `install_world_map_entities_with_configs`):
 - `Npc { interact_id }` - surfaces a `FieldEvent::FieldInteract` with that id.
 
 Entities without a config fall back to the shared formation and a generic
-interaction. Two retail threads remain open: the per-region encounter table
-(`FUN_800243F0` → the MAN region table) that would pick the formation from the
-player's overworld position, and seeding overworld entities from the boot path
+interaction.
+
+### Overworld player movement + region-keyed encounters
+
+The overworld now has a moving player and a position-routed random-encounter
+roll. `tick_world_map` walks the player actor from the held d-pad
+(`World::step_world_map_locomotion`, direct screen-axis mapping at
+`World::WORLD_MAP_PLAYER_SPEED` units/frame) and, on each 128-unit tile the
+player crosses (`World::live_world_map_tick`, mirroring the field
+`live_field_tick`), rolls the scene's region-keyed encounter table
+(`World::set_world_map_regions`). That table is the clean-room port of
+`FUN_801D9E1C` ([`region_encounter`](../formats/encounter.md#engine-port-region-keyed-roll)):
+the player's tile selects the first region whose AABB contains it, the region's
+rate increment depletes a step counter, and a `<= 0` counter rolls a formation
+from the region's `[base, base + count)` slice and latches
+`pending_world_map_encounter` - which the same tick resolves into a
+`SceneMode::WorldMap → SceneMode::Battle` transition that returns to the
+overworld. A camera-only world map (no region table routed) is unchanged.
+
+Two retail threads remain open: overworld **collision / walkability** (the
+player currently moves unbounded; the overworld walkability source is a separate
+RE thread, like the field grid was), the camera-relative movement remap (today
+the d-pad maps directly to world axes; the field controller remaps through the
+camera), and seeding overworld entities + the region table from the boot path
 (today they are installed through the API).
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
