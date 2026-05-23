@@ -302,3 +302,15 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
   <p><strong><code>FUN_801E30E4</code> has zero static callers.</strong> It is a label inside <code>FUN_801DE840</code>, not a callable subroutine. Ghidra promotes it to a <code>FUN_</code> symbol because the JT entry at <code>0x801CF008[2]</code> resolves there; the actual control flow is the dispatch chain above. A direct <code>grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/</code> returns zero matches.</p>
   <p>The corollary for the seven mid-game scenes (<code>town0b</code>, <code>map01</code>, <code>chitei2</code>, <code>map02</code>, <code>jou</code>, <code>uru2</code>, <code>town0e</code>): they <strong>must</strong> trigger via the same <code>0x4C 0xE2</code> op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only <code>PROT[371] taiku</code>, <code>fmv_id=5</code>). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot &mdash; the lift is blocked on the same intra-transition byte-level capture that gates <a href="../formats/field-pack.html">field-pack</a>.</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="actor-vm.html">Actor VM</a>
+    <a href="move-vm.html">Move-table VM</a>
+    <a href="motion-vm.html">Motion VM</a>
+    <a href="effect-vm.html">Effect VM</a>
+    <a href="../formats/scene-v12-table.html">Scene v12 table</a>
+  </div>
+</section>

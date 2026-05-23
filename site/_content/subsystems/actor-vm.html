@@ -126,3 +126,15 @@
   <h3>VDF body header</h3>
   <p>Read against <code>FUN_801D77F4</code>'s walker - <code>*puVar11 = record_count</code>, then <code>*puVar10 = group_idx</code> advancing <code>+12</code> bytes per record - the first u32 is the record count and the records start 4 bytes in. An earlier "16-byte header" framing was off-by-12. The actor VM does <strong>not</strong> skip any metadata header before dispatch, because the actor VM never dispatches on this buffer at all (per the first implication above).</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field/event VM</a>
+    <a href="move-vm.html">Move-table VM</a>
+    <a href="motion-vm.html">Motion VM</a>
+    <a href="../formats/anm.html">ANM animation</a>
+    <a href="../formats/tmd.html">Legaia TMD</a>
+  </div>
+</section>

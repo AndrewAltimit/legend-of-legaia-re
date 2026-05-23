@@ -121,3 +121,14 @@
   <p>A "12-byte fixed prefix <code>00 F0 84 7F 01 F0 1F 00 00 F1 00 00</code> repeated at 20-byte stride" detector lives at <code>crates/asset/src/stage_geom.rs</code>. It's <strong>not</strong> real stage geometry - it's the standard primitive-group header for Legaia TMD primitive group data when <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1 == K</code> (where K is the group type that uses 20-byte stride).</p>
   <p>The detector is preserved as a signal during exploration ("this buffer contains a TMD with effect-style primitives") but for actual geometry extraction use the TMD parser (<code>crates/tmd::legaia_prims</code>).</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/tmd.html">Legaia TMD</a>
+    <a href="../formats/tim.html">PSX TIM</a>
+    <a href="../formats/npc-palette.html">NPC palettes</a>
+    <a href="world-overview-viewer.html">World-overview viewer</a>
+  </div>
+</section>
