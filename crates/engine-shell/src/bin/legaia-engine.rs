@@ -3693,11 +3693,20 @@ impl PlayWindowApp {
                                 .session
                                 .enter_field_live(cutscene, &self.field_live_opts)
                             {
-                                Ok(mode) => log::info!(
-                                    "new game: seeded party_count={}, entered opening cutscene \
-                                     '{cutscene}' (mode={mode:?})",
-                                    self.session.host.world.party_count,
-                                ),
+                                Ok(mode) => {
+                                    // Arm the cutscene -> Rim Elm handoff. Retail's
+                                    // opdeene timeline sets this flag (GFLAG_SET 26)
+                                    // when the prologue narration finishes; the engine
+                                    // doesn't replay that timeline yet, so arm it on
+                                    // entry. The confirm-gated transition fires in the
+                                    // field tick below (World::take_prologue_handoff).
+                                    self.session.host.world.arm_prologue_handoff();
+                                    log::info!(
+                                        "new game: seeded party_count={}, entered opening cutscene \
+                                         '{cutscene}' (mode={mode:?})",
+                                        self.session.host.world.party_count,
+                                    )
+                                }
                                 Err(e) => log::warn!(
                                     "new game: enter opening cutscene '{cutscene}' failed ({e:#}); \
                                      staying on the pre-booted scene"
@@ -6230,6 +6239,26 @@ impl ApplicationHandler for PlayWindowApp {
                         // Keep the frame counter advancing so the caret blinks.
                         self.session.host.world.frame =
                             self.session.host.world.frame.wrapping_add(1);
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
+                    // Prologue cutscene -> Rim Elm handoff. While in `opdeene`
+                    // with the trigger armed, a confirm press (Cross) hands off
+                    // to `town01`, mirroring FUN_801D1344's flag + pad gate.
+                    if let Some(target) = self
+                        .session
+                        .host
+                        .world
+                        .take_prologue_handoff(pressed_edge & 0x4000 != 0)
+                    {
+                        match self.session.enter_field_live(target, &self.field_live_opts) {
+                            Ok(mode) => {
+                                log::info!("prologue handoff: entered '{target}' (mode={mode:?})")
+                            }
+                            Err(e) => {
+                                log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
+                            }
+                        }
                         self.prev_pad = self.pad;
                         continue;
                     }

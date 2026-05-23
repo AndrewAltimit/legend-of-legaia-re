@@ -283,9 +283,13 @@ The mechanism, traced through the field/cutscene overlay:
   }
   ```
 
-  The target name **`"town01"` is hardcoded as the overlay literal at `0x801CE82C`** — that is why a scan of `opdeene`'s per-scene data (MAN + event scripts) finds no scene-name string. The trigger flag `_DAT_1F800394 & 0x4000000` is set by `opdeene`'s own cutscene script (the scratchpad-flag write is one of the not-yet-decoded `0x4C` cutscene sub-ops in `opdeene`'s MAN record 0); the pad bit `_DAT_8007B850 & 0x100` is the player's confirm-to-continue after the *"It was the Seru."* prologue.
+  The target name **`"town01"` is hardcoded as the overlay literal at `0x801CE82C`** — that is why a scan of `opdeene`'s per-scene data (MAN + event scripts) finds no scene-name string. The pad bit `_DAT_8007B850 & 0x100` is the player's confirm-to-continue after the *"It was the Seru."* prologue.
+
+  **Trigger flag (`_DAT_1F800394 & 0x4000000`, bit 26).** Set by the field VM's generic scratchpad-bit opcode **`GFLAG_SET` (op `0x2E`, operand `0x1A`)** — the dispatcher in `FUN_801DE840` runs `_DAT_1f800394 |= 1 << (idx & 0x1f)`; `idx = 0x1A` is bit 26. The only `GFLAG_SET 26` in `opdeene`'s decoded MAN is **not** in the partition-1 per-actor/scene-entry scripts; it lives in the **last record of the MAN's third record partition** (partition index 2, count 19; record start at MAN file offset `0xA47`, the `2E 1A` at `0xA5E`). That record is a cutscene-timeline script: the `GFLAG_SET 26` is immediately followed by a `Camera Configure` op and an actor `MoveTo`, i.e. the prologue's closing camera/actor staging arms the handoff just before returning control to the player. (Earlier notes guessing a `0x4C` MenuCtrl sub-op in record 0 are falsified — there is no `0x2E`/`0x2F` byte anywhere in record 0.)
 
 The executable's **default** scene name is also `town01`: `FUN_8001D424` reads the dev file `initmap.txt` and copies 16 bytes into `0x8007050C`. `init_game` overrides this with `opdeene` for a real New Game; the gated handoff above then sets it back to `town01`.
+
+**Clean-room port.** [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) mirrors the `FUN_801D1344` gate: while the active scene is `opdeene` and the trigger bit ([`PROLOGUE_HANDOFF_FLAG`] = `0x0400_0000` in [`World::story_flags`], the engine's `_DAT_1F800394` mirror) is set, a confirm press clears the bit (fire-once) and returns `town01`. The windowed host arms the bit on NEW-GAME entry into `opdeene` ([`World::arm_prologue_handoff`]) — standing in for the not-yet-replayed cutscene-timeline `GFLAG_SET 26` — and, on the `Some(target)`, runs `BootSession::enter_field_live(target)` (the engine's scene-change-packet equivalent).
 
 ### Name-entry overlay
 

@@ -114,6 +114,15 @@ pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 /// See `ghidra/scripts/funcs/80034a6c.txt`.
 pub const NEW_GAME_STARTING_GOLD: i32 = 500;
 
+/// Scratchpad flag-word bit (`_DAT_1F800394 & 0x0400_0000`, bit 26) that
+/// the opening cutscene `opdeene` raises to arm the handoff to Rim Elm
+/// (`town01`). Retail sets it with field-VM `GFLAG_SET 26` (op `0x2E`
+/// operand `0x1A`) at the end of the prologue cutscene timeline, and the
+/// per-frame field controller `FUN_801D1344` consumes it (with the
+/// confirm-press gate) to issue the name-based scene change. See
+/// [`World::arm_prologue_handoff`] / [`World::take_prologue_handoff`].
+pub const PROLOGUE_HANDOFF_FLAG: u32 = 0x0400_0000;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
@@ -1603,6 +1612,61 @@ impl World {
             true
         } else {
             false
+        }
+    }
+
+    /// Arm the prologue cutscene -> Rim Elm handoff.
+    ///
+    /// In retail the opening cutscene scene `opdeene` runs a scripted
+    /// timeline (a field-VM record in the MAN's third record partition)
+    /// that ends with `GFLAG_SET 26` - field-VM op `0x2E` with operand
+    /// `0x1A`, which sets bit 26 (`0x0400_0000`) of the scratchpad flag
+    /// word `_DAT_1F800394` (the engine's [`Self::story_flags`]) right
+    /// after staging the closing camera + actor moves. Once that bit is
+    /// set, the per-frame field controller `FUN_801D1344` waits for the
+    /// player's confirm press and then issues a name-based scene-change
+    /// packet to `town01` (see [`Self::take_prologue_handoff`]).
+    ///
+    /// The engine doesn't yet replay that cutscene timeline (only record
+    /// 0 of the scene runs), so callers arm the bit explicitly when they
+    /// enter `opdeene` live. This sets exactly the flag the retail
+    /// `GFLAG_SET 26` would, so the downstream gate stays faithful.
+    // REF: FUN_801D1344
+    pub fn arm_prologue_handoff(&mut self) {
+        self.story_flags |= PROLOGUE_HANDOFF_FLAG;
+    }
+
+    /// Poll the prologue cutscene -> Rim Elm handoff gate.
+    ///
+    /// Faithful port of the one-shot block in `FUN_801D1344`:
+    ///
+    /// ```c
+    /// if (_DAT_8007b868 == 0 && (_DAT_1f800394 & 0x4000000) && (_DAT_8007b850 & 0x100)) {
+    ///     ... fade; town01 entry coords (0xec0, 0x2dc0); ...
+    ///     _DAT_1f800394 &= 0xfbffffff;            // fire-once: clear bit 26
+    ///     func_0x8001fd44(s_town01_801ce82c, 3);  // name-based scene change
+    /// }
+    /// ```
+    ///
+    /// Returns the handoff target scene ([`legaia_asset::new_game::OPENING_SCENE`]
+    /// = `town01`) once - when the active scene is the prologue cutscene
+    /// ([`legaia_asset::new_game::OPENING_CUTSCENE_SCENE`] = `opdeene`),
+    /// the trigger bit is set ([`Self::arm_prologue_handoff`]), and the
+    /// caller reports a confirm-button press this frame. Clears the bit so
+    /// it fires once, exactly as retail clears `0x4000000`. Returns `None`
+    /// otherwise. The host issues the actual scene change (the engine's
+    /// equivalent of the scene-change packet) on a `Some`.
+    // REF: FUN_801D1344
+    // REF: FUN_8001FD44
+    pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
+        if confirm
+            && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+            && self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
+        {
+            self.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+            Some(legaia_asset::new_game::OPENING_SCENE)
+        } else {
+            None
         }
     }
 
@@ -12029,6 +12093,43 @@ mod tests {
         assert!(world.encounter.is_none());
         assert!(!world.game_over);
         assert_eq!(world.play_time_seconds, 0);
+    }
+
+    #[test]
+    fn prologue_handoff_fires_once_on_confirm_in_opdeene() {
+        let mut world = World::new();
+        world.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
+
+        // Not armed yet: confirm does nothing.
+        assert_eq!(world.take_prologue_handoff(true), None);
+
+        world.arm_prologue_handoff();
+        assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+
+        // Armed but no confirm: stays in the cutscene.
+        assert_eq!(world.take_prologue_handoff(false), None);
+        assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+
+        // Armed + confirm: hands off to town01 and clears the bit (fire-once).
+        assert_eq!(
+            world.take_prologue_handoff(true),
+            Some(legaia_asset::new_game::OPENING_SCENE)
+        );
+        assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+
+        // A second confirm does not re-fire.
+        assert_eq!(world.take_prologue_handoff(true), None);
+    }
+
+    #[test]
+    fn prologue_handoff_only_fires_in_the_cutscene_scene() {
+        let mut world = World::new();
+        // Armed, confirm pressed, but the active scene is not `opdeene`.
+        world.set_active_scene_label(legaia_asset::new_game::OPENING_SCENE);
+        world.arm_prologue_handoff();
+        assert_eq!(world.take_prologue_handoff(true), None);
+        // Bit is left intact for the gate to fire only in `opdeene`.
+        assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
     }
 
     // ------------------------------------------------------------------
