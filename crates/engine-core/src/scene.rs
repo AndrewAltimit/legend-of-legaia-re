@@ -1230,6 +1230,10 @@ impl SceneHost {
     /// scripts or the record index is out of range.
     pub fn enter_field_scene(&mut self, name: &str, record_index: usize) -> Result<()> {
         self.load_scene(name)?;
+        // Drop any cutscene timeline from a previous scene; only `opdeene`
+        // re-installs one below, so it must not leak into the scene we hand off
+        // to (Rim Elm).
+        self.world.cutscene_timeline = None;
         let record_bytes: Vec<u8> = {
             let scene = self
                 .scene
@@ -1491,21 +1495,83 @@ impl SceneHost {
             {
                 Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
                     Ok(man_file) => {
+                        // Execute the cutscene timeline as a spawned field-VM
+                        // context: its camera path + actor moves play and the
+                        // closing `GFLAG_SET 26` fires by execution. Fall back
+                        // to the static MAN-walk arm only when the timeline
+                        // record can't be resolved, so the prologue still hands
+                        // off either way.
                         if self
+                            .world
+                            .load_cutscene_timeline_from_man(&man_file, &man_bytes)
+                        {
+                            log::info!(
+                                "prologue: executing '{}' cutscene timeline -> '{}' hand-off by GFLAG_SET {}",
+                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
+                                legaia_asset::new_game::OPENING_SCENE,
+                                crate::world::PROLOGUE_HANDOFF_BIT,
+                            );
+                        } else if self
                             .world
                             .arm_prologue_handoff_from_man(&man_file, &man_bytes)
                         {
                             log::info!(
-                                "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {}",
+                                "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {} (static fallback)",
                                 legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
                                 legaia_asset::new_game::OPENING_SCENE,
                                 crate::world::PROLOGUE_HANDOFF_BIT,
                             );
                         }
+                        // Install the inline narration the cutscene-timeline
+                        // partition (partition 2) carries, so the opening plays
+                        // its subtitle pages before the Rim Elm hand-off.
+                        let pages = crate::man_field_scripts::collect_partition_narration(
+                            &man_file, &man_bytes, 2,
+                        );
+                        if !pages.is_empty() {
+                            log::info!(
+                                "prologue: '{}' carries {} inline narration page(s)",
+                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
+                                pages.len(),
+                            );
+                            self.world.open_cutscene_narration(pages);
+                        }
                     }
                     Err(err) => eprintln!("[scene] prologue MAN parse skipped: {err:#}"),
                 },
                 Some(Err(err)) => eprintln!("[scene] prologue MAN payload skipped: {err:#}"),
+                _ => {}
+            }
+        }
+        // New-game opening: when `town01` is entered via the prologue hand-off
+        // (not a normal visit), install its opening cutscene timeline so the
+        // establishing camera sweep + Vahn's walk-out play and the pinned
+        // op-`0x49` STATE_RESUME opens the name-entry overlay at the right beat
+        // (rather than the host opening it blindly at the hand-off). One-shot:
+        // consume the flag so re-entering `town01` later never re-runs it.
+        if name == legaia_asset::new_game::OPENING_SCENE && self.world.entering_town01_opening {
+            self.world.entering_town01_opening = false;
+            match self
+                .scene
+                .as_ref()
+                .map(|s| s.field_man_payload(&self.index))
+            {
+                Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
+                    Ok(man_file) => {
+                        if self
+                            .world
+                            .install_town01_opening_timeline(&man_file, &man_bytes)
+                        {
+                            log::info!(
+                                "opening: executing '{}' opening timeline (P2[{}]); name entry opens at its op-0x49 STATE_RESUME",
+                                legaia_asset::new_game::OPENING_SCENE,
+                                crate::world::World::TOWN01_OPENING_TIMELINE_RECORD,
+                            );
+                        }
+                    }
+                    Err(err) => eprintln!("[scene] town01 opening MAN parse skipped: {err:#}"),
+                },
+                Some(Err(err)) => eprintln!("[scene] town01 opening MAN payload skipped: {err:#}"),
                 _ => {}
             }
         }

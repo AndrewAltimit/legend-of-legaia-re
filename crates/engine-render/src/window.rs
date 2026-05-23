@@ -266,6 +266,61 @@ pub fn world_map_camera_mvp(
     proj * view
 }
 
+/// Camera MVP for an in-engine cutscene (the `opdeene` opening prologue),
+/// framing the cutscene's look-at point from a heading-rotated vantage.
+///
+/// The parameters come from the cutscene timeline's executed op-`0x45` Camera
+/// Configure ops, committed to the engine globals by `FUN_801DE084`:
+///
+/// - `look_at` - the camera focus/target. The retail camera stores the
+///   *negated* focus X/Z in `_DAT_80089118` / `_DAT_80089120` (the GTE
+///   translation = `-focus`, confirmed by the follow-cam `FUN_801DBE9C` which
+///   sets them to `-(anchor+0x14)` / `-(anchor+0x18)`), so the engine negates
+///   params 6 / 8 back to a world-space focus before calling this; Y (param 7)
+///   is stored un-negated.
+/// - `yaw_radians` - heading, from op-`0x45` param 1 (`_DAT_8007b792`, the
+///   camera yaw; PSX `4096` = full turn, converted by the caller).
+/// - `fov_radians` - vertical FOV derived from op-`0x45` param 9
+///   (`_DAT_8007b6f4`), which retail writes to the GTE H projection register
+///   via `setCopControlWord` - the focal length / zoom.
+///
+/// Unlike [`orbit_camera_mvp`] (which rotates with wall-clock time) this is a
+/// static cinematic shot: the eye orbits the focus by `yaw_radians` at a
+/// distance derived from the scene AABB. Geometry uses the same PSX Y-down
+/// convention as [`orbit_camera_mvp`] / [`world_map_camera_mvp`] (eye pushed to
+/// *negative* Y to sit above, `+Y` look-at up vector).
+///
+/// The eye **distance** itself is not a pinned op-`0x45` param (retail derives
+/// it through the GTE projection rather than an explicit translate), so the
+/// orbit radius is a scene-sized approximation; the FOV and heading are from
+/// real params. See `docs/subsystems/cutscene.md`.
+pub fn cutscene_camera_mvp(
+    look_at: [f32; 3],
+    yaw_radians: f32,
+    fov_radians: f32,
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+    aspect: f32,
+) -> Mat4 {
+    let center = Vec3::from(look_at);
+    let lo = Vec3::from(aabb_lo);
+    let hi = Vec3::from(aabb_hi);
+    let radius = ((hi - lo).length() * 0.5).max(1.0);
+    // Slightly tighter than the orbit framing so the cinematic shot fills more
+    // of the screen.
+    let distance = radius / 30f32.to_radians().tan() * 1.2;
+    // Orbit the focus by the cutscene heading. At yaw 0 the eye sits in front
+    // (`+Z`) and above (`-Y` under Y-down), matching the default framing.
+    let (sin, cos) = yaw_radians.sin_cos();
+    let eye = center + Vec3::new(distance * sin, -distance * 0.45, distance * cos);
+    let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    let near = (distance * 0.05).max(0.1);
+    let far = distance * 4.0 + 1000.0;
+    let fov = fov_radians.clamp(10f32.to_radians(), 120f32.to_radians());
+    let proj = Mat4::perspective_rh(fov, aspect.max(0.01), near, far);
+    proj * view
+}
+
 #[cfg(test)]
 mod camera_tests {
     use super::*;
@@ -313,5 +368,44 @@ mod camera_tests {
         let zoomed_out = world_map_camera_mvp(LO, HI, 0, -100_000, 0, 0, 1.5);
         assert!(finite(&zoomed_in));
         assert!(finite(&zoomed_out));
+    }
+
+    #[test]
+    fn cutscene_camera_mvp_is_finite() {
+        let m = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 60f32.to_radians(), LO, HI, 16.0 / 9.0);
+        assert!(finite(&m));
+    }
+
+    #[test]
+    fn cutscene_camera_tracks_its_look_at() {
+        // Re-targeting the camera (the pinned op-0x45 focus params changing)
+        // must change the projection - the shot follows the cutscene target.
+        let fov = 60f32.to_radians();
+        let a = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, fov, LO, HI, 1.5);
+        let b = cutscene_camera_mvp([500.0, 0.0, -300.0], 0.0, fov, LO, HI, 1.5);
+        assert_ne!(a.to_cols_array(), b.to_cols_array());
+        assert!(finite(&b));
+    }
+
+    #[test]
+    fn cutscene_camera_yaw_and_fov_change_the_view() {
+        let fov = 60f32.to_radians();
+        let base = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, fov, LO, HI, 1.5);
+        // A quarter-turn heading orbits the eye -> different projection.
+        let yawed = cutscene_camera_mvp(
+            [0.0, 0.0, 0.0],
+            std::f32::consts::FRAC_PI_2,
+            fov,
+            LO,
+            HI,
+            1.5,
+        );
+        assert_ne!(base.to_cols_array(), yawed.to_cols_array());
+        // A narrower FOV (more zoom, from a larger GTE H) also changes it, and
+        // an out-of-range FOV is clamped to a finite matrix.
+        let zoomed = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 20f32.to_radians(), LO, HI, 1.5);
+        assert_ne!(base.to_cols_array(), zoomed.to_cols_array());
+        let clamped = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, LO, HI, 1.5);
+        assert!(finite(&clamped));
     }
 }

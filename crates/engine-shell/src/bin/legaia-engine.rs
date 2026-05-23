@@ -180,11 +180,17 @@ enum Cmd {
         /// inline record.
         #[arg(long)]
         all: bool,
-        /// Print the full field-VM opcode disassembly of one partition-1
-        /// record (by index; record 0 is the scene-entry system script).
+        /// Print the full field-VM opcode disassembly of one record (by
+        /// index; in partition 1 record 0 is the scene-entry system script).
         /// Useful for tracing scene-entry / cutscene / dialog flow.
         #[arg(long)]
         disasm_record: Option<usize>,
+        /// Partition the `--disasm-record` index lives in (default 1, the
+        /// per-actor scripts). Use `2` to disassemble a cutscene-timeline
+        /// record (e.g. opdeene's record 18, the prologue camera/actor/text
+        /// sequence ending in `GFLAG_SET 26`).
+        #[arg(long, default_value_t = 1)]
+        disasm_partition: usize,
         /// Write the decoded (LZS-decompressed) MAN payload to this path so it
         /// can be scanned for embedded literals (e.g. a scripted scene-change
         /// target name). The scene-entry script + every partition's bytecode
@@ -197,6 +203,13 @@ enum Cmd {
         /// town01 hand-off arm). Reported at real opcode boundaries.
         #[arg(long)]
         gflag_partition: Option<usize>,
+        /// Dump the inline cutscene-narration text pages embedded in a
+        /// cutscene-timeline record (the `0x1F`/`0x00`-framed subtitle pages
+        /// after a `0x4C` narration op). Pair with `--disasm-record N
+        /// --disasm-partition 2` to target the right record; defaults to
+        /// scanning every partition-2 record when no record is given.
+        #[arg(long)]
+        narration: bool,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -969,16 +982,20 @@ fn main() -> Result<()> {
             disc,
             all,
             disasm_record,
+            disasm_partition,
             dump_man,
             gflag_partition,
+            narration,
         } => cmd_man_scripts(
             &scene,
             &extracted_root,
             disc.as_deref(),
             all,
             disasm_record,
+            disasm_partition,
             dump_man.as_deref(),
             gflag_partition,
+            narration,
         ),
         Cmd::VramOracle {
             scene,
@@ -1795,17 +1812,20 @@ fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_man_scripts(
     scene_name: &str,
     extracted_root: &Path,
     disc: Option<&Path>,
     all: bool,
     disasm_record: Option<usize>,
+    disasm_partition: usize,
     dump_man: Option<&Path>,
     gflag_partition: Option<usize>,
+    narration: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
-        walk_partition_gflag_sites, walk_partition1_scripts,
+        partition_record_span, walk_partition_gflag_sites, walk_partition1_scripts,
     };
     use legaia_engine_core::scene_bundle;
 
@@ -1892,29 +1912,32 @@ fn cmd_man_scripts(
 
     if let Some(target) = disasm_record {
         use legaia_engine_vm::field_disasm::{LinearWalker, format_instruction};
-        let rec = records
-            .iter()
-            .find(|r| r.index == target)
-            .with_context(|| format!("no partition-1 record with index {target}"))?;
-        let end = rec.script_start + rec.body_len;
+        let (script_start, pc0, body_len) =
+            partition_record_span(&man_file, &man, disasm_partition, target).with_context(
+                || format!("partition {disasm_partition} record {target} has no decodable span"),
+            )?;
+        let end = script_start + body_len;
         let body = man
-            .get(rec.script_start..end)
+            .get(script_start..end)
             .with_context(|| format!("record {target} body slice out of range"))?;
         println!(
-            "\n--- disasm P1[{}] (start=0x{:05X} pc0={} body={}b) ---",
-            rec.index, rec.script_start, rec.pc0, rec.body_len,
+            "\n--- disasm P{disasm_partition}[{target}] (start=0x{script_start:05X} pc0={pc0} body={body_len}b) ---",
         );
-        for insn in LinearWalker::new(body, rec.pc0) {
+        for insn in LinearWalker::new(body, pc0) {
             match insn {
                 Ok(insn) => println!(
                     "  0x{:05X} (+0x{:04X})  {}",
-                    rec.script_start + insn.pc,
+                    script_start + insn.pc,
                     insn.pc,
                     format_instruction(&insn, body),
                 ),
                 Err((pc, e)) => {
-                    println!("  0x{:05X} [decode stopped: {e:?}]", rec.script_start + pc);
-                    break;
+                    let raw = body.get(pc).copied().unwrap_or(0);
+                    println!(
+                        "  0x{:05X} (+0x{:04X})  .byte 0x{raw:02X}  [{e:?}]",
+                        script_start + pc,
+                        pc,
+                    );
                 }
             }
         }
@@ -1937,6 +1960,59 @@ fn cmd_man_scripts(
                 s.opcode,
             );
         }
+    }
+
+    if narration {
+        use legaia_asset::cutscene_text::parse_narration;
+        // Either a specific `--disasm-record` in `--disasm-partition`, or a
+        // sweep of every record in `disasm_partition` (defaulting to 2, the
+        // cutscene-timeline partition).
+        let candidates: Vec<usize> = match disasm_record {
+            Some(r) => vec![r],
+            None => {
+                let count = man_file
+                    .header
+                    .partition_counts
+                    .get(disasm_partition)
+                    .copied()
+                    .unwrap_or(0)
+                    .max(0) as usize;
+                (0..count).collect()
+            }
+        };
+        println!("\n--- inline cutscene narration (partition {disasm_partition}) ---",);
+        let mut total = 0usize;
+        for r in candidates {
+            let Some((script_start, _pc0, body_len)) =
+                partition_record_span(&man_file, &man, disasm_partition, r)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let blocks = parse_narration(body);
+            for (bi, block) in blocks.iter().enumerate() {
+                total += block.pages.len();
+                println!(
+                    "  P{disasm_partition}[{r}] block {bi} @ 0x{:05X}: declared {} page(s), decoded {}{}",
+                    script_start + block.op_offset,
+                    block.declared_pages,
+                    block.pages.len(),
+                    if block.count_matches() {
+                        ""
+                    } else {
+                        "  [count mismatch]"
+                    },
+                );
+                for page in &block.pages {
+                    println!(
+                        "      0x{:05X}  {:?}",
+                        script_start + page.offset,
+                        page.text
+                    );
+                }
+            }
+        }
+        println!("summary: {total} narration page(s) total");
     }
     Ok(())
 }
@@ -5193,6 +5269,64 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
+    /// Camera parameters for the cutscene shot, decoded from the cutscene
+    /// timeline's executed op-`0x45` Camera Configure params (read from
+    /// `World::camera_state`, committed by `FUN_801DE084`). Returns
+    /// `(look_at, yaw_radians, fov_radians)`:
+    ///
+    /// - **look_at**: the camera focus. Retail stores the *negated* focus X / Z
+    ///   in params 6 / 8 (`_DAT_80089118` / `_DAT_80089120` = the GTE
+    ///   translation `-focus`; the follow-cam `FUN_801DBE9C` sets them to
+    ///   `-(anchor X/Z)`), so X / Z are negated back to world space here; Y
+    ///   (param 7) is stored un-negated. Any axis the cutscene hasn't staged
+    ///   yet falls back to the lead actor (the cutscene anchor), then the
+    ///   scene-AABB centre.
+    /// - **yaw**: param 1 (`_DAT_8007b792`, camera yaw), PSX `4096` = full turn.
+    /// - **fov**: derived from param 9 (`_DAT_8007b6f4`), which retail writes to
+    ///   the GTE H projection register - the focal length. PSX projects onto a
+    ///   ~240-tall frame, so the vertical FOV is `2*atan(120 / H)`. Inferred;
+    ///   falls back to 60 deg when the param is absent or degenerate.
+    fn cutscene_view(&self) -> ([f32; 3], f32, f32) {
+        use std::f32::consts::TAU;
+        let world = &self.session.host.world;
+        let params = &world.camera_state.params;
+        let param = |slot: u8| {
+            params
+                .iter()
+                .find(|p| p.slot == slot)
+                .map(|p| p.value as i16 as f32)
+        };
+        let (px, py, pz) = world
+            .actors
+            .first()
+            .filter(|a| a.active || a.tmd_binding.is_some())
+            .map(|a| {
+                (
+                    a.move_state.world_x as f32,
+                    a.move_state.world_y as f32,
+                    a.move_state.world_z as f32,
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                    (self.scene_aabb.0[1] + self.scene_aabb.1[1]) * 0.5,
+                    (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+                )
+            });
+        let look_at = [
+            param(6).map(|v| -v).unwrap_or(px),
+            param(7).unwrap_or(py),
+            param(8).map(|v| -v).unwrap_or(pz),
+        ];
+        let yaw = param(1).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
+        let fov = param(9)
+            .filter(|&h| h > 1.0)
+            .map(|h| 2.0 * (120.0 / h).atan())
+            .unwrap_or(60f32.to_radians());
+        (look_at, yaw, fov)
+    }
+
     fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.session.host.world.actors[slot];
         let pos = Vec3::new(
@@ -6316,6 +6450,20 @@ impl PlayWindowApp {
         {
             out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
+        // Opening-cutscene narration: the `opdeene` prologue subtitle pages,
+        // centered near the bottom of the screen one page at a time.
+        if let Some(narration) = &self.session.host.world.cutscene_narration
+            && let Some(text) = narration.current_text()
+        {
+            let gold = [1.0f32, 0.92, 0.6, 1.0];
+            let center_x = (w / 2) as i32;
+            // Retail draws the subtitle at Y=180 on a 240px-tall virtual
+            // screen (FUN_8003C764) - 3/4 down; scale to the real surface.
+            let top_y = (h as i32 * 3 / 4).min(h as i32 - 16).max(0);
+            out.extend(legaia_engine_render::cutscene_narration_draws_for(
+                &self.font, text, center_x, top_y, gold,
+            ));
+        }
         // Name-entry overlay: the opening `town01` lead-character naming prompt.
         if let Some(entry) = &self.session.host.world.name_entry {
             use legaia_engine_core::name_entry::{CHAR_CELLS, GRID, GRID_COLS};
@@ -6550,6 +6698,27 @@ impl ApplicationHandler for PlayWindowApp {
                         self.prev_pad = self.pad;
                         continue;
                     }
+                    // Opening-cutscene narration plays first. While its
+                    // subtitle pages are on screen the field is held and a
+                    // confirm press (Cross) skips to the next page; the
+                    // per-page timer (World::tick) auto-advances otherwise.
+                    // Only once the narration completes does a confirm reach
+                    // the hand-off gate below - so the prologue narration
+                    // precedes the Rim Elm transition, mirroring retail order.
+                    if self.session.host.world.cutscene_narration_active() {
+                        if pressed_edge & 0x4000 != 0 {
+                            self.session.host.world.skip_cutscene_narration();
+                        }
+                        // Freeze player movement (pad held at 0) but keep the
+                        // world ticking so the narration's per-page timer
+                        // advances and the scene still renders.
+                        self.session.host.world.set_pad(0);
+                        if let Err(e) = self.session.tick() {
+                            log::error!("session tick (narration): {e:#}");
+                        }
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
                     // Prologue cutscene -> Rim Elm handoff. While in `opdeene`
                     // with the trigger armed, a confirm press (Cross) hands off
                     // to `town01`, mirroring FUN_801D1344's flag + pad gate.
@@ -6562,21 +6731,13 @@ impl ApplicationHandler for PlayWindowApp {
                         match self.session.enter_field_live(target, &self.field_live_opts) {
                             Ok(mode) => {
                                 log::info!("prologue handoff: entered '{target}' (mode={mode:?})");
-                                // Faithful opening order: the retail `town01`
-                                // opening runs an establishing camera + Vahn's
-                                // scripted walk-out, then the "Select your name."
-                                // prompt (master mode 0x03; see boot.md "Name-entry
-                                // overlay"). The engine doesn't yet tick that
-                                // in-scene cutscene timeline (per-mesh placement is
-                                // still open), so we open the naming prompt right
-                                // at the opening hand-off - the prompt's ORDER in
-                                // the new-game flow is correct even though the exact
-                                // in-script field-VM trigger op is still being RE'd.
-                                // Gated tightly: `take_prologue_handoff` only fires
-                                // on the NEW GAME `opdeene` -> `town01` opening, so
-                                // this never re-prompts on a normal `town01` visit.
-                                // Seeded with the template default `Vahn`.
-                                self.session.host.world.open_name_entry(0);
+                                // `enter_field_scene` installs `town01`'s opening
+                                // cutscene timeline (gated on the prologue hand-off):
+                                // the establishing camera + Vahn's scripted walk-out
+                                // play, and the name-entry overlay opens when the
+                                // timeline reaches its pinned op-`0x49` STATE_RESUME
+                                // (P2[3] body `0x02c6`) - the faithful in-script
+                                // trigger, not a blind host call at the hand-off.
                             }
                             Err(e) => {
                                 log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
@@ -6662,8 +6823,10 @@ impl ApplicationHandler for PlayWindowApp {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
                     // World-map mode frames the loaded map with the
-                    // controller-driven camera (azimuth / zoom / pan);
-                    // every other mode uses the orbit camera.
+                    // controller-driven camera (azimuth / zoom / pan); an active
+                    // in-engine cutscene (opdeene opening prologue) frames the
+                    // cutscene's executed op-0x45 camera target; every other mode
+                    // uses the orbit camera.
                     let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
                     let cam = if in_world_map {
                         let (az, zoom, px, pz) = self
@@ -6681,6 +6844,16 @@ impl ApplicationHandler for PlayWindowApp {
                             zoom,
                             px,
                             pz,
+                            aspect,
+                        )
+                    } else if self.session.host.world.cutscene_timeline_active() {
+                        let (look_at, yaw, fov) = self.cutscene_view();
+                        legaia_engine_render::window::cutscene_camera_mvp(
+                            look_at,
+                            yaw,
+                            fov,
+                            self.scene_aabb.0,
+                            self.scene_aabb.1,
                             aspect,
                         )
                     } else {

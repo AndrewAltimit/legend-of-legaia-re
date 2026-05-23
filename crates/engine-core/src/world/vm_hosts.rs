@@ -8,7 +8,7 @@ use crate::field_events::FieldEvent;
 use legaia_engine_vm as vm;
 use vm::battle_action::{BattleActionHost, BattleActor, BattleEndCause, Pose};
 use vm::effect_vm::{EffectHost, MasterSlot, StateOutcome};
-use vm::field::{CameraParam, FieldCtx, FieldHost, SceneFadeResult};
+use vm::field::{CameraParam, FieldCtx, FieldHost, Op49State, SceneFadeResult};
 use vm::move_vm::{ActorState as MoveActorState, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 
@@ -502,6 +502,38 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn extra_flags(&self) -> u32 {
         self.world.extra_flags
     }
+
+    // Op-0x49 STATE_RESUME, scoped to the `town01` opening cutscene timeline.
+    // The pinned name-entry handoff (P2[3] body `0x02c6`, `49 03 00`) suspends
+    // the script here; the engine opens the name-entry overlay on the Idle->arm
+    // edge and keeps the op Armed (parked) until the player commits, then Done
+    // (resume). Outside the timeline (`in_cutscene_timeline == false`) and
+    // outside the opening (`prologue_naming_pending == false`) these fall back
+    // to the default Idle, so a normal field-VM op-0x49 behaves as before.
+    // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
+    fn op49_state(&self) -> Op49State {
+        if self.world.in_cutscene_timeline && self.world.prologue_naming_armed {
+            if self.world.name_entry_active() {
+                Op49State::Armed
+            } else {
+                Op49State::Done
+            }
+        } else {
+            Op49State::Idle
+        }
+    }
+    fn op49_invoke_setup(&mut self) {
+        if self.world.in_cutscene_timeline
+            && self.world.prologue_naming_pending
+            && !self.world.prologue_naming_armed
+            && !self.world.name_entry_active()
+        {
+            // Lead character (party slot 0 = Vahn) is the one named at the
+            // opening, matching the retail char-record pointer `_DAT_8007B450`.
+            self.world.open_name_entry(0);
+            self.world.prologue_naming_armed = true;
+        }
+    }
     fn screen_mode(&self) -> u32 {
         self.world.screen_mode
     }
@@ -839,6 +871,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+        // In the spawned opening-cutscene context (target 0xF8) this op is the
+        // inline-narration text-draw, not an actor spawn - the separate
+        // `CutsceneNarration` presenter owns those pages. Suppress the spawn
+        // side-effect while the cutscene timeline steps; the VM still advances
+        // the PC past the page bytes on its own.
+        if self.world.in_cutscene_timeline {
+            return;
+        }
         // Walk `count` variable-length records out of `tail` using the
         // retail packet-length rule (FUN_8003CA38, mirrored in
         // `legaia_engine_vm::field_helpers::packet_length`): bytes <= 0x1E
