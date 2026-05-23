@@ -3568,6 +3568,12 @@ struct PlayWindowApp {
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
     /// re-pose animated actor meshes each frame via `tmd_to_vram_mesh_posed`.
     scene_tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
+    /// Field static-geometry draws: `(index into `meshes`, world model matrix)`
+    /// per placed environment object, resolved at scene load from the field
+    /// map's object table (`legaia_asset::field_objects`). Empty for non-field
+    /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
+    /// terrain at their world positions instead of all at the origin.
+    field_placement_draws: Vec<(usize, Mat4)>,
     /// Pristine CPU-side scene VRAM, cloned at scene-load before any battle
     /// edits. A battle injects monster texture pools into a working copy and
     /// re-uploads; leaving battle restores this base so the field renders
@@ -4854,11 +4860,83 @@ impl PlayWindowApp {
 }
 
 impl PlayWindowApp {
+    /// Resolve the field static-geometry placement draws for the current
+    /// scene: each placed environment object's scene-pack mesh paired with a
+    /// world model matrix. Built from the field map's object table
+    /// (`Scene::field_object_placements`) and the scene_asset_table TMD pack;
+    /// the per-object pack index resolves via `legaia_asset::field_objects`.
+    ///
+    /// `tmd_src_index[j]` is the `res.tmds` index of uploaded mesh `j` (meshes
+    /// skip empty-prim TMDs, so this bridges back). Returns empty for scenes
+    /// with no field map / no bundle (e.g. battle or world-map blocks).
+    ///
+    /// World Y is left at the ground plane for now; the per-tile floor-height
+    /// LUT (MAN header) is a separate refinement.
+    fn resolve_field_placement_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        let placements = match scene.field_object_placements(&self.session.host.index) {
+            Ok(Some(p)) if !p.is_empty() => p,
+            _ => return Vec::new(),
+        };
+        // The environment meshes are the scene_asset_table bundle entry's TMD
+        // pack, in scan order; `pack_index` indexes that subset of `res.tmds`.
+        let Some(bundle_entry) =
+            legaia_engine_core::scene_bundle::find_bundle(scene).map(|b| b.entry_idx())
+        else {
+            return Vec::new();
+        };
+        let env_tmds: Vec<usize> = res
+            .tmds
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.entry_idx == bundle_entry)
+            .map(|(i, _)| i)
+            .collect();
+        // res.tmds index -> uploaded-mesh index (None where the mesh was
+        // dropped for having no renderable prims).
+        let mut res_to_mesh: Vec<Option<usize>> = vec![None; res.tmds.len()];
+        for (mesh_idx, &src) in tmd_src_index.iter().enumerate() {
+            if let Some(slot) = res_to_mesh.get_mut(src) {
+                *slot = Some(mesh_idx);
+            }
+        }
+        let mut draws = Vec::new();
+        for p in &placements {
+            let Some(pack_index) = p.pack_index else {
+                continue;
+            };
+            let Some(&res_idx) = env_tmds.get(pack_index as usize) else {
+                continue;
+            };
+            let Some(mesh_idx) = res_to_mesh[res_idx] else {
+                continue;
+            };
+            // PSX field coords (same convention as actor positions), Y-flipped
+            // to match the geometry like `actor_model`.
+            let model = Mat4::from_translation(Vec3::new(p.world_x as f32, 0.0, p.world_z as f32))
+                * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+            draws.push((mesh_idx, model));
+        }
+        log::info!(
+            "play-window: {} field placement draws ({} placements, {} env meshes)",
+            draws.len(),
+            placements.len(),
+            env_tmds.len(),
+        );
+        draws
+    }
+
     fn upload_assets(&mut self) {
         let Some(res) = self.scene_res.take() else {
             return;
         };
-        let (vram_opt, font_opt, meshes, tmd_data, lo, hi) = {
+        let (vram_opt, font_opt, meshes, tmd_data, tmd_src_index, lo, hi) = {
             let Some(r) = self.win.renderer.as_ref() else {
                 self.scene_res = Some(res);
                 return;
@@ -4873,9 +4951,12 @@ impl PlayWindowApp {
                 .ok();
             let mut meshes = Vec::new();
             let mut tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)> = Vec::new();
+            // `res.tmds` index for each pushed mesh (meshes skip empty-prim
+            // TMDs, so this is the bridge back to a `ResolvedTmd`).
+            let mut tmd_src_index: Vec<usize> = Vec::new();
             let mut lo = [f32::INFINITY; 3];
             let mut hi = [f32::NEG_INFINITY; 3];
-            for rtmd in &res.tmds {
+            for (src_i, rtmd) in res.tmds.iter().enumerate() {
                 // Use the VRAM-aware filter so prims whose CBA / TSB sample
                 // un-uploaded regions get dropped at mesh-build time. This
                 // matches the asset-viewer's cleanup and avoids the "flat
@@ -4904,12 +4985,18 @@ impl PlayWindowApp {
                     Ok(m) => {
                         tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
                         meshes.push(m);
+                        tmd_src_index.push(src_i);
                     }
                     Err(e) => log::warn!("TMD upload skipped: {e:#}"),
                 }
             }
-            (vram, font, meshes, tmd_data, lo, hi)
+            (vram, font, meshes, tmd_data, tmd_src_index, lo, hi)
         };
+        // Resolve the field static-geometry placement draws: each placed
+        // environment object -> its scene-pack mesh -> a world transform.
+        // Built here (not per-frame) because the placement table + pack are
+        // fixed for the scene; the field draw branch just replays the list.
+        let field_placement_draws = self.resolve_field_placement_draws(&res, &tmd_src_index);
         // Keep a clean CPU copy of the scene VRAM so a battle can inject
         // monster textures into a throwaway clone and restore this on exit.
         self.cpu_vram_base = Some(res.vram.clone());
@@ -5016,6 +5103,7 @@ impl PlayWindowApp {
         }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
+        self.field_placement_draws = field_placement_draws;
         if lo[0].is_finite() {
             self.scene_aabb = (lo, hi);
         }
@@ -6692,6 +6780,20 @@ impl ApplicationHandler for PlayWindowApp {
                             });
                         }
                     } else {
+                        // Static environment geometry: draw each placed
+                        // building / terrain mesh at its world transform
+                        // (resolved at scene load in `resolve_field_placement_
+                        // draws`). Without this the field shows only the ~8
+                        // actor-bound meshes and the town's 100+ environment
+                        // meshes never render (or pile at the origin).
+                        for (mesh_idx, model) in &self.field_placement_draws {
+                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * *model,
+                                });
+                            }
+                        }
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
@@ -7473,6 +7575,7 @@ fn cmd_play_window_with_record(
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
+        field_placement_draws: Vec::new(),
         cpu_vram_base: None,
         prev_scene_mode: None,
         monster_archive: None,

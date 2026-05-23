@@ -136,10 +136,13 @@ the same map via a sibling path (`FUN_8003a1e4`, partition-1 records, the
 that NPC/player set, while the static objects are a larger placed set.
 
 Clean-room parser: [`legaia_asset::field_objects`](../../crates/asset/src/field_objects.rs)
-(`parse_placements` over the field map file); the engine reads it via
-`Scene::field_object_placements`. The remaining open thread is the
-`obj_idx -> pack mesh index` selection (how each placed actor's `+0x44` chain
-picks its TMD from the pack); see
+(`parse_placements` + `pack_mesh_index` over the field map file); the engine
+reads it via `Scene::field_object_placements`. Each object's drawn mesh comes
+from the scene_asset_table TMD pack (byte-verified): `pack_index = obj_idx - 5`
+for the field-actor band `93..=118`, otherwise the object record's `+0x10`
+`u16` field; ids `1/2/3` are the protagonist/NPC meshes from the shared pool.
+The `anim_id` resolved separately via the MAN script (`func_0x801d5630`) only
+drives animation; it does not pick geometry. See
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## Provenance
@@ -162,7 +165,7 @@ Footprint caveat: the TOC-**indexed** payload of the `.MAP` entry is only the fi
 
 ### Environment geometry
 
-A field/town scene's environment meshes (the terrain, buildings, and props) are Legaia TMDs packed inside **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4: 121 meshes, ≈8041 vertices). The clean-room `SceneResources` TMD pass scans each entry's LZS-decompressed sections in addition to its raw bytes (`tmd_scan::scan_entry`, the same path the TIM pass already used), so these meshes land in the scene TMD pool; the `scene_tmd_stream` skip still drops battle-character meshes in field mode. The field build uses `SceneLoadKind::Field` with `upload_all_tims`, matching retail's field loader (`FUN_8001f7c0`), which DMA-uploads every TIM — the environment meshes sample texture pages across the whole atlas, so a render-targeted upload drops most of their prims. Per-mesh **world placement** for this static geometry is the [Object-record table](#object-record-format-0x0000-0x20-byte-stride) above (`FUN_8003a55c`: the object-index grid at `+0x8000` of the field map file selects a `+0x0000` object record per placed tile, which gives the mesh its world translation; `legaia_asset::field_objects` parses it, `Scene::field_object_placements` exposes it). The one remaining gap is the `obj_idx -> pack mesh index` selection.
+A field/town scene's environment meshes (the terrain, buildings, and props) are Legaia TMDs packed inside **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4: 121 meshes, ≈8041 vertices). The clean-room `SceneResources` TMD pass scans each entry's LZS-decompressed sections in addition to its raw bytes (`tmd_scan::scan_entry`, the same path the TIM pass already used), so these meshes land in the scene TMD pool; the `scene_tmd_stream` skip still drops battle-character meshes in field mode. The field build uses `SceneLoadKind::Field` with `upload_all_tims`, matching retail's field loader (`FUN_8001f7c0`), which DMA-uploads every TIM — the environment meshes sample texture pages across the whole atlas, so a render-targeted upload drops most of their prims. Per-mesh **world placement** for this static geometry is the [Object-record table](#object-record-format-0x0000-0x20-byte-stride) above (`FUN_8003a55c`: the object-index grid at `+0x8000` of the field map file selects a `+0x0000` object record per placed tile, giving the mesh its world translation; `legaia_asset::field_objects` parses it, `Scene::field_object_placements` exposes it). Each object's mesh resolves to a scene-pack index (`pack_index = obj_idx - 5` for the field-actor band `93..=118`, else the record's `+0x10` field). `legaia-engine play-window` renders the town from this: `resolve_field_placement_draws` pairs each placement with its uploaded pack mesh + world transform and draws them in `SceneMode::Field`. The remaining refinement is per-tile **world Y** (the MAN-header floor-height LUT; the engine currently uses a flat ground plane).
 
 ### Scene-entry script
 

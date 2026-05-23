@@ -7,6 +7,9 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_core::scene_resources::{
+    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+};
 
 fn extracted_dir() -> Option<PathBuf> {
     for d in ["extracted", "../../extracted"] {
@@ -90,6 +93,85 @@ fn town01_placements_reproduce_building_anchors() {
 
     eprintln!(
         "town01: {} placed static objects; Vahn's house @ tile (38,25) -> (4864, 3208)",
+        placements.len()
+    );
+}
+
+/// The render mapping is sound: every placement's `pack_index` lands inside
+/// the scene_asset_table TMD pack the engine loads, so the play-window
+/// static-draw pass resolves a real mesh for each placed object.
+#[test]
+fn town01_placement_pack_indices_resolve_in_loaded_pack() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let index = host.index.clone();
+    let scene = Scene::load(&index, "town01").expect("load town01");
+
+    let placements = scene
+        .field_object_placements(&index)
+        .expect("read placements")
+        .expect("field map");
+
+    // The environment meshes are the scene bundle entry's TMD pack, in scan
+    // order (the same indexing `pack_index` uses).
+    let bundle =
+        legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
+    let bundle_entry = bundle.entry_idx();
+
+    let mut shared: Vec<Scene> = Vec::new();
+    for name in FIELD_SHARED_BLOCKS {
+        if let Ok(s) = Scene::load(&index, name) {
+            shared.push(s);
+        }
+    }
+    let refs: Vec<&Scene> = shared.iter().collect();
+    let (res, _) = SceneResources::build_targeted_with_options(
+        &scene,
+        &refs,
+        BuildOptions {
+            kind: SceneLoadKind::Field,
+            upload_all_tims: true,
+        },
+    )
+    .expect("build town01 field");
+
+    let env_mesh_count = res
+        .tmds
+        .iter()
+        .filter(|t| t.entry_idx == bundle_entry)
+        .count();
+    assert!(
+        env_mesh_count >= 100,
+        "town01 env mesh pack unexpectedly small: {env_mesh_count}"
+    );
+
+    let mut resolved = 0usize;
+    for p in &placements {
+        if let Some(pack_index) = p.pack_index {
+            assert!(
+                (pack_index as usize) < env_mesh_count,
+                "object {} pack_index {} out of range (env pack has {})",
+                p.obj_idx,
+                pack_index,
+                env_mesh_count
+            );
+            resolved += 1;
+        }
+    }
+    assert!(
+        resolved >= 10,
+        "expected most placements to resolve a mesh; only {resolved} did"
+    );
+    eprintln!(
+        "town01: {resolved}/{} placements resolve into the {env_mesh_count}-mesh pack",
         placements.len()
     );
 }
