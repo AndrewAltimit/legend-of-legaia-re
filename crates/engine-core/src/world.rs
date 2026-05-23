@@ -1509,11 +1509,13 @@ impl World {
     /// `FUN_800560B4` template expansion `FUN_80034A6C` calls), which a caller
     /// with the disc's `SCUS_942.54` invokes right after this to drop Vahn into
     /// slot 0; the opening scene (`town01`) is entered through the normal
-    /// scene-load path. There is no opening narration or name-entry sub-mode to
-    /// reproduce: retail's front-end (`FUN_801DD35C`) goes title-menu -> fade ->
-    /// `init_game` -> master-mode 2 (field) directly, copying a fixed default
-    /// name; the opening "cutscene" is the attract/intro STR FMV (master-mode
-    /// `0x1A`). This data seed just copies the template's default name.
+    /// scene-load path. Retail's front-end (`FUN_801DD35C`) goes title-menu ->
+    /// fade -> `init_game` -> master-mode 2 (field) directly, with no narration
+    /// or name-entry sub-mode; this seed just copies the template's default name
+    /// (`Vahn`). The opening narration and the name-entry screen are downstream
+    /// field/event/menu-overlay steps after the field launches (an in-engine 3D
+    /// cutscene + subtitle text, then the "Select your name." character grid),
+    /// not modeled here yet.
     // REF: FUN_80025B64
     // REF: FUN_801D6704
     // REF: FUN_80034A6C
