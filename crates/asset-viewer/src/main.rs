@@ -2239,6 +2239,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
         E::ActorAllocate { .. } => "ActorAllocate",
         E::ActorSpawned { .. } => "ActorSpawned",
         E::ActorSpawnFailed { .. } => "ActorSpawnFailed",
+        E::WorldMapTransition { .. } => "WorldMapTransition",
     }
 }
 

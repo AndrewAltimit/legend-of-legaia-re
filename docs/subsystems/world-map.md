@@ -124,8 +124,26 @@ tick: the Idle state's encounter (countdown reaches zero with encounters
 enabled) latches the configured formation, which the world resolves into a
 battle through the same `formation_table` machinery as a field encounter,
 tagged via `World::battle_return_mode` to return to the overworld rather than
-the field. Interactions / portal transitions surface as a `FieldInteract`
-event for the host.
+the field.
+
+Each entity carries an optional per-entity role
+(`World::WorldMapEntityConfig`, paired by index with the SM list and installed
+via `install_world_map_entities_with_configs`):
+
+- `EncounterZone { formation_id }` - the entity spawns its own formation when
+  it fires, instead of the map-wide shared one.
+- `Portal { target_map }` - engaging the entity
+  (`World::engage_world_map_entity`, the clean-room stand-in for retail's
+  player-position-in-zone trigger) drives the SM to its transition state and
+  surfaces a `FieldEvent::WorldMapTransition { target_map, slot }` for the host
+  to load the target scene.
+- `Npc { interact_id }` - surfaces a `FieldEvent::FieldInteract` with that id.
+
+Entities without a config fall back to the shared formation and a generic
+interaction. Two retail threads remain open: the per-region encounter table
+(`FUN_800243F0` → the MAN region table) that would pick the formation from the
+player's overworld position, and seeding overworld entities from the boot path
+(today they are installed through the API).
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see
