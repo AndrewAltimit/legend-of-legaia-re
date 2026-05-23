@@ -49,13 +49,24 @@ Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two 
 | Mode | Init handler | Loader call | PROT idx | Content (verified) |
 |---|---|---|---|---|
 | 0 `CONFIG INIT` | `FUN_80025C68` | `FUN_8003EBE4(0x4C)` | 973 | Slot-machine debug overlay — "OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16" strings + slot-game text. **The dev label "CONFIG" is a misnomer for the slot-machine debug mode.** |
-| 2 `MAIN INIT` | `FUN_80025B64` | `FUN_8003EBE4(2)` | 899 | Options/config menu — "Display Off / Vibration On / Voices On" strings + 27 MIPS prologues. **The dev label "MAIN INIT" refers to the OPTIONS MENU**, not the title screen. |
+| 2 `MAIN INIT` | `FUN_80025B64` | `FUN_8003EBE4(2)` | 899 | **Field/town gameplay INIT.** Loads the field/town/menu overlay, then calls the per-scene initializer `FUN_801D6704` (map + MAN + camera + fog + BGM load; game-mode work buffer alloc), which hands off to mode 3 by writing `_DAT_8007B83C = 3`. The title screen's NEW GAME path launches this mode. The "Display Off / Vibration On / Voices On" strings in PROT 899 belong to the **in-game options submenu** carried by this same overlay (reached through the field menu) — they do not make mode 2 a standalone options mode. |
 | 24 `OTHER INIT` | `FUN_80025980` | ? | 896 | Mode-24 OTHER overlay (cited by `dump_round8.py`'s `OVERLAY_0896_TARGETS`) — **not** "battle background" despite CDNAME `bat_back_dat`. |
 | 26 `STR INIT` | `FUN_80025FB4` | (FMV path) | — | Cutscene / STR FMV mode entry. Title-overlay tick writes `_DAT_8007B83C = 0x1A` (= 26) on attract underflow → enters this mode. |
 
-**The dev mode-names mislead.** `MAIN INIT` doesn't initialise the title screen; it initialises the options menu (likely so-named because options is the "main game-options" screen in dev parlance). `CONFIG INIT` doesn't initialise game config; it initialises the slot-machine debug mode. The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names but its implied semantics (e.g., comment "Mode 2 - main init (boot to title screen)") are wrong — verify each variant's docstring against retail behaviour before relying on it.
+**The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen — the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the slot-machine debug mode. The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
 
-**The title screen does not appear to be one of the 28 modes** — every mode whose init handler we've traced loads a debug/test/menu overlay or a major game mode (field/battle/cutscene), none of which match the title-overlay tick at `FUN_801DD35C`. The title overlay is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all.
+#### New Game boot chain (title → field)
+
+The title-screen NEW GAME selection is the entry point into modes 2/3:
+
+1. **Title confirm.** In the title overlay tick (`FUN_801DD35C`), the menu handler reads the live cursor (`state[+0x1FC]`), and on `L1|Cross` (`pad & 0x44`) stashes the chosen row at `state[+0x200]`, then advances to sub-mode `0x14`. NEW GAME is row 0; a non-zero row (CONTINUE) routes to the save/card load path instead.
+2. **Launch write.** The row-0 sub-phases reach `0x801DFC00`: `li v0,0x2; sh v0,-0x47C4(v1)` writes `_DAT_8007B83C = 2`, resets the title sub-mode, and kicks a fade-out (`FUN_80024EE4(1, 2, 0xFFFFFF)`). (The other master-mode writes in this tick set `0x1A` = STR/intro-FMV, the attract/demo path.)
+3. **Mode-2 init.** The mode dispatcher runs `FUN_80025B64`: load the field overlay (`FUN_8003EBE4(2)`) → call `FUN_801D6704`.
+4. **Field scene init.** `FUN_801D6704` reads the resident map id, loads geometry + MAN + camera + fog + BGM, allocates the game-mode work buffer, and writes `_DAT_8007B83C = 3` — the field per-frame loop ("MAIN MODE") takes over the next frame.
+
+The mode-transition control flow is mirrored in `crates/engine-vm/src/title_overlay.rs` (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3, `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `crates/engine-core/src/world.rs` (`World::begin_new_game`). The *fresh-state seed* a new game establishes (starting party stats, gold, starting scene id) is set by a separate, not-yet-pinned new-game-init routine; `FUN_801D6704` itself is generic field entry, used for every scene transition, and reads that state from globals rather than seeding it.
+
+**The title screen is not one of the 28 modes** — its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2).
 
 ### CD-read API stack
 

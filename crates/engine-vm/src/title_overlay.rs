@@ -498,7 +498,49 @@ pub const MASTER_GAME_MODE_STR_INIT: u8 = 0x1A;
 /// (title-launch) handler writes to [`MASTER_GAME_MODE_ADDR`]. This is
 /// the value the engine port consumes to transition out of the title
 /// overlay into the main game (field / town).
+///
+/// `0x02` is the *init* mode ("MAIN INIT"): its handler `FUN_80025B64`
+/// loads the field/town overlay and calls the per-scene initializer
+/// [`FIELD_SCENE_INIT_PC`], which loads the map + MAN + camera + fog +
+/// BGM, allocates the game-mode work buffer, and then hands off to the
+/// field per-frame loop by writing [`MASTER_GAME_MODE_FIELD_RUN`] = `3`.
+/// So `2` and `3` are the INIT/RUN pair of the field/town gameplay mode,
+/// not an options screen.
 pub const MASTER_GAME_MODE_FIELD_LAUNCH: u8 = 0x02;
+
+/// Master-game-mode value the field scene initializer
+/// ([`FIELD_SCENE_INIT_PC`]) writes once the map is resident, handing off
+/// to the field per-frame loop ("MAIN MODE"). The retail write is
+/// `_DAT_8007b83c = 3` at the tail of `FUN_801D6704`.
+pub const MASTER_GAME_MODE_FIELD_RUN: u8 = 0x03;
+
+/// SCUS handler for master game-mode `0x02` ("MAIN INIT"): loads the
+/// field/town overlay via `FUN_8003EBE4(2)` and invokes
+/// [`FIELD_SCENE_INIT_PC`].
+// REF: FUN_80025B64
+// REF: FUN_8003EBE4
+pub const MODE2_INIT_HANDLER_PC: u32 = 0x8002_5B64;
+
+/// The field/town scene initializer the NEW GAME launch lands in
+/// (`FUN_801D6704`, in the field overlay). Reads the map id from the
+/// resident globals, loads geometry + MAN + camera + fog + BGM, allocates
+/// the game-mode work buffer, then writes [`MASTER_GAME_MODE_FIELD_RUN`].
+/// Used for every field entry, not just NEW GAME; the title path simply
+/// routes here via [`MASTER_GAME_MODE_FIELD_LAUNCH`].
+// REF: FUN_801D6704
+pub const FIELD_SCENE_INIT_PC: u32 = 0x801D_6704;
+
+/// State offset holding the menu row the player confirmed on the title
+/// screen (`state[+0x200]`). The confirm handler reads the live cursor
+/// (`state[+0x1FC]`), stashes it here, and advances to sub-mode `0x14`;
+/// the launch sub-phases then branch on this value.
+pub const MENU_INDEX_STATE_OFFSET: u32 = 0x0000_0200;
+
+/// Value of [`MENU_INDEX_STATE_OFFSET`] selecting NEW GAME (the top row).
+/// The index-0 sub-phases reach the [`MASTER_GAME_MODE_FIELD_LAUNCH`]
+/// write at [`PHASE06_LAUNCH_GAME_PC`]; a non-zero index (CONTINUE) routes
+/// to the save/card load path instead.
+pub const MENU_INDEX_NEW_GAME: u32 = 0;
 
 /// One observed `state[+0x204] = value` write inside the tick function.
 /// Each row pins which mode handler emits the write and the value
@@ -844,5 +886,23 @@ mod tests {
             phase06 < PHASE06_LAUNCH_GAME_PC,
             "Phase06 handler 0x{phase06:08X} should precede launch write 0x{PHASE06_LAUNCH_GAME_PC:08X}"
         );
+    }
+
+    #[test]
+    fn new_game_boot_chain_constants() {
+        // NEW GAME is the top menu row (index 0); the launch write sets the
+        // field INIT mode (2), whose init handler reaches the field scene
+        // initializer, which hands off to the field RUN mode (3).
+        assert_eq!(MENU_INDEX_NEW_GAME, 0);
+        assert_eq!(MENU_INDEX_STATE_OFFSET, 0x200);
+        assert_eq!(MASTER_GAME_MODE_FIELD_LAUNCH, 0x02);
+        assert_eq!(MASTER_GAME_MODE_FIELD_RUN, 0x03);
+        // INIT precedes RUN, and both differ from the attract STR-FMV mode.
+        const _: () = assert!(MASTER_GAME_MODE_FIELD_LAUNCH < MASTER_GAME_MODE_FIELD_RUN);
+        assert_ne!(MASTER_GAME_MODE_FIELD_RUN, MASTER_GAME_MODE_STR_INIT);
+        // The mode-2 init handler is SCUS-resident; the field scene
+        // initializer it calls is overlay-resident (0x801C0000+).
+        const _: () = assert!(MODE2_INIT_HANDLER_PC < 0x801C_0000);
+        const _: () = assert!(FIELD_SCENE_INIT_PC >= 0x801C_0000);
     }
 }

@@ -53,15 +53,19 @@ pub enum GameMode {
     /// Mode 1 - "CONFIG MODE" per-frame handler for the slot-machine debug
     /// mode. Uses the default per-frame dispatcher `FUN_80025EEC`.
     ConfigMode,
-    /// Mode 2 - "MAIN INIT" (dev label - misleading): the retail handler
-    /// `FUN_80025B64` loads PROT 899, the OPTIONS MENU code overlay
-    /// (Display Off / Vibration On / Voices On). Despite the dev name and
-    /// earlier engine-core comments, **this is not the title-screen init.**
-    /// The title screen is loaded by a pre-mode-dispatch boot routine
-    /// that is not yet pinned.
+    /// Mode 2 - "MAIN INIT": the field/town gameplay INIT mode. The retail
+    /// handler `FUN_80025B64` loads the field overlay (`FUN_8003EBE4(2)`)
+    /// and calls the per-scene initializer `FUN_801D6704`, which loads the
+    /// map + MAN + camera + fog + BGM, allocates the game-mode work buffer,
+    /// then hands off to mode 3 (field per-frame) by writing
+    /// `_DAT_8007B83C = 3`. The title screen's NEW GAME path launches this
+    /// mode (`_DAT_8007B83C = 2` at `0x801DFC00`). The dev label "MAIN" and
+    /// older "options menu" notes are misleading: this is the field entry,
+    /// not the options screen (options is reached through the in-game menu).
     MainInit,
-    /// Mode 3 - "MAIN MODE" (dev label) per-frame handler for the options
-    /// menu. Uses the default per-frame dispatcher `FUN_80025EEC`.
+    /// Mode 3 - "MAIN MODE": the field/town per-frame gameplay handler
+    /// (`game_mode 0x03`, the on-field / in-town loop). Mode 2 (init) hands
+    /// off here once the map is resident.
     MainMode,
     /// Mode 4 - monster test init (debug).
     MonsterTest,

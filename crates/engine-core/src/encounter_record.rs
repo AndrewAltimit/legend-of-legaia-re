@@ -73,6 +73,18 @@ pub const IDS_OFFSET: usize = 0x4;
 /// slot 0. See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
 pub const RIM_ELM_TRAINING_OPPONENT_ID: u8 = 0x4F;
 
+/// Index of the Rim Elm Tetsu tutorial fight in town01's per-scene MAN
+/// formation table - a lone [`RIM_ELM_TRAINING_OPPONENT_ID`] monster.
+///
+/// The scripted carrier entity installs the fight by selecting this index into
+/// the per-scene formation table (it is **not** an inline `[count][id]` literal
+/// in the field-VM script - the id `0x4F` resolves through the indexed table).
+/// Verified against the live "Come at me!" save state: the in-RAM formation
+/// table reads `[04][07][0a][3f 3e 3e 3e][4f][0a 0a][3d 3d]`, byte-identical to
+/// the engine's MAN parse, so the Tetsu row is index 4. See
+/// [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
+pub const RIM_ELM_TRAINING_FORMATION_ID: u16 = 4;
+
 /// Decoded encounter record.
 ///
 /// `monster_ids` always has length `FORMATION_SLOTS`; trailing slots beyond

@@ -58,7 +58,7 @@
 # driven, all from active scene `map01`):
 #
 #   mc2 → STR 0 (fmv_id 0)    mc3 → STR 1 (fmv_id 1)
-#   mc4 → STR 2 (fmv_id 2)    mc5 → STR 3 (fmv_id 3)
+#   mc4 → STR 2 (fmv_id 2)    mc5 → ROTATED (title_screen_new_game)
 #   mc6 → STR 4 (fmv_id 4)    mc7 → ROTATED (v0.1 slice C; was fmv_id 5)
 #   mc8 → ROTATED (v0.1 slice C+; was fmv_id 6)
 #   mc9 → STR 7 (fmv_id 7)
@@ -632,3 +632,19 @@ description = "Walkable area; a ~0.75s Down press walks into a town entrance, lo
 phase = "field"
 expected_game_mode = 0x03
 topics = ["field", "scene transition", "town", "MAN", "scene_asset_table", "FUN_8001F05C", "_DAT_8007b898"]
+
+# ----------------------------------------------------------------------
+# Title screen, NEW GAME row highlighted. One Cross press short of the
+# title -> field-launch transition: confirming writes master game-mode
+# 0x02 (FUN_80025B64), whose field scene init FUN_801D6704 hands off to
+# 0x03. Pre-launch anchor for the New Game boot chain; see
+# docs/subsystems/boot.md "New Game boot chain".
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 5
+label = "title_screen_new_game"
+ram_fingerprint_sha256 = "9efbfeacdbb7f98ab7d0f9eee62468e0ec05f540677498f771eda113c9a6776c"
+backup_fingerprint = "71094451e85eb2ecef11d2fcc975615360fb3bf58b506467fb8e1aa01f4c0334"
+description = "Title screen with the NEW GAME row highlighted; one Cross press before the title -> field master-mode transition (FUN_80025B64 -> FUN_801D6704 -> game_mode 0x03). Pre-launch anchor for the New Game boot chain."
+phase = "boot"
+topics = ["title screen", "new game", "boot", "FUN_801DD35C", "master game-mode", "FUN_80025B64", "FUN_801D6704"]

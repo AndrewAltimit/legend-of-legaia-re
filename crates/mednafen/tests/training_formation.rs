@@ -8,6 +8,13 @@
 //! observation so a regression in the formation-cell address or the corpus
 //! surfaces here.
 //!
+//! The lone `0x4F` is not an inline script literal: it is town01 **MAN
+//! formation index 4**, selected by the scripted carrier. The in-RAM 8-byte
+//! formation table is byte-identical to the engine's MAN parse
+//! (`RIM_ELM_TRAINING_FORMATION_ID`); the engine reaches the fight via
+//! `World::install_man_formation(4)`. See `docs/formats/encounter.md` →
+//! "Worked example: the Rim Elm training fight".
+//!
 //! Library-gated, not disc-gated: the capture states live as immutable,
 //! content-hashed backups under `saves/library/mednafen/` (gitignored Sony
 //! RAM) and resolve via each scenario's `backup_fingerprint`. The test

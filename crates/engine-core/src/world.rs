@@ -1421,6 +1421,46 @@ impl World {
         }
     }
 
+    /// Establish a fresh-game slate and enter the field per-frame mode.
+    ///
+    /// This is the engine's analog of the retail title-screen NEW GAME
+    /// transition. In retail, confirming NEW GAME writes the master
+    /// game-mode word `_DAT_8007B83C = 2` (field INIT, `FUN_80025B64`),
+    /// whose per-scene initializer `FUN_801D6704` loads the map and then
+    /// hands off to mode 3 (field per-frame) by writing
+    /// `_DAT_8007B83C = 3`. See `docs/subsystems/boot.md` ("New Game boot
+    /// chain") and `crates/engine-vm/src/title_overlay.rs`
+    /// (`MASTER_GAME_MODE_FIELD_LAUNCH` / `MASTER_GAME_MODE_FIELD_RUN`).
+    ///
+    /// Here that collapses to: clear the unambiguous new-game-owned state
+    /// (story flags, money, inventory, and any pending transitions left
+    /// over from a prior session) and set [`SceneMode::Field`] — the
+    /// engine's mapping of master mode 3. Distinct from the Continue path,
+    /// which instead hydrates the world from a save slot.
+    ///
+    /// Note this does **not** seed the starting party stats, gold, or
+    /// starting scene id — in retail those come from a separate,
+    /// not-yet-pinned new-game-init routine that runs before mode 2, and
+    /// `FUN_801D6704` reads them from globals. Callers enter the actual
+    /// opening scene through the normal scene-load path afterward.
+    // REF: FUN_80025B64
+    // REF: FUN_801D6704
+    pub fn begin_new_game(&mut self) {
+        self.story_flags = 0;
+        self.story_flag_bits.clear();
+        self.money = 0;
+        self.inventory.clear();
+        self.pending_scene_transition = None;
+        self.pending_fmv_trigger = None;
+        self.pending_scripted_encounter = None;
+        self.scripted_encounter_armed = false;
+        self.encounter = None;
+        self.battle_end = None;
+        self.game_over = false;
+        self.play_time_seconds = 0;
+        self.mode = SceneMode::Field;
+    }
+
     /// Record the active scene label. Engines call this from the scene-load
     /// path (typically right before `install_encounter_for_scene`) so
     /// downstream consumers (HUD, diagnostics, save snapshots) can surface
@@ -2856,6 +2896,50 @@ impl World {
         };
         let mut table = EncounterTable::new(scene_label);
         // Force the next roll to succeed: the record IS the encounter.
+        table.set_trigger_rate(0xFF);
+        table.push(EncounterEntry::new(formation_id, 1));
+        let tracker = EncounterTracker::new(table);
+        self.encounter = Some(EncounterSession::new(tracker));
+        Some(formation_id)
+    }
+
+    /// Install an already-registered per-scene formation as the next encounter,
+    /// by its `formation_id`.
+    ///
+    /// This is the faithful model of a scripted-battle carrier entity selecting
+    /// a formation **by index** into the per-scene formation table - the
+    /// mechanism the Rim Elm Tetsu tutorial fight uses. The per-scene formations
+    /// load from the MAN asset into a contiguous 8-byte-stride table
+    /// (`[3 reserved][count][<=4 ids]`, see [`crate::encounter_record`] /
+    /// `docs/formats/encounter.md`); a carrier entity arms its encounter by
+    /// pointing `actor[+0x94]` at one entry (`table_base + index*8`), and
+    /// `FUN_801DA51C` copies that record into the formation cell on confirm. The
+    /// id 0x4F that lands in the cell is **not** an inline script literal - it is
+    /// the `monster_id` of town01 MAN `formation_id` 4, already registered by
+    /// [`Self::install_man_encounter`] at scene entry (with its real archive
+    /// stats merged).
+    ///
+    /// Unlike [`Self::install_encounter_from_record`], this re-encodes nothing:
+    /// it forces the existing table row, so the scene's merged monster stats
+    /// stand. Returns the `formation_id` installed, or `None` when it isn't
+    /// registered or has no slots.
+    ///
+    /// REF: FUN_801DA51C
+    pub fn install_man_formation(&mut self, formation_id: u16) -> Option<u16> {
+        let has_slots = self
+            .formation_table
+            .formation(formation_id)
+            .is_some_and(|def| !def.slots.is_empty());
+        if !has_slots {
+            return None;
+        }
+        let scene_label = self.active_scene_label.clone();
+
+        use crate::encounter::{
+            EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
+        };
+        let mut table = EncounterTable::new(&scene_label);
+        // Force the next step roll: the scripted carrier installs this formation.
         table.set_trigger_rate(0xFF);
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
@@ -11397,6 +11481,57 @@ mod tests {
         assert!(id.is_none());
         // No session installed.
         assert!(world.encounter.is_none());
+    }
+
+    #[test]
+    fn install_man_formation_forces_registered_row() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.set_active_scene_label("town01");
+        // Register a lone-monster formation at id 4 (town01's Tetsu row shape).
+        world
+            .formation_table
+            .insert(FormationDef::new(4, vec![FormationSlot::new(0x4F)]));
+
+        // Unknown id -> None, no session.
+        assert!(world.install_man_formation(9).is_none());
+        assert!(world.encounter.is_none());
+
+        // Registered id installs a forced-rate session that triggers next step.
+        assert_eq!(world.install_man_formation(4), Some(4));
+        assert!(world.encounter.is_some());
+        assert!(
+            world.on_field_step(),
+            "forced-rate session triggers on the next step"
+        );
+    }
+
+    #[test]
+    fn begin_new_game_clears_state_and_enters_field() {
+        let mut world = World::new();
+        // Dirty the world as if a prior session had been played.
+        world.mode = SceneMode::Battle;
+        world.story_flags = 0xDEAD_BEEF;
+        world.story_flag_bits = vec![1, 2, 3];
+        world.money = 4242;
+        world.inventory.insert(0x10, 5);
+        world.scripted_encounter_armed = true;
+        world.game_over = true;
+        world.play_time_seconds = 9999;
+
+        world.begin_new_game();
+
+        // The retail field-launch (master mode 3) clean slate.
+        assert_eq!(world.mode, SceneMode::Field);
+        assert_eq!(world.story_flags, 0);
+        assert!(world.story_flag_bits.is_empty());
+        assert_eq!(world.money, 0);
+        assert!(world.inventory.is_empty());
+        assert!(!world.scripted_encounter_armed);
+        assert!(world.encounter.is_none());
+        assert!(!world.game_over);
+        assert_eq!(world.play_time_seconds, 0);
     }
 
     // ------------------------------------------------------------------

@@ -154,9 +154,66 @@ boundary cleanly:
 
 So the formation copy happens at battle entry, exactly as the reader above
 describes: the cell is empty in the field and carries the lone id `0x4F`
-from battle-load onward. The clean-room engine builds this with
-`EncounterRecord::rim_elm_training()` (`RIM_ELM_TRAINING_OPPONENT_ID = 0x4F`,
-in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs)).
+from battle-load onward.
+
+**The id `0x4F` is not an inline script literal — it is a per-scene formation
+index.** A scan of town01's field-VM event-script records (the `scene_event_scripts`
+prescript at PROT entry 3) finds no `[count=1][0x4F]` install operand anywhere: the
+small structured records carry no such pattern, and the `0x4F` bytes in the bulk
+payload are high-entropy asset data, not bytecode. Instead, the lone-`0x4F`
+formation is **town01 MAN formation index 4**. The per-scene formations load from
+the scene's MAN asset into a contiguous **8-byte-stride** table
+(`[3 reserved][count: 0..4][≤4 ids]`) resident in the field work area; in the live
+"talk to Tetsu / Come at me!" save state that table reads:
+
+```
+[0] 00 00 00 01 04            [4] 00 00 00 01 4f   <- Tetsu (count 1, id 0x4F)
+[1] 00 00 00 01 07            [5] 00 00 00 02 0a 0a
+[2] 00 00 00 01 0a            [6] 00 00 00 02 3d 3d
+[3] 00 00 00 04 3f 3e 3e 3e
+```
+
+This is **byte-identical** to the engine's MAN parse (`legaia_asset::man_section`
+→ `crate::encounter_man::scene_encounter_from_man`, which yields exactly these 7
+formations for town01, `formation_id` 4 = `[0x4F]`). The scripted carrier entity
+selects this formation **by index** (it points `actor[+0x94]` at the table row, and
+`FUN_801DA51C` copies it into the cell on the dialogue-accept), which is why the
+cell shows the lone `0x4F` while no inline operand carries it. The pre-confirm
+("Come at me!") capture has the cell still clear — the install fires on the
+accept press.
+
+The clean-room engine reaches this fight faithfully through the same indexed
+table: a cold boot loads town01's MAN formations (with the monster archive's real
+stats merged at scene entry), and `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)`
+(`= 4`, in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs))
+installs the existing row as the forced next encounter — no re-encoded record, the
+scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()`
+remains for the equivalent hand-built `[count=1][0x4F]` window used by the
+arm-seam path.
+
+## Scripted-battle id path (`FUN_8005567c`)
+
+The `actor[+0x94]` record path above is one of **two** ways the formation cell is
+populated. The other is a global **battle-id** at `DAT_8007b7fc` consumed at
+battle-init by `FUN_80055b6c`, which calls `FUN_8005567c` (`SCUS_942.54`) to expand
+the id into the cell:
+
+```c
+DAT_8007bd0c = DAT_8007bd0d = DAT_8007bd0e = (u8)DAT_8007b7fc;   // lone / paired id
+// id ranges 0x07..0x09, 0x49..0x4d, 0x88..0x8b, 0xa2..0xff get bespoke multi-monster
+// / boss expansions (DAT_8007bd0e cleared; DAT_8007bd10.. set per id);
+if (DAT_8007b7fc == 0) { cell = [4, _, 4, 4]; }                 // default-zero fallback
+```
+
+`DAT_8007b7fc` is a **transient** parameter: it is `0` in every captured Tetsu
+frame (the id is consumed and cleared by the time the battle is resident). The
+distinguishing signature is the cell *shape* — `FUN_8005567c` writes slots 0/1/2
+for a plain id (`[0x4F,0x4F,0x4F,0]`), whereas the Tetsu cell is `[0x4F,0,0,0]`
+(slot 0 only, slots 1-3 cleared), which is the `FUN_801DA51C` count-1 record path.
+So the Rim Elm fight uses the indexed-record path; `FUN_8005567c` is the
+formation source for battles cued by a battle-id rather than an entity record
+(no writer of `DAT_8007b7fc` is present in `SCUS_942.54`, so the id is set from a
+field overlay).
 
 ## Random-encounter trigger path
 
