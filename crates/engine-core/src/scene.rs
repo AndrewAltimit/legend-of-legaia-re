@@ -700,6 +700,31 @@ impl Scene {
         Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
     }
 
+    /// The scene's 16-entry floor-height LUT, read from the MAN header
+    /// (`man[+0x02..+0x22]`, 16 `s16` LE). A placed object's world Y is
+    /// `-lut[tile_floor_nibble] + record.y_off` (the runtime stores the LUT
+    /// negated; `FUN_8003aeb0` fills it from the MAN, `FUN_8003a55c` reads it).
+    /// Validated against a live `town01` save (Vahn's house tile nibble `6`,
+    /// `lut[6]=192` -> world Y `-192`). Returns `Ok(None)` when the scene has
+    /// no MAN bundle.
+    pub fn field_floor_height_lut(&self, index: &ProtIndex) -> Result<Option<[i16; 16]>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? else {
+            return Ok(None);
+        };
+        let Some(lut_bytes) = man.get(0x02..0x22) else {
+            return Ok(None);
+        };
+        let mut lut = [0i16; 16];
+        for (i, slot) in lut.iter_mut().enumerate() {
+            *slot = i16::from_le_bytes([lut_bytes[i * 2], lut_bytes[i * 2 + 1]]);
+        }
+        Ok(Some(lut))
+    }
+
     /// Resolve the scene's field-VM **scene-entry system script** (context
     /// channel `0xFB`) from the MAN asset, mirroring retail `FUN_8003ab2c`:
     /// the entry script is partition 1's first record in the scene's MAN

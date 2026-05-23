@@ -4884,6 +4884,13 @@ impl PlayWindowApp {
             Ok(Some(p)) if !p.is_empty() => p,
             _ => return Vec::new(),
         };
+        // Per-tile floor-height LUT (MAN header). World Y for a placed object
+        // is `-lut[tile_floor_nibble] + y_off`; without it the town renders on
+        // a flat plane (Rim Elm is on a cliff with real elevation changes).
+        let floor_lut = scene
+            .field_floor_height_lut(&self.session.host.index)
+            .ok()
+            .flatten();
         // The environment meshes are the scene_asset_table bundle entry's TMD
         // pack, in scan order; `pack_index` indexes that subset of `res.tmds`.
         let Some(bundle_entry) =
@@ -4917,10 +4924,19 @@ impl PlayWindowApp {
             let Some(mesh_idx) = res_to_mesh[res_idx] else {
                 continue;
             };
+            // World Y from the floor-height LUT (`-lut[nibble] + y_off`), or
+            // the ground plane when the LUT / nibble is unavailable.
+            let world_y = match (floor_lut, p.floor_nibble) {
+                (Some(lut), Some(nib)) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
+                _ => 0,
+            };
             // PSX field coords (same convention as actor positions), Y-flipped
             // to match the geometry like `actor_model`.
-            let model = Mat4::from_translation(Vec3::new(p.world_x as f32, 0.0, p.world_z as f32))
-                * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+            let model = Mat4::from_translation(Vec3::new(
+                p.world_x as f32,
+                world_y as f32,
+                p.world_z as f32,
+            )) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
             draws.push((mesh_idx, model));
         }
         log::info!(

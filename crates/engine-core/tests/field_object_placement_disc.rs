@@ -71,6 +71,17 @@ fn town01_placements_reproduce_building_anchors() {
     // house (id 137, >=120) draws scene-pack mesh 36 via the record's +0x10
     // field; the windmill (id 96, in the 93..=118 band) draws mesh 91 (96-5).
     assert_eq!(vahns_house.pack_index, Some(36), "Vahn's house pack mesh");
+
+    // Floor-height LUT: Vahn's house tile floor nibble is 6, lut[6] = 192, so
+    // its world Y is -192 (matches the live actor). Validates the MAN-header
+    // LUT accessor + the `-lut[nibble] + y_off` elevation formula.
+    let lut = scene
+        .field_floor_height_lut(&index)
+        .expect("read floor LUT")
+        .expect("town01 MAN carries a floor LUT");
+    let nib = vahns_house.floor_nibble.expect("Vahn's house tile floor nibble");
+    let world_y = -(lut[(nib & 0x0F) as usize] as i32) + vahns_house.y_off as i32;
+    assert_eq!(world_y, -192, "Vahn's house world Y from floor LUT");
     if let Some(windmill) = placements.iter().find(|p| p.obj_idx == 96) {
         assert_eq!(windmill.pack_index, Some(91), "windmill pack mesh (96-5)");
     }
