@@ -164,6 +164,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_cue_handles_adversarial_input_without_panic() {
+        // A `FILE` line with no name, no quotes, unterminated quote, embedded
+        // NULs, and pure garbage must all parse to Some/None without panicking
+        // on the `line[4..]` byte slice or the quote-find logic.
+        for cue in [
+            "FILE",                  // bare keyword, nothing after
+            "FILE ",                 // keyword + trailing space only
+            "FILE \"",               // unterminated quote
+            "FILE \"\"",             // empty quoted name
+            "file lower.bin BINARY", // lowercase keyword
+            "FILE\tname.bin",        // tab separator
+            "\0\0FILE x\0y",         // embedded NULs around the token
+            "FILEBUNDLED",           // "FILE" prefix but not the FILE command
+        ] {
+            // Just assert it doesn't panic; value correctness is covered above.
+            let _ = parse_cue_first_file(cue);
+        }
+        // A tab-separated FILE token is still recovered.
+        assert_eq!(
+            parse_cue_first_file("FILE\tname.bin").as_deref(),
+            Some("name.bin")
+        );
+    }
+
+    #[test]
     fn resolve_returns_unchanged_for_bin() {
         let p = Path::new("/tmp/foo.bin");
         assert_eq!(resolve_disc_path(p).unwrap(), p);

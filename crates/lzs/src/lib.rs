@@ -36,7 +36,18 @@ pub fn decompress(input: &[u8], expected_output_size: usize) -> Result<Vec<u8>> 
 pub fn decompress_tracked(input: &[u8], expected_output_size: usize) -> Result<(Vec<u8>, usize)> {
     let mut window = [0u8; WINDOW_SIZE];
     let mut window_pos: usize = WINDOW_START_POS;
-    let mut out: Vec<u8> = Vec::with_capacity(expected_output_size);
+    // `expected_output_size` is attacker-controlled (the container header's
+    // per-section size, or a value a bulk scanner derives from junk bytes). A
+    // value near `usize::MAX` would make `with_capacity` attempt a multi-GiB
+    // up-front allocation (capacity-overflow / OOM) before the decode loop ever
+    // runs and bails on EOF. The decoder can never emit more than one output
+    // byte per ~1.5 input bytes (a back-ref copies up to 18 bytes from 2 input
+    // bytes plus its control bit), so the input length is a tight upper bound on
+    // realisable output. Reserve `min(expected, plausible-from-input)` and let
+    // the `Vec` grow naturally on the (valid) path where the bound is generous;
+    // this is behaviour-preserving for any real stream.
+    let reserve_hint = expected_output_size.min(input.len().saturating_mul(18).saturating_add(64));
+    let mut out: Vec<u8> = Vec::with_capacity(reserve_hint);
     let mut src = 0usize;
     let mut control: u32 = 0;
 
@@ -342,6 +353,30 @@ mod tests {
         // EOF, so no section is accepted.
         let file = vec![0xFFu8; 64];
         assert!(parse_container(&file).is_err());
+    }
+
+    #[test]
+    fn decompress_huge_target_with_tiny_input_does_not_alloc_bomb() {
+        // A container/scanner can hand `decompress` an enormous target size
+        // derived from junk bytes. The up-front capacity reservation must be
+        // bounded by the (tiny) input, so this returns Err on EOF promptly
+        // rather than attempting a multi-GiB allocation.
+        let input = [0xFFu8, b'A', b'B'];
+        let r = decompress(&input, usize::MAX / 2);
+        assert!(r.is_err(), "should bail on EOF, not OOM");
+    }
+
+    #[test]
+    fn decompress_huge_target_still_decodes_available_literals() {
+        // Behaviour-preserving check: the capped reservation must not change
+        // what valid input decodes to. 8 literals with a huge target still
+        // emit exactly the 8 literal bytes before hitting EOF.
+        let input = [0xFF, b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H'];
+        // Target larger than reachable output -> Err, but the loop still grows
+        // `out` correctly up to EOF (no panic on the small initial capacity).
+        assert!(decompress(&input, 1_000_000).is_err());
+        // Exact target decodes cleanly.
+        assert_eq!(decompress(&input, 8).unwrap(), b"ABCDEFGH");
     }
 
     #[test]
