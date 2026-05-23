@@ -275,6 +275,19 @@ path uses, but raises a **different flag bit** (`0x80000`, not
 `0x400`). `FUN_801DA51C` reads `actor[+0x94]` without checking either
 flag, so a single reader serves both paths.
 
+**Engine port (region-keyed roll).** The roll above is ported clean-room as
+[`region_encounter`](../../crates/engine-core/src/region_encounter.rs)
+(`PORT: FUN_801D9E1C`). `RegionEncounterTable` preserves each region's
+tile-AABB + rate increment + formation slice (built from the MAN via
+`region_encounter_table_from_man`, the position-routed companion to the
+aggregated [`encounter_man::encounter_table_from_man`](../../crates/engine-core/src/encounter_man.rs)).
+`RegionEncounterTracker::on_step(world_x, world_z, rng)` reduces the position to
+a 128-unit tile (`coord >> 7`), selects the first region whose AABB contains it,
+subtracts the setting-scaled rate increment from the step counter, and on a
+`<= 0` counter rolls a formation uniformly from `[base, base + count)` with the
+one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` counter reset. The
+no-trigger path consumes zero RNG, matching retail (so it is replay-safe).
+
 **Encounter control block (`_DAT_801C6EA4`).** A 100-byte block
 allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
 ("Mesworks set encount group table"). After scene load it carries:
