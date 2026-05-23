@@ -180,11 +180,17 @@ enum Cmd {
         /// inline record.
         #[arg(long)]
         all: bool,
-        /// Print the full field-VM opcode disassembly of one partition-1
-        /// record (by index; record 0 is the scene-entry system script).
+        /// Print the full field-VM opcode disassembly of one record (by
+        /// index; in partition 1 record 0 is the scene-entry system script).
         /// Useful for tracing scene-entry / cutscene / dialog flow.
         #[arg(long)]
         disasm_record: Option<usize>,
+        /// Partition the `--disasm-record` index lives in (default 1, the
+        /// per-actor scripts). Use `2` to disassemble a cutscene-timeline
+        /// record (e.g. opdeene's record 18, the prologue camera/actor/text
+        /// sequence ending in `GFLAG_SET 26`).
+        #[arg(long, default_value_t = 1)]
+        disasm_partition: usize,
         /// Write the decoded (LZS-decompressed) MAN payload to this path so it
         /// can be scanned for embedded literals (e.g. a scripted scene-change
         /// target name). The scene-entry script + every partition's bytecode
@@ -197,6 +203,13 @@ enum Cmd {
         /// town01 hand-off arm). Reported at real opcode boundaries.
         #[arg(long)]
         gflag_partition: Option<usize>,
+        /// Dump the inline cutscene-narration text pages embedded in a
+        /// cutscene-timeline record (the `0x1F`/`0x00`-framed subtitle pages
+        /// after a `0x4C` narration op). Pair with `--disasm-record N
+        /// --disasm-partition 2` to target the right record; defaults to
+        /// scanning every partition-2 record when no record is given.
+        #[arg(long)]
+        narration: bool,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -969,16 +982,20 @@ fn main() -> Result<()> {
             disc,
             all,
             disasm_record,
+            disasm_partition,
             dump_man,
             gflag_partition,
+            narration,
         } => cmd_man_scripts(
             &scene,
             &extracted_root,
             disc.as_deref(),
             all,
             disasm_record,
+            disasm_partition,
             dump_man.as_deref(),
             gflag_partition,
+            narration,
         ),
         Cmd::VramOracle {
             scene,
@@ -1795,17 +1812,20 @@ fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_man_scripts(
     scene_name: &str,
     extracted_root: &Path,
     disc: Option<&Path>,
     all: bool,
     disasm_record: Option<usize>,
+    disasm_partition: usize,
     dump_man: Option<&Path>,
     gflag_partition: Option<usize>,
+    narration: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
-        walk_partition_gflag_sites, walk_partition1_scripts,
+        partition_record_span, walk_partition_gflag_sites, walk_partition1_scripts,
     };
     use legaia_engine_core::scene_bundle;
 
@@ -1892,29 +1912,32 @@ fn cmd_man_scripts(
 
     if let Some(target) = disasm_record {
         use legaia_engine_vm::field_disasm::{LinearWalker, format_instruction};
-        let rec = records
-            .iter()
-            .find(|r| r.index == target)
-            .with_context(|| format!("no partition-1 record with index {target}"))?;
-        let end = rec.script_start + rec.body_len;
+        let (script_start, pc0, body_len) =
+            partition_record_span(&man_file, &man, disasm_partition, target).with_context(
+                || format!("partition {disasm_partition} record {target} has no decodable span"),
+            )?;
+        let end = script_start + body_len;
         let body = man
-            .get(rec.script_start..end)
+            .get(script_start..end)
             .with_context(|| format!("record {target} body slice out of range"))?;
         println!(
-            "\n--- disasm P1[{}] (start=0x{:05X} pc0={} body={}b) ---",
-            rec.index, rec.script_start, rec.pc0, rec.body_len,
+            "\n--- disasm P{disasm_partition}[{target}] (start=0x{script_start:05X} pc0={pc0} body={body_len}b) ---",
         );
-        for insn in LinearWalker::new(body, rec.pc0) {
+        for insn in LinearWalker::new(body, pc0) {
             match insn {
                 Ok(insn) => println!(
                     "  0x{:05X} (+0x{:04X})  {}",
-                    rec.script_start + insn.pc,
+                    script_start + insn.pc,
                     insn.pc,
                     format_instruction(&insn, body),
                 ),
                 Err((pc, e)) => {
-                    println!("  0x{:05X} [decode stopped: {e:?}]", rec.script_start + pc);
-                    break;
+                    let raw = body.get(pc).copied().unwrap_or(0);
+                    println!(
+                        "  0x{:05X} (+0x{:04X})  .byte 0x{raw:02X}  [{e:?}]",
+                        script_start + pc,
+                        pc,
+                    );
                 }
             }
         }
@@ -1937,6 +1960,59 @@ fn cmd_man_scripts(
                 s.opcode,
             );
         }
+    }
+
+    if narration {
+        use legaia_asset::cutscene_text::parse_narration;
+        // Either a specific `--disasm-record` in `--disasm-partition`, or a
+        // sweep of every record in `disasm_partition` (defaulting to 2, the
+        // cutscene-timeline partition).
+        let candidates: Vec<usize> = match disasm_record {
+            Some(r) => vec![r],
+            None => {
+                let count = man_file
+                    .header
+                    .partition_counts
+                    .get(disasm_partition)
+                    .copied()
+                    .unwrap_or(0)
+                    .max(0) as usize;
+                (0..count).collect()
+            }
+        };
+        println!("\n--- inline cutscene narration (partition {disasm_partition}) ---",);
+        let mut total = 0usize;
+        for r in candidates {
+            let Some((script_start, _pc0, body_len)) =
+                partition_record_span(&man_file, &man, disasm_partition, r)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let blocks = parse_narration(body);
+            for (bi, block) in blocks.iter().enumerate() {
+                total += block.pages.len();
+                println!(
+                    "  P{disasm_partition}[{r}] block {bi} @ 0x{:05X}: declared {} page(s), decoded {}{}",
+                    script_start + block.op_offset,
+                    block.declared_pages,
+                    block.pages.len(),
+                    if block.count_matches() {
+                        ""
+                    } else {
+                        "  [count mismatch]"
+                    },
+                );
+                for page in &block.pages {
+                    println!(
+                        "      0x{:05X}  {:?}",
+                        script_start + page.offset,
+                        page.text
+                    );
+                }
+            }
+        }
+        println!("summary: {total} narration page(s) total");
     }
     Ok(())
 }

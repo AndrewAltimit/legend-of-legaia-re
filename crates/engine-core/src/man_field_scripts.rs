@@ -243,6 +243,33 @@ fn partition_record_offset(
     (abs < man_len).then_some(abs)
 }
 
+/// The byte span of `partition`'s record `index` as a field-VM script:
+/// `(script_start, pc0, body_len)`, where `script_start` is the absolute
+/// MAN offset of the record, `pc0` the first-opcode offset relative to it
+/// (`1 + N*2 + 4`), and `body_len` the bounded body length (clamped so the
+/// walk does not spill into the next record or a sibling section).
+///
+/// `None` when the partition / index is out of range, the offset lands past
+/// the buffer, or the record's prefix already overruns its bound. This is
+/// the partition-agnostic span the disassembler needs to render any
+/// record's instruction stream (partition 2's cutscene-timeline records as
+/// readily as partition 1's per-actor scripts).
+pub fn partition_record_span(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+    index: usize,
+) -> Option<(usize, usize, usize)> {
+    let script_start = partition_record_offset(man_file, man.len(), partition, index)?;
+    let n = *man.get(script_start).unwrap_or(&0) as usize;
+    let pc0 = 1 + n * 2 + 4;
+    let end = record_end_bound(man_file, man.len(), script_start);
+    if script_start + pc0 >= end {
+        return None;
+    }
+    Some((script_start, pc0, end - script_start))
+}
+
 /// Walk every record of `partition` (`0..3`) as a field-VM script and
 /// collect its global-flag write sites (`GFLAG_SET` / `GFLAG_CLEAR`).
 ///

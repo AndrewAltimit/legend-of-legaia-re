@@ -217,6 +217,20 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
   <p>The corpus is codified at <code>legaia_engine_core::capture_observations::cutscene_trigger_corpus</code> and exercised by the disc-gated test <code>cutscene_trigger_corpus_pins_fmv_id_across_nine_saves</code>.</p>
 </section>
 
+<section class="doc-section" id="opdeene">
+  <h2>In-engine 3D cutscene (<code>opdeene</code> opening prologue)</h2>
+  <p>Not every cutscene is an STR FMV. The New Game opening &mdash; the "Genesis tree" prologue narration &mdash; is an <strong>in-engine 3D cutscene scene</strong> (<code>opdeene</code>, CDNAME/PROT #748), a field scene running in master game-mode <code>0x03</code> (field RUN), not a <code>MOV/MVn.STR</code> video. (<code>MV1.STR</code> is the title-attract movie; the opening 3D sequence is engine-rendered.)</p>
+  <p>The cutscene plays out of the scene MAN's <strong>cutscene-timeline partition</strong> (partition 2). Its closing record (record 18; record start at MAN offset <code>0xA47</code>) is a field-VM script that interleaves camera staging (op <code>0x45</code> <code>Camera Configure</code>, a 23-byte payload block; op <code>0x46</code> <code>RenderCfg</code>), actors (op <code>0x23</code> <code>MoveTo</code>, op <code>0x34</code> <code>Effect</code>), the <code>town01</code> hand-off arm (op <code>0x2E</code> <code>GFLAG_SET 26</code>, <code>2E 1A</code> at <code>0xA5E</code>), and inline narration text.</p>
+  <h3 id="narration-format">Inline narration format</h3>
+  <p>The on-screen narration is carried as <strong>inline ASCII text pages embedded in the timeline script</strong>, not as a <code>MES</code> text id. A narration block is introduced by a field-VM op <code>0x4C</code> in its outer-nibble-8 form with the cross-context extended target <code>0xF8</code>:</p>
+  <pre><code>0xCC 0xF8 0x80 N        ; op (0xCC = 0x80|0x4C extended), N = page count
+1F &lt;ascii…&gt; 00          ; page 1
+1F &lt;ascii…&gt; 00          ; page 2
+…                       ; N pages total</code></pre>
+  <p>Each page is framed <code>0x1F &lt;printable ASCII&gt; 0x00</code> &mdash; <code>0x1F</code> (ASCII Unit Separator) starts a page, <code>0x00</code> terminates it, the body is plain 7-bit ASCII. The page count <code>N</code> in the introducing op equals the number of <code>0x1F</code>-framed pages that follow, which both validates the parse and gives a consumer the cadence for revealing subtitles.</p>
+  <p><code>opdeene</code>'s timeline carries two blocks: a 14-page creation prologue and an 8-page Seru-history block (22 pages total). The clean-room parser is <code>legaia_asset::cutscene_text</code> (<code>parse_narration</code> / <code>narration_pages</code>); it locates the introducing op and the page framing structurally and decodes the runtime disc bytes (no narration text is baked into the repo). Inspect it with <code>legaia-engine man-scripts --scene opdeene --disc &lt;disc&gt;.bin --narration --disasm-partition 2</code>. The disc-gated test <code>opdeene_narration.rs</code> ground-truths the structure (two blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded) without committing the text.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open items</h2>
   <ul class="bullets">

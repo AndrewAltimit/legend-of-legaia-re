@@ -287,6 +287,39 @@ The `0x4C 0xE2 lo hi` byte sequence does NOT appear in the field-pack RAM region
 
 The corpus is codified at `legaia_engine_core::capture_observations::cutscene_trigger_corpus` and exercised by the disc-gated test `crates/mednafen/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
 
+## In-engine 3D cutscene (`opdeene` opening prologue)
+
+Not every cutscene is an STR FMV. The New Game opening — the "Genesis tree" prologue with the *"…the Seru."* narration — is an **in-engine 3D cutscene scene** (`opdeene`, CDNAME/PROT #748), a field scene running in master game-mode `0x03` (field RUN), not a `MOV/MVn.STR` video. (`MV1.STR` is the title-attract movie; the opening 3D sequence is engine-rendered — see [`boot.md`](boot.md#opdeene--town01-handoff-scene-change-packet).)
+
+The cutscene plays out of the scene MAN's **cutscene-timeline partition** (partition 2). Its closing record (record 18; record start at MAN offset `0xA47`) is a field-VM script that interleaves:
+
+- camera staging — op `0x45` `Camera Configure` (a 23-byte payload block) and op `0x46` `RenderCfg`;
+- actors — op `0x23` `MoveTo` and op `0x34` `Effect` spawns;
+- the `town01` hand-off arm — op `0x2E` `GFLAG_SET 26` (`2E 1A` at `0xA5E`);
+- **inline narration text** (below).
+
+### Inline narration format
+
+The on-screen narration is carried as **inline ASCII text pages embedded in the timeline script**, not as a `MES` text id. A narration **block** is introduced by a field-VM op `0x4C` in its outer-nibble-8 form with the cross-context extended target `0xF8`:
+
+```text
+0xCC 0xF8 0x80 N        ; op (0xCC = 0x80|0x4C extended), N = page count
+1F <ascii…> 00          ; page 1
+1F <ascii…> 00          ; page 2
+…                       ; N pages total
+```
+
+Each page is framed `0x1F <printable ASCII> 0x00` — `0x1F` (ASCII Unit Separator) starts a page, `0x00` terminates it, the body is plain 7-bit ASCII. The page count `N` in the introducing op equals the number of `0x1F`-framed pages that follow, which both validates the parse and gives a consumer the cadence for revealing subtitles.
+
+`opdeene`'s timeline carries two blocks: a 14-page creation prologue and an 8-page Seru-history block (22 pages total). The clean-room parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs) (`parse_narration` / `narration_pages`); it locates the introducing op and the page framing structurally and decodes the runtime disc bytes (no narration text is baked into the repo). Inspect it with:
+
+```bash
+legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
+  --narration --disasm-partition 2
+```
+
+The disc-gated test `crates/engine-core/tests/opdeene_narration.rs` ground-truths the structure (two blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded) without committing the text.
+
 ## Open items
 
 - **Function-by-function overlay decompilation.** `ghidra/scripts/dump_str_fmv_overlay.py` ships a `TARGETS` list re-ranked by xref count from `inventory_overlay.py` against the captured `overlay_str_fmv.bin` slice. The 27 entry points cluster around `FUN_801CF098` (the 1236-byte main play loop) - inbound xrefs from `0x801CECA0` confirm the FMV-state struct selector reads `_DAT_8007BA78 << 6 + 0x801D0A6C` to pick the entry passed in. Per-function sub-asset decode (XA channel selector, MDEC frame demux state machine) still pending.
