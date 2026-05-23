@@ -679,6 +679,27 @@ impl Scene {
             .map(<[u8]>::to_vec))
     }
 
+    /// The scene's static-object placements: one entry per placed tile of the
+    /// field map file's object-index grid (`+0x8000`), positioned in world
+    /// space from the `+0x0000` object-record table. This is the source for
+    /// laying out the environment geometry (the `scene_asset_table` TMD pack
+    /// is object-local; each placement gives a mesh its world transform).
+    ///
+    /// Mirrors retail `FUN_8003A55C`; see
+    /// [`legaia_asset::field_objects`] for the format + provenance. Reads the
+    /// field map entry's **extended** footprint (the object grid is past the
+    /// TOC-indexed payload). Returns `Ok(None)` if the scene has no field map.
+    pub fn field_object_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
+    }
+
     /// Resolve the scene's field-VM **scene-entry system script** (context
     /// channel `0xFB`) from the MAN asset, mirroring retail `FUN_8003ab2c`:
     /// the entry script is partition 1's first record in the scene's MAN
