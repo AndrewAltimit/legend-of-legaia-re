@@ -270,6 +270,42 @@ pub fn partition_record_span(
     Some((script_start, pc0, end - script_start))
 }
 
+/// Collect every inline cutscene-narration page in `partition`'s records, in
+/// record-then-page order.
+///
+/// Each record's bounded body is handed to
+/// [`legaia_asset::cutscene_text::parse_narration`], which finds the narration
+/// op + `0x1F`/`0x00` page framing structurally. The opening prologue scene
+/// (`opdeene`) carries its narration in the cutscene-timeline partition
+/// (partition 2); this returns those subtitle pages as plain text for the
+/// runtime presenter ([`crate::cutscene_narration::CutsceneNarration`]).
+pub fn collect_partition_narration(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+) -> Vec<String> {
+    let count = man_file
+        .header
+        .partition_counts
+        .get(partition)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    let mut pages = Vec::new();
+    for index in 0..count {
+        let Some((script_start, _pc0, body_len)) =
+            partition_record_span(man_file, man, partition, index)
+        else {
+            continue;
+        };
+        let body = &man[script_start..script_start + body_len];
+        for block in legaia_asset::cutscene_text::parse_narration(body) {
+            pages.extend(block.pages.into_iter().map(|p| p.text));
+        }
+    }
+    pages
+}
+
 /// Walk every record of `partition` (`0..3`) as a field-VM script and
 /// collect its global-flag write sites (`GFLAG_SET` / `GFLAG_CLEAR`).
 ///

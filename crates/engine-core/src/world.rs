@@ -1256,6 +1256,16 @@ pub struct World {
     /// [`Self::step_name_entry`]; on commit the name lands in
     /// [`Self::party_names`].
     pub name_entry: Option<crate::name_entry::NameEntry>,
+
+    /// Active opening-cutscene narration presenter, or `None` when no cutscene
+    /// narration is playing. Installed by [`Self::open_cutscene_narration`]
+    /// (the `opdeene` opening prologue) with the inline subtitle pages decoded
+    /// from the scene MAN's cutscene-timeline script; its per-page timer is
+    /// advanced in [`Self::tick`], and the host renders [`Self::cutscene_narration`]'s
+    /// current page. It gates the prologue hand-off: while it is active the
+    /// confirm press skips narration pages, and only once it completes does a
+    /// confirm reach [`Self::take_prologue_handoff`].
+    pub cutscene_narration: Option<crate::cutscene_narration::CutsceneNarration>,
 }
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
@@ -1515,6 +1525,7 @@ impl World {
             pending_field_carrier_battle: None,
             party_names: Vec::new(),
             name_entry: None,
+            cutscene_narration: None,
         }
     }
 
@@ -1624,6 +1635,44 @@ impl World {
         }
     }
 
+    /// Install the opening-cutscene narration presenter with `pages` (the
+    /// inline subtitle pages decoded from the scene MAN's cutscene-timeline
+    /// script; see [`crate::man_field_scripts::collect_partition_narration`]).
+    /// A presenter with no pages installs nothing - a scene that carries no
+    /// inline narration simply never shows one. The host renders the active
+    /// page from [`Self::cutscene_narration`]; [`Self::tick`] advances its
+    /// per-page timer.
+    pub fn open_cutscene_narration(&mut self, pages: Vec<String>) {
+        if pages.is_empty() {
+            return;
+        }
+        self.cutscene_narration = Some(crate::cutscene_narration::CutsceneNarration::new(pages));
+    }
+
+    /// `true` while the opening-cutscene narration is on screen (not yet
+    /// stepped past its last page). Hosts gate the prologue hand-off on this:
+    /// the narration plays first, the Rim Elm hand-off follows.
+    pub fn cutscene_narration_active(&self) -> bool {
+        self.cutscene_narration
+            .as_ref()
+            .is_some_and(|n| !n.is_complete())
+    }
+
+    /// Skip the active narration to its next page (a confirm press). Clears
+    /// the presenter once it advances past the last page. Returns `true` while
+    /// narration is still on screen, `false` once it completes (so the host
+    /// lets the confirm fall through to [`Self::take_prologue_handoff`]).
+    pub fn skip_cutscene_narration(&mut self) -> bool {
+        let Some(narration) = self.cutscene_narration.as_mut() else {
+            return false;
+        };
+        let still_active = narration.skip_page();
+        if !still_active {
+            self.cutscene_narration = None;
+        }
+        still_active
+    }
+
     /// Arm the prologue cutscene -> Rim Elm handoff.
     ///
     /// In retail the opening cutscene scene `opdeene` runs a scripted
@@ -1700,7 +1749,12 @@ impl World {
     // REF: FUN_801D1344
     // REF: FUN_8001FD44
     pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
+        // The opening narration plays first: while its subtitle pages are on
+        // screen the confirm press skips pages (see
+        // [`Self::skip_cutscene_narration`]) and never reaches this gate, so
+        // the hand-off can only fire once the narration has finished.
         if confirm
+            && !self.cutscene_narration_active()
             && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0
             && self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
         {
@@ -2868,6 +2922,13 @@ impl World {
             if banner.is_done() {
                 self.current_capture_banner = None;
             }
+        }
+        // Advance the opening-cutscene narration's per-page timer; clear it
+        // once the last page finishes so the prologue hand-off gate releases.
+        if let Some(narration) = &mut self.cutscene_narration
+            && !narration.tick(1)
+        {
+            self.cutscene_narration = None;
         }
         match self.mode {
             SceneMode::Battle => {

@@ -22,6 +22,7 @@ pub mod capture_observations;
 pub mod cd_dma;
 pub mod cheat_applier;
 pub mod cutscene;
+pub mod cutscene_narration;
 pub mod dialog;
 pub mod encounter;
 pub mod encounter_man;

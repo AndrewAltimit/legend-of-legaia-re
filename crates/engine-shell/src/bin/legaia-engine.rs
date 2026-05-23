@@ -6392,6 +6392,18 @@ impl PlayWindowApp {
         {
             out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
+        // Opening-cutscene narration: the `opdeene` prologue subtitle pages,
+        // centered near the bottom of the screen one page at a time.
+        if let Some(narration) = &self.session.host.world.cutscene_narration
+            && let Some(text) = narration.current_text()
+        {
+            let gold = [1.0f32, 0.92, 0.6, 1.0];
+            let center_x = (w / 2) as i32;
+            let top_y = (h as i32 - 56).max(0);
+            out.extend(legaia_engine_render::cutscene_narration_draws_for(
+                &self.font, text, center_x, top_y, gold,
+            ));
+        }
         // Name-entry overlay: the opening `town01` lead-character naming prompt.
         if let Some(entry) = &self.session.host.world.name_entry {
             use legaia_engine_core::name_entry::{CHAR_CELLS, GRID, GRID_COLS};
@@ -6623,6 +6635,27 @@ impl ApplicationHandler for PlayWindowApp {
                         // Keep the frame counter advancing so the caret blinks.
                         self.session.host.world.frame =
                             self.session.host.world.frame.wrapping_add(1);
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
+                    // Opening-cutscene narration plays first. While its
+                    // subtitle pages are on screen the field is held and a
+                    // confirm press (Cross) skips to the next page; the
+                    // per-page timer (World::tick) auto-advances otherwise.
+                    // Only once the narration completes does a confirm reach
+                    // the hand-off gate below - so the prologue narration
+                    // precedes the Rim Elm transition, mirroring retail order.
+                    if self.session.host.world.cutscene_narration_active() {
+                        if pressed_edge & 0x4000 != 0 {
+                            self.session.host.world.skip_cutscene_narration();
+                        }
+                        // Freeze player movement (pad held at 0) but keep the
+                        // world ticking so the narration's per-page timer
+                        // advances and the scene still renders.
+                        self.session.host.world.set_pad(0);
+                        if let Err(e) = self.session.tick() {
+                            log::error!("session tick (narration): {e:#}");
+                        }
                         self.prev_pad = self.pad;
                         continue;
                     }

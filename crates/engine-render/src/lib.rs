@@ -2688,6 +2688,30 @@ pub fn name_entry_draws_for(
     out
 }
 
+/// Build [`TextDraw`]s for one opening-cutscene narration page (a single
+/// subtitle line), horizontally centered at `center_x` with its baseline at
+/// `top_y`, both in surface pixels. The host calls this with the active
+/// page text from [`legaia_engine_core::cutscene_narration::CutsceneNarration`]
+/// each frame; an empty / completed narration draws nothing.
+///
+/// Centering is computed from the font metrics (`center_x - width / 2`), the
+/// same scheme [`now_checking_text_draws_for`] uses for retail-style centered
+/// dialog. Subtitles are bottom-anchored by the caller's `top_y`.
+pub fn cutscene_narration_draws_for(
+    font: &legaia_font::Font,
+    text: &str,
+    center_x: i32,
+    top_y: i32,
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let layout = font.layout_ascii(text);
+    let left_x = center_x - (layout.advance_x as i32 / 2);
+    text_draws_for(&layout, (left_x, top_y), color)
+}
+
 /// One row in the inventory item-use list. Plain-data view so the
 /// renderer doesn't depend on `engine-core::inventory_use`.
 pub struct InventoryItemRow<'a> {

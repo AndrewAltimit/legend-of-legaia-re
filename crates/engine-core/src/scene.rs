@@ -1502,6 +1502,20 @@ impl SceneHost {
                                 crate::world::PROLOGUE_HANDOFF_BIT,
                             );
                         }
+                        // Install the inline narration the cutscene-timeline
+                        // partition (partition 2) carries, so the opening plays
+                        // its subtitle pages before the Rim Elm hand-off.
+                        let pages = crate::man_field_scripts::collect_partition_narration(
+                            &man_file, &man_bytes, 2,
+                        );
+                        if !pages.is_empty() {
+                            log::info!(
+                                "prologue: '{}' carries {} inline narration page(s)",
+                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
+                                pages.len(),
+                            );
+                            self.world.open_cutscene_narration(pages);
+                        }
                     }
                     Err(err) => eprintln!("[scene] prologue MAN parse skipped: {err:#}"),
                 },
