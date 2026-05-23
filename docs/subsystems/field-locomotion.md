@@ -108,9 +108,9 @@ copy; the runtime region is mutated). Decoded fields:
 
 | Offset | Type | Meaning |
 |---|---|---|
-| `+0x00` | `u16` | X sub-tile offset; `world_x = col*128 + this + 0x40` |
-| `+0x02` | `u16` | Y offset added to the tile floor height (`heightLUT[grid_byte & 0xf]`) |
-| `+0x04` | `u16` | Z sub-tile offset; `world_z = row*128 - (this - 0x40)` |
+| `+0x00` | `i16` | X offset; `world_x = col*128 + this + 0x40` |
+| `+0x02` | `i16` | Y offset added to the tile floor height (`heightLUT[grid_byte & 0xf]`) |
+| `+0x04` | `i16` | Z offset; `world_z = row*128 - (this - 0x40)` |
 | `+0x06` | `i8`  | footprint column delta to the anchor tile |
 | `+0x07` | `i8`  | footprint row delta to the anchor tile |
 | `+0x12` | `u16` | flags; bit `0x4` = placed/active, bit `0x800` ORs actor `+0x74` bit `0x10000000` |
@@ -118,14 +118,31 @@ copy; the runtime region is mutated). Decoded fields:
 
 The anchor object is created by `FUN_80024c88(pos, …)` (writes `actor+0x14/16/18`), then
 `FUN_8003a55c` writes `actor+0x60 = object_index` and copies record `+0x08/+0x0a/+0x0c`
-into `actor+0x24/+0x26/+0x28`. For town01 the 41 placed records carry near-zero
-`+0x08..+0x0c`, i.e. **this table holds the NPC / event / trigger spawns, not the visible
-building meshes** — the field actor pool is small (about 8 slots, `0xD8` stride, list
-heads at `0x8007C34C..0x36C`, player `_DAT_8007c364`). The town's static architecture (the
-LZS-packed mesh pack inside the scene_asset_table; see
-[`scene-bundles.md`](../formats/scene-bundles.md)) is drawn by a separate static path, not
-as actors. The per-mesh world-transform source for that static geometry is an open thread,
-shared with the world-map's "per-mesh world placement" gap — see
+into `actor+0x24/+0x26/+0x28`.
+
+**This table is the static environment placement** — the visible terrain
+segments, buildings, and props, *not* (only) NPC spawns. Each placed tile
+allocates a static-object actor (shared tick fn `0x8003BC08`); the actor draws
+its mesh from the [`scene_asset_table`](../formats/scene-bundles.md) TMD pack
+through its `+0x44` mesh chain. (An earlier reading concluded this table held
+"NPC / event / trigger spawns, not building meshes" from the near-zero
+`+0x08..+0x0c` fields — that was wrong: those fields are not the mesh selector,
+but the records *are* the buildings. Validated against a live `town01` save:
+e.g. object id `137` = Vahn's house, anchor tile `(col 38, row 25)` ->
+`world (4864, _, 3208)`, matching the live actor.) NPCs and event triggers ride
+the same map via a sibling path (`FUN_8003a1e4`, partition-1 records, the
+`0x7F,0x7F` parked-sentinel decode); the small actor pool note (about 8 slots,
+`0xD8` stride, list heads `0x8007C34C..0x36C`, player `_DAT_8007c364`) refers to
+that NPC/player set, while the static objects are a larger placed set.
+
+Clean-room parser: [`legaia_asset::field_objects`](../../crates/asset/src/field_objects.rs)
+(`parse_placements` + `pack_mesh_index` over the field map file); the engine
+reads it via `Scene::field_object_placements`. Each object's drawn mesh comes
+from the scene_asset_table TMD pack (byte-verified): `pack_index = obj_idx - 5`
+for the field-actor band `93..=118`, otherwise the object record's `+0x10`
+`u16` field; ids `1/2/3` are the protagonist/NPC meshes from the shared pool.
+The `anim_id` resolved separately via the MAN script (`func_0x801d5630`) only
+drives animation; it does not pick geometry. See
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## Provenance
@@ -148,7 +165,7 @@ Footprint caveat: the TOC-**indexed** payload of the `.MAP` entry is only the fi
 
 ### Environment geometry
 
-A field/town scene's environment meshes (the terrain, buildings, and props) are Legaia TMDs packed inside **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4: 121 meshes, ≈8041 vertices). The clean-room `SceneResources` TMD pass scans each entry's LZS-decompressed sections in addition to its raw bytes (`tmd_scan::scan_entry`, the same path the TIM pass already used), so these meshes land in the scene TMD pool; the `scene_tmd_stream` skip still drops battle-character meshes in field mode. The field build uses `SceneLoadKind::Field` with `upload_all_tims`, matching retail's field loader (`FUN_8001f7c0`), which DMA-uploads every TIM — the environment meshes sample texture pages across the whole atlas, so a render-targeted upload drops most of their prims. Per-mesh **world placement** for this static geometry is still open (see [Object-record format](#object-record-format-0x0000-0x20-byte-stride) above: the `+0x0000` table is NPC/event spawns, not building transforms, and the buildings are not actors).
+A field/town scene's environment meshes (the terrain, buildings, and props) are Legaia TMDs packed inside **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4: 121 meshes, ≈8041 vertices). The clean-room `SceneResources` TMD pass scans each entry's LZS-decompressed sections in addition to its raw bytes (`tmd_scan::scan_entry`, the same path the TIM pass already used), so these meshes land in the scene TMD pool; the `scene_tmd_stream` skip still drops battle-character meshes in field mode. The field build uses `SceneLoadKind::Field` with `upload_all_tims`, matching retail's field loader (`FUN_8001f7c0`), which DMA-uploads every TIM — the environment meshes sample texture pages across the whole atlas, so a render-targeted upload drops most of their prims. Per-mesh **world placement** for this static geometry is the [Object-record table](#object-record-format-0x0000-0x20-byte-stride) above (`FUN_8003a55c`: the object-index grid at `+0x8000` of the field map file selects a `+0x0000` object record per placed tile, giving the mesh its world translation; `legaia_asset::field_objects` parses it, `Scene::field_object_placements` exposes it). Each object's mesh resolves to a scene-pack index (`pack_index = obj_idx - 5` for the field-actor band `93..=118`, else the record's `+0x10` field). Per-tile **world Y** = `-floorHeightLUT[tile_nibble] + y_off`, the LUT being 16 `s16` at the MAN header `+0x02` (`Scene::field_floor_height_lut`). `legaia-engine play-window` renders the town from this: `resolve_field_placement_draws` pairs each placement with its uploaded pack mesh + world transform (X/Z + floor-LUT Y) and draws them in `SceneMode::Field`.
 
 ### Scene-entry script
 

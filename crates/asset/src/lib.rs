@@ -23,6 +23,7 @@ pub mod befect_cluster;
 pub mod categorize;
 pub mod data_field_truncated;
 pub mod effect_bundle;
+pub mod field_objects;
 pub mod field_pack;
 pub mod init_pak;
 pub mod item_names;

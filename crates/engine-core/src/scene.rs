@@ -679,6 +679,52 @@ impl Scene {
             .map(<[u8]>::to_vec))
     }
 
+    /// The scene's static-object placements: one entry per placed tile of the
+    /// field map file's object-index grid (`+0x8000`), positioned in world
+    /// space from the `+0x0000` object-record table. This is the source for
+    /// laying out the environment geometry (the `scene_asset_table` TMD pack
+    /// is object-local; each placement gives a mesh its world transform).
+    ///
+    /// Mirrors retail `FUN_8003A55C`; see
+    /// [`legaia_asset::field_objects`] for the format + provenance. Reads the
+    /// field map entry's **extended** footprint (the object grid is past the
+    /// TOC-indexed payload). Returns `Ok(None)` if the scene has no field map.
+    pub fn field_object_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
+    }
+
+    /// The scene's 16-entry floor-height LUT, read from the MAN header
+    /// (`man[+0x02..+0x22]`, 16 `s16` LE). A placed object's world Y is
+    /// `-lut[tile_floor_nibble] + record.y_off` (the runtime stores the LUT
+    /// negated; `FUN_8003aeb0` fills it from the MAN, `FUN_8003a55c` reads it).
+    /// Validated against a live `town01` save (Vahn's house tile nibble `6`,
+    /// `lut[6]=192` -> world Y `-192`). Returns `Ok(None)` when the scene has
+    /// no MAN bundle.
+    pub fn field_floor_height_lut(&self, index: &ProtIndex) -> Result<Option<[i16; 16]>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? else {
+            return Ok(None);
+        };
+        let Some(lut_bytes) = man.get(0x02..0x22) else {
+            return Ok(None);
+        };
+        let mut lut = [0i16; 16];
+        for (i, slot) in lut.iter_mut().enumerate() {
+            *slot = i16::from_le_bytes([lut_bytes[i * 2], lut_bytes[i * 2 + 1]]);
+        }
+        Ok(Some(lut))
+    }
+
     /// Resolve the scene's field-VM **scene-entry system script** (context
     /// channel `0xFB`) from the MAN asset, mirroring retail `FUN_8003ab2c`:
     /// the entry script is partition 1's first record in the scene's MAN
