@@ -200,3 +200,14 @@ return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
   <p>In retail SCUS, only <code>FUN_8002541C</code>'s 0x14 (DATA_FIELD) branch reaches the dispatcher <em>from inside <code>SCUS_942.54</code></em>. The other static call site is <code>FUN_80020224</code> - a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (<code>FUN_801D6704</code> → <code>0x801D6B0C</code> with <code>a0 = 0</code>); see <a href="asset-descriptor.html">asset descriptor</a>.</p>
 </section>
 
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="asset-descriptor.html">Asset descriptor</a>
+    <a href="data-field.html">DATA_FIELD streaming</a>
+    <a href="pack.html">asset::pack</a>
+    <a href="lzs.html">LZS compression</a>
+  </div>
+</section>

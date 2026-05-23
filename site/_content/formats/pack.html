@@ -32,3 +32,13 @@ offset[1]:       8b 20 00 00    word offset 0x208B → byte 0x822C (= start of T
   <p>The <a href="tim-pack.html">standalone TIM-pack</a> form is structurally similar but uses an 8-byte byte-marker header (with <code>byte[3] == 0x01</code> and <code>byte[2] &lt; 0x10</code> as discriminators) and stores count in <code>byte[2]</code>. The pack-inside-streaming-chunks form here uses a full <code>u32</code> count and lacks the marker prefix - use the right format for the source.</p>
 </section>
 
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="tim-pack.html">prot::timpack</a>
+    <a href="field-pack.html">field-pack</a>
+    <a href="data-field.html">DATA_FIELD streaming</a>
+  </div>
+</section>
