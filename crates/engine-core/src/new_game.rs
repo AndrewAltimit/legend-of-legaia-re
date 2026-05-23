@@ -138,6 +138,34 @@ mod tests {
     }
 
     #[test]
+    fn seeded_new_game_party_is_the_walking_field_player() {
+        // End-to-end (synthetic, no disc): after a New Game seeds Vahn into
+        // slot 0, the scene-entry player install makes that same slot the
+        // free-movement field player, so pressing a direction walks Vahn.
+        use crate::input::PadButton;
+        use crate::world::SceneMode;
+
+        let mut world = World::new();
+        world.begin_new_game();
+        world.seed_starting_party(&StartingParty::from_members(vec![vahn()]));
+        // Scene entry configures party-leader slot 0 as the field player
+        // (mirrors enter_field_scene -> install_field_player(0)).
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        // Open floor (no walls) + camera facing forward.
+        world.field_camera_azimuth = 0;
+
+        let z0 = world.actors[0].move_state.world_z;
+        world.set_pad(PadButton::Up as u16);
+        world.step_field_locomotion();
+        assert!(
+            world.actors[0].move_state.world_z > z0,
+            "Vahn should advance forward (Z+) when Up is held; z0={z0}, z1={}",
+            world.actors[0].move_state.world_z
+        );
+    }
+
+    #[test]
     fn seed_starting_party_empty_template_loads_nothing() {
         // An empty template (e.g. SCUS unreadable) leaves the roster as it
         // was - nothing is loaded - so a caller falls back to whatever party
