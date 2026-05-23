@@ -3474,6 +3474,15 @@ impl World {
         if self.current_dialog.is_some() {
             return;
         }
+        // In the top-view debug camera the d-pad scrolls the camera
+        // ([`WorldMapController::tick`]); only walk the player in walk mode.
+        if self
+            .world_map_ctrl
+            .as_ref()
+            .is_some_and(|c| c.is_top_view())
+        {
+            return;
+        }
         let Some(slot) = self.player_actor_slot else {
             return;
         };

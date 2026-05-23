@@ -7455,19 +7455,6 @@ fn cmd_play_window_with_record(
         Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
         None => BootSession::open(extracted_root, &cfg)?,
     };
-    if world_map {
-        // Installs the controller; World::tick drives it from the pad
-        // routed via world.set_pad each frame.
-        session.host.world.enter_world_map();
-        // Start in the navigable top-view so the player can orbit / zoom /
-        // pan the map immediately (L1/R1 rotate, the dpad pans, the
-        // shoulder/face zoom bits change height). Without this the
-        // controller stays in walk mode and ignores camera input.
-        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
-            ctrl.debug_enabled = true;
-            ctrl.view_mode = 1;
-        }
-    }
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {
@@ -7475,6 +7462,25 @@ fn cmd_play_window_with_record(
         player_battle,
         battle_bgm,
     };
+    if world_map {
+        // Load the scene's resources, route its region-keyed encounter table
+        // onto the overworld, install the player, and enter world-map mode
+        // (camera controller included). World::tick drives locomotion + the
+        // per-tile encounter roll from the pad routed via world.set_pad.
+        match session.enter_world_map_live(scene, &field_live_opts) {
+            Ok(mode) => {
+                log::info!("play-window: entered world-map scene '{scene}' (mode={mode:?})")
+            }
+            Err(e) => log::warn!("play-window: enter_world_map_live('{scene}') failed: {e:#}"),
+        }
+        // Start in walk mode so the d-pad walks the overworld player (and the
+        // per-tile encounter roll fires). The top-view debug camera (orbit /
+        // zoom / pan) stays reachable via the toggle combo (debug_enabled).
+        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
+            ctrl.debug_enabled = true;
+            ctrl.view_mode = 0;
+        }
+    }
     if !world_map {
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
