@@ -3694,13 +3694,13 @@ impl PlayWindowApp {
                                 .enter_field_live(cutscene, &self.field_live_opts)
                             {
                                 Ok(mode) => {
-                                    // Arm the cutscene -> Rim Elm handoff. Retail's
-                                    // opdeene timeline sets this flag (GFLAG_SET 26)
-                                    // when the prologue narration finishes; the engine
-                                    // doesn't replay that timeline yet, so arm it on
-                                    // entry. The confirm-gated transition fires in the
-                                    // field tick below (World::take_prologue_handoff).
-                                    self.session.host.world.arm_prologue_handoff();
+                                    // The cutscene -> Rim Elm handoff is now armed
+                                    // inside `enter_field_scene` by walking opdeene's
+                                    // MAN cutscene-timeline for the real `GFLAG_SET 26`
+                                    // write (World::arm_prologue_handoff_from_man), so
+                                    // no blind arm is needed here. The confirm-gated
+                                    // transition still fires in the field tick below
+                                    // (World::take_prologue_handoff).
                                     log::info!(
                                         "new game: seeded party_count={}, entered opening cutscene \
                                          '{cutscene}' (mode={mode:?})",

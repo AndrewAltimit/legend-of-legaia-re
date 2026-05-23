@@ -771,6 +771,24 @@ impl Scene {
             &man_bytes,
         ))
     }
+
+    /// The scene's decoded MAN payload bytes (retail `_DAT_8007B898`), or
+    /// `Ok(None)` when the scene has no `scene_asset_table` bundle / the MAN
+    /// payload doesn't decode - the same detector gap
+    /// [`Self::field_man_entry_script`] documents.
+    ///
+    /// Callers that want the parsed structure pass the bytes to
+    /// [`legaia_asset::man_section::parse`]; this is the shared raw-bytes
+    /// fetch behind the entry-script / encounter-table accessors, exposed so
+    /// the field host can also walk the cutscene-timeline partition (e.g. the
+    /// opening prologue's `GFLAG_SET 26` hand-off arm).
+    pub fn field_man_payload(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
+    }
 }
 
 /// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME
@@ -1402,6 +1420,39 @@ impl SceneHost {
                 }
                 self.world.init_scene_animations(&res);
                 self.resources = Some(res);
+            }
+        }
+        // Opening-prologue hand-off arm. When entering the cutscene scene
+        // `opdeene`, derive the `town01` hand-off arm from the scene's own MAN
+        // bytecode instead of a blind constant: walk the cutscene-timeline
+        // partition for the `GFLAG_SET 26` write retail's gate waits on and
+        // arm only when it is present. A cutscene scene that never issues that
+        // write never produces a false hand-off. See
+        // [`crate::world::World::arm_prologue_handoff_from_man`].
+        if name == legaia_asset::new_game::OPENING_CUTSCENE_SCENE {
+            match self
+                .scene
+                .as_ref()
+                .map(|s| s.field_man_payload(&self.index))
+            {
+                Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
+                    Ok(man_file) => {
+                        if self
+                            .world
+                            .arm_prologue_handoff_from_man(&man_file, &man_bytes)
+                        {
+                            log::info!(
+                                "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {}",
+                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
+                                legaia_asset::new_game::OPENING_SCENE,
+                                crate::world::PROLOGUE_HANDOFF_BIT,
+                            );
+                        }
+                    }
+                    Err(err) => eprintln!("[scene] prologue MAN parse skipped: {err:#}"),
+                },
+                Some(Err(err)) => eprintln!("[scene] prologue MAN payload skipped: {err:#}"),
+                _ => {}
             }
         }
         // Drain any pending transition the previous scene left behind.
