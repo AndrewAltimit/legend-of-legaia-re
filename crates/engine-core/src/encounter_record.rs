@@ -63,6 +63,16 @@ pub const COUNT_OFFSET: usize = 0x3;
 /// Byte offset of the first monster id inside an encounter record.
 pub const IDS_OFFSET: usize = 0x4;
 
+/// Monster id of the opening training opponent in Rim Elm (monster archive
+/// id `0x4F`, "Tetsu"). The game's first battle is a scripted single-monster
+/// formation built from this id.
+///
+/// Pinned from the training-fight save-state corpus: the global formation
+/// cell at `0x8007BD0C` is empty (`00 00 00 00`) in the pre-battle field
+/// state and reads `4F 00 00 00` from battle-load onward — a lone monster in
+/// slot 0. See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
+pub const RIM_ELM_TRAINING_OPPONENT_ID: u8 = 0x4F;
+
 /// Decoded encounter record.
 ///
 /// `monster_ids` always has length `FORMATION_SLOTS`; trailing slots beyond
@@ -99,6 +109,13 @@ impl EncounterRecord {
             count,
             monster_ids: ids,
         })
+    }
+
+    /// The opening Rim Elm training fight: a lone opponent
+    /// ([`RIM_ELM_TRAINING_OPPONENT_ID`]). This is the first scripted battle
+    /// the player reaches; the formation is a single monster in slot 0.
+    pub fn rim_elm_training() -> Self {
+        Self::new(1, &[RIM_ELM_TRAINING_OPPONENT_ID]).expect("1-monster record is always valid")
     }
 
     /// Parse from a raw byte slice.
@@ -333,6 +350,19 @@ mod tests {
     fn to_formation_def_empty_record_has_no_slots() {
         let f = EncounterRecord::EMPTY.to_formation_def("empty");
         assert!(f.slots.is_empty());
+    }
+
+    #[test]
+    fn rim_elm_training_is_a_lone_opponent() {
+        let r = EncounterRecord::rim_elm_training();
+        assert_eq!(r.count, 1);
+        assert_eq!(r.monster_ids[0], RIM_ELM_TRAINING_OPPONENT_ID);
+        assert_eq!(r.monster_ids[0], 0x4F);
+        assert_eq!(r.monster_ids[1..], [0, 0, 0]);
+        // Resolves to a single-slot formation carrying the training id.
+        let f = r.to_formation_def("town01");
+        assert_eq!(f.slots.len(), 1);
+        assert_eq!(f.slots[0].monster_id, 0x4F);
     }
 
     #[test]
