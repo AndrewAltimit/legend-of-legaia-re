@@ -307,14 +307,27 @@ so a warp anywhere in the record marks the actor a portal. Real data: `town01`
 classifies 14 NPCs / 38 plain, the overworlds carry a handful of warp portals
 (`map02`/`map03` each expose one to a field map id).
 
-`SceneHost::enter_world_map_scene` now seeds these typed entities on the
-boot/transition path: each Portal / NPC placement installs a matching
-[`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) (Plain
-placements are skipped). So overworld portals + NPCs are **disc-sourced**, not
-synthetic. What remains host-driven is the per-entity **auto-engage trigger**
-(walking onto a portal tile fires the transition) — today a host calls
-[`World::engage_world_map_entity`](../../crates/engine-core/src/world.rs); the
-region table (the random-encounter driver) is fully boot-path seeded.
+`SceneHost::enter_world_map_scene` seeds these typed entities on the
+boot/transition path via [`World::install_world_map_entities_at`]: each Portal /
+NPC placement installs a matching
+[`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) **with its spawn
+position** (Plain placements are skipped). So overworld portals + NPCs are
+**disc-sourced**, not synthetic.
+
+#### Auto-engage on walk-over
+
+The portals fire themselves. [`World::auto_engage_world_map_portals`] runs each
+`tick_world_map` (right after locomotion, before the entity-SM step): any
+`Portal` entity whose placement tile (`pos >> 7`) matches the player's current
+tile is driven to its transition state — exactly what a host
+[`World::engage_world_map_entity`] call does — so the same tick's SM step
+surfaces the [`FieldEvent::WorldMapTransition`] with the portal's target map and
+the host loads the destination. Only `Idle` portals are engaged (a portal fires
+once per visit; standing on the tile doesn't re-trigger). NPCs are **not**
+auto-engaged — they are talk-to, driven by the SM's idle-interact path, not
+walk-onto. The clean-room stand-in for retail's per-entity
+player-position-in-zone check; the region table (the random-encounter driver)
+is the other half of overworld gameplay, fully boot-path seeded.
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see

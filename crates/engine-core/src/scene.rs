@@ -1675,7 +1675,10 @@ impl SceneHost {
         let table = man_bytes
             .as_ref()
             .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
-        let entity_configs: Vec<crate::world::WorldMapEntityConfig> = man_bytes
+        // Each interactive placement → (config, spawn world position). The
+        // positions drive the auto-engage-on-walkover trigger; Plain
+        // (decorative / model-only) placements are skipped.
+        let entities: Vec<(crate::world::WorldMapEntityConfig, (i16, i16))> = man_bytes
             .as_ref()
             .and_then(|man| {
                 legaia_asset::man_section::parse(man)
@@ -1686,20 +1689,21 @@ impl SceneHost {
                 use crate::man_field_scripts::PlacementKind;
                 crate::man_field_scripts::classify_placements(&mf, man)
                     .into_iter()
-                    .filter_map(|(_, kind)| match kind {
-                        PlacementKind::Portal { target_map } => {
-                            Some(crate::world::WorldMapEntityConfig::Portal {
-                                target_map: target_map as u16,
-                            })
-                        }
-                        PlacementKind::Npc { interact_id, .. } => {
-                            Some(crate::world::WorldMapEntityConfig::Npc {
-                                interact_id: interact_id.unwrap_or(0),
-                            })
-                        }
-                        // Decorative / model-only actors are not interactive
-                        // entities.
-                        PlacementKind::Plain => None,
+                    .filter_map(|(p, kind)| {
+                        let cfg = match kind {
+                            PlacementKind::Portal { target_map } => {
+                                crate::world::WorldMapEntityConfig::Portal {
+                                    target_map: target_map as u16,
+                                }
+                            }
+                            PlacementKind::Npc { interact_id, .. } => {
+                                crate::world::WorldMapEntityConfig::Npc {
+                                    interact_id: interact_id.unwrap_or(0),
+                                }
+                            }
+                            PlacementKind::Plain => return None,
+                        };
+                        Some((cfg, (p.world_x, p.world_z)))
                     })
                     .collect()
             })
@@ -1711,13 +1715,12 @@ impl SceneHost {
             );
             self.world.set_world_map_regions(table);
         }
-        if !entity_configs.is_empty() {
+        if !entities.is_empty() {
             log::info!(
                 "world-map '{name}': installed {} interactive entit(ies) from placements",
-                entity_configs.len()
+                entities.len()
             );
-            self.world
-                .install_world_map_entities_with_configs(entity_configs);
+            self.world.install_world_map_entities_at(entities);
         }
         // Switch to world-map mode (idempotent; keeps the installed player +
         // collision grid).

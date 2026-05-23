@@ -1265,6 +1265,16 @@ pub struct World {
     /// the entities via [`Self::install_world_map_entities_with_configs`].
     pub world_map_entity_configs: Vec<WorldMapEntityConfig>,
 
+    /// Per-entity overworld world position `(x, z)`, paired by index with
+    /// [`Self::world_map_entities`]. Populated only by
+    /// [`Self::install_world_map_entities_at`] (the disc placement seeding);
+    /// the config-only installers leave it empty. When present, it drives the
+    /// **auto-engage-on-walkover** trigger in [`Self::tick_world_map`]: the
+    /// player stepping onto a `Portal` entity's tile fires its transition with
+    /// no host call, the clean-room stand-in for retail's per-entity
+    /// player-position-in-zone check.
+    pub world_map_entity_positions: Vec<(i16, i16)>,
+
     /// Shared overworld encounter-rate state - the retail globals the
     /// world-map entity SM reads (`DAT_8007b604` countdown, `DAT_8007b5f8`
     /// enable flag) plus the formation an overworld encounter spawns.
@@ -1631,6 +1641,7 @@ impl World {
             field_last_tile: None,
             world_map_entities: Vec::new(),
             world_map_entity_configs: Vec::new(),
+            world_map_entity_positions: Vec::new(),
             world_map_encounter: WorldMapEncounterState::default(),
             world_map_player_walking: false,
             pending_world_map_encounter: None,
@@ -3482,6 +3493,12 @@ impl World {
         const WORLD_MAP_DPAD: u16 = 0x1000 | 0x2000 | 0x4000 | 0x8000;
         self.world_map_player_walking = pad & WORLD_MAP_DPAD != 0;
 
+        // Move the player first, then auto-engage any portal the player just
+        // walked onto (sets its SM to Transitioning), so the entity SM step
+        // below fires the portal's transition the *same* tick.
+        self.step_world_map_locomotion();
+        self.auto_engage_world_map_portals();
+
         if !self.world_map_entities.is_empty() {
             // Take the entity list out so the SM's host bridge can borrow the
             // world mutably (mirrors the monster-AI-state borrow window).
@@ -3493,12 +3510,9 @@ impl World {
             self.world_map_entities = entities;
         }
 
-        // Overworld free-movement + the region-keyed random-encounter roll
-        // (the `FUN_801D9E1C` path). Moves the player actor with the d-pad and,
-        // on each 128-unit tile crossing, rolls the active region. Both no-op
-        // without a player actor / region tracker, so a camera-only world map
-        // is unchanged.
-        self.step_world_map_locomotion();
+        // The region-keyed random-encounter roll (the `FUN_801D9E1C` path): on
+        // each 128-unit tile crossing, roll the active region. No-op without a
+        // region tracker, so a camera-only world map is unchanged.
         self.live_world_map_tick();
 
         // Resolve a latched overworld encounter into a battle. Runs for both
@@ -3660,6 +3674,76 @@ impl World {
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
         self.world_map_entity_configs = configs;
+        self.world_map_entity_positions.clear();
+    }
+
+    /// Seed overworld entities with a per-entity config **and** world position.
+    /// One Idle state machine per `(config, position)`. The positions enable
+    /// the auto-engage-on-walkover trigger in [`Self::tick_world_map`] (the
+    /// player stepping onto a `Portal` entity's tile fires it). Replaces any
+    /// previously installed set. This is the disc-placement seeding path
+    /// ([`crate::scene::SceneHost::enter_world_map_scene`] feeds it the
+    /// classified actor placements + their spawn positions).
+    pub fn install_world_map_entities_at(
+        &mut self,
+        entities: Vec<(WorldMapEntityConfig, (i16, i16))>,
+    ) {
+        self.world_map_entities = (0..entities.len())
+            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .collect();
+        self.world_map_entity_positions = entities.iter().map(|(_, pos)| *pos).collect();
+        self.world_map_entity_configs = entities.into_iter().map(|(cfg, _)| cfg).collect();
+    }
+
+    /// Auto-engage any `Portal` overworld entity the player is standing on.
+    ///
+    /// The clean-room stand-in for retail's per-entity player-position-in-zone
+    /// trigger: a portal whose placement tile (`pos >> 7`) matches the player's
+    /// current tile is driven to its transition state, exactly as a host
+    /// [`Self::engage_world_map_entity`] call would, so the next SM step fires
+    /// the [`crate::field_events::FieldEvent::WorldMapTransition`]. Only `Idle`
+    /// portals are engaged, so a portal fires once per visit and the player can
+    /// stand on the tile without re-triggering. NPC entities are *not*
+    /// auto-engaged (they are talk-to, not walk-onto). No-op without entity
+    /// positions, a player actor, or while a dialog owns the frame.
+    fn auto_engage_world_map_portals(&mut self) {
+        if self.current_dialog.is_some() || self.world_map_entity_positions.is_empty() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (px, pz) = match self.actors.get(slot as usize) {
+            Some(a) => (
+                (a.move_state.world_x as i32) >> 7,
+                (a.move_state.world_z as i32) >> 7,
+            ),
+            None => return,
+        };
+        // Collect the portals the player is standing on (still Idle), then
+        // engage them — separated so the immutable scan drops before the
+        // mutable `engage` borrow.
+        let mut to_engage: Vec<usize> = Vec::new();
+        for (idx, ctx) in self.world_map_entities.iter().enumerate() {
+            if ctx.state != vm::world_map::EntityState::Idle as u16 {
+                continue;
+            }
+            if !matches!(
+                self.world_map_entity_configs.get(idx),
+                Some(WorldMapEntityConfig::Portal { .. })
+            ) {
+                continue;
+            }
+            let Some(&(ex, ez)) = self.world_map_entity_positions.get(idx) else {
+                continue;
+            };
+            if (ex as i32) >> 7 == px && (ez as i32) >> 7 == pz {
+                to_engage.push(idx);
+            }
+        }
+        for idx in to_engage {
+            self.engage_world_map_entity(idx);
+        }
     }
 
     /// Host signal that the player engaged overworld entity `idx` (walked onto
@@ -3669,10 +3753,11 @@ impl World {
     /// [`crate::field_events::FieldEvent::WorldMapTransition`] with its target
     /// map. No-op for an out-of-range index.
     ///
-    /// This is the clean-room stand-in for retail's per-entity
-    /// player-position-in-zone trigger (the engine has no overworld player
-    /// placement yet); it mirrors the arm-via-API shape of the scripted-field
-    /// encounter seam.
+    /// Hosts can call this directly; [`Self::auto_engage_world_map_portals`]
+    /// also calls it each tick for any `Portal` entity the player has walked
+    /// onto (the engine-driven trigger), so an entity installed with a position
+    /// via [`Self::install_world_map_entities_at`] fires on walk-over without a
+    /// host call.
     pub fn engage_world_map_entity(&mut self, idx: usize) {
         if let Some(ctx) = self.world_map_entities.get_mut(idx) {
             // State 2 = Transitioning: the SM fires `on_scene_transition` and

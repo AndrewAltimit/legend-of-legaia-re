@@ -267,3 +267,79 @@ fn world_map_scene_transition_auto_enters_world_map() {
         "the overworld walkability grid is loaded ({walls} walls)"
     );
 }
+
+/// A real overworld portal auto-engages when the player walks onto its tile:
+/// teleport the player onto a classified `Portal` entity's tile and confirm the
+/// next world-map ticks surface a `WorldMapTransition` to the portal's target
+/// map — no host `engage_world_map_entity` call.
+#[test]
+fn world_map_walking_onto_real_portal_transitions() {
+    use legaia_engine_core::field_events::FieldEvent;
+    use legaia_engine_core::world::WorldMapEntityConfig;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // map02 / map03 each classify one warp portal from their placement scripts.
+    let mut tested_any = false;
+    for scene in ["map02", "map03"] {
+        let cfg = BootConfig {
+            scene: scene.into(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let opts = FieldLiveOpts::default();
+        session
+            .enter_world_map_live(scene, &opts)
+            .expect("enter_world_map_live");
+
+        let world = &mut session.host.world;
+        // Find the first installed Portal entity and its placement position.
+        let portal = world
+            .world_map_entity_configs
+            .iter()
+            .enumerate()
+            .find_map(|(i, c)| match c {
+                WorldMapEntityConfig::Portal { target_map } => Some((i, *target_map)),
+                _ => None,
+            });
+        let Some((idx, target_map)) = portal else {
+            eprintln!("[{scene}] no portal entity installed");
+            continue;
+        };
+        let (px, pz) = world.world_map_entity_positions[idx];
+        // Teleport the player onto the portal tile, then tick: auto-engage
+        // should fire the transition within a couple of frames.
+        if let Some(slot) = world.player_actor_slot {
+            let a = &mut world.actors[slot as usize];
+            a.move_state.world_x = px;
+            a.move_state.world_z = pz;
+        }
+        let mut transitioned = false;
+        for _ in 0..4 {
+            let _ = world.tick();
+            if world.drain_field_events().into_iter().any(|e| {
+                matches!(e, FieldEvent::WorldMapTransition { target_map: t, .. } if t == target_map)
+            }) {
+                transitioned = true;
+                break;
+            }
+        }
+        eprintln!("[{scene}] portal #{idx} -> map {target_map}: transitioned={transitioned}");
+        assert!(
+            transitioned,
+            "[{scene}] standing on the portal tile auto-fires its transition"
+        );
+        tested_any = true;
+    }
+    assert!(
+        tested_any,
+        "at least one overworld portal must be exercised"
+    );
+}

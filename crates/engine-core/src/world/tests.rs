@@ -901,6 +901,76 @@ fn world_map_portal_engage_surfaces_target_map() {
     assert!(transitioned, "the portal surfaces its target map");
 }
 
+/// Walking the overworld player onto a portal entity's tile auto-engages it
+/// (no host `engage_world_map_entity` call) and surfaces its target map.
+#[test]
+fn world_map_walking_onto_portal_auto_engages() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    // Encounters off so only the transition path can fire.
+    world.set_world_map_encounter(false, 50, 0, 64);
+    // A portal at tile (3,3) -> world (3*128 + 64 = 448, 448).
+    world.install_world_map_entities_at(vec![(
+        WorldMapEntityConfig::Portal { target_map: 9 },
+        (448, 448),
+    )]);
+
+    // Player starts two tiles to the -X side, on the same row as the portal.
+    world.actors[0].move_state.world_x = 448 - 256;
+    world.actors[0].move_state.world_z = 448;
+
+    // Hold the d-pad direction that walks +X at the default azimuth (0):
+    // "screen up" maps to +X there (see the camera-relative remap).
+    world.set_pad(input::PadButton::Up.mask());
+    let mut transitioned = false;
+    for _ in 0..200 {
+        let _ = world.tick();
+        if world.drain_field_events().into_iter().any(|e| {
+            matches!(
+                e,
+                FieldEvent::WorldMapTransition {
+                    target_map: 9,
+                    slot: 0
+                }
+            )
+        }) {
+            transitioned = true;
+            break;
+        }
+    }
+    assert!(
+        transitioned,
+        "walking onto the portal tile auto-fires its transition"
+    );
+}
+
+/// Auto-engage is portal-only: walking onto an NPC entity's tile does NOT fire
+/// a transition (NPCs are talk-to, not walk-onto).
+#[test]
+fn world_map_walking_onto_npc_does_not_transition() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.set_world_map_encounter(false, 50, 0, 64);
+    world.install_world_map_entities_at(vec![(
+        WorldMapEntityConfig::Npc { interact_id: 4 },
+        (448, 448),
+    )]);
+    world.actors[0].move_state.world_x = 448;
+    world.actors[0].move_state.world_z = 448; // standing on the NPC tile
+    world.set_pad(0);
+    let _ = world.tick();
+    let transitioned = world
+        .drain_field_events()
+        .into_iter()
+        .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. }));
+    assert!(
+        !transitioned,
+        "an NPC is not auto-engaged by walking onto its tile"
+    );
+}
+
 /// An NPC-config entity surfaces its configured interaction id.
 #[test]
 fn world_map_npc_config_surfaces_interact_id() {
