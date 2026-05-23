@@ -2570,6 +2570,8 @@ pub struct NameEntryView<'a> {
 /// working name with a blinking caret, the 6x17 character grid (separators
 /// skipped), a control bar (Back / Space / End), and a Yes/No box while
 /// confirming. Grid metrics: 14 px per column, 16 px per row.
+///
+/// REF: FUN_801E6B34
 pub fn name_entry_draws_for(
     font: &legaia_font::Font,
     view: &NameEntryView<'_>,
