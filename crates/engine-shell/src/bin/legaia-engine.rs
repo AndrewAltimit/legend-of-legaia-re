@@ -191,6 +191,12 @@ enum Cmd {
         /// live in this blob.
         #[arg(long)]
         dump_man: Option<PathBuf>,
+        /// Walk a partition's records as field-VM scripts and report their
+        /// global-flag writes (`GFLAG_SET`/`GFLAG_CLEAR`). Partition 2 holds
+        /// the cutscene-timeline records (e.g. opdeene's `GFLAG_SET 26`
+        /// town01 hand-off arm). Reported at real opcode boundaries.
+        #[arg(long)]
+        gflag_partition: Option<usize>,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -964,6 +970,7 @@ fn main() -> Result<()> {
             all,
             disasm_record,
             dump_man,
+            gflag_partition,
         } => cmd_man_scripts(
             &scene,
             &extracted_root,
@@ -971,6 +978,7 @@ fn main() -> Result<()> {
             all,
             disasm_record,
             dump_man.as_deref(),
+            gflag_partition,
         ),
         Cmd::VramOracle {
             scene,
@@ -1794,8 +1802,11 @@ fn cmd_man_scripts(
     all: bool,
     disasm_record: Option<usize>,
     dump_man: Option<&Path>,
+    gflag_partition: Option<usize>,
 ) -> Result<()> {
-    use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
+    use legaia_engine_core::man_field_scripts::{
+        walk_partition_gflag_sites, walk_partition1_scripts,
+    };
     use legaia_engine_core::scene_bundle;
 
     let index = open_index_from_args(extracted_root, disc)?;
@@ -1906,6 +1917,25 @@ fn cmd_man_scripts(
                     break;
                 }
             }
+        }
+    }
+
+    if let Some(partition) = gflag_partition {
+        let sites = walk_partition_gflag_sites(&man_file, &man, partition);
+        println!(
+            "\n--- GFLAG writes in partition {partition} ({} sites) ---",
+            sites.len(),
+        );
+        for s in &sites {
+            println!(
+                "  P{}[{}] GFLAG.{} bit={:<2} @ 0x{:05X} (op 0x{:02X})",
+                s.partition,
+                s.record,
+                if s.set { "Set  " } else { "Clear" },
+                s.bit,
+                s.abs_pc,
+                s.opcode,
+            );
         }
     }
     Ok(())
