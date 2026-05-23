@@ -2863,6 +2863,50 @@ impl World {
         Some(formation_id)
     }
 
+    /// Install an already-registered per-scene formation as the next encounter,
+    /// by its `formation_id`.
+    ///
+    /// This is the faithful model of a scripted-battle carrier entity selecting
+    /// a formation **by index** into the per-scene formation table - the
+    /// mechanism the Rim Elm Tetsu tutorial fight uses. The per-scene formations
+    /// load from the MAN asset into a contiguous 8-byte-stride table
+    /// (`[3 reserved][count][<=4 ids]`, see [`crate::encounter_record`] /
+    /// `docs/formats/encounter.md`); a carrier entity arms its encounter by
+    /// pointing `actor[+0x94]` at one entry (`table_base + index*8`), and
+    /// `FUN_801DA51C` copies that record into the formation cell on confirm. The
+    /// id 0x4F that lands in the cell is **not** an inline script literal - it is
+    /// the `monster_id` of town01 MAN `formation_id` 4, already registered by
+    /// [`Self::install_man_encounter`] at scene entry (with its real archive
+    /// stats merged).
+    ///
+    /// Unlike [`Self::install_encounter_from_record`], this re-encodes nothing:
+    /// it forces the existing table row, so the scene's merged monster stats
+    /// stand. Returns the `formation_id` installed, or `None` when it isn't
+    /// registered or has no slots.
+    ///
+    /// REF: FUN_801DA51C
+    pub fn install_man_formation(&mut self, formation_id: u16) -> Option<u16> {
+        let has_slots = self
+            .formation_table
+            .formation(formation_id)
+            .is_some_and(|def| !def.slots.is_empty());
+        if !has_slots {
+            return None;
+        }
+        let scene_label = self.active_scene_label.clone();
+
+        use crate::encounter::{
+            EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
+        };
+        let mut table = EncounterTable::new(&scene_label);
+        // Force the next step roll: the scripted carrier installs this formation.
+        table.set_trigger_rate(0xFF);
+        table.push(EncounterEntry::new(formation_id, 1));
+        let tracker = EncounterTracker::new(table);
+        self.encounter = Some(EncounterSession::new(tracker));
+        Some(formation_id)
+    }
+
     /// Arm (or disarm) the scripted-encounter consumer.
     ///
     /// While armed, the field VM's bare arm-encounter op (`0x37`/`0x41`) hands
@@ -11397,6 +11441,30 @@ mod tests {
         assert!(id.is_none());
         // No session installed.
         assert!(world.encounter.is_none());
+    }
+
+    #[test]
+    fn install_man_formation_forces_registered_row() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.set_active_scene_label("town01");
+        // Register a lone-monster formation at id 4 (town01's Tetsu row shape).
+        world
+            .formation_table
+            .insert(FormationDef::new(4, vec![FormationSlot::new(0x4F)]));
+
+        // Unknown id -> None, no session.
+        assert!(world.install_man_formation(9).is_none());
+        assert!(world.encounter.is_none());
+
+        // Registered id installs a forced-rate session that triggers next step.
+        assert_eq!(world.install_man_formation(4), Some(4));
+        assert!(world.encounter.is_some());
+        assert!(
+            world.on_field_step(),
+            "forced-rate session triggers on the next step"
+        );
     }
 
     // ------------------------------------------------------------------

@@ -16,7 +16,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID;
+use legaia_engine_core::encounter_record::{
+    RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
+};
 use legaia_engine_core::monster_catalog::catalog_from_monster_archive;
 use legaia_engine_core::world::SceneMode;
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
@@ -140,5 +142,99 @@ fn training_encounter_reaches_battle_with_real_monster() {
     assert_eq!(
         world.actors[monster_slot].battle.max_hp, 999,
         "enemy slot seeded with Tetsu's real HP"
+    );
+}
+
+/// The faithful by-index path: the Rim Elm Tetsu fight is town01 MAN
+/// `formation_id` 4, which a cold boot already loads from the scene's MAN asset
+/// (with the monster archive's real stats merged). The scripted carrier selects
+/// that formation by index; `install_man_formation` models exactly that, with
+/// no hand-built record and no manual catalog seeding. This is the same battle
+/// the test above reaches, but driven through the actual per-scene formation
+/// table rather than a re-encoded `[count][id]` window.
+#[test]
+fn training_reaches_battle_via_man_formation_index() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // Cold boot loaded town01's MAN formation table. The Tetsu row is index 4,
+    // a lone monster id 0x4F.
+    {
+        let formation = session
+            .host
+            .world
+            .formation_table
+            .formation(RIM_ELM_TRAINING_FORMATION_ID)
+            .expect("town01 MAN carries formation_id 4");
+        assert_eq!(
+            formation.slots.len(),
+            1,
+            "Tetsu is a lone-monster formation"
+        );
+        assert_eq!(
+            formation.slots[0].monster_id, RIM_ELM_TRAINING_OPPONENT_ID as u16,
+            "town01 formation_id 4 = monster 0x4F (Tetsu)"
+        );
+    }
+
+    // Install the formation by index (the carrier's mechanism) and drive to
+    // Battle.
+    assert_eq!(
+        session
+            .host
+            .world
+            .install_man_formation(RIM_ELM_TRAINING_FORMATION_ID),
+        Some(RIM_ELM_TRAINING_FORMATION_ID),
+    );
+    assert!(
+        session.host.world.on_field_step(),
+        "forced-rate roll triggers the scripted formation"
+    );
+    let mut reached_battle = false;
+    for _ in 0..240 {
+        let _ = session.tick().expect("tick");
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(
+        reached_battle,
+        "MAN-formation install flips Field -> Battle"
+    );
+
+    // The enemy slot is Tetsu with the real archive HP (999) merged at scene
+    // entry — no manual catalog seeding needed on this path.
+    let world = &session.host.world;
+    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "Tetsu's real HP merged from the disc archive at scene entry"
     );
 }
