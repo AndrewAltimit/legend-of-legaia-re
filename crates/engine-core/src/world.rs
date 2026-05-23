@@ -4099,6 +4099,15 @@ impl World {
         if self.current_dialog.is_some() || self.tile_board.is_some() {
             return;
         }
+        // Lock pad-driven locomotion while an opening-cutscene timeline owns
+        // the scene (the establishing camera sweep + name-entry). During the
+        // sweep the script drives the lead actor through its own MoveTo ops;
+        // the pad must not also walk the player out from under the cinematic
+        // camera. Releases the frame the timeline drops (matches retail, where
+        // free-roam control returns only after the opening choreography ends).
+        if self.cutscene_timeline_active() {
+            return;
+        }
         let Some(slot) = self.player_actor_slot else {
             return;
         };

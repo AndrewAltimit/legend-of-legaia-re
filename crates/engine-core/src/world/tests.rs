@@ -382,6 +382,35 @@ fn locomotion_deterministic_across_identical_pad_stream() {
 }
 
 #[test]
+fn locomotion_gated_while_cutscene_timeline_active() {
+    use crate::cutscene_timeline::CutsceneTimeline;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_z = 200;
+    // An opening-cutscene timeline owns the scene (establishing sweep). A
+    // non-empty body so it is not immediately `done`.
+    world.cutscene_timeline = Some(CutsceneTimeline::new(vec![0x21, 0x2E, 0x1A], 0));
+    assert!(world.cutscene_timeline_active());
+    world.set_pad(input::PadButton::Up.mask());
+    world.step_field_locomotion();
+    assert_eq!(
+        world.actors[0].move_state.world_z, 200,
+        "pad-driven walk is locked while the cutscene timeline owns the scene"
+    );
+    // Once the timeline finishes, free-roam control returns.
+    if let Some(tl) = world.cutscene_timeline.as_mut() {
+        tl.done = true;
+    }
+    assert!(!world.cutscene_timeline_active());
+    world.step_field_locomotion();
+    assert_eq!(
+        world.actors[0].move_state.world_z, 208,
+        "locomotion resumes the frame the timeline drops"
+    );
+}
+
+#[test]
 fn world_tick_drives_per_actor_move_vm() {
     let mut world = World::new();
     world.mode = SceneMode::Field;

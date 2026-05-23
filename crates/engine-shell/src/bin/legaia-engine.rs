@@ -3725,6 +3725,10 @@ struct PlayWindowApp {
     /// `Some`, world ticks are suspended and the window shows the video; the
     /// world resumes once the frames drain.
     cutscene: Option<WindowedCutscene>,
+    /// Eases the in-engine cutscene camera between Camera Configure beats so
+    /// the opening choreography blends instead of cutting. Reset (snaps) while
+    /// no cutscene timeline is active.
+    cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -6815,6 +6819,21 @@ impl ApplicationHandler for PlayWindowApp {
                 // and swap the VRAM. Must run before the render borrows
                 // `uploaded_vram` below (this method may re-upload it).
                 self.sync_battle_render();
+                // Ease the in-engine cutscene camera between Camera Configure
+                // beats. Done here (outside the renderer borrow below) so the
+                // interpolator can take `&mut self`; while no cutscene timeline
+                // owns the scene the interp is reset so the next opening shot
+                // snaps in rather than sweeping from a stale pose.
+                let cutscene_cam = if self.session.host.world.mode != SceneMode::WorldMap
+                    && self.session.host.world.cutscene_timeline_active()
+                {
+                    let (look_at, yaw, fov) = self.cutscene_view();
+                    // ~0.15/frame ease => a few-frame blend at the redraw cadence.
+                    Some(self.cutscene_cam_interp.approach(look_at, yaw, fov, 0.15))
+                } else {
+                    self.cutscene_cam_interp.reset();
+                    None
+                };
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     self.win.renderer.as_ref(),
                     self.uploaded_vram.as_ref(),
@@ -6846,8 +6865,7 @@ impl ApplicationHandler for PlayWindowApp {
                             pz,
                             aspect,
                         )
-                    } else if self.session.host.world.cutscene_timeline_active() {
-                        let (look_at, yaw, fov) = self.cutscene_view();
+                    } else if let Some((look_at, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
                             look_at,
                             yaw,
@@ -7786,6 +7804,7 @@ fn cmd_play_window_with_record(
         // runs can't read the ISO STR here, so leave it `None` (drains no-op).
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
         cutscene: None,
+        cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
