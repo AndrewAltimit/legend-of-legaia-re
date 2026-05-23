@@ -64,7 +64,12 @@ The title-screen NEW GAME selection is the entry point into modes 2/3:
 3. **Mode-2 init.** The mode dispatcher runs `FUN_80025B64`: load the field overlay (`FUN_8003EBE4(2)`) → call `FUN_801D6704`.
 4. **Field scene init.** `FUN_801D6704` reads the resident map id, loads geometry + MAN + camera + fog + BGM, allocates the game-mode work buffer, and writes `_DAT_8007B83C = 3` — the field per-frame loop ("MAIN MODE") takes over the next frame.
 
-The mode-transition control flow is mirrored in `crates/engine-vm/src/title_overlay.rs` (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3, `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `crates/engine-core/src/world.rs` (`World::begin_new_game`). The *fresh-state seed* a new game establishes (starting party stats, gold, starting scene id) is set by a separate, not-yet-pinned new-game-init routine; `FUN_801D6704` itself is generic field entry, used for every scene transition, and reads that state from globals rather than seeding it.
+The mode-transition control flow is mirrored in `crates/engine-vm/src/title_overlay.rs` (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3, `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `crates/engine-core/src/world.rs` (`World::begin_new_game`). `FUN_801D6704` itself is generic field entry, used for every scene transition, and reads the *fresh-state seed* a new game establishes (starting party stats, gold, starting scene id) from globals rather than seeding it.
+
+The seed's two visible halves are now pinned:
+
+- **Starting party.** A static template in `SCUS_942.54` holds each roster member's opening stats + name; the seed expands it into the live per-character records at `0x80084708 + n*0x414`. The table is `[8×u16 stats][10-byte name]` per record (Vahn, Noa, Gala, Terra), parsed by [`legaia_asset::new_game`](../formats/new-game-table.md). Vahn's row (HP 180 / MP 20 / AGL 100 / ATK 24 / uDEF 16 / lDEF 12 / SPD 19 / INT 9) is byte-validated against an early `town01` save state.
+- **Opening scene.** The default map-name buffer holds the literal `"town01"` (Rim Elm) — the interactive scene a New Game enters. `FUN_8001D424` (the global reset/init) leaves the buffer at `town01` and reads an optional dev `initmap.txt` override when the debug flag `_DAT_8007B8C2` is clear.
 
 **The title screen is not one of the 28 modes** — its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2).
 

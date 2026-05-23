@@ -1477,11 +1477,13 @@ impl World {
     /// engine's mapping of master mode 3. Distinct from the Continue path,
     /// which instead hydrates the world from a save slot.
     ///
-    /// Note this does **not** seed the starting party stats, gold, or
-    /// starting scene id — in retail those come from a separate,
-    /// not-yet-pinned new-game-init routine that runs before mode 2, and
-    /// `FUN_801D6704` reads them from globals. Callers enter the actual
-    /// opening scene through the normal scene-load path afterward.
+    /// This does **not** itself seed the starting party stats, gold, or
+    /// opening scene id — in retail those come from a separate new-game-init
+    /// routine that runs before mode 2, and `FUN_801D6704` reads them from
+    /// globals. The starting party half is pinned: a caller with the disc's
+    /// `SCUS_942.54` calls [`World::seed_starting_party`] (see
+    /// [`crate::new_game`]) right after this to drop Vahn into slot 0, and
+    /// enters the opening scene (`town01`) through the normal scene-load path.
     // REF: FUN_80025B64
     // REF: FUN_801D6704
     pub fn begin_new_game(&mut self) {

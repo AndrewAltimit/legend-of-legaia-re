@@ -3614,10 +3614,16 @@ impl PlayWindowApp {
                         TitleOutcome::NewGame => {
                             // Mirror the retail NEW GAME → field-launch
                             // (master mode 2 → mode 3): establish a fresh
-                            // slate and enter the field per-frame mode, then
-                            // reveal the already-booted opening scene. See
+                            // slate and seed the starting party (Vahn) from the
+                            // disc's SCUS template, then reveal the already-
+                            // booted opening scene (town01). See
                             // docs/subsystems/boot.md "New Game boot chain".
-                            self.session.host.world.begin_new_game();
+                            self.session.begin_new_game();
+                            log::info!(
+                                "new game: seeded party_count={}, scene='{}'",
+                                self.session.host.world.party_count,
+                                legaia_asset::new_game::OPENING_SCENE,
+                            );
                             self.boot_ui = BootUiState::Inactive;
                         }
                         TitleOutcome::Continue => {

@@ -89,6 +89,32 @@ pub struct BootSession {
     /// Wall-clock frame counter, separate from `host.world.frame` (which
     /// includes pause-time skips when those land).
     pub frames: u64,
+    /// New-game starting-party template parsed from the boot source's
+    /// `SCUS_942.54`, if present. Used by [`BootSession::begin_new_game`] to
+    /// seed a faithful starting roster; `None` when the executable couldn't be
+    /// read (e.g. a raw PROT.DAT-only source), in which case New Game keeps the
+    /// world's default scaffold party.
+    pub starting_party: Option<legaia_asset::new_game::StartingParty>,
+}
+
+/// Read + parse the new-game starting-party template from a boot source's
+/// `SCUS_942.54`. Returns `None` (not an error) when the executable isn't
+/// reachable or doesn't parse, so a boot never fails just because the seed
+/// data is unavailable.
+fn read_starting_party(source: &SceneSource<'_>) -> Option<legaia_asset::new_game::StartingParty> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_asset::new_game::StartingParty::from_scus(&scus)
 }
 
 impl BootSession {
@@ -108,6 +134,9 @@ impl BootSession {
     }
 
     fn open_with_source(source: SceneSource<'_>, cfg: &BootConfig) -> Result<Self> {
+        // Parse the new-game starting-party template from the same source
+        // (best-effort; never fails the boot).
+        let starting_party = read_starting_party(&source);
         let mut host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
@@ -152,7 +181,25 @@ impl BootSession {
             audio,
             bgm,
             frames: 0,
+            starting_party,
         })
+    }
+
+    /// Begin a New Game: clear the world to a fresh slate
+    /// ([`legaia_engine_core::world::World::begin_new_game`]) and seed the
+    /// starting party (Vahn) from the boot source's `SCUS_942.54` template.
+    ///
+    /// Mirrors the retail NEW GAME → field-launch chain (master mode 2 → 3,
+    /// see `docs/subsystems/boot.md`). The interactive opening scene
+    /// ([`legaia_asset::new_game::OPENING_SCENE`] = `town01`) is entered through
+    /// the usual [`BootSession::enter_field_live`] path; this call only resets
+    /// and seeds the world state. When the SCUS template isn't available the
+    /// world keeps its default scaffold party so the slice stays runnable.
+    pub fn begin_new_game(&mut self) {
+        self.host.world.begin_new_game();
+        if let Some(starting) = &self.starting_party {
+            self.host.world.seed_starting_party(starting);
+        }
     }
 
     /// One per-frame step: tick the world, route field-VM camera + BGM
