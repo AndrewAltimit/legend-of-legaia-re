@@ -173,13 +173,13 @@ Top-level shell loop (closed loop title → save-select → field/encounter → 
 - **Equipment catalog** (`engine-core::equipment`) - vanilla 30-entry table covering weapons / armor / accessories with character restrictions.
 - **Seru capture + spell learning** (`engine-core::seru_learning`) - per-character per-Seru point accumulator with banner session.
 - **Tactical Arts chain editor** (`engine-core::tactical_arts_editor`) - menu-side compose + name + save flow with per-character library.
-- **LGSF v2 save format** (`crates/save/src/ext.rs`) - backward-compatible v1 prelude + extension block carrying play-time, active-party, per-character ext (learned arts mask, spell list, Seru captures, active chains), and saved-chain library.
+- **LGSF save format** (`crates/save/src/ext.rs`) - versioned + backward-compatible: the v1 prelude carries party records, story-flag word, money and inventory; the v2 extension block carries play-time, active-party, per-character ext (learned arts mask, spell list, Seru captures, active chains), and the saved-chain library; the v3 extension appends the full 512-byte story-flag bitmap. The writer emits the highest version any populated field requires (v3 once `SaveExt::story_flag_bits` is non-empty); readers accept v1, v2, and v3.
 - **Dialog renderer pipeline** (`engine-render::dialog_box_draws_for`) - turns the dialog panel's typed glyph stream into `TextDraw`s with CLUT-aware tinting + greedy width-based wrap.
 
 Pending:
 - Field map + dialog (the field-VM port already runs; needs the field-loader chain wired).
 - The [battle subsystem](battle.md) including Tactical Arts and the per-actor state machine `FUN_801E295C` (state machine port landed; still needs scene loader integration).
-- Menu + save / load (LGSF v2 round-trips via `SaveFile::write` / `parse`; engine-side population of the v2 fields from the live `World` state still pending).
+- Menu + save / load (LGSF round-trips via `SaveFile::write` / `parse`; engine-side population of the extension fields from the live `World` state still pending).
 
 ### Phase 4 - targets
 

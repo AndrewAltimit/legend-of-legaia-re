@@ -426,7 +426,7 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
   <h2>End-to-end gameplay loop integration test</h2>
   <p><code>crates/engine-core/tests/end_to_end_gameplay_loop.rs</code> stitches every gameplay-side subsystem into one cycle:</p>
   <ol>
-    <li><strong>Boot</strong> &mdash; load an <code>LGSF v2</code> <code>SaveFile</code> (party + story flags + money + inventory) into a fresh <code>World</code> via <code>load_full</code>. <code>load_full</code> hydrates the <code>LevelUpTracker</code> per-slot level from each record's <code>+0x100</code> byte so reloads don't roll the tracker back to L1.</li>
+    <li><strong>Boot</strong> &mdash; load an <code>LGSF</code> <code>SaveFile</code> (party + story flags + money + inventory) into a fresh <code>World</code> via <code>load_full</code>. <code>load_full</code> hydrates the <code>LevelUpTracker</code> per-slot level from each record's <code>+0x100</code> byte so reloads don't roll the tracker back to L1.</li>
     <li><strong>Field walk</strong> &mdash; switch to <code>SceneMode::Field</code>, install an <code>EncounterSession</code> keyed to <code>vanilla_formation_table</code> at saturated trigger rate, step until <code>EncounterPhase::Triggered</code>.</li>
     <li><strong>Encounter</strong> &mdash; drain the formation roll, populate monster slots 3..N from the <code>MonsterCatalog</code>, flip mode to <code>SceneMode::Battle</code>.</li>
     <li><strong>Battle SM</strong> &mdash; drive <code>World::tick</code> while applying clean-room formula damage on every <code>AttackChain &rarr; AttackRecovery</code> transition until the action SM resolves to <code>BattleEndCause::MonsterWipe</code>.</li>
