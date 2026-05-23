@@ -188,6 +188,12 @@
         <td>Single-snapshot byte-exact is <strong>physically unachievable</strong>: a save state's VRAM is a live snapshot and ~40% of the texpage band is dynamic/residual state (proven by diffing two town01 captures pre/post battle &mdash; they disagree on ~40% of the band). The pre-pass also only uploaded the render-targeted TIM subset (17/181). Fix: the parity pre-pass now does field-mode <strong>DMA-every-TIM</strong> (<code>BuildOptions.upload_all_tims</code>), lifting town01 oracle coverage 4%&rarr;38% with engine-only (wrong) texels dropping 11.5k&rarr;~250. <code>vram_oracle_e1</code> was reframed to the <strong>static mask</strong> (words stable across same-scene captures), excluding the runtime-managed NPC/character CLUT band; town01 now passes byte-exact on every static pixel the engine uploads. <strong>Still open:</strong> completeness &mdash; ~53k <em>static</em> texels (boot-resident font/menu atlases, etc.) the pre-pass doesn't yet assemble; these are missing-upload, never a <em>wrong</em> static texel.</td>
         <td><code>project_town01_targeted_upload_fix.md</code></td>
       </tr>
+      <tr>
+        <td>Field/town environment-geometry placement</td>
+        <td><code>partly resolved</code></td>
+        <td>The town's environment meshes (terrain + buildings + props) are Legaia TMDs packed inside <strong>LZS streams of the scene_asset_table</strong> PROT entry (<code>town01</code> = entry 4: 121 meshes, &asymp;8041 verts). <code>SceneResources</code> now scans <code>tmd_scan::scan_entry</code>'s LZS sections so they load into the field TMD pool, and the field build uses <code>SceneLoadKind::Field</code> + <code>upload_all_tims</code> (retail <code>FUN_8001f7c0</code> DMAs every TIM; keep ratio 24%&rarr;95%) &mdash; the window renders textured town terrain instead of one stray battle mesh. <strong>Open: per-mesh world placement.</strong> The meshes are object-local (drawing all at origin gives a pile, falsified). The field-buffer <code>+0x0000</code> object table (decoded from <code>FUN_8003a55c</code>) is <strong>NPC/event/trigger spawns, not building transforms</strong>, and the field actor pool is small (&asymp;8 slots) so the buildings are <strong>not actors</strong>. The per-mesh transform source for the static geometry is unidentified &mdash; shared with the world-map's "per-mesh world placement" gap.</td>
+        <td><code>project_town_geometry_render_gap.md</code></td>
+      </tr>
     </tbody>
   </table>
 </section>
