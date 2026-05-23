@@ -125,7 +125,7 @@
   <table>
     <thead><tr><th>Range (PROT.DAT)</th><th>Sectors</th><th>Bytes</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td><code>0x5C3D800..0x5C44800</code></td><td>47227..47241</td><td>28&nbsp;672</td><td>PROT 899 indexed payload (options menu)</td></tr>
+      <tr><td><code>0x5C3D800..0x5C44800</code></td><td>47227..47241</td><td>28&nbsp;672</td><td>PROT 899 indexed payload (field/town/menu overlay &mdash; loaded by mode-2 field init; carries the in-game options submenu strings)</td></tr>
       <tr><td><code>0x5C44800..0x5C62800</code></td><td>47241..47301</td><td><strong>122&nbsp;880</strong></td><td><strong>Unindexed gap = title overlay code</strong></td></tr>
       <tr><td><code>0x5C62800..0x5C67800</code></td><td>47301..47311</td><td>20&nbsp;480</td><td>PROT 900 indexed payload</td></tr>
     </tbody>
@@ -164,6 +164,14 @@ _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
   <h3>Sub-mode dispatcher</h3>
   <p>The first ~250 instructions of <code>FUN_801DD35C</code> fan out via a 25-entry jump table at <code>0x801CF244</code> keyed on <code>state[+0x204]</code>. The JT, the state-struct field offsets, and the observed <code>state[+0x204] = N</code> transitions are pinned in <code>legaia_engine_vm::title_overlay</code>. Four modes are semantically labelled (<code>Init</code>, <code>Idle</code>, <code>AttractIdle</code>, <code>AttractDelay</code>); the other 21 carry <code>Phase0xNN</code> placeholders with traced-transition docstrings.</p>
   <p>Standout pin: <strong><code>Phase06</code> writes <code>_DAT_8007B83C = 0x02</code> at <code>0x801DFC00</code></strong> &mdash; the title-screen &rarr; main-game master-mode transition, exported as <code>MASTER_GAME_MODE_FIELD_LAUNCH</code> + <code>PHASE06_LAUNCH_GAME_PC</code>. Engine-side observers can detect the launch by watching that single write site.</p>
+  <h3>New Game boot chain (title &rarr; field)</h3>
+  <p>Confirming <strong>NEW GAME</strong> is what crosses from the title overlay into the 28-mode table. The menu handler reads the live cursor (<code>state[+0x1FC]</code>), and on <code>L1|Cross</code> (<code>pad &amp; 0x44</code>) stashes the chosen row at <code>state[+0x200]</code> and advances to sub-mode <code>0x14</code>; NEW GAME is row 0 (a non-zero row, CONTINUE, routes to the save/card load path). The row-0 sub-phases reach the launch write above:</p>
+  <ol class="bullets">
+    <li><strong>Mode 2 (field INIT).</strong> <code>_DAT_8007B83C = 2</code> &rarr; the dispatcher runs <code>FUN_80025B64</code>, which loads the field/town/menu overlay (<code>FUN_8003EBE4(2)</code>, PROT 899) and calls the per-scene initializer <code>FUN_801D6704</code>.</li>
+    <li><strong>Field scene init.</strong> <code>FUN_801D6704</code> reads the resident map id and loads geometry + MAN (<code>FUN_8003AEB0</code>) + camera + fog + BGM through the field loader <code>FUN_8001F7C0</code>, allocates the game-mode work buffer, then writes <code>_DAT_8007B83C = 3</code>.</li>
+    <li><strong>Mode 3 (field RUN).</strong> The field per-frame loop ("MAIN MODE", <code>game_mode 0x03</code>) takes over. So modes 2/3 are the field/town gameplay INIT/RUN pair &mdash; <em>not</em> an options screen, despite the dev label and older notes.</li>
+  </ol>
+  <p>The mode-transition control flow is mirrored in <code>legaia_engine_vm::title_overlay</code> (<code>MASTER_GAME_MODE_FIELD_RUN</code>, <code>FIELD_SCENE_INIT_PC</code>, <code>MENU_INDEX_NEW_GAME</code>) and <code>World::begin_new_game</code> in <code>engine-core</code>. The <em>fresh-state seed</em> a new game establishes (starting party stats, gold, scene id) comes from a separate, not-yet-pinned new-game-init routine that runs before mode 2; <code>FUN_801D6704</code> is generic field entry and reads that state from globals.</p>
   <h3>Sprite-emit helpers</h3>
   <p>The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in <code>legaia_engine_vm::title_prim</code>:</p>
   <ul class="bullets">

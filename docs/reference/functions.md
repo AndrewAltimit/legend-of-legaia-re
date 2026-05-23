@@ -160,7 +160,7 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 | `800179C0` | Dev mode-transition writer. Reads input mask, advances current mode. Gated on `_DAT_8007B98C != 0`. |
 | `80025EEC` | Default per-frame mode handler - used by all 14 odd-indexed (per-frame) modes. Pipeline: `FUN_8001698C → FUN_80016444(1) → FUN_80016B6C`. |
 | `80025C68` | Mode 0 (CONFIG INIT) handler - **loads PROT 973 (slot-machine debug overlay)** via `FUN_8003EBE4(0x4C)`. Despite the dev name "CONFIG", this is a slot-machine debug mode, not a game-config init. |
-| `80025B64` | Mode 2 (MAIN INIT) handler - **loads PROT 899 (options menu)** via `FUN_8003EBE4(2)`. Despite the dev name "MAIN", this is the options/config menu mode, not the title screen. |
+| `80025B64` | Mode 2 (MAIN INIT) handler - **field/town gameplay INIT.** Loads the field overlay via `FUN_8003EBE4(2)` (PROT 899) then calls the per-scene initializer `FUN_801D6704`, which hands off to mode 3 (field per-frame). The title screen's NEW GAME path launches this mode (`_DAT_8007B83C = 2` at `0x801DFC00`). Despite the dev name "MAIN" / older "options menu" notes, this is the field entry; the options strings in PROT 899 belong to the in-game options submenu carried by the same overlay. |
 | `80025DA0` | Mode 12 (MAPDISP INIT) handler - field/town init - this is the actual gameplay-mode entry. |
 | `80025F2C` | Mode 13 (MAPDISP MODE) handler - field-display per-frame. |
 | `80025E68` | Mode 8 (EFECT TEST INIT) handler - effect-bundle test mode. |
@@ -244,7 +244,7 @@ sub-state, `+0x07` action-type).
 | Address | Role |
 |---|---|
 | `801D6628` | Actor / sprite VM (title-screen overlay). 13 opcodes; dispatch table at `0x801CED70`. |
-| `801D6704` | Town overlay MAIN INIT. Calls `FUN_80020224` at `0x801D6B0C`. |
+| `801D6704` | **Field/town per-scene initializer** (the body of mode-2 "MAIN INIT", invoked by `FUN_80025B64`; also every field scene transition). Reads the resident map id, loads geometry + MAN (`FUN_8003AEB0`) + camera + fog + BGM via the field loader `FUN_8001F7C0`, allocates the game-mode work buffer, calls `FUN_80020224` at `0x801D6B0C`, and ends by writing `_DAT_8007B83C = 3` to hand off to the field per-frame loop. Debug strings `map_name`/`map_read`/`man_set`/`camera_set`/`fog_set`/`tmds: %d`/`game_mode`/`program_mode`. The title NEW GAME path lands here via mode 2. |
 | `801CF650` | Emitter ramp-actor allocator (town overlay). Calls `FUN_80020DE0(base + 0x27EC)`, configures the actor's curve / ramp slots: `+0x50 = sub_id`, `+0x6C = mode_byte`, `+0x80 / +0x8C = curve_table[curve_id] << 16` (table at `_DAT_1F80035C`), `+0x84 = (target << 17) / (duration + 1)`, `+0x88 = abs / duration`. Shared helper used by 0x43 sub-0x10 / sub-0x12 emitter setup ops. |
 | `801DB7B0` | Generic 4-byte jump-table dispatcher (town overlay). 7 instructions: `(*(table[v1])(...))()` where table base = `v0 - 0xD6C`. Caller sets `v0` (lui-immediate) and `v1` (index). |
 | `801DE840` | **Field / event script VM** (town/field overlay). 17.5 KB / 357 outgoing calls. The largest function in the corpus. See [`subsystems/script-vm.md`](../subsystems/script-vm.md). |

@@ -3496,7 +3496,12 @@ impl PlayWindowApp {
                 if let Some(outcome) = session.outcome() {
                     match outcome {
                         TitleOutcome::NewGame => {
-                            // Drop straight into the scene.
+                            // Mirror the retail NEW GAME → field-launch
+                            // (master mode 2 → mode 3): establish a fresh
+                            // slate and enter the field per-frame mode, then
+                            // reveal the already-booted opening scene. See
+                            // docs/subsystems/boot.md "New Game boot chain".
+                            self.session.host.world.begin_new_game();
                             self.boot_ui = BootUiState::Inactive;
                         }
                         TitleOutcome::Continue => {
