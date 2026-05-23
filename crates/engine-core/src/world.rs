@@ -1518,6 +1518,7 @@ impl World {
     /// (`Vahn`).
     // REF: FUN_80025B64
     // REF: FUN_801D6704
+    // REF: FUN_801DD35C
     // REF: FUN_80034A6C
     // REF: FUN_800560B4
     // REF: FUN_8004F0E8
