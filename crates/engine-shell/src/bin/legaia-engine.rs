@@ -6848,21 +6848,41 @@ impl ApplicationHandler for PlayWindowApp {
                     // uses the orbit camera.
                     let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
                     let cam = if in_world_map {
-                        let (az, zoom, px, pz) = self
-                            .session
-                            .host
-                            .world
+                        let world = &self.session.host.world;
+                        let (az, zoom, px, pz, walk_mode) = world
                             .world_map_ctrl
                             .as_ref()
-                            .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z))
-                            .unwrap_or((0, 0, 0, 0));
+                            .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z, !c.is_top_view()))
+                            .unwrap_or((0, 0, 0, 0, true));
+                        // In walk mode the camera follows the player: pan so the
+                        // framing centre tracks the player's world position
+                        // (the AABB-relative offset world_map_camera_mvp adds to
+                        // its centre). Top-view debug keeps the controller scroll.
+                        let (pan_x, pan_z) = if walk_mode {
+                            let center = [
+                                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+                            ];
+                            world
+                                .player_actor_slot
+                                .and_then(|s| world.actors.get(s as usize))
+                                .map(|a| {
+                                    (
+                                        (a.move_state.world_x as f32 - center[0]) as i32,
+                                        (a.move_state.world_z as f32 - center[1]) as i32,
+                                    )
+                                })
+                                .unwrap_or((px, pz))
+                        } else {
+                            (px, pz)
+                        };
                         legaia_engine_render::window::world_map_camera_mvp(
                             self.scene_aabb.0,
                             self.scene_aabb.1,
                             az,
                             zoom,
-                            px,
-                            pz,
+                            pan_x,
+                            pan_z,
                             aspect,
                         )
                     } else if let Some((look_at, yaw, fov)) = cutscene_cam {

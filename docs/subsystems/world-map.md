@@ -200,12 +200,18 @@ from the region's `[base, base + count)` slice and latches
 `SceneMode::WorldMap → SceneMode::Battle` transition that returns to the
 overworld. A camera-only world map (no region table routed) is unchanged.
 
+In walk mode the native `play-window` camera **follows the player**: it passes
+the player's AABB-relative world position as the `pan` offset to
+[`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs), so
+the framing centre tracks the player as they walk; the top-view debug camera
+keeps the controller's free scroll.
+
 Two retail threads remain open: overworld **collision / walkability** (the
 player currently moves unbounded; the overworld walkability source is a separate
 RE thread, like the field grid was), the camera-relative movement remap (today
 the d-pad maps directly to world axes; the field controller remaps through the
-camera), and seeding overworld entities + the region table from the boot path
-(today they are installed through the API).
+camera azimuth), and seeding overworld entities + the region table from the boot
+path (today they are installed through the API / the `--world-map` entry).
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see
