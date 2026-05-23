@@ -112,7 +112,7 @@ if let Some(s) = scene_vab_stream::detect(buf) {
   <p>Each scene block on the disc carries <strong>both</strong> a v12 entry (this format, prescript at <code>+0x800</code>) and a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no v12 header). The two scripts likely serve different runtime phases — scene-enter triggers vs. per-actor / per-region triggers — though the exact split isn't pinned down yet; both are walked by the same field VM.</p>
 </section>
 
-<section class="doc-section" id="scene-asset-table-canonical-7-asset-bundle">
+<section class="doc-section" id="scene-asset-table-count-prefixed-asset-bundle">
   <h2>scene_asset_table - count-prefixed asset bundle</h2>
   <p>The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: <code>crates/asset/src/scene_asset_table.rs</code>.</p>
 <pre><code>+0x00   u32  count                  ; descriptor count (6 or 7)

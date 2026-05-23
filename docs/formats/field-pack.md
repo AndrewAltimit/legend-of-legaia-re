@@ -1,6 +1,6 @@
 # Field-pack format
 
-Magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. Four PROT entries match the signature today. Detector + dispatch: `crates/asset/src/field_pack.rs`.
+Magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. 124 PROT entries share the byte-identical 388-byte schema block. Detector + dispatch: `crates/asset/src/field_pack.rs`.
 
 ## Layout
 

@@ -35,7 +35,7 @@ The reader copies `monster_ids[0..count]` into the global formation cell at `0x8
 
 ## Reader
 
-`FUN_801DA51C` (the world-map / field entity tick, see [`subsystems/world-map.md`](../subsystems/world-map.md#fun_801da51c-world-map-entity-tick-260-bytes)) at offsets `0x801DA620..0x801DA678`:
+`FUN_801DA51C` (the world-map / field entity tick, see [`subsystems/world-map.md`](../subsystems/world-map.md#fun_801da51c---world-map-entity-tick-260-bytes)) at offsets `0x801DA620..0x801DA678`:
 
 ```mips
 801da620  lui v0,0x8008
@@ -290,7 +290,7 @@ allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
 
 **Per-scene MAN file (asset type `0x03`).** The encounter data lives as
 the `Man` asset in each scene's
-[`scene_asset_table`](scene-bundles.md#scene_asset_table---canonical-7-asset-bundle)
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
 7-asset bundle, descriptor index 2. The asset dispatcher
 (`FUN_8001F05C`) LZS-decompresses the Man payload into a heap buffer
 addressed by `_DAT_8007B898`; `FUN_8003AEB0` (the per-scene MAN

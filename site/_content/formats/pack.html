@@ -29,7 +29,7 @@ offset[1]:       8b 20 00 00    word offset 0x208B → byte 0x822C (= start of T
 
 <section class="doc-section" id="distinction-from-the-standalone-tim-pack">
   <h2>Distinction from the standalone TIM-pack</h2>
-  <p>The <a href="tim-pack.html">standalone TIM-pack</a> form is structurally similar but uses an 8-byte byte-marker header (with <code>byte[3] == 0x01</code> and <code>byte[2] &lt; 0x10</code> as discriminators) and stores count in <code>byte[2]</code>. The pack-inside-streaming-chunks form here uses a full <code>u32</code> count and lacks the marker prefix - use the right format for the source.</p>
+  <p>The <a href="tim-pack.html">standalone TIM-pack</a> form is structurally similar but uses an 8-byte header (a <code>byte[3] == 0x01</code> / <code>byte[2] &lt; 0x10</code> discriminator pair, then a <code>u32</code> count at <code>+4</code>) and adds a constant <code>+4</code> to each word offset. The pack-inside-streaming-chunks form here lacks the discriminator prefix and its word offsets are taken straight from the pack-data start - use the right format for the source.</p>
 </section>
 
 

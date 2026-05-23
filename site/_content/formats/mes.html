@@ -49,7 +49,7 @@
 
 <section class="doc-section" id="bytecode-encoding">
   <h2>Bytecode encoding</h2>
-  <p>Reverse-engineered from the four SCUS interpreter functions (<a href="#fun_8003ca38--glyph-stride-walker"><code>FUN_8003CA38</code></a>, <a href="#fun_80036044--text-width-measurement"><code>FUN_80036044</code></a>, <a href="#fun_80036888--text-renderer"><code>FUN_80036888</code></a>, <a href="#fun_80036514--substitution-expander"><code>FUN_80036514</code></a>). The same byte-classification table is used by all four; only the action per byte differs.</p>
+  <p>Reverse-engineered from the four SCUS <a href="#interpreter-functions">interpreter functions</a> (<code>FUN_8003CA38</code>, <code>FUN_80036044</code>, <code>FUN_80036888</code>, <code>FUN_80036514</code>). The same byte-classification table is used by all four; only the action per byte differs.</p>
 <table>
 <thead><tr>
 <th>Byte range</th>
@@ -163,7 +163,7 @@
   <h3><code>FUN_80036044</code> - text width measurement</h3>
   <p>Walks the bytecode and returns total width. Adds the substitution dispatch on top of the stride walker - for each <code>0xC1..0xC5</code> or <code>0xC7</code> byte, it follows the substitution pointer into the corresponding name table and recursively walks that string's width too. Calls itself implicitly by re-running the same <code>(byte &gt; 0x1F)</code> loop on the substituted string.</p>
   <h3><code>FUN_80036888</code> - text renderer</h3>
-  <p>The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls <a href="#fun_80036514--substitution-expander"><code>FUN_80036514</code></a> at the start to expand substitutions into a working buffer.</p>
+  <p>The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls <code>FUN_80036514</code> (the substitution expander, above) at the start to expand substitutions into a working buffer.</p>
   <h3><code>FUN_80036514</code> - substitution expander</h3>
   <p>Reads source bytecode from <code>param_2</code> and writes expanded bytecode to <code>param_1</code>. Two input-time aliases are normalised:</p>
 <table>
