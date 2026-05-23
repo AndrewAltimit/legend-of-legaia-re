@@ -273,15 +273,22 @@ The *"Select your name."* screen (default `Vahn`) runs **after** the field launc
 |---|---|---|
 | Character grid | `0x801F29F0` | Flat ASCII, 6 rows × 17 bytes: `ABCDE\|abcde\|12345`, `FGHIJ\|fghij\|67890`, `KLMNO\|klmno\|!?#%&`, `PQRST\|pqrst\|.,'<>`, `UVWXY\|uvwxy\|+-*/=`, `Z␣␣␣␣\|z␣␣␣␣\|:;()~`, NUL-terminated. Three column-groups of 5 (`\|` = `0x7C` separators); spaces pad the short Z/z row → 15 cols × 6 rows. |
 | Live name buffer | `0x801F2A6C` | The name being edited (`Vahn` by default). |
-| Cursor index | `0x80077B88` | Grid position `0..101`; `row = cursor/17`, `col = cursor%17`. Bounds-checked `< 0x66`. |
-| Mode flag | `0x80077B94` | |
-| Name-edit state ptr | `0x80077A50` | Name length at `+1`. |
+| Cursor index | `0x8007BB88` | Linear position over a **7-row × 17-col** navigation space (`0..0x77` = 119), wrapped modulo `0x77`. Cells `0..0x66` (102) are the glyph rows; `0x66..0x77` are the control row. `row = cursor/17`, `col = cursor%17`. |
+| Pad edge bits | `0x8007BB84` | Just-pressed mask for this frame (d-pad tested as `0x1000`/`0x4000`/`0x2000`, confirm via the button-mask table AND-ed with held pad `0x8007B874`). |
+| Char-record pointer | `0x8007B450` | Live character record being named; the active char index is the byte at `+1`, scaled by stride `0x414`; the committed name lands at `record + 0x86F`. |
 | Prompts | `0x801CF698`+ | "Is this name okay?", "Cannot enter that name.", "Tell me my name.", "Select your name.", "[Nameless]". |
 
 Two functions carry the screen:
 
 - **`FUN_801E6B34`** (render) — draws the 6×17 grid (skipping `|` / space) via the glyph drawer `FUN_80036888`, plus the current name, the blinking caret (the `Vahn_` underscore, measured with MES `FUN_8003CA38` + width `FUN_80035F04`), and the box frames (`FUN_8002C69C`).
-- **`FUN_801F03F0`** (state machine) — substate at `struct+0x54`, dispatched through a **5-entry jump table at `0x801CF71C`**: `0x801F0444` (init → cursor + flag, advances), `0x801F0480` (interactive: cursor move + char select, calls the renderer), and `0x801F095C` / `0x801F09C0` / `0x801F097C` (the confirm "Is this name okay?" path). The per-substate input bits, the char-commit-into-buffer / BS logic, the commit-to-character-record on Select, and the field-VM trigger that opens the overlay are still to be traced.
+- **`FUN_801F03F0`** (state machine) — substate at `struct+0x54`, dispatched through a **5-entry jump table at `0x801CF71C`**:
+  - `0x801F0444` **init** — sets the active flag and advances to interactive.
+  - `0x801F0480` **interactive** — d-pad deltas `-0x11` (up) / `+0x11` (down) / `+1` (right) / `-1` (left); after each move the cursor wraps modulo `0x77` and **skips non-selectable cells** (the `|`=`0x7C` separators in the glyph rows) in the direction of travel. Confirm resolves the cell: a glyph cell appends its character to the name (length-bounded by the proportional-font pixel width, cap `0x39`=57 px); a control-row cell runs its action via the row's sentinel bytes — `0x66` = **Backspace** (truncate one glyph), `0x64` = **Space**, `0x65` = **End** (gated on a non-empty name via the `blez` check → advances to confirm).
+  - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** — the "Is this name okay?" Yes/No prompt; Yes commits the name into `record+0x86F` and exits, No returns to interactive.
+
+The control row (grid row 6) tiles those sentinel bytes across its columns: `00 00 | 66×6 | 64×6 | 65×3` (filler / Backspace / Space / End).
+
+**Clean-room engine port.** The whole SM is ported as a standalone overlay in [`legaia_engine_core::name_entry`](../../crates/engine-core/src/name_entry.rs) (`NameEntry` + `NameEntryState` + `Control`), driven on the world by `World::open_name_entry` / `step_name_entry` (committing into `World::party_names`) and rendered through [`legaia_engine_render::name_entry_draws_for`](../../crates/engine-render/src/lib.rs). The one remaining open thread is the **field-VM op** that opens the overlay during the `town01` opening sequence; the engine exposes `open_name_entry` for a host to call (a dev key in `legaia-engine play-window`) until that trigger is pinned.
 
 ### Sprite-emit helpers
 

@@ -1225,6 +1225,19 @@ pub struct World {
     /// end of [`Self::tick_field_carriers`] to flip Field -> Battle. `None`
     /// between transitions.
     pub pending_field_carrier_battle: Option<u16>,
+
+    /// Per-party-slot display names. Seeded from the starting-party template
+    /// at [`Self::seed_starting_party`] and overwritten by the name-entry
+    /// overlay ([`Self::open_name_entry`]). Indexed by party slot; a slot with
+    /// no entry falls back to the template name at the call site.
+    pub party_names: Vec<String>,
+
+    /// Active name-entry overlay session, or `None` when no name is being
+    /// entered. Installed by [`Self::open_name_entry`] (the opening `town01`
+    /// script's lead-character prompt) and driven by
+    /// [`Self::step_name_entry`]; on commit the name lands in
+    /// [`Self::party_names`].
+    pub name_entry: Option<crate::name_entry::NameEntry>,
 }
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
@@ -1482,6 +1495,8 @@ impl World {
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
             pending_field_carrier_battle: None,
+            party_names: Vec::new(),
+            name_entry: None,
         }
     }
 
@@ -1544,6 +1559,51 @@ impl World {
     /// the current scene without re-walking the [`crate::scene::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+    }
+
+    /// Display name for a party slot - the name-entry result if one was
+    /// committed, otherwise the template default seeded at
+    /// [`Self::seed_starting_party`]. Empty string when the slot is unknown.
+    pub fn party_name(&self, slot: usize) -> &str {
+        self.party_names.get(slot).map(String::as_str).unwrap_or("")
+    }
+
+    /// Open the name-entry overlay for `slot`, seeded with the slot's current
+    /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
+    /// script's lead-character naming prompt. The host drives it each frame
+    /// with [`Self::step_name_entry`] and renders from [`Self::name_entry`].
+    pub fn open_name_entry(&mut self, slot: usize) {
+        let initial = self.party_name(slot).to_string();
+        self.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
+    }
+
+    /// `true` while the name-entry overlay is active.
+    pub fn name_entry_active(&self) -> bool {
+        self.name_entry.is_some()
+    }
+
+    /// Advance the active name-entry overlay by one input frame. On commit
+    /// (the player confirms "Is this name okay?") the entered name is written
+    /// into [`Self::party_names`] for the entry's slot, the session is closed,
+    /// and `true` is returned so the host can resume the field script.
+    /// Returns `false` while the overlay stays open (or when none is active).
+    pub fn step_name_entry(&mut self, input: crate::name_entry::NameEntryInput) -> bool {
+        let Some(entry) = self.name_entry.as_mut() else {
+            return false;
+        };
+        entry.step(input);
+        if entry.state == crate::name_entry::NameEntryState::Done {
+            let slot = entry.char_index;
+            let name = entry.committed_name();
+            if self.party_names.len() <= slot {
+                self.party_names.resize(slot + 1, String::new());
+            }
+            self.party_names[slot] = name;
+            self.name_entry = None;
+            true
+        } else {
+            false
+        }
     }
 
     /// Install the VDF ("set_mime") buffer for the active scene. The bytes

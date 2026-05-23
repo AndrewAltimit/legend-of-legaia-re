@@ -5990,6 +5990,43 @@ impl PlayWindowApp {
         {
             out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
+        // Name-entry overlay: the opening `town01` lead-character naming prompt.
+        if let Some(entry) = &self.session.host.world.name_entry {
+            use legaia_engine_core::name_entry::{CHAR_CELLS, GRID, GRID_COLS};
+            let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
+                (
+                    Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
+                    None,
+                )
+            } else {
+                // Map the control-row column to a button index (Back=0/Space=1/End=2)
+                // via the cell's resolved action.
+                use legaia_engine_core::name_entry::Control;
+                let ctrl = entry.control_at(entry.cursor);
+                let idx = match ctrl {
+                    Some(Control::Backspace) => Some(0),
+                    Some(Control::Space) => Some(1),
+                    Some(Control::End) => Some(2),
+                    _ => None,
+                };
+                (None, idx)
+            };
+            let view = legaia_engine_render::NameEntryView {
+                grid_rows: &GRID,
+                control_labels: &["Back", "Space", "End"],
+                name: &entry.name,
+                grid_cursor,
+                control_cursor,
+                confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
+                confirm_yes: entry.confirm_yes,
+                caret_on: (self.session.host.world.frame / 16).is_multiple_of(2),
+            };
+            out.extend(legaia_engine_render::name_entry_draws_for(
+                &self.font,
+                &view,
+                (32, 24),
+            ));
+        }
         out
     }
 }
@@ -6103,6 +6140,18 @@ impl ApplicationHandler for PlayWindowApp {
                         .spawn_debug_effect_model(pos, model_index);
                     return;
                 }
+                // `N`: open the name-entry overlay for the lead character. A
+                // dev hand-trigger - the opening `town01` script's field-VM op
+                // that opens it during the establishing sequence is still an
+                // open RE thread; this exercises the ported overlay end-to-end.
+                if matches!(code, KeyCode::KeyN)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                    && !self.session.host.world.name_entry_active()
+                {
+                    self.session.host.world.open_name_entry(0);
+                    return;
+                }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {
                     let prev = self.pad;
@@ -6138,6 +6187,27 @@ impl ApplicationHandler for PlayWindowApp {
                     // Start in field opens the pause menu. Edge-detect so a
                     // held key doesn't auto-reopen.
                     let pressed_edge = self.pad & !self.prev_pad;
+                    // Name-entry overlay is modal: while it's open the field is
+                    // frozen and every pad edge routes into the entry SM (one
+                    // cell / glyph per press). Mirrors the opening `town01`
+                    // naming prompt, which suspends the field VM.
+                    if self.session.host.world.name_entry_active() {
+                        let p = pressed_edge;
+                        let input = legaia_engine_core::name_entry::NameEntryInput {
+                            up: p & 0x0010 != 0,
+                            down: p & 0x0040 != 0,
+                            left: p & 0x0080 != 0,
+                            right: p & 0x0020 != 0,
+                            confirm: p & 0x4000 != 0, // Cross
+                            cancel: p & 0x1000 != 0,  // Triangle
+                        };
+                        self.session.host.world.step_name_entry(input);
+                        // Keep the frame counter advancing so the caret blinks.
+                        self.session.host.world.frame =
+                            self.session.host.world.frame.wrapping_add(1);
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
                     if pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
                         let view_money = self.session.host.world.money;
                         let play_secs = self.session.host.world.play_time_seconds;
