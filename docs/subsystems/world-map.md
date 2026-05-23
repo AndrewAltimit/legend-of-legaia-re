@@ -240,9 +240,28 @@ right way on screen for every azimuth, keeping the remap in lock-step with the
 camera. The native `play-window` feeds the same controller azimuth to both the
 camera and the remap, so they cannot drift.
 
-One retail thread remains open: seeding overworld entities + the region table
-from the boot path (today they are installed through the API / the
-`--world-map` entry).
+### Boot-path seeding
+
+The overworld seeds itself on the natural scene-transition path, not just the
+explicit `--world-map` entry. The overworld shares game mode `0x03` with
+towns/fields, so retail distinguishes it by the loaded scene; the engine
+mirrors that with [`is_world_map_scene`](../../crates/engine-core/src/scene.rs)
+(the three kingdom `mapNN` labels). When the field VM issues a
+`scene_transition(map_id)` that resolves to an overworld scene,
+[`SceneHost::tick`](../../crates/engine-core/src/scene.rs) routes it through
+`SceneHost::enter_world_map_scene` instead of the plain field path:
+`enter_field_scene` (resources + walkability grid + player) followed by routing
+the region-keyed encounter table from the scene's MAN and switching into
+`SceneMode::WorldMap`. The `--world-map` window flag and `enter_world_map_live`
+now delegate to the same `enter_world_map_scene`, so both entries seed
+identically.
+
+One retail thread remains open: seeding overworld **entity** records (portals /
+fixed encounter zones). In retail these are installed by field-VM op handlers
+running against the scene's entity table; the engine does not yet parse that
+table, so entities are still installed through the API
+(`install_world_map_entities*`). The region table (the random-encounter driver)
+is fully boot-path seeded.
 
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see

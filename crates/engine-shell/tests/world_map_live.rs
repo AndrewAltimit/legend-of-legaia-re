@@ -204,3 +204,66 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
         );
     }
 }
+
+/// A field-VM `scene_transition(map_id)` that resolves to an overworld scene is
+/// auto-routed into world-map mode with its region table seeded — the
+/// boot/transition path, not the explicit `--world-map` entry. This is the
+/// regression guard for "the overworld seeds itself when the game walks onto
+/// it", driving the real `SceneHost::tick` transition handler.
+#[test]
+fn world_map_scene_transition_auto_enters_world_map() {
+    use legaia_engine_core::scene::{SceneTickEvent, VecMapIdResolver};
+    use legaia_engine_core::world::SceneMode;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // Boot on a town, then transition to the overworld the way the field VM
+    // would: map_id 0 -> "map03" via the resolver, latched as a pending
+    // scene transition that `SceneHost::tick` processes.
+    let cfg = BootConfig {
+        scene: "town01".into(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .host
+        .set_map_resolver(Box::new(VecMapIdResolver::new(vec!["map03".into()])));
+    session.host.world.pending_scene_transition = Some(0);
+
+    let event = session.host.tick().expect("tick processes the transition");
+    assert!(
+        matches!(&event, SceneTickEvent::SceneEntered { name } if name == "map03"),
+        "transition entered map03, got {event:?}"
+    );
+
+    let world = &session.host.world;
+    assert_eq!(
+        world.mode,
+        SceneMode::WorldMap,
+        "an overworld transition lands in world-map mode, not plain Field"
+    );
+    assert!(
+        world.world_map_region_tracker.is_some(),
+        "the overworld region table is seeded on the transition path"
+    );
+    assert!(
+        world.world_map_ctrl.is_some(),
+        "the world-map camera controller is installed"
+    );
+    let walls: usize = world
+        .field_collision_grid
+        .iter()
+        .map(|b| (b >> 4).count_ones() as usize)
+        .sum();
+    assert!(
+        walls > 0,
+        "the overworld walkability grid is loaded ({walls} walls)"
+    );
+}

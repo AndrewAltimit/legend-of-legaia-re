@@ -311,41 +311,24 @@ impl BootSession {
     /// logs and continues into world-map mode without a region table (camera
     /// only). Returns the active [`SceneMode`].
     pub fn enter_world_map_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
-        match self.host.enter_field_scene(scene, 0) {
-            Ok(()) => log::info!("entered world-map scene '{scene}' (resources loaded)"),
-            Err(e) => log::warn!(
-                "enter_field_scene('{scene}', 0) failed ({e:#}); world map will be camera-only"
-            ),
-        }
-        self.host.world.set_active_scene_label(scene);
-
-        // Build the region-keyed encounter table from the scene's MAN (clone
-        // the bytes out first so the immutable host borrow drops before the
-        // mutable world borrow below).
-        let man = self
-            .host
-            .scene
-            .as_ref()
-            .and_then(|s| s.field_man_payload(&self.host.index).ok().flatten());
-        if let Some(man) = man
-            && let Some(table) =
-                legaia_engine_core::region_encounter::region_encounter_table_from_man(scene, &man)
-        {
-            log::info!(
-                "world-map '{scene}': routed {} encounter regions",
-                table.regions.len()
-            );
-            self.host.world.set_world_map_regions(table);
+        // The scene load + region routing + world-map mode now live in
+        // `SceneHost::enter_world_map_scene`, so the natural boot/transition
+        // path (`SceneHost::tick` auto-routing an overworld scene) and this
+        // explicit `--world-map` entry seed the overworld identically. This
+        // wrapper only layers the live-loop / battle options on top.
+        match self.host.enter_world_map_scene(scene) {
+            Ok(()) => log::info!("entered world-map scene '{scene}' (overworld seeded)"),
+            Err(e) => {
+                log::warn!(
+                    "enter_world_map_scene('{scene}') failed ({e:#}); world map camera-only"
+                );
+                // Still switch into world-map mode so the window has a camera.
+                self.host.world.set_active_scene_label(scene);
+                self.host.world.enter_world_map();
+            }
         }
 
         let world = &mut self.host.world;
-        // `enter_field_scene` already installed slot 0 as the field player and
-        // loaded the per-scene walkability grid. Do NOT re-install here:
-        // `install_field_player` ends with `reset_field_collision_grid`, which
-        // would wipe the overworld's walls (the kingdom maps carry thousands of
-        // wall sub-cells) and leave the player roaming unbounded. Just enter
-        // world-map mode (installs the camera controller).
-        world.enter_world_map();
         world.live_gameplay_loop = true;
         world.set_equipment_table(
             legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table(),

@@ -409,6 +409,27 @@ pub fn is_fmv_trigger_field_scene(label: &str) -> bool {
     FMV_TRIGGER_FIELD_SCENES.contains(&label)
 }
 
+/// Return `true` if a CDNAME label is an overworld (world-map) scene.
+///
+/// Legaia's three kingdom overworlds are `map01` / `map02` / `map03`; they are
+/// the only CDNAME `mapNN` labels. The overworld shares game mode `0x03` with
+/// towns and fields (see `docs/subsystems/field-locomotion.md` "Town / field
+/// parity") - retail does not give it a distinct mode. It distinguishes the
+/// overworld by the scene's own code overlay: the kingdom bundles carry a
+/// world-map-overlay slot (type byte `0x05`, see
+/// `docs/formats/world-map-overlay.md`) that towns/dungeons lack. The engine
+/// classifies by the stable CDNAME label, which is `map` followed by two
+/// digits for exactly these three scenes. A scene that classifies as a world
+/// map is entered through [`SceneHost::enter_world_map_scene`] (which seeds the
+/// region-keyed encounter table + world-map camera) instead of the plain
+/// field path.
+pub fn is_world_map_scene(label: &str) -> bool {
+    match label.strip_prefix("map") {
+        Some(rest) => rest.len() == 2 && rest.bytes().all(|b| b.is_ascii_digit()),
+        None => false,
+    }
+}
+
 /// Engine-override CDNAME→MV cutscene map.
 ///
 /// The retail table lives in the FMV-cutscene overlay (game modes 26/27,
@@ -1580,10 +1601,62 @@ impl SceneHost {
         Ok(())
     }
 
+    /// Enter `name` as the **overworld** (world-map) scene.
+    ///
+    /// The counterpart to [`Self::enter_field_scene`] for the three kingdom
+    /// overworld scenes ([`is_world_map_scene`]). It runs the full field-entry
+    /// load first - the world-map-walk overlay shares the field's locomotion,
+    /// walkability grid, and asset pipeline (see
+    /// `docs/subsystems/world-map.md`) - then:
+    ///
+    /// 1. Routes the region-keyed random-encounter table from the scene's MAN
+    ///    ([`crate::region_encounter::region_encounter_table_from_man`]) onto
+    ///    the overworld via [`crate::world::World::set_world_map_regions`], so
+    ///    `tick_world_map`'s per-tile roll fires real encounters.
+    /// 2. Switches the world into [`crate::world::SceneMode::WorldMap`]
+    ///    (installs the camera controller); the player actor + collision grid
+    ///    that `enter_field_scene` set up stay in place.
+    ///
+    /// Overworld **entity** records (portals / fixed encounter zones) are not
+    /// seeded here: in retail they are installed by the field-VM ops that run
+    /// against the scene's entity table, which the engine does not yet parse -
+    /// a separate open thread. The region table (the random-encounter driver)
+    /// is fully sourced from the MAN.
+    pub fn enter_world_map_scene(&mut self, name: &str) -> Result<()> {
+        // Full field-entry load: resources, walkability grid, player, monster
+        // catalog, scene label. Leaves the world in `Field` mode.
+        self.enter_field_scene(name, 0)?;
+        // Build the region table while only `self.scene` / `self.index` are
+        // borrowed (both immutable), so the owned table outlives the borrow
+        // before the mutable `world` access below.
+        let table = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
+            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, &man));
+        if let Some(table) = table {
+            log::info!(
+                "world-map '{name}': routed {} encounter region(s)",
+                table.regions.len()
+            );
+            self.world.set_world_map_regions(table);
+        }
+        // Switch to world-map mode (idempotent; keeps the installed player +
+        // collision grid).
+        self.world.enter_world_map();
+        Ok(())
+    }
+
     /// One frame: tick the world, materialize any actor-spawn requests
     /// queued by the field VM's `0x4C 0x80` opcode, then process any
     /// pending `scene_transition(map_id)` request. Returns the
     /// [`SceneTickEvent`] describing what happened.
+    ///
+    /// A transition whose resolved scene is an overworld scene
+    /// ([`is_world_map_scene`]) routes through [`Self::enter_world_map_scene`]
+    /// (world-map mode + region table) instead of the plain field path, so the
+    /// boot/transition path seeds the overworld the same way the explicit
+    /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         let _ = self.world.tick();
         self.world
@@ -1591,7 +1664,11 @@ impl SceneHost {
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {
                 Some(name) => {
-                    self.enter_field_scene(&name, 0)?;
+                    if is_world_map_scene(&name) {
+                        self.enter_world_map_scene(&name)?;
+                    } else {
+                        self.enter_field_scene(&name, 0)?;
+                    }
                     return Ok(SceneTickEvent::SceneEntered { name });
                 }
                 None => {
@@ -1891,6 +1968,24 @@ fn seed_effect_vram_from_befect_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn world_map_scene_classifier_matches_only_the_kingdom_overworlds() {
+        // The three kingdom overworld scenes.
+        assert!(is_world_map_scene("map01"));
+        assert!(is_world_map_scene("map02"));
+        assert!(is_world_map_scene("map03"));
+        // Towns, dungeons, cutscene/FMV labels are not overworlds.
+        for label in [
+            "town01", "town0b", "chitei2", "jou", "uru2", "opdeene", "opmap01", "battle", "map1",
+            "map001", "mapxx", "world", "",
+        ] {
+            assert!(
+                !is_world_map_scene(label),
+                "{label} must not classify as world map"
+            );
+        }
+    }
 
     /// Disc-gated: the `etim.dat` effect-sprite TIMs (PROT 0874 section 2)
     /// decode and upload into a software VRAM, populating the fire-sprite tile
