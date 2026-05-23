@@ -1407,7 +1407,15 @@ impl SceneHost {
                     &shared_refs,
                     crate::scene_resources::BuildOptions {
                         kind: crate::scene_resources::SceneLoadKind::Field,
-                        ..Default::default()
+                        // Retail's field loader (FUN_8001F7C0) DMA-uploads
+                        // every TIM in the scene, not just the subset the
+                        // first-frame meshes sample. The town's environment
+                        // geometry (the LZS-packed mesh pack now parsed out of
+                        // the scene_asset_table) samples texture pages across
+                        // the whole atlas, so a render-targeted upload drops
+                        // ~75% of its prims (missing texture page). Uploading
+                        // all TIMs lifts the town keep ratio to ~95%.
+                        upload_all_tims: true,
                     },
                 )
             {

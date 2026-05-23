@@ -101,6 +101,33 @@ The **base wall + floor data is an on-disc blob**: it is the `+0x4000..+0x8000` 
 
 The `+0x8000` map is **not** a terrain-flag grid (an earlier reading). It is a per-tile object/attribute word: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init — note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the field-pack region records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records).
 
+### Object-record format (`+0x0000`, 0x20-byte stride)
+
+`FUN_8003a55c` reads each record at `field_buffer + idx*0x20` (the `.MAP` file's authored
+copy; the runtime region is mutated). Decoded fields:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0x00` | `u16` | X sub-tile offset; `world_x = col*128 + this + 0x40` |
+| `+0x02` | `u16` | Y offset added to the tile floor height (`heightLUT[grid_byte & 0xf]`) |
+| `+0x04` | `u16` | Z sub-tile offset; `world_z = row*128 - (this - 0x40)` |
+| `+0x06` | `i8`  | footprint column delta to the anchor tile |
+| `+0x07` | `i8`  | footprint row delta to the anchor tile |
+| `+0x12` | `u16` | flags; bit `0x4` = placed/active, bit `0x800` ORs actor `+0x74` bit `0x10000000` |
+| `+0x1e` | `u8`  | non-zero ORs actor `+0x74` bit `0x40000000` |
+
+The anchor object is created by `FUN_80024c88(pos, …)` (writes `actor+0x14/16/18`), then
+`FUN_8003a55c` writes `actor+0x60 = object_index` and copies record `+0x08/+0x0a/+0x0c`
+into `actor+0x24/+0x26/+0x28`. For town01 the 41 placed records carry near-zero
+`+0x08..+0x0c`, i.e. **this table holds the NPC / event / trigger spawns, not the visible
+building meshes** — the field actor pool is small (about 8 slots, `0xD8` stride, list
+heads at `0x8007C34C..0x36C`, player `_DAT_8007c364`). The town's static architecture (the
+LZS-packed mesh pack inside the scene_asset_table; see
+[`scene-bundles.md`](../formats/scene-bundles.md)) is drawn by a separate static path, not
+as actors. The per-mesh world-transform source for that static geometry is an open thread,
+shared with the world-map's "per-mesh world placement" gap — see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
 ## Provenance
 
 - Controller `FUN_801d01b0`, position writes `0x801D0684 / 06E4 / 0744 / 07B4` — see `ghidra/scripts/funcs/overlay_0897_801d0684.txt`.
@@ -118,6 +145,10 @@ The controller is selected by **game mode**: mode `0x03` loads the field overlay
 The clean-room engine loads the base grid directly from the field map file. `SceneHost::enter_field_scene` resolves the `.MAP` entry via `Scene::field_map_index` — the unique CDNAME-block entry whose **extended on-disc footprint** is exactly `0x12000` bytes — and copies its `+0x4000..+0x8000` region into `World::field_collision_grid` (`World::load_field_collision_grid`). The grid byte format (high nibble = sub-cell wall bits, low nibble = floor-elevation tier) matches the runtime 1:1, so it copies verbatim; the field-VM `0x4C` nibble-7 hook then layers deltas on top as the prescript runs.
 
 Footprint caveat: the TOC-**indexed** payload of the `.MAP` entry is only the first `0x4000` bytes (the object-record region); the collision grid and everything past it live in the entry's **trailing-gap sectors**, so the engine reads `ProtIndex::entry_bytes_extended`, not the indexed `SceneEntry::bytes`. Verified byte-exact: `town01`'s `entry10[0x4000..0x8000]` equals the live collision grid in a town01 save state (1297 wall tiles, zero diff). Disc-gated coverage: `crates/engine-core/tests/field_locomotion_disc.rs` (base grid non-empty on `town01` + `map03`, and the player stops at a real base wall).
+
+### Environment geometry
+
+A field/town scene's environment meshes (the terrain, buildings, and props) are Legaia TMDs packed inside **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4: 121 meshes, ≈8041 vertices). The clean-room `SceneResources` TMD pass scans each entry's LZS-decompressed sections in addition to its raw bytes (`tmd_scan::scan_entry`, the same path the TIM pass already used), so these meshes land in the scene TMD pool; the `scene_tmd_stream` skip still drops battle-character meshes in field mode. The field build uses `SceneLoadKind::Field` with `upload_all_tims`, matching retail's field loader (`FUN_8001f7c0`), which DMA-uploads every TIM — the environment meshes sample texture pages across the whole atlas, so a render-targeted upload drops most of their prims. Per-mesh **world placement** for this static geometry is still open (see [Object-record format](#object-record-format-0x0000-0x20-byte-stride) above: the `+0x0000` table is NPC/event spawns, not building transforms, and the buildings are not actors).
 
 ### Scene-entry script
 

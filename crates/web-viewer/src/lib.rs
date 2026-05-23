@@ -60,6 +60,10 @@ struct ViewerEntry {
     /// Where the entry's leading TMD lives (if any). Used by the 3D viewer
     /// path. None ⇒ no TMD; render the TIM instead (or a "no TMD" message).
     tmd_source: Option<TmdSource>,
+    /// Total Legaia TMDs found across the entry's LZS sections (the
+    /// scene_asset_table environment-geometry mesh pack). `tmd_source` renders
+    /// the first; this surfaces how many more the entry carries.
+    tmd_pack_count: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -68,6 +72,15 @@ enum TmdSource {
     Direct { offset: usize },
     /// scene_tmd_stream wrapper: 4-byte chunk0 header + bare TMD.
     SceneTmdStream { offset: usize, len: usize },
+    /// TMD packed inside one of the entry's LZS-decompressed sections.
+    /// Field/town scene_asset_table entries store their environment-geometry
+    /// mesh pack this way (`town01` = entry 4, 121 meshes). `offset`/`len` are
+    /// within `tmd_scan::scan_entry(buf).lzs_sections[section]`.
+    Lzs {
+        section: usize,
+        offset: usize,
+        len: usize,
+    },
 }
 
 #[derive(Clone)]
@@ -341,8 +354,9 @@ impl LegaiaViewer {
                 }
             }
 
-            // Detect a leading TMD for the 3D viewer path.
-            let tmd_source = detect_tmd_in_entry(buf, report.class);
+            // Detect a leading TMD for the 3D viewer path (raw, scene_tmd_stream,
+            // or the first of an LZS-packed environment-geometry mesh pack).
+            let (tmd_source, tmd_pack_count) = detect_tmd_in_entry(buf, report.class);
 
             // Skip entries that have neither a viewable TIM nor a parseable TMD.
             if first_tim.is_none() && tmd_source.is_none() {
@@ -355,6 +369,7 @@ impl LegaiaViewer {
                 first_tim,
                 tim_count,
                 tmd_source,
+                tmd_pack_count,
             });
         }
 
@@ -1811,23 +1826,13 @@ impl LegaiaViewer {
         let Some(entry) = self.viewable.get(self.current) else {
             return Vec::new();
         };
-        let off = entry.meta.byte_offset as usize;
-        let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
-        if end > self.disc.len() {
-            return Vec::new();
-        }
-        let buf = &self.disc[off..end];
-
-        let (tmd_buf, tmd_len) = match entry.tmd_source {
-            Some(TmdSource::Direct { offset }) => (&buf[offset..], buf.len() - offset),
-            Some(TmdSource::SceneTmdStream { offset, len }) => (&buf[offset..offset + len], len),
-            None => return Vec::new(),
-        };
-        let _ = tmd_len;
-        let Ok(tmd) = legaia_tmd::parse(tmd_buf) else {
+        let Some(tmd_buf) = self.tmd_bytes_for(entry) else {
             return Vec::new();
         };
-        let Some(prepared) = tmd3d::prepare(&tmd, tmd_buf) else {
+        let Ok(tmd) = legaia_tmd::parse(&tmd_buf) else {
+            return Vec::new();
+        };
+        let Some(prepared) = tmd3d::prepare(&tmd, &tmd_buf) else {
             return Vec::new();
         };
         tmd3d::render(
@@ -1850,7 +1855,7 @@ impl LegaiaViewer {
             None => (0, 0),
         };
         format!(
-            "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"width\":{},\"height\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{},\"tmd_tris\":{},\"tmd_verts\":{}}}",
+            "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"width\":{},\"height\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{},\"tmd_tris\":{},\"tmd_verts\":{},\"tmd_pack_count\":{}}}",
             self.current,
             e.meta.index,
             e.class.name(),
@@ -1861,6 +1866,7 @@ impl LegaiaViewer {
             has_tmd,
             tmd_tris,
             tmd_verts,
+            e.tmd_pack_count,
         )
     }
 
@@ -2061,18 +2067,35 @@ impl LegaiaViewer {
     /// Parse the current entry's TMD if it has one. Returns the parsed TMD
     /// plus the byte slice it was parsed from (caller may need it again to
     /// walk per-object primitive sections).
-    fn parse_current_tmd(&self) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
-        let entry = self.viewable.get(self.current)?;
+    /// Resolve an entry's renderable TMD bytes for any [`TmdSource`] variant,
+    /// decompressing the LZS section on demand for the environment-geometry
+    /// mesh pack. Centralises the slicing the 3D paths share.
+    fn tmd_bytes_for(&self, entry: &ViewerEntry) -> Option<Vec<u8>> {
         let off = entry.meta.byte_offset as usize;
         let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
-        if end > self.disc.len() {
-            return None;
+        let buf = self.disc.get(off..end)?;
+        match entry.tmd_source? {
+            TmdSource::Direct { offset } => buf.get(offset..).map(<[u8]>::to_vec),
+            TmdSource::SceneTmdStream { offset, len } => {
+                buf.get(offset..offset + len).map(<[u8]>::to_vec)
+            }
+            TmdSource::Lzs {
+                section,
+                offset,
+                len,
+            } => {
+                let scan = legaia_asset::tmd_scan::scan_entry(buf);
+                scan.lzs_sections
+                    .get(section)?
+                    .get(offset..offset + len)
+                    .map(<[u8]>::to_vec)
+            }
         }
-        let buf = &self.disc[off..end];
-        let tmd_buf: Vec<u8> = match entry.tmd_source? {
-            TmdSource::Direct { offset } => buf[offset..].to_vec(),
-            TmdSource::SceneTmdStream { offset, len } => buf[offset..offset + len].to_vec(),
-        };
+    }
+
+    fn parse_current_tmd(&self) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let entry = self.viewable.get(self.current)?;
+        let tmd_buf = self.tmd_bytes_for(entry)?;
         let tmd = legaia_tmd::parse(&tmd_buf).ok()?;
         Some((tmd, tmd_buf))
     }
@@ -2254,21 +2277,13 @@ impl LegaiaViewer {
     }
 
     fn tmd_stats(&self, entry: &ViewerEntry) -> (usize, usize) {
-        let off = entry.meta.byte_offset as usize;
-        let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
-        if end > self.disc.len() {
-            return (0, 0);
-        }
-        let buf = &self.disc[off..end];
-        let tmd_buf = match entry.tmd_source {
-            Some(TmdSource::Direct { offset }) => &buf[offset..],
-            Some(TmdSource::SceneTmdStream { offset, len }) => &buf[offset..offset + len],
-            None => return (0, 0),
-        };
-        let Ok(tmd) = legaia_tmd::parse(tmd_buf) else {
+        let Some(tmd_buf) = self.tmd_bytes_for(entry) else {
             return (0, 0);
         };
-        let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, tmd_buf);
+        let Ok(tmd) = legaia_tmd::parse(&tmd_buf) else {
+            return (0, 0);
+        };
+        let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, &tmd_buf);
         (mesh.triangle_count(), mesh.vertex_count())
     }
 
@@ -2458,26 +2473,55 @@ fn resolve_canvas(canvas_id: &str) -> Result<HtmlCanvasElement, JsValue> {
 ///   - Bare TMD at offset 0 (rare; caught by raw TMD magic check).
 ///
 /// Returns None if no TMD is present.
-fn detect_tmd_in_entry(buf: &[u8], class: Class) -> Option<TmdSource> {
+/// Returns the renderable TMD source plus the total count of LZS-packed TMDs
+/// in the entry (0 unless the geometry lives in LZS sections).
+fn detect_tmd_in_entry(buf: &[u8], class: Class) -> (Option<TmdSource>, usize) {
     if class == Class::SceneTmdStream
         && let Some(s) = legaia_asset::scene_tmd_stream::detect(buf)
     {
         let r = s.tmd_range();
         // Validate the TMD actually parses; the detector is structural only.
         if legaia_tmd::parse(&buf[r.start..r.end]).is_ok() {
-            return Some(TmdSource::SceneTmdStream {
-                offset: r.start,
-                len: r.end - r.start,
-            });
+            return (
+                Some(TmdSource::SceneTmdStream {
+                    offset: r.start,
+                    len: r.end - r.start,
+                }),
+                0,
+            );
         }
     }
     // Bare TMD at offset 0?
     if buf.len() >= legaia_tmd::HEADER_SIZE
         && let Ok(_) = legaia_tmd::parse(buf)
     {
-        return Some(TmdSource::Direct { offset: 0 });
+        return (Some(TmdSource::Direct { offset: 0 }), 0);
     }
-    None
+    // Field/town environment geometry: Legaia TMDs packed inside the entry's
+    // LZS-decompressed sections (the scene_asset_table mesh pack). The raw
+    // scanners above can't see these, so the viewer reported "no TMD" for
+    // whole towns. `scan_entry` walks the LZS sections; render the first and
+    // surface the total count.
+    let scan = legaia_asset::tmd_scan::scan_entry(buf);
+    let lzs_hits: Vec<_> = scan
+        .hits
+        .iter()
+        .filter_map(|(src, hit)| match src {
+            legaia_asset::tmd_scan::Source::Lzs(idx) => Some((*idx, hit)),
+            legaia_asset::tmd_scan::Source::Raw => None,
+        })
+        .collect();
+    if let Some((section, hit)) = lzs_hits.first() {
+        return (
+            Some(TmdSource::Lzs {
+                section: *section,
+                offset: hit.offset,
+                len: hit.byte_len,
+            }),
+            lzs_hits.len(),
+        );
+    }
+    (None, 0)
 }
 
 // ---------------------------------------------------------------------------

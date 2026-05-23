@@ -5051,14 +5051,42 @@ impl PlayWindowApp {
     }
 
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
-        orbit_camera_mvp(
-            self.scene_aabb.0,
-            self.scene_aabb.1,
-            0.25,
-            0.4,
-            self.win.elapsed_secs(),
-            aspect,
-        )
+        // Frame the player's vicinity, not the whole scene. Loading the full
+        // town environment-geometry pack makes `scene_aabb` (the union of every
+        // mesh's local extent) span thousands of units, so fitting it pulls the
+        // orbit camera far enough out that the actually-drawn terrain near the
+        // player shrinks to a speck. Until per-mesh world placement lands, build
+        // a fixed-size framing box around the player actor (the field draws
+        // actor-bound meshes at actor positions) so the view stays close.
+        const FIELD_VIEW_HALF: f32 = 700.0;
+        let (lo, hi) = self
+            .session
+            .host
+            .world
+            .actors
+            .first()
+            .filter(|p| p.active || p.tmd_binding.is_some())
+            .map(|p| {
+                let (cx, cy, cz) = (
+                    p.move_state.world_x as f32,
+                    p.move_state.world_y as f32,
+                    p.move_state.world_z as f32,
+                );
+                (
+                    [
+                        cx - FIELD_VIEW_HALF,
+                        cy - FIELD_VIEW_HALF,
+                        cz - FIELD_VIEW_HALF,
+                    ],
+                    [
+                        cx + FIELD_VIEW_HALF,
+                        cy + FIELD_VIEW_HALF,
+                        cz + FIELD_VIEW_HALF,
+                    ],
+                )
+            })
+            .unwrap_or((self.scene_aabb.0, self.scene_aabb.1));
+        orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
@@ -7215,20 +7243,21 @@ fn cmd_play_window_with_record(
             }
         }
         let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-        // Use Battle kind so scene_tmd_stream entries are *included*:
-        // most town/field scenes ship their party-character meshes
-        // inside scene_tmd_stream-shaped entries, and the engine has
-        // no separate field-geometry dispatch yet. Switching to
-        // `SceneLoadKind::Field` (which retail uses for field-load)
-        // strips those TMDs and leaves the scene with zero meshes.
-        // Matches the diagnostic `info` subcommand. Revisit when a
-        // field-geometry dispatch lands.
+        // Field-load model (matches retail FUN_8001F7C0 + the engine's
+        // `enter_field_scene`): `SceneLoadKind::Field` skips the battle-
+        // character `scene_tmd_stream` meshes, and the TMD scan now pulls
+        // the town's environment geometry out of the scene_asset_table's
+        // LZS-packed mesh pack (previously invisible to the raw scanner,
+        // which left the field with a single stray battle mesh). Upload
+        // every TIM, as retail's field loader DMAs the whole atlas - the
+        // town meshes sample texture pages across all of VRAM, so a
+        // render-targeted upload drops most of their prims.
         let (res, _stats) = SceneResources::build_targeted_with_options(
             s,
             &shared_refs,
             BuildOptions {
-                kind: SceneLoadKind::Battle,
-                ..Default::default()
+                kind: SceneLoadKind::Field,
+                upload_all_tims: true,
             },
         )?;
         res
