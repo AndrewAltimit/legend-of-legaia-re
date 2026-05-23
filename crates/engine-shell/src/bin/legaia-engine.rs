@@ -180,6 +180,11 @@ enum Cmd {
         /// inline record.
         #[arg(long)]
         all: bool,
+        /// Print the full field-VM opcode disassembly of one partition-1
+        /// record (by index; record 0 is the scene-entry system script).
+        /// Useful for tracing scene-entry / cutscene / dialog flow.
+        #[arg(long)]
+        disasm_record: Option<usize>,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -951,7 +956,8 @@ fn main() -> Result<()> {
             extracted_root,
             disc,
             all,
-        } => cmd_man_scripts(&scene, &extracted_root, disc.as_deref(), all),
+            disasm_record,
+        } => cmd_man_scripts(&scene, &extracted_root, disc.as_deref(), all, disasm_record),
         Cmd::VramOracle {
             scene,
             extracted_root,
@@ -1772,6 +1778,7 @@ fn cmd_man_scripts(
     extracted_root: &Path,
     disc: Option<&Path>,
     all: bool,
+    disasm_record: Option<usize>,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
     use legaia_engine_core::scene_bundle;
@@ -1846,6 +1853,36 @@ fn cmd_man_scripts(
         "summary: {} yield sites, {} decode as inline records, {} match the Tetsu signature",
         total_yields, total_records, tetsu,
     );
+
+    if let Some(target) = disasm_record {
+        use legaia_engine_vm::field_disasm::{LinearWalker, format_instruction};
+        let rec = records
+            .iter()
+            .find(|r| r.index == target)
+            .with_context(|| format!("no partition-1 record with index {target}"))?;
+        let end = rec.script_start + rec.body_len;
+        let body = man
+            .get(rec.script_start..end)
+            .with_context(|| format!("record {target} body slice out of range"))?;
+        println!(
+            "\n--- disasm P1[{}] (start=0x{:05X} pc0={} body={}b) ---",
+            rec.index, rec.script_start, rec.pc0, rec.body_len,
+        );
+        for insn in LinearWalker::new(body, rec.pc0) {
+            match insn {
+                Ok(insn) => println!(
+                    "  0x{:05X} (+0x{:04X})  {}",
+                    rec.script_start + insn.pc,
+                    insn.pc,
+                    format_instruction(&insn, body),
+                ),
+                Err((pc, e)) => {
+                    println!("  0x{:05X} [decode stopped: {e:?}]", rec.script_start + pc);
+                    break;
+                }
+            }
+        }
+    }
     Ok(())
 }
 

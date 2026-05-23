@@ -171,7 +171,14 @@ _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
     <li><strong>Field scene init.</strong> <code>FUN_801D6704</code> reads the resident map id and loads geometry + MAN (<code>FUN_8003AEB0</code>) + camera + fog + BGM through the field loader <code>FUN_8001F7C0</code>, allocates the game-mode work buffer, then writes <code>_DAT_8007B83C = 3</code>.</li>
     <li><strong>Mode 3 (field RUN).</strong> The field per-frame loop ("MAIN MODE", <code>game_mode 0x03</code>) takes over. So modes 2/3 are the field/town gameplay INIT/RUN pair &mdash; <em>not</em> an options screen, despite the dev label and older notes.</li>
   </ol>
-  <p>The mode-transition control flow is mirrored in <code>legaia_engine_vm::title_overlay</code> (<code>MASTER_GAME_MODE_FIELD_RUN</code>, <code>FIELD_SCENE_INIT_PC</code>, <code>MENU_INDEX_NEW_GAME</code>) and <code>World::begin_new_game</code> in <code>engine-core</code>. The <em>fresh-state seed</em> a new game establishes (starting party stats, gold, scene id) comes from a separate, not-yet-pinned new-game-init routine that runs before mode 2; <code>FUN_801D6704</code> is generic field entry and reads that state from globals.</p>
+  <p>The mode-transition control flow is mirrored in <code>legaia_engine_vm::title_overlay</code> (<code>MASTER_GAME_MODE_FIELD_RUN</code>, <code>FIELD_SCENE_INIT_PC</code>, <code>MENU_INDEX_NEW_GAME</code>) and <code>World::begin_new_game</code> in <code>engine-core</code>. The <em>fresh-state seed</em> a new game establishes is the new-game data-init <code>FUN_80034A6C</code> (reached via the boot mode initializer <code>FUN_8001DCF8</code>):</p>
+  <ul class="bullets">
+    <li><strong>Gold</strong> &rarr; party gold <code>_DAT_8008459C</code> is set to a hardcoded <strong>500</strong> (a constant, not a template field). Mirror: <code>NEW_GAME_STARTING_GOLD</code>.</li>
+    <li><strong>Story flags</strong> &rarr; the routine zeroes a ~<code>0x200</code>-byte story-flag region, so a New Game starts with all flags clear.</li>
+    <li><strong>Party stats</strong> &rarr; it calls <code>FUN_800560B4</code>, which expands the <code>SCUS_942.54</code> starting-party template into the live records (stride <code>0x414</code>), copying each member's <em>default name</em> &mdash; so a name-entry screen would overwrite it later; the data seed never prompts.</li>
+    <li><strong>Opening scene</strong> &rarr; the map-name buffer's default <code>town01</code> (Rim Elm) is the scene a New Game enters; the data seed does not set it.</li>
+  </ul>
+  <p><code>FUN_801D6704</code> is generic field entry and reads this seeded state from globals.</p>
   <h3>Sprite-emit helpers</h3>
   <p>The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in <code>legaia_engine_vm::title_prim</code>:</p>
   <ul class="bullets">

@@ -104,6 +104,16 @@ const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 /// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
 pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 
+/// Starting gold (money) a New Game grants the party.
+///
+/// The retail new-game data-init `FUN_80034A6C` writes the party-gold global
+/// `_DAT_8008459C` (the same word the battle-victory reward writer
+/// `FUN_8004F0E8` credits) to a hardcoded `500` - it is a constant in the
+/// init routine, not a field of the starting-party template. The same routine
+/// also zeroes the story-flag region and calls the stat seed `FUN_800560B4`.
+/// See `ghidra/scripts/funcs/80034a6c.txt`.
+pub const NEW_GAME_STARTING_GOLD: i32 = 500;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
@@ -1492,19 +1502,24 @@ impl World {
     /// engine's mapping of master mode 3. Distinct from the Continue path,
     /// which instead hydrates the world from a save slot.
     ///
-    /// This does **not** itself seed the starting party stats, gold, or
-    /// opening scene id — in retail those come from a separate new-game-init
-    /// routine that runs before mode 2, and `FUN_801D6704` reads them from
-    /// globals. The starting party half is pinned: a caller with the disc's
-    /// `SCUS_942.54` calls [`World::seed_starting_party`] (see
-    /// [`crate::new_game`]) right after this to drop Vahn into slot 0, and
-    /// enters the opening scene (`town01`) through the normal scene-load path.
+    /// Gold and the story-flag clear mirror the retail new-game data-init
+    /// `FUN_80034A6C`: it zeroes the story-flag region and writes party gold
+    /// (`_DAT_8008459C`) to a hardcoded [`NEW_GAME_STARTING_GOLD`] = 500. The
+    /// starting party stats come from [`World::seed_starting_party`] (the
+    /// `FUN_800560B4` template expansion `FUN_80034A6C` calls), which a caller
+    /// with the disc's `SCUS_942.54` invokes right after this to drop Vahn into
+    /// slot 0; the opening scene (`town01`) is entered through the normal
+    /// scene-load path. The opening narration + name-entry sequence is not part
+    /// of this data seed (the seed copies the template's default name).
     // REF: FUN_80025B64
     // REF: FUN_801D6704
+    // REF: FUN_80034A6C
+    // REF: FUN_800560B4
+    // REF: FUN_8004F0E8
     pub fn begin_new_game(&mut self) {
         self.story_flags = 0;
         self.story_flag_bits.clear();
-        self.money = 0;
+        self.money = NEW_GAME_STARTING_GOLD;
         self.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_fmv_trigger = None;
@@ -11941,7 +11956,8 @@ mod tests {
         assert_eq!(world.mode, SceneMode::Field);
         assert_eq!(world.story_flags, 0);
         assert!(world.story_flag_bits.is_empty());
-        assert_eq!(world.money, 0);
+        // New-game gold is the retail constant (FUN_80034A6C), not zero.
+        assert_eq!(world.money, NEW_GAME_STARTING_GOLD);
         assert!(world.inventory.is_empty());
         assert!(!world.scripted_encounter_armed);
         assert!(world.encounter.is_none());

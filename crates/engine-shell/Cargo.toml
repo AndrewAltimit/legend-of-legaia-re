@@ -17,6 +17,7 @@ legaia-art = { path = "../art" }
 legaia-asset = { path = "../asset" }
 legaia-cheats = { path = "../cheats" }
 legaia-engine-core = { path = "../engine-core" }
+legaia-engine-vm = { path = "../engine-vm" }
 legaia-engine-audio = { path = "../engine-audio" }
 legaia-engine-render = { path = "../engine-render" }
 legaia-prot = { path = "../prot" }
