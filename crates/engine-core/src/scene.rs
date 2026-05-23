@@ -1328,6 +1328,20 @@ impl SceneHost {
         {
             eprintln!("[scene] global TMD-pool seed skipped: {err:#}");
         }
+        // Load the battle effect-model library from PROT 0871 (`etmd.dat`)
+        // into `DAT_8007C018[3..=32]`. Retail pulls this at battle init; the
+        // engine keeps it resident across the battle scene-mode overlay (like
+        // the etim VRAM and effect catalog), so seeding it at field entry is
+        // equivalent. It overwrites the two trailing slots of the §0 field
+        // head (`[3]`, `[4]`) - matching retail's temporal layout - and gives
+        // the effect-model render path the real Gimard *Tail Fire* mesh at
+        // `[26]`. Idempotent: only loads when the library isn't already
+        // resident. Soft-fails - the §0 preview stand-in remains the fallback.
+        if !effect_model_library_loaded(&self.world)
+            && let Err(err) = seed_effect_model_library_from_etmd(&self.index, &mut self.world)
+        {
+            eprintln!("[scene] effect-model library (PROT 0871) load skipped: {err:#}");
+        }
         // Load the runtime effect-script catalog from PROT 0873 (`efect.dat`)
         // so the battle-action SM's `ui_element` spawns resolve to real
         // effect scripts. Idempotent: only loads when the catalog is empty
@@ -1445,14 +1459,46 @@ const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
 /// retail pack carries exactly 5 character meshes.
 const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
 
-/// Index into [`crate::world::World::global_tmd_pool`] of the *Tail Fire*
-/// flame mesh - the smallest of the five `etmd.dat` models (2 objects, 18
-/// verts, 25 prims). Its textured primitives sample `etim` at page (832,256)
-/// 4bpp with CLUT row 478 (`cba=0x778E`), byte-for-byte the live battle prim
-/// pool captured mid-cast (Gimard's *Tail Fire*). The other four `etmd` models
-/// are large (200-400 prims) - bigger spell/summon effects. See
+/// Index into [`crate::world::World::global_tmd_pool`] of the PROT 0874 §0
+/// *preview* flame mesh - the smallest of that section's five TMDs (2 objects,
+/// 18 verts, 25 prims). It bakes the `etim` CLUT (`cba=0x778E@(224,478)`,
+/// `tsb=0x001D@(832,256)`) and looks flame-shaped, so the engine could render
+/// it through the standard VRAM-mesh pipeline as a stand-in.
+///
+/// **This is a preview mesh, not the model retail draws.** The real battle
+/// flame is [`GIMARD_TAIL_FIRE_MODEL_INDEX`], pulled from the PROT 0871
+/// effect-model library ([`seed_effect_model_library_from_etmd`]). The
+/// stand-in is kept only as a fallback when that library isn't loaded (e.g.
+/// raw-PROT.DAT inspection without the battle assets). See
 /// `docs/formats/effect.md`.
 pub const ETMD_TAIL_FIRE_MODEL_INDEX: usize = 4;
+
+/// PROT entry holding the battle effect-model library (`etmd.dat`): a 30-entry
+/// `asset::pack` of Legaia TMDs (`word[0]=30`, every entry magic `0x80000002`),
+/// stored uncompressed. Retail registers all 30 verbatim into
+/// `DAT_8007C018[3..=32]` at battle init (`FUN_800520F0` debug index `0x367` ->
+/// `FUN_80026B4C`); the dev-path name is `h:\prot\battle\etmd.dat`. The CDNAME
+/// label `sound_data` is misleading - this is the effect-model library, not
+/// audio. See `docs/formats/effect.md`.
+const PROT_EFFECT_MODEL_LIBRARY_ENTRY: u32 = 871;
+
+/// Base index in [`crate::world::World::global_tmd_pool`] (= `DAT_8007C018`)
+/// where the PROT 0871 effect-model library registers. Its 30 models occupy
+/// `[3..=32]`, overwriting the two trailing slots of the PROT 0874 §0 field
+/// head (`[3]`, `[4]`) - exactly retail's temporal layout (the field head
+/// seeds `[0..=4]`; battle init reloads `[3..=32]`).
+const EFFECT_MODEL_LIBRARY_BASE: usize = 3;
+
+/// Number of TMDs in the PROT 0871 effect-model library (`word[0]`).
+const EFFECT_MODEL_LIBRARY_COUNT: usize = 30;
+
+/// Index in [`crate::world::World::global_tmd_pool`] of Gimard's *Tail Fire*
+/// flame model (`DAT_8007C018[26]`) - the model retail draws for the Gimard
+/// Seru cast. Equals [`EFFECT_MODEL_LIBRARY_BASE`]` + 23` (pack entry 23). Its
+/// fire flicker is CLUT/palette cycling driven by the PROT 0905 summon overlay
+/// (the model geometry is static). Supersedes the PROT 0874 §0 preview
+/// stand-in at [`ETMD_TAIL_FIRE_MODEL_INDEX`]. See `docs/formats/effect.md`.
+pub const GIMARD_TAIL_FIRE_MODEL_INDEX: usize = 26;
 
 /// Seed `World::global_tmd_pool[0..=4]` from PROT 0874 (`befect_data`)
 /// section 0. Soft-fails (returns `Err`) when the entry is missing, the
@@ -1523,6 +1569,79 @@ fn seed_global_tmd_pool_from_befect_data(
         );
     }
     Ok(())
+}
+
+/// Seed the battle effect-model library from PROT 0871 (`etmd.dat`) into
+/// `World::global_tmd_pool[3..=32]` (retail `DAT_8007C018[3..=32]`).
+///
+/// PROT 0871 is an uncompressed 30-entry [`legaia_asset::pack`] of Legaia
+/// TMDs; the engine walks it directly (no LZS) and parses each entry, mapping
+/// pack entry `i` -> pool index [`EFFECT_MODEL_LIBRARY_BASE`]` + i`. This is
+/// the library retail loads at battle init (`FUN_800520F0`); the live
+/// Tail-Fire RAM confirms these 30 models are resident during a Seru cast
+/// while PROT 0874 §0's five TMDs are not - so this supersedes the §0 preview
+/// head for the effect-model render path ([`GIMARD_TAIL_FIRE_MODEL_INDEX`] is
+/// the flame retail draws).
+///
+/// Soft-fails (returns `Err`) when the entry is missing or the pack walk
+/// fails; entries that don't parse as TMDs are skipped individually. The two
+/// overlapping slots (`[3]`, `[4]`) from the PROT 0874 §0 head are overwritten
+/// here, matching retail's temporal load order.
+fn seed_effect_model_library_from_etmd(
+    index: &ProtIndex,
+    world: &mut crate::world::World,
+) -> Result<()> {
+    // The pack body spans PROT 0871's full on-disc footprint (the last TMD
+    // sits past the TOC-indexed end), so read the extended footprint - the
+    // indexed-only view truncates the pack mid-table.
+    let raw = index
+        .entry_bytes_extended(PROT_EFFECT_MODEL_LIBRARY_ENTRY)
+        .with_context(|| {
+            format!(
+                "read PROT entry {} (etmd.dat effect-model library)",
+                PROT_EFFECT_MODEL_LIBRARY_ENTRY
+            )
+        })?;
+    let pack_entries = legaia_asset::pack::extract_pack(&raw)
+        .context("walk PROT 0871 (etmd.dat) as a TMD pack")?;
+    let mut loaded = 0usize;
+    for (i, body) in pack_entries
+        .iter()
+        .enumerate()
+        .take(EFFECT_MODEL_LIBRARY_COUNT)
+    {
+        let tmd = match legaia_tmd::parse(body) {
+            Ok(t) => t,
+            Err(err) => {
+                eprintln!("[scene] etmd library slot {i} did not parse as TMD ({err:#}); skipping");
+                continue;
+            }
+        };
+        world.set_global_tmd(
+            EFFECT_MODEL_LIBRARY_BASE + i,
+            std::sync::Arc::new(crate::world::GlobalTmd {
+                tmd,
+                raw: body.to_vec(),
+            }),
+        );
+        loaded += 1;
+    }
+    if loaded == 0 {
+        anyhow::bail!("etmd library (PROT 0871) carried no parseable TMDs");
+    }
+    Ok(())
+}
+
+/// True when the PROT 0871 effect-model library is already resident in the
+/// pool (every slot in `[3..=32]` populated). Used to keep
+/// [`seed_effect_model_library_from_etmd`] idempotent across scene
+/// transitions, mirroring the field-head guard.
+fn effect_model_library_loaded(world: &crate::world::World) -> bool {
+    let end = EFFECT_MODEL_LIBRARY_BASE + EFFECT_MODEL_LIBRARY_COUNT;
+    world.global_tmd_pool.len() >= end
+        && world.global_tmd_pool[EFFECT_MODEL_LIBRARY_BASE..end]
+            .iter()
+            .all(|s| s.is_some())
 }
 
 /// PROT 0874 (`befect_data`) section index carrying `etim.dat` - the battle
@@ -1679,6 +1798,67 @@ mod tests {
         assert!(
             flame_prims < 64,
             "flame model is a small mesh, got {flame_prims} prims"
+        );
+    }
+
+    /// Disc-gated: the PROT 0871 effect-model library (`etmd.dat`) is a 30-entry
+    /// TMD pack that registers into `World::global_tmd_pool[3..=32]`, and the
+    /// Gimard *Tail Fire* slot ([`GIMARD_TAIL_FIRE_MODEL_INDEX`]) resolves to a
+    /// real Legaia TMD. Pins the library load + index to real disc bytes. Skips
+    /// when the disc data isn't present.
+    #[test]
+    fn etmd_effect_model_library_registers_into_global_pool() {
+        if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        }
+        let root = ["extracted", "../../extracted"]
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.join("PROT.DAT").is_file());
+        let Some(root) = root else {
+            eprintln!("[skip] extracted/PROT.DAT missing");
+            return;
+        };
+        let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
+        let mut world = crate::world::World::default();
+
+        // Library not loaded yet -> guard reports false.
+        assert!(!effect_model_library_loaded(&world));
+
+        seed_effect_model_library_from_etmd(&index, &mut world).expect("seed etmd library");
+
+        // All 30 models register into [3..=32], and the guard is now true.
+        assert!(effect_model_library_loaded(&world));
+        for i in 0..EFFECT_MODEL_LIBRARY_COUNT {
+            assert!(
+                world
+                    .global_tmd((EFFECT_MODEL_LIBRARY_BASE + i) as i16)
+                    .is_some(),
+                "effect-model library slot {i} -> pool {} should be present",
+                EFFECT_MODEL_LIBRARY_BASE + i
+            );
+        }
+
+        // The named Gimard flame slot resolves to a real TMD with geometry.
+        let flame = world
+            .global_tmd(GIMARD_TAIL_FIRE_MODEL_INDEX as i16)
+            .expect("Gimard Tail Fire model present");
+        let flame_prims: usize = flame
+            .tmd
+            .objects
+            .iter()
+            .map(|o| o.header.n_primitive as usize)
+            .sum();
+        assert!(
+            flame_prims > 0,
+            "Gimard flame model carries primitives, got {flame_prims}"
+        );
+        // The flame index falls inside the library window.
+        assert_eq!(
+            GIMARD_TAIL_FIRE_MODEL_INDEX,
+            EFFECT_MODEL_LIBRARY_BASE + 23,
+            "Gimard flame is DAT_8007C018[26] = pack entry 23"
         );
     }
 

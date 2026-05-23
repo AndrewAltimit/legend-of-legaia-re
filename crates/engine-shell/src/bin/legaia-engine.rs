@@ -6023,10 +6023,24 @@ impl ApplicationHandler for PlayWindowApp {
                             ]
                         })
                         .unwrap_or([0.0, 0.0, 0.0]);
-                    self.session.host.world.spawn_debug_effect_model(
-                        pos,
-                        legaia_engine_core::scene::ETMD_TAIL_FIRE_MODEL_INDEX,
-                    );
+                    // Prefer the real Gimard *Tail Fire* mesh from the PROT
+                    // 0871 effect-model library when it's resident; fall back
+                    // to the PROT 0874 §0 preview stand-in otherwise.
+                    let model_index = if self
+                        .session
+                        .host
+                        .world
+                        .global_tmd(legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX as i16)
+                        .is_some()
+                    {
+                        legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX
+                    } else {
+                        legaia_engine_core::scene::ETMD_TAIL_FIRE_MODEL_INDEX
+                    };
+                    self.session
+                        .host
+                        .world
+                        .spawn_debug_effect_model(pos, model_index);
                     return;
                 }
                 let key_name = keycode_to_name(code);
