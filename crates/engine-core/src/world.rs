@@ -1443,6 +1443,8 @@ impl World {
     /// not-yet-pinned new-game-init routine that runs before mode 2, and
     /// `FUN_801D6704` reads them from globals. Callers enter the actual
     /// opening scene through the normal scene-load path afterward.
+    // REF: FUN_80025B64
+    // REF: FUN_801D6704
     pub fn begin_new_game(&mut self) {
         self.story_flags = 0;
         self.story_flag_bits.clear();

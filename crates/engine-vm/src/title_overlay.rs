@@ -517,6 +517,8 @@ pub const MASTER_GAME_MODE_FIELD_RUN: u8 = 0x03;
 /// SCUS handler for master game-mode `0x02` ("MAIN INIT"): loads the
 /// field/town overlay via `FUN_8003EBE4(2)` and invokes
 /// [`FIELD_SCENE_INIT_PC`].
+// REF: FUN_80025B64
+// REF: FUN_8003EBE4
 pub const MODE2_INIT_HANDLER_PC: u32 = 0x8002_5B64;
 
 /// The field/town scene initializer the NEW GAME launch lands in
@@ -525,6 +527,7 @@ pub const MODE2_INIT_HANDLER_PC: u32 = 0x8002_5B64;
 /// the game-mode work buffer, then writes [`MASTER_GAME_MODE_FIELD_RUN`].
 /// Used for every field entry, not just NEW GAME; the title path simply
 /// routes here via [`MASTER_GAME_MODE_FIELD_LAUNCH`].
+// REF: FUN_801D6704
 pub const FIELD_SCENE_INIT_PC: u32 = 0x801D_6704;
 
 /// State offset holding the menu row the player confirmed on the title
