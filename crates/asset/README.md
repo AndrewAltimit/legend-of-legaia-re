@@ -40,6 +40,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `item_names` | `SCUS_942.54` item-name table (`PTR_DAT_8007436C[id*3]`, 256 ids): `ItemNameTable::from_scus` → `name(id)`. The id space a monster record's `drop_item` indexes; used by the web viewer's enemy table. See [`item-table.md`](../../docs/formats/item-table.md). |
 | `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). See [`spell-table.md`](../../docs/formats/spell-table.md). |
+| `new_game` | `SCUS_942.54` new-game starting-party template (`0x80078C4C`, 4 records, 26-byte stride): `StartingParty::from_scus` → per-member opening stats + name (Vahn/Noa/Gala/Terra). The seed for the live `0x80084708 + n*0x414` records; `OPENING_SCENE` = `town01`. See [`new-game-table.md`](../../docs/formats/new-game-table.md). |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. |
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`. |
 | `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). |
