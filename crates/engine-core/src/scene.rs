@@ -1230,6 +1230,10 @@ impl SceneHost {
     /// scripts or the record index is out of range.
     pub fn enter_field_scene(&mut self, name: &str, record_index: usize) -> Result<()> {
         self.load_scene(name)?;
+        // Drop any cutscene timeline from a previous scene; only `opdeene`
+        // re-installs one below, so it must not leak into the scene we hand off
+        // to (Rim Elm).
+        self.world.cutscene_timeline = None;
         let record_bytes: Vec<u8> = {
             let scene = self
                 .scene
@@ -1491,12 +1495,28 @@ impl SceneHost {
             {
                 Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
                     Ok(man_file) => {
+                        // Execute the cutscene timeline as a spawned field-VM
+                        // context: its camera path + actor moves play and the
+                        // closing `GFLAG_SET 26` fires by execution. Fall back
+                        // to the static MAN-walk arm only when the timeline
+                        // record can't be resolved, so the prologue still hands
+                        // off either way.
                         if self
+                            .world
+                            .load_cutscene_timeline_from_man(&man_file, &man_bytes)
+                        {
+                            log::info!(
+                                "prologue: executing '{}' cutscene timeline -> '{}' hand-off by GFLAG_SET {}",
+                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
+                                legaia_asset::new_game::OPENING_SCENE,
+                                crate::world::PROLOGUE_HANDOFF_BIT,
+                            );
+                        } else if self
                             .world
                             .arm_prologue_handoff_from_man(&man_file, &man_bytes)
                         {
                             log::info!(
-                                "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {}",
+                                "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {} (static fallback)",
                                 legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
                                 legaia_asset::new_game::OPENING_SCENE,
                                 crate::world::PROLOGUE_HANDOFF_BIT,

@@ -45,8 +45,14 @@ struct. `World::tick` runs:
    via `set_move_bytecode`.
 3. Mode-specific top-level VM:
    - `SceneMode::Battle` → battle-action state machine step.
-   - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step. In
-     `Field` this is followed by `step_field_locomotion` - the free-movement
+   - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step, preceded by
+     `step_cutscene_timeline` when a cutscene timeline is installed (the
+     `opdeene` opening prologue): a *second* spawned `FieldCtx`
+     (`cutscene_timeline::CutsceneTimeline`) runs the scene MAN's partition-2
+     cutscene record through the same field VM, so its camera path + actor
+     moves play and the Rim Elm hand-off `GFLAG_SET 26` fires by execution.
+     See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
+     In `Field` the field-VM step is followed by `step_field_locomotion` - the free-movement
      player controller (port of `FUN_801d01b0`): the held d-pad becomes a
      camera-relative direction (remapped by `field_camera_azimuth`), the
      player actor advances in 2-unit steps with per-axis collision against

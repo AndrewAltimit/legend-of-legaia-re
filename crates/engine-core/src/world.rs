@@ -132,6 +132,18 @@ pub const PROLOGUE_HANDOFF_FLAG: u32 = 1 << PROLOGUE_HANDOFF_BIT;
 /// `GFLAG_SET` against this bit.
 pub const PROLOGUE_HANDOFF_BIT: u32 = 26;
 
+/// Per-frame field-VM step budget for the opening-cutscene timeline
+/// ([`World::step_cutscene_timeline`]). Bounds a non-yielding stretch of real
+/// disc bytecode so it can't hang the tick; the timeline normally yields or
+/// waits well within this.
+const CUTSCENE_TIMELINE_STEP_BUDGET: u32 = 256;
+
+/// Frame cap for the opening-cutscene timeline. If the spawned context never
+/// reaches its closing `GFLAG_SET 26` within this many frames (≈20 s at 60 fps,
+/// generous for the opening's camera path), the engine forces it complete and
+/// arms the hand-off statically so the prologue can't stall.
+const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 1200;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
@@ -1266,6 +1278,22 @@ pub struct World {
     /// confirm press skips narration pages, and only once it completes does a
     /// confirm reach [`Self::take_prologue_handoff`].
     pub cutscene_narration: Option<crate::cutscene_narration::CutsceneNarration>,
+
+    /// Active opening-cutscene timeline executor, or `None` when no cutscene
+    /// timeline is running. Installed by
+    /// [`Self::load_cutscene_timeline_from_man`] (the `opdeene` opening
+    /// prologue) with the partition-2 record that issues `GFLAG_SET 26`;
+    /// stepped each frame by [`Self::step_cutscene_timeline`] so the cutscene's
+    /// camera path + actor moves play and the hand-off bit fires by execution.
+    /// See [`crate::cutscene_timeline::CutsceneTimeline`].
+    pub cutscene_timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
+
+    /// `true` only while [`Self::step_cutscene_timeline`] is executing the
+    /// spawned cutscene context. The field-VM host reads it to suppress the
+    /// actor-allocator hook (op `0x4C` n8 sub-0), which in the cutscene context
+    /// (target `0xF8`) is the inline-narration text-draw the separate
+    /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
+    pub in_cutscene_timeline: bool,
 }
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
@@ -1526,6 +1554,8 @@ impl World {
             party_names: Vec::new(),
             name_entry: None,
             cutscene_narration: None,
+            cutscene_timeline: None,
+            in_cutscene_timeline: false,
         }
     }
 
@@ -1579,6 +1609,7 @@ impl World {
         self.battle_end = None;
         self.game_over = false;
         self.play_time_seconds = 0;
+        self.cutscene_timeline = None;
         self.mode = SceneMode::Field;
     }
 
@@ -1763,6 +1794,151 @@ impl World {
         } else {
             None
         }
+    }
+
+    /// Load the opening-cutscene timeline record from the scene MAN as a
+    /// spawned field-VM context, so its camera path + actor moves play and the
+    /// closing `GFLAG_SET 26` fires by execution.
+    ///
+    /// Finds the partition-2 (cutscene-timeline) record that issues the
+    /// [`PROLOGUE_HANDOFF_BIT`] `GFLAG_SET` via
+    /// [`crate::man_field_scripts::walk_partition_gflag_sites`], resolves its
+    /// named-record span with
+    /// [`crate::man_field_scripts::partition_record_span`] (the partition-2
+    /// header decode), and slices the record body from its `script_start` so
+    /// relative jumps wrap against the record base (retail
+    /// `buffer_base = script_start`). The spawned context begins at the
+    /// record's first-opcode offset (`pc0`).
+    ///
+    /// Returns `true` when a timeline was installed. Returns `false` (no
+    /// matching record, or span resolution failed) so the caller can fall back
+    /// to the static hand-off arm ([`Self::arm_prologue_handoff_from_man`]).
+    // REF: FUN_8003BDE0
+    // REF: FUN_801D1344
+    pub fn load_cutscene_timeline_from_man(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) -> bool {
+        let Some(record_idx) =
+            crate::man_field_scripts::walk_partition_gflag_sites(man_file, man, 2)
+                .into_iter()
+                .find(|s| s.set && s.bit as u32 == PROLOGUE_HANDOFF_BIT)
+                .map(|s| s.record)
+        else {
+            return false;
+        };
+        let Some((script_start, pc0, body_len)) =
+            crate::man_field_scripts::partition_record_span(man_file, man, 2, record_idx)
+        else {
+            return false;
+        };
+        let Some(body) = man.get(script_start..script_start + body_len) else {
+            return false;
+        };
+        let mut body = body.to_vec();
+        // Neutralize the inline narration spans before handing the record to
+        // the field VM. The narration pages (`[0xCC 0xF8 0x80 N]` + `0x1F`/`0x00`
+        // pages) are *data*, not field-VM opcodes - retail's cutscene-context
+        // handler (`FUN_8003C764`) consumes them, but the engine presents them
+        // through the separate `CutsceneNarration` presenter. Overwriting each
+        // span with the field-VM NOP (`0x21`, a 1-byte op) is offset-preserving,
+        // so the VM walks through them harmlessly and the camera Configure / Move
+        // / `GFLAG_SET` ops at their original offsets still execute.
+        for block in legaia_asset::cutscene_text::parse_narration(&body) {
+            let (start, end) = block.byte_span();
+            let end = end.min(body.len());
+            if start < end {
+                for b in &mut body[start..end] {
+                    *b = 0x21;
+                }
+            }
+        }
+        self.cutscene_timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(body, pc0));
+        true
+    }
+
+    /// `true` while the opening-cutscene timeline is still executing (installed
+    /// and not yet complete). Diagnostics / tests read this; the hand-off gate
+    /// itself keys off the scratchpad flag the timeline sets, not this.
+    pub fn cutscene_timeline_active(&self) -> bool {
+        self.cutscene_timeline
+            .as_ref()
+            .is_some_and(|t| !t.is_done())
+    }
+
+    /// Step the opening-cutscene timeline one frame.
+    ///
+    /// Runs the spawned cutscene context ([`crate::cutscene_timeline`]) through
+    /// the field VM until it yields, waits, or completes - mirroring retail's
+    /// run-until-`YIELD`-per-frame dispatch. Camera Configure (`0x45`) and
+    /// actor MoveTo (`0x23`) ops emit the same [`crate::field_events::FieldEvent`]s
+    /// the runtime camera folds in; the closing `GFLAG_SET 26` writes the
+    /// hand-off bit through the same host path the main field VM uses, so the
+    /// `town01` hand-off arms by execution.
+    ///
+    /// Bounded two ways so real disc bytecode can never hang the tick or stall
+    /// the prologue:
+    /// - a per-frame step budget caps a non-yielding loop;
+    /// - a frame cap forces completion if the timeline never reaches its
+    ///   `GFLAG_SET 26` (e.g. it hits an op this port cannot advance past), in
+    ///   which case the hand-off is armed statically as a safety net.
+    ///
+    /// No-op when no timeline is installed or it has already completed.
+    // REF: FUN_8003BDE0
+    pub fn step_cutscene_timeline(&mut self) {
+        let Some(mut tl) = self.cutscene_timeline.take() else {
+            return;
+        };
+        if tl.done {
+            self.cutscene_timeline = Some(tl);
+            return;
+        }
+        tl.frames = tl.frames.saturating_add(1);
+        self.in_cutscene_timeline = true;
+        {
+            let mut host = FieldHostImpl { world: self };
+            let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
+            while budget > 0 {
+                budget -= 1;
+                match vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, tl.pc) {
+                    FieldStepResult::Advance { next_pc } => tl.pc = next_pc,
+                    FieldStepResult::Yield { resume_pc } => {
+                        tl.pc = resume_pc;
+                        break;
+                    }
+                    // WAIT_FRAMES and conditional holds return `Halt` at the
+                    // same PC: end the frame and resume there next tick.
+                    FieldStepResult::Halt { final_pc } => {
+                        tl.pc = final_pc;
+                        break;
+                    }
+                    // An op this port can't advance past: stop and let the
+                    // safety net below arm the hand-off.
+                    FieldStepResult::Pending { pc, .. } | FieldStepResult::Unknown { pc, .. } => {
+                        tl.pc = pc;
+                        tl.done = true;
+                        break;
+                    }
+                }
+            }
+        }
+        self.in_cutscene_timeline = false;
+        // Terminal op: the record ends with `GFLAG_SET 26`. Once that bit is
+        // set by execution the cutscene timeline is complete.
+        if self.story_flags & PROLOGUE_HANDOFF_FLAG != 0 {
+            tl.done = true;
+        }
+        // Safety net: if the timeline can no longer advance, or ran past its
+        // frame cap without setting the hand-off bit, force it complete and arm
+        // the hand-off statically so the prologue can't stall.
+        if (tl.done || tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES)
+            && self.story_flags & PROLOGUE_HANDOFF_FLAG == 0
+        {
+            self.arm_prologue_handoff();
+            tl.done = true;
+        }
+        self.cutscene_timeline = Some(tl);
     }
 
     /// Install the VDF ("set_mime") buffer for the active scene. The bytes
@@ -2939,6 +3115,7 @@ impl World {
                 }
             }
             SceneMode::Field => {
+                self.step_cutscene_timeline();
                 self.step_field();
                 self.tick_tile_board();
                 self.step_field_locomotion();
@@ -2956,6 +3133,7 @@ impl World {
                 // hands the frame to the cutscene/MDEC overlay - and the host
                 // drives playback, calling [`finish_cutscene`] when it ends.
                 if self.active_fmv.is_none() {
+                    self.step_cutscene_timeline();
                     self.step_field();
                 }
                 None

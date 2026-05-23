@@ -72,6 +72,27 @@ impl NarrationBlock {
     pub fn count_matches(&self) -> bool {
         self.pages.len() == usize::from(self.declared_pages)
     }
+
+    /// Byte span `[start, end)` (relative to the parsed body) this block
+    /// occupies: the introducing op through the last page's `0x00`
+    /// terminator. A block whose pages did not frame cleanly spans just the
+    /// 4-byte introducing op `[0xCC 0xF8 0x80 N]`.
+    ///
+    /// A consumer that drives the cutscene timeline through a field-VM
+    /// (rather than rendering the narration itself) uses this to skip the
+    /// inline pages: the page bytes are data, not field-VM opcodes, so
+    /// stepping the VM into them would mis-decode. The narration text is
+    /// presented separately from the decoded [`pages`](Self::pages).
+    pub fn byte_span(&self) -> (usize, usize) {
+        let end = match self.pages.last() {
+            // A page is `[0x1F][text bytes][0x00]`; text is 7-bit ASCII, so
+            // its byte length equals its `char` length. End is one past the
+            // `0x00`: offset + 1 (start marker) + text + 1 (terminator).
+            Some(last) => last.offset + 2 + last.text.len(),
+            None => self.op_offset + 4,
+        };
+        (self.op_offset, end)
+    }
 }
 
 /// The extended-bit field-VM opcode `0x80 | 0x4C` that opens a narration op.
@@ -257,5 +278,42 @@ mod tests {
     fn empty_input_yields_no_blocks() {
         assert!(parse_narration(&[]).is_empty());
         assert!(narration_pages(&[]).is_empty());
+    }
+
+    #[test]
+    fn byte_span_covers_op_through_last_terminator() {
+        // 4-byte prefix, then a 2-page block, then a trailing 0x46 op.
+        let body = synthetic_block(&["Hello world,", "this is a test."]);
+        let blocks = parse_narration(&body);
+        assert_eq!(blocks.len(), 1);
+        let (start, end) = blocks[0].byte_span();
+        // Span starts at the introducing 0xCC (after the 4-byte prefix).
+        assert_eq!(start, 4);
+        assert_eq!(body[start], OP_MENU_CTRL_EXT);
+        // Span ends one past the last page's 0x00 terminator - i.e. exactly
+        // at the trailing 0x46 op.
+        assert_eq!(body[end], 0x46);
+        assert_eq!(body[end - 1], PAGE_END);
+        // Filling the span with field-VM NOPs (0x21) is offset-preserving:
+        // every byte inside is replaced, the trailing op is untouched.
+        let mut filled = body.clone();
+        for b in &mut filled[start..end] {
+            *b = 0x21;
+        }
+        assert!(filled[start..end].iter().all(|&b| b == 0x21));
+        assert_eq!(filled[end], 0x46);
+        assert_eq!(filled[..start], body[..start]);
+    }
+
+    #[test]
+    fn byte_span_of_pageless_block_is_the_op_header() {
+        // Op present, declares 1 page, but the page fails to decode.
+        let mut body = vec![OP_MENU_CTRL_EXT, EXT_TARGET_CUTSCENE, OP0_NARRATION, 0x01];
+        body.push(PAGE_START);
+        body.extend_from_slice(&[0x48, 0x80, 0x49]); // 0x80 not printable
+        body.push(PAGE_END);
+        let blocks = parse_narration(&body);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].byte_span(), (0, 4));
     }
 }

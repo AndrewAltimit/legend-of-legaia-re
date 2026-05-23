@@ -43,7 +43,9 @@ fn opdeene_plays_narration_then_releases_the_handoff() {
     host.enter_field_scene(cutscene, 0).expect("enter opdeene");
 
     // 1. The narration installed (the 22 inline subtitle pages) and the
-    //    hand-off armed.
+    //    cutscene timeline installed (the spawned context that fires the
+    //    hand-off bit by execution). The hand-off flag is NOT armed yet - it
+    //    arms once the timeline executes its `GFLAG_SET 26`.
     assert!(
         host.world.cutscene_narration_active(),
         "entering opdeene installs the inline narration"
@@ -55,18 +57,16 @@ fn opdeene_plays_narration_then_releases_the_handoff() {
         .map(|n| n.page_count())
         .unwrap_or(0);
     assert_eq!(pages, 22, "opdeene carries 22 inline narration pages");
+    assert!(
+        host.world.cutscene_timeline_active(),
+        "entering opdeene installs the cutscene timeline"
+    );
 
     // 2. While the narration plays, the hand-off gate stays closed even on a
-    //    confirm press.
+    //    confirm press - independent of whether the timeline has armed the bit.
     assert!(
         host.world.take_prologue_handoff(true).is_none(),
         "the hand-off is gated until the narration finishes"
-    );
-    // Re-arm: the probe above is read-only (returns None without clearing),
-    // but assert the flag is still set so the later release can fire.
-    assert!(
-        host.world.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0,
-        "hand-off flag stays armed while narration plays"
     );
 
     // 3. Tick the world until the narration completes. Each page dwells

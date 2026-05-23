@@ -839,6 +839,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+        // In the spawned opening-cutscene context (target 0xF8) this op is the
+        // inline-narration text-draw, not an actor spawn - the separate
+        // `CutsceneNarration` presenter owns those pages. Suppress the spawn
+        // side-effect while the cutscene timeline steps; the VM still advances
+        // the PC past the page bytes on its own.
+        if self.world.in_cutscene_timeline {
+            return;
+        }
         // Walk `count` variable-length records out of `tail` using the
         // retail packet-length rule (FUN_8003CA38, mirrored in
         // `legaia_engine_vm::field_helpers::packet_length`): bytes <= 0x1E
