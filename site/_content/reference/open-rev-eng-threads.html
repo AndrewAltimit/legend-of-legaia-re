@@ -242,6 +242,12 @@
         <td>Zero LUI+ADDIU references to <code>0x8007123C</code> across SCUS plus every captured overlay. The XP table is still real (98 u16 increments, L1&rarr;2 = 50, mirrored in <code>retail_xp_table()</code>); the lookup is either through a <code>gp</code>-relative load or an indirection that LUI+ADDIU scans cannot catch.</td>
         <td><code>project_xp_split_static_negative.md</code> + <code>project_xp_table_and_cutscene_overlays.md</code></td>
       </tr>
+      <tr>
+        <td>Opening-prologue tail (<code>opdeene</code>)</td>
+        <td><code>partial</code></td>
+        <td>The <code>opdeene</code> &rarr; <code>town01</code> hand-off arm is now <strong>data-driven</strong>: <code>enter_field_scene</code> walks the cutscene-timeline partition (partition 2) for the real <code>GFLAG_SET 26</code> write and arms only when present (<code>World::arm_prologue_handoff_from_man</code>; the write is partition-2 record-18 offset <code>0xA5E</code>, also confirmed via <code>man-scripts --gflag-partition</code>). Three threads remain: (1) the <strong>field-VM op that auto-opens the name-entry overlay</strong> during the town01 opening &mdash; the SM <code>FUN_801F03F0</code> has no direct <code>jal</code> caller in the field overlay (sub-mode/jump-table dispatch via <code>0x801CF71C</code>), and pinning the town01 trigger op needs a mid-cutscene capture absent from the corpus; (2) tracing the <strong>intro 3D cutscene scene content</strong> (<code>new_game_cutscene_intro_a</code>); (3) <strong>ticking opdeene's partition-2 cutscene timeline</strong> frame-by-frame (camera + actor <code>MoveTo</code> that precede the flag write).</td>
+        <td><code>project_cold_boot_prologue.md</code></td>
+      </tr>
     </tbody>
   </table>
 </section>
