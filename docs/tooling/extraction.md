@@ -39,7 +39,7 @@ When you want to drive a single stage:
 ### Disc → files (`disc-extract`)
 
 ```bash
-disc-extract --bin /path/to/disc.bin --out extracted/
+disc-extract extract /path/to/disc.bin extracted/
 ```
 
 Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
@@ -47,7 +47,7 @@ Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
 ### PROT.DAT → entries (`prot-extract`)
 
 ```bash
-prot-extract --in extracted/PROT.DAT --cdname extracted/CDNAME.TXT --out extracted/PROT/
+prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT
 ```
 
 Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint — `max(indexed_size, next_start - this_start)` — so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
@@ -56,7 +56,7 @@ Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each e
 
 ```bash
 lzs-decode raw --size N <file>          # standalone LZS body
-lzs-decode container <file>             # multi-section player.lzs container
+lzs-decode container <file> <out_dir>   # multi-section player.lzs container, one file per section
 ```
 
 See [LZS compression](../formats/lzs.md).
@@ -64,7 +64,8 @@ See [LZS compression](../formats/lzs.md).
 ### TIM → PNG (`tim`)
 
 ```bash
-tim convert <file> --out <out_dir>
+tim convert <file> [out.png]            # single TIM; out defaults to <file>.png
+tim convert-dir <dir>                    # recursively convert every .tim under <dir>
 ```
 
 ### TMD analysis (`tmd`)
@@ -78,9 +79,8 @@ tmd validate-prims <DIR>          # bulk-walk every prim group, sanity-check
 ### VAB extraction (`vab`)
 
 ```bash
-vab info <file> [--offset 0xN]
-vab extract <file> --out <out_dir>     # WAV per program × tone
-vab play <file> --offset 0xN --sample N --rate Hz
+vab list    <file>                                  # find + describe every VAB
+vab extract <file> --out <out_dir> [--wav] [--sample-rate 22050]   # VAG bodies (+ optional WAV)
 ```
 
 ### Sub-asset extraction (`asset`)

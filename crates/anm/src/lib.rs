@@ -863,4 +863,50 @@ mod tests {
         assert_eq!(pack.count, 1);
         assert_eq!(record_bytes(peeled, &pack.records[0]), &[0xCC; 8][..]);
     }
+
+    // --- Adversarial-input fuzz (bulk scanner / web viewer feed arbitrary
+    //     bytes to `parse`; a panic there takes down the disc load) --------
+
+    /// `parse` on pseudo-random byte soup of every length 0..512 must only
+    /// ever return `Ok`/`Err`, never panic (no capacity-overflow on a huge
+    /// `count`, no out-of-bounds on a bogus offset table).
+    #[test]
+    fn parse_random_bytes_never_panics() {
+        for seed in 0u64..400 {
+            let mut x = seed
+                .wrapping_mul(0x9E3779B97F4A7C15)
+                .wrapping_add(0x1234_5678);
+            let n = (seed % 512) as usize;
+            let mut buf = Vec::with_capacity(n);
+            for _ in 0..n {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                buf.push(x as u8);
+            }
+            let _ = parse(&buf);
+            // peel_preamble + the keyframe reader on the same junk too.
+            let _ = peel_preamble(&buf);
+            let _ = KeyframeReader::parse(&buf, (x as usize) & 0xFFFF);
+        }
+    }
+
+    /// A count word claiming far more records than the buffer can hold must
+    /// be rejected without trying to allocate `count` entries up front.
+    #[test]
+    fn huge_count_word_is_err_not_capacity_overflow() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&u32::MAX.to_le_bytes()); // count = 0xFFFFFFFF
+        buf.extend_from_slice(&[0u8; 32]);
+        assert!(parse(&buf).is_err());
+    }
+
+    /// `KeyframeReader::parse` with a colossal bone count must reject via
+    /// checked arithmetic, not overflow-panic on `8 * bone_count`.
+    #[test]
+    fn keyframe_reader_huge_bone_count_is_err() {
+        let rec = vec![0u8; 64];
+        assert!(KeyframeReader::parse(&rec, usize::MAX).is_err());
+        assert!(KeyframeReader::parse(&rec, usize::MAX / 2).is_err());
+    }
 }

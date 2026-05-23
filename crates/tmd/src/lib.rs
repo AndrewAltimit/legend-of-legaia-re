@@ -648,4 +648,35 @@ mod tests {
         assert_eq!(tmd.objects[0].vertices.len(), 2);
         assert_eq!(tmd.objects[0].vertices[0].x, 1);
     }
+
+    /// `parse` then the mesh builders on pseudo-random bytes (some forced to
+    /// carry the TMD magic) must never panic. The asset TMD scanner + web
+    /// viewer probe every magic hit, and the mesh builders run on whatever
+    /// `parse` returns - a vertex-index or prim-section panic there takes
+    /// down the disc load.
+    #[test]
+    fn parse_and_mesh_build_never_panic_on_random_bytes() {
+        use crate::mesh::{tmd_to_textured_mesh, tmd_to_vram_mesh};
+        for seed in 0u64..400 {
+            let mut x = seed.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(0xABCD);
+            let n = (seed % 512) as usize;
+            let mut buf = Vec::with_capacity(n);
+            for _ in 0..n {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                buf.push(x as u8);
+            }
+            // Force the Legaia TMD magic so `parse` enters the body walk.
+            if buf.len() >= 4 {
+                buf[0..4].copy_from_slice(&0x8000_0002u32.to_le_bytes());
+            }
+            if let Ok(tmd) = parse(&buf) {
+                // The mesh builders must not panic on whatever objects /
+                // vertex counts / prim sections `parse` accepted.
+                let _ = tmd_to_textured_mesh(&tmd, &buf);
+                let _ = tmd_to_vram_mesh(&tmd, &buf);
+            }
+        }
+    }
 }

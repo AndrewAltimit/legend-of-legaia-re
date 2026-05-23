@@ -539,8 +539,12 @@ fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
     }
     let mut saved_chains = Vec::with_capacity(ch_count);
     for _ in 0..ch_count {
-        if p + 1 > buf.len() {
-            bail!("saved_chain: char_slot missing");
+        // Need two bytes here: char_slot followed by the name-length byte.
+        // A prior version only checked for one byte before reading both,
+        // so a saved-chain record whose `char_slot` was the final buffer
+        // byte panicked on the `nlen = buf[p]` read. Check both up front.
+        if p + 2 > buf.len() {
+            bail!("saved_chain: char_slot / name_len missing");
         }
         let cs = buf[p];
         p += 1;
@@ -871,5 +875,122 @@ mod tests {
             parsed.ext.story_flags,
             u32::from_le_bytes([bits[0], bits[1], bits[2], bits[3]])
         );
+    }
+
+    // --- Panic-hardening / adversarial-input regression tests -------------
+
+    fn save_with_saved_chain() -> SaveFile {
+        SaveFile {
+            party: Party {
+                members: vec![CharacterRecord::zeroed()],
+            },
+            ext: SaveExt {
+                story_flags: 0,
+                money: 0,
+                inventory: vec![],
+                story_flag_bits: Vec::new(),
+            },
+            ext_v2: SaveExtV2 {
+                play_time_seconds: 42,
+                active_party: vec![0, 1],
+                per_char: vec![(
+                    0,
+                    CharSaveExt {
+                        learned_arts_mask: 0x12345678,
+                        spells: vec![1, 2, 3],
+                        seru_captures: vec![(0x81, 100), (0x82, 50)],
+                        active_chains: [[1, 2, 3, 4]; 4],
+                    },
+                )],
+                saved_chains: vec![SavedChainRecord {
+                    char_slot: 0,
+                    name: "Combo".to_string(),
+                    sequence: vec![0x10, 0x20, 0x30],
+                }],
+            },
+        }
+    }
+
+    /// Truncating a well-formed LGSF v3 buffer at *every* prefix length must
+    /// only ever return `Err` (or `Ok` for the few prefixes that happen to
+    /// form a self-consistent shorter save) - never panic. This is the
+    /// blanket prefix-fuzz that surfaced the `parse_ext_v2` saved-chain
+    /// out-of-bounds read (a 1-byte guard before a 2-byte read).
+    #[test]
+    fn truncated_prefixes_never_panic() {
+        let full = save_with_saved_chain().write();
+        for len in 0..=full.len() {
+            // Must not panic; result value is unimportant.
+            let _ = SaveFile::parse(&full[..len]);
+        }
+    }
+
+    /// Same prefix-fuzz, but tampering the declared ext-block size to point
+    /// the inner cursor at arbitrary boundaries. The historical bug was a
+    /// saved-chain `char_slot` landing as the final byte of the ext slice;
+    /// this drives the ext slice to end at every byte offset.
+    #[test]
+    fn tampered_ext_total_size_never_panics() {
+        let full = save_with_saved_chain().write();
+        let marker = full
+            .windows(4)
+            .position(|w| w == SAVE_FILE_EXT_MAGIC)
+            .expect("ext magic present");
+        let size_off = marker + 4;
+        for claimed in 0u32..=200 {
+            let mut bytes = full.clone();
+            bytes[size_off..size_off + 4].copy_from_slice(&claimed.to_le_bytes());
+            // Any claimed ext size, valid or not, must not panic the parser.
+            let _ = SaveFile::parse(&bytes);
+        }
+    }
+
+    /// Directed regression for the saved-chain OOB: an ext block whose final
+    /// byte is a saved-chain `char_slot` (so the `name_len` byte read would
+    /// run off the end) must return `Err`, not panic.
+    #[test]
+    fn saved_chain_char_slot_at_buffer_end_is_err_not_panic() {
+        // Hand-build a minimal v2 ext block:
+        //   play_time(4) active_len(=0) pc_count(=0) ch_count(=1) char_slot(1 byte, EOF)
+        let ext_block: Vec<u8> = vec![
+            0, 0, 0, 0, // play_time
+            0, // active_len
+            0, // pc_count
+            1, // ch_count
+            0, // saved_chain[0].char_slot  <- last byte; name_len missing
+        ];
+        let res = parse_ext_v2(&ext_block);
+        assert!(res.is_err(), "expected Err on truncated saved-chain");
+    }
+
+    /// A full save round-trips with a saved chain present (guards against the
+    /// fix accidentally rejecting valid data).
+    #[test]
+    fn saved_chain_round_trips() {
+        let sf = save_with_saved_chain();
+        let bytes = sf.write();
+        let parsed = SaveFile::parse(&bytes).unwrap();
+        assert_eq!(parsed, sf);
+        assert_eq!(parsed.ext_v2.saved_chains.len(), 1);
+        assert_eq!(parsed.ext_v2.saved_chains[0].name, "Combo");
+    }
+
+    /// Random byte soup that happens to start with the LGSF magic must never
+    /// panic the versioned parser regardless of the trailing junk.
+    #[test]
+    fn lgsf_magic_with_junk_body_never_panics() {
+        for seed in 0u64..512 {
+            let mut x = seed.wrapping_mul(0x9E3779B97F4A7C15);
+            let mut bytes = SAVE_FILE_MAGIC.to_vec();
+            bytes.push(SAVE_FILE_VERSION);
+            let n = (seed % 300) as usize;
+            for _ in 0..n {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                bytes.push(x as u8);
+            }
+            let _ = SaveFile::parse(&bytes);
+        }
     }
 }

@@ -150,4 +150,28 @@ mod tests {
         let d = parse(buf).unwrap();
         assert_eq!(d.region, Region::NorthAmerica);
     }
+
+    #[test]
+    fn rejects_non_utf8_without_panic() {
+        // SYSTEM.CNF should be ASCII; invalid UTF-8 must Err, not panic.
+        let buf = [0xFFu8, 0xFE, 0x00, b'B', b'O', b'O', b'T'];
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn short_boot_value_is_err_not_panic() {
+        // BOOT= value shorter than a 4-char prefix: must Err cleanly.
+        assert!(parse(b"BOOT=ab\n").is_err());
+        assert!(parse(b"BOOT=\n").is_err());
+    }
+
+    #[test]
+    fn multibyte_executable_prefix_does_not_panic() {
+        // A 4-byte BOOT value that is a single multibyte UTF-8 char would make
+        // a byte-length check disagree with a char-count `take(4)`; ensure the
+        // prefix derivation never panics on such input.
+        let buf = "BOOT=\u{00e9}\u{00e9};1\n".as_bytes(); // two 2-byte chars = 4 bytes
+        // Either Ok(Unknown) or Err - never a panic / OOB.
+        let _ = parse(buf);
+    }
 }

@@ -414,8 +414,12 @@ pub fn read_retail_char_records(sc_block: &[u8], max_records: usize) -> Option<V
     let records_start = game_data.get(RETAIL_CHAR_RECORD_HEADER_SIZE..)?;
     let mut out = Vec::new();
     for i in 0..max_records {
-        let offset = i * RETAIL_CHAR_RECORD_STRIDE;
-        let record = records_start.get(offset..offset + RETAIL_CHAR_RECORD_STRIDE)?;
+        // Use checked arithmetic: `max_records` is caller-supplied, so a huge
+        // value must stop the walk (the `?` short-circuit), never overflow the
+        // `offset` / `offset + STRIDE` computation into a slice-index panic.
+        let offset = i.checked_mul(RETAIL_CHAR_RECORD_STRIDE)?;
+        let end = offset.checked_add(RETAIL_CHAR_RECORD_STRIDE)?;
+        let record = records_start.get(offset..end)?;
         if record.iter().all(|&b| b == 0) {
             break; // stop at first empty slot
         }
@@ -747,6 +751,17 @@ mod tests {
                 ((i as u8) + 1).wrapping_mul(11)
             );
         }
+    }
+
+    #[test]
+    fn read_retail_char_records_huge_max_does_not_panic() {
+        // A pathological `max_records` must not overflow the `i * STRIDE`
+        // computation into a slice-index panic; the walk just stops at the
+        // first empty slot / buffer end.
+        let block = fresh_sc_block();
+        let _ = read_retail_char_records(&block, usize::MAX);
+        // Also a too-small block returns None rather than panicking.
+        assert!(read_retail_char_records(&[0u8; 4], usize::MAX).is_none());
     }
 
     #[test]

@@ -684,4 +684,55 @@ mod tests {
             assert!(tok.byte_len() <= buf.len() || matches!(tok, Token::Truncated(_)));
         }
     }
+
+    // --- Adversarial-input fuzz -------------------------------------------
+
+    /// `detect_format` / `parse` / `iter_tokens` run against arbitrary
+    /// LZS-decoded PROT bytes by the asset scanner and web viewer. Random
+    /// soup of every length 0..512, plus a copy forced to carry the compact
+    /// magic, must never panic.
+    #[test]
+    fn parsers_never_panic_on_random_bytes() {
+        for seed in 0u64..400 {
+            let mut x = seed.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(7);
+            let n = (seed % 512) as usize;
+            let mut buf = Vec::with_capacity(n);
+            for _ in 0..n {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                buf.push(x as u8);
+            }
+            let _ = detect_format(&buf);
+            let _ = parse(&buf);
+            // Walk tokens from a few start offsets - the iterator must
+            // terminate (every token advances pos by >= 1) and never index OOB.
+            for &start in &[0usize, buf.len() / 2, buf.len().saturating_sub(1)] {
+                let _: Vec<_> = iter_tokens(&buf, start).collect();
+            }
+            // Force the compact magic so the compact path runs on junk too.
+            if buf.len() >= 4 {
+                let mut compact = buf.clone();
+                compact[0..4].copy_from_slice(&COMPACT_MAGIC.to_le_bytes());
+                let _ = parse(&compact);
+                let _ = extract_all_messages(&compact);
+                let _ = extract_message(&compact, 0);
+            }
+        }
+    }
+
+    /// Token iteration always terminates: every emitted token consumes at
+    /// least one input byte, so the total emitted equals exactly the bytes
+    /// walked. (Guards against a future stride-0 token reintroducing a hang.)
+    #[test]
+    fn token_iteration_always_makes_progress() {
+        let buf: Vec<u8> = (0u16..=255).map(|b| b as u8).collect();
+        let mut last = 0usize;
+        let mut it = iter_tokens(&buf, 0);
+        while let Some((pos, _)) = it.next() {
+            assert!(it.pos() > pos, "token at {pos} did not advance the cursor");
+            last = it.pos();
+        }
+        assert!(last >= buf.len());
+    }
 }

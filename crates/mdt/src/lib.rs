@@ -429,4 +429,39 @@ mod tests {
     fn empty_buffer_rejects() {
         assert!(MoveBuffer::parse(&[]).is_err());
     }
+
+    /// `MoveBuffer::parse`, `RecordTable::parse`, and `classify` are all run
+    /// against LZS-decoded sections of arbitrary PROT entries by the asset
+    /// scanner. Pseudo-random byte soup of every length 0..512 must never
+    /// panic - the over-read past a short per-scene table is expected and
+    /// tolerated, but a slice/index/overflow panic is a real bug.
+    #[test]
+    fn parsers_never_panic_on_random_bytes() {
+        for seed in 0u64..400 {
+            let mut x = seed.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(99);
+            let n = (seed % 512) as usize;
+            let mut buf = Vec::with_capacity(n);
+            for _ in 0..n {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                buf.push(x as u8);
+            }
+            let _ = MoveBuffer::parse(&buf);
+            let _ = MoveBuffer::parse_with_table_size(&buf, 1024);
+            let _ = RecordTable::parse(&buf);
+            let _ = classify(&buf);
+        }
+    }
+
+    /// An offset table whose entries are all `0xFFFFFFFF` (every offset far
+    /// past EOF) must classify cleanly as bogus without panicking and never
+    /// look like a valid Move buffer.
+    #[test]
+    fn all_max_offsets_are_bogus_not_panic() {
+        let buf = vec![0xFFu8; 1024];
+        let mb = MoveBuffer::parse(&buf).unwrap();
+        assert!(!mb.looks_like_move_buffer());
+        let _ = classify(&buf).unwrap();
+    }
 }
