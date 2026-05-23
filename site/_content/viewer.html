@@ -438,7 +438,10 @@
     const tc = stat.tim_count > 1 ? ` · ${stat.tim_count} TIMs` : '';
     let summary = `${stat.class} · ${mb}${tc}`;
     if (stat.has_tmd) {
-      summary = `${stat.class} · TMD ${stat.tmd_tris} tris / ${stat.tmd_verts} verts (auto-rotate)${stat.tim_count ? ` · also ${stat.tim_count} TIM(s)` : ''}`;
+      const packNote = stat.tmd_pack_count > 1
+        ? ` · 1 of ${stat.tmd_pack_count} meshes in the scene pack`
+        : '';
+      summary = `${stat.class} · TMD ${stat.tmd_tris} tris / ${stat.tmd_verts} verts (auto-rotate)${packNote}${stat.tim_count ? ` · also ${stat.tim_count} TIM(s)` : ''}`;
     }
     info.innerHTML = `<b>PROT ${stat.prot_index}</b> · ${summary} · slot ${stat.slot + 1}/${allEntries.length}`;
     list.querySelectorAll('li').forEach(li => li.classList.remove('active'));
