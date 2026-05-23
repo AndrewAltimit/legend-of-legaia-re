@@ -111,6 +111,14 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
   through `World::use_item`.
+- `tactical_arts_editor` - the field-menu Arts screen: `ChainEditor`
+  (Browsing → Editing → Naming → Done) composes a directional chain into
+  a per-character `ChainLibrary`. `World::chain_library` /
+  `World::store_chain_library` bridge that library to `World.saved_chains`,
+  so a chain authored in the menu serializes with `save_full` and is
+  offered in the next battle via `build_battle_arts_rows` - the same path
+  whether it was edited live or loaded from a save (`SavedChain::to_record`
+  / `from_record` pack to the `Command` byte alphabet the battle side reads).
 - `cutscene` - FMV index ↔ `MV*.STR` filename mapping. The retail
   field-VM `0x4C 0xE2` op writes a 16-bit FMV index to
   `_DAT_8007BA78` and kicks game mode `StrInit` (26); the world

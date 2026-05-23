@@ -1809,6 +1809,26 @@ impl World {
             .collect()
     }
 
+    /// Pull the cross-character saved-chain library out as a
+    /// [`crate::tactical_arts_editor::ChainLibrary`] - what the field menu's
+    /// Tactical Arts editor browses + edits. The editor mutates the returned
+    /// library; the engine writes the result back with
+    /// [`Self::store_chain_library`] so the edit reaches the next battle's
+    /// Arts menu (via [`Self::build_battle_arts_rows`]) and the next save
+    /// (via [`Self::saved_chains`]).
+    pub fn chain_library(&self) -> crate::tactical_arts_editor::ChainLibrary {
+        crate::tactical_arts_editor::ChainLibrary::from_records(&self.saved_chains)
+    }
+
+    /// Write an edited [`crate::tactical_arts_editor::ChainLibrary`] back into
+    /// [`Self::saved_chains`], replacing the whole library. This is the bridge
+    /// that closes the loop the field menu opens with [`Self::chain_library`]:
+    /// once stored, a chain composed in the editor is selectable in battle and
+    /// persists across `save_full` / `load_full`.
+    pub fn store_chain_library(&mut self, lib: &crate::tactical_arts_editor::ChainLibrary) {
+        self.saved_chains = lib.to_records();
+    }
+
     /// Use an item from the catalog against a target slot. Wraps the
     /// `items::apply_effect` resolution and folds the outcome back into
     /// world state (HP/MP deltas, status cure, revive HP). Returns the
@@ -10667,6 +10687,77 @@ mod tests {
             !reloaded.seru_log.has_learned(0, 2),
             "still below threshold after reload"
         );
+    }
+
+    #[test]
+    fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
+        use crate::tactical_arts_editor::{ChainEditor, EditInput, EditOutcome};
+
+        // A field-side session: the player opens the Tactical Arts editor and
+        // composes a brand-new chain for character slot 0 (Down, Up, Up).
+        let mut field = World {
+            party_count: 1,
+            ..World::default()
+        };
+        let mut lib = field.chain_library();
+        let mut ed = ChainEditor::new(0, &lib);
+        // Cross: open the "+ New" editor.
+        ed.tick(EditInput {
+            cross: true,
+            ..Default::default()
+        });
+        for dir in [
+            EditInput {
+                down: true,
+                ..Default::default()
+            },
+            EditInput {
+                up: true,
+                ..Default::default()
+            },
+            EditInput {
+                up: true,
+                ..Default::default()
+            },
+        ] {
+            ed.tick(dir);
+        }
+        // Cross: commit to naming, then Cross again: confirm the default name.
+        ed.tick(EditInput {
+            cross: true,
+            ..Default::default()
+        });
+        ed.tick(EditInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(
+            matches!(ed.outcome(), Some(EditOutcome::Saved { slot: 0, .. })),
+            "editor saved a new chain"
+        );
+        // Apply the edit to the library and store it back into the world -
+        // the bridge under test (no direct `saved_chains` seeding).
+        ed.apply_outcome(&mut lib).unwrap();
+        field.store_chain_library(&lib);
+
+        // The chain now serializes with the save block...
+        let save = field.save_full();
+        assert_eq!(save.ext_v2.saved_chains.len(), 1);
+
+        // ...and a fresh boot that loads the save can offer it in battle.
+        let mut battle = World {
+            party_count: 1,
+            ..World::default()
+        };
+        battle.load_full(save);
+        let rows = battle.build_battle_arts_rows(0);
+        assert_eq!(
+            rows.len(),
+            1,
+            "the edited chain reaches the battle arts menu"
+        );
+        // Default new-chain name preset; 3 directional inputs => 3 synthetic hits.
+        assert_eq!(rows[0].hits(), 3);
     }
 
     #[test]
