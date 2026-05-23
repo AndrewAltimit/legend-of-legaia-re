@@ -293,11 +293,15 @@ The executable's **default** scene name is also `town01`: `FUN_8001D424` reads t
 
 The arm is **data-driven**: rather than blindly raising the bit on entry, `SceneHost::enter_field_scene` walks `opdeene`'s own MAN cutscene-timeline partition for the real `GFLAG_SET 26` write and arms only when it is present ([`World::arm_prologue_handoff_from_man`], built on [`man_field_scripts::walk_partition_gflag_sites`](../../crates/engine-core/src/man_field_scripts.rs)). So the engine confirms the arming op exists in the disc bytecode and sets exactly the bit the executed op would, and a cutscene scene that never issues that write can never produce a false hand-off. The disc-gated test `opdeene_prologue_arm.rs` pins the `GFLAG_SET 26` at the partition-2 record-18 offset `0xA5E` and asserts `town01` carries no such arm.
 
-The opening narration **plays** from this same timeline record: its inline subtitle pages (`0x1F`/`0x00`-framed ASCII decoded by `legaia_asset::cutscene_text` — see [`cutscene.md`](cutscene.md#in-engine-3d-cutscene-opdeene-opening-prologue)) are installed on entry and walked one page at a time by the [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) presenter, which **gates** the hand-off so the narration finishes before the `town01` confirm fires. What remains of the prologue tail is ticking the timeline's camera + actor `MoveTo`s frame-by-frame (so `GFLAG_SET 26` fires by execution and the 3D staging plays alongside the subtitles), and the field-VM op that auto-opens the name-entry overlay.
+The opening narration **plays** from this same timeline record: its inline subtitle pages (`0x1F`/`0x00`-framed ASCII decoded by `legaia_asset::cutscene_text` — see [`cutscene.md`](cutscene.md#in-engine-3d-cutscene-opdeene-opening-prologue)) are installed on entry and walked one page at a time by the [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) presenter, which **gates** the hand-off so the narration finishes before the `town01` confirm fires. What remains of the prologue tail is ticking the timeline's camera + actor `MoveTo`s frame-by-frame (so `GFLAG_SET 26` fires by execution and the 3D staging plays alongside the subtitles). The field-VM op that auto-opens the name-entry overlay is now pinned — see [Name-entry overlay](#name-entry-overlay).
 
 ### Name-entry overlay
 
-The *"Select your name."* screen (default `Vahn`) runs **after** the field launches, as a menu overlay invoked during the `town01` opening (master mode `0x03`, captured in the `name_input_ui` save state). It is part of the field/dialog overlay (loaded at `0x801C0000`), not a title sub-mode. Pinned addresses (live in `name_input_ui`):
+The *"Select your name."* screen (default `Vahn`) runs **after** the field launches, as a menu overlay invoked during the `town01` opening (master mode `0x03`, captured in the `name_input_ui` save state). It is part of the field/dialog overlay (loaded at `0x801C0000`), not a title sub-mode.
+
+**The field-VM op that opens it is pinned:** op `0x49` **STATE_RESUME sub-op 3** at `town01` partition-2 record 3 (P2[3]) body offset `0x02c6` (`49 03 00`), in the opening cutscene timeline. After the establishing camera sweep and Vahn's walk-out, the script suspends on this STATE_RESUME and `op49_invoke_setup` (`func_0x80020de0(0x8007065c, _DAT_8007c34c)`) hands off to the name-entry overlay. Confirmed by executing P2[3] through the engine field VM and correlating against this save: `_DAT_8007B450` (the op-`0x49` state slot) holds `0x800EB297`, which is the `0x49` op's RAM address + 1 (the record loads with body `0x02b0` at RAM `0x800EB280`, byte-identical), so the field script is parked precisely at this op while name entry is up. Regression: `crates/engine-core/tests/town01_opening_timeline_trace.rs`.
+
+Pinned addresses (live in `name_input_ui`):
 
 | Datum | Address | Notes |
 |---|---|---|
@@ -305,7 +309,7 @@ The *"Select your name."* screen (default `Vahn`) runs **after** the field launc
 | Live name buffer | `0x801F2A6C` | The name being edited (`Vahn` by default). |
 | Cursor index | `0x8007BB88` | Linear position over a **7-row × 17-col** navigation space (`0..0x77` = 119), wrapped modulo `0x77`. Cells `0..0x66` (102) are the glyph rows; `0x66..0x77` are the control row. `row = cursor/17`, `col = cursor%17`. |
 | Pad edge bits | `0x8007BB84` | Just-pressed mask for this frame (d-pad tested as `0x1000`/`0x4000`/`0x2000`, confirm via the button-mask table AND-ed with held pad `0x8007B874`). |
-| Char-record pointer | `0x8007B450` | Live character record being named; the active char index is the byte at `+1`, scaled by stride `0x414`; the committed name lands at `record + 0x86F`. |
+| Char-record pointer / op-0x49 slot | `0x8007B450` | The field-VM op-`0x49` STATE_RESUME state slot (`0` idle, `1` done, else an armed PC pointer). While name entry is open it holds `0x800EB297` = the opening timeline's `0x49` op address + 1 (the script is suspended there). The live character record being named is reachable through it; the committed name lands at `record + 0x86F` (stride `0x414`). |
 | Prompts | `0x801CF698`+ | "Is this name okay?", "Cannot enter that name.", "Tell me my name.", "Select your name.", "[Nameless]". |
 
 Two functions carry the screen:

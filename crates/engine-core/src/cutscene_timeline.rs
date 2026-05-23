@@ -38,6 +38,44 @@
 
 use legaia_engine_vm::field::FieldCtx;
 
+/// One executed instruction in a timeline op-stream trace.
+///
+/// Recorded by [`crate::world::World::step_cutscene_timeline`] when the
+/// timeline's [`CutsceneTimeline::trace_enabled`] flag is set. The trace is the
+/// engine VM's *authoritative* decode of the record bytecode - it follows the
+/// real per-op PC stride, so it never drifts the way a linear disassembler does
+/// through the variable-width `0x4C` menu-control op. Used to correlate which
+/// field-VM op opens a downstream UI (e.g. the `town01` opening's name-entry
+/// prompt) against a save-state oracle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TraceEntry {
+    /// Byte offset of the opcode in the record bytecode.
+    pub pc: usize,
+    /// Raw opcode byte, including the `0x80` cross-context (extended) bit.
+    pub opcode_byte: u8,
+    /// Decoded opcode (`opcode_byte & 0x7F`).
+    pub opcode: u8,
+    /// PC after the step (the resume / advance target).
+    pub next_pc: usize,
+    /// How the VM resolved this step.
+    pub result: TraceResult,
+}
+
+/// The [`legaia_engine_vm::field::StepResult`] discriminant for a [`TraceEntry`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceResult {
+    /// Normal advance to the next instruction.
+    Advance,
+    /// Per-frame yield (the VM ran until a `YIELD`).
+    Yield,
+    /// Held at PC (WAIT_FRAMES / conditional hold / un-advanceable op).
+    Halt,
+    /// A host hook fired but the op needs more support to advance.
+    Pending,
+    /// Unknown / out-of-range opcode.
+    Unknown,
+}
+
 /// A spawned field-VM context running the `opdeene` cutscene-timeline record.
 ///
 /// Built by [`crate::world::World::load_cutscene_timeline_from_man`] from the
@@ -62,6 +100,13 @@ pub struct CutsceneTimeline {
     pub done: bool,
     /// Frames the timeline has been stepping (for the safety cap).
     pub frames: u32,
+    /// When `true`, [`crate::world::World::step_cutscene_timeline`] appends a
+    /// [`TraceEntry`] per executed instruction to [`Self::trace`]. Off by
+    /// default (no overhead on the normal opening path); turned on for the RE
+    /// op-stream correlation harness.
+    pub trace_enabled: bool,
+    /// The recorded op stream when [`Self::trace_enabled`] is set.
+    pub trace: Vec<TraceEntry>,
 }
 
 impl CutsceneTimeline {
@@ -82,12 +127,21 @@ impl CutsceneTimeline {
             pc,
             done: false,
             frames: 0,
+            trace_enabled: false,
+            trace: Vec::new(),
         }
     }
 
     /// `true` once the timeline has completed.
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// Enable op-stream tracing (see [`Self::trace`]). Returns `self` for
+    /// builder-style use on the RE correlation harness.
+    pub fn with_trace(mut self) -> Self {
+        self.trace_enabled = true;
+        self
     }
 }
 
@@ -102,5 +156,13 @@ mod tests {
         assert_eq!(tl.pc, 1);
         assert!(!tl.is_done());
         assert_eq!(tl.frames, 0);
+        assert!(!tl.trace_enabled);
+    }
+
+    #[test]
+    fn with_trace_enables_tracing() {
+        let tl = CutsceneTimeline::new(vec![0x21], 0).with_trace();
+        assert!(tl.trace_enabled);
+        assert!(tl.trace.is_empty());
     }
 }

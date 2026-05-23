@@ -1828,8 +1828,36 @@ impl World {
         else {
             return false;
         };
+        self.install_cutscene_timeline_record(man_file, man, 2, record_idx, false)
+    }
+
+    /// Install a specific partition / record as a spawned cutscene-timeline
+    /// context. The general core behind [`Self::load_cutscene_timeline_from_man`]
+    /// (which locates `opdeene`'s `GFLAG_SET 26` record first) and the
+    /// town-opening op-stream trace harness (which installs `town01`'s opening
+    /// timeline record by index).
+    ///
+    /// Resolves the record's `(script_start, pc0, body_len)` span, slices the
+    /// body from `script_start` (so relative jumps wrap against the record
+    /// base), NOP-fills the inline narration spans (they are data the separate
+    /// [`crate::cutscene_narration::CutsceneNarration`] presenter consumes, not
+    /// field-VM opcodes - overwriting each with the 1-byte NOP `0x21` is
+    /// offset-preserving so the camera / move / flag ops keep their offsets),
+    /// and installs the timeline with `trace` controlling op-stream recording.
+    ///
+    /// Returns `true` when a timeline was installed; `false` when the span can't
+    /// be resolved.
+    // REF: FUN_8003BDE0
+    pub fn install_cutscene_timeline_record(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        partition: usize,
+        record_idx: usize,
+        trace: bool,
+    ) -> bool {
         let Some((script_start, pc0, body_len)) =
-            crate::man_field_scripts::partition_record_span(man_file, man, 2, record_idx)
+            crate::man_field_scripts::partition_record_span(man_file, man, partition, record_idx)
         else {
             return false;
         };
@@ -1837,14 +1865,6 @@ impl World {
             return false;
         };
         let mut body = body.to_vec();
-        // Neutralize the inline narration spans before handing the record to
-        // the field VM. The narration pages (`[0xCC 0xF8 0x80 N]` + `0x1F`/`0x00`
-        // pages) are *data*, not field-VM opcodes - retail's cutscene-context
-        // handler (`FUN_8003C764`) consumes them, but the engine presents them
-        // through the separate `CutsceneNarration` presenter. Overwriting each
-        // span with the field-VM NOP (`0x21`, a 1-byte op) is offset-preserving,
-        // so the VM walks through them harmlessly and the camera Configure / Move
-        // / `GFLAG_SET` ops at their original offsets still execute.
         for block in legaia_asset::cutscene_text::parse_narration(&body) {
             let (start, end) = block.byte_span();
             let end = end.min(body.len());
@@ -1854,7 +1874,11 @@ impl World {
                 }
             }
         }
-        self.cutscene_timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(body, pc0));
+        let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(body, pc0);
+        if trace {
+            tl = tl.with_trace();
+        }
+        self.cutscene_timeline = Some(tl);
         true
     }
 
@@ -1901,25 +1925,53 @@ impl World {
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
             while budget > 0 {
                 budget -= 1;
-                match vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, tl.pc) {
-                    FieldStepResult::Advance { next_pc } => tl.pc = next_pc,
-                    FieldStepResult::Yield { resume_pc } => {
-                        tl.pc = resume_pc;
-                        break;
-                    }
+                let pc = tl.pc;
+                let opcode_byte = tl.bytecode.get(pc).copied().unwrap_or(0);
+                let result = vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc);
+                let (next_pc, kind, stop) = match result {
+                    FieldStepResult::Advance { next_pc } => (
+                        next_pc,
+                        crate::cutscene_timeline::TraceResult::Advance,
+                        false,
+                    ),
+                    FieldStepResult::Yield { resume_pc } => (
+                        resume_pc,
+                        crate::cutscene_timeline::TraceResult::Yield,
+                        true,
+                    ),
                     // WAIT_FRAMES and conditional holds return `Halt` at the
                     // same PC: end the frame and resume there next tick.
                     FieldStepResult::Halt { final_pc } => {
-                        tl.pc = final_pc;
-                        break;
+                        (final_pc, crate::cutscene_timeline::TraceResult::Halt, true)
                     }
                     // An op this port can't advance past: stop and let the
                     // safety net below arm the hand-off.
-                    FieldStepResult::Pending { pc, .. } | FieldStepResult::Unknown { pc, .. } => {
-                        tl.pc = pc;
-                        tl.done = true;
-                        break;
+                    FieldStepResult::Pending { pc, .. } => {
+                        (pc, crate::cutscene_timeline::TraceResult::Pending, true)
                     }
+                    FieldStepResult::Unknown { pc, .. } => {
+                        (pc, crate::cutscene_timeline::TraceResult::Unknown, true)
+                    }
+                };
+                if tl.trace_enabled {
+                    tl.trace.push(crate::cutscene_timeline::TraceEntry {
+                        pc,
+                        opcode_byte,
+                        opcode: opcode_byte & 0x7F,
+                        next_pc,
+                        result: kind,
+                    });
+                }
+                tl.pc = next_pc;
+                if matches!(
+                    kind,
+                    crate::cutscene_timeline::TraceResult::Pending
+                        | crate::cutscene_timeline::TraceResult::Unknown
+                ) {
+                    tl.done = true;
+                }
+                if stop {
+                    break;
                 }
             }
         }
