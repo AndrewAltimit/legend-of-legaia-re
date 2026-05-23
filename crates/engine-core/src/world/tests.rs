@@ -382,6 +382,41 @@ fn locomotion_deterministic_across_identical_pad_stream() {
 }
 
 #[test]
+fn cutscene_narration_confirm_press_skips_page() {
+    let mut world = World::new();
+    world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
+    world.open_cutscene_narration(vec!["Page 1".into(), "Page 2".into()]);
+    let idx = |w: &World| w.cutscene_narration.as_ref().map(|n| n.current_index());
+    assert_eq!(idx(&world), Some(0));
+
+    // No press: a single tick does not advance (the dwell is 120 frames).
+    world.set_pad(0);
+    let _ = world.tick();
+    assert_eq!(idx(&world), Some(0));
+
+    // A just-pressed confirm (Cross) skips to the next page.
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(idx(&world), Some(1));
+
+    // Holding the same button is not a new edge - it must not skip again.
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(idx(&world), Some(1));
+
+    // Release, then a fresh press past the last page completes the narration
+    // (so the prologue hand-off gate releases).
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(input::PadButton::Circle.mask());
+    let _ = world.tick();
+    assert!(
+        world.cutscene_narration.is_none(),
+        "confirm past the last page completes the narration"
+    );
+}
+
+#[test]
 fn locomotion_gated_while_cutscene_timeline_active() {
     use crate::cutscene_timeline::CutsceneTimeline;
     let mut world = World::new();

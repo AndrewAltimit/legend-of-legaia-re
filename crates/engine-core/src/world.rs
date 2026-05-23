@@ -3264,12 +3264,24 @@ impl World {
                 self.current_capture_banner = None;
             }
         }
-        // Advance the opening-cutscene narration's per-page timer; clear it
-        // once the last page finishes so the prologue hand-off gate releases.
-        if let Some(narration) = &mut self.cutscene_narration
-            && !narration.tick(1)
-        {
-            self.cutscene_narration = None;
+        // Advance the opening-cutscene narration. A confirm press (Cross /
+        // Circle) skips to the next page early, mirroring the retail text
+        // balloon (which advances on confirm or its dwell timer, whichever is
+        // first); otherwise the per-page dwell timer auto-advances it so the
+        // cutscene plays unattended. Clear it once the last page finishes so
+        // the prologue hand-off gate releases. (Edge-triggered: the same press
+        // can't run through multiple pages in one frame.)
+        let narration_confirm = self.input.just_pressed(input::PadButton::Cross)
+            || self.input.just_pressed(input::PadButton::Circle);
+        if let Some(narration) = &mut self.cutscene_narration {
+            let still_on_screen = if narration_confirm {
+                narration.skip_page()
+            } else {
+                narration.tick(1)
+            };
+            if !still_on_screen {
+                self.cutscene_narration = None;
+            }
         }
         match self.mode {
             SceneMode::Battle => {
