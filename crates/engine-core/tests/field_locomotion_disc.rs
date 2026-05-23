@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::world::{FIELD_COLD_SPAWN_XZ, SceneMode};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -205,6 +205,42 @@ fn field_locomotion_drives_player_on_real_scene() {
     for scene in ["town01", "map03"] {
         verify_scene(&mut host, scene);
     }
+}
+
+/// A cold field entry (the New Game opening path) drops the player at the
+/// retail `FUN_801D6704` cold-boot spawn `(0xA40, 0, 0xA40)`, and that spawn
+/// is a standable tile in real town01 (Rim Elm) - not inside a base-grid wall.
+/// This pins Vahn's opening position so the engine no longer leaves him at the
+/// `(0, 0)` map corner.
+#[test]
+fn cold_field_entry_spawns_player_at_authored_walkable_position() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+    host.enter_field_scene("town01", 0).expect("enter town01");
+
+    let ms = &host.world.actors[0].move_state;
+    assert_eq!(
+        (ms.world_x, ms.world_y, ms.world_z),
+        (FIELD_COLD_SPAWN_XZ, 0, FIELD_COLD_SPAWN_XZ),
+        "cold field entry must place the player at the retail cold-boot spawn"
+    );
+    assert!(
+        !host
+            .world
+            .field_tile_is_wall(FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ),
+        "the cold-boot spawn tile must be walkable in town01"
+    );
+    eprintln!(
+        "[town01] cold-boot spawn ({FIELD_COLD_SPAWN_XZ}, 0, {FIELD_COLD_SPAWN_XZ}) is walkable"
+    );
 }
 
 /// Same pad stream twice -> bit-identical player trajectory on real data.

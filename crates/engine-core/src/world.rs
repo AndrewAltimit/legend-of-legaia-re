@@ -89,6 +89,21 @@ const FIELD_STEP_UNIT: i32 = 2;
 /// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
 const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 
+/// Cold field-entry player spawn coordinate (both X and Z).
+///
+/// On a non-warp (cold) field scene entry, the per-scene initializer
+/// `FUN_801D6704` creates the player actor at actor coords
+/// `(0xA40, 0, 0xA40)` - the centre of the camera's `0x20`-tile view window
+/// (`func_0x80024c88(&local_68=...)`, with the `sVar13`/`sVar14` sub-tile
+/// terms zero for a cold entry). Warp entries (`_DAT_8007b8b8 == 2`) override
+/// X/Z from the saved transition coords `_DAT_80084568`/`_DAT_8008456C`.
+///
+/// Cold entry only ever happens for the New Game opening scene (`town01`,
+/// Rim Elm), so this doubles as Vahn's authored opening spawn. See
+/// `ghidra/scripts/funcs/overlay_0897_801d6704.txt` (the
+/// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
+pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
