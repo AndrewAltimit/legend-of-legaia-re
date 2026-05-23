@@ -444,3 +444,10 @@ The TIM-upload helper for these (and for the title overlay's per-frame sprites) 
 - `_DAT_8007B98F` - separate debug-mode flag (NA build offset; JP retail uses `0x07D51F`, an `0x1B90` build-shift).
 
 The input dispatcher `FUN_8001822C` reads these flags but doesn't write them; the writer is downstream of one of the option-menu / cheat-menu overlays (`0896` or similar).
+
+## See also
+
+**Reference** —
+[PROT.DAT TOC](../formats/prot.md) ·
+[Asset loader](asset-loader.md) ·
+[Extraction pipeline](../tooling/extraction.md)

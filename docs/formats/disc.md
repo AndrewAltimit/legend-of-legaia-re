@@ -43,3 +43,8 @@ XA/XA1.XA  ... XA21.XA
 `XA/XA*.XA` are XA-ADPCM audio; `crates/xa` decodes the format spec but the on-disc files use a non-standard interleave.
 `PROT.DAT` is the main asset archive - see [PROT.DAT TOC](prot.md).
 `SCUS_942.54` is the executable. Reverse-engineering instructions: [`tooling/ghidra.md`](../tooling/ghidra.md).
+
+## See also
+
+- [PROT.DAT TOC](prot.md) - the in-disc container index.
+- [`tooling/extraction.md`](../tooling/extraction.md) - the extraction pipeline that walks this geometry.

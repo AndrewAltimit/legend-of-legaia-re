@@ -394,11 +394,13 @@ against trusting a drifted slot:
 5. Run `target/release/mednafen-state watch <label>` to see what's in
    the watch regions.
 
-## Cross-links
+## See also
 
 - [`overlay-capture.md`](overlay-capture.md) - how the resulting overlay
   slices get imported into Ghidra and analysed.
-- [`extraction.md`](extraction.md) - disc-side extraction; runs upstream
-  of save-state work.
+- [`pcsx-redux-automation.md`](pcsx-redux-automation.md) - the live
+  breakpoint-probe sibling of the save-state diff workflow.
+- [`docs/reference/memory-map.md`](../reference/memory-map.md) - the RAM
+  addresses the main-RAM diff regions resolve against.
 - [`crates/mednafen/README.md`](../../crates/mednafen/README.md) - the
   crate's API contract.

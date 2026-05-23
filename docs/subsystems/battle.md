@@ -780,3 +780,11 @@ The crate ships four test variants:
 | `real_psx_memory_card_save_drives_full_loop` | Disc-gated: boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card. |
 
 Disc-gated variants skip silently when `extracted/PROT.DAT` / the mednafen card is missing.
+
+## See also
+
+**Reference** —
+[Battle action SM](battle-action.md) ·
+[Damage / accuracy formulas](battle-formulas.md) ·
+[Encounter record](../formats/encounter.md) ·
+[battle_data pack](../formats/battle-data-pack.md)

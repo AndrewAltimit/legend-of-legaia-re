@@ -56,3 +56,9 @@ The 4096-byte ring buffer initialises to zeros, so most random inputs decode wit
 ## Where LZS is consumed
 
 The asset-type dispatcher (`FUN_8001F05C`) calls the LZS path when its `copy_only` flag is zero. See [asset type dispatcher](asset-type.md). Standalone-shaped LZS containers (with the descriptor-pair walker in [`asset-descriptor.md`](asset-descriptor.md)) are also recognised by `crates/lzs`.
+
+## See also
+
+- [Asset-type dispatch](asset-type.md) - the handler that selects the LZS decode path.
+- [Asset descriptor](asset-descriptor.md) - the standalone-container descriptor pairs.
+- [PROT.DAT TOC](prot.md) - the container index whose entries are commonly LZS-compressed.

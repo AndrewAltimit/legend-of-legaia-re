@@ -278,3 +278,12 @@ The engine-side translator at `crates/engine-core/src/art_strike.rs` (`apply_art
 - States `0x32..0x38` (summon flow): the `func_0x801F1ED4` call inside `0x34`/`0x35`/`0x36` is opaque; its dump is needed to resolve the summon-creature spawn path.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch and its interaction with the HP-bar at `ctx[+0x1074]` needs cross-referencing with the spirit definitions table to identify exactly which spirit triggers it.
 - `FUN_801E791C` (`0x64`), `FUN_801E7824` (`0x68`), `FUN_801E7250` (`0x51`), `FUN_801F0348` (`0x0C`/`0x71`), `FUN_801F3990` (`0x3D`), `FUN_801F45A4` (`0xFF`) are all opaque battle helpers - their semantics here are inferred from caller context, not their own decompile.
+
+## See also
+
+**Reference** —
+[Battle scene loader](battle.md) ·
+[Damage / accuracy formulas](battle-formulas.md) ·
+[Move-table VM](move-vm.md) ·
+[Effect VM](effect-vm.md) ·
+[Art records](../formats/art-data.md)

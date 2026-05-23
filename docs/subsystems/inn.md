@@ -57,3 +57,10 @@ Gold is stored at `_DAT_8008459C` in retail RAM and in `World::money` in the
 engine. Per-character HP/MP maxima are at `+0xFE / +0x102` (hp_max) and
 `+0x104 / +0x106` (mp_max) within the 0x414-byte character record
 (see `docs/reference/memory-map.md`).
+
+## See also
+
+**Reference** —
+[Shop UI](shop.md) ·
+[Save screen](save-screen.md) ·
+[Level-up](level-up.md)

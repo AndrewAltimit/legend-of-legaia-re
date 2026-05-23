@@ -139,3 +139,11 @@ The per-mode descriptor table from `DAT_8007326C` is also exposed as a typed loo
 A "12-byte fixed prefix `00 F0 84 7F 01 F0 1F 00 00 F1 00 00` repeated at 20-byte stride" detector lives at `crates/asset/src/stage_geom.rs`. It's not real stage geometry - it's the standard primitive-group header for Legaia TMD primitive group data when `((flags >> 1) - 8) >> 1 == K` (where K is the group type that uses 20-byte stride).
 
 The detector is preserved as a signal during exploration ("this buffer contains a TMD with effect-style primitives") but for actual geometry extraction use the TMD parser (`crates/tmd::legaia_prims`).
+
+## See also
+
+**Reference** —
+[Legaia TMD](../formats/tmd.md) ·
+[PSX TIM](../formats/tim.md) ·
+[NPC palettes](../formats/npc-palette.md) ·
+[World-overview viewer](world-overview-viewer.md)

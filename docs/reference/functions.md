@@ -490,3 +490,10 @@ These are 2-instruction `jr ra` / nop bodies — likely retail-disabled debug ho
 | `80024DFC` | Actor-cleanup hook (called from `FUN_8002519C` while freeing an actor). |
 | `8002B93C` / `8002B944` / `8002B94C` / `8002B954` | Cluster of debug-disabled helpers. |
 | `8003E7F0` | Reserved sound-path stub (called from `FUN_80017AAC`). |
+
+## See also
+
+- [`docs/subsystems/script-vm.md`](../subsystems/script-vm.md) — the field/event VM dispatcher (`FUN_801DE840`) anchoring many of these entries.
+- [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) — the battle-action SM (`FUN_801E295C`) and its helpers.
+- [`docs/reference/memory-map.md`](memory-map.md) — the RAM globals these functions read and write.
+- [`docs/tooling/ghidra.md`](../tooling/ghidra.md) — how the dumps backing this directory are produced.

@@ -32,3 +32,10 @@ The PSX TIM spec allows a 4bpp TIM's CLUT block to contain multiple CLUT rows (e
 Both TIMs are byte-confirmed against retail VRAM dumps; see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen) for the pinning method (PCSX-Redux save state → `extract_vram_from_sstate.py` → CLUT-row byte cross-reference against `PROT.DAT`).
 
 Browse them in the asset viewer with `asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut <row>` (any of 0..15).
+
+## See also
+
+- [Legaia TMD](tmd.md) - the mesh format that references these textures.
+- [TIM-pack](tim-pack.md) - the standalone bundle of multiple TIMs.
+- [NPC palettes](npc-palette.md) - the row-479 CLUT TIMs.
+- [`subsystems/renderer.md`](../subsystems/renderer.md) - the renderer that uploads TIMs into VRAM.

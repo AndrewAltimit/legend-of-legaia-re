@@ -254,3 +254,8 @@ The point of the table is to make the cross-cuts cheap to read:
   explicitly added to `port-catalog-ignore.toml`. Treat unfamiliar 16-byte
   thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather
   than ports.
+
+## See also
+
+- [`docs/tooling/ghidra.md`](ghidra.md) — produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
+- [`docs/reference/functions.md`](../reference/functions.md) — the curated entry-point directory the "documented" signal draws from.

@@ -65,3 +65,9 @@ What's **NOT** modelled yet:
 - The retail engine's per-scene "asset table" indirection (`SceneAssetTable` and `SceneScriptedAssetTable` detectors fire on a small fraction of entries; full reverse needs an overlay capture of `FUN_8001f7c0` at scene-load time).
 
 The categorize sweep covers the bulk of bytes - every PROT entry classifies to *something*, and ~95% of bytes fall into known classes. Refining the residual classes is the work tracked under "Reverse-engineer DATA_FIELD per-scene layout" in [`docs/subsystems/engine.md`](../subsystems/engine.md).
+
+## See also
+
+- [asset::pack](pack.md) - the pack format carried inside DATA_FIELD chunks.
+- [Asset-type dispatch](asset-type.md) - the type byte that opens each chunk.
+- [Asset descriptor](asset-descriptor.md) - the descriptor layout the chunks reference.

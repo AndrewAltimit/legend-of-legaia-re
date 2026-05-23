@@ -47,3 +47,9 @@ to the [arts-name table](art-data.md#arts-name-table-dat_80075ec4) resolver in
 `legaia_art::arts_table`). The web viewer's enemy table uses it to show drop
 item names; the disc-gated `item_names_real` test pins a span of ids against the
 real executable.
+
+## See also
+
+- [Spell table](spell-table.md) - the sibling static `SCUS_942.54` name+stat table.
+- [Art records](art-data.md) - the Tactical Arts records and arts-name table.
+- [`reference/gamedata.md`](../reference/gamedata.md) - the curated ground-truth item/drop tables.

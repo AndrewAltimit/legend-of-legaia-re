@@ -301,3 +301,10 @@ mednafen-state clut-trace \
   dispatch site that routes PROT 0874 section 0 through
   `FUN_8001F05C case 2` → `FUN_80026B4C` is open work
   (item 4 in `world-map-overlay.md` § Open work).
+
+## See also
+
+- [Legaia TMD](tmd.md) - the mesh embedded in each decompressed record.
+- [PSX TIM](tim.md) - the texture-pool format that follows each record's TMD.
+- [LZS compression](lzs.md) - the per-record decompression stage.
+- [`subsystems/battle.md`](../subsystems/battle.md) - the battle scene loader that pulls these records.

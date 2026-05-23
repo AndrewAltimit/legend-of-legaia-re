@@ -128,3 +128,12 @@ The memory note's "live snapshot" at `0x8011A2FC` shows what looks like a 16-byt
 ```
 
 Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puVar11 + 1` then `*puVar10 = group_idx`, advances `puVar10 += 12` bytes per record - the first u32 is the record count and the records start 4 bytes in. The "16-byte header" framing was off-by-12. The actor VM does **not** skip any metadata header before dispatch because **the actor VM never dispatches on this buffer at all** (per Implication 1 above).
+
+## See also
+
+**Reference** —
+[Field/event VM](script-vm.md) ·
+[Move-table VM](move-vm.md) ·
+[Motion VM](motion-vm.md) ·
+[ANM animation](../formats/anm.md) ·
+[Legaia TMD](../formats/tmd.md)

@@ -263,3 +263,10 @@ h:\prot\battle\etim.dat
 ```
 
 The `h:\` prefix indicates a Windows dev box. The runtime doesn't actually open these paths in retail (no real `h:\` drive on a PSX); the strings are leftover format artefacts that point at where each subsystem's data lives in PROT.
+
+## See also
+
+- [`docs/reference/functions.md`](../reference/functions.md) — the canonical directory of Ghidra-traced entry points these scripts dump.
+- [`docs/reference/memory-map.md`](../reference/memory-map.md) — RAM map + globals the LUI+ADDIU writer hunts resolve.
+- [`docs/tooling/port-catalog.md`](port-catalog.md) — tracks which dumped functions are documented / ported.
+- [`docs/tooling/extraction.md`](extraction.md) — the disc-side extraction that feeds `extracted/` into the container.

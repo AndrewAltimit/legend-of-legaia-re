@@ -311,3 +311,10 @@ would refine this with an interactively-scrolled centre + a refined
 ``zoom``; walk-view captures (``DAT_801F2B94 == 0``) match the spawn
 anchor, which is good enough as a "lock" target since the dev-menu
 top-view also enters from this anchor before user input scrolls it.
+
+## See also
+
+**Reference** —
+[World map](world-map.md) ·
+[World-map overlay](../formats/world-map-overlay.md) ·
+[Renderer](renderer.md)

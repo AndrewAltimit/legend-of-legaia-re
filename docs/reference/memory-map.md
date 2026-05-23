@@ -210,3 +210,9 @@ The 256 KB overlay window is shared between several runtime overlays - only one 
 ## Mini-game state regions
 
 Each mini-game gets its own ~64 KB slab of upper RAM, loaded fresh when entered. See [`reference/builds.md`](builds.md) for the per-mini-game RAM addresses.
+
+## See also
+
+- [`docs/reference/functions.md`](functions.md) — the functions that read and write these globals.
+- [`docs/subsystems/boot.md`](../subsystems/boot.md) — how the PROT TOC and key globals get installed at `0x801C70F0`.
+- [`docs/tooling/ghidra.md`](../tooling/ghidra.md) — the LUI+ADDIU writer hunt that pins these addresses.

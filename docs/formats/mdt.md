@@ -76,3 +76,9 @@ mdt classify <PATH>                        # which layout?
 mdt records  <PATH> --limit 8              # decode as flat record table
 mdt slots    <PATH> --limit 8              # decode as offset-table layout
 ```
+
+## See also
+
+- [`subsystems/move-vm.md`](../subsystems/move-vm.md) - the move-table opcode VM that runs these bytecode streams.
+- [Art records](art-data.md) - the per-character art-record layer above the move tables.
+- [`subsystems/battle-action.md`](../subsystems/battle-action.md) - the battle action state machine that drives the moves.

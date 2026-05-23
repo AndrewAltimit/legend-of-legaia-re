@@ -42,3 +42,9 @@ if let Some(m) = mips_overlay::detect(buf) {
              m.stack_frame_bytes, m.second_op);
 }
 ```
+
+## See also
+
+- [Overlay pointer table](overlay-ptr-table.md) - the sister detector for overlay code with leading pointer tables.
+- [`reference/functions.md`](../reference/functions.md) - the catalogue of traced function entry points.
+- [`reference/memory-map.md`](../reference/memory-map.md) - the RAM map showing where overlays load.

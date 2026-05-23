@@ -129,3 +129,11 @@ Builds paths under the `sound\` prefix; the XA / `.pac` / `STR` consumer. Same d
 ## Top-level extraction pipeline
 
 `legaia-extract` (the binary in `crates/extract`) drives the offline preservation pipeline: verify → disc → PROT → categorize → streaming-format extract → TIM → PNG. See [`tooling/extraction.md`](../tooling/extraction.md) for the per-stage CLI invocations.
+
+## See also
+
+**Reference** —
+[Asset descriptor](../formats/asset-descriptor.md) ·
+[Asset-type dispatch](../formats/asset-type.md) ·
+[DATA_FIELD streaming](../formats/data-field.md) ·
+[Boot sequence](boot.md)

@@ -238,3 +238,9 @@ Useful as fixtures for validating extractors:
 - **Unused items**: "Something Good" (sells for 50,000G) and an unnamed accessory (forces Seru-only encounters).
 - **Placeholder battle background**: a graphic containing `ぷろきおん` in hiragana - loaded when a real battle background is missing.
 - **Placeholder music**: tracks copied from Alundra (Zazan battle theme) and Wild ARMs (battle theme) sit in the SEQ/VAB data.
+
+## See also
+
+- [`docs/reference/gamedata.md`](gamedata.md) — the curated enemy / item tables the unused-content indices reference.
+- [`docs/reference/memory-map.md`](memory-map.md) — the per-mini-game RAM slabs and region-shifted globals.
+- [`docs/reference/cheats.md`](cheats.md) — region-specific RAM offsets validated against these builds.

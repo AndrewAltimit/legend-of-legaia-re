@@ -535,3 +535,9 @@ When the probe surfaces a useful signal, commit the Lua file under
 `scripts/pcsx-redux/` and update the catalogue table above. The CSV
 output itself is gitignored &mdash; it's a per-run artifact, not a
 project state.
+
+## See also
+
+- [`mednafen-automation.md`](mednafen-automation.md) - the save-state diff / bisect sibling of these live probes.
+- [`overlay-capture.md`](overlay-capture.md) - capturing overlay RAM slices for Ghidra import.
+- [`docs/reference/memory-map.md`](../reference/memory-map.md) - the RAM addresses the probes break on and watch.

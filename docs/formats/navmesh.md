@@ -44,3 +44,8 @@ Real per-scene region / event-trigger data for actor pathing is NOT in this RAM 
 - A **tile-board grid** (cell `2` = wall) is installed inline in the field-VM event script by op `0x49`, but that drives the puzzle / board minigame mode, not general locomotion (see [`subsystems/tile-board.md`](../subsystems/tile-board.md)).
 - Per-scene **region / zone boxes** are 18-byte records at the MAN control block `_DAT_801c6ea4 + 0x4`, queried by player tile via `FUN_801dba20` (bbox in `bytes[1..4]`).
 - The **encounter-record pointer** lives in actor records at `actor[+0x94]` — see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow.
+
+## See also
+
+- [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md) - the real free-movement collision system.
+- [Scene bundles](scene-bundles.md) - the scene asset layouts that hold the per-scene grids.

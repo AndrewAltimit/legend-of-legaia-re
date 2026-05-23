@@ -26,3 +26,8 @@ Treat as known-empty:
 - Don't run format detectors against them.
 - Don't include in TMD/TIM bulk-scan totals.
 - Skip in any "what's still uncategorised" tally.
+
+## See also
+
+- [PROT TOC](prot.md) - the index whose unused slots get pochi-filled.
+- [DMY.DAT](dmy.md) - the other dev-fixture container in the corpus.

@@ -305,3 +305,11 @@ The corpus is codified at `legaia_engine_core::capture_observations::cutscene_tr
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
 | Game modes 26 / 27 | `crates/engine-core/src/mode.rs` lines 101–104, 322–332 |
 | `play-str` frame loop | `crates/engine-shell/src/bin/legaia-engine.rs` lines 827–876 |
+
+## See also
+
+**Reference** —
+[STR FMV table](../formats/str-fmv-table.md) ·
+[XA audio](../formats/xa.md) ·
+[Audio stack](audio.md) ·
+[Field/event VM](script-vm.md)

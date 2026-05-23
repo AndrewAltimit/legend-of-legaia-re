@@ -29,3 +29,9 @@ The `+4` is the difference from the [pack format](pack.md): this format adds a c
 ## Item type detection
 
 `detected_ext(item)` returns `"TIM"` if the first byte is `0x10` (PSX TIM magic), else `"BIN"`.
+
+## See also
+
+- [asset::pack](pack.md) - the structurally similar in-DATA_FIELD pack.
+- [PROT.DAT TOC](prot.md) - the index whose standalone entries use this pack.
+- [PSX TIM](tim.md) - the texture sub-asset bundled here.

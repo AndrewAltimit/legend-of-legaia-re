@@ -15,3 +15,8 @@ No part of the file is referenced by retail gameplay code; the file is included 
 ## Treatment
 
 Skipped by the categorize pipeline. Not interesting for either preservation or the engine port.
+
+## See also
+
+- [PROT TOC](prot.md) - the sibling container with real game content.
+- [Pochi-fill slots](pochi.md) - the other dev-placeholder pattern in the corpus.

@@ -1056,3 +1056,9 @@ TMD-pack.
    semantic is vestigial, not load-bearing). The dynamic
    probe should also break on `_DAT_8007B824` writes to
    settle which case holds.
+
+## See also
+
+- [`subsystems/world-map.md`](../subsystems/world-map.md) - the world-map controller and render pipeline.
+- [`subsystems/world-overview-viewer.md`](../subsystems/world-overview-viewer.md) - the static-site WebGL viewer.
+- [Legaia TMD](tmd.md) - the candidate mesh format for the slot-4 records.
