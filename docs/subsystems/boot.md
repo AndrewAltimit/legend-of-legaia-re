@@ -301,6 +301,8 @@ The *"Select your name."* screen (default `Vahn`) runs **after** the field launc
 
 **The field-VM op that opens it is pinned:** op `0x49` **STATE_RESUME sub-op 3** at `town01` partition-2 record 3 (P2[3]) body offset `0x02c6` (`49 03 00`), in the opening cutscene timeline. After the establishing camera sweep and Vahn's walk-out, the script suspends on this STATE_RESUME and `op49_invoke_setup` (`func_0x80020de0(0x8007065c, _DAT_8007c34c)`) hands off to the name-entry overlay. Confirmed by executing P2[3] through the engine field VM and correlating against this save: `_DAT_8007B450` (the op-`0x49` state slot) holds `0x800EB297`, which is the `0x49` op's RAM address + 1 (the record loads with body `0x02b0` at RAM `0x800EB280`, byte-identical), so the field script is parked precisely at this op while name entry is up. Regression: `crates/engine-core/tests/town01_opening_timeline_trace.rs`.
 
+This is **executed in-engine**: on the new-game prologue hand-off the `town01` entry installs P2[3] as a spawned cutscene timeline ([`World::install_town01_opening_timeline`](../../crates/engine-core/src/world.rs), gated on `entering_town01_opening`). The timeline plays the establishing camera + Vahn's walk-out over ~490 frames (stepping past the conditional-wait parks the engine doesn't model — `0x4C` nibble-C `script_alloc`/globals, `0x2D`/`0x30` flag-tests — while honoring `0x4A` timed waits), then op `0x49` opens the name-entry overlay through the op-49 host hooks (`op49_invoke_setup` → `open_name_entry(0)`; `op49_state` Armed while open, Done after commit). The timeline freezes while the overlay is up and resumes once a name commits. Disc-gated `town01_opening_name_entry_wiring.rs`.
+
 Pinned addresses (live in `name_input_ui`):
 
 | Datum | Address | Notes |

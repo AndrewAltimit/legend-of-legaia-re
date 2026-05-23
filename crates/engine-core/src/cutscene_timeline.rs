@@ -107,6 +107,13 @@ pub struct CutsceneTimeline {
     pub trace_enabled: bool,
     /// The recorded op stream when [`Self::trace_enabled`] is set.
     pub trace: Vec<TraceEntry>,
+    /// When `true`, this timeline's terminal op is the `opdeene` prologue's
+    /// `GFLAG_SET 26`, so completing it (or hitting the frame cap) arms the
+    /// `town01` hand-off. The `town01` opening timeline sets this `false` - it
+    /// drives the establishing shot + name-entry handoff, not a scene change,
+    /// so it must never arm a prologue hand-off. See
+    /// [`crate::world::World::step_cutscene_timeline`].
+    pub arms_prologue_handoff: bool,
 }
 
 impl CutsceneTimeline {
@@ -129,6 +136,7 @@ impl CutsceneTimeline {
             frames: 0,
             trace_enabled: false,
             trace: Vec::new(),
+            arms_prologue_handoff: false,
         }
     }
 
@@ -141,6 +149,13 @@ impl CutsceneTimeline {
     /// builder-style use on the RE correlation harness.
     pub fn with_trace(mut self) -> Self {
         self.trace_enabled = true;
+        self
+    }
+
+    /// Mark this timeline as the `opdeene` prologue (its terminal `GFLAG_SET 26`
+    /// arms the `town01` hand-off; see [`Self::arms_prologue_handoff`]).
+    pub fn arming_prologue_handoff(mut self) -> Self {
+        self.arms_prologue_handoff = true;
         self
     }
 }

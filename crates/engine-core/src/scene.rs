@@ -1543,6 +1543,38 @@ impl SceneHost {
                 _ => {}
             }
         }
+        // New-game opening: when `town01` is entered via the prologue hand-off
+        // (not a normal visit), install its opening cutscene timeline so the
+        // establishing camera sweep + Vahn's walk-out play and the pinned
+        // op-`0x49` STATE_RESUME opens the name-entry overlay at the right beat
+        // (rather than the host opening it blindly at the hand-off). One-shot:
+        // consume the flag so re-entering `town01` later never re-runs it.
+        if name == legaia_asset::new_game::OPENING_SCENE && self.world.entering_town01_opening {
+            self.world.entering_town01_opening = false;
+            match self
+                .scene
+                .as_ref()
+                .map(|s| s.field_man_payload(&self.index))
+            {
+                Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
+                    Ok(man_file) => {
+                        if self
+                            .world
+                            .install_town01_opening_timeline(&man_file, &man_bytes)
+                        {
+                            log::info!(
+                                "opening: executing '{}' opening timeline (P2[{}]); name entry opens at its op-0x49 STATE_RESUME",
+                                legaia_asset::new_game::OPENING_SCENE,
+                                crate::world::World::TOWN01_OPENING_TIMELINE_RECORD,
+                            );
+                        }
+                    }
+                    Err(err) => eprintln!("[scene] town01 opening MAN parse skipped: {err:#}"),
+                },
+                Some(Err(err)) => eprintln!("[scene] town01 opening MAN payload skipped: {err:#}"),
+                _ => {}
+            }
+        }
         // Drain any pending transition the previous scene left behind.
         self.world.pending_scene_transition = None;
         Ok(())

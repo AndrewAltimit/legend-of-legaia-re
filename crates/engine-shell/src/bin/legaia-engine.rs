@@ -6731,21 +6731,13 @@ impl ApplicationHandler for PlayWindowApp {
                         match self.session.enter_field_live(target, &self.field_live_opts) {
                             Ok(mode) => {
                                 log::info!("prologue handoff: entered '{target}' (mode={mode:?})");
-                                // Faithful opening order: the retail `town01`
-                                // opening runs an establishing camera + Vahn's
-                                // scripted walk-out, then the "Select your name."
-                                // prompt (master mode 0x03; see boot.md "Name-entry
-                                // overlay"). The engine doesn't yet tick that
-                                // in-scene cutscene timeline (per-mesh placement is
-                                // still open), so we open the naming prompt right
-                                // at the opening hand-off - the prompt's ORDER in
-                                // the new-game flow is correct even though the exact
-                                // in-script field-VM trigger op is still being RE'd.
-                                // Gated tightly: `take_prologue_handoff` only fires
-                                // on the NEW GAME `opdeene` -> `town01` opening, so
-                                // this never re-prompts on a normal `town01` visit.
-                                // Seeded with the template default `Vahn`.
-                                self.session.host.world.open_name_entry(0);
+                                // `enter_field_scene` installs `town01`'s opening
+                                // cutscene timeline (gated on the prologue hand-off):
+                                // the establishing camera + Vahn's scripted walk-out
+                                // play, and the name-entry overlay opens when the
+                                // timeline reaches its pinned op-`0x49` STATE_RESUME
+                                // (P2[3] body `0x02c6`) - the faithful in-script
+                                // trigger, not a blind host call at the hand-off.
                             }
                             Err(e) => {
                                 log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
@@ -6854,7 +6846,7 @@ impl ApplicationHandler for PlayWindowApp {
                             pz,
                             aspect,
                         )
-                    } else if self.session.host.world.cutscene_timeline.is_some() {
+                    } else if self.session.host.world.cutscene_timeline_active() {
                         let (look_at, yaw, fov) = self.cutscene_view();
                         legaia_engine_render::window::cutscene_camera_mvp(
                             look_at,
