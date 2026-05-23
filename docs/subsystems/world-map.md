@@ -111,6 +111,26 @@ cell from a per-encounter record pointed at by `entity[+0x94]`:
 3. Copy `entity[+0x94][+0x4 .. +0x4 + monster_count]` into the formation
    cell, byte-for-byte.
 
+This copy runs in **SM state 1** (`entity[+0x8A] == 1`). The same invocation
+clears `entity[+0x94]`, sets `entity[+0x88] = 0`, advances `entity[+0x8A]` to
+`2`, and then **falls through** the `case 2/3` arm, which writes
+`_DAT_8007B83C = 8` (the game-mode handoff that launches the battle), sets
+`entity[+0x8A] = 4`, and clears the `0x80000` "encounter active" flag on the
+player context (`_DAT_8007C364[+0x10]`, which state 1 had raised). So the
+formation install and the battle launch happen in the **same tick** the
+carrier reaches state 1. State 0 reaches state 1 either via the random roll
+`FUN_801D9E1C` (which sets `+0x88`/`+0x8A`/`+0x94` from the rolled formation
+index) or — in a 0%-random town like `town01` — via a scripted advance from
+the scene's interaction bytecode.
+
+The carrier `entity_ptr` (`param_1`) is a **dedicated field entity**, distinct
+from the player context `_DAT_8007C364`: the routine reads `param_1[+0x8A]` /
+`param_1[+0x94]` but writes the `0x80000` flag onto `_DAT_8007C364` separately,
+and the player-context object (corpus-stable at `0x80083794`) carries no clean
+`+0x8A`/`+0x94` SM. The loop reaches the carrier through the per-entity
+update-function-pointer dispatch (no direct `jal`), so the carrier is one of
+the scene's MAN-placed entities, not the player.
+
 The encounter-record format consumed here is documented in
 [`formats/encounter.md`](../formats/encounter.md). The 4-byte formation cell
 at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
