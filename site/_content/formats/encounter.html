@@ -99,6 +99,19 @@
       <tr><td><code>mc3</code> (post-battle, <code>suimon</code>)</td><td><code>0A 0D 00 00</code></td><td>Two-slot encounter, monsters <code>0x0A</code> and <code>0x0D</code>.</td></tr>
     </tbody>
   </table>
+
+  <h3>Worked example: the Rim Elm training fight</h3>
+  <p>The game's opening battle &mdash; the training fight in Rim Elm (<code>town01</code>) &mdash; is a scripted <strong>single-monster</strong> encounter against monster archive id <code>0x4F</code> ("Tetsu", the 999/999 tutorial sparring partner). Reading the formation cell across the training-fight capture corpus shows the install boundary cleanly:</p>
+  <table>
+    <thead><tr><th>Capture phase (<code>town01</code>)</th><th><code>0x8007BD0C..0F</code></th><th>Interpretation</th></tr></thead>
+    <tbody>
+      <tr><td>Pre-battle field (free movement, before the fight)</td><td><code>00 00 00 00</code></td><td>No formation installed &mdash; the cell is clear.</td></tr>
+      <tr><td>Battle loading (<code>game_mode 0x15</code>, graphics not yet drawn)</td><td><code>4F 00 00 00</code></td><td>One-monster formation: id <code>0x4F</code> in slot 0.</td></tr>
+      <tr><td>Battle running (graphics / command menu / submenu)</td><td><code>4F 00 00 00</code></td><td>Same lone-monster formation.</td></tr>
+      <tr><td>Post-battle field (back to <code>game_mode 0x03</code>)</td><td><code>4F 00 00 00</code></td><td>Cell retains the last formation until the next install (cleared at the next encounter, not on victory).</td></tr>
+    </tbody>
+  </table>
+  <p>The formation copy happens at battle entry: the cell is empty in the field and carries the lone id <code>0x4F</code> from battle-load onward. The clean-room engine builds this with <code>EncounterRecord::rim_elm_training()</code> (<code>RIM_ELM_TRAINING_OPPONENT_ID = 0x4F</code>).</p>
 </section>
 
 <section class="doc-section" id="random-encounter">
