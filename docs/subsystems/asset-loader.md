@@ -37,15 +37,21 @@ The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op
 
 `FUN_80025980` loads a **code overlay** at PROT index `map_id + 0x4d` (or `map_id + 0x4f` when `map_id >= 6`). Only 7 distinct warp destinations exist (map_id 0–6), each loading a different scene-type overlay at PROT 0x4D–0x55. These overlays contain scene-specific entry functions at overlay-resident addresses (`0x801CF070`, `0x801CE8A0`, etc.).
 
-The **scene name** (stored at `DAT_80084548`) is pre-set before `FUN_80025980` executes. The overlay entry function reads this buffer and passes it to `FUN_8001F7C0` and `FUN_80020118`. The mechanism that writes the scene name before the WARP fires is in code paths not yet fully traced (likely a pre-transition handler in the field/town overlay).
+The **scene name** (stored at `DAT_80084548`) is pre-set before `FUN_80025980` executes. The overlay entry function reads this buffer and passes it to `FUN_8001F7C0` and `FUN_80020118`. `FUN_80025980` does not set the name itself — it backs the active name up into `0x8007BAE8` and only selects the scene-*type* overlay by `map_id`.
 
 Key globals:
 - `DAT_80084548` - scene name string (max 8 chars; e.g. `"izumi"`, `"town01"`)  
+- `DAT_8007050C` - mirror of the scene name; the executable's static default is `"town01"` (loaded from the dev file `initmap.txt` by `FUN_8001D424`)  
 - `DAT_80084540` - current scene's PROT base index (short)  
 - `DAT_8007b768` - pending destination PROT index; `0xffff` = none  
 - `DAT_8007ba34` - pending warp map_id (0–6); read by `FUN_80025980`  
+- `DAT_8007bae8` - WARP handler's backup of the previous scene name (8 bytes)  
 
-The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list, and the scene name is determined by a pre-WARP state-machine path not yet traced.
+The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list.
+
+### Name-based scene change (`FUN_8001FD44`)
+
+Distinct from the map-id door-warp above, the engine has a **name-based scene-change packet** that sets the destination scene by its CDNAME string. **`FUN_8001FD44(name_ptr)`** copies the target name into `0x8007050C`, syncs it to the active buffer `0x80084548` (`FUN_8001D7F8`), and stages the load (gated retail-vs-debug on `_DAT_8007B8C2`); `s_ERR_CHANGE_PACKET` guards re-entry while a packet is pending (`_DAT_8007BA3C`). This is the path the opening `opdeene`→`town01` handoff uses — see [`subsystems/boot.md`](boot.md#opdeene--town01-handoff-scene-change-packet). Because the destination name is supplied as a code/data string (the opening's `"town01"` is the overlay literal at `0x801CE82C`), this path is **not** constrained to the 7 door-warp map_ids.
 
 ## Asset descriptor walker (`FUN_80020224`)
 

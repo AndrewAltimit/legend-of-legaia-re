@@ -185,6 +185,12 @@ enum Cmd {
         /// Useful for tracing scene-entry / cutscene / dialog flow.
         #[arg(long)]
         disasm_record: Option<usize>,
+        /// Write the decoded (LZS-decompressed) MAN payload to this path so it
+        /// can be scanned for embedded literals (e.g. a scripted scene-change
+        /// target name). The scene-entry script + every partition's bytecode
+        /// live in this blob.
+        #[arg(long)]
+        dump_man: Option<PathBuf>,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen
@@ -957,7 +963,15 @@ fn main() -> Result<()> {
             disc,
             all,
             disasm_record,
-        } => cmd_man_scripts(&scene, &extracted_root, disc.as_deref(), all, disasm_record),
+            dump_man,
+        } => cmd_man_scripts(
+            &scene,
+            &extracted_root,
+            disc.as_deref(),
+            all,
+            disasm_record,
+            dump_man.as_deref(),
+        ),
         Cmd::VramOracle {
             scene,
             extracted_root,
@@ -1779,6 +1793,7 @@ fn cmd_man_scripts(
     disc: Option<&Path>,
     all: bool,
     disasm_record: Option<usize>,
+    dump_man: Option<&Path>,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
     use legaia_engine_core::scene_bundle;
@@ -1795,6 +1810,16 @@ fn cmd_man_scripts(
     let man = scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
         .with_context(|| format!("scene '{scene_name}' MAN payload did not decode"))?;
     let man_file = legaia_asset::man_section::parse(&man)?;
+
+    if let Some(path) = dump_man {
+        std::fs::write(path, &man)
+            .with_context(|| format!("write decoded MAN to {}", path.display()))?;
+        println!(
+            "wrote decoded MAN payload ({} bytes) to {}",
+            man.len(),
+            path.display()
+        );
+    }
 
     let records = walk_partition1_scripts(&man_file, &man);
     println!(
