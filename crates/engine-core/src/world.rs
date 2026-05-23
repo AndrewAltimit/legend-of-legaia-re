@@ -986,6 +986,12 @@ pub struct World {
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
 
+    /// Per-item battle-stat modifier table (weapon / armor / accessory
+    /// bonuses). Empty by default; install via [`World::set_equipment_table`]
+    /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
+    /// party combatant's attack / defense at battle entry.
+    pub equipment_table: crate::battle_stats::EquipmentTable,
+
     /// Battle-scoped monster-AI state (cooldowns / phase counter / recent-target
     /// ring) read & written by the per-monster-id scripted-cast picker
     /// ([`crate::monster_ai::decide`]). Reset on each battle enter.
@@ -1363,6 +1369,7 @@ impl World {
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
+            equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
             vdf_buffer: None,
@@ -2726,6 +2733,61 @@ impl World {
         self.monster_catalog = catalog;
     }
 
+    /// Install the per-item battle-stat modifier table (weapon / armor /
+    /// accessory bonuses). Boot wires this once; [`Self::seed_party_battle_stats`]
+    /// folds the equipped items onto each party combatant at battle entry.
+    pub fn set_equipment_table(&mut self, table: crate::battle_stats::EquipmentTable) {
+        self.equipment_table = table;
+    }
+
+    /// Seed each party combatant's battle attack / defense from the roster's
+    /// live stats plus equipped-gear bonuses.
+    ///
+    /// For every party slot whose roster record carries real stats (live
+    /// attack `> 0`), this resolves a [`crate::battle_stats::BattleStats`] from
+    /// the character's base attack / UDF / LDF and the modifiers of the items
+    /// in its equipment slots ([`crate::battle_stats::compute_battle_stats_default`]
+    /// against [`Self::equipment_table`]), then writes
+    /// [`Self::battle_attack`] (= resolved attack) and
+    /// [`Self::battle_defense_split`] (= resolved UDF / LDF). Slots with a
+    /// zeroed roster record are left untouched, so synthetic battles that set
+    /// `battle_attack` directly keep their values.
+    ///
+    /// Called automatically from the live-loop battle entry; also public so a
+    /// host can refresh stats after an equipment change without re-entering the
+    /// battle.
+    pub fn seed_party_battle_stats(&mut self) {
+        let pc = self.party_count.min(3) as usize;
+        for slot in 0..pc {
+            let Some(rec) = self.roster.members.get(slot) else {
+                continue;
+            };
+            let live = rec.live_stats();
+            // A zeroed roster carries no real stats; don't clobber any value a
+            // synthetic battle set directly.
+            if live.atk == 0 {
+                continue;
+            }
+            let record = crate::battle_stats::StatRecord {
+                base_attack: live.atk,
+                base_udf: live.udf,
+                base_ldf: live.ldf,
+                base_accuracy: live.agl,
+                base_evasion: live.agl,
+                equip: rec.equipment().slots,
+            };
+            let stats = crate::battle_stats::compute_battle_stats_default(
+                &record,
+                &self.equipment_table,
+                &[],
+            );
+            if let Some(s) = self.battle_attack.get_mut(slot) {
+                *s = stats.atk;
+            }
+            self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
+        }
+    }
+
     /// Install a formation + monster catalog pair. Boot wires this once;
     /// engines read it at battle-load time.
     pub fn set_formation_table(
@@ -3875,6 +3937,9 @@ impl World {
             // previous battle that placed an enemy in this slot.
             a.battle_monster_id = None;
         }
+        // Fold the roster's live stats + equipped-gear bonuses onto the party
+        // combatants' attack / defense (no-op for a zeroed roster).
+        self.seed_party_battle_stats();
         // Clear any monster-slot SPD left over from a previous battle so the
         // initiative gate only sees this formation's speeds.
         for s in self.battle_speed.iter_mut().skip(party_count as usize) {
@@ -11078,6 +11143,63 @@ mod tests {
         assert!(world.encounter.is_none());
         // Too short to even hold the count byte -> parse fails.
         assert_eq!(world.install_scripted_encounter(&[0, 0]), None);
+    }
+
+    #[test]
+    fn seed_party_battle_stats_folds_live_stats_and_equipment() {
+        use crate::battle_stats::{EquipmentTable, ItemModifier};
+        use legaia_save::EquipmentSlots;
+        use legaia_save::character::LiveStats;
+
+        let mut world = World::new();
+        let mut party = legaia_save::Party::zeroed(1);
+        party.members[0].set_live_stats(LiveStats {
+            agl: 12,
+            atk: 30,
+            udf: 10,
+            ldf: 8,
+            spd: 5,
+            int: 4,
+        });
+        let mut slots = [0u8; 8];
+        slots[0] = 5; // a weapon in the first slot
+        party.members[0].set_equipment(EquipmentSlots { slots });
+        world.load_party(party);
+
+        // Item 5 grants +7 attack, +3 UDF, +2 LDF.
+        let mut table = EquipmentTable::new();
+        table.set(
+            5,
+            ItemModifier {
+                atk: 7,
+                udf: 3,
+                ldf: 2,
+                acc: 0,
+                eva: 0,
+                ability_bits: [0; 32],
+            },
+        );
+        world.set_equipment_table(table);
+
+        world.seed_party_battle_stats();
+        assert_eq!(world.battle_attack[0], 37, "30 base + 7 weapon");
+        assert_eq!(
+            world.battle_defense_split[0],
+            Some((13, 10)),
+            "(10+3) UDF, (8+2) LDF"
+        );
+    }
+
+    #[test]
+    fn seed_party_battle_stats_skips_zeroed_roster() {
+        // A synthetic battle sets battle_attack directly then loads a zeroed
+        // roster; seeding must not clobber the manual value.
+        let mut world = World::new();
+        world.set_battle_attack(0, 60);
+        world.load_party(legaia_save::Party::zeroed(3));
+        world.seed_party_battle_stats();
+        assert_eq!(world.battle_attack[0], 60, "zeroed roster leaves it intact");
+        assert_eq!(world.battle_defense_split[0], None);
     }
 
     #[test]
