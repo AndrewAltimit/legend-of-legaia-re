@@ -5051,14 +5051,42 @@ impl PlayWindowApp {
     }
 
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
-        orbit_camera_mvp(
-            self.scene_aabb.0,
-            self.scene_aabb.1,
-            0.25,
-            0.4,
-            self.win.elapsed_secs(),
-            aspect,
-        )
+        // Frame the player's vicinity, not the whole scene. Loading the full
+        // town environment-geometry pack makes `scene_aabb` (the union of every
+        // mesh's local extent) span thousands of units, so fitting it pulls the
+        // orbit camera far enough out that the actually-drawn terrain near the
+        // player shrinks to a speck. Until per-mesh world placement lands, build
+        // a fixed-size framing box around the player actor (the field draws
+        // actor-bound meshes at actor positions) so the view stays close.
+        const FIELD_VIEW_HALF: f32 = 700.0;
+        let (lo, hi) = self
+            .session
+            .host
+            .world
+            .actors
+            .first()
+            .filter(|p| p.active || p.tmd_binding.is_some())
+            .map(|p| {
+                let (cx, cy, cz) = (
+                    p.move_state.world_x as f32,
+                    p.move_state.world_y as f32,
+                    p.move_state.world_z as f32,
+                );
+                (
+                    [
+                        cx - FIELD_VIEW_HALF,
+                        cy - FIELD_VIEW_HALF,
+                        cz - FIELD_VIEW_HALF,
+                    ],
+                    [
+                        cx + FIELD_VIEW_HALF,
+                        cy + FIELD_VIEW_HALF,
+                        cz + FIELD_VIEW_HALF,
+                    ],
+                )
+            })
+            .unwrap_or((self.scene_aabb.0, self.scene_aabb.1));
+        orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
