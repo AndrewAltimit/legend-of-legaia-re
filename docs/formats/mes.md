@@ -46,7 +46,7 @@ parses this variant.
 
 ## Bytecode encoding
 
-Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#fun_8003ca38--glyph-stride-walker), [`FUN_80036044`](#fun_80036044--text-width-measurement), [`FUN_80036888`](#fun_80036888--text-renderer), [`FUN_80036514`](#fun_80036514--substitution-expander)). The same byte-classification table is used by all four; only the action per byte differs.
+Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#fun_8003ca38---glyph-stride-walker), [`FUN_80036044`](#fun_80036044---text-width-measurement), [`FUN_80036888`](#fun_80036888---text-renderer), [`FUN_80036514`](#fun_80036514---substitution-expander)). The same byte-classification table is used by all four; only the action per byte differs.
 
 | Byte range | Stride | Meaning |
 |---|---|---|
@@ -95,7 +95,7 @@ Walks the bytecode and returns total width. Adds the substitution dispatch on to
 
 ### `FUN_80036888` - text renderer
 
-The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls [`FUN_80036514`](#fun_80036514--substitution-expander) at the start to expand substitutions into a working buffer.
+The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls [`FUN_80036514`](#fun_80036514---substitution-expander) at the start to expand substitutions into a working buffer.
 
 ### `FUN_80036514` - substitution expander
 

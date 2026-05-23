@@ -13,10 +13,10 @@
   <h2>Header (8 bytes)</h2>
 <pre><code>u8  magic_lo            // arbitrary
 u8  magic_hi            // arbitrary
-u8  count               // &lt; 0x10
+u8  disc               // &lt; 0x10  (discriminator byte, NOT the count)
 u8  marker              // == 0x01
-u32 (offset table starts here, count entries)</code></pre>
-  <p>The <code>byte[3] == 0x01</code> byte is the magic discriminator; <code>byte[2]</code> is the count (limited to <code>&lt;16</code>, hence the cap). The detection function <code>is_tim_pack</code> checks both.</p>
+u32 tim_num             // entry count at +4; offset table follows at +8</code></pre>
+  <p>The <code>byte[3] == 0x01</code> / <code>byte[2] &lt; 0x10</code> pair is the magic discriminator; the entry count is the <code>u32 tim_num</code> at <code>+4</code> (so the offset table begins at byte <code>+8</code>). The detection function <code>is_tim_pack</code> checks the signature pair, that <code>tim_num</code> is positive, and that the offset table fits within the blob.</p>
 </section>
 
 <section class="doc-section" id="offset-table">

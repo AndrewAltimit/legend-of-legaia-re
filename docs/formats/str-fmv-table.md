@@ -79,7 +79,7 @@ The play loop's selector lives at `0x801CECA0`:
 
 The 64-byte slot has the shape `[u32 path_ptr, u32 flag, u32 segment_id, u32 frame_count, u32, u32, u32 width, u32 height, ...]`. The play loop reads the path pointer at `+0x00` and opens the file via libcd.
 
-`_DAT_8007BA78` is a `s16` written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#fmv-trigger-op) for the full opcode trace.
+`_DAT_8007BA78` is a `s16` written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op) for the full opcode trace.
 
 ### Authoritative runtime mapping
 

@@ -101,6 +101,18 @@ fn vlq_short_read_and_overlong_return_err() {
 }
 
 #[test]
+fn vlq_extreme_pos_does_not_overflow() {
+    // `read_vlq` is a public entry point with a caller-supplied `pos`.
+    // A junk `pos == usize::MAX` would overflow the `pos + consumed`
+    // index arithmetic and panic in a debug build. It must return Err.
+    let buf = [0x00u8, 0x80, 0x40];
+    assert!(read_vlq(&buf, usize::MAX).is_err());
+    assert!(read_vlq(&buf, usize::MAX - 1).is_err());
+    // An empty buffer with an extreme offset is also Err, not a panic.
+    assert!(read_vlq(&[], usize::MAX).is_err());
+}
+
+#[test]
 fn legaia_shape_truncated_returns_err() {
     // u32 BE version == 1 at +4 selects the Legaia shape (15-byte header).
     // Provide only enough for the PsyQ shape so the Legaia branch is not

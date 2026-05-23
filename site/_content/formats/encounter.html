@@ -151,7 +151,7 @@ _DAT_8007b5fc = (RNG % 0x1e7) - ((RNG % 0x1e7) - 0x3ce);</code></pre>
     </tbody>
   </table>
   <h3>Per-scene MAN file (asset type <code>0x03</code>)</h3>
-  <p>The encounter data lives as the <code>Man</code> asset in each scene's <a href="scene-bundles.html#scene_asset_table---canonical-7-asset-bundle">scene_asset_table</a> 7-asset bundle, descriptor index 2. The asset dispatcher (<code>FUN_8001F05C</code>) LZS-decompresses the Man payload into a heap buffer addressed by <code>_DAT_8007B898</code>; <code>FUN_8003AEB0</code> (the per-scene MAN walker, called from <code>FUN_801D6704</code> / family scene loaders) then walks the MAN's multi-section header and finally writes the encounter-section pointer into <code>ctrl[+0x20]</code> before calling <code>FUN_8003A110</code>.</p>
+  <p>The encounter data lives as the <code>Man</code> asset in each scene's <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> 7-asset bundle, descriptor index 2. The asset dispatcher (<code>FUN_8001F05C</code>) LZS-decompresses the Man payload into a heap buffer addressed by <code>_DAT_8007B898</code>; <code>FUN_8003AEB0</code> (the per-scene MAN walker, called from <code>FUN_801D6704</code> / family scene loaders) then walks the MAN's multi-section header and finally writes the encounter-section pointer into <code>ctrl[+0x20]</code> before calling <code>FUN_8003A110</code>.</p>
   <p>The MAN multi-section header is byte-exact across all 80 retail <code>scene_asset_table</code> bundles and lives at MAN offset <code>0</code>:</p>
 <pre><code>+0x00..+0x02   u16 LE  status_flags     ; return value; bit 0x400 hints world-map
                                          ; bulk terrain (set on map01/map02/map03)

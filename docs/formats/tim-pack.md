@@ -9,12 +9,12 @@ Implementation: `crates/prot/src/timpack.rs`.
 ```
 u8  magic_lo            // arbitrary
 u8  magic_hi            // arbitrary
-u8  count               // < 0x10
+u8  disc               // < 0x10  (discriminator byte, NOT the count)
 u8  marker              // == 0x01
-u32 (offset table starts here, count entries)
+u32 tim_num             // entry count at +4; offset table follows at +8
 ```
 
-The `byte[3] == 0x01` byte is the magic discriminator; `byte[2]` is the count (limited to `<16`, hence the cap). The detection function `is_tim_pack` checks both.
+The `byte[3] == 0x01` / `byte[2] < 0x10` pair is the magic discriminator; the entry count is the `u32 tim_num` at `+4` (so the offset table begins at byte `+8`). The detection function `is_tim_pack` checks the signature pair, that `tim_num` is positive, and that the offset table fits within the blob.
 
 ## Offset table
 

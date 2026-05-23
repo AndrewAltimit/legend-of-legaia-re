@@ -31,7 +31,7 @@ buffer that the runtime loads verbatim into RAM. Three carriers:
 | Karisto | 0391 | `map03` | 24444 |
 
 The 7-asset bundle is the standard
-[`scene_asset_table`](scene-bundles.md#scene_asset_table---canonical-7-asset-bundle)
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
 shape with type sequence `(1, 2, 3, 4, 5, 6, 7)`. Slot 4's type byte
 is `0x05` per [asset-type](asset-type.md) - the standard table calls
 this "MOVE", but the kingdom-bundle consumer interprets the bytes as
@@ -563,7 +563,7 @@ The chain is the **standard asset-load path**: scene loader →
 allocated RAM destination (`0x8011A624` for Drake). No special slot-4
 transcoder; the asset is just LZS-decoded verbatim into RAM, matching
 the byte-verified `disc → RAM` finding documented in
-[RAM layout](#ram-layout) above.
+[RAM layout](#ram-layout-confirmed) above.
 
 ### Working-buffer writers (transcoder-hunt probe, 2026-05-14)
 
