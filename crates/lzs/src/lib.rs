@@ -271,6 +271,79 @@ mod tests {
         );
     }
 
+    // --- Panic-hardening regression tests ---------------------------------
+    //
+    // Bulk scanners feed ARBITRARY PROT-entry bytes at `parse_container` /
+    // `decompress_container*`, and `decompress` is called with externally
+    // supplied target sizes. Junk / truncated input must return `Err`, never
+    // panic (OOB slice, capacity overflow, integer over/underflow).
+
+    #[test]
+    fn decompress_empty_with_nonzero_target_is_err_not_panic() {
+        assert!(decompress(&[], 16).is_err());
+    }
+
+    #[test]
+    fn decompress_truncated_backref_is_err_not_panic() {
+        // Control byte 0x00 selects a back-ref, but only one of the two
+        // back-ref bytes follows.
+        assert!(decompress(&[0x00, 0xEE], 8).is_err());
+    }
+
+    #[test]
+    fn decompress_one_byte_control_then_eof_is_err_not_panic() {
+        // Control byte requests a literal but the source is already exhausted.
+        assert!(decompress(&[0x01], 4).is_err());
+    }
+
+    #[test]
+    fn parse_container_empty_is_err_not_panic() {
+        assert!(parse_container(&[]).is_err());
+    }
+
+    #[test]
+    fn parse_container_one_byte_is_err_not_panic() {
+        assert!(parse_container(&[0xAB]).is_err());
+    }
+
+    #[test]
+    fn parse_container_bogus_huge_size_offset_is_err_not_panic() {
+        // 16-byte minimum so we get past the size gate, then a section pair
+        // with an enormous size and an offset past EOF.
+        let mut file = Vec::new();
+        file.extend_from_slice(&0u32.to_le_bytes()); // meta[0]
+        file.extend_from_slice(&0u32.to_le_bytes()); // meta[1]
+        file.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // size
+        file.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // offset (past EOF)
+        // No plausible section survives the heuristic -> Err, no panic.
+        assert!(parse_container(&file).is_err());
+    }
+
+    #[test]
+    fn decompress_container_offset_past_eof_does_not_panic() {
+        // A header that yields a section whose offset is in-bounds but whose
+        // claimed decompressed size far exceeds the available stream. Greedy
+        // decode must hit EOF and return Err rather than slicing OOB.
+        let mut file = Vec::new();
+        file.extend_from_slice(&0u32.to_le_bytes());
+        file.extend_from_slice(&0u32.to_le_bytes());
+        file.extend_from_slice(&100_000u32.to_le_bytes()); // size
+        file.extend_from_slice(&16u32.to_le_bytes()); // offset = 16 (in-bounds)
+        // A few junk stream bytes after the header.
+        file.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+        // Either parse_container rejects or decode bails on EOF; never panics.
+        let _ = decompress_container(&file);
+        let _ = decompress_container_strict(&file);
+    }
+
+    #[test]
+    fn parse_container_all_junk_does_not_panic() {
+        // 64 bytes of 0xFF: max_pairs heuristic walks but every offset is past
+        // EOF, so no section is accepted.
+        let file = vec![0xFFu8; 64];
+        assert!(parse_container(&file).is_err());
+    }
+
     #[test]
     fn back_reference_reads_zeros_from_initial_window() {
         // control 0x00 -> 8 back-refs. First back-ref: b0=0xEE, b1=0xF0

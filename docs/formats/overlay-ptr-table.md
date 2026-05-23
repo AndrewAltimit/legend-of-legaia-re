@@ -50,3 +50,9 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
 ```
 
 Each entry can be Ghidra-imported via [`scripts/bulk-import-overlays.sh`](../tooling/overlay-capture.md) once the load address is determined; the pointer values bound the load address from above (`<= min_ptr`).
+
+## See also
+
+- [MIPS overlay detection](mips-overlay.md) - the sister detector keyed on the prologue instruction shape.
+- [`reference/functions.md`](../reference/functions.md) - the catalogue of traced function entry points.
+- [`reference/memory-map.md`](../reference/memory-map.md) - the RAM map showing where overlays load.

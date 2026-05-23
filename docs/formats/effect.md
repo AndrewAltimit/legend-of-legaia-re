@@ -196,3 +196,10 @@ Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 
 ## Field-pack format (magic `0x01059B84`)
 
 A small number of PROT entries lead with magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. The preamble→slot mapping is unknown - likely runtime-reconstructed from the schema's offset hints. Detector + dispatch live in `crates/asset/src/field_pack.rs`.
+
+## See also
+
+- [`subsystems/effect-vm.md`](../subsystems/effect-vm.md) - the effect-bundle pool and spawn API.
+- [PSX TIM](tim.md) - the sprite-anim texture format inside the bundle.
+- [Legaia TMD](tmd.md) - the effect-model meshes inside the bundle.
+- [`subsystems/battle.md`](../subsystems/battle.md) - the battle scene that spawns these effects.

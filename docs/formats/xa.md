@@ -74,3 +74,10 @@ If the tree on disk has a populated `extracted/XA/` directory from a pre-fix ext
 | Subheader interpretation | [`crates/xa/src/demux.rs`](../../crates/xa/src/demux.rs) |
 | 4-bit ADPCM filter coefficients | [`crates/xa/src/lib.rs`](../../crates/xa/src/lib.rs) |
 | Form-1-truncation diagnosis | direct comparison: 90 % of 128-byte groups in `extracted/XA/*.XA` failed the `bytes 8..16 == bytes 0..8` invariant before the demuxer was added. |
+
+## See also
+
+- [VAB sound bank](vab.md) - the other SPU-ADPCM audio source.
+- [`subsystems/cutscene.md`](../subsystems/cutscene.md) - the STR cutscene path that interleaves XA audio.
+- [`subsystems/audio.md`](../subsystems/audio.md) - the PsyQ audio stack.
+- [STR FMV table](str-fmv-table.md) - the in-RAM FMV file table.

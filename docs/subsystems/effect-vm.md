@@ -70,3 +70,10 @@ Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 
 ## Effect-ID → human effect name mapping
 
 Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". To name effects, trace call sites of `FUN_801DFDF8` in damage / battle-action code (in town/level-up overlays). Each caller passes a literal byte for `effect_id`; correlate with the action that triggered it (a Tactical Arts move, an item use, a spell cast).
+
+## See also
+
+**Reference** —
+[efect.dat format](../formats/effect.md) ·
+[Battle action SM](battle-action.md) ·
+[Move-table VM](move-vm.md)

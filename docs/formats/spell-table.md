@@ -119,3 +119,9 @@ MP-scaled placeholders.
 The mirror lives at `legaia_engine_core::retail_magic` (`SERU_MAGIC` +
 `retail_seru_magic_catalog`); the Seru that teach these ids are wired in
 `legaia_engine_core::seru_learning::SeruRegistry::retail`.
+
+## See also
+
+- [Item-name table](item-table.md) - the sibling static `SCUS_942.54` name table.
+- [`subsystems/battle-formulas.md`](../subsystems/battle-formulas.md) - the MP-cost and damage kernels that read these stats.
+- [`reference/gamedata.md`](../reference/gamedata.md) - the curated ground-truth magic tables.

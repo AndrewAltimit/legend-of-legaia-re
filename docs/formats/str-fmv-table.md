@@ -151,3 +151,8 @@ assert!(str_fmv_table::looks_like_str_fmv_table(bytes));
 | `fmv_id ∈ 0..=8` range                     | Per-STR FMV trigger corpus (nine save states); `cutscene_trigger_corpus` |
 | Trigger-side state at game mode `0x1A`     | Per-STR FMV trigger corpus |
 | Residency signature                        | `legaia_engine_core::capture_observations::str_fmv_overlay::is_resident` |
+
+## See also
+
+- [`subsystems/cutscene.md`](../subsystems/cutscene.md) - the STR game modes and MDEC decode loop.
+- [XA audio](xa.md) - the XA-ADPCM audio interleaved with the STR video.

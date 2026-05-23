@@ -312,3 +312,11 @@ The engine drives BGM through a private `TraceBgmDirector` that routes field-VM 
 The byte-level layouts of `.MAP / .PCH / .spk / .dpk / .pac` are still TBD. The dispatch chain *into* them is fully traced; the next move is to read the body of `FUN_8001FA88` for the `.dpk` byte layout (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor, almost certainly a record count).
 
 Eventual home: a `crates/sound` companion to `crates/vab`.
+
+## See also
+
+**Reference** —
+[VAB sound bank](../formats/vab.md) ·
+[SEQ sequence](../formats/seq.md) ·
+[Sound-driver outputs](../formats/sound-driver.md) ·
+[Cutscene / STR](cutscene.md)

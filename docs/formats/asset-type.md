@@ -90,3 +90,10 @@ pub enum AssetType {
 ## Where the dispatcher actually gets called
 
 In retail SCUS, only `FUN_8002541C`'s 0x14 (DATA_FIELD) branch reaches the dispatcher *from inside `SCUS_942.54`*. The other static call site is `FUN_80020224` - a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (`FUN_801D6704` → `0x801D6B0C` with `a0 = 0`); see [asset descriptor](asset-descriptor.md).
+
+## See also
+
+- [Asset descriptor](asset-descriptor.md) - the descriptor-pair layout the dispatcher consumes.
+- [DATA_FIELD streaming](data-field.md) - the streaming container whose `0x14` branch reaches the dispatcher.
+- [asset::pack](pack.md) - the in-DATA_FIELD pack the type bytes resolve to.
+- [LZS compression](lzs.md) - the decode path taken when `copy_only` is zero.

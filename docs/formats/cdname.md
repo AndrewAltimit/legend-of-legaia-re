@@ -38,3 +38,10 @@ When the block name conflicts with what the bytes actually look like, trust the 
 ## Per-scene asset reservations
 
 Most scene blocks reserve 6–8 PROT slots for asset variants. Unused slots get filled with the dev placeholder pattern documented in [pochi-filler](pochi.md). The `edstati3` block (likely "ending station 3", possibly cut content) is almost entirely pochi-filled.
+
+## See also
+
+- [PROT TOC](prot.md) - the index this name map labels.
+- [Disc layout](disc.md) - the on-disc geometry that holds both files.
+- [`subsystems/asset-loader.md`](../subsystems/asset-loader.md) - the loader that resolves CDNAME labels to PROT entries.
+- [`subsystems/boot.md`](../subsystems/boot.md) - the boot sequence that loads the TOC.

@@ -540,6 +540,75 @@ mod tests {
         assert!(parse(&buf).is_err());
     }
 
+    // --- Additional panic-hardening regression tests ---------------------
+    //
+    // `parse` is already hardened (checked-before-alloc on n_vert / n_normal /
+    // n_primitive). These confirm the remaining attacker-controlled entry
+    // shapes - empty / 1-byte / truncated-header input and a valid-magic blob
+    // with a garbage body - all return `Err` without panicking.
+
+    #[test]
+    fn empty_input_is_err_not_panic() {
+        assert!(parse(&[]).is_err());
+    }
+
+    #[test]
+    fn one_byte_input_is_err_not_panic() {
+        assert!(parse(&[0x02]).is_err());
+    }
+
+    #[test]
+    fn truncated_header_is_err_not_panic() {
+        // Magic present (FLIST set) but fewer than HEADER_SIZE bytes.
+        assert!(parse(&0x8000_0002u32.to_le_bytes()).is_err());
+    }
+
+    #[test]
+    fn valid_magic_object_table_overruns_buffer_is_err_not_panic() {
+        // Header claims 5 objects but no object table bytes follow.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&5u32.to_le_bytes());
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn valid_magic_garbage_body_is_err_or_bounded_ok_not_panic() {
+        // Valid TMD magic + nobj=1, then an object table of all-0xFF (absurd
+        // counts AND offsets). Must not panic.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        buf.extend(std::iter::repeat_n(0xFFu8, OBJECT_SIZE));
+        buf.extend(std::iter::repeat_n(0u8, 64));
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn iter_groups_rejects_oob_section_without_panic() {
+        use crate::legaia_prims::{iter_groups, iter_groups_lenient};
+        let buf = vec![0u8; 16];
+        // Section start/size that runs past the buffer.
+        assert!(iter_groups(&buf, 8, 1_000_000).is_err());
+        // Lenient sibling returns empty rather than panicking.
+        assert!(iter_groups_lenient(&buf, 8, 1_000_000).is_empty());
+        // Overflowing section bounds.
+        assert!(iter_groups(&buf, usize::MAX, 8).is_err());
+        assert!(iter_groups_lenient(&buf, usize::MAX, 8).is_empty());
+    }
+
+    #[test]
+    fn iter_groups_junk_body_does_not_panic() {
+        use crate::legaia_prims::{iter_groups, iter_groups_lenient};
+        // 64 bytes of 0xFF interpreted as a primitive section: huge counts /
+        // strides must be caught by the overrun checks, not panic.
+        let buf = vec![0xFFu8; 64];
+        let _ = iter_groups(&buf, 0, buf.len());
+        let _ = iter_groups_lenient(&buf, 0, buf.len());
+    }
+
     /// TMD2 dispatch (asset type 0x09) hands the payload to FUN_80026b4c
     /// directly, which validates `*buffer == 0x80000002`. This test confirms
     /// `parse` accepts that exact id (Legaia's chosen TMD id) so a TMD2

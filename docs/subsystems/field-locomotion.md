@@ -183,3 +183,11 @@ When `World::live_gameplay_loop` is set, locomotion feeds the encounter system d
   - Shared core: `FUN_8003e800(dest, count, flags)` (generic read entry; sets `gp+0x894`/`gp+0x97c`) → `FUN_8003f128` (arm: copies dest/count into `gp+0x940`/`gp+0x968`, seeds `gp+0x8c8` from the current CD position, issues `CdControl(CdlSetloc=2, &cdloc@0x8007bc5c)`, registers the data-ready callback) → `FUN_8003EF14` per-sector poller → `FUN_8005C2C4` → `FUN_8005D9A0` CD-DMA primitive (one sector per ready-IRQ, dest cursor `+= 0x800`). This is the same `FUN_8005D9A0` writer caught by the runtime watchpoint above — static loader trace and watchpoint agree.
   - The same generic entry serves other clients (`FUN_8003e104` = the `h:\mpack\monster_snd` pack loader), confirming `FUN_8003e800`/`FUN_8003f128` are shared streaming infrastructure, not field-specific. (This corrects an earlier note that ruled `FUN_8001f7c0` out as "loads `+0x12000`/`+0x12800` only" — it loads the base `.MAP` too, which *contains* the `+0x4000` grid.)
 - `FUN_801cfc40` (the finer actor/edge collision probe contributing bits `1`/`4`) is not fully decoded.
+
+## See also
+
+**Reference** —
+[Field/event VM](script-vm.md) ·
+[World map](world-map.md) ·
+[Scene bundles](../formats/scene-bundles.md) ·
+[Scene v12 table](../formats/scene-v12-table.md)

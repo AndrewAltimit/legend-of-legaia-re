@@ -263,3 +263,10 @@ The frame-opener rate is what makes this detector zero-false-positive on its own
 The prescript records are field-VM (`FUN_801DE840`) event scripts - the same per-frame bytecode shape used by `scene_scripted_asset_table` (`0xFFFF 0x0000` is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.
 
 Detection runs after `scene_scripted_asset_table` and `scene_asset_table`, so any composite layouts those detectors recognize claim their entries first.
+
+## See also
+
+- [Scene v12 table](scene-v12-table.md) - the per-scene runtime-fixup header + record table.
+- [Field-pack](field-pack.md) - one of the bundled scene asset layouts.
+- [asset::pack](pack.md) - the in-chunk pack the bundles embed.
+- [`subsystems/asset-loader.md`](../subsystems/asset-loader.md) - the loader chain that resolves the bundles.

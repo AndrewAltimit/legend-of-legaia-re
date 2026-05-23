@@ -533,3 +533,10 @@ parked y. The shell driver
 `SLOT_INFO_LV_*`, `SLOT_INFO_HP_*`, `SLOT_INFO_MP_*`) are exported
 panel-y-relative so future slides / layout shifts only need to touch
 the parked-y constant.
+
+## See also
+
+**Reference** —
+[Save record](../formats/save-record.md) ·
+[Inn](inn.md) ·
+[Shop UI](shop.md)

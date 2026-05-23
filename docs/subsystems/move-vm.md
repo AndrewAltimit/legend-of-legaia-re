@@ -228,3 +228,11 @@ After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_8
 - **`param_3` is the size in u16 units**, not bytes. The dispatcher epilogue does `actor[+0x70] += param_3`.
 - **0x47-bound check**: `sltiu v0, v1, 0x47`. Out-of-range opcodes silently fall through to the loop-exit, the same shape as the field-VM `default` arm. Treat any opcode `>= 0x47` as "end of move buffer" rather than "unknown opcode".
 - **Cases that "look like NOPs" in the C decompile** still advance the PC via `param_3` - the increment is set in MIPS branch-delay slots and is invisible at the C level (same pattern as the field VM, see `script-vm.md` § "Decompile quirks").
+
+## See also
+
+**Reference** —
+[Move table (MDT)](../formats/mdt.md) ·
+[Motion VM](motion-vm.md) ·
+[Battle action SM](battle-action.md) ·
+[Actor VM](actor-vm.md)

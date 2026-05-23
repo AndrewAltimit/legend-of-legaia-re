@@ -61,3 +61,9 @@ file-offset map, identical to the [item-name table](item-table.md) resolver), so
 the engine can seed a faithful New Game from the user's own disc without
 committing any Sony bytes. The disc-gated `new_game_real` test pins the four
 rows against the real executable.
+
+## See also
+
+- [Per-character save record](save-record.md) - the live `0x414`-byte record this template seeds.
+- [Item-name table](item-table.md) - the sibling static table using the same offset-map resolver.
+- [`subsystems/boot.md`](../subsystems/boot.md) - the New Game boot chain into `town01`.

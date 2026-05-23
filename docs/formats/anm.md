@@ -344,3 +344,10 @@ the payload:
 ```
 
 `crates/anm::peel_preamble` strips it; the on-disc form has no preamble.
+
+## See also
+
+- [Legaia TMD](tmd.md) - the mesh format these animations transform.
+- [Monster animation](monster-animation.md) - the enemy-side battle keyframe stream.
+- [`subsystems/actor-vm.md`](../subsystems/actor-vm.md) - the actor/sprite VM that plays these clips.
+- [`subsystems/renderer.md`](../subsystems/renderer.md) - the TMD renderer that consumes the posed vertices.

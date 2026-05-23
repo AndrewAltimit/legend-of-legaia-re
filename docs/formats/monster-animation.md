@@ -78,3 +78,10 @@ loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
 - `FUN_80048a08` — per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
 - `FUN_800495c8` / `FUN_8005b038` — GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
 - `FUN_80054cb0` — monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` (`ghidra/scripts/funcs/80054cb0.txt`).
+
+## See also
+
+- [Legaia TMD](tmd.md) - the mesh whose vertices these keyframes morph.
+- [ANM animation](anm.md) - the player/field-actor animation container.
+- [Battle-data pack](battle-data-pack.md) - the archive carrying the monster meshes.
+- [`subsystems/battle.md`](../subsystems/battle.md) - the battle scene that drives the playback.

@@ -218,7 +218,12 @@ fn detect_header(reader: &mut dyn ReadSeek, len: u64) -> Result<Header> {
         if file_num_minus_1 <= 0 || header_sectors <= 0 {
             continue;
         }
-        let file_num = (file_num_minus_1 + 1) as u32;
+        // `file_num_minus_1` is attacker-controlled; `+ 1` would overflow in
+        // debug for `i32::MAX`. Use a checked add and treat overflow as a
+        // non-match rather than panicking.
+        let Some(file_num) = file_num_minus_1.checked_add(1).map(|n| n as u32) else {
+            continue;
+        };
         if off + (header_sectors as u64) * (SECTOR as u64) > len {
             continue;
         }

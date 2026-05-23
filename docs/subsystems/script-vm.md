@@ -572,3 +572,12 @@ A grep across every Ghidra dump in the corpus for writes to the global game-mode
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
 
 The corollary for §2.7's seven mid-game scenes (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`): they **must** trigger via the same `0x4C 0xE2` op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only `PROT[371] taiku, fmv_id=5`). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot — the lift is blocked on the same intra-transition byte-level capture that gates [`docs/formats/field-pack.md`](../formats/field-pack.md).
+
+## See also
+
+**Reference** —
+[Actor VM](actor-vm.md) ·
+[Move-table VM](move-vm.md) ·
+[Motion VM](motion-vm.md) ·
+[Effect VM](effect-vm.md) ·
+[Scene v12 table](../formats/scene-v12-table.md)

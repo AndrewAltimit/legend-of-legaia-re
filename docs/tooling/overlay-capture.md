@@ -305,3 +305,9 @@ scripts/bulk-import-overlays.sh --score 3.5
 Reads the `find-overlay` output, filters by score, imports each at base `0x801C0000` (the overlay window) and runs auto-analysis + the inventory dumper. Per-overlay function inventories land in `ghidra/scripts/inventory_overlay_<stem>.bin.csv`.
 
 The bulk-imported overlays still need a subsystem-naming pass (correlating strings + dispatcher shapes against the inventories) - bulk import only gives you the function lists.
+
+## See also
+
+- [`docs/tooling/mednafen-automation.md`](mednafen-automation.md) — the save-state diff / bisect toolkit these slices come from.
+- [`docs/reference/functions.md`](../reference/functions.md) — overlay-resident entry points the captured slices expose.
+- [`docs/reference/memory-map.md`](../reference/memory-map.md) — the `0x801C0000+` overlay window addresses.

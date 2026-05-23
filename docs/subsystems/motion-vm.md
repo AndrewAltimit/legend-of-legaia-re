@@ -52,3 +52,10 @@ The default mode follows a target actor slot at a configured distance + height.
 ## Provenance
 
 - [`ghidra/scripts/funcs/8003774c.txt`](../../ghidra/scripts/funcs/8003774c.txt) - full disassembly + decompilation.
+
+## See also
+
+**Reference** —
+[Move-table VM](move-vm.md) ·
+[Actor VM](actor-vm.md) ·
+[World-map controller](world-map.md)

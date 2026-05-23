@@ -224,3 +224,11 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
 - The monster record is now fully decoded: all six stat halfwords (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)), the reward fields (see [victory spoils](#victory-spoils-rewards)), and the spell-offset list (see [spell list](#spell-list-record-0x4c)). No record fields remain open. The spell entries' interior layout beyond the id (`+0x00`) and SP cost (`+0x74`) - the `+0x04`/`+0x08` effect-script sub-pointers - is the same attack-effect geometry as the monster's own `+0x04` data and is left undecoded.
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.
+
+## See also
+
+**Reference** —
+[Battle scene](battle.md) ·
+[Battle action SM](battle-action.md) ·
+[Level-up](level-up.md) ·
+[Game-data tables](../reference/gamedata.md)

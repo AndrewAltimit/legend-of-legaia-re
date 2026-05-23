@@ -114,3 +114,11 @@ confirmed constants. The cost prompt and Yes/No cursor are rendered in
 Gold is stored at `_DAT_8008459C` in retail RAM and in `World::money` in the
 engine. Inventory is a `HashMap<u8, u8>` (`item_id → count`) in `World::inventory`.
 `SaveFile` / `SaveExt` round-trips both through the `LGSF v1` format.
+
+## See also
+
+**Reference** —
+[Inn](inn.md) ·
+[Level-up](level-up.md) ·
+[Save screen](save-screen.md) ·
+[Game-data tables](../reference/gamedata.md)

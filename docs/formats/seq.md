@@ -123,3 +123,9 @@ seq json    <PATH>    # full parse as JSON
 Playback is the engine side: `legaia_engine_audio::Sequencer` consumes
 a parsed `Seq` + a loaded `VabBank` and drives the clean-room SPU
 model. See `docs/subsystems/audio.md` → "Engine-audio model".
+
+## See also
+
+- [VAB sound bank](vab.md) - the instrument bank these sequences play against.
+- [Sound-driver outputs](sound-driver.md) - the related `.dpk`/`.spk`/`.MAP` driver formats.
+- [`subsystems/audio.md`](../subsystems/audio.md) - the PsyQ libsnd/libspu stack and sequencer.

@@ -203,8 +203,14 @@ fn read_scus(scus: &[u8], t_addr: u32, ram_addr: u32, len: usize) -> Result<&[u8
     let ram_off = ram_addr
         .checked_sub(t_addr)
         .ok_or_else(|| anyhow!("RAM 0x{ram_addr:08X} below t_addr 0x{t_addr:08X}"))?;
-    let file_off = (ram_off + PSX_EXE_HEADER) as usize;
-    if file_off + len > scus.len() {
+    // `t_addr` comes from the (attacker-controllable) PSX-EXE header, so the
+    // offset arithmetic must be checked: a junk t_addr could otherwise make
+    // `ram_off + PSX_EXE_HEADER` (or the `+ len` below) overflow.
+    let file_off = ram_off
+        .checked_add(PSX_EXE_HEADER)
+        .map(|v| v as usize)
+        .ok_or_else(|| anyhow!("RAM 0x{ram_addr:08X} offset overflows file address"))?;
+    if file_off.checked_add(len).is_none_or(|end| end > scus.len()) {
         bail!(
             "RAM 0x{ram_addr:08X} → file 0x{file_off:X}+{len} past SCUS end 0x{:X}",
             scus.len()
@@ -530,6 +536,51 @@ mod tests {
     fn bgr555_white_is_opaque_white() {
         let [r, g, b, a] = bgr555_to_rgba8(0x7FFF);
         assert_eq!((r, g, b, a), (255, 255, 255, 255));
+    }
+
+    #[test]
+    fn read_scus_rejects_t_addr_causing_overflow() {
+        // t_addr = 0 with a huge ram_addr makes ram_off near u32::MAX; the
+        // checked add must reject it rather than overflow-panic.
+        let buf = vec![0u8; 0x1000];
+        assert!(read_scus(&buf, 0, 0xFFFF_FFFF, 4).is_err());
+        assert!(read_scus(&buf, 0, 0xFFFF_F900, 0x1000).is_err());
+    }
+
+    #[test]
+    fn parse_psx_exe_rejects_short_or_wrong_magic() {
+        assert!(parse_psx_exe_t_addr(&[]).is_none());
+        assert!(parse_psx_exe_t_addr(&[0u8; 0x3F]).is_none());
+        let mut buf = vec![0u8; 0x40];
+        buf[0..8].copy_from_slice(b"NOTANEXE");
+        assert!(parse_psx_exe_t_addr(&buf).is_none());
+    }
+
+    #[test]
+    fn parse_escape_table_ignores_trailing_partial_entry() {
+        // A buffer whose length isn't a multiple of 4 must not panic; the
+        // partial tail is dropped by chunks_exact.
+        let bytes = vec![0u8; ESCAPE_ENTRY_SIZE * 2 + 3];
+        let entries = parse_escape_table(&bytes);
+        assert_eq!(entries.len(), 2);
+        // Empty input yields no entries.
+        assert!(parse_escape_table(&[]).is_empty());
+    }
+
+    #[test]
+    fn read_vram_from_save_rejects_garbage() {
+        // Non-mednafen bytes must Err, not panic.
+        let dir = std::env::temp_dir().join("legaia-font-extract-fuzz");
+        let _ = std::fs::create_dir_all(&dir);
+        let p = dir.join("garbage.mc0");
+        std::fs::write(&p, b"not a save state at all").unwrap();
+        assert!(read_vram_from_save(&p, false).is_err());
+        // Has the magic but no GPURAM variable / truncated.
+        let p2 = dir.join("magic_only.mc0");
+        std::fs::write(&p2, b"MDFNSVST\x00\x00\x00\x00").unwrap();
+        assert!(read_vram_from_save(&p2, false).is_err());
+        let _ = std::fs::remove_file(&p);
+        let _ = std::fs::remove_file(&p2);
     }
 
     #[test]

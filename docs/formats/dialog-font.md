@@ -177,3 +177,8 @@ cargo run -p legaia-font --bin font-extract -- \
 Save-state parsing locates VRAM by searching for the `&GPURAM[0][0]` variable
 header (mednafen uses a `u8 name_len; bytes name; u32 size; bytes data;`
 record format inside each section); no MDFNSVST section walk is required.
+
+## See also
+
+- [MES dialog](mes.md) - the dialog containers this font renders.
+- [`subsystems/renderer.md`](../subsystems/renderer.md) - the renderer that blits the glyph atlas.

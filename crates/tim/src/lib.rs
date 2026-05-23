@@ -264,7 +264,17 @@ pub fn parse(buf: &[u8]) -> Result<Tim> {
 pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
     let w = tim.pixel_width();
     let h = tim.pixel_height();
-    let mut out = Vec::with_capacity(w * h * 4);
+    // `w`/`h` derive from the public `fb_w`/`h` header fields, which a caller
+    // can set to arbitrary values when constructing a `Tim` by hand (the
+    // struct's fields are `pub`, and the web-viewer software rasteriser builds
+    // `Tim`/`Image` directly). Validate the output footprint with checked
+    // arithmetic before reserving so a bogus dimension can't capacity-overflow
+    // panic; surface a graceful `Err` instead.
+    let out_len = w
+        .checked_mul(h)
+        .and_then(|p| p.checked_mul(4))
+        .context("TIM output dimensions overflow")?;
+    let mut out = Vec::with_capacity(out_len);
     match tim.mode {
         PixelMode::Bpp4 => {
             let clut = tim.clut.as_ref().context("4bpp TIM requires a CLUT")?;
@@ -278,7 +288,15 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
             for row in 0..h {
                 for col in 0..w {
                     let byte_off = row * (tim.image.fb_w as usize * 2) + col / 2;
-                    let byte = tim.image.data[byte_off];
+                    let byte = *tim.image.data.get(byte_off).with_context(|| {
+                        format!(
+                            "4bpp pixel ({},{}) byte offset {} past image data ({})",
+                            row,
+                            col,
+                            byte_off,
+                            tim.image.data.len()
+                        )
+                    })?;
                     let nibble = if col & 1 == 0 {
                         byte & 0x0F
                     } else {
@@ -303,7 +321,15 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
             for row in 0..h {
                 for col in 0..w {
                     let byte_off = row * (tim.image.fb_w as usize * 2) + col;
-                    let idx = tim.image.data[byte_off] as usize;
+                    let idx = *tim.image.data.get(byte_off).with_context(|| {
+                        format!(
+                            "8bpp pixel ({},{}) byte offset {} past image data ({})",
+                            row,
+                            col,
+                            byte_off,
+                            tim.image.data.len()
+                        )
+                    })? as usize;
                     let entry = *palette.get(idx).with_context(|| {
                         format!("index {} >= palette len {}", idx, palette.len())
                     })?;
@@ -315,6 +341,9 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
             for row in 0..h {
                 for col in 0..w {
                     let byte_off = (row * w + col) * 2;
+                    if byte_off + 2 > tim.image.data.len() {
+                        bail!("16bpp pixel ({},{}) out of range", row, col);
+                    }
                     let entry = u16_le(&tim.image.data, byte_off);
                     out.extend_from_slice(&bgr555_to_rgba8(entry));
                 }
@@ -461,6 +490,139 @@ mod tests {
         let mut buf = build_tim_4bpp();
         buf[0] = 0xFF;
         assert!(parse(&buf).is_err());
+    }
+
+    // --- Panic-hardening regression tests ---------------------------------
+    //
+    // The web viewer and bulk scanners feed ARBITRARY PROT-entry / LZS-section
+    // bytes into `parse`, and the software rasteriser constructs `Tim`/`Image`
+    // values directly (the fields are `pub`). A junk magic match or a
+    // hand-built `Tim` with inconsistent dimensions must return `Err`, never
+    // panic (OOB slice, capacity overflow, etc.).
+
+    #[test]
+    fn empty_input_is_err_not_panic() {
+        assert!(parse(&[]).is_err());
+    }
+
+    #[test]
+    fn one_byte_input_is_err_not_panic() {
+        assert!(parse(&[0x10]).is_err());
+    }
+
+    #[test]
+    fn truncated_header_is_err_not_panic() {
+        // Valid magic but only 4 of the 8 header bytes present.
+        assert!(parse(&0x10u32.to_le_bytes()).is_err());
+    }
+
+    #[test]
+    fn truncated_after_flags_is_err_not_panic() {
+        // magic + flags (claims has-CLUT) but no CLUT block at all.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x10u32.to_le_bytes());
+        buf.extend_from_slice(&0x08u32.to_le_bytes()); // pmode 0 + has CLUT
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn bogus_huge_clut_block_len_is_err_not_panic() {
+        // Valid magic + has-CLUT flag, then a CLUT block length far past EOF.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x10u32.to_le_bytes());
+        buf.extend_from_slice(&0x08u32.to_le_bytes());
+        buf.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // bs_len
+        buf.extend_from_slice(&0u16.to_le_bytes()); // fb_x
+        buf.extend_from_slice(&0u16.to_le_bytes()); // fb_y
+        buf.extend_from_slice(&0xFFFFu16.to_le_bytes()); // w
+        buf.extend_from_slice(&0xFFFFu16.to_le_bytes()); // h
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn bogus_huge_image_block_len_is_err_not_panic() {
+        // No CLUT; image block claims an enormous bs_len.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x10u32.to_le_bytes());
+        buf.extend_from_slice(&0x02u32.to_le_bytes()); // pmode 2 = 16bpp, no CLUT
+        buf.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // bs_len
+        buf.extend_from_slice(&0u16.to_le_bytes());
+        buf.extend_from_slice(&0u16.to_le_bytes());
+        buf.extend_from_slice(&0xFFFFu16.to_le_bytes());
+        buf.extend_from_slice(&0xFFFFu16.to_le_bytes());
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn valid_magic_garbage_body_is_err_not_panic() {
+        // Valid TIM magic followed by random-looking bytes for the rest.
+        let mut buf = vec![0x10u8, 0, 0, 0];
+        buf.extend(std::iter::repeat_n(0xA5u8, 60));
+        // Whatever the flags byte decodes to, the result must be Ok or Err -
+        // never a panic. (pmode 5..7 -> Err; has-CLUT with junk lengths -> Err.)
+        let _ = parse(&buf);
+    }
+
+    #[test]
+    fn decode_rejects_handbuilt_tim_with_short_data() {
+        // A caller builds a 16bpp Tim claiming 64x64 but supplies no pixels.
+        let tim = Tim {
+            flags: 0x02,
+            mode: PixelMode::Bpp16,
+            clut: None,
+            image: Image {
+                fb_x: 0,
+                fb_y: 0,
+                fb_w: 64,
+                h: 64,
+                data: Vec::new(),
+            },
+        };
+        assert!(decode_rgba8(&tim, 0).is_err());
+    }
+
+    #[test]
+    fn decode_rejects_handbuilt_8bpp_short_data() {
+        let clut = Clut {
+            fb_x: 0,
+            fb_y: 0,
+            w: 256,
+            h: 1,
+            entries: vec![0u16; 256],
+        };
+        let tim = Tim {
+            flags: 0x09,
+            mode: PixelMode::Bpp8,
+            clut: Some(clut),
+            image: Image {
+                fb_x: 0,
+                fb_y: 0,
+                fb_w: 128,
+                h: 64,
+                data: Vec::new(), // claims 128*2*64 px but has none
+            },
+        };
+        assert!(decode_rgba8(&tim, 0).is_err());
+    }
+
+    #[test]
+    fn decode_rejects_handbuilt_dimension_overflow() {
+        // fb_w/h chosen so pixel_width()*h*4 overflows usize on 64-bit.
+        let tim = Tim {
+            flags: 0x02,
+            mode: PixelMode::Bpp16,
+            clut: None,
+            image: Image {
+                fb_x: 0,
+                fb_y: 0,
+                fb_w: u16::MAX,
+                h: u16::MAX,
+                data: Vec::new(),
+            },
+        };
+        // 16bpp: w*h*4 = 65535*65535*4 fits usize on 64-bit, so this returns the
+        // short-data Err; the point is no panic on the reserve.
+        assert!(decode_rgba8(&tim, 0).is_err());
     }
 
     #[test]

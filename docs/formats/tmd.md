@@ -110,3 +110,10 @@ The per-prim data IS uniform 20 bytes (= `ilen*4`) - there are no per-prim sub-h
 The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 
 The renderer itself is documented separately under [renderer subsystem](../subsystems/renderer.md).
+
+## See also
+
+- [PSX TIM](tim.md) - the texture format these meshes sample.
+- [`subsystems/renderer.md`](../subsystems/renderer.md) - the TMD renderer (`FUN_8002735C`).
+- [Monster animation](monster-animation.md) - the enemy keyframe morph applied to these meshes.
+- [`subsystems/move-vm.md`](../subsystems/move-vm.md) - the move-table VM that poses character meshes.

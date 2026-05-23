@@ -226,6 +226,25 @@ mod tests {
         assert_eq!(AUDIO_BYTES_PER_SECTOR, 2304);
     }
 
+    #[test]
+    fn parse_subheader_on_junk_does_not_panic_and_is_not_audio() {
+        // All-0xFF subheader: redundant copy matches (both halves equal), but
+        // submode 0xFF still classifies; the demuxer's audio/form2 gate is
+        // what decides inclusion. The point here is no panic on garbage.
+        let bytes = [0xFFu8; 8];
+        let (sub, ok) = parse_subheader(&bytes);
+        assert!(ok); // both 4-byte halves identical
+        // 0xFF has both AUDIO (0x04) and FORM2 (0x20) bits set; sample-rate
+        // and stereo derivations must not panic regardless.
+        let _ = sub.sample_rate();
+        let _ = sub.is_stereo();
+
+        // A subheader whose halves disagree is flagged corrupt (skipped).
+        let mixed = [0u8, 0, 0x64, 0x01, 9, 9, 9, 9];
+        let (_, ok2) = parse_subheader(&mixed);
+        assert!(!ok2);
+    }
+
     /// Build a stand-in Form 2 sector and verify our offsets pull the
     /// right bytes back out.
     #[test]

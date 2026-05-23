@@ -134,3 +134,9 @@ The `mednafen-state vram-dump` CLI extracts the raw 1 MiB VRAM blob.
 Row 479 starts at byte offset `0xEF800` (= `479 * 2048`). Slicing 32
 bytes at `0xEF800 + slot * 32` gives one CLUT slot. See
 [`docs/tooling/mednafen-automation.md`](../tooling/mednafen-automation.md).
+
+## See also
+
+- [PSX TIM](tim.md) - the plain TIM form these CLUTs ship as.
+- [`subsystems/renderer.md`](../subsystems/renderer.md) - the targeted-upload CLUT pass with merge-zeros semantics.
+- [Scene bundles](scene-bundles.md) - the scene PROT entries that carry these palettes.

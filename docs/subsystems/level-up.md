@@ -314,3 +314,11 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   (STR, INT, VIT, etc.) with an animated counter. Only HP/MP are tracked in the
   current port; other stats are handled by the per-character record's stat
   aggregator (`FUN_80042558`).
+
+## See also
+
+**Reference** —
+[Battle scene](battle.md) ·
+[Battle formulas](battle-formulas.md) ·
+[Shop UI](shop.md) ·
+[Game-data tables](../reference/gamedata.md)

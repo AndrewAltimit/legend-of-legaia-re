@@ -25,3 +25,9 @@ Strictly scanning all 1232 PROT entries against this format finds zero hits. Tha
 ## Note on naming
 
 The Rust function is named `parse_player_lzs` for historical reasons - the format was first encountered while investigating `player.lzs` chains. The format itself isn't player-specific.
+
+## See also
+
+- [Asset-type dispatch](asset-type.md) - the type-byte handler this descriptor pairs feed.
+- [DATA_FIELD streaming](data-field.md) - the streaming container that embeds descriptor-shaped chunks.
+- [`subsystems/asset-loader.md`](../subsystems/asset-loader.md) - the loader chain that walks descriptors at runtime.

@@ -234,3 +234,9 @@ for (i, _kind, off, _size) in legaia_asset::field_pack::iter_canonical_slots() {
 ```
 
 The detector is reliable for classification today; per-slot interpretation beyond size-clustering is bracketed by the cluster table above and pending a per-scene loader trace for the final on-disc → RAM projection.
+
+## See also
+
+- [asset::pack](pack.md) - the in-DATA_FIELD pack this format is often confused with.
+- [PSX TIM](tim.md) - the texture sub-asset bundled in field-pack slots.
+- [Legaia TMD](tmd.md) - the mesh sub-asset bundled in field-pack slots.

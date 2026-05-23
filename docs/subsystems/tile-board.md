@@ -95,3 +95,10 @@ Provenance: `overlay_0897_801ef2b0.txt` case 4; a denser duplicate of this logic
 - Which specific minigames / puzzle rooms use this board, and whether any board is fixed (inline-script cells) vs. always procedural. The `dance` / `baka_fighter` / `slot_machine` overlays reference the same `_DAT_8007b450` globals.
 - The exact byte offset where the cell array begins in the inline script header (the header is variable-length; `+7`/`+9` are read through the field-VM operand reader `func_0x8003ce9c`). Needed to lift a fixed board from a scene's event script.
 - Whether `func_0x800467e8`'s facing remap is a fixed 90° quadrant snap or a finer rotation.
+
+## See also
+
+**Reference** —
+[Field locomotion](field-locomotion.md) ·
+[Field/event VM](script-vm.md) ·
+[Encounter record](../formats/encounter.md)

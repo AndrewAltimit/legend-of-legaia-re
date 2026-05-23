@@ -17,3 +17,10 @@ println!("VAB v{} ps={} ts={}", header.version, header.ps, header.ts);
 ```
 
 For bulk extraction of every VAB and per-program WAV files, see the `vab` CLI documented in [`tooling/extraction.md`](../tooling/extraction.md).
+
+## See also
+
+- [SEQ sequence](seq.md) - the sequenced music that plays against this bank.
+- [Sound-driver outputs](sound-driver.md) - the related driver-output formats.
+- [XA audio](xa.md) - the streamed-audio format for FMV/cutscenes.
+- [`subsystems/audio.md`](../subsystems/audio.md) - the PsyQ libspu/libsnd stack.

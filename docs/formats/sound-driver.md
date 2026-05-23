@@ -43,3 +43,9 @@ Both paths land at the same files; only the indirection differs. The same dev/re
 The byte-level layouts of the individual files (`.MAP` / `.PCH` / `.spk` / `.dpk` / `.pac`) are still TBD. With consumers identified, the next move is to read the body of `FUN_8001FA88` (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns) for the `.dpk` byte layout - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor (almost certainly a record count).
 
 The eventual home is a `crates/sound` companion to `crates/vab`.
+
+## See also
+
+- [VAB sound bank](vab.md) - the instrument-bank format these drivers emit.
+- [SEQ sequence](seq.md) - the sequenced-music format played against the banks.
+- [`subsystems/audio.md`](../subsystems/audio.md) - the PsyQ audio stack.
