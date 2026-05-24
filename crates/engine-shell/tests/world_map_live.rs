@@ -589,5 +589,36 @@ fn world_maps_decode_world_frame_terrain_placements() {
             "[{label}] {} terrain placements, {resolved} resolve to a slot-1 pack mesh",
             placements.len()
         );
+
+        // The DENSE continent layer: the visible-tile set (CELL_VISIBLE) is
+        // the ground / trees / mountains the overhead sweep draws, far more
+        // numerous than the placed-flag interactive objects above. This is the
+        // set the world-map render now draws so the overworld isn't sparse.
+        let tiles = scene
+            .field_terrain_tiles(&index)
+            .expect("read field map")
+            .expect("world-map scene has a terrain tile grid");
+        assert!(
+            tiles.len() > placements.len() * 2,
+            "[{label}] the visible terrain layer ({}) must dwarf the placed objects ({})",
+            tiles.len(),
+            placements.len()
+        );
+        let tile_in_pack = tiles
+            .iter()
+            .filter(|p| p.pack_index.is_some())
+            .filter(|p| (0..0x4000).contains(&p.world_x) && (0..0x4000).contains(&p.world_z))
+            .count();
+        // Most visible tiles draw from the loaded slot-1 pack (a minority index
+        // the wider global TMD pool, which the world-map load doesn't pull in).
+        assert!(
+            tile_in_pack * 3 >= tiles.len(),
+            "[{label}] most terrain tiles ({tile_in_pack}/{}) resolve in-pack + on-grid",
+            tiles.len()
+        );
+        eprintln!(
+            "[{label}] {} dense terrain tiles ({tile_in_pack} drawable)",
+            tiles.len()
+        );
     }
 }

@@ -60,6 +60,11 @@ pub const OBJECT_GRID_OFFSET: usize = 0x8000;
 pub const OBJECT_INDEX_MASK: u16 = 0x1FF;
 /// Object-record `+0x12` flag bit marking the tile as a placed/visible object.
 pub const FLAG_PLACED: u16 = 0x4;
+/// Object-index-grid cell bit marking the tile as a **visible** terrain cell.
+/// The overhead continent sweep (`FUN_801F69D8`) renders every cell with this
+/// bit set (ground / trees / mountains) - the bulk continent, distinct from
+/// the placed-flag interactive objects [`parse_placements`] returns.
+pub const CELL_VISIBLE: u16 = 0x2000;
 /// Object ids `93..=118` are the "field-actor" band: their mesh is selected
 /// positionally (`pack_index = obj_idx - FIELD_ACTOR_PACK_BIAS`) rather than
 /// from the record's `+0x10` field. These map to the last meshes of the pack.
@@ -220,6 +225,64 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
     out
 }
 
+/// Walk the `128 x 128` object-index grid and return one [`Placement`] per
+/// **visible** tile (cell bit [`CELL_VISIBLE`]), mirroring the overhead
+/// continent sweep `FUN_801F69D8`'s `(cell & 0x2000) != 0` gate.
+///
+/// This is the **bulk continent terrain** - the ground, trees, and mountain
+/// meshes that tile the kingdom - as opposed to [`parse_placements`], which
+/// returns only the placed-flag (`0x4`) interactive / collision objects. A
+/// scene has far more visible terrain tiles than placed objects (a kingdom
+/// overworld tiles most of the walkable continent), so the world-map render
+/// needs this sweep to draw a populated continent rather than a handful of
+/// landmarks.
+///
+/// World position + mesh resolution use the same formulas as
+/// [`parse_placements`]; the only difference is the gate (visible bit instead
+/// of the placed flag) and that the footprint-anchor bounds check is relaxed
+/// to a plain on-grid test (terrain tiles have no interaction footprint).
+/// `obj_idx == 0` cells are skipped (record 0 is the empty/sentinel slot).
+pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
+    let mut out = Vec::new();
+    let Some(grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
+        return out;
+    };
+    for row in 0..GRID_DIM {
+        for col in 0..GRID_DIM {
+            let cell_off = (row * GRID_DIM + col) * 2;
+            let Some(cell_bytes) = grid.get(cell_off..cell_off + 2) else {
+                continue;
+            };
+            let cell = u16::from_le_bytes([cell_bytes[0], cell_bytes[1]]);
+            if cell & CELL_VISIBLE == 0 {
+                continue;
+            }
+            let obj_idx = cell & OBJECT_INDEX_MASK;
+            if obj_idx == 0 {
+                continue;
+            }
+            let Some(rec) = ObjectRecord::parse(field_map, obj_idx as usize) else {
+                continue;
+            };
+            let floor_nibble = field_map
+                .get(0x4000 + row * GRID_DIM + col)
+                .map(|b| b & 0x0F);
+            out.push(Placement {
+                obj_idx,
+                col: col as u8,
+                row: row as u8,
+                world_x: world_x(col as u8, rec.x_off),
+                world_z: world_z(row as u8, rec.z_off),
+                y_off: rec.y_off,
+                floor_nibble,
+                pack_index: pack_mesh_index(obj_idx, &rec),
+                flags: rec.flags,
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,6 +331,30 @@ mod tests {
         assert_eq!((p[0].col, p[0].row), (38, 25));
         assert_eq!((p[0].world_x, p[0].world_z), (4864, 3208));
         assert_eq!(p[0].pack_index, Some(36));
+    }
+
+    #[test]
+    fn parse_terrain_tiles_emits_visible_cells_regardless_of_placed_flag() {
+        // Record 5: a terrain tile mesh, NOT placed-flagged (flags = 0).
+        let mut map = vec![0u8; 0x12000];
+        let r = &mut map[OBJECT_RECORD_STRIDE * 5..OBJECT_RECORD_STRIDE * 6];
+        r[0x10..0x12].copy_from_slice(&12u16.to_le_bytes()); // pack mesh index
+        // flags stays 0 -> NOT placed (parse_placements would skip it).
+        // Cell (row 10, col 20): visible bit set + record index 5.
+        let cell = OBJECT_GRID_OFFSET + (10 * GRID_DIM + 20) * 2;
+        map[cell..cell + 2].copy_from_slice(&(CELL_VISIBLE | 5).to_le_bytes());
+        // A second cell pointing at record 5 but WITHOUT the visible bit: skipped.
+        let cell2 = OBJECT_GRID_OFFSET + (11 * GRID_DIM + 20) * 2;
+        map[cell2..cell2 + 2].copy_from_slice(&5u16.to_le_bytes());
+
+        // parse_placements drops the unplaced record entirely.
+        assert!(parse_placements(&map).is_empty());
+        // parse_terrain_tiles emits the visible cell (and only it).
+        let t = parse_terrain_tiles(&map);
+        assert_eq!(t.len(), 1, "only the CELL_VISIBLE cell is emitted");
+        assert_eq!(t[0].obj_idx, 5);
+        assert_eq!((t[0].col, t[0].row), (20, 10));
+        assert_eq!(t[0].pack_index, Some(12));
     }
 
     #[test]

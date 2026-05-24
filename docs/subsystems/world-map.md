@@ -388,17 +388,34 @@ carries the slot-1 pack index plus signed X/Y/Z offsets from the tile centre).
 Retail walks this grid two ways — the walk-view static placer `FUN_8003A55C`
 and the overhead continent sweep `FUN_801F69D8` (both read `_DAT_1f8003ec +
 0x8000`; see [`formats/world-map-overlay.md`](../formats/world-map-overlay.md)).
-The engine port resolves [`Scene::field_object_placements`] into world-space
-draws (`resolve_field_placement_draws`): for each placed tile it draws the
+Two layers come out of the grid:
+
+- **Dense continent terrain** ([`Scene::field_terrain_tiles`] →
+  `resolve_world_map_terrain_draws`): every cell with the grid's
+  [`CELL_VISIBLE`](../../crates/asset/src/field_objects.rs) (`0x2000`) bit set —
+  the ground / trees / mountains. This is the `FUN_801F69D8` overhead sweep's
+  set and is by far the larger one (Drake 970 tiles, Sebacus 184, Karisto 161).
+- **Interactive objects** ([`Scene::field_object_placements`] →
+  `resolve_field_placement_draws`): the placed-flag (`0x4`) records —
+  landmarks, towns, collision props (Drake 51, Sebacus 20, Karisto 24). This is
+  the `FUN_8003A55C` walk-placer's set.
+
+Both resolve through the shared `resolve_placement_draws`: each tile draws the
 slot-1 pack mesh at `(col*0x80 + x_off, floor_height + y_off, row*0x80 +
 z_off)`, Y-flipped, sharing the player / entity-marker world frame. This
 replaces the earlier stopgap that drew the whole pack at the pack-local origin
 (the "small blob in the corner" — the continent and the player were in
-different frames). Drake decodes 51 placements, Sebacus 20, Karisto 24; their
-world positions match the live actor positions captured from a top-down
-(`game_mode 0x0D`) save state. The walk-view camera frames a fixed world-space
-radius around the player (the object-local pack AABB would frame only the tile
-under the player); the top-view keeps the full-pack overhead framing.
+different frames). The world positions match the live actor positions captured
+from a top-down (`game_mode 0x0D`) save state. The walk-view camera frames a
+fixed world-space radius around the player (the object-local pack AABB would
+frame only the tile under the player); the top-view keeps the full-pack
+overhead framing.
+
+A minority of terrain tiles reference mesh indices beyond the loaded slot-1
+pack (Drake draws ~860 of 970 in-pack): those index the wider per-kingdom
+global TMD pool (`DAT_8007C018`, 138 entries) that the world-map load doesn't
+yet pull in, so they resolve to no mesh and are skipped — the remaining gap in
+a fully-tiled continent.
 
 #### Rendering the placed entities
 

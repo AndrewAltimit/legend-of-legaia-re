@@ -3650,6 +3650,13 @@ struct PlayWindowApp {
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     field_placement_draws: Vec<(usize, Mat4)>,
+    /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
+    /// per visible tile of the kingdom's `.MAP` object grid
+    /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
+    /// Empty off the world map. Drawn in `SceneMode::WorldMap` so the overworld
+    /// shows its tiled ground / trees / mountains rather than a handful of
+    /// landmark objects.
+    world_map_terrain_draws: Vec<(usize, Mat4)>,
     /// Pristine CPU-side scene VRAM, cloned at scene-load before any battle
     /// edits. A battle injects monster texture pools into a working copy and
     /// re-uploads; leaving battle restores this base so the field renders
@@ -4970,6 +4977,46 @@ impl PlayWindowApp {
             Ok(Some(p)) if !p.is_empty() => p,
             _ => return Vec::new(),
         };
+        self.resolve_placement_draws(res, tmd_src_index, &placements)
+    }
+
+    /// World-map continent terrain draws: the dense visible-tile set
+    /// (`Scene::field_terrain_tiles`, the `FUN_801F69D8` overhead sweep) rather
+    /// than the placed-flag interactive objects. Tiles whose pack index falls
+    /// outside the loaded slot-1 landmark pack (they reference the wider global
+    /// TMD pool, not yet loaded for the world map) resolve to no mesh and are
+    /// skipped by `resolve_placement_draws`.
+    fn resolve_world_map_terrain_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        let tiles = match scene.field_terrain_tiles(&self.session.host.index) {
+            Ok(Some(t)) if !t.is_empty() => t,
+            _ => return Vec::new(),
+        };
+        self.resolve_placement_draws(res, tmd_src_index, &tiles)
+    }
+
+    /// Shared placement -> world-transform resolver for both the field static-
+    /// object layer and the world-map continent terrain. Maps each placement's
+    /// scene-pack mesh index through the uploaded-mesh bridge and builds its
+    /// world model matrix.
+    fn resolve_placement_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+        placements: &[legaia_asset::field_objects::Placement],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        if placements.is_empty() {
+            return Vec::new();
+        }
         // Per-tile floor-height LUT (MAN header). World Y for a placed object
         // is `-lut[tile_floor_nibble] + y_off`; without it the town renders on
         // a flat plane (Rim Elm is on a cliff with real elevation changes).
@@ -5000,7 +5047,7 @@ impl PlayWindowApp {
             }
         }
         let mut draws = Vec::new();
-        for p in &placements {
+        for p in placements {
             let Some(pack_index) = p.pack_index else {
                 continue;
             };
@@ -5099,6 +5146,7 @@ impl PlayWindowApp {
         // Built here (not per-frame) because the placement table + pack are
         // fixed for the scene; the field draw branch just replays the list.
         let field_placement_draws = self.resolve_field_placement_draws(&res, &tmd_src_index);
+        let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Keep a clean CPU copy of the scene VRAM so a battle can inject
         // monster textures into a throwaway clone and restore this on exit.
         self.cpu_vram_base = Some(res.vram.clone());
@@ -5206,6 +5254,7 @@ impl PlayWindowApp {
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         self.field_placement_draws = field_placement_draws;
+        self.world_map_terrain_draws = world_map_terrain_draws;
         if lo[0].is_finite() {
             self.scene_aabb = (lo, hi);
         }
@@ -7078,20 +7127,26 @@ impl ApplicationHandler for PlayWindowApp {
                     } else if in_world_map {
                         // World map continent geometry is placed per-tile, the
                         // same way field/town static objects are: the kingdom's
-                        // DATA_FIELD `.MAP` object grid (`field_object_placements`
-                        // -> `resolve_field_placement_draws`) selects a slot-1
-                        // pack mesh per occupied tile and positions it at world
-                        // (col*0x80 + x_off, floor_height + y_off, row*0x80 +
-                        // z_off). This shares the player / entity-marker world
-                        // frame, so the continent aligns under the player instead
-                        // of piling at the pack-local origin. (Retail's overhead
-                        // continent sweep is `FUN_801F69D8`; the walk-view static
-                        // placer is `FUN_8003A55C` - both read the same `.MAP`
-                        // tile grid documented in `field_objects`.)
-                        if self.field_placement_draws.is_empty() {
-                            // Fallback (no `.MAP` placements resolved): draw the
-                            // whole pack at pack-local coords, Y-flipped, so the
-                            // map is never blank.
+                        // DATA_FIELD `.MAP` object grid positions a slot-1 pack
+                        // mesh per occupied tile at world (col*0x80 + x_off,
+                        // floor_height + y_off, row*0x80 + z_off). This shares the
+                        // player / entity-marker world frame, so the continent
+                        // aligns under the player instead of piling at the
+                        // pack-local origin.
+                        //
+                        // The DENSE continent (ground / trees / mountains) is the
+                        // *visible-tile* set (`world_map_terrain_draws`, the
+                        // `FUN_801F69D8` overhead sweep over cells with the
+                        // `0x2000` bit) - hundreds of tiles, vs the ~tens of
+                        // placed-flag interactive objects (`field_placement_draws`,
+                        // `FUN_8003A55C`). Draw both: terrain first, then the
+                        // interactive landmarks on top.
+                        if self.world_map_terrain_draws.is_empty()
+                            && self.field_placement_draws.is_empty()
+                        {
+                            // Fallback (no `.MAP` tiles resolved): draw the whole
+                            // pack at pack-local coords, Y-flipped, so the map is
+                            // never blank.
                             let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                             for mesh in &self.meshes {
                                 draws.push(SceneDraw {
@@ -7100,7 +7155,11 @@ impl ApplicationHandler for PlayWindowApp {
                                 });
                             }
                         } else {
-                            for (mesh_idx, model) in &self.field_placement_draws {
+                            for (mesh_idx, model) in self
+                                .world_map_terrain_draws
+                                .iter()
+                                .chain(self.field_placement_draws.iter())
+                            {
                                 if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                     draws.push(SceneDraw {
                                         mesh,
@@ -8076,6 +8135,7 @@ fn cmd_play_window_with_record(
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
         field_placement_draws: Vec::new(),
+        world_map_terrain_draws: Vec::new(),
         cpu_vram_base: None,
         prev_scene_mode: None,
         monster_archive: None,

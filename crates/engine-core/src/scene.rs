@@ -721,6 +721,26 @@ impl Scene {
         Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
     }
 
+    /// The scene's **bulk terrain** tiles: one entry per visible cell of the
+    /// field map's object-index grid (`+0x8000`, cell bit
+    /// [`legaia_asset::field_objects::CELL_VISIBLE`]), positioned the same way
+    /// as [`Self::field_object_placements`]. This is the dense continent layer
+    /// (ground / trees / mountains) the overhead sweep `FUN_801F69D8` draws -
+    /// far more tiles than the placed-flag interactive objects. Returns
+    /// `Ok(None)` if the scene has no field map.
+    pub fn field_terrain_tiles(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_terrain_tiles(
+            &bytes,
+        )))
+    }
+
     /// The scene's 16-entry floor-height LUT, read from the MAN header
     /// (`man[+0x02..+0x22]`, 16 `s16` LE). A placed object's world Y is
     /// `-lut[tile_floor_nibble] + record.y_off` (the runtime stores the LUT
