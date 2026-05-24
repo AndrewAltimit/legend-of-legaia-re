@@ -470,19 +470,20 @@ cell bit `0x1000`** (15389 cells in the live grid), distinct from the overview's
 placements (decoded via
 [`legaia_asset::man_section::ManFile::actor_placements`]).
 
-**Engine render-path mismatch + open gap.** `is_world_map_scene` routes any
-`map\d\d` scene to the WorldMap *overview* branch, which draws
-`world_map_terrain_draws` (the `0x2000` visible sweep + the raw `+0x10` index,
-up to 105) against the 40-mesh **walk** pool — the high indices resolve to no
-mesh, hence the sparse scatter. The walk path instead needs the **`0x1000`**
-cell gate and `pool = record[+0x10] + prefix(5)` (above). The `.MAP` source is
-now fully pinned — the records+grid is the **raw** region at PROT.DAT `0x655800`
-(`toc[87]`, no compression), validated by parsing it back to the exact live
-placements (16251 continent tiles all in-pool; the 6 placed objects → pools
-36/34/11/7/19/21 = the live render list). So the remaining work is purely
-**engine wiring**: load via `toc[p+2]` (index 85 → `0x655800`, not the
-extractor's mislabeled `0085` slice at `0x668000`), and route `map\d\d` walk to
-the field-actor render path.
+**Engine render (wired).** The walk path reads the **raw** `.MAP` records+grid
+at PROT.DAT `0x655800` (`toc[87]`, no compression) via
+[`Scene::walk_field_map_index`] (`block_start - 2`), sweeps the continent on the
+**`0x1000`** cell gate ([`Scene::walk_terrain_tiles`]) with `pool =
+record[+0x10]` (uniform), and `resolve_world_map_terrain_draws` feeds the
+world-map render — a kingdom overworld now draws a coherent ~16k-tile continent
+instead of the earlier sparse scatter (which came from the overview's `0x2000`
+sweep + raw `+0x10` against the 40-mesh pool resolving the within-block decoy
+map). The per-tile geometry + pack ordering is **verified correct**: the
+engine's slot-1 pack object-count sequence `[1,1,2,1,…]` is byte-order-identical
+to the live `DAT_8007C018[5..45]` pool (disc-gated test `walk_field_map`). The
+continent currently renders largely flat/untextured grey, so the open refinement
+is **texturing** — the walk-view slot-0 TIM → VRAM-page residency for the pack
+meshes (textured prims that sample un-uploaded VRAM are dropped at mesh build).
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
