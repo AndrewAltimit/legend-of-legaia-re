@@ -351,14 +351,18 @@ pub const COLLISION_GRID_OFFSET: usize = 0x4000;
 /// Positions are in the same pre-Y-flip world frame the placement draws use
 /// (`world_y = -lut[nibble]`), so the engine applies the same `(1, -1, 1)`
 /// model flip. `tile_id` carries each vertex's source-tile `+0x14` byte (range
-/// `0..63`), retained so a future texture pass can map it to a slot-0 atlas
-/// tile once that mapping is pinned; texturing is **not** resolved here.
+/// `0..63`). Note: `+0x14` is **terrain-type metadata, not a texture selector** —
+/// no retail draw path reads it (the only per-cell terrain emitter, the
+/// overview renderer `FUN_801F69D8`, keys on `+0x10` meshes). It is retained
+/// here for terrain-class uses (encounter / footstep / walk-speed), not for
+/// texturing. See `docs/subsystems/world-map.md` "Open (texturing)".
 #[derive(Debug, Clone, Default)]
 pub struct WalkHeightfield {
     /// Per-vertex world position (pre-Y-flip): `(col*128, -lut[nibble], row*128)`.
     pub positions: Vec<[f32; 3]>,
-    /// Per-vertex source-tile `+0x14` id (`0..63`), the candidate texture
-    /// selector for a later per-tile texture pass.
+    /// Per-vertex source-tile `+0x14` id (`0..63`). Terrain-*type* metadata
+    /// (no draw path reads it), **not** a texture-atlas selector; see the
+    /// struct docs.
     pub tile_ids: Vec<u8>,
     /// Triangle indices (two triangles per visible cell quad).
     pub indices: Vec<u32>,
@@ -404,8 +408,9 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             if cell & CELL_WALK_VISIBLE == 0 {
                 continue;
             }
-            // The +0x14 byte of this cell's object record — the per-tile id
-            // (texture selector candidate); 0 when the record is absent.
+            // The +0x14 byte of this cell's object record — the per-tile
+            // terrain-type id (not a texture selector); 0 when the record is
+            // absent.
             let obj_idx = (cell & OBJECT_INDEX_MASK) as usize;
             let tile_id = field_map
                 .get(obj_idx * OBJECT_RECORD_STRIDE + 0x14)
