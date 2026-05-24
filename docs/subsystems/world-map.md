@@ -350,32 +350,51 @@ position** (Plain placements are skipped). So overworld portals + NPCs are
 
 #### Loading the kingdom geometry (engine port)
 
-The walk-view world map draws exactly one thing: the **kingdom-bundle slot-1
-landmark TMD pack** (Drake 40, Sebacus 36, Karisto 56 TMDs), textured by the
-slot-0 TIM atlas. Retail's loader reads those slots straight from the scene's
-7-asset descriptor table; the engine port now mirrors that. When
+The engine port loads the scene's **kingdom-bundle slot-1 landmark TMD pack**
+(Drake 40, Sebacus 36, Karisto 56 TMDs), textured by the slot-0 TIM atlas. When
 `SceneHost::enter_field_scene` loads a `map\d\d` scene it selects
 [`SceneLoadKind::WorldMap`], and [`SceneResources::build_targeted_with_options`]
-decodes slot 1 (via [`legaia_asset::kingdom_bundle`] +
-[`legaia_asset::pack`]) into the TMD pool and slot 0 into the VRAM upload set,
-**instead of** the generic raw/LZS `tmd_scan` sweep. The generic sweep can't
-follow the LZS-compressed descriptor table, so before this it picked up only a
-handful of stray meshes — the historical "the world map looks like a battle
-map" symptom.
+decodes slot 1 (via [`legaia_asset::kingdom_bundle`] + [`legaia_asset::pack`])
+into the TMD pool and slot 0 into the VRAM upload set, **instead of** the generic
+raw/LZS `tmd_scan` sweep. The generic sweep can't follow the LZS-compressed
+descriptor table, so before this it picked up only a handful of stray meshes —
+the historical "the world map looks like a battle map" symptom. Only the
+scene's primary kingdom entry contributes; the sub-area sibling entries are
+skipped so they neither leak stray meshes nor inflate `scene_aabb`.
 
-Two scoping rules keep the pool faithful to the savestate ground truth (the
-walk-view resident pool is the landmark pack alone — Drake's live mesh table
-holds 5 shared party meshes + 39 landmarks, not the 110 a naive sweep yields):
+**The retail load mechanism (pinned).** The `DAT_8007C018` global TMD pointer
+table that the world-map tile dispatcher reads is filled by a single
+descriptor-walk: the per-scene field initializer `FUN_801D6704` runs
+`FUN_80020118` (party meshes → `[0..4]` via `FUN_8001E890`) then `FUN_80020224`,
+which walks the scene's main field file (streamed into `_DAT_8007b85c`) and
+dispatches every descriptor through `FUN_8001f05c`. **Only dispatcher cases
+`0x02` (TMD pack) and `0x09` (bare TMD) install** into `DAT_8007C018` via
+`FUN_80026B4C`; the type-`0x05` slot-4 "MOVE" case only allocates a buffer and
+never installs — so slot-4 is *not* the terrain-mesh source.
 
-- **Only the primary kingdom entry.** Each kingdom's PROT range also contains a
-  *second* kingdom-bundle-shaped entry — the bulk **continent overview** pack
-  (e.g. PROT 0093 for Drake, ~70 TMDs) that belongs to the zoomed-out
-  world-overview view, not the per-kingdom walk map. The build accepts only the
-  first kingdom bundle per scene and ignores the rest.
-- **No sibling-entry sweep.** The world-map main scene's non-kingdom sibling
-  entries (sub-area / battle assets) are skipped entirely, so they neither leak
-  stray meshes nor inflate `scene_aabb` (a camera-framing hazard). Shared blocks
-  (the player atlas) still load normally.
+**Open: the full walk-view pool source.** `map01`'s static-object grid reaches
+pack index **105** (66 distinct), far past the 40-mesh landmark pack, so the
+faithful walk view needs a ~106-mesh pool. That pool is **not** reconstructible
+from the disc's `map01` PROT entries:
+
+- Appending the larger sibling **continent-overview pack** (PROT 0093, 70 TMDs)
+  to the landmark pack is **falsified** — 0085's and 0093's slot-0 atlases
+  target the *same* VRAM pages (both write `(320,0)`, `(384,0)`, `(512,256)`,
+  `(640,0)`, `(704,0)`, `(768,0)` … and overlapping CLUT rows), so they are
+  **mutually-exclusive** asset sets (a walk-view vs. overview pair), never
+  co-resident. Loading both clobbers the landmark texels (terrain renders with
+  scrambled/yellow textures) *and* maps tiles to wrong meshes.
+- No single `map01` PROT entry holds ≥106 meshes (the largest is 0093's 70).
+
+The retail walk-view pool is therefore a self-contained ≥106-mesh field-file
+pack the engine's `PROT.DAT`-boot path does not currently surface (the ISO9660
+disc has no `DATA\FIELD` tree; field files live inside `PROT.DAT`, and the
+matching `map01` walk-view entry is unidentified). Pinning it needs a **correct
+`map01` walk-view RAM capture** (`game_mode 0x03`) — the available
+`drake_world` / `sebucus_world` dumps are in fact the `dolk` / `geremi` field
+scenes, not world maps (see the provenance correction in
+[`memory-map.md`](../reference/memory-map.md)), so no world-map pool snapshot
+exists yet. Until then the walk view draws the landmark pack only.
 
 #### Placing the continent terrain (engine port)
 
@@ -411,11 +430,12 @@ fixed world-space radius around the player (the object-local pack AABB would
 frame only the tile under the player); the top-view keeps the full-pack
 overhead framing.
 
-A minority of terrain tiles reference mesh indices beyond the loaded slot-1
-pack (Drake draws ~860 of 970 in-pack): those index the wider per-kingdom
-global TMD pool (`DAT_8007C018`, 138 entries) that the world-map load doesn't
-yet pull in, so they resolve to no mesh and are skipped — the remaining gap in
-a fully-tiled continent.
+Every terrain / object tile whose pack index falls inside the loaded landmark
+pack draws at its world position; tiles indexing beyond it (the majority — see
+*Open: the full walk-view pool source* above) resolve to no mesh and are
+skipped, so the engine continent is **sparse but correctly-meshed** rather than
+densely-but-wrongly tiled. Closing the gap is blocked on identifying the
+≥106-mesh walk-view pool, which needs a correct `map01` RAM capture.
 
 #### Rendering the placed entities
 

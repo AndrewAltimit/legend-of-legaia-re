@@ -754,10 +754,21 @@ object record's `[+0x1E]` flag is set, and OR'd with `0x10000000` if
 `record[+0x12] & 0x800`. The `fog` arg is
 `clamp((GTE_screen_z - 0x5000) >> 3, 0, 0x1000)`.
 
-### Live snapshot (Drake post-warp settled)
+### Live snapshot (settled field scene)
 
-Drake world-map RAM dump after the warp has settled
-([`captures/ram_dumps/drake_world.bin`](../../captures/ram_dumps/)):
+> **Capture provenance correction.** The local dump file is named
+> `drake_world.bin`, but its `0x80084540` scene id is `0x3c` and the scene name
+> at `0x80084548` is `dolk` with `game_mode 0x03` — it is the **`dolk` field
+> scene**, *not* the Drake world map. The `DAT_8007C018` table is filled
+> identically by every field-scene load (the single descriptor-walk
+> `FUN_80020224`), so the layout/counter observations below are valid as a
+> generic field-scene example; just don't read them as world-map-specific. The
+> `[5..142]` entries are this scene's field-file TMD pack (one contiguous
+> 138-entry pack), not a "kingdom bundle".
+
+RAM dump after the scene load has settled
+([`captures/ram_dumps/drake_world.bin`](../../captures/ram_dumps/) — the `dolk`
+field scene, see correction above):
 
 | Field | Value |
 |---|---:|
@@ -815,9 +826,12 @@ with word offsets in 4-byte units (same convention as
 | 3 | `0x972C` | 3  | 6 488 |
 | 4 | `0xB084` | 2  | 20 348 (trailing padding to pack end) |
 
-Byte-equality check against a Drake post-warp RAM snapshot
+Byte-equality check against a settled field-scene RAM snapshot
 ([`captures/ram_dumps/drake_world.bin`](../../captures/ram_dumps/),
-local-only):
+local-only — the `dolk` field scene, not the Drake world map; see the
+provenance correction in [§ Live snapshot](#live-snapshot-settled-field-scene)).
+The character meshes `[0..4]` are the shared party pack every field scene loads,
+so the equality holds scene-independently:
 
 - **Pack slot 3 vs RAM `DAT_8007C018[3]`** (un-fixup the runtime's
   absolute-pointer group descriptors back to disc-form offsets using
