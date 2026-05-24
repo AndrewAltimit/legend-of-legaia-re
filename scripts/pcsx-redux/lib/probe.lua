@@ -36,6 +36,7 @@ local bp       = require("probe.bp")
 local csv      = require("probe.csv")
 local snapshot = require("probe.snapshot")
 local sm       = require("probe.sm")
+local watch    = require("probe.watch")
 -- Lazy-require for symbols: it does a filesystem lookup on first access,
 -- so don't pay that cost just because a probe required the umbrella.
 local _symbols_cached = nil
@@ -57,6 +58,7 @@ M.bp       = bp
 M.csv      = csv
 M.snapshot = snapshot
 M.sm       = sm
+M.watch    = watch
 setmetatable(M, { __index = function(t, k)
     if k == "symbols" then return get_symbols() end
     return nil

@@ -33,44 +33,35 @@ The dump is a Sony-derived RAM image and must stay local (gitignored).
 from __future__ import annotations
 
 import argparse
-import struct
 import sys
 from collections import Counter
+
+import gpu_packets  # shared PSX GPU primitive decode (scripts/gpu_packets.py)
 
 # Default ground-page identifiers, pinned from a Drake (map01) walk image.
 DEFAULT_CLUT = 0x7C40  # CBA word -> VRAM fb (0, 497)
 DEFAULT_TPAGE = 0x001A  # 4bpp page -> VRAM fb (640, 256)
 
-# POLY_FT4 (cmd 0x2C) packet layout in the ordering-table build buffer:
-#   +0x00 tag(next-ptr|len)  +0x04 cmd|rgb   +0x08 xy0
-#   +0x0C uv0 | clut<<16      +0x10 xy1       +0x14 uv1 | tpage<<16
-#   +0x18 xy2                 +0x1C uv2       +0x20 xy3   +0x24 uv3
-PACKET_LEN = 0x28
-
-
-def _s16(v: int) -> int:
-    return v - 0x10000 if v & 0x8000 else v
+# The ground is drawn as POLY_FT4 (flat-textured quad) packets; the shared
+# library knows the libgpu packet layout (tag + GP0 words, clut in uv0's high
+# half, tpage in uv1's high half). See scripts/gpu_packets.py.
 
 
 def decode(ram: bytes, clut: int, tpage: int):
     quads = []
-    for o in range(0, len(ram) - PACKET_LEN, 4):
-        if (struct.unpack_from("<I", ram, o + 0x0C)[0] >> 16) != clut:
-            continue
-        if (struct.unpack_from("<I", ram, o + 0x14)[0] >> 16) != tpage:
-            continue
-        if ram[o + 0x07] != 0x2C:  # cmd byte (POLY_FT4, flat, opaque)
-            continue
-        u0, v0 = ram[o + 0x0C], ram[o + 0x0D]
-        u3, v3 = ram[o + 0x24], ram[o + 0x25]
-        xy0 = struct.unpack_from("<I", ram, o + 0x08)[0]
+    for pkt in gpu_packets.iter_textured_packets(
+        ram, clut=clut, tpage=tpage, codes={0x2C}
+    ):
+        u0, v0 = pkt.uvs[0]
+        u3, v3 = pkt.uvs[3]
+        sx, sy = pkt.xys[0]
         quads.append(
             dict(
-                off=o,
+                off=pkt.off,
                 uv0=(u0, v0),
                 span=(abs(u3 - u0), abs(v3 - v0)),
-                sx=_s16(xy0 & 0xFFFF),
-                sy=_s16((xy0 >> 16) & 0xFFFF),
+                sx=sx,
+                sy=sy,
             )
         )
     return quads
