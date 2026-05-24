@@ -1213,6 +1213,16 @@ impl SceneHost {
     /// the box.
     pub fn open_pending_dialog(&mut self) -> Option<crate::dialog::OwnedDialogPanel> {
         let req = self.world.current_dialog.as_ref()?;
+        // Placement-NPC / event dialogue carries its text inline (the field-VM
+        // `0x3F` op's buffer); its `text_id` is a box-config id, not an MES
+        // index, so it never resolves through the scene MES. Prefer the inline
+        // text when present, falling back to the MES `text_id` lookup (used by
+        // the message-table dialogue paths).
+        if !req.inline.is_empty()
+            && let Some(panel) = crate::dialog::OwnedDialogPanel::from_inline_dialog(&req.inline)
+        {
+            return Some(panel);
+        }
         let mes = self.assets.as_ref()?.mes.as_ref()?;
         crate::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)
     }
@@ -1696,11 +1706,15 @@ impl SceneHost {
                                     target_map: target_map as u16,
                                 }
                             }
-                            PlacementKind::Npc { interact_id, .. } => {
-                                crate::world::WorldMapEntityConfig::Npc {
-                                    interact_id: interact_id.unwrap_or(0),
-                                }
-                            }
+                            PlacementKind::Npc {
+                                interact_id,
+                                dialog_text_id,
+                                dialog_inline,
+                            } => crate::world::WorldMapEntityConfig::Npc {
+                                interact_id: interact_id.unwrap_or(0),
+                                text_id: dialog_text_id,
+                                inline: dialog_inline.unwrap_or_default(),
+                            },
                             PlacementKind::Plain => return None,
                         };
                         Some((cfg, (p.world_x, p.world_z)))

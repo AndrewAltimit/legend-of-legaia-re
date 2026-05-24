@@ -209,6 +209,27 @@ impl OwnedDialogPanel {
         Some(Self::new(Arc::new(mes.bytes.clone()), pc))
     }
 
+    /// Build a panel over the **inline** dialog bytes a field-VM `0x3F` op
+    /// carries (stored on [`crate::world::DialogRequest::inline`]).
+    ///
+    /// Placement-NPC and event dialogue does not live in the scene MES (its
+    /// `text_id` is a box-config id, not a message index - it never resolves
+    /// through [`Self::from_scene_mes`]); the message text is the inline buffer
+    /// itself, in the field-VM dialog-box format `[box-geometry header]` then
+    /// `0x1F`-lead text/option segments (MES glyph bytecode). The geometry
+    /// header is opaque here (it carries box position/size and option-layout
+    /// bytes, some of which fall in the glyph range), so this skips to the
+    /// first `0x1F` lead marker and decodes the text from just past it through
+    /// the standard MES [`Interpreter`](legaia_mes::Interpreter) - rendering
+    /// the first segment up to its terminator.
+    ///
+    /// Returns `None` when no `0x1F` lead marker is present (nothing
+    /// renderable), so a caller can fall back to the MES path.
+    pub fn from_inline_dialog(inline: &[u8]) -> Option<Self> {
+        let lead = inline.iter().position(|&b| b == 0x1F)?;
+        Some(Self::new(Arc::new(inline.to_vec()), lead + 1))
+    }
+
     pub fn set_glyphs_per_frame(&mut self, n: u8) {
         self.glyphs_per_frame = n.max(1);
     }
@@ -330,6 +351,28 @@ mod tests {
         assert_eq!(panel.page_bytes(), vec![b'a', b'b', b'c']);
         assert_eq!(panel.tick(), PanelState::Done);
         assert!(panel.is_done());
+    }
+
+    /// Inline field-VM dialog: a box-geometry header (leading bytes, some in
+    /// the glyph range) then a `0x1F`-lead text segment. `from_inline_dialog`
+    /// must skip the header to the first `0x1F` marker and type the text after
+    /// it - here `"Hi"` from `[00 56 00 1F 'H' 'i' 00]`.
+    #[test]
+    fn from_inline_dialog_skips_geometry_header_and_types_text() {
+        let inline = vec![0x00u8, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
+        for _ in 0..2 {
+            assert_eq!(panel.tick(), PanelState::Typing);
+        }
+        assert_eq!(panel.page_bytes(), vec![b'H', b'i']);
+        assert_eq!(panel.tick(), PanelState::Done);
+    }
+
+    /// No `0x1F` lead marker = nothing renderable; the caller falls back to the
+    /// MES `text_id` path.
+    #[test]
+    fn from_inline_dialog_without_lead_marker_is_none() {
+        assert!(OwnedDialogPanel::from_inline_dialog(&[0x00, 0x10, 0x00]).is_none());
     }
 
     /// `0xCF XX` in MES bytecode = render XX alone. Both panel variants

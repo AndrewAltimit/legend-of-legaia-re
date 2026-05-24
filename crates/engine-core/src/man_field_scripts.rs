@@ -207,40 +207,92 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
     out
 }
 
-/// The interactive role of a placed actor ([`ActorPlacement`]), inferred by
-/// scanning its per-entity field-VM script for the opcodes that give it
-/// behaviour.
+/// The interactive role of a placed actor ([`ActorPlacement`]), inferred from
+/// its per-entity field-VM script ([`classify_placements`]).
 ///
 /// Retail has no static "entity kind" field: a placed actor's behaviour is
-/// whatever its script does. This classifies by the script's distinguishing
-/// opcodes ([`classify_placements`]):
+/// whatever its script does. This classifies by two signals:
 ///
-/// - a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`) → a
-///   [`Portal`](Self::Portal) whose target map id is `op0 - 100`;
-/// - a **dialog** (`0x3F`) or **field interact** (`0x3E` with `op0 < 100`) and
-///   no warp → an [`Npc`](Self::Npc);
+/// - a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`), found by
+///   the linear opcode walk → a [`Portal`](Self::Portal) whose target map id is
+///   `op0 - 100`;
+/// - otherwise, an **inline dialog-text block** — a run of `0x1F`-lead /
+///   `0x00`-terminated message segments embedded in the record — found
+///   *structurally* (see [`first_inline_dialog_offset`]) → an
+///   [`Npc`](Self::Npc) carrying that text;
 /// - none of those → [`Plain`](Self::Plain) (a moving / animated / model-only
 ///   actor, e.g. the lead-actor slot or a decorative NPC).
 ///
-/// The scan is a *linear* disassembly (the same over-approximating walk
-/// [`walk_partition1_scripts`] uses): it sees every opcode-shaped byte in the
-/// record, not only the ones a particular control-flow path reaches, so a warp
-/// anywhere in the record marks the actor a portal.
+/// ## Why dialog text is found structurally, not by opcode
+///
+/// A field-scene interaction record is dominated by its embedded message text,
+/// and that text contains bytes that look like field-VM opcodes (a literal
+/// `>` is `0x3E`, the `scene_transition`/interact opcode; ASCII punctuation
+/// hits `0x37`/`0x41` yield bytes). A linear disassembly therefore *desyncs*
+/// inside the text and reports phantom interact / dialog ops with garbage
+/// operands. So the message text is located by scanning for the `0x1F`-lead
+/// segment block directly, and the (unreliable, for field scenes) opcode-decoded
+/// `dialog_text_id` / `interact_id` are kept only as best-effort hints. The
+/// warp scan is still opcode-based: a warp anywhere in the record marks the
+/// actor a portal, and warp records carry no inline text block to confuse it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlacementKind {
     /// The script warps to another scene. `target_map` is the field-VM map id
     /// (`op0 - 100`), resolvable through the same `MapIdResolver` a
     /// `scene_transition` uses.
     Portal { target_map: u8 },
-    /// The script opens dialog and/or triggers a field interaction but never
-    /// warps - a talk-to NPC / sign / event trigger.
+    /// The actor carries an inline dialog-text block and/or a field-interact
+    /// op but never warps - a talk-to NPC / sign / event trigger.
     Npc {
+        /// Best-effort `0x3F`-op box-config id from the opcode walk. Unreliable
+        /// for field scenes (the walk desyncs on embedded text); the real
+        /// message text is [`dialog_inline`](Self::Npc::dialog_inline).
         dialog_text_id: Option<u16>,
+        /// Best-effort `0x3E`-op interact selector from the opcode walk. Like
+        /// `dialog_text_id`, unreliable for text-heavy field records.
         interact_id: Option<u8>,
+        /// Record bytes from the start of the first inline `0x1F`-lead text
+        /// segment through the record's bounded end. This - not
+        /// `dialog_text_id`, which is a box-config id - is the actual message
+        /// text; [`crate::dialog::OwnedDialogPanel::from_inline_dialog`]
+        /// renders it (it re-finds the `0x1F` lead and types the first segment).
+        dialog_inline: Option<Vec<u8>>,
     },
     /// No warp / dialog / interact opcode: a decorative or script-only actor
     /// (movement, animation, model preload, the lead-actor slot).
     Plain,
+}
+
+/// Find the byte offset of the first inline dialog-text segment in `body`,
+/// searching from `from`.
+///
+/// A field-scene interaction record stores its message text as a run of
+/// segments, each `0x1F <printable bytes> 0x00`. This returns the offset of the
+/// first `0x1F` that introduces a segment whose body is non-trivial (≥3 bytes)
+/// and overwhelmingly printable ASCII (≥3/4 of the bytes in `0x20..=0x7E`) - the
+/// printable-ratio gate rejects a stray `0x1F` glyph byte that happens to sit in
+/// opcode / move-script data. Returns `None` when no such segment exists (a
+/// decorative or warp-only actor).
+pub fn first_inline_dialog_offset(body: &[u8], from: usize) -> Option<usize> {
+    let mut i = from.min(body.len());
+    while i < body.len() {
+        if body[i] == 0x1F {
+            let text_start = i + 1;
+            let mut j = text_start;
+            while j < body.len() && body[j] != 0x00 {
+                j += 1;
+            }
+            let raw = &body[text_start..j];
+            let printable = raw.iter().filter(|&&b| (0x20..=0x7E).contains(&b)).count();
+            if raw.len() >= 3 && printable * 4 >= raw.len() * 3 {
+                return Some(i);
+            }
+            i = j + 1;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 /// Classify every partition-1 actor placement by scanning its field-VM script.
@@ -269,11 +321,18 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
         return PlacementKind::Plain;
     }
     let body = &man[start..end];
+
+    // Opcode-walk pass: a warp wins outright (the actor is a portal). A real
+    // warp is `0x3E op0 ...` with `op0 >= 100`, so it is not aliased by a
+    // literal `>` (0x3E) in message text (there the next byte is the segment
+    // terminator `0x00`, i.e. `op0 < 100`, an interact). The decoded interact /
+    // dialog hints, by contrast, *are* unreliable on text-heavy field records
+    // (the walk desyncs inside the message), so they are best-effort only - the
+    // real dialog text is recovered structurally below.
     let mut dialog_text_id = None;
     let mut interact_id = None;
     for insn in LinearWalker::new(body, p.script_pc0).flatten() {
         match insn.info {
-            // A warp wins outright: the actor is a portal.
             InsnInfo::WarpOrInteract {
                 op0, is_warp: true, ..
             } => {
@@ -294,10 +353,17 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
             _ => {}
         }
     }
-    if dialog_text_id.is_some() || interact_id.is_some() {
+
+    // Structural pass: the message text is a run of `0x1F`-lead segments. Carry
+    // the record bytes from the first segment's `0x1F` through the record end;
+    // `from_inline_dialog` re-finds the lead and types the first segment.
+    let dialog_inline = first_inline_dialog_offset(body, p.script_pc0).map(|o| body[o..].to_vec());
+
+    if dialog_inline.is_some() || interact_id.is_some() {
         PlacementKind::Npc {
             dialog_text_id,
             interact_id,
+            dialog_inline,
         }
     } else {
         PlacementKind::Plain
@@ -629,6 +695,7 @@ mod tests {
             PlacementKind::Npc {
                 dialog_text_id: None,
                 interact_id: Some(0x07),
+                dialog_inline: None,
             }
         );
     }
@@ -642,6 +709,45 @@ mod tests {
             classify_placement(&mf, &man, &placements[0]),
             PlacementKind::Plain
         );
+    }
+
+    #[test]
+    fn first_inline_dialog_offset_finds_a_printable_segment() {
+        // `[noise][0x1F "Hello" 0x00]` -> offset of the 0x1F.
+        let body = [0x21u8, 0x25, 0x1F, b'H', b'e', b'l', b'l', b'o', 0x00, 0x21];
+        assert_eq!(first_inline_dialog_offset(&body, 0), Some(2));
+    }
+
+    #[test]
+    fn first_inline_dialog_offset_rejects_a_stray_marker() {
+        // A 0x1F followed by non-printable / too-short data is not a segment.
+        let body = [0x1Fu8, 0x01, 0x02, 0x00, 0x1F, 0xAB, 0x00];
+        assert_eq!(first_inline_dialog_offset(&body, 0), None);
+    }
+
+    #[test]
+    fn classify_inline_text_with_phantom_warp_byte_is_an_npc() {
+        // A talk-NPC record whose message contains a literal '>' (0x3E, the
+        // warp/interact opcode). The structural pass finds the 0x1F text block;
+        // the desync gate ignores the '>' byte because it sits inside the text,
+        // so the actor classifies as an Npc carrying the inline message - NOT a
+        // phantom portal.
+        let mut script = vec![0x25u8]; // a benign leading op
+        script.extend_from_slice(&[0x1F]); // text-segment lead
+        script.extend_from_slice(b"<Go north>"); // contains 0x3E ('>')
+        script.push(0x00); // terminator
+        let (mf, man) = man_with_placement_script(&script);
+        let placements = mf.actor_placements(&man);
+        let kind = classify_placement(&mf, &man, &placements[0]);
+        match kind {
+            PlacementKind::Npc { dialog_inline, .. } => {
+                let inline = dialog_inline.expect("inline text captured");
+                // Renders the segment text (after the 0x1F lead).
+                let panel = crate::dialog::OwnedDialogPanel::from_inline_dialog(&inline);
+                assert!(panel.is_some(), "inline buffer is renderable");
+            }
+            other => panic!("expected Npc, got {other:?}"),
+        }
     }
 
     #[test]

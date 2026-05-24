@@ -201,8 +201,32 @@ formations for town01, `formation_id` 4 = `[0x4F]`). The scripted carrier entity
 selects this formation **by index** (it points `actor[+0x94]` at the table row, and
 `FUN_801DA51C` copies it into the cell on the dialogue-accept), which is why the
 cell shows the lone `0x4F` while no inline operand carries it. The pre-confirm
-("Come at me!") capture has the cell still clear — the install fires on the
-accept press.
+capture has the cell still clear — the install fires on the accept press.
+
+### The carrier entity
+
+The MAN-placed actor that installs this fight is pinned: town01 partition-1
+holds exactly one placement at **tile (76, 65)** with **model byte `0x6A`**,
+whose interaction record carries a long multi-page dialog block — the sparring
+talk-menu and its battle-trigger branch. It is the only on-map placement whose
+inline dialog runs that long (the village's other NPCs are one- or two-line),
+which is what distinguishes it from them; it sits adjacent to the town01 spawn.
+Mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL`
+in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs) and
+locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
+
+The carrier is identified by its **dialog block**, not by an opcode-decoded
+selector: a field interaction record is dominated by embedded message text whose
+bytes alias field-VM opcodes (a literal `>` is `0x3E`, the warp/interact opcode;
+ASCII punctuation hits the `0x37`/`0x41` yield bytes), so a linear disassembly
+desyncs inside the text and reports phantom interact / dialog ops with garbage
+operands. The dialog text itself is therefore recovered **structurally** — as a
+run of `0x1F`-lead / `0x00`-terminated segments
+(`man_field_scripts::first_inline_dialog_offset`) — which is also how every
+town01 NPC's message renders. Confirming the dialogue-accept → `actor[+0x94]`
+install on this specific entity still needs a mid-interaction RAM capture; the
+field-VM control flow from the menu branch to the formation-index install is the
+remaining open step.
 
 The clean-room engine reaches this fight faithfully through the same indexed
 table: a cold boot loads town01's MAN formations (with the monster archive's real

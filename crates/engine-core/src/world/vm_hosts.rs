@@ -384,7 +384,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
     }
     fn on_interact(&mut self, entity_idx: usize) {
         let interact_id = match self.world.world_map_entity_configs.get(entity_idx) {
-            Some(WorldMapEntityConfig::Npc { interact_id }) => *interact_id,
+            Some(WorldMapEntityConfig::Npc { interact_id, .. }) => *interact_id,
             _ => 0,
         };
         self.world

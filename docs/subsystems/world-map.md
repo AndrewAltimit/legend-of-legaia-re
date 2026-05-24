@@ -178,10 +178,40 @@ via `install_world_map_entities_with_configs`):
   player-position-in-zone trigger) drives the SM to its transition state and
   surfaces a `FieldEvent::WorldMapTransition { target_map, slot }` for the host
   to load the target scene.
-- `Npc { interact_id }` - surfaces a `FieldEvent::FieldInteract` with that id.
+- `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
+  with that id. When the placement script carries a `0x3F` Dialog op, `inline`
+  is the op's inline dialog-text buffer (see [dialog text source](#npc-dialogue-text-source));
+  `tick_world_map` opens it (sets `World::current_dialog` + emits
+  `FieldEvent::OpenDialog`, both carrying the inline bytes) when the player
+  presses confirm while standing within one tile of the entity, and dismisses
+  it on the next confirm/cancel press. This is the overworld talk-to path -
+  portals are walk-onto, NPCs are talk-to. (On the field the per-entity field
+  VM runs the `0x3F` itself; the overworld has no per-entity VM ticking, so the
+  world owns the open/dismiss directly.)
+
+#### NPC dialogue text source
+
+Placement-NPC and event dialogue text is **inline** in the script, not in the
+scene MES container. The `0x3F` Dialog op is `[3F, lo, hi, len, <len inline
+bytes>, xb, zb, depth]`; the `text_id` (`lo|hi<<8`) is a **box-config id**, not
+an MES message index (these ids - e.g. `0x2900` - do not resolve through
+`SceneMes::message_offset`). The message text is the `len`-byte inline buffer:
+a small box-geometry header (position / size / option-layout, some bytes
+falling in the glyph range) followed by `0x1F`-lead text/option segments of MES
+glyph bytecode. `OwnedDialogPanel::from_inline_dialog` skips to the first `0x1F`
+lead marker and decodes the segment after it through the standard MES
+interpreter; `SceneHost::open_pending_dialog` prefers this inline path and falls
+back to the `text_id` -> scene-MES lookup (used by the message-table dialogue
+paths). The geometry-header layout and multi-segment (full menu) rendering are
+not yet pinned - the first segment renders today.
 
 Entities without a config fall back to the shared formation and a generic
 interaction.
+
+The "player walking" gate that suppresses the talk-to / interaction path reads
+the d-pad direction bits (Up/Right/Down/Left), the same bits the locomotion
+step consumes - not the face buttons, so a confirm press is never mistaken for
+movement.
 
 ### Overworld player movement + region-keyed encounters
 

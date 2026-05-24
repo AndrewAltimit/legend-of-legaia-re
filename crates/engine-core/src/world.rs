@@ -1426,7 +1426,17 @@ pub enum WorldMapEntityConfig {
     Portal { target_map: u16 },
     /// A plain interactable (NPC / signpost). Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
-    Npc { interact_id: u8 },
+    ///
+    /// `inline` is the entity's own placement-script dialog text (the `0x3F`
+    /// op's inline buffer the placement walker captured); [`World::tick_world_map`]
+    /// opens it when the player presses confirm next to the entity. `text_id`
+    /// is the box-config id carried alongside it (not an MES index). Both are
+    /// empty/`None` when the placement has an interaction but no inline dialog.
+    Npc {
+        interact_id: u8,
+        text_id: Option<u16>,
+        inline: Vec<u8>,
+    },
 }
 
 /// Shared overworld encounter-rate state read by the world-map entity SM.
@@ -3489,9 +3499,20 @@ impl World {
             ctrl.tick(pad, pad_held);
         }
         // Player is "walking" on the overworld this frame when any d-pad
-        // direction is held (bits 0x1000/0x2000/0x4000/0x8000).
-        const WORLD_MAP_DPAD: u16 = 0x1000 | 0x2000 | 0x4000 | 0x8000;
+        // direction is held. These are the Up/Right/Down/Left bits the
+        // locomotion step ([`Self::step_world_map_locomotion`]) reads — the
+        // face buttons (Triangle/Circle/Cross/Square, 0x1000..0x8000) must not
+        // count as walking or a confirm press would suppress the talk-to gate.
+        const WORLD_MAP_DPAD: u16 = input::PadButton::Up as u16
+            | input::PadButton::Right as u16
+            | input::PadButton::Down as u16
+            | input::PadButton::Left as u16;
         self.world_map_player_walking = pad & WORLD_MAP_DPAD != 0;
+
+        // Talk-to: open / dismiss an adjacent NPC's dialogue on a confirm
+        // press. Runs before locomotion so opening a box suppresses movement +
+        // portal auto-engage this frame (both gate off `current_dialog`).
+        self.tick_world_map_npc_dialog();
 
         // Move the player first, then auto-engage any portal the player just
         // walked onto (sets its SM to Transitioning), so the entity SM step
@@ -3743,6 +3764,92 @@ impl World {
         }
         for idx in to_engage {
             self.engage_world_map_entity(idx);
+        }
+    }
+
+    /// Open / dismiss an overworld NPC's dialogue on a confirm press.
+    ///
+    /// The talk-to counterpart of [`Self::auto_engage_world_map_portals`]
+    /// (portals are walk-onto, NPCs are talk-to). While a box is up, a
+    /// confirm/cancel press (`Cross`/`Circle`) dismisses it: the overworld has
+    /// no field VM ticking to run the op-`0x4C` dismiss hook the field path
+    /// uses ([`vm_hosts`](crate::world)), so the world map owns the dismiss
+    /// directly. Otherwise, a confirm press while the player stands within one
+    /// tile of an [`WorldMapEntityConfig::Npc`] that carries inline dialog text
+    /// (the `Dialog` op the placement walker found) opens that text against the
+    /// scene's MES container — sets [`Self::current_dialog`] and emits
+    /// [`FieldEvent::OpenDialog`], which the host renders through
+    /// [`crate::scene::SceneHost::open_pending_dialog`], the same panel path
+    /// the field VM's op `0x3F` feeds.
+    ///
+    /// No-op while walking (a held direction is a movement frame, not a
+    /// talk-to), without entity positions, or without a player actor. An NPC
+    /// with an interaction but no inline text is left to the SM's
+    /// [`FieldEvent::FieldInteract`] path unchanged.
+    fn tick_world_map_npc_dialog(&mut self) {
+        // A box is up: a confirm/cancel press dismisses it (and the locomotion
+        // + auto-engage steps stay gated off `current_dialog` meanwhile).
+        if self.current_dialog.is_some() {
+            if self.input.just_pressed(input::PadButton::Cross)
+                || self.input.just_pressed(input::PadButton::Circle)
+            {
+                self.current_dialog = None;
+                self.pending_field_events.push(FieldEvent::DialogDismissed);
+            }
+            return;
+        }
+        // Otherwise a confirm press next to a talkable NPC opens its dialogue.
+        if self.world_map_player_walking || !self.input.just_pressed(input::PadButton::Cross) {
+            return;
+        }
+        if self.world_map_entity_positions.is_empty() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (px, pz) = match self.actors.get(slot as usize) {
+            Some(a) => (
+                (a.move_state.world_x as i32) >> 7,
+                (a.move_state.world_z as i32) >> 7,
+            ),
+            None => return,
+        };
+        // First talkable NPC within one tile (Chebyshev) of the player. An NPC
+        // is talkable when it carries inline dialog text or a box-config id.
+        let mut open: Option<(u16, Vec<u8>)> = None;
+        for (idx, cfg) in self.world_map_entity_configs.iter().enumerate() {
+            let (text_id, inline) = match cfg {
+                WorldMapEntityConfig::Npc {
+                    text_id, inline, ..
+                } if text_id.is_some() || !inline.is_empty() => {
+                    (text_id.unwrap_or(0), inline.clone())
+                }
+                _ => continue,
+            };
+            let Some(&(ex, ez)) = self.world_map_entity_positions.get(idx) else {
+                continue;
+            };
+            if ((ex as i32 >> 7) - px).abs() <= 1 && ((ez as i32 >> 7) - pz).abs() <= 1 {
+                open = Some((text_id, inline));
+                break;
+            }
+        }
+        if let Some((text_id, inline)) = open {
+            self.current_dialog = Some(DialogRequest {
+                text_id,
+                inline: inline.clone(),
+                world_x: 0,
+                world_z: 0,
+                depth_id: 0,
+            });
+            self.pending_field_events.push(FieldEvent::OpenDialog {
+                text_id,
+                inline,
+                world_x: 0,
+                world_z: 0,
+                depth_id: 0,
+            });
         }
     }
 

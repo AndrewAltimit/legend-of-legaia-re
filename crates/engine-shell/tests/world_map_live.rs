@@ -343,3 +343,109 @@ fn world_map_walking_onto_real_portal_transitions() {
         "at least one overworld portal must be exercised"
     );
 }
+
+/// A real overworld NPC carrying inline dialog text opens AND renders its
+/// message when talked to: teleport the player onto a classified `Npc` entity,
+/// press confirm, and assert (a) the world's `current_dialog` opens carrying
+/// the inline text and (b) `SceneHost::open_pending_dialog` builds a panel that
+/// types real glyphs out of it. The inline path is what makes placement-NPC
+/// dialogue render at all — its `text_id` is a box-config id that never
+/// resolves through the scene MES. Portals are walk-onto; NPCs are talk-to.
+#[test]
+fn world_map_talking_to_real_npc_renders_inline_dialogue() {
+    use legaia_engine_core::world::WorldMapEntityConfig;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // map01 / map02 each classify at least one NPC that carries inline dialog
+    // text in its placement script.
+    let mut tested_any = false;
+    for scene in ["map01", "map02"] {
+        let cfg = BootConfig {
+            scene: scene.into(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let opts = FieldLiveOpts::default();
+        session
+            .enter_world_map_live(scene, &opts)
+            .expect("enter_world_map_live");
+
+        let npc = session
+            .host
+            .world
+            .world_map_entity_configs
+            .iter()
+            .enumerate()
+            .find_map(|(i, c)| match c {
+                WorldMapEntityConfig::Npc { inline, .. } if !inline.is_empty() => Some(i),
+                _ => None,
+            });
+        let Some(idx) = npc else {
+            eprintln!("[{scene}] no talkable NPC entity with inline text installed");
+            continue;
+        };
+        let (nx, nz) = session.host.world.world_map_entity_positions[idx];
+        if let Some(slot) = session.host.world.player_actor_slot {
+            let a = &mut session.host.world.actors[slot as usize];
+            a.move_state.world_x = nx;
+            a.move_state.world_z = nz;
+        }
+        // Don't count the teleport as a tile crossing (avoids a stray region
+        // roll flipping us into Battle before the confirm).
+        session.host.world.world_map_last_tile = None;
+
+        // Settle a no-input frame so the confirm press is a clean edge, then talk.
+        session.host.world.set_pad(0);
+        let _ = session.host.world.tick();
+        session.host.world.set_pad(PadButton::Cross.mask());
+        let _ = session.host.world.tick();
+
+        assert!(
+            session
+                .host
+                .world
+                .current_dialog
+                .as_ref()
+                .is_some_and(|d| !d.inline.is_empty()),
+            "[{scene}] talking to the NPC opens a dialog carrying inline text"
+        );
+
+        // The host resolves it into a renderable panel; type ~64 glyphs and
+        // confirm real text comes out (placement-NPC text only renders via the
+        // inline path - the MES `text_id` lookup never resolves it).
+        let mut panel = session
+            .host
+            .open_pending_dialog()
+            .expect("[scene] inline dialog resolves to a panel");
+        panel.set_glyphs_per_frame(1);
+        for _ in 0..64 {
+            panel.tick();
+        }
+        let glyphs = panel.page_bytes();
+        let printable = glyphs
+            .iter()
+            .filter(|&&b| (0x20..=0x7E).contains(&b))
+            .count();
+        eprintln!(
+            "[{scene}] NPC #{idx}: panel typed {} glyphs, {printable} printable",
+            glyphs.len()
+        );
+        assert!(
+            printable >= 3,
+            "[{scene}] the inline dialog renders real text (got {printable} printable glyphs)"
+        );
+        tested_any = true;
+    }
+    assert!(
+        tested_any,
+        "at least one overworld NPC with inline dialog text must be exercised"
+    );
+}
