@@ -455,23 +455,40 @@ entities use a different partition / record format.
 scatter. The Drake *walk* view is a **field** scene (game mode `0x03`) and needs
 the field-actor render path fed by its walk `.MAP`.
 
-The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`)
-pins the walk `.MAP` *filename*: it builds **`DATA\FIELD\<scene>.MAP`** (plus
-`<scene>.PCH` at `+0x12000` and `\efect.dat`; extension globals
-`DAT_8007b3bc=".MAP"` / `DAT_8007b3c4=".PCH"`), with the scene name from the
-global at `0x80084548`, and loads it *by name* via `FUN_8003e6bc` →
-`FUN_800608f0` (`break 0x103`, the kernel trap that resolves the name through
-PROT.DAT/CDNAME — the ISO9660 filesystem has no `DATA\FIELD\` tree). The
-walk/overview discriminator is the **scene name**, not the extension: CDNAME
-maps `map01 = 85` (walk) and `opmap01 = 768` (overview) to *separate* PROT
-blocks, so the walk loads `map01.MAP` (block `0085..0093`) and the overview
-loads `opmap01.MAP` (block `0768..0772`) — distinct files. The one piece still
-open is *which* entry in the `map01` block is `map01.MAP`: the raw extracted
-`0085..0093` don't reproduce the live record placement (e.g. record 474 → pool
-21 at world `(9152,10432)`), so `map01.MAP` is stored compressed / resolved to a
-specific block offset by the `break 0x103` handler. Closing it needs the trap's
-extension→offset mapping (or a correct decode of the block), then parsing that
-`.MAP` with the model field (`pool = prefix + model`).
+The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
+**dual-mode**, gated on two globals:
+
+```c
+if (_DAT_8007b868 == 0 && _DAT_8007b8c2 != 0)   // RETAIL
+    FUN_8003e8a8(param_3, 1);   // param_3 = PROT entry index
+else                                            // DEV-HOST
+    FUN_8003e6bc("DATA\FIELD\<scene>.MAP", ...) // break 0x103 fopen on the dev PC
+```
+
+On **retail** (`_DAT_8007b8c2 != 0`, `_DAT_8007b868 == 0` — both confirmed live)
+the `.MAP` is resolved purely by **PROT entry index**: `param_3` is read by the
+field-init caller (`FUN_801d6704` @ `0x801d6ae8`) from the global at
+**`0x80084540`** (the word right before the scene-name string at `0x80084548`),
+and `FUN_8003e8a8` indexes the in-RAM PROT TOC at `0x801c70f0`
+(`toc[index+2]` = start_lba; the trace verifies the `0x801c70f0` constant inside
+`FUN_8003e8a8`). So the entry a scene loads is pinned by `0x80084540`, and a live
+Drake walk capture reads **`0x80084540 = 0x55 = 85`** → the walk `.MAP` is **PROT
+entry `0085_map01`** (the CDNAME `map01` base itself). Entry 85 is a
+section-offset-table container (leading u16 offset list); the `poch…`-filler
+`0087`/`0091` and the zero-prefixed `0092` in the same block are *not* the `.MAP`
+(`0092` is what an earlier raw-parse mis-read as "record 474 → pool 21").
+
+The **`break 0x103`** path (`FUN_800608f0`) is the **dev-host `fopen`** — a PsyQ
+host-link open of a real `DATA\FIELD\<scene>.MAP` (+ `<scene>.PCH` at `+0x12000`,
++ `\efect.dat`; extensions from `DAT_8007b3bc`/`DAT_8007b3c4`, scene name from
+`0x80084548`) on the *developer's PC*. It carries **no** extension→PROT mapping,
+the retail disc has no ISO9660 `DATA\FIELD\` tree, and it is never taken when
+`_DAT_8007b8c2 != 0`. So the resolver to read for retail is the `0x80084540`
+PROT-index dispatch, not the trap. The walk/overview split is just the scene name
+→ index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
+`0768..0772`). What remains is decoding entry 85's `.MAP` container (the object
+grid + `model` field, `pool = prefix + model`) and routing `map\d\d` walk scenes
+to the field-actor render path instead of the overview branch.
 
 #### Rendering the placed entities
 
