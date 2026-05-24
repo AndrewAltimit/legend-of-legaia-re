@@ -741,6 +741,63 @@ impl Scene {
         )))
     }
 
+    /// Resolve the **free-roam walk** view's field `.MAP` entry.
+    ///
+    /// The runtime loads a scene's field `.MAP` from its CDNAME index through
+    /// `FUN_8003e8a8`'s `toc[idx + 2]`. For the overlapping PROT clusters the
+    /// kingdom overworld scenes live in, that resolves **two entries below**
+    /// the per-entry extractor's CDNAME block start — the real walk `.MAP`
+    /// (records + the `0x1000`-gated continent grid) sits in the preceding
+    /// "duplicate" cluster, while the first [`FIELD_MAP_LEN`] entry *inside*
+    /// the block ([`Self::field_map_index`]) is a different/decoy map (for the
+    /// kingdoms it has only a few `0x1000` cells; for towns the two are byte
+    /// copies, which is why the overview/town paths were unaffected).
+    /// Verified against live `map01` plus `town01`/`map02`/`map03`: the walk
+    /// `.MAP` is `block_start - 2`. Falls back to [`Self::field_map_index`]
+    /// when that slot isn't a [`FIELD_MAP_LEN`] entry.
+    pub fn walk_field_map_index(&self, index: &ProtIndex) -> Option<u32> {
+        let preceding = self.start.checked_sub(2).filter(|&idx| {
+            index
+                .entries()
+                .get(idx as usize)
+                .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
+        });
+        preceding.or_else(|| self.field_map_index(index))
+    }
+
+    /// The walk view's **bulk continent** tiles: [`Self::field_terrain_tiles`]
+    /// but read from [`Self::walk_field_map_index`] and gated on the walk
+    /// visible bit ([`legaia_asset::field_objects::CELL_WALK_VISIBLE`], `0x1000`)
+    /// instead of the overhead `0x2000`. This is the layer the free-roam
+    /// overworld draws (Drake `map01` ≈ 16k tiles, all in the slot-1 landmark
+    /// pool). Returns `Ok(None)` when the scene has no field map.
+    pub fn walk_terrain_tiles(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.walk_field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_walk_terrain_tiles(
+            &bytes,
+        )))
+    }
+
+    /// The walk view's placed-flag interactive objects, read from
+    /// [`Self::walk_field_map_index`] (the correct walk `.MAP`) rather than the
+    /// within-block decoy. Same semantics as [`Self::field_object_placements`].
+    pub fn walk_object_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.walk_field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
+    }
+
     /// The scene's 16-entry floor-height LUT, read from the MAN header
     /// (`man[+0x02..+0x22]`, 16 `s16` LE). A placed object's world Y is
     /// `-lut[tile_floor_nibble] + record.y_off` (the runtime stores the LUT

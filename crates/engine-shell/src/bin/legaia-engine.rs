@@ -4994,10 +4994,23 @@ impl PlayWindowApp {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
         };
-        let tiles = match scene.field_terrain_tiles(&self.session.host.index) {
-            Ok(Some(t)) if !t.is_empty() => t,
-            _ => return Vec::new(),
+        // Free-roam walk view: read the *walk* `.MAP` (`Scene::walk_field_map_
+        // index`, the `block_start - 2` entry the runtime resolves through
+        // `toc[idx+2]`) and sweep its `0x1000`-gated continent (`walk_terrain_
+        // tiles`), then the placed-flag landmarks from the same `.MAP`. The
+        // earlier path read the within-block decoy entry with the overhead
+        // `0x2000` gate, which for the kingdoms resolved a different map and
+        // produced the sparse mesh scatter.
+        let mut tiles = match scene.walk_terrain_tiles(&self.session.host.index) {
+            Ok(Some(t)) => t,
+            _ => Vec::new(),
         };
+        if let Ok(Some(objs)) = scene.walk_object_placements(&self.session.host.index) {
+            tiles.extend(objs);
+        }
+        if tiles.is_empty() {
+            return Vec::new();
+        }
         self.resolve_placement_draws(res, tmd_src_index, &tiles)
     }
 
@@ -7134,16 +7147,14 @@ impl ApplicationHandler for PlayWindowApp {
                         // aligns under the player instead of piling at the
                         // pack-local origin.
                         //
-                        // The DENSE continent (ground / trees / mountains) is the
-                        // *visible-tile* set (`world_map_terrain_draws`, the
-                        // `FUN_801F69D8` overhead sweep over cells with the
-                        // `0x2000` bit) - hundreds of tiles, vs the ~tens of
-                        // placed-flag interactive objects (`field_placement_draws`,
-                        // `FUN_8003A55C`). Draw both: terrain first, then the
-                        // interactive landmarks on top.
-                        if self.world_map_terrain_draws.is_empty()
-                            && self.field_placement_draws.is_empty()
-                        {
+                        // `world_map_terrain_draws` carries the full walk layer:
+                        // the dense `0x1000`-gated continent (ground / trees /
+                        // mountains, ~16k tiles for Drake) plus the placed-flag
+                        // landmarks, both resolved from the walk `.MAP`
+                        // (`resolve_world_map_terrain_draws`). The field path's
+                        // `field_placement_draws` is NOT chained here - for the
+                        // kingdoms it reads the within-block decoy map.
+                        if self.world_map_terrain_draws.is_empty() {
                             // Fallback (no `.MAP` tiles resolved): draw the whole
                             // pack at pack-local coords, Y-flipped, so the map is
                             // never blank.
@@ -7155,11 +7166,7 @@ impl ApplicationHandler for PlayWindowApp {
                                 });
                             }
                         } else {
-                            for (mesh_idx, model) in self
-                                .world_map_terrain_draws
-                                .iter()
-                                .chain(self.field_placement_draws.iter())
-                            {
+                            for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
                                 if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                     draws.push(SceneDraw {
                                         mesh,

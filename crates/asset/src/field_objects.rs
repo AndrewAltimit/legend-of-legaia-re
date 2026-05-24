@@ -263,6 +263,30 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
 /// to a plain on-grid test (terrain tiles have no interaction footprint).
 /// `obj_idx == 0` cells are skipped (record 0 is the empty/sentinel slot).
 pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
+    parse_terrain_tiles_gated(field_map, CELL_VISIBLE, false)
+}
+
+/// The free-roam **walk** view's bulk continent: [`parse_terrain_tiles`] gated
+/// on [`CELL_WALK_VISIBLE`] (`0x1000`) instead of the overhead-overview's
+/// `0x2000`. A real Drake `map01` walk `.MAP` sets `0x1000` on ~16k cells
+/// (vs ~300 with `0x2000`).
+///
+/// The walk mesh is **`record[+0x10]` uniformly** (retail `FUN_80020f88`:
+/// `actor+0x64 = record[+0x10] + prefix`), so the band-positional fallback in
+/// [`pack_mesh_index`] is bypassed here — some continent tiles reference object
+/// ids in [`FIELD_ACTOR_BAND`], and applying the band rule would push their
+/// pack index past the 40-mesh slot-1 pool. Taking `+0x10` directly keeps every
+/// continent tile in-pool (verified ≤ pool size against a live `map01` walk).
+pub fn parse_walk_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
+    parse_terrain_tiles_gated(field_map, CELL_WALK_VISIBLE, true)
+}
+
+/// Shared object-grid sweep for [`parse_terrain_tiles`] (overview, `0x2000`)
+/// and [`parse_walk_terrain_tiles`] (walk, `0x1000`). `gate` selects the
+/// object-index-grid cell bit that marks a drawn tile; `walk_mesh` selects the
+/// mesh resolution (`true` = `record[+0x10]` directly per `FUN_80020f88`;
+/// `false` = [`pack_mesh_index`] with its field-actor-band fallback).
+pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -> Vec<Placement> {
     let mut out = Vec::new();
     let Some(grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
         return out;
@@ -274,7 +298,7 @@ pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
                 continue;
             };
             let cell = u16::from_le_bytes([cell_bytes[0], cell_bytes[1]]);
-            if cell & CELL_VISIBLE == 0 {
+            if cell & gate == 0 {
                 continue;
             }
             let obj_idx = cell & OBJECT_INDEX_MASK;
@@ -295,7 +319,11 @@ pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,
                 floor_nibble,
-                pack_index: pack_mesh_index(obj_idx, &rec),
+                pack_index: if walk_mesh {
+                    Some(rec.pack_index_field)
+                } else {
+                    pack_mesh_index(obj_idx, &rec)
+                },
                 flags: rec.flags,
             });
         }
