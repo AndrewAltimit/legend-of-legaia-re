@@ -214,7 +214,7 @@ top-view routes its TMD prims through. The overlay table reports as
 empty when the world-map overlay isn't paged in; pass
 `--overlay-targets-only` to pipe the eight addresses into a Ghidra
 `dump_funcs.py` `TARGETS` list. See
-[`docs/subsystems/world-map.md`](../subsystems/world-map.md#bulk-continent-terrain-emit-mechanism-pinned)
+[`docs/subsystems/world-map.md`](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers)
 for the mechanism and
 [`crates/mednafen/src/prim_dispatch.rs`](../../crates/mednafen/src/prim_dispatch.rs)
 for the typed accessors.

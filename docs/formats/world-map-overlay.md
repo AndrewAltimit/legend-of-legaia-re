@@ -19,7 +19,7 @@
 > overlay-mode dispatch table at `0x801F8968` whose eight high-mode
 > renderers replace the SCUS variants when the world-map overlay is
 > paged in. See
-> [`subsystems/world-map.md`](../subsystems/world-map.md#bulk-continent-terrain-emit-mechanism-pinned).
+> [`subsystems/world-map.md`](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers).
 
 Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size
 buffer that the runtime loads verbatim into RAM. Three carriers:
@@ -339,8 +339,7 @@ the world-map enters steady state. The Read-bp probe that captured
 that had once held slot-4 bytes, not the slot-4 bytes themselves.
 
 The slot-4 body header `kind ∈ {1, 2, 4}` therefore has **no link** to
-the cluster-A bank selector (the previously listed hypothesis is
-empirically falsified — see
+the cluster-A bank selector (see
 [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play)).
 Whatever slot 4 encodes, it's consumed during the warp's first asset
 pass and converted into TMD blobs by an as-yet-unpinned step before
@@ -413,15 +412,13 @@ breakdown table above.
 
 ### Reproducing the capture
 
-An earlier Drake-tuned `autorun_slot4_readers.lua` probe (now archived
-under `archive/pcsx-redux-probes/`) walked Read breakpoints across
-Drake's 15-body slot-4 layout to surface the original reader PCs. It
-doesn't generalise — the offsets are Drake-specific. The
-kingdom-agnostic replacement is
+The kingdom-agnostic consumer probe is
 [`autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua),
-which arms Exec breakpoints at the cluster-A + cluster-B PCs surfaced
-during that earlier capture and fires identically across all three
-kingdoms:
+which arms Exec breakpoints at the cluster-A + cluster-B PCs and fires
+identically across all three kingdoms (the Drake-tuned Read-breakpoint
+`autorun_slot4_readers.lua` is archived under
+`archive/pcsx-redux-probes/` — its offsets are Drake-specific and don't
+generalise):
 
 ```bash
 LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-sebucus-warp-save>.sstate \
@@ -528,12 +525,11 @@ purpose ("render the world-map wireframe") is no longer valid:
 | `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Full 2 MiB main RAM dump. Use when the load base is unknown for a new build / state - signature-scan the dump for the 64-byte outer pack prefix. |
 | `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare a RAM dump against the disc-decoded payload. |
 
-The world-overview web viewer no longer exposes slot 4 - the previous
-"show slot-4 wireframe" toggle was removed once the wireframe
-hypothesis was falsified. Re-enable from the WASM exports
+The world-overview web viewer does not expose slot 4 (the wireframe
+interpretation is falsified). The WASM exports
 (`slot4_wireframe_lines` / `slot4_wireframe_points` /
-`slot4_wireframe_bounds`) if a future RE pass identifies the correct
-draw interpretation.
+`slot4_wireframe_bounds`) remain available to re-enable a slot-4 draw
+if a future RE pass identifies the correct interpretation.
 
 ### Slot-4 loader (loader-hunt probe)
 
@@ -980,9 +976,8 @@ TMD-pack.
 2. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
    in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
    `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
-   low-byte) tags rather than indices. The body-kind ↔ cmd_flags
-   bank hypothesis (previously listed as open work) is **falsified**
-   — Drake's dispatcher-entry probe shows neither `0x04000000` nor
+   low-byte) tags rather than indices. There is **no** body-kind ↔
+   cmd_flags bank link: Drake's dispatcher-entry probe shows neither `0x04000000` nor
    `0x20000000` is ever set in retail world-map play; only banks
    `0x00` and `0x50` (the fade-flag distinction) are exercised. See
    [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play).
