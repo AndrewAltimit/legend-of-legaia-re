@@ -5163,12 +5163,12 @@ impl PlayWindowApp {
                 }
             }
             // World-map continent ground: build the heightfield surface from
-            // the walk `.MAP` floor grid (correct model — the slot-1 pack
-            // meshes are only the landmarks, not a per-cell ground mesh) and
-            // upload it with a provisional uniform ground texel. Per-tile
-            // texturing has no clean source: record +0x14 is terrain-type
-            // metadata, not an atlas selector (no draw path reads it) - see
-            // docs/subsystems/world-map.md "Open (texturing)".
+            // the walk `.MAP` floor grid (the slot-1 pack meshes are only the
+            // landmarks, not a per-cell ground mesh) and texture it from the
+            // retail ground-tile atlas (`GROUND_ATLAS_TPAGE`/`_CLUT`) with the
+            // positional `(col%3, row%3)` detail-tiling the heightfield bakes
+            // into its per-vertex UVs - see docs/subsystems/world-map.md
+            // "Ground texturing".
             let mut world_map_hf: Option<UploadedVramMesh> = None;
             let is_world_map = self
                 .session
@@ -5181,9 +5181,11 @@ impl PlayWindowApp {
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
             {
-                let (cba, tsb, uv) =
-                    first_textured_atlas_texel(&res.tmds).unwrap_or((0, 0, [0, 0]));
-                let vmesh = heightfield_to_vram_mesh(&hf, cba, tsb, uv);
+                let vmesh = heightfield_to_vram_mesh(
+                    &hf,
+                    legaia_asset::field_objects::GROUND_ATLAS_CLUT,
+                    legaia_asset::field_objects::GROUND_ATLAS_TPAGE,
+                );
                 match r.upload_vram_mesh(
                     &vmesh.positions,
                     &vmesh.uvs,
@@ -7619,58 +7621,24 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
     }
 }
 
-/// Build a LineList for the placed overworld entities: one upright marker per
-/// entity (a vertical post plus a small base cross), colour-coded by kind, so
-/// portals / NPCs / encounter zones are locatable on the world map. Sized
-/// relative to the scene AABB so the markers read at any map scale.
-///
-/// Marker geometry uses the same Y-flip convention as
-/// [`PlayWindowApp::actor_model`] (local "up" `+Y` renders toward world `-Y`,
-/// which the world-map camera shows as screen-up), so the post stands upright.
-/// The markers share the player's coordinate frame (both come from the scene
-/// The `(cba, tsb, [u, v])` of the first textured primitive across a scene's
-/// resolved TMD pool — a real slot-0-atlas ground texel, used as the
-/// **provisional** uniform texture for the world-map heightfield surface. There
-/// is no per-cell `+0x14`→atlas-UV mapping to pin (`+0x14` is terrain-type
-/// metadata, not a texture selector; see docs/subsystems/world-map.md). `None`
-/// if no textured prim exists (the caller then renders the heightfield flat).
-fn first_textured_atlas_texel(
-    tmds: &[legaia_engine_core::scene_resources::ResolvedTmd],
-) -> Option<(u16, u16, [u8; 2])> {
-    for rtmd in tmds {
-        for o in &rtmd.tmd.objects {
-            for g in legaia_tmd::legaia_prims::iter_groups_lenient(
-                &rtmd.raw,
-                o.primitives_byte_offset,
-                o.primitives_byte_size,
-            ) {
-                for p in &g.prims {
-                    if let Some(&(u, v)) = p.uvs.first() {
-                        return Some((p.cba, p.tsb, [u, v]));
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`], applying a single
-/// provisional `(cba, tsb, uv)` to every vertex (uniform ground texel). Normals
-/// are left at the `[0,0,0]` sentinel so the shader derives screen-space
-/// normals (flat-lit). Geometry is faithful (elevation from the floor grid);
-/// faithful per-tile texturing would mean rendering the bulk-terrain mesh, not
-/// a `+0x14` lookup (see docs/subsystems/world-map.md "Open (texturing)").
+/// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`]. The heightfield
+/// supplies per-vertex UVs (the positional `(col%3, row%3)` ground-tile atlas
+/// tiling); `cba` / `tsb` select the shared ground-tile page
+/// ([`GROUND_ATLAS_CLUT`](legaia_asset::field_objects::GROUND_ATLAS_CLUT) /
+/// [`GROUND_ATLAS_TPAGE`](legaia_asset::field_objects::GROUND_ATLAS_TPAGE)).
+/// Normals are left at the `[0,0,0]` sentinel so the shader derives screen-space
+/// normals (flat-lit). See docs/subsystems/world-map.md "Ground texturing".
 fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
     cba: u16,
     tsb: u16,
-    uv: [u8; 2],
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
     legaia_tmd::mesh::VramMesh {
         positions: hf.positions.clone(),
-        uvs: vec![uv; n],
+        // Per-vertex ground-tile atlas UVs (positional `(col%3, row%3)`
+        // detail-tiling); `cba`/`tsb` select the shared ground-tile page.
+        uvs: hf.uvs.clone(),
         cba_tsb: vec![[cba, tsb]; n],
         normals: vec![[0.0, 0.0, 0.0]; n],
         indices: hf.indices.clone(),

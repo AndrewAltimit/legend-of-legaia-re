@@ -335,6 +335,24 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
 /// (`0x80 x 0x80` bytes, 1/tile; low nibble = floor-elevation tier).
 pub const COLLISION_GRID_OFFSET: usize = 0x4000;
 
+/// The walk-view continent ground is textured from a small **3x3 atlas of
+/// 32x32-texel ground tiles** packed in one VRAM page, selected **positionally**
+/// per cell: tile `(col % 3, row % 3)`. This is a detail-tiling trick that hides
+/// the repetition of a single ground texture across the continent — it is *not*
+/// keyed by any per-cell record field (the record `+0x14` byte plays no part;
+/// no draw path reads it). Pinned from the retail prim pool in a continent-walk
+/// RAM image: 1187 `POLY_FT4` (cmd `0x2C`) ground quads, all `tpage = 0x001A`
+/// (4bpp VRAM page at fb `(640, 256)`) / `clut = 0x7C40` (CBA fb `(0, 497)`),
+/// each a 32x32 rect whose UV origin is one of `u,v in {0, 32, 64}` (a clean
+/// 3x3 grid), and whose tile index cycles mod 3 with the cell's column / row.
+pub const GROUND_ATLAS_TILE_PX: u8 = 32;
+/// Tiles per atlas axis (the atlas is `GROUND_ATLAS_AXIS x GROUND_ATLAS_AXIS`).
+pub const GROUND_ATLAS_AXIS: usize = 3;
+/// PSX `tpage` word for the ground-tile VRAM page (4bpp page at fb `(640, 256)`).
+pub const GROUND_ATLAS_TPAGE: u16 = 0x001A;
+/// PSX `clut` (CBA) word for the ground-tile CLUT (fb `(0, 497)`).
+pub const GROUND_ATLAS_CLUT: u16 = 0x7C40;
+
 /// A triangulated heightfield surface for the world-map walk-view continent
 /// ground — the clean-room analogue of the retail terrain renderer, whose
 /// elevation comes from the `+0x4000` floor-nibble grid (the height math is
@@ -350,12 +368,16 @@ pub const COLLISION_GRID_OFFSET: usize = 0x4000;
 ///
 /// Positions are in the same pre-Y-flip world frame the placement draws use
 /// (`world_y = -lut[nibble]`), so the engine applies the same `(1, -1, 1)`
-/// model flip. `tile_id` carries each vertex's source-tile `+0x14` byte (range
-/// `0..63`). Note: `+0x14` is **terrain-type metadata, not a texture selector** —
-/// no retail draw path reads it (the only per-cell terrain emitter, the
-/// overview renderer `FUN_801F69D8`, keys on `+0x10` meshes). It is retained
-/// here for terrain-class uses (encounter / footstep / walk-speed), not for
-/// texturing. See `docs/subsystems/world-map.md` "Open (texturing)".
+/// model flip.
+///
+/// [`Self::uvs`] textures each cell from the retail ground-tile atlas
+/// ([`GROUND_ATLAS_TPAGE`] / [`GROUND_ATLAS_CLUT`]) by the positional
+/// `(col % 3, row % 3)` detail-tiling pinned from the prim pool. `tile_id`
+/// carries the source-tile `+0x14` byte (range `0..63`), which is **terrain-type
+/// metadata, not a texture selector** — no retail draw path reads it (the only
+/// per-cell terrain *mesh* emitter, the overview renderer `FUN_801F69D8`, keys
+/// on `+0x10`); it is retained for terrain-class uses (encounter / footstep /
+/// walk-speed). See `docs/subsystems/world-map.md` "Ground texturing".
 #[derive(Debug, Clone, Default)]
 pub struct WalkHeightfield {
     /// Per-vertex world position (pre-Y-flip): `(col*128, -lut[nibble], row*128)`.
@@ -364,6 +386,11 @@ pub struct WalkHeightfield {
     /// (no draw path reads it), **not** a texture-atlas selector; see the
     /// struct docs.
     pub tile_ids: Vec<u8>,
+    /// Per-vertex page-local texture coordinates into the ground-tile atlas
+    /// page ([`GROUND_ATLAS_TPAGE`] / [`GROUND_ATLAS_CLUT`]). Each cell's four
+    /// corners cover the 32x32 atlas tile `(col % 3, row % 3)` — the positional
+    /// detail-tiling retail uses (see the atlas constants).
+    pub uvs: Vec<[u8; 2]>,
     /// Triangle indices (two triangles per visible cell quad).
     pub indices: Vec<u32>,
 }
@@ -426,6 +453,17 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             hf.positions.push([x1, corner_y(col + 1, row), z0]);
             hf.positions.push([x0, corner_y(col, row + 1), z1]);
             hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
+            // Positional 3x3 detail-tiling: this cell shows atlas tile
+            // (col % 3, row % 3); the four corners map to the tile's 32x32 rect
+            // (U along +X/col, V along +Z/row). See the atlas constants.
+            let u0 = (col % GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
+            let v0 = (row % GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
+            let u1 = u0 + GROUND_ATLAS_TILE_PX - 1;
+            let v1 = v0 + GROUND_ATLAS_TILE_PX - 1;
+            hf.uvs.push([u0, v0]); // NW
+            hf.uvs.push([u1, v0]); // NE
+            hf.uvs.push([u0, v1]); // SW
+            hf.uvs.push([u1, v1]); // SE
             for _ in 0..4 {
                 hf.tile_ids.push(tile_id);
             }
@@ -554,5 +592,30 @@ mod tests {
         assert_eq!(hf.positions[3][1], 0.0);
         // Every vertex carries the cell's +0x14 tile id.
         assert!(hf.tile_ids.iter().all(|&t| t == 0x2A));
+        // Positional 3x3 ground tiling: cell (col 10, row 4) -> atlas tile
+        // (10 % 3, 4 % 3) = (1, 1) -> UV origin (32, 32), spanning a 32x32 rect.
+        assert_eq!(hf.uvs.len(), 4);
+        assert_eq!(hf.uvs[0], [32, 32]); // NW
+        assert_eq!(hf.uvs[1], [63, 32]); // NE
+        assert_eq!(hf.uvs[2], [32, 63]); // SW
+        assert_eq!(hf.uvs[3], [63, 63]); // SE
+    }
+
+    #[test]
+    fn ground_tiling_cycles_mod_3_across_cells() {
+        // Mark three adjacent columns walk-visible at row 0 and confirm the
+        // atlas U origin cycles 0, 32, 64 (col % 3) — the detail-tiling pattern.
+        let lut = [0i16; 16];
+        let mut map = vec![0u8; 0x12000];
+        for col in 0..3usize {
+            let cell = OBJECT_GRID_OFFSET + col * 2;
+            map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 1).to_le_bytes());
+        }
+        let hf = build_walk_heightfield(&map, &lut);
+        assert_eq!(hf.quad_count(), 3);
+        // NW-corner U of each cell's first vertex = 32 * (col % 3).
+        assert_eq!(hf.uvs[0][0], 0);
+        assert_eq!(hf.uvs[4][0], 32);
+        assert_eq!(hf.uvs[8][0], 64);
     }
 }
