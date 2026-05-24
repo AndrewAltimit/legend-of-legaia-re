@@ -65,17 +65,26 @@ pub const FLAG_PLACED: u16 = 0x4;
 /// bit set (ground / trees / mountains) - the bulk continent, distinct from
 /// the placed-flag interactive objects [`parse_placements`] returns.
 ///
-/// **Scope (overworld)**: on a kingdom overworld scene (`map\d\d`) the
-/// visible-bit sweep + [`pack_mesh_index`] (the record `+0x10` geometry id)
-/// is the **top-down overview** path's terrain (game mode `0x0D`), whose
-/// resident pool is the *larger* overview pack - `+0x10` reaches well past
-/// `0x3F`. It is NOT the *walk* view's terrain: a real `map01` walk capture
-/// (game mode `0x03`) keeps only 5 party + 40 small scene meshes resident, so
-/// the `+0x10` indices are out of range there. The walk-view continent is
-/// instanced from those 40 meshes by a separate placement table that is **not**
-/// in these `.MAP` object-grid records (no record field cleanly indexes
-/// `0..39`). That table is an open RE thread.
+/// This `0x2000` gate is the **top-down overview** path (game mode `0x0D`,
+/// `FUN_801F69D8`), reading `opmap01.MAP` whose pool is the *larger* overview
+/// pack - so `+0x10` reaches well past `0x3F` there.
+///
+/// **The free-roam *walk* view (game mode `0x03`) uses the same record layout
+/// but a different cell gate, [`CELL_WALK_VISIBLE`] (`0x1000`).** It reads the
+/// per-scene walk `.MAP` (e.g. `map01` walk = PROT entry `0085`), whose `+0x10`
+/// values are small (`0..39`) because the walk pool is 5 party + the 40-mesh
+/// slot-1 landmark pack. The per-object mesh resolution is the same
+/// [`pack_mesh_index`] (`+0x10`) **plus the pack prefix**: the retail path
+/// (`FUN_80020f88` -> `actor+0x64 = record[+0x10] + DAT_8007b6f8`, prefix `= 5`;
+/// `FUN_80024d78` then builds the actor's mesh chain from
+/// `DAT_8007C018[actor+0x64]`) was pinned 14/14 against a live walk capture, so
+/// the walk continent pool index is `FIELD_ACTOR_PACK_BIAS + pack_mesh_index`.
 pub const CELL_VISIBLE: u16 = 0x2000;
+/// Object-index-grid cell bit marking a **walk-view** (game mode `0x03`) visible
+/// continent tile - the free-roam analogue of [`CELL_VISIBLE`]. The Drake walk
+/// `.MAP` grid sets this on ~15k cells (vs ~300 with `0x2000`); see the
+/// `CELL_VISIBLE` docs for the shared `+0x10`-plus-prefix mesh resolution.
+pub const CELL_WALK_VISIBLE: u16 = 0x1000;
 /// Object ids `93..=118` are the "field-actor" band: their mesh is selected
 /// positionally (`pack_index = obj_idx - FIELD_ACTOR_PACK_BIAS`) rather than
 /// from the record's `+0x10` field. These map to the last meshes of the pack.

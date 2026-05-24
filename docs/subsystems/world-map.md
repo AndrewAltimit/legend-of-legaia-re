@@ -442,40 +442,45 @@ draws one pool TMD**. The terrain/object actors are spawned by `FUN_8003A55C`
 the `.MAP` grid record index and `actor[+0x90]` = the object's MAN interaction
 script. A direct walk of the live render list (head `*(0x8007C354) = 0x80083BCC`,
 via node `+0x0`; for each actor `+0x56` = render mode, `+0x60` = record index,
-`+0x44` = mesh chain whose first pointer falls inside one `DAT_8007C018[i]`) gives
-the trustworthy `rec → pool` pairs: `39→14, 40→7, 41→10, 42→5, 349→11, 414→7,
-430→12, 474→6, …` (this **corrects** the earlier "rec 474 → pool 21 / pool
-{7,11,19,21,34}", which came from a worse resolver).
+`+0x44` = mesh chain whose first entry equals `DAT_8007C018[i] + 0xc`) gives the
+`rec → pool` pairs: `349→11, 414→36, 430→34, 474→21, 411→19, 409→7, …` — the pool
+is `actor+0x64` (see below), matched exactly 14/14.
 
-**How the per-object pool index is chosen is unresolved** (an earlier "`pool =
-prefix + model`, `model` a `.MAP` record field" reading is **falsified**):
-records `349`/`474` are all-zero in the live `.MAP` buffer yet their actors draw
-pools `11`/`6`; no record-index→pool/model table (`u8`/`u16`/`0x20`-strided, any
-field offset) exists anywhere in the 2 MiB dump; and the actor struct does not
-store the pool index as a small int — only the *resolved* `+0x44` chain pointer.
-`FUN_80020e3c` zeroes `+0x44` at init and **no dumped function writes the
-non-zero chain**, so the mesh-assignment code (an untraced writer of
-`actor+0x44`, reached through the object-setup / MAN-script path) is the open
-resolver. The `.MAP` `+0x10` field is the **overview's** geometry id, not the
-walk mesh. MAN partition 1 supplies the NPC/portal/party placements (the engine
-already decodes these via
-[`legaia_asset::man_section::ManFile::actor_placements`]); the environment
-entities use a different partition / record format, and their live MAN scripts
-(`actor+0x90`) are `[type byte][SJIS object name][ops…]` — the type byte does not
-correlate with the drawn pool.
+**The per-object pool index is `record[+0x10] + prefix`** (pinned via
+`ghidra/scripts/find_mesh_chain_writer.py`, confirmed 14/14 against the live
+render list). The chain `actor+0x44` is built by `FUN_80024d78` from
+`DAT_8007C018[ *(u16*)(actor+0x64) ]` (the `-0x7ff83fe8` constant resolves to
+`0x8007C018`): `chain[0] = tmd[+8]` (object count), `chain[1+i] = tmd+0xc+i*0x1c`.
+So `actor+0x64` is the `DAT_8007C018` pool index, and `FUN_80020f88` sets it as
+
+```text
+actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
+           = .MAP_record[obj_idx].+0x10 (model) + prefix          (prefix = 5)
+```
+
+i.e. **`pool = record[+0x10] + prefix`** — the existing
+[`legaia_asset::field_objects::pack_mesh_index`] (`+0x10`) *plus* the prefix.
+Confirmed at the real live `.MAP` buffer `_DAT_1f8003ec = 0x80139530`
+(`474 → 16+5=21`, `349 → 6+5=11`, `414 → 31+5=36`, `430 → 29+5=34`,
+`411 → 14+5=19`). `FUN_80024e08(actor, model)` is the direct set-model primitive
+for script-driven (non-`.MAP`-grid) actors. The **walk continent grid gate is
+cell bit `0x1000`** (15389 cells in the live grid), distinct from the overview's
+`0x2000` (304 cells) — so the walk sweep is `(cell & 0x1000)`, not
+`parse_terrain_tiles`'s `0x2000`. MAN partition 1 supplies the NPC/portal/party
+placements (decoded via
+[`legaia_asset::man_section::ManFile::actor_placements`]).
 
 **Engine render-path mismatch + open gap.** `is_world_map_scene` routes any
 `map\d\d` scene to the WorldMap *overview* branch, which draws
-`world_map_terrain_draws` (the `+0x10` overview indices, up to 105) against the
-40-mesh **walk** pool — the high indices resolve to no mesh, hence the sparse
-scatter. The Drake *walk* view is a **field** scene (game mode `0x03`) and needs
-the field-actor render path fed by its walk `.MAP`. Routing it correctly is
-blocked on two open pieces: **(1)** entry 85's unpacking — it is a `[u16
-count=46][46×u16 offsets][sections]` pack whose sections span only ~4 KB and
-which holds **no directly-readable records+grid** at any offset, so the `.MAP`
-buffer is LZS-compressed / runtime-assembled inside it; and **(2)** the
-mesh-per-object resolver above. Until both are pinned, a walk render path would
-draw guessed meshes.
+`world_map_terrain_draws` (the `0x2000` visible sweep + the raw `+0x10` index,
+up to 105) against the 40-mesh **walk** pool — the high indices resolve to no
+mesh, hence the sparse scatter. The walk path instead needs the **`0x1000`**
+cell gate and `pool = record[+0x10] + prefix(5)` (above). With the mesh resolver
+now pinned, the single remaining blocker is entry 85's **unpacking** — it is a
+`[u16 count=46][46×u16 offsets][sections]` pack and the live records+grid buffer
+is not present verbatim, so the `.MAP` buffer is LZS-compressed / runtime-
+assembled inside it; cracking which section yields the records+grid buffer is the
+last step before a faithful walk render path.
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
@@ -510,10 +515,10 @@ the retail disc has no ISO9660 `DATA\FIELD\` tree, and it is never taken when
 `_DAT_8007b8c2 != 0`. So the resolver to read for retail is the `0x80084540`
 PROT-index dispatch, not the trap. The walk/overview split is just the scene name
 → index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
-`0768..0772`). What remains (before a walk render path is possible) is unpacking
-entry 85's `.MAP` records+grid buffer and pinning the mesh-per-object resolver —
-the untraced writer of `actor+0x44` — since the pool index is *not* a `.MAP`
-record field (see the placement mechanism above).
+`0768..0772`). With the mesh resolver pinned (`pool = record[+0x10] + prefix`,
+above), what remains before a walk render path is unpacking entry 85's `.MAP`
+records+grid buffer (the live form sits at `_DAT_1f8003ec = 0x80139530`, but is
+not present verbatim in entry 85's packed bytes).
 
 #### Rendering the placed entities
 
