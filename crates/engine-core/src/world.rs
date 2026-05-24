@@ -350,6 +350,22 @@ pub struct WorldMapEntityMarker {
     pub kind: WorldMapEntityKind,
 }
 
+/// Render-agnostic snapshot of the player's overworld position, produced by
+/// [`World::world_map_player_marker`]. In `SceneMode::WorldMap` the kingdom
+/// terrain mesh renders at its pack-local coordinates and the player actor's
+/// own mesh is not drawn, so a host draws a marker at this position to show the
+/// player on the map. `facing` is the player's heading (`render_26`), so the
+/// host can draw a direction tick.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMapPlayerMarker {
+    /// Player world position in world units (the player actor's
+    /// `move_state.world_x / y / z`).
+    pub world_pos: [f32; 3],
+    /// Player heading as a PSX 12-bit angle (`4096` = full turn), measured the
+    /// same way the field path stores it (`render_26`). `0` faces `+Z`.
+    pub facing: i16,
+}
+
 /// Scene mode the world is running. Drives which top-level VMs tick and
 /// which auxiliary state lives in the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -3298,6 +3314,26 @@ impl World {
             .collect()
     }
 
+    /// The player's overworld position for the renderer, or `None` when there
+    /// is no active player actor. The world-map draw path shows the player at
+    /// this position (the player's own mesh isn't drawn in
+    /// [`SceneMode::WorldMap`]), oriented by [`WorldMapPlayerMarker::facing`].
+    pub fn world_map_player_marker(&self) -> Option<WorldMapPlayerMarker> {
+        let slot = self.player_actor_slot? as usize;
+        let a = self.actors.get(slot)?;
+        if !a.active {
+            return None;
+        }
+        Some(WorldMapPlayerMarker {
+            world_pos: [
+                a.move_state.world_x as f32,
+                a.move_state.world_y as f32,
+                a.move_state.world_z as f32,
+            ],
+            facing: a.move_state.render_26,
+        })
+    }
+
     /// Dev/visualization helper: seat one synthetic active effect carrying a
     /// 3D `etmd` model at `world_pos` (world units), so the model render path
     /// (e.g. *Tail Fire* = `etmd` mesh index 4, textured by `etim`) can be
@@ -3694,6 +3730,20 @@ impl World {
         let dir_bits = world_map_camera_relative_bits(azimuth, sx, sy);
         if dir_bits == 0 {
             return;
+        }
+        // Record the heading from the world-space movement direction (the same
+        // `render_26` field the field path stores from `decode_field_direction`,
+        // a PSX 12-bit angle: 4096 = full turn). The world-map walk uses the
+        // camera-relative bits rather than `decode_field_direction`, so it must
+        // set the heading itself; the player marker reads it to draw a facing
+        // tick. Deterministic: same pad + azimuth -> same heading.
+        let dz = (dir_bits & 0x1000 != 0) as i32 - (dir_bits & 0x4000 != 0) as i32;
+        let dx = (dir_bits & 0x2000 != 0) as i32 - (dir_bits & 0x8000 != 0) as i32;
+        if dx != 0 || dz != 0 {
+            let heading = (((dx as f32).atan2(dz as f32) / std::f32::consts::TAU * 4096.0).round()
+                as i32)
+                .rem_euclid(4096) as i16;
+            self.actors[slot].move_state.render_26 = heading;
         }
         let speed = self.world_map_player_speed.max(1) as i32;
         self.advance_with_collision(slot, dir_bits, speed);

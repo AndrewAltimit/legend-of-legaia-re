@@ -1011,6 +1011,49 @@ fn world_map_entity_markers_pair_position_and_kind() {
     assert_eq!(markers[2].kind, WorldMapEntityKind::EncounterZone);
 }
 
+/// The player surfaces as an overworld marker at its actor position; with no
+/// player actor installed there is no marker.
+#[test]
+fn world_map_player_marker_tracks_player_actor() {
+    let mut world = World::default();
+    world.enter_world_map();
+    assert!(
+        world.world_map_player_marker().is_none(),
+        "no player actor -> no marker"
+    );
+    world.install_field_player(0);
+    world.actors[0].move_state.world_x = 320;
+    world.actors[0].move_state.world_y = -64;
+    world.actors[0].move_state.world_z = 256;
+    let m = world
+        .world_map_player_marker()
+        .expect("player marker present");
+    assert_eq!(m.world_pos, [320.0, -64.0, 256.0]);
+}
+
+/// Walking on the overworld records a heading the player marker exposes (the
+/// world-map walk sets `render_26` itself, since it uses the camera-relative
+/// bits rather than the field heading decoder).
+#[test]
+fn world_map_walking_sets_player_marker_facing() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.set_world_map_encounter(false, 50, 0, 64);
+    // At the default azimuth, "screen up" walks +X (dx=1, dz=0) ->
+    // atan2(1, 0) = TAU/4 -> heading 1024.
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    let m = world
+        .world_map_player_marker()
+        .expect("player marker present");
+    assert_eq!(m.facing, 1024, "walking +X faces heading 1024");
+    assert!(
+        world.actors[0].move_state.world_x > 0,
+        "the player advanced +X"
+    );
+}
+
 /// Config-only installs (no disc placements) produce no markers, so a
 /// camera-only or synthetic world map draws nothing.
 #[test]

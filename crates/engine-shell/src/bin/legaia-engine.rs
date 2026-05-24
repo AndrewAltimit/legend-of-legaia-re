@@ -7202,27 +7202,48 @@ impl ApplicationHandler for PlayWindowApp {
                     if let Some(mesh) = effect_billboard.as_ref() {
                         draws.push(SceneDraw { mesh, mvp: cam });
                     }
-                    // World-map placed entities: a kind-coded upright marker for
-                    // each portal / NPC / encounter zone installed from the
-                    // scene MAN placements (`World::world_map_entity_markers`).
-                    // Routed through the same Lines slot as the effect outlines
-                    // - mutually exclusive, since no effects spawn on the world
-                    // map. Without this the installed entities carry positions
-                    // but never appear on screen.
+                    // World-map overlay lines: a kind-coded upright marker for
+                    // each placed entity (portal / NPC / encounter zone, from
+                    // `World::world_map_entity_markers`) plus the player marker
+                    // (`World::world_map_player_marker`) - the player's own mesh
+                    // isn't drawn in world-map mode. Both build into one Lines
+                    // mesh, routed through the same overlay slot as the effect
+                    // outlines (mutually exclusive: no effects spawn on the
+                    // world map). Without this the installed entities + player
+                    // carry positions but never appear on screen.
                     let world_map_entity_lines = if in_world_map && !self.boot_ui.is_active() {
                         let markers = self.session.host.world.world_map_entity_markers();
-                        if markers.is_empty() {
-                            None
-                        } else {
-                            let (pos, col, idx) = world_map_entity_line_geometry(
+                        let mut pos: Vec<[f32; 3]> = Vec::new();
+                        let mut col: Vec<[u8; 4]> = Vec::new();
+                        let mut idx: Vec<u32> = Vec::new();
+                        if !markers.is_empty() {
+                            let (p, c, i) = world_map_entity_line_geometry(
                                 &markers,
                                 self.scene_aabb.0,
                                 self.scene_aabb.1,
                             );
+                            pos = p;
+                            col = c;
+                            idx = i;
+                        }
+                        if let Some(player) = self.session.host.world.world_map_player_marker() {
+                            let (p, c, i) = world_map_player_line_geometry(
+                                &player,
+                                self.scene_aabb.0,
+                                self.scene_aabb.1,
+                            );
+                            let base = pos.len() as u32;
+                            pos.extend(p);
+                            col.extend(c);
+                            idx.extend(i.into_iter().map(|v| v + base));
+                        }
+                        if idx.is_empty() {
+                            None
+                        } else {
                             match r.upload_lines(&pos, &col, &idx) {
                                 Ok(m) => Some(m),
                                 Err(e) => {
-                                    log::warn!("world-map entity marker lines upload: {e:#}");
+                                    log::warn!("world-map overlay marker lines upload: {e:#}");
                                     None
                                 }
                             }
@@ -7465,6 +7486,46 @@ fn world_map_entity_line_geometry(
             idx.push(base + b);
         }
     }
+    (pos, col, idx)
+}
+
+/// Build a LineList for the overworld player marker: a taller upright post (so
+/// the player reads above the kind-coded entity markers), a base cross, and a
+/// facing tick pointing in the player's heading. White-yellow, sized relative
+/// to the scene AABB. Same Y-flip convention as the entity markers.
+fn world_map_player_line_geometry(
+    marker: &legaia_engine_core::world::WorldMapPlayerMarker,
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
+    let diag = (Vec3::from(aabb_hi) - Vec3::from(aabb_lo))
+        .length()
+        .max(1.0);
+    let post_h = diag * 0.09;
+    let arm = diag * 0.025;
+    let tick = diag * 0.05;
+    let [x, y, z] = marker.world_pos;
+    let c = [255u8, 230, 60, 255];
+    // Heading: PSX 12-bit angle, 0 = +Z, quarter turn (1024) = +X.
+    let angle = (marker.facing as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = angle.sin_cos();
+    let verts = [
+        [x, y, z],                           // 0 base
+        [x, y - post_h, z],                  // 1 top
+        [x - arm, y, z],                     // 2 -X arm
+        [x + arm, y, z],                     // 3 +X arm
+        [x, y, z - arm],                     // 4 -Z arm
+        [x, y, z + arm],                     // 5 +Z arm
+        [x + sin * tick, y, z + cos * tick], // 6 facing tick end
+    ];
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(7);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(7);
+    for v in verts {
+        pos.push(v);
+        col.push(c);
+    }
+    // Post + base-cross (X/Z arms) + facing tick.
+    let idx = vec![0, 1, 2, 3, 4, 5, 0, 6];
     (pos, col, idx)
 }
 

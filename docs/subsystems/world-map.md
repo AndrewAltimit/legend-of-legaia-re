@@ -363,6 +363,17 @@ own actor model is the still-open per-entity mesh thread). Config-only installs
 (no disc placements) produce no markers, so a camera-only world map draws
 nothing extra.
 
+The player itself is drawn the same way:
+[`World::world_map_player_marker`](../../crates/engine-core/src/world.rs)
+returns the player actor's position plus heading (the player's own mesh is not
+drawn in world-map mode), and `play-window` draws a distinct white-yellow
+marker - a taller post, a base cross, and a facing tick pointing in the
+heading. Because the world-map walk uses the camera-relative direction bits
+rather than the field `decode_field_direction`, `step_world_map_locomotion`
+records the heading into the actor's `render_26` field itself (the same field
+the field path stores), so the facing tick tracks the walk direction
+deterministically. The player + entity markers build into one Lines mesh.
+
 #### Auto-engage on walk-over
 
 The portals fire themselves. [`World::auto_engage_world_map_portals`] runs each
