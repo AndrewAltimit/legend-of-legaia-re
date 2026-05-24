@@ -765,22 +765,26 @@ impl Scene {
         preceding.or_else(|| self.field_map_index(index))
     }
 
-    /// The walk view's **bulk continent** tiles: [`Self::field_terrain_tiles`]
-    /// but read from [`Self::walk_field_map_index`] and gated on the walk
-    /// visible bit ([`legaia_asset::field_objects::CELL_WALK_VISIBLE`], `0x1000`)
-    /// instead of the overhead `0x2000`. This is the layer the free-roam
-    /// overworld draws (Drake `map01` ≈ 16k tiles, all in the slot-1 landmark
-    /// pool). Returns `Ok(None)` when the scene has no field map.
-    pub fn walk_terrain_tiles(
+    /// The walk view's continent **ground** as a heightfield surface, built
+    /// from the walk `.MAP` floor grid (`+0x4000`) gated on the `0x1000`
+    /// visible bit, with corner elevations from the per-scene floor-height LUT
+    /// (the math `FUN_80019278` pins). This is the correct model for the bulk
+    /// ground — the slot-1 pack meshes are only the sparse placed landmarks
+    /// ([`Self::walk_object_placements`]), not a per-cell terrain mesh. Returns
+    /// `Ok(None)` when the scene has no field map or no floor LUT.
+    pub fn walk_heightfield(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+    ) -> Result<Option<legaia_asset::field_objects::WalkHeightfield>> {
         let Some(idx) = self.walk_field_map_index(index) else {
             return Ok(None);
         };
+        let Some(lut) = self.field_floor_height_lut(index)? else {
+            return Ok(None);
+        };
         let bytes = index.entry_bytes_extended(idx)?;
-        Ok(Some(legaia_asset::field_objects::parse_walk_terrain_tiles(
-            &bytes,
+        Ok(Some(legaia_asset::field_objects::build_walk_heightfield(
+            &bytes, &lut,
         )))
     }
 

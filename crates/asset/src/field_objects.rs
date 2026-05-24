@@ -331,6 +331,107 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
     out
 }
 
+/// Byte offset of the collision / floor-height grid within the field map file
+/// (`0x80 x 0x80` bytes, 1/tile; low nibble = floor-elevation tier).
+pub const COLLISION_GRID_OFFSET: usize = 0x4000;
+
+/// A triangulated heightfield surface for the world-map walk-view continent
+/// ground — the clean-room analogue of the retail terrain renderer, whose
+/// elevation comes from the `+0x4000` floor-nibble grid (the height math is
+/// pinned by `FUN_80019278`, the SCUS bilinear ground-height sampler: a tile's
+/// low nibble indexes the 16-entry floor LUT, and the surface interpolates
+/// between adjacent tile heights).
+///
+/// This is **not** the per-cell pack-mesh instancing the old
+/// [`parse_walk_terrain_tiles`] modelled (that floods the map with pool-5 mesh
+/// because the bulk-terrain records carry `+0x10 == 0`). The continent ground
+/// is a heightfield surface; the slot-1 pack meshes are only the sparse placed
+/// landmarks ([`parse_placements`]).
+///
+/// Positions are in the same pre-Y-flip world frame the placement draws use
+/// (`world_y = -lut[nibble]`), so the engine applies the same `(1, -1, 1)`
+/// model flip. `tile_id` carries each vertex's source-tile `+0x14` byte (range
+/// `0..63`), retained so a future texture pass can map it to a slot-0 atlas
+/// tile once that mapping is pinned; texturing is **not** resolved here.
+#[derive(Debug, Clone, Default)]
+pub struct WalkHeightfield {
+    /// Per-vertex world position (pre-Y-flip): `(col*128, -lut[nibble], row*128)`.
+    pub positions: Vec<[f32; 3]>,
+    /// Per-vertex source-tile `+0x14` id (`0..63`), the candidate texture
+    /// selector for a later per-tile texture pass.
+    pub tile_ids: Vec<u8>,
+    /// Triangle indices (two triangles per visible cell quad).
+    pub indices: Vec<u32>,
+}
+
+impl WalkHeightfield {
+    /// Number of visible cells (quads) emitted.
+    pub fn quad_count(&self) -> usize {
+        self.indices.len() / 6
+    }
+}
+
+/// Build the walk-view continent ground as a heightfield surface from a field
+/// map file's floor grid (`+0x4000`) gated on the object-grid `0x1000` visible
+/// bit. `lut` is the 16-entry floor-height LUT (from the MAN header). Each
+/// visible cell `(c, r)` emits a quad whose four corners take their Y from the
+/// floor nibble of the corner tile (`-lut[nibble]`), giving a continuous
+/// heightfield (adjacent cells share corner heights). Empty if the map has no
+/// grid.
+pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfield {
+    let mut hf = WalkHeightfield::default();
+    let Some(obj_grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
+        return hf;
+    };
+    // Corner height (pre-Y-flip) from the floor nibble of tile (c, r), clamped
+    // to the grid edge so border cells stay watertight.
+    let corner_y = |c: usize, r: usize| -> f32 {
+        let cc = c.min(GRID_DIM - 1);
+        let rr = r.min(GRID_DIM - 1);
+        let nib = field_map
+            .get(COLLISION_GRID_OFFSET + rr * GRID_DIM + cc)
+            .map(|b| (b & 0x0F) as usize)
+            .unwrap_or(0);
+        -(lut[nib] as f32)
+    };
+    for row in 0..GRID_DIM {
+        for col in 0..GRID_DIM {
+            let cell_off = (row * GRID_DIM + col) * 2;
+            let Some(cell_bytes) = obj_grid.get(cell_off..cell_off + 2) else {
+                continue;
+            };
+            let cell = u16::from_le_bytes([cell_bytes[0], cell_bytes[1]]);
+            if cell & CELL_WALK_VISIBLE == 0 {
+                continue;
+            }
+            // The +0x14 byte of this cell's object record — the per-tile id
+            // (texture selector candidate); 0 when the record is absent.
+            let obj_idx = (cell & OBJECT_INDEX_MASK) as usize;
+            let tile_id = field_map
+                .get(obj_idx * OBJECT_RECORD_STRIDE + 0x14)
+                .copied()
+                .unwrap_or(0);
+            let x0 = (col as i32 * TILE) as f32;
+            let x1 = ((col as i32 + 1) * TILE) as f32;
+            let z0 = (row as i32 * TILE) as f32;
+            let z1 = ((row as i32 + 1) * TILE) as f32;
+            let base = hf.positions.len() as u32;
+            // 4 corners: (c,r) (c+1,r) (c,r+1) (c+1,r+1).
+            hf.positions.push([x0, corner_y(col, row), z0]);
+            hf.positions.push([x1, corner_y(col + 1, row), z0]);
+            hf.positions.push([x0, corner_y(col, row + 1), z1]);
+            hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
+            for _ in 0..4 {
+                hf.tile_ids.push(tile_id);
+            }
+            // Two triangles, standard PSX quad winding (v0,v1,v2)+(v1,v3,v2).
+            hf.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        }
+    }
+    hf
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +519,35 @@ mod tests {
         // Protagonist / NPC ids draw from a different pool.
         assert_eq!(pack_mesh_index(1, &rec), None);
         assert_eq!(pack_mesh_index(3, &rec), None);
+    }
+
+    #[test]
+    fn heightfield_emits_quad_per_visible_cell_with_floor_heights() {
+        let mut map = vec![0u8; 0x12000];
+        // Floor LUT: nibble 2 -> height 80, nibble 5 -> 200 (negated in mesh).
+        let lut = {
+            let mut l = [0i16; 16];
+            l[2] = 80;
+            l[5] = 200;
+            l
+        };
+        // Tile (col 10, row 4): floor nibble 2; mark its object cell walk-visible
+        // with obj_idx 7, and give record 7 a +0x14 tile id of 0x2A.
+        map[COLLISION_GRID_OFFSET + 4 * GRID_DIM + 10] = 0x02;
+        let cell = OBJECT_GRID_OFFSET + (4 * GRID_DIM + 10) * 2;
+        map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 7).to_le_bytes());
+        map[7 * OBJECT_RECORD_STRIDE + 0x14] = 0x2A;
+
+        let hf = build_walk_heightfield(&map, &lut);
+        assert_eq!(hf.quad_count(), 1, "one visible cell -> one quad");
+        assert_eq!(hf.positions.len(), 4);
+        assert_eq!(hf.indices.len(), 6);
+        // Corner (10,4) sits at world (10*128, -lut[2], 4*128).
+        assert_eq!(hf.positions[0], [1280.0, -80.0, 512.0]);
+        // The far corner (11,5) reads nibble 0 (height 0) since those tiles
+        // weren't painted.
+        assert_eq!(hf.positions[3][1], 0.0);
+        // Every vertex carries the cell's +0x14 tile id.
+        assert!(hf.tile_ids.iter().all(|&t| t == 0x2A));
     }
 }
