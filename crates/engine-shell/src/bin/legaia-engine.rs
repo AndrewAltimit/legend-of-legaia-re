@@ -5165,8 +5165,10 @@ impl PlayWindowApp {
             // World-map continent ground: build the heightfield surface from
             // the walk `.MAP` floor grid (correct model — the slot-1 pack
             // meshes are only the landmarks, not a per-cell ground mesh) and
-            // upload it with a provisional uniform ground texel. Texturing
-            // per-tile (record +0x14 -> atlas UV) is a documented follow-up.
+            // upload it with a provisional uniform ground texel. Per-tile
+            // texturing has no clean source: record +0x14 is terrain-type
+            // metadata, not an atlas selector (no draw path reads it) - see
+            // docs/subsystems/world-map.md "Open (texturing)".
             let mut world_map_hf: Option<UploadedVramMesh> = None;
             let is_world_map = self
                 .session
@@ -7628,9 +7630,10 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
 /// The markers share the player's coordinate frame (both come from the scene
 /// The `(cba, tsb, [u, v])` of the first textured primitive across a scene's
 /// resolved TMD pool — a real slot-0-atlas ground texel, used as the
-/// **provisional** uniform texture for the world-map heightfield surface until
-/// the per-cell `+0x14`→atlas-UV mapping is pinned. `None` if no textured prim
-/// exists (the caller then renders the heightfield flat / untextured).
+/// **provisional** uniform texture for the world-map heightfield surface. There
+/// is no per-cell `+0x14`→atlas-UV mapping to pin (`+0x14` is terrain-type
+/// metadata, not a texture selector; see docs/subsystems/world-map.md). `None`
+/// if no textured prim exists (the caller then renders the heightfield flat).
 fn first_textured_atlas_texel(
     tmds: &[legaia_engine_core::scene_resources::ResolvedTmd],
 ) -> Option<(u16, u16, [u8; 2])> {
@@ -7656,7 +7659,8 @@ fn first_textured_atlas_texel(
 /// provisional `(cba, tsb, uv)` to every vertex (uniform ground texel). Normals
 /// are left at the `[0,0,0]` sentinel so the shader derives screen-space
 /// normals (flat-lit). Geometry is faithful (elevation from the floor grid);
-/// per-tile texturing is a documented follow-up.
+/// faithful per-tile texturing would mean rendering the bulk-terrain mesh, not
+/// a `+0x14` lookup (see docs/subsystems/world-map.md "Open (texturing)").
 fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
     cba: u16,
