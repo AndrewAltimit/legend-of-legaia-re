@@ -85,6 +85,29 @@ pub const RIM_ELM_TRAINING_OPPONENT_ID: u8 = 0x4F;
 /// [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
 pub const RIM_ELM_TRAINING_FORMATION_ID: u16 = 4;
 
+/// town01 partition-1 placement that carries the Rim Elm sparring fight - the
+/// NPC whose talk-menu installs the lone-[`RIM_ELM_TRAINING_OPPONENT_ID`]
+/// formation ([`RIM_ELM_TRAINING_FORMATION_ID`]).
+///
+/// Pinned structurally from the town01 MAN: a single partition-1 actor
+/// placement sits at this tile carrying this model and a multi-page inline
+/// dialog block (the sparring talk menu and its battle-trigger branch). It is
+/// the only on-map placement whose inline text runs to that length. The model
+/// byte and tile are stable disc invariants; the menu *text* is Sony content
+/// and is not reproduced here.
+///
+/// This resolves the "which MAN-placed entity is the training-fight carrier"
+/// half of the opening-battle thread. Note the carrier is **not** identified by
+/// the opcode-decoded interact selector: a field interaction record desyncs
+/// under linear disassembly (its embedded message bytes alias opcodes), so the
+/// entity is recognised by its inline dialog block, found structurally. See
+/// [`crate::man_field_scripts::first_inline_dialog_offset`] and
+/// [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
+pub const RIM_ELM_SPARRING_CARRIER_TILE: (u8, u8) = (76, 65);
+
+/// Model byte of the [`RIM_ELM_SPARRING_CARRIER_TILE`] placement.
+pub const RIM_ELM_SPARRING_CARRIER_MODEL: u8 = 0x6A;
+
 /// Decoded encounter record.
 ///
 /// `monster_ids` always has length `FORMATION_SLOTS`; trailing slots beyond
