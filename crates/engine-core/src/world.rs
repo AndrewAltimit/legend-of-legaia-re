@@ -1427,14 +1427,15 @@ pub enum WorldMapEntityConfig {
     /// A plain interactable (NPC / signpost). Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
     ///
-    /// `text_id` is the MES message the entity's own placement script opens
-    /// when talked to (the `Dialog` op the placement walker found, if any);
-    /// [`World::tick_world_map`] opens it against the scene's MES container on
-    /// a confirm press while the player stands next to the entity. `None` when
-    /// the placement carries an interaction but no inline dialog text.
+    /// `inline` is the entity's own placement-script dialog text (the `0x3F`
+    /// op's inline buffer the placement walker captured); [`World::tick_world_map`]
+    /// opens it when the player presses confirm next to the entity. `text_id`
+    /// is the box-config id carried alongside it (not an MES index). Both are
+    /// empty/`None` when the placement has an interaction but no inline dialog.
     Npc {
         interact_id: u8,
         text_id: Option<u16>,
+        inline: Vec<u8>,
     },
 }
 
@@ -3814,34 +3815,37 @@ impl World {
             ),
             None => return,
         };
-        // First talkable NPC within one tile (Chebyshev) of the player.
-        let mut open: Option<u16> = None;
+        // First talkable NPC within one tile (Chebyshev) of the player. An NPC
+        // is talkable when it carries inline dialog text or a box-config id.
+        let mut open: Option<(u16, Vec<u8>)> = None;
         for (idx, cfg) in self.world_map_entity_configs.iter().enumerate() {
-            let text_id = match cfg {
+            let (text_id, inline) = match cfg {
                 WorldMapEntityConfig::Npc {
-                    text_id: Some(t), ..
-                } => *t,
+                    text_id, inline, ..
+                } if text_id.is_some() || !inline.is_empty() => {
+                    (text_id.unwrap_or(0), inline.clone())
+                }
                 _ => continue,
             };
             let Some(&(ex, ez)) = self.world_map_entity_positions.get(idx) else {
                 continue;
             };
             if ((ex as i32 >> 7) - px).abs() <= 1 && ((ez as i32 >> 7) - pz).abs() <= 1 {
-                open = Some(text_id);
+                open = Some((text_id, inline));
                 break;
             }
         }
-        if let Some(text_id) = open {
+        if let Some((text_id, inline)) = open {
             self.current_dialog = Some(DialogRequest {
                 text_id,
-                inline: Vec::new(),
+                inline: inline.clone(),
                 world_x: 0,
                 world_z: 0,
                 depth_id: 0,
             });
             self.pending_field_events.push(FieldEvent::OpenDialog {
                 text_id,
-                inline: Vec::new(),
+                inline,
                 world_x: 0,
                 world_z: 0,
                 depth_id: 0,

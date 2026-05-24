@@ -237,6 +237,11 @@ pub enum PlacementKind {
     Npc {
         dialog_text_id: Option<u16>,
         interact_id: Option<u8>,
+        /// Raw inline dialog bytes from the first `0x3F` op (the box-geometry
+        /// header + `0x1F`-lead text segments). This - not `dialog_text_id`,
+        /// which is a box-config id - is the actual message text;
+        /// [`crate::dialog::OwnedDialogPanel::from_inline_dialog`] renders it.
+        dialog_inline: Option<Vec<u8>>,
     },
     /// No warp / dialog / interact opcode: a decorative or script-only actor
     /// (movement, animation, model preload, the lead-actor slot).
@@ -271,7 +276,13 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     let body = &man[start..end];
     let mut dialog_text_id = None;
     let mut interact_id = None;
+    let mut dialog_inline: Option<Vec<u8>> = None;
     for insn in LinearWalker::new(body, p.script_pc0).flatten() {
+        // Copy the byte position + extended flag before matching `insn.info`
+        // (which partially moves it) so the Dialog arm can slice the inline
+        // buffer out of the script body.
+        let insn_pc = insn.pc;
+        let insn_extended = insn.extended;
         match insn.info {
             // A warp wins outright: the actor is a portal.
             InsnInfo::WarpOrInteract {
@@ -288,8 +299,19 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
             } => {
                 interact_id.get_or_insert(op1);
             }
-            InsnInfo::Dialog { text_id, .. } => {
+            InsnInfo::Dialog { text_id, len, .. } => {
                 dialog_text_id.get_or_insert(text_id);
+                // Inline layout: `[opcode (+ extended byte)][lo][hi][len][len
+                // inline bytes][xb][zb][depth]`. Capture the `len` inline bytes
+                // (the box-geometry header + text) from the first dialog op.
+                if dialog_inline.is_none() {
+                    let header = if insn_extended.is_some() { 2 } else { 1 };
+                    let istart = insn_pc + header + 3;
+                    let iend = istart.saturating_add(len as usize).min(body.len());
+                    if istart <= iend {
+                        dialog_inline = Some(body[istart..iend].to_vec());
+                    }
+                }
             }
             _ => {}
         }
@@ -298,6 +320,7 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
         PlacementKind::Npc {
             dialog_text_id,
             interact_id,
+            dialog_inline,
         }
     } else {
         PlacementKind::Plain
@@ -629,6 +652,7 @@ mod tests {
             PlacementKind::Npc {
                 dialog_text_id: None,
                 interact_id: Some(0x07),
+                dialog_inline: None,
             }
         );
     }

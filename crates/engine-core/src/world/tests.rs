@@ -957,6 +957,7 @@ fn world_map_walking_onto_npc_does_not_transition() {
         WorldMapEntityConfig::Npc {
             interact_id: 4,
             text_id: None,
+            inline: Vec::new(),
         },
         (448, 448),
     )]);
@@ -982,6 +983,7 @@ fn world_map_npc_config_surfaces_interact_id() {
     world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Npc {
         interact_id: 7,
         text_id: None,
+        inline: Vec::new(),
     }]);
     world.set_world_map_encounter(false, 50, 0, 64);
     // Stationary player: the idle entity interacts.
@@ -1004,10 +1006,14 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     world.enter_world_map();
     world.install_field_player(0);
     world.set_world_map_encounter(false, 50, 0, 64);
+    // Inline dialog bytes in the field-VM box format: a geometry header then a
+    // `0x1F`-lead text segment ("Hi").
+    let inline = vec![0x00u8, 0x1F, b'H', b'i', 0x00];
     world.install_world_map_entities_at(vec![(
         WorldMapEntityConfig::Npc {
             interact_id: 4,
             text_id: Some(0x12),
+            inline: inline.clone(),
         },
         (576, 448), // one tile east of the player (448 >> 7 == 3, 576 >> 7 == 4)
     )]);
@@ -1019,20 +1025,21 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     let _ = world.tick();
     assert!(world.current_dialog.is_none(), "no box before talking");
 
-    // Confirm press next to the NPC opens its dialogue.
+    // Confirm press next to the NPC opens its dialogue, carrying the inline
+    // text through (the host renders it via `OwnedDialogPanel::from_inline_dialog`).
     world.set_pad(cross);
     let _ = world.tick();
     assert_eq!(
-        world.current_dialog.as_ref().map(|d| d.text_id),
-        Some(0x12),
-        "talk-to opens the NPC's MES text"
+        world.current_dialog.as_ref().map(|d| d.inline.clone()),
+        Some(inline.clone()),
+        "talk-to opens the NPC's inline dialogue text"
     );
     assert!(
         world
             .drain_field_events()
             .into_iter()
-            .any(|e| matches!(e, FieldEvent::OpenDialog { text_id: 0x12, .. })),
-        "talk-to emits OpenDialog for the host to render"
+            .any(|e| matches!(e, FieldEvent::OpenDialog { ref inline, .. } if !inline.is_empty())),
+        "talk-to emits OpenDialog carrying the inline text for the host to render"
     );
 
     // Cross held across the frame boundary is not a fresh edge (edges advance

@@ -209,6 +209,12 @@
         <td>Earlier "blocked on runtime trace" framing was wrong; tile-page lives at VRAM <code>(896, 0)..(960, 256)</code>, extracted by <code>legaia-font::font-extract</code> from any in-game save state. Listed here only so the older "open" framing doesn't get re-opened.</td>
         <td><code>project_dialog_font_hunt.md</code></td>
       </tr>
+      <tr>
+        <td>Inline dialog-box format (<code>0x3F</code> op)</td>
+        <td><code>partial</code></td>
+        <td>Placement-NPC / event dialogue text is <strong>inline</strong> in the field-VM <code>0x3F</code> op (<code>[3F, lo, hi, len, &lt;len inline bytes&gt;, xb, zb, depth]</code>), <strong>not</strong> the scene MES &mdash; its <code>text_id</code> (<code>lo|hi&lt;&lt;8</code>) is a box-config id that never resolves through <code>SceneMes::message_offset</code> (verified: 0/13 town01 placement-NPC ids resolve). The inline buffer is a box-geometry header (position / size / option layout) then <code>0x1F</code>-lead text segments of MES glyph bytecode. <code>OwnedDialogPanel::from_inline_dialog</code> skips to the first <code>0x1F</code> and decodes the text after it; <code>open_pending_dialog</code> prefers inline (falling back to the MES <code>text_id</code> lookup) and the native <code>play-window</code> renders the typed box. <strong>Still open:</strong> the geometry-header layout and multi-segment menu rendering (the panel stops at the first <code>0x00</code>, so only the first <code>0x1F</code> segment renders) &mdash; likely from the retail dialog-box renderer <code>func_0x8001ebec</code>.</td>
+        <td>&mdash;</td>
+      </tr>
     </tbody>
   </table>
 </section>

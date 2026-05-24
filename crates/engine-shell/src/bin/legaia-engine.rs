@@ -3729,6 +3729,12 @@ struct PlayWindowApp {
     /// the opening choreography blends instead of cutting. Reset (snaps) while
     /// no cutscene timeline is active.
     cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
+    /// Active dialog box, mirroring `World::current_dialog`. Opened from the
+    /// scene's MES container the frame a dialog request appears (field-VM
+    /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,
+    /// and dropped when the world clears the request (the world owns dismissal
+    /// via the field VM / overworld handler). `None` when no box is up.
+    active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -5960,6 +5966,32 @@ impl PlayWindowApp {
         )
     }
 
+    /// Keep the rendered dialog panel ([`Self::active_dialog`]) in sync with
+    /// the world's pending dialog request.
+    ///
+    /// The world owns dismissal: the field VM's op-`0x4C` dialog-advance hook
+    /// and the overworld talk-to handler both clear `World::current_dialog` on
+    /// a confirm/cancel press. This method only mirrors that state into a
+    /// visible, typed-out box - it opens a panel from the scene's MES the frame
+    /// a request appears, ticks its typewriter reveal, and drops the panel the
+    /// frame the world clears the request. It never clears `current_dialog`
+    /// itself, so it can't race the world's dismiss.
+    fn sync_dialog_panel(&mut self) {
+        if self.session.host.world.current_dialog.is_none() {
+            self.active_dialog = None;
+            return;
+        }
+        if self.active_dialog.is_none()
+            && let Some(mut panel) = self.session.host.open_pending_dialog()
+        {
+            panel.set_glyphs_per_frame(2);
+            self.active_dialog = Some(panel);
+        }
+        if let Some(panel) = self.active_dialog.as_mut() {
+            panel.tick();
+        }
+    }
+
     fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -6505,6 +6537,26 @@ impl PlayWindowApp {
                 (32, 24),
             ));
         }
+        // Dialog box: the active NPC / event message, typed out one line near
+        // the bottom of the screen (1/8 from the left, ~70% down - the
+        // single-line layout the retail field VM emits). The panel mirrors
+        // `World::current_dialog`; the world owns dismissal.
+        if let Some(panel) = self.active_dialog.as_ref() {
+            let page: String = panel
+                .page_bytes()
+                .iter()
+                .map(|&b| {
+                    if (0x20..=0x7E).contains(&b) {
+                        b as char
+                    } else {
+                        '?'
+                    }
+                })
+                .collect();
+            let layout = self.font.layout_ascii(&page);
+            let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
+            out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
+        }
         out
     }
 }
@@ -6800,6 +6852,10 @@ impl ApplicationHandler for PlayWindowApp {
                     // carries a `tmd_ref` queue a render-pass mesh upload
                     // so spawn-record actors appear in the scene.
                     self.drain_and_route_field_events();
+                    // Mirror the world's dialog request into a rendered,
+                    // typed-out panel (opened from the scene MES, dropped when
+                    // the world dismisses the box).
+                    self.sync_dialog_panel();
                 }
                 // A tick this frame may have flipped the world into
                 // SceneMode::Cutscene (field-VM FMV-trigger op). Start
@@ -7831,6 +7887,7 @@ fn cmd_play_window_with_record(
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
+        active_dialog: None,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
