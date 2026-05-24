@@ -33,7 +33,9 @@
 //! REF: FUN_8001E890
 
 use anyhow::Result;
-use legaia_asset::{anm_detect, battle_data_pack, scene_tmd_stream, tim_scan, tmd_scan};
+use legaia_asset::{
+    anm_detect, battle_data_pack, kingdom_bundle, pack, scene_tmd_stream, tim_scan, tmd_scan,
+};
 use legaia_tim::Vram;
 
 use crate::scene::Scene;
@@ -404,9 +406,68 @@ impl SceneResources {
         let parse_scene_tmds_anms = |s: &Scene,
                                      tmds: &mut Vec<ResolvedTmd>,
                                      anm_packs: &mut Vec<ResolvedAnm>,
-                                     tmd_count: &mut usize| {
+                                     tmd_count: &mut usize,
+                                     is_main: bool| {
+            // The walk-view world map draws exactly ONE kingdom bundle: the
+            // scene's primary entry (PROT 0085/0244/0391). Its sibling range
+            // also contains a kingdom-bundle-shaped *continent* pack (e.g.
+            // PROT 0093, ~70 TMDs) that belongs to the zoomed-out world
+            // OVERVIEW, not the per-kingdom walk view - the walk-view
+            // resident pool is the landmark pack alone (savestate ground
+            // truth, docs/subsystems/world-map.md). So accept only the first
+            // kingdom bundle per scene.
+            let mut took_kingdom = false;
             for entry in &s.entries {
                 let bytes: &[u8] = &entry.bytes;
+                // World-map kingdom bundles carry their landmark geometry as
+                // slot 1 (a Legaia-TMD pack) of a 7-asset descriptor table,
+                // LZS-compressed. The generic raw/LZS magic sweep below can't
+                // follow the descriptor table, so retail (and now this build)
+                // reads the slot explicitly. This is authoritative for the
+                // kingdom entry - skip the heuristic sweep so stray meshes
+                // (the "battle-map look") don't leak in. Non-kingdom entries
+                // in the same scene fail `decode_slot` and fall through.
+                if matches!(kind, SceneLoadKind::WorldMap)
+                    && !took_kingdom
+                    && let Ok(slot1) = kingdom_bundle::decode_slot(bytes, 1)
+                    && let Ok(pack_entries) = pack::parse_pack(&slot1)
+                {
+                    let mut added = 0usize;
+                    for pe in pack_entries {
+                        let Some(tslice) = slot1.get(pe.byte_offset..pe.byte_offset + pe.size)
+                        else {
+                            continue;
+                        };
+                        if let Ok(tmd) = legaia_tmd::parse(tslice) {
+                            tmds.push(ResolvedTmd {
+                                entry_idx: entry.idx,
+                                offset: pe.byte_offset,
+                                byte_len: pe.size,
+                                tmd,
+                                raw: tslice.to_vec(),
+                            });
+                            added += 1;
+                        }
+                    }
+                    if added > 0 {
+                        *tmd_count += added;
+                        took_kingdom = true;
+                        continue;
+                    }
+                }
+                // On the world-map MAIN scene, the kingdom bundle (handled
+                // above) is the sole geometry source. Its sibling PROT
+                // entries hold sub-area / battle assets that retail does NOT
+                // draw on the overworld (the resident pool is the slot-1
+                // landmark pack + the shared player TMD - see the world-map
+                // savestate ground truth in docs/subsystems/world-map.md).
+                // Generic-scanning them re-introduces the stray "battle-map"
+                // meshes and bloats `scene_aabb`, so skip them here. Shared
+                // blocks (`is_main == false`) still scan normally for the
+                // player mesh.
+                if is_main && matches!(kind, SceneLoadKind::WorldMap) {
+                    continue;
+                }
                 let skip_scene_tmd_stream = kind.excludes_scene_tmd_stream()
                     && scene_tmd_stream::is_scene_tmd_stream(bytes);
                 if !skip_scene_tmd_stream {
@@ -491,9 +552,15 @@ impl SceneResources {
             }
         };
         for shared in shared_scenes {
-            parse_scene_tmds_anms(shared, &mut tmds, &mut anm_packs, &mut shared_tmd_count);
+            parse_scene_tmds_anms(
+                shared,
+                &mut tmds,
+                &mut anm_packs,
+                &mut shared_tmd_count,
+                false,
+            );
         }
-        parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize);
+        parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize, true);
 
         // Pass 2: collect prim targets from every TMD - the union is
         // what the targeted upload aims for.
@@ -519,88 +586,123 @@ impl SceneResources {
         // town load path. See [`docs/formats/scene-bundles.md`].
         let mut tim_bufs: Vec<Vec<u8>> = Vec::new();
         let mut tim_parse_failures = 0usize;
-        let collect_tim_bufs =
-            |s: &Scene, tim_bufs: &mut Vec<Vec<u8>>, tim_parse_failures: &mut usize| {
-                for entry in &s.entries {
-                    let bytes: &[u8] = &entry.bytes;
-                    // Skip-set: payload offsets of scene_tmd_stream
-                    // type-0x01 TIM chunks. Only populated when the
-                    // build is field-mode AND the entry is shaped like
-                    // a scene_tmd_stream.
-                    let battle_tim_payload_skips: Vec<usize> = if kind.excludes_scene_tmd_stream() {
-                        scene_tmd_stream::battle_tim_chunks(bytes)
-                            .iter()
-                            .map(|c| c.payload_offset)
-                            .collect()
-                    } else {
-                        Vec::new()
-                    };
-                    let scan = tim_scan::scan_entry(bytes);
-                    for (source, hit) in &scan.hits {
-                        let src: &[u8] = match source {
-                            tim_scan::Source::Raw => bytes,
-                            tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
-                        };
-                        let end = hit.offset + hit.byte_len;
-                        if end > src.len() {
-                            continue;
-                        }
-                        // Field-mode: drop TIMs whose offset matches one
-                        // of the scene_tmd_stream battle TIM chunks. The
-                        // scanner walks raw entry bytes and the skip
-                        // set is in raw-buffer coordinates, so only the
-                        // `Source::Raw` arm needs the filter.
-                        if matches!(source, tim_scan::Source::Raw)
-                            && battle_tim_payload_skips.contains(&hit.offset)
-                        {
-                            continue;
-                        }
-                        let payload = &src[hit.offset..end];
-                        if legaia_tim::parse(payload).is_ok() {
-                            tim_bufs.push(payload.to_vec());
-                        } else {
-                            *tim_parse_failures += 1;
+        let collect_tim_bufs = |s: &Scene,
+                                tim_bufs: &mut Vec<Vec<u8>>,
+                                tim_parse_failures: &mut usize,
+                                is_main: bool| {
+            // Match the TMD pool: only the first (primary) kingdom bundle
+            // per scene contributes its slot-0 atlas.
+            let mut took_kingdom = false;
+            for entry in &s.entries {
+                let bytes: &[u8] = &entry.bytes;
+                // World-map kingdom bundles: slot 0 is the terrain TIM
+                // atlas (a tim-pack of ~50 TIMs) that textures the slot-1
+                // landmark meshes. Decode it explicitly for the same
+                // reason as slot 1 above - the descriptor table is opaque
+                // to the generic scanner.
+                if matches!(kind, SceneLoadKind::WorldMap)
+                    && !took_kingdom
+                    && let Ok(slot0) = kingdom_bundle::decode_slot(bytes, 0)
+                    && let Ok(tim_slices) = pack::extract_pack(&slot0)
+                {
+                    let mut added = 0usize;
+                    for tslice in &tim_slices {
+                        if legaia_tim::parse(tslice).is_ok() {
+                            tim_bufs.push(tslice.to_vec());
+                            added += 1;
                         }
                     }
-                    // battle_data pack: rescan decompressed record bytes
-                    // for any TIM headers. The post-TMD region inside
-                    // each record holds the character textures + CLUTs;
-                    // most retail records don't tag their texture pool
-                    // with the standard TIM magic, but the few that do
-                    // (or future records that gain it) are now reachable.
-                    // Field mode skips this entirely - battle_data is
-                    // battle-init resident, not part of field VRAM.
-                    if kind.excludes_scene_tmd_stream() {
+                    if added > 0 {
+                        took_kingdom = true;
                         continue;
                     }
-                    if let Some(pack) = battle_data_pack::detect(bytes) {
-                        for record in &pack.records {
-                            let Ok(decoded) =
-                                battle_data_pack::decode_record(bytes, &pack, record.index)
-                            else {
+                }
+                // World-map MAIN scene: only the slot-0 atlas textures the
+                // (slot-1) landmark meshes. Sibling-entry TIMs texture
+                // sub-area meshes we no longer load and would clobber the
+                // atlas's VRAM pages, so skip them. Shared blocks still
+                // upload (the player atlas). Mirrors the TMD-pool skip.
+                if is_main && matches!(kind, SceneLoadKind::WorldMap) {
+                    continue;
+                }
+                // Skip-set: payload offsets of scene_tmd_stream
+                // type-0x01 TIM chunks. Only populated when the
+                // build is field-mode AND the entry is shaped like
+                // a scene_tmd_stream.
+                let battle_tim_payload_skips: Vec<usize> = if kind.excludes_scene_tmd_stream() {
+                    scene_tmd_stream::battle_tim_chunks(bytes)
+                        .iter()
+                        .map(|c| c.payload_offset)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let scan = tim_scan::scan_entry(bytes);
+                for (source, hit) in &scan.hits {
+                    let src: &[u8] = match source {
+                        tim_scan::Source::Raw => bytes,
+                        tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
+                    };
+                    let end = hit.offset + hit.byte_len;
+                    if end > src.len() {
+                        continue;
+                    }
+                    // Field-mode: drop TIMs whose offset matches one
+                    // of the scene_tmd_stream battle TIM chunks. The
+                    // scanner walks raw entry bytes and the skip
+                    // set is in raw-buffer coordinates, so only the
+                    // `Source::Raw` arm needs the filter.
+                    if matches!(source, tim_scan::Source::Raw)
+                        && battle_tim_payload_skips.contains(&hit.offset)
+                    {
+                        continue;
+                    }
+                    let payload = &src[hit.offset..end];
+                    if legaia_tim::parse(payload).is_ok() {
+                        tim_bufs.push(payload.to_vec());
+                    } else {
+                        *tim_parse_failures += 1;
+                    }
+                }
+                // battle_data pack: rescan decompressed record bytes
+                // for any TIM headers. The post-TMD region inside
+                // each record holds the character textures + CLUTs;
+                // most retail records don't tag their texture pool
+                // with the standard TIM magic, but the few that do
+                // (or future records that gain it) are now reachable.
+                // Field mode skips this entirely - battle_data is
+                // battle-init resident, not part of field VRAM.
+                if kind.excludes_scene_tmd_stream() {
+                    continue;
+                }
+                if let Some(pack) = battle_data_pack::detect(bytes) {
+                    for record in &pack.records {
+                        let Ok(decoded) =
+                            battle_data_pack::decode_record(bytes, &pack, record.index)
+                        else {
+                            continue;
+                        };
+                        for hit in tim_scan::scan_buffer(&decoded.bytes) {
+                            let end = hit.offset + hit.byte_len;
+                            if end > decoded.bytes.len() {
                                 continue;
-                            };
-                            for hit in tim_scan::scan_buffer(&decoded.bytes) {
-                                let end = hit.offset + hit.byte_len;
-                                if end > decoded.bytes.len() {
-                                    continue;
-                                }
-                                let payload = &decoded.bytes[hit.offset..end];
-                                if legaia_tim::parse(payload).is_ok() {
-                                    tim_bufs.push(payload.to_vec());
-                                } else {
-                                    *tim_parse_failures += 1;
-                                }
+                            }
+                            let payload = &decoded.bytes[hit.offset..end];
+                            if legaia_tim::parse(payload).is_ok() {
+                                tim_bufs.push(payload.to_vec());
+                            } else {
+                                *tim_parse_failures += 1;
                             }
                         }
                     }
                 }
-            };
+            }
+        };
         for shared in shared_scenes {
-            collect_tim_bufs(shared, &mut tim_bufs, &mut tim_parse_failures);
+            collect_tim_bufs(shared, &mut tim_bufs, &mut tim_parse_failures, false);
         }
         let shared_tim_count = tim_bufs.len();
-        collect_tim_bufs(scene, &mut tim_bufs, &mut tim_parse_failures);
+        collect_tim_bufs(scene, &mut tim_bufs, &mut tim_parse_failures, true);
         let tim_count = tim_bufs.len();
 
         let (mut vram, upload_stats) = if options.upload_all_tims {

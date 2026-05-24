@@ -139,10 +139,13 @@ pub fn world_map_camera_relative_bits(azimuth: i32, sx: i32, sy: i32) -> u16 {
     }
     let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
     let (sin, cos) = theta.sin_cos();
-    // screen-up    -> world ( cosθ, sinθ)   (verified against world_map_camera_mvp)
+    // screen-up    -> world (-cosθ, -sinθ)   (verified against world_map_camera_mvp)
     // screen-right -> world ( sinθ, -cosθ)
-    let wx = (sx as f32) * sin + (sy as f32) * cos;
-    let wz = -(sx as f32) * cos + (sy as f32) * sin;
+    // The camera looks down on the (Y-up) flipped terrain from positive Y, so
+    // the on-screen vertical axis runs opposite the eye->centre forward dir;
+    // hence the screen-up -> world mapping carries the negative sign.
+    let wx = (sx as f32) * sin - (sy as f32) * cos;
+    let wz = -(sx as f32) * cos - (sy as f32) * sin;
     // sin(22.5°): within this band of an axis the press is treated as cardinal;
     // beyond it (a rotated framing) both bits set and the player walks diagonally.
     const T: f32 = 0.382_683_43;
@@ -309,6 +312,61 @@ pub struct EffectModel {
     pub angle: u16,
     /// Lifetime fraction `0.0..=1.0` (0 = just spawned, 1 = about to retire).
     pub age01: f32,
+}
+
+/// Coarse role of a placed overworld entity, carried on
+/// [`WorldMapEntityMarker`] so a host can colour-code its render marker
+/// without inspecting the full [`WorldMapEntityConfig`] (which carries
+/// per-kind payload the renderer doesn't need).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldMapEntityKind {
+    /// A roaming-encounter zone ([`WorldMapEntityConfig::EncounterZone`]).
+    EncounterZone,
+    /// A town / dungeon portal ([`WorldMapEntityConfig::Portal`]).
+    Portal,
+    /// A plain interactable NPC / signpost ([`WorldMapEntityConfig::Npc`]),
+    /// also the fallback for an entity with no config row.
+    Npc,
+}
+
+/// Render-agnostic snapshot of one placed overworld entity, produced by
+/// [`World::world_map_entity_markers`]. The disc-sourced placement seeding
+/// ([`crate::scene::SceneHost::enter_world_map_scene`]) installs each entity
+/// with a world position and a [`WorldMapEntityConfig`]; this pairs the
+/// position with its coarse [`WorldMapEntityKind`] so a host can draw a marker
+/// at each on-map portal / NPC / encounter zone.
+///
+/// This is the seam for the still-open per-entity mesh-resolution thread: the
+/// retail engine binds each placement to its own actor model, which is not yet
+/// decoded, so the host draws a kind-coded marker at the position rather than
+/// the entity's real mesh. The position shares the player's coordinate frame
+/// (both come from the scene MAN), so a marker reads correctly relative to the
+/// player even while the kingdom terrain mesh renders at its own pack-local
+/// coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMapEntityMarker {
+    /// Entity world position in world units. `x` / `z` are the MAN placement
+    /// coordinates; `y` is the player actor's current plane (the entities are
+    /// 2D placements, so they sit on the player's walking plane).
+    pub world_pos: [f32; 3],
+    /// Coarse role, for colour-coding the marker.
+    pub kind: WorldMapEntityKind,
+}
+
+/// Render-agnostic snapshot of the player's overworld position, produced by
+/// [`World::world_map_player_marker`]. In `SceneMode::WorldMap` the kingdom
+/// terrain mesh renders at its pack-local coordinates and the player actor's
+/// own mesh is not drawn, so a host draws a marker at this position to show the
+/// player on the map. `facing` is the player's heading (`render_26`), so the
+/// host can draw a direction tick.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMapPlayerMarker {
+    /// Player world position in world units (the player actor's
+    /// `move_state.world_x / y / z`).
+    pub world_pos: [f32; 3],
+    /// Player heading as a PSX 12-bit angle (`4096` = full turn), measured the
+    /// same way the field path stores it (`render_26`). `0` faces `+Z`.
+    pub facing: i16,
 }
 
 /// Scene mode the world is running. Drives which top-level VMs tick and
@@ -3218,6 +3276,67 @@ impl World {
             .collect()
     }
 
+    /// Snapshot every placed overworld entity for the renderer: one
+    /// [`WorldMapEntityMarker`] per installed entity that carries a world
+    /// position, paired with its coarse [`WorldMapEntityKind`].
+    ///
+    /// Returns an empty vector unless the disc-placement seeding
+    /// ([`Self::install_world_map_entities_at`]) populated
+    /// [`Self::world_map_entity_positions`] - the config-only installers
+    /// (which leave positions empty) produce no markers, so a camera-only or
+    /// synthetic world map degrades cleanly. The marker `y` is the player
+    /// actor's current plane (the placements are 2D), so markers sit on the
+    /// player's walking plane rather than at an arbitrary `y = 0`.
+    pub fn world_map_entity_markers(&self) -> Vec<WorldMapEntityMarker> {
+        if self.world_map_entity_positions.is_empty() {
+            return Vec::new();
+        }
+        let base_y = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| a.move_state.world_y as f32)
+            .unwrap_or(0.0);
+        self.world_map_entity_positions
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, z))| {
+                let kind = match self.world_map_entity_configs.get(i) {
+                    Some(WorldMapEntityConfig::EncounterZone { .. }) => {
+                        WorldMapEntityKind::EncounterZone
+                    }
+                    Some(WorldMapEntityConfig::Portal { .. }) => WorldMapEntityKind::Portal,
+                    // An NPC config or no config at all (a plain interaction)
+                    // both render as the NPC marker.
+                    Some(WorldMapEntityConfig::Npc { .. }) | None => WorldMapEntityKind::Npc,
+                };
+                WorldMapEntityMarker {
+                    world_pos: [x as f32, base_y, z as f32],
+                    kind,
+                }
+            })
+            .collect()
+    }
+
+    /// The player's overworld position for the renderer, or `None` when there
+    /// is no active player actor. The world-map draw path shows the player at
+    /// this position (the player's own mesh isn't drawn in
+    /// [`SceneMode::WorldMap`]), oriented by [`WorldMapPlayerMarker::facing`].
+    pub fn world_map_player_marker(&self) -> Option<WorldMapPlayerMarker> {
+        let slot = self.player_actor_slot? as usize;
+        let a = self.actors.get(slot)?;
+        if !a.active {
+            return None;
+        }
+        Some(WorldMapPlayerMarker {
+            world_pos: [
+                a.move_state.world_x as f32,
+                a.move_state.world_y as f32,
+                a.move_state.world_z as f32,
+            ],
+            facing: a.move_state.render_26,
+        })
+    }
+
     /// Dev/visualization helper: seat one synthetic active effect carrying a
     /// 3D `etmd` model at `world_pos` (world units), so the model render path
     /// (e.g. *Tail Fire* = `etmd` mesh index 4, textured by `etim`) can be
@@ -3614,6 +3733,20 @@ impl World {
         let dir_bits = world_map_camera_relative_bits(azimuth, sx, sy);
         if dir_bits == 0 {
             return;
+        }
+        // Record the heading from the world-space movement direction (the same
+        // `render_26` field the field path stores from `decode_field_direction`,
+        // a PSX 12-bit angle: 4096 = full turn). The world-map walk uses the
+        // camera-relative bits rather than `decode_field_direction`, so it must
+        // set the heading itself; the player marker reads it to draw a facing
+        // tick. Deterministic: same pad + azimuth -> same heading.
+        let dz = (dir_bits & 0x1000 != 0) as i32 - (dir_bits & 0x4000 != 0) as i32;
+        let dx = (dir_bits & 0x2000 != 0) as i32 - (dir_bits & 0x8000 != 0) as i32;
+        if dx != 0 || dz != 0 {
+            let heading = (((dx as f32).atan2(dz as f32) / std::f32::consts::TAU * 4096.0).round()
+                as i32)
+                .rem_euclid(4096) as i16;
+            self.actors[slot].move_state.render_26 = heading;
         }
         let speed = self.world_map_player_speed.max(1) as i32;
         self.advance_with_collision(slot, dir_bits, speed);

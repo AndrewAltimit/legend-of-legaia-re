@@ -80,6 +80,81 @@ fn world_map_live_installs_regions_and_player() {
     );
 }
 
+/// The world-map load must source its geometry from the kingdom bundle's
+/// slot-1 landmark TMD pack, not the generic raw/LZS TMD sweep (which can't
+/// follow the 7-asset descriptor table and yields only a handful of stray
+/// meshes - the historical "battle-map look"). Slot-1 pack counts are pinned
+/// by the disc: Drake 40, Sebacus 36, Karisto 56.
+#[test]
+fn world_map_load_uses_kingdom_landmark_pack() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // (scene, slot-1 landmark TMD count) per crates/asset/src/kingdom_bundle.rs
+    // and verified against the disc.
+    for (scene, landmarks) in [("map01", 40usize), ("map02", 36), ("map03", 56)] {
+        let cfg = BootConfig {
+            scene: scene.into(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let opts = FieldLiveOpts::default();
+        session
+            .enter_world_map_live(scene, &opts)
+            .expect("enter_world_map_live");
+
+        let res = session
+            .host
+            .resources
+            .as_ref()
+            .expect("world-map scene resources built");
+        let n = res.tmds.len();
+        // The walk-view pool must be the kingdom landmark pack and nothing
+        // else: at least the full pack, and not the sibling-range continent
+        // overview pack (+43/+70 TMDs) or stray battle meshes. A small margin
+        // tolerates future shared-block (player) contributions.
+        assert!(
+            (landmarks..landmarks + 12).contains(&n),
+            "{scene}: expected ~{landmarks} landmark TMDs from the kingdom \
+             slot-1 pack, got {n} (too few = battle-map fallback; too many = \
+             the world-overview continent pack leaked in)"
+        );
+        // Every loaded TMD must come from the single primary kingdom entry.
+        let entries: std::collections::BTreeSet<u32> =
+            res.tmds.iter().map(|t| t.entry_idx).collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "{scene}: world-map geometry must come from one kingdom entry, \
+             got {entries:?}"
+        );
+        // At least most of the pack must texture cleanly against the slot-0
+        // atlas (the prim filter drops un-textured prims; a healthy world map
+        // keeps the large majority of meshes). Guards against a regression
+        // where the atlas stops covering the landmark texture pages.
+        let nonempty = res
+            .tmds
+            .iter()
+            .filter(|t| !t.build_filtered_vram_mesh(&res.vram).indices.is_empty())
+            .count();
+        assert!(
+            nonempty * 2 >= n,
+            "{scene}: only {nonempty}/{n} landmark meshes textured - the \
+             slot-0 atlas isn't covering the pack"
+        );
+        eprintln!(
+            "[{scene}] world-map mesh pool: {n} TMDs from entry {entries:?}, \
+             {nonempty} textured"
+        );
+    }
+}
+
 #[test]
 fn world_map_live_walk_reaches_battle() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -448,4 +523,102 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
         tested_any,
         "at least one overworld NPC with inline dialog text must be exercised"
     );
+}
+
+/// Disc-gated: each kingdom overworld decodes its continent terrain as
+/// world-frame static-object placements (the DATA_FIELD `.MAP` object grid,
+/// `Scene::field_object_placements`). This is the data feeding the world-map
+/// render's per-tile terrain draw (`resolve_field_placement_draws`): every
+/// placement must sit on the 128-unit world tile grid (not pack-local), resolve
+/// to a slot-1 pack mesh index, and land inside the world bounds — the same
+/// frame the player marker uses, which is what aligns the continent under the
+/// player instead of piling it at the pack origin.
+#[test]
+fn world_maps_decode_world_frame_terrain_placements() {
+    use std::sync::Arc;
+
+    use legaia_engine_core::scene::{ProtIndex, Scene};
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+    let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open prot index"));
+
+    for label in ["map01", "map02", "map03"] {
+        let scene = Scene::load(&index, label).expect("load world-map scene");
+        let placements = scene
+            .field_object_placements(&index)
+            .expect("read field map")
+            .expect("world-map scene has a DATA_FIELD object grid");
+        assert!(
+            !placements.is_empty(),
+            "[{label}] continent terrain must decode at least one placement"
+        );
+        let mut resolved = 0usize;
+        for p in &placements {
+            // World-frame coordinates: the 128x128 tile grid spans 0..0x4000
+            // world units per axis (col/row 0..127, tile size 0x80).
+            assert!(
+                (0..0x4000).contains(&p.world_x) && (0..0x4000).contains(&p.world_z),
+                "[{label}] placement obj {} is off the world tile grid: ({}, {})",
+                p.obj_idx,
+                p.world_x,
+                p.world_z
+            );
+            assert!(
+                p.col < 0x80 && p.row < 0x80,
+                "[{label}] tile index out of grid"
+            );
+            if p.pack_index.is_some() {
+                resolved += 1;
+            }
+        }
+        // The bulk of placements bind a slot-1 kingdom-pack mesh (a few are
+        // script-only / global-pool refs that don't carry a pack index).
+        assert!(
+            resolved * 2 >= placements.len(),
+            "[{label}] most placements ({resolved}/{}) must resolve to a kingdom-pack mesh",
+            placements.len()
+        );
+        eprintln!(
+            "[{label}] {} terrain placements, {resolved} resolve to a slot-1 pack mesh",
+            placements.len()
+        );
+
+        // The DENSE continent layer: the visible-tile set (CELL_VISIBLE) is
+        // the ground / trees / mountains the overhead sweep draws, far more
+        // numerous than the placed-flag interactive objects above. This is the
+        // set the world-map render now draws so the overworld isn't sparse.
+        let tiles = scene
+            .field_terrain_tiles(&index)
+            .expect("read field map")
+            .expect("world-map scene has a terrain tile grid");
+        assert!(
+            tiles.len() > placements.len() * 2,
+            "[{label}] the visible terrain layer ({}) must dwarf the placed objects ({})",
+            tiles.len(),
+            placements.len()
+        );
+        let tile_in_pack = tiles
+            .iter()
+            .filter(|p| p.pack_index.is_some())
+            .filter(|p| (0..0x4000).contains(&p.world_x) && (0..0x4000).contains(&p.world_z))
+            .count();
+        // Most visible tiles draw from the loaded slot-1 pack (a minority index
+        // the wider global TMD pool, which the world-map load doesn't pull in).
+        assert!(
+            tile_in_pack * 3 >= tiles.len(),
+            "[{label}] most terrain tiles ({tile_in_pack}/{}) resolve in-pack + on-grid",
+            tiles.len()
+        );
+        eprintln!(
+            "[{label}] {} dense terrain tiles ({tile_in_pack} drawable)",
+            tiles.len()
+        );
+    }
 }

@@ -3650,6 +3650,20 @@ struct PlayWindowApp {
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     field_placement_draws: Vec<(usize, Mat4)>,
+    /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
+    /// per visible tile of the kingdom's `.MAP` object grid
+    /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
+    /// Empty off the world map. Drawn in `SceneMode::WorldMap` so the overworld
+    /// shows its tiled ground / trees / mountains rather than a handful of
+    /// landmark objects.
+    world_map_terrain_draws: Vec<(usize, Mat4)>,
+    /// World-map continent **ground**: the heightfield surface built from the
+    /// walk `.MAP` floor grid (`Scene::walk_heightfield`). `None` off the world
+    /// map. Drawn in `SceneMode::WorldMap` as the continent ground (texturing
+    /// provisional — a uniform ground texel); `world_map_terrain_draws` carries
+    /// the sparse placed landmarks on top. Kept out of `meshes` (it has no
+    /// `Tmd` / actor binding); drawn directly with a constant Y-flip model.
+    world_map_heightfield: Option<UploadedVramMesh>,
     /// Pristine CPU-side scene VRAM, cloned at scene-load before any battle
     /// edits. A battle injects monster texture pools into a working copy and
     /// re-uploads; leaving battle restores this base so the field renders
@@ -4970,6 +4984,62 @@ impl PlayWindowApp {
             Ok(Some(p)) if !p.is_empty() => p,
             _ => return Vec::new(),
         };
+        self.resolve_placement_draws(res, tmd_src_index, &placements)
+    }
+
+    /// World-map continent terrain draws: the dense visible-tile set
+    /// (`Scene::field_terrain_tiles`, the `FUN_801F69D8` overhead sweep) rather
+    /// than the placed-flag interactive objects. Tiles whose pack index falls
+    /// outside the loaded slot-1 landmark pack (they reference the wider global
+    /// TMD pool, not yet loaded for the world map) resolve to no mesh and are
+    /// skipped by `resolve_placement_draws`.
+    fn resolve_world_map_terrain_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        // Free-roam walk view: read the *walk* `.MAP` (`Scene::walk_field_map_
+        // index`, the `block_start - 2` entry the runtime resolves through
+        // `toc[idx+2]`) and sweep its `0x1000`-gated continent (`walk_terrain_
+        // tiles`), then the placed-flag landmarks from the same `.MAP`. The
+        // earlier path read the within-block decoy entry with the overhead
+        // `0x2000` gate, which for the kingdoms resolved a different map and
+        // produced the sparse mesh scatter.
+        // Only the sparse placed landmarks (FUN_8003A55C, flags & 0x4) resolve
+        // to slot-1 pack meshes via record[+0x10]+prefix. The bulk continent
+        // ground is NOT per-cell pack meshes (the old `walk_terrain_tiles`
+        // sweep floods 97% of cells with pool-5 because their record[+0x10] is
+        // 0); it is the heightfield surface built separately in `upload_assets`
+        // (`Scene::walk_heightfield`). See docs/subsystems/world-map.md.
+        let tiles = match scene.walk_object_placements(&self.session.host.index) {
+            Ok(Some(t)) => t,
+            _ => Vec::new(),
+        };
+        if tiles.is_empty() {
+            return Vec::new();
+        }
+        self.resolve_placement_draws(res, tmd_src_index, &tiles)
+    }
+
+    /// Shared placement -> world-transform resolver for both the field static-
+    /// object layer and the world-map continent terrain. Maps each placement's
+    /// scene-pack mesh index through the uploaded-mesh bridge and builds its
+    /// world model matrix.
+    fn resolve_placement_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+        placements: &[legaia_asset::field_objects::Placement],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        if placements.is_empty() {
+            return Vec::new();
+        }
         // Per-tile floor-height LUT (MAN header). World Y for a placed object
         // is `-lut[tile_floor_nibble] + y_off`; without it the town renders on
         // a flat plane (Rim Elm is on a cliff with real elevation changes).
@@ -5000,7 +5070,7 @@ impl PlayWindowApp {
             }
         }
         let mut draws = Vec::new();
-        for p in &placements {
+        for p in placements {
             let Some(pack_index) = p.pack_index else {
                 continue;
             };
@@ -5038,7 +5108,7 @@ impl PlayWindowApp {
         let Some(res) = self.scene_res.take() else {
             return;
         };
-        let (vram_opt, font_opt, meshes, tmd_data, tmd_src_index, lo, hi) = {
+        let (vram_opt, font_opt, meshes, tmd_data, tmd_src_index, lo, hi, world_map_hf) = {
             let Some(r) = self.win.renderer.as_ref() else {
                 self.scene_res = Some(res);
                 return;
@@ -5092,13 +5162,61 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("TMD upload skipped: {e:#}"),
                 }
             }
-            (vram, font, meshes, tmd_data, tmd_src_index, lo, hi)
+            // World-map continent ground: build the heightfield surface from
+            // the walk `.MAP` floor grid (correct model — the slot-1 pack
+            // meshes are only the landmarks, not a per-cell ground mesh) and
+            // upload it with a provisional uniform ground texel. Texturing
+            // per-tile (record +0x14 -> atlas UV) is a documented follow-up.
+            let mut world_map_hf: Option<UploadedVramMesh> = None;
+            let is_world_map = self
+                .session
+                .host
+                .scene
+                .as_ref()
+                .is_some_and(|s| legaia_engine_core::scene::is_world_map_scene(&s.name));
+            if is_world_map
+                && let Some(scene) = self.session.host.scene.as_ref()
+                && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
+                && !hf.indices.is_empty()
+            {
+                let (cba, tsb, uv) =
+                    first_textured_atlas_texel(&res.tmds).unwrap_or((0, 0, [0, 0]));
+                let vmesh = heightfield_to_vram_mesh(&hf, cba, tsb, uv);
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        log::info!(
+                            "play-window: world-map heightfield {} quads ({} verts)",
+                            hf.quad_count(),
+                            hf.positions.len()
+                        );
+                        world_map_hf = Some(m);
+                    }
+                    Err(e) => log::warn!("heightfield upload skipped: {e:#}"),
+                }
+            }
+            (
+                vram,
+                font,
+                meshes,
+                tmd_data,
+                tmd_src_index,
+                lo,
+                hi,
+                world_map_hf,
+            )
         };
         // Resolve the field static-geometry placement draws: each placed
         // environment object -> its scene-pack mesh -> a world transform.
         // Built here (not per-frame) because the placement table + pack are
         // fixed for the scene; the field draw branch just replays the list.
         let field_placement_draws = self.resolve_field_placement_draws(&res, &tmd_src_index);
+        let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Keep a clean CPU copy of the scene VRAM so a battle can inject
         // monster textures into a throwaway clone and restore this on exit.
         self.cpu_vram_base = Some(res.vram.clone());
@@ -5206,6 +5324,8 @@ impl PlayWindowApp {
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         self.field_placement_draws = field_placement_draws;
+        self.world_map_terrain_draws = world_map_terrain_draws;
+        self.world_map_heightfield = world_map_hf;
         if lo[0].is_finite() {
             self.scene_aabb = (lo, hi);
         }
@@ -6945,14 +7065,28 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             (px, pz)
                         };
+                        // Walk view frames a fixed WORLD-space radius around the
+                        // player rather than the (small, object-local) kingdom-
+                        // pack AABB - the continent terrain now draws at world
+                        // tile coordinates (`field_placement_draws`), so the
+                        // pack-AABB radius would frame only the one tile under
+                        // the player. Keep the box centred at the pack-AABB
+                        // centre (the pan re-centres it on the player) and widen
+                        // it; top-view keeps the full-pack framing for the
+                        // overhead continent sweep.
+                        let (cam_lo, cam_hi) = if walk_mode {
+                            const WALK_HALF: f32 = 3200.0;
+                            let cx = (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5;
+                            let cz = (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5;
+                            (
+                                [cx - WALK_HALF, self.scene_aabb.0[1], cz - WALK_HALF],
+                                [cx + WALK_HALF, self.scene_aabb.1[1], cz + WALK_HALF],
+                            )
+                        } else {
+                            (self.scene_aabb.0, self.scene_aabb.1)
+                        };
                         legaia_engine_render::window::world_map_camera_mvp(
-                            self.scene_aabb.0,
-                            self.scene_aabb.1,
-                            az,
-                            zoom,
-                            pan_x,
-                            pan_z,
-                            aspect,
+                            cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
                         )
                     } else if let Some((look_at, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
@@ -7062,18 +7196,50 @@ impl ApplicationHandler for PlayWindowApp {
                     if self.boot_ui.is_active() {
                         // Boot UI is fullscreen - suppress 3D draws.
                     } else if in_world_map {
-                        // World map has no per-actor bindings: draw the whole
-                        // loaded kingdom mesh pack at its pack-local
-                        // coordinates (Y-flipped to match the geometry
-                        // convention). Per-mesh world placement from the live
-                        // actor table is a separate, still-open RE thread; the
-                        // meshes render where the pack puts them.
-                        let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        for mesh in &self.meshes {
+                        // World-map continent = two layers, both in the shared
+                        // player / entity-marker world frame:
+                        //
+                        // 1. The **ground** is a heightfield surface
+                        //    (`world_map_heightfield`) built from the walk
+                        //    `.MAP` floor grid (`Scene::walk_heightfield`,
+                        //    elevation per `FUN_80019278`). Texturing is
+                        //    provisional (a uniform ground texel) until the
+                        //    per-tile `+0x14`->atlas-UV mapping is pinned.
+                        // 2. The sparse **placed landmarks** (trees / mountains
+                        //    / castle) are slot-1 pack meshes positioned per
+                        //    occupied tile (`world_map_terrain_draws`, the
+                        //    `flags & 0x4` set resolved via record[+0x10]+prefix).
+                        //
+                        // The earlier per-cell pack-mesh sweep that stamped a
+                        // mesh on every `0x1000` cell was wrong (it flooded the
+                        // map with pool-5; see docs/subsystems/world-map.md).
+                        let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                        if let Some(hf_mesh) = self.world_map_heightfield.as_ref() {
                             draws.push(SceneDraw {
-                                mesh,
-                                mvp: cam * model,
+                                mesh: hf_mesh,
+                                mvp: cam * yflip,
                             });
+                        }
+                        for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
+                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * *model,
+                                });
+                            }
+                        }
+                        // Last-resort fallback: nothing resolved at all -> draw
+                        // the whole pack at pack-local coords so the map isn't
+                        // blank.
+                        if self.world_map_heightfield.is_none()
+                            && self.world_map_terrain_draws.is_empty()
+                        {
+                            for mesh in &self.meshes {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * yflip,
+                                });
+                            }
                         }
                     } else {
                         // Static environment geometry: draw each placed
@@ -7202,6 +7368,55 @@ impl ApplicationHandler for PlayWindowApp {
                     if let Some(mesh) = effect_billboard.as_ref() {
                         draws.push(SceneDraw { mesh, mvp: cam });
                     }
+                    // World-map overlay lines: a kind-coded upright marker for
+                    // each placed entity (portal / NPC / encounter zone, from
+                    // `World::world_map_entity_markers`) plus the player marker
+                    // (`World::world_map_player_marker`) - the player's own mesh
+                    // isn't drawn in world-map mode. Both build into one Lines
+                    // mesh, routed through the same overlay slot as the effect
+                    // outlines (mutually exclusive: no effects spawn on the
+                    // world map). Without this the installed entities + player
+                    // carry positions but never appear on screen.
+                    let world_map_entity_lines = if in_world_map && !self.boot_ui.is_active() {
+                        let markers = self.session.host.world.world_map_entity_markers();
+                        let mut pos: Vec<[f32; 3]> = Vec::new();
+                        let mut col: Vec<[u8; 4]> = Vec::new();
+                        let mut idx: Vec<u32> = Vec::new();
+                        if !markers.is_empty() {
+                            let (p, c, i) = world_map_entity_line_geometry(
+                                &markers,
+                                self.scene_aabb.0,
+                                self.scene_aabb.1,
+                            );
+                            pos = p;
+                            col = c;
+                            idx = i;
+                        }
+                        if let Some(player) = self.session.host.world.world_map_player_marker() {
+                            let (p, c, i) = world_map_player_line_geometry(
+                                &player,
+                                self.scene_aabb.0,
+                                self.scene_aabb.1,
+                            );
+                            let base = pos.len() as u32;
+                            pos.extend(p);
+                            col.extend(c);
+                            idx.extend(i.into_iter().map(|v| v + base));
+                        }
+                        if idx.is_empty() {
+                            None
+                        } else {
+                            match r.upload_lines(&pos, &col, &idx) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    log::warn!("world-map overlay marker lines upload: {e:#}");
+                                    None
+                                }
+                            }
+                        }
+                    } else {
+                        None
+                    };
                     // Effect 3D models (`etmd.dat`): spell effects like Tail
                     // Fire are small Gouraud-shaded `etmd` meshes textured by
                     // the resident `etim` texels, not billboards. Build a
@@ -7250,7 +7465,10 @@ impl ApplicationHandler for PlayWindowApp {
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
-                        overlay_lines: effect_lines.as_ref().map(|m| (m, cam)),
+                        overlay_lines: world_map_entity_lines
+                            .as_ref()
+                            .or(effect_lines.as_ref())
+                            .map(|m| (m, cam)),
                         overlay_sprites: sprites_slot_1,
                         overlay_sprites_2: sprites_slot_2,
                         overlay_text: Some(&overlay),
@@ -7372,6 +7590,155 @@ fn effect_sprite_line_geometry(
             idx.push(base + b);
         }
     }
+    (pos, col, idx)
+}
+
+/// RGBA colour of a world-map entity marker, keyed by its kind: portals
+/// (town/dungeon entrances) cyan, NPCs green, encounter zones warm red.
+fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntityKind) -> [u8; 4] {
+    use legaia_engine_core::world::WorldMapEntityKind as K;
+    match kind {
+        K::Portal => [0, 200, 255, 255],
+        K::Npc => [80, 220, 80, 255],
+        K::EncounterZone => [230, 80, 40, 255],
+    }
+}
+
+/// Build a LineList for the placed overworld entities: one upright marker per
+/// entity (a vertical post plus a small base cross), colour-coded by kind, so
+/// portals / NPCs / encounter zones are locatable on the world map. Sized
+/// relative to the scene AABB so the markers read at any map scale.
+///
+/// Marker geometry uses the same Y-flip convention as
+/// [`PlayWindowApp::actor_model`] (local "up" `+Y` renders toward world `-Y`,
+/// which the world-map camera shows as screen-up), so the post stands upright.
+/// The markers share the player's coordinate frame (both come from the scene
+/// The `(cba, tsb, [u, v])` of the first textured primitive across a scene's
+/// resolved TMD pool — a real slot-0-atlas ground texel, used as the
+/// **provisional** uniform texture for the world-map heightfield surface until
+/// the per-cell `+0x14`→atlas-UV mapping is pinned. `None` if no textured prim
+/// exists (the caller then renders the heightfield flat / untextured).
+fn first_textured_atlas_texel(
+    tmds: &[legaia_engine_core::scene_resources::ResolvedTmd],
+) -> Option<(u16, u16, [u8; 2])> {
+    for rtmd in tmds {
+        for o in &rtmd.tmd.objects {
+            for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+                &rtmd.raw,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            ) {
+                for p in &g.prims {
+                    if let Some(&(u, v)) = p.uvs.first() {
+                        return Some((p.cba, p.tsb, [u, v]));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`], applying a single
+/// provisional `(cba, tsb, uv)` to every vertex (uniform ground texel). Normals
+/// are left at the `[0,0,0]` sentinel so the shader derives screen-space
+/// normals (flat-lit). Geometry is faithful (elevation from the floor grid);
+/// per-tile texturing is a documented follow-up.
+fn heightfield_to_vram_mesh(
+    hf: &legaia_asset::field_objects::WalkHeightfield,
+    cba: u16,
+    tsb: u16,
+    uv: [u8; 2],
+) -> legaia_tmd::mesh::VramMesh {
+    let n = hf.positions.len();
+    legaia_tmd::mesh::VramMesh {
+        positions: hf.positions.clone(),
+        uvs: vec![uv; n],
+        cba_tsb: vec![[cba, tsb]; n],
+        normals: vec![[0.0, 0.0, 0.0]; n],
+        indices: hf.indices.clone(),
+    }
+}
+
+/// MAN), so they sit correctly relative to the player even while the kingdom
+/// terrain mesh renders at its own pack-local coordinates.
+fn world_map_entity_line_geometry(
+    markers: &[legaia_engine_core::world::WorldMapEntityMarker],
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
+    let diag = (Vec3::from(aabb_hi) - Vec3::from(aabb_lo))
+        .length()
+        .max(1.0);
+    let post_h = diag * 0.06;
+    let arm = diag * 0.02;
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(markers.len() * 6);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(markers.len() * 6);
+    let mut idx: Vec<u32> = Vec::with_capacity(markers.len() * 6);
+    for m in markers {
+        let [x, y, z] = m.world_pos;
+        let c = world_map_entity_marker_color(m.kind);
+        let base = pos.len() as u32;
+        // 0: base, 1: top (up = world -Y under the geometry convention),
+        // 2..=5: base-cross arm ends along +/-X and +/-Z.
+        let verts = [
+            [x, y, z],
+            [x, y - post_h, z],
+            [x - arm, y, z],
+            [x + arm, y, z],
+            [x, y, z - arm],
+            [x, y, z + arm],
+        ];
+        for v in verts {
+            pos.push(v);
+            col.push(c);
+        }
+        // Vertical post + the two base-cross segments.
+        for &(a, b) in &[(0u32, 1u32), (2, 3), (4, 5)] {
+            idx.push(base + a);
+            idx.push(base + b);
+        }
+    }
+    (pos, col, idx)
+}
+
+/// Build a LineList for the overworld player marker: a taller upright post (so
+/// the player reads above the kind-coded entity markers), a base cross, and a
+/// facing tick pointing in the player's heading. White-yellow, sized relative
+/// to the scene AABB. Same Y-flip convention as the entity markers.
+fn world_map_player_line_geometry(
+    marker: &legaia_engine_core::world::WorldMapPlayerMarker,
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
+    let diag = (Vec3::from(aabb_hi) - Vec3::from(aabb_lo))
+        .length()
+        .max(1.0);
+    let post_h = diag * 0.09;
+    let arm = diag * 0.025;
+    let tick = diag * 0.05;
+    let [x, y, z] = marker.world_pos;
+    let c = [255u8, 230, 60, 255];
+    // Heading: PSX 12-bit angle, 0 = +Z, quarter turn (1024) = +X.
+    let angle = (marker.facing as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = angle.sin_cos();
+    let verts = [
+        [x, y, z],                           // 0 base
+        [x, y - post_h, z],                  // 1 top
+        [x - arm, y, z],                     // 2 -X arm
+        [x + arm, y, z],                     // 3 +X arm
+        [x, y, z - arm],                     // 4 -Z arm
+        [x, y, z + arm],                     // 5 +Z arm
+        [x + sin * tick, y, z + cos * tick], // 6 facing tick end
+    ];
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(7);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(7);
+    for v in verts {
+        pos.push(v);
+        col.push(c);
+    }
+    // Post + base-cross (X/Z arms) + facing tick.
+    let idx = vec![0, 1, 2, 3, 4, 5, 0, 6];
     (pos, col, idx)
 }
 
@@ -7674,11 +8041,21 @@ fn cmd_play_window_with_record(
         // every TIM, as retail's field loader DMAs the whole atlas - the
         // town meshes sample texture pages across all of VRAM, so a
         // render-targeted upload drops most of their prims.
+        // World-map scenes (`map\d\d`) draw the kingdom-bundle slot-1
+        // landmark pack, not the generic field sweep. Mirror the host's
+        // `enter_field_scene` kind selection so the rendered meshes match the
+        // gameplay-side resources (otherwise the window draws the Field-mode
+        // 2-mesh fallback while the host loaded the full 40-TMD pack).
+        let load_kind = if legaia_engine_core::scene::is_world_map_scene(scene) {
+            SceneLoadKind::WorldMap
+        } else {
+            SceneLoadKind::Field
+        };
         let (res, _stats) = SceneResources::build_targeted_with_options(
             s,
             &shared_refs,
             BuildOptions {
-                kind: SceneLoadKind::Field,
+                kind: load_kind,
                 upload_all_tims: true,
             },
         )?;
@@ -7878,6 +8255,8 @@ fn cmd_play_window_with_record(
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
         field_placement_draws: Vec::new(),
+        world_map_terrain_draws: Vec::new(),
+        world_map_heightfield: None,
         cpu_vram_base: None,
         prev_scene_mode: None,
         monster_archive: None,

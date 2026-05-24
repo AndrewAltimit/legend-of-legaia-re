@@ -260,9 +260,12 @@ remap retail's `func_0x800467e8` applies (it feeds the pad through the camera
 yaw the renderer uses). `World::world_map_camera_relative_bits(azimuth, sx, sy)`
 rotates the screen delta into world space against the same azimuth
 [`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs) frames
-the eye with (`eye = center + (d·cosθ, -0.7d, d·sinθ)`). Because the renderer's
-Y-down convention inverts the on-screen vertical axis relative to the eye→centre
-direction, the world→screen axes are taken from the **real camera matrix, not a
+the eye with (`eye = center + (d·cosθ, +0.7d, d·sinθ)`). The kingdom pack is
+drawn Y-flipped (`scale(1,-1,1)`, PSX Y-down → renderer Y-up), so the camera
+frames the **flipped** Y range and sits at *positive* Y looking down on the
+terrain. Because that overhead view inverts
+the on-screen vertical axis relative to the eye→centre direction, the
+world→screen axes are taken from the **real camera matrix, not a
 hand-derived guess**: a disc-free projection test
 (`crates/engine-shell/tests/world_map_camera_remap.rs`) projects the chosen
 world direction back through `world_map_camera_mvp` and asserts it moves the
@@ -343,6 +346,236 @@ NPC placement installs a matching
 [`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) **with its spawn
 position** (Plain placements are skipped). So overworld portals + NPCs are
 **disc-sourced**, not synthetic.
+
+#### Loading the kingdom geometry (engine port)
+
+The engine port loads the scene's **kingdom-bundle slot-1 landmark TMD pack**
+(Drake 40, Sebacus 36, Karisto 56 TMDs), textured by the slot-0 TIM atlas. When
+`SceneHost::enter_field_scene` loads a `map\d\d` scene it selects
+[`SceneLoadKind::WorldMap`], and [`SceneResources::build_targeted_with_options`]
+decodes slot 1 (via [`legaia_asset::kingdom_bundle`] + [`legaia_asset::pack`])
+into the TMD pool and slot 0 into the VRAM upload set, **instead of** the generic
+raw/LZS `tmd_scan` sweep. The generic sweep can't follow the LZS-compressed
+descriptor table, so before this it picked up only a handful of stray meshes —
+the historical "the world map looks like a battle map" symptom. Only the
+scene's primary kingdom entry contributes; the sub-area sibling entries are
+skipped so they neither leak stray meshes nor inflate `scene_aabb`.
+
+**The retail load mechanism (pinned).** The `DAT_8007C018` global TMD pointer
+table that the world-map tile dispatcher reads is filled by a single
+descriptor-walk: the per-scene field initializer `FUN_801D6704` runs
+`FUN_80020118` (party meshes → `[0..4]` via `FUN_8001E890`) then `FUN_80020224`,
+which walks the scene's main field file (streamed into `_DAT_8007b85c`) and
+dispatches every descriptor through `FUN_8001f05c`. **Only dispatcher cases
+`0x02` (TMD pack) and `0x09` (bare TMD) install** into `DAT_8007C018` via
+`FUN_80026B4C`; the type-`0x05` slot-4 "MOVE" case only allocates a buffer and
+never installs — so slot-4 is *not* the terrain-mesh source.
+
+**The walk-view pool (pinned).** A real `map01` walk-view capture (game mode
+`0x03`, standing on the Drake overworld) settles `DAT_8007C018` to exactly **45
+entries**: `[0..4]` = 5 party meshes (heap addresses ~`0x8014xxxx`), `[5..44]` =
+**the 40-mesh slot-1 landmark pack** (`prefix = 5`, install count 45). So the
+walk-view pool *is* the landmark pack the port already loads. (0085's and 0093's
+slot-0 atlases target the *same* VRAM pages, so the walk-view and overview pools
+are mutually-exclusive sets that clobber each other if co-loaded — see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
+
+Parsed live (absolute-pointer-fixed-up TMDs), the 40 scene meshes are all
+**small object-local tile/prop meshes** (dx/dz ≤ ~768 = a few 128-unit tiles,
+centred near origin, Y ≤ 0) — not one map-spanning stage. These 40 are the
+**landmark layer** (trees, mountains, the castle); they are *not* the continent
+ground, which is a procedural heightfield (see below).
+
+**Walk view ≠ overview — different pools, different placement.** The two retail
+sweeps over the `.MAP` object grid serve two different render modes:
+
+- **Overview** (top-down, game mode `0x0D`): `FUN_801F69D8` over the
+  [`CELL_VISIBLE`](../../crates/asset/src/field_objects.rs) (`0x2000`) cells.
+  Mesh = record `+0x10` geometry id (Drake: 134 distinct records, `+0x10` up to
+  63/105) → indexes the *larger* overview pack. This is what
+  [`legaia_asset::field_objects::parse_terrain_tiles`] + `pack_mesh_index`
+  models, and it is correct **for the overview pool only**.
+- **Walk** (game mode `0x03`): the bulk continent ground is **not** a per-cell
+  pack-mesh sweep at all — it is a procedural heightfield (corner heights from
+  the `+0x4000` floor-nibble grid, confirmed by `FUN_80019278`; see below). The
+  `.MAP` records' `+0x10` field is used only by the sparse placed-landmark layer
+  (`FUN_8003A55C`, `flags & 0x4`); for the bulk ground cells `+0x10` is 0.
+
+The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
+interactive objects (distance-culled to ~14 live actors in the capture; most
+live actors are script-spawned, not from the placed-flag set). It allocates via
+`FUN_80024c88` → `FUN_80020de0` (free-list `FUN_80020454`, pool `_DAT_8007c354`),
+stores the record index at actor `+0x60`, and leaves the mesh chain `+0x44` at
+0; the mesh is resolved from the record index by the scene draw loop (resolver
+not yet pinned). These are props/entities, not the bulk continent.
+
+#### Placing the continent terrain (engine port)
+
+The kingdom slot-1 meshes are object-local, so the continent must be assembled
+by **positioning** them per tile. The **overview** layer is modelled today:
+
+- **Overview terrain** ([`Scene::field_terrain_tiles`] →
+  `resolve_world_map_terrain_draws`): the `FUN_801F69D8` visible-bit
+  (`0x2000`) cells (Drake 970, Sebacus 184, Karisto 161), mesh via record
+  `+0x10`. This targets the *overview* pack; against the 40-mesh walk pool the
+  high indices resolve to no mesh.
+- **Interactive objects** ([`Scene::field_object_placements`] →
+  `resolve_field_placement_draws`): the placed-flag (`0x4`) records (Drake 51,
+  Sebacus 20, Karisto 24), the `FUN_8003A55C` set.
+
+Both resolve through `resolve_placement_draws`: each tile draws the pack mesh at
+`(col*0x80 + x_off, floor_height + y_off, row*0x80 + z_off)`, Y-flipped, in the
+shared player / entity-marker world frame. Positions match live actor positions
+from a top-down (`game_mode 0x0D`) save state.
+
+**Walk-view placement mechanism (traced).** A walk capture shows the continent
+is drawn by the **actor system**, not a flat table. The per-actor render
+dispatcher `FUN_8001ADA4` (driven by `FUN_80016444` → `FUN_8001d140`) switches on
+`actor[+0x56]`; **case 5** draws `actor[+0x44]` as a *mesh chain* whose entries
+point at `pool_tmd + 0xc + obj*0x1c` (the TMD object headers), so **one actor
+draws one pool TMD**. The terrain/object actors are spawned by `FUN_8003A55C`
+(the `.MAP` object-grid placer) into pool `_DAT_8007c354`, with `actor[+0x60]` =
+the `.MAP` grid record index and `actor[+0x90]` = the object's MAN interaction
+script. A direct walk of the live render list (head `*(0x8007C354) = 0x80083BCC`,
+via node `+0x0`; for each actor `+0x56` = render mode, `+0x60` = record index,
+`+0x44` = mesh chain whose first entry equals `DAT_8007C018[i] + 0xc`) gives the
+`rec → pool` pairs: `349→11, 414→36, 430→34, 474→21, 411→19, 409→7, …` — the pool
+is `actor+0x64` (see below), matched exactly 14/14.
+
+**The per-object pool index is `record[+0x10] + prefix`** (pinned via
+`ghidra/scripts/find_mesh_chain_writer.py`, confirmed 14/14 against the live
+render list). The chain `actor+0x44` is built by `FUN_80024d78` from
+`DAT_8007C018[ *(u16*)(actor+0x64) ]` (the `-0x7ff83fe8` constant resolves to
+`0x8007C018`): `chain[0] = tmd[+8]` (object count), `chain[1+i] = tmd+0xc+i*0x1c`.
+So `actor+0x64` is the `DAT_8007C018` pool index, and `FUN_80020f88` sets it as
+
+```text
+actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
+           = .MAP_record[obj_idx].+0x10 (model) + prefix          (prefix = 5)
+```
+
+i.e. **`pool = record[+0x10] + prefix`** — the existing
+[`legaia_asset::field_objects::pack_mesh_index`] (`+0x10`) *plus* the prefix.
+Confirmed at the real live `.MAP` buffer `_DAT_1f8003ec = 0x80139530`
+(`474 → 16+5=21`, `349 → 6+5=11`, `414 → 31+5=36`, `430 → 29+5=34`,
+`411 → 14+5=19`). `FUN_80024e08(actor, model)` is the direct set-model primitive
+for script-driven (non-`.MAP`-grid) actors. The **walk continent grid gate is
+cell bit `0x1000`** (15389 cells in the live grid), distinct from the overview's
+`0x2000` (304 cells) — so the walk sweep is `(cell & 0x1000)`, not
+`parse_terrain_tiles`'s `0x2000`. MAN partition 1 supplies the NPC/portal/party
+placements (decoded via
+[`legaia_asset::man_section::ManFile::actor_placements`]).
+
+**The continent ground is a procedural heightfield, not instanced meshes.**
+This is confirmed by **`FUN_80019278`** (SCUS, always-resident — unambiguous, no
+overlay aliasing), the bilinear **ground-height sampler**: from an entity's XZ
+(`actor+0x14/+0x18`) it reads the object-grid cell (`+0x8000`, tests the `0x1000`
+walk bit and the `0x1800` mask, sets the actor's `0x800000` off-map flag), then
+reads the 2×2 floor-nibble block at `+0x4000` (`grid[0],[1],[0x80],[0x81]`, each
+`& 0xf`) and **bilinearly interpolates** the floor height from the four corner
+LUT values (`DAT_1f80035c[nibble]`) weighted by the sub-tile position
+(`pos & 0x7f`), `>>0xe` (÷128²). So the `+0x4000` grid is **terrain elevation**,
+the `0x1000`-gated continent is a smooth heightfield surface, and the slot-1
+**pack meshes are only the sparse placed landmarks** (the `pool = record[+0x10] +
+prefix` set above, spawned by `FUN_8003A55C` gated on `flags & 0x4`).
+
+The visible ground is drawn as textured heightfield quads by the per-frame
+field/world controller (a live prim-pool write-probe,
+`dump_field_overlay_terrain_emitter.py`, caught `FUN_801F5748` writing the pool
+during a world-map transition), but the **exact terrain-quad emitter is not yet
+cleanly isolated** — the `0x801F76xx` terrain code aliases across overlays
+(muscle_dome / dance / fishing / world-map map *different* code to those VAs;
+the same VA in the 0897 field overlay is camera/region-scroll), so treat any
+single emitter-address attribution with caution. `FUN_80019278` (the height
+math) is the reliable anchor and is all the port needs for correct geometry.
+
+**Engine status.** The continent ground now renders as a **heightfield
+surface**: [`Scene::walk_heightfield`] →
+[`legaia_asset::field_objects::build_walk_heightfield`] sweeps the `0x1000`
+cells and emits one quad per cell, each corner's Y taken from the `+0x4000`
+floor-nibble grid via the floor LUT (the `FUN_80019278` math). `play-window`
+uploads it and draws it as the ground, with the placed landmarks
+([`Scene::walk_object_placements`], the `flags & 0x4` slot-1 pack meshes via
+`record[+0x10]+prefix`) on top. Verified against the real disc: map01/02/03
+build dense (>10k-quad) heightfields with genuine elevation variation. The old
+`walk_terrain_tiles` per-cell pack-mesh sweep — which flooded ~97% of cells
+with pool-5 because the bulk-terrain records carry `+0x10 == 0` — is removed.
+**Open (texturing):** the heightfield is drawn with a *provisional* uniform
+ground texel (the first textured atlas prim). Faithful per-tile texturing needs
+the per-cell tile id (`record +0x14`, range 0..63) mapped to a slot-0 atlas
+page + UV, which in turn needs the walk/world overlay's ground emitter isolated
+(blocked by overlay aliasing — the `0x801F76xx` terrain code differs per
+overlay). The decoded slot-0 atlas itself textures correctly (real terrain
+tiles decode through each prim's CLUT; `missing_page = 0`).
+
+The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
+**dual-mode**, gated on two globals:
+
+```c
+if (_DAT_8007b868 == 0 && _DAT_8007b8c2 != 0)   // RETAIL
+    FUN_8003e8a8(param_3, 1);   // param_3 = PROT entry index
+else                                            // DEV-HOST
+    FUN_8003e6bc("DATA\FIELD\<scene>.MAP", ...) // break 0x103 fopen on the dev PC
+```
+
+On **retail** (`_DAT_8007b8c2 != 0`, `_DAT_8007b868 == 0` — both confirmed live)
+the `.MAP` is resolved purely by **PROT entry index**: `param_3` is read by the
+field-init caller (`FUN_801d6704` @ `0x801d6ae8`) from the global at
+**`0x80084540`** (the word right before the scene-name string at `0x80084548`),
+and `FUN_8003e8a8` indexes the in-RAM PROT TOC at `0x801c70f0`
+(`toc[index+2]` = start_lba; the trace verifies the `0x801c70f0` constant inside
+`FUN_8003e8a8`). So the entry a scene loads is pinned by `0x80084540`, and a live
+Drake walk capture reads **`0x80084540 = 0x55 = 85`** → the walk `.MAP` is **PROT
+CDNAME/runtime index 85**, which `FUN_8003e8a8` resolves to `toc[87] = 3243` →
+**PROT.DAT offset `0x655800`** — and that region is the `.MAP` records+grid
+**raw** (99.7% byte-identical to the live buffer; records & walkability 100%, no
+compression). NB the per-entry *extractor* mis-slices this: its `0085_map01.BIN`
+is a `[u16 count=46][46×u16 offsets]` field-object/script pack at `0x668000`,
+**not** the `.MAP`; the real `.MAP` is filed under the overlapping manifest entry
+83 (the extractor's entry numbering is offset ~2 from the runtime `toc[p+2]`).
+
+The **`break 0x103`** path (`FUN_800608f0`) is the **dev-host `fopen`** — a PsyQ
+host-link open of a real `DATA\FIELD\<scene>.MAP` (+ `<scene>.PCH` at `+0x12000`,
++ `\efect.dat`; extensions from `DAT_8007b3bc`/`DAT_8007b3c4`, scene name from
+`0x80084548`) on the *developer's PC*. It carries **no** extension→PROT mapping,
+the retail disc has no ISO9660 `DATA\FIELD\` tree, and it is never taken when
+`_DAT_8007b8c2 != 0`. So the resolver to read for retail is the `0x80084540`
+PROT-index dispatch, not the trap. The walk/overview split is just the scene name
+→ index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
+`0768..0772`). So the walk `.MAP` is the **raw** records+grid region at PROT.DAT
+`0x655800` (`toc[87]`, no compression); the landmark mesh resolver is `pool =
+record[+0x10] + prefix`, and the bulk ground is the `0x1000`-gated heightfield
+(Engine status, above).
+
+#### Rendering the placed entities
+
+[`World::world_map_entity_markers`](../../crates/engine-core/src/world.rs) is the
+render-agnostic seam for the installed placements: one
+`WorldMapEntityMarker { world_pos, kind }` per entity that carries a position,
+pairing the placement coordinate with its coarse `WorldMapEntityKind`
+(Portal / Npc / EncounterZone). The marker `y` is the player actor's current
+plane (the placements are 2D), so markers sit on the walking plane. The native
+`play-window` draws each as a kind-coded upright marker (a vertical post plus a
+small base cross, colour-keyed: portals cyan, NPCs green, encounter zones red)
+through the Lines pipeline — the same overlay slot the effect outlines use, and
+mutually exclusive with them since no effects spawn on the world map. The
+markers share the player's coordinate frame (both come from the scene MAN), so
+they read correctly relative to the player even while the kingdom terrain mesh
+still renders at its own pack-local coordinates (binding each placement to its
+own actor model is the still-open per-entity mesh thread). Config-only installs
+(no disc placements) produce no markers, so a camera-only world map draws
+nothing extra.
+
+The player itself is drawn the same way:
+[`World::world_map_player_marker`](../../crates/engine-core/src/world.rs)
+returns the player actor's position plus heading (the player's own mesh is not
+drawn in world-map mode), and `play-window` draws a distinct white-yellow
+marker - a taller post, a base cross, and a facing tick pointing in the
+heading. Because the world-map walk uses the camera-relative direction bits
+rather than the field `decode_field_direction`, `step_world_map_locomotion`
+records the heading into the actor's `render_26` field itself (the same field
+the field path stores), so the facing tick tracks the walk direction
+deterministically. The player + entity markers build into one Lines mesh.
 
 #### Auto-engage on walk-over
 
@@ -457,13 +690,14 @@ world-map actor's `actor[+0x44]` mesh chain points into Drake's
 walks once per frame through `FUN_8002735C` (the 60-GTE Legaia TMD
 renderer). That accounts for the landmark prims in the GPU pool.
 
-### Bulk continent terrain emit mechanism (pinned)
+### Top-view bulk-terrain render path (overlay-replaced per-prim renderers)
 
-The bulk continent prims are not produced by a procedural emitter
-sibling of `FUN_801D7EA0`.
-They come out of ordinary case-5 TMD rendering whose per-prim dispatch
-is **mode-switched** to overlay-resident renderers when the world-map
-overlay is paged in. `FUN_80043390` (the SCUS-side per-prim TMD
+This is the **top-view / overview** render path (game mode `0x0D`), distinct
+from the walk-view continent (a heightfield, above). The top-view's bulk terrain
+prims are not produced by a procedural emitter sibling of `FUN_801D7EA0`; they
+come out of ordinary case-5 TMD rendering (of the overview-pool meshes placed
+per cell) whose per-prim dispatch is **mode-switched** to overlay-resident
+renderers when the top-view overlay is paged in. `FUN_80043390` (the SCUS-side per-prim TMD
 renderer at the leaf of the actor-mesh-chain walk) selects one of two
 function-pointer tables based on `_DAT_1F800394 & 1`:
 
@@ -499,51 +733,13 @@ window stopped at `0x801F0000` (which clipped every leaf address).
 
 #### Per-slot delta vs SCUS sibling
 
-First-pass capstone disassembly (`scripts/disasm-overlay-fn.py --batch
-leaves` against the extended overlay; `--batch scus-siblings` against
-`SCUS_942.54`) shows every overlay leaf is the SCUS sibling body plus a
-**distance-cue fog post-process**. The fog block is inserted between the
-GTE projection and the OT packet write; its shape is constant across all
-eight slots:
-
-```mips
-; --- common GTE projection (identical to SCUS sibling) ---
-mtc2  v0, v1, v2                                ; vertex coords -> GTE
-GTE.rtpt                                         ; perspective transform
-GTE.nclip                                        ; backface test
-GTE.avsz3 / avsz4                                ; average Z
-
-; --- fog block (overlay-only) ---
-lbu   s3, -0x2d1(gp)                             ; fog-enable byte
-andi  s3, s3, 0x10                               ; bit 4 = "fog on"
-bnez  s3, fog_path                               ; bypass if cleared
-mfc2  z1, sxyz1; mfc2 z2, sxyz2; mfc2 z3, sxyz3  ; per-vertex Z
-; Z_far = max(z1, z2, z3) >> *(u8 *)(gp+0x90)
-sub/move/branch sequence to pick the max         ; min-of-mins clamp
-lbu   shift, 0x90(gp); srlv Z_far, Z_far, shift
-lw    fog_ref, -0x2e0(gp)                        ; far-plane reference
-lwc2  fog_color, -0x2dc(gp)                      ; fog color -> GTE
-or    cmd, cmd, fog_ref                          ; mix into prim cmd
-mtc2  cmd, rgbc
-GTE.dpcs                                          ; depth-cue single
-; per-vertex RGB LUT tint: indexes lut[Z>>5] from gp-0x2bc
-; for each of the three R,G,B sub-vertices and ADD-writes
-; the result into offsets 8/0xc/0x10 of the OT packet.
-
-; --- common OT write (identical to SCUS sibling) ---
-sw    rgbc,    0(t1)
-sw    p0_xy,   4(t1)
-sw    p1_xy,   8(t1)
-...
-addi  t1, t1, 0x14                                ; stride 20 (5 words)
-bgtz  t3, loop_top
-addi  t3, t3, -1
-j     0x80043580                                  ; tail call to SCUS
-                                                  ; dispatcher continuation
-```
-
-The fog parameters all sit at GP-relative offsets in the per-frame
-camera/render context block accessed through `$t2`:
+Every overlay leaf is its SCUS sibling body plus a **distance-cue fog
+post-process** inserted between the GTE projection and the OT packet write
+(constant shape across all eight slots): per-vertex `Z_far = max(z1,z2,z3) >>
+shift`, mix the far-plane reference into the prim cmd, `dpcs`/`dpct` against the
+fog colour, then a per-Z RGB-LUT tint added into the OT packet. The two textured-
+quad modes (slots 15, 19) use `dpct` (triple); the rest use `dpcs`. The fog
+parameters sit at GP-relative offsets in the per-frame camera/render context:
 
 | GP offset | Role |
 |---|---|
@@ -553,39 +749,10 @@ camera/render context block accessed through `$t2`:
 | `-0x2bc` | Pointer to per-Z fog-tint LUT (2-byte entries, indexed by `Z >> 5`). |
 | `+0x90`  | Z shift exponent (controls how aggressively far-plane Z compresses). |
 
-Each overlay leaf is the SCUS sibling at 60-80 instructions plus
-~60-80 instructions of the fog block, so every leaf roughly doubles in
-size:
+The full per-slot disassembly and the fog-pass implementation are documented in
+[`world-overview-viewer.md`](world-overview-viewer.md), which ports this pass to WebGL.
 
-| Slot | SCUS sibling | Overlay leaf | Overlay-only GTE ops added |
-|---|---|---|---|
-| 12 | `0x80043658` (68 instr) | `0x801F7644` (125 instr) | `dpcs` |
-| 13 | `0x80043768` (84 instr) | `0x801F7838` (155 instr) | `dpcs` |
-| 14 | `0x80043B58` (69 instr) | `0x801F7F78` (136 instr) | `dpcs` |
-| 15 | `0x80043C6C` (90 instr) | `0x801F8198` (175 instr) | `dpct` + `dpcs` |
-| 16 | `0x800438B8` (75 instr) | `0x801F7AA4` (138 instr) | `dpcs` |
-| 17 | `0x800439E4` (93 instr) | `0x801F7CCC` (171 instr) | `dpcs` |
-| 18 | `0x80043DD4` (79 instr) | `0x801F8454` (143 instr) | `dpcs` |
-| 19 | `0x80043F10` (99 instr) | `0x801F8690` (182 instr) | `dpct` + `dpcs` |
-
-The two slots that use `dpct` (Depth-Cue Triple: applies the fog to all
-three current GTE color registers at once) are the textured-quad modes
-(slot 15 and 19) - the rest only need `dpcs` because they emit one color
-per prim. Every leaf ends with `j 0x80043580; addiu $a1, $a1, 0xc` -
-the tail call back to the SCUS dispatcher continuation plus the loop's
-per-prim source-pointer advance.
-
-The capstone dump source lives in `/tmp/leaves/` (overlay) and
-`/tmp/scus-siblings/` (SCUS); regenerate with:
-
-```bash
-scripts/disasm-overlay-fn.py /tmp/overlay_world_map_top_ext.bin \
-    --base 0x801C0000 --batch leaves        --out-dir /tmp/leaves
-scripts/disasm-overlay-fn.py extracted/SCUS_942.54 \
-    --base 0x80010000 --header 0x800 --batch scus-siblings --out-dir /tmp/scus-siblings
-```
-
-This is **why the bulk continent prims didn't show up under a single
+This is **why the top-view bulk-terrain prims don't show up under a single
 emit function**: there isn't one. There are eight per-mode leaves
 called once per TMD primitive across however many actor mesh chains are
 active. The source mesh data is the same kingdom-bundle TMD pack
@@ -610,64 +777,19 @@ need function-pointer dispatch. Ghidra's reference manager misses the
 cross-program call when sweeping the overlay alone; sweep SCUS to
 surface the caller.
 
-#### `FUN_80016444` jal-target audit (background)
-
-Audit of `FUN_80016444`'s direct `jal` targets ([dump]({{ghidra}}/scripts/funcs/80016444.txt))
-finds 12 unique targets across 60 call sites. **None is a bulk-terrain
-emitter on its own** - that conclusion lines up with the dispatch-table
-mechanism documented above (the bulk prims come from many small
-case-5 TMD renders going through the overlay-replaced per-mode
-renderers, not from a single emit function called from this site):
-
-| Target | Calls | Role |
-|---|---:|---|
-| `0x8001a068` | 19 | Actor-list pass dispatcher (8 of the 19 hit at the function head). |
-| `0x8005fb84` | 18 | Early-return block; skipped when submode == 2. |
-| `0x8002519c` | 6 | Per-frame render-pass iterator (5 lists per frame). |
-| `0x8001d140` | 6 | Stack-swap wrapper → `FUN_8001ADA4` (per-actor render dispatcher). |
-| `0x800172c0` | 1 | GTE matrix setup helper (`FUN_80026988(&local_18, 0x1F8003A8)`). |
-| `0x800179c0` | 1 | Small helper. |
-| `0x800188c8` | 1 | Debug-HUD text renderer (`PSX_TEST_PROGRAM` string). |
-| `0x8001d058` | 2 | 48-byte scratchpad / GPU register flush. |
-| `0x8002b688/790` | 2 / 2 | Tiny accessors (60-80 bytes each). |
-| `0x80046978` | 1 | Screen-tint fade emitter (gated on `gp+0x9d4`). |
-| `0x801d7ea0` | 1 | **Horizon emitter** (overlay-resident, single direct call). |
-
-None of these dispatch into a function whose body contains a bulk
-POLY_FT4 loop. The remaining static signals were initially confusing:
-
-- **Static `addprim` hunters find only the horizon emitter inside any
-  world_map overlay variant** (`addprim_emitters_overlay_world_map.bin.txt`,
-  `*_top.bin.txt`, `*_walk.bin.txt` all report exactly one candidate:
-  `FUN_801D7EA0`).
-- **SCUS-side `addprim` candidates** are five non-terrain emitters:
-  `FUN_8002C69C` (HUD sprite batch, 10 sites), `FUN_8006A420` (2 sites),
-  `FUN_8001D424`, `FUN_8001C394`, `FUN_8002B994` - all sprite/digit
-  batchers used by HUD/menu paths.
-
-Both negatives are explained by the **descriptor-table-driven dispatch
-documented above**: the world-map top-view's bulk terrain prims come out
-of `FUN_80043390 → overlay-resident high-mode renderer` where the cmd
-byte is loaded from `DAT_8007326C` (the per-mode descriptor table the
-60-GTE Legaia TMD renderer uses), not built with `lui`/`li` immediates.
-That makes the leaves invisible to addprim hunters, and the overlay
-extraction window stopped at `0x801F0000` so the leaves weren't even in
-the captured binary.
-
-The dynamic prim-pool-writers probe at
-[`scripts/pcsx-redux/autorun_prim_pool_writers.lua`](../../scripts/pcsx-redux/autorun_prim_pool_writers.lua)
-confirms this: top-of-list PC hits land in the
-`0x801F7344..0x801F8DBC` overlay-resident range, exactly the eight
-high-mode renderer addresses pinned by the overlay dispatch table.
-
-The bulk terrain's source mesh data is the same kingdom slot-1 TMD
-pack the landmarks come from. Drake has 40 TMDs in slot 1; the
-`world-overview.json` placement table surfaces 28 unique slot indices,
-but the world-map top-view also walks runtime-positioned character /
-NPC mesh chains (lists `_DAT_8007C354` and friends) - the 73 actors in
-list #2 with mode=5 mesh chains pointing into `0x80128xxx..0x80139xxx`
-(inside the landmark pack RAM range) account for the bulk prims when
-each is rendered through the overlay-replaced renderers.
+There is no single bulk-terrain emit function: the top-view prims come from many
+small case-5 TMD renders going through `FUN_80043390`'s overlay-replaced per-mode
+renderers, where the prim cmd byte is loaded from the descriptor table
+`DAT_8007326C` rather than built with `lui`/`li` immediates. Static `addprim`
+hunters therefore surface only the horizon emitter `FUN_801D7EA0` inside the
+overlay (SCUS-side candidates are all HUD/menu sprite batchers). The dynamic
+prim-pool-writers probe
+([`scripts/pcsx-redux/autorun_prim_pool_writers.lua`](../../scripts/pcsx-redux/autorun_prim_pool_writers.lua))
+confirms it: top-of-list PC hits land in the `0x801F7344..0x801F8DBC`
+overlay-resident range — the eight high-mode renderers pinned by the dispatch
+table above. The source mesh data is the kingdom slot-1 TMD pack the landmarks
+come from, plus the runtime-positioned character/NPC mesh chains in
+`_DAT_8007C354` and siblings.
 
 ### Per-frame render-pass iterator - `FUN_8002519c`
 

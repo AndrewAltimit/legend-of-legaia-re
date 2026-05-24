@@ -60,6 +60,31 @@ pub const OBJECT_GRID_OFFSET: usize = 0x8000;
 pub const OBJECT_INDEX_MASK: u16 = 0x1FF;
 /// Object-record `+0x12` flag bit marking the tile as a placed/visible object.
 pub const FLAG_PLACED: u16 = 0x4;
+/// Object-index-grid cell bit marking the tile as a **visible** terrain cell.
+/// The overhead continent sweep (`FUN_801F69D8`) renders every cell with this
+/// bit set (ground / trees / mountains) - the bulk continent, distinct from
+/// the placed-flag interactive objects [`parse_placements`] returns.
+///
+/// This `0x2000` gate is the **top-down overview** path (game mode `0x0D`,
+/// `FUN_801F69D8`), reading `opmap01.MAP` whose pool is the *larger* overview
+/// pack - so `+0x10` reaches well past `0x3F` there.
+///
+/// **The free-roam *walk* view (game mode `0x03`) uses the same record layout
+/// but a different cell gate, [`CELL_WALK_VISIBLE`] (`0x1000`).** It reads the
+/// per-scene walk `.MAP` (e.g. `map01` walk = PROT entry `0085`), whose `+0x10`
+/// values are small (`0..39`) because the walk pool is 5 party + the 40-mesh
+/// slot-1 landmark pack. The per-object mesh resolution is the same
+/// [`pack_mesh_index`] (`+0x10`) **plus the pack prefix**: the retail path
+/// (`FUN_80020f88` -> `actor+0x64 = record[+0x10] + DAT_8007b6f8`, prefix `= 5`;
+/// `FUN_80024d78` then builds the actor's mesh chain from
+/// `DAT_8007C018[actor+0x64]`) was pinned 14/14 against a live walk capture, so
+/// the walk continent pool index is `FIELD_ACTOR_PACK_BIAS + pack_mesh_index`.
+pub const CELL_VISIBLE: u16 = 0x2000;
+/// Object-index-grid cell bit marking a **walk-view** (game mode `0x03`) visible
+/// continent tile - the free-roam analogue of [`CELL_VISIBLE`]. The Drake walk
+/// `.MAP` grid sets this on ~15k cells (vs ~300 with `0x2000`); see the
+/// `CELL_VISIBLE` docs for the shared `+0x10`-plus-prefix mesh resolution.
+pub const CELL_WALK_VISIBLE: u16 = 0x1000;
 /// Object ids `93..=118` are the "field-actor" band: their mesh is selected
 /// positionally (`pack_index = obj_idx - FIELD_ACTOR_PACK_BIAS`) rather than
 /// from the record's `+0x10` field. These map to the last meshes of the pack.
@@ -220,6 +245,193 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
     out
 }
 
+/// Walk the `128 x 128` object-index grid and return one [`Placement`] per
+/// **visible** tile (cell bit [`CELL_VISIBLE`]), mirroring the overhead
+/// continent sweep `FUN_801F69D8`'s `(cell & 0x2000) != 0` gate.
+///
+/// This is the **bulk continent terrain** - the ground, trees, and mountain
+/// meshes that tile the kingdom - as opposed to [`parse_placements`], which
+/// returns only the placed-flag (`0x4`) interactive / collision objects. A
+/// scene has far more visible terrain tiles than placed objects (a kingdom
+/// overworld tiles most of the walkable continent), so the world-map render
+/// needs this sweep to draw a populated continent rather than a handful of
+/// landmarks.
+///
+/// World position + mesh resolution use the same formulas as
+/// [`parse_placements`]; the only difference is the gate (visible bit instead
+/// of the placed flag) and that the footprint-anchor bounds check is relaxed
+/// to a plain on-grid test (terrain tiles have no interaction footprint).
+/// `obj_idx == 0` cells are skipped (record 0 is the empty/sentinel slot).
+pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
+    parse_terrain_tiles_gated(field_map, CELL_VISIBLE, false)
+}
+
+/// The free-roam **walk** view's bulk continent: [`parse_terrain_tiles`] gated
+/// on [`CELL_WALK_VISIBLE`] (`0x1000`) instead of the overhead-overview's
+/// `0x2000`. A real Drake `map01` walk `.MAP` sets `0x1000` on ~16k cells
+/// (vs ~300 with `0x2000`).
+///
+/// The walk mesh is **`record[+0x10]` uniformly** (retail `FUN_80020f88`:
+/// `actor+0x64 = record[+0x10] + prefix`), so the band-positional fallback in
+/// [`pack_mesh_index`] is bypassed here — some continent tiles reference object
+/// ids in [`FIELD_ACTOR_BAND`], and applying the band rule would push their
+/// pack index past the 40-mesh slot-1 pool. Taking `+0x10` directly keeps every
+/// continent tile in-pool (verified ≤ pool size against a live `map01` walk).
+pub fn parse_walk_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
+    parse_terrain_tiles_gated(field_map, CELL_WALK_VISIBLE, true)
+}
+
+/// Shared object-grid sweep for [`parse_terrain_tiles`] (overview, `0x2000`)
+/// and [`parse_walk_terrain_tiles`] (walk, `0x1000`). `gate` selects the
+/// object-index-grid cell bit that marks a drawn tile; `walk_mesh` selects the
+/// mesh resolution (`true` = `record[+0x10]` directly per `FUN_80020f88`;
+/// `false` = [`pack_mesh_index`] with its field-actor-band fallback).
+pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -> Vec<Placement> {
+    let mut out = Vec::new();
+    let Some(grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
+        return out;
+    };
+    for row in 0..GRID_DIM {
+        for col in 0..GRID_DIM {
+            let cell_off = (row * GRID_DIM + col) * 2;
+            let Some(cell_bytes) = grid.get(cell_off..cell_off + 2) else {
+                continue;
+            };
+            let cell = u16::from_le_bytes([cell_bytes[0], cell_bytes[1]]);
+            if cell & gate == 0 {
+                continue;
+            }
+            let obj_idx = cell & OBJECT_INDEX_MASK;
+            if obj_idx == 0 {
+                continue;
+            }
+            let Some(rec) = ObjectRecord::parse(field_map, obj_idx as usize) else {
+                continue;
+            };
+            let floor_nibble = field_map
+                .get(0x4000 + row * GRID_DIM + col)
+                .map(|b| b & 0x0F);
+            out.push(Placement {
+                obj_idx,
+                col: col as u8,
+                row: row as u8,
+                world_x: world_x(col as u8, rec.x_off),
+                world_z: world_z(row as u8, rec.z_off),
+                y_off: rec.y_off,
+                floor_nibble,
+                pack_index: if walk_mesh {
+                    Some(rec.pack_index_field)
+                } else {
+                    pack_mesh_index(obj_idx, &rec)
+                },
+                flags: rec.flags,
+            });
+        }
+    }
+    out
+}
+
+/// Byte offset of the collision / floor-height grid within the field map file
+/// (`0x80 x 0x80` bytes, 1/tile; low nibble = floor-elevation tier).
+pub const COLLISION_GRID_OFFSET: usize = 0x4000;
+
+/// A triangulated heightfield surface for the world-map walk-view continent
+/// ground — the clean-room analogue of the retail terrain renderer, whose
+/// elevation comes from the `+0x4000` floor-nibble grid (the height math is
+/// pinned by `FUN_80019278`, the SCUS bilinear ground-height sampler: a tile's
+/// low nibble indexes the 16-entry floor LUT, and the surface interpolates
+/// between adjacent tile heights).
+///
+/// This is **not** the per-cell pack-mesh instancing the old
+/// [`parse_walk_terrain_tiles`] modelled (that floods the map with pool-5 mesh
+/// because the bulk-terrain records carry `+0x10 == 0`). The continent ground
+/// is a heightfield surface; the slot-1 pack meshes are only the sparse placed
+/// landmarks ([`parse_placements`]).
+///
+/// Positions are in the same pre-Y-flip world frame the placement draws use
+/// (`world_y = -lut[nibble]`), so the engine applies the same `(1, -1, 1)`
+/// model flip. `tile_id` carries each vertex's source-tile `+0x14` byte (range
+/// `0..63`), retained so a future texture pass can map it to a slot-0 atlas
+/// tile once that mapping is pinned; texturing is **not** resolved here.
+#[derive(Debug, Clone, Default)]
+pub struct WalkHeightfield {
+    /// Per-vertex world position (pre-Y-flip): `(col*128, -lut[nibble], row*128)`.
+    pub positions: Vec<[f32; 3]>,
+    /// Per-vertex source-tile `+0x14` id (`0..63`), the candidate texture
+    /// selector for a later per-tile texture pass.
+    pub tile_ids: Vec<u8>,
+    /// Triangle indices (two triangles per visible cell quad).
+    pub indices: Vec<u32>,
+}
+
+impl WalkHeightfield {
+    /// Number of visible cells (quads) emitted.
+    pub fn quad_count(&self) -> usize {
+        self.indices.len() / 6
+    }
+}
+
+/// Build the walk-view continent ground as a heightfield surface from a field
+/// map file's floor grid (`+0x4000`) gated on the object-grid `0x1000` visible
+/// bit. `lut` is the 16-entry floor-height LUT (from the MAN header). Each
+/// visible cell `(c, r)` emits a quad whose four corners take their Y from the
+/// floor nibble of the corner tile (`-lut[nibble]`), giving a continuous
+/// heightfield (adjacent cells share corner heights). Empty if the map has no
+/// grid.
+pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfield {
+    let mut hf = WalkHeightfield::default();
+    let Some(obj_grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
+        return hf;
+    };
+    // Corner height (pre-Y-flip) from the floor nibble of tile (c, r), clamped
+    // to the grid edge so border cells stay watertight.
+    let corner_y = |c: usize, r: usize| -> f32 {
+        let cc = c.min(GRID_DIM - 1);
+        let rr = r.min(GRID_DIM - 1);
+        let nib = field_map
+            .get(COLLISION_GRID_OFFSET + rr * GRID_DIM + cc)
+            .map(|b| (b & 0x0F) as usize)
+            .unwrap_or(0);
+        -(lut[nib] as f32)
+    };
+    for row in 0..GRID_DIM {
+        for col in 0..GRID_DIM {
+            let cell_off = (row * GRID_DIM + col) * 2;
+            let Some(cell_bytes) = obj_grid.get(cell_off..cell_off + 2) else {
+                continue;
+            };
+            let cell = u16::from_le_bytes([cell_bytes[0], cell_bytes[1]]);
+            if cell & CELL_WALK_VISIBLE == 0 {
+                continue;
+            }
+            // The +0x14 byte of this cell's object record — the per-tile id
+            // (texture selector candidate); 0 when the record is absent.
+            let obj_idx = (cell & OBJECT_INDEX_MASK) as usize;
+            let tile_id = field_map
+                .get(obj_idx * OBJECT_RECORD_STRIDE + 0x14)
+                .copied()
+                .unwrap_or(0);
+            let x0 = (col as i32 * TILE) as f32;
+            let x1 = ((col as i32 + 1) * TILE) as f32;
+            let z0 = (row as i32 * TILE) as f32;
+            let z1 = ((row as i32 + 1) * TILE) as f32;
+            let base = hf.positions.len() as u32;
+            // 4 corners: (c,r) (c+1,r) (c,r+1) (c+1,r+1).
+            hf.positions.push([x0, corner_y(col, row), z0]);
+            hf.positions.push([x1, corner_y(col + 1, row), z0]);
+            hf.positions.push([x0, corner_y(col, row + 1), z1]);
+            hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
+            for _ in 0..4 {
+                hf.tile_ids.push(tile_id);
+            }
+            // Two triangles, standard PSX quad winding (v0,v1,v2)+(v1,v3,v2).
+            hf.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        }
+    }
+    hf
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,6 +483,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_terrain_tiles_emits_visible_cells_regardless_of_placed_flag() {
+        // Record 5: a terrain tile mesh, NOT placed-flagged (flags = 0).
+        let mut map = vec![0u8; 0x12000];
+        let r = &mut map[OBJECT_RECORD_STRIDE * 5..OBJECT_RECORD_STRIDE * 6];
+        r[0x10..0x12].copy_from_slice(&12u16.to_le_bytes()); // pack mesh index
+        // flags stays 0 -> NOT placed (parse_placements would skip it).
+        // Cell (row 10, col 20): visible bit set + record index 5.
+        let cell = OBJECT_GRID_OFFSET + (10 * GRID_DIM + 20) * 2;
+        map[cell..cell + 2].copy_from_slice(&(CELL_VISIBLE | 5).to_le_bytes());
+        // A second cell pointing at record 5 but WITHOUT the visible bit: skipped.
+        let cell2 = OBJECT_GRID_OFFSET + (11 * GRID_DIM + 20) * 2;
+        map[cell2..cell2 + 2].copy_from_slice(&5u16.to_le_bytes());
+
+        // parse_placements drops the unplaced record entirely.
+        assert!(parse_placements(&map).is_empty());
+        // parse_terrain_tiles emits the visible cell (and only it).
+        let t = parse_terrain_tiles(&map);
+        assert_eq!(t.len(), 1, "only the CELL_VISIBLE cell is emitted");
+        assert_eq!(t[0].obj_idx, 5);
+        assert_eq!((t[0].col, t[0].row), (20, 10));
+        assert_eq!(t[0].pack_index, Some(12));
+    }
+
+    #[test]
     fn pack_mesh_index_rule() {
         let mut rec = ObjectRecord::parse(&[0u8; OBJECT_RECORD_STRIDE], 0).unwrap();
         rec.pack_index_field = 15;
@@ -283,5 +519,35 @@ mod tests {
         // Protagonist / NPC ids draw from a different pool.
         assert_eq!(pack_mesh_index(1, &rec), None);
         assert_eq!(pack_mesh_index(3, &rec), None);
+    }
+
+    #[test]
+    fn heightfield_emits_quad_per_visible_cell_with_floor_heights() {
+        let mut map = vec![0u8; 0x12000];
+        // Floor LUT: nibble 2 -> height 80, nibble 5 -> 200 (negated in mesh).
+        let lut = {
+            let mut l = [0i16; 16];
+            l[2] = 80;
+            l[5] = 200;
+            l
+        };
+        // Tile (col 10, row 4): floor nibble 2; mark its object cell walk-visible
+        // with obj_idx 7, and give record 7 a +0x14 tile id of 0x2A.
+        map[COLLISION_GRID_OFFSET + 4 * GRID_DIM + 10] = 0x02;
+        let cell = OBJECT_GRID_OFFSET + (4 * GRID_DIM + 10) * 2;
+        map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 7).to_le_bytes());
+        map[7 * OBJECT_RECORD_STRIDE + 0x14] = 0x2A;
+
+        let hf = build_walk_heightfield(&map, &lut);
+        assert_eq!(hf.quad_count(), 1, "one visible cell -> one quad");
+        assert_eq!(hf.positions.len(), 4);
+        assert_eq!(hf.indices.len(), 6);
+        // Corner (10,4) sits at world (10*128, -lut[2], 4*128).
+        assert_eq!(hf.positions[0], [1280.0, -80.0, 512.0]);
+        // The far corner (11,5) reads nibble 0 (height 0) since those tiles
+        // weren't painted.
+        assert_eq!(hf.positions[3][1], 0.0);
+        // Every vertex carries the cell's +0x14 tile id.
+        assert!(hf.tile_ids.iter().all(|&t| t == 0x2A));
     }
 }
