@@ -311,6 +311,45 @@ pub struct EffectModel {
     pub age01: f32,
 }
 
+/// Coarse role of a placed overworld entity, carried on
+/// [`WorldMapEntityMarker`] so a host can colour-code its render marker
+/// without inspecting the full [`WorldMapEntityConfig`] (which carries
+/// per-kind payload the renderer doesn't need).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldMapEntityKind {
+    /// A roaming-encounter zone ([`WorldMapEntityConfig::EncounterZone`]).
+    EncounterZone,
+    /// A town / dungeon portal ([`WorldMapEntityConfig::Portal`]).
+    Portal,
+    /// A plain interactable NPC / signpost ([`WorldMapEntityConfig::Npc`]),
+    /// also the fallback for an entity with no config row.
+    Npc,
+}
+
+/// Render-agnostic snapshot of one placed overworld entity, produced by
+/// [`World::world_map_entity_markers`]. The disc-sourced placement seeding
+/// ([`crate::scene::SceneHost::enter_world_map_scene`]) installs each entity
+/// with a world position and a [`WorldMapEntityConfig`]; this pairs the
+/// position with its coarse [`WorldMapEntityKind`] so a host can draw a marker
+/// at each on-map portal / NPC / encounter zone.
+///
+/// This is the seam for the still-open per-entity mesh-resolution thread: the
+/// retail engine binds each placement to its own actor model, which is not yet
+/// decoded, so the host draws a kind-coded marker at the position rather than
+/// the entity's real mesh. The position shares the player's coordinate frame
+/// (both come from the scene MAN), so a marker reads correctly relative to the
+/// player even while the kingdom terrain mesh renders at its own pack-local
+/// coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMapEntityMarker {
+    /// Entity world position in world units. `x` / `z` are the MAN placement
+    /// coordinates; `y` is the player actor's current plane (the entities are
+    /// 2D placements, so they sit on the player's walking plane).
+    pub world_pos: [f32; 3],
+    /// Coarse role, for colour-coding the marker.
+    pub kind: WorldMapEntityKind,
+}
+
 /// Scene mode the world is running. Drives which top-level VMs tick and
 /// which auxiliary state lives in the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -3214,6 +3253,47 @@ impl World {
                     angle: m.angle,
                     age01: ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0),
                 })
+            })
+            .collect()
+    }
+
+    /// Snapshot every placed overworld entity for the renderer: one
+    /// [`WorldMapEntityMarker`] per installed entity that carries a world
+    /// position, paired with its coarse [`WorldMapEntityKind`].
+    ///
+    /// Returns an empty vector unless the disc-placement seeding
+    /// ([`Self::install_world_map_entities_at`]) populated
+    /// [`Self::world_map_entity_positions`] - the config-only installers
+    /// (which leave positions empty) produce no markers, so a camera-only or
+    /// synthetic world map degrades cleanly. The marker `y` is the player
+    /// actor's current plane (the placements are 2D), so markers sit on the
+    /// player's walking plane rather than at an arbitrary `y = 0`.
+    pub fn world_map_entity_markers(&self) -> Vec<WorldMapEntityMarker> {
+        if self.world_map_entity_positions.is_empty() {
+            return Vec::new();
+        }
+        let base_y = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| a.move_state.world_y as f32)
+            .unwrap_or(0.0);
+        self.world_map_entity_positions
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, z))| {
+                let kind = match self.world_map_entity_configs.get(i) {
+                    Some(WorldMapEntityConfig::EncounterZone { .. }) => {
+                        WorldMapEntityKind::EncounterZone
+                    }
+                    Some(WorldMapEntityConfig::Portal { .. }) => WorldMapEntityKind::Portal,
+                    // An NPC config or no config at all (a plain interaction)
+                    // both render as the NPC marker.
+                    Some(WorldMapEntityConfig::Npc { .. }) | None => WorldMapEntityKind::Npc,
+                };
+                WorldMapEntityMarker {
+                    world_pos: [x as f32, base_y, z as f32],
+                    kind,
+                }
             })
             .collect()
     }

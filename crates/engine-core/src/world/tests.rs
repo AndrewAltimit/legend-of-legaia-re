@@ -975,6 +975,56 @@ fn world_map_walking_onto_npc_does_not_transition() {
     );
 }
 
+/// Placed overworld entities surface as render markers: one per installed
+/// position, paired with its kind, at the player's walking plane.
+#[test]
+fn world_map_entity_markers_pair_position_and_kind() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    // Put the player on a known plane so the marker `y` is deterministic.
+    world.actors[0].move_state.world_y = -200;
+    world.install_world_map_entities_at(vec![
+        (WorldMapEntityConfig::Portal { target_map: 9 }, (448, 320)),
+        (
+            WorldMapEntityConfig::Npc {
+                interact_id: 4,
+                text_id: None,
+                inline: Vec::new(),
+            },
+            (640, 128),
+        ),
+        (
+            WorldMapEntityConfig::EncounterZone { formation_id: 2 },
+            (-64, 512),
+        ),
+    ]);
+
+    let markers = world.world_map_entity_markers();
+    assert_eq!(markers.len(), 3);
+    // Position x/z come straight from the placement; y is the player plane.
+    assert_eq!(markers[0].world_pos, [448.0, -200.0, 320.0]);
+    assert_eq!(markers[0].kind, WorldMapEntityKind::Portal);
+    assert_eq!(markers[1].world_pos, [640.0, -200.0, 128.0]);
+    assert_eq!(markers[1].kind, WorldMapEntityKind::Npc);
+    assert_eq!(markers[2].world_pos, [-64.0, -200.0, 512.0]);
+    assert_eq!(markers[2].kind, WorldMapEntityKind::EncounterZone);
+}
+
+/// Config-only installs (no disc placements) produce no markers, so a
+/// camera-only or synthetic world map draws nothing.
+#[test]
+fn world_map_entity_markers_empty_without_positions() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Npc {
+        interact_id: 1,
+        text_id: None,
+        inline: Vec::new(),
+    }]);
+    assert!(world.world_map_entity_markers().is_empty());
+}
+
 /// An NPC-config entity surfaces its configured interaction id.
 #[test]
 fn world_map_npc_config_surfaces_interact_id() {

@@ -344,6 +344,25 @@ NPC placement installs a matching
 position** (Plain placements are skipped). So overworld portals + NPCs are
 **disc-sourced**, not synthetic.
 
+#### Rendering the placed entities
+
+[`World::world_map_entity_markers`](../../crates/engine-core/src/world.rs) is the
+render-agnostic seam for the installed placements: one
+`WorldMapEntityMarker { world_pos, kind }` per entity that carries a position,
+pairing the placement coordinate with its coarse `WorldMapEntityKind`
+(Portal / Npc / EncounterZone). The marker `y` is the player actor's current
+plane (the placements are 2D), so markers sit on the walking plane. The native
+`play-window` draws each as a kind-coded upright marker (a vertical post plus a
+small base cross, colour-keyed: portals cyan, NPCs green, encounter zones red)
+through the Lines pipeline — the same overlay slot the effect outlines use, and
+mutually exclusive with them since no effects spawn on the world map. The
+markers share the player's coordinate frame (both come from the scene MAN), so
+they read correctly relative to the player even while the kingdom terrain mesh
+still renders at its own pack-local coordinates (binding each placement to its
+own actor model is the still-open per-entity mesh thread). Config-only installs
+(no disc placements) produce no markers, so a camera-only world map draws
+nothing extra.
+
 #### Auto-engage on walk-over
 
 The portals fire themselves. [`World::auto_engage_world_map_portals`] runs each

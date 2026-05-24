@@ -7202,6 +7202,34 @@ impl ApplicationHandler for PlayWindowApp {
                     if let Some(mesh) = effect_billboard.as_ref() {
                         draws.push(SceneDraw { mesh, mvp: cam });
                     }
+                    // World-map placed entities: a kind-coded upright marker for
+                    // each portal / NPC / encounter zone installed from the
+                    // scene MAN placements (`World::world_map_entity_markers`).
+                    // Routed through the same Lines slot as the effect outlines
+                    // - mutually exclusive, since no effects spawn on the world
+                    // map. Without this the installed entities carry positions
+                    // but never appear on screen.
+                    let world_map_entity_lines = if in_world_map && !self.boot_ui.is_active() {
+                        let markers = self.session.host.world.world_map_entity_markers();
+                        if markers.is_empty() {
+                            None
+                        } else {
+                            let (pos, col, idx) = world_map_entity_line_geometry(
+                                &markers,
+                                self.scene_aabb.0,
+                                self.scene_aabb.1,
+                            );
+                            match r.upload_lines(&pos, &col, &idx) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    log::warn!("world-map entity marker lines upload: {e:#}");
+                                    None
+                                }
+                            }
+                        }
+                    } else {
+                        None
+                    };
                     // Effect 3D models (`etmd.dat`): spell effects like Tail
                     // Fire are small Gouraud-shaded `etmd` meshes textured by
                     // the resident `etim` texels, not billboards. Build a
@@ -7250,7 +7278,10 @@ impl ApplicationHandler for PlayWindowApp {
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
-                        overlay_lines: effect_lines.as_ref().map(|m| (m, cam)),
+                        overlay_lines: world_map_entity_lines
+                            .as_ref()
+                            .or(effect_lines.as_ref())
+                            .map(|m| (m, cam)),
                         overlay_sprites: sprites_slot_1,
                         overlay_sprites_2: sprites_slot_2,
                         overlay_text: Some(&overlay),
@@ -7368,6 +7399,68 @@ fn effect_sprite_line_geometry(
         }
         // Four edges of the rectangle (LineList).
         for &(a, b) in &[(0u32, 1u32), (1, 2), (2, 3), (3, 0)] {
+            idx.push(base + a);
+            idx.push(base + b);
+        }
+    }
+    (pos, col, idx)
+}
+
+/// RGBA colour of a world-map entity marker, keyed by its kind: portals
+/// (town/dungeon entrances) cyan, NPCs green, encounter zones warm red.
+fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntityKind) -> [u8; 4] {
+    use legaia_engine_core::world::WorldMapEntityKind as K;
+    match kind {
+        K::Portal => [0, 200, 255, 255],
+        K::Npc => [80, 220, 80, 255],
+        K::EncounterZone => [230, 80, 40, 255],
+    }
+}
+
+/// Build a LineList for the placed overworld entities: one upright marker per
+/// entity (a vertical post plus a small base cross), colour-coded by kind, so
+/// portals / NPCs / encounter zones are locatable on the world map. Sized
+/// relative to the scene AABB so the markers read at any map scale.
+///
+/// Marker geometry uses the same Y-flip convention as
+/// [`PlayWindowApp::actor_model`] (local "up" `+Y` renders toward world `-Y`,
+/// which the world-map camera shows as screen-up), so the post stands upright.
+/// The markers share the player's coordinate frame (both come from the scene
+/// MAN), so they sit correctly relative to the player even while the kingdom
+/// terrain mesh renders at its own pack-local coordinates.
+fn world_map_entity_line_geometry(
+    markers: &[legaia_engine_core::world::WorldMapEntityMarker],
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
+    let diag = (Vec3::from(aabb_hi) - Vec3::from(aabb_lo))
+        .length()
+        .max(1.0);
+    let post_h = diag * 0.06;
+    let arm = diag * 0.02;
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(markers.len() * 6);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(markers.len() * 6);
+    let mut idx: Vec<u32> = Vec::with_capacity(markers.len() * 6);
+    for m in markers {
+        let [x, y, z] = m.world_pos;
+        let c = world_map_entity_marker_color(m.kind);
+        let base = pos.len() as u32;
+        // 0: base, 1: top (up = world -Y under the geometry convention),
+        // 2..=5: base-cross arm ends along +/-X and +/-Z.
+        let verts = [
+            [x, y, z],
+            [x, y - post_h, z],
+            [x - arm, y, z],
+            [x + arm, y, z],
+            [x, y, z - arm],
+            [x, y, z + arm],
+        ];
+        for v in verts {
+            pos.push(v);
+            col.push(c);
+        }
+        // Vertical post + the two base-cross segments.
+        for &(a, b) in &[(0u32, 1u32), (2, 3), (4, 5)] {
             idx.push(base + a);
             idx.push(base + b);
         }
