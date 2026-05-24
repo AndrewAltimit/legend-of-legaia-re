@@ -6542,35 +6542,20 @@ impl PlayWindowApp {
         // single-line layout the retail field VM emits). The panel mirrors
         // `World::current_dialog`; the world owns dismissal.
         if let Some(panel) = self.active_dialog.as_ref() {
-            let ascii = |bytes: &[u8]| -> String {
-                bytes
-                    .iter()
-                    .map(|&b| {
-                        if (0x20..=0x7E).contains(&b) {
-                            b as char
-                        } else {
-                            '?'
-                        }
-                    })
-                    .collect()
-            };
-            let layout = self.font.layout_ascii(&ascii(&panel.page_bytes()));
+            let page: String = panel
+                .page_bytes()
+                .iter()
+                .map(|&b| {
+                    if (0x20..=0x7E).contains(&b) {
+                        b as char
+                    } else {
+                        '?'
+                    }
+                })
+                .collect();
+            let layout = self.font.layout_ascii(&page);
             let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
             out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
-            // Choice box: the prompt's `0x1F`-lead option labels are laid out
-            // as a vertical list under the prompt (indented). Box-geometry
-            // header positions aren't decoded yet, so this uses a default
-            // stacked layout rather than the retail per-option coordinates.
-            let line_h = legaia_font::LINE_HEIGHT as i32;
-            for (i, opt) in panel.options().iter().enumerate() {
-                let layout = self.font.layout_ascii(&ascii(opt));
-                let oy = pen.1 + line_h * (i as i32 + 1);
-                out.extend(text_draws_for(
-                    &layout,
-                    (pen.0 + 16, oy),
-                    [1.0, 1.0, 1.0, 1.0],
-                ));
-            }
         }
         out
     }

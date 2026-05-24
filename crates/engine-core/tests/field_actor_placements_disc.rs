@@ -158,3 +158,84 @@ fn placement_scripts_classify_into_kinds() {
         "the overworld must classify at least one warp portal"
     );
 }
+
+/// Disc-gated: a town01 placement's inline dialogue decodes into its full
+/// `0x1F`-lead segment **pool**, not just the first line.
+///
+/// An interaction record carries the NPC's whole dialogue line set — every
+/// line across every story-state branch, plus interspersed option labels like
+/// `"Yes"` / `"No"`. This verifies `dialog::decode_inline_segments` recovers
+/// every segment from real disc bytes (the conversational NPCs decode into
+/// many lines, and the choice-bearing NPCs include the `Yes`/`No` labels),
+/// rather than stopping at the first `0x00` the way the panel typewriter does.
+#[test]
+fn inline_dialogue_decodes_into_full_segment_pool() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::dialog::decode_inline_segments;
+    use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open prot index"));
+    let scene = Scene::load(&index, "town01").expect("load town01");
+    let man_bytes = scene
+        .field_man_payload(&index)
+        .expect("read MAN")
+        .expect("town01 has a MAN payload");
+    let man = parse_man(&man_bytes).expect("parse MAN");
+
+    let mut multi_line = 0usize;
+    let mut max_segments = 0usize;
+    let mut saw_yes_no = false;
+    for (p, kind) in classify_placements(&man, &man_bytes) {
+        let PlacementKind::Npc {
+            dialog_inline: Some(inline),
+            ..
+        } = kind
+        else {
+            continue;
+        };
+        let segs = decode_inline_segments(&inline);
+        if segs.len() >= 2 {
+            multi_line += 1;
+            max_segments = max_segments.max(segs.len());
+        }
+        let has_yes = segs.iter().any(|s| s == b"Yes");
+        let has_no = segs.iter().any(|s| s == b"No");
+        saw_yes_no |= has_yes && has_no;
+        if segs.len() >= 2 {
+            eprintln!(
+                "[town01] placement #{} at tile ({},{}): {} segment(s){}",
+                p.index,
+                p.tile_x,
+                p.tile_z,
+                segs.len(),
+                if has_yes && has_no {
+                    " (has Yes/No)"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+
+    assert!(
+        multi_line >= 1,
+        "town01 must carry at least one multi-line dialogue record; found {multi_line}"
+    );
+    assert!(
+        saw_yes_no,
+        "at least one town01 NPC's segment pool must include both Yes and No \
+         option labels (proves the decoder reaches past the first segment)"
+    );
+    assert!(
+        max_segments >= 5,
+        "conversational NPCs decode into many lines"
+    );
+}
