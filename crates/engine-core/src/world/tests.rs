@@ -690,9 +690,9 @@ fn world_map_locomotion_walks_when_clear() {
     world.actors[0].move_state.world_z = 250;
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    // speed 8 -> four 2-unit steps, all clear: Up at azimuth 0 walks +X (screen
-    // up), so x: 200 -> 208, z unchanged.
-    assert_eq!(world.actors[0].move_state.world_x, 208);
+    // speed 8 -> four 2-unit steps, all clear: at azimuth 0 the camera sits on
+    // +X looking back, so "screen up" walks -X; x: 200 -> 192, z unchanged.
+    assert_eq!(world.actors[0].move_state.world_x, 192);
     assert_eq!(world.actors[0].move_state.world_z, 250);
 }
 
@@ -705,19 +705,19 @@ fn world_map_locomotion_walks_when_clear() {
 fn world_map_camera_relative_bits_rotates_with_azimuth() {
     use crate::world::world_map_camera_relative_bits;
     // Expectations are the camera-verified screen axes (screen-up -> world
-    // (cosθ, sinθ), screen-right -> world (sinθ, -cosθ)); the engine-shell
+    // (-cosθ, -sinθ), screen-right -> world (sinθ, -cosθ)); the engine-shell
     // projection test confirms these move the right way on screen.
     // No input -> no bits.
     assert_eq!(world_map_camera_relative_bits(0, 0, 0), 0);
-    // Azimuth 0: Up (screen up) -> X+ (0x2000), Right -> Z- (0x4000).
-    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x2000);
+    // Azimuth 0: camera on +X, so Up (screen up) -> X- (0x8000), Right -> Z- (0x4000).
+    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x8000);
     assert_eq!(world_map_camera_relative_bits(0, 1, 0), 0x4000);
-    // Azimuth 1024 (quarter turn): Up -> Z+ (0x1000).
-    assert_eq!(world_map_camera_relative_bits(1024, 0, 1), 0x1000);
-    // Azimuth 2048 (half turn): Up -> X- (0x8000).
-    assert_eq!(world_map_camera_relative_bits(2048, 0, 1), 0x8000);
-    // Azimuth 3072 (3/4 turn): Up -> Z- (0x4000), Right -> X- (0x8000).
-    assert_eq!(world_map_camera_relative_bits(3072, 0, 1), 0x4000);
+    // Azimuth 1024 (quarter turn): Up -> Z- (0x4000).
+    assert_eq!(world_map_camera_relative_bits(1024, 0, 1), 0x4000);
+    // Azimuth 2048 (half turn): Up -> X+ (0x2000).
+    assert_eq!(world_map_camera_relative_bits(2048, 0, 1), 0x2000);
+    // Azimuth 3072 (3/4 turn): Up -> Z+ (0x1000), Right -> X- (0x8000).
+    assert_eq!(world_map_camera_relative_bits(3072, 0, 1), 0x1000);
     assert_eq!(world_map_camera_relative_bits(3072, 1, 0), 0x8000);
     // A diagonal framing (1/8 turn) maps a single screen press to two world
     // axes (the player walks diagonally).
@@ -920,9 +920,10 @@ fn world_map_walking_onto_portal_auto_engages() {
     world.actors[0].move_state.world_x = 448 - 256;
     world.actors[0].move_state.world_z = 448;
 
-    // Hold the d-pad direction that walks +X at the default azimuth (0):
-    // "screen up" maps to +X there (see the camera-relative remap).
-    world.set_pad(input::PadButton::Up.mask());
+    // Hold the d-pad direction that walks +X at the default azimuth (0): the
+    // camera sits on +X, so "screen down" walks +X toward the portal (see the
+    // camera-relative remap).
+    world.set_pad(input::PadButton::Down.mask());
     let mut transitioned = false;
     for _ in 0..200 {
         let _ = world.tick();
@@ -1040,17 +1041,21 @@ fn world_map_walking_sets_player_marker_facing() {
     world.enter_world_map();
     world.install_field_player(0);
     world.set_world_map_encounter(false, 50, 0, 64);
-    // At the default azimuth, "screen up" walks +X (dx=1, dz=0) ->
-    // atan2(1, 0) = TAU/4 -> heading 1024.
+    world.reset_field_collision_grid(); // all-walkable so the step commits
+    world.actors[0].move_state.world_x = 200; // away from the -X boundary
+    let start_x = world.actors[0].move_state.world_x;
+    // At the default azimuth the camera sits on +X, so "screen up" walks -X
+    // (dx=-1, dz=0) -> atan2(-1, 0) = -TAU/4 -> heading 3072.
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     let m = world
         .world_map_player_marker()
         .expect("player marker present");
-    assert_eq!(m.facing, 1024, "walking +X faces heading 1024");
+    assert_eq!(m.facing, 3072, "walking -X faces heading 3072");
     assert!(
-        world.actors[0].move_state.world_x > 0,
-        "the player advanced +X"
+        world.actors[0].move_state.world_x < start_x,
+        "the player advanced -X (start {start_x} -> {})",
+        world.actors[0].move_state.world_x
     );
 }
 

@@ -217,9 +217,12 @@ pub fn orbit_camera_mvp(
 ///
 /// The world map is viewed from an elevated, slightly-angled vantage that the
 /// player rotates (`azimuth`), raises/lowers (`zoom`), and pans (`pan_x` /
-/// `pan_z`) - mirroring the top-view debug camera's controls. Geometry uses
-/// the PSX Y-down convention (same as [`orbit_camera_mvp`]), so the eye is
-/// pushed to *negative* Y to sit above the terrain.
+/// `pan_z`) - mirroring the top-view debug camera's controls. The kingdom pack
+/// is drawn **Y-flipped** (`scale(1,-1,1)`) to convert the PSX Y-down geometry
+/// to the renderer's Y-up, so its drawn Y-range is `[-hi.y, -lo.y]`; this camera
+/// frames that flipped centre and sits at *positive* Y, looking down on the
+/// terrain. (Framing the raw, un-flipped AABB - as an earlier version did -
+/// put the eye on the opposite Y side and rendered the map from underneath.)
 ///
 /// # Parameters
 /// - `aabb_lo`, `aabb_hi` - world-space bounding box of the loaded map meshes.
@@ -240,8 +243,13 @@ pub fn world_map_camera_mvp(
 ) -> Mat4 {
     let lo = Vec3::from(aabb_lo);
     let hi = Vec3::from(aabb_hi);
-    // Frame the AABB centre, offset by the player's top-view pan.
-    let center = (lo + hi) * 0.5 + Vec3::new(pan_x as f32, 0.0, pan_z as f32);
+    // The kingdom pack is drawn Y-flipped, so its drawn Y-range is
+    // `[-hi.y, -lo.y]`; frame that flipped centre, offset by the top-view pan.
+    let center = Vec3::new(
+        (lo.x + hi.x) * 0.5 + pan_x as f32,
+        -(lo.y + hi.y) * 0.5,
+        (lo.z + hi.z) * 0.5 + pan_z as f32,
+    );
     let radius = ((hi - lo).length() * 0.5).max(1.0);
     let base_distance = radius / 30f32.to_radians().tan() * 1.6;
     // Zoom nudges the framing distance; clamp so the player can't invert or
@@ -251,12 +259,12 @@ pub fn world_map_camera_mvp(
     let distance = base_distance * zoom_mult;
     // PSX angle units: 4096 == 2*pi.
     let angle = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
-    // Elevated vantage (0.7 of distance above centre) for the map's bird's-eye
-    // look; negative Y is "up" under the Y-down geometry convention.
+    // Elevated bird's-eye vantage above the (Y-up) flipped terrain: +Y is up,
+    // so the eye sits at positive Y and looks down on the map.
     let eye = center
         + Vec3::new(
             distance * angle.cos(),
-            -distance * 0.7,
+            distance * 0.7,
             distance * angle.sin(),
         );
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);

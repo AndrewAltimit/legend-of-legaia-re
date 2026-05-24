@@ -139,10 +139,13 @@ pub fn world_map_camera_relative_bits(azimuth: i32, sx: i32, sy: i32) -> u16 {
     }
     let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
     let (sin, cos) = theta.sin_cos();
-    // screen-up    -> world ( cosθ, sinθ)   (verified against world_map_camera_mvp)
+    // screen-up    -> world (-cosθ, -sinθ)   (verified against world_map_camera_mvp)
     // screen-right -> world ( sinθ, -cosθ)
-    let wx = (sx as f32) * sin + (sy as f32) * cos;
-    let wz = -(sx as f32) * cos + (sy as f32) * sin;
+    // The camera looks down on the (Y-up) flipped terrain from positive Y, so
+    // the on-screen vertical axis runs opposite the eye->centre forward dir;
+    // hence the screen-up -> world mapping carries the negative sign.
+    let wx = (sx as f32) * sin - (sy as f32) * cos;
+    let wz = -(sx as f32) * cos - (sy as f32) * sin;
     // sin(22.5°): within this band of an axis the press is treated as cardinal;
     // beyond it (a rotated framing) both bits set and the player walks diagonally.
     const T: f32 = 0.382_683_43;

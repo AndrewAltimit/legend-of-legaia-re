@@ -7064,10 +7064,15 @@ impl ApplicationHandler for PlayWindowApp {
                     } else if in_world_map {
                         // World map has no per-actor bindings: draw the whole
                         // loaded kingdom mesh pack at its pack-local
-                        // coordinates (Y-flipped to match the geometry
-                        // convention). Per-mesh world placement from the live
-                        // actor table is a separate, still-open RE thread; the
-                        // meshes render where the pack puts them.
+                        // coordinates, Y-flipped (`scale(1,-1,1)`) to convert the
+                        // PSX Y-down geometry to the renderer's Y-up - the same
+                        // orientation flip the field/actor path applies. The
+                        // world-map camera frames the *flipped* Y range from
+                        // above (see `world_map_camera_mvp`), so the kingdom
+                        // renders right-side up and viewed from overhead. Per-mesh
+                        // world placement from the live actor table is a separate,
+                        // still-open RE thread; the meshes render where the pack
+                        // puts them.
                         let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                         for mesh in &self.meshes {
                             draws.push(SceneDraw {
