@@ -64,25 +64,24 @@
   </ol>
   <p>The result was a stream where only ~10 % of 128-byte sound groups passed the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That's the "non-standard interleave" shorthand from earlier doc revisions - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
   <p>The fix lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
-  <p>The <code>xa demux-disc</code> subcommand drives this end-to-end:</p>
-<pre><code>./target/release/xa demux-disc \
+  <p>The <code>xa demux-disc-all</code> subcommand drives this across the whole disc - it walks the ISO9660 tree, finds every <code>*.XA</code>, and demuxes each at its own per-sector sample rate / channel mode read from the subheaders (no guessed global rate):</p>
+<pre><code>./target/release/xa demux-disc-all \
     "/path/to/Legend of Legaia (USA).bin" \
-    --lba &lt;ISO9660-LBA-of-XA1.XA&gt; \
-    --size &lt;directory-entry-size&gt; \
     --out extracted/xa_demux</code></pre>
-  <p>One WAV lands per <code>(file_no, ch_no)</code> channel in <code>extracted/xa_demux/</code>.</p>
+  <p>One WAV lands per <code>(file_no, ch_no)</code> channel under <code>extracted/xa_demux/</code>, named <code>&lt;xa-stem&gt;_fileN_chM.wav</code>. The single-file <code>xa demux-disc --lba --size</code> variant remains for targeting one entry by directory offset.</p>
+  <p>Pacing is therefore <strong>data-driven per track</strong> - the whole point. A track that varies channel mode (the NA disc has 16-channel mono voice files like <code>XA4</code>/<code>XA6</code> alongside 8-channel stereo music like <code>XA5</code>/<code>XA7</code>/<code>XA8</code>/<code>XA9</code>) decodes each channel at its real width: the Form-1 <code>convert</code> path read a stereo track as mono and played it at 2&times; speed; the demux path reads <code>coding_info</code> and gets it right. Channels reporting a non-4-bit width are skipped with a warning rather than mis-decoded.</p>
 </section>
 
 <section class="doc-section" id="what-the-older-extracted-xa-xa-files-contain">
   <h2>What the older <code>extracted/XA/*.XA</code> files contain</h2>
-  <p>If the tree on disk has a populated <code>extracted/XA/</code> directory from a pre-fix extraction, those files are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. They should be deleted and re-extracted via <code>xa demux-disc</code> (or via the top-level <code>legaia-extract</code> once it integrates the new path).</p>
+  <p>If the tree on disk has a populated <code>extracted/XA/</code> directory from a pre-fix extraction, those files are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. They should be deleted and re-extracted via <code>xa demux-disc-all</code> (or via the top-level <code>legaia-extract</code> once it integrates the new path).</p>
 </section>
 
 <section class="doc-section" id="what-s-still-open">
   <h2>What's still open</h2>
   <ul class="bullets">
-    <li><strong>Top-level extract integration.</strong> <code>legaia-extract</code> doesn't yet call <code>xa demux-disc</code>. Cutscene audio works end-to-end via the standalone <code>xa</code> binary; the unified pipeline still emits the legacy Form-1 bytes.</li>
-    <li><strong>8-bit ADPCM mode.</strong> Detected (<code>coding_info</code> bit), unimplemented in the decoder. Most music in the corpus is 4-bit, so this hasn't blocked anything observed.</li>
+    <li><strong>Top-level extract integration.</strong> <code>legaia-extract</code> doesn't yet call <code>xa demux-disc-all</code>. Cutscene audio works end-to-end via the standalone <code>xa</code> binary; the unified pipeline still emits the legacy Form-1 bytes.</li>
+    <li><strong>8-bit ADPCM mode.</strong> The NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for all 316 channels across 34 <code>*.XA</code> files), so the unimplemented 8-bit group decoder doesn't block anything. The demuxer surfaces <code>bits_per_sample</code> and the CLI skips-and-warns on any non-4-bit channel rather than mis-decoding it.</li>
     <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that's reversed, the WAV → cutscene assignment is manual.</li>
   </ul>
 </section>
