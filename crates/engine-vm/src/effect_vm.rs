@@ -504,10 +504,13 @@ pub trait EffectHost {
 /// sprite's GPU primitive. The exact byte layout is pinned from that consumer
 /// (dump `overlay_battle_801e0088.txt`, the sprite-emit block ~0x801e0840):
 /// it reads `atlas[0]=u`, `atlas[1]=v`, `atlas[2]=w`, `atlas[3]=h` as bytes,
-/// copies the u16 at `atlas+4` straight into the primitive's `tpage` field,
-/// and the byte at `atlas+6` into the CLUT field. The texel rectangle is
-/// `(u, v)..(u+w-1, v+h-1)`; the pixels live in VRAM, uploaded from the
-/// sibling TIM pack (PROT 0872).
+/// copies the **u16 at `atlas+4`** into the primitive's **CLUT** field
+/// (`POLY_FT4` word3 high half), and the **byte at `atlas+6`** into the
+/// primitive's **tpage** field (`POLY_FT4` word5 high half). (The fields are
+/// the reverse of an earlier reading: `atlas+4` is the CBA, not the tpage -
+/// `0x7680` decodes as CLUT `(0, 474)`, an effect-CLUT row, not page `(0,0)`.)
+/// The texel rectangle is `(u, v)..(u+w-1, v+h-1)`; the pixels live in VRAM,
+/// uploaded by the effect-texture loaders (PROT 870 / `etim`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SpriteAtlasEntry {
     /// `+0` source texel U within the texture page.
@@ -518,11 +521,14 @@ pub struct SpriteAtlasEntry {
     pub w: u8,
     /// `+3` sprite height in texels.
     pub h: u8,
-    /// `+4` PSX `tpage` descriptor (texture-page X/Y base + colour mode +
-    /// semi-transparency), used verbatim as the GPU primitive's tpage.
+    /// `+4` CLUT (CBA) id - the u16 the emit writes into the primitive's CLUT
+    /// field. Effect sprites point into the effect-CLUT rows (473..=480).
+    pub clut: u16,
+    /// `+6` PSX `tpage` descriptor byte (texture-page X/Y base + colour mode +
+    /// semi-transparency), zero-extended into the GPU primitive's tpage field.
+    /// Effect sprites select the loaded effect pages (e.g. `0x25` = page
+    /// `(320,0)` 4bpp, a PROT 870 flame-atlas page).
     pub page: u16,
-    /// `+6` CLUT (CBA) id.
-    pub clut: u8,
     /// `+7` unknown / reserved byte.
     pub unk: u8,
 }
@@ -642,8 +648,8 @@ impl EffectCatalog {
                 v: buf[p + 1],
                 w: buf[p + 2],
                 h: buf[p + 3],
-                page: u16::from_le_bytes([buf[p + 4], buf[p + 5]]),
-                clut: buf[p + 6],
+                clut: u16::from_le_bytes([buf[p + 4], buf[p + 5]]),
+                page: buf[p + 6] as u16,
                 unk: buf[p + 7],
             });
         }
@@ -1312,10 +1318,10 @@ mod tests {
         let mut buf = Vec::new();
         // Reserve header (filled at the end).
         buf.extend_from_slice(&[0u8; 8]);
-        // Inline atlas: 2 entries (u, v, w, h, u16 tpage, clut, unk).
+        // Inline atlas: 2 entries (u, v, w, h, u16 CLUT@+4, u8 tpage@+6, unk).
         buf.extend_from_slice(&[0u8, 0, 32, 32]); // u=0 v=0 w=32 h=32
-        buf.extend_from_slice(&0x7680u16.to_le_bytes());
-        buf.extend_from_slice(&[0x25u8, 0]); // clut, unk
+        buf.extend_from_slice(&0x7680u16.to_le_bytes()); // CLUT (CBA -> row 474)
+        buf.extend_from_slice(&[0x25u8, 0]); // tpage byte (page 320,0 4bpp), unk
         buf.extend_from_slice(&[32u8, 0, 32, 32]); // u=32 v=0 w=32 h=32
         buf.extend_from_slice(&0x7680u16.to_le_bytes());
         buf.extend_from_slice(&[0x25u8, 0]);
@@ -1357,8 +1363,8 @@ mod tests {
         assert_eq!(cat.atlas()[1].u, 32);
         assert_eq!(cat.atlas()[0].w, 32);
         assert_eq!(cat.atlas()[0].h, 32);
-        assert_eq!(cat.atlas()[0].page, 0x7680);
-        assert_eq!(cat.atlas()[0].clut, 0x25);
+        assert_eq!(cat.atlas()[0].clut, 0x7680, "CBA is the u16 at atlas+4");
+        assert_eq!(cat.atlas()[0].page, 0x25, "tpage is the byte at atlas+6");
         assert_eq!(cat.anim_count(), 1);
         let batch = cat.anim(0).expect("anim batch 0");
         assert_eq!(batch.frames.len(), 2);

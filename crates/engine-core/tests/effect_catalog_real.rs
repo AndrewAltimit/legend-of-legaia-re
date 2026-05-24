@@ -75,4 +75,35 @@ fn efect_dat_parses_into_a_populated_catalog() {
             );
         }
     }
+
+    // Atlas field-order regression. The atlas entry is
+    // `[u8 u, v, w, h, u16 CLUT@+4, u8 tpage@+6, u8 unk]` - confirmed from the
+    // `FUN_801E0088` emit (CLUT <- atlas+4, tpage <- atlas+6), NOT the reverse.
+    // The discriminator against the old swapped reading: the u16 at +4 (CLUT)
+    // decodes to the high effect-CLUT rows (`fb_y >= 473`), and the byte at +6
+    // (tpage) is a small page descriptor (< 0x80, a 4bpp page) selecting the
+    // loaded effect texture pages (`fb_x >= 320`). Under the swap, `clut` would
+    // be a tiny byte and `page` a huge `0x76xx` - so this assertion fails if
+    // the fields are ever flipped back.
+    let mut effect_band_hits = 0usize;
+    for e in cat.atlas() {
+        if e.w == 0 || e.h == 0 {
+            continue; // skip empty/unused atlas slots
+        }
+        let clut_fb_y = e.clut >> 6; // CBA: fb_y = cba >> 6
+        let page_fb_x = (e.page & 0xF) * 64; // tpage: fb_x = TX * 64
+        assert!(
+            e.page < 0x80,
+            "tpage must be a single-byte 4bpp page descriptor, got {:#06x}",
+            e.page
+        );
+        if (473..=486).contains(&clut_fb_y) && page_fb_x >= 320 {
+            effect_band_hits += 1;
+        }
+    }
+    assert!(
+        effect_band_hits > 0,
+        "expected >=1 atlas entry with an effect-CLUT-band CBA (fb_y 473..=486) \
+         and an effect-page tpage (fb_x >= 320); field order is likely swapped"
+    );
 }

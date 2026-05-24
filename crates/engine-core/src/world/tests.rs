@@ -3267,10 +3267,10 @@ fn spell_less_monster_always_arms_physical_strike() {
 /// 1 effect script with 1 child referencing sprite_id 0.
 fn minimal_efect_dat() -> Vec<u8> {
     let mut buf = vec![0u8; 8];
-    // atlas[0]: u=5 v=7 w=24 h=24, tpage=0x88, clut=0x12, unk=0
+    // atlas[0]: u=5 v=7 w=24 h=24, CLUT@+4=0x88, tpage@+6=0x12, unk=0
     buf.extend_from_slice(&[5u8, 7, 24, 24]);
-    buf.extend_from_slice(&0x88u16.to_le_bytes());
-    buf.extend_from_slice(&[0x12u8, 0]);
+    buf.extend_from_slice(&0x88u16.to_le_bytes()); // CLUT (CBA)
+    buf.extend_from_slice(&[0x12u8, 0]); // tpage byte, unk
     let pack0 = buf.len() as u32;
     // pack0: 1 anim batch, 1 frame (atlas_index 0).
     buf.extend_from_slice(&1u32.to_le_bytes());
@@ -3321,8 +3321,8 @@ fn active_effect_sprites_carry_atlas_size_and_vram_coords() {
     assert_eq!(s.uv, [5, 7], "atlas texel origin");
     assert_eq!(s.uv_size, [24, 24], "atlas sprite size");
     assert_eq!(s.size, [24.0, 24.0]);
-    assert_eq!(s.page, 0x88);
-    assert_eq!(s.clut, 0x12);
+    assert_eq!(s.page, 0x12, "tpage byte from atlas+6");
+    assert_eq!(s.clut, 0x88, "CLUT (CBA) u16 from atlas+4");
     // Origin Y matches; X/Z within a small deterministic ring of (10, 20).
     assert!((s.world_pos[1] - 0.0).abs() < 1e-3);
     assert!((s.world_pos[0] - 10.0).abs() < 1.0);
