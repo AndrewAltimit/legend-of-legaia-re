@@ -475,12 +475,14 @@ placements (decoded via
 `world_map_terrain_draws` (the `0x2000` visible sweep + the raw `+0x10` index,
 up to 105) against the 40-mesh **walk** pool — the high indices resolve to no
 mesh, hence the sparse scatter. The walk path instead needs the **`0x1000`**
-cell gate and `pool = record[+0x10] + prefix(5)` (above). With the mesh resolver
-now pinned, the single remaining blocker is entry 85's **unpacking** — it is a
-`[u16 count=46][46×u16 offsets][sections]` pack and the live records+grid buffer
-is not present verbatim, so the `.MAP` buffer is LZS-compressed / runtime-
-assembled inside it; cracking which section yields the records+grid buffer is the
-last step before a faithful walk render path.
+cell gate and `pool = record[+0x10] + prefix(5)` (above). The `.MAP` source is
+now fully pinned — the records+grid is the **raw** region at PROT.DAT `0x655800`
+(`toc[87]`, no compression), validated by parsing it back to the exact live
+placements (16251 continent tiles all in-pool; the 6 placed objects → pools
+36/34/11/7/19/21 = the live render list). So the remaining work is purely
+**engine wiring**: load via `toc[p+2]` (index 85 → `0x655800`, not the
+extractor's mislabeled `0085` slice at `0x668000`), and route `map\d\d` walk to
+the field-actor render path.
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
@@ -500,12 +502,13 @@ and `FUN_8003e8a8` indexes the in-RAM PROT TOC at `0x801c70f0`
 (`toc[index+2]` = start_lba; the trace verifies the `0x801c70f0` constant inside
 `FUN_8003e8a8`). So the entry a scene loads is pinned by `0x80084540`, and a live
 Drake walk capture reads **`0x80084540 = 0x55 = 85`** → the walk `.MAP` is **PROT
-entry `0085_map01`** (the CDNAME `map01` base itself). Entry 85 is a `[u16
-count=46][46×u16 section offsets][sections]` pack whose sections span only
-~`0x1078` bytes; it holds **no directly-readable records+grid `.MAP` buffer** at
-any offset, so the buffer (records@0 + grid@0x8000) is LZS-compressed /
-runtime-assembled inside it. The `poch…`-filler `0087`/`0091` and the
-zero-prefixed `0092` in the same block are not it either.
+CDNAME/runtime index 85**, which `FUN_8003e8a8` resolves to `toc[87] = 3243` →
+**PROT.DAT offset `0x655800`** — and that region is the `.MAP` records+grid
+**raw** (99.7% byte-identical to the live buffer; records & walkability 100%, no
+compression). NB the per-entry *extractor* mis-slices this: its `0085_map01.BIN`
+is a `[u16 count=46][46×u16 offsets]` field-object/script pack at `0x668000`,
+**not** the `.MAP`; the real `.MAP` is filed under the overlapping manifest entry
+83 (the extractor's entry numbering is offset ~2 from the runtime `toc[p+2]`).
 
 The **`break 0x103`** path (`FUN_800608f0`) is the **dev-host `fopen`** — a PsyQ
 host-link open of a real `DATA\FIELD\<scene>.MAP` (+ `<scene>.PCH` at `+0x12000`,
@@ -515,10 +518,13 @@ the retail disc has no ISO9660 `DATA\FIELD\` tree, and it is never taken when
 `_DAT_8007b8c2 != 0`. So the resolver to read for retail is the `0x80084540`
 PROT-index dispatch, not the trap. The walk/overview split is just the scene name
 → index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
-`0768..0772`). With the mesh resolver pinned (`pool = record[+0x10] + prefix`,
-above), what remains before a walk render path is unpacking entry 85's `.MAP`
-records+grid buffer (the live form sits at `_DAT_1f8003ec = 0x80139530`, but is
-not present verbatim in entry 85's packed bytes).
+`0768..0772`). The walk `.MAP` source is now fully pinned: it is the **raw**
+records+grid region at PROT.DAT `0x655800` (`toc[87]`, no compression), and the
+mesh resolver is `pool = record[+0x10] + prefix`. What remains is purely engine
+**wiring** — load the field `.MAP` via `toc[p+2]` (index 85 → `0x655800`, not the
+extractor's mislabeled `0085` slice), parse `field_objects` with the `0x1000`
+walk gate + `pool = pack_mesh_index(+0x10) + FIELD_ACTOR_PACK_BIAS`, and route
+`map\d\d` walk (mode `0x03`) to the field-actor render path.
 
 #### Rendering the placed entities
 
