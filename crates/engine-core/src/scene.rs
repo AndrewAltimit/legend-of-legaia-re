@@ -1537,7 +1537,8 @@ impl SceneHost {
                 // section 2) into the scene VRAM so the 3D effect models
                 // (etmd.dat) have their texels resident. Kept across the battle
                 // scene-mode overlay; soft-fails (textures just stay absent).
-                if let Err(err) = seed_effect_vram_from_befect_data(&self.index, &mut res.vram) {
+                if let Err(err) = upload_effect_textures_into_vram(&self.index, &mut res.vram, true)
+                {
                     eprintln!("[scene] effect-texture VRAM upload skipped: {err:#}");
                 }
                 self.world.init_scene_animations(&res);
@@ -2022,9 +2023,22 @@ const BEFECT_ETIM_SECTION: usize = 2;
 ///
 /// Mirrors [`seed_global_tmd_pool_from_befect_data`]'s LZS path. Soft-fails;
 /// returns the number of TIMs uploaded.
-fn seed_effect_vram_from_befect_data(
+///
+/// Public so the VRAM-parity oracle's lightweight pre-pass can apply the same
+/// effect-texture upload the live field-entry path performs - without it the
+/// oracle reports the `fb_y=256` effect pages (fb_x 320/384/832/852/872/880)
+/// as a phantom static gap that the real engine never has.
+///
+/// `upload_clut` controls whether the TIMs' CLUT rows (473..=478) are written
+/// alongside the image pages. Retail keeps the effect-texture *pixel* pages
+/// (fb_y=256) resident from field through battle, but uploads their CLUTs at
+/// battle entry - so a field-VRAM parity build wants `upload_clut = false`
+/// (image pages only) while the live field-entry seed passes `true` to keep
+/// the CLUTs resident through the battle scene-mode overlay.
+pub fn upload_effect_textures_into_vram(
     index: &ProtIndex,
     vram: &mut legaia_tim::Vram,
+    upload_clut: bool,
 ) -> Result<usize> {
     let raw = index
         .entry_bytes(PROT_BEFECT_DATA_ENTRY)
@@ -2043,7 +2057,7 @@ fn seed_effect_vram_from_befect_data(
     for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
         match legaia_tim::parse(&decoded[target.offset..]) {
             Ok(tim) => {
-                vram.upload_tim(&tim);
+                vram.upload_tim_partial(&tim, true, upload_clut);
                 uploaded += 1;
             }
             Err(err) => {
@@ -2102,7 +2116,7 @@ mod tests {
         };
         let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
         let mut vram = legaia_tim::Vram::new();
-        let n = seed_effect_vram_from_befect_data(&index, &mut vram).expect("seed etim VRAM");
+        let n = upload_effect_textures_into_vram(&index, &mut vram, true).expect("seed etim VRAM");
         assert!(n >= 5, "expected >=5 etim TIMs uploaded, got {n}");
         assert!(
             vram.region_has_data(832, 256, 20, 64),

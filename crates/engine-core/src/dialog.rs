@@ -23,6 +23,52 @@
 use legaia_mes::{DialogPlayer, Interpreter, MesEvent, PlayerState};
 use std::sync::Arc;
 
+/// Decode every `0x1F`-lead text segment in a field-VM inline dialog buffer
+/// to its glyph bytes.
+///
+/// An interaction record's inline text is a flat **pool** of segments, each
+/// introduced by a `0x1F` lead byte and terminated by an MES end byte
+/// (`0x00..=0x1E`). Empirically (decoding real town01 placements) this pool is
+/// the NPC's *entire* dialogue line set — every line across every story-state
+/// branch of that NPC's conversation, with interspersed option labels (e.g.
+/// `"Yes"` / `"No"`). It is **not** a single box's "prompt then option labels":
+/// most segments are consecutive speech lines, and the field-VM script (gated
+/// on story flags via `COND_JMP`) selects which segment to start at, how many
+/// lines fill one box, and which are selectable options. Mapping segments →
+/// boxes/options needs the box-geometry header that precedes the run (op `0x3F`
+/// → `func_0x8001ebec`), which is not yet decoded.
+///
+/// So this returns the raw segment pool, faithfully, leaving the box/option
+/// interpretation to a future consumer once the header semantics are pinned.
+/// The geometry header before the first `0x1F` is skipped (its bytes can fall
+/// in the glyph range, so it is not interpreted as text).
+pub fn decode_inline_segments(inline: &[u8]) -> Vec<Vec<u8>> {
+    let mut segments = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel) = inline[cursor..].iter().position(|&b| b == 0x1F) {
+        let start = cursor + rel + 1;
+        let mut interp = Interpreter::new_at(inline, start);
+        let mut glyphs = Vec::new();
+        loop {
+            match interp.next_event() {
+                Some(MesEvent::Glyph(g)) | Some(MesEvent::SkipTwo(g)) => glyphs.push(g),
+                Some(MesEvent::WideGlyph(_op, arg)) => glyphs.push(arg),
+                Some(MesEvent::EndOfMessage(_)) | None => break,
+                // Page-break / spacing / substitution stay inside the current
+                // segment: a segment ends only at its MES terminator, never at
+                // an intermediate control byte.
+                Some(_) => {}
+            }
+        }
+        // Resume scanning just past this segment's terminator. `pc()` sits
+        // after the end byte; clamp to `start` so a `0x1F` immediately followed
+        // by a terminator (empty segment) still makes forward progress.
+        cursor = interp.pc().max(start);
+        segments.push(glyphs);
+    }
+    segments
+}
+
 /// Page-state machine the host polls each frame. Mirrors the
 /// [`legaia_mes::PlayerState`] fan-out but folds idle / typing into a single
 /// `Typing` outcome the host doesn't need to disambiguate.
@@ -219,9 +265,14 @@ impl OwnedDialogPanel {
     /// `0x1F`-lead text/option segments (MES glyph bytecode). The geometry
     /// header is opaque here (it carries box position/size and option-layout
     /// bytes, some of which fall in the glyph range), so this skips to the
-    /// first `0x1F` lead marker and decodes the text from just past it through
-    /// the standard MES [`Interpreter`](legaia_mes::Interpreter) - rendering
-    /// the first segment up to its terminator.
+    /// first `0x1F` lead marker and types the first segment from just past it
+    /// through the standard MES [`Interpreter`](legaia_mes::Interpreter).
+    ///
+    /// Only the first segment is typed: the record holds the NPC's whole
+    /// dialogue line pool (see [`decode_inline_segments`]), and choosing which
+    /// segment to start at — and how many lines / which option labels make up
+    /// one box — is the field-VM script's job, gated on story flags, via the
+    /// box-geometry header that is not yet decoded.
     ///
     /// Returns `None` when no `0x1F` lead marker is present (nothing
     /// renderable), so a caller can fall back to the MES path.
@@ -373,6 +424,32 @@ mod tests {
     #[test]
     fn from_inline_dialog_without_lead_marker_is_none() {
         assert!(OwnedDialogPanel::from_inline_dialog(&[0x00, 0x10, 0x00]).is_none());
+    }
+
+    /// The segment-pool decoder recovers **every** `0x1F`-lead segment, not
+    /// just the first: a record carries the NPC's whole dialogue line pool
+    /// (consecutive speech lines plus interspersed option labels like
+    /// `"Yes"` / `"No"`), each `0x00`-terminated.
+    #[test]
+    fn decode_inline_segments_recovers_every_segment() {
+        // [header] 1F W e l c o m e 00  1F Y e s 00  1F N o 00
+        let inline = vec![
+            0x00, 0x42, 0x1F, b'W', b'e', b'l', b'c', b'o', b'm', b'e', 0x00, 0x1F, b'Y', b'e',
+            b's', 0x00, 0x1F, b'N', b'o', 0x00,
+        ];
+        let segs = decode_inline_segments(&inline);
+        assert_eq!(
+            segs,
+            vec![b"Welcome".to_vec(), b"Yes".to_vec(), b"No".to_vec()],
+            "all three 0x1F-lead segments decode in pool order"
+        );
+    }
+
+    /// A single-segment record decodes to exactly one segment.
+    #[test]
+    fn decode_inline_segments_single_segment() {
+        let inline = vec![0x00, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
+        assert_eq!(decode_inline_segments(&inline), vec![b"Hi".to_vec()]);
     }
 
     /// `0xCF XX` in MES bytecode = render XX alone. Both panel variants

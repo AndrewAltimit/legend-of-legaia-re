@@ -74,8 +74,22 @@ pub fn build_engine_vram_bytes_prepass(
         kind: SceneLoadKind::Field,
         upload_all_tims: true,
     };
-    let (resources, _) =
+    let (mut resources, _) =
         SceneResources::build_targeted_with_options(&scene, &shared_refs, options)?;
+    // Mirror the live field-entry path: upload the `befect_data` (PROT 0874
+    // section 2) effect-texture TIMs into VRAM. These sit at fb_y=256
+    // (fb_x 320/384/832/852/872/880) and are resident across field + battle
+    // in retail; the targeted scene build alone never touches them, so without
+    // this the oracle reports them as a phantom static gap the engine doesn't
+    // actually have. Image pages only (`upload_clut = false`): retail keeps the
+    // effect *pixels* field-resident but uploads their CLUTs (rows 473..=478)
+    // at battle entry, so writing the CLUTs here would be a wrong static upload.
+    // Soft-fail: a scene without the cluster just stays as-is.
+    let _ = legaia_engine_core::scene::upload_effect_textures_into_vram(
+        &index,
+        &mut resources.vram,
+        false,
+    );
     Ok(vram_to_le_bytes(&resources.vram))
 }
 
