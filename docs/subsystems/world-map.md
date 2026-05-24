@@ -372,70 +372,77 @@ dispatches every descriptor through `FUN_8001f05c`. **Only dispatcher cases
 `FUN_80026B4C`; the type-`0x05` slot-4 "MOVE" case only allocates a buffer and
 never installs — so slot-4 is *not* the terrain-mesh source.
 
-**Open: the full walk-view pool source.** `map01`'s static-object grid reaches
-pack index **105** (66 distinct), far past the 40-mesh landmark pack, so the
-faithful walk view needs a ~106-mesh pool. That pool is **not** reconstructible
-from the disc's `map01` PROT entries:
+**The walk-view pool (pinned).** A real `map01` walk-view capture (game mode
+`0x03`, standing on the Drake overworld) settles `DAT_8007C018` to exactly **45
+entries**: `[0..4]` = 5 party meshes (heap addresses ~`0x8014xxxx`), `[5..44]` =
+**the 40-mesh slot-1 landmark pack** (`prefix = 5`, install count 45). So the
+walk-view pool *is* the landmark pack the port already loads — the earlier
+"`map01` needs a ~106-mesh pool" reading was a misattribution (it came from the
+`.MAP` `+0x10` field, which belongs to the *overview*, below). The combined-pool
+idea (appending PROT 0093) was independently falsified: 0085's and 0093's slot-0
+atlases target the *same* VRAM pages, so they are **mutually-exclusive** sets (a
+walk-view vs. overview pair) that clobber each other if co-loaded.
 
-- Appending the larger sibling **continent-overview pack** (PROT 0093, 70 TMDs)
-  to the landmark pack is **falsified** — 0085's and 0093's slot-0 atlases
-  target the *same* VRAM pages (both write `(320,0)`, `(384,0)`, `(512,256)`,
-  `(640,0)`, `(704,0)`, `(768,0)` … and overlapping CLUT rows), so they are
-  **mutually-exclusive** asset sets (a walk-view vs. overview pair), never
-  co-resident. Loading both clobbers the landmark texels (terrain renders with
-  scrambled/yellow textures) *and* maps tiles to wrong meshes.
-- No single `map01` PROT entry holds ≥106 meshes (the largest is 0093's 70).
+Parsed live (absolute-pointer-fixed-up TMDs), the 40 scene meshes are all
+**small object-local tile/prop meshes** (dx/dz ≤ ~768 = a few 128-unit tiles,
+centred near origin, Y ≤ 0) — not one map-spanning stage. The walk continent is
+*instanced* from these 40.
 
-The retail walk-view pool is therefore a self-contained ≥106-mesh field-file
-pack the engine's `PROT.DAT`-boot path does not currently surface (the ISO9660
-disc has no `DATA\FIELD` tree; field files live inside `PROT.DAT`, and the
-matching `map01` walk-view entry is unidentified). Pinning it needs a **correct
-`map01` walk-view RAM capture** (`game_mode 0x03`) — the available
-`drake_world` / `sebucus_world` dumps are in fact the `dolk` / `geremi` field
-scenes, not world maps (see the provenance correction in
-[`memory-map.md`](../reference/memory-map.md)), so no world-map pool snapshot
-exists yet. Until then the walk view draws the landmark pack only.
+**Walk view ≠ overview — different pools, different placement.** The two retail
+sweeps over the `.MAP` object grid serve two different render modes:
+
+- **Overview** (top-down, game mode `0x0D`): `FUN_801F69D8` over the
+  [`CELL_VISIBLE`](../../crates/asset/src/field_objects.rs) (`0x2000`) cells.
+  Mesh = record `+0x10` geometry id (Drake: 134 distinct records, `+0x10` up to
+  63/105) → indexes the *larger* overview pack. This is what
+  [`legaia_asset::field_objects::parse_terrain_tiles`] + `pack_mesh_index`
+  models, and it is correct **for the overview pool only**.
+- **Walk** (game mode `0x03`): with the 40-mesh resident pool the `+0x10`
+  indices are out of range, and **no** record field is a clean `0..39` mesh
+  index (the byte fields that stay in range — `+0x0b`/`+0x15`/`+0x1e` — have
+  only 5–12 distinct values). So the `.MAP` object grid is the overview's
+  terrain source, **not** the walk view's. The walk-view bulk-continent
+  placement table is a separate structure that is **not in the `.MAP`
+  records**; its location is an open RE thread.
+
+The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
+interactive objects (distance-culled to ~14 live actors in the capture; most
+live actors are script-spawned, not from the placed-flag set). It allocates via
+`FUN_80024c88` → `FUN_80020de0` (free-list `FUN_80020454`, pool `_DAT_8007c354`),
+stores the record index at actor `+0x60`, and leaves the mesh chain `+0x44` at
+0; the mesh is resolved from the record index by the scene draw loop (resolver
+not yet pinned). These are props/entities, not the bulk continent.
 
 #### Placing the continent terrain (engine port)
 
-The kingdom slot-1 meshes are object-local; the continent is assembled by
-**positioning** them per tile. The placement source is the per-scene
-`DATA\FIELD\<scene>.MAP` object grid — the *same* static-object table towns
-use, decoded by [`legaia_asset::field_objects`] (the `+0x8000` object-index
-grid selects one of the `+0x0000` object records per occupied tile; each record
-carries the slot-1 pack index plus signed X/Y/Z offsets from the tile centre).
-Retail walks this grid two ways — the walk-view static placer `FUN_8003A55C`
-and the overhead continent sweep `FUN_801F69D8` (both read `_DAT_1f8003ec +
-0x8000`; see [`formats/world-map-overlay.md`](../formats/world-map-overlay.md)).
-Two layers come out of the grid:
+The kingdom slot-1 meshes are object-local, so the continent must be assembled
+by **positioning** them per tile. The **overview** layer is modelled today:
 
-- **Dense continent terrain** ([`Scene::field_terrain_tiles`] →
-  `resolve_world_map_terrain_draws`): every cell with the grid's
-  [`CELL_VISIBLE`](../../crates/asset/src/field_objects.rs) (`0x2000`) bit set —
-  the ground / trees / mountains. This is the `FUN_801F69D8` overhead sweep's
-  set and is by far the larger one (Drake 970 tiles, Sebacus 184, Karisto 161).
+- **Overview terrain** ([`Scene::field_terrain_tiles`] →
+  `resolve_world_map_terrain_draws`): the `FUN_801F69D8` visible-bit
+  (`0x2000`) cells (Drake 970, Sebacus 184, Karisto 161), mesh via record
+  `+0x10`. This targets the *overview* pack; against the 40-mesh walk pool the
+  high indices resolve to no mesh.
 - **Interactive objects** ([`Scene::field_object_placements`] →
-  `resolve_field_placement_draws`): the placed-flag (`0x4`) records —
-  landmarks, towns, collision props (Drake 51, Sebacus 20, Karisto 24). This is
-  the `FUN_8003A55C` walk-placer's set.
+  `resolve_field_placement_draws`): the placed-flag (`0x4`) records (Drake 51,
+  Sebacus 20, Karisto 24), the `FUN_8003A55C` set.
 
-Both resolve through the shared `resolve_placement_draws`: each tile draws the
-slot-1 pack mesh at `(col*0x80 + x_off, floor_height + y_off, row*0x80 +
-z_off)`, Y-flipped, sharing the player / entity-marker world frame. This
-replaces the earlier stopgap that drew the whole pack at the pack-local origin
-(the "small blob in the corner" — the continent and the player were in
-different frames). The world positions match the live actor positions captured
-from a top-down (`game_mode 0x0D`) save state. The walk-view camera frames a
-fixed world-space radius around the player (the object-local pack AABB would
-frame only the tile under the player); the top-view keeps the full-pack
-overhead framing.
+Both resolve through `resolve_placement_draws`: each tile draws the pack mesh at
+`(col*0x80 + x_off, floor_height + y_off, row*0x80 + z_off)`, Y-flipped, in the
+shared player / entity-marker world frame. Positions match live actor positions
+from a top-down (`game_mode 0x0D`) save state.
 
-Every terrain / object tile whose pack index falls inside the loaded landmark
-pack draws at its world position; tiles indexing beyond it (the majority — see
-*Open: the full walk-view pool source* above) resolve to no mesh and are
-skipped, so the engine continent is **sparse but correctly-meshed** rather than
-densely-but-wrongly tiled. Closing the gap is blocked on identifying the
-≥106-mesh walk-view pool, which needs a correct `map01` RAM capture.
+**Engine render-path mismatch (open).** `is_world_map_scene` routes any
+`map\d\d` scene to the WorldMap *overview* branch, which draws
+`world_map_terrain_draws` (the `+0x10` overview indices, up to 105) against the
+40-mesh **walk** pool. The high indices resolve to no mesh, so the result is a
+sparse scatter rather than a continent. But the Drake *walk* view is a **field**
+scene (game mode `0x03`), not the overview — it needs its own render path fed by
+the walk-view placement table (still unidentified), not the overview sweep.
+Until that table is found, the engine draws only the meshes whose indices land
+inside the resident pool — sparse, and partly mis-sourced. Closing the gap is
+blocked on locating the walk-view continent placement structure (the `.MAP`
+object grid is the overview's, not the walk's).
 
 #### Rendering the placed entities
 

@@ -64,6 +64,17 @@ pub const FLAG_PLACED: u16 = 0x4;
 /// The overhead continent sweep (`FUN_801F69D8`) renders every cell with this
 /// bit set (ground / trees / mountains) - the bulk continent, distinct from
 /// the placed-flag interactive objects [`parse_placements`] returns.
+///
+/// **Scope (overworld)**: on a kingdom overworld scene (`map\d\d`) the
+/// visible-bit sweep + [`pack_mesh_index`] (the record `+0x10` geometry id)
+/// is the **top-down overview** path's terrain (game mode `0x0D`), whose
+/// resident pool is the *larger* overview pack - `+0x10` reaches well past
+/// `0x3F`. It is NOT the *walk* view's terrain: a real `map01` walk capture
+/// (game mode `0x03`) keeps only 5 party + 40 small scene meshes resident, so
+/// the `+0x10` indices are out of range there. The walk-view continent is
+/// instanced from those 40 meshes by a separate placement table that is **not**
+/// in these `.MAP` object-grid records (no record field cleanly indexes
+/// `0..39`). That table is an open RE thread.
 pub const CELL_VISIBLE: u16 = 0x2000;
 /// Object ids `93..=118` are the "field-actor" band: their mesh is selected
 /// positionally (`pack_index = obj_idx - FIELD_ACTOR_PACK_BIAS`) rather than
