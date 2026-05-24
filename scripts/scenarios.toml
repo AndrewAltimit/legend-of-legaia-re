@@ -648,3 +648,46 @@ backup_fingerprint = "71094451e85eb2ecef11d2fcc975615360fb3bf58b506467fb8e1aa01f
 description = "Title screen with the NEW GAME row highlighted; one Cross press before the title -> field master-mode transition (FUN_80025B64 -> FUN_801D6704 -> game_mode 0x03). Pre-launch anchor for the New Game boot chain."
 phase = "boot"
 topics = ["title screen", "new game", "boot", "FUN_801DD35C", "master game-mode", "FUN_80025B64", "FUN_801D6704"]
+
+# ----------------------------------------------------------------------
+# Battle 2D-billboard hit-spark + summon-flicker captures. The melee
+# hit-spark frame is the capture that resolved the long-open "what fills
+# the efect.dat atlas page (0,0)" question: walking the live GPU prim
+# pool shows NO prim samples page (0,0) / 8bpp / tpage 0x7680 anywhere -
+# the static atlas tpage is an authoring placeholder, and the runtime
+# relocates each billboard onto the loaded effect-texture pages. The
+# white melee impact draws as textured quads (POLY_FT4/GT4) sampling the
+# PROT 870 flame-atlas pages (320,0) / (448,0) with effect-band CLUTs
+# (rows 473..480) - pages that appear ONLY in the impact frame (absent
+# from a no-spark command-menu frame), confirming they are the effect.
+# See docs/formats/effect.md "2D sprite billboards".
+#
+# The two Gimard Tail-Fire frames are consecutive-ish summon-cast frames
+# for the remaining flame-flicker thread; their effect-CLUT-band VRAM
+# data (rows 473..481) is byte-identical, which points the flicker at
+# per-frame prim CBA-column cycling rather than CLUT-data re-upload.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "battle_melee_hit_spark"
+backup_fingerprint = "2962ebbb70cc410de1050c0e4f231ce9ad66b5a509dc46d5649cff5c8b721581"
+phase = "battle"
+description = "Rim Elm (town01) battle frame on the impact of a melee attack, with the small white hit-spark effect on screen. Capture point for the efect.dat 2D-billboard texel source: the live GPU prim pool shows the spark drawn as textured quads sampling the PROT 870 flame-atlas pages (320,0)/(448,0) (effect-band CLUTs), with NO prim sampling page (0,0) / 8bpp / tpage 0x7680 - falsifying the page-(0,0) atlas reading."
+topics = ["battle", "effect", "2D billboard", "efect.dat", "hit spark", "PROT 870", "FUN_801E0088", "prim pool"]
+
+[[scenarios]]
+slot = 255
+label = "battle_gimard_tail_fire_a"
+backup_fingerprint = "c8038c2d86f84e42c0c2148fbf499eb795b645689e7260e88f7065b5c6a7c935"
+phase = "battle"
+description = "Rim Elm (town01) Gimard Tail Fire summon mid-cast, flame-animation frame A. Pair with battle_gimard_tail_fire_b for the flame-flicker thread (the PROT 905 summon overlay's per-frame animation). The effect-CLUT band (rows 473..481) is byte-identical between A and B, indicating the flicker is prim CBA-column cycling, not CLUT-data re-upload."
+topics = ["battle", "effect", "summon", "Tail Fire", "Gimard", "CLUT cycling", "PROT 905"]
+
+[[scenarios]]
+slot = 255
+label = "battle_gimard_tail_fire_b"
+backup_fingerprint = "def8234c3edec96f769a3a6e3cde0e5b93f7b68296f236ea01aba56a0f0637b1"
+phase = "battle"
+description = "Rim Elm (town01) Gimard Tail Fire summon mid-cast, flame-animation frame B. Pair with battle_gimard_tail_fire_a (see its note) for the flame-flicker thread."
+topics = ["battle", "effect", "summon", "Tail Fire", "Gimard", "CLUT cycling", "PROT 905"]

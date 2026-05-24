@@ -1798,6 +1798,23 @@ impl SceneHost {
 /// RAM snapshot.
 const PROT_BEFECT_DATA_ENTRY: u32 = 874;
 
+/// PROT entry holding the battle effect-texture atlas (the "flame atlas"):
+/// three 64x256 4bpp PSX TIMs blitted to VRAM `(320,0)`, `(384,0)`, `(448,0)`
+/// with CLUTs in rows 474..=476 (the effect-CLUT band). Stored uncompressed,
+/// back-to-back behind a 16-byte prefix. Despite its CDNAME label
+/// (`sound_data`, shared with PROT 871) it carries no audio - the label is one
+/// of the documented CDNAME mislabels. Byte-verified pixel-exact in VRAM
+/// against every stable Rim Elm battle capture (command-menu / submenu /
+/// pre- and post-Seru-capture frames); the partial match in a still-loading
+/// frame is just the mid-DMA snapshot. Unlike `etim.dat` (PROT 874 section 2,
+/// pages at `fb_y=256`), these pages sit at `fb_y=0` in the same VRAM columns
+/// the field uses for town stage textures, so they are *battle-only* uploads -
+/// the field captures hold unrelated town texels there. Retail blits them at
+/// battle load (not by the `FUN_800520F0` etmd/befect path, which pulls
+/// indices `0x367..=0x36d` - PROT 870 = index `0x366` is loaded by a separate
+/// site). See `docs/formats/effect.md`.
+const PROT_FLAME_ATLAS_ENTRY: u32 = 870;
+
 /// PROT entry holding the runtime effect buffer `data\battle\efect.dat` - the
 /// 2-pack wrapper (inline sprite atlas + pack0 anim batches + pack1 effect
 /// scripts) the battle effect VM consumes. Stored uncompressed; the raw entry
@@ -2074,6 +2091,53 @@ pub fn upload_effect_textures_into_vram(
     Ok(uploaded)
 }
 
+/// Upload the battle effect-texture atlas (PROT 870, the "flame atlas") into
+/// `vram`. These three 64x256 4bpp TIMs (pages at `(320,0)`, `(384,0)`,
+/// `(448,0)`, CLUTs in rows 474..=476) are the texel source for the
+/// fire/flame effect meshes during battle, byte-verified against live battle
+/// VRAM (see [`PROT_FLAME_ATLAS_ENTRY`]).
+///
+/// Call this on **battle entry**, not field entry: the pages land in the same
+/// VRAM columns (`fb_x` 320..512, `fb_y` 0) the field stage textures occupy,
+/// so uploading them while a field scene is resident would clobber town
+/// rendering. Retail overwrites that region for battle and the field reloads
+/// its textures on return - the play-window battle path mirrors this by
+/// blitting into a throwaway VRAM copy that battle exit discards.
+///
+/// `upload_clut` writes the CLUT rows (474..=476) alongside the image pages.
+/// Mirrors [`upload_effect_textures_into_vram`]; PROT 870 is uncompressed, so
+/// the TIMs are walked straight out of the entry bytes (read via the extended
+/// footprint, like the PROT 871 effect-model library - the indexed size can
+/// truncate the trailing TIM). Soft-fails; returns the number of TIMs uploaded.
+pub fn upload_flame_atlas_into_vram(
+    index: &ProtIndex,
+    vram: &mut legaia_tim::Vram,
+    upload_clut: bool,
+) -> Result<usize> {
+    let raw = index
+        .entry_bytes_extended(PROT_FLAME_ATLAS_ENTRY)
+        .with_context(|| format!("read PROT entry {PROT_FLAME_ATLAS_ENTRY} (flame atlas)"))?;
+    let mut uploaded = 0;
+    for target in legaia_asset::befect_cluster::scan_tims(&raw) {
+        match legaia_tim::parse(&raw[target.offset..]) {
+            Ok(tim) => {
+                vram.upload_tim_partial(&tim, true, upload_clut);
+                uploaded += 1;
+            }
+            Err(err) => {
+                eprintln!(
+                    "[scene] flame-atlas TIM @0x{:x} did not parse ({err:#}); skipping",
+                    target.offset
+                );
+            }
+        }
+    }
+    if uploaded == 0 {
+        anyhow::bail!("flame atlas (PROT {PROT_FLAME_ATLAS_ENTRY}) carried no uploadable TIMs");
+    }
+    Ok(uploaded)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2122,6 +2186,38 @@ mod tests {
             vram.region_has_data(832, 256, 20, 64),
             "etim fire-sprite tile @fb(832,256) should be populated"
         );
+    }
+
+    /// Disc-gated: the flame-atlas TIMs (PROT 870) decode and upload into a
+    /// software VRAM, populating all three effect-texture pages at the
+    /// byte-verified targets `(320,0)`, `(384,0)`, `(448,0)`. These sit at
+    /// `fb_y=0` (distinct from etim's `fb_y=256` pages) and are battle-only.
+    /// Skips when the disc data isn't present.
+    #[test]
+    fn flame_atlas_uploads_three_effect_pages_at_y0() {
+        if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        }
+        let root = ["extracted", "../../extracted"]
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.join("PROT.DAT").is_file());
+        let Some(root) = root else {
+            eprintln!("[skip] extracted/PROT.DAT missing");
+            return;
+        };
+        let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
+        let mut vram = legaia_tim::Vram::new();
+        let n =
+            upload_flame_atlas_into_vram(&index, &mut vram, true).expect("seed flame-atlas VRAM");
+        assert_eq!(n, 3, "expected exactly 3 flame-atlas TIMs, got {n}");
+        for (fb_x, fb_y) in [(320usize, 0usize), (384, 0), (448, 0)] {
+            assert!(
+                vram.region_has_data(fb_x, fb_y, 64, 256),
+                "flame-atlas page @fb({fb_x},{fb_y}) should be populated"
+            );
+        }
     }
 
     /// Disc-gated: the global TMD pool seeded from `etmd.dat` (PROT 0874

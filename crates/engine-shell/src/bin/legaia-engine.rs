@@ -5408,6 +5408,19 @@ impl PlayWindowApp {
         // Work on a throwaway copy so the field VRAM stays clean for the
         // restore on battle exit.
         let mut vram = base;
+        // Blit the battle effect-texture atlas (PROT 870) into the battle VRAM
+        // copy. Its pages land at fb_y=0 in the same columns the field stage
+        // textures occupy, so this is a battle-only upload that battle exit
+        // discards (the field VRAM base is untouched). Byte-verified against
+        // live battle captures; soft-fails so a missing disc entry just leaves
+        // the flame pages absent.
+        if let Err(e) = legaia_engine_core::scene::upload_flame_atlas_into_vram(
+            &self.session.host.index,
+            &mut vram,
+            true,
+        ) {
+            log::warn!("play-window: flame-atlas VRAM upload skipped: {e:#}");
+        }
         self.battle_mesh_base = self.meshes.len();
         let mut bound = 0usize;
         for (actor_idx, monster_id, slot) in monsters {

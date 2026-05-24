@@ -3179,7 +3179,7 @@ impl World {
                     uv: [e.u as u16, e.v as u16],
                     uv_size: [e.w as u16, e.h as u16],
                     page: e.page,
-                    clut: e.clut as u16,
+                    clut: e.clut,
                     age01,
                 });
             }
