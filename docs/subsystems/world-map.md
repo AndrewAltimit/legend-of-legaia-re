@@ -260,9 +260,13 @@ remap retail's `func_0x800467e8` applies (it feeds the pad through the camera
 yaw the renderer uses). `World::world_map_camera_relative_bits(azimuth, sx, sy)`
 rotates the screen delta into world space against the same azimuth
 [`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs) frames
-the eye with (`eye = center + (d·cosθ, -0.7d, d·sinθ)`). Because the renderer's
-Y-down convention inverts the on-screen vertical axis relative to the eye→centre
-direction, the world→screen axes are taken from the **real camera matrix, not a
+the eye with (`eye = center + (d·cosθ, +0.7d, d·sinθ)`). The kingdom pack is
+drawn Y-flipped (`scale(1,-1,1)`, PSX Y-down → renderer Y-up), so the camera
+frames the **flipped** Y range and sits at *positive* Y looking down on the
+terrain (an earlier version framed the raw AABB with the eye on the opposite Y
+side and rendered the map from underneath). Because that overhead view inverts
+the on-screen vertical axis relative to the eye→centre direction, the
+world→screen axes are taken from the **real camera matrix, not a
 hand-derived guess**: a disc-free projection test
 (`crates/engine-shell/tests/world_map_camera_remap.rs`) projects the chosen
 world direction back through `world_map_camera_mvp` and asserts it moves the
