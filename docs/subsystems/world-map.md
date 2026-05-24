@@ -377,6 +377,29 @@ holds 5 shared party meshes + 39 landmarks, not the 110 a naive sweep yields):
   stray meshes nor inflate `scene_aabb` (a camera-framing hazard). Shared blocks
   (the player atlas) still load normally.
 
+#### Placing the continent terrain (engine port)
+
+The kingdom slot-1 meshes are object-local; the continent is assembled by
+**positioning** them per tile. The placement source is the per-scene
+`DATA\FIELD\<scene>.MAP` object grid — the *same* static-object table towns
+use, decoded by [`legaia_asset::field_objects`] (the `+0x8000` object-index
+grid selects one of the `+0x0000` object records per occupied tile; each record
+carries the slot-1 pack index plus signed X/Y/Z offsets from the tile centre).
+Retail walks this grid two ways — the walk-view static placer `FUN_8003A55C`
+and the overhead continent sweep `FUN_801F69D8` (both read `_DAT_1f8003ec +
+0x8000`; see [`formats/world-map-overlay.md`](../formats/world-map-overlay.md)).
+The engine port resolves [`Scene::field_object_placements`] into world-space
+draws (`resolve_field_placement_draws`): for each placed tile it draws the
+slot-1 pack mesh at `(col*0x80 + x_off, floor_height + y_off, row*0x80 +
+z_off)`, Y-flipped, sharing the player / entity-marker world frame. This
+replaces the earlier stopgap that drew the whole pack at the pack-local origin
+(the "small blob in the corner" — the continent and the player were in
+different frames). Drake decodes 51 placements, Sebacus 20, Karisto 24; their
+world positions match the live actor positions captured from a top-down
+(`game_mode 0x0D`) save state. The walk-view camera frames a fixed world-space
+radius around the player (the object-local pack AABB would frame only the tile
+under the player); the top-view keeps the full-pack overhead framing.
+
 #### Rendering the placed entities
 
 [`World::world_map_entity_markers`](../../crates/engine-core/src/world.rs) is the

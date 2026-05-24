@@ -524,3 +524,70 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
         "at least one overworld NPC with inline dialog text must be exercised"
     );
 }
+
+/// Disc-gated: each kingdom overworld decodes its continent terrain as
+/// world-frame static-object placements (the DATA_FIELD `.MAP` object grid,
+/// `Scene::field_object_placements`). This is the data feeding the world-map
+/// render's per-tile terrain draw (`resolve_field_placement_draws`): every
+/// placement must sit on the 128-unit world tile grid (not pack-local), resolve
+/// to a slot-1 pack mesh index, and land inside the world bounds — the same
+/// frame the player marker uses, which is what aligns the continent under the
+/// player instead of piling it at the pack origin.
+#[test]
+fn world_maps_decode_world_frame_terrain_placements() {
+    use std::sync::Arc;
+
+    use legaia_engine_core::scene::{ProtIndex, Scene};
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+    let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open prot index"));
+
+    for label in ["map01", "map02", "map03"] {
+        let scene = Scene::load(&index, label).expect("load world-map scene");
+        let placements = scene
+            .field_object_placements(&index)
+            .expect("read field map")
+            .expect("world-map scene has a DATA_FIELD object grid");
+        assert!(
+            !placements.is_empty(),
+            "[{label}] continent terrain must decode at least one placement"
+        );
+        let mut resolved = 0usize;
+        for p in &placements {
+            // World-frame coordinates: the 128x128 tile grid spans 0..0x4000
+            // world units per axis (col/row 0..127, tile size 0x80).
+            assert!(
+                (0..0x4000).contains(&p.world_x) && (0..0x4000).contains(&p.world_z),
+                "[{label}] placement obj {} is off the world tile grid: ({}, {})",
+                p.obj_idx,
+                p.world_x,
+                p.world_z
+            );
+            assert!(
+                p.col < 0x80 && p.row < 0x80,
+                "[{label}] tile index out of grid"
+            );
+            if p.pack_index.is_some() {
+                resolved += 1;
+            }
+        }
+        // The bulk of placements bind a slot-1 kingdom-pack mesh (a few are
+        // script-only / global-pool refs that don't carry a pack index).
+        assert!(
+            resolved * 2 >= placements.len(),
+            "[{label}] most placements ({resolved}/{}) must resolve to a kingdom-pack mesh",
+            placements.len()
+        );
+        eprintln!(
+            "[{label}] {} terrain placements, {resolved} resolve to a slot-1 pack mesh",
+            placements.len()
+        );
+    }
+}

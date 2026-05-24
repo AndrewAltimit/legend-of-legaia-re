@@ -6945,14 +6945,28 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             (px, pz)
                         };
+                        // Walk view frames a fixed WORLD-space radius around the
+                        // player rather than the (small, object-local) kingdom-
+                        // pack AABB - the continent terrain now draws at world
+                        // tile coordinates (`field_placement_draws`), so the
+                        // pack-AABB radius would frame only the one tile under
+                        // the player. Keep the box centred at the pack-AABB
+                        // centre (the pan re-centres it on the player) and widen
+                        // it; top-view keeps the full-pack framing for the
+                        // overhead continent sweep.
+                        let (cam_lo, cam_hi) = if walk_mode {
+                            const WALK_HALF: f32 = 3200.0;
+                            let cx = (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5;
+                            let cz = (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5;
+                            (
+                                [cx - WALK_HALF, self.scene_aabb.0[1], cz - WALK_HALF],
+                                [cx + WALK_HALF, self.scene_aabb.1[1], cz + WALK_HALF],
+                            )
+                        } else {
+                            (self.scene_aabb.0, self.scene_aabb.1)
+                        };
                         legaia_engine_render::window::world_map_camera_mvp(
-                            self.scene_aabb.0,
-                            self.scene_aabb.1,
-                            az,
-                            zoom,
-                            pan_x,
-                            pan_z,
-                            aspect,
+                            cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
                         )
                     } else if let Some((look_at, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
@@ -7062,23 +7076,38 @@ impl ApplicationHandler for PlayWindowApp {
                     if self.boot_ui.is_active() {
                         // Boot UI is fullscreen - suppress 3D draws.
                     } else if in_world_map {
-                        // World map has no per-actor bindings: draw the whole
-                        // loaded kingdom mesh pack at its pack-local
-                        // coordinates, Y-flipped (`scale(1,-1,1)`) to convert the
-                        // PSX Y-down geometry to the renderer's Y-up - the same
-                        // orientation flip the field/actor path applies. The
-                        // world-map camera frames the *flipped* Y range from
-                        // above (see `world_map_camera_mvp`), so the kingdom
-                        // renders right-side up and viewed from overhead. Per-mesh
-                        // world placement from the live actor table is a separate,
-                        // still-open RE thread; the meshes render where the pack
-                        // puts them.
-                        let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        for mesh in &self.meshes {
-                            draws.push(SceneDraw {
-                                mesh,
-                                mvp: cam * model,
-                            });
+                        // World map continent geometry is placed per-tile, the
+                        // same way field/town static objects are: the kingdom's
+                        // DATA_FIELD `.MAP` object grid (`field_object_placements`
+                        // -> `resolve_field_placement_draws`) selects a slot-1
+                        // pack mesh per occupied tile and positions it at world
+                        // (col*0x80 + x_off, floor_height + y_off, row*0x80 +
+                        // z_off). This shares the player / entity-marker world
+                        // frame, so the continent aligns under the player instead
+                        // of piling at the pack-local origin. (Retail's overhead
+                        // continent sweep is `FUN_801F69D8`; the walk-view static
+                        // placer is `FUN_8003A55C` - both read the same `.MAP`
+                        // tile grid documented in `field_objects`.)
+                        if self.field_placement_draws.is_empty() {
+                            // Fallback (no `.MAP` placements resolved): draw the
+                            // whole pack at pack-local coords, Y-flipped, so the
+                            // map is never blank.
+                            let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                            for mesh in &self.meshes {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * model,
+                                });
+                            }
+                        } else {
+                            for (mesh_idx, model) in &self.field_placement_draws {
+                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                    draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * *model,
+                                    });
+                                }
+                            }
                         }
                     } else {
                         // Static environment geometry: draw each placed
