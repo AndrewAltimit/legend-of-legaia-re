@@ -385,8 +385,10 @@ walk-view vs. overview pair) that clobber each other if co-loaded.
 
 Parsed live (absolute-pointer-fixed-up TMDs), the 40 scene meshes are all
 **small object-local tile/prop meshes** (dx/dz ≤ ~768 = a few 128-unit tiles,
-centred near origin, Y ≤ 0) — not one map-spanning stage. The walk continent is
-*instanced* from these 40.
+centred near origin, Y ≤ 0) — not one map-spanning stage. These 40 are the
+**landmark layer** (trees, mountains, the castle); they are *not* the continent
+ground, which is a procedural heightfield (see "the continent ground is a
+procedural heightfield" below).
 
 **Walk view ≠ overview — different pools, different placement.** The two retail
 sweeps over the `.MAP` object grid serve two different render modes:
@@ -397,13 +399,11 @@ sweeps over the `.MAP` object grid serve two different render modes:
   63/105) → indexes the *larger* overview pack. This is what
   [`legaia_asset::field_objects::parse_terrain_tiles`] + `pack_mesh_index`
   models, and it is correct **for the overview pool only**.
-- **Walk** (game mode `0x03`): with the 40-mesh resident pool the `+0x10`
-  indices are out of range, and **no** record field is a clean `0..39` mesh
-  index (the byte fields that stay in range — `+0x0b`/`+0x15`/`+0x1e` — have
-  only 5–12 distinct values). So the `.MAP` object grid is the overview's
-  terrain source, **not** the walk view's. The walk-view bulk-continent
-  placement table is a separate structure that is **not in the `.MAP`
-  records**; its location is an open RE thread.
+- **Walk** (game mode `0x03`): the bulk continent ground is **not** a per-cell
+  pack-mesh sweep at all — it is a procedural heightfield (corner heights from
+  the `+0x4000` floor-nibble grid, confirmed by `FUN_80019278`; see below). The
+  `.MAP` records' `+0x10` field is used only by the sparse placed-landmark layer
+  (`FUN_8003A55C`, `flags & 0x4`); for the bulk ground cells `+0x10` is 0.
 
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
@@ -470,20 +470,43 @@ cell bit `0x1000`** (15389 cells in the live grid), distinct from the overview's
 placements (decoded via
 [`legaia_asset::man_section::ManFile::actor_placements`]).
 
-**Engine render (wired).** The walk path reads the **raw** `.MAP` records+grid
-at PROT.DAT `0x655800` (`toc[87]`, no compression) via
-[`Scene::walk_field_map_index`] (`block_start - 2`), sweeps the continent on the
-**`0x1000`** cell gate ([`Scene::walk_terrain_tiles`]) with `pool =
-record[+0x10]` (uniform), and `resolve_world_map_terrain_draws` feeds the
-world-map render — a kingdom overworld now draws a coherent ~16k-tile continent
-instead of the earlier sparse scatter (which came from the overview's `0x2000`
-sweep + raw `+0x10` against the 40-mesh pool resolving the within-block decoy
-map). The per-tile geometry + pack ordering is **verified correct**: the
-engine's slot-1 pack object-count sequence `[1,1,2,1,…]` is byte-order-identical
-to the live `DAT_8007C018[5..45]` pool (disc-gated test `walk_field_map`). The
-continent currently renders largely flat/untextured grey, so the open refinement
-is **texturing** — the walk-view slot-0 TIM → VRAM-page residency for the pack
-meshes (textured prims that sample un-uploaded VRAM are dropped at mesh build).
+**The continent ground is a procedural heightfield, not instanced meshes.**
+This is confirmed by **`FUN_80019278`** (SCUS, always-resident — unambiguous, no
+overlay aliasing), the bilinear **ground-height sampler**: from an entity's XZ
+(`actor+0x14/+0x18`) it reads the object-grid cell (`+0x8000`, tests the `0x1000`
+walk bit and the `0x1800` mask, sets the actor's `0x800000` off-map flag), then
+reads the 2×2 floor-nibble block at `+0x4000` (`grid[0],[1],[0x80],[0x81]`, each
+`& 0xf`) and **bilinearly interpolates** the floor height from the four corner
+LUT values (`DAT_1f80035c[nibble]`) weighted by the sub-tile position
+(`pos & 0x7f`), `>>0xe` (÷128²). So the `+0x4000` grid is **terrain elevation**,
+the `0x1000`-gated continent is a smooth heightfield surface, and the slot-1
+**pack meshes are only the sparse placed landmarks** (the `pool = record[+0x10] +
+prefix` set above, spawned by `FUN_8003A55C` gated on `flags & 0x4`).
+
+The visible ground is drawn as textured heightfield quads by the per-frame
+field/world controller (a live prim-pool write-probe,
+`dump_field_overlay_terrain_emitter.py`, caught `FUN_801F5748` writing the pool
+during a world-map transition), but the **exact terrain-quad emitter is not yet
+cleanly isolated** — the `0x801F76xx` terrain code aliases across overlays
+(muscle_dome / dance / fishing / world-map map *different* code to those VAs;
+the same VA in the 0897 field overlay is camera/region-scroll), so treat any
+single emitter-address attribution with caution. `FUN_80019278` (the height
+math) is the reliable anchor and is all the port needs for correct geometry.
+
+**Engine status.** The decoded slot-0 atlas textures correctly (real terrain
+tiles — grass/dirt/rock — decode through each prim's CLUT; the VRAM filter
+reports `missing_page = 0`). But [`Scene::walk_terrain_tiles`] (the `0x1000`
+per-cell pack-mesh sweep) is **incorrect** — it has no retail basis and floods
+~97% of cells with pool-5 because their `record +0x10` is 0 (their `+0x10` field
+is unused; the bulk ground never indexes the pack). A faithful render of that
+sweep is a near-uniform grid of one 768×640 mesh stamped every 128 units. The
+port needs a **new heightfield-terrain builder** (sweep `0x1000` cells, quad per
+cell from the `+0x4000` floor grid, texture from the slot-0 atlas via the
+per-cell tile id at `record +0x14`, range 0..63 — the `+0x14`→atlas-UV mapping is
+not yet pinned), and `walk_terrain_tiles` should be deleted. The slot-1 pack
+ordering is sound (the engine's `[1,1,2,1,…]` object-count sequence is
+byte-order-identical to the live `DAT_8007C018[5..45]` pool), so it remains the
+correct source for the landmark layer ([`Scene::walk_object_placements`]).
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
