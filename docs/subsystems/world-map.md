@@ -453,12 +453,25 @@ entities use a different partition / record format.
 `world_map_terrain_draws` (the `+0x10` overview indices, up to 105) against the
 40-mesh **walk** pool — the high indices resolve to no mesh, hence the sparse
 scatter. The Drake *walk* view is a **field** scene (game mode `0x03`) and needs
-the field-actor render path fed by its walk `.MAP`. The one piece still open is
-the **walk `.MAP` source**: disc `0092_map01.BIN` is *not* it (its grid/records
-don't appear in the live buffer and its positions don't match the live actors —
-`0092` is most likely the overview `.MAP`). Pinning the walk `.MAP` entry + its
-model field needs a scratchpad-inclusive capture (`_DAT_1f8003ec`) or tracing
-`FUN_8001f7c0`'s load target for the game-mode-`0x03` `map01` scene.
+the field-actor render path fed by its walk `.MAP`.
+
+The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`)
+pins the walk `.MAP` *filename*: it builds **`DATA\FIELD\<scene>.MAP`** (plus
+`<scene>.PCH` at `+0x12000` and `\efect.dat`; extension globals
+`DAT_8007b3bc=".MAP"` / `DAT_8007b3c4=".PCH"`), with the scene name from the
+global at `0x80084548`, and loads it *by name* via `FUN_8003e6bc` →
+`FUN_800608f0` (`break 0x103`, the kernel trap that resolves the name through
+PROT.DAT/CDNAME — the ISO9660 filesystem has no `DATA\FIELD\` tree). The
+walk/overview discriminator is the **scene name**, not the extension: CDNAME
+maps `map01 = 85` (walk) and `opmap01 = 768` (overview) to *separate* PROT
+blocks, so the walk loads `map01.MAP` (block `0085..0093`) and the overview
+loads `opmap01.MAP` (block `0768..0772`) — distinct files. The one piece still
+open is *which* entry in the `map01` block is `map01.MAP`: the raw extracted
+`0085..0093` don't reproduce the live record placement (e.g. record 474 → pool
+21 at world `(9152,10432)`), so `map01.MAP` is stored compressed / resolved to a
+specific block offset by the `break 0x103` handler. Closing it needs the trap's
+extension→offset mapping (or a correct decode of the block), then parsing that
+`.MAP` with the model field (`pool = prefix + model`).
 
 #### Rendering the placed entities
 

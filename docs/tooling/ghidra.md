@@ -162,6 +162,7 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 | `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. |
 | `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has `>=8` instructions ending in `jr $ra` before committing the function. |
 | `dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain (`FUN_801D7EA0` / `FUN_801D8258` / `FUN_801D1344` / `FUN_80016444` + SCUS callers and the 0897 relocation copy). Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
+| `trace_field_loader.py` | Targeted trace of the per-scene field-file loader `FUN_8001f7c0`: dumps the load chain (`FUN_8003e6bc` name-resolver, `FUN_800608f0` = `break 0x103` open, seek/read/close), reads the path-template + extension string constants (`DATA\FIELD\`, ext globals `DAT_8007b3bc=".MAP"` / `DAT_8007b3c4=".PCH"`, `\efect.dat`), LUI+ADDIU/mem writers of the extension + scene-name (`0x80084548`) globals, and xrefs to `FUN_8001f7c0`. Pins the field `.MAP` filename build (`DATA\FIELD\<scene>.MAP`) and the walk-vs-overview scene-name split (`map01` vs `opmap01` CDNAME blocks). |
 
 **LUI+ADDIU and address-resolution helpers**
 
