@@ -129,8 +129,28 @@ assignment is manual.
 2. Feed each sector to `StrFrameAssembler::push_sector()`.
 3. On complete frame: `MdecDecoder::new(w, h).decode_frame(&bs)` → RGBA8 buffer.
 4. Pre-decode all frames into `Vec<VideoFrame>`, then enter the winit event loop.
-5. On `RedrawRequested`: upload the next frame's RGBA as a GPU texture via
-   `renderer.upload_texture()` and render with `RenderTarget::Texture`.
+5. On `RedrawRequested`: show the frame due at the current wall-clock time
+   (`elapsed / frame_period`) and render it with `RenderTarget::Texture`, so the
+   movie plays at its real rate instead of the display refresh rate.
+
+### Frame-rate detection
+
+PSX STR files carry no frame-rate field; the rate is implied by how many CD
+sectors elapse per frame at the 2x delivery rate (150 sectors/s). In the raw
+2048-byte-per-sector files this codebase works with, the on-disc sector order is
+preserved 1:1 (audio sectors appear as skipped chunks), so the mean
+sectors-per-frame recovers the authored rate directly:
+
+```text
+fps = 150 / (total_sectors / video_frame_count)
+```
+
+`legaia_mdec::str_sector::analyze_str_timing` computes this and
+`StrTiming::frame_period` returns the per-frame hold duration (falling back to
+the canonical 15 fps for a degenerate stream). All six Legaia movies measure
+**exactly 10 sectors/frame → 15.00 fps** (`MV1` = 1345 frames = 89.7 s). The
+windowed in-flow cutscene driver and `play-str` both pace to this clock; frames
+are held when the host runs faster and dropped if it falls behind.
 
 Audio sync with the XA track is deferred; XA demux infrastructure exists in `crates/xa`.
 
@@ -140,7 +160,7 @@ entry needs the cutscene overlay trace (see "Open items" below).
 ## CLI reference
 
 ```bash
-# Report frame inventory of a raw STR file
+# Report frame inventory + detected frame rate of a raw STR file
 mdec scan-str cutscene.str
 
 # Decode all frames to PPM images

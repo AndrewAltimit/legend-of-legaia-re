@@ -85,9 +85,11 @@ A = 255</code></pre>
     <li>Feed each sector to <code>StrFrameAssembler::push_sector()</code>.</li>
     <li>On complete frame: <code>MdecDecoder::new(w, h).decode_frame(&amp;bs)</code> &rarr; RGBA8 buffer.</li>
     <li>Pre-decode all frames, then enter the winit event loop.</li>
-    <li>On <code>RedrawRequested</code>: upload the next frame as a GPU texture and render fullscreen.</li>
+    <li>On <code>RedrawRequested</code>: show the frame due at the current wall-clock time (<code>elapsed / frame_period</code>) and render fullscreen, so the movie plays at its real rate instead of the display refresh rate.</li>
   </ol>
-  <pre><code># Report frame inventory
+  <h3>Frame-rate detection</h3>
+  <p>PSX STR files carry no frame-rate field; the rate is implied by how many CD sectors elapse per frame at the 2x delivery rate (150 sectors/s). The raw 2048-byte-per-sector files preserve on-disc sector order 1:1 (audio sectors appear as skipped chunks), so the mean sectors-per-frame recovers the authored rate: <code>fps = 150 / (total_sectors / video_frame_count)</code>. <code>legaia_mdec::str_sector::analyze_str_timing</code> computes this and <code>StrTiming::frame_period</code> returns the per-frame hold duration (falling back to the canonical 15 fps for a degenerate stream). All six Legaia movies measure <strong>exactly 10 sectors/frame &rarr; 15.00 fps</strong> (<code>MV1</code> = 1345 frames = 89.7 s).</p>
+  <pre><code># Report frame inventory + detected frame rate
 mdec scan-str cutscene.str
 
 # Decode all frames to PPM images

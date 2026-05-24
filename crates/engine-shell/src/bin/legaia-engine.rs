@@ -3159,11 +3159,18 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
     Ok(decoded)
 }
 
-/// Decode a raw PSX STR file (2048-byte sectors) into RGBA video frames.
+/// Decode a raw PSX STR file (2048-byte sectors) into RGBA video frames plus
+/// the stream's detected playback timing (frame rate from the sector stride).
 /// Shared by `play-str` and the windowed in-flow cutscene driver.
-fn decode_str_frames(str_path: &Path) -> Result<Vec<legaia_mdec::VideoFrame>> {
+fn decode_str_frames(
+    str_path: &Path,
+) -> Result<(
+    Vec<legaia_mdec::VideoFrame>,
+    legaia_mdec::str_sector::StrTiming,
+)> {
     use legaia_mdec::{MdecDecoder, VideoFrame, str_sector::StrFrameAssembler};
     let data = std::fs::read(str_path).with_context(|| format!("read {}", str_path.display()))?;
+    let timing = legaia_mdec::str_sector::analyze_str_timing(&data);
     let n_sectors = data.len() / 2048;
     let mut asm = StrFrameAssembler::new();
     let mut frames: Vec<VideoFrame> = Vec::new();
@@ -3182,18 +3189,23 @@ fn decode_str_frames(str_path: &Path) -> Result<Vec<legaia_mdec::VideoFrame>> {
             }
         }
     }
-    Ok(frames)
+    Ok((frames, timing))
 }
 
 /// Windowed in-flow cutscene playback state: the decoded STR frames the
 /// field VM's FMV-trigger op resolved to, plus the current frame cursor and
 /// the live GPU upload. Held on [`PlayWindowApp`] while the world sits in
 /// [`SceneMode::Cutscene`]; the world resumes (`finish_cutscene`) once the
-/// frames drain. Mirrors [`StrPlayerApp`]'s one-frame-per-redraw pacing.
+/// frames drain. Paced to the stream's detected frame rate (wall-clock gated),
+/// like [`StrPlayerApp`], so the movie isn't tied to the display refresh rate.
 struct WindowedCutscene {
     frames: Vec<legaia_mdec::VideoFrame>,
     idx: usize,
     uploaded: Option<legaia_engine_render::UploadedTexture>,
+    /// Wall-clock duration to hold each frame (from `StrTiming::frame_period`).
+    frame_period: std::time::Duration,
+    /// When playback started; the visible frame index is `elapsed / period`.
+    clock: Option<std::time::Instant>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4361,15 +4373,18 @@ impl PlayWindowApp {
             (Some(root), Some(rel)) => {
                 let path = root.join(rel);
                 match decode_str_frames(&path) {
-                    Ok(frames) if !frames.is_empty() => {
+                    Ok((frames, timing)) if !frames.is_empty() => {
                         log::info!(
-                            "cutscene: playing fmv_id={fmv_id} {rel} ({} frames)",
-                            frames.len()
+                            "cutscene: playing fmv_id={fmv_id} {rel} ({} frames, {:.2} fps)",
+                            frames.len(),
+                            timing.fps
                         );
                         self.cutscene = Some(WindowedCutscene {
                             frames,
                             idx: 0,
                             uploaded: None,
+                            frame_period: timing.frame_period(),
+                            clock: None,
                         });
                         true
                     }
@@ -4401,20 +4416,30 @@ impl PlayWindowApp {
         }
     }
 
-    /// Render the active cutscene's current frame and advance the cursor.
-    /// One frame per redraw (mirrors [`StrPlayerApp`]); the drain check at the
-    /// top of the redraw handler resumes the field once `idx` passes the end.
+    /// Render the active cutscene's current frame, paced to the stream's
+    /// detected frame rate. The visible frame is `elapsed / frame_period`, so
+    /// playback runs at the movie's real ~15 fps regardless of the display
+    /// refresh rate (frames are held, or dropped if the host falls behind).
+    /// `idx` tracks the due frame so the drain check at the top of the redraw
+    /// handler resumes the field once the full duration has elapsed.
     fn render_windowed_cutscene(&mut self) {
         let Some(renderer) = self.win.renderer.as_ref() else {
             return;
         };
         if let Some(c) = self.cutscene.as_mut() {
-            if let Some(f) = c.frames.get(c.idx) {
+            let now = std::time::Instant::now();
+            let start = *c.clock.get_or_insert(now);
+            let elapsed = now.duration_since(start).as_secs_f64();
+            // Due frame index at this wall-clock time; `idx` reaching the frame
+            // count signals end-of-playback to the drain check.
+            let due = (elapsed / c.frame_period.as_secs_f64()) as usize;
+            c.idx = due;
+            let show = due.min(c.frames.len().saturating_sub(1));
+            if let Some(f) = c.frames.get(show) {
                 match renderer.upload_texture(&f.rgba, f.width, f.height) {
                     Ok(tex) => c.uploaded = Some(tex),
                     Err(e) => log::warn!("cutscene upload: {e}"),
                 }
-                c.idx += 1;
             }
             match c.uploaded.as_ref() {
                 Some(tex) => {
@@ -8442,22 +8467,24 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
 fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()> {
     // Pre-decode all frames into RGBA buffers (shared with the in-flow
     // windowed cutscene driver).
-    let frames = decode_str_frames(str_file)?;
+    let (frames, timing) = decode_str_frames(str_file)?;
     if frames.is_empty() {
         anyhow::bail!("no video frames found in {}", str_file.display());
     }
     println!(
-        "play-str: {} frames, {}×{}",
+        "play-str: {} frames, {}×{}, {:.2} fps",
         frames.len(),
         frames[0].width,
-        frames[0].height
+        frames[0].height,
+        timing.fps
     );
 
     let mut app = StrPlayerApp {
         win: EngineWindow::new(),
         frames,
-        frame_idx: 0,
         uploaded: None,
+        frame_period: timing.frame_period(),
+        clock: None,
     };
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
@@ -8467,8 +8494,11 @@ fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()
 struct StrPlayerApp {
     win: EngineWindow,
     frames: Vec<legaia_mdec::VideoFrame>,
-    frame_idx: usize,
     uploaded: Option<legaia_engine_render::UploadedTexture>,
+    /// Wall-clock duration to hold each frame (from the stream's detected fps).
+    frame_period: std::time::Duration,
+    /// When playback started; the visible frame is `elapsed / frame_period`.
+    clock: Option<std::time::Instant>,
 }
 
 impl ApplicationHandler for StrPlayerApp {
@@ -8492,16 +8522,23 @@ impl ApplicationHandler for StrPlayerApp {
                 self.win.handle_resize(size.width, size.height);
             }
             WindowEvent::RedrawRequested => {
+                // Pace to the stream's real frame rate: the frame to show is
+                // `elapsed / frame_period`, so the movie runs at ~15 fps rather
+                // than the display refresh rate. Once the due frame passes the
+                // last decoded frame, playback is done and the window closes.
+                let now = std::time::Instant::now();
+                let start = *self.clock.get_or_insert(now);
+                let due = (now.duration_since(start).as_secs_f64()
+                    / self.frame_period.as_secs_f64()) as usize;
+                if due >= self.frames.len() {
+                    event_loop.exit();
+                    return;
+                }
                 if let Some(renderer) = self.win.renderer() {
-                    if self.frame_idx < self.frames.len() {
-                        let f = &self.frames[self.frame_idx];
-                        match renderer.upload_texture(&f.rgba, f.width, f.height) {
-                            Ok(tex) => {
-                                self.uploaded = Some(tex);
-                            }
-                            Err(e) => log::warn!("upload: {e}"),
-                        }
-                        self.frame_idx += 1;
+                    let f = &self.frames[due];
+                    match renderer.upload_texture(&f.rgba, f.width, f.height) {
+                        Ok(tex) => self.uploaded = Some(tex),
+                        Err(e) => log::warn!("upload: {e}"),
                     }
                     if let Some(tex) = &self.uploaded {
                         let _ = renderer.render(RenderTarget::Texture(tex));

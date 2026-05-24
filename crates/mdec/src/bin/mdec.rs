@@ -102,7 +102,14 @@ fn cmd_scan_str(str_file: &PathBuf) -> Result<()> {
             frame_count += 1;
         }
     }
+    let timing = legaia_mdec::str_sector::analyze_str_timing(&data);
     println!("{} sectors, {} complete frames", n_sectors, frame_count);
+    println!(
+        "{:.3} sectors/frame -> {:.2} fps (2x CD rate); duration {:.1}s",
+        timing.sectors_per_frame,
+        timing.fps,
+        timing.frame_count as f64 * timing.frame_period().as_secs_f64()
+    );
     Ok(())
 }
 
