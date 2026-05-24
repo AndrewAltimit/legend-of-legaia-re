@@ -493,20 +493,24 @@ the same VA in the 0897 field overlay is camera/region-scroll), so treat any
 single emitter-address attribution with caution. `FUN_80019278` (the height
 math) is the reliable anchor and is all the port needs for correct geometry.
 
-**Engine status.** The decoded slot-0 atlas textures correctly (real terrain
-tiles — grass/dirt/rock — decode through each prim's CLUT; the VRAM filter
-reports `missing_page = 0`). But [`Scene::walk_terrain_tiles`] (the `0x1000`
-per-cell pack-mesh sweep) is **incorrect** — it has no retail basis and floods
-~97% of cells with pool-5 because their `record +0x10` is 0 (their `+0x10` field
-is unused; the bulk ground never indexes the pack). A faithful render of that
-sweep is a near-uniform grid of one 768×640 mesh stamped every 128 units. The
-port needs a **new heightfield-terrain builder** (sweep `0x1000` cells, quad per
-cell from the `+0x4000` floor grid, texture from the slot-0 atlas via the
-per-cell tile id at `record +0x14`, range 0..63 — the `+0x14`→atlas-UV mapping is
-not yet pinned), and `walk_terrain_tiles` should be deleted. The slot-1 pack
-ordering is sound (the engine's `[1,1,2,1,…]` object-count sequence is
-byte-order-identical to the live `DAT_8007C018[5..45]` pool), so it remains the
-correct source for the landmark layer ([`Scene::walk_object_placements`]).
+**Engine status.** The continent ground now renders as a **heightfield
+surface**: [`Scene::walk_heightfield`] →
+[`legaia_asset::field_objects::build_walk_heightfield`] sweeps the `0x1000`
+cells and emits one quad per cell, each corner's Y taken from the `+0x4000`
+floor-nibble grid via the floor LUT (the `FUN_80019278` math). `play-window`
+uploads it and draws it as the ground, with the placed landmarks
+([`Scene::walk_object_placements`], the `flags & 0x4` slot-1 pack meshes via
+`record[+0x10]+prefix`) on top. Verified against the real disc: map01/02/03
+build dense (>10k-quad) heightfields with genuine elevation variation. The old
+`walk_terrain_tiles` per-cell pack-mesh sweep — which flooded ~97% of cells
+with pool-5 because the bulk-terrain records carry `+0x10 == 0` — is removed.
+**Open (texturing):** the heightfield is drawn with a *provisional* uniform
+ground texel (the first textured atlas prim). Faithful per-tile texturing needs
+the per-cell tile id (`record +0x14`, range 0..63) mapped to a slot-0 atlas
+page + UV, which in turn needs the walk/world overlay's ground emitter isolated
+(blocked by overlay aliasing — the `0x801F76xx` terrain code differs per
+overlay). The decoded slot-0 atlas itself textures correctly (real terrain
+tiles decode through each prim's CLUT; `missing_page = 0`).
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
