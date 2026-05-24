@@ -7075,7 +7075,11 @@ impl ApplicationHandler for PlayWindowApp {
                         // it; top-view keeps the full-pack framing for the
                         // overhead continent sweep.
                         let (cam_lo, cam_hi) = if walk_mode {
-                            const WALK_HALF: f32 = 3200.0;
+                            // Frame a wide world-space radius around the player so
+                            // the overworld reads at retail's overhead scale (the
+                            // walk camera also sits steeper - see
+                            // `walk_view_camera_mvp`).
+                            const WALK_HALF: f32 = 4200.0;
                             let cx = (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5;
                             let cz = (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5;
                             (
@@ -7085,9 +7089,15 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             (self.scene_aabb.0, self.scene_aabb.1)
                         };
-                        legaia_engine_render::window::world_map_camera_mvp(
-                            cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
-                        )
+                        if walk_mode {
+                            legaia_engine_render::window::walk_view_camera_mvp(
+                                cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
+                            )
+                        } else {
+                            legaia_engine_render::window::world_map_camera_mvp(
+                                cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
+                            )
+                        }
                     } else if let Some((look_at, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
                             look_at,
@@ -7202,9 +7212,12 @@ impl ApplicationHandler for PlayWindowApp {
                         // 1. The **ground** is a heightfield surface
                         //    (`world_map_heightfield`) built from the walk
                         //    `.MAP` floor grid (`Scene::walk_heightfield`,
-                        //    elevation per `FUN_80019278`). Texturing is
-                        //    provisional (a uniform ground texel) until the
-                        //    per-tile `+0x14`->atlas-UV mapping is pinned.
+                        //    elevation per `FUN_80019278`). It draws with a
+                        //    provisional uniform ground texel: per-tile
+                        //    texturing has no clean source - the record `+0x14`
+                        //    byte is terrain-type metadata, not an atlas
+                        //    selector (no draw path reads it; see
+                        //    docs/subsystems/world-map.md "Open (texturing)").
                         // 2. The sparse **placed landmarks** (trees / mountains
                         //    / castle) are slot-1 pack meshes positioned per
                         //    occupied tile (`world_map_terrain_draws`, the

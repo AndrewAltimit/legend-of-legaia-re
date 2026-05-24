@@ -274,6 +274,62 @@ pub fn world_map_camera_mvp(
     proj * view
 }
 
+/// Camera MVP for the **overworld walk view** (game mode `0x03` on a kingdom
+/// continent, `map01`/`map02`/`map03`).
+///
+/// Same player-follow / azimuth / zoom / pan controls as
+/// [`world_map_camera_mvp`], but framed the way retail frames the overworld:
+/// a **wider, more steeply-overhead** vantage. The top-view debug camera
+/// ([`world_map_camera_mvp`]) sits at a `0.7·distance` height (a shallow ~35deg
+/// pitch good for surveying the whole continent); walking around a kingdom
+/// instead wants a higher, closer-overhead radius around the player so the
+/// nearby terrain reads at a useful scale. This keeps the two cameras separate
+/// so tuning one doesn't disturb the other.
+///
+/// Geometry matches [`world_map_camera_mvp`]: the continent is drawn Y-flipped
+/// (`scale(1,-1,1)`), so the eye sits at *positive* Y looking down on the
+/// flipped terrain centre (offset by the player-follow `pan_x` / `pan_z`).
+///
+/// # Parameters
+/// Identical to [`world_map_camera_mvp`].
+pub fn walk_view_camera_mvp(
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+    azimuth: i32,
+    zoom: i32,
+    pan_x: i32,
+    pan_z: i32,
+    aspect: f32,
+) -> Mat4 {
+    let lo = Vec3::from(aabb_lo);
+    let hi = Vec3::from(aabb_hi);
+    let center = Vec3::new(
+        (lo.x + hi.x) * 0.5 + pan_x as f32,
+        -(lo.y + hi.y) * 0.5,
+        (lo.z + hi.z) * 0.5 + pan_z as f32,
+    );
+    let radius = ((hi - lo).length() * 0.5).max(1.0);
+    let base_distance = radius / 30f32.to_radians().tan() * 1.6;
+    let zoom_mult = (1.0 - (zoom as f32) / 512.0).clamp(0.25, 3.0);
+    let distance = base_distance * zoom_mult;
+    let angle = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
+    // Steeper overhead than the top-view survey camera: `1.4·distance` of
+    // height gives a ~54deg downward pitch (vs the top-view's ~35deg), the
+    // higher-angle framing retail uses while walking the continent.
+    const WALK_EYE_HEIGHT: f32 = 1.4;
+    let eye = center
+        + Vec3::new(
+            distance * angle.cos(),
+            distance * WALK_EYE_HEIGHT,
+            distance * angle.sin(),
+        );
+    let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    let near = (distance * 0.05).max(0.1);
+    let far = distance * 4.0 + 1000.0;
+    let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+    proj * view
+}
+
 /// Camera MVP for an in-engine cutscene (the `opdeene` opening prologue),
 /// framing the cutscene's look-at point from a heading-rotated vantage.
 ///
@@ -449,6 +505,35 @@ mod camera_tests {
         let zoomed_out = world_map_camera_mvp(LO, HI, 0, -100_000, 0, 0, 1.5);
         assert!(finite(&zoomed_in));
         assert!(finite(&zoomed_out));
+    }
+
+    #[test]
+    fn walk_view_camera_mvp_is_finite_and_responds_to_controls() {
+        let base = walk_view_camera_mvp(LO, HI, 0, 0, 0, 0, 16.0 / 9.0);
+        assert!(finite(&base));
+        // azimuth / zoom / pan each change the projection, and extremes clamp.
+        assert_ne!(
+            base.to_cols_array(),
+            walk_view_camera_mvp(LO, HI, 1024, 0, 0, 0, 16.0 / 9.0).to_cols_array()
+        );
+        assert_ne!(
+            base.to_cols_array(),
+            walk_view_camera_mvp(LO, HI, 0, 256, 0, 0, 16.0 / 9.0).to_cols_array()
+        );
+        assert_ne!(
+            base.to_cols_array(),
+            walk_view_camera_mvp(LO, HI, 0, 0, 64, -64, 16.0 / 9.0).to_cols_array()
+        );
+        assert!(finite(&walk_view_camera_mvp(LO, HI, 0, 100_000, 0, 0, 1.5)));
+    }
+
+    #[test]
+    fn walk_view_camera_is_more_overhead_than_top_view() {
+        // The walk camera sits steeper (higher eye for the same framing) than
+        // the top-view survey camera, so the two MVPs differ.
+        let walk = walk_view_camera_mvp(LO, HI, 0, 0, 0, 0, 1.5);
+        let top = world_map_camera_mvp(LO, HI, 0, 0, 0, 0, 1.5);
+        assert_ne!(walk.to_cols_array(), top.to_cols_array());
     }
 
     #[test]
