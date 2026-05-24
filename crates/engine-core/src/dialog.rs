@@ -23,6 +23,51 @@
 use legaia_mes::{DialogPlayer, Interpreter, MesEvent, PlayerState};
 use std::sync::Arc;
 
+/// Decode every `0x1F`-lead text segment in a field-VM inline dialog buffer
+/// to its glyph bytes.
+///
+/// The retail field-VM dialog box (op `0x3F` → `func_0x8001ebec`) is a
+/// box-geometry header followed by one or more text segments, each introduced
+/// by a `0x1F` lead byte and terminated by an MES end byte (`0x00..=0x1E`).
+/// The first segment is the prompt the window types out; any further segments
+/// are the option labels the box lists below it.
+///
+/// Multi-*page* prompts are a single segment carrying `0x80..=0x9F` page-break
+/// control bytes between pages - those are paced by the typewriter
+/// ([`OwnedDialogPanel::tick`] surfaces them as [`PanelState::PageBreak`]), not
+/// split here. Only a fresh `0x1F` lead after a terminator opens a new segment,
+/// so this distinguishes "next page of the prompt" from "next option label".
+///
+/// Returns one `Vec<u8>` of decoded glyph bytes per segment, prompt first. The
+/// geometry header that precedes the first `0x1F` is skipped (its bytes can
+/// fall in the glyph range, so it is not interpreted as text).
+pub fn decode_inline_segments(inline: &[u8]) -> Vec<Vec<u8>> {
+    let mut segments = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel) = inline[cursor..].iter().position(|&b| b == 0x1F) {
+        let start = cursor + rel + 1;
+        let mut interp = Interpreter::new_at(inline, start);
+        let mut glyphs = Vec::new();
+        loop {
+            match interp.next_event() {
+                Some(MesEvent::Glyph(g)) | Some(MesEvent::SkipTwo(g)) => glyphs.push(g),
+                Some(MesEvent::WideGlyph(_op, arg)) => glyphs.push(arg),
+                Some(MesEvent::EndOfMessage(_)) | None => break,
+                // Page-break / spacing / substitution stay inside the current
+                // segment: a segment ends only at its MES terminator, never at
+                // an intermediate control byte.
+                Some(_) => {}
+            }
+        }
+        // Resume scanning just past this segment's terminator. `pc()` sits
+        // after the end byte; clamp to `start` so a `0x1F` immediately followed
+        // by a terminator (empty segment) still makes forward progress.
+        cursor = interp.pc().max(start);
+        segments.push(glyphs);
+    }
+    segments
+}
+
 /// Page-state machine the host polls each frame. Mirrors the
 /// [`legaia_mes::PlayerState`] fan-out but folds idle / typing into a single
 /// `Typing` outcome the host doesn't need to disambiguate.
@@ -180,6 +225,12 @@ pub struct OwnedDialogPanel {
     pub page: Vec<PanelGlyph>,
     /// CLUT pen color tracked through `0xCF` color escapes.
     pub current_clut: u8,
+    /// Option-label segments for a choice box, one decoded glyph-byte run per
+    /// label, in box order. Empty for a plain statement box. Populated by
+    /// [`Self::from_inline_dialog`] from the `0x1F`-lead segments that follow
+    /// the prompt (see [`decode_inline_segments`]); the prompt itself is typed
+    /// out through [`Self::page`]. The host lays these out below the prompt.
+    pub options: Vec<Vec<u8>>,
     state: PanelState,
     waiting_for_input: bool,
     done: bool,
@@ -196,6 +247,7 @@ impl OwnedDialogPanel {
             glyphs_per_frame: 1,
             page: Vec::new(),
             current_clut: 0,
+            options: Vec::new(),
             state: PanelState::Typing,
             waiting_for_input: false,
             done: false,
@@ -219,15 +271,36 @@ impl OwnedDialogPanel {
     /// `0x1F`-lead text/option segments (MES glyph bytecode). The geometry
     /// header is opaque here (it carries box position/size and option-layout
     /// bytes, some of which fall in the glyph range), so this skips to the
-    /// first `0x1F` lead marker and decodes the text from just past it through
-    /// the standard MES [`Interpreter`](legaia_mes::Interpreter) - rendering
-    /// the first segment up to its terminator.
+    /// first `0x1F` lead marker and types the prompt segment from just past it
+    /// through the standard MES [`Interpreter`](legaia_mes::Interpreter).
+    ///
+    /// A choice box carries further `0x1F`-lead segments after the prompt - the
+    /// option labels. Those are decoded up front via [`decode_inline_segments`]
+    /// and stashed in [`Self::options`] for the host to lay out below the
+    /// prompt (the prompt itself still types out through [`Self::page`]). A
+    /// plain statement box has no extra segments, so `options` stays empty.
     ///
     /// Returns `None` when no `0x1F` lead marker is present (nothing
     /// renderable), so a caller can fall back to the MES path.
     pub fn from_inline_dialog(inline: &[u8]) -> Option<Self> {
         let lead = inline.iter().position(|&b| b == 0x1F)?;
-        Some(Self::new(Arc::new(inline.to_vec()), lead + 1))
+        let mut panel = Self::new(Arc::new(inline.to_vec()), lead + 1);
+        // Segment 0 is the prompt (typed through `page`); 1.. are option
+        // labels. Skip empty trailing segments (a dangling `0x1F` with no body)
+        // so a stray lead in the record tail doesn't surface a blank option.
+        let mut segments = decode_inline_segments(inline);
+        if !segments.is_empty() {
+            segments.remove(0);
+        }
+        segments.retain(|s| !s.is_empty());
+        panel.options = segments;
+        Some(panel)
+    }
+
+    /// Option-label byte runs for a choice box, in box order. Empty for a plain
+    /// statement box. See [`Self::options`].
+    pub fn options(&self) -> &[Vec<u8>] {
+        &self.options
     }
 
     pub fn set_glyphs_per_frame(&mut self, n: u8) {
@@ -373,6 +446,57 @@ mod tests {
     #[test]
     fn from_inline_dialog_without_lead_marker_is_none() {
         assert!(OwnedDialogPanel::from_inline_dialog(&[0x00, 0x10, 0x00]).is_none());
+    }
+
+    /// A choice box: prompt segment `"Yes?"` then two `0x1F`-lead option
+    /// labels `"Yes"` / `"No"`, each terminated by `0x00`. The decoder must
+    /// recover all three segments in order, not stop at the first terminator.
+    #[test]
+    fn decode_inline_segments_recovers_prompt_and_options() {
+        // [header] 1F Y e s ? 00  1F Y e s 00  1F N o 00
+        let inline = vec![
+            0x00, 0x42, 0x1F, b'Y', b'e', b's', b'?', 0x00, 0x1F, b'Y', b'e', b's', 0x00, 0x1F,
+            b'N', b'o', 0x00,
+        ];
+        let segs = decode_inline_segments(&inline);
+        assert_eq!(
+            segs,
+            vec![b"Yes?".to_vec(), b"Yes".to_vec(), b"No".to_vec(),],
+            "all three 0x1F-lead segments decode in box order"
+        );
+    }
+
+    /// `from_inline_dialog` on a choice box: the prompt types out through the
+    /// page accumulator while the option labels land in `options`.
+    #[test]
+    fn from_inline_dialog_separates_prompt_from_options() {
+        let inline = vec![
+            0x00, 0x42, 0x1F, b'O', b'K', b'?', 0x00, 0x1F, b'Y', b'e', b's', 0x00, 0x1F, b'N',
+            b'o', 0x00,
+        ];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
+        assert_eq!(
+            panel.options(),
+            &[b"Yes".to_vec(), b"No".to_vec()],
+            "option labels recovered up front"
+        );
+        for _ in 0..3 {
+            assert_eq!(panel.tick(), PanelState::Typing);
+        }
+        assert_eq!(
+            panel.page_bytes(),
+            b"OK?".to_vec(),
+            "prompt types through page"
+        );
+    }
+
+    /// A plain statement box (single segment) leaves `options` empty - the
+    /// existing single-segment behaviour is preserved.
+    #[test]
+    fn from_inline_dialog_plain_statement_has_no_options() {
+        let inline = vec![0x00, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
+        let panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
+        assert!(panel.options().is_empty());
     }
 
     /// `0xCF XX` in MES bytecode = render XX alone. Both panel variants
