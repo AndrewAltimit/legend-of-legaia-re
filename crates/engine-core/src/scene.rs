@@ -1515,12 +1515,24 @@ impl SceneHost {
                 }
             }
             let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+            // World-map scenes (`map\d\d` = the three kingdom bundles) carry
+            // their landmark geometry in slot 1 of a 7-asset descriptor table,
+            // not as raw / loosely-LZS-packed TMDs. `SceneLoadKind::WorldMap`
+            // makes the resource build decode that slot explicitly (the
+            // faithful retail path) and routes per-prim emit through the
+            // distance-cue overlay variant. Every other field uses the plain
+            // field loader. See [`docs/subsystems/world-map.md`].
+            let load_kind = if crate::scene::is_world_map_scene(name) {
+                crate::scene_resources::SceneLoadKind::WorldMap
+            } else {
+                crate::scene_resources::SceneLoadKind::Field
+            };
             if let Ok((mut res, _stats)) =
                 crate::scene_resources::SceneResources::build_targeted_with_options(
                     scene,
                     &shared_refs,
                     crate::scene_resources::BuildOptions {
-                        kind: crate::scene_resources::SceneLoadKind::Field,
+                        kind: load_kind,
                         // Retail's field loader (FUN_8001F7C0) DMA-uploads
                         // every TIM in the scene, not just the subset the
                         // first-frame meshes sample. The town's environment

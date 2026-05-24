@@ -80,6 +80,81 @@ fn world_map_live_installs_regions_and_player() {
     );
 }
 
+/// The world-map load must source its geometry from the kingdom bundle's
+/// slot-1 landmark TMD pack, not the generic raw/LZS TMD sweep (which can't
+/// follow the 7-asset descriptor table and yields only a handful of stray
+/// meshes - the historical "battle-map look"). Slot-1 pack counts are pinned
+/// by the disc: Drake 40, Sebacus 36, Karisto 56.
+#[test]
+fn world_map_load_uses_kingdom_landmark_pack() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // (scene, slot-1 landmark TMD count) per crates/asset/src/kingdom_bundle.rs
+    // and verified against the disc.
+    for (scene, landmarks) in [("map01", 40usize), ("map02", 36), ("map03", 56)] {
+        let cfg = BootConfig {
+            scene: scene.into(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let opts = FieldLiveOpts::default();
+        session
+            .enter_world_map_live(scene, &opts)
+            .expect("enter_world_map_live");
+
+        let res = session
+            .host
+            .resources
+            .as_ref()
+            .expect("world-map scene resources built");
+        let n = res.tmds.len();
+        // The walk-view pool must be the kingdom landmark pack and nothing
+        // else: at least the full pack, and not the sibling-range continent
+        // overview pack (+43/+70 TMDs) or stray battle meshes. A small margin
+        // tolerates future shared-block (player) contributions.
+        assert!(
+            (landmarks..landmarks + 12).contains(&n),
+            "{scene}: expected ~{landmarks} landmark TMDs from the kingdom \
+             slot-1 pack, got {n} (too few = battle-map fallback; too many = \
+             the world-overview continent pack leaked in)"
+        );
+        // Every loaded TMD must come from the single primary kingdom entry.
+        let entries: std::collections::BTreeSet<u32> =
+            res.tmds.iter().map(|t| t.entry_idx).collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "{scene}: world-map geometry must come from one kingdom entry, \
+             got {entries:?}"
+        );
+        // At least most of the pack must texture cleanly against the slot-0
+        // atlas (the prim filter drops un-textured prims; a healthy world map
+        // keeps the large majority of meshes). Guards against a regression
+        // where the atlas stops covering the landmark texture pages.
+        let nonempty = res
+            .tmds
+            .iter()
+            .filter(|t| !t.build_filtered_vram_mesh(&res.vram).indices.is_empty())
+            .count();
+        assert!(
+            nonempty * 2 >= n,
+            "{scene}: only {nonempty}/{n} landmark meshes textured - the \
+             slot-0 atlas isn't covering the pack"
+        );
+        eprintln!(
+            "[{scene}] world-map mesh pool: {n} TMDs from entry {entries:?}, \
+             {nonempty} textured"
+        );
+    }
+}
+
 #[test]
 fn world_map_live_walk_reaches_battle() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

@@ -348,6 +348,35 @@ NPC placement installs a matching
 position** (Plain placements are skipped). So overworld portals + NPCs are
 **disc-sourced**, not synthetic.
 
+#### Loading the kingdom geometry (engine port)
+
+The walk-view world map draws exactly one thing: the **kingdom-bundle slot-1
+landmark TMD pack** (Drake 40, Sebacus 36, Karisto 56 TMDs), textured by the
+slot-0 TIM atlas. Retail's loader reads those slots straight from the scene's
+7-asset descriptor table; the engine port now mirrors that. When
+`SceneHost::enter_field_scene` loads a `map\d\d` scene it selects
+[`SceneLoadKind::WorldMap`], and [`SceneResources::build_targeted_with_options`]
+decodes slot 1 (via [`legaia_asset::kingdom_bundle`] +
+[`legaia_asset::pack`]) into the TMD pool and slot 0 into the VRAM upload set,
+**instead of** the generic raw/LZS `tmd_scan` sweep. The generic sweep can't
+follow the LZS-compressed descriptor table, so before this it picked up only a
+handful of stray meshes — the historical "the world map looks like a battle
+map" symptom.
+
+Two scoping rules keep the pool faithful to the savestate ground truth (the
+walk-view resident pool is the landmark pack alone — Drake's live mesh table
+holds 5 shared party meshes + 39 landmarks, not the 110 a naive sweep yields):
+
+- **Only the primary kingdom entry.** Each kingdom's PROT range also contains a
+  *second* kingdom-bundle-shaped entry — the bulk **continent overview** pack
+  (e.g. PROT 0093 for Drake, ~70 TMDs) that belongs to the zoomed-out
+  world-overview view, not the per-kingdom walk map. The build accepts only the
+  first kingdom bundle per scene and ignores the rest.
+- **No sibling-entry sweep.** The world-map main scene's non-kingdom sibling
+  entries (sub-area / battle assets) are skipped entirely, so they neither leak
+  stray meshes nor inflate `scene_aabb` (a camera-framing hazard). Shared blocks
+  (the player atlas) still load normally.
+
 #### Rendering the placed entities
 
 [`World::world_map_entity_markers`](../../crates/engine-core/src/world.rs) is the

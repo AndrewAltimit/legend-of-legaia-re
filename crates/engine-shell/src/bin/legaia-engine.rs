@@ -7833,11 +7833,21 @@ fn cmd_play_window_with_record(
         // every TIM, as retail's field loader DMAs the whole atlas - the
         // town meshes sample texture pages across all of VRAM, so a
         // render-targeted upload drops most of their prims.
+        // World-map scenes (`map\d\d`) draw the kingdom-bundle slot-1
+        // landmark pack, not the generic field sweep. Mirror the host's
+        // `enter_field_scene` kind selection so the rendered meshes match the
+        // gameplay-side resources (otherwise the window draws the Field-mode
+        // 2-mesh fallback while the host loaded the full 40-TMD pack).
+        let load_kind = if legaia_engine_core::scene::is_world_map_scene(scene) {
+            SceneLoadKind::WorldMap
+        } else {
+            SceneLoadKind::Field
+        };
         let (res, _stats) = SceneResources::build_targeted_with_options(
             s,
             &shared_refs,
             BuildOptions {
-                kind: SceneLoadKind::Field,
+                kind: load_kind,
                 upload_all_tims: true,
             },
         )?;
