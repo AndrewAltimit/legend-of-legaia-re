@@ -432,17 +432,33 @@ Both resolve through `resolve_placement_draws`: each tile draws the pack mesh at
 shared player / entity-marker world frame. Positions match live actor positions
 from a top-down (`game_mode 0x0D`) save state.
 
-**Engine render-path mismatch (open).** `is_world_map_scene` routes any
+**Walk-view placement mechanism (traced).** A walk capture shows the continent
+is drawn by the **actor system**, not a flat table. The per-actor render
+dispatcher `FUN_8001ADA4` (driven by `FUN_80016444` → `FUN_8001d140`) switches on
+`actor[+0x56]`; **case 5** draws `actor[+0x44]` as a *mesh chain* whose entries
+point at `pool_tmd + 0xc + obj*0x1c` (the TMD object headers), so **one actor
+draws one pool TMD**. The terrain/object actors are spawned by `FUN_8003A55C`
+(the `.MAP` object-grid placer) into pool `_DAT_8007c354`, with `actor[+0x60]` =
+the `.MAP` grid record index and `actor[+0x90]` = the object's MAN interaction
+script. The mesh is **`pool_idx = DAT_8007b6f8 (prefix) + model`** — a *small*
+index into the resident pool (live terrain actors draw pool 7/11/19/21/34, i.e.
+models 2/6/14/16/29). The `.MAP` `+0x10` field (28..105) is the **overview's**
+geometry id (its larger pool), not the walk mesh. MAN partition 1 supplies the
+NPC/portal/party placements (the engine already decodes these via
+[`legaia_asset::man_section::ManFile::actor_placements`]); the environment
+entities use a different partition / record format.
+
+**Engine render-path mismatch + open gap.** `is_world_map_scene` routes any
 `map\d\d` scene to the WorldMap *overview* branch, which draws
 `world_map_terrain_draws` (the `+0x10` overview indices, up to 105) against the
-40-mesh **walk** pool. The high indices resolve to no mesh, so the result is a
-sparse scatter rather than a continent. But the Drake *walk* view is a **field**
-scene (game mode `0x03`), not the overview — it needs its own render path fed by
-the walk-view placement table (still unidentified), not the overview sweep.
-Until that table is found, the engine draws only the meshes whose indices land
-inside the resident pool — sparse, and partly mis-sourced. Closing the gap is
-blocked on locating the walk-view continent placement structure (the `.MAP`
-object grid is the overview's, not the walk's).
+40-mesh **walk** pool — the high indices resolve to no mesh, hence the sparse
+scatter. The Drake *walk* view is a **field** scene (game mode `0x03`) and needs
+the field-actor render path fed by its walk `.MAP`. The one piece still open is
+the **walk `.MAP` source**: disc `0092_map01.BIN` is *not* it (its grid/records
+don't appear in the live buffer and its positions don't match the live actors —
+`0092` is most likely the overview `.MAP`). Pinning the walk `.MAP` entry + its
+model field needs a scratchpad-inclusive capture (`_DAT_1f8003ec`) or tracing
+`FUN_8001f7c0`'s load target for the game-mode-`0x03` `map01` scene.
 
 #### Rendering the placed entities
 
