@@ -4,8 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_asset::{
     AssetType, DecodeMode, Descriptor, battle_data_pack, categorize, decode, effect_bundle,
-    field_pack, parse_player_lzs, parse_streaming, stage_geom, tim_catalog, tim_scan, tmd_scan,
-    validate,
+    field_pack, parse_player_lzs, parse_streaming, stage_geom, tim_catalog, tim_deep_catalog,
+    tim_scan, tmd_scan, validate,
 };
 use legaia_prot::cdname;
 
@@ -150,6 +150,26 @@ enum Cmd {
         /// Flat PROT.DAT image (e.g. `extracted/PROT.DAT`).
         prot: PathBuf,
         /// Write the catalog as JSON to this path. Default prints a table.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Also print the count + rollup digest (the value the disc-gated
+        /// regression pins).
+        #[arg(long, default_value_t = false)]
+        rollup: bool,
+    },
+    /// Deep TIM catalog: LZS-decompress every PROT entry and catalog the
+    /// standard PSX TIMs found inside the decoded sections - the compressed
+    /// character / scene textures the flat `tim-catalog` (raw-bytes only)
+    /// can't see. Each row is keyed by `(entry, lzs-section, offset-in-
+    /// section)` with dimensions, CLUT count, byte length, and an FNV
+    /// fingerprint of the DECODED bytes. A hit is admitted only when the
+    /// decoded bytes strict-parse AND decode to RGBA (LZS "decodes without
+    /// error" is never a validity signal).
+    TimDeepCatalog {
+        /// PROT.DAT image (e.g. `extracted/PROT.DAT`).
+        prot: PathBuf,
+        /// Write the catalog as TSV (`.tsv`) or JSON to this path. Default
+        /// prints a table.
         #[arg(long)]
         out: Option<PathBuf>,
         /// Also print the count + rollup digest (the value the disc-gated
@@ -553,6 +573,9 @@ fn main() -> Result<()> {
             out,
         } => tim_scan_cmd(&dir, cdname.as_deref(), only_hits, out.as_deref()),
         Cmd::TimCatalog { prot, out, rollup } => tim_catalog_cmd(&prot, out.as_deref(), rollup),
+        Cmd::TimDeepCatalog { prot, out, rollup } => {
+            tim_deep_catalog_cmd(&prot, out.as_deref(), rollup)
+        }
         Cmd::TmdScan {
             dir,
             cdname,
@@ -2313,6 +2336,53 @@ fn tim_catalog_cmd(
 
     if rollup {
         let r = tim_catalog::rollup(&catalog);
+        println!("rollup: count={} digest=0x{:016x}", r.count, r.digest);
+    }
+    Ok(())
+}
+
+/// `asset tim-deep-catalog <PROT.DAT>` - LZS-decompress every entry and
+/// catalog the standard TIMs hiding inside the compressed sections.
+fn tim_deep_catalog_cmd(
+    prot: &std::path::Path,
+    out: Option<&std::path::Path>,
+    rollup: bool,
+) -> Result<()> {
+    let catalog = tim_deep_catalog::build_from_path(prot)?;
+
+    if let Some(out) = out {
+        let body = if out.extension().and_then(|e| e.to_str()) == Some("tsv") {
+            tim_deep_catalog::to_tsv(&catalog)
+        } else {
+            serde_json::to_string_pretty(&catalog)?
+        };
+        std::fs::write(out, body)?;
+        println!("wrote {} deep TIMs -> {}", catalog.len(), out.display());
+    } else {
+        println!(
+            "{:>5}  {:>5}  {:>3}  {:>9}  {:>4}  {:>4}  {:>9}  fnv1a",
+            "id", "entry", "sec", "off_in", "bpp", "pal", "bytes"
+        );
+        println!("{}", "-".repeat(78));
+        for t in &catalog {
+            println!(
+                "{:>5}  {:>5}  {:>3}  0x{:07X}  {:>4}  {:>4}  {:>9}  {:016x}  {}x{}",
+                t.id,
+                t.entry_index,
+                t.lzs_section,
+                t.offset_in_section,
+                t.bpp,
+                t.clut_count,
+                t.byte_len,
+                t.fnv1a,
+                t.width,
+                t.height,
+            );
+        }
+    }
+
+    if rollup {
+        let r = tim_deep_catalog::rollup(&catalog);
         println!("rollup: count={} digest=0x{:016x}", r.count, r.digest);
     }
     Ok(())

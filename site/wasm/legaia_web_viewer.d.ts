@@ -293,31 +293,26 @@ export class LegaiaViewer {
      */
     current_mes_message_hex(text_id: number): string;
     /**
-     * CLUT-palette count of the current entry's current TIM (0 for 16/24bpp).
-     */
-    current_tim_clut_count(): number;
-    /**
-     * Number of strict-catalog TIMs the 2D stepper can page through in the
-     * current entry. 0 for TMD/3D entries (the mesh owns the canvas) and
-     * LZS-only entries (their TIMs aren't in the flat catalog).
-     */
-    current_tim_count(): number;
-    /**
-     * Index of the TIM the 2D path is currently showing within the entry.
-     */
-    current_tim_index(): number;
-    /**
-     * JSON describing the current entry's current TIM (catalog id, offset,
-     * dimensions, CLUT count, byte length) for the status line.
-     */
-    current_tim_info_json(): string;
-    /**
      * Build a 1024×512 PSX VRAM from every TIM the current entry contains.
      * Returns the raw bytes (2 MB if a CLUT block is present, but VRAM is
      * always exactly 1 MB = 1024×512×2). Used by the WebGL2 path to upload
      * to a R16UI texture.
      */
     current_vram_bytes(): Uint8Array;
+    /**
+     * Number of CLUT palettes available for deep-catalog TIM `id`.
+     */
+    deep_catalog_clut_count(id: number): number;
+    /**
+     * JSON describing deep-catalog TIM `id` (owning entry, LZS section,
+     * offset within the decoded section, dimensions, CLUT count, byte
+     * length, fingerprint) for the info panel.
+     */
+    deep_catalog_info_json(id: number): string;
+    /**
+     * Number of cataloged compressed TIMs in the loaded PROT.DAT.
+     */
+    deep_catalog_len(): number;
     entry_count(): number;
     /**
      * Returns a JSON array describing every viewable entry: PROT index, class,
@@ -531,6 +526,11 @@ export class LegaiaViewer {
      */
     render_catalog_tim(id: number, clut: number, canvas_id: string): void;
     /**
+     * Render deep-catalog TIM `id` with CLUT `clut` into the 2D canvas named
+     * `canvas_id`.
+     */
+    render_deep_catalog_tim(id: number, clut: number, canvas_id: string): void;
+    /**
      * Render the current entry's TMD at the given rotation into a flat
      * `Vec<f32>` of triangle data (7 floats per triangle, painter's-sorted
      * back-to-front).
@@ -591,10 +591,6 @@ export class LegaiaViewer {
      * the dropdown / list-click UI.
      */
     set_slot(slot: number): number;
-    /**
-     * Select which TIM within the current entry the 2D path renders.
-     */
-    set_tim_in_entry(idx: number): void;
     /**
      * Per-body inventory of the slot-4 wireframe, as a JSON string.
      * Used by the inspector panel to show which bodies are present.
@@ -770,11 +766,10 @@ export interface InitOutput {
     readonly legaiaviewer_current_has_tmd: (a: number) => number;
     readonly legaiaviewer_current_index: (a: number) => number;
     readonly legaiaviewer_current_mes_message_hex: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_current_tim_clut_count: (a: number) => number;
-    readonly legaiaviewer_current_tim_count: (a: number) => number;
-    readonly legaiaviewer_current_tim_index: (a: number) => number;
-    readonly legaiaviewer_current_tim_info_json: (a: number) => [number, number];
     readonly legaiaviewer_current_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_deep_catalog_clut_count: (a: number, b: number) => number;
+    readonly legaiaviewer_deep_catalog_info_json: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_deep_catalog_len: (a: number) => number;
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
     readonly legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
@@ -815,13 +810,13 @@ export interface InitOutput {
     readonly legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaviewer_save_state_prim_replay: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
-    readonly legaiaviewer_set_tim_in_entry: (a: number, b: number) => [number, number];
     readonly legaiaviewer_slot4_body_inventory_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_slot4_wireframe_bounds: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

@@ -83,6 +83,39 @@ the count + a rollup digest. The in-browser asset viewer builds the same
 catalog live from a user-supplied disc and lets you page through every TIM by
 id with its CLUT variants.
 
+### Deep catalog: TIMs inside LZS-compressed sections
+
+The flat catalog — like the reference decoder — scans only **raw** bytes, so
+any TIM stored inside an [LZS-compressed](lzs.md) `PROT.DAT` section is
+invisible to it, and most character and scene textures are compressed.
+`legaia_asset::tim_deep_catalog` recovers them as a **separate tier**: it walks
+every PROT entry, LZS-decompresses it with `legaia_lzs::decompress_container`
+(the same decode path [`tim_scan`](../../crates/asset/src/tim_scan.rs) uses),
+and strict-parses every TIM in each decoded section.
+
+```
+asset tim-deep-catalog extracted/PROT.DAT --out deep_catalog.tsv   # or .json
+asset tim-deep-catalog extracted/PROT.DAT --rollup                 # count + digest
+```
+
+Each deep hit is keyed by `(entry index, LZS section index, offset within the
+decoded section)` plus dimensions / bpp / CLUT count / byte length / an FNV-1a
+of the decoded bytes. The validity gate matters: **LZS "decompresses without
+error" is never a validity signal** — the 4 KB ring buffer initialises to
+zeros, so random input decodes to plausible-looking bytes (see
+[`lzs.md`](lzs.md)). A deep hit is admitted only when the decoded bytes both
+pass `parse_strict` *and* decode to RGBA, which rejects the coincidental
+TIM-magic-in-noise a magic-only scan of decompressed garbage would produce.
+
+The deep tier is kept wholly separate from the flat catalog (which stays
+byte-identical to its reference). It has no external decoder oracle — the
+reference decoder doesn't decompress — so its disc-gated regression
+(`crates/asset/tests/tim_deep_catalog_coverage.rs`) instead guards the decode
+path + validity gate by pinning count + rollup digest + a byte-exact committed
+reference (`crates/asset/tests/data/prot_tim_deep_catalog.tsv`, metadata + FNV
+only; no decompressed Sony bytes). The viewer surfaces the deep tier as a
+distinct "compressed textures" grid below the raw catalog.
+
 ## See also
 
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.

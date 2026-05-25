@@ -17,9 +17,17 @@ PROT entries                      // 0865_battle_data.BIN, 0972_move_program_no.
 Sub-assets                        // TIM, TMD, VAB, MES, ANM, stage-geom, scene bundles
    │  legaia-tim         TIM → PNG (--skip-png skips)
    │  legaia-xa          CD-XA demux → per-channel WAV (--skip-xa skips)
+   │  legaia-asset       TIM catalog → TSV inventory (--skip-catalog skips)
    ▼
 extracted/                        // human-browsable output tree
 ```
+
+The final step writes the flat and deep TIM catalogs as TSVs
+(`prot_tim_catalog.tsv` / `prot_tim_deep_catalog.tsv`) into the extract root,
+so a headless extract carries the full texture inventory - the raw,
+strict-validated TIM set plus the TIMs recovered from inside LZS-compressed
+sections. These mirror the committed reference catalogs (metadata + FNV
+fingerprints only, no pixel bytes).
 
 The CD-XA step reads the raw disc directly (not the Form-1 dumps under
 `extracted/XA/`, which truncate the Form-2 audio sectors and shuffle the
@@ -40,6 +48,7 @@ together with a clap CLI and a SHA-256 check on the input.
 # Common flags:
 #   --skip-png       skip the slow PNG conversion
 #   --skip-xa        skip the CD-XA demux → WAV step
+#   --skip-catalog   skip writing the TIM-catalog TSVs
 #   --skip-verify    skip the input SHA-256 check
 #   -v               per-file output
 ```

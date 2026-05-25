@@ -680,49 +680,6 @@ export class LegaiaViewer {
         }
     }
     /**
-     * CLUT-palette count of the current entry's current TIM (0 for 16/24bpp).
-     * @returns {number}
-     */
-    current_tim_clut_count() {
-        const ret = wasm.legaiaviewer_current_tim_clut_count(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Number of strict-catalog TIMs the 2D stepper can page through in the
-     * current entry. 0 for TMD/3D entries (the mesh owns the canvas) and
-     * LZS-only entries (their TIMs aren't in the flat catalog).
-     * @returns {number}
-     */
-    current_tim_count() {
-        const ret = wasm.legaiaviewer_current_tim_count(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Index of the TIM the 2D path is currently showing within the entry.
-     * @returns {number}
-     */
-    current_tim_index() {
-        const ret = wasm.legaiaviewer_current_tim_index(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * JSON describing the current entry's current TIM (catalog id, offset,
-     * dimensions, CLUT count, byte length) for the status line.
-     * @returns {string}
-     */
-    current_tim_info_json() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.legaiaviewer_current_tim_info_json(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
      * Build a 1024×512 PSX VRAM from every TIM the current entry contains.
      * Returns the raw bytes (2 MB if a CLUT block is present, but VRAM is
      * always exactly 1 MB = 1024×512×2). Used by the WebGL2 path to upload
@@ -734,6 +691,42 @@ export class LegaiaViewer {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * Number of CLUT palettes available for deep-catalog TIM `id`.
+     * @param {number} id
+     * @returns {number}
+     */
+    deep_catalog_clut_count(id) {
+        const ret = wasm.legaiaviewer_deep_catalog_clut_count(this.__wbg_ptr, id);
+        return ret >>> 0;
+    }
+    /**
+     * JSON describing deep-catalog TIM `id` (owning entry, LZS section,
+     * offset within the decoded section, dimensions, CLUT count, byte
+     * length, fingerprint) for the info panel.
+     * @param {number} id
+     * @returns {string}
+     */
+    deep_catalog_info_json(id) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_deep_catalog_info_json(this.__wbg_ptr, id);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Number of cataloged compressed TIMs in the loaded PROT.DAT.
+     * @returns {number}
+     */
+    deep_catalog_len() {
+        const ret = wasm.legaiaviewer_deep_catalog_len(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * @returns {number}
@@ -1252,6 +1245,21 @@ export class LegaiaViewer {
         }
     }
     /**
+     * Render deep-catalog TIM `id` with CLUT `clut` into the 2D canvas named
+     * `canvas_id`.
+     * @param {number} id
+     * @param {number} clut
+     * @param {string} canvas_id
+     */
+    render_deep_catalog_tim(id, clut, canvas_id) {
+        const ptr0 = passStringToWasm0(canvas_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_render_deep_catalog_tim(this.__wbg_ptr, id, clut, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * Render the current entry's TMD at the given rotation into a flat
      * `Vec<f32>` of triangle data (7 floats per triangle, painter's-sorted
      * back-to-front).
@@ -1372,16 +1380,6 @@ export class LegaiaViewer {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] >>> 0;
-    }
-    /**
-     * Select which TIM within the current entry the 2D path renders.
-     * @param {number} idx
-     */
-    set_tim_in_entry(idx) {
-        const ret = wasm.legaiaviewer_set_tim_in_entry(this.__wbg_ptr, idx);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
     }
     /**
      * Per-body inventory of the slot-4 wireframe, as a JSON string.

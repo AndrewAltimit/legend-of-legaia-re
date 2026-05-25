@@ -40,6 +40,9 @@ struct Cli {
     /// Skip CD-XA demux → per-channel WAV (the streamed-audio step).
     #[arg(long)]
     skip_xa: bool,
+    /// Skip writing the TIM-catalog TSVs (the texture inventory step).
+    #[arg(long)]
+    skip_catalog: bool,
     /// Print one line per file written.
     #[arg(short, long)]
     verbose: bool,
@@ -63,11 +66,11 @@ fn main() -> Result<()> {
         log("verify: skipped");
     }
 
-    log("step 1/6: disc → ISO9660 files");
+    log("step 1/7: disc → ISO9660 files");
     let n = step_disc_extract(&cli.bin, &cli.out, cli.verbose)?;
     log(&format!("  {} files extracted", n));
 
-    log("step 2/6: PROT.DAT → named entries");
+    log("step 2/7: PROT.DAT → named entries");
     let prot_dir = cli.out.join("PROT");
     let cdname_path = cli.out.join("CDNAME.TXT");
     let cdname_arg = if cdname_path.exists() {
@@ -87,7 +90,7 @@ fn main() -> Result<()> {
         prot_dir.display()
     ));
 
-    log("step 3/6: categorize PROT entries");
+    log("step 3/7: categorize PROT entries");
     let cat_path = prot_dir.join("categorize.json");
     let report = step_categorize(&prot_dir, &cat_path)?;
     log(&format!(
@@ -96,15 +99,15 @@ fn main() -> Result<()> {
         cat_path.display()
     ));
 
-    log("step 4/6: extract sub-assets from streaming-format entries");
+    log("step 4/7: extract sub-assets from streaming-format entries");
     let stream_dir = cli.out.join("streaming");
     let n_streams = step_streaming_extract(&prot_dir, &stream_dir, cli.verbose)?;
     log(&format!("  {} streaming containers expanded", n_streams));
 
     if cli.skip_png {
-        log("step 5/6: TIM → PNG (skipped via --skip-png)");
+        log("step 5/7: TIM → PNG (skipped via --skip-png)");
     } else {
-        log("step 5/6: TIM → PNG");
+        log("step 5/7: TIM → PNG");
         let n_png = step_tim_to_png(&stream_dir, cli.verbose)?;
         log(&format!(
             "  {} PNG images written under {}",
@@ -114,9 +117,9 @@ fn main() -> Result<()> {
     }
 
     if cli.skip_xa {
-        log("step 6/6: CD-XA demux → WAV (skipped via --skip-xa)");
+        log("step 6/7: CD-XA demux → WAV (skipped via --skip-xa)");
     } else {
-        log("step 6/6: CD-XA demux → per-channel WAV");
+        log("step 6/7: CD-XA demux → per-channel WAV");
         let xa_dir = cli.out.join("XA_WAV");
         let n_wav = step_xa_demux(&cli.bin, &xa_dir, cli.verbose)?;
         log(&format!(
@@ -126,8 +129,40 @@ fn main() -> Result<()> {
         ));
     }
 
+    if cli.skip_catalog {
+        log("step 7/7: TIM catalog → TSV (skipped via --skip-catalog)");
+    } else {
+        log("step 7/7: TIM catalog → TSV");
+        let (raw_n, deep_n) = step_tim_catalog(&cli.out.join("PROT.DAT"), &cli.out)?;
+        log(&format!(
+            "  {} raw + {} compressed TIMs → prot_tim_catalog.tsv / prot_tim_deep_catalog.tsv",
+            raw_n, deep_n
+        ));
+    }
+
     log("done");
     Ok(())
+}
+
+/// Write the flat and deep TIM catalogs as TSVs into the extract root, so a
+/// headless extract carries the full texture inventory. These mirror the
+/// committed reference catalogs (metadata + FNV fingerprints only - no pixel
+/// bytes). Returns `(raw_count, deep_count)`.
+fn step_tim_catalog(prot: &Path, out: &Path) -> Result<(usize, usize)> {
+    if !prot.exists() {
+        bail!("PROT.DAT not found at {}", prot.display());
+    }
+    let raw = legaia_asset::tim_catalog::build_from_path(prot)?;
+    std::fs::write(
+        out.join("prot_tim_catalog.tsv"),
+        legaia_asset::tim_catalog::to_tsv(&raw),
+    )?;
+    let deep = legaia_asset::tim_deep_catalog::build_from_path(prot)?;
+    std::fs::write(
+        out.join("prot_tim_deep_catalog.tsv"),
+        legaia_asset::tim_deep_catalog::to_tsv(&deep),
+    )?;
+    Ok((raw.len(), deep.len()))
 }
 
 fn verify(bin: &Path, log: impl Fn(&str)) -> Result<()> {

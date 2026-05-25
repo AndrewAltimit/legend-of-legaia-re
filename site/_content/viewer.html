@@ -139,7 +139,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
-  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side. The top viewer renders every 3D mesh (Legaia TMD) in <code>PROT.DAT</code>; the TIM-catalog grid below it shows every 2D texture. Nothing leaves your machine.</p>
+  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side. The top viewer renders every 3D mesh (Legaia TMD) in <code>PROT.DAT</code>; below it, two texture grids show every 2D TIM &mdash; the raw catalog and a deep tier that recovers textures from inside LZS-compressed sections. Nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -196,7 +196,7 @@
 
 <section class="doc-section" id="tim-catalog">
   <style>
-    #catalog-grid {
+    #catalog-grid, #deep-catalog-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
       gap: 6px;
@@ -260,9 +260,32 @@
   <p id="catalog-empty" class="hint">Load a disc (or raw <code>PROT.DAT</code>) above to browse the TIM catalog.</p>
 </section>
 
+<section class="doc-section" id="compressed-textures">
+  <h2>Compressed textures (LZS-embedded)</h2>
+  <p class="lede">Most character and scene textures aren't stored as raw bytes &mdash; they live inside <strong>LZS-compressed</strong> <code>PROT.DAT</code> sections, invisible to the flat scan above (which, like the reference decoder, reads only raw bytes). This grid is the <em>deep</em> tier: every entry is LZS-decompressed and the standard PSX TIMs inside each decoded section are recovered, keyed by <code>(entry, section, offset)</code>. A hit is admitted only when the decompressed bytes strict-parse <em>and</em> decode to RGBA &mdash; &ldquo;decompresses without error&rdquo; is never a validity signal, since the LZS ring buffer initialises to zeros. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <div id="deep-catalog-pane" style="display: none;">
+    <div id="deep-catalog-grid"></div>
+    <div id="deep-catalog-detail" style="display: none; margin-top: 0.75rem;">
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem;">
+        <button id="deep-cat-prev" type="button">&larr; Prev</button>
+        <input type="number" id="deep-cat-id" min="0" value="0" title="compressed-texture id" style="width: 6rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.4rem; font-family: inherit;">
+        <button id="deep-cat-next" type="button">Next &rarr;</button>
+        <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
+          <select id="deep-cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
+        </label>
+        <span class="viewer-info" id="deep-cat-info"></span>
+      </div>
+      <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
+        <canvas id="deep-catalog-canvas" width="256" height="256" style="image-rendering: pixelated; background: #11161f; transform-origin: top left;"></canvas>
+      </div>
+    </div>
+  </div>
+  <p id="deep-catalog-empty" class="hint">Load a disc (or raw <code>PROT.DAT</code>) above to browse the compressed textures.</p>
+</section>
+
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
-  <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. The TIM-catalog grid below shows every 2D texture in <code>PROT.DAT</code> &mdash; click a thumbnail to load it full-size and switch CLUT (palette) variants.</p>
+  <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. Below it, the <strong>PROT.DAT TIM catalog</strong> grid shows every raw 2D texture and the <strong>compressed textures</strong> grid shows the LZS-embedded ones &mdash; click a thumbnail in either to load it full-size and switch CLUT (palette) variants.</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
@@ -296,119 +319,150 @@
 
   if (!fileInput) return;
 
-  /* --- TIM Catalog browse mode -----------------------------------------
-   * Self-contained: its own canvas + controls, independent of the PROT-
-   * entry browser (which swaps its canvas between 2D and WebGL). Driven by
-   * the flat jPSXdec-parity catalog the WASM viewer builds at load time. */
-  const catalogPane  = document.getElementById('catalog-pane');
-  const catalogEmpty = document.getElementById('catalog-empty');
-  const catGrid   = document.getElementById('catalog-grid');
-  const catDetail = document.getElementById('catalog-detail');
-  const catId   = document.getElementById('cat-id');
-  const catClut = document.getElementById('cat-clut');
-  const catInfo = document.getElementById('cat-info');
-  const catPrev = document.getElementById('cat-prev');
-  const catNext = document.getElementById('cat-next');
-  let catCount = 0;
-  let catCur = 0;
+  /* --- TIM catalog grids -----------------------------------------------
+   * Two tiers, identical UI, different WASM backing: the flat jPSXdec-parity
+   * RAW catalog and the DEEP (LZS-embedded) catalog of compressed textures.
+   * `makeCatalogTier` builds one self-contained grid + detail panel (its own
+   * canvas + controls, independent of the 3D PROT-entry browser) from a
+   * config that names the DOM ids and the WASM accessors. Instantiated once
+   * per tier below. */
+  function makeCatalogTier(cfg) {
+    const pane   = document.getElementById(cfg.pane);
+    const empty  = document.getElementById(cfg.empty);
+    const grid   = document.getElementById(cfg.grid);
+    const detail = document.getElementById(cfg.detail);
+    const idIn   = document.getElementById(cfg.idInput);
+    const clutSel= document.getElementById(cfg.clut);
+    const infoEl = document.getElementById(cfg.info);
+    const prevBt = document.getElementById(cfg.prev);
+    const nextBt = document.getElementById(cfg.next);
+    let count = 0, cur = 0, observer = null;
 
-  function renderCatalog(id, clut) {
-    try {
-      viewer.render_catalog_tim(id, clut, 'catalog-canvas');
-    } catch (e) {
-      catInfo.textContent = 'render error: ' + e;
-      return false;
+    function render(id, clut) {
+      try { cfg.render(id, clut, cfg.canvas); }
+      catch (e) { infoEl.textContent = 'render error: ' + e; return false; }
+      return true;
     }
-    return true;
-  }
 
-  /* Load one TIM full-size into the detail panel below the grid. */
-  function showCatalogTim(id) {
-    if (!viewer || catCount === 0) return;
-    id = Math.max(0, Math.min(catCount - 1, id | 0));
-    catCur = id;
-    catId.value = id;
-    catDetail.style.display = 'block';
-    const meta = JSON.parse(viewer.catalog_info_json(id));
-    const nclut = Math.max(1, meta.clut_count | 0);
-    catClut.innerHTML = '';
-    for (let i = 0; i < nclut; i++) {
-      const o = document.createElement('option');
-      o.value = i; o.textContent = 'palette ' + i;
-      catClut.appendChild(o);
-    }
-    catClut.value = 0;                     /* CLUT resets to 0 per TIM */
-    catClut.disabled = (meta.clut_count | 0) <= 1;
-    if (!renderCatalog(id, 0)) return;
-    const where = meta.entry === 'gap' ? 'system-UI gap' : ('PROT ' + meta.entry);
-    catInfo.textContent =
-      `#${meta.id} / ${catCount - 1} · ${meta.width}×${meta.height} ${meta.bpp}bpp · ` +
-      `${meta.clut_count | 0} CLUT · ${where} +0x${meta.offset_in_entry.toString(16)} · ` +
-      `${meta.byte_len} B`;
-    /* Highlight the matching grid cell + scroll the detail into view. */
-    catGrid.querySelectorAll('.cat-cell.selected').forEach(c => c.classList.remove('selected'));
-    const cell = catGrid.querySelector(`.cat-cell[data-id="${id}"]`);
-    if (cell) cell.classList.add('selected');
-    catDetail.scrollIntoView({ block: 'nearest' });
-  }
-
-  /* Lazily render each thumbnail only as it scrolls into the grid viewport
-   * (1132 TIMs would be too much to blit up front). */
-  let thumbObserver = null;
-  function buildCatalogGrid() {
-    catGrid.innerHTML = '';
-    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
-    thumbObserver = new IntersectionObserver((entries, obs) => {
-      for (const ent of entries) {
-        if (!ent.isIntersecting) continue;
-        const cell = ent.target;
-        obs.unobserve(cell);
-        const id = parseInt(cell.dataset.id, 10);
-        try { viewer.render_catalog_tim(id, 0, 'cat-thumb-' + id); } catch (e) { /* skip */ }
+    /* Load one TIM full-size into the detail panel below the grid. */
+    function show(id) {
+      if (!viewer || count === 0) return;
+      id = Math.max(0, Math.min(count - 1, id | 0));
+      cur = id;
+      idIn.value = id;
+      detail.style.display = 'block';
+      const meta = JSON.parse(cfg.infoJson(id));
+      const nclut = Math.max(1, meta.clut_count | 0);
+      clutSel.innerHTML = '';
+      for (let i = 0; i < nclut; i++) {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = 'palette ' + i;
+        clutSel.appendChild(o);
       }
-    }, { root: catGrid, rootMargin: '120px' });
-
-    const frag = document.createDocumentFragment();
-    for (let id = 0; id < catCount; id++) {
-      const meta = JSON.parse(viewer.catalog_info_json(id));
-      const cell = document.createElement('div');
-      cell.className = 'cat-cell';
-      cell.dataset.id = id;
-      cell.title = `#${id} · ${meta.width}×${meta.height} ${meta.bpp}bpp`;
-      const cv = document.createElement('canvas');
-      cv.id = 'cat-thumb-' + id;
-      cv.width = 1; cv.height = 1;
-      const label = document.createElement('span');
-      label.className = 'cat-cell-label';
-      label.textContent = `#${id} · ${meta.width}×${meta.height}`;
-      cell.appendChild(cv);
-      cell.appendChild(label);
-      cell.addEventListener('click', () => showCatalogTim(id));
-      frag.appendChild(cell);
+      clutSel.value = 0;                     /* CLUT resets to 0 per TIM */
+      clutSel.disabled = (meta.clut_count | 0) <= 1;
+      if (!render(id, 0)) return;
+      infoEl.textContent =
+        `#${meta.id} / ${count - 1} · ${meta.width}×${meta.height} ${meta.bpp}bpp · ` +
+        `${meta.clut_count | 0} CLUT · ${cfg.where(meta)} · ${meta.byte_len} B`;
+      /* Highlight the matching grid cell + scroll the detail into view. */
+      grid.querySelectorAll('.cat-cell.selected').forEach(c => c.classList.remove('selected'));
+      const cell = grid.querySelector(`.cat-cell[data-id="${id}"]`);
+      if (cell) cell.classList.add('selected');
+      detail.scrollIntoView({ block: 'nearest' });
     }
-    catGrid.appendChild(frag);
-    catGrid.querySelectorAll('.cat-cell').forEach(c => thumbObserver.observe(c));
+
+    /* Lazily render each thumbnail only as it scrolls into the grid viewport
+     * (thousands of TIMs would be too much to blit up front). */
+    function buildGrid() {
+      grid.innerHTML = '';
+      if (observer) { observer.disconnect(); observer = null; }
+      observer = new IntersectionObserver((entries, obs) => {
+        for (const ent of entries) {
+          if (!ent.isIntersecting) continue;
+          const cell = ent.target;
+          obs.unobserve(cell);
+          const id = parseInt(cell.dataset.id, 10);
+          try { cfg.render(id, 0, cfg.thumbPrefix + id); } catch (e) { /* skip */ }
+        }
+      }, { root: grid, rootMargin: '120px' });
+
+      const frag = document.createDocumentFragment();
+      for (let id = 0; id < count; id++) {
+        const meta = JSON.parse(cfg.infoJson(id));
+        const cell = document.createElement('div');
+        cell.className = 'cat-cell';
+        cell.dataset.id = id;
+        cell.title = `#${id} · ${meta.width}×${meta.height} ${meta.bpp}bpp`;
+        const cv = document.createElement('canvas');
+        cv.id = cfg.thumbPrefix + id;
+        cv.width = 1; cv.height = 1;
+        const label = document.createElement('span');
+        label.className = 'cat-cell-label';
+        label.textContent = `#${id} · ${meta.width}×${meta.height}`;
+        cell.appendChild(cv);
+        cell.appendChild(label);
+        cell.addEventListener('click', () => show(id));
+        frag.appendChild(cell);
+      }
+      grid.appendChild(frag);
+      grid.querySelectorAll('.cat-cell').forEach(c => observer.observe(c));
+    }
+
+    function init() {
+      count = viewer ? cfg.len() : 0;
+      if (count === 0) {
+        pane.style.display = 'none';
+        empty.style.display = 'block';
+        empty.textContent = cfg.emptyMsg;
+        return;
+      }
+      empty.style.display = 'none';
+      pane.style.display = 'block';
+      detail.style.display = 'none';
+      idIn.max = count - 1;
+      buildGrid();
+    }
+
+    if (prevBt) prevBt.onclick = () => show(cur - 1);
+    if (nextBt) nextBt.onclick = () => show(cur + 1);
+    if (idIn)   idIn.addEventListener('change', () => show(parseInt(idIn.value, 10) || 0));
+    if (clutSel) clutSel.addEventListener('change', () => render(cur, parseInt(clutSel.value, 10) || 0));
+
+    return { init };
   }
 
-  function initCatalog() {
-    catCount = viewer ? viewer.catalog_len() : 0;
-    if (catCount === 0) {
-      catalogPane.style.display = 'none';
-      catalogEmpty.style.display = 'block';
-      catalogEmpty.textContent = 'No TIM catalog for this input (load a disc or raw PROT.DAT).';
-      return;
-    }
-    catalogEmpty.style.display = 'none';
-    catalogPane.style.display = 'block';
-    catDetail.style.display = 'none';
-    catId.max = catCount - 1;
-    buildCatalogGrid();
-  }
+  /* Flat jPSXdec-parity catalog: each TIM maps to its owning PROT entry (or
+   * the unindexed system-UI gap) at a raw byte offset. */
+  const rawCatalog = makeCatalogTier({
+    pane: 'catalog-pane', empty: 'catalog-empty', grid: 'catalog-grid',
+    detail: 'catalog-detail', idInput: 'cat-id', clut: 'cat-clut',
+    info: 'cat-info', prev: 'cat-prev', next: 'cat-next',
+    canvas: 'catalog-canvas', thumbPrefix: 'cat-thumb-',
+    emptyMsg: 'No TIM catalog for this input (load a disc or raw PROT.DAT).',
+    len:      ()           => viewer.catalog_len(),
+    infoJson: (id)         => viewer.catalog_info_json(id),
+    render:   (id, c, cv)  => viewer.render_catalog_tim(id, c, cv),
+    where:    (meta)       => (meta.entry === 'gap' ? 'system-UI gap' : ('PROT ' + meta.entry))
+                              + ' +0x' + meta.offset_in_entry.toString(16),
+  });
 
-  if (catPrev) catPrev.onclick = () => showCatalogTim(catCur - 1);
-  if (catNext) catNext.onclick = () => showCatalogTim(catCur + 1);
-  if (catId) catId.addEventListener('change', () => showCatalogTim(parseInt(catId.value, 10) || 0));
-  if (catClut) catClut.addEventListener('change', () => renderCatalog(catCur, parseInt(catClut.value, 10) || 0));
+  /* Deep catalog: TIMs recovered from inside LZS-compressed sections, keyed
+   * by (entry, section, offset-in-decoded-section). */
+  const deepCatalog = makeCatalogTier({
+    pane: 'deep-catalog-pane', empty: 'deep-catalog-empty', grid: 'deep-catalog-grid',
+    detail: 'deep-catalog-detail', idInput: 'deep-cat-id', clut: 'deep-cat-clut',
+    info: 'deep-cat-info', prev: 'deep-cat-prev', next: 'deep-cat-next',
+    canvas: 'deep-catalog-canvas', thumbPrefix: 'deep-cat-thumb-',
+    emptyMsg: 'No compressed TIMs for this input (load a disc or raw PROT.DAT).',
+    len:      ()           => viewer.deep_catalog_len(),
+    infoJson: (id)         => viewer.deep_catalog_info_json(id),
+    render:   (id, c, cv)  => viewer.render_deep_catalog_tim(id, c, cv),
+    where:    (meta)       => 'PROT ' + meta.entry + ' · LZS sec ' + meta.lzs_section
+                              + ' +0x' + meta.offset_in_section.toString(16),
+  });
+
+  function initCatalog() { rawCatalog.init(); deepCatalog.init(); }
 
   let viewer = null;
   let allEntries = [];      /* entry-list-json output */
