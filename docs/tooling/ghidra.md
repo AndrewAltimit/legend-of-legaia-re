@@ -155,6 +155,14 @@ Empirical workflow:
 
 The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scripts/`. Edit the `TARGETS` / `LO` / `HI` constants at the top of any script to point at the addresses you want to trace.
 
+Every script needs the `# @runtime Jython` header line (with `# @category Legaia`); without it the headless analyzer routes `.py` to the PyGhidra (Python 3) provider, which the image doesn't enable, and the load fails with *"Ghidra was not started with PyGhidra"*.
+
+**Symbol re-application**
+
+| Script | Purpose |
+|---|---|
+| `apply_known_symbols.py` | Re-apply this project's pinned function names to a fresh import of `SCUS_942.54`. Reads the curated `(address, name, role-comment)` table in `known_symbols.py` and names each function + sets a one-line PLATE comment, so the asset/loader/CD/dispatch cluster is readable immediately instead of a wall of `FUN_xxxxxxxx`. The clean-room counterpart to a PsyQ FidDB pass (replays our own RE labels, no external SDK). SCUS-resident (`0x80010000..0x8007C000`) only - RAM overlays alias by address, so naming them blind would mislabel. Run with `-process SCUS_942.54 -noanalysis -postScript /scripts/apply_known_symbols.py`. |
+
 **Per-function dumps**
 
 | Script | Purpose |

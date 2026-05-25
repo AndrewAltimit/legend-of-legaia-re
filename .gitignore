@@ -118,3 +118,6 @@ __pycache__/
 # OS junk.
 .DS_Store
 Thumbs.db
+
+# Jython-compiled bytecode from running ghidra/scripts/*.py in the container
+*$py.class
