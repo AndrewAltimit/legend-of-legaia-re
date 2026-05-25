@@ -9,6 +9,14 @@ Two coordinated tracks under one Cargo workspace:
 
 The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation.
 
+**Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - interactive viewers (run client-side off your own disc image), the full technical reference, and the demo video below.
+
+## Demo
+
+https://github.com/AndrewAltimit/legend-of-legaia-re/raw/refs/heads/main/site/assets/legend-of-legaia-re-demo.mp4
+
+The clean-room engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
+
 **Status:** local research project. Don't expect API stability.
 
 **License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered - this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same. These licenses apply *only* to the code and documentation in this repository. **Sony's IP - game executable, asset data, ROM contents - is not redistributed and is not covered by these licenses.** You bring your own disc image. The `extracted/` and `ghidra/projects/` directories are gitignored. CI runs without disc data.
