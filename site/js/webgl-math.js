@@ -271,15 +271,22 @@ function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
   const eyeX = cam.centerX;
   const eyeZ = cam.centerZ - eyeY * Math.tan(pitch);
   const target = [cam.centerX, 0, cam.centerZ];
-  /* Rotate the top-down map 90 deg clockwise on screen. With the camera
-   * looking straight down, up = -X makes screen-up = world -X and
-   * screen-right = world -Z (vs the un-rotated up = -Z, which gave
-   * screen-up = -Z / screen-right = +X). The pan controls in
-   * attachTopDownControls map drag deltas back through this same basis. */
-  const up = [-1, 0, 0];
+  /* Rotate the top-down map 180 deg on screen. With the camera looking
+   * straight down, up = +Z makes screen-up = world +Z and screen-right =
+   * world -X (vs the un-rotated up = -Z, which gave screen-up = -Z /
+   * screen-right = +X). */
+  const up = [0, 0, 1];
   const V = lookAt([eyeX, eyeY, eyeZ], target, up);
 
-  const P = ortho(-hw, hw, -hh, hh, 1.0, farPad);
+  /* ...then mirror the horizontal screen axis to match retail. Retail
+   * draws this view rotated 180 deg *and* horizontally flipped (left
+   * becomes right), so after the up = +Z rotation above we negate screen
+   * X by swapping ortho's left/right. The net world->screen basis becomes
+   * screen-up = world +Z, screen-right = world +X. This reverses triangle
+   * winding, which is harmless here (renderAssembled disables CULL_FACE).
+   * The pan controls in attachTopDownControls map drag deltas back through
+   * this same (post-mirror) basis. */
+  const P = ortho(hw, -hw, -hh, hh, 1.0, farPad);
   return mulMat4(P, V);
 }
 

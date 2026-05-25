@@ -92,10 +92,15 @@ camera framing (centred on its XZ centroid, sized to its extent); the
 "lock to retail top-view" button still recentres on the captured spawn
 anchor on demand.
 
-The top-down camera renders the map **rotated 90° clockwise** (the
-`buildTopDownVp` up vector is world `-X`, so screen-up = world `-X` and
-screen-right = world `-Z`); the pan controls map drag deltas back through
-the same basis.
+The top-down camera renders the map **rotated 180° and then horizontally
+flipped** to match retail's world-map orientation. The `buildTopDownVp` up
+vector is world `+Z` (the 180° rotation: screen-up = world `+Z`,
+screen-right = world `-X`), and the projection then mirrors the horizontal
+screen axis (swapping `ortho`'s left/right), so the net basis is
+screen-up = world `+Z`, screen-right = world `+X`. The mirror reverses
+triangle winding, which is harmless since `renderAssembled` disables
+`CULL_FACE`. The pan controls map drag deltas back through this same
+post-mirror basis.
 
 ## Walk-frame placed landmarks
 

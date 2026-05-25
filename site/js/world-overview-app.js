@@ -1026,12 +1026,13 @@
       lastX = e.clientX; lastY = e.clientY;
       /* Drag -> camera grabs the map (content follows the cursor).
        * Convert pixel deltas to world units via the current camera
-       * half-extents, through the 90-deg-CW basis buildTopDownVp uses:
-       * screen-right = world -Z, screen-down = world +X. */
+       * half-extents, through the basis buildTopDownVp uses (180 deg
+       * rotation + horizontal mirror): screen-right = world +X,
+       * screen-down = world -Z. */
       const sx = (worldCam.halfWidth  * 2) / canvas.width;
       const sy = (worldCam.halfHeight * 2) / canvas.height;
-      worldCam.centerX -= dy * sy;
-      worldCam.centerZ += dx * sx;
+      worldCam.centerX -= dx * sx;
+      worldCam.centerZ += dy * sy;
     });
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
