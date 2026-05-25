@@ -108,16 +108,28 @@ fn owning_entry(sorted: &[Span], abs: u64) -> Option<u32> {
 /// scan yields exactly the non-overlapping item set jPSXdec reports - no
 /// "consume past the item" bookkeeping needed.
 pub fn build(prot: &[u8], entries: &[Entry]) -> Vec<CatalogTim> {
-    let mut sorted: Vec<Span> = entries
+    let spans: Vec<(u64, u64, u32)> = entries
         .iter()
-        .map(|e| (e.byte_offset, e.byte_offset + e.size_bytes, e.index))
+        .map(|e| (e.byte_offset, e.size_bytes, e.index))
+        .collect();
+    build_from_spans(prot, &spans)
+}
+
+/// Like [`build`] but takes raw `(byte_offset, size_bytes, index)` entry
+/// spans instead of a parsed [`Entry`] slice. Lets the in-browser viewer
+/// build the catalog from its own lightweight TOC metadata without cloning
+/// the whole archive into a [`Archive`].
+pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<CatalogTim> {
+    let mut sorted: Vec<Span> = entry_spans
+        .iter()
+        .map(|&(off, size, idx)| (off, off + size, idx))
         .collect();
     sorted.sort_unstable();
     let entry_off = |idx: u32| {
-        entries
+        entry_spans
             .iter()
-            .find(|e| e.index == idx)
-            .map(|e| e.byte_offset)
+            .find(|&&(_, _, i)| i == idx)
+            .map(|&(off, _, _)| off)
             .unwrap_or(0)
     };
 

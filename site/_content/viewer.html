@@ -214,6 +214,26 @@
   </div>
 </section>
 
+<section class="doc-section" id="tim-catalog">
+  <h2>PROT.DAT TIM catalog</h2>
+  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches an independent reference decoder's TIM index exactly &mdash; same offsets, dimensions, and palette counts &mdash; and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the per-entry browser above can't reach. Page through every one by id and switch CLUT variants.</p>
+  <div id="catalog-pane" style="display: none;">
+    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem;">
+      <button id="cat-prev" type="button">&larr; Prev</button>
+      <input type="number" id="cat-id" min="0" value="0" title="TIM catalog id" style="width: 6rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.4rem; font-family: inherit;">
+      <button id="cat-next" type="button">Next &rarr;</button>
+      <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
+        <select id="cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
+      </label>
+      <span class="viewer-info" id="cat-info"></span>
+    </div>
+    <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
+      <canvas id="catalog-canvas" width="256" height="256" style="image-rendering: pixelated; background: #11161f; transform-origin: top left;"></canvas>
+    </div>
+  </div>
+  <p id="catalog-empty" class="hint">Load a disc (or raw <code>PROT.DAT</code>) above to browse the TIM catalog.</p>
+</section>
+
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
   <p>The sidebar groups entries by scene category and classification. Filter by class (e.g. only <code>scene_tmd_stream</code> for character meshes, or <code>tim_passthrough</code> for standalone images) and jump by PROT index. By default the 3D path renders Legaia TMDs textured (WebGL2; same paletted fragment shader the native engine uses); toggle "textured" off in the sidebar for a flat-shaded fallback.</p>
@@ -251,6 +271,73 @@
   const jumpBtn = document.getElementById('jump-btn');
 
   if (!fileInput) return;
+
+  /* --- TIM Catalog browse mode -----------------------------------------
+   * Self-contained: its own canvas + controls, independent of the PROT-
+   * entry browser (which swaps its canvas between 2D and WebGL). Driven by
+   * the flat jPSXdec-parity catalog the WASM viewer builds at load time. */
+  const catalogPane  = document.getElementById('catalog-pane');
+  const catalogEmpty = document.getElementById('catalog-empty');
+  const catId   = document.getElementById('cat-id');
+  const catClut = document.getElementById('cat-clut');
+  const catInfo = document.getElementById('cat-info');
+  const catPrev = document.getElementById('cat-prev');
+  const catNext = document.getElementById('cat-next');
+  let catCount = 0;
+  let catCur = 0;
+
+  function renderCatalog(id, clut) {
+    try {
+      viewer.render_catalog_tim(id, clut, 'catalog-canvas');
+    } catch (e) {
+      catInfo.textContent = 'render error: ' + e;
+      return false;
+    }
+    return true;
+  }
+
+  function showCatalogTim(id) {
+    if (!viewer || catCount === 0) return;
+    id = Math.max(0, Math.min(catCount - 1, id | 0));
+    catCur = id;
+    catId.value = id;
+    const meta = JSON.parse(viewer.catalog_info_json(id));
+    const nclut = Math.max(1, meta.clut_count | 0);
+    const prevClut = parseInt(catClut.value || '0', 10) || 0;
+    catClut.innerHTML = '';
+    for (let i = 0; i < nclut; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = 'palette ' + i;
+      catClut.appendChild(o);
+    }
+    catClut.value = Math.min(prevClut, nclut - 1);
+    catClut.disabled = (meta.clut_count | 0) <= 1;
+    if (!renderCatalog(id, parseInt(catClut.value, 10) || 0)) return;
+    const where = meta.entry === 'gap' ? 'system-UI gap' : ('PROT ' + meta.entry);
+    catInfo.textContent =
+      `#${meta.id} / ${catCount - 1} · ${meta.width}×${meta.height} ${meta.bpp}bpp · ` +
+      `${meta.clut_count | 0} CLUT · ${where} +0x${meta.offset_in_entry.toString(16)} · ` +
+      `${meta.byte_len} B`;
+  }
+
+  function initCatalog() {
+    catCount = viewer ? viewer.catalog_len() : 0;
+    if (catCount === 0) {
+      catalogPane.style.display = 'none';
+      catalogEmpty.style.display = 'block';
+      catalogEmpty.textContent = 'No TIM catalog for this input (load a disc or raw PROT.DAT).';
+      return;
+    }
+    catalogEmpty.style.display = 'none';
+    catalogPane.style.display = 'block';
+    catId.max = catCount - 1;
+    showCatalogTim(0);
+  }
+
+  if (catPrev) catPrev.onclick = () => showCatalogTim(catCur - 1);
+  if (catNext) catNext.onclick = () => showCatalogTim(catCur + 1);
+  if (catId) catId.addEventListener('change', () => showCatalogTim(parseInt(catId.value, 10) || 0));
+  if (catClut) catClut.addEventListener('change', () => renderCatalog(catCur, parseInt(catClut.value, 10) || 0));
 
   let viewer = null;
   let allEntries = [];      /* entry-list-json output */
@@ -709,6 +796,8 @@
         status.textContent = `Loaded: ${f.name} - standalone TIM rendered.`;
         prog.done('Standalone TIM rendered.');
       }
+
+      initCatalog();
 
       classFilter.addEventListener('change', rebuildList);
       sceneFilter.addEventListener('change', rebuildList);

@@ -15,6 +15,7 @@ pub mod tmd3d;
 
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
+use legaia_asset::tim_catalog;
 use legaia_asset::tim_scan;
 use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
@@ -171,6 +172,12 @@ pub struct LegaiaViewer {
     /// magic-attack ids into the on-screen spell names (`0x27` -> `Tail Fire`).
     /// `None` on raw PROT.DAT loads.
     spell_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// Flat catalog of every standard PSX TIM in the loaded PROT.DAT image,
+    /// built at load time from the TOC (see [`tim_catalog`]). Drives the
+    /// "TIM Catalog" browse mode: page through every TIM by id with its CLUT
+    /// variants, regardless of which PROT entry (or the unindexed gap) hosts
+    /// it. Empty on the single-TIM load path.
+    tim_catalog: Vec<tim_catalog::CatalogTim>,
 }
 
 #[wasm_bindgen]
@@ -194,6 +201,7 @@ impl LegaiaViewer {
             fog_lut: None,
             item_names: None,
             spell_names: None,
+            tim_catalog: Vec::new(),
         })
     }
 
@@ -208,6 +216,7 @@ impl LegaiaViewer {
         self.fog_lut = None;
         self.item_names = None;
         self.spell_names = None;
+        self.tim_catalog = Vec::new();
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -286,6 +295,20 @@ impl LegaiaViewer {
 
         let entries = parse_prot_toc(&prot_bytes)
             .ok_or_else(|| JsValue::from_str("PROT TOC parse failed"))?;
+
+        // Build the flat TIM catalog from the whole image + TOC spans. This
+        // catches TIMs in the unindexed system-UI gap that the per-entry
+        // tim-scan below never sees, and gives the UI a stable per-TIM id.
+        let spans: Vec<(u64, u64, u32)> = entries
+            .iter()
+            .map(|e| (e.byte_offset, e.size_bytes, e.index))
+            .collect();
+        self.tim_catalog = tim_catalog::build_from_spans(&prot_bytes, &spans);
+        console_log(&format!(
+            "Cataloged {} TIMs in PROT.DAT",
+            self.tim_catalog.len()
+        ));
+
         console_log(&format!(
             "Found {} PROT entries - classifying…",
             entries.len()
@@ -437,6 +460,95 @@ impl LegaiaViewer {
     pub fn set_clut(&mut self, idx: u32) -> Result<(), JsValue> {
         self.clut_idx = idx as usize;
         self.render_current()
+    }
+
+    // --- TIM Catalog browse mode -----------------------------------------
+    //
+    // The catalog is a flat, jPSXdec-parity inventory of every standard TIM
+    // in the loaded PROT.DAT, keyed by a stable id. These accessors let the
+    // page page through all of them by id and switch CLUT variants, even for
+    // TIMs that live in the unindexed system-UI gap (no owning PROT entry).
+
+    /// Number of cataloged TIMs in the loaded PROT.DAT.
+    pub fn catalog_len(&self) -> u32 {
+        self.tim_catalog.len() as u32
+    }
+
+    /// Number of CLUT palettes available for cataloged TIM `id` (0 for
+    /// 16/24bpp TIMs, which carry no palette).
+    pub fn catalog_clut_count(&self, id: u32) -> u32 {
+        self.tim_catalog
+            .get(id as usize)
+            .map(|t| t.clut_count as u32)
+            .unwrap_or(0)
+    }
+
+    /// JSON describing cataloged TIM `id` (offset, owning entry, dimensions,
+    /// CLUT count, byte length, fingerprint) for the info panel.
+    pub fn catalog_info_json(&self, id: u32) -> String {
+        match self.tim_catalog.get(id as usize) {
+            Some(t) => {
+                let entry = match t.entry_index {
+                    Some(i) => i.to_string(),
+                    None => "gap".to_string(),
+                };
+                format!(
+                    "{{\"id\":{},\"abs_offset\":{},\"sector\":{},\"entry\":\"{}\",\
+                     \"offset_in_entry\":{},\"width\":{},\"height\":{},\"bpp\":{},\
+                     \"clut_count\":{},\"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                    t.id,
+                    t.abs_offset,
+                    t.sector,
+                    entry,
+                    t.offset_in_entry,
+                    t.width,
+                    t.height,
+                    t.bpp,
+                    t.clut_count,
+                    t.byte_len,
+                    t.fnv1a,
+                )
+            }
+            None => "{}".to_string(),
+        }
+    }
+
+    /// Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
+    /// `canvas_id`. The catalog browser uses its own canvas (separate from
+    /// the PROT-entry browser's, which switches between 2D and WebGL), so it
+    /// takes the target id explicitly rather than the viewer's bound canvas.
+    pub fn render_catalog_tim(&self, id: u32, clut: u32, canvas_id: &str) -> Result<(), JsValue> {
+        let t = self
+            .tim_catalog
+            .get(id as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("catalog id {id} out of range")))?;
+        let off = t.abs_offset as usize;
+        let tim = legaia_tim::parse(&self.disc[off..])
+            .map_err(|e| JsValue::from_str(&format!("catalog[{id}] TIM parse: {e}")))?;
+        let clut_idx = if t.clut_count > 0 {
+            (clut as usize).min(t.clut_count - 1)
+        } else {
+            0
+        };
+        let rgba = legaia_tim::decode_rgba8(&tim, clut_idx)
+            .map_err(|e| JsValue::from_str(&format!("catalog[{id}] decode: {e}")))?;
+        let w = tim.pixel_width() as u32;
+        let h = tim.image.h as u32;
+        let canvas = resolve_canvas(canvas_id)?;
+        let ctx = canvas
+            .get_context("2d")?
+            .ok_or_else(|| JsValue::from_str("catalog canvas has no 2D context"))?
+            .dyn_into::<CanvasRenderingContext2d>()?;
+        if w == 0 || h == 0 {
+            return Err(JsValue::from_str(&format!(
+                "catalog[{id}]: empty TIM ({w}x{h})"
+            )));
+        }
+        canvas.set_width(w);
+        canvas.set_height(h);
+        let img = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&rgba), w, h)?;
+        ctx.put_image_data(&img, 0.0, 0.0)?;
+        Ok(())
     }
 
     /// Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
