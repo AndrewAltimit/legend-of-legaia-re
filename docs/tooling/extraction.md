@@ -122,6 +122,7 @@ asset effect-bundle  <file>
 asset tmd-scan       <DIR>                            # bulk byte-search for TMD magic
 asset tim-scan       <DIR>                            # bulk byte-search for TIM magic (per-entry, lenient)
 asset tim-catalog    <PROT.DAT> [--out f.tsv|f.json]  # flat strict-validated TIM catalog (jPSXdec parity)
+asset tim-deep-catalog <PROT.DAT> [--out f.tsv|f.json] # TIMs inside LZS-compressed sections
 ```
 
 `tim-catalog` scans the whole `PROT.DAT` image (not per-entry), strict-validates
@@ -130,6 +131,15 @@ and maps each hit to its owning PROT entry + offset (or the unindexed system-UI
 gap). It recovers the same set an independent reference decoder reports; the
 committed catalog + a disc-gated regression pin the result. `--rollup` prints
 the count + digest the test pins.
+
+`tim-deep-catalog` covers what the flat catalog can't see: it LZS-decompresses
+every entry and catalogs the TIMs inside each decoded section (most character /
+scene textures are compressed). Each row is keyed by `(entry, LZS section,
+offset-in-section)`. A hit is admitted only when the decompressed bytes
+strict-parse **and** decode to RGBA — LZS "decodes without error" is never a
+validity signal (the ring buffer inits to zeros). It has its own committed
+reference + disc-gated regression. See
+[`formats/tim.md`](../formats/tim.md#deep-catalog-tims-inside-lzs-compressed-sections).
 
 ### MES dialog (`mes`)
 
