@@ -253,12 +253,13 @@
       <tr><td><code>Sequencer::tick_sample(spu)</code></td><td>Production playback clock - advance exactly one SPU sample (44.1 kHz).</td></tr>
       <tr><td><code>Sequencer::tick_us(spu, dt_us)</code></td><td>Wall-clock / per-frame poller (parity oracles, tests) - converts &micro;s to whole samples with a carry.</td></tr>
       <tr><td><code>Sequencer::set_master_vol(vol)</code></td><td><code>SsSeqSetVol</code> master.</td></tr>
-      <tr><td><code>Sequencer::set_loop_to(idx)</code></td><td>Loop point (<code>_DAT_801CD2C0[i] + 0x98</code> repeat-bit equivalent).</td></tr>
+      <tr><td><code>Sequencer::set_loop_to(idx)</code></td><td>External loop-point fallback (<code>_DAT_801CD2C0[i] + 0x98</code> repeat-bit equivalent) for tracks with no in-stream markers.</td></tr>
       <tr><td><code>Sequencer::stop(spu)</code></td><td><code>_SsSeqCtrl(mode=1)</code> - silences and freezes.</td></tr>
       <tr><td><code>Sequencer::rewind_to(idx, spu)</code></td><td><code>SsSeqRewind</code>.</td></tr>
     </tbody>
   </table>
   <p>Voice allocation is round-robin over the 24 SPU voices, with the sequencer tracking <code>(channel, key) &rarr; voice</code> so the matching key-off can shut down the right slot. Tempo events from the SEQ override the running tempo at the event's absolute tick (matching libsnd's mid-stream <code>0xFF 0x51</code>). PitchBend / Aftertouch are accepted by the parser and ignored by the playback path until the engine wires per-voice modulation.</p>
+  <p><strong>Loop points</strong> are read from the stream: the NRPN-style control changes on <code>0xB0</code> (controller 99 value 20 = Loop Start, value 30 = Loop Forever). A Loop Start records the position immediately after the marker; a later Loop Forever - or an end-of-track that follows a Loop Start - rewinds there rather than to event 0, so looped BGM repeats from the correct bar instead of restarting the whole track. The rewind resets the integer sample-clock, so the looped body re-fires on the same sample offset every pass. <code>set_loop_to</code> is the fallback for the four retail tracks with no markers.</p>
   <p class="callout"><strong>Timebase.</strong> The production playback path ticks the sequencer once per SPU sample (<code>tick_sample</code>), so the music clock is locked to the audio clock. Timing is computed with an <strong>exact integer accumulator</strong> (units of <code>sample &times; ppqn &times; 1_000_000</code>; an event of delta <code>d</code> fires when the accumulator reaches <code>d &times; tempo_us &times; 44100</code>) - no per-tick float, no long-track drift, and bit-deterministic for the replay oracle. Note the SEQ tempo gotcha: the header tempo is a 240 BPM placeholder, immediately overridden by the first body <code>0xFF 0x51</code> (which, in PSX SEQ, carries its 3 tempo bytes with <strong>no</strong> MIDI length prefix). Mis-parsing that override pinned playback at the placeholder rate (~3x too fast).</p>
 </section>
 

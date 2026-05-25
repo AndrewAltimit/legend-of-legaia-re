@@ -627,6 +627,56 @@ mod tests {
         ));
     }
 
+    /// PSX SEQ loop points are NRPN-style control changes on `0xB0`:
+    /// controller 99 value 20 = Loop Start, value 30 = Loop Forever. The
+    /// parser surfaces them as ordinary `ControlChange` events; the sequencer
+    /// interprets them at playback time.
+    #[test]
+    fn loop_markers_decode_as_control_change() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]); // version 1
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        // delta 0, Loop Start: CC ch0 controller 99 value 20
+        buf.push(0x00);
+        buf.push(0xB0);
+        buf.push(99);
+        buf.push(20);
+        // delta 0, Loop Forever: CC ch0 controller 99 value 30 (running status)
+        buf.push(0x00);
+        buf.push(99);
+        buf.push(30);
+        // delta 0, end-of-track
+        buf.push(0x00);
+        buf.push(0xFF);
+        buf.push(0x2F);
+
+        let seq = Seq::parse(&buf).unwrap();
+        assert!(matches!(
+            seq.events[0].body,
+            EventBody::Channel {
+                channel: 0,
+                message: ChannelMessage::ControlChange {
+                    control: 99,
+                    value: 20
+                },
+            }
+        ));
+        assert!(matches!(
+            seq.events[1].body,
+            EventBody::Channel {
+                message: ChannelMessage::ControlChange {
+                    control: 99,
+                    value: 30
+                },
+                ..
+            }
+        ));
+    }
+
     /// Helper: encode a u32 as VLQ. Tests-only.
     fn write_vlq(out: &mut Vec<u8>, mut v: u32) {
         let mut bytes = [0u8; 5];

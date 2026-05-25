@@ -230,7 +230,7 @@ sequencer cluster above. Surface mirrors `SsSeqOpen` / `SsSeqPlay` /
 | `Sequencer::tick_sample(spu)` | production playback clock - advance exactly one SPU sample (44.1 kHz) |
 | `Sequencer::tick_us(spu, dt_us)` | wall-clock / per-frame poller (parity oracles, tests) - converts µs to whole samples with a carry |
 | `Sequencer::set_master_vol(vol)` | `SsSeqSetVol` master |
-| `Sequencer::set_loop_to(idx)` | loop point (`_DAT_801CD2C0[i] + 0x98` repeat bit equivalent) |
+| `Sequencer::set_loop_to(idx)` | external loop-point fallback (`_DAT_801CD2C0[i] + 0x98` repeat bit equivalent) for tracks with no in-stream markers |
 | `Sequencer::stop(spu)` | `_SsSeqCtrl(mode=1)` - silences and freezes |
 | `Sequencer::rewind_to(idx, spu)` | `SsSeqRewind` |
 
@@ -240,6 +240,16 @@ shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
 `0xFF 0x51`). PitchBend / Aftertouch are accepted by the parser and
 ignored by the playback path until the engine wires per-voice modulation.
+
+**Loop points.** SEQ loop markers are read from the stream: the NRPN-style
+control changes on `0xB0` (controller 99 value 20 = Loop Start, value 30 =
+Loop Forever; see [`formats/seq.md`](../formats/seq.md)). A Loop Start records
+the position immediately after the marker; a later Loop Forever - or an
+end-of-track that follows a Loop Start - rewinds there rather than to event 0,
+so looped BGM repeats from the correct bar instead of restarting the whole
+track. The rewind resets the integer sample-clock, so the looped body re-fires
+on the same sample offset every pass. `set_loop_to` is the fallback for the
+four retail tracks with no markers.
 
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.

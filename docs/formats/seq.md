@@ -113,8 +113,17 @@ PSX SEQ encodes looping through NRPN-style control changes on `0xB0`:
 | `0x63` (99) | 20 | Loop Start - remembers the current position |
 | `0x63` (99) | 30 | Loop Forever - jump back to the last Loop Start |
 
-The parser surfaces these as ordinary `ControlChange` events; the engine's
-loop point is currently driven externally (`Sequencer::set_loop_to`).
+88 of 92 retail SEQ tracks carry these markers.
+
+The parser surfaces them as ordinary `ControlChange` events (the bytes really
+are a CC), and the engine `Sequencer` interprets them at playback time: a Loop
+Start fires recording the position immediately after the marker, and a later
+Loop Forever - or an end-of-track that follows a Loop Start - rewinds there
+rather than to event 0. The rewind lands on the event *after* the marker, so it
+neither re-fires the marker nor re-applies its delta, and the integer
+sample-clock is reset so the looped body re-fires on the same sample offset
+every pass. `Sequencer::set_loop_to` remains an external fallback for the four
+tracks that carry no markers.
 
 ## Tempo math
 
