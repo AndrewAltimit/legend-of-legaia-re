@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; cutscene</div>
   <h1>Cutscene (STR mode)</h1>
-  <p class="lede">Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder) with multiplexed XA-ADPCM audio from the <code>XA*.XA</code> files on disc. The engine drives it through game modes 26 and 27 (<code>StrInit</code> / <code>StrMode</code>), which map to <code>SceneMode::Cutscene</code> in the clean-room port.</p>
+  <p class="lede">Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder) with the XA-ADPCM audio interleaved in the same CD-XA sectors. The engine drives it through game modes 26 and 27 (<code>StrInit</code> / <code>StrMode</code>), which map to <code>SceneMode::Cutscene</code> in the clean-room port.</p>
 </header>
 
 <section class="doc-section" id="modes">
@@ -19,73 +19,75 @@
 
 <section class="doc-section" id="str-sector">
   <h2>STR sector format</h2>
-  <p>STR video is carried in 2048-byte Mode 2 Form 1 sectors. Each sector's user-data area starts with a 20-byte header, followed by 2028 bytes of compressed bitstream payload:</p>
+  <p>STR video is carried in 2048-byte Mode 2 Form 1 sectors. Each sector's user-data area starts with a 32-byte sector header; the remaining 2016 bytes are the demuxed-frame payload. Concatenating the <code>[0x20..2048]</code> payload of every sector of a frame (in arrival order) reconstructs that frame's demuxed bitstream, which begins with the Iki frame header.</p>
   <pre><code>Offset  Bytes  Field
 0x000   2      magic            - 0x0160 = video sector; any other value = non-video, skip silently
-0x002   2      chunk_number     - 0-indexed position of this sector within the frame
-0x004   2      chunks_per_frame - total sectors needed to complete this frame
-0x006   2      frame_number     - sequential, 0-based, wraps at 0xFFFF
-0x008   4      bs_data_size     - total bitstream bytes across all chunks for this frame
-0x00C   2      width            - frame width in pixels (multiple of 16)
-0x00E   2      height           - frame height in pixels (multiple of 16)
-0x010   2      bs_version       - 2 (BS v2 only in Legaia)
-0x012   2      quantize_scale   - per-frame quantization scale, 0..63
-0x014   2028   bs_data          - compressed bitstream payload chunk</code></pre>
-  <p><code>StrFrameAssembler</code> accumulates sector payloads in arrival order. When <code>chunk_number + 1 == chunks_per_frame</code>, the full bitstream is returned truncated to <code>bs_data_size</code>. Non-video sectors are skipped silently.</p>
+0x002   2      type             - 0x8001
+0x004   2      chunk_number     - 0-indexed position of this sector within the frame
+0x006   2      chunks_per_frame - total sectors needed to complete this frame
+0x008   4      frame_number     - sequential, wraps at 0xFFFF
+0x00C   4      frame_size_bytes - total demuxed bytes across all chunks for this frame
+0x010   2      width            - frame width in pixels (multiple of 16)
+0x012   2      height           - frame height in pixels (multiple of 16)
+0x014   12     replicated frame-header copy + zero padding (not used by the decoder)
+0x020   2016   demux payload chunk</code></pre>
+  <p><code>StrFrameAssembler</code> accumulates sector payloads in arrival order. When <code>chunk_number + 1 == chunks_per_frame</code>, the demuxed frame is returned truncated to <code>frame_size_bytes</code>. Non-video sectors are skipped silently.</p>
   <p>Implementation: <code>crates/mdec/src/str_sector.rs</code></p>
 </section>
 
 <section class="doc-section" id="mdec">
-  <h2>MDEC decoder</h2>
-  <p><code>MdecDecoder::decode_frame(bs)</code> converts a complete BS v2 bitstream into an RGBA8 pixel buffer. Clean-room port; reference: PSX-SPX &sect;MDEC Decompression.</p>
+  <h2>MDEC decoder (Iki bitstream)</h2>
+  <p><code>MdecDecoder::decode_frame(frame)</code> converts a complete demuxed frame into an RGBA8 pixel buffer. Legaia's movies use the PSX <strong>&ldquo;Iki&rdquo;</strong> bitstream variant, <strong>not</strong> the common STRv2 layout: the per-block DC and quantization scale are not in the entropy bitstream &mdash; they live in an LZSS-compressed lookup table right after the frame header, and the bitstream carries only AC coefficients. (Legaia overwrites STRv2's header qscale/version fields with the frame width/height, which is what a strict STRv2 parser rejects.) Clean-room port; sources: PSX-SPX BS-compression pages + jPSXdec's <code>PlayStation1_STR_format.txt</code> (format docs only).</p>
 
-  <h3>1. Bitstream header</h3>
-  <p>4 bytes before the macroblock data: <code>u16 n_words</code> (number of 32-bit words) + <code>u16 qs</code> (per-frame quantization scale, 0&ndash;63).</p>
+  <h3>1. Frame header (10 bytes)</h3>
+  <pre><code>Offset  Bytes  Field
+0x000   2      mdec_code_count
+0x002   2      0x3800 magic
+0x004   2      width
+0x006   2      height
+0x008   2      lzss_size   - byte length of the compressed qscale/DC table that follows</code></pre>
 
-  <h3>2. VLC decoding</h3>
-  <p>Each 8&times;8 block decodes its DC coefficient first, then AC coefficients until an EOB token.</p>
-  <ul class="bullets">
-    <li><strong>DC coefficient</strong> - luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). Delta-coded per component (Cr / Cb / Y0&ndash;Y3 each have independent running state).</li>
-    <li><strong>AC coefficients</strong> - MPEG-1 Table B.14 (run/level pairs). Escape sequences carry a 6-bit run + 8-bit signed level. EOB code (<code>run == 64</code>) ends the block.</li>
-  </ul>
-  <p>After VLC, coefficients are in JPEG zigzag scan order.</p>
+  <h3>2. LZSS qscale/DC table</h3>
+  <p>The <code>lzss_size</code> bytes after the header decompress to a <code>block_count &times; 2</code>-byte table. Control byte, bits tested LSB-first: a <code>0</code> bit copies one literal byte; a <code>1</code> bit is a back-reference &mdash; a length byte (<code>+3</code>, range 3&ndash;258) then a 1- or 2-byte offset (high bit of the first byte selects the 2-byte form; offset is <code>+1</code>, relative to the current output position; overlapping copies allowed). For block <code>i</code> the packed word is <code>(table[i] &lt;&lt; 8) | table[i + block_count]</code>: top 6 bits = quant scale, low 10 bits = signed DC.</p>
 
-  <h3>3. Dequantize</h3>
-  <pre><code>coef[i] = clamp( (coef[i] * qs * Q_MAT[i] + 4) / 8, -2048, 2047 )</code></pre>
-  <p><code>Q_MAT</code> is the standard PSX quantization matrix. The DC position always gets <code>qs = 2</code> applied independently.</p>
+  <h3>3. AC bitstream</h3>
+  <p>Read as <strong>16-bit little-endian words, MSB-first within each word</strong>, beginning immediately after the compressed table. Per block: AC run/level codes from the PSX VLC table, terminated by the End-of-Block code <code>10</code>. The escape code <code>000001</code> is followed by a 16-bit raw MDEC value (<code>run &lt;&lt; 10 | signed-10-bit level</code>). A block that fills all 63 AC positions is still terminated by an explicit EOB, so the decode loop always reads the next code rather than stopping when the coefficient index saturates.</p>
 
-  <h3>4. 8&times;8 IDCT</h3>
-  <p>Two-pass separable 2D IDCT using a precomputed cosine table <code>IDCT_C[k][n]</code> (pre-scaled by 2048). Row IDCT followed by column IDCT; output clamped to <code>[-128, 127]</code>.</p>
+  <h3>4. Dequantize + IDCT</h3>
+  <p>DC: <code>coef[0] = DC * Q_MAT[0]</code>. AC: <code>coef[zigzag[i]] = (level * Q_MAT[i] * qscale + 4) &gt;&gt; 3</code> (arithmetic shift = floor; not range-clamped, since escape codes carry large levels). Two-pass separable 8&times;8 IDCT using <code>IDCT_C[k][n]</code> (pre-scaled by 2048); the row pass keeps full <code>i64</code> precision and the single <code>&gt;&gt; 24</code> after the column pass normalises a DC-only block to <code>coef[0] / 8</code>.</p>
 
   <h3>5. Macroblock layout</h3>
-  <p>Macroblocks are 16&times;16 pixels. Each macroblock decodes 6 &times; 8&times;8 blocks: <strong>Cr, Cb, Y0 (top-left), Y1 (top-right), Y2 (bottom-left), Y3 (bottom-right)</strong>.</p>
+  <p>Each macroblock decodes 6 &times; 8&times;8 blocks: <strong>Cr, Cb, Y0 (top-left), Y1 (top-right), Y2 (bottom-left), Y3 (bottom-right)</strong>. Macroblocks are laid out <strong>column-major</strong>: down each 16-pixel column top-to-bottom, then the next column to the right.</p>
 
   <h3>6. 4:2:0 upsampling + BT.601 colour conversion</h3>
-  <p>Each Cb/Cr sample covers a 2&times;2 luma region. Chroma values are center-biased (nominal ~128, subtracted before the matrix).</p>
-  <pre><code>R = Y + ((91881 * Cr) &gt;&gt; 16)
-G = Y - ((22554 * Cb + 46802 * Cr) &gt;&gt; 16)
-B = Y + ((116130 * Cb) &gt;&gt; 16)
+  <p>Each Cb/Cr sample covers a 2&times;2 luma region. PSX MDEC outputs signed (zero-centred) samples, so the luma is offset by <code>+128</code> on the final RGB.</p>
+  <pre><code>R = (Y+128) + ((91881 * Cr) &gt;&gt; 16)
+G = (Y+128) - ((22554 * Cb + 46802 * Cr) &gt;&gt; 16)
+B = (Y+128) + ((116130 * Cb) &gt;&gt; 16)
 A = 255</code></pre>
   <p>Output is a <code>width &times; height</code> RGBA8 buffer in row-major order.</p>
-  <p>Implementation: <code>crates/mdec/src/lib.rs</code> (<code>MdecDecoder</code>, VLC tables, <code>IDCT_C</code>, <code>Q_MAT</code>).</p>
+  <p>Implementation: <code>crates/mdec/src/lib.rs</code> (<code>MdecDecoder</code>, <code>AC_CODES</code>, <code>iki_lzss_decompress</code>, <code>IDCT_C</code>, <code>Q_MAT</code>). The disc-gated <code>str_mdec_decode_is_pixel_stable</code> test pins a decoded-frame fingerprint as a regression guard.</p>
 </section>
 
 <section class="doc-section" id="xa">
   <h2>XA audio</h2>
   <p>XA-ADPCM audio is carried on Mode 2 Form 2 sectors with <code>submode &amp; 0x24 == 0x24</code>. The demuxer splits them by <code>(file_no, ch_no)</code> into per-channel streams. Each 128-byte sound group holds 8 sound units of 28 4-bit ADPCM samples; stereo interleaves as SU0 = L, SU1 = R.</p>
   <p>See <code>docs/formats/xa.md</code> for the full sector layout, coding-info bit definitions, and filter coefficients.</p>
-  <p class="hint">The mapping from cutscene name to expected <code>(file_no, ch_no)</code> channel pair is overlay-resident (in the not-yet-captured cutscene overlay). Until that's reversed, WAV &rarr; cutscene assignment is manual.</p>
+
+  <h3>Interleaved cutscene audio (A/V sync)</h3>
+  <p>The six <code>MOV/MV*.STR</code> movies <strong>interleave</strong> their audio with the video at the sector level: video sectors (Mode 2 Form 1, magic <code>0x0160</code>) and one XA track (Mode 2 Form 2, all on file/channel <code>(1, 0)</code>, stereo 37.8 kHz 4-bit) share the same LBA range. The audio needs no name-based pairing &mdash; it is pulled from the same sector stream as the video, so the two are aligned by construction.</p>
+  <p>The Form-1 extract under <code>extracted/MOV/*.STR</code> keeps the video intact but truncates each Form-2 audio sector (2324 &rarr; 2048 bytes), corrupting the audio. Faithful playback reads the raw 2352-byte sectors <strong>straight off the disc image</strong>: <code>cutscene_av::decode_str_av_from_disc</code> makes one pass over the sectors, routing Form-2 audio to a per-channel buffer and the rest to <code>StrFrameAssembler</code>, then decodes the dominant audio channel to PCM and the video to RGBA frames.</p>
+  <p>The PCM is staged into the engine audio output (<code>AudioOut::play_xa</code>) and the video clock is driven off the audio cursor (<code>AudioOut::xa_cursor_secs</code>): the visible frame is <code>audio_position / frame_period</code> (<code>cutscene_av::due_video_frame</code>), so the picture stays locked to the soundtrack rather than free-running on a separate timer. With no audio track the same function falls back to wall-clock pacing.</p>
+  <p class="hint">The mapping from cutscene <em>name</em> to expected <code>(file_no, ch_no)</code> channel pair is still overlay-resident (in the not-yet-captured cutscene overlay) &mdash; only needed to select a cutscene by name from a separate multi-channel container; the in-file interleaving above needs no such map. 8-bit ADPCM is detected and dropped with a warning (none appears in the movie corpus).</p>
 </section>
 
 <section class="doc-section" id="playback">
   <h2>Playback loop (<code>play-str</code>)</h2>
-  <p><code>legaia-engine play-str &lt;file&gt;</code> demonstrates end-to-end decoding:</p>
+  <p><code>legaia-engine play-str &lt;file&gt;</code> demonstrates end-to-end decoding. Two modes: <code>play-str &lt;file&gt;</code> plays a raw filesystem STR file as <strong>video only</strong> (the extract truncates the audio); <code>play-str MOV/MV1.STR --disc &lt;bin&gt;</code> resolves the movie inside the disc image and plays it <strong>with its interleaved XA audio</strong> in sync.</p>
   <ol>
-    <li>Read the raw file in 2048-byte sectors.</li>
-    <li>Feed each sector to <code>StrFrameAssembler::push_sector()</code>.</li>
-    <li>On complete frame: <code>MdecDecoder::new(w, h).decode_frame(&amp;bs)</code> &rarr; RGBA8 buffer.</li>
-    <li>Pre-decode all frames, then enter the winit event loop.</li>
-    <li>On <code>RedrawRequested</code>: show the frame due at the current wall-clock time (<code>elapsed / frame_period</code>) and render fullscreen, so the movie plays at its real rate instead of the display refresh rate.</li>
+    <li>Decode video frames + (disc mode) the audio track up front (<code>cutscene_av::decode_str_av_from_disc</code> / <code>decode_str_video_only</code>).</li>
+    <li>Stage the decoded audio into <code>AudioOut</code> on the first redraw so the audio cursor and the picture start together.</li>
+    <li>On <code>RedrawRequested</code>: show the frame due at the current playback position (<code>cutscene_av::due_video_frame</code>) and render fullscreen. With audio the position is the audio cursor; without audio it is wall-clock. Either way the movie plays at its real rate, not the display refresh rate.</li>
   </ol>
   <h3>Frame-rate detection</h3>
   <p>PSX STR files carry no frame-rate field; the rate is implied by how many CD sectors elapse per frame at the 2x delivery rate (150 sectors/s). The raw 2048-byte-per-sector files preserve on-disc sector order 1:1 (audio sectors appear as skipped chunks), so the mean sectors-per-frame recovers the authored rate: <code>fps = 150 / (total_sectors / video_frame_count)</code>. <code>legaia_mdec::str_sector::analyze_str_timing</code> computes this and <code>StrTiming::frame_period</code> returns the per-frame hold duration (falling back to the canonical 15 fps for a degenerate stream). All six Legaia movies measure <strong>exactly 10 sectors/frame &rarr; 15.00 fps</strong> (<code>MV1</code> = 1345 frames = 89.7 s).</p>
@@ -95,8 +97,11 @@ mdec scan-str cutscene.str
 # Decode all frames to PPM images
 mdec decode-str cutscene.str --out-dir frames/
 
-# Play in a window
-legaia-engine play-str cutscene.str</code></pre>
+# Play in a window (video only)
+legaia-engine play-str cutscene.str
+
+# Play a disc movie with its interleaved XA audio, in sync
+legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></pre>
 </section>
 
 <section class="doc-section" id="cutscene-map">
@@ -168,7 +173,7 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
     <li><code>_DAT_8007B83C</code> &mdash; next-game-mode global. Setting it to <code>0x1A</code> (decimal 26) kicks the main mode dispatcher (<code>FUN_80017714</code>) into <code>StrInit</code> on the next frame, which loads the str_fmv overlay and reads <code>_DAT_8007BA78</code> to pick the file.</li>
   </ul>
   <p>The field-VM port handles this op as <code>op4c_n_e_sub2_fmv_trigger(fmv_id: i16)</code> in <a href="../../crates/engine-vm/src/field.rs"><code>legaia_engine_vm::field</code></a> and the world's <code>FieldHostImpl</code> records the request as <code>World::pending_fmv_trigger</code> plus a <code>FieldEvent::FmvTrigger { fmv_id }</code>.</p>
-  <p>The world drives the Field &rarr; Cutscene &rarr; Field flow itself, mirroring the retail next-game-mode dispatch: the <em>next</em> <code>World::tick</code> consumes the pending trigger at the top of the frame (one frame after the op fires, just as the main dispatcher reads the next-game-mode global a frame late). If the id resolves to a playable slot it flips <code>World::mode</code> into <code>SceneMode::Cutscene</code> and records the active FMV (<code>World::active_fmv()</code>), <strong>suspending the field VM</strong> while it plays (the STR overlay owns the frame in retail). The host polls <code>World::active_fmv_str_filename()</code>, plays the resolved <code>MV*.STR</code>, and calls <code>World::finish_cutscene()</code> when playback ends, returning to the field with the field-VM program counter already past the op. A <code>fmv_id</code> whose slot points at a cut/missing path drains as a no-op. The <code>legaia-engine play</code> loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count; the windowed <code>play-window</code> host plays it <strong>in the engine window</strong> &mdash; it decodes the resolved <code>MV*.STR</code> (shared with <code>play-str</code>), suspends world ticks, and shows the video one frame per redraw, then calls <code>finish_cutscene()</code> and resumes the field once the frames drain.</p>
+  <p>The world drives the Field &rarr; Cutscene &rarr; Field flow itself, mirroring the retail next-game-mode dispatch: the <em>next</em> <code>World::tick</code> consumes the pending trigger at the top of the frame (one frame after the op fires, just as the main dispatcher reads the next-game-mode global a frame late). If the id resolves to a playable slot it flips <code>World::mode</code> into <code>SceneMode::Cutscene</code> and records the active FMV (<code>World::active_fmv()</code>), <strong>suspending the field VM</strong> while it plays (the STR overlay owns the frame in retail). The host polls <code>World::active_fmv_str_filename()</code>, plays the resolved <code>MV*.STR</code>, and calls <code>World::finish_cutscene()</code> when playback ends, returning to the field with the field-VM program counter already past the op. A <code>fmv_id</code> whose slot points at a cut/missing path drains as a no-op. The <code>legaia-engine play</code> loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count; the windowed <code>play-window</code> host plays it <strong>in the engine window</strong> &mdash; it decodes the resolved <code>MV*.STR</code> (shared <code>cutscene_av</code> module with <code>play-str</code>), suspends world ticks, and shows the video one frame per redraw, then calls <code>finish_cutscene()</code> and resumes the field once the frames drain. Booting from a <strong>disc image</strong> reads the movie straight from the ISO with its interleaved XA audio (the scene BGM sequencer is paused for the duration; the video is paced off the audio cursor); booting from an <strong>extracted root</strong> plays video only.</p>
   <p>The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's <code>addiu s8, s8, 6</code> is fixed, but only bytes <code>+1..+3</code> are read). Disassemblers should leave them as opaque padding.</p>
 
   <h3 id="static-fmv-trigger-sites">Static FMV-trigger sites &mdash; exhaustive</h3>
@@ -272,10 +277,12 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
     <thead><tr><th>Subject</th><th>Source</th></tr></thead>
     <tbody>
       <tr><td>STR sector header layout</td><td><code>crates/mdec/src/str_sector.rs</code>; PSX-SPX &sect;STR Video Files</td></tr>
-      <tr><td>BS v2 VLC tables (DC/AC)</td><td><code>crates/mdec/src/lib.rs</code>; PSX-SPX Tables B.12&ndash;B.14</td></tr>
+      <tr><td>Iki AC VLC table + LZSS qscale/DC table</td><td><code>crates/mdec/src/lib.rs</code>; PSX-SPX BS-compression pages + jPSXdec <code>PlayStation1_STR_format.txt</code> (format docs)</td></tr>
       <tr><td>IDCT + dequantize formula</td><td><code>crates/mdec/src/lib.rs</code>; PSX-SPX &sect;MDEC</td></tr>
       <tr><td>BT.601 coefficients</td><td><code>crates/mdec/src/lib.rs</code></td></tr>
       <tr><td>XA sector layout + demux</td><td><code>crates/xa/src/demux.rs</code></td></tr>
+      <tr><td>Interleaved STR A/V decode + sync clock</td><td><code>crates/engine-shell/src/cutscene_av.rs</code></td></tr>
+      <tr><td>Audio-cursor playback clock</td><td><code>crates/engine-audio/src/lib.rs</code> (<code>AudioOut::xa_cursor_secs</code>)</td></tr>
       <tr><td>Game modes 26 / 27</td><td><code>crates/engine-core/src/mode.rs</code></td></tr>
       <tr><td><code>play-str</code> frame loop</td><td><code>crates/engine-shell/src/bin/legaia-engine.rs</code></td></tr>
     </tbody>

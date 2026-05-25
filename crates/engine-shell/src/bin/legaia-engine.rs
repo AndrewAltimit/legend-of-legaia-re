@@ -723,17 +723,28 @@ enum Cmd {
         #[arg(long)]
         battle_bgm: Option<u16>,
     },
-    /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
-    /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
-    /// video frames are rendered fullscreen at ~15 FPS (one frame per tick).
+    /// Open a window and play back a PSX STR movie using the MDEC decoder,
+    /// paced at the stream's real ~15 fps.
     ///
-    /// Accepts raw STR data files written by `legaia-extract` or extracted
-    /// directly from Mode 2 Form 1 CD sectors.  The Legaia-specific mapping
-    /// from PROT entry to STR data is not yet traced; supply a raw file path.
+    /// Without `--disc` it plays a raw filesystem STR file (2048-byte Form-1
+    /// sectors, video only - the `legaia-extract` shape). With `--disc <bin>`
+    /// the `<str_file>` argument is an ISO path inside the disc image (e.g.
+    /// `MOV/MV1.STR`); the movie is read as raw 2352-byte sectors so its
+    /// interleaved XA audio track plays, with the video clock driven off the
+    /// audio cursor for A/V sync.
     PlayStr {
-        /// Path to a raw STR file (2048-byte sectors, no subheaders).
+        /// STR file to play. Without `--disc` this is a raw filesystem path
+        /// (2048-byte Form-1 sectors, video only - the extracted shape).
+        /// With `--disc` it is the ISO path of the movie inside the disc
+        /// image (e.g. `MOV/MV1.STR`), read as raw 2352-byte sectors so the
+        /// interleaved XA audio track plays in sync with the video.
         #[arg()]
         str_file: PathBuf,
+        /// Disc image (`.bin`). When set, `str_file` is resolved as an ISO
+        /// path inside it and the cutscene plays with its interleaved audio
+        /// (the video clock is driven off the audio cursor).
+        #[arg(long)]
+        disc: Option<PathBuf>,
         /// Window width.
         #[arg(long, default_value_t = 640)]
         width: u32,
@@ -1179,9 +1190,10 @@ fn main() -> Result<()> {
         Cmd::Load { save_dir, slot } => cmd_load(&save_dir, slot),
         Cmd::PlayStr {
             str_file,
+            disc,
             width,
             height,
-        } => cmd_play_str(&str_file, width, height),
+        } => cmd_play_str(&str_file, disc.as_deref(), width, height),
         Cmd::Config { cmd } => cmd_config(cmd),
         Cmd::Battle {
             monsters,
@@ -3159,39 +3171,6 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
     Ok(decoded)
 }
 
-/// Decode a raw PSX STR file (2048-byte sectors) into RGBA video frames plus
-/// the stream's detected playback timing (frame rate from the sector stride).
-/// Shared by `play-str` and the windowed in-flow cutscene driver.
-fn decode_str_frames(
-    str_path: &Path,
-) -> Result<(
-    Vec<legaia_mdec::VideoFrame>,
-    legaia_mdec::str_sector::StrTiming,
-)> {
-    use legaia_mdec::{MdecDecoder, VideoFrame, str_sector::StrFrameAssembler};
-    let data = std::fs::read(str_path).with_context(|| format!("read {}", str_path.display()))?;
-    let timing = legaia_mdec::str_sector::analyze_str_timing(&data);
-    let n_sectors = data.len() / 2048;
-    let mut asm = StrFrameAssembler::new();
-    let mut frames: Vec<VideoFrame> = Vec::new();
-    for i in 0..n_sectors {
-        let sector = &data[i * 2048..(i + 1) * 2048];
-        if let Some((hdr, bs)) = asm.push_sector(sector)? {
-            let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
-            match dec.decode_frame(&bs) {
-                Ok(rgba) => frames.push(VideoFrame {
-                    rgba,
-                    width: hdr.width as u32,
-                    height: hdr.height as u32,
-                    frame_number: hdr.frame_number,
-                }),
-                Err(e) => log::warn!("frame {}: decode error: {e}", hdr.frame_number),
-            }
-        }
-    }
-    Ok((frames, timing))
-}
-
 /// Windowed in-flow cutscene playback state: the decoded STR frames the
 /// field VM's FMV-trigger op resolved to, plus the current frame cursor and
 /// the live GPU upload. Held on [`PlayWindowApp`] while the world sits in
@@ -3204,8 +3183,17 @@ struct WindowedCutscene {
     uploaded: Option<legaia_engine_render::UploadedTexture>,
     /// Wall-clock duration to hold each frame (from `StrTiming::frame_period`).
     frame_period: std::time::Duration,
-    /// When playback started; the visible frame index is `elapsed / period`.
+    /// When playback started; the wall-clock fallback frame index is
+    /// `elapsed / period` (used only when there is no audio track).
     clock: Option<std::time::Instant>,
+    /// The cutscene's interleaved XA audio track, staged into the engine's
+    /// audio output on the first render so its cursor (the video clock for A/V
+    /// sync) starts with the picture. `None` for a video-only (extract-sourced)
+    /// cutscene. Taken once.
+    pending_audio: Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+    /// `true` once an audio track has been staged - the render loop then reads
+    /// the audio cursor as the master clock instead of wall-clock.
+    has_audio: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3744,8 +3732,13 @@ struct PlayWindowApp {
     /// Extracted-root directory, retained so the in-flow cutscene driver can
     /// resolve a field-VM FMV trigger's `MV*.STR` file (mirrors the headless
     /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
-    /// where the STR lives in the ISO and the cutscene drains as a no-op.
+    /// where the STR is read straight from the ISO via `disc_path`.
     extracted_root: Option<std::path::PathBuf>,
+    /// Disc image, retained so the in-flow cutscene driver can read a movie's
+    /// raw 2352-byte sectors off the ISO and play its interleaved XA audio in
+    /// sync with the video. `None` when running from an extracted root (where
+    /// the cutscene plays video only, since the extract truncates the audio).
+    disc_path: Option<std::path::PathBuf>,
     /// Active windowed cutscene playback, when the field VM has flipped the
     /// world into [`SceneMode::Cutscene`] and the resolved STR decoded. While
     /// `Some`, world ticks are suspended and the window shows the video; the
@@ -4358,61 +4351,104 @@ impl PlayWindowApp {
 
     /// Start windowed cutscene playback when the world has flipped into
     /// [`SceneMode::Cutscene`] (a field-VM FMV-trigger op fired). Resolves the
-    /// active FMV's `MV*.STR` under the extracted root and decodes its frames;
-    /// a cut/missing slot, an unresolvable path, or a disc-only run drains the
-    /// trigger immediately via `finish_cutscene` (no-op), matching the headless
-    /// `play` loop. Leaves `self.cutscene = None` when nothing starts.
+    /// active FMV's `MV*.STR` and decodes it: from the disc image (raw 2352-
+    /// byte sectors, so the interleaved XA audio plays in sync) when booting
+    /// from a disc, otherwise the video-only Form-1 extract under the extracted
+    /// root. A cut/missing slot, an unresolvable path, or a decode that yields
+    /// no frames drains the trigger immediately via `finish_cutscene` (no-op),
+    /// matching the headless `play` loop. Leaves `self.cutscene = None` when
+    /// nothing starts.
     fn try_start_windowed_cutscene(&mut self) {
+        use legaia_engine_shell::cutscene_av::{decode_str_av_from_disc, decode_str_video_only};
         let Some(fmv_id) = self.session.host.world.active_fmv() else {
             return;
         };
-        let started = match (
-            self.extracted_root.as_ref(),
-            self.session.host.world.active_fmv_str_filename(),
-        ) {
-            (Some(root), Some(rel)) => {
-                let path = root.join(rel);
-                match decode_str_frames(&path) {
-                    Ok((frames, timing)) if !frames.is_empty() => {
-                        log::info!(
-                            "cutscene: playing fmv_id={fmv_id} {rel} ({} frames, {:.2} fps)",
-                            frames.len(),
-                            timing.fps
-                        );
-                        self.cutscene = Some(WindowedCutscene {
-                            frames,
-                            idx: 0,
-                            uploaded: None,
-                            frame_period: timing.frame_period(),
-                            clock: None,
-                        });
-                        true
-                    }
-                    Ok(_) => {
-                        log::warn!("cutscene: fmv_id={fmv_id} {rel} decoded no frames; skipping");
-                        false
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "cutscene: fmv_id={fmv_id} {} decode failed ({e:#}); skipping",
-                            path.display()
-                        );
-                        false
+        let Some(rel) = self.session.host.world.active_fmv_str_filename() else {
+            log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
+            self.session.host.world.finish_cutscene();
+            return;
+        };
+
+        let decoded: Option<(Vec<legaia_mdec::VideoFrame>, std::time::Duration, _)> = if let Some(
+            disc_path,
+        ) =
+            self.disc_path.as_ref()
+        {
+            match resolve_iso_file(disc_path, Path::new(&rel)) {
+                Ok((lba, size)) => {
+                    let count = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+                    match decode_str_av_from_disc(disc_path, lba, count) {
+                        Ok(av) if !av.frames.is_empty() => {
+                            log::info!(
+                                "cutscene: playing fmv_id={fmv_id} {rel} from disc \
+                                     ({} frames, {:.2} fps, audio: {})",
+                                av.frames.len(),
+                                av.timing.fps,
+                                if av.audio.is_some() { "yes" } else { "no" }
+                            );
+                            Some((av.frames, av.timing.frame_period(), av.audio))
+                        }
+                        Ok(_) => {
+                            log::warn!("cutscene: fmv_id={fmv_id} {rel} decoded no frames");
+                            None
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "cutscene: fmv_id={fmv_id} {rel} disc decode failed ({e:#})"
+                            );
+                            None
+                        }
                     }
                 }
+                Err(e) => {
+                    log::warn!("cutscene: fmv_id={fmv_id} {rel} not on disc ({e:#})");
+                    None
+                }
             }
-            (None, _) => {
-                log::info!("cutscene: fmv_id={fmv_id} (no extracted root / disc-only); skipping");
-                false
+        } else if let Some(root) = self.extracted_root.as_ref() {
+            let path = root.join(rel);
+            match decode_str_video_only(&path) {
+                Ok((frames, timing)) if !frames.is_empty() => {
+                    log::info!(
+                        "cutscene: playing fmv_id={fmv_id} {rel} ({} frames, {:.2} fps, no audio)",
+                        frames.len(),
+                        timing.fps
+                    );
+                    Some((frames, timing.frame_period(), None))
+                }
+                Ok(_) => {
+                    log::warn!("cutscene: fmv_id={fmv_id} {rel} decoded no frames; skipping");
+                    None
+                }
+                Err(e) => {
+                    log::warn!(
+                        "cutscene: fmv_id={fmv_id} {} decode failed ({e:#}); skipping",
+                        path.display()
+                    );
+                    None
+                }
             }
-            (_, None) => {
-                log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
-                false
-            }
+        } else {
+            log::info!("cutscene: fmv_id={fmv_id} (no disc / extracted root); skipping");
+            None
         };
-        if !started {
-            // Drain the trigger so the field resumes next frame.
-            self.session.host.world.finish_cutscene();
+
+        match decoded {
+            Some((frames, frame_period, audio)) => {
+                self.cutscene = Some(WindowedCutscene {
+                    frames,
+                    idx: 0,
+                    uploaded: None,
+                    frame_period,
+                    clock: None,
+                    pending_audio: audio,
+                    has_audio: false,
+                });
+            }
+            None => {
+                // Drain the trigger so the field resumes next frame.
+                self.session.host.world.finish_cutscene();
+            }
         }
     }
 
@@ -4423,16 +4459,37 @@ impl PlayWindowApp {
     /// `idx` tracks the due frame so the drain check at the top of the redraw
     /// handler resumes the field once the full duration has elapsed.
     fn render_windowed_cutscene(&mut self) {
+        // Clone the audio handle before borrowing the renderer / cutscene so
+        // staging the track and reading its cursor don't alias `self`.
+        let audio_out = self.session.audio.clone();
         let Some(renderer) = self.win.renderer.as_ref() else {
             return;
         };
         if let Some(c) = self.cutscene.as_mut() {
+            // Stage the interleaved audio on the first render so the audio
+            // cursor (the A/V-sync master clock) starts with the picture. Pause
+            // the scene sequencer so the cutscene track isn't layered over BGM.
+            if let (Some(out), Some(track)) = (audio_out.as_ref(), c.pending_audio.take()) {
+                out.set_sequencer_paused(true);
+                out.play_xa(track.pcm, track.sample_rate, track.channels, false, 0x4000);
+                c.has_audio = true;
+            }
             let now = std::time::Instant::now();
             let start = *c.clock.get_or_insert(now);
             let elapsed = now.duration_since(start).as_secs_f64();
-            // Due frame index at this wall-clock time; `idx` reaching the frame
+            // A/V sync: drive the visible frame off the audio cursor while a
+            // track is playing, else off wall-clock. `idx` reaching the frame
             // count signals end-of-playback to the drain check.
-            let due = (elapsed / c.frame_period.as_secs_f64()) as usize;
+            let audio_secs = if c.has_audio {
+                audio_out.as_ref().and_then(|o| o.xa_cursor_secs())
+            } else {
+                None
+            };
+            let due = legaia_engine_shell::cutscene_av::due_video_frame(
+                audio_secs,
+                elapsed,
+                c.frame_period.as_secs_f64(),
+            );
             c.idx = due;
             let show = due.min(c.frames.len().saturating_sub(1));
             if let Some(f) = c.frames.get(show) {
@@ -6876,6 +6933,12 @@ impl ApplicationHandler for PlayWindowApp {
                     .as_ref()
                     .is_some_and(|c| c.idx >= c.frames.len())
                 {
+                    // Stop the cutscene audio and resume the scene sequencer
+                    // (BGM was paused while the movie played).
+                    if let Some(out) = self.session.audio.as_ref() {
+                        out.stop_xa();
+                        out.set_sequencer_paused(false);
+                    }
                     self.session.host.world.finish_cutscene();
                     self.cutscene = None;
                 }
@@ -7903,8 +7966,24 @@ fn cmd_play_window_with_record(
     // Phase 1: if a STR file is provided (or auto-resolved), play the
     // video in a window first. The user closes (or ESC) the STR window,
     // then the scene window opens.
+    //
+    // When booting from a disc image we can resolve the scene's movie inside
+    // the ISO and play it with its interleaved XA audio (read raw 2352-byte
+    // sectors). Otherwise we fall back to the filesystem (video only).
     if let Some(str_path) = resolved_str {
-        cmd_play_str(str_path, 640, 480)?;
+        cmd_play_str(str_path, None, 640, 480)?;
+    } else if let (Some(disc_path), None) = (disc, str_file) {
+        // Disc mode, no explicit file: resolve the scene's MV*.STR via the
+        // cutscene map / heuristic and play it from the disc with audio.
+        if let Some(rel) = cutscene_map.resolve(scene) {
+            let iso_path = Path::new(&rel);
+            match cmd_play_str(iso_path, Some(disc_path), 640, 480) {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("info: scene '{scene}' STR '{rel}' not played from disc ({e:#})")
+                }
+            }
+        }
     }
 
     let cfg = BootConfig {
@@ -8278,9 +8357,11 @@ fn cmd_play_window_with_record(
         options_state: legaia_engine_core::options::OptionsState::default(),
         record_log: record_to.map(RecordLog::from_target),
         field_live_opts,
-        // In-flow cutscene STR resolves from the extracted root; disc-only
-        // runs can't read the ISO STR here, so leave it `None` (drains no-op).
+        // In-flow cutscene STR resolves from the extracted root (video only)
+        // or, when booting from a disc image, straight from the ISO with its
+        // interleaved XA audio. Exactly one of these is set.
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
+        disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         active_dialog: None,
@@ -8458,20 +8539,66 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
 
 // ── STR video player ────────────────────────────────────────────────────────
 
-fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()> {
-    // Pre-decode all frames into RGBA buffers (shared with the in-flow
-    // windowed cutscene driver).
-    let (frames, timing) = decode_str_frames(str_file)?;
+fn cmd_play_str(
+    str_file: &Path,
+    disc: Option<&Path>,
+    _win_width: u32,
+    _win_height: u32,
+) -> Result<()> {
+    use legaia_engine_shell::cutscene_av::{
+        CutsceneAudio, decode_str_av_from_disc, decode_str_video_only,
+    };
+
+    // With a disc image the STR is read as raw 2352-byte sectors so its
+    // interleaved XA audio track comes along; without one we play the
+    // (video-only) Form-1 extract from the filesystem.
+    let (frames, timing, audio): (_, _, Option<CutsceneAudio>) = if let Some(disc_path) = disc {
+        let (lba, size) = resolve_iso_file(disc_path, str_file)?;
+        let count = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let av = decode_str_av_from_disc(disc_path, lba, count)
+            .with_context(|| format!("decode STR {} from disc", str_file.display()))?;
+        (av.frames, av.timing, av.audio)
+    } else {
+        let (f, t) = decode_str_video_only(str_file)?;
+        (f, t, None)
+    };
     if frames.is_empty() {
         anyhow::bail!("no video frames found in {}", str_file.display());
     }
     println!(
-        "play-str: {} frames, {}×{}, {:.2} fps",
+        "play-str: {} frames, {}×{}, {:.2} fps, audio: {}",
         frames.len(),
         frames[0].width,
         frames[0].height,
-        timing.fps
+        timing.fps,
+        match &audio {
+            Some(a) => format!(
+                "{:.1} kHz {} ({:.1}s)",
+                a.sample_rate as f64 / 1000.0,
+                if matches!(a.channels, legaia_xa::Channels::Stereo) {
+                    "stereo"
+                } else {
+                    "mono"
+                },
+                a.duration_secs()
+            ),
+            None => "none".into(),
+        }
     );
+
+    // Open the audio device only when there is a track to play. A device
+    // failure (CI / headless) degrades to wall-clock-paced video, not an error.
+    let audio_out = if audio.is_some() {
+        match legaia_engine_audio::AudioOut::new() {
+            Ok(a) => Some(a),
+            Err(e) => {
+                log::warn!("play-str: audio device unavailable ({e:#}); playing video only");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let mut app = StrPlayerApp {
         win: EngineWindow::new(),
@@ -8479,10 +8606,32 @@ fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()
         uploaded: None,
         frame_period: timing.frame_period(),
         clock: None,
+        audio_out,
+        pending_audio: audio,
     };
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
+}
+
+/// Resolve an ISO9660 path inside a disc image to its `(lba, size)`. Matches
+/// case-insensitively and tolerates a leading slash. Errors if not found.
+fn resolve_iso_file(disc_path: &Path, iso_path: &Path) -> Result<(u32, u32)> {
+    use legaia_iso::iso9660;
+    let want = iso_path
+        .to_string_lossy()
+        .trim_start_matches('/')
+        .replace('\\', "/")
+        .to_ascii_uppercase();
+    let mut disc = legaia_iso::raw::RawDisc::open(disc_path)
+        .with_context(|| format!("open disc {}", disc_path.display()))?;
+    let vol = iso9660::read_volume(&mut disc).context("read ISO volume")?;
+    let files = iso9660::walk_files(&mut disc, &vol.root).context("walk ISO files")?;
+    files
+        .into_iter()
+        .find(|(p, _)| p.to_ascii_uppercase() == want)
+        .map(|(_, rec)| (rec.lba, rec.size))
+        .ok_or_else(|| anyhow::anyhow!("{} not found on disc {}", want, disc_path.display()))
 }
 
 struct StrPlayerApp {
@@ -8491,8 +8640,16 @@ struct StrPlayerApp {
     uploaded: Option<legaia_engine_render::UploadedTexture>,
     /// Wall-clock duration to hold each frame (from the stream's detected fps).
     frame_period: std::time::Duration,
-    /// When playback started; the visible frame is `elapsed / frame_period`.
+    /// When playback started; the wall-clock fallback frame index is
+    /// `elapsed / frame_period` (used only when no audio track is playing).
     clock: Option<std::time::Instant>,
+    /// Live audio output, present only when an interleaved XA track decoded
+    /// and the device opened. The video clock reads its cursor for A/V sync.
+    /// Owned solely by the player (single-threaded), so no `Arc` is needed.
+    audio_out: Option<legaia_engine_audio::AudioOut>,
+    /// The decoded audio track, staged into `audio_out` on the first redraw so
+    /// the audio cursor and the video start together. Taken once.
+    pending_audio: Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
 }
 
 impl ApplicationHandler for StrPlayerApp {
@@ -8516,15 +8673,30 @@ impl ApplicationHandler for StrPlayerApp {
                 self.win.handle_resize(size.width, size.height);
             }
             WindowEvent::RedrawRequested => {
-                // Pace to the stream's real frame rate: the frame to show is
-                // `elapsed / frame_period`, so the movie runs at ~15 fps rather
-                // than the display refresh rate. Once the due frame passes the
+                // Stage the audio on the first redraw so its cursor (the video
+                // clock) starts when the picture does.
+                if let (Some(out), Some(track)) =
+                    (self.audio_out.as_ref(), self.pending_audio.take())
+                {
+                    out.play_xa(track.pcm, track.sample_rate, track.channels, false, 0x4000);
+                }
+                // A/V sync: drive the visible frame off the audio cursor when a
+                // track is playing (audio is the hardware-paced master clock);
+                // otherwise pace off wall-clock. Once the due frame passes the
                 // last decoded frame, playback is done and the window closes.
                 let now = std::time::Instant::now();
                 let start = *self.clock.get_or_insert(now);
-                let due = (now.duration_since(start).as_secs_f64()
-                    / self.frame_period.as_secs_f64()) as usize;
+                let wall = now.duration_since(start).as_secs_f64();
+                let audio_secs = self.audio_out.as_ref().and_then(|o| o.xa_cursor_secs());
+                let due = legaia_engine_shell::cutscene_av::due_video_frame(
+                    audio_secs,
+                    wall,
+                    self.frame_period.as_secs_f64(),
+                );
                 if due >= self.frames.len() {
+                    if let Some(out) = self.audio_out.as_ref() {
+                        out.stop_xa();
+                    }
                     event_loop.exit();
                     return;
                 }

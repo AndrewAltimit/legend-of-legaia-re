@@ -30,6 +30,7 @@ legaia-font = { path = "../font" }
 legaia-mdec = { path = "../mdec" }
 legaia-mednafen = { path = "../mednafen" }
 legaia-iso = { path = "../iso" }
+legaia-xa = { path = "../xa" }
 glam.workspace = true
 png = "0.17"
 winit = "0.30"
@@ -40,4 +41,3 @@ sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"
-legaia-xa = { path = "../xa" }
