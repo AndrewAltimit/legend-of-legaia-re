@@ -206,6 +206,13 @@ pub struct LegaiaViewer {
     /// same continent terrain the native engine does. `None` until a kingdom is
     /// loaded, or when the walk `.MAP` / floor LUT can't be resolved.
     walk_ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    /// Walk-frame placed landmarks for the currently-loaded kingdom: the
+    /// `flags & 0x4` slot-1 pack objects (`FUN_8003A55C`), resolved into the
+    /// same `col*128` world frame as [`LegaiaViewer::walk_ground`]. Built by
+    /// [`LegaiaViewer::set_scene_kingdom`]; consumed by the `walk_placement_*`
+    /// accessors so the viewer draws the landmark meshes on top of the
+    /// continent terrain instead of the misaligned overview-frame JSON layer.
+    walk_placements: Option<Vec<WalkPlacement>>,
 }
 
 #[wasm_bindgen]
@@ -233,6 +240,7 @@ impl LegaiaViewer {
             tim_deep_catalog: Vec::new(),
             deep_section_cache: std::cell::RefCell::new(None),
             walk_ground: None,
+            walk_placements: None,
         })
     }
 
@@ -251,6 +259,7 @@ impl LegaiaViewer {
         self.tim_deep_catalog = Vec::new();
         *self.deep_section_cache.borrow_mut() = None;
         self.walk_ground = None;
+        self.walk_placements = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -836,7 +845,56 @@ impl LegaiaViewer {
                 "walk heightfield: unavailable for PROT base {prot_base} (no walk .MAP / floor LUT)"
             ));
         }
+
+        // Resolve the walk-frame placed landmarks (the slot-1 pack meshes
+        // `FUN_8003A55C` stamps on the continent) in the same world frame as
+        // the heightfield, so the viewer can draw them on top of the terrain.
+        self.walk_placements = build_walk_placements(&self.disc, &entries, prot_base);
+        if let Some(ps) = &self.walk_placements {
+            console_log(&format!(
+                "walk placements: {} landmarks for PROT base {prot_base}",
+                ps.len()
+            ));
+        }
         Ok(count)
+    }
+
+    /// Number of walk-frame placed landmarks for the currently-loaded kingdom
+    /// (slot-1 pack meshes positioned on the continent terrain). 0 when no
+    /// kingdom is loaded or the walk `.MAP` / floor LUT couldn't be resolved.
+    pub fn walk_placement_count(&self) -> u32 {
+        self.walk_placements
+            .as_ref()
+            .map(|p| p.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// Per-placement kingdom pack-mesh slot (record `+0x10`), one `u32` per
+    /// walk-frame landmark in placement order. Feed each into `pack_mesh` to
+    /// select the mesh, then draw it at the matching
+    /// [`Self::walk_placement_positions`] entry.
+    pub fn walk_placement_slots(&self) -> Vec<u32> {
+        self.walk_placements
+            .as_ref()
+            .map(|ps| ps.iter().map(|p| p.pack_index).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-placement world positions `[x, y, z, ...]` (flattened), in the same
+    /// pre-Y-flip `col*128` world frame as [`Self::walk_ground_positions`], so
+    /// the JS renderer draws each landmark with the same `(1, -1, 1)` model
+    /// flip at scale `1` (the slot-1 meshes are already in true world units).
+    pub fn walk_placement_positions(&self) -> Vec<f32> {
+        let Some(ps) = self.walk_placements.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(ps.len() * 3);
+        for p in ps {
+            out.push(p.world_x as f32);
+            out.push(p.world_y as f32);
+            out.push(p.world_z as f32);
+        }
+        out
     }
 
     /// Per-vertex world positions of the walk-view continent ground
@@ -2881,6 +2939,98 @@ pub fn build_walk_ground(
     entries: &[EntryMeta],
     prot_base: u32,
 ) -> Option<legaia_asset::field_objects::WalkHeightfield> {
+    let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
+    let hf = legaia_asset::field_objects::build_walk_heightfield(map_bytes, &lut);
+    (!hf.indices.is_empty()).then_some(hf)
+}
+
+/// One walk-frame landmark placement resolved for the world-overview viewer: a
+/// slot-1 pack mesh index plus its world position in the **same `col*128`
+/// world frame** the walk heightfield is built in.
+///
+/// Mirrors the native engine's `resolve_placement_draws` world transform: the
+/// placement anchor sits at `world_y = -lut[floor_nibble] + y_off` (the runtime
+/// stores the floor LUT negated) and the JS renderer applies the shared
+/// `(1, -1, 1)` model flip at scale `1` — the slot-1 pack meshes are already in
+/// true world units, unlike the legacy overview-frame icons that needed an
+/// arbitrary presentation scale. This is why these placements line up on top of
+/// [`build_walk_ground`]'s terrain while the old `world-overview.json`
+/// overview-frame placements do not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WalkPlacement {
+    /// Slot-1 pack mesh index (record `+0x10`); index into the kingdom pack the
+    /// `pack_mesh_*` accessors expose.
+    pub pack_index: u32,
+    /// World X in the `col*128` walk frame.
+    pub world_x: i32,
+    /// World Y: `-lut[floor_nibble] + y_off` (pre-Y-flip, same frame as the
+    /// heightfield's stored positions).
+    pub world_y: i32,
+    /// World Z in the `row*128` walk frame.
+    pub world_z: i32,
+}
+
+/// Resolve the kingdom's walk-frame placed landmarks (the `flags & 0x4` slot-1
+/// pack objects `FUN_8003A55C` draws) in the same world frame as
+/// [`build_walk_ground`], so the world-overview viewer can overlay them on the
+/// continent terrain.
+///
+/// Reads the same walk `.MAP` + floor-height LUT [`build_walk_ground`] does
+/// (see [`resolve_walk_map_and_lut`]), runs
+/// [`legaia_asset::field_objects::parse_placements`], and resolves each
+/// placement's world Y from the floor nibble exactly like the native
+/// `resolve_placement_draws`. Placements whose mesh isn't in the scene pack
+/// (protagonist / NPC ids, `pack_index == None`) are dropped. Returns `None`
+/// when the walk `.MAP` / floor LUT can't be resolved.
+pub fn build_walk_placements(
+    disc: &[u8],
+    entries: &[EntryMeta],
+    prot_base: u32,
+) -> Option<Vec<WalkPlacement>> {
+    let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
+    let placements = legaia_asset::field_objects::parse_placements(map_bytes);
+    let resolved = placements
+        .iter()
+        .filter_map(|p| {
+            let pack_index = p.pack_index?;
+            // World Y from the floor-height LUT (`-lut[nibble] + y_off`), or the
+            // ground plane when the nibble is unavailable - matches the native
+            // engine's `resolve_placement_draws`.
+            let world_y = match p.floor_nibble {
+                Some(nib) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
+                None => 0,
+            };
+            Some(WalkPlacement {
+                pack_index: pack_index as u32,
+                world_x: p.world_x,
+                world_y,
+                world_z: p.world_z,
+            })
+        })
+        .collect();
+    Some(resolved)
+}
+
+/// Resolve the kingdom's walk `.MAP` bytes + 16-entry floor-height LUT from raw
+/// PROT.DAT, the shared source both [`build_walk_ground`] and
+/// [`build_walk_placements`] read. Mirrors `Scene::walk_field_map_index` +
+/// `Scene::field_floor_height_lut`:
+///
+/// - **Walk `.MAP`** is the entry two slots before the kingdom block start
+///   (`prot_base - 2`), whose extended on-disc footprint is exactly
+///   [`WALK_FIELD_MAP_LEN`] (`0x12000`). Inside the block the first `0x12000`
+///   entry is a decoy with only a handful of `0x1000` cells, so the preceding
+///   "duplicate"-cluster entry is the real grid (pinned 14/14 against a live
+///   `map01` walk capture). Falls back to scanning the block when that slot
+///   isn't a `0x12000` entry.
+/// - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the kingdom
+///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`
+///   reads.
+fn resolve_walk_map_and_lut<'a>(
+    disc: &'a [u8],
+    entries: &[EntryMeta],
+    prot_base: u32,
+) -> Option<(&'a [u8], [i16; 16])> {
     // Floor-height LUT from the kingdom MAN (slot 2). Try the bundle at
     // `prot_base`, then `prot_base + 1` (the bare scene_asset_table variant
     // carries the same MAN), matching `try_load_kingdom_at`'s probe order.
@@ -2905,8 +3055,7 @@ pub fn build_walk_ground(
     let off = meta.byte_offset as usize;
     let end = off.checked_add(meta.size_bytes as usize)?;
     let map_bytes = disc.get(off..end)?;
-    let hf = legaia_asset::field_objects::build_walk_heightfield(map_bytes, &lut);
-    (!hf.indices.is_empty()).then_some(hf)
+    Some((map_bytes, lut))
 }
 
 /// Decode the kingdom bundle at PROT entry `idx` and read its 16-entry

@@ -4,7 +4,8 @@
  *
  * Loads as a classic global script — exposes: IDENTITY4, MESH_SCALE,
  * compileProgram, mulMat4, perspective, translate, rotateY, rotateX,
- * scaleMat, buildMvp, placementModelScaled, placementModelCentered,
+ * scaleMat, buildMvp, placementModelScaled, placementModelScaledY,
+ * placementModelCentered,
  * computeAabb, buildTopDownVp, ortho, lookAt. Must be loaded before
  * webgl-tmd.js.
  */
@@ -178,6 +179,25 @@ function placementModelScaled(x, z, rotY, scale) {
   ]);
 }
 
+/* Per-placement model that also positions the anchor in Y (world height).
+ * Same as `placementModelScaled` but translates by (x, y, z) instead of
+ * (x, 0, z). Used for walk-frame landmarks, whose world Y comes from the
+ * scene floor-height LUT (`-lut[nibble] + y_off`) so they sit on the
+ * continent heightfield rather than the y=0 plane. The mesh-local geometry
+ * is still Y-flipped (PSX +Y down -> world +Y up); the translation is applied
+ * after the flip, matching the native engine's
+ * `T(x, world_y, z) * S(1, -1, 1)`. */
+function placementModelScaledY(x, y, z, rotY, scale) {
+  const c = Math.cos(rotY), s = Math.sin(rotY);
+  const sc = scale;
+  return new Float32Array([
+     sc * c,    0,  sc * s, 0,
+     0,       -sc,  0,      0,    /* flip Y so PSX +Y down -> world +Y up */
+    -sc * s,    0,  sc * c, 0,
+     x,         y,  z,      1,
+  ]);
+}
+
 /* Centroid-anchored per-placement model. Pre-translates the mesh so its
  * AABB centroid sits at the placement coord before rotation + Y-flip
  * scale + world translation. The math expands `T_world * Sflip_scaled *
@@ -251,15 +271,22 @@ function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
   const eyeX = cam.centerX;
   const eyeZ = cam.centerZ - eyeY * Math.tan(pitch);
   const target = [cam.centerX, 0, cam.centerZ];
-  /* Rotate the top-down map 90 deg clockwise on screen. With the camera
-   * looking straight down, up = -X makes screen-up = world -X and
-   * screen-right = world -Z (vs the un-rotated up = -Z, which gave
-   * screen-up = -Z / screen-right = +X). The pan controls in
-   * attachTopDownControls map drag deltas back through this same basis. */
-  const up = [-1, 0, 0];
+  /* Rotate the top-down map 180 deg on screen. With the camera looking
+   * straight down, up = +Z makes screen-up = world +Z and screen-right =
+   * world -X (vs the un-rotated up = -Z, which gave screen-up = -Z /
+   * screen-right = +X). */
+  const up = [0, 0, 1];
   const V = lookAt([eyeX, eyeY, eyeZ], target, up);
 
-  const P = ortho(-hw, hw, -hh, hh, 1.0, farPad);
+  /* ...then mirror the horizontal screen axis to match retail. Retail
+   * draws this view rotated 180 deg *and* horizontally flipped (left
+   * becomes right), so after the up = +Z rotation above we negate screen
+   * X by swapping ortho's left/right. The net world->screen basis becomes
+   * screen-up = world +Z, screen-right = world +X. This reverses triangle
+   * winding, which is harmless here (renderAssembled disables CULL_FACE).
+   * The pan controls in attachTopDownControls map drag deltas back through
+   * this same (post-mirror) basis. */
+  const P = ortho(hw, -hw, -hh, hh, 1.0, farPad);
   return mulMat4(P, V);
 }
 

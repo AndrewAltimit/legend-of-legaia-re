@@ -1570,6 +1570,42 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Number of walk-frame placed landmarks for the currently-loaded kingdom
+     * (slot-1 pack meshes positioned on the continent terrain). 0 when no
+     * kingdom is loaded or the walk `.MAP` / floor LUT couldn't be resolved.
+     * @returns {number}
+     */
+    walk_placement_count() {
+        const ret = wasm.legaiaviewer_walk_placement_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Per-placement world positions `[x, y, z, ...]` (flattened), in the same
+     * pre-Y-flip `col*128` world frame as [`Self::walk_ground_positions`], so
+     * the JS renderer draws each landmark with the same `(1, -1, 1)` model
+     * flip at scale `1` (the slot-1 meshes are already in true world units).
+     * @returns {Float32Array}
+     */
+    walk_placement_positions() {
+        const ret = wasm.legaiaviewer_walk_placement_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-placement kingdom pack-mesh slot (record `+0x10`), one `u32` per
+     * walk-frame landmark in placement order. Feed each into `pack_mesh` to
+     * select the mesh, then draw it at the matching
+     * [`Self::walk_placement_positions`] entry.
+     * @returns {Uint32Array}
+     */
+    walk_placement_slots() {
+        const ret = wasm.legaiaviewer_walk_placement_slots(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Decode the live PSX GPU primitive pool out of a mednafen save state
      * and return per-vertex attribute arrays for replay in WebGL2 against
      * the save state's VRAM.

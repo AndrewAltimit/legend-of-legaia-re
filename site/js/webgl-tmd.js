@@ -21,8 +21,12 @@
  *   r.dispose();
  *
  * Each `placement` for `renderAssembled` is:
- *   { meshId, x, z, rotY?, scale?, anchor? }
+ *   { meshId, x, z, y?, rotY?, scale?, anchor? }
  *     scale  - per-placement world-scale (defaults to MESH_SCALE).
+ *     y      - optional world height for the anchor (walk-frame landmarks
+ *              pass the floor-LUT height so they sit on the heightfield;
+ *              omitted -> anchor on the y=0 plane). Ignored when anchor is
+ *              'centroid'.
  *     anchor - 'origin' (default) uses the mesh's TMD-local origin as the
  *              placement pivot; 'centroid' first translates the mesh so
  *              its AABB centroid sits at (x, 0, z).
@@ -48,6 +52,7 @@ class TmdRenderer {
     this.locModel   = gl.getUniformLocation(this.program, 'u_model');
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locLight   = gl.getUniformLocation(this.program, 'u_light');
+    this.locNormalSign = gl.getUniformLocation(this.program, 'u_normal_sign');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
     this.locFogEnableFs = gl.getUniformLocation(this.program, 'u_fog_enable');
@@ -425,6 +430,7 @@ class TmdRenderer {
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
+    gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -640,6 +646,11 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);
+    /* The top-down VP horizontally mirrors a screen axis (retail orientation),
+     * which flips the handedness of the screen-space derivatives the FS uses
+     * to build the shading normal. Negate it back so lighting matches the
+     * non-mirrored orbit view instead of collapsing to the ambient floor. */
+    gl.uniform1f(this.locNormalSign, -1.0);
     gl.uniform1i(this.locNoDisc, 1);  /* assembled scene: paint silhouettes instead of discarding */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -699,9 +710,16 @@ class TmdRenderer {
       for (const p of list) {
         const scale = (p.scale != null) ? p.scale : MESH_SCALE;
         const useCentroid = (p.anchor === 'centroid') && m.aabb;
-        const model = useCentroid
-          ? placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb)
-          : placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+        let model;
+        if (useCentroid) {
+          model = placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
+        } else if (p.y != null) {
+          /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
+           * sit on the continent heightfield instead of the y=0 plane. */
+          model = placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
+        } else {
+          model = placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+        }
         gl.uniformMatrix4fv(this.locModel, false, model);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }

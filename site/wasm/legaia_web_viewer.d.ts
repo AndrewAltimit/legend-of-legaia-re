@@ -694,6 +694,26 @@ export class LegaiaViewer {
      */
     walk_ground_uvs(): Uint8Array;
     /**
+     * Number of walk-frame placed landmarks for the currently-loaded kingdom
+     * (slot-1 pack meshes positioned on the continent terrain). 0 when no
+     * kingdom is loaded or the walk `.MAP` / floor LUT couldn't be resolved.
+     */
+    walk_placement_count(): number;
+    /**
+     * Per-placement world positions `[x, y, z, ...]` (flattened), in the same
+     * pre-Y-flip `col*128` world frame as [`Self::walk_ground_positions`], so
+     * the JS renderer draws each landmark with the same `(1, -1, 1)` model
+     * flip at scale `1` (the slot-1 meshes are already in true world units).
+     */
+    walk_placement_positions(): Float32Array;
+    /**
+     * Per-placement kingdom pack-mesh slot (record `+0x10`), one `u32` per
+     * walk-frame landmark in placement order. Feed each into `pack_mesh` to
+     * select the mesh, then draw it at the matching
+     * [`Self::walk_placement_positions`] entry.
+     */
+    walk_placement_slots(): Uint32Array;
+    /**
      * Decode the live PSX GPU primitive pool out of a mednafen save state
      * and return per-vertex attribute arrays for replay in WebGL2 against
      * the save state's VRAM.
@@ -854,6 +874,9 @@ export interface InitOutput {
     readonly legaiaviewer_walk_ground_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_ground_quad_count: (a: number) => number;
     readonly legaiaviewer_walk_ground_uvs: (a: number) => [number, number];
+    readonly legaiaviewer_walk_placement_count: (a: number) => number;
+    readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
+    readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

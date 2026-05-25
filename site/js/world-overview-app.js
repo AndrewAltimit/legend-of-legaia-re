@@ -99,6 +99,7 @@
   const $normalizeUnplaced = document.getElementById('wo-normalize-unplaced');
   const $fogEnable  = document.getElementById('wo-fog-enable');
   const $showTerrain = document.getElementById('wo-show-terrain');
+  const $showLandmarks = document.getElementById('wo-show-landmarks');
   const $lockTopView = document.getElementById('wo-lock-topview');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
@@ -213,6 +214,7 @@
     const $normalizeWrap = document.getElementById('wo-normalize-unplaced-wrap');
     const $fogWrap = document.getElementById('wo-fog-wrap');
     const $terrainWrap = document.getElementById('wo-show-terrain-wrap');
+    const $landmarksWrap = document.getElementById('wo-show-landmarks-wrap');
     /* The unplaced-slot-1 layout grid only drives the legacy
      * overview-frame placement layer, which is hidden while the viewer
      * shows the walk-view continent terrain only - so keep its toggles
@@ -221,6 +223,7 @@
     if ($normalizeWrap) $normalizeWrap.hidden = true;
     if ($fogWrap)       $fogWrap.hidden       = meshOnly;
     if ($terrainWrap)   $terrainWrap.hidden   = meshOnly;
+    if ($landmarksWrap) $landmarksWrap.hidden = meshOnly;
     if ($lockTopView)   $lockTopView.hidden   = meshOnly;
     $resetCam.hidden = false;
     /* Re-enter the active kingdom so the right path renders. */
@@ -264,6 +267,13 @@
       if (glRenderer && typeof glRenderer.setGroundEnable === 'function') {
         glRenderer.setGroundEnable($showTerrain.checked);
       }
+    });
+  }
+  if ($showLandmarks) {
+    $showLandmarks.addEventListener('change', () => {
+      /* The walk-frame landmark draw list is built once per kingdom load,
+       * so a flip has to re-enter the kingdom to add or clear the layer. */
+      if (viewMode === 'world') selectKingdom(currentKingdom);
     });
   }
   if ($lockTopView) {
@@ -630,6 +640,39 @@
      * so the snapshot panel + toggles keep working when it returns). */
     const SHOW_LEGACY_PLACEMENTS = false;
     const drawPlacements = [];
+
+    /* Walk-frame placed landmarks: the slot-1 pack meshes FUN_8003A55C
+     * stamps on the continent (flags & 0x4), resolved by the WASM
+     * `build_walk_placements` into the SAME col*128 world frame as the
+     * heightfield ground above - so they overlay the terrain correctly,
+     * unlike the legacy overview-frame `world-overview.json` placements
+     * (kept behind SHOW_LEGACY_PLACEMENTS below). Each landmark draws its
+     * pack mesh at world (x, y, z) with scale 1 and the shared (1,-1,1)
+     * Y-flip; world Y comes from the floor-height LUT so the mesh sits on
+     * the heightfield. */
+    let walkLandmarkCount = 0;
+    const showLandmarks = !$showLandmarks || $showLandmarks.checked;
+    if (showLandmarks) {
+      const wpCount = viewer.walk_placement_count();
+      if (wpCount > 0) {
+        const slots = viewer.walk_placement_slots();
+        const pos = viewer.walk_placement_positions();
+        for (let i = 0; i < wpCount; i++) {
+          const ms = slots[i];
+          if (!ensureMeshUploaded(ms)) continue;
+          drawPlacements.push({
+            meshId: ms,
+            x: pos[i * 3],
+            y: pos[i * 3 + 1],
+            z: pos[i * 3 + 2],
+            scale: 1.0,
+            kind: 'walk_landmark',
+            class: 'landmark',
+          });
+          walkLandmarkCount++;
+        }
+      }
+    }
     /* MAN-table placements at the disc-encoded world coordinates. Counts
      * by source so the snapshot panel surfaces how many placements made
      * it onto the GPU vs were dropped for the global-pool gap. */
@@ -894,9 +937,14 @@
         `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
         + terrainSummary + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
     } else {
+      const landmarkSummary = walkLandmarkCount > 0
+        ? ` + ${walkLandmarkCount} placed landmarks`
+        : '';
       $meshLabel.textContent = groundQuads > 0
-        ? `${k.cdname} - ${groundQuads}-cell continent heightfield (walk-view terrain)`
-        : `${k.cdname} - no walk-view terrain resolved`;
+        ? `${k.cdname} - ${groundQuads}-cell continent heightfield (walk-view terrain)${landmarkSummary}`
+        : (walkLandmarkCount > 0
+            ? `${k.cdname} - ${walkLandmarkCount} placed landmarks (no terrain resolved)`
+            : `${k.cdname} - no walk-view terrain resolved`);
     }
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
@@ -978,12 +1026,13 @@
       lastX = e.clientX; lastY = e.clientY;
       /* Drag -> camera grabs the map (content follows the cursor).
        * Convert pixel deltas to world units via the current camera
-       * half-extents, through the 90-deg-CW basis buildTopDownVp uses:
-       * screen-right = world -Z, screen-down = world +X. */
+       * half-extents, through the basis buildTopDownVp uses (180 deg
+       * rotation + horizontal mirror): screen-right = world +X,
+       * screen-down = world -Z. */
       const sx = (worldCam.halfWidth  * 2) / canvas.width;
       const sy = (worldCam.halfHeight * 2) / canvas.height;
-      worldCam.centerX -= dy * sy;
-      worldCam.centerZ += dx * sx;
+      worldCam.centerX -= dx * sx;
+      worldCam.centerZ += dy * sy;
     });
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
