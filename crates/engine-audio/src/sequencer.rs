@@ -21,6 +21,13 @@
 //!   (ppqn × 1e6)`), which keeps every term an integer.
 //! - Tempo events from the SEQ override the running tempo at the event
 //!   time (matching libsnd's mid-stream `0xFF 0x51`).
+//! - Loop points are read **from the stream**: PSX SEQ encodes them as
+//!   NRPN-style control changes on status `0xB0` - controller 99 (`0x63`)
+//!   value 20 = Loop Start, value 30 = Loop Forever. When a Loop Start fires
+//!   the sequencer remembers the position; a later Loop Forever (or an
+//!   end-of-track that follows a Loop Start) rewinds to that marker rather
+//!   than to the beginning. An external [`Sequencer::set_loop_to`] remains as
+//!   a fallback for the handful of retail tracks that carry no markers.
 //!
 //! Tests use synthetic SEQs + a stubbed `VabBank` shape so no Sony bytes
 //! are ever instantiated.
@@ -35,6 +42,13 @@ pub const CHANNELS: usize = 16;
 
 /// libsnd default initial tempo when the SEQ header is broken: 120 BPM.
 pub const DEFAULT_TEMPO_US_PER_QN: u32 = 500_000;
+
+/// NRPN-style controller that carries SEQ loop markers (controller 99).
+const CC_LOOP_MARKER: u8 = 0x63;
+/// `CC_LOOP_MARKER` value marking a Loop Start point.
+const LOOP_START_VALUE: u8 = 20;
+/// `CC_LOOP_MARKER` value marking Loop Forever (jump to the last Loop Start).
+const LOOP_FOREVER_VALUE: u8 = 30;
 
 /// Per-channel state carried across events.
 #[derive(Debug, Clone, Copy)]
@@ -95,9 +109,21 @@ pub struct Sequencer {
     abs_tick: u64,
     /// Has end-of-track been reached.
     finished: bool,
-    /// If non-zero, restart at this event index when EOT is reached.
-    /// 0 means "loop to beginning"; `usize::MAX` means "no looping".
+    /// External loop fallback: restart at this event index when EOT is
+    /// reached *and* no in-stream Loop Start marker has been seen. 0 means
+    /// "loop to beginning"; `usize::MAX` means "no looping". In-stream markers
+    /// (see [`Self::loop_start`]) take precedence over this.
     loop_to: usize,
+    /// Event index recorded when an in-stream Loop Start marker (CC 99 value
+    /// 20) fires - the position a Loop Forever marker or a following EOT
+    /// rewinds to. It points at the event *after* the marker, so a rewind
+    /// neither re-fires the marker nor re-applies its delta. `None` until the
+    /// first Loop Start is seen; persists across loop rewinds so repeated
+    /// loops keep returning to the same bar.
+    loop_start: Option<usize>,
+    /// Set when a Loop Forever marker (CC 99 value 30) fires; the advance loop
+    /// consumes it, rewinds, and clears it.
+    pending_loop_forever: bool,
 
     channels: [ChannelState; CHANNELS],
     /// Active note → voice mappings. Linear search; bounded by SPU voice
@@ -128,6 +154,8 @@ impl Sequencer {
             abs_tick: 0,
             finished: false,
             loop_to: usize::MAX,
+            loop_start: None,
+            pending_loop_forever: false,
             channels: [ChannelState::default(); CHANNELS],
             active: Vec::new(),
             master_vol: 127,
@@ -139,10 +167,27 @@ impl Sequencer {
         self.master_vol = v.min(127);
     }
 
-    /// Enable looping: rewinds the event index to `to` when the SEQ hits
-    /// end-of-track. Pass `usize::MAX` to disable (the default).
+    /// Set the external loop fallback: rewinds the event index to `to` when
+    /// the SEQ hits end-of-track *and* the stream carried no Loop Start marker.
+    /// Pass `usize::MAX` to disable (the default). In-stream loop markers (CC
+    /// 99 value 20/30) take precedence over this fallback.
     pub fn set_loop_to(&mut self, to: usize) {
         self.loop_to = to;
+    }
+
+    /// Where a loop should rewind to: the in-stream Loop Start marker if one
+    /// has fired, else the external [`Self::set_loop_to`] fallback, else
+    /// `None` (no looping). Bounds-checked against the event count.
+    fn loop_target(&self) -> Option<usize> {
+        if let Some(start) = self.loop_start
+            && start < self.seq.events.len()
+        {
+            return Some(start);
+        }
+        if self.loop_to != usize::MAX && self.loop_to < self.seq.events.len() {
+            return Some(self.loop_to);
+        }
+        None
     }
 
     /// Has the sequence completed (no looping)?
@@ -215,8 +260,8 @@ impl Sequencer {
         loop {
             let Some(event) = self.seq.events.get(self.next) else {
                 self.finished = true;
-                if self.loop_to != usize::MAX && self.loop_to < self.seq.events.len() {
-                    self.rewind_to(self.loop_to, spu);
+                if let Some(target) = self.loop_target() {
+                    self.rewind_to(target, spu);
                 }
                 return;
             };
@@ -234,8 +279,18 @@ impl Sequencer {
             self.abs_tick += event.delta as u64;
             self.fire(spu, self.next);
             self.next += 1;
-            // EOT branch: if this event was end-of-track and looping is on,
-            // rewind. Otherwise mark finished and bail.
+            // Loop Forever branch: an in-stream CC 99 value 30 marker just
+            // fired. Rewind to the last Loop Start (or the track beginning if
+            // none was seen) and resume - this takes precedence over EOT.
+            if self.pending_loop_forever {
+                self.pending_loop_forever = false;
+                let target = self.loop_start.unwrap_or(0).min(self.seq.events.len());
+                self.rewind_to(target, spu);
+                continue;
+            }
+            // EOT branch: if this event was end-of-track and a loop point is
+            // available (an in-stream Loop Start or the external fallback),
+            // rewind to it. Otherwise mark finished and bail.
             if matches!(
                 self.seq
                     .events
@@ -243,8 +298,8 @@ impl Sequencer {
                     .map(|e| &e.body),
                 Some(EventBody::Meta(MetaMessage::EndOfTrack))
             ) {
-                if self.loop_to != usize::MAX && self.loop_to < self.seq.events.len() {
-                    self.rewind_to(self.loop_to, spu);
+                if let Some(target) = self.loop_target() {
+                    self.rewind_to(target, spu);
                 } else {
                     self.finished = true;
                     return;
@@ -311,6 +366,20 @@ impl Sequencer {
             ChannelMessage::ControlChange { control, value } => match control {
                 0x07 => self.channels[ch].volume = value,
                 0x0A => self.channels[ch].pan = value,
+                CC_LOOP_MARKER => match value {
+                    LOOP_START_VALUE => {
+                        // Record the position *after* this marker. `self.next`
+                        // is still this event's index here (the advance loop
+                        // increments it after `fire` returns), so the event
+                        // following the marker is `next + 1`. Rewinding there
+                        // skips re-firing the marker and re-applying its delta.
+                        self.loop_start = Some(self.next + 1);
+                    }
+                    LOOP_FOREVER_VALUE => {
+                        self.pending_loop_forever = true;
+                    }
+                    _ => {}
+                },
                 _ => {}
             },
             ChannelMessage::NoteOn { key, velocity } => {
@@ -524,6 +593,136 @@ mod tests {
         assert_eq!(s.next, 1, "NoteOn must not fire one sample early");
         s.tick_sample(&mut spu);
         assert!(s.next >= 2, "NoteOn fires on the exact 22050th sample");
+    }
+
+    /// A track with a mid-stream Loop Start marker (CC 99 value 20) must
+    /// rewind to that marker - not to event 0 - when Loop Forever (CC 99
+    /// value 30) fires, and the integer sample-clock must stay exact across
+    /// the rewind so the looped body re-fires on the same sample offset.
+    #[test]
+    fn loop_forever_rewinds_to_in_stream_marker_not_zero() {
+        // ppqn 480, tempo 500000 (120 BPM) => one quarter (delta 480) is
+        // exactly 22050 SPU samples at 44.1 kHz.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]); // version 1 (PsyQ shape)
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        // idx 0: delta 0, ProgramChange ch0 prog 0
+        buf.push(0x00);
+        buf.push(0xC0);
+        buf.push(0x00);
+        // idx 1: delta 480, NoteOn ch0 key 60 vel 100
+        buf.push(0x83);
+        buf.push(0x60);
+        buf.push(0x90);
+        buf.push(60);
+        buf.push(100);
+        // idx 2: delta 0, Loop Start (CC 0xB0 ch0 controller 99 value 20).
+        // Records the rewind target as idx 3 (the event after this marker).
+        buf.push(0x00);
+        buf.push(0xB0);
+        buf.push(99);
+        buf.push(20);
+        // idx 3: delta 480, NoteOn ch0 key 64 vel 100 (the loop body start)
+        buf.push(0x83);
+        buf.push(0x60);
+        buf.push(0x90);
+        buf.push(64);
+        buf.push(100);
+        // idx 4: delta 480, Loop Forever (CC 99 value 30) -> rewind to idx 3
+        buf.push(0x83);
+        buf.push(0x60);
+        buf.push(0xB0);
+        buf.push(99);
+        buf.push(30);
+        // idx 5: delta 0, end-of-track (never reached while looping)
+        buf.push(0x00);
+        buf.push(0xFF);
+        buf.push(0x2F);
+        let seq = Seq::parse(&buf).unwrap();
+        let mut s = Sequencer::new(seq, empty_bank());
+        let mut spu = Spu::new();
+
+        // Loop Forever (idx 4) fires at sample 66150 (= 3 quarters). After it
+        // fires the sequencer rewinds to the recorded Loop Start target.
+        for _ in 0..66_150 {
+            s.tick_sample(&mut spu);
+        }
+        assert!(!s.is_finished(), "Loop Forever must not finish the track");
+        assert_eq!(
+            s.loop_start,
+            Some(3),
+            "Loop Start records the event after the marker"
+        );
+        assert_eq!(
+            s.next, 3,
+            "Loop Forever rewinds to the in-stream marker (idx 3), not to 0"
+        );
+
+        // Exactness across the rewind: the looped NoteOn at idx 3 has delta
+        // 480 = 22050 samples. It must not re-fire one sample early.
+        for _ in 0..22_049 {
+            s.tick_sample(&mut spu);
+        }
+        assert_eq!(s.next, 3, "looped NoteOn must not fire early after rewind");
+        s.tick_sample(&mut spu);
+        assert!(
+            s.next >= 4,
+            "looped NoteOn fires on the exact sample after rewind"
+        );
+
+        // And it keeps looping: drive well past another Loop Forever and the
+        // playhead is still parked at the marker, never finished.
+        for _ in 0..66_150 {
+            s.tick_sample(&mut spu);
+        }
+        assert!(!s.is_finished());
+        assert_eq!(s.next, 3, "repeated loops keep returning to the marker");
+    }
+
+    /// When the stream carries a Loop Start marker, end-of-track rewinds to it
+    /// even if no external [`Sequencer::set_loop_to`] fallback was set.
+    #[test]
+    fn eot_rewinds_to_marker_without_external_loop() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]);
+        buf.extend_from_slice(&[0x01, 0xE0]);
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]);
+        buf.push(0x04);
+        buf.push(0x02);
+        // idx 0: delta 0, Loop Start
+        buf.push(0x00);
+        buf.push(0xB0);
+        buf.push(99);
+        buf.push(20);
+        // idx 1: delta 480, NoteOn
+        buf.push(0x83);
+        buf.push(0x60);
+        buf.push(0x90);
+        buf.push(60);
+        buf.push(100);
+        // idx 2: delta 0, end-of-track
+        buf.push(0x00);
+        buf.push(0xFF);
+        buf.push(0x2F);
+        let seq = Seq::parse(&buf).unwrap();
+        let mut s = Sequencer::new(seq, empty_bank());
+        // Note: set_loop_to is NOT called - looping is driven purely by the
+        // in-stream marker.
+        let mut spu = Spu::new();
+        for _ in 0..40_000 {
+            s.tick_sample(&mut spu);
+        }
+        assert!(
+            !s.is_finished(),
+            "in-stream marker loops without set_loop_to"
+        );
+        // Loop Start recorded idx 1; EOT rewound there rather than finishing.
+        assert_eq!(s.loop_start, Some(1));
     }
 
     #[test]
