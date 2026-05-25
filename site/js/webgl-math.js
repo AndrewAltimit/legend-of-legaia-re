@@ -4,7 +4,8 @@
  *
  * Loads as a classic global script — exposes: IDENTITY4, MESH_SCALE,
  * compileProgram, mulMat4, perspective, translate, rotateY, rotateX,
- * scaleMat, buildMvp, placementModelScaled, placementModelCentered,
+ * scaleMat, buildMvp, placementModelScaled, placementModelScaledY,
+ * placementModelCentered,
  * computeAabb, buildTopDownVp, ortho, lookAt. Must be loaded before
  * webgl-tmd.js.
  */
@@ -175,6 +176,25 @@ function placementModelScaled(x, z, rotY, scale) {
      0,       -sc,  0,      0,    /* flip Y so PSX +Y down -> world +Y up */
     -sc * s,    0,  sc * c, 0,
      x,         0,  z,      1,
+  ]);
+}
+
+/* Per-placement model that also positions the anchor in Y (world height).
+ * Same as `placementModelScaled` but translates by (x, y, z) instead of
+ * (x, 0, z). Used for walk-frame landmarks, whose world Y comes from the
+ * scene floor-height LUT (`-lut[nibble] + y_off`) so they sit on the
+ * continent heightfield rather than the y=0 plane. The mesh-local geometry
+ * is still Y-flipped (PSX +Y down -> world +Y up); the translation is applied
+ * after the flip, matching the native engine's
+ * `T(x, world_y, z) * S(1, -1, 1)`. */
+function placementModelScaledY(x, y, z, rotY, scale) {
+  const c = Math.cos(rotY), s = Math.sin(rotY);
+  const sc = scale;
+  return new Float32Array([
+     sc * c,    0,  sc * s, 0,
+     0,       -sc,  0,      0,    /* flip Y so PSX +Y down -> world +Y up */
+    -sc * s,    0,  sc * c, 0,
+     x,         y,  z,      1,
   ]);
 }
 

@@ -21,8 +21,12 @@
  *   r.dispose();
  *
  * Each `placement` for `renderAssembled` is:
- *   { meshId, x, z, rotY?, scale?, anchor? }
+ *   { meshId, x, z, y?, rotY?, scale?, anchor? }
  *     scale  - per-placement world-scale (defaults to MESH_SCALE).
+ *     y      - optional world height for the anchor (walk-frame landmarks
+ *              pass the floor-LUT height so they sit on the heightfield;
+ *              omitted -> anchor on the y=0 plane). Ignored when anchor is
+ *              'centroid'.
  *     anchor - 'origin' (default) uses the mesh's TMD-local origin as the
  *              placement pivot; 'centroid' first translates the mesh so
  *              its AABB centroid sits at (x, 0, z).
@@ -699,9 +703,16 @@ class TmdRenderer {
       for (const p of list) {
         const scale = (p.scale != null) ? p.scale : MESH_SCALE;
         const useCentroid = (p.anchor === 'centroid') && m.aabb;
-        const model = useCentroid
-          ? placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb)
-          : placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+        let model;
+        if (useCentroid) {
+          model = placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
+        } else if (p.y != null) {
+          /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
+           * sit on the continent heightfield instead of the y=0 plane. */
+          model = placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
+        } else {
+          model = placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+        }
         gl.uniformMatrix4fv(this.locModel, false, model);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }

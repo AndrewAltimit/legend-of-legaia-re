@@ -97,13 +97,46 @@ The top-down camera renders the map **rotated 90° clockwise** (the
 screen-right = world `-Z`); the pan controls map drag deltas back through
 the same basis.
 
-**The legacy placement layers are currently hidden.** The MAN-table
-landmarks, live-RAM actor placements, and the unplaced-slot-1 layout grid
-(described under "Layout engine for unplaced slot-1 TMDs" below) are all in
-the top-down *overview* coordinate frame, which is misaligned with the
-walk-view heightfield. Until they're re-derived in the walk frame the viewer
-shows the continent terrain only; the `SHOW_LEGACY_PLACEMENTS` flag in
-`world-overview-app.js` re-enables the old layer (the code is preserved).
+## Walk-frame placed landmarks
+
+The continent isn't just terrain: the sparse **placed landmarks** (the
+`flags & 0x4` slot-1 pack objects `FUN_8003A55C` stamps on occupied tiles —
+towers, castles, bridges) draw on top of the heightfield, in the **same
+`col*128` world frame** as the ground. This is the same set the native
+`play-window --scene map01 --world-map` render draws over its heightfield.
+
+`legaia_web_viewer::build_walk_placements` resolves them from the raw
+PROT.DAT the viewer already holds, sharing the walk `.MAP` + floor-LUT
+resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
+
+- Runs `legaia_asset::field_objects::parse_placements` on the walk `.MAP`.
+- Each placement's mesh is the record's `+0x10` field (`pack_index`) — a
+  slot into the kingdom's slot-1 TMD pack the `pack_mesh_*` accessors expose.
+- World position is the placement's `(world_x, world_z)` plus a world Y of
+  `-lut[floor_nibble] + y_off` (the runtime stores the floor LUT negated), so
+  the landmark sits on the heightfield. This mirrors the native engine's
+  `resolve_placement_draws` exactly; the disc-gated
+  `crates/web-viewer/tests/walk_placements_parity.rs` asserts the viewer's
+  resolved placements equal `Scene::walk_object_placements` + the floor LUT
+  for all three kingdoms (6 / 33 / 25 landmarks for Drake / Sebucus / Karisto).
+
+The `walk_placement_{count,slots,positions}` WASM accessors hand the list to
+JS, which uploads each referenced pack mesh once and pushes a draw record per
+landmark. `renderAssembled` draws them after the ground with
+`placementModelScaledY(x, y, z, 0, 1)` — scale `1` (the slot-1 meshes are
+already in true world units, unlike the legacy overview-frame icons that
+needed a presentation scale) and the same `(1, -1, 1)` Y-flip the ground and
+the native render use. The "landmarks" checkbox toggles the layer.
+
+**The legacy overview-frame placement layers stay hidden.** The
+`world-overview.json` MAN-table landmarks, live-RAM actor placements, and the
+unplaced-slot-1 layout grid (described under "Layout engine for unplaced
+slot-1 TMDs" above) are in the top-down *overview* coordinate frame
+(mednafen captures / MAN overview coords), which is misaligned with the
+walk-view heightfield. The walk-frame placements above supersede them for the
+landmark layer; the `SHOW_LEGACY_PLACEMENTS` flag in `world-overview-app.js`
+still re-enables the old overview-frame code (preserved for the snapshot
+panel + the unplaced-layout toggles).
 
 ## Distance-cue fog pass
 
