@@ -5189,10 +5189,11 @@ impl PlayWindowApp {
             }
             // World-map continent ground: build the heightfield surface from
             // the walk `.MAP` floor grid (the slot-1 pack meshes are only the
-            // landmarks, not a per-cell ground mesh) and texture it from the
-            // retail ground-tile atlas (`GROUND_ATLAS_TPAGE`/`_CLUT`) with the
-            // positional `(col%3, row%3)` detail-tiling the heightfield bakes
-            // into its per-vertex UVs - see docs/subsystems/world-map.md
+            // landmarks, not a per-cell ground mesh) and texture each cell from
+            // the retail terrain-type-keyed multi-page atlas - the heightfield
+            // bakes the per-cell tile UV (`+0x14`) and page+palette
+            // (`+0x15`/`+0x16..+0x18`) so grass / mountain / water cells sample
+            // their own VRAM page. See docs/subsystems/world-map.md
             // "Ground texturing".
             let mut world_map_hf: Option<UploadedVramMesh> = None;
             let is_world_map = self
@@ -5206,11 +5207,7 @@ impl PlayWindowApp {
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
             {
-                let vmesh = heightfield_to_vram_mesh(
-                    &hf,
-                    legaia_asset::field_objects::GROUND_ATLAS_CLUT,
-                    legaia_asset::field_objects::GROUND_ATLAS_TPAGE,
-                );
+                let vmesh = heightfield_to_vram_mesh(&hf);
                 match r.upload_vram_mesh(
                     &vmesh.positions,
                     &vmesh.uvs,
@@ -7647,24 +7644,21 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
 }
 
 /// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`]. The heightfield
-/// supplies per-vertex UVs (the positional `(col%3, row%3)` ground-tile atlas
-/// tiling); `cba` / `tsb` select the shared ground-tile page
-/// ([`GROUND_ATLAS_CLUT`](legaia_asset::field_objects::GROUND_ATLAS_CLUT) /
-/// [`GROUND_ATLAS_TPAGE`](legaia_asset::field_objects::GROUND_ATLAS_TPAGE)).
-/// Normals are left at the `[0,0,0]` sentinel so the shader derives screen-space
-/// normals (flat-lit). See docs/subsystems/world-map.md "Ground texturing".
+/// supplies per-vertex UVs (the `+0x14` atlas tile) **and** per-vertex
+/// `[clut, tpage]` (the cell's terrain page + palette from `+0x15` /
+/// `+0x16..+0x18`), so grass / mountain / water / forest cells each sample their
+/// own VRAM page within the single ground mesh. Normals are left at the
+/// `[0,0,0]` sentinel so the shader derives screen-space normals (flat-lit).
+/// See docs/subsystems/world-map.md "Ground texturing".
 fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
-    cba: u16,
-    tsb: u16,
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
     legaia_tmd::mesh::VramMesh {
         positions: hf.positions.clone(),
-        // Per-vertex ground-tile atlas UVs (positional `(col%3, row%3)`
-        // detail-tiling); `cba`/`tsb` select the shared ground-tile page.
         uvs: hf.uvs.clone(),
-        cba_tsb: vec![[cba, tsb]; n],
+        // Per-cell terrain page + palette (multi-page terrain atlas).
+        cba_tsb: hf.cba_tsb.clone(),
         normals: vec![[0.0, 0.0, 0.0]; n],
         indices: hf.indices.clone(),
     }

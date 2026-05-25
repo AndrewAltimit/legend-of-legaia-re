@@ -506,46 +506,47 @@ with pool-5 because the bulk-terrain records carry `+0x10 == 0` — is removed.
 ### Ground texturing
 
 The walk-view continent ground is drawn as a field of **`POLY_FT4` (cmd `0x2C`)
-textured quads, one per visible cell** in a window around the player (≈1187
-quads in a Drake walk image), all sampling **one VRAM page** through one CLUT:
-`tpage = 0x001A` (4bpp page at fb `(640, 256)`) / `clut = 0x7C40` (CBA fb
-`(0, 497)`), pinned by decoding the retail prim pool
-(`scripts/analyze-walk-ground-tiles.py`).
+textured quads, one `32×32`-texel quad per visible cell** in a window around the
+player, emitted in a **row-major world-cell sweep** (the quads sit in contiguous
+runs in the prim pool, screen-X stepping along each swept row). Each cell's
+texture is selected **per cell** from a **terrain-type-keyed multi-page atlas** —
+grass, mountain, water, and forest cells each sample a different VRAM page.
 
-**Within a terrain type, tiles are positionally detail-tiled.** Each quad is a
-`32×32`-texel rect from a small atlas; the grass tiles form a `3×3` grid (UV
-origins `u,v ∈ {0,32,64}`), and the tile index cycles **mod 3 with the cell's
-column / row** (verified per screen-row: the atlas column steps `0,1,2` across
-adjacent cells). So the grass ground is a `(col % 3, row % 3)` detail-tiling
-that hides the repetition of one texture — **not** a per-cell data lookup. This
-is consistent with **no draw path reading `record +0x14`**: enumerating every
-walk tile-record consumer (`cell & 0x1ff` → `×0x20` idiom: the cell-bit
-refresher `FUN_80017C00` reads `+0x12`/`+0x16`; the landmark spawners
-`FUN_8003A55C` / `FUN_801D7B50` read `+0x0/2/4/6/7/8/a/c/12/1e/60`; the overview
-renderer `FUN_801F69D8` reads `+0x0/2/4/10/12/1e`) shows none reads `+0x14`. So
-`+0x14` (0..63) is **terrain-type metadata** (encounter / footstep / walk-speed
-class), not the per-tile texture selector.
+The selector is the cell's object-record `+0x14..+0x18` run (the record reached
+through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool:
 
-**Engine.** [`build_walk_heightfield`] bakes the `(col % 3, row % 3)` atlas UVs
-per cell ([`GROUND_ATLAS_TPAGE`] / [`GROUND_ATLAS_CLUT`] /
-[`GROUND_ATLAS_TILE_PX`] / [`GROUND_ATLAS_AXIS`]); `play-window` samples the
-ground-tile page so the continent renders as textured grass instead of a flat
-texel.
+| record byte | meaning |
+|---|---|
+| `+0x14` | `8×8` atlas **tile** index (`u = (id % 8) × 32`, `v = (id / 8) × 32`); `0..63` |
+| `+0x15` | PSX **`tpage`** word — the terrain VRAM page (= terrain type) |
+| `+0x16..+0x18` | PSX **`clut`** (CBA) word (`r[0x16] | r[0x17] << 8`) |
 
-**Open — terrain-TYPE variation.** Retail varies the ground by terrain *type*:
-**mountain** tiles on the height edges / slopes and **water** tiles in the
-ocean/lake regions, not uniform grass. The single grass-area capture analysed so
-far only exposed the 9 grass tiles (one CLUT/page), so the **type → tile (or
-type → page/CLUT) selection is not yet pinned**. Candidates: the floor height /
-local slope (`+0x4000` nibble — mountains track height, the user-observed cue),
-the `+0x14` terrain-type byte feeding the (still-unlocated) per-cell quad
-emitter, or per-region page/CLUT swaps. Closing it needs a walk capture
-positioned over mountain/water terrain (to read those quads' UVs/CLUTs) and/or
-locating the quad emitter via a live prim-pool writer trace. The decoded slot-0
-atlas itself textures correctly (`missing_page = 0`); the open question is the
-per-cell type selection, not the decode. (Distinct from the **top-view** bulk
-continent, which is per-cell *meshes* via `FUN_80043390` / the MAN
-`0x7F`-sentinel resolver — see
+Observed `+0x15` pages: `0x1A` fb `(640,256)` **grass**, `0x0C` fb `(768,0)`
+**mountain/rock** (a full `8×8` atlas), `0x1B`/`0x1C` fb `(704/768,256)`
+**water**, `0x0B` fb `(704,0)` **forest/coastal**, with a family of CLUTs per
+page in VRAM rows `495..509`.
+
+**How it was pinned** (`scripts/analyze-walk-ground-tiles.py --verify-rule`):
+the ground quads emit in world-cell-sweep order, so aligning a quad run's
+UV→tile-index sequence to the walk `.MAP`'s `+0x14` grid finds an exact match;
+on the aligned cells the quad's tile / page / clut equal the record's
+`+0x14` / `+0x15` / `+0x16..+0x18` for **100%** of cells across mountain + coast
+captures.
+
+> The earlier reading — "single `0x1A` grass page, positional `(col % 3,
+> row % 3)`, `+0x14` unused metadata" — was a **misread**. Grass cells happen to
+> use page `0x1A` with `+0x14` in the top-left `3×3` block of the `8×8` atlas, so
+> the mod-3 cross-row sequence was coincidental. `+0x14` **is** the tile
+> selector; the page/CLUT come from `+0x15`/`+0x16`.
+
+**Engine.** [`build_walk_heightfield`] reads each visible cell's record and bakes
+the per-cell tile UV (`+0x14` → 8×8 atlas) into `WalkHeightfield::uvs` and the
+per-cell `[clut, tpage]` (`+0x15`/`+0x16`) into `WalkHeightfield::cba_tsb`, so a
+single ground mesh samples grass / mountain / water / forest pages per cell;
+`play-window` draws it. `GROUND_ATLAS_TPAGE` / `_CLUT` remain only as the grass
+fallback for cells whose record carries no terrain run. (Distinct from the
+**top-view** bulk continent, which is per-cell *meshes* via `FUN_80043390` / the
+MAN `0x7F`-sentinel resolver — see
 [`world-overview-viewer.md`](world-overview-viewer.md).)
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
