@@ -10,7 +10,7 @@ Tools for extracting assets from a user-supplied disc image. Per the project's c
 ./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV. Use `--skip-png` to skip the slowest step; `--skip-xa` to skip the CD-XA audio demux; `--skip-verify` to skip the SHA verification.
+The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV → TIM-catalog TSV. Use `--skip-png` to skip the slowest step; `--skip-xa` to skip the CD-XA audio demux; `--skip-catalog` to skip writing the texture-inventory TSVs (`prot_tim_catalog.tsv` + `prot_tim_deep_catalog.tsv`); `--skip-verify` to skip the SHA verification.
 
 Output lands in `./extracted/` (gitignored):
 
