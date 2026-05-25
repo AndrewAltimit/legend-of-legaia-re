@@ -227,7 +227,8 @@ sequencer cluster above. Surface mirrors `SsSeqOpen` / `SsSeqPlay` /
 | Method | Maps to |
 |---|---|
 | `Sequencer::new(seq, bank)` | `SsSeqOpen` - bind one SEQ + one VAB bank, allocate channel state |
-| `Sequencer::tick_us(spu, dt_us)` | per-frame poller - drains events whose accumulated us elapsed at current tempo |
+| `Sequencer::tick_sample(spu)` | production playback clock - advance exactly one SPU sample (44.1 kHz) |
+| `Sequencer::tick_us(spu, dt_us)` | wall-clock / per-frame poller (parity oracles, tests) - converts µs to whole samples with a carry |
 | `Sequencer::set_master_vol(vol)` | `SsSeqSetVol` master |
 | `Sequencer::set_loop_to(idx)` | loop point (`_DAT_801CD2C0[i] + 0x98` repeat bit equivalent) |
 | `Sequencer::stop(spu)` | `_SsSeqCtrl(mode=1)` - silences and freezes |
@@ -239,6 +240,17 @@ shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
 `0xFF 0x51`). PitchBend / Aftertouch are accepted by the parser and
 ignored by the playback path until the engine wires per-voice modulation.
+
+**Timebase.** The production playback path ticks the sequencer once per SPU
+sample (`tick_sample`), so the music clock is locked to the audio clock.
+Timing is computed with an **exact integer accumulator** (units of
+`sample × ppqn × 1_000_000`; an event of delta `d` fires when the accumulator
+reaches `d × tempo_us × 44100`) - no per-tick float, no long-track drift, and
+bit-deterministic for the replay oracle. Note the SEQ tempo gotcha documented
+in [`formats/seq.md`](../formats/seq.md): the header tempo is a 240 BPM
+placeholder, immediately overridden by the first body `0xFF 0x51` (which, in
+PSX SEQ, carries its 3 tempo bytes with **no** MIDI length prefix). Mis-parsing
+that override pinned playback at the 240 BPM placeholder (~3x too fast).
 
 See [`crates/engine-audio/src/sequencer.rs`](../../crates/engine-audio/src/sequencer.rs)
 for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.

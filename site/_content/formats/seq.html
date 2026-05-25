@@ -82,57 +82,46 @@
 <td>2 (LSB, MSB; both 7-bit)</td>
 </tr>
 <tr>
-<td><code>0xFF NN LL</code></td>
+<td><code>0xFF NN</code></td>
 <td>Meta event</td>
-<td>LL bytes (LL is VLQ)</td>
+<td>fixed length per type (see below)</td>
 </tr>
 </tbody>
 </table>
-  <p>Channel index is the low nibble of the status byte (<code>0..=15</code>).</p>
+  <p>Channel index is the low nibble of the status byte (<code>0..=15</code>). Retail data only uses <code>0x90</code> / <code>0xB0</code> / <code>0xC0</code> / <code>0xE0</code> (Note Off is <code>0x90</code> with <code>velocity == 0</code>).</p>
   <h3>Variable-length quantity (VLQ)</h3>
-  <p>A VLQ is a big-endian sequence of 7-bit groups; the high bit of each byte is <code>1</code> for "more bytes follow", <code>0</code> for the final group. Maximum 4 bytes per delta. SEQ uses VLQ both for delta-times and meta-event length fields. See <code>legaia_seq::read_vlq</code>.</p>
+  <p>A VLQ is a big-endian sequence of 7-bit groups; the high bit of each byte is <code>1</code> for "more bytes follow", <code>0</code> for the final group. Maximum 4 bytes per delta. SEQ uses VLQ for delta-times. See <code>legaia_seq::read_vlq</code>.</p>
   <h3>Meta events</h3>
+  <p><strong>PSX SEQ meta events have no MIDI variable-length <code>length</code> field.</strong> This is the one place the format diverges sharply from a Standard MIDI File: the SsAPI sequencer reads a meta-type byte and then a <em>fixed</em> number of payload bytes determined by the type. The two meta types that appear in retail data:</p>
 <table>
 <thead><tr>
 <th>Kind</th>
-<th>Length</th>
+<th>Bytes after type</th>
 <th>Meaning</th>
 </tr></thead>
 <tbody>
 <tr>
-<td><code>0x2F</code></td>
-<td>0</td>
-<td>End-of-Track (always the final event)</td>
-</tr>
-<tr>
 <td><code>0x51</code></td>
 <td>3</td>
-<td>Set Tempo (u24 BE microseconds per quarter note)</td>
+<td>Set Tempo (u24 BE microseconds per quarter note). The 3 tempo bytes follow <code>0x51</code> <strong>directly</strong> - there is no <code>0x03</code> length prefix. An SMF would write <code>FF 51 03 tt tt tt</code>; PSX SEQ writes <code>FF 51 tt tt tt</code>.</td>
 </tr>
 <tr>
-<td><code>0x58</code></td>
-<td>4</td>
-<td>Time signature (numerator, denominator-pow2, MIDI clocks/metronome, 32nds/quarter)</td>
-</tr>
-<tr>
-<td><code>0x59</code></td>
-<td>2</td>
-<td>Key signature (sharps as <code>i8</code>, minor flag)</td>
-</tr>
-<tr>
-<td>other</td>
-<td>LL</td>
-<td>surfaced as <code>MetaMessage::Other { kind, data }</code></td>
+<td><code>0x2F</code></td>
+<td>0</td>
+<td>End-of-Track. Two bytes total (<code>FF 2F</code>), no <code>0x00</code> payload. Required; terminates parsing.</td>
 </tr>
 </tbody>
 </table>
-  <p>End-of-Track is required and terminates parsing.</p>
+  <p>Any other meta type has an undefined fixed length, so the parser cannot safely skip it and stops the track there (the reference SsAPI reader behaves the same way).</p>
+  <p class="callout"><strong>The tempo gotcha.</strong> Reading a phantom MIDI length byte mis-decodes every tempo event: <code>0x51</code> would consume the first tempo byte as a "length", then swallow the following note events as a bogus payload, and the override would be dropped. Retail tracks ship a <strong>240 BPM (250000 &micro;s/qn) init-placeholder</strong> header tempo that the <em>first body</em> <code>0xFF 0x51</code> event immediately overrides to the real musical tempo (e.g. <code>FF 51 0B 71 B0</code> = 750000 &micro;s/qn = 80 BPM). Dropping that override pins playback at the 240 BPM placeholder - a constant ~3x-too-fast rate. Every retail SEQ has <code>ppqn = 480</code>.</p>
+  <h3>Loop markers</h3>
+  <p>PSX SEQ encodes looping through NRPN-style control changes on <code>0xB0</code>: controller <code>0x63</code> (99) value 20 = Loop Start, value 30 = Loop Forever (jump back to the last Loop Start). The parser surfaces these as ordinary <code>ControlChange</code> events; the engine's loop point is currently driven externally (<code>Sequencer::set_loop_to</code>).</p>
 </section>
 
 <section class="doc-section" id="tempo-math">
   <h2>Tempo math</h2>
-  <p><code>tempo</code> is microseconds per quarter note; <code>ppqn</code> is ticks per quarter note. Per-tick duration is <code>tempo / ppqn</code> microseconds, and the SsAPI runtime accumulates real-world time against this rate. A mid-stream <code>SetTempo</code> overrides for <strong>future</strong> events only - events that already fired at the previous tempo are unaffected.</p>
-  <p><code>legaia_seq::us_per_tick(tempo, ppqn)</code> returns the per-tick duration as <code>f64</code>.</p>
+  <p><code>tempo</code> is microseconds per quarter note; <code>ppqn</code> is ticks per quarter note (always 480 in retail data). Per-tick duration is <code>tempo / ppqn</code> microseconds, and the runtime accumulates real-world time against this rate. A mid-stream <code>SetTempo</code> overrides for <strong>future</strong> events only - events that already fired at the previous tempo are unaffected.</p>
+  <p><code>legaia_seq::us_per_tick(tempo, ppqn)</code> returns the per-tick duration as <code>f64</code> for inspection. The engine playback clock (<code>Sequencer</code>) does <strong>not</strong> use this float: it accumulates time as an exact integer in units of <code>sample &times; ppqn &times; 1_000_000</code> and fires an event of delta <code>d</code> ticks once the accumulator reaches <code>d &times; tempo_us &times; 44100</code>, which keeps every term integer and the timebase free of long-track drift.</p>
 </section>
 
 <section class="doc-section" id="where-the-data-lives">

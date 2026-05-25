@@ -66,9 +66,11 @@ treat that byte as data.
 | `0xC0..=0xCF`| Program Change     | 1 (program) |
 | `0xD0..=0xDF`| Channel Aftertouch | 1 |
 | `0xE0..=0xEF`| Pitch Bend         | 2 (LSB, MSB; both 7-bit) |
-| `0xFF NN LL` | Meta event         | LL bytes (LL is VLQ) |
+| `0xFF NN`    | Meta event         | fixed length per type (see below) |
 
-Channel index is the low nibble of the status byte (`0..=15`).
+Channel index is the low nibble of the status byte (`0..=15`). Retail data
+only uses `0x90` / `0xB0` / `0xC0` / `0xE0` (Note Off is `0x90` with
+`velocity == 0`).
 
 ### Variable-length quantity (VLQ)
 
@@ -79,26 +81,55 @@ length fields. See `legaia_seq::read_vlq`.
 
 ### Meta events
 
-| Kind | Length | Meaning |
-| ---- | ------ | ------- |
-| `0x2F` | 0 | End-of-Track (always the final event) |
-| `0x51` | 3 | Set Tempo (u24 BE microseconds per quarter note) |
-| `0x58` | 4 | Time signature (numerator, denominator-pow2, MIDI clocks/metronome, 32nds/quarter) |
-| `0x59` | 2 | Key signature (sharps as `i8`, minor flag) |
-| other | LL | surfaced as `MetaMessage::Other { kind, data }` |
+**PSX SEQ meta events have no MIDI variable-length `length` field.** This is
+the one place the format diverges sharply from a Standard MIDI File: the
+SsAPI sequencer reads a meta-type byte and then a *fixed* number of payload
+bytes determined by the type. The two meta types that appear in retail data:
 
-End-of-Track is required and terminates parsing.
+| Kind | Bytes after type | Meaning |
+| ---- | ---------------- | ------- |
+| `0x51` | 3 | Set Tempo (u24 BE microseconds per quarter note). The 3 tempo bytes follow `0x51` **directly** - there is no `0x03` length prefix. A Standard MIDI File would write `FF 51 03 tt tt tt`; PSX SEQ writes `FF 51 tt tt tt`. |
+| `0x2F` | 0 | End-of-Track. Two bytes total (`FF 2F`), no `0x00` payload. Required; terminates parsing. |
+
+Any other meta type has an undefined fixed length, so the parser cannot
+safely skip it and stops the track there (the reference SsAPI reader behaves
+the same way).
+
+> **The tempo gotcha.** Reading a phantom MIDI length byte mis-decodes every
+> tempo event: `0x51` would consume the first tempo byte as a "length", then
+> swallow the following note events as a bogus payload, and the override would
+> be dropped. Retail tracks ship a **240 BPM (250000 µs/qn) init-placeholder**
+> header tempo that the *first body* `0xFF 0x51` event immediately overrides
+> to the real musical tempo (e.g. `FF 51 0B 71 B0` = 750000 µs/qn = 80 BPM).
+> Dropping that override pins playback at the 240 BPM placeholder - a constant
+> ~3x-too-fast rate. Every retail SEQ has `ppqn = 480`.
+
+### Loop markers
+
+PSX SEQ encodes looping through NRPN-style control changes on `0xB0`:
+
+| Controller | Value | Meaning |
+| ---------- | ----- | ------- |
+| `0x63` (99) | 20 | Loop Start - remembers the current position |
+| `0x63` (99) | 30 | Loop Forever - jump back to the last Loop Start |
+
+The parser surfaces these as ordinary `ControlChange` events; the engine's
+loop point is currently driven externally (`Sequencer::set_loop_to`).
 
 ## Tempo math
 
 `tempo` is microseconds per quarter note; `ppqn` is ticks per quarter
-note. Per-tick duration is `tempo / ppqn` microseconds, and the SsAPI
-runtime accumulates real-world time against this rate. A mid-stream
-`SetTempo` overrides for **future** events only - events that already
-fired at the previous tempo are unaffected.
+note (always 480 in retail data). Per-tick duration is `tempo / ppqn`
+microseconds, and the runtime accumulates real-world time against this rate.
+A mid-stream `SetTempo` overrides for **future** events only - events that
+already fired at the previous tempo are unaffected.
 
 `legaia_seq::us_per_tick(tempo, ppqn)` returns the per-tick duration as
-`f64`.
+`f64` for inspection. The engine playback clock (`Sequencer`) does **not**
+use this float: it accumulates time as an exact integer in units of
+`sample × ppqn × 1_000_000` and fires an event of delta `d` ticks once the
+accumulator reaches `d × tempo_us × 44100`, which keeps every term integer
+and the timebase free of long-track drift.
 
 ## Where the data lives
 

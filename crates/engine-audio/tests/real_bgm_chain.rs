@@ -90,6 +90,26 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
         "real SEQ must decode at least one event before EOT"
     );
 
+    // Retail tracks carry an init-placeholder header tempo (commonly 240 BPM)
+    // that the first body `0xFF 0x51` event immediately overrides to the real
+    // musical tempo. PSX SEQ meta events have NO MIDI length byte; reading a
+    // phantom length would drop the override and pin playback at the
+    // placeholder rate (the constant-wrong-BPM bug). Confirm the override is
+    // decoded and lands in a sane musical range.
+    use legaia_seq::{EventBody, MetaMessage};
+    let first_tempo = seq.events.iter().find_map(|e| match e.body {
+        EventBody::Meta(MetaMessage::SetTempo { us_per_qn }) => Some(us_per_qn),
+        _ => None,
+    });
+    if let Some(us) = first_tempo {
+        let bpm = 60_000_000.0 / us as f64;
+        eprintln!("[real-bgm] first body SetTempo = {us} us/qn ({bpm:.1} BPM)");
+        assert!(
+            (40.0..=300.0).contains(&bpm),
+            "first body tempo override should be a musical BPM, got {bpm:.1}"
+        );
+    }
+
     let mut spu = Spu::new();
     let mut alloc = SpuAllocator::new(0x1000, 0x40_000);
     let bank = VabBank::upload(&mut spu, &mut alloc, &vab_report, &bytes[vab_off..]);

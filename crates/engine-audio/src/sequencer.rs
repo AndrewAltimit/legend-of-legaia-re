@@ -11,9 +11,14 @@
 //!   the first idle one, and remembers the `(channel, key) → voice` binding
 //!   so the matching key-off can shut it down.
 //! - Tempo is stored as microseconds-per-quarter-note; the SsAPI runtime
-//!   rounds to a tick clock at `ppqn` ticks per quarter note. We keep a
-//!   sub-tick accumulator (`tick_accum_us`) to advance forward by exact
-//!   real-time deltas (`tick(dt_us)`).
+//!   advances a tick clock at `ppqn` ticks per quarter note.
+//! - Timing uses an **exact integer accumulator** clocked in SPU samples
+//!   (44.1 kHz) - no floating-point per-tick rate, so there is no drift on
+//!   long tracks and playback is bit-deterministic. The accumulator counts
+//!   in units of `sample × ppqn × 1_000_000`; an event whose delta is
+//!   `d` ticks fires once the accumulator reaches `d × tempo_us × 44100`
+//!   (the algebraic rearrangement of `elapsed_seconds ≥ d × tempo_us /
+//!   (ppqn × 1e6)`), which keeps every term an integer.
 //! - Tempo events from the SEQ override the running tempo at the event
 //!   time (matching libsnd's mid-stream `0xFF 0x51`).
 //!
@@ -21,6 +26,7 @@
 //! are ever instantiated.
 
 use crate::Spu;
+use crate::spu::voice::SPU_INTERNAL_RATE;
 use crate::vab_bind::VabBank;
 use legaia_seq::{ChannelMessage, EventBody, MetaMessage, Seq};
 
@@ -70,12 +76,19 @@ pub struct Sequencer {
 
     /// Index of the *next* event to fire (events[next..]).
     next: usize,
-    /// Microseconds accumulated since the last fired event. We keep us
-    /// (not ticks) so a mid-stream `SetTempo` correctly applies to the
-    /// *future* gap rather than re-pricing already-elapsed real-time.
-    tick_accum_us: f64,
-    /// Microseconds per PPQN tick. Recomputed on tempo change.
-    us_per_tick: f64,
+    /// Integer time accumulated since the last fired event, in units of
+    /// `sample × ppqn × 1_000_000`. We accumulate elapsed time (not ticks)
+    /// so a mid-stream `SetTempo` correctly applies to the *future* gap
+    /// rather than re-pricing already-elapsed real-time. See [`Self::fire_at`]
+    /// for the exact-integer fire threshold.
+    accum: u64,
+    /// Accumulator increment per SPU sample: `ppqn × 1_000_000`. Constant for
+    /// the life of the sequencer (ppqn is fixed by the header).
+    accum_per_sample: u64,
+    /// Fractional-sample carry for the `tick_us(f64)` entry point so repeated
+    /// non-integer microsecond deltas convert to whole samples without drift.
+    /// The sample-clocked [`Self::tick_sample`] path never touches this.
+    sample_carry: f64,
     /// Current tempo (us/qn).
     tempo_us_per_qn: u32,
     /// Absolute tick offset of the playhead (sum of fired event deltas).
@@ -104,13 +117,13 @@ impl Sequencer {
             seq.header.tempo_us_per_qn
         };
         let ppqn = seq.header.ppqn.max(1);
-        let us_per_tick = tempo as f64 / ppqn as f64;
         Self {
             seq,
             bank,
             next: 0,
-            tick_accum_us: 0.0,
-            us_per_tick,
+            accum: 0,
+            accum_per_sample: ppqn as u64 * 1_000_000,
+            sample_carry: 0.0,
             tempo_us_per_qn: tempo,
             abs_tick: 0,
             finished: false,
@@ -157,13 +170,48 @@ impl Sequencer {
         self.active.len()
     }
 
-    /// Advance the sequencer by `dt_us` microseconds, firing any events
-    /// whose accumulated delta has elapsed.
+    /// Advance the sequencer by exactly one SPU sample (1 / 44100 s). This is
+    /// the production playback clock: callers ticking the SPU sample-by-sample
+    /// call this once per `Spu::tick`, so the music timebase is locked to the
+    /// audio clock with no floating-point drift.
+    pub fn tick_sample(&mut self, spu: &mut Spu) {
+        self.advance_samples(spu, 1);
+    }
+
+    /// Advance the sequencer by `dt_us` microseconds, firing any events whose
+    /// accumulated delta has elapsed. Kept for callers that drive the
+    /// sequencer off a wall-clock / per-frame delta (parity oracles, tests);
+    /// the microsecond delta is converted to whole SPU samples with a
+    /// fractional carry so repeated non-integer deltas don't drift.
     pub fn tick_us(&mut self, spu: &mut Spu, dt_us: f64) {
         if self.finished {
             return;
         }
-        self.tick_accum_us += dt_us;
+        // samples = dt_us * 44100 / 1e6, with the leftover fraction carried
+        // to the next call so the conversion is drift-free over a long track.
+        let exact = dt_us.max(0.0) * SPU_INTERNAL_RATE as f64 / 1_000_000.0 + self.sample_carry;
+        let whole = exact.floor();
+        self.sample_carry = exact - whole;
+        let samples = whole.max(0.0) as u64;
+        // Always advance (even by zero samples) so a leading run of zero-delta
+        // events drains on the first tick, matching the old behaviour.
+        self.advance_samples(spu, samples);
+    }
+
+    /// Convenience wrapper: advance by milliseconds.
+    pub fn tick_ms(&mut self, spu: &mut Spu, dt_ms: f64) {
+        self.tick_us(spu, dt_ms * 1000.0);
+    }
+
+    /// Core integer-clocked advance. Adds `samples` SPU samples worth of time
+    /// to the accumulator, then fires every event that has come due.
+    fn advance_samples(&mut self, spu: &mut Spu, samples: u64) {
+        if self.finished {
+            return;
+        }
+        self.accum = self
+            .accum
+            .saturating_add(self.accum_per_sample.saturating_mul(samples));
         loop {
             let Some(event) = self.seq.events.get(self.next) else {
                 self.finished = true;
@@ -172,18 +220,17 @@ impl Sequencer {
                 }
                 return;
             };
-            // delta_us recomputed every event so a mid-stream SetTempo
-            // correctly affects the gap to the *next* event, not the one
-            // that fires it.
-            let delta_us = event.delta as f64 * self.us_per_tick;
-            // f64(event.delta * us_per_tick) doesn't always round-trip
-            // exactly; allow 1 microsecond of slack so a perfectly-matched
-            // accumulation fires deterministically.
-            const US_EPS: f64 = 1.0;
-            if self.tick_accum_us + US_EPS < delta_us {
+            // Fire threshold (exact integer): the event fires once the
+            // accumulator (sample × ppqn × 1e6) reaches `delta × tempo_us ×
+            // 44100`. Recomputed every event so a mid-stream SetTempo affects
+            // the gap to the *next* event, not the one that fired it.
+            let threshold = (event.delta as u64)
+                .saturating_mul(self.tempo_us_per_qn as u64)
+                .saturating_mul(SPU_INTERNAL_RATE as u64);
+            if self.accum < threshold {
                 return;
             }
-            self.tick_accum_us -= delta_us;
+            self.accum -= threshold;
             self.abs_tick += event.delta as u64;
             self.fire(spu, self.next);
             self.next += 1;
@@ -206,18 +253,14 @@ impl Sequencer {
         }
     }
 
-    /// Convenience wrapper: advance by milliseconds.
-    pub fn tick_ms(&mut self, spu: &mut Spu, dt_ms: f64) {
-        self.tick_us(spu, dt_ms * 1000.0);
-    }
-
     /// Key-off every active note and reset the playhead to `to`. Called by
     /// the loop logic and exposed publicly so engines can implement
     /// gameplay-driven loop points.
     pub fn rewind_to(&mut self, to: usize, spu: &mut Spu) {
         self.silence_all(spu);
         self.next = to;
-        self.tick_accum_us = 0.0;
+        self.accum = 0;
+        self.sample_carry = 0.0;
         self.finished = false;
         // Recompute abs_tick from the rewound position.
         self.abs_tick = self.seq.events[..to.min(self.seq.events.len())]
@@ -249,9 +292,10 @@ impl Sequencer {
                 self.fire_channel(spu, ch, *message);
             }
             EventBody::Meta(MetaMessage::SetTempo { us_per_qn }) => {
+                // Tempo only re-prices the gap to *future* events; the
+                // accumulator is in tempo-independent units (sample × ppqn ×
+                // 1e6), so no rescaling of the carried remainder is needed.
                 self.tempo_us_per_qn = (*us_per_qn).max(1);
-                let ppqn = self.seq.header.ppqn.max(1);
-                self.us_per_tick = self.tempo_us_per_qn as f64 / ppqn as f64;
             }
             EventBody::Meta(_) => {
                 // Non-tempo meta events are inert for playback.
@@ -438,6 +482,50 @@ mod tests {
         assert!(seq.playhead_ticks() < seq.seq.total_ticks() * 2);
     }
 
+    /// The integer sample-clock fires an event at exactly the right SPU
+    /// sample: at 120 BPM / ppqn 480, one quarter note (delta 480) is 0.5 s =
+    /// 22050 samples. The event must fire on sample 22050, not 22049, with no
+    /// floating-point slack.
+    #[test]
+    fn sample_clock_fires_quarter_note_at_exact_sample() {
+        // ppqn 480, tempo 500000 (120 BPM). Events: ProgramChange (delta 0),
+        // NoteOn (delta 480), EOT (delta 0).
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]);
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.push(0x00); // delta 0
+        buf.push(0xC0);
+        buf.push(0x00); // ProgramChange
+        buf.push(0x83); // delta 480
+        buf.push(0x60);
+        buf.push(0x90);
+        buf.push(60);
+        buf.push(100); // NoteOn
+        buf.push(0x00);
+        buf.push(0xFF);
+        buf.push(0x2F); // EOT
+        let seq = Seq::parse(&buf).unwrap();
+        let mut s = Sequencer::new(seq, empty_bank());
+        let mut spu = Spu::new();
+
+        // Drain the leading zero-delta ProgramChange.
+        s.tick_sample(&mut spu);
+        assert_eq!(s.next, 1, "ProgramChange fires immediately");
+
+        // 22050 samples == exactly one quarter at 120 BPM. We already consumed
+        // one sample, so 22048 more leaves us one short; the 22049th tips it.
+        for _ in 0..22_048 {
+            s.tick_sample(&mut spu);
+        }
+        assert_eq!(s.next, 1, "NoteOn must not fire one sample early");
+        s.tick_sample(&mut spu);
+        assert!(s.next >= 2, "NoteOn fires on the exact 22050th sample");
+    }
+
     #[test]
     fn tempo_event_changes_us_per_tick() {
         // Build a SEQ that starts at 120 BPM then jumps to 60 BPM after 0
@@ -450,18 +538,17 @@ mod tests {
         buf.extend_from_slice(&[0x07, 0xA1, 0x20]);
         buf.push(0x04);
         buf.push(0x02);
-        // delta 0, set-tempo to 1_000_000 us/qn (60 BPM)
+        // delta 0, set-tempo to 1_000_000 us/qn (60 BPM). PSX SEQ meta has no
+        // MIDI length byte: the 3 tempo bytes follow 0x51 directly.
         buf.push(0x00);
         buf.push(0xFF);
         buf.push(0x51);
-        buf.push(0x03);
         buf.extend_from_slice(&[0x0F, 0x42, 0x40]); // 1_000_000 BE
         // delta 480, end-of-track
         buf.push(0x83);
         buf.push(0x60);
         buf.push(0xFF);
         buf.push(0x2F);
-        buf.push(0x00);
         let seq = Seq::parse(&buf).unwrap();
         let mut s = Sequencer::new(seq, empty_bank());
         let mut spu = Spu::new();
