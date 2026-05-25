@@ -84,14 +84,26 @@ correct terrain textures from the VRAM the viewer already has.
 The `walk_ground_{positions,uvs,cba_tsb,indices,quad_count}` WASM
 accessors hand the surface to the WebGL renderer. `TmdRenderer.uploadGround`
 keeps it resident as one mesh; `renderAssembled` draws it after the ocean
-plane (so land occludes water via depth-test) and before the landmark
-placements (so they sit on top), with a fixed `diag(1, -1, 1)` model — the
-same Y-flip the placement models apply, since the heightfield is already in
-world coordinates. The "terrain" checkbox toggles the ground pass
-(read per-frame, no kingdom re-entry). When the heightfield is present it
-also drives the default camera framing (centred on its XZ centroid, sized
-to its extent); the "lock to retail top-view" button still recentres on the
-captured spawn anchor on demand.
+plane (so land occludes water via depth-test), with a fixed `diag(1, -1, 1)`
+model — the same Y-flip the placement models apply, since the heightfield is
+already in world coordinates. The "terrain" checkbox toggles the ground pass
+(read per-frame, no kingdom re-entry). The heightfield drives the default
+camera framing (centred on its XZ centroid, sized to its extent); the
+"lock to retail top-view" button still recentres on the captured spawn
+anchor on demand.
+
+The top-down camera renders the map **rotated 90° clockwise** (the
+`buildTopDownVp` up vector is world `-X`, so screen-up = world `-X` and
+screen-right = world `-Z`); the pan controls map drag deltas back through
+the same basis.
+
+**The legacy placement layers are currently hidden.** The MAN-table
+landmarks, live-RAM actor placements, and the unplaced-slot-1 layout grid
+(described under "Layout engine for unplaced slot-1 TMDs" below) are all in
+the top-down *overview* coordinate frame, which is misaligned with the
+walk-view heightfield. Until they're re-derived in the walk frame the viewer
+shows the continent terrain only; the `SHOW_LEGACY_PLACEMENTS` flag in
+`world-overview-app.js` re-enables the old layer (the code is preserved).
 
 ## Distance-cue fog pass
 

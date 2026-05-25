@@ -213,8 +213,12 @@
     const $normalizeWrap = document.getElementById('wo-normalize-unplaced-wrap');
     const $fogWrap = document.getElementById('wo-fog-wrap');
     const $terrainWrap = document.getElementById('wo-show-terrain-wrap');
-    if ($unplacedWrap)  $unplacedWrap.hidden  = meshOnly;
-    if ($normalizeWrap) $normalizeWrap.hidden = meshOnly;
+    /* The unplaced-slot-1 layout grid only drives the legacy
+     * overview-frame placement layer, which is hidden while the viewer
+     * shows the walk-view continent terrain only - so keep its toggles
+     * hidden regardless of view mode. */
+    if ($unplacedWrap)  $unplacedWrap.hidden  = true;
+    if ($normalizeWrap) $normalizeWrap.hidden = true;
     if ($fogWrap)       $fogWrap.hidden       = meshOnly;
     if ($terrainWrap)   $terrainWrap.hidden   = meshOnly;
     if ($lockTopView)   $lockTopView.hidden   = meshOnly;
@@ -617,13 +621,21 @@
       return true;
     }
 
+    /* Legacy placement layers (MAN-table landmarks, live-RAM actors,
+     * unplaced slot-1 TMD layout grid). These are positioned in the
+     * top-down OVERVIEW coordinate frame, which is misaligned with the
+     * walk-view heightfield the viewer now draws as the real continent.
+     * Until they're re-derived in the walk frame, show terrain only.
+     * Flip this to re-enable the old layer (the code below is preserved
+     * so the snapshot panel + toggles keep working when it returns). */
+    const SHOW_LEGACY_PLACEMENTS = false;
     const drawPlacements = [];
     /* MAN-table placements at the disc-encoded world coordinates. Counts
      * by source so the snapshot panel surfaces how many placements made
      * it onto the GPU vs were dropped for the global-pool gap. */
     const manSlots = new Set();
     const renderCounts = { scene_pack: 0, global_pool: 0, skipped: 0 };
-    for (const p of k.placements) {
+    for (const p of (SHOW_LEGACY_PLACEMENTS ? k.placements : [])) {
       if (p.script_positioned) continue;
       if (!p.tmd_source) {
         renderCounts.skipped++;
@@ -679,7 +691,7 @@
      * the legacy class colouring still works, and treat bulk_terrain as
      * a tagged sub-bucket. */
     const liveSlots = new Set();
-    const livePlacements = k.live_placements || [];
+    const livePlacements = SHOW_LEGACY_PLACEMENTS ? (k.live_placements || []) : [];
     for (const lp of livePlacements) {
       const ms = lp.pack_slot;
       if (!ensureMeshUploaded(ms)) continue;
@@ -739,7 +751,7 @@
         anchor: normalize ? 'centroid' : 'origin',
       };
     }
-    if ($showUnplaced && $showUnplaced.checked) {
+    if (SHOW_LEGACY_PLACEMENTS && $showUnplaced && $showUnplaced.checked) {
       /* Drop entries the live extract already placed in real
        * coordinates - drawing them twice produces visual duplicates. */
       const unplacedAll = (k.unplaced_slot1_tmds || [])
@@ -874,12 +886,18 @@
       ` + ${renderCounts.global_pool} global-pool placeholders`;
     const skippedSummary = renderCounts.skipped === 0 ? '' :
       ` (${renderCounts.skipped} skipped)`;
-    const terrainSummary = groundQuads > 0
-      ? ` + ${groundQuads}-cell ground heightfield`
-      : '';
-    $meshLabel.textContent =
-      `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
-      + terrainSummary + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
+    if (SHOW_LEGACY_PLACEMENTS) {
+      const terrainSummary = groundQuads > 0
+        ? ` + ${groundQuads}-cell ground heightfield`
+        : '';
+      $meshLabel.textContent =
+        `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
+        + terrainSummary + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
+    } else {
+      $meshLabel.textContent = groundQuads > 0
+        ? `${k.cdname} - ${groundQuads}-cell continent heightfield (walk-view terrain)`
+        : `${k.cdname} - no walk-view terrain resolved`;
+    }
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
@@ -958,12 +976,14 @@
       if (!dragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      /* Drag right -> camera moves right (so content scrolls left).
-       * Convert pixel deltas to world units via the current camera half-extents. */
+      /* Drag -> camera grabs the map (content follows the cursor).
+       * Convert pixel deltas to world units via the current camera
+       * half-extents, through the 90-deg-CW basis buildTopDownVp uses:
+       * screen-right = world -Z, screen-down = world +X. */
       const sx = (worldCam.halfWidth  * 2) / canvas.width;
       const sy = (worldCam.halfHeight * 2) / canvas.height;
-      worldCam.centerX -= dx * sx;
-      worldCam.centerZ -= dy * sy;
+      worldCam.centerX -= dy * sy;
+      worldCam.centerZ += dx * sx;
     });
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
