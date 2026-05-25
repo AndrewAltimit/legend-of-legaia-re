@@ -251,7 +251,12 @@ function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
   const eyeX = cam.centerX;
   const eyeZ = cam.centerZ - eyeY * Math.tan(pitch);
   const target = [cam.centerX, 0, cam.centerZ];
-  const up = [0, 0, -1];  /* world -Z is "up" on screen for a top-down map */
+  /* Rotate the top-down map 90 deg clockwise on screen. With the camera
+   * looking straight down, up = -X makes screen-up = world -X and
+   * screen-right = world -Z (vs the un-rotated up = -Z, which gave
+   * screen-up = -Z / screen-right = +X). The pan controls in
+   * attachTopDownControls map drag deltas back through this same basis. */
+  const up = [-1, 0, 0];
   const V = lookAt([eyeX, eyeY, eyeZ], target, up);
 
   const P = ortho(-hw, hw, -hh, hh, 1.0, farPad);

@@ -667,6 +667,33 @@ export class LegaiaViewer {
      */
     status(): string;
     /**
+     * Per-vertex `[clut, tpage]` (PSX CBA + tpage words) of the walk-view
+     * ground, flattened. Distinct per cell so grass / mountain / water / forest
+     * cells sample their own VRAM page from the kingdom slot-0 atlas.
+     */
+    walk_ground_cba_tsb(): Uint16Array;
+    /**
+     * Triangle indices of the walk-view ground (two triangles per cell quad).
+     */
+    walk_ground_indices(): Uint32Array;
+    /**
+     * Per-vertex world positions of the walk-view continent ground
+     * heightfield, flattened `[x, y, z, ...]`. Empty until a kingdom is loaded.
+     * Same pre-Y-flip world frame as the landmark placement draws, so the JS
+     * renderer applies the same `(1, -1, 1)` model flip (scale 1, no offset).
+     */
+    walk_ground_positions(): Float32Array;
+    /**
+     * Number of ground cells (quads) in the walk-view heightfield. 0 when no
+     * kingdom is loaded or the heightfield couldn't be resolved.
+     */
+    walk_ground_quad_count(): number;
+    /**
+     * Per-vertex page-local UVs (`u8` pairs) of the walk-view ground, flattened
+     * `[u, v, ...]`. Each cell's four corners cover its `32 x 32` atlas tile.
+     */
+    walk_ground_uvs(): Uint8Array;
+    /**
      * Decode the live PSX GPU primitive pool out of a mednafen save state
      * and return per-vertex attribute arrays for replay in WebGL2 against
      * the save state's VRAM.
@@ -822,6 +849,11 @@ export interface InitOutput {
     readonly legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly legaiaviewer_slot4_wireframe_points: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_status: (a: number) => [number, number];
+    readonly legaiaviewer_walk_ground_cba_tsb: (a: number) => [number, number];
+    readonly legaiaviewer_walk_ground_indices: (a: number) => [number, number];
+    readonly legaiaviewer_walk_ground_positions: (a: number) => [number, number];
+    readonly legaiaviewer_walk_ground_quad_count: (a: number) => number;
+    readonly legaiaviewer_walk_ground_uvs: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -74,6 +74,17 @@ class TmdRenderer {
      * the TMD-local origin as the placement pivot. */
     this.sceneMeshes = new Map();
 
+    /* Walk-view continent ground: one big heightfield mesh (per-cell
+     * terrain-atlas UVs + [clut, tpage]) that textures against the same
+     * VRAM as the landmark meshes. Built once per kingdom by
+     * `uploadGround`, drawn by `renderAssembled` before the placement
+     * loop so landmarks sit on top. `null` until uploaded. The mesh is
+     * already in world coords (col*128, -lut[nibble], row*128), so it
+     * draws with a fixed Y-flip model (scale 1, no offset) - the same
+     * (1,-1,1) flip the placement models apply. */
+    this.ground = null;
+    this.groundEnable = true;
+
     /* Allocate the VRAM texture once (R16UI 1024x512). */
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, VRAM_W, VRAM_H);
@@ -487,6 +498,64 @@ class TmdRenderer {
     this.sceneMeshes.clear();
   }
 
+  /* Upload the walk-view continent ground heightfield. Attribute layout
+   * matches `uploadSceneMesh` (positions f32x3, uvs u8x2, cbaTsb u16x2,
+   * indices u32). Idempotent: re-upload overwrites. Pass empty arrays to
+   * clear the ground (e.g. a kingdom with no resolvable walk `.MAP`). */
+  uploadGround(positions, uvs, cbaTsb, indices) {
+    const gl = this.gl;
+    if (!positions || positions.length === 0 || !indices || indices.length === 0) {
+      this.ground = null;
+      return;
+    }
+    let g = this.ground;
+    if (!g) {
+      g = {
+        vao: gl.createVertexArray(),
+        posBuf: gl.createBuffer(),
+        uvBuf:  gl.createBuffer(),
+        ctBuf:  gl.createBuffer(),
+        idxBuf: gl.createBuffer(),
+        indexCount: 0,
+        aabb: null,
+      };
+      this.ground = g;
+    }
+    g.aabb = computeAabb(positions);
+    gl.bindVertexArray(g.vao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locPos);
+    gl.vertexAttribPointer(this.locPos, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.uvBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locUv);
+    gl.vertexAttribPointer(this.locUv, 2, gl.UNSIGNED_BYTE, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.ctBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, cbaTsb, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locCbaTsb);
+    gl.vertexAttribIPointer(this.locCbaTsb, 2, gl.UNSIGNED_SHORT, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+    g.indexCount = indices.length;
+    gl.bindVertexArray(null);
+  }
+
+  /* Return the ground heightfield AABB (null until uploadGround has run). */
+  getGroundAabb() {
+    return this.ground ? this.ground.aabb : null;
+  }
+
+  /* Toggle the ground pass (wired to the "show terrain" checkbox). */
+  setGroundEnable(on) {
+    this.groundEnable = !!on;
+  }
+
   /* Render an assembled top-down scene. `placements` is an array of
    * `{ meshId, x, z, rotY? }` records (one draw call per record). `worldExtent`
    * is `[wx, wz]` (the full kingdom world size, e.g. [16320, 16320]). `cam`
@@ -562,7 +631,11 @@ class TmdRenderer {
       gl.bindVertexArray(null);
     }
 
-    if (this.sceneMeshes.size === 0 || placements.length === 0) return;
+    /* Nothing to draw with the textured program (no ground, no placed
+     * meshes) - the ocean pass above already ran, so bail. */
+    const haveGround = this.groundEnable && this.ground && this.ground.indexCount > 0;
+    const havePlacements = this.sceneMeshes.size > 0 && placements.length > 0;
+    if (!haveGround && !havePlacements) return;
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
@@ -590,6 +663,26 @@ class TmdRenderer {
     gl.uniform3f(this.locFogOrigin, fogOrigin[0], fogOrigin[1], fogOrigin[2]);
     gl.uniform1f(this.locFogFarRef, this.fogParams.farRef);
     gl.uniform1f(this.locFogZShift, this.fogParams.zShift);
+
+    /* Continent ground heightfield: one draw, fixed Y-flip model (the
+     * mesh is already in world coords, PSX +Y down). Drawn after the
+     * ocean (so land occludes water through depth-test) and before the
+     * landmark placements (so they sit on top). Per-cell UVs/CBA/tpage
+     * sample the kingdom slot-0 terrain atlas already in u_vram. */
+    if (this.groundEnable && this.ground && this.ground.indexCount > 0) {
+      /* model = diag(1, -1, 1): flip PSX +Y(down) to world +Y(up), no
+       * translation - matches placementModelScaled(0, 0, 0, 1). */
+      const flipY = new Float32Array([
+        1, 0, 0, 0,
+        0, -1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ]);
+      gl.uniformMatrix4fv(this.locModel, false, flipY);
+      gl.bindVertexArray(this.ground.vao);
+      gl.drawElements(gl.TRIANGLES, this.ground.indexCount, gl.UNSIGNED_INT, 0);
+      gl.bindVertexArray(null);
+    }
 
     /* Group draws by meshId so we bind each VAO once per frame. */
     const byMesh = new Map();
@@ -620,6 +713,14 @@ class TmdRenderer {
   dispose() {
     const gl = this.gl;
     this.clearScene();
+    if (this.ground) {
+      gl.deleteVertexArray(this.ground.vao);
+      gl.deleteBuffer(this.ground.posBuf);
+      gl.deleteBuffer(this.ground.uvBuf);
+      gl.deleteBuffer(this.ground.ctBuf);
+      gl.deleteBuffer(this.ground.idxBuf);
+      this.ground = null;
+    }
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
     gl.deleteBuffer(this.posBuf);

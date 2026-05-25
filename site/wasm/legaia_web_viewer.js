@@ -1515,6 +1515,61 @@ export class LegaiaViewer {
         }
     }
     /**
+     * Per-vertex `[clut, tpage]` (PSX CBA + tpage words) of the walk-view
+     * ground, flattened. Distinct per cell so grass / mountain / water / forest
+     * cells sample their own VRAM page from the kingdom slot-0 atlas.
+     * @returns {Uint16Array}
+     */
+    walk_ground_cba_tsb() {
+        const ret = wasm.legaiaviewer_walk_ground_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Triangle indices of the walk-view ground (two triangles per cell quad).
+     * @returns {Uint32Array}
+     */
+    walk_ground_indices() {
+        const ret = wasm.legaiaviewer_walk_ground_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex world positions of the walk-view continent ground
+     * heightfield, flattened `[x, y, z, ...]`. Empty until a kingdom is loaded.
+     * Same pre-Y-flip world frame as the landmark placement draws, so the JS
+     * renderer applies the same `(1, -1, 1)` model flip (scale 1, no offset).
+     * @returns {Float32Array}
+     */
+    walk_ground_positions() {
+        const ret = wasm.legaiaviewer_walk_ground_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Number of ground cells (quads) in the walk-view heightfield. 0 when no
+     * kingdom is loaded or the heightfield couldn't be resolved.
+     * @returns {number}
+     */
+    walk_ground_quad_count() {
+        const ret = wasm.legaiaviewer_walk_ground_quad_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Per-vertex page-local UVs (`u8` pairs) of the walk-view ground, flattened
+     * `[u, v, ...]`. Each cell's four corners cover its `32 x 32` atlas tile.
+     * @returns {Uint8Array}
+     */
+    walk_ground_uvs() {
+        const ret = wasm.legaiaviewer_walk_ground_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Decode the live PSX GPU primitive pool out of a mednafen save state
      * and return per-vertex attribute arrays for replay in WebGL2 against
      * the save state's VRAM.

@@ -486,11 +486,17 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
             // Per-cell atlas tile from +0x14: the 8x8 atlas places tile `id` at
             // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`; the four corners map to
-            // its 32x32 rect (U along +X/col, V along +Z/row).
-            let u0 = (tile_id as usize % GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
-            let v0 = (tile_id as usize / GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
-            let u1 = u0 + GROUND_ATLAS_TILE_PX - 1;
-            let v1 = v0 + GROUND_ATLAS_TILE_PX - 1;
+            // its 32x32 rect (U along +X/col, V along +Z/row). Compute in a wide
+            // type and clamp to the u8 page extent: the bottom-right tile origin
+            // is `(224, 224)` and `+31` reaches the page edge `(255, 255)`, but
+            // the intermediate `224 + 32` overflows a u8 — so widen, then cast.
+            let px = GROUND_ATLAS_TILE_PX as usize;
+            let u0 = (tile_id as usize % GROUND_ATLAS_AXIS) * px;
+            let v0 = (tile_id as usize / GROUND_ATLAS_AXIS) * px;
+            let u1 = (u0 + px - 1).min(255) as u8;
+            let v1 = (v0 + px - 1).min(255) as u8;
+            let u0 = u0.min(255) as u8;
+            let v0 = v0.min(255) as u8;
             hf.uvs.push([u0, v0]); // NW
             hf.uvs.push([u1, v0]); // NE
             hf.uvs.push([u0, v1]); // SW

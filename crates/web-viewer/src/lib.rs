@@ -198,6 +198,14 @@ pub struct LegaiaViewer {
     /// decompressed sections lets a run of same-entry thumbnails reuse one
     /// decode instead of re-decompressing per thumbnail.
     deep_section_cache: std::cell::RefCell<Option<(u32, Vec<Vec<u8>>)>>,
+    /// Walk-view continent ground for the currently-loaded kingdom: the
+    /// procedural heightfield surface built from the walk `.MAP` floor grid,
+    /// per-cell-textured from the terrain-type-keyed multi-page atlas. Built by
+    /// [`LegaiaViewer::set_scene_kingdom`] alongside the landmark pack; consumed
+    /// by the `walk_ground_*` accessors so the world-overview viewer draws the
+    /// same continent terrain the native engine does. `None` until a kingdom is
+    /// loaded, or when the walk `.MAP` / floor LUT can't be resolved.
+    walk_ground: Option<legaia_asset::field_objects::WalkHeightfield>,
 }
 
 #[wasm_bindgen]
@@ -224,6 +232,7 @@ impl LegaiaViewer {
             tim_catalog: Vec::new(),
             tim_deep_catalog: Vec::new(),
             deep_section_cache: std::cell::RefCell::new(None),
+            walk_ground: None,
         })
     }
 
@@ -241,6 +250,7 @@ impl LegaiaViewer {
         self.tim_catalog = Vec::new();
         self.tim_deep_catalog = Vec::new();
         *self.deep_section_cache.borrow_mut() = None;
+        self.walk_ground = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -807,7 +817,85 @@ impl LegaiaViewer {
                 break;
             }
         }
+
+        // Build the walk-view continent ground heightfield for this kingdom.
+        // The native engine's world-map render draws this surface (the slot-1
+        // pack is only the sparse landmarks); reproducing it here brings the
+        // site viewer to terrain parity. Sources the walk `.MAP` floor grid +
+        // the kingdom MAN's floor-height LUT; reuses `build_walk_heightfield`.
+        self.walk_ground = build_walk_ground(&self.disc, &entries, prot_base);
+        if let Some(hf) = &self.walk_ground {
+            console_log(&format!(
+                "walk heightfield: {} quads ({} verts) for PROT base {}",
+                hf.quad_count(),
+                hf.positions.len(),
+                prot_base
+            ));
+        } else {
+            console_log(&format!(
+                "walk heightfield: unavailable for PROT base {prot_base} (no walk .MAP / floor LUT)"
+            ));
+        }
         Ok(count)
+    }
+
+    /// Per-vertex world positions of the walk-view continent ground
+    /// heightfield, flattened `[x, y, z, ...]`. Empty until a kingdom is loaded.
+    /// Same pre-Y-flip world frame as the landmark placement draws, so the JS
+    /// renderer applies the same `(1, -1, 1)` model flip (scale 1, no offset).
+    pub fn walk_ground_positions(&self) -> Vec<f32> {
+        let Some(hf) = self.walk_ground.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(hf.positions.len() * 3);
+        for p in &hf.positions {
+            out.extend_from_slice(p);
+        }
+        out
+    }
+
+    /// Per-vertex page-local UVs (`u8` pairs) of the walk-view ground, flattened
+    /// `[u, v, ...]`. Each cell's four corners cover its `32 x 32` atlas tile.
+    pub fn walk_ground_uvs(&self) -> Vec<u8> {
+        let Some(hf) = self.walk_ground.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(hf.uvs.len() * 2);
+        for uv in &hf.uvs {
+            out.extend_from_slice(uv);
+        }
+        out
+    }
+
+    /// Per-vertex `[clut, tpage]` (PSX CBA + tpage words) of the walk-view
+    /// ground, flattened. Distinct per cell so grass / mountain / water / forest
+    /// cells sample their own VRAM page from the kingdom slot-0 atlas.
+    pub fn walk_ground_cba_tsb(&self) -> Vec<u16> {
+        let Some(hf) = self.walk_ground.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(hf.cba_tsb.len() * 2);
+        for ct in &hf.cba_tsb {
+            out.extend_from_slice(ct);
+        }
+        out
+    }
+
+    /// Triangle indices of the walk-view ground (two triangles per cell quad).
+    pub fn walk_ground_indices(&self) -> Vec<u32> {
+        self.walk_ground
+            .as_ref()
+            .map(|hf| hf.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// Number of ground cells (quads) in the walk-view heightfield. 0 when no
+    /// kingdom is loaded or the heightfield couldn't be resolved.
+    pub fn walk_ground_quad_count(&self) -> u32 {
+        self.walk_ground
+            .as_ref()
+            .map(|hf| hf.quad_count() as u32)
+            .unwrap_or(0)
     }
 
     /// Number of TMDs in the currently-loaded continent pack. 0 when no
@@ -2760,6 +2848,82 @@ pub fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
         off += 0x800;
     }
     None
+}
+
+/// Extended on-disc footprint of a field `.MAP` file (object-record table +
+/// collision/floor grid at `+0x4000` + object-index grid at `+0x8000`). The
+/// walk-view `.MAP` entry is identified by this exact footprint, matching
+/// `legaia_engine_core::scene::FIELD_MAP_LEN`.
+const WALK_FIELD_MAP_LEN: usize = 0x12000;
+
+/// Resolve + build the walk-view continent ground heightfield for the kingdom
+/// whose bundle leads at PROT entry `prot_base`, from raw PROT.DAT bytes.
+///
+/// Mirrors the native `Scene::walk_heightfield` resolution without the full
+/// `ProtIndex`/CDNAME machinery (the world-overview viewer already has the raw
+/// PROT.DAT bytes in hand):
+///
+/// - **Walk `.MAP`** is the entry two slots before the kingdom block start
+///   (`prot_base - 2`), whose extended on-disc footprint is exactly
+///   [`WALK_FIELD_MAP_LEN`] (`0x12000`). Inside the block the first `0x12000`
+///   entry is a decoy with only a handful of `0x1000` cells, so the preceding
+///   "duplicate"-cluster entry is the real grid (pinned 14/14 against a live
+///   `map01` walk capture). Falls back to scanning the block when that slot
+///   isn't a `0x12000` entry.
+/// - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the kingdom
+///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`
+///   reads.
+///
+/// Reuses [`legaia_asset::field_objects::build_walk_heightfield`] for the grid
+/// math. Returns `None` when either source can't be resolved.
+pub fn build_walk_ground(
+    disc: &[u8],
+    entries: &[EntryMeta],
+    prot_base: u32,
+) -> Option<legaia_asset::field_objects::WalkHeightfield> {
+    // Floor-height LUT from the kingdom MAN (slot 2). Try the bundle at
+    // `prot_base`, then `prot_base + 1` (the bare scene_asset_table variant
+    // carries the same MAN), matching `try_load_kingdom_at`'s probe order.
+    let lut = [prot_base, prot_base + 1]
+        .into_iter()
+        .find_map(|idx| kingdom_floor_lut(disc, entries, idx))?;
+
+    // Walk `.MAP` entry: `prot_base - 2` when it's a 0x12000 entry, else the
+    // first 0x12000 entry in the kingdom block.
+    let is_field_map = |idx: u32| -> bool {
+        entries
+            .iter()
+            .find(|e| e.index == idx)
+            .is_some_and(|e| e.size_bytes as usize == WALK_FIELD_MAP_LEN)
+    };
+    let walk_idx = prot_base
+        .checked_sub(2)
+        .filter(|&i| is_field_map(i))
+        .or_else(|| (prot_base..prot_base + 8).find(|&i| is_field_map(i)))?;
+
+    let meta = entries.iter().find(|e| e.index == walk_idx)?;
+    let off = meta.byte_offset as usize;
+    let end = off.checked_add(meta.size_bytes as usize)?;
+    let map_bytes = disc.get(off..end)?;
+    let hf = legaia_asset::field_objects::build_walk_heightfield(map_bytes, &lut);
+    (!hf.indices.is_empty()).then_some(hf)
+}
+
+/// Decode the kingdom bundle at PROT entry `idx` and read its 16-entry
+/// floor-height LUT (`man[+0x02..+0x22]`, 16 `s16` LE) out of the MAN slot
+/// (slot 2). `None` when the entry isn't a kingdom bundle or the MAN is short.
+fn kingdom_floor_lut(disc: &[u8], entries: &[EntryMeta], idx: u32) -> Option<[i16; 16]> {
+    let meta = entries.iter().find(|e| e.index == idx)?;
+    let off = meta.byte_offset as usize;
+    let end = (meta.byte_offset + meta.size_bytes) as usize;
+    let buf = disc.get(off..end)?;
+    let man = legaia_asset::kingdom_bundle::decode_slot(buf, 2).ok()?;
+    let lut_bytes = man.get(0x02..0x22)?;
+    let mut lut = [0i16; 16];
+    for (i, slot) in lut.iter_mut().enumerate() {
+        *slot = i16::from_le_bytes([lut_bytes[i * 2], lut_bytes[i * 2 + 1]]);
+    }
+    Some(lut)
 }
 
 fn read_u32_le_slice(buf: &[u8], at: usize) -> Result<u32, String> {
