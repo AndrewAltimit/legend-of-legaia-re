@@ -138,6 +138,24 @@ impl Tim {
     pub fn pixel_height(&self) -> usize {
         self.image.h as usize
     }
+
+    /// Total bytes the TIM occupies: 8-byte header + optional CLUT block +
+    /// image block (each block is `12 + w*h*2` bytes). For a strict-parsed
+    /// TIM (exact block lengths) this is the precise on-disc footprint.
+    pub fn byte_extent(&self) -> usize {
+        let mut end = 8;
+        if let Some(c) = &self.clut {
+            end += 12 + (c.w as usize) * (c.h as usize) * 2;
+        }
+        end += 12 + (self.image.fb_w as usize) * (self.image.h as usize) * 2;
+        end
+    }
+
+    /// Number of CLUT palettes available for this TIM's pixel mode (0 for
+    /// 16/24-bpp images, which carry no CLUT).
+    pub fn palette_count(&self) -> usize {
+        self.clut.as_ref().map_or(0, |c| c.n_palettes(self.mode))
+    }
 }
 
 /// Convert a raw 16-bit PSX color (BGR555 + STP) to RGBA8888.
@@ -155,6 +173,36 @@ pub fn bgr555_to_rgba8(c: u16) -> [u8; 4] {
 }
 
 pub fn parse(buf: &[u8]) -> Result<Tim> {
+    parse_with(buf, false)
+}
+
+/// Strict TIM parse that reproduces jPSXdec's TIM detector exactly.
+///
+/// On top of the lenient [`parse`] checks it additionally requires:
+/// - **No reserved flag bits.** Only bits 0..3 (pmode + has-CLUT) may be set.
+/// - **A real pixel mode.** `pmode` must be 0..=3; the `Mixed` (pmode 4)
+///   pseudo-mode is rejected.
+/// - **Exact block lengths.** Each block's `bs_len` must equal
+///   `12 + w*h*2` precisely (the lenient parser tolerates trailing padding).
+/// - **In-bounds VRAM rectangles.** The image (and CLUT, if present) must fit
+///   inside the 1024x512 16-bit framebuffer at its declared load position.
+///
+/// This is the validation level used to build the PROT.DAT TIM catalog: a
+/// flat scan of PROT.DAT with `parse_strict` recovers byte-for-byte the same
+/// item set (offsets, dimensions, palette counts) that jPSXdec reports. The
+/// lenient [`parse`] is retained for callers that decode bytes already known
+/// to be a TIM (web-viewer thumbnails, sub-asset extraction) where the extra
+/// rejections would only get in the way.
+pub fn parse_strict(buf: &[u8]) -> Result<Tim> {
+    parse_with(buf, true)
+}
+
+/// VRAM is 1024 16-bit pixels wide by 512 rows; every TIM rectangle (image
+/// and CLUT) loads somewhere inside it.
+pub const VRAM_FB_WIDTH: u16 = 1024;
+pub const VRAM_FB_HEIGHT: u16 = 512;
+
+fn parse_with(buf: &[u8], strict: bool) -> Result<Tim> {
     if buf.len() < 8 {
         bail!("buffer too small for TIM header");
     }
@@ -167,7 +215,13 @@ pub fn parse(buf: &[u8]) -> Result<Tim> {
         );
     }
     let flags = u32_le(buf, 4);
+    if strict && flags & !0xF != 0 {
+        bail!("reserved TIM flag bits set: 0x{:08x}", flags);
+    }
     let pmode = flags & 0x7;
+    if strict && pmode > 3 {
+        bail!("non-standard TIM pmode {} (strict allows 0..=3)", pmode);
+    }
     let has_clut = (flags >> 3) & 1 == 1;
     let mode = PixelMode::from_pmode(pmode)?;
 
@@ -198,6 +252,23 @@ pub fn parse(buf: &[u8]) -> Result<Tim> {
                 expected,
                 data_bytes
             );
+        }
+        if strict {
+            if expected != data_bytes {
+                bail!(
+                    "CLUT block length not exact: w*h*2={}, bs_len-12={}",
+                    expected,
+                    data_bytes
+                );
+            }
+            if w == 0 || h == 0 {
+                bail!("zero-dimension CLUT block ({}x{})", w, h);
+            }
+            // NOTE: the CLUT rectangle is deliberately NOT VRAM-bounds-checked.
+            // Legaia stores many NPC palettes at fb_y 510..511 (the row-479+
+            // CLUT band) with h up to 16, so the block legitimately extends a
+            // few rows past the 512-row framebuffer edge. jPSXdec accepts
+            // these; only the image rectangle is bounds-checked.
         }
         let mut entries = Vec::with_capacity(expected / 2);
         for i in 0..(expected / 2) {
@@ -240,6 +311,19 @@ pub fn parse(buf: &[u8]) -> Result<Tim> {
             data_bytes
         );
     }
+    if strict {
+        if expected != data_bytes {
+            bail!(
+                "image block length not exact: w*h*2={}, bs_len-12={}",
+                expected,
+                data_bytes
+            );
+        }
+        if fb_w == 0 || h == 0 {
+            bail!("zero-dimension image block ({}x{})", fb_w, h);
+        }
+        check_vram_bounds("image", fb_x, fb_y, fb_w, h)?;
+    }
     let data = buf[cur + 12..cur + 12 + expected].to_vec();
     let image = Image {
         fb_x,
@@ -255,6 +339,25 @@ pub fn parse(buf: &[u8]) -> Result<Tim> {
         clut,
         image,
     })
+}
+
+/// A TIM rectangle (in 16-bit framebuffer units) must load fully inside VRAM.
+fn check_vram_bounds(which: &str, fb_x: u16, fb_y: u16, w: u16, h: u16) -> Result<()> {
+    let right = (fb_x as u32) + (w as u32);
+    let bottom = (fb_y as u32) + (h as u32);
+    if right > VRAM_FB_WIDTH as u32 || bottom > VRAM_FB_HEIGHT as u32 {
+        bail!(
+            "{} rect ({},{})+{}x{} exceeds {}x{} VRAM",
+            which,
+            fb_x,
+            fb_y,
+            w,
+            h,
+            VRAM_FB_WIDTH,
+            VRAM_FB_HEIGHT
+        );
+    }
+    Ok(())
 }
 
 /// Decode a TIM into row-major RGBA8 pixel data.
@@ -490,6 +593,52 @@ mod tests {
         let mut buf = build_tim_4bpp();
         buf[0] = 0xFF;
         assert!(parse(&buf).is_err());
+    }
+
+    // --- Strict-parse (jPSXdec-parity) regression ------------------------
+
+    #[test]
+    fn strict_accepts_well_formed_tim() {
+        let buf = build_tim_4bpp();
+        assert!(parse_strict(&buf).is_ok());
+        let tim = parse_strict(&buf).unwrap();
+        assert_eq!(tim.byte_extent(), buf.len());
+    }
+
+    #[test]
+    fn strict_rejects_reserved_flag_bits() {
+        // The PROT.DAT init_data "TIM" at +0x10 carries flags 0x00010008:
+        // pmode 0 + has-CLUT, but with reserved bit 16 set. jPSXdec rejects
+        // it (verified by feeding the carved slab to jPSXdec); strict must too.
+        let mut buf = build_tim_4bpp();
+        buf[4..8].copy_from_slice(&0x0001_0008u32.to_le_bytes());
+        assert!(parse(&buf).is_ok(), "lenient parse still accepts it");
+        assert!(parse_strict(&buf).is_err(), "strict rejects reserved bits");
+    }
+
+    #[test]
+    fn strict_rejects_trailing_padding_in_block() {
+        // Pad the image block length by 16 bytes: lenient parse tolerates the
+        // padding, strict requires an exact 12 + w*h*2 block.
+        let mut buf = build_tim_4bpp();
+        // image block bs_len is the last 4-byte LE word before the image header
+        // fields; locate it by re-deriving the layout.
+        let img_bs_off = 8 + 44; // header + CLUT block
+        let bs = u32_le(&buf, img_bs_off);
+        buf[img_bs_off..img_bs_off + 4].copy_from_slice(&(bs + 16).to_le_bytes());
+        buf.extend(std::iter::repeat_n(0u8, 16));
+        assert!(parse(&buf).is_ok());
+        assert!(parse_strict(&buf).is_err());
+    }
+
+    #[test]
+    fn strict_rejects_out_of_vram_image() {
+        let mut buf = build_tim_4bpp();
+        // image fb_x sits at +8+44+4 (after CLUT block + image bs_len). Push it
+        // past the right VRAM edge.
+        let img_fbx_off = 8 + 44 + 4;
+        buf[img_fbx_off..img_fbx_off + 2].copy_from_slice(&1024u16.to_le_bytes());
+        assert!(parse_strict(&buf).is_err());
     }
 
     // --- Panic-hardening regression tests ---------------------------------

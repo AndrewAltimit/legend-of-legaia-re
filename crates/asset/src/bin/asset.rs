@@ -4,7 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_asset::{
     AssetType, DecodeMode, Descriptor, battle_data_pack, categorize, decode, effect_bundle,
-    field_pack, parse_player_lzs, parse_streaming, stage_geom, tim_scan, tmd_scan, validate,
+    field_pack, parse_player_lzs, parse_streaming, stage_geom, tim_catalog, tim_scan, tmd_scan,
+    validate,
 };
 use legaia_prot::cdname;
 
@@ -137,6 +138,24 @@ enum Cmd {
         /// Extract every found TIM into this directory.
         #[arg(short, long)]
         out: Option<PathBuf>,
+    },
+    /// Flat-scan a whole PROT.DAT image for standard PSX TIMs (jPSXdec
+    /// parity) and emit a definitive per-TIM catalog keyed by a stable id
+    /// (= jPSXdec's `PROT.DAT[<id>]` item index). Each row maps the TIM to
+    /// its owning PROT entry + byte offset, with dimensions, CLUT count,
+    /// byte length, and an FNV fingerprint. Unlike `tim-scan` (per-entry,
+    /// lenient) this catches TIMs in the unindexed system-UI gap and applies
+    /// strict validation so the result is the clean, jPSXdec-equivalent set.
+    TimCatalog {
+        /// Flat PROT.DAT image (e.g. `extracted/PROT.DAT`).
+        prot: PathBuf,
+        /// Write the catalog as JSON to this path. Default prints a table.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Also print the count + rollup digest (the value the disc-gated
+        /// regression pins).
+        #[arg(long, default_value_t = false)]
+        rollup: bool,
     },
     /// Scan PROT entries (raw + LZS-decoded) for embedded Legaia TMDs.
     /// Reports per-entry hit counts and total verts/prims; with `--out`
@@ -533,6 +552,7 @@ fn main() -> Result<()> {
             only_hits,
             out,
         } => tim_scan_cmd(&dir, cdname.as_deref(), only_hits, out.as_deref()),
+        Cmd::TimCatalog { prot, out, rollup } => tim_catalog_cmd(&prot, out.as_deref(), rollup),
         Cmd::TmdScan {
             dir,
             cdname,
@@ -2242,6 +2262,58 @@ fn tim_scan_cmd(
     );
     if out.is_some() {
         println!("wrote {} TIM files", tims_written);
+    }
+    Ok(())
+}
+
+/// `asset tim-catalog <PROT.DAT>` - flat-scan the whole archive image for
+/// standard TIMs and emit the per-TIM catalog (jPSXdec parity).
+fn tim_catalog_cmd(
+    prot: &std::path::Path,
+    out: Option<&std::path::Path>,
+    rollup: bool,
+) -> Result<()> {
+    let catalog = tim_catalog::build_from_path(prot)?;
+
+    if let Some(out) = out {
+        let body = if out.extension().and_then(|e| e.to_str()) == Some("tsv") {
+            tim_catalog::to_tsv(&catalog)
+        } else {
+            serde_json::to_string_pretty(&catalog)?
+        };
+        std::fs::write(out, body)?;
+        println!("wrote {} TIMs -> {}", catalog.len(), out.display());
+    } else {
+        println!(
+            "{:>5}  {:>10}  {:>6}  {:>14}  {:>9}  {:>4}  {:>4}  {:>9}  fnv1a",
+            "id", "abs_off", "sector", "entry", "off_in", "bpp", "pal", "bytes"
+        );
+        println!("{}", "-".repeat(92));
+        for t in &catalog {
+            let entry = match t.entry_index {
+                Some(i) => i.to_string(),
+                None => "gap".to_string(),
+            };
+            println!(
+                "{:>5}  0x{:08X}  {:>6}  {:>14}  0x{:07X}  {:>4}  {:>4}  {:>9}  {:016x}  {}x{}",
+                t.id,
+                t.abs_offset,
+                t.sector,
+                entry,
+                t.offset_in_entry,
+                t.bpp,
+                t.clut_count,
+                t.byte_len,
+                t.fnv1a,
+                t.width,
+                t.height,
+            );
+        }
+    }
+
+    if rollup {
+        let r = tim_catalog::rollup(&catalog);
+        println!("rollup: count={} digest=0x{:016x}", r.count, r.digest);
     }
     Ok(())
 }
