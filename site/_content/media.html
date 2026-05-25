@@ -84,10 +84,10 @@
 <script src="js/load-progress.js"></script>-->
 
 <header class="page-header">
-  <div class="breadcrumb"><a href="index.html">home</a> &middot; audio</div>
-  <h1>Audio browser <span class="badge-wip">work in progress</span></h1>
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; media</div>
+  <h1>Media browser <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Listen to every sound on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between <strong>BGM</strong> sequenced music and <strong>XA</strong> streaming audio. The same WASM build that powers the asset viewer parses, decodes, and plays everything locally &mdash; nothing leaves your machine. Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear).
+    Play every sound &mdash; and watch every cutscene &mdash; on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between <strong>BGM</strong> sequenced music and the <strong>streaming media</strong> tracks: XA audio plus the <code>MV*.STR</code> FMV movies, which decode and play with synced MDEC video. The same WASM build that powers the asset viewer parses, decodes, and plays everything locally &mdash; nothing leaves your machine. Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear).
   </p>
 </header>
 
@@ -110,7 +110,7 @@
 
   <div class="audio-tabs" role="tablist">
     <button class="audio-tab is-active" data-tab="bgm" role="tab">BGM (VAB + SEQ)</button>
-    <button class="audio-tab"            data-tab="xa"  role="tab">XA streams</button>
+    <button class="audio-tab"            data-tab="xa"  role="tab">Streaming (XA + FMV)</button>
   </div>
 
   <!-- BGM panel -->
@@ -133,15 +133,19 @@
     </p>
   </div>
 
-  <!-- XA panel -->
+  <!-- XA / FMV panel -->
   <div class="audio-panel" data-panel="xa">
+    <div id="xa-video-wrap" style="display: none; margin-bottom: 0.75rem; text-align: center; background: #000; border: 1px solid var(--border); padding: 0.5rem;">
+      <canvas id="xa-video" width="320" height="224" style="image-rendering: pixelated; width: 100%; max-width: 640px; height: auto; background: #000; display: block; margin: 0 auto;"></canvas>
+      <div id="xa-video-status" style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">&nbsp;</div>
+    </div>
     <div class="audio-toolbar">
       <input type="search" id="xa-search" placeholder="Filter by filename…" autocomplete="off">
       <span id="xa-summary">&nbsp;</span>
     </div>
     <ul class="audio-list" id="xa-list"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      <code>MV*.STR</code> files carry interleaved MDEC video + XA audio &mdash; the demuxer pulls audio out cleanly via the Form 2 subheader filter. Decode can take a few seconds for the longer streams; the button stays in &ldquo;decoding…&rdquo; while it works.
+      <code>MV*.STR</code> files carry interleaved MDEC video + XA audio. Playing one decodes the <a href="formats/xa.html">XA audio</a> and drives the <a href="subsystems/cutscene.html">MDEC video</a> off the audio clock, frame by frame &mdash; the same clean-room decoders the engine port uses (<code>legaia-mdec</code> + <code>legaia-xa</code>). <code>XA*.XA</code> files are audio only. Decode can take a few seconds for the longer streams; the button stays in &ldquo;decoding…&rdquo; while it works.
     </p>
   </div>
 </section>
@@ -149,7 +153,7 @@
 <section class="doc-section" id="legal">
   <h2>Notes</h2>
   <p>
-    All decoded audio stays in your browser. Decoders live in <code>crates/web-viewer</code>: <a href="formats/vab.html">VAB</a> via <code>legaia-vab::decode_vag</code>, <a href="formats/seq.html">SEQ</a> via <code>legaia_engine_audio::Sequencer</code>, <a href="formats/xa.html">XA-ADPCM</a> via <code>legaia-xa::decode</code>. The clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is documented at <a href="subsystems/audio.html">subsystems / audio</a>.
+    All decoded media stays in your browser. Decoders live in <code>crates/web-viewer</code>: <a href="formats/vab.html">VAB</a> via <code>legaia-vab::decode_vag</code>, <a href="formats/seq.html">SEQ</a> via <code>legaia_engine_audio::Sequencer</code>, <a href="formats/xa.html">XA-ADPCM</a> via <code>legaia-xa::decode</code>, and the <a href="subsystems/cutscene.html">Iki MDEC</a> cutscene video via <code>legaia-mdec</code> (frames assembled off the disc, then decoded one at a time as the movie plays). The clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is documented at <a href="subsystems/audio.html">subsystems / audio</a>.
   </p>
   <p>
     Browser playback sounding wrong? Hit the <code>.wav</code> button to download a raw PCM dump and play it in <code>VLC</code> / <code>ffplay</code>. The dumped bytes are byte-equal to <code>./target/release/xa demux-disc</code> output (proven by <code>audio_parity.rs</code>) - that's the canonical ground-truth reference. If the downloaded <code>.wav</code> sounds correct but in-browser playback doesn't, the disconnect is on the WebAudio side rather than in the decoder.
@@ -176,6 +180,9 @@
   const xaList      = document.getElementById('xa-list');
   const xaSummary   = document.getElementById('xa-summary');
   const xaSearch    = document.getElementById('xa-search');
+  const xaVideoWrap = document.getElementById('xa-video-wrap');
+  const xaVideo     = document.getElementById('xa-video');
+  const xaVideoStat = document.getElementById('xa-video-status');
 
   let wasmMod = null;
   let audio = null;        // LegaiaAudio instance
@@ -217,11 +224,72 @@
 
   /** Stop any one-shot preview currently playing. */
   function stopOneShot() {
+    stopVideo();
     if (activeSource) {
       try { activeSource.stop(); } catch (_) {}
       activeSource = null;
     }
     document.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
+  }
+
+  // ---------------- STR / FMV video ----------------
+  // The currently-playing movie's render loop. Frames are decoded on demand
+  // (one MDEC decode per displayed frame) and the frame index is picked off
+  // the audio clock (`audioCtx.currentTime`), mirroring the native player's
+  // audio-cursor video clock. requestAnimationFrame fires ~60 Hz but the movie
+  // is 15 fps, so we only decode when the computed index changes.
+  let videoRAF = null;
+  const videoCtx2d = xaVideo ? xaVideo.getContext('2d') : null;
+
+  /** Stop the FMV render loop and hide the canvas. */
+  function stopVideo() {
+    if (videoRAF !== null) { cancelAnimationFrame(videoRAF); videoRAF = null; }
+    if (xaVideoWrap) xaVideoWrap.style.display = 'none';
+  }
+
+  /** Decode one frame of the open movie and blit it to the canvas. */
+  function drawVideoFrame(info, idx) {
+    const rgba = audio.str_decode_frame(idx);
+    if (rgba.length !== info.width * info.height * 4) return;
+    const img = new ImageData(new Uint8ClampedArray(rgba), info.width, info.height);
+    videoCtx2d.putImageData(img, 0, 0);
+  }
+
+  /**
+   * Start the FMV render loop for an opened movie. `audioStart` is the
+   * `audioCtx.currentTime` captured when the synced audio began (or `null`
+   * for a video-only fallback driven off the wall clock). The movie ends when
+   * the clock passes the last frame.
+   */
+  function startVideo(info, audioStart) {
+    if (!videoCtx2d || info.frame_count <= 0) return;
+    xaVideo.width = info.width;
+    xaVideo.height = info.height;
+    xaVideoWrap.style.display = 'block';
+    const fps = (info.fps > 0.5 && isFinite(info.fps)) ? info.fps : 15;
+    const wallStart = performance.now() / 1000;
+    const clock = () =>
+      (audioStart !== null && audioCtx) ? (audioCtx.currentTime - audioStart)
+                                        : (performance.now() / 1000 - wallStart);
+    drawVideoFrame(info, 0);
+    let lastIdx = 0;
+    const tick = () => {
+      const elapsed = clock();
+      let idx = Math.floor(elapsed * fps);
+      if (idx >= info.frame_count) {
+        drawVideoFrame(info, info.frame_count - 1);
+        xaVideoStat.textContent =
+          `${info.width}x${info.height} - ${info.frame_count} frames @ ${fps.toFixed(1)} fps - done`;
+        videoRAF = null;
+        return;
+      }
+      if (idx < 0) idx = 0;
+      if (idx !== lastIdx) { drawVideoFrame(info, idx); lastIdx = idx; }
+      xaVideoStat.textContent =
+        `${info.width}x${info.height} - frame ${idx + 1}/${info.frame_count} @ ${fps.toFixed(1)} fps`;
+      videoRAF = requestAnimationFrame(tick);
+    };
+    videoRAF = requestAnimationFrame(tick);
   }
 
   /**
@@ -463,6 +531,7 @@
       const playBtn = li.querySelector('[data-act="play"]');
       const wavBtn  = li.querySelector('[data-act="wav"]');
 
+      const isStr = /\.str$/i.test(name);
       playBtn.addEventListener('click', () => {
         const orig = playBtn.textContent;
         playBtn.textContent = 'decoding…';
@@ -470,19 +539,35 @@
         // Defer so the UI repaints, then run the async play path.
         setTimeout(async () => {
           try {
+            stopOneShot();
             const meta = JSON.parse(audio.xa_metadata_json(lba, size));
-            if (meta.length === 0) {
-              playBtn.textContent = '(no audio)';
+            // For .STR movies, demux the video frames (cheap - bitstream
+            // assembly only; the MDEC decode is per-frame during playback).
+            const vinfo = isStr ? JSON.parse(audio.str_video_open(lba, size)) : null;
+            const hasVideo = vinfo && vinfo.frame_count > 0;
+            if (meta.length === 0 && !hasVideo) {
+              playBtn.textContent = '(no media)';
               return;
             }
-            const m = meta[0];
-            const pcm = audio.decode_xa_stream_i16(lba, size, 0);
-            const channels = m.stereo ? 2 : 1;
-            const src = await playPcmI16(pcm, m.sample_rate, channels);
+            // Audio (the dominant channel). Plays through the shared context.
+            let src = null;
+            if (meta.length > 0) {
+              const m = meta[0];
+              const pcm = audio.decode_xa_stream_i16(lba, size, 0);
+              const channels = m.stereo ? 2 : 1;
+              src = await playPcmI16(pcm, m.sample_rate, channels);
+            }
             playBtn.textContent = orig;
+            // Start the video loop, synced to the audio clock when present.
+            if (hasVideo) {
+              const audioStart = src ? audioCtx.currentTime : null;
+              startVideo(vinfo, audioStart);
+            }
             if (src) {
               playBtn.classList.add('is-playing');
-              src.onended = () => playBtn.classList.remove('is-playing');
+              src.onended = () => { playBtn.classList.remove('is-playing'); stopVideo(); };
+            } else if (hasVideo) {
+              playBtn.classList.add('is-playing');
             }
           } catch (err) {
             playBtn.textContent = '(error)';

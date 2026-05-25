@@ -101,6 +101,29 @@ export class LegaiaAudio {
      */
     stop_bgm(): void;
     /**
+     * Decode the frame at `frame_idx` of the currently-open STR movie to a
+     * row-major RGBA8 buffer (`width * height * 4` bytes). Empty when no movie
+     * is open or the index is out of range. Call `str_video_open` first.
+     */
+    str_decode_frame(frame_idx: number): Uint8Array;
+    /**
+     * Drop the cached STR movie frames (frees the bitstream buffers).
+     */
+    str_video_close(): void;
+    /**
+     * Open an `MV*.STR` movie for video playback. Demuxes every MDEC video
+     * frame's bitstream off the disc (skipping the interleaved audio) and
+     * caches them, keyed by `lba`. Returns JSON
+     * `{ "width", "height", "frame_count", "fps" }`. Frames are NOT decoded to
+     * RGBA here - call `str_decode_frame(idx)` per displayed frame so the page
+     * pays MDEC cost incrementally (a whole movie's RGBA is hundreds of MB).
+     *
+     * Idempotent for the same `lba`: a second open returns the cached metadata
+     * without re-walking the disc. `.XA` (audio-only) files have no video and
+     * come back with `frame_count: 0`.
+     */
+    str_video_open(lba: number, size: number): string;
+    /**
      * JSON metadata for every VAG sample inside one VAB bank.
      * Shape: `[{ size_bytes, decoded_samples, duration_ms }, ...]`.
      * `decoded_samples` is the actual PCM length after walking the ADPCM
@@ -668,6 +691,9 @@ export interface InitOutput {
     readonly legaiaaudio_set_bgm_paused: (a: number, b: number) => void;
     readonly legaiaaudio_start_bgm: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaaudio_stop_bgm: (a: number) => void;
+    readonly legaiaaudio_str_decode_frame: (a: number, b: number) => [number, number];
+    readonly legaiaaudio_str_video_close: (a: number) => void;
+    readonly legaiaaudio_str_video_open: (a: number, b: number, c: number) => [number, number];
     readonly legaiaaudio_vab_sample_list_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaaudio_vab_sample_rate: (a: number) => number;
     readonly legaiaaudio_xa_metadata_json: (a: number, b: number, c: number) => [number, number];

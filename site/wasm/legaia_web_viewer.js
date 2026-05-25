@@ -215,6 +215,52 @@ export class LegaiaAudio {
         wasm.legaiaaudio_stop_bgm(this.__wbg_ptr);
     }
     /**
+     * Decode the frame at `frame_idx` of the currently-open STR movie to a
+     * row-major RGBA8 buffer (`width * height * 4` bytes). Empty when no movie
+     * is open or the index is out of range. Call `str_video_open` first.
+     * @param {number} frame_idx
+     * @returns {Uint8Array}
+     */
+    str_decode_frame(frame_idx) {
+        const ret = wasm.legaiaaudio_str_decode_frame(this.__wbg_ptr, frame_idx);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Drop the cached STR movie frames (frees the bitstream buffers).
+     */
+    str_video_close() {
+        wasm.legaiaaudio_str_video_close(this.__wbg_ptr);
+    }
+    /**
+     * Open an `MV*.STR` movie for video playback. Demuxes every MDEC video
+     * frame's bitstream off the disc (skipping the interleaved audio) and
+     * caches them, keyed by `lba`. Returns JSON
+     * `{ "width", "height", "frame_count", "fps" }`. Frames are NOT decoded to
+     * RGBA here - call `str_decode_frame(idx)` per displayed frame so the page
+     * pays MDEC cost incrementally (a whole movie's RGBA is hundreds of MB).
+     *
+     * Idempotent for the same `lba`: a second open returns the cached metadata
+     * without re-walking the disc. `.XA` (audio-only) files have no video and
+     * come back with `frame_count: 0`.
+     * @param {number} lba
+     * @param {number} size
+     * @returns {string}
+     */
+    str_video_open(lba, size) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_str_video_open(this.__wbg_ptr, lba, size);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * JSON metadata for every VAG sample inside one VAB bank.
      * Shape: `[{ size_bytes, decoded_samples, duration_ms }, ...]`.
      * `decoded_samples` is the actual PCM length after walking the ADPCM
@@ -1604,7 +1650,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 507, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 508, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
             return ret;
         },

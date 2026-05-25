@@ -254,6 +254,87 @@ pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<D
     out
 }
 
+/// One assembled-but-not-yet-decoded STR video frame: its dimensions and the
+/// concatenated Iki bitstream. Decoding to RGBA is deferred to
+/// [`decode_str_frame_rgba`] so the front-end pays MDEC cost one frame at a
+/// time (a whole movie's RGBA would be hundreds of MB).
+#[derive(Debug, Clone)]
+pub struct StrVideoFrame {
+    pub width: u32,
+    pub height: u32,
+    pub bitstream: Vec<u8>,
+}
+
+/// Demuxed STR video: every frame's bitstream plus the recovered playback rate.
+#[derive(Debug, Clone, Default)]
+pub struct StrVideo {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub frames: Vec<StrVideoFrame>,
+}
+
+/// Walk an `MV*.STR` file's raw sectors and assemble every MDEC video frame's
+/// bitstream (skipping the interleaved Form-2 audio sectors). Mirrors the
+/// native `cutscene_av::decode_str_av_from_disc` video path but reads from the
+/// in-memory disc slice and defers the per-frame MDEC decode. The frame rate is
+/// recovered from the mean sectors-per-frame at the 2x CD rate, exactly like
+/// the native path.
+pub fn demux_str_video(disc: &[u8], start_lba: u32, byte_size: u32) -> StrVideo {
+    use legaia_mdec::str_sector::{CD_SECTORS_PER_SEC_2X, StrFrameAssembler};
+
+    const VIDEO_USER_DATA: usize = 2048;
+    let sector_count = byte_size.div_ceil(2048);
+    let mut asm = StrFrameAssembler::new();
+    let mut frames: Vec<StrVideoFrame> = Vec::new();
+
+    for s in 0..sector_count {
+        let Some(raw) = read_raw_sector(disc, start_lba + s) else {
+            break;
+        };
+        let mut sub_bytes = [0u8; 8];
+        sub_bytes.copy_from_slice(&raw[SUBHEADER_OFFSET..SUBHEADER_OFFSET + 8]);
+        let (sub, ok) = parse_subheader(&sub_bytes);
+        if ok && sub.is_audio() && sub.is_form2() {
+            continue; // audio sector - handled by decode_xa_in_memory
+        }
+        let video_user = &raw[USER_DATA_OFFSET..USER_DATA_OFFSET + VIDEO_USER_DATA];
+        // The assembler magic-checks each sector and skips non-video data.
+        if let Ok(Some((hdr, bs))) = asm.push_sector(video_user) {
+            frames.push(StrVideoFrame {
+                width: hdr.width as u32,
+                height: hdr.height as u32,
+                bitstream: bs,
+            });
+        }
+    }
+
+    let (width, height) = frames
+        .first()
+        .map(|f| (f.width, f.height))
+        .unwrap_or((0, 0));
+    let fps = if frames.is_empty() {
+        0.0
+    } else {
+        CD_SECTORS_PER_SEC_2X / (sector_count as f64 / frames.len() as f64)
+    };
+    StrVideo {
+        width,
+        height,
+        fps,
+        frames,
+    }
+}
+
+/// Decode one assembled STR frame bitstream to a row-major RGBA8 buffer.
+/// Returns an empty vec on a decode error (a single bad frame shouldn't abort
+/// playback).
+pub fn decode_str_frame_rgba(frame: &StrVideoFrame) -> Vec<u8> {
+    legaia_mdec::MdecDecoder::new(frame.width, frame.height)
+        .decode_frame(&frame.bitstream)
+        .unwrap_or_default()
+}
+
 fn entry_buf<'a>(disc: &'a [u8], e: &EntryMeta) -> Option<&'a [u8]> {
     let off = e.byte_offset as usize;
     let end = (e.byte_offset + e.size_bytes) as usize;

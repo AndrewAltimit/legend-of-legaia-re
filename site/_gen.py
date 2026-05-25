@@ -41,7 +41,7 @@ WIDE_PAGES: set[str] = {
     "arts",
     "monsters",
     "viewer",
-    "audio",
+    "media",
     "architecture",
     "world-overview",
 }
@@ -85,7 +85,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("architecture.html",          "How the layers stack",          "architecture",               "architecture.html"),
     ("quickstart.html",            "Quick start",                   "quickstart",                 "quickstart.html"),
     ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),
-    ("audio.html",                 "Audio browser (WASM)",          "audio",                      "audio.html"),
+    ("media.html",                 "Media browser (WASM)",          "media",                      "media.html"),
     ("world.html",                 "Game world",                    "world",                      "world.html"),
     ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
     ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
