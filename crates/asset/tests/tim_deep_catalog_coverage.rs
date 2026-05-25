@@ -144,3 +144,30 @@ fn deep_catalog_tims_all_decode() {
     }
     assert!(decoded > 0, "expected to decode some deep TIMs");
 }
+
+/// Any label assigned to a deep (LZS-embedded) TIM is from the shared curated
+/// table and in the controlled vocabulary. The label is keyed by content
+/// fingerprint, so the deep tier picks up whatever the table curates for a
+/// texture's bytes.
+#[test]
+fn deep_labels_are_in_vocabulary() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let catalog = tim_deep_catalog::build_from_path(&prot).expect("build deep TIM catalog");
+    for t in &catalog {
+        if let Some(l) = t.label {
+            assert!(
+                legaia_asset::tim_labels::VALID_LABELS.contains(&l),
+                "deep id {} has out-of-vocabulary label {l:?}",
+                t.id
+            );
+        }
+    }
+}

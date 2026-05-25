@@ -27,6 +27,15 @@ fn console_log(s: &str) {
     web_sys::console::log_1(&JsValue::from_str(s));
 }
 
+/// Render a catalog TIM's curated label as a JSON value for the info panel: a
+/// quoted label string, or `null` when the fingerprint isn't curated yet.
+fn json_label(label: Option<&str>) -> String {
+    match label {
+        Some(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        None => "null".to_string(),
+    }
+}
+
 /// Parse a 2-char axis pair string like `"xz"` / `"xy"` / `"zy"` into the
 /// (horizontal, vertical) [`Axis`] pair the slot-4 emitter expects.
 /// Unknown / malformed strings fall back to `(X, Z)` (historical top-down).
@@ -559,7 +568,7 @@ impl LegaiaViewer {
                 format!(
                     "{{\"id\":{},\"abs_offset\":{},\"sector\":{},\"entry\":\"{}\",\
                      \"offset_in_entry\":{},\"width\":{},\"height\":{},\"bpp\":{},\
-                     \"clut_count\":{},\"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                     \"clut_count\":{},\"byte_len\":{},\"fnv1a\":\"{:016x}\",\"label\":{}}}",
                     t.id,
                     t.abs_offset,
                     t.sector,
@@ -571,6 +580,7 @@ impl LegaiaViewer {
                     t.clut_count,
                     t.byte_len,
                     t.fnv1a,
+                    json_label(t.label),
                 )
             }
             None => "{}".to_string(),
@@ -644,7 +654,7 @@ impl LegaiaViewer {
             Some(t) => format!(
                 "{{\"id\":{},\"entry\":{},\"lzs_section\":{},\"offset_in_section\":{},\
                  \"width\":{},\"height\":{},\"bpp\":{},\"clut_count\":{},\
-                 \"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                 \"byte_len\":{},\"fnv1a\":\"{:016x}\",\"label\":{}}}",
                 t.id,
                 t.entry_index,
                 t.lzs_section,
@@ -655,6 +665,7 @@ impl LegaiaViewer {
                 t.clut_count,
                 t.byte_len,
                 t.fnv1a,
+                json_label(t.label),
             ),
             None => "{}".to_string(),
         }

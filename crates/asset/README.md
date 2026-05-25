@@ -48,6 +48,8 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 | `scene_v12_table` | Variant of the per-scene table. |
 | `tim_scan` / `tmd_scan` | Brute-force magic search inside an entry. |
 | `tim_catalog` | Flat strict-validated TIM inventory over the whole `PROT.DAT` image (catches the unindexed-gap TIMs `tim_scan` can't); maps each to its owning entry + offset; reproduces an external reference decoder's TIM set item-for-item. |
+| `tim_deep_catalog` | Separate tier: strict-validated TIMs recovered from inside LZS-compressed sections, keyed by `(entry, LZS section, offset-in-section)`. |
+| `tim_labels` | Curated semantic labels for cataloged TIMs (raw + deep), keyed by content fingerprint: coarse visual categories + precise reverse-engineered pins for the boot/title/menu textures. Our own annotations, not asset bytes. |
 
 Detector coverage and provenance are tracked in
 [`docs/formats/scene-bundles.md`](../../docs/formats/scene-bundles.md).
@@ -61,6 +63,8 @@ asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
 asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
 asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
 asset tim-catalog      <PROT.DAT>         # flat strict TIM catalog (--out f.tsv|f.json, --rollup)
+asset tim-deep-catalog <PROT.DAT>         # TIMs inside LZS-compressed sections (--out, --rollup)
+asset tim-render-distinct <PROT.DAT> --out <dir>  # decode each distinct TIM to PNG (local only; drives tim_labels)
 asset tmd-scan         <input>            # locate embedded TMDs
 asset stage / stage-scan
 asset field-pack / field-pack-scan

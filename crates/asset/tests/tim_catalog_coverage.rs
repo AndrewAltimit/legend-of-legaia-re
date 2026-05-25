@@ -93,3 +93,44 @@ fn catalog_matches_jpsxdec_pinned_reference() {
         );
     }
 }
+
+/// The byte-exact reverse-engineered pins ([`legaia_asset::tim_labels`])
+/// resolve to the expected catalog ids. These textures sit at fixed offsets on
+/// the retail NA image (a stable invariant), so the ids are safe to assert.
+/// Guards the fingerprint table against a catalog-fingerprint or table drift.
+#[test]
+fn pinned_textures_carry_their_label() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let catalog = tim_catalog::build_from_path(&prot).expect("build TIM catalog");
+    let label = |id: usize| catalog[id].label;
+
+    assert_eq!(label(8), Some("menu glyph atlas"));
+    assert_eq!(label(1083), Some("main-title sprite sheet"));
+    assert_eq!(label(1), Some("load-screen UI sheet"));
+    assert_eq!(label(10), Some("load-screen portrait"));
+    assert_eq!(label(11), Some("load-screen portrait"));
+    assert_eq!(label(12), Some("load-screen portrait"));
+    assert_eq!(label(13), Some("load-screen empty-slot frame"));
+    for id in 1086..=1089 {
+        assert_eq!(label(id), Some("publisher logo"), "logo id {id}");
+    }
+
+    // Every assigned label is in the controlled vocabulary.
+    for t in &catalog {
+        if let Some(l) = t.label {
+            assert!(
+                legaia_asset::tim_labels::VALID_LABELS.contains(&l),
+                "id {} has out-of-vocabulary label {l:?}",
+                t.id
+            );
+        }
+    }
+}

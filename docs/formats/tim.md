@@ -116,6 +116,45 @@ reference (`crates/asset/tests/data/prot_tim_deep_catalog.tsv`, metadata + FNV
 only; no decompressed Sony bytes). The viewer surfaces the deep tier as a
 distinct "compressed textures" grid below the raw catalog.
 
+### Semantic labels
+
+The catalog records *where* each texture lives, not *what* it is.
+`legaia_asset::tim_labels` is a curated label table that answers the "what" for
+identified textures. It is keyed by **content fingerprint** — the FNV-1a-64 the
+catalogs already record — so a single label propagates to every catalog id that
+shares those bytes (duplicate textures, and textures aliased across overlapping
+PROT entries), and one table serves both the raw and the deep tier. The label
+is surfaced as a `label` column in the committed reference TSVs and in the
+viewer's grid + info panel.
+
+A label is one of:
+
+- A **coarse visual category** assigned by inspecting the decoded thumbnail:
+  `environment` (floor / wall / structure), `terrain` (overworld ground),
+  `foliage`, `character`, `ui-text`, `effect`, or `other`.
+- A **precise reverse-engineered role** for a texture whose loader site and
+  byte offset are pinned: the menu-glyph atlas, the main-title sprite sheet,
+  the four `init.pak` publisher / warning logos, and the load-screen UI sheet +
+  party portraits + empty-slot frame.
+
+Both are our own observations — not asset strings or pixel data — so the table
+ships in the repo (`crates/asset/src/data/tim_categories.tsv`), like the
+ground-truth gamedata tables. A `table_is_valid` check (unique fingerprints,
+controlled vocabulary) plus the disc-gated catalog regressions guard it.
+
+The coarse categories were assigned by reviewing the decoded thumbnails:
+`asset tim-render-distinct <PROT.DAT> --out <dir>` decodes each distinct
+texture (deduped by fingerprint) to a local PNG, and `scripts/montage_tims.py`
+lays them into indexed contact sheets for review. Those PNGs are decoded pixel
+data and stay local — only the resulting fingerprint→label table is committed.
+
+> **Note:** an earlier revision tried to derive an "NPC palette" label
+> *structurally* from the CLUT load position `fb=(0, 479)`. That is unsound:
+> nearly every 256×256 4bpp scene/field texture page parks its CLUT in that
+> same bottom VRAM band (see [NPC palettes](npc-palette.md)), so the rule
+> conflated floors / walls / terrain with NPC colour tables. Labels are now
+> content-keyed observations, not a CLUT heuristic.
+
 ## See also
 
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.
