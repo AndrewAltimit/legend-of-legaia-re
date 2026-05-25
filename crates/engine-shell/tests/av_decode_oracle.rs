@@ -133,6 +133,87 @@ fn str_movies_decode_stably_at_15fps() {
     }
 }
 
+/// A/V sync: decoding a cutscene STR straight off the disc recovers BOTH the
+/// MDEC video frames AND the interleaved XA audio track, and the audio-cursor
+/// playback clock advances the video monotonically and ends on the last frame.
+///
+/// Targets the smallest movie to keep the full-frame MDEC decode bounded. The
+/// determinism-safe clock relationship (`due_video_frame` over the decoded
+/// audio duration) is also exercised here against real timing - the CI-only
+/// half of that contract lives in the `cutscene_av` unit tests.
+#[test]
+fn str_av_decode_recovers_synced_audio_and_video() {
+    use legaia_engine_shell::cutscene_av::{decode_str_av_from_disc, due_video_frame};
+
+    let Some(bin) = disc_bin() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let mut disc = RawDisc::open(&bin).expect("open disc");
+    let vol = iso9660::read_volume(&mut disc).expect("read volume");
+    let files = iso9660::walk_files(&mut disc, &vol.root).expect("walk files");
+    let smallest = files
+        .into_iter()
+        .filter(|(p, _)| p.to_ascii_uppercase().ends_with(".STR"))
+        .min_by_key(|(_, rec)| rec.size)
+        .expect("at least one .STR");
+    let (path, rec) = smallest;
+    let count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+
+    let av = decode_str_av_from_disc(&bin, rec.lba, count).expect("decode AV");
+    assert!(!av.frames.is_empty(), "{path}: no video frames");
+    assert!(
+        (av.timing.fps - 15.0).abs() < 1.0,
+        "{path}: fps {:.3} not ~15",
+        av.timing.fps
+    );
+
+    // Every Legaia movie interleaves one stereo 37.8 kHz 4-bit XA track.
+    let audio = av.audio.as_ref().expect("expected an interleaved XA track");
+    assert_eq!(audio.sample_rate, 37_800, "{path}: unexpected XA rate");
+    assert!(
+        matches!(audio.channels, legaia_xa::Channels::Stereo),
+        "{path}: expected stereo XA"
+    );
+    assert!(!audio.pcm.is_empty(), "{path}: empty audio PCM");
+    let audio_dur = audio.duration_secs();
+    let video_dur = av.frames.len() as f64 * av.timing.frame_period().as_secs_f64();
+    // The interleaved tracks span the same movie; allow generous slack for
+    // lead-in / trailing audio padding, but they must be the same ballpark
+    // (not e.g. a 2x stereo-as-mono mis-decode, which would halve audio time).
+    assert!(
+        audio_dur > video_dur * 0.5 && audio_dur < video_dur * 2.0,
+        "{path}: audio {audio_dur:.2}s vs video {video_dur:.2}s out of sync range"
+    );
+
+    // The audio-cursor clock sweeps the full frame range monotonically and
+    // lands exactly on the last frame at the end of the audio.
+    let fp = av.timing.frame_period().as_secs_f64();
+    let mut last = 0usize;
+    let steps = 200usize;
+    for i in 0..=steps {
+        let secs = audio_dur * i as f64 / steps as f64;
+        let f = due_video_frame(Some(secs), 0.0, fp);
+        assert!(f >= last, "{path}: video clock went backwards");
+        last = f;
+    }
+    let final_frame = due_video_frame(Some(video_dur), 0.0, fp);
+    assert!(
+        final_frame >= av.frames.len() - 1,
+        "{path}: clock at video end ({final_frame}) didn't reach last frame ({})",
+        av.frames.len() - 1
+    );
+
+    eprintln!(
+        "[ok] {path}: {} frames @ {:.2} fps, XA {:.1}s stereo {} Hz (video {:.1}s)",
+        av.frames.len(),
+        av.timing.fps,
+        audio_dur,
+        audio.sample_rate,
+        video_dur
+    );
+}
+
 #[test]
 fn xa_channels_decode_to_expected_sample_counts() {
     let Some(bin) = disc_bin() else {

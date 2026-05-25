@@ -547,6 +547,25 @@ impl AudioOut {
         s.xa.as_ref().is_some_and(|x| !x.is_done())
     }
 
+    /// Playback position of the active XA stream in seconds, or `None` when
+    /// no stream is attached. The cursor advances inside the cpal callback at
+    /// the audio device's true rate, so this is a hardware-paced clock - a
+    /// video player can drive its frame advance off it to keep MDEC video in
+    /// lock-step with the interleaved XA track (no drift from a separate
+    /// wall-clock timer). The value is `cursor_frames / sample_rate` and is
+    /// monotonic until the one-shot stream runs off the end (where it pins at
+    /// the stream duration).
+    pub fn xa_cursor_secs(&self) -> Option<f64> {
+        let s = self.state.lock().unwrap();
+        s.xa.as_ref().map(|x| {
+            if x.sample_rate == 0 {
+                0.0
+            } else {
+                x.cursor / x.sample_rate as f64
+            }
+        })
+    }
+
     /// Install a sequencer immediately. The cpal callback ticks it once per
     /// SPU sample (every `1 / 44100` s) for sample-accurate timing.
     /// Replacing an existing sequencer silences any active notes from the

@@ -1,7 +1,7 @@
 # Cutscene
 
-Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder) with multiplexed
-XA-ADPCM audio from the `XA*.XA` files on disc. The engine drives it through game modes 26 and 27
+Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder) with the
+XA-ADPCM audio interleaved in the same CD-XA sectors. The engine drives it through game modes 26 and 27
 (`StrInit` / `StrMode`), which map to `SceneMode::Cutscene` in the clean-room port.
 
 ## Game modes
@@ -117,21 +117,55 @@ sound units of 28 4-bit ADPCM samples; stereo interleaves as SU0 = L, SU1 = R, �
 See [`formats/xa.md`](../formats/xa.md) for the full sector layout, coding-info bit definitions,
 filter coefficients, and the demuxer invocation.
 
-**Open item:** the mapping from cutscene name to the expected `(file_no, ch_no)` channel pair is
-overlay-resident (in the not-yet-captured cutscene overlay). Until that's reversed, WAV → cutscene
-assignment is manual.
+### Interleaved cutscene audio (A/V sync)
+
+The six `MOV/MV*.STR` movies **interleave** their audio with the video at the sector level: the
+video sectors (Mode 2 Form 1, magic `0x0160`) and one XA audio track (Mode 2 Form 2, all on
+file/channel `(1, 0)`, stereo 37.8 kHz 4-bit) share the same LBA range. The cutscene's audio
+therefore needs no name-based pairing - it is pulled from the same sector stream as the video, so
+the two are aligned by construction.
+
+The Form-1 extract written to `extracted/MOV/*.STR` keeps the video sectors intact but truncates
+each Form-2 audio sector from 2324 to 2048 bytes, corrupting the audio. Faithful playback therefore
+reads the raw 2352-byte sectors **straight off the disc image**:
+[`legaia_engine_shell::cutscene_av::decode_str_av_from_disc`](../../crates/engine-shell/src/cutscene_av.rs)
+makes one pass over the sectors, routing Form-2 audio to a per-`(file_no, ch_no)` buffer (à la
+[`legaia_xa::demux`]) and the rest to the [`StrFrameAssembler`], then decodes the dominant audio
+channel to PCM and the video to RGBA frames.
+
+The decoded PCM is staged into the engine's audio output ([`AudioOut::play_xa`]) and the video clock
+is driven off the audio cursor ([`AudioOut::xa_cursor_secs`]): the visible frame is
+`audio_position / frame_period` ([`cutscene_av::due_video_frame`]), so the picture stays locked to
+the soundtrack instead of free-running on a separate wall-clock timer (which drifts against the
+hardware audio rate). When no audio track is present the same function falls back to a wall-clock
+position, preserving the video-only pacing.
+
+**Open item:** the mapping from cutscene *name* to the expected `(file_no, ch_no)` channel pair is
+still overlay-resident (in the not-yet-captured cutscene overlay) - this is only needed for
+selecting a cutscene by name from a separate multi-channel container; the in-file interleaving above
+needs no such map. The 8-bit-ADPCM coding mode is detected and dropped with a warning rather than
+mis-decoded; no 8-bit audio appears in the movie corpus.
 
 ## Playback loop (`play-str`)
 
-`legaia-engine play-str <file>` demonstrates end-to-end decoding:
+`legaia-engine play-str <file>` demonstrates end-to-end decoding. It has two modes:
 
-1. Read the raw file in 2048-byte sectors.
-2. Feed each sector to `StrFrameAssembler::push_sector()`.
-3. On complete frame: `MdecDecoder::new(w, h).decode_frame(&bs)` → RGBA8 buffer.
-4. Pre-decode all frames into `Vec<VideoFrame>`, then enter the winit event loop.
-5. On `RedrawRequested`: show the frame due at the current wall-clock time
-   (`elapsed / frame_period`) and render it with `RenderTarget::Texture`, so the
-   movie plays at its real rate instead of the display refresh rate.
+- **`play-str <file>`** (no disc): plays a raw filesystem STR file (2048-byte Form-1 sectors, the
+  `legaia-extract` shape) as **video only** - the extract truncates the interleaved audio.
+- **`play-str MOV/MV1.STR --disc <bin>`**: resolves the movie inside the disc image and plays it
+  **with its interleaved XA audio** in sync (raw 2352-byte sectors; see "Interleaved cutscene
+  audio" above).
+
+The loop:
+
+1. Decode video frames + (disc mode) the audio track up front
+   (`cutscene_av::decode_str_av_from_disc` / `decode_str_video_only`).
+2. Stage the decoded audio into `AudioOut` on the first redraw so the audio cursor and the picture
+   start together.
+3. On `RedrawRequested`: show the frame due at the current playback position
+   (`cutscene_av::due_video_frame`) and render it with `RenderTarget::Texture`. With audio the
+   position is the **audio cursor** (`AudioOut::xa_cursor_secs`); without audio it is wall-clock
+   (`elapsed`). Either way the movie plays at its real rate, not the display refresh rate.
 
 ### Frame-rate detection
 
@@ -149,10 +183,11 @@ fps = 150 / (total_sectors / video_frame_count)
 `StrTiming::frame_period` returns the per-frame hold duration (falling back to
 the canonical 15 fps for a degenerate stream). All six Legaia movies measure
 **exactly 10 sectors/frame → 15.00 fps** (`MV1` = 1345 frames = 89.7 s). The
-windowed in-flow cutscene driver and `play-str` both pace to this clock; frames
-are held when the host runs faster and dropped if it falls behind.
-
-Audio sync with the XA track is deferred; XA demux infrastructure exists in `crates/xa`.
+windowed in-flow cutscene driver and `play-str` both pace to this clock when no
+audio track is playing; frames are held when the host runs faster and dropped if
+it falls behind. When the interleaved XA audio is playing (disc-sourced
+playback), the audio cursor is the master clock instead - see "Interleaved
+cutscene audio (A/V sync)" above.
 
 For PROT-scene routing (`play --scene cutsceneN`), the mapping from CDNAME scene label to STR
 entry needs the cutscene overlay trace (see "Open items" below).
@@ -269,7 +304,7 @@ The two globals it writes are the only side-effects:
 
 The field-VM port handles this op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs) and the world's [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as `World::pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`.
 
-The world drives the Field → Cutscene → Field flow itself, mirroring the retail next-game-mode dispatch: the **next** `World::tick` consumes `pending_fmv_trigger` at the top of the frame (one frame after the op fires, exactly as `FUN_80017714` reads the next-game-mode global a frame late), and if the id resolves to a playable slot (`cutscene::fmv_index_to_str_filename` is `Some`) it flips `World::mode` into `SceneMode::Cutscene` and records the active FMV (`World::active_fmv()`). While the FMV plays the world **suspends the field VM** (the STR overlay owns the frame in retail); the host polls `World::active_fmv_str_filename()`, plays the resolved `MV*.STR`, and calls `World::finish_cutscene()` when playback ends, which returns to the field with the field-VM program counter already past the op. A `fmv_id` whose runtime slot points at a cut/missing path is drained as a no-op (no mode flip), matching the engine's "treat a cut slot as a no-op" rule. The `legaia-engine play` loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count. The windowed `play-window` host plays it **in the engine window**: when a tick flips the world into `SceneMode::Cutscene`, it resolves the `MV*.STR` under the extracted root, decodes the frames (shared `decode_str_frames` with `play-str`), suspends world ticks, and shows the video one frame per redraw; once the frames drain it calls `finish_cutscene()` and resumes the field. (Disc-only `play-window` runs can't read the ISO STR at that point, so the cutscene drains as a no-op there.)
+The world drives the Field → Cutscene → Field flow itself, mirroring the retail next-game-mode dispatch: the **next** `World::tick` consumes `pending_fmv_trigger` at the top of the frame (one frame after the op fires, exactly as `FUN_80017714` reads the next-game-mode global a frame late), and if the id resolves to a playable slot (`cutscene::fmv_index_to_str_filename` is `Some`) it flips `World::mode` into `SceneMode::Cutscene` and records the active FMV (`World::active_fmv()`). While the FMV plays the world **suspends the field VM** (the STR overlay owns the frame in retail); the host polls `World::active_fmv_str_filename()`, plays the resolved `MV*.STR`, and calls `World::finish_cutscene()` when playback ends, which returns to the field with the field-VM program counter already past the op. A `fmv_id` whose runtime slot points at a cut/missing path is drained as a no-op (no mode flip), matching the engine's "treat a cut slot as a no-op" rule. The `legaia-engine play` loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count. The windowed `play-window` host plays it **in the engine window**: when a tick flips the world into `SceneMode::Cutscene`, it resolves the `MV*.STR` and decodes it (shared `cutscene_av` module with `play-str`), suspends world ticks, and shows the video one frame per redraw; once the frames drain it calls `finish_cutscene()` and resumes the field. When booting from a **disc image** the movie is read straight from the ISO with its interleaved XA audio (the scene BGM sequencer is paused for the duration and the video is paced off the audio cursor); when booting from an **extracted root** it plays video only (the extract truncates the audio). A `fmv_id` whose slot points at a missing path drains as a no-op.
 
 The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's `addiu s8, s8, 6` is fixed, but only bytes `+1..+3` are read). Disassemblers should leave them as opaque padding.
 
@@ -401,8 +436,10 @@ Disc-gated coverage: `crates/engine-core/tests/opdeene_timeline_execution.rs` co
 | IDCT + dequantize formula | `crates/mdec/src/lib.rs`; PSX-SPX §MDEC |
 | BT.601 coefficients | `crates/mdec/src/lib.rs` |
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
-| Game modes 26 / 27 | `crates/engine-core/src/mode.rs` lines 101–104, 322–332 |
-| `play-str` frame loop | `crates/engine-shell/src/bin/legaia-engine.rs` lines 827–876 |
+| Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs` |
+| Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
+| Game modes 26 / 27 | `crates/engine-core/src/mode.rs` |
+| `play-str` frame loop | `crates/engine-shell/src/bin/legaia-engine.rs` (`cmd_play_str` / `StrPlayerApp`) |
 
 ## See also
 
