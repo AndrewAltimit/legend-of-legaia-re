@@ -293,6 +293,25 @@ export class LegaiaViewer {
      */
     current_mes_message_hex(text_id: number): string;
     /**
+     * CLUT-palette count of the current entry's current TIM (0 for 16/24bpp).
+     */
+    current_tim_clut_count(): number;
+    /**
+     * Number of strict-catalog TIMs the 2D stepper can page through in the
+     * current entry. 0 for TMD/3D entries (the mesh owns the canvas) and
+     * LZS-only entries (their TIMs aren't in the flat catalog).
+     */
+    current_tim_count(): number;
+    /**
+     * Index of the TIM the 2D path is currently showing within the entry.
+     */
+    current_tim_index(): number;
+    /**
+     * JSON describing the current entry's current TIM (catalog id, offset,
+     * dimensions, CLUT count, byte length) for the status line.
+     */
+    current_tim_info_json(): string;
+    /**
      * Build a 1024×512 PSX VRAM from every TIM the current entry contains.
      * Returns the raw bytes (2 MB if a CLUT block is present, but VRAM is
      * always exactly 1 MB = 1024×512×2). Used by the WebGL2 path to upload
@@ -573,6 +592,10 @@ export class LegaiaViewer {
      */
     set_slot(slot: number): number;
     /**
+     * Select which TIM within the current entry the 2D path renders.
+     */
+    set_tim_in_entry(idx: number): void;
+    /**
      * Per-body inventory of the slot-4 wireframe, as a JSON string.
      * Used by the inspector panel to show which bodies are present.
      * Returns `"[]"` when slot 4 can't be decoded.
@@ -747,6 +770,10 @@ export interface InitOutput {
     readonly legaiaviewer_current_has_tmd: (a: number) => number;
     readonly legaiaviewer_current_index: (a: number) => number;
     readonly legaiaviewer_current_mes_message_hex: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_current_tim_clut_count: (a: number) => number;
+    readonly legaiaviewer_current_tim_count: (a: number) => number;
+    readonly legaiaviewer_current_tim_index: (a: number) => number;
+    readonly legaiaviewer_current_tim_info_json: (a: number) => [number, number];
     readonly legaiaviewer_current_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
@@ -794,6 +821,7 @@ export interface InitOutput {
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
+    readonly legaiaviewer_set_tim_in_entry: (a: number, b: number) => [number, number];
     readonly legaiaviewer_slot4_body_inventory_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_slot4_wireframe_bounds: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

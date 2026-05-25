@@ -205,6 +205,14 @@
       <button id="next-btn">Next &rarr;</button>
       <button id="autorotate-btn" title="Toggle auto-rotate (space)">⏸ stop spin</button>
       <button id="reset-btn" title="Reset camera (R or double-click)">⟲ reset</button>
+      <span id="tim-stepper" style="display: none; align-items: center; gap: 0.4rem;" title="Step through every TIM in this entry">
+        <button id="tim-prev" type="button">&#9664; TIM</button>
+        <span id="tim-pos" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim);"></span>
+        <button id="tim-next" type="button">TIM &#9654;</button>
+        <label style="font-size: 0.78rem; color: var(--text-dim);">CLUT
+          <select id="tim-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.15rem;"></select>
+        </label>
+      </span>
       <span class="viewer-info" id="viewer-info"></span>
     </div>
 
@@ -338,6 +346,51 @@
   if (catNext) catNext.onclick = () => showCatalogTim(catCur + 1);
   if (catId) catId.addEventListener('change', () => showCatalogTim(parseInt(catId.value, 10) || 0));
   if (catClut) catClut.addEventListener('change', () => renderCatalog(catCur, parseInt(catClut.value, 10) || 0));
+
+  /* --- Per-entry TIM stepper (in the entry-browser controls bar) --------
+   * A single PROT entry can hold many TIMs (a town's scene scripts carry
+   * ~96). Steps through every catalog TIM the current entry owns + per-TIM
+   * CLUT variants, rendered into the main entry-browser canvas. Hidden for
+   * 3D (TMD) entries and entries with no catalog TIM. */
+  const timStepper = document.getElementById('tim-stepper');
+  const timPos     = document.getElementById('tim-pos');
+  const timClut    = document.getElementById('tim-clut');
+  const timPrevBtn = document.getElementById('tim-prev');
+  const timNextBtn = document.getElementById('tim-next');
+
+  function updateTimStepper() {
+    if (!timStepper || !viewer) return;
+    const n = viewer.current_tim_count();
+    if (n === 0) { timStepper.style.display = 'none'; return; }
+    timStepper.style.display = 'inline-flex';
+    const idx = viewer.current_tim_index();
+    timPos.textContent = `TIM ${idx + 1}/${n}`;
+    timPrevBtn.disabled = (n <= 1);
+    timNextBtn.disabled = (n <= 1);
+    const nclut = Math.max(1, viewer.current_tim_clut_count());
+    timClut.innerHTML = '';
+    for (let i = 0; i < nclut; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = 'pal ' + i;
+      timClut.appendChild(o);
+    }
+    timClut.value = 0;            /* clut resets to 0 on every TIM change */
+    timClut.disabled = (nclut <= 1);
+  }
+
+  function stepTim(delta) {
+    if (!viewer) return;
+    const n = viewer.current_tim_count();
+    if (n <= 1) return;
+    const next = (viewer.current_tim_index() + delta + n) % n;
+    viewer.set_tim_in_entry(next);
+    updateTimStepper();
+  }
+  if (timPrevBtn) timPrevBtn.onclick = () => stepTim(-1);
+  if (timNextBtn) timNextBtn.onclick = () => stepTim(1);
+  if (timClut) timClut.addEventListener('change', () => {
+    viewer.set_clut(parseInt(timClut.value, 10) || 0);
+  });
 
   let viewer = null;
   let allEntries = [];      /* entry-list-json output */
@@ -531,6 +584,7 @@
       summary = `${stat.class} · TMD ${stat.tmd_tris} tris / ${stat.tmd_verts} verts (auto-rotate)${packNote}${stat.tim_count ? ` · also ${stat.tim_count} TIM(s)` : ''}`;
     }
     info.innerHTML = `<b>PROT ${stat.prot_index}</b> · ${summary} · slot ${stat.slot + 1}/${allEntries.length}`;
+    updateTimStepper();
     list.querySelectorAll('li').forEach(li => li.classList.remove('active'));
     const active = list.querySelector(`li[data-slot="${stat.slot}"]`);
     if (active) {
