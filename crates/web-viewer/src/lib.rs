@@ -315,6 +315,25 @@ impl LegaiaViewer {
         ));
         self.disc = prot_bytes;
 
+        // Index the strict TIM catalog by owning entry so the entry browser
+        // shows the SAME TIM the catalog does (strict-validated, jPSXdec
+        // parity) instead of whatever the lenient per-entry scan picked first.
+        // Entries whose TIMs only exist inside LZS-compressed sections aren't
+        // in the catalog (the flat scan doesn't decompress), so those still
+        // fall back to the lenient scan below.
+        let mut catalog_by_entry: std::collections::HashMap<u32, Vec<TimHit>> =
+            std::collections::HashMap::new();
+        for t in &self.tim_catalog {
+            if let Some(idx) = t.entry_index {
+                catalog_by_entry.entry(idx).or_default().push(TimHit {
+                    source: TimSource::Raw(t.offset_in_entry as usize),
+                    width: t.width,
+                    height: t.height,
+                    bpp: t.bpp,
+                });
+            }
+        }
+
         // Classify + tim-scan each entry. Skip non-viewable classes early to
         // keep this fast on the user's main thread. The expensive step is
         // tim_scan::scan_entry which LZS-decompresses + walks magic offsets;
@@ -329,53 +348,65 @@ impl LegaiaViewer {
             let buf = &self.disc[off..end];
             let report = classify(buf);
 
-            // Skip classes that never carry TIMs.
-            if matches!(
-                report.class,
-                Class::Empty
-                    | Class::Tiny
-                    | Class::AllZeros
-                    | Class::MostlyZeros
-                    | Class::ConstantByte
-                    | Class::PochiFiller
-                    | Class::MipsOverlay
-                    | Class::OverlayPtrTable
-                    | Class::SceneVabStream
-            ) {
+            let cat_hits = catalog_by_entry.get(&e.index);
+            let has_cat = cat_hits.is_some_and(|h| !h.is_empty());
+
+            // Skip classes that never carry TIMs - unless the catalog already
+            // found a (strict) TIM here, in which case show it regardless.
+            if !has_cat
+                && matches!(
+                    report.class,
+                    Class::Empty
+                        | Class::Tiny
+                        | Class::AllZeros
+                        | Class::MostlyZeros
+                        | Class::ConstantByte
+                        | Class::PochiFiller
+                        | Class::MipsOverlay
+                        | Class::OverlayPtrTable
+                        | Class::SceneVabStream
+                )
+            {
                 continue;
             }
 
-            let scan = tim_scan::scan_entry(buf);
-            let tim_count = scan.hits.len();
-
-            // Find the first hit whose bytes actually decode (not just magic match).
-            let mut first_tim = None;
-            for (source, hit) in &scan.hits {
-                let bytes_for_parse: Option<&[u8]> = match source {
-                    tim_scan::Source::Raw => Some(&buf[hit.offset..]),
-                    tim_scan::Source::Lzs(idx) => {
-                        scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..])
-                    }
-                };
-                if let Some(b) = bytes_for_parse
-                    && legaia_tim::parse(b).is_ok()
-                {
-                    let ts = match source {
-                        tim_scan::Source::Raw => TimSource::Raw(hit.offset),
-                        tim_scan::Source::Lzs(idx) => TimSource::Lzs {
-                            section: *idx,
-                            offset: hit.offset,
-                        },
+            // Prefer the strict catalog TIM for this entry; fall back to the
+            // lenient scan only when the catalog has none (LZS-only entries).
+            let (first_tim, tim_count) = if let Some(hits) = cat_hits.filter(|h| !h.is_empty()) {
+                (Some(hits[0].clone()), hits.len())
+            } else {
+                let scan = tim_scan::scan_entry(buf);
+                let tim_count = scan.hits.len();
+                // First hit whose bytes actually decode (not just magic match).
+                let mut first_tim = None;
+                for (source, hit) in &scan.hits {
+                    let bytes_for_parse: Option<&[u8]> = match source {
+                        tim_scan::Source::Raw => Some(&buf[hit.offset..]),
+                        tim_scan::Source::Lzs(idx) => {
+                            scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..])
+                        }
                     };
-                    first_tim = Some(TimHit {
-                        source: ts,
-                        width: hit.width,
-                        height: hit.height,
-                        bpp: hit.bpp,
-                    });
-                    break;
+                    if let Some(b) = bytes_for_parse
+                        && legaia_tim::parse(b).is_ok()
+                    {
+                        let ts = match source {
+                            tim_scan::Source::Raw => TimSource::Raw(hit.offset),
+                            tim_scan::Source::Lzs(idx) => TimSource::Lzs {
+                                section: *idx,
+                                offset: hit.offset,
+                            },
+                        };
+                        first_tim = Some(TimHit {
+                            source: ts,
+                            width: hit.width,
+                            height: hit.height,
+                            bpp: hit.bpp,
+                        });
+                        break;
+                    }
                 }
-            }
+                (first_tim, tim_count)
+            };
 
             // Detect a leading TMD for the 3D viewer path (raw, scene_tmd_stream,
             // or the first of an LZS-packed environment-geometry mesh pack).
