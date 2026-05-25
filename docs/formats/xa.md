@@ -33,6 +33,40 @@ Coding-info bits:
 
 The 18 sound groups inside the user data are 128-byte CD-XA ADPCM blocks; see [the lib doc-comment](../../crates/xa/src/lib.rs) for the per-block layout (8 sound units, 28 lines × 4 bytes).
 
+## Sound-group decode (4-bit)
+
+Each 128-byte sound group holds 8 sound units of 28 samples. The decode is bit-exact against an external lossless reference decode of a real cutscene track (every interleaved sample matches), so the layout below is confirmed, not inferred.
+
+**Parameter bytes (0..16).** The redundant copy is interleaved *within each half*, not appended:
+
+```text
+byte:  0  1  2  3   4  5  6  7   8  9 10 11  12 13 14 15
+unit: p0 p1 p2 p3  p0 p1 p2 p3  p4 p5 p6 p7  p4 p5 p6 p7
+```
+
+So unit `u`'s parameter byte is at `u + (if u < 4 { 0 } else { 4 })`. Each byte is `(filter << 4) | range`, filter ∈ 0..=3, range ∈ 0..=12. (Reading bytes 0..8 as eight sequential params - the "appended mirror" reading - mis-assigns the parameters of units 4..7 and is the classic CD-XA decode trap.)
+
+**Sample nibbles (16..128).** 28 lines of 4 bytes. Unit `u` reads byte `u / 2` of each line, taking the **low** nibble when `u` is even and the **high** nibble when `u` is odd:
+
+```text
+line byte:  0           1           2           3
+nibble:   lo=unit0     lo=unit2    lo=unit4    lo=unit6
+          hi=unit1     hi=unit3    hi=unit5    hi=unit7
+```
+
+**Per-sample reconstruction.** With filter coefficients in 1/64 units (`k0 = {0, 0.9375, 1.796875, 1.53125}`, `k1 = {0, 0, -0.8125, -0.859375}`):
+
+```text
+shifted = (sign_extend(nibble, 4) << 12) >> range
+value   = shifted + k0 * prev1 + k1 * prev2
+output  = clip16(round_half_away_from_zero(value))
+prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
+```
+
+The predictor history is the full-precision reconstructed `value`, **not** the rounded+clamped 16-bit output. Re-feeding the clamped output instead is audible only at high volume - the prediction drifts on loud sound-units and rails to the opposite extreme - which is exactly the symptom that bit-exact history feedback removes.
+
+**Stereo de-interleave.** The LEFT channel is the even units (0,2,4,6) and the RIGHT channel is the odd units (1,3,5,7); output is L,R interleaved, pairing `(0,1),(2,3),(4,5),(6,7)`. Each channel keeps its own `(prev1, prev2)` history.
+
 ## "Non-standard interleave" - what it is and isn't
 
 The earliest extracted-XA tooling truncated each on-disc sector to 2048 bytes (Form 1 mode), which silently:
@@ -83,6 +117,7 @@ If the tree on disk has a populated `extracted/XA/` directory from a pre-fix ext
 | Mode 2 / Form 2 sector layout | PSX BIOS docs + `legaia-iso::raw` |
 | Subheader interpretation | [`crates/xa/src/demux.rs`](../../crates/xa/src/demux.rs) |
 | 4-bit ADPCM filter coefficients | [`crates/xa/src/lib.rs`](../../crates/xa/src/lib.rs) |
+| Sound-group decode (param + nibble layout, predictor) | bit-exact, sample-for-sample, against an external lossless reference decode of a real cutscene track; pinned by the disc-gated `xa_pcm_matches_reference` oracle in [`crates/xa/tests/pcm_reference.rs`](../../crates/xa/tests/pcm_reference.rs). |
 | Form-1-truncation diagnosis | direct comparison: 90 % of 128-byte groups in `extracted/XA/*.XA` failed the `bytes 8..16 == bytes 0..8` invariant before the demuxer was added. |
 
 ## See also

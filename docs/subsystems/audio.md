@@ -277,9 +277,9 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
 
-## XA-ADPCM (in-progress)
+## XA-ADPCM
 
-`crates/xa` decodes the format spec correctly on synthetic inputs. The on-disc `.XA` files use a non-standard interleave - ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.
+`crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.
 
 ## Audio-trace parity oracle
 
