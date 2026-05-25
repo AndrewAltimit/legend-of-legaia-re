@@ -15,10 +15,19 @@ PROT entries                      // 0865_battle_data.BIN, 0972_move_program_no.
    │  legaia-asset       categorize + streaming sub-asset extract
    ▼
 Sub-assets                        // TIM, TMD, VAB, MES, ANM, stage-geom, scene bundles
-   │  legaia-tim         TIM → PNG (last stage; --skip-png skips)
+   │  legaia-tim         TIM → PNG (--skip-png skips)
+   │  legaia-xa          CD-XA demux → per-channel WAV (--skip-xa skips)
    ▼
 extracted/                        // human-browsable output tree
 ```
+
+The CD-XA step reads the raw disc directly (not the Form-1 dumps under
+`extracted/XA/`, which truncate the Form-2 audio sectors and shuffle the
+multiplexed channels together) and writes one correctly-paced WAV per
+`(file_no, ch_no)` channel under `extracted/XA_WAV/`, each decoded at its
+true per-sector rate / stereo mode. The 4-bit XA decoder is bit-exact, so
+these WAVs are reference-quality. Non-4-bit channels are skipped with a
+warning rather than mis-decoded (the NA corpus is entirely 4-bit).
 
 Each stage is implemented in its own crate; this one wires them
 together with a clap CLI and a SHA-256 check on the input.
@@ -30,6 +39,7 @@ together with a clap CLI and a SHA-256 check on the input.
 
 # Common flags:
 #   --skip-png       skip the slow PNG conversion
+#   --skip-xa        skip the CD-XA demux → WAV step
 #   --skip-verify    skip the input SHA-256 check
 #   -v               per-file output
 ```

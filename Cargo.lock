@@ -1350,6 +1350,7 @@ dependencies = [
  "legaia-prot",
  "legaia-tim",
  "legaia-tmd",
+ "legaia-xa",
  "rayon",
  "serde_json",
  "sha2",

@@ -10,7 +10,7 @@ Tools for extracting assets from a user-supplied disc image. Per the project's c
 ./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG. Use `--skip-png` to skip the slowest step; `--skip-verify` to skip the SHA verification.
+The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV. Use `--skip-png` to skip the slowest step; `--skip-xa` to skip the CD-XA audio demux; `--skip-verify` to skip the SHA verification.
 
 Output lands in `./extracted/` (gitignored):
 
@@ -27,10 +27,19 @@ extracted/
 │   └── ####_<name>.BIN
 ├── streaming/                     - DATA_FIELD streaming sub-assets
 │   └── ####_<name>/chunk##_<TYPE>/####.tim
-├── tim_scan/                      - every TIM byte-pattern hit
-├── tmd_scan/                      - every TMD byte-pattern hit
-└── images/                        - TIM-to-PNG conversions
+├── XA/                            - raw Form-1 .XA dumps (truncated audio; not listenable)
+└── XA_WAV/                        - correctly-paced per-channel WAVs (one per (file_no, ch_no))
+    └── XAn_fileN_chM.wav
 ```
+
+The CD-XA step reads the raw disc directly and demuxes every `*.XA` file
+into one WAV per `(file_no, ch_no)` channel, each decoded at its true
+per-sector rate / stereo mode. This bypasses the `extracted/XA/` Form-1
+dumps from the disc-walk step, which truncate the Form-2 audio sectors
+(2324 → 2048) and collapse a file's multiplexed channels into one shuffled
+stream. The NA corpus is 34 files / 316 channels, all 4-bit 37.8 kHz;
+non-4-bit channels are skipped with a warning (the group decoder is 4-bit
+only). The decoder is bit-exact, so the WAVs are reference-quality.
 
 ## Per-stage tools
 
@@ -82,6 +91,23 @@ tmd validate-prims <DIR>          # bulk-walk every prim group, sanity-check
 vab list    <file>                                  # find + describe every VAB
 vab extract <file> --out <out_dir> [--wav] [--sample-rate 22050]   # VAG bodies (+ optional WAV)
 ```
+
+### CD-XA demux → WAV (`xa`)
+
+The streamed-audio (`XA*.XA`) decoder. The disc-wide demux is the
+correct-pacing path the top-level pipeline uses:
+
+```bash
+xa demux-disc-all <disc.bin> --out extracted/XA_WAV   # every .XA → per-channel WAV
+xa demux-disc <disc.bin> --lba L --size S --out <dir>  # one .XA by LBA/size
+xa info    <file.xa> [--channels stereo] [--sample-rate 37800]
+xa convert <file.xa> [-o out.wav]                       # single Form-1 dump (must guess rate)
+```
+
+Prefer `demux-disc-all` over `convert`/`convert-dir`: it reads the raw
+2352-byte sectors, splits by `(file_no, ch_no)`, and takes the true rate /
+channel mode from each sector's CD-XA subheader instead of guessing a
+global rate. See [XA audio](../formats/xa.md).
 
 ### Sub-asset extraction (`asset`)
 

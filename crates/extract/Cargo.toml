@@ -20,3 +20,4 @@ legaia-asset = { path = "../asset" }
 legaia-lzs = { path = "../lzs" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
+legaia-xa = { path = "../xa" }
