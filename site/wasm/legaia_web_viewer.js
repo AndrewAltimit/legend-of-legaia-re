@@ -680,49 +680,6 @@ export class LegaiaViewer {
         }
     }
     /**
-     * CLUT-palette count of the current entry's current TIM (0 for 16/24bpp).
-     * @returns {number}
-     */
-    current_tim_clut_count() {
-        const ret = wasm.legaiaviewer_current_tim_clut_count(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Number of strict-catalog TIMs the 2D stepper can page through in the
-     * current entry. 0 for TMD/3D entries (the mesh owns the canvas) and
-     * LZS-only entries (their TIMs aren't in the flat catalog).
-     * @returns {number}
-     */
-    current_tim_count() {
-        const ret = wasm.legaiaviewer_current_tim_count(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Index of the TIM the 2D path is currently showing within the entry.
-     * @returns {number}
-     */
-    current_tim_index() {
-        const ret = wasm.legaiaviewer_current_tim_index(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * JSON describing the current entry's current TIM (catalog id, offset,
-     * dimensions, CLUT count, byte length) for the status line.
-     * @returns {string}
-     */
-    current_tim_info_json() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.legaiaviewer_current_tim_info_json(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
      * Build a 1024×512 PSX VRAM from every TIM the current entry contains.
      * Returns the raw bytes (2 MB if a CLUT block is present, but VRAM is
      * always exactly 1 MB = 1024×512×2). Used by the WebGL2 path to upload
@@ -1423,16 +1380,6 @@ export class LegaiaViewer {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] >>> 0;
-    }
-    /**
-     * Select which TIM within the current entry the 2D path renders.
-     * @param {number} idx
-     */
-    set_tim_in_entry(idx) {
-        const ret = wasm.legaiaviewer_set_tim_in_entry(this.__wbg_ptr, idx);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
     }
     /**
      * Per-body inventory of the slot-4 wireframe, as a JSON string.

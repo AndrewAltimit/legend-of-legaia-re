@@ -59,11 +59,6 @@ struct ViewerEntry {
     first_tim: Option<TimHit>,
     /// Total number of TIM hits found by tim_scan (for the status line).
     tim_count: usize,
-    /// Strict-catalog TIM ids owned by this entry, in id (ascending-offset)
-    /// order. Drives the per-entry TIM stepper: the 2D path renders
-    /// `catalog_ids[tim_in_entry]`. Empty for LZS-only or TMD-only entries
-    /// (those keep the `first_tim` / 3D paths).
-    catalog_ids: Vec<u32>,
     /// Where the entry's leading TMD lives (if any). Used by the 3D viewer
     /// path. None ⇒ no TMD; render the TIM instead (or a "no TMD" message).
     tmd_source: Option<TmdSource>,
@@ -149,9 +144,6 @@ pub struct LegaiaViewer {
     current: usize,
     /// CLUT index to use when rendering paletted TIMs.
     clut_idx: usize,
-    /// Which TIM within the current entry the 2D path renders (index into the
-    /// entry's `catalog_ids`). Reset to 0 on every entry switch.
-    tim_in_entry: usize,
     /// Currently-loaded kingdom bundle (Drake/Sebucus/Karisto). Populated by
     /// `set_scene_kingdom`; consumed by the `pack_mesh_*` accessors.
     kingdom: Option<KingdomPack>,
@@ -214,7 +206,6 @@ impl LegaiaViewer {
             viewable: Vec::new(),
             current: 0,
             clut_idx: 0,
-            tim_in_entry: 0,
             kingdom: None,
             continent: None,
             worldmap_menu: None,
@@ -461,7 +452,6 @@ impl LegaiaViewer {
                 class: report.class,
                 first_tim,
                 tim_count,
-                catalog_ids: cat_ids.to_vec(),
                 tmd_source,
                 tmd_pack_count,
             });
@@ -499,7 +489,6 @@ impl LegaiaViewer {
             return Ok(0);
         }
         self.current = (self.current + 1) % self.viewable.len();
-        self.tim_in_entry = 0;
         self.clut_idx = 0;
         self.render_current()?;
         Ok(self.current_index())
@@ -514,7 +503,6 @@ impl LegaiaViewer {
         } else {
             self.current - 1
         };
-        self.tim_in_entry = 0;
         self.clut_idx = 0;
         self.render_current()?;
         Ok(self.current_index())
@@ -528,7 +516,6 @@ impl LegaiaViewer {
         }
         let s = (slot as usize).min(self.viewable.len() - 1);
         self.current = s;
-        self.tim_in_entry = 0;
         self.clut_idx = 0;
         self.render_current()?;
         Ok(self.current_index())
@@ -536,65 +523,6 @@ impl LegaiaViewer {
 
     pub fn set_clut(&mut self, idx: u32) -> Result<(), JsValue> {
         self.clut_idx = idx as usize;
-        self.render_current()
-    }
-
-    // --- Per-entry TIM stepper -------------------------------------------
-    //
-    // A single PROT entry can hold many TIMs (e.g. a town's scene scripts
-    // carry ~96). The 2D path renders `catalog_ids[tim_in_entry]`; these
-    // accessors let the JS UI page through all of them within one entry.
-
-    /// Number of strict-catalog TIMs the 2D stepper can page through in the
-    /// current entry. 0 for TMD/3D entries (the mesh owns the canvas) and
-    /// LZS-only entries (their TIMs aren't in the flat catalog).
-    pub fn current_tim_count(&self) -> u32 {
-        match self.viewable.get(self.current) {
-            Some(e) if e.tmd_source.is_none() => e.catalog_ids.len() as u32,
-            _ => 0,
-        }
-    }
-
-    /// Index of the TIM the 2D path is currently showing within the entry.
-    pub fn current_tim_index(&self) -> u32 {
-        self.tim_in_entry as u32
-    }
-
-    /// CLUT-palette count of the current entry's current TIM (0 for 16/24bpp).
-    pub fn current_tim_clut_count(&self) -> u32 {
-        let e = match self.viewable.get(self.current) {
-            Some(e) => e,
-            None => return 0,
-        };
-        e.catalog_ids
-            .get(self.tim_in_entry)
-            .and_then(|id| self.tim_catalog.get(*id as usize))
-            .map(|t| t.clut_count as u32)
-            .unwrap_or(0)
-    }
-
-    /// JSON describing the current entry's current TIM (catalog id, offset,
-    /// dimensions, CLUT count, byte length) for the status line.
-    pub fn current_tim_info_json(&self) -> String {
-        let id = match self
-            .viewable
-            .get(self.current)
-            .and_then(|e| e.catalog_ids.get(self.tim_in_entry))
-        {
-            Some(id) => *id,
-            None => return "{}".to_string(),
-        };
-        self.catalog_info_json(id)
-    }
-
-    /// Select which TIM within the current entry the 2D path renders.
-    pub fn set_tim_in_entry(&mut self, idx: u32) -> Result<(), JsValue> {
-        let n = self.current_tim_count();
-        if n == 0 {
-            return Ok(());
-        }
-        self.tim_in_entry = (idx as usize).min(n as usize - 1);
-        self.clut_idx = 0;
         self.render_current()
     }
 
@@ -2296,18 +2224,7 @@ impl LegaiaViewer {
             return Ok(());
         }
 
-        // 2D path: render the selected TIM of the entry. When the strict
-        // catalog has TIMs for this entry, step through them by
-        // `tim_in_entry`; this is what lets the browser enumerate all N TIMs
-        // an entry carries instead of only the first.
-        if !entry.catalog_ids.is_empty() {
-            let idx = self.tim_in_entry.min(entry.catalog_ids.len() - 1);
-            let cat_id = entry.catalog_ids[idx];
-            let clut = self.clut_idx as u32;
-            let canvas = self.canvas_id.clone();
-            return self.render_catalog_tim(cat_id, clut, &canvas);
-        }
-
+        // 2D path: render the entry's first decodable TIM.
         let Some(hit) = &entry.first_tim else {
             return self.draw_message(&format!(
                 "{label}: classified, but no decodable TIM or TMD found"
