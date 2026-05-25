@@ -120,8 +120,16 @@ asset stream         <file>                           # walk DATA_FIELD chunks, 
 asset describe       <file>                           # asset-descriptor walk
 asset effect-bundle  <file>
 asset tmd-scan       <DIR>                            # bulk byte-search for TMD magic
-asset tim-scan       <DIR>                            # bulk byte-search for TIM magic
+asset tim-scan       <DIR>                            # bulk byte-search for TIM magic (per-entry, lenient)
+asset tim-catalog    <PROT.DAT> [--out f.tsv|f.json]  # flat strict-validated TIM catalog (jPSXdec parity)
 ```
+
+`tim-catalog` scans the whole `PROT.DAT` image (not per-entry), strict-validates
+each TIM (see [`formats/tim.md`](../formats/tim.md#strict-validation-what-counts-as-a-tim)),
+and maps each hit to its owning PROT entry + offset (or the unindexed system-UI
+gap). It recovers the same set an independent reference decoder reports; the
+committed catalog + a disc-gated regression pin the result. `--rollup` prints
+the count + digest the test pins.
 
 ### MES dialog (`mes`)
 

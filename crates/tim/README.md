@@ -41,7 +41,14 @@ Pixel widths in real pixels:
 
 ## What it provides
 
-- `parse(bytes) -> Tim` - header + CLUT + image-block parser.
+- `parse(bytes) -> Tim` - lenient header + CLUT + image-block parser
+  (tolerates trailing block padding; for callers decoding known-TIM bytes).
+- `parse_strict(bytes) -> Tim` - reproduces an external reference decoder's
+  TIM detector: no reserved flag bits, pmode 0..=3, exact block lengths,
+  nonzero dims, in-VRAM-bounds image rectangle (CLUT intentionally not
+  bounds-checked - NPC palettes sit at the framebuffer's bottom edge). Used to
+  build the flat `PROT.DAT` TIM catalog in `legaia-asset::tim_catalog`.
+- `Tim::byte_extent` / `Tim::palette_count` - on-disc footprint + CLUT count.
 - `Tim::to_rgba8` - palette-resolve to RGBA8 for PNG.
 - `vram::Vram` - software model of PSX VRAM (1024×512 R16 framebuffer).
   Used by `legaia-engine-render` for per-primitive texture-page +

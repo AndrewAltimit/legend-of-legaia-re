@@ -33,6 +33,56 @@ Both TIMs are byte-confirmed against retail VRAM dumps; see [`subsystems/save-sc
 
 Browse them in the asset viewer with `asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut <row>` (any of 0..15).
 
+## Cataloging every PROT.DAT TIM
+
+`PROT.DAT` is also indexable as one flat 2048-byte-sector stream. Scanning the
+whole image (rather than per-TOC-entry) catches every standard TIM regardless
+of which addressing layer hosts it — including the TIMs in the unindexed
+system-UI gap before the first entry (the menu-glyph atlas and load-screen
+chrome above). `legaia_asset::tim_catalog` does this and maps each hit back to
+its owning PROT entry + byte offset (or the gap), producing a per-TIM catalog
+keyed by a stable id:
+
+```
+asset tim-catalog extracted/PROT.DAT --out catalog.tsv   # or .json
+asset tim-catalog extracted/PROT.DAT --rollup            # count + digest
+```
+
+### Strict validation (what counts as a TIM)
+
+A magic-only scan over arbitrary bytes turns up many spurious matches — a
+coincidental `0x00000010` word inside another TIM's pixel data, blocks with
+trailing padding, or `Mixed`/garbage pixel modes. `legaia_tim::parse_strict`
+applies the extra checks that separate real, VRAM-ready TIMs from noise:
+
+- **No reserved flag bits.** Only bits 0..3 (pixel mode + CLUT-present) may be
+  set; a flags word like `0x00010008` (reserved bit 16 set) is rejected.
+- **A real pixel mode.** `pmode` must be 0..=3.
+- **Exact block lengths.** Each block's `size` field must equal `12 + w*h*2`
+  precisely — no trailing padding.
+- **Nonzero dimensions** and an **in-VRAM-bounds image rectangle** (the image
+  must fit inside the 1024×512 16-bit framebuffer at its load position).
+
+The **CLUT** rectangle is deliberately *not* bounds-checked: Legaia stores many
+NPC palettes at `fb_y` 510..511 (the [row-479 CLUT band](npc-palette.md)) with
+heights up to 16, so a legitimate CLUT block extends a few rows past the
+framebuffer's bottom edge.
+
+Under this rule a flat scan of the retail NA `PROT.DAT` recovers the same TIM
+set an independent reference decoder reports, cross-checked item-for-item
+(identical offsets, dimensions, bit depths, and palette counts). The lenient
+`legaia_tim::parse` is retained for callers decoding bytes already known to be
+a TIM (web-viewer thumbnails, sub-asset extraction), where the extra
+rejections would only get in the way.
+
+The committed reference catalog
+(`crates/asset/tests/data/prot_tim_catalog.tsv`) holds derived metadata only
+(offsets, dimensions, CLUT counts, byte lengths, FNV-1a fingerprints) — never
+pixel bytes — and a disc-gated regression rebuilds it from the disc and pins
+the count + a rollup digest. The in-browser asset viewer builds the same
+catalog live from a user-supplied disc and lets you page through every TIM by
+id with its CLUT variants.
+
 ## See also
 
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.

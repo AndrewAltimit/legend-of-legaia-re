@@ -47,6 +47,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 | `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). |
 | `scene_v12_table` | Variant of the per-scene table. |
 | `tim_scan` / `tmd_scan` | Brute-force magic search inside an entry. |
+| `tim_catalog` | Flat strict-validated TIM inventory over the whole `PROT.DAT` image (catches the unindexed-gap TIMs `tim_scan` can't); maps each to its owning entry + offset; reproduces an external reference decoder's TIM set item-for-item. |
 
 Detector coverage and provenance are tracked in
 [`docs/formats/scene-bundles.md`](../../docs/formats/scene-bundles.md).
@@ -58,7 +59,8 @@ asset describe         <input>            # parse + print descriptor
 asset decode           <input> <output>   # apply the dispatcher
 asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
 asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
-asset tim-scan         <input>            # locate embedded TIMs
+asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
+asset tim-catalog      <PROT.DAT>         # flat strict TIM catalog (--out f.tsv|f.json, --rollup)
 asset tmd-scan         <input>            # locate embedded TMDs
 asset stage / stage-scan
 asset field-pack / field-pack-scan
