@@ -76,9 +76,38 @@ fn walk_map_resolves_real_continent_for_kingdoms() {
             "{name}: one tile id per vertex"
         );
         assert_eq!(
+            hf.positions.len(),
+            hf.cba_tsb.len(),
+            "{name}: one [clut, tpage] per vertex"
+        );
+        assert_eq!(
             hf.indices.len(),
             hf.quad_count() * 6,
             "{name}: two triangles per quad"
+        );
+        // The continent ground is a terrain-type-keyed MULTI-page atlas (grass /
+        // mountain / water / forest each on their own VRAM page), selected per
+        // cell from the record's +0x15 byte — not a single shared page. A
+        // sea-surrounded kingdom continent must touch several terrain pages,
+        // including a water page (0x1B / 0x1C).
+        let mut pages: Vec<u16> = hf.cba_tsb.iter().map(|ct| ct[1]).collect();
+        pages.sort_unstable();
+        pages.dedup();
+        assert!(
+            pages.len() >= 3,
+            "{name}: expected several terrain pages, got {pages:?}"
+        );
+        assert!(
+            pages.iter().any(|&p| p == 0x001B || p == 0x001C),
+            "{name}: expected a water terrain page (0x1B/0x1C) in {pages:?}"
+        );
+        // +0x14 is the 8x8 atlas index: every baked UV origin lands on the
+        // 32-texel grid within a 256x256 page.
+        assert!(
+            hf.uvs
+                .iter()
+                .all(|[u, v]| (u % 32 == 0 || u % 32 == 31) && (v % 32 == 0 || v % 32 == 31)),
+            "{name}: ground UVs should tile the 32x32 atlas grid"
         );
         // The terrain is a real heightfield, not a flat plane: at least two
         // distinct corner elevations across the continent.

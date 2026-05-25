@@ -110,6 +110,18 @@ pub struct ObjectRecord {
     pub pack_index_field: u16,
     /// `+0x12` flags; bit [`FLAG_PLACED`] gates spawning.
     pub flags: u16,
+    /// `+0x14` ground-tile atlas index (`0..63`) into the `8 x 8` grid of
+    /// `32 x 32`-texel tiles on the cell's terrain page (`u = (id % 8) * 32`,
+    /// `v = (id / 8) * 32`). The per-cell texture selector for the walk-view
+    /// continent ground — see [`WalkHeightfield`].
+    pub terrain_tile: u8,
+    /// `+0x15` ground-tile PSX `tpage` word (4bpp; e.g. `0x1A` -> fb `(640, 256)`
+    /// grass, `0x0C` -> mountain, `0x1B`/`0x1C` -> water, `0x0B` -> forest). The
+    /// per-cell terrain-type / VRAM-page selector.
+    pub terrain_tpage: u16,
+    /// `+0x16..+0x18` ground-tile PSX `clut` (CBA) word (little-endian:
+    /// `r[0x16] | r[0x17] << 8`). Selects the tile's palette row.
+    pub terrain_clut: u16,
 }
 
 impl ObjectRecord {
@@ -126,6 +138,9 @@ impl ObjectRecord {
             row_delta: r[0x07] as i8,
             pack_index_field: u16::from_le_bytes([r[0x10], r[0x11]]),
             flags: u16::from_le_bytes([r[0x12], r[0x13]]),
+            terrain_tile: r[0x14],
+            terrain_tpage: r[0x15] as u16,
+            terrain_clut: u16::from_le_bytes([r[0x16], r[0x17]]),
         })
     }
 
@@ -335,22 +350,33 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
 /// (`0x80 x 0x80` bytes, 1/tile; low nibble = floor-elevation tier).
 pub const COLLISION_GRID_OFFSET: usize = 0x4000;
 
-/// The walk-view continent ground is textured from a small **3x3 atlas of
-/// 32x32-texel ground tiles** packed in one VRAM page, selected **positionally**
-/// per cell: tile `(col % 3, row % 3)`. This is a detail-tiling trick that hides
-/// the repetition of a single ground texture across the continent — it is *not*
-/// keyed by any per-cell record field (the record `+0x14` byte plays no part;
-/// no draw path reads it). Pinned from the retail prim pool in a continent-walk
-/// RAM image: 1187 `POLY_FT4` (cmd `0x2C`) ground quads, all `tpage = 0x001A`
-/// (4bpp VRAM page at fb `(640, 256)`) / `clut = 0x7C40` (CBA fb `(0, 497)`),
-/// each a 32x32 rect whose UV origin is one of `u,v in {0, 32, 64}` (a clean
-/// 3x3 grid), and whose tile index cycles mod 3 with the cell's column / row.
+/// The walk-view continent ground is textured per cell from a **terrain-type-
+/// keyed multi-page atlas**: every visible cell's object record carries its own
+/// tile + page + palette, so grass, mountain, water, and forest cells each
+/// sample a different VRAM page. The selector is the record's `+0x14..+0x18`
+/// run, byte-verified against the retail prim pool (the ground quads emit in a
+/// row-major world-cell sweep; aligning a quad-run's UV sequence to the map's
+/// `+0x14` grid matches exactly, and the page/CLUT each map 1:1 to `+0x15` /
+/// `+0x16..+0x18`):
+/// - `+0x14` -> the `8 x 8` atlas tile index (`u = (id % 8) * 32`,
+///   `v = (id / 8) * 32`; tiles are `32 x 32` texels),
+/// - `+0x15` -> the PSX `tpage` word (4bpp page; `0x1A` grass at fb `(640, 256)`,
+///   `0x0C` mountain, `0x1B`/`0x1C` water, `0x0B` forest, ...),
+/// - `+0x16..+0x18` -> the PSX `clut` (CBA) word.
+///
+/// (The earlier "single 3x3 grass page, positional `(col % 3, row % 3)`,
+/// `+0x14` unused" reading was a misread: grass cells happen to use page `0x1A`
+/// with `+0x14` landing in the top-left `3 x 3` block, so the mod-3 cross-row
+/// sequence was coincidental. `+0x14` is the tile selector, not metadata.)
 pub const GROUND_ATLAS_TILE_PX: u8 = 32;
-/// Tiles per atlas axis (the atlas is `GROUND_ATLAS_AXIS x GROUND_ATLAS_AXIS`).
-pub const GROUND_ATLAS_AXIS: usize = 3;
-/// PSX `tpage` word for the ground-tile VRAM page (4bpp page at fb `(640, 256)`).
+/// Tiles per atlas axis (the atlas is `GROUND_ATLAS_AXIS x GROUND_ATLAS_AXIS`
+/// `32 x 32`-texel tiles filling one `256 x 256` VRAM page).
+pub const GROUND_ATLAS_AXIS: usize = 8;
+/// PSX `tpage` word for the **grass** ground-tile page (4bpp at fb `(640, 256)`).
+/// Used as the fallback page when a cell's record carries no terrain bytes;
+/// per-cell pages come from [`ObjectRecord::terrain_tpage`].
 pub const GROUND_ATLAS_TPAGE: u16 = 0x001A;
-/// PSX `clut` (CBA) word for the ground-tile CLUT (fb `(0, 497)`).
+/// PSX `clut` (CBA) word for the grass-tile CLUT (fb `(0, 497)`); fallback only.
 pub const GROUND_ATLAS_CLUT: u16 = 0x7C40;
 
 /// A triangulated heightfield surface for the world-map walk-view continent
@@ -370,27 +396,28 @@ pub const GROUND_ATLAS_CLUT: u16 = 0x7C40;
 /// (`world_y = -lut[nibble]`), so the engine applies the same `(1, -1, 1)`
 /// model flip.
 ///
-/// [`Self::uvs`] textures each cell from the retail ground-tile atlas
-/// ([`GROUND_ATLAS_TPAGE`] / [`GROUND_ATLAS_CLUT`]) by the positional
-/// `(col % 3, row % 3)` detail-tiling pinned from the prim pool. `tile_id`
-/// carries the source-tile `+0x14` byte (range `0..63`), which is **terrain-type
-/// metadata, not a texture selector** — no retail draw path reads it (the only
-/// per-cell terrain *mesh* emitter, the overview renderer `FUN_801F69D8`, keys
-/// on `+0x10`); it is retained for terrain-class uses (encounter / footstep /
-/// walk-speed). See `docs/subsystems/world-map.md` "Ground texturing".
+/// [`Self::uvs`] + [`Self::cba_tsb`] texture each cell from the retail terrain-
+/// type-keyed multi-page atlas (see the `GROUND_ATLAS_*` constants): the cell's
+/// object record gives the tile (`+0x14` -> `8 x 8` atlas UV), the VRAM page
+/// (`+0x15` -> `tpage`), and the palette (`+0x16..+0x18` -> `clut`). `tile_id`
+/// keeps the raw `+0x14` byte for non-texturing terrain-class uses (encounter /
+/// footstep / walk-speed). See `docs/subsystems/world-map.md` "Ground texturing".
 #[derive(Debug, Clone, Default)]
 pub struct WalkHeightfield {
     /// Per-vertex world position (pre-Y-flip): `(col*128, -lut[nibble], row*128)`.
     pub positions: Vec<[f32; 3]>,
-    /// Per-vertex source-tile `+0x14` id (`0..63`). Terrain-*type* metadata
-    /// (no draw path reads it), **not** a texture-atlas selector; see the
-    /// struct docs.
+    /// Per-vertex source-tile `+0x14` id (`0..63`) — the atlas tile index this
+    /// cell draws, also usable as terrain-class metadata (see the struct docs).
     pub tile_ids: Vec<u8>,
-    /// Per-vertex page-local texture coordinates into the ground-tile atlas
-    /// page ([`GROUND_ATLAS_TPAGE`] / [`GROUND_ATLAS_CLUT`]). Each cell's four
-    /// corners cover the 32x32 atlas tile `(col % 3, row % 3)` — the positional
-    /// detail-tiling retail uses (see the atlas constants).
+    /// Per-vertex page-local texture coordinates into the cell's terrain page.
+    /// Each cell's four corners cover the `32 x 32` atlas tile selected by the
+    /// record's `+0x14` byte (`u = (id % 8) * 32`, `v = (id / 8) * 32`).
     pub uvs: Vec<[u8; 2]>,
+    /// Per-vertex `[clut, tpage]` (PSX CBA + tpage words) selecting the cell's
+    /// terrain page + palette from the record's `+0x15` / `+0x16..+0x18` bytes.
+    /// Distinct per cell so grass / mountain / water / forest cells sample their
+    /// own VRAM page in a single mesh.
+    pub cba_tsb: Vec<[u16; 2]>,
     /// Triangle indices (two triangles per visible cell quad).
     pub indices: Vec<u32>,
 }
@@ -435,14 +462,18 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             if cell & CELL_WALK_VISIBLE == 0 {
                 continue;
             }
-            // The +0x14 byte of this cell's object record — the per-tile
-            // terrain-type id (not a texture selector); 0 when the record is
-            // absent.
+            // This cell's terrain texture comes from its object record's
+            // +0x14..+0x18 run: +0x14 = atlas tile, +0x15 = tpage (terrain
+            // page), +0x16..+0x18 = clut. Fall back to the grass page when the
+            // record is absent / carries no terrain bytes (tpage 0 = fb (0,0),
+            // never a real terrain page).
             let obj_idx = (cell & OBJECT_INDEX_MASK) as usize;
-            let tile_id = field_map
-                .get(obj_idx * OBJECT_RECORD_STRIDE + 0x14)
-                .copied()
-                .unwrap_or(0);
+            let rec = ObjectRecord::parse(field_map, obj_idx);
+            let tile_id = rec.map(|r| r.terrain_tile).unwrap_or(0);
+            let (tpage, clut) = match rec {
+                Some(r) if r.terrain_tpage != 0 => (r.terrain_tpage, r.terrain_clut),
+                _ => (GROUND_ATLAS_TPAGE, GROUND_ATLAS_CLUT),
+            };
             let x0 = (col as i32 * TILE) as f32;
             let x1 = ((col as i32 + 1) * TILE) as f32;
             let z0 = (row as i32 * TILE) as f32;
@@ -453,11 +484,11 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             hf.positions.push([x1, corner_y(col + 1, row), z0]);
             hf.positions.push([x0, corner_y(col, row + 1), z1]);
             hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
-            // Positional 3x3 detail-tiling: this cell shows atlas tile
-            // (col % 3, row % 3); the four corners map to the tile's 32x32 rect
-            // (U along +X/col, V along +Z/row). See the atlas constants.
-            let u0 = (col % GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
-            let v0 = (row % GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
+            // Per-cell atlas tile from +0x14: the 8x8 atlas places tile `id` at
+            // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`; the four corners map to
+            // its 32x32 rect (U along +X/col, V along +Z/row).
+            let u0 = (tile_id as usize % GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
+            let v0 = (tile_id as usize / GROUND_ATLAS_AXIS) as u8 * GROUND_ATLAS_TILE_PX;
             let u1 = u0 + GROUND_ATLAS_TILE_PX - 1;
             let v1 = v0 + GROUND_ATLAS_TILE_PX - 1;
             hf.uvs.push([u0, v0]); // NW
@@ -466,6 +497,7 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             hf.uvs.push([u1, v1]); // SE
             for _ in 0..4 {
                 hf.tile_ids.push(tile_id);
+                hf.cba_tsb.push([clut, tpage]);
             }
             // Two triangles, standard PSX quad winding (v0,v1,v2)+(v1,v3,v2).
             hf.indices
@@ -575,11 +607,15 @@ mod tests {
             l
         };
         // Tile (col 10, row 4): floor nibble 2; mark its object cell walk-visible
-        // with obj_idx 7, and give record 7 a +0x14 tile id of 0x2A.
+        // with obj_idx 7, and give record 7 a terrain run (+0x14..+0x18): tile
+        // 0x2A on the mountain page 0x0C with CLUT 0x7EC0.
         map[COLLISION_GRID_OFFSET + 4 * GRID_DIM + 10] = 0x02;
         let cell = OBJECT_GRID_OFFSET + (4 * GRID_DIM + 10) * 2;
         map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 7).to_le_bytes());
-        map[7 * OBJECT_RECORD_STRIDE + 0x14] = 0x2A;
+        map[7 * OBJECT_RECORD_STRIDE + 0x14] = 0x2A; // tile index
+        map[7 * OBJECT_RECORD_STRIDE + 0x15] = 0x0C; // tpage (mountain page)
+        map[7 * OBJECT_RECORD_STRIDE + 0x16] = 0xC0; // clut low
+        map[7 * OBJECT_RECORD_STRIDE + 0x17] = 0x7E; // clut high
 
         let hf = build_walk_heightfield(&map, &lut);
         assert_eq!(hf.quad_count(), 1, "one visible cell -> one quad");
@@ -592,30 +628,62 @@ mod tests {
         assert_eq!(hf.positions[3][1], 0.0);
         // Every vertex carries the cell's +0x14 tile id.
         assert!(hf.tile_ids.iter().all(|&t| t == 0x2A));
-        // Positional 3x3 ground tiling: cell (col 10, row 4) -> atlas tile
-        // (10 % 3, 4 % 3) = (1, 1) -> UV origin (32, 32), spanning a 32x32 rect.
+        // Atlas tile 0x2A = 42 -> (42 % 8, 42 / 8) = (col 2, row 5) -> UV origin
+        // (64, 160), spanning a 32x32 rect.
         assert_eq!(hf.uvs.len(), 4);
-        assert_eq!(hf.uvs[0], [32, 32]); // NW
-        assert_eq!(hf.uvs[1], [63, 32]); // NE
-        assert_eq!(hf.uvs[2], [32, 63]); // SW
-        assert_eq!(hf.uvs[3], [63, 63]); // SE
+        assert_eq!(hf.uvs[0], [64, 160]); // NW
+        assert_eq!(hf.uvs[1], [95, 160]); // NE
+        assert_eq!(hf.uvs[2], [64, 191]); // SW
+        assert_eq!(hf.uvs[3], [95, 191]); // SE
+        // Every vertex carries the cell's [clut, tpage] from +0x15 / +0x16..+0x18.
+        assert!(hf.cba_tsb.iter().all(|&ct| ct == [0x7EC0, 0x000C]));
     }
 
     #[test]
-    fn ground_tiling_cycles_mod_3_across_cells() {
-        // Mark three adjacent columns walk-visible at row 0 and confirm the
-        // atlas U origin cycles 0, 32, 64 (col % 3) — the detail-tiling pattern.
+    fn ground_page_and_clut_are_per_cell_from_record() {
+        // Two adjacent walk-visible cells with different terrain records: a
+        // grass cell (page 0x1A) and a water cell (page 0x1B) coexist in one
+        // heightfield, each sampling its own page — the multi-page terrain atlas.
         let lut = [0i16; 16];
         let mut map = vec![0u8; 0x12000];
-        for col in 0..3usize {
-            let cell = OBJECT_GRID_OFFSET + col * 2;
-            map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 1).to_le_bytes());
-        }
+        // record 1: grass tile 9 on page 0x1A / CLUT 0x7C40.
+        let g = OBJECT_RECORD_STRIDE;
+        map[g + 0x14] = 9;
+        map[g + 0x15] = 0x1A;
+        map[g + 0x16] = 0x40;
+        map[g + 0x17] = 0x7C;
+        // record 2: water tile 17 on page 0x1B / CLUT 0x7F41.
+        let w = 2 * OBJECT_RECORD_STRIDE;
+        map[w + 0x14] = 17;
+        map[w + 0x15] = 0x1B;
+        map[w + 0x16] = 0x41;
+        map[w + 0x17] = 0x7F;
+        let cg = OBJECT_GRID_OFFSET; // (col 0, row 0)
+        map[cg..cg + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 1).to_le_bytes());
+        let cw = OBJECT_GRID_OFFSET + 2; // (col 1, row 0)
+        map[cw..cw + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 2).to_le_bytes());
+
         let hf = build_walk_heightfield(&map, &lut);
-        assert_eq!(hf.quad_count(), 3);
-        // NW-corner U of each cell's first vertex = 32 * (col % 3).
-        assert_eq!(hf.uvs[0][0], 0);
-        assert_eq!(hf.uvs[4][0], 32);
-        assert_eq!(hf.uvs[8][0], 64);
+        assert_eq!(hf.quad_count(), 2);
+        // First cell (grass): tile 9 -> UV (32, 32), page 0x1A / CLUT 0x7C40.
+        assert_eq!(hf.uvs[0], [32, 32]);
+        assert_eq!(hf.cba_tsb[0], [0x7C40, 0x001A]);
+        // Second cell (water): tile 17 -> (17 % 8, 17 / 8) = (1, 2) -> UV (32, 64),
+        // page 0x1B / CLUT 0x7F41.
+        assert_eq!(hf.uvs[4], [32, 64]);
+        assert_eq!(hf.cba_tsb[4], [0x7F41, 0x001B]);
+    }
+
+    #[test]
+    fn ground_cell_without_terrain_bytes_falls_back_to_grass_page() {
+        // A visible cell whose record carries no terrain run (tpage 0) uses the
+        // grass fallback page, never tpage 0 (= fb (0,0), the framebuffer).
+        let lut = [0i16; 16];
+        let mut map = vec![0u8; 0x12000];
+        let cell = OBJECT_GRID_OFFSET;
+        map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 1).to_le_bytes());
+        let hf = build_walk_heightfield(&map, &lut);
+        assert_eq!(hf.quad_count(), 1);
+        assert_eq!(hf.cba_tsb[0], [GROUND_ATLAS_CLUT, GROUND_ATLAS_TPAGE]);
     }
 }
