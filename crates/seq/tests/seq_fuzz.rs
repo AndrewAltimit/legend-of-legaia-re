@@ -6,10 +6,12 @@
 //! `LEGAIA_DISC_BIN` unset.
 //!
 //! Note: `parse_header` deliberately accepts both the PsyQ shape (u16 BE
-//! version) and the Legaia variant (u32 BE version, two extra bytes), and
-//! meta `0x51` can be non-3-byte / running status is preserved across meta.
-//! These tests only assert the *absence of panics* on malformed bytes;
-//! they do not change that accepting behaviour.
+//! version) and the Legaia variant (u32 BE version, two extra bytes). Meta
+//! events have fixed per-type lengths (no MIDI length field): `0x51` is a
+//! 3-byte tempo, `0x2F` ends the track, and any other meta type ends the
+//! track gracefully (its length is undefined). Running status is preserved
+//! across meta events. These tests only assert the *absence of panics* on
+//! malformed bytes; they do not change that accepting behaviour.
 
 use legaia_seq::{SEQ_MAGIC, Seq, parse_header, read_vlq};
 
@@ -68,16 +70,34 @@ fn running_status_with_no_prior_returns_err() {
 }
 
 #[test]
-fn meta_payload_overrun_returns_err() {
-    // delta 0, meta 0xFF kind 0x7F, length VLQ says 200 but stream is short.
+fn truncated_tempo_meta_returns_err() {
+    // delta 0, meta 0xFF kind 0x51 (Set Tempo) needs 3 bytes but stream ends.
     let mut buf = header_only();
     buf.push(0x00); // delta
     buf.push(0xFF); // meta
-    buf.push(0x7F); // kind
-    buf.push(0x81); // VLQ length: 0x81 0x48 = 200
-    buf.push(0x48);
-    // no payload bytes follow
+    buf.push(0x51); // Set Tempo
+    buf.push(0x07); // only one of the three tempo bytes
     assert!(Seq::parse(&buf).is_err());
+}
+
+#[test]
+fn unknown_meta_ends_track_gracefully() {
+    // PSX SEQ meta events have no MIDI length field, so an unknown meta type
+    // has an undefined length and the parser stops the track there (Ok, with
+    // a terminating End-of-Track) rather than guessing a length.
+    let mut buf = header_only();
+    buf.push(0x00); // delta
+    buf.push(0xFF); // meta
+    buf.push(0x7F); // unknown meta type
+    buf.push(0xDE); // trailing junk - never interpreted
+    buf.push(0xAD);
+    let seq = Seq::parse(&buf).expect("unknown meta must end the track, not error");
+    assert!(matches!(
+        seq.events.last().map(|e| &e.body),
+        Some(legaia_seq::EventBody::Meta(
+            legaia_seq::MetaMessage::EndOfTrack
+        ))
+    ));
 }
 
 #[test]

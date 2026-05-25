@@ -45,14 +45,12 @@ pub use webaudio::WebAudioOut;
 /// (verified against several extracted banks).
 pub const DEFAULT_INPUT_RATE: u32 = 22_050;
 
-/// Microseconds elapsed per SPU internal sample period (1/44100 s).
-const US_PER_SPU_TICK: f64 = 1_000_000.0 / SPU_INTERNAL_RATE as f64;
-
 /// Render `duration_samples` interleaved stereo frames of BGM at the SPU's
 /// internal 44.1 kHz rate by driving `sequencer` + `spu` step-by-step.
-/// The sequencer is advanced by exactly `US_PER_SPU_TICK` microseconds per
-/// SPU sample, so output timing is locked to the SPU clock - no callback
-/// pacing dependency. Returns interleaved i16 PCM (`[l0, r0, l1, r1, ...]`).
+/// The sequencer is advanced by exactly one SPU sample per output sample
+/// (`Sequencer::tick_sample`), so output timing is locked to the SPU clock -
+/// no callback pacing dependency. Returns interleaved i16 PCM
+/// (`[l0, r0, l1, r1, ...]`).
 ///
 /// Used by the WASM site to pre-render BGM chunks and play them through
 /// `AudioBufferSourceNode` instead of the deprecated `ScriptProcessorNode`,
@@ -65,7 +63,7 @@ pub fn render_bgm_to_pcm(
 ) -> Vec<i16> {
     let mut out = Vec::with_capacity(duration_samples * 2);
     for _ in 0..duration_samples {
-        sequencer.tick_us(spu, US_PER_SPU_TICK);
+        sequencer.tick_sample(spu);
         let (l, r) = spu.tick();
         out.push(l);
         out.push(r);
@@ -232,11 +230,12 @@ impl StreamResampler {
         while self.phase >= 1.0 {
             // Advance fade one step per SPU tick.
             self.advance_fade();
-            // Tick sequencer unless paused.
+            // Tick sequencer unless paused. Sample-clocked: one SPU sample
+            // per call, locked to the audio clock with no drift.
             if !self.sequencer_paused
                 && let Some(seq) = self.sequencer.as_mut()
             {
-                seq.tick_us(&mut self.spu, US_PER_SPU_TICK);
+                seq.tick_sample(&mut self.spu);
             }
             self.prev = self.cur;
             // Mix SPU output with master-fade applied.

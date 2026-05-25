@@ -35,10 +35,21 @@
 //! | `0xC0..=0xCF`| Program Change  | 1 |
 //! | `0xD0..=0xDF`| Channel Aftertouch | 1 |
 //! | `0xE0..=0xEF`| Pitch Bend      | 2 |
-//! | `0xFF NN LL` | Meta event      | LL bytes (LL is VLQ) |
+//! | `0xFF NN`    | Meta event      | fixed length per type (see below) |
 //!
-//! Meta events carry tempo (`0x51`, 3-byte payload), time signature
-//! (`0x58`), and end-of-track (`0x2F`, zero-length).
+//! **Meta events do not carry a MIDI variable-length `length` field.** This
+//! is the key divergence from Standard MIDI Files: PsyQ's SsAPI sequencer
+//! reads a meta-type byte and then a *fixed* number of payload bytes
+//! determined by the type. Only two meta types appear in retail data:
+//!
+//! - `0xFF 0x51` + 3 bytes - Set Tempo (u24 BE microseconds per quarter
+//!   note). No `0x03` length prefix - the 3 tempo bytes follow the `0x51`
+//!   directly. (Standard MIDI would write `0xFF 0x51 0x03 tt tt tt`.)
+//! - `0xFF 0x2F` - End-of-Track. Two bytes total; no `0x00` length/payload.
+//!
+//! Any other meta type has an unknown fixed length, so the parser cannot
+//! safely skip it and stops the track there (matching the reference SsAPI
+//! reader behaviour).
 //!
 //! ## Use
 //!
@@ -324,43 +335,53 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
 
         let body = match status_byte {
             0xFF => {
-                // Meta event. PsyQ libsnd preserves running status across
-                // meta events (real Legaia SEQ data relies on this - the
-                // strict-MIDI behaviour of clearing running status here
-                // would cause a "running status with no prior" error on
-                // the byte stream immediately after a meta).
+                // Meta event. Unlike Standard MIDI, PsyQ SEQ meta events have
+                // NO variable-length `length` field - each meta type carries
+                // a fixed number of payload bytes. Running status is preserved
+                // across meta events (real Legaia SEQ data relies on this).
                 if pos >= stream.len() {
                     bail!("meta event truncated at +{}", pos);
                 }
                 let kind = stream[pos];
                 pos += 1;
-                let (length, lvlq) = read_vlq(stream, pos)?;
-                pos += lvlq;
-                let length = length as usize;
-                if pos + length > stream.len() {
-                    bail!("meta event payload overruns at +{}", pos);
+                match kind {
+                    0x51 => {
+                        // Set Tempo: exactly 3 bytes (u24 BE us/qn) follow the
+                        // `0x51` directly - no `0x03` length prefix.
+                        if pos + 3 > stream.len() {
+                            bail!("tempo meta truncated at +{}", pos);
+                        }
+                        let us_per_qn = u24_be(&stream[pos..pos + 3]);
+                        pos += 3;
+                        EventBody::Meta(MetaMessage::SetTempo { us_per_qn })
+                    }
+                    0x2F => {
+                        // End-of-Track: two bytes total (`FF 2F`), no payload.
+                        EventBody::Meta(MetaMessage::EndOfTrack)
+                    }
+                    _ => {
+                        // Unknown meta type - its fixed length is undefined, so
+                        // we cannot safely resynchronise. Stop the track here
+                        // (the reference SsAPI reader does the same). Emit a
+                        // terminating End-of-Track so the event stream stays
+                        // well-formed for consumers.
+                        events.push(Event {
+                            delta,
+                            body: EventBody::Meta(MetaMessage::EndOfTrack),
+                        });
+                        break;
+                    }
                 }
-                let payload = &stream[pos..pos + length];
-                pos += length;
-                let meta = decode_meta(kind, payload)?;
-                EventBody::Meta(meta)
             }
-            0xF0 | 0xF7 => {
-                // SysEx - not used by libsnd; parse-and-skip so we don't
-                // explode on unknown payloads but warn loudly via Other meta.
-                running_status = None;
-                let (length, lvlq) = read_vlq(stream, pos)?;
-                pos += lvlq;
-                let length = length as usize;
-                if pos + length > stream.len() {
-                    bail!("sysex event payload overruns at +{}", pos);
-                }
-                let payload = stream[pos..pos + length].to_vec();
-                pos += length;
-                EventBody::Meta(MetaMessage::Other {
-                    kind: status_byte,
-                    data: payload,
-                })
+            s if s & 0x80 != 0 && s & 0xF0 == 0xF0 => {
+                // System-common / SysEx (`0xF0..=0xFE`, excluding the `0xFF`
+                // meta handled above). PsyQ SEQ does not use these; their
+                // length is undefined, so stop the track rather than guess.
+                events.push(Event {
+                    delta,
+                    body: EventBody::Meta(MetaMessage::EndOfTrack),
+                });
+                break;
             }
             s if s & 0x80 != 0 => {
                 // Channel voice / mode message. Consume the message-specific
@@ -427,61 +448,6 @@ fn decode_channel(high: u8, data: &[u8]) -> ChannelMessage {
         }
         _ => unreachable!(),
     }
-}
-
-fn decode_meta(kind: u8, payload: &[u8]) -> Result<MetaMessage> {
-    Ok(match kind {
-        0x2F => MetaMessage::EndOfTrack,
-        0x51 => {
-            // Standard MIDI SetTempo is exactly 3 bytes (u24 BE us/qn).
-            // Real Legaia SEQ data sometimes carries longer 0x51 payloads
-            // - likely PsyQ-specific extensions (loop markers / mark
-            // events). Surface those as `Other` rather than failing the
-            // whole-track decode.
-            if payload.len() == 3 {
-                MetaMessage::SetTempo {
-                    us_per_qn: u24_be(payload),
-                }
-            } else {
-                MetaMessage::Other {
-                    kind,
-                    data: payload.to_vec(),
-                }
-            }
-        }
-        0x58 => {
-            // Same tolerance as 0x51 - accept the canonical 4-byte form
-            // and surface anything else as `Other`.
-            if payload.len() != 4 {
-                return Ok(MetaMessage::Other {
-                    kind,
-                    data: payload.to_vec(),
-                });
-            }
-            MetaMessage::TimeSignature {
-                numerator: payload[0],
-                denominator_pow2: payload[1],
-                clocks_per_metronome: payload[2],
-                thirty_seconds_per_quarter: payload[3],
-            }
-        }
-        0x59 => {
-            if payload.len() != 2 {
-                return Ok(MetaMessage::Other {
-                    kind,
-                    data: payload.to_vec(),
-                });
-            }
-            MetaMessage::KeySignature {
-                sharps: payload[0] as i8,
-                minor: payload[1],
-            }
-        }
-        _ => MetaMessage::Other {
-            kind,
-            data: payload.to_vec(),
-        },
-    })
 }
 
 /// Compute microseconds per PPQN tick from a tempo + ppqn pair.
@@ -617,6 +583,48 @@ mod tests {
         assert_eq!(s.note_on, 1);
         assert_eq!(s.note_off, 1); // vel=0 NoteOn counts as NoteOff in the summary
         assert_eq!(s.end_of_track, 1);
+    }
+
+    /// PSX SEQ meta tempo events carry the 3 tempo bytes directly after the
+    /// `0x51` type byte - there is NO MIDI variable-length `length` field.
+    /// This mirrors the retail-data shape where a track's header tempo is an
+    /// init placeholder immediately overridden by a body `0xFF 0x51` event;
+    /// reading a phantom length byte would consume a tempo byte and mis-decode
+    /// the override (the constant-wrong-BPM playback bug).
+    #[test]
+    fn tempo_meta_has_no_midi_length_byte() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]); // version 1 (PsyQ shape)
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x03, 0xD0, 0x90]); // header tempo 250000 (240 BPM)
+        buf.push(0x04);
+        buf.push(0x02);
+        // delta 0, Set Tempo -> 750000 us/qn (80 BPM): bytes follow 0x51 with
+        // NO 0x03 length prefix.
+        buf.push(0x00);
+        buf.push(0xFF);
+        buf.push(0x51);
+        buf.extend_from_slice(&[0x0B, 0x71, 0xB0]); // 750000 BE
+        // delta 0, end-of-track (two bytes, no 0x00 payload).
+        buf.push(0x00);
+        buf.push(0xFF);
+        buf.push(0x2F);
+
+        let seq = Seq::parse(&buf).unwrap();
+        assert_eq!(seq.header.tempo_us_per_qn, 250_000, "header placeholder");
+        // First body event is the tempo override decoded EXACTLY (not the
+        // 0x03-length mis-read that an SMF parser would produce).
+        match seq.events[0].body {
+            EventBody::Meta(MetaMessage::SetTempo { us_per_qn }) => {
+                assert_eq!(us_per_qn, 750_000, "80 BPM override applied");
+            }
+            ref other => panic!("expected SetTempo, got {other:?}"),
+        }
+        assert!(matches!(
+            seq.events[1].body,
+            EventBody::Meta(MetaMessage::EndOfTrack)
+        ));
     }
 
     /// Helper: encode a u32 as VLQ. Tests-only.
