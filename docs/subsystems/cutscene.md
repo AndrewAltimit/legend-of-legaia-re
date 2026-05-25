@@ -126,10 +126,13 @@ fingerprint as a regression guard.
 
 XA-ADPCM audio is carried on Mode 2 Form 2 sectors with `submode & 0x24 == 0x24`. The demuxer
 splits them by `(file_no, ch_no)` into per-channel streams. Each 128-byte sound group holds 8
-sound units of 28 4-bit ADPCM samples; stereo interleaves as SU0 = L, SU1 = R, ….
+sound units of 28 4-bit ADPCM samples; for stereo the LEFT channel is the even units (0,2,4,6)
+and the RIGHT channel is the odd units (1,3,5,7), output L,R interleaved. The decode is bit-exact
+against an external lossless reference decode of a real cutscene track.
 
 See [`formats/xa.md`](../formats/xa.md) for the full sector layout, coding-info bit definitions,
-filter coefficients, and the demuxer invocation.
+filter coefficients, the per-sound-group decode (parameter/nibble layout + full-precision
+predictor), and the demuxer invocation.
 
 ### Interleaved cutscene audio (A/V sync)
 
