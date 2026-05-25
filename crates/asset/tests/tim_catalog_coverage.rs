@@ -21,6 +21,7 @@
 use std::path::PathBuf;
 
 use legaia_asset::tim_catalog;
+use legaia_asset::tim_labels::TimRole;
 
 /// Number of standard PSX TIMs jPSXdec finds in the retail NA `PROT.DAT`. A
 /// stable invariant of the disc image (like the PROT entry count), not a
@@ -92,4 +93,47 @@ fn catalog_matches_jpsxdec_pinned_reference() {
             reference.lines().count()
         );
     }
+}
+
+/// The semantic role labels ([`legaia_asset::tim_labels`]) attach to the
+/// expected catalog ids. These pins are stable invariants of the retail NA
+/// image (the boot/title/menu textures sit at fixed offsets), so the ids are
+/// safe to assert. Guards both the byte-exact pins and the structural NPC
+/// palette rule against a build-order or rule drift.
+#[test]
+fn known_textures_carry_their_role_label() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let catalog = tim_catalog::build_from_path(&prot).expect("build TIM catalog");
+    let role = |id: usize| catalog[id].label;
+
+    // Byte-exact single-offset pins.
+    assert_eq!(role(8), Some(TimRole::MenuGlyphAtlas));
+    assert_eq!(role(1083), Some(TimRole::MainTitle));
+    assert_eq!(role(1), Some(TimRole::LoadScreenChrome));
+    assert_eq!(role(10), Some(TimRole::LoadScreenPortrait));
+    assert_eq!(role(11), Some(TimRole::LoadScreenPortrait));
+    assert_eq!(role(12), Some(TimRole::LoadScreenPortrait));
+    assert_eq!(role(13), Some(TimRole::LoadScreenEmptyFrame));
+    for id in 1086..=1089 {
+        assert_eq!(role(id), Some(TimRole::PublisherLogo), "logo id {id}");
+    }
+
+    // Structural NPC-palette family: a stable count of the row-479 band.
+    let npc = catalog
+        .iter()
+        .filter(|t| t.label == Some(TimRole::NpcPaletteRow))
+        .count();
+    assert_eq!(npc, 147, "raw NPC palette row count drifted");
+
+    // Total labeled ids, so an over-eager rule (mass mislabeling) trips here.
+    let labeled = catalog.iter().filter(|t| t.label.is_some()).count();
+    assert_eq!(labeled, 158, "total labeled raw TIM count drifted");
 }

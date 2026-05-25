@@ -221,6 +221,10 @@
     }
     .cat-cell:hover { border-color: var(--border); }
     .cat-cell.selected { border-color: var(--accent, #6ab0f3); background: #16202c; }
+    /* Textures cross-referenced to a known pin get a semantic role label and
+     * a subtle accent so they stand out in the grid. */
+    .cat-cell-known { border-color: #3a5a2c; background: #131a13; }
+    .cat-cell-known .cat-cell-label { color: #9ccc7a; }
     .cat-cell canvas {
       width: 100%;
       height: auto;
@@ -364,7 +368,8 @@
       if (!render(id, 0)) return;
       infoEl.textContent =
         `#${meta.id} / ${count - 1} · ${meta.width}×${meta.height} ${meta.bpp}bpp · ` +
-        `${meta.clut_count | 0} CLUT · ${cfg.where(meta)} · ${meta.byte_len} B`;
+        `${meta.clut_count | 0} CLUT · ${cfg.where(meta)} · ${meta.byte_len} B` +
+        (meta.label ? ` · ${meta.label}` : '');
       /* Highlight the matching grid cell + scroll the detail into view. */
       grid.querySelectorAll('.cat-cell.selected').forEach(c => c.classList.remove('selected'));
       const cell = grid.querySelector(`.cat-cell[data-id="${id}"]`);
@@ -393,13 +398,17 @@
         const cell = document.createElement('div');
         cell.className = 'cat-cell';
         cell.dataset.id = id;
-        cell.title = `#${id} · ${meta.width}×${meta.height} ${meta.bpp}bpp`;
+        cell.title = `#${id} · ${meta.width}×${meta.height} ${meta.bpp}bpp`
+          + (meta.label ? ` · ${meta.label}` : '');
+        if (meta.label) cell.classList.add('cat-cell-known');
         const cv = document.createElement('canvas');
         cv.id = cfg.thumbPrefix + id;
         cv.width = 1; cv.height = 1;
         const label = document.createElement('span');
         label.className = 'cat-cell-label';
-        label.textContent = `#${id} · ${meta.width}×${meta.height}`;
+        label.textContent = meta.label
+          ? `#${id} · ${meta.label}`
+          : `#${id} · ${meta.width}×${meta.height}`;
         cell.appendChild(cv);
         cell.appendChild(label);
         cell.addEventListener('click', () => show(id));

@@ -17,6 +17,7 @@ use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
 use legaia_asset::tim_catalog;
 use legaia_asset::tim_deep_catalog;
+use legaia_asset::tim_labels::TimRole;
 use legaia_asset::tim_scan;
 use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
@@ -25,6 +26,15 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 fn console_log(s: &str) {
     web_sys::console::log_1(&JsValue::from_str(s));
+}
+
+/// Render a catalog TIM's semantic role as a JSON value for the info panel:
+/// a quoted human label string, or `null` when the id matches no known pin.
+fn json_label(role: Option<TimRole>) -> String {
+    match role {
+        Some(r) => format!("\"{}\"", r.as_str()),
+        None => "null".to_string(),
+    }
 }
 
 /// Parse a 2-char axis pair string like `"xz"` / `"xy"` / `"zy"` into the
@@ -559,7 +569,7 @@ impl LegaiaViewer {
                 format!(
                     "{{\"id\":{},\"abs_offset\":{},\"sector\":{},\"entry\":\"{}\",\
                      \"offset_in_entry\":{},\"width\":{},\"height\":{},\"bpp\":{},\
-                     \"clut_count\":{},\"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                     \"clut_count\":{},\"byte_len\":{},\"fnv1a\":\"{:016x}\",\"label\":{}}}",
                     t.id,
                     t.abs_offset,
                     t.sector,
@@ -571,6 +581,7 @@ impl LegaiaViewer {
                     t.clut_count,
                     t.byte_len,
                     t.fnv1a,
+                    json_label(t.label),
                 )
             }
             None => "{}".to_string(),
@@ -644,7 +655,7 @@ impl LegaiaViewer {
             Some(t) => format!(
                 "{{\"id\":{},\"entry\":{},\"lzs_section\":{},\"offset_in_section\":{},\
                  \"width\":{},\"height\":{},\"bpp\":{},\"clut_count\":{},\
-                 \"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                 \"byte_len\":{},\"fnv1a\":\"{:016x}\",\"label\":{}}}",
                 t.id,
                 t.entry_index,
                 t.lzs_section,
@@ -655,6 +666,7 @@ impl LegaiaViewer {
                 t.clut_count,
                 t.byte_len,
                 t.fnv1a,
+                json_label(t.label),
             ),
             None => "{}".to_string(),
         }

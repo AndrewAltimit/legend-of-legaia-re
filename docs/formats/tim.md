@@ -116,6 +116,37 @@ reference (`crates/asset/tests/data/prot_tim_deep_catalog.tsv`, metadata + FNV
 only; no decompressed Sony bytes). The viewer surfaces the deep tier as a
 distinct "compressed textures" grid below the raw catalog.
 
+### Semantic role labels
+
+The catalog records *where* each texture lives, not *what* it is.
+`legaia_asset::tim_labels` cross-references the textures this project has
+independently pinned and attaches a human-readable **role** to the catalog ids
+that match a pin (raw and deep). A role is a derived structural annotation —
+which pinned asset a catalog id corresponds to — not an asset string or pixel
+data, so it ships in the committed reference TSVs (a `label` column) and in the
+viewer's info panel.
+
+Two kinds of pin feed the matcher:
+
+- **Byte-exact, single-offset pins.** The boot / title / menu textures each sit
+  at one fixed `(owning entry, byte offset)` on the retail NA disc: the
+  menu-glyph atlas, the main-title sprite sheet (aliased across PROT 888/889/890,
+  so the flat catalog resolves it to the innermost owning span, 890), the four
+  `init.pak` publisher / warning logos (PROT 895), and the load-screen UI sheet +
+  slot-grid portraits + empty-slot frame. These are enumerated in
+  `tim_labels::RAW_PINS`.
+- **A structural family pin.** The [NPC palette rows](npc-palette.md) are not one
+  texture but a whole family sharing a fixed CLUT load signature — a 4bpp image
+  whose CLUT block loads at framebuffer `(0, 479)` and is `256 × 1` (16 stacked
+  16-colour palettes). They are matched by that signature, so the rule covers
+  every scene's NPC CLUTs in both tiers. This is distinct from the many other
+  textures that merely park a CLUT in the bottom rows of VRAM (those use other
+  `fb_x` / `fb_y`); a byte-exact pin always wins over the family rule.
+
+Labels are NA-retail addresses; on another build the offset pins simply don't
+match and those ids stay unlabeled — the matcher never guesses. The role for
+each pinned id is asserted in the disc-gated catalog regressions.
+
 ## See also
 
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.

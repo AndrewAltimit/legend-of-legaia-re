@@ -66,6 +66,12 @@ pub struct CatalogTim {
     /// the regression detect any drift in the decoded region without
     /// committing Sony pixel data.
     pub fnv1a: u64,
+    /// Our own semantic role annotation when this id matches a known pin
+    /// (boot/title/menu texture or the NPC palette band), else `None`. See
+    /// [`crate::tim_labels`]. Not folded into [`rollup`] - the digest stays a
+    /// pure structural fingerprint - but it is serialized in [`to_tsv`].
+    #[serde(serialize_with = "crate::tim_labels::serialize_role")]
+    pub label: Option<crate::tim_labels::TimRole>,
 }
 
 /// FNV-1a-64 of a byte slice.
@@ -155,6 +161,7 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Cat
                 legaia_tim::PixelMode::Bpp24 => 24,
                 legaia_tim::PixelMode::Mixed => 0,
             };
+            let label = crate::tim_labels::classify_raw(entry_index, offset_in_entry, &tim);
             out.push(CatalogTim {
                 id,
                 abs_offset: abs,
@@ -167,6 +174,7 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Cat
                 clut_count: tim.palette_count(),
                 byte_len,
                 fnv1a: fnv1a64(&prot[off..off + byte_len]),
+                label,
             });
             id += 1;
         }
@@ -187,17 +195,18 @@ pub fn build_from_path(path: &std::path::Path) -> anyhow::Result<Vec<CatalogTim>
 /// followed by one tab-separated row per TIM. This is the exact text of the
 /// committed reference catalog, so the disc-gated regression can rebuild from
 /// the disc and compare byte-for-byte. `entry_index` is `-1` for gap-owned
-/// TIMs; `fnv1a` is lowercase 16-hex-digit.
+/// TIMs; `fnv1a` is lowercase 16-hex-digit; `label` is our semantic role
+/// annotation (empty when the id matches no known pin).
 pub fn to_tsv(catalog: &[CatalogTim]) -> String {
     let mut s = String::new();
-    s.push_str("id\tabs_offset\tsector\tentry_index\toffset_in_entry\twidth\theight\tbpp\tclut_count\tbyte_len\tfnv1a\n");
+    s.push_str("id\tabs_offset\tsector\tentry_index\toffset_in_entry\twidth\theight\tbpp\tclut_count\tbyte_len\tfnv1a\tlabel\n");
     for t in catalog {
         let entry = match t.entry_index {
             Some(i) => i as i64,
             None => -1,
         };
         s.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:016x}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:016x}\t{}\n",
             t.id,
             t.abs_offset,
             t.sector,
@@ -209,6 +218,7 @@ pub fn to_tsv(catalog: &[CatalogTim]) -> String {
             t.clut_count,
             t.byte_len,
             t.fnv1a,
+            t.label.map(|r| r.as_str()).unwrap_or(""),
         ));
     }
     s

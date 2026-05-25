@@ -60,6 +60,12 @@ pub struct DeepCatalogTim {
     /// bytes - lets the regression detect drift without committing Sony pixel
     /// data (and without committing decompressed Sony bytes).
     pub fnv1a: u64,
+    /// Our own semantic role annotation when this id matches a known pin, else
+    /// `None`. The boot/title/menu textures are all stored raw, so only the
+    /// NPC palette band reaches the deep tier. See [`crate::tim_labels`]. Not
+    /// folded into [`rollup`]; serialized in [`to_tsv`].
+    #[serde(serialize_with = "crate::tim_labels::serialize_role")]
+    pub label: Option<crate::tim_labels::TimRole>,
 }
 
 /// FNV-1a-64 of a byte slice.
@@ -116,6 +122,7 @@ fn scan_section(
                 clut_count: tim.palette_count(),
                 byte_len,
                 fnv1a: fnv1a64(&section[off..off + byte_len]),
+                label: crate::tim_labels::classify_deep(&tim),
             });
             *id += 1;
         }
@@ -184,11 +191,11 @@ pub fn build_from_path(path: &std::path::Path) -> anyhow::Result<Vec<DeepCatalog
 pub fn to_tsv(catalog: &[DeepCatalogTim]) -> String {
     let mut s = String::new();
     s.push_str(
-        "id\tentry_index\tlzs_section\toffset_in_section\twidth\theight\tbpp\tclut_count\tbyte_len\tfnv1a\n",
+        "id\tentry_index\tlzs_section\toffset_in_section\twidth\theight\tbpp\tclut_count\tbyte_len\tfnv1a\tlabel\n",
     );
     for t in catalog {
         s.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:016x}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:016x}\t{}\n",
             t.id,
             t.entry_index,
             t.lzs_section,
@@ -199,6 +206,7 @@ pub fn to_tsv(catalog: &[DeepCatalogTim]) -> String {
             t.clut_count,
             t.byte_len,
             t.fnv1a,
+            t.label.map(|r| r.as_str()).unwrap_or(""),
         ));
     }
     s
@@ -306,9 +314,14 @@ mod tests {
             clut_count: 2,
             byte_len: 1234,
             fnv1a: 0xdead_beef_0000_0001,
+            label: Some(crate::tim_labels::TimRole::NpcPaletteRow),
         }];
         let tsv = to_tsv(&cat);
-        assert!(tsv.starts_with("id\tentry_index\tlzs_section\toffset_in_section\t"));
-        assert!(tsv.contains("0\t12\t1\t99\t64\t32\t4\t2\t1234\tdeadbeef00000001\n"));
+        let header = tsv.lines().next().unwrap();
+        assert!(header.starts_with("id\tentry_index\tlzs_section\toffset_in_section\t"));
+        assert!(header.ends_with("\tlabel"));
+        assert!(
+            tsv.contains("0\t12\t1\t99\t64\t32\t4\t2\t1234\tdeadbeef00000001\tNPC palette row\n")
+        );
     }
 }
