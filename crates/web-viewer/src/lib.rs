@@ -2109,7 +2109,7 @@ impl LegaiaViewer {
             };
             let has_tmd = e.tmd_source.is_some();
             s.push_str(&format!(
-                "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"w\":{},\"h\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{}}}",
+                "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"w\":{},\"h\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{},\"tmd_pack_count\":{}}}",
                 i,
                 e.meta.index,
                 e.class.name(),
@@ -2118,6 +2118,7 @@ impl LegaiaViewer {
                 bpp,
                 e.tim_count,
                 has_tmd,
+                e.tmd_pack_count,
             ));
         }
         s.push(']');
