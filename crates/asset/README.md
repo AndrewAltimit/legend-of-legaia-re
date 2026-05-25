@@ -63,6 +63,8 @@ asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
 asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
 asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
 asset tim-catalog      <PROT.DAT>         # flat strict TIM catalog (--out f.tsv|f.json, --rollup)
+asset tim-deep-catalog <PROT.DAT>         # TIMs inside LZS-compressed sections (--out, --rollup)
+asset tim-render-distinct <PROT.DAT> --out <dir>  # decode each distinct TIM to PNG (local only; drives tim_labels)
 asset tmd-scan         <input>            # locate embedded TMDs
 asset stage / stage-scan
 asset field-pack / field-pack-scan

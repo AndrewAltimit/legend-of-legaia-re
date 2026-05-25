@@ -142,6 +142,12 @@ ships in the repo (`crates/asset/src/data/tim_categories.tsv`), like the
 ground-truth gamedata tables. A `table_is_valid` check (unique fingerprints,
 controlled vocabulary) plus the disc-gated catalog regressions guard it.
 
+The coarse categories were assigned by reviewing the decoded thumbnails:
+`asset tim-render-distinct <PROT.DAT> --out <dir>` decodes each distinct
+texture (deduped by fingerprint) to a local PNG, and `scripts/montage_tims.py`
+lays them into indexed contact sheets for review. Those PNGs are decoded pixel
+data and stay local — only the resulting fingerprint→label table is committed.
+
 > **Note:** an earlier revision tried to derive an "NPC palette" label
 > *structurally* from the CLUT load position `fb=(0, 479)`. That is unsound:
 > nearly every 256×256 4bpp scene/field texture page parks its CLUT in that

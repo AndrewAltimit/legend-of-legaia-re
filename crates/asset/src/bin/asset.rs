@@ -177,6 +177,21 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         rollup: bool,
     },
+    /// Decode each DISTINCT cataloged TIM (raw + deep, deduped by content
+    /// fingerprint) to a PNG plus a manifest, for local inspection /
+    /// categorization. Output is decoded pixel data - keep it local, never
+    /// commit it. Used to drive the `tim_labels` visual-categorization pass.
+    TimRenderDistinct {
+        /// PROT.DAT image (e.g. `extracted/PROT.DAT`).
+        prot: PathBuf,
+        /// Output directory; receives `<fnv>.png` per distinct texture and a
+        /// `manifest.tsv`.
+        #[arg(long)]
+        out: PathBuf,
+        /// Which tier(s) to render.
+        #[arg(long, value_enum, default_value_t = RenderTier::Both)]
+        tier: RenderTier,
+    },
     /// Scan PROT entries (raw + LZS-decoded) for embedded Legaia TMDs.
     /// Reports per-entry hit counts and total verts/prims; with `--out`
     /// extracts each found TMD to `<out>/<entry>/raw_off<H>.tmd` (or
@@ -576,6 +591,7 @@ fn main() -> Result<()> {
         Cmd::TimDeepCatalog { prot, out, rollup } => {
             tim_deep_catalog_cmd(&prot, out.as_deref(), rollup)
         }
+        Cmd::TimRenderDistinct { prot, out, tier } => tim_render_distinct_cmd(&prot, &out, tier),
         Cmd::TmdScan {
             dir,
             cdname,
@@ -2385,6 +2401,166 @@ fn tim_deep_catalog_cmd(
         let r = tim_deep_catalog::rollup(&catalog);
         println!("rollup: count={} digest=0x{:016x}", r.count, r.digest);
     }
+    Ok(())
+}
+
+/// Which catalog tier(s) `tim-render-distinct` decodes.
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum RenderTier {
+    /// Flat (raw-bytes) catalog only.
+    Raw,
+    /// LZS-embedded (deep) catalog only.
+    Deep,
+    /// Both tiers, deduped by fingerprint (raw takes the representative).
+    Both,
+}
+
+/// Encode an RGBA8 buffer to a PNG file via the `png` crate.
+fn write_png(path: &Path, rgba: &[u8], w: u32, h: u32) -> Result<()> {
+    let file = std::fs::File::create(path)?;
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(rgba)?;
+    Ok(())
+}
+
+/// `asset tim-render-distinct` - decode each DISTINCT cataloged TIM (deduped by
+/// content fingerprint) to `<out>/<fnv>.png` and write `<out>/manifest.tsv`.
+///
+/// The output is decoded Sony pixel data - it is meant for local inspection
+/// (driving the `tim_labels` visual categorization) and must never be
+/// committed. Only the resulting fingerprint -> label table is committed.
+fn tim_render_distinct_cmd(prot: &Path, out: &Path, tier: RenderTier) -> Result<()> {
+    use std::collections::HashMap;
+
+    std::fs::create_dir_all(out)?;
+    let prot_bytes = std::fs::read(prot)?;
+
+    let want_raw = matches!(tier, RenderTier::Raw | RenderTier::Both);
+    let want_deep = matches!(tier, RenderTier::Deep | RenderTier::Both);
+
+    // Per fingerprint: (tier, width, height, bpp, clut_count, count seen).
+    struct Rec {
+        tier: &'static str,
+        w: u32,
+        h: u32,
+        bpp: u32,
+        clut: usize,
+        count: u32,
+    }
+    let mut recs: HashMap<u64, Rec> = HashMap::new();
+
+    // Decode one TIM (palette 0) from a byte slice and, if its fingerprint is
+    // new, write the PNG. Always bumps the per-fingerprint count.
+    let mut emit = |fnv: u64,
+                    bytes: &[u8],
+                    tier: &'static str,
+                    w: u32,
+                    h: u32,
+                    bpp: u32,
+                    clut: usize|
+     -> Result<()> {
+        if let Some(r) = recs.get_mut(&fnv) {
+            r.count += 1;
+            return Ok(());
+        }
+        recs.insert(
+            fnv,
+            Rec {
+                tier,
+                w,
+                h,
+                bpp,
+                clut,
+                count: 1,
+            },
+        );
+        if let Ok(tim) = legaia_tim::parse(bytes)
+            && let Ok(rgba) = legaia_tim::decode_rgba8(&tim, 0)
+        {
+            let pw = tim.pixel_width() as u32;
+            let ph = tim.image.h as u32;
+            if pw > 0 && ph > 0 {
+                write_png(&out.join(format!("{fnv:016x}.png")), &rgba, pw, ph)?;
+            }
+        }
+        Ok(())
+    };
+
+    if want_raw {
+        let archive = legaia_prot::archive::Archive::open(prot)?;
+        let catalog = tim_catalog::build(&prot_bytes, &archive.entries);
+        for t in &catalog {
+            let off = t.abs_offset as usize;
+            emit(
+                t.fnv1a,
+                &prot_bytes[off..off + t.byte_len],
+                "raw",
+                t.width,
+                t.height,
+                t.bpp,
+                t.clut_count,
+            )?;
+        }
+    }
+
+    if want_deep {
+        // Decompress each entry once; decode the deep TIMs it hosts.
+        let mut archive = legaia_prot::archive::Archive::open(prot)?;
+        let deep = tim_deep_catalog::build(&archive, &prot_bytes);
+        let entries = archive.entries.clone();
+        let mut buf = Vec::new();
+        // Group deep hits by entry to decompress once per entry.
+        let mut by_entry: HashMap<u32, Vec<&tim_deep_catalog::DeepCatalogTim>> = HashMap::new();
+        for t in &deep {
+            by_entry.entry(t.entry_index).or_default().push(t);
+        }
+        for entry in &entries {
+            let Some(hits) = by_entry.get(&entry.index) else {
+                continue;
+            };
+            archive.read_entry(entry, &mut buf)?;
+            let Ok(sections) = legaia_lzs::decompress_container(&buf) else {
+                continue;
+            };
+            for t in hits {
+                let Some(section) = sections.get(t.lzs_section as usize) else {
+                    continue;
+                };
+                let o = t.offset_in_section as usize;
+                if o + t.byte_len > section.len() {
+                    continue;
+                }
+                emit(
+                    t.fnv1a,
+                    &section[o..o + t.byte_len],
+                    "deep",
+                    t.width,
+                    t.height,
+                    t.bpp,
+                    t.clut_count,
+                )?;
+            }
+        }
+    }
+
+    // Manifest, sorted by fingerprint for a stable file.
+    let mut rows: Vec<(u64, &Rec)> = recs.iter().map(|(&f, r)| (f, r)).collect();
+    rows.sort_by_key(|&(f, _)| f);
+    let mut tsv = String::from("fnv1a\ttier\twidth\theight\tbpp\tclut_count\tcount\n");
+    for (fnv, r) in &rows {
+        tsv.push_str(&format!(
+            "{:016x}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            fnv, r.tier, r.w, r.h, r.bpp, r.clut, r.count
+        ));
+    }
+    std::fs::write(out.join("manifest.tsv"), tsv)?;
+    println!(
+        "rendered {} distinct textures -> {} (NOT for commit: decoded pixel data)",
+        rows.len(),
+        out.display()
+    );
     Ok(())
 }
 
