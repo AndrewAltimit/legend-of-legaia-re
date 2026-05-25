@@ -28,7 +28,7 @@
 //! error. That double gate rejects the coincidental TIM-magic-in-noise hits a
 //! magic-only scan of decompressed garbage would otherwise turn up.
 
-use legaia_prot::archive::{Archive, Entry};
+use legaia_prot::archive::Archive;
 use serde::Serialize;
 
 /// One TIM recovered from inside an LZS-compressed PROT section. All fields
@@ -123,36 +123,58 @@ fn scan_section(
     }
 }
 
-/// Build the deep catalog from an open [`Archive`].
+/// Build the deep catalog from a flat PROT.DAT image and its TOC entry spans.
 ///
-/// Walks every TOC entry in index order, LZS-decompresses it with
+/// Walks every entry in index order, LZS-decompresses its bytes with
 /// [`legaia_lzs::decompress_container`] (the same decode path
 /// [`crate::tim_scan::scan_entry`] uses), and strict-parses every TIM in each
 /// decoded section. Entries that are not LZS containers (the lenient header
-/// heuristic fails to find a section table) simply contribute no sections and
-/// are skipped - the flat catalog already covers their raw TIMs.
-pub fn build(archive: &mut Archive) -> anyhow::Result<Vec<DeepCatalogTim>> {
-    // Snapshot the entries so we can borrow the archive mutably for reads.
-    let entries: Vec<Entry> = archive.entries.clone();
+/// heuristic fails to find a section table) contribute no sections and are
+/// skipped - the flat catalog already covers their raw TIMs.
+///
+/// Takes raw `(byte_offset, size_bytes, index)` spans (the same shape
+/// [`crate::tim_catalog::build_from_spans`] takes) so the in-browser viewer
+/// can build the deep catalog from its own lightweight TOC metadata over the
+/// in-memory PROT.DAT, without an [`Archive`].
+pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<DeepCatalogTim> {
+    // Iterate in index-ascending order so the assigned ids (and thus the
+    // rollup digest) are stable regardless of how the caller ordered spans.
+    let mut spans: Vec<(u64, u64, u32)> = entry_spans.to_vec();
+    spans.sort_unstable_by_key(|&(_, _, idx)| idx);
+
     let mut out = Vec::new();
     let mut id = 0u32;
-    let mut buf = Vec::new();
-    for entry in &entries {
-        archive.read_entry(entry, &mut buf)?;
-        let Ok(sections) = legaia_lzs::decompress_container(&buf) else {
+    for &(off, size, index) in &spans {
+        let start = off as usize;
+        let end = start.saturating_add(size as usize);
+        if end > prot.len() {
+            continue; // span runs off the image (already filtered at TOC parse)
+        }
+        let Ok(sections) = legaia_lzs::decompress_container(&prot[start..end]) else {
             continue;
         };
         for (sec_idx, section) in sections.iter().enumerate() {
-            scan_section(section, entry.index, sec_idx as u32, &mut id, &mut out);
+            scan_section(section, index, sec_idx as u32, &mut id, &mut out);
         }
     }
-    Ok(out)
+    out
+}
+
+/// Build the deep catalog from an open [`Archive`].
+pub fn build(archive: &Archive, prot: &[u8]) -> Vec<DeepCatalogTim> {
+    let spans: Vec<(u64, u64, u32)> = archive
+        .entries
+        .iter()
+        .map(|e| (e.byte_offset, e.size_bytes, e.index))
+        .collect();
+    build_from_spans(prot, &spans)
 }
 
 /// Convenience: open a PROT.DAT file and build its deep catalog.
 pub fn build_from_path(path: &std::path::Path) -> anyhow::Result<Vec<DeepCatalogTim>> {
-    let mut archive = Archive::open(path)?;
-    build(&mut archive)
+    let archive = Archive::open(path)?;
+    let prot = std::fs::read(path)?;
+    Ok(build(&archive, &prot))
 }
 
 /// Canonical, diff-friendly serialization: a one-line header followed by one

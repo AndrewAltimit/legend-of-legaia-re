@@ -736,6 +736,42 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Number of CLUT palettes available for deep-catalog TIM `id`.
+     * @param {number} id
+     * @returns {number}
+     */
+    deep_catalog_clut_count(id) {
+        const ret = wasm.legaiaviewer_deep_catalog_clut_count(this.__wbg_ptr, id);
+        return ret >>> 0;
+    }
+    /**
+     * JSON describing deep-catalog TIM `id` (owning entry, LZS section,
+     * offset within the decoded section, dimensions, CLUT count, byte
+     * length, fingerprint) for the info panel.
+     * @param {number} id
+     * @returns {string}
+     */
+    deep_catalog_info_json(id) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_deep_catalog_info_json(this.__wbg_ptr, id);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Number of cataloged compressed TIMs in the loaded PROT.DAT.
+     * @returns {number}
+     */
+    deep_catalog_len() {
+        const ret = wasm.legaiaviewer_deep_catalog_len(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @returns {number}
      */
     entry_count() {
@@ -1247,6 +1283,21 @@ export class LegaiaViewer {
         const ptr0 = passStringToWasm0(canvas_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.legaiaviewer_render_catalog_tim(this.__wbg_ptr, id, clut, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Render deep-catalog TIM `id` with CLUT `clut` into the 2D canvas named
+     * `canvas_id`.
+     * @param {number} id
+     * @param {number} clut
+     * @param {string} canvas_id
+     */
+    render_deep_catalog_tim(id, clut, canvas_id) {
+        const ptr0 = passStringToWasm0(canvas_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_render_deep_catalog_tim(this.__wbg_ptr, id, clut, ptr0, len0);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }

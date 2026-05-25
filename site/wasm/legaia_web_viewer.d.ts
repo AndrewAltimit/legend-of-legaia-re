@@ -318,6 +318,20 @@ export class LegaiaViewer {
      * to a R16UI texture.
      */
     current_vram_bytes(): Uint8Array;
+    /**
+     * Number of CLUT palettes available for deep-catalog TIM `id`.
+     */
+    deep_catalog_clut_count(id: number): number;
+    /**
+     * JSON describing deep-catalog TIM `id` (owning entry, LZS section,
+     * offset within the decoded section, dimensions, CLUT count, byte
+     * length, fingerprint) for the info panel.
+     */
+    deep_catalog_info_json(id: number): string;
+    /**
+     * Number of cataloged compressed TIMs in the loaded PROT.DAT.
+     */
+    deep_catalog_len(): number;
     entry_count(): number;
     /**
      * Returns a JSON array describing every viewable entry: PROT index, class,
@@ -530,6 +544,11 @@ export class LegaiaViewer {
      * takes the target id explicitly rather than the viewer's bound canvas.
      */
     render_catalog_tim(id: number, clut: number, canvas_id: string): void;
+    /**
+     * Render deep-catalog TIM `id` with CLUT `clut` into the 2D canvas named
+     * `canvas_id`.
+     */
+    render_deep_catalog_tim(id: number, clut: number, canvas_id: string): void;
     /**
      * Render the current entry's TMD at the given rotation into a flat
      * `Vec<f32>` of triangle data (7 floats per triangle, painter's-sorted
@@ -775,6 +794,9 @@ export interface InitOutput {
     readonly legaiaviewer_current_tim_index: (a: number) => number;
     readonly legaiaviewer_current_tim_info_json: (a: number) => [number, number];
     readonly legaiaviewer_current_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_deep_catalog_clut_count: (a: number, b: number) => number;
+    readonly legaiaviewer_deep_catalog_info_json: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_deep_catalog_len: (a: number) => number;
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
     readonly legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
@@ -815,6 +837,7 @@ export interface InitOutput {
     readonly legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaviewer_save_state_prim_replay: (a: number, b: number, c: number) => [number, number, number, number];

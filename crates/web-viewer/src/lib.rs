@@ -16,6 +16,7 @@ pub mod tmd3d;
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
 use legaia_asset::tim_catalog;
+use legaia_asset::tim_deep_catalog;
 use legaia_asset::tim_scan;
 use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
@@ -186,6 +187,16 @@ pub struct LegaiaViewer {
     /// variants, regardless of which PROT entry (or the unindexed gap) hosts
     /// it. Empty on the single-TIM load path.
     tim_catalog: Vec<tim_catalog::CatalogTim>,
+    /// Deep catalog: standard PSX TIMs recovered from inside LZS-compressed
+    /// PROT sections (the compressed character / scene textures the flat
+    /// catalog can't see). Built at load time. Drives the "compressed
+    /// textures" grid, a tier separate from the raw catalog above.
+    tim_deep_catalog: Vec<tim_deep_catalog::DeepCatalogTim>,
+    /// One-entry decompression cache for rendering deep-catalog thumbnails.
+    /// The deep catalog is grouped by entry, so caching the last entry's
+    /// decompressed sections lets a run of same-entry thumbnails reuse one
+    /// decode instead of re-decompressing per thumbnail.
+    deep_section_cache: std::cell::RefCell<Option<(u32, Vec<Vec<u8>>)>>,
 }
 
 #[wasm_bindgen]
@@ -211,6 +222,8 @@ impl LegaiaViewer {
             item_names: None,
             spell_names: None,
             tim_catalog: Vec::new(),
+            tim_deep_catalog: Vec::new(),
+            deep_section_cache: std::cell::RefCell::new(None),
         })
     }
 
@@ -226,6 +239,8 @@ impl LegaiaViewer {
         self.item_names = None;
         self.spell_names = None;
         self.tim_catalog = Vec::new();
+        self.tim_deep_catalog = Vec::new();
+        *self.deep_section_cache.borrow_mut() = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -316,6 +331,14 @@ impl LegaiaViewer {
         console_log(&format!(
             "Cataloged {} TIMs in PROT.DAT",
             self.tim_catalog.len()
+        ));
+
+        // Deep tier: LZS-decompress every entry and catalog the compressed
+        // TIMs the flat (raw-bytes) catalog can't see.
+        self.tim_deep_catalog = tim_deep_catalog::build_from_spans(&prot_bytes, &spans);
+        console_log(&format!(
+            "Cataloged {} TIMs inside LZS-compressed sections",
+            self.tim_deep_catalog.len()
         ));
 
         console_log(&format!(
@@ -657,6 +680,131 @@ impl LegaiaViewer {
                 "catalog[{id}]: empty TIM ({w}x{h})"
             )));
         }
+        canvas.set_width(w);
+        canvas.set_height(h);
+        let img = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&rgba), w, h)?;
+        ctx.put_image_data(&img, 0.0, 0.0)?;
+        Ok(())
+    }
+
+    // --- Deep TIM Catalog (compressed textures) --------------------------
+    //
+    // The deep catalog is the LZS-embedded tier: standard TIMs recovered from
+    // inside compressed PROT sections, which the flat (raw-bytes) catalog
+    // above can't reach. Keyed by (entry, lzs-section, offset-in-section).
+    // These accessors mirror the flat-catalog ones so the page can drive a
+    // second, clearly-labeled grid from the same UI code.
+
+    /// Number of cataloged compressed TIMs in the loaded PROT.DAT.
+    pub fn deep_catalog_len(&self) -> u32 {
+        self.tim_deep_catalog.len() as u32
+    }
+
+    /// Number of CLUT palettes available for deep-catalog TIM `id`.
+    pub fn deep_catalog_clut_count(&self, id: u32) -> u32 {
+        self.tim_deep_catalog
+            .get(id as usize)
+            .map(|t| t.clut_count as u32)
+            .unwrap_or(0)
+    }
+
+    /// JSON describing deep-catalog TIM `id` (owning entry, LZS section,
+    /// offset within the decoded section, dimensions, CLUT count, byte
+    /// length, fingerprint) for the info panel.
+    pub fn deep_catalog_info_json(&self, id: u32) -> String {
+        match self.tim_deep_catalog.get(id as usize) {
+            Some(t) => format!(
+                "{{\"id\":{},\"entry\":{},\"lzs_section\":{},\"offset_in_section\":{},\
+                 \"width\":{},\"height\":{},\"bpp\":{},\"clut_count\":{},\
+                 \"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                t.id,
+                t.entry_index,
+                t.lzs_section,
+                t.offset_in_section,
+                t.width,
+                t.height,
+                t.bpp,
+                t.clut_count,
+                t.byte_len,
+                t.fnv1a,
+            ),
+            None => "{}".to_string(),
+        }
+    }
+
+    /// Decompress deep-catalog TIM `id`'s owning entry (via a one-entry cache)
+    /// and return the decoded section bytes it lives in, plus the offset.
+    fn deep_section_bytes(&self, id: u32) -> Result<(Vec<u8>, usize), JsValue> {
+        let t = self
+            .tim_deep_catalog
+            .get(id as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("deep catalog id {id} out of range")))?;
+        // Reuse the cached sections if this is the same entry as last time.
+        {
+            let cache = self.deep_section_cache.borrow();
+            if let Some((cached_entry, sections)) = cache.as_ref()
+                && *cached_entry == t.entry_index
+            {
+                let section = sections.get(t.lzs_section as usize).ok_or_else(|| {
+                    JsValue::from_str(&format!("deep[{id}]: section {} gone", t.lzs_section))
+                })?;
+                return Ok((section.clone(), t.offset_in_section as usize));
+            }
+        }
+        // Cache miss: find the entry span, slice, decompress, and cache.
+        let entries = parse_prot_toc(&self.disc)
+            .ok_or_else(|| JsValue::from_str("deep: PROT TOC parse failed"))?;
+        let entry = entries
+            .iter()
+            .find(|e| e.index == t.entry_index)
+            .ok_or_else(|| JsValue::from_str(&format!("deep[{id}]: entry gone")))?;
+        let start = entry.byte_offset as usize;
+        let end = start.saturating_add(entry.size_bytes as usize);
+        if end > self.disc.len() {
+            return Err(JsValue::from_str(&format!("deep[{id}]: entry span OOB")));
+        }
+        let sections = legaia_lzs::decompress_container(&self.disc[start..end])
+            .map_err(|e| JsValue::from_str(&format!("deep[{id}]: LZS decode: {e}")))?;
+        let section = sections
+            .get(t.lzs_section as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("deep[{id}]: section gone")))?
+            .clone();
+        let off = t.offset_in_section as usize;
+        *self.deep_section_cache.borrow_mut() = Some((t.entry_index, sections));
+        Ok((section, off))
+    }
+
+    /// Render deep-catalog TIM `id` with CLUT `clut` into the 2D canvas named
+    /// `canvas_id`.
+    pub fn render_deep_catalog_tim(
+        &self,
+        id: u32,
+        clut: u32,
+        canvas_id: &str,
+    ) -> Result<(), JsValue> {
+        let (section, off) = self.deep_section_bytes(id)?;
+        let tim = legaia_tim::parse(&section[off..])
+            .map_err(|e| JsValue::from_str(&format!("deep[{id}] TIM parse: {e}")))?;
+        let nclut = tim.palette_count();
+        let clut_idx = if nclut > 0 {
+            (clut as usize).min(nclut - 1)
+        } else {
+            0
+        };
+        let rgba = legaia_tim::decode_rgba8(&tim, clut_idx)
+            .map_err(|e| JsValue::from_str(&format!("deep[{id}] decode: {e}")))?;
+        let w = tim.pixel_width() as u32;
+        let h = tim.image.h as u32;
+        if w == 0 || h == 0 {
+            return Err(JsValue::from_str(&format!(
+                "deep[{id}]: empty TIM ({w}x{h})"
+            )));
+        }
+        let canvas = resolve_canvas(canvas_id)?;
+        let ctx = canvas
+            .get_context("2d")?
+            .ok_or_else(|| JsValue::from_str("deep catalog canvas has no 2D context"))?
+            .dyn_into::<CanvasRenderingContext2d>()?;
         canvas.set_width(w);
         canvas.set_height(h);
         let img = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&rgba), w, h)?;
