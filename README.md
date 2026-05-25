@@ -13,7 +13,7 @@ The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-im
 
 ## Demo
 
-https://github.com/AndrewAltimit/legend-of-legaia-re/raw/refs/heads/main/site/assets/legend-of-legaia-re-demo.mp4
+https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
 The clean-room engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
 
