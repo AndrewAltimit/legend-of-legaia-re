@@ -1315,6 +1315,7 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-vab",
+ "legaia-xa",
  "log",
  "png",
  "serde",

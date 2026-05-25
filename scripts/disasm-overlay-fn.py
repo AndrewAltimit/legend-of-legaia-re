@@ -36,77 +36,10 @@ except ImportError:
     sys.exit(1)
 
 
-# PSX GTE (COP2) instructions; capstone returns "cop2" with the raw immediate
-# in its operand string and doesn't decode the GTE function field. The cop2
-# function field lives in bits 0..24 of the 32-bit word (the lower 25 bits)
-# for the "GTE function" cofun encoding; the mnemonic is selected by the
-# unique 6-bit opcode embedded in there. We pre-build the table.
-#
-# Encoding refresher (PSX GTE Cofun):
-#   COP2 cofun = 0b0100101_<25-bit cofun field>
-#   bits 25:0 are the cofun payload. The 6-bit cofun "op" sits in bits 0..5
-#   of the cofun field, plus some real ops use higher bits.
-#
-# We only annotate the most common GTE ops seen in TMD render loops; the
-# rest fall through as "cop2 <raw>".
-GTE_OPS = {
-    0x0180001: "rtps",   # RTPS - perspective transformation, single
-    0x0280030: "rtpt",   # RTPT - perspective transformation, triple
-    0x0a00428: "sqr",    # SQR
-    0x170000C: "op",     # OP - cross product
-    0x158002D: "avsz3",
-    0x168002E: "avsz4",
-    0x1400006: "nclip",
-    0x190003D: "gpf",
-    0x1A0003E: "gpl",
-    0x1280030: "rtpt",   # RTPT (variant with different shift/flag)
-    0x108041E: "ncct",   # NCCT
-    0x10C0008: "ncct",
-    0x10C002D: "avsz3",
-    # NCS / NCT / NCDS / NCDT / NCCS / NCCT / NCLIP / DPCS / DPCT / DPC
-    # All have low-byte ops 0x05..0x14 / 0x1F..0x2A. Capture them by mask
-    # below rather than by full word.
-}
-
-# Low-byte (bits 0..5) shortcut. Used when the full-word lookup misses.
-GTE_FUNC = {
-    0x01: "rtps",
-    0x06: "nclip",
-    0x0C: "op",
-    0x10: "dpcs",
-    0x11: "intpl",
-    0x12: "mvmva",
-    0x13: "ncds",
-    0x14: "cdp",
-    0x16: "ncdt",
-    0x1B: "nccs",
-    0x1C: "cc",
-    0x1E: "ncs",
-    0x20: "nct",
-    0x28: "sqr",
-    0x29: "dcpl",
-    0x2A: "dpct",
-    0x2D: "avsz3",
-    0x2E: "avsz4",
-    0x30: "rtpt",
-    0x3D: "gpf",
-    0x3E: "gpl",
-    0x3F: "ncct",
-}
-
-
-def annotate_cop2(raw: int) -> str:
-    """Return a GTE op annotation for a raw COP2 cofun word, or "".
-
-    `raw` is the full 32-bit instruction word. The cofun field is bits 0..24.
-    """
-    if (raw >> 26) != 0x12:
-        return ""
-    cofun = raw & 0x01FF_FFFF
-    if cofun in GTE_OPS:
-        return GTE_OPS[cofun]
-    func = cofun & 0x3F
-    return GTE_FUNC.get(func, "")
+# PSX GTE (COP2) instruction annotation. Capstone returns a bare "cop2" with
+# the raw immediate and doesn't name the GTE function, so we annotate from the
+# shared table in scripts/mips_gte.py.
+from mips_gte import annotate_cop2  # noqa: E402,F401
 
 
 def virt_to_file(addr: int, base: int, header: int) -> int:

@@ -53,10 +53,8 @@ from pathlib import Path
 # little-endian. The bytes we receive from the binary are already in
 # memory order, so we use `struct.unpack("<I", ...)` to recover the word.
 
-# Cmd bytes worth flagging.
-POLY_FT4 = {0x2C, 0x2D, 0x2E, 0x2F}
-POLY_GT4 = {0x3C, 0x3D, 0x3E, 0x3F}
-TEXTURED_QUAD_CODES = POLY_FT4 | POLY_GT4
+# Cmd bytes worth flagging (shared sets from scripts/gpu_packets.py).
+from gpu_packets import POLY_FT4, POLY_GT4, TEXTURED_QUAD_CODES  # noqa: E402,F401
 
 CODE_NAME = {
     0x2C: "POLY_FT4   flat       opaque",

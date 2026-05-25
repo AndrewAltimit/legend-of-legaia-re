@@ -94,6 +94,83 @@ pub fn parse_video_sector(sector_data: &[u8]) -> Result<Option<(StrSectorHeader,
     Ok(Some((hdr, payload)))
 }
 
+/// CD double-speed ("2x") sector rate, in sectors per second. PSX FMV
+/// streams are authored for 2x playback - the drive delivers one sector
+/// every 1/150 s - so the on-disc sector spacing between frames *is* the
+/// playback clock. jPSXdec's frame-rate detection uses the same constant.
+pub const CD_SECTORS_PER_SEC_2X: f64 = 150.0;
+
+/// Fallback frame rate when a stream is too short to measure or measures
+/// something implausible. 15 fps is the canonical PSX FMV rate and what
+/// every Legaia `MV*.STR` uses (10 sectors/frame at 2x).
+pub const DEFAULT_FMV_FPS: f64 = 15.0;
+
+/// Frame-rate analysis of a raw STR sector stream.
+///
+/// PSX STR files don't store a frame-rate field; the rate is implied by how
+/// many CD sectors elapse per frame at the 2x delivery rate. In the raw
+/// 2048-byte-per-sector files this codebase works with, the on-disc sector
+/// ordering is preserved 1:1 (audio sectors included as skipped chunks), so
+/// the mean sectors-per-frame recovers the authored rate directly.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrTiming {
+    /// Total 2048-byte sectors in the stream (video + skipped audio/other).
+    pub sector_count: usize,
+    /// Number of complete video frames assembled.
+    pub frame_count: usize,
+    /// Mean disc sectors spanned by one frame (audio interleave included).
+    pub sectors_per_frame: f64,
+    /// Playback frame rate in Hz = [`CD_SECTORS_PER_SEC_2X`] / `sectors_per_frame`.
+    /// `0.0` when no frames were found.
+    pub fps: f64,
+}
+
+impl StrTiming {
+    /// Wall-clock duration each frame should be held on screen. Falls back
+    /// to [`DEFAULT_FMV_FPS`] when the measured rate is missing or implausible
+    /// (`< 0.5` or non-finite), so a degenerate stream still plays sanely.
+    pub fn frame_period(&self) -> std::time::Duration {
+        let fps = if self.fps.is_finite() && self.fps > 0.5 {
+            self.fps
+        } else {
+            DEFAULT_FMV_FPS
+        };
+        std::time::Duration::from_secs_f64(1.0 / fps)
+    }
+}
+
+/// Recover the playback frame rate of a raw STR file (concatenated 2048-byte
+/// sector data areas) by measuring its mean sectors-per-frame against the 2x
+/// CD rate. Verified against Legaia's six `MV*.STR` - all exactly 10
+/// sectors/frame, i.e. 15 fps.
+pub fn analyze_str_timing(data: &[u8]) -> StrTiming {
+    let n_sectors = data.len() / SECTOR_DATA_BYTES;
+    let mut asm = StrFrameAssembler::new();
+    let mut frame_count = 0usize;
+    for i in 0..n_sectors {
+        let sector = &data[i * SECTOR_DATA_BYTES..(i + 1) * SECTOR_DATA_BYTES];
+        if matches!(asm.push_sector(sector), Ok(Some(_))) {
+            frame_count += 1;
+        }
+    }
+    let sectors_per_frame = if frame_count > 0 {
+        n_sectors as f64 / frame_count as f64
+    } else {
+        0.0
+    };
+    let fps = if sectors_per_frame > 0.0 {
+        CD_SECTORS_PER_SEC_2X / sectors_per_frame
+    } else {
+        0.0
+    };
+    StrTiming {
+        sector_count: n_sectors,
+        frame_count,
+        sectors_per_frame,
+        fps,
+    }
+}
+
 /// Collects STR sectors and assembles complete frame bitstreams.
 ///
 /// Feed each 2048-byte video sector data area through [`StrFrameAssembler::push_sector`].
@@ -291,6 +368,51 @@ mod tests {
         let mut asm = StrFrameAssembler::new();
         let (_, bs) = asm.push_sector(&s).unwrap().unwrap();
         assert_eq!(bs.len(), 10);
+    }
+
+    #[test]
+    fn analyze_str_timing_recovers_fps_from_sector_stride() {
+        // 3 single-sector video frames, each followed by one non-video
+        // (audio-stand-in) sector: 6 sectors / 3 frames = 2.0 sectors/frame
+        // -> 150 / 2 = 75 fps.
+        let mut data = Vec::new();
+        for frame in 0..3u32 {
+            data.extend_from_slice(&make_sector(0, 1, frame, 0));
+            data.extend_from_slice(&vec![0u8; SECTOR_DATA_BYTES]); // non-video
+        }
+        let t = analyze_str_timing(&data);
+        assert_eq!(t.sector_count, 6);
+        assert_eq!(t.frame_count, 3);
+        assert!((t.sectors_per_frame - 2.0).abs() < 1e-9);
+        assert!((t.fps - 75.0).abs() < 1e-9);
+        // 75 fps -> ~13.33 ms per frame.
+        assert!((t.frame_period().as_secs_f64() - 1.0 / 75.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ten_sectors_per_frame_is_15fps_like_legaia_movies() {
+        // Mirror the real MV*.STR shape: each frame spans 10 sectors
+        // (one single-sector video frame + 9 non-video chunks).
+        let mut data = Vec::new();
+        for frame in 0..4u32 {
+            data.extend_from_slice(&make_sector(0, 1, frame, 0));
+            for _ in 0..9 {
+                data.extend_from_slice(&vec![0u8; SECTOR_DATA_BYTES]);
+            }
+        }
+        let t = analyze_str_timing(&data);
+        assert_eq!(t.frame_count, 4);
+        assert!((t.sectors_per_frame - 10.0).abs() < 1e-9);
+        assert!((t.fps - 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn empty_stream_timing_falls_back_to_default_fps() {
+        let t = analyze_str_timing(&[]);
+        assert_eq!(t.frame_count, 0);
+        assert_eq!(t.fps, 0.0);
+        // frame_period must not divide by zero - it clamps to the default.
+        assert!((t.frame_period().as_secs_f64() - 1.0 / DEFAULT_FMV_FPS).abs() < 1e-9);
     }
 
     #[test]

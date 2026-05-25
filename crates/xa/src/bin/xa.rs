@@ -40,6 +40,19 @@ enum Cmd {
         #[arg(long, default_value_t = 37800)]
         sample_rate: u32,
     },
+    /// Walk the disc's ISO9660 tree and demux EVERY `*.XA` file, one WAV
+    /// per `(file_no, ch_no)` channel, each decoded at its true per-sector
+    /// sample rate / channel mode read from the CD-XA subheaders. This is
+    /// the correct-pacing path: no `--sample-rate` guess, and each track
+    /// gets its own rate. Prefer this over `convert`/`convert-dir`, which
+    /// operate on subheader-stripped Form-1 dumps and must guess the rate.
+    DemuxDiscAll {
+        /// Path to the disc image (`.bin`, Mode 2 / 2352 raw sectors).
+        bin: PathBuf,
+        /// Output directory; WAVs land under `<out>/<xa-stem>_fileN_chM.wav`.
+        #[arg(long, default_value = "extracted/xa_demux")]
+        out: PathBuf,
+    },
     /// Demux a CD-XA stream directly off a `.bin` disc image and write
     /// one WAV per `(file_no, ch_no)` channel. Solves the "Form 1
     /// truncation + multi-channel mux collapse" problem on Legaia's
@@ -101,6 +114,7 @@ fn main() -> Result<()> {
             channels,
             sample_rate,
         } => convert_dir(&dir, out.as_deref(), channels.into(), sample_rate),
+        Cmd::DemuxDiscAll { bin, out } => demux_disc_all(&bin, &out),
         Cmd::DemuxDisc {
             bin,
             lba,
@@ -109,6 +123,85 @@ fn main() -> Result<()> {
             prefix,
         } => demux_disc(&bin, lba, size, &out, prefix.as_deref()),
     }
+}
+
+/// Decode one demuxed channel stream to a WAV. Non-4-bit streams are
+/// skipped with a warning rather than mis-decoded (the group walker is
+/// 4-bit only); returns `false` when skipped.
+fn write_channel_wav(s: &legaia_xa::demux::ChannelStream, path: &Path) -> Result<bool> {
+    if s.bits_per_sample != 4 {
+        eprintln!(
+            "  file={:<3} ch={:<3} SKIPPED: {}-bit ADPCM unsupported (4-bit only)",
+            s.file_no, s.ch_no, s.bits_per_sample
+        );
+        return Ok(false);
+    }
+    let opts = DecodeOptions {
+        channels: if s.stereo {
+            Channels::Stereo
+        } else {
+            Channels::Mono
+        },
+        sample_rate: s.sample_rate,
+    };
+    let (samples, report) = legaia_xa::decode(&s.audio, opts)?;
+    legaia_xa::write_wav(path, &samples, opts.channels, opts.sample_rate)?;
+    let dur = samples.len() as f64 / opts.sample_rate as f64 / opts.channels.n() as f64;
+    println!(
+        "  file={:<3} ch={:<3} {:>4} sectors {:>5} groups ({} skip) {:>5}Hz {:<6} {:.2}s -> {}",
+        s.file_no,
+        s.ch_no,
+        s.sector_count,
+        report.n_groups,
+        report.n_groups_skipped,
+        s.sample_rate,
+        if s.stereo { "stereo" } else { "mono" },
+        dur,
+        path.display()
+    );
+    Ok(true)
+}
+
+fn demux_disc_all(bin: &Path, out_dir: &Path) -> Result<()> {
+    let files = legaia_xa::demux::demux_disc_all(bin)
+        .with_context(|| format!("demux all XA on {}", bin.display()))?;
+    if files.is_empty() {
+        bail!(
+            "no .XA files found in the ISO9660 tree of {}",
+            bin.display()
+        );
+    }
+    std::fs::create_dir_all(out_dir)?;
+    let mut total_channels = 0usize;
+    for f in &files {
+        // Output stem from the on-disc filename (e.g. `XA/XA1.XA` -> `XA1`):
+        // basename with a single trailing extension removed.
+        let base = f.path.rsplit('/').next().unwrap_or(&f.path);
+        let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(base);
+        let stem = if stem.is_empty() {
+            format!("lba{}", f.start_lba)
+        } else {
+            stem.to_string()
+        };
+        println!(
+            "{} (LBA {}): {} channel(s)",
+            f.path,
+            f.start_lba,
+            f.streams.len()
+        );
+        for s in &f.streams {
+            let path = out_dir.join(format!("{stem}_file{}_ch{}.wav", s.file_no, s.ch_no));
+            if write_channel_wav(s, &path)? {
+                total_channels += 1;
+            }
+        }
+    }
+    println!(
+        "demuxed {} XA file(s), {} channel(s) written",
+        files.len(),
+        total_channels
+    );
+    Ok(())
 }
 
 fn demux_disc(bin: &Path, lba: u32, size: u32, out_dir: &Path, prefix: Option<&str>) -> Result<()> {
@@ -126,28 +219,8 @@ fn demux_disc(bin: &Path, lba: u32, size: u32, out_dir: &Path, prefix: Option<&s
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("lba{lba}"));
     for s in &streams {
-        let opts = DecodeOptions {
-            channels: if s.stereo {
-                Channels::Stereo
-            } else {
-                Channels::Mono
-            },
-            sample_rate: s.sample_rate,
-        };
-        let (samples, report) = legaia_xa::decode(&s.audio, opts)?;
         let path = out_dir.join(format!("{prefix}_file{}_ch{}.wav", s.file_no, s.ch_no));
-        legaia_xa::write_wav(&path, &samples, opts.channels, opts.sample_rate)?;
-        let dur = samples.len() as f64 / opts.sample_rate as f64 / opts.channels.n() as f64;
-        println!(
-            "  file={:<3} ch={:<3} {:>4} sectors  {:>5} groups ({} skipped)  {:.2}s -> {}",
-            s.file_no,
-            s.ch_no,
-            s.sector_count,
-            report.n_groups,
-            report.n_groups_skipped,
-            dur,
-            path.display()
-        );
+        write_channel_wav(s, &path)?;
     }
     Ok(())
 }

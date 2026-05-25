@@ -3159,11 +3159,18 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
     Ok(decoded)
 }
 
-/// Decode a raw PSX STR file (2048-byte sectors) into RGBA video frames.
+/// Decode a raw PSX STR file (2048-byte sectors) into RGBA video frames plus
+/// the stream's detected playback timing (frame rate from the sector stride).
 /// Shared by `play-str` and the windowed in-flow cutscene driver.
-fn decode_str_frames(str_path: &Path) -> Result<Vec<legaia_mdec::VideoFrame>> {
+fn decode_str_frames(
+    str_path: &Path,
+) -> Result<(
+    Vec<legaia_mdec::VideoFrame>,
+    legaia_mdec::str_sector::StrTiming,
+)> {
     use legaia_mdec::{MdecDecoder, VideoFrame, str_sector::StrFrameAssembler};
     let data = std::fs::read(str_path).with_context(|| format!("read {}", str_path.display()))?;
+    let timing = legaia_mdec::str_sector::analyze_str_timing(&data);
     let n_sectors = data.len() / 2048;
     let mut asm = StrFrameAssembler::new();
     let mut frames: Vec<VideoFrame> = Vec::new();
@@ -3182,18 +3189,23 @@ fn decode_str_frames(str_path: &Path) -> Result<Vec<legaia_mdec::VideoFrame>> {
             }
         }
     }
-    Ok(frames)
+    Ok((frames, timing))
 }
 
 /// Windowed in-flow cutscene playback state: the decoded STR frames the
 /// field VM's FMV-trigger op resolved to, plus the current frame cursor and
 /// the live GPU upload. Held on [`PlayWindowApp`] while the world sits in
 /// [`SceneMode::Cutscene`]; the world resumes (`finish_cutscene`) once the
-/// frames drain. Mirrors [`StrPlayerApp`]'s one-frame-per-redraw pacing.
+/// frames drain. Paced to the stream's detected frame rate (wall-clock gated),
+/// like [`StrPlayerApp`], so the movie isn't tied to the display refresh rate.
 struct WindowedCutscene {
     frames: Vec<legaia_mdec::VideoFrame>,
     idx: usize,
     uploaded: Option<legaia_engine_render::UploadedTexture>,
+    /// Wall-clock duration to hold each frame (from `StrTiming::frame_period`).
+    frame_period: std::time::Duration,
+    /// When playback started; the visible frame index is `elapsed / period`.
+    clock: Option<std::time::Instant>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4361,15 +4373,18 @@ impl PlayWindowApp {
             (Some(root), Some(rel)) => {
                 let path = root.join(rel);
                 match decode_str_frames(&path) {
-                    Ok(frames) if !frames.is_empty() => {
+                    Ok((frames, timing)) if !frames.is_empty() => {
                         log::info!(
-                            "cutscene: playing fmv_id={fmv_id} {rel} ({} frames)",
-                            frames.len()
+                            "cutscene: playing fmv_id={fmv_id} {rel} ({} frames, {:.2} fps)",
+                            frames.len(),
+                            timing.fps
                         );
                         self.cutscene = Some(WindowedCutscene {
                             frames,
                             idx: 0,
                             uploaded: None,
+                            frame_period: timing.frame_period(),
+                            clock: None,
                         });
                         true
                     }
@@ -4401,20 +4416,30 @@ impl PlayWindowApp {
         }
     }
 
-    /// Render the active cutscene's current frame and advance the cursor.
-    /// One frame per redraw (mirrors [`StrPlayerApp`]); the drain check at the
-    /// top of the redraw handler resumes the field once `idx` passes the end.
+    /// Render the active cutscene's current frame, paced to the stream's
+    /// detected frame rate. The visible frame is `elapsed / frame_period`, so
+    /// playback runs at the movie's real ~15 fps regardless of the display
+    /// refresh rate (frames are held, or dropped if the host falls behind).
+    /// `idx` tracks the due frame so the drain check at the top of the redraw
+    /// handler resumes the field once the full duration has elapsed.
     fn render_windowed_cutscene(&mut self) {
         let Some(renderer) = self.win.renderer.as_ref() else {
             return;
         };
         if let Some(c) = self.cutscene.as_mut() {
-            if let Some(f) = c.frames.get(c.idx) {
+            let now = std::time::Instant::now();
+            let start = *c.clock.get_or_insert(now);
+            let elapsed = now.duration_since(start).as_secs_f64();
+            // Due frame index at this wall-clock time; `idx` reaching the frame
+            // count signals end-of-playback to the drain check.
+            let due = (elapsed / c.frame_period.as_secs_f64()) as usize;
+            c.idx = due;
+            let show = due.min(c.frames.len().saturating_sub(1));
+            if let Some(f) = c.frames.get(show) {
                 match renderer.upload_texture(&f.rgba, f.width, f.height) {
                     Ok(tex) => c.uploaded = Some(tex),
                     Err(e) => log::warn!("cutscene upload: {e}"),
                 }
-                c.idx += 1;
             }
             match c.uploaded.as_ref() {
                 Some(tex) => {
@@ -5163,10 +5188,12 @@ impl PlayWindowApp {
                 }
             }
             // World-map continent ground: build the heightfield surface from
-            // the walk `.MAP` floor grid (correct model — the slot-1 pack
-            // meshes are only the landmarks, not a per-cell ground mesh) and
-            // upload it with a provisional uniform ground texel. Texturing
-            // per-tile (record +0x14 -> atlas UV) is a documented follow-up.
+            // the walk `.MAP` floor grid (the slot-1 pack meshes are only the
+            // landmarks, not a per-cell ground mesh) and texture it from the
+            // retail ground-tile atlas (`GROUND_ATLAS_TPAGE`/`_CLUT`) with the
+            // positional `(col%3, row%3)` detail-tiling the heightfield bakes
+            // into its per-vertex UVs - see docs/subsystems/world-map.md
+            // "Ground texturing".
             let mut world_map_hf: Option<UploadedVramMesh> = None;
             let is_world_map = self
                 .session
@@ -5179,9 +5206,11 @@ impl PlayWindowApp {
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
             {
-                let (cba, tsb, uv) =
-                    first_textured_atlas_texel(&res.tmds).unwrap_or((0, 0, [0, 0]));
-                let vmesh = heightfield_to_vram_mesh(&hf, cba, tsb, uv);
+                let vmesh = heightfield_to_vram_mesh(
+                    &hf,
+                    legaia_asset::field_objects::GROUND_ATLAS_CLUT,
+                    legaia_asset::field_objects::GROUND_ATLAS_TPAGE,
+                );
                 match r.upload_vram_mesh(
                     &vmesh.positions,
                     &vmesh.uvs,
@@ -7075,7 +7104,11 @@ impl ApplicationHandler for PlayWindowApp {
                         // it; top-view keeps the full-pack framing for the
                         // overhead continent sweep.
                         let (cam_lo, cam_hi) = if walk_mode {
-                            const WALK_HALF: f32 = 3200.0;
+                            // Frame a wide world-space radius around the player so
+                            // the overworld reads at retail's overhead scale (the
+                            // walk camera also sits steeper - see
+                            // `walk_view_camera_mvp`).
+                            const WALK_HALF: f32 = 4200.0;
                             let cx = (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5;
                             let cz = (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5;
                             (
@@ -7085,9 +7118,15 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             (self.scene_aabb.0, self.scene_aabb.1)
                         };
-                        legaia_engine_render::window::world_map_camera_mvp(
-                            cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
-                        )
+                        if walk_mode {
+                            legaia_engine_render::window::walk_view_camera_mvp(
+                                cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
+                            )
+                        } else {
+                            legaia_engine_render::window::world_map_camera_mvp(
+                                cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
+                            )
+                        }
                     } else if let Some((look_at, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
                             look_at,
@@ -7202,9 +7241,12 @@ impl ApplicationHandler for PlayWindowApp {
                         // 1. The **ground** is a heightfield surface
                         //    (`world_map_heightfield`) built from the walk
                         //    `.MAP` floor grid (`Scene::walk_heightfield`,
-                        //    elevation per `FUN_80019278`). Texturing is
-                        //    provisional (a uniform ground texel) until the
-                        //    per-tile `+0x14`->atlas-UV mapping is pinned.
+                        //    elevation per `FUN_80019278`). It draws with a
+                        //    provisional uniform ground texel: per-tile
+                        //    texturing has no clean source - the record `+0x14`
+                        //    byte is terrain-type metadata, not an atlas
+                        //    selector (no draw path reads it; see
+                        //    docs/subsystems/world-map.md "Open (texturing)").
                         // 2. The sparse **placed landmarks** (trees / mountains
                         //    / castle) are slot-1 pack meshes positioned per
                         //    occupied tile (`world_map_terrain_draws`, the
@@ -7604,56 +7646,24 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
     }
 }
 
-/// Build a LineList for the placed overworld entities: one upright marker per
-/// entity (a vertical post plus a small base cross), colour-coded by kind, so
-/// portals / NPCs / encounter zones are locatable on the world map. Sized
-/// relative to the scene AABB so the markers read at any map scale.
-///
-/// Marker geometry uses the same Y-flip convention as
-/// [`PlayWindowApp::actor_model`] (local "up" `+Y` renders toward world `-Y`,
-/// which the world-map camera shows as screen-up), so the post stands upright.
-/// The markers share the player's coordinate frame (both come from the scene
-/// The `(cba, tsb, [u, v])` of the first textured primitive across a scene's
-/// resolved TMD pool — a real slot-0-atlas ground texel, used as the
-/// **provisional** uniform texture for the world-map heightfield surface until
-/// the per-cell `+0x14`→atlas-UV mapping is pinned. `None` if no textured prim
-/// exists (the caller then renders the heightfield flat / untextured).
-fn first_textured_atlas_texel(
-    tmds: &[legaia_engine_core::scene_resources::ResolvedTmd],
-) -> Option<(u16, u16, [u8; 2])> {
-    for rtmd in tmds {
-        for o in &rtmd.tmd.objects {
-            for g in legaia_tmd::legaia_prims::iter_groups_lenient(
-                &rtmd.raw,
-                o.primitives_byte_offset,
-                o.primitives_byte_size,
-            ) {
-                for p in &g.prims {
-                    if let Some(&(u, v)) = p.uvs.first() {
-                        return Some((p.cba, p.tsb, [u, v]));
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`], applying a single
-/// provisional `(cba, tsb, uv)` to every vertex (uniform ground texel). Normals
-/// are left at the `[0,0,0]` sentinel so the shader derives screen-space
-/// normals (flat-lit). Geometry is faithful (elevation from the floor grid);
-/// per-tile texturing is a documented follow-up.
+/// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`]. The heightfield
+/// supplies per-vertex UVs (the positional `(col%3, row%3)` ground-tile atlas
+/// tiling); `cba` / `tsb` select the shared ground-tile page
+/// ([`GROUND_ATLAS_CLUT`](legaia_asset::field_objects::GROUND_ATLAS_CLUT) /
+/// [`GROUND_ATLAS_TPAGE`](legaia_asset::field_objects::GROUND_ATLAS_TPAGE)).
+/// Normals are left at the `[0,0,0]` sentinel so the shader derives screen-space
+/// normals (flat-lit). See docs/subsystems/world-map.md "Ground texturing".
 fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
     cba: u16,
     tsb: u16,
-    uv: [u8; 2],
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
     legaia_tmd::mesh::VramMesh {
         positions: hf.positions.clone(),
-        uvs: vec![uv; n],
+        // Per-vertex ground-tile atlas UVs (positional `(col%3, row%3)`
+        // detail-tiling); `cba`/`tsb` select the shared ground-tile page.
+        uvs: hf.uvs.clone(),
         cba_tsb: vec![[cba, tsb]; n],
         normals: vec![[0.0, 0.0, 0.0]; n],
         indices: hf.indices.clone(),
@@ -8457,22 +8467,24 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
 fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()> {
     // Pre-decode all frames into RGBA buffers (shared with the in-flow
     // windowed cutscene driver).
-    let frames = decode_str_frames(str_file)?;
+    let (frames, timing) = decode_str_frames(str_file)?;
     if frames.is_empty() {
         anyhow::bail!("no video frames found in {}", str_file.display());
     }
     println!(
-        "play-str: {} frames, {}×{}",
+        "play-str: {} frames, {}×{}, {:.2} fps",
         frames.len(),
         frames[0].width,
-        frames[0].height
+        frames[0].height,
+        timing.fps
     );
 
     let mut app = StrPlayerApp {
         win: EngineWindow::new(),
         frames,
-        frame_idx: 0,
         uploaded: None,
+        frame_period: timing.frame_period(),
+        clock: None,
     };
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
@@ -8482,8 +8494,11 @@ fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()
 struct StrPlayerApp {
     win: EngineWindow,
     frames: Vec<legaia_mdec::VideoFrame>,
-    frame_idx: usize,
     uploaded: Option<legaia_engine_render::UploadedTexture>,
+    /// Wall-clock duration to hold each frame (from the stream's detected fps).
+    frame_period: std::time::Duration,
+    /// When playback started; the visible frame is `elapsed / frame_period`.
+    clock: Option<std::time::Instant>,
 }
 
 impl ApplicationHandler for StrPlayerApp {
@@ -8507,16 +8522,23 @@ impl ApplicationHandler for StrPlayerApp {
                 self.win.handle_resize(size.width, size.height);
             }
             WindowEvent::RedrawRequested => {
+                // Pace to the stream's real frame rate: the frame to show is
+                // `elapsed / frame_period`, so the movie runs at ~15 fps rather
+                // than the display refresh rate. Once the due frame passes the
+                // last decoded frame, playback is done and the window closes.
+                let now = std::time::Instant::now();
+                let start = *self.clock.get_or_insert(now);
+                let due = (now.duration_since(start).as_secs_f64()
+                    / self.frame_period.as_secs_f64()) as usize;
+                if due >= self.frames.len() {
+                    event_loop.exit();
+                    return;
+                }
                 if let Some(renderer) = self.win.renderer() {
-                    if self.frame_idx < self.frames.len() {
-                        let f = &self.frames[self.frame_idx];
-                        match renderer.upload_texture(&f.rgba, f.width, f.height) {
-                            Ok(tex) => {
-                                self.uploaded = Some(tex);
-                            }
-                            Err(e) => log::warn!("upload: {e}"),
-                        }
-                        self.frame_idx += 1;
+                    let f = &self.frames[due];
+                    match renderer.upload_texture(&f.rgba, f.width, f.height) {
+                        Ok(tex) => self.uploaded = Some(tex),
+                        Err(e) => log::warn!("upload: {e}"),
                     }
                     if let Some(tex) = &self.uploaded {
                         let _ = renderer.render(RenderTarget::Texture(tex));

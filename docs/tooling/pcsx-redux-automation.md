@@ -124,7 +124,7 @@ This pattern is factored out as a shared library at
 [`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua),
 which is an umbrella that re-exports the per-concern submodules under
 [`scripts/pcsx-redux/lib/probe/`](../../scripts/pcsx-redux/lib/probe/) -
-`env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, and
+`env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, `watch`, and
 `symbols`. A new probe doesn't reimplement the state machine, the
 memory readers, the save-state loader, the pad-override helpers, the
 CSV writer, or the live-snapshot writer - it imports them:
@@ -185,6 +185,24 @@ of the CPU at the moment of a breakpoint hit:
 opens the file in append mode so multi-shot probes can stack
 snapshots without overwriting earlier ones. The slot-4 reader and the
 XP-table probe both use this for first-hit detail dumps.
+
+### Write-watchpoint logging (`probe.watch`)
+
+The recurring "*what writes this address?*" probe arms a Write breakpoint
+and, in the callback, logs `(elapsed, label, addr, pc, ra, new_value)` to a
+CSV plus a first-N call-context dump. `probe.watch` factors that closure out
+(it composes `bp` + `mem` + `snapshot`, adding no new emulator interaction):
+
+```lua
+local w = probe.watch.new{
+    csv         = probe.csv_open(probe.out_path("hits.csv"),
+                                 "tick,label,addr,pc,ra,value"),
+    detail_path = probe.out_path("hits.detail.txt"),  -- optional
+    elapsed     = function() return g_elapsed end,
+}
+w:arm(player_ptr + 0x14, 2, "playerX")  -- width 1/2/4; kind defaults "Write"
+-- ... at end: print("total writes:", w:total())
+```
 
 ### Early-quit signal
 

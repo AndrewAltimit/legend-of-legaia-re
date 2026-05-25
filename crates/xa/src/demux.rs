@@ -76,6 +76,17 @@ impl Subheader {
             _ => 18_900,
         }
     }
+    /// ADPCM sample width in bits, derived from coding_info bits 4..=5
+    /// (`00` = 4-bit, `01` = 8-bit). The 4-bit form packs two samples per
+    /// byte and is what music/voice uses; 8-bit is rare. Surfaced so a
+    /// consumer can refuse an 8-bit stream loudly instead of decoding it
+    /// as 4-bit garbage (the [`crate::decode`] group walker is 4-bit only).
+    pub fn bits_per_sample(&self) -> u8 {
+        match (self.coding_info >> 4) & 0x03 {
+            0 => 4,
+            _ => 8,
+        }
+    }
     /// True when both 4-byte halves of the on-disc subheader agree (the
     /// standard CD-XA redundancy invariant). Worth checking because
     /// coding-info corruption mid-stream is the most common dump glitch.
@@ -104,6 +115,10 @@ pub struct ChannelStream {
     pub ch_no: u8,
     pub sample_rate: u32,
     pub stereo: bool,
+    /// ADPCM sample width (4 or 8) from the sectors' coding-info. The 4-bit
+    /// path is the one [`crate::decode`] handles; 8-bit is surfaced so the
+    /// caller can skip-and-warn rather than mis-decode.
+    pub bits_per_sample: u8,
     /// Concatenated audio data, one 128-byte sound group at a time.
     pub audio: Vec<u8>,
     /// How many sectors contributed to this channel (informational).
@@ -146,6 +161,7 @@ pub fn demux_disc_range(
             ch_no: sub.ch_no,
             sample_rate: sub.sample_rate(),
             stereo: sub.is_stereo(),
+            bits_per_sample: sub.bits_per_sample(),
             audio: Vec::new(),
             sector_count: 0,
         });
@@ -172,6 +188,47 @@ pub fn demux_file(bin_path: &Path, start_lba: u32, byte_size: u32) -> Result<Vec
         RawDisc::open(bin_path).with_context(|| format!("open disc {}", bin_path.display()))?;
     let sector_count = byte_size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
     demux_disc_range(&mut disc, start_lba, sector_count)
+}
+
+/// One discovered `.XA` file on the disc and its demuxed channel streams.
+#[derive(Debug, Clone)]
+pub struct DiscXaFile {
+    /// ISO9660 path (e.g. `XA/XA1.XA`).
+    pub path: String,
+    pub start_lba: u32,
+    pub streams: Vec<ChannelStream>,
+}
+
+/// Walk the disc's ISO9660 tree, demuxing every `*.XA` file into its
+/// per-`(file_no, ch_no)` channel streams. Each stream carries the true
+/// per-sector sample rate / channel mode / bit width read from the CD-XA
+/// subheaders - the whole point being that pacing is data-driven per track
+/// rather than a single guessed global rate.
+///
+/// Files that contain no Form-2 audio sectors (a stray non-XA file with an
+/// `.XA` extension) are returned with an empty `streams` vec rather than
+/// erroring, so one odd file doesn't abort a full-disc sweep.
+pub fn demux_disc_all(bin_path: &Path) -> Result<Vec<DiscXaFile>> {
+    use legaia_iso::iso9660;
+    let mut disc =
+        RawDisc::open(bin_path).with_context(|| format!("open disc {}", bin_path.display()))?;
+    let volume = iso9660::read_volume(&mut disc)?;
+    let files = iso9660::walk_files(&mut disc, &volume.root)?;
+    let mut out = Vec::new();
+    for (path, rec) in files {
+        if !path.to_ascii_uppercase().ends_with(".XA") {
+            continue;
+        }
+        let sector_count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+        let streams = demux_disc_range(&mut disc, rec.lba, sector_count)
+            .with_context(|| format!("demux {} @ LBA {}", path, rec.lba))?;
+        out.push(DiscXaFile {
+            path,
+            start_lba: rec.lba,
+            streams,
+        });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -214,6 +271,16 @@ mod tests {
         let (sub, _) = parse_subheader(&bytes);
         assert!(!sub.is_stereo());
         assert_eq!(sub.sample_rate(), 18_900);
+        assert_eq!(sub.bits_per_sample(), 4);
+    }
+
+    #[test]
+    fn coding_info_bits_select_sample_width() {
+        // bits 4..=5 = 00 → 4-bit, = 01 (0x10) → 8-bit.
+        let four = parse_subheader(&[0, 0, 0x64, 0x00, 0, 0, 0x64, 0x00]).0;
+        let eight = parse_subheader(&[0, 0, 0x64, 0x10, 0, 0, 0x64, 0x10]).0;
+        assert_eq!(four.bits_per_sample(), 4);
+        assert_eq!(eight.bits_per_sample(), 8);
     }
 
     /// Sanity: sector layout constants line up with the expected on-disc

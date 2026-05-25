@@ -6,7 +6,8 @@ PSX MDEC clean-room decoder and PSX STR video-sector parser.
 
 - `MdecDecoder` - decodes a complete BS v2 bitstream payload into RGBA8 pixels.
 - `str_sector::StrFrameAssembler` - collects 2048-byte Mode 2 Form 1 sector data areas and returns assembled BS payloads when a full frame is ready.
-- `mdec` CLI - `decode-frame` (raw BS → PPM), `scan-str` (report frame inventory), `decode-str` (batch decode to PPMs).
+- `str_sector::analyze_str_timing` - recovers the playback frame rate from the sector stride at the 2x CD rate (PSX STR carries no fps field). All six Legaia `MV*.STR` measure 10 sectors/frame → 15 fps; `play-str` and the in-flow cutscene driver pace to this.
+- `mdec` CLI - `decode-frame` (raw BS → PPM), `scan-str` (frame inventory + detected fps), `decode-str` (batch decode to PPMs).
 
 ## Algorithm
 

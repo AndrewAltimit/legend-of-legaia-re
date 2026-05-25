@@ -66,15 +66,22 @@ skip ~90% of Legaia's audio.
 ## CLI
 
 ```bash
-xa info        <file>
-xa convert     <file> <output.wav>
-xa convert-dir <dir>  <out_dir>
-xa demux-disc  <DISC.bin> --lba <LBA> --size <SIZE> --out <OUT_DIR>
+xa info           <file>
+xa convert        <file> <output.wav>
+xa convert-dir    <dir>  <out_dir>
+xa demux-disc-all <DISC.bin> --out <OUT_DIR>
+xa demux-disc     <DISC.bin> --lba <LBA> --size <SIZE> --out <OUT_DIR>
 ```
 
-`demux-disc` is the production audio path. `--lba` and `--size`
-come from the ISO9660 directory entry for the target XA file (e.g.
-`XA1.XA` lives at LBA 59449 / size 2179072 on the NA disc).
+`demux-disc-all` is the production audio path: it walks the disc's
+ISO9660 tree, finds every `*.XA`, and writes one WAV per
+`(file_no, ch_no)` channel, each decoded at its true per-sector sample
+rate / channel mode (no guessed global rate). On the NA disc that's 34
+files / 316 channels, all 4-bit 37.8 kHz, with channel mode varying per
+file (16-channel mono voice vs 8-channel stereo music). `demux-disc`
+targets a single entry by `--lba` / `--size` from its ISO9660 directory
+record. Streams reporting a non-4-bit `coding_info` width are skipped
+with a warning (the group decoder is 4-bit only).
 
 ## See also
 

@@ -479,15 +479,18 @@ the `0x1000`-gated continent is a smooth heightfield surface, and the slot-1
 **pack meshes are only the sparse placed landmarks** (the `pool = record[+0x10] +
 prefix` set above, spawned by `FUN_8003A55C` gated on `flags & 0x4`).
 
-The visible ground is drawn as textured heightfield quads by the per-frame
-field/world controller (a live prim-pool write-probe,
-`dump_field_overlay_terrain_emitter.py`, caught `FUN_801F5748` writing the pool
-during a world-map transition), but the **exact terrain-quad emitter is not yet
-cleanly isolated** — the `0x801F76xx` terrain code aliases across overlays
-(muscle_dome / dance / fishing / world-map map *different* code to those VAs;
-the same VA in the 0897 field overlay is camera/region-scroll), so treat any
-single emitter-address attribution with caution. `FUN_80019278` (the height
-math) is the reliable anchor and is all the port needs for correct geometry.
+The only per-cell terrain emitter that sweeps this grid is **`FUN_801F69D8`**
+(the **top-view overview** renderer, gate `cell & 0x2000`): for each occupied
+cell it reads the object record (grid base + `(cell & 0x1ff) * 0x20`), takes the
+**mesh-pool index from `+0x10`** (`record[+0x10]` plus a per-scene base, into a
+drawable-pointer table), computes the same bilinear corner height as
+`FUN_80019278`, and submits the per-cell mesh through `FUN_80043390` — the sole
+caller of that bulk-terrain emit. The overview ground is therefore **per-cell
+meshes** keyed by `+0x10`, each carrying its own TMD UVs. `FUN_80019278` (the
+height math) is the reliable anchor and is all the heightfield port needs for
+correct geometry. (The earlier `FUN_801F5748` write-probe lead is dead: in a
+genuine continent-**walk** RAM image that address disassembles as data, not
+code — the `0x801F76xx` range aliases across overlays.)
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →
@@ -500,13 +503,50 @@ uploads it and draws it as the ground, with the placed landmarks
 build dense (>10k-quad) heightfields with genuine elevation variation. The old
 `walk_terrain_tiles` per-cell pack-mesh sweep — which flooded ~97% of cells
 with pool-5 because the bulk-terrain records carry `+0x10 == 0` — is removed.
-**Open (texturing):** the heightfield is drawn with a *provisional* uniform
-ground texel (the first textured atlas prim). Faithful per-tile texturing needs
-the per-cell tile id (`record +0x14`, range 0..63) mapped to a slot-0 atlas
-page + UV, which in turn needs the walk/world overlay's ground emitter isolated
-(blocked by overlay aliasing — the `0x801F76xx` terrain code differs per
-overlay). The decoded slot-0 atlas itself textures correctly (real terrain
-tiles decode through each prim's CLUT; `missing_page = 0`).
+### Ground texturing
+
+The walk-view continent ground is drawn as a field of **`POLY_FT4` (cmd `0x2C`)
+textured quads, one per visible cell** in a window around the player (≈1187
+quads in a Drake walk image), all sampling **one VRAM page** through one CLUT:
+`tpage = 0x001A` (4bpp page at fb `(640, 256)`) / `clut = 0x7C40` (CBA fb
+`(0, 497)`), pinned by decoding the retail prim pool
+(`scripts/analyze-walk-ground-tiles.py`).
+
+**Within a terrain type, tiles are positionally detail-tiled.** Each quad is a
+`32×32`-texel rect from a small atlas; the grass tiles form a `3×3` grid (UV
+origins `u,v ∈ {0,32,64}`), and the tile index cycles **mod 3 with the cell's
+column / row** (verified per screen-row: the atlas column steps `0,1,2` across
+adjacent cells). So the grass ground is a `(col % 3, row % 3)` detail-tiling
+that hides the repetition of one texture — **not** a per-cell data lookup. This
+is consistent with **no draw path reading `record +0x14`**: enumerating every
+walk tile-record consumer (`cell & 0x1ff` → `×0x20` idiom: the cell-bit
+refresher `FUN_80017C00` reads `+0x12`/`+0x16`; the landmark spawners
+`FUN_8003A55C` / `FUN_801D7B50` read `+0x0/2/4/6/7/8/a/c/12/1e/60`; the overview
+renderer `FUN_801F69D8` reads `+0x0/2/4/10/12/1e`) shows none reads `+0x14`. So
+`+0x14` (0..63) is **terrain-type metadata** (encounter / footstep / walk-speed
+class), not the per-tile texture selector.
+
+**Engine.** [`build_walk_heightfield`] bakes the `(col % 3, row % 3)` atlas UVs
+per cell ([`GROUND_ATLAS_TPAGE`] / [`GROUND_ATLAS_CLUT`] /
+[`GROUND_ATLAS_TILE_PX`] / [`GROUND_ATLAS_AXIS`]); `play-window` samples the
+ground-tile page so the continent renders as textured grass instead of a flat
+texel.
+
+**Open — terrain-TYPE variation.** Retail varies the ground by terrain *type*:
+**mountain** tiles on the height edges / slopes and **water** tiles in the
+ocean/lake regions, not uniform grass. The single grass-area capture analysed so
+far only exposed the 9 grass tiles (one CLUT/page), so the **type → tile (or
+type → page/CLUT) selection is not yet pinned**. Candidates: the floor height /
+local slope (`+0x4000` nibble — mountains track height, the user-observed cue),
+the `+0x14` terrain-type byte feeding the (still-unlocated) per-cell quad
+emitter, or per-region page/CLUT swaps. Closing it needs a walk capture
+positioned over mountain/water terrain (to read those quads' UVs/CLUTs) and/or
+locating the quad emitter via a live prim-pool writer trace. The decoded slot-0
+atlas itself textures correctly (`missing_page = 0`); the open question is the
+per-cell type selection, not the decode. (Distinct from the **top-view** bulk
+continent, which is per-cell *meshes* via `FUN_80043390` / the MAN
+`0x7F`-sentinel resolver — see
+[`world-overview-viewer.md`](world-overview-viewer.md).)
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
