@@ -6,7 +6,6 @@
 architecture.html
 arts.html
 arts.json
-audio.html
 formats/anm.html
 formats/art-data.html
 formats/asset-descriptor.html
@@ -45,6 +44,7 @@ formats/vab.html
 formats/world-map-overlay.html
 formats/xa.html
 index.html
+media.html
 minigames.html
 minigames.json
 monsters.html

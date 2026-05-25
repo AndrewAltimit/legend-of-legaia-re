@@ -37,6 +37,9 @@ struct Cli {
     /// Skip TIM → PNG conversion (the slowest step).
     #[arg(long)]
     skip_png: bool,
+    /// Skip CD-XA demux → per-channel WAV (the streamed-audio step).
+    #[arg(long)]
+    skip_xa: bool,
     /// Print one line per file written.
     #[arg(short, long)]
     verbose: bool,
@@ -60,11 +63,11 @@ fn main() -> Result<()> {
         log("verify: skipped");
     }
 
-    log("step 1/5: disc → ISO9660 files");
+    log("step 1/6: disc → ISO9660 files");
     let n = step_disc_extract(&cli.bin, &cli.out, cli.verbose)?;
     log(&format!("  {} files extracted", n));
 
-    log("step 2/5: PROT.DAT → named entries");
+    log("step 2/6: PROT.DAT → named entries");
     let prot_dir = cli.out.join("PROT");
     let cdname_path = cli.out.join("CDNAME.TXT");
     let cdname_arg = if cdname_path.exists() {
@@ -84,7 +87,7 @@ fn main() -> Result<()> {
         prot_dir.display()
     ));
 
-    log("step 3/5: categorize PROT entries");
+    log("step 3/6: categorize PROT entries");
     let cat_path = prot_dir.join("categorize.json");
     let report = step_categorize(&prot_dir, &cat_path)?;
     log(&format!(
@@ -93,20 +96,33 @@ fn main() -> Result<()> {
         cat_path.display()
     ));
 
-    log("step 4/5: extract sub-assets from streaming-format entries");
+    log("step 4/6: extract sub-assets from streaming-format entries");
     let stream_dir = cli.out.join("streaming");
     let n_streams = step_streaming_extract(&prot_dir, &stream_dir, cli.verbose)?;
     log(&format!("  {} streaming containers expanded", n_streams));
 
     if cli.skip_png {
-        log("step 5/5: TIM → PNG (skipped via --skip-png)");
+        log("step 5/6: TIM → PNG (skipped via --skip-png)");
     } else {
-        log("step 5/5: TIM → PNG");
+        log("step 5/6: TIM → PNG");
         let n_png = step_tim_to_png(&stream_dir, cli.verbose)?;
         log(&format!(
             "  {} PNG images written under {}",
             n_png,
             stream_dir.display()
+        ));
+    }
+
+    if cli.skip_xa {
+        log("step 6/6: CD-XA demux → WAV (skipped via --skip-xa)");
+    } else {
+        log("step 6/6: CD-XA demux → per-channel WAV");
+        let xa_dir = cli.out.join("XA_WAV");
+        let n_wav = step_xa_demux(&cli.bin, &xa_dir, cli.verbose)?;
+        log(&format!(
+            "  {} WAVs written under {}",
+            n_wav,
+            xa_dir.display()
         ));
     }
 
@@ -391,6 +407,68 @@ fn step_tim_to_png(stream_dir: &Path, verbose: bool) -> Result<usize> {
     });
 
     Ok(count.load(Ordering::Relaxed))
+}
+
+/// Demux every `*.XA` file on the disc into correctly-paced per-channel WAVs.
+///
+/// The disc-extract step copies each `XA/*.XA` file as Form-1 user data (2048
+/// B/sector), which truncates the Form-2 audio sectors and collapses the file's
+/// multiplexed channels into one shuffled byte stream - those raw dumps are not
+/// listenable. This step instead reads the raw 2352-byte sectors straight off
+/// the disc image, splits them by `(file_no, ch_no)` via
+/// [`legaia_xa::demux::demux_disc_all`], and decodes each channel at its true
+/// per-sector rate / stereo mode, so the WAVs are reference-quality. Non-4-bit
+/// channels are skipped with a warning (the group decoder is 4-bit only) rather
+/// than mis-decoded.
+fn step_xa_demux(bin: &Path, out: &Path, verbose: bool) -> Result<usize> {
+    use legaia_xa::{Channels, DecodeOptions};
+
+    let files = legaia_xa::demux::demux_disc_all(bin)
+        .with_context(|| format!("demux all XA on {}", bin.display()))?;
+    std::fs::create_dir_all(out)?;
+    let mut written = 0usize;
+    for f in &files {
+        // Output stem from the on-disc filename (e.g. `XA/XA1.XA` -> `XA1`).
+        let base = f.path.rsplit('/').next().unwrap_or(&f.path);
+        let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(base);
+        let stem = if stem.is_empty() {
+            format!("lba{}", f.start_lba)
+        } else {
+            stem.to_string()
+        };
+        for s in &f.streams {
+            if s.bits_per_sample != 4 {
+                eprintln!(
+                    "    [xa] {}_file{}_ch{}: SKIPPED ({}-bit ADPCM unsupported, 4-bit only)",
+                    stem, s.file_no, s.ch_no, s.bits_per_sample
+                );
+                continue;
+            }
+            let opts = DecodeOptions {
+                channels: if s.stereo {
+                    Channels::Stereo
+                } else {
+                    Channels::Mono
+                },
+                sample_rate: s.sample_rate,
+            };
+            let (samples, _report) = legaia_xa::decode(&s.audio, opts)?;
+            let path = out.join(format!("{stem}_file{}_ch{}.wav", s.file_no, s.ch_no));
+            legaia_xa::write_wav(&path, &samples, opts.channels, opts.sample_rate)?;
+            if verbose {
+                let dur = samples.len() as f64 / opts.sample_rate as f64 / opts.channels.n() as f64;
+                println!(
+                    "    [xa] {:>5}Hz {:<6} {:.2}s → {}",
+                    s.sample_rate,
+                    if s.stereo { "stereo" } else { "mono" },
+                    dur,
+                    path.display()
+                );
+            }
+            written += 1;
+        }
+    }
+    Ok(written)
 }
 
 fn walk(root: &Path) -> Result<Vec<PathBuf>> {

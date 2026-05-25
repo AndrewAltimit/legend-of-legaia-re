@@ -2548,6 +2548,10 @@ pub struct LegaiaAudio {
     /// created, retained across BGM switches via `attach_sequencer`.
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<legaia_engine_audio::WebAudioOut>,
+    /// The STR movie currently opened for video playback, keyed by start LBA.
+    /// Holds every frame's assembled bitstream so `str_decode_frame` can decode
+    /// one frame at a time off the audio clock without re-walking the disc.
+    str_video: Option<(u32, audio::StrVideo)>,
 }
 
 #[wasm_bindgen]
@@ -2561,6 +2565,7 @@ impl LegaiaAudio {
             entries: Vec::new(),
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
+            str_video: None,
         }
     }
 
@@ -2753,6 +2758,50 @@ impl LegaiaAudio {
             .nth(stream_idx as usize)
             .map(|x| x.pcm)
             .unwrap_or_default()
+    }
+
+    /// Open an `MV*.STR` movie for video playback. Demuxes every MDEC video
+    /// frame's bitstream off the disc (skipping the interleaved audio) and
+    /// caches them, keyed by `lba`. Returns JSON
+    /// `{ "width", "height", "frame_count", "fps" }`. Frames are NOT decoded to
+    /// RGBA here - call `str_decode_frame(idx)` per displayed frame so the page
+    /// pays MDEC cost incrementally (a whole movie's RGBA is hundreds of MB).
+    ///
+    /// Idempotent for the same `lba`: a second open returns the cached metadata
+    /// without re-walking the disc. `.XA` (audio-only) files have no video and
+    /// come back with `frame_count: 0`.
+    pub fn str_video_open(&mut self, lba: u32, size: u32) -> String {
+        if self.str_video.as_ref().map(|(l, _)| *l) != Some(lba) {
+            let video = audio::demux_str_video(&self.disc, lba, size);
+            self.str_video = Some((lba, video));
+        }
+        let (_, video) = self.str_video.as_ref().unwrap();
+        format!(
+            r#"{{"width":{},"height":{},"frame_count":{},"fps":{:.4}}}"#,
+            video.width,
+            video.height,
+            video.frames.len(),
+            video.fps,
+        )
+    }
+
+    /// Decode the frame at `frame_idx` of the currently-open STR movie to a
+    /// row-major RGBA8 buffer (`width * height * 4` bytes). Empty when no movie
+    /// is open or the index is out of range. Call `str_video_open` first.
+    pub fn str_decode_frame(&self, frame_idx: u32) -> Vec<u8> {
+        let Some((_, video)) = self.str_video.as_ref() else {
+            return Vec::new();
+        };
+        video
+            .frames
+            .get(frame_idx as usize)
+            .map(audio::decode_str_frame_rgba)
+            .unwrap_or_default()
+    }
+
+    /// Drop the cached STR movie frames (frees the bitstream buffers).
+    pub fn str_video_close(&mut self) {
+        self.str_video = None;
     }
 
     /// Start BGM playback for the given (`prot_index`, `vab_offset`,
