@@ -64,34 +64,42 @@ def main():
             continue
         pins.add(l.split("\t")[0].strip().lower())
 
-    # Existing coarse rows.
+    # Existing coarse rows: fnv -> (label, note). Notes are preserved so manual
+    # annotations (e.g. a specific texture's description) survive later passes.
     coarse = {}
     for l in lines[cut + 1 :]:
         if not l.strip() or l.startswith("#"):
             continue
         c = l.split("\t")
-        coarse[c[0].strip().lower()] = c[1].strip()
+        note = c[2].strip() if len(c) > 2 else ""
+        coarse[c[0].strip().lower()] = [c[1].strip(), note]
 
     promoted = demoted = protected = 0
     for fnv in sel:
         if fnv in pins:
             protected += 1
             continue
-        if coarse.get(fnv) != cat:
+        cur = coarse.get(fnv)
+        if cur is None:
+            coarse[fnv] = [cat, ""]
             promoted += 1
-        coarse[fnv] = cat
-    for fnv, lbl in list(coarse.items()):
-        if lbl == cat and fnv not in sel:
-            coarse[fnv] = "other"
+        else:
+            if cur[0] != cat:
+                promoted += 1
+            cur[0] = cat
+    for fnv, rec in coarse.items():
+        if rec[0] == cat and fnv not in sel:
+            rec[0] = "other"
             demoted += 1
 
     out = list(prefix)
     for fnv in sorted(coarse):
-        out.append(f"{fnv}\t{coarse[fnv]}\t")
+        lbl, note = coarse[fnv]
+        out.append(f"{fnv}\t{lbl}\t{note}")
     with open(args.table, "w") as f:
         f.write("\n".join(out) + "\n")
 
-    total = sum(1 for v in coarse.values() if v == cat)
+    total = sum(1 for v in coarse.values() if v[0] == cat)
     print(
         f"category '{cat}': promoted {promoted}, demoted {demoted} -> other, "
         f"protected {protected} pins. now {total} '{cat}' rows."
