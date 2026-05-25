@@ -52,6 +52,7 @@ class TmdRenderer {
     this.locModel   = gl.getUniformLocation(this.program, 'u_model');
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locLight   = gl.getUniformLocation(this.program, 'u_light');
+    this.locNormalSign = gl.getUniformLocation(this.program, 'u_normal_sign');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
     this.locFogEnableFs = gl.getUniformLocation(this.program, 'u_fog_enable');
@@ -429,6 +430,7 @@ class TmdRenderer {
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
+    gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -644,6 +646,11 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);
+    /* The top-down VP horizontally mirrors a screen axis (retail orientation),
+     * which flips the handedness of the screen-space derivatives the FS uses
+     * to build the shading normal. Negate it back so lighting matches the
+     * non-mirrored orbit view instead of collapsing to the ambient floor. */
+    gl.uniform1f(this.locNormalSign, -1.0);
     gl.uniform1i(this.locNoDisc, 1);  /* assembled scene: paint silhouettes instead of discarding */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);

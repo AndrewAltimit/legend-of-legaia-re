@@ -161,6 +161,12 @@ precision highp usampler2D;
 uniform usampler2D u_vram;
 uniform usampler2D u_fog_lut;  /* 512x1 R16UI, BGR555 entries; indexed by Z >> 5 */
 uniform vec3 u_light;
+/* +1.0 normally; -1.0 when the view-projection mirrors a screen axis (the
+ * top-down world map is horizontally flipped to match retail). The shading
+ * normal is derived from screen-space derivatives of v_world, whose cross
+ * product flips sign with the VP's handedness, so this restores the correct
+ * normal orientation without depending on triangle winding. */
+uniform float u_normal_sign;
 /* When non-zero, render transparent samples as opaque (with a tinted
  * fallback so they're visible). Used by the assembled top-view map where
  * CLUT collisions are expected and discarded fragments leave holes. */
@@ -261,7 +267,7 @@ void main() {
 
   vec3 dx = dFdx(v_world);
   vec3 dy = dFdy(v_world);
-  vec3 n = normalize(cross(dx, dy));
+  vec3 n = normalize(cross(dx, dy)) * u_normal_sign;
   float lambert = max(dot(n, normalize(-u_light)), 0.0);
   float shade = 0.45 + 0.55 * lambert;
   vec3 lit = color.rgb * shade;
