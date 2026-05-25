@@ -49,7 +49,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 | `tim_scan` / `tmd_scan` | Brute-force magic search inside an entry. |
 | `tim_catalog` | Flat strict-validated TIM inventory over the whole `PROT.DAT` image (catches the unindexed-gap TIMs `tim_scan` can't); maps each to its owning entry + offset; reproduces an external reference decoder's TIM set item-for-item. |
 | `tim_deep_catalog` | Separate tier: strict-validated TIMs recovered from inside LZS-compressed sections, keyed by `(entry, LZS section, offset-in-section)`. |
-| `tim_labels` | Semantic role annotations for cataloged TIMs (raw + deep): byte-exact pins for the boot/title/menu textures plus a structural rule for the NPC palette band. Our own labels, not asset bytes. |
+| `tim_labels` | Curated semantic labels for cataloged TIMs (raw + deep), keyed by content fingerprint: coarse visual categories + precise reverse-engineered pins for the boot/title/menu textures. Our own annotations, not asset bytes. |
 
 Detector coverage and provenance are tracked in
 [`docs/formats/scene-bundles.md`](../../docs/formats/scene-bundles.md).

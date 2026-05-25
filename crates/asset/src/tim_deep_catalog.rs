@@ -60,12 +60,12 @@ pub struct DeepCatalogTim {
     /// bytes - lets the regression detect drift without committing Sony pixel
     /// data (and without committing decompressed Sony bytes).
     pub fnv1a: u64,
-    /// Our own semantic role annotation when this id matches a known pin, else
-    /// `None`. The boot/title/menu textures are all stored raw, so only the
-    /// NPC palette band reaches the deep tier. See [`crate::tim_labels`]. Not
-    /// folded into [`rollup`]; serialized in [`to_tsv`].
-    #[serde(serialize_with = "crate::tim_labels::serialize_role")]
-    pub label: Option<crate::tim_labels::TimRole>,
+    /// Our own curated semantic label for this texture, looked up by content
+    /// fingerprint in [`crate::tim_labels`]; `None` when not yet curated. The
+    /// table is shared with the raw tier, so a texture that appears in both
+    /// (e.g. a raw page also embedded compressed elsewhere) gets the same
+    /// label. Not folded into [`rollup`]; serialized in [`to_tsv`].
+    pub label: Option<&'static str>,
 }
 
 /// FNV-1a-64 of a byte slice.
@@ -111,6 +111,7 @@ fn scan_section(
                 legaia_tim::PixelMode::Bpp24 => 24,
                 legaia_tim::PixelMode::Mixed => 0,
             };
+            let fnv1a = fnv1a64(&section[off..off + byte_len]);
             out.push(DeepCatalogTim {
                 id: *id,
                 entry_index,
@@ -121,8 +122,8 @@ fn scan_section(
                 bpp,
                 clut_count: tim.palette_count(),
                 byte_len,
-                fnv1a: fnv1a64(&section[off..off + byte_len]),
-                label: crate::tim_labels::classify_deep(&tim),
+                fnv1a,
+                label: crate::tim_labels::label_for(fnv1a),
             });
             *id += 1;
         }
@@ -206,7 +207,7 @@ pub fn to_tsv(catalog: &[DeepCatalogTim]) -> String {
             t.clut_count,
             t.byte_len,
             t.fnv1a,
-            t.label.map(|r| r.as_str()).unwrap_or(""),
+            t.label.unwrap_or(""),
         ));
     }
     s
@@ -314,14 +315,12 @@ mod tests {
             clut_count: 2,
             byte_len: 1234,
             fnv1a: 0xdead_beef_0000_0001,
-            label: Some(crate::tim_labels::TimRole::NpcPaletteRow),
+            label: Some("environment"),
         }];
         let tsv = to_tsv(&cat);
         let header = tsv.lines().next().unwrap();
         assert!(header.starts_with("id\tentry_index\tlzs_section\toffset_in_section\t"));
         assert!(header.ends_with("\tlabel"));
-        assert!(
-            tsv.contains("0\t12\t1\t99\t64\t32\t4\t2\t1234\tdeadbeef00000001\tNPC palette row\n")
-        );
+        assert!(tsv.contains("0\t12\t1\t99\t64\t32\t4\t2\t1234\tdeadbeef00000001\tenvironment\n"));
     }
 }

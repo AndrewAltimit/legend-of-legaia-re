@@ -1,0 +1,27 @@
+# Curated semantic labels for cataloged PROT.DAT TIMs, keyed by content
+# fingerprint (FNV-1a-64, as recorded by tim_catalog / tim_deep_catalog).
+#
+# label vocabulary (see legaia_asset::tim_labels::VALID_LABELS):
+#   coarse visual categories: environment, terrain, foliage, character,
+#                             ui-text, effect, other
+#   precise reverse-engineered pins: menu glyph atlas, main-title sprite sheet,
+#                             publisher logo, load-screen UI sheet,
+#                             load-screen portrait, load-screen empty-slot frame
+#
+# A label propagates to every catalog id sharing the fingerprint (duplicate or
+# aliased textures), across both the raw and the deep tier. These are our own
+# annotations - observations of decoded thumbnails + RE loader-site pins - not
+# Sony asset strings or pixel data. The `note` column is human context only.
+fnv1a	label	note
+# --- Byte-exact reverse-engineered pins -------------------------------------
+4bf1abb728543d02	menu glyph atlas	in-game menu small-caps font (pre-init_data gap)
+a28561c084c1a351	main-title sprite sheet	orb + wordmark + copyright bands (PROT 888/889/890)
+78f561f4b6af5a88	load-screen UI sheet	load/save panel 9-slice chrome + glyphs
+74988d0ffc9cc738	load-screen portrait	Vahn
+a041fe6c325bb661	load-screen portrait	Noa
+f5a60157e780f321	load-screen portrait	Gala
+5c73329387c91106	load-screen empty-slot frame	unoccupied load-slot frame
+4819b00d5495ff72	publisher logo	PROKION
+1b25c4da6917f662	publisher logo	Contrail
+cafbc8b8029bf3e0	publisher logo	SCEA
+7008bc6000d3fd70	publisher logo	WARNING

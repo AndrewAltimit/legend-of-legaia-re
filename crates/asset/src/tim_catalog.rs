@@ -66,12 +66,12 @@ pub struct CatalogTim {
     /// the regression detect any drift in the decoded region without
     /// committing Sony pixel data.
     pub fnv1a: u64,
-    /// Our own semantic role annotation when this id matches a known pin
-    /// (boot/title/menu texture or the NPC palette band), else `None`. See
-    /// [`crate::tim_labels`]. Not folded into [`rollup`] - the digest stays a
-    /// pure structural fingerprint - but it is serialized in [`to_tsv`].
-    #[serde(serialize_with = "crate::tim_labels::serialize_role")]
-    pub label: Option<crate::tim_labels::TimRole>,
+    /// Our own curated semantic label for this texture (a coarse visual
+    /// category or a precise reverse-engineered role), looked up by content
+    /// fingerprint in [`crate::tim_labels`]; `None` when not yet curated. Not
+    /// folded into [`rollup`] - the digest stays a pure structural fingerprint
+    /// - but it is serialized in [`to_tsv`].
+    pub label: Option<&'static str>,
 }
 
 /// FNV-1a-64 of a byte slice.
@@ -161,7 +161,7 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Cat
                 legaia_tim::PixelMode::Bpp24 => 24,
                 legaia_tim::PixelMode::Mixed => 0,
             };
-            let label = crate::tim_labels::classify_raw(entry_index, offset_in_entry, &tim);
+            let fnv1a = fnv1a64(&prot[off..off + byte_len]);
             out.push(CatalogTim {
                 id,
                 abs_offset: abs,
@@ -173,8 +173,8 @@ pub fn build_from_spans(prot: &[u8], entry_spans: &[(u64, u64, u32)]) -> Vec<Cat
                 bpp,
                 clut_count: tim.palette_count(),
                 byte_len,
-                fnv1a: fnv1a64(&prot[off..off + byte_len]),
-                label,
+                fnv1a,
+                label: crate::tim_labels::label_for(fnv1a),
             });
             id += 1;
         }
@@ -218,7 +218,7 @@ pub fn to_tsv(catalog: &[CatalogTim]) -> String {
             t.clut_count,
             t.byte_len,
             t.fnv1a,
-            t.label.map(|r| r.as_str()).unwrap_or(""),
+            t.label.unwrap_or(""),
         ));
     }
     s

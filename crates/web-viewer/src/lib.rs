@@ -17,7 +17,6 @@ use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
 use legaia_asset::tim_catalog;
 use legaia_asset::tim_deep_catalog;
-use legaia_asset::tim_labels::TimRole;
 use legaia_asset::tim_scan;
 use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
@@ -28,11 +27,11 @@ fn console_log(s: &str) {
     web_sys::console::log_1(&JsValue::from_str(s));
 }
 
-/// Render a catalog TIM's semantic role as a JSON value for the info panel:
-/// a quoted human label string, or `null` when the id matches no known pin.
-fn json_label(role: Option<TimRole>) -> String {
-    match role {
-        Some(r) => format!("\"{}\"", r.as_str()),
+/// Render a catalog TIM's curated label as a JSON value for the info panel: a
+/// quoted label string, or `null` when the fingerprint isn't curated yet.
+fn json_label(label: Option<&str>) -> String {
+    match label {
+        Some(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         None => "null".to_string(),
     }
 }

@@ -23,7 +23,6 @@
 use std::path::PathBuf;
 
 use legaia_asset::tim_deep_catalog;
-use legaia_asset::tim_labels::TimRole;
 
 /// Number of standard PSX TIMs recovered from inside LZS-compressed sections
 /// of the retail NA `PROT.DAT`. A stable invariant of the disc image.
@@ -146,11 +145,12 @@ fn deep_catalog_tims_all_decode() {
     assert!(decoded > 0, "expected to decode some deep TIMs");
 }
 
-/// The only semantic role that reaches the deep (LZS-embedded) tier is the
-/// NPC palette band - the boot/title/menu textures are all stored raw. Pins
-/// the count of structurally-matched NPC CLUTs inside compressed sections.
+/// Any label assigned to a deep (LZS-embedded) TIM is from the shared curated
+/// table and in the controlled vocabulary. The label is keyed by content
+/// fingerprint, so the deep tier picks up whatever the table curates for a
+/// texture's bytes.
 #[test]
-fn compressed_npc_palettes_are_labeled() {
+fn deep_labels_are_in_vocabulary() {
     let Some(prot) = prot_dat() else {
         eprintln!("[skip] extracted/PROT.DAT missing");
         return;
@@ -161,12 +161,13 @@ fn compressed_npc_palettes_are_labeled() {
     }
 
     let catalog = tim_deep_catalog::build_from_path(&prot).expect("build deep TIM catalog");
-    let labeled: Vec<_> = catalog.iter().filter(|t| t.label.is_some()).collect();
-    assert!(
-        labeled
-            .iter()
-            .all(|t| t.label == Some(TimRole::NpcPaletteRow)),
-        "deep tier should only carry NPC palette labels"
-    );
-    assert_eq!(labeled.len(), 8, "compressed NPC palette count drifted");
+    for t in &catalog {
+        if let Some(l) = t.label {
+            assert!(
+                legaia_asset::tim_labels::VALID_LABELS.contains(&l),
+                "deep id {} has out-of-vocabulary label {l:?}",
+                t.id
+            );
+        }
+    }
 }
