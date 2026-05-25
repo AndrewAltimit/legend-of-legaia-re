@@ -9,6 +9,14 @@ Two coordinated tracks under one Cargo workspace:
 
 The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation.
 
+**Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - interactive viewers (run client-side off your own disc image), the full technical reference, and the demo video below.
+
+## Demo
+
+https://github.com/AndrewAltimit/legend-of-legaia-re/raw/refs/heads/main/site/assets/legend-of-legaia-re-demo.mp4
+
+The clean-room engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
+
 **Status:** local research project. Don't expect API stability.
 
 **License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered - this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same. These licenses apply *only* to the code and documentation in this repository. **Sony's IP - game executable, asset data, ROM contents - is not redistributed and is not covered by these licenses.** You bring your own disc image. The `extracted/` and `ghidra/projects/` directories are gitignored. CI runs without disc data.
@@ -19,7 +27,7 @@ The committed docs under `docs/` are organised topic-first as a technical refere
 
 - **[`docs/overview.md`](docs/overview.md)** - elevator pitch + how the layers stack.
 - **[`docs/formats/`](docs/formats/overview.md)** - per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect, overlays, …).
-- **[`docs/subsystems/`](docs/subsystems/)** - how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [move VM](docs/subsystems/move-vm.md), [motion VM](docs/subsystems/motion-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [cutscene](docs/subsystems/cutscene.md), [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md), [engine reimplementation](docs/subsystems/engine.md).
+- **[`docs/subsystems/`](docs/subsystems/)** - how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [move VM](docs/subsystems/move-vm.md), [motion VM](docs/subsystems/motion-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [cutscene](docs/subsystems/cutscene.md), [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md), [world map](docs/subsystems/world-map.md), [field locomotion](docs/subsystems/field-locomotion.md), [engine reimplementation](docs/subsystems/engine.md).
 - **[`docs/tooling/`](docs/tooling/)** - how to use the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md), [mednafen automation](docs/tooling/mednafen-automation.md), [PCSX-Redux automation](docs/tooling/pcsx-redux-automation.md), [port catalog](docs/tooling/port-catalog.md) (per-function dumped × documented × ported × ignored status with BFS-from-roots feature views).
 - **[`docs/reference/`](docs/reference/)** - [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [TCRF region data](docs/reference/builds.md), [open RE threads](docs/reference/open-rev-eng-threads.md) (still-open hunts + falsified hypotheses worth not re-walking).
 
@@ -202,17 +210,21 @@ legend-of-legaia-re/
 │   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
 │   ├── xa/                       # XA-ADPCM decoder + WAV exporter
 │   ├── mdt/                      # Move table (Tactical Arts) parser
+│   ├── art/                      # Tactical Arts data: action constants, per-character art tables, SCUS arts-name table
 │   ├── mes/                      # MES dialog container parser
 │   ├── anm/                      # ANM animation container parser
 │   ├── seq/                      # PsyQ SEQ parser + CLI inspector
-│   ├── save/                     # Per-character record (0x414B) parse + write
+│   ├── save/                     # Per-character record + PSX memory-card walker + LGSF v2 engine save round-trip
 │   ├── font/                     # Dialog font extraction + atlas / layout API
 │   ├── extract/                  # Top-level pipeline driver
-│   ├── mdec/                     # PSX MDEC clean-room decoder (BS v2 bitstream → RGBA8); STR sector assembler
+│   ├── mdec/                     # PSX MDEC clean-room decoder (Iki bitstream → RGBA8); STR sector assembler
+│   ├── mednafen/                 # Mednafen save-state parser + watchpoint automation; VRAM + SPU parity oracles
+│   ├── gamedata/                 # Curated walkthrough-mined game-data tables (ground-truth labels)
+│   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
 │   ├── engine-core/              # World, scene host, scene resources (VRAM pre-pass), camera, menu runtime, save round-trip
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
-│   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM + action validator + formulas
+│   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM + world-map SM + action validator + formulas
 │   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector; play-window renders shop + inn + level-up overlays
 │   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
 │   └── web-viewer/               # WASM target - disc browser running in the browser
@@ -222,7 +234,7 @@ legend-of-legaia-re/
 │   └── scripts/                  # Jython analysis scripts + per-function dumps
 ├── scripts/                      # Host-side helpers (function-coverage, overlay capture)
 ├── site/                         # Project landing site (mirrors docs/)
-└── extracted/                    # Build outputs (gitignored)
+└── extracted/                    # Disc-extracted assets - Sony bytes, never committed (gitignored)
 ```
 
 ## Acknowledgments
