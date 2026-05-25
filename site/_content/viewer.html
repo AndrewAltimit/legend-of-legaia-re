@@ -139,7 +139,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
-  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side, classifies every PROT entry, and filters to the ones with renderable TIMs. Nothing leaves your machine.</p>
+  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side. The top viewer renders every 3D mesh (Legaia TMD) in <code>PROT.DAT</code>; the TIM-catalog grid below it shows every 2D texture. Nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -155,27 +155,7 @@
     <div class="viewer-layout">
       <!-- Sidebar: filtered list of viewable entries -->
       <div class="viewer-list-pane" id="viewer-list-pane" style="display: none;">
-        <div class="viewer-list-toolbar">
-          <select id="scene-filter" title="Filter by scene category">
-            <option value="town" selected>Towns</option>
-            <option value="field">Field areas</option>
-            <option value="world_map">World map</option>
-            <option value="battle">Battle data</option>
-            <option value="cutscene">Cutscenes (op*/ed*)</option>
-            <option value="audio">Audio (VAB / SEQ)</option>
-            <option value="system">System / overlays</option>
-            <option value="">All scenes</option>
-          </select>
-        </div>
-        <div class="viewer-list-toolbar">
-          <select id="class-filter" title="Filter by classification">
-            <option value="">all classes</option>
-          </select>
-        </div>
         <div class="viewer-list-toolbar" style="font-size: 0.78rem;">
-          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
-            <input type="checkbox" id="tmd-filter" checked> 3D only
-          </label>
           <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
             <input type="checkbox" id="textured-toggle" checked> textured
           </label>
@@ -214,9 +194,75 @@
   </div>
 </section>
 
+<section class="doc-section" id="tim-catalog">
+  <style>
+    #catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+      gap: 6px;
+      max-height: 440px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      background: #0a0e15;
+      padding: 8px;
+    }
+    .cat-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 4px;
+      min-height: 104px;       /* reserve space so lazy thumbnails load row-by-row */
+      border: 1px solid transparent;
+      border-radius: 3px;
+      cursor: pointer;
+      background: #11161f;
+    }
+    .cat-cell:hover { border-color: var(--border); }
+    .cat-cell.selected { border-color: var(--accent, #6ab0f3); background: #16202c; }
+    .cat-cell canvas {
+      width: 100%;
+      height: auto;
+      max-height: 84px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
+      background: #0a0e15;
+    }
+    .cat-cell-label {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--text-dim);
+      line-height: 1.1;
+      text-align: center;
+    }
+  </style>
+  <h2>PROT.DAT TIM catalog</h2>
+  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches an independent reference decoder's TIM index exactly &mdash; same offsets, dimensions, and palette counts &mdash; and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the 3D browser above can't reach. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <div id="catalog-pane" style="display: none;">
+    <div id="catalog-grid"></div>
+    <div id="catalog-detail" style="display: none; margin-top: 0.75rem;">
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem;">
+        <button id="cat-prev" type="button">&larr; Prev</button>
+        <input type="number" id="cat-id" min="0" value="0" title="TIM catalog id" style="width: 6rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.4rem; font-family: inherit;">
+        <button id="cat-next" type="button">Next &rarr;</button>
+        <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
+          <select id="cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
+        </label>
+        <span class="viewer-info" id="cat-info"></span>
+      </div>
+      <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
+        <canvas id="catalog-canvas" width="256" height="256" style="image-rendering: pixelated; background: #11161f; transform-origin: top left;"></canvas>
+      </div>
+    </div>
+  </div>
+  <p id="catalog-empty" class="hint">Load a disc (or raw <code>PROT.DAT</code>) above to browse the TIM catalog.</p>
+</section>
+
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
-  <p>The sidebar groups entries by scene category and classification. Filter by class (e.g. only <code>scene_tmd_stream</code> for character meshes, or <code>tim_passthrough</code> for standalone images) and jump by PROT index. By default the 3D path renders Legaia TMDs textured (WebGL2; same paletted fragment shader the native engine uses); toggle "textured" off in the sidebar for a flat-shaded fallback.</p>
+  <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. The TIM-catalog grid below shows every 2D texture in <code>PROT.DAT</code> &mdash; click a thumbnail to load it full-size and switch CLUT (palette) variants.</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
@@ -244,13 +290,125 @@
   const info = document.getElementById('viewer-info');
   const listPane = document.getElementById('viewer-list-pane');
   const list = document.getElementById('viewer-list');
-  const classFilter = document.getElementById('class-filter');
-  const sceneFilter = document.getElementById('scene-filter');
   const sceneHint   = document.getElementById('scene-hint');
   const jumpInput = document.getElementById('jump-input');
   const jumpBtn = document.getElementById('jump-btn');
 
   if (!fileInput) return;
+
+  /* --- TIM Catalog browse mode -----------------------------------------
+   * Self-contained: its own canvas + controls, independent of the PROT-
+   * entry browser (which swaps its canvas between 2D and WebGL). Driven by
+   * the flat jPSXdec-parity catalog the WASM viewer builds at load time. */
+  const catalogPane  = document.getElementById('catalog-pane');
+  const catalogEmpty = document.getElementById('catalog-empty');
+  const catGrid   = document.getElementById('catalog-grid');
+  const catDetail = document.getElementById('catalog-detail');
+  const catId   = document.getElementById('cat-id');
+  const catClut = document.getElementById('cat-clut');
+  const catInfo = document.getElementById('cat-info');
+  const catPrev = document.getElementById('cat-prev');
+  const catNext = document.getElementById('cat-next');
+  let catCount = 0;
+  let catCur = 0;
+
+  function renderCatalog(id, clut) {
+    try {
+      viewer.render_catalog_tim(id, clut, 'catalog-canvas');
+    } catch (e) {
+      catInfo.textContent = 'render error: ' + e;
+      return false;
+    }
+    return true;
+  }
+
+  /* Load one TIM full-size into the detail panel below the grid. */
+  function showCatalogTim(id) {
+    if (!viewer || catCount === 0) return;
+    id = Math.max(0, Math.min(catCount - 1, id | 0));
+    catCur = id;
+    catId.value = id;
+    catDetail.style.display = 'block';
+    const meta = JSON.parse(viewer.catalog_info_json(id));
+    const nclut = Math.max(1, meta.clut_count | 0);
+    catClut.innerHTML = '';
+    for (let i = 0; i < nclut; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = 'palette ' + i;
+      catClut.appendChild(o);
+    }
+    catClut.value = 0;                     /* CLUT resets to 0 per TIM */
+    catClut.disabled = (meta.clut_count | 0) <= 1;
+    if (!renderCatalog(id, 0)) return;
+    const where = meta.entry === 'gap' ? 'system-UI gap' : ('PROT ' + meta.entry);
+    catInfo.textContent =
+      `#${meta.id} / ${catCount - 1} · ${meta.width}×${meta.height} ${meta.bpp}bpp · ` +
+      `${meta.clut_count | 0} CLUT · ${where} +0x${meta.offset_in_entry.toString(16)} · ` +
+      `${meta.byte_len} B`;
+    /* Highlight the matching grid cell + scroll the detail into view. */
+    catGrid.querySelectorAll('.cat-cell.selected').forEach(c => c.classList.remove('selected'));
+    const cell = catGrid.querySelector(`.cat-cell[data-id="${id}"]`);
+    if (cell) cell.classList.add('selected');
+    catDetail.scrollIntoView({ block: 'nearest' });
+  }
+
+  /* Lazily render each thumbnail only as it scrolls into the grid viewport
+   * (1132 TIMs would be too much to blit up front). */
+  let thumbObserver = null;
+  function buildCatalogGrid() {
+    catGrid.innerHTML = '';
+    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+    thumbObserver = new IntersectionObserver((entries, obs) => {
+      for (const ent of entries) {
+        if (!ent.isIntersecting) continue;
+        const cell = ent.target;
+        obs.unobserve(cell);
+        const id = parseInt(cell.dataset.id, 10);
+        try { viewer.render_catalog_tim(id, 0, 'cat-thumb-' + id); } catch (e) { /* skip */ }
+      }
+    }, { root: catGrid, rootMargin: '120px' });
+
+    const frag = document.createDocumentFragment();
+    for (let id = 0; id < catCount; id++) {
+      const meta = JSON.parse(viewer.catalog_info_json(id));
+      const cell = document.createElement('div');
+      cell.className = 'cat-cell';
+      cell.dataset.id = id;
+      cell.title = `#${id} · ${meta.width}×${meta.height} ${meta.bpp}bpp`;
+      const cv = document.createElement('canvas');
+      cv.id = 'cat-thumb-' + id;
+      cv.width = 1; cv.height = 1;
+      const label = document.createElement('span');
+      label.className = 'cat-cell-label';
+      label.textContent = `#${id} · ${meta.width}×${meta.height}`;
+      cell.appendChild(cv);
+      cell.appendChild(label);
+      cell.addEventListener('click', () => showCatalogTim(id));
+      frag.appendChild(cell);
+    }
+    catGrid.appendChild(frag);
+    catGrid.querySelectorAll('.cat-cell').forEach(c => thumbObserver.observe(c));
+  }
+
+  function initCatalog() {
+    catCount = viewer ? viewer.catalog_len() : 0;
+    if (catCount === 0) {
+      catalogPane.style.display = 'none';
+      catalogEmpty.style.display = 'block';
+      catalogEmpty.textContent = 'No TIM catalog for this input (load a disc or raw PROT.DAT).';
+      return;
+    }
+    catalogEmpty.style.display = 'none';
+    catalogPane.style.display = 'block';
+    catDetail.style.display = 'none';
+    catId.max = catCount - 1;
+    buildCatalogGrid();
+  }
+
+  if (catPrev) catPrev.onclick = () => showCatalogTim(catCur - 1);
+  if (catNext) catNext.onclick = () => showCatalogTim(catCur + 1);
+  if (catId) catId.addEventListener('change', () => showCatalogTim(parseInt(catId.value, 10) || 0));
+  if (catClut) catClut.addEventListener('change', () => renderCatalog(catCur, parseInt(catClut.value, 10) || 0));
 
   let viewer = null;
   let allEntries = [];      /* entry-list-json output */
@@ -573,46 +731,22 @@
     rafId = requestAnimationFrame(tick);
   }
 
+  /* The top viewer is 3D-only: it lists every PROT entry that carries a
+   * Legaia TMD, with no scene/class filter. (2D textures are browsed in the
+   * TIM-catalog grid below.) */
   function rebuildList() {
-    const classF = classFilter.value;
-    const sceneF = sceneFilter.value;
-    const onlyTmd = document.getElementById('tmd-filter')?.checked;
-    visibleSlots = allEntries
-      .map((e, i) => i)
-      .filter(i => {
-        const e = allEntries[i];
-        if (classF && e.class !== classF) return false;
-        if (onlyTmd && !e.has_tmd) return false;
-        if (sceneF) {
-          const s = sceneForProt(e.prot_index);
-          if (!s || s.category !== sceneF) return false;
-        }
-        return true;
-      });
+    visibleSlots = allEntries.map((e, i) => i).filter(i => allEntries[i].has_tmd);
 
-    /* Update the in-pane hint with a one-line summary of what's visible. */
     if (sceneHint) {
-      if (sceneF && scenes.length > 0) {
-        const labels = new Set();
-        for (const slot of visibleSlots) {
-          const s = sceneForProt(allEntries[slot].prot_index);
-          if (s) labels.add(s.display);
-        }
-        const sample = [...labels].slice(0, 3).join(', ');
-        const more   = labels.size > 3 ? ` +${labels.size - 3}` : '';
-        sceneHint.textContent = `${visibleSlots.length} entries · ${sample}${more}`;
-      } else {
-        sceneHint.textContent = `${visibleSlots.length} entries`;
-      }
+      sceneHint.textContent = `${visibleSlots.length} 3D entries`;
     }
 
     list.innerHTML = visibleSlots.map(i => {
       const e = allEntries[i];
-      const dims = e.bpp ? `${e.w}×${e.h}` : '-';
-      const tag = e.has_tmd ? '<span style="color:var(--accent)">3D</span> · ' : '';
       const scene = sceneForProt(e.prot_index);
       const sceneTag = scene ? `<span class="li-scene">${scene.label}</span>` : '';
-      return `<li data-slot="${i}"><span class="li-idx">${e.prot_index}</span><span class="li-meta">${tag}${e.class}<br><span class="li-class">${dims}${scene ? ' &middot; ' + sceneTag : ''}</span></span></li>`;
+      const meshes = e.tmd_pack_count > 1 ? `${e.tmd_pack_count} meshes` : 'TMD';
+      return `<li data-slot="${i}"><span class="li-idx">${e.prot_index}</span><span class="li-meta">${e.class}<br><span class="li-class">${meshes}${scene ? ' &middot; ' + sceneTag : ''}</span></span></li>`;
     }).join('');
 
     list.querySelectorAll('li').forEach(li => {
@@ -623,15 +757,6 @@
         refreshInfo();
       });
     });
-  }
-
-  function populateClassFilter(entries) {
-    const classes = [...new Set(entries.map(e => e.class))].sort();
-    classFilter.innerHTML = '<option value="">all classes (' + entries.length + ')</option>'
-      + classes.map(c => {
-        const n = entries.filter(e => e.class === c).length;
-        return `<option value="${c}">${c} (${n})</option>`;
-      }).join('');
   }
 
   /* `f` is a File (fresh pick) or a cache-backed source from RomCache;
@@ -660,18 +785,10 @@
 
       if (count > 0) {
         allEntries = JSON.parse(viewer.entry_list_json());
-        populateClassFilter(allEntries);
 
-        /* Honour ?scene=<label> deep-links from the world / shops pages.
-         * Falls back to the default sceneFilter selection (Towns). */
+        /* Honour ?scene=<label> deep-links from the world / shops pages. */
         const params = new URLSearchParams(location.search);
         const wantScene = params.get('scene');
-        if (wantScene && scenes.length > 0) {
-          const hit = scenes.find(s => s.label === wantScene);
-          if (hit) {
-            sceneFilter.value = hit.category;
-          }
-        }
 
         rebuildList();
 
@@ -710,10 +827,8 @@
         prog.done('Standalone TIM rendered.');
       }
 
-      classFilter.addEventListener('change', rebuildList);
-      sceneFilter.addEventListener('change', rebuildList);
-      const tmdFilter = document.getElementById('tmd-filter');
-      if (tmdFilter) tmdFilter.addEventListener('change', rebuildList);
+      initCatalog();
+
       const texturedToggle = document.getElementById('textured-toggle');
       if (texturedToggle) texturedToggle.addEventListener('change', refreshInfo);
 

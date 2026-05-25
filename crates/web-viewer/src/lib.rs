@@ -15,6 +15,7 @@ pub mod tmd3d;
 
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
+use legaia_asset::tim_catalog;
 use legaia_asset::tim_scan;
 use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
@@ -57,6 +58,11 @@ struct ViewerEntry {
     first_tim: Option<TimHit>,
     /// Total number of TIM hits found by tim_scan (for the status line).
     tim_count: usize,
+    /// Strict-catalog TIM ids owned by this entry, in id (ascending-offset)
+    /// order. Drives the per-entry TIM stepper: the 2D path renders
+    /// `catalog_ids[tim_in_entry]`. Empty for LZS-only or TMD-only entries
+    /// (those keep the `first_tim` / 3D paths).
+    catalog_ids: Vec<u32>,
     /// Where the entry's leading TMD lives (if any). Used by the 3D viewer
     /// path. None ⇒ no TMD; render the TIM instead (or a "no TMD" message).
     tmd_source: Option<TmdSource>,
@@ -142,6 +148,9 @@ pub struct LegaiaViewer {
     current: usize,
     /// CLUT index to use when rendering paletted TIMs.
     clut_idx: usize,
+    /// Which TIM within the current entry the 2D path renders (index into the
+    /// entry's `catalog_ids`). Reset to 0 on every entry switch.
+    tim_in_entry: usize,
     /// Currently-loaded kingdom bundle (Drake/Sebucus/Karisto). Populated by
     /// `set_scene_kingdom`; consumed by the `pack_mesh_*` accessors.
     kingdom: Option<KingdomPack>,
@@ -171,6 +180,12 @@ pub struct LegaiaViewer {
     /// magic-attack ids into the on-screen spell names (`0x27` -> `Tail Fire`).
     /// `None` on raw PROT.DAT loads.
     spell_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// Flat catalog of every standard PSX TIM in the loaded PROT.DAT image,
+    /// built at load time from the TOC (see [`tim_catalog`]). Drives the
+    /// "TIM Catalog" browse mode: page through every TIM by id with its CLUT
+    /// variants, regardless of which PROT entry (or the unindexed gap) hosts
+    /// it. Empty on the single-TIM load path.
+    tim_catalog: Vec<tim_catalog::CatalogTim>,
 }
 
 #[wasm_bindgen]
@@ -188,12 +203,14 @@ impl LegaiaViewer {
             viewable: Vec::new(),
             current: 0,
             clut_idx: 0,
+            tim_in_entry: 0,
             kingdom: None,
             continent: None,
             worldmap_menu: None,
             fog_lut: None,
             item_names: None,
             spell_names: None,
+            tim_catalog: Vec::new(),
         })
     }
 
@@ -208,6 +225,7 @@ impl LegaiaViewer {
         self.fog_lut = None;
         self.item_names = None;
         self.spell_names = None;
+        self.tim_catalog = Vec::new();
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -286,11 +304,41 @@ impl LegaiaViewer {
 
         let entries = parse_prot_toc(&prot_bytes)
             .ok_or_else(|| JsValue::from_str("PROT TOC parse failed"))?;
+
+        // Build the flat TIM catalog from the whole image + TOC spans. This
+        // catches TIMs in the unindexed system-UI gap that the per-entry
+        // tim-scan below never sees, and gives the UI a stable per-TIM id.
+        let spans: Vec<(u64, u64, u32)> = entries
+            .iter()
+            .map(|e| (e.byte_offset, e.size_bytes, e.index))
+            .collect();
+        self.tim_catalog = tim_catalog::build_from_spans(&prot_bytes, &spans);
+        console_log(&format!(
+            "Cataloged {} TIMs in PROT.DAT",
+            self.tim_catalog.len()
+        ));
+
         console_log(&format!(
             "Found {} PROT entries - classifying…",
             entries.len()
         ));
         self.disc = prot_bytes;
+
+        // Index the strict TIM catalog by owning entry so the entry browser
+        // shows the SAME TIM the catalog does (strict-validated, jPSXdec
+        // parity) instead of whatever the lenient per-entry scan picked first.
+        // Entries whose TIMs only exist inside LZS-compressed sections aren't
+        // in the catalog (the flat scan doesn't decompress), so those still
+        // fall back to the lenient scan below.
+        // entry index -> its catalog TIM ids, ascending (the catalog is built
+        // in ascending-offset order, so push order is already correct).
+        let mut catalog_by_entry: std::collections::HashMap<u32, Vec<u32>> =
+            std::collections::HashMap::new();
+        for t in &self.tim_catalog {
+            if let Some(idx) = t.entry_index {
+                catalog_by_entry.entry(idx).or_default().push(t.id);
+            }
+        }
 
         // Classify + tim-scan each entry. Skip non-viewable classes early to
         // keep this fast on the user's main thread. The expensive step is
@@ -306,53 +354,75 @@ impl LegaiaViewer {
             let buf = &self.disc[off..end];
             let report = classify(buf);
 
-            // Skip classes that never carry TIMs.
-            if matches!(
-                report.class,
-                Class::Empty
-                    | Class::Tiny
-                    | Class::AllZeros
-                    | Class::MostlyZeros
-                    | Class::ConstantByte
-                    | Class::PochiFiller
-                    | Class::MipsOverlay
-                    | Class::OverlayPtrTable
-                    | Class::SceneVabStream
-            ) {
+            let cat_ids: &[u32] = catalog_by_entry
+                .get(&e.index)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            let has_cat = !cat_ids.is_empty();
+
+            // Skip classes that never carry TIMs - unless the catalog already
+            // found a (strict) TIM here, in which case show it regardless.
+            if !has_cat
+                && matches!(
+                    report.class,
+                    Class::Empty
+                        | Class::Tiny
+                        | Class::AllZeros
+                        | Class::MostlyZeros
+                        | Class::ConstantByte
+                        | Class::PochiFiller
+                        | Class::MipsOverlay
+                        | Class::OverlayPtrTable
+                        | Class::SceneVabStream
+                )
+            {
                 continue;
             }
 
-            let scan = tim_scan::scan_entry(buf);
-            let tim_count = scan.hits.len();
-
-            // Find the first hit whose bytes actually decode (not just magic match).
-            let mut first_tim = None;
-            for (source, hit) in &scan.hits {
-                let bytes_for_parse: Option<&[u8]> = match source {
-                    tim_scan::Source::Raw => Some(&buf[hit.offset..]),
-                    tim_scan::Source::Lzs(idx) => {
-                        scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..])
-                    }
+            // Prefer the strict catalog TIM for this entry; fall back to the
+            // lenient scan only when the catalog has none (LZS-only entries).
+            let (first_tim, tim_count) = if has_cat {
+                let t = &self.tim_catalog[cat_ids[0] as usize];
+                let ft = TimHit {
+                    source: TimSource::Raw(t.offset_in_entry as usize),
+                    width: t.width,
+                    height: t.height,
+                    bpp: t.bpp,
                 };
-                if let Some(b) = bytes_for_parse
-                    && legaia_tim::parse(b).is_ok()
-                {
-                    let ts = match source {
-                        tim_scan::Source::Raw => TimSource::Raw(hit.offset),
-                        tim_scan::Source::Lzs(idx) => TimSource::Lzs {
-                            section: *idx,
-                            offset: hit.offset,
-                        },
+                (Some(ft), cat_ids.len())
+            } else {
+                let scan = tim_scan::scan_entry(buf);
+                let tim_count = scan.hits.len();
+                // First hit whose bytes actually decode (not just magic match).
+                let mut first_tim = None;
+                for (source, hit) in &scan.hits {
+                    let bytes_for_parse: Option<&[u8]> = match source {
+                        tim_scan::Source::Raw => Some(&buf[hit.offset..]),
+                        tim_scan::Source::Lzs(idx) => {
+                            scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..])
+                        }
                     };
-                    first_tim = Some(TimHit {
-                        source: ts,
-                        width: hit.width,
-                        height: hit.height,
-                        bpp: hit.bpp,
-                    });
-                    break;
+                    if let Some(b) = bytes_for_parse
+                        && legaia_tim::parse(b).is_ok()
+                    {
+                        let ts = match source {
+                            tim_scan::Source::Raw => TimSource::Raw(hit.offset),
+                            tim_scan::Source::Lzs(idx) => TimSource::Lzs {
+                                section: *idx,
+                                offset: hit.offset,
+                            },
+                        };
+                        first_tim = Some(TimHit {
+                            source: ts,
+                            width: hit.width,
+                            height: hit.height,
+                            bpp: hit.bpp,
+                        });
+                        break;
+                    }
                 }
-            }
+                (first_tim, tim_count)
+            };
 
             // Detect a leading TMD for the 3D viewer path (raw, scene_tmd_stream,
             // or the first of an LZS-packed environment-geometry mesh pack).
@@ -368,6 +438,7 @@ impl LegaiaViewer {
                 class: report.class,
                 first_tim,
                 tim_count,
+                catalog_ids: cat_ids.to_vec(),
                 tmd_source,
                 tmd_pack_count,
             });
@@ -405,6 +476,8 @@ impl LegaiaViewer {
             return Ok(0);
         }
         self.current = (self.current + 1) % self.viewable.len();
+        self.tim_in_entry = 0;
+        self.clut_idx = 0;
         self.render_current()?;
         Ok(self.current_index())
     }
@@ -418,6 +491,8 @@ impl LegaiaViewer {
         } else {
             self.current - 1
         };
+        self.tim_in_entry = 0;
+        self.clut_idx = 0;
         self.render_current()?;
         Ok(self.current_index())
     }
@@ -430,6 +505,8 @@ impl LegaiaViewer {
         }
         let s = (slot as usize).min(self.viewable.len() - 1);
         self.current = s;
+        self.tim_in_entry = 0;
+        self.clut_idx = 0;
         self.render_current()?;
         Ok(self.current_index())
     }
@@ -437,6 +514,154 @@ impl LegaiaViewer {
     pub fn set_clut(&mut self, idx: u32) -> Result<(), JsValue> {
         self.clut_idx = idx as usize;
         self.render_current()
+    }
+
+    // --- Per-entry TIM stepper -------------------------------------------
+    //
+    // A single PROT entry can hold many TIMs (e.g. a town's scene scripts
+    // carry ~96). The 2D path renders `catalog_ids[tim_in_entry]`; these
+    // accessors let the JS UI page through all of them within one entry.
+
+    /// Number of strict-catalog TIMs the 2D stepper can page through in the
+    /// current entry. 0 for TMD/3D entries (the mesh owns the canvas) and
+    /// LZS-only entries (their TIMs aren't in the flat catalog).
+    pub fn current_tim_count(&self) -> u32 {
+        match self.viewable.get(self.current) {
+            Some(e) if e.tmd_source.is_none() => e.catalog_ids.len() as u32,
+            _ => 0,
+        }
+    }
+
+    /// Index of the TIM the 2D path is currently showing within the entry.
+    pub fn current_tim_index(&self) -> u32 {
+        self.tim_in_entry as u32
+    }
+
+    /// CLUT-palette count of the current entry's current TIM (0 for 16/24bpp).
+    pub fn current_tim_clut_count(&self) -> u32 {
+        let e = match self.viewable.get(self.current) {
+            Some(e) => e,
+            None => return 0,
+        };
+        e.catalog_ids
+            .get(self.tim_in_entry)
+            .and_then(|id| self.tim_catalog.get(*id as usize))
+            .map(|t| t.clut_count as u32)
+            .unwrap_or(0)
+    }
+
+    /// JSON describing the current entry's current TIM (catalog id, offset,
+    /// dimensions, CLUT count, byte length) for the status line.
+    pub fn current_tim_info_json(&self) -> String {
+        let id = match self
+            .viewable
+            .get(self.current)
+            .and_then(|e| e.catalog_ids.get(self.tim_in_entry))
+        {
+            Some(id) => *id,
+            None => return "{}".to_string(),
+        };
+        self.catalog_info_json(id)
+    }
+
+    /// Select which TIM within the current entry the 2D path renders.
+    pub fn set_tim_in_entry(&mut self, idx: u32) -> Result<(), JsValue> {
+        let n = self.current_tim_count();
+        if n == 0 {
+            return Ok(());
+        }
+        self.tim_in_entry = (idx as usize).min(n as usize - 1);
+        self.clut_idx = 0;
+        self.render_current()
+    }
+
+    // --- TIM Catalog browse mode -----------------------------------------
+    //
+    // The catalog is a flat, jPSXdec-parity inventory of every standard TIM
+    // in the loaded PROT.DAT, keyed by a stable id. These accessors let the
+    // page page through all of them by id and switch CLUT variants, even for
+    // TIMs that live in the unindexed system-UI gap (no owning PROT entry).
+
+    /// Number of cataloged TIMs in the loaded PROT.DAT.
+    pub fn catalog_len(&self) -> u32 {
+        self.tim_catalog.len() as u32
+    }
+
+    /// Number of CLUT palettes available for cataloged TIM `id` (0 for
+    /// 16/24bpp TIMs, which carry no palette).
+    pub fn catalog_clut_count(&self, id: u32) -> u32 {
+        self.tim_catalog
+            .get(id as usize)
+            .map(|t| t.clut_count as u32)
+            .unwrap_or(0)
+    }
+
+    /// JSON describing cataloged TIM `id` (offset, owning entry, dimensions,
+    /// CLUT count, byte length, fingerprint) for the info panel.
+    pub fn catalog_info_json(&self, id: u32) -> String {
+        match self.tim_catalog.get(id as usize) {
+            Some(t) => {
+                let entry = match t.entry_index {
+                    Some(i) => i.to_string(),
+                    None => "gap".to_string(),
+                };
+                format!(
+                    "{{\"id\":{},\"abs_offset\":{},\"sector\":{},\"entry\":\"{}\",\
+                     \"offset_in_entry\":{},\"width\":{},\"height\":{},\"bpp\":{},\
+                     \"clut_count\":{},\"byte_len\":{},\"fnv1a\":\"{:016x}\"}}",
+                    t.id,
+                    t.abs_offset,
+                    t.sector,
+                    entry,
+                    t.offset_in_entry,
+                    t.width,
+                    t.height,
+                    t.bpp,
+                    t.clut_count,
+                    t.byte_len,
+                    t.fnv1a,
+                )
+            }
+            None => "{}".to_string(),
+        }
+    }
+
+    /// Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
+    /// `canvas_id`. The catalog browser uses its own canvas (separate from
+    /// the PROT-entry browser's, which switches between 2D and WebGL), so it
+    /// takes the target id explicitly rather than the viewer's bound canvas.
+    pub fn render_catalog_tim(&self, id: u32, clut: u32, canvas_id: &str) -> Result<(), JsValue> {
+        let t = self
+            .tim_catalog
+            .get(id as usize)
+            .ok_or_else(|| JsValue::from_str(&format!("catalog id {id} out of range")))?;
+        let off = t.abs_offset as usize;
+        let tim = legaia_tim::parse(&self.disc[off..])
+            .map_err(|e| JsValue::from_str(&format!("catalog[{id}] TIM parse: {e}")))?;
+        let clut_idx = if t.clut_count > 0 {
+            (clut as usize).min(t.clut_count - 1)
+        } else {
+            0
+        };
+        let rgba = legaia_tim::decode_rgba8(&tim, clut_idx)
+            .map_err(|e| JsValue::from_str(&format!("catalog[{id}] decode: {e}")))?;
+        let w = tim.pixel_width() as u32;
+        let h = tim.image.h as u32;
+        let canvas = resolve_canvas(canvas_id)?;
+        let ctx = canvas
+            .get_context("2d")?
+            .ok_or_else(|| JsValue::from_str("catalog canvas has no 2D context"))?
+            .dyn_into::<CanvasRenderingContext2d>()?;
+        if w == 0 || h == 0 {
+            return Err(JsValue::from_str(&format!(
+                "catalog[{id}]: empty TIM ({w}x{h})"
+            )));
+        }
+        canvas.set_width(w);
+        canvas.set_height(h);
+        let img = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&rgba), w, h)?;
+        ctx.put_image_data(&img, 0.0, 0.0)?;
+        Ok(())
     }
 
     /// Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
@@ -1884,7 +2109,7 @@ impl LegaiaViewer {
             };
             let has_tmd = e.tmd_source.is_some();
             s.push_str(&format!(
-                "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"w\":{},\"h\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{}}}",
+                "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"w\":{},\"h\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{},\"tmd_pack_count\":{}}}",
                 i,
                 e.meta.index,
                 e.class.name(),
@@ -1893,6 +2118,7 @@ impl LegaiaViewer {
                 bpp,
                 e.tim_count,
                 has_tmd,
+                e.tmd_pack_count,
             ));
         }
         s.push(']');
@@ -1920,6 +2146,18 @@ impl LegaiaViewer {
         // which case getContext("2d") returns null.
         if entry.tmd_source.is_some() {
             return Ok(());
+        }
+
+        // 2D path: render the selected TIM of the entry. When the strict
+        // catalog has TIMs for this entry, step through them by
+        // `tim_in_entry`; this is what lets the browser enumerate all N TIMs
+        // an entry carries instead of only the first.
+        if !entry.catalog_ids.is_empty() {
+            let idx = self.tim_in_entry.min(entry.catalog_ids.len() - 1);
+            let cat_id = entry.catalog_ids[idx];
+            let clut = self.clut_idx as u32;
+            let canvas = self.canvas_id.clone();
+            return self.render_catalog_tim(cat_id, clut, &canvas);
         }
 
         let Some(hit) = &entry.first_tim else {

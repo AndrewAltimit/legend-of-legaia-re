@@ -45,6 +45,7 @@ pub mod scene_vab_stream;
 pub mod spell_names;
 pub mod stage_geom;
 pub mod str_fmv_table;
+pub mod tim_catalog;
 pub mod tim_scan;
 pub mod title_pak;
 pub mod tmd_scan;
