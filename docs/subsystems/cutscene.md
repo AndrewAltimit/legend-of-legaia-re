@@ -26,87 +26,101 @@ share the town field-VM overlay binary, not the FMV decoder. Capture pipeline:
 ## STR sector format
 
 STR video is carried in 2048-byte Mode 2 Form 1 sectors. Each sector's user-data area starts with
-a 20-byte header, followed by 2028 bytes of compressed bitstream payload:
+a 32-byte sector header; the remaining 2016 bytes are the demuxed-frame payload. Concatenating the
+`[0x20..2048]` payload of every sector of a frame (in arrival order) reconstructs that frame's
+demuxed bitstream, which begins with the Iki frame header (see below).
 
 ```text
 Offset  Bytes  Field
 0x000   2      magic            - 0x0160 = video sector; any other value = non-video, skip silently
-0x002   2      chunk_number     - 0-indexed position of this sector within the frame
-0x004   2      chunks_per_frame - total sectors needed to complete this frame
-0x006   2      frame_number     - sequential, 0-based, wraps at 0xFFFF
-0x008   4      bs_data_size     - total bitstream bytes across all chunks for this frame
-0x00C   2      width            - frame width in pixels (multiple of 16)
-0x00E   2      height           - frame height in pixels (multiple of 16)
-0x010   2      bs_version       - 2 (BS v2 only in Legaia)
-0x012   2      quantize_scale   - per-frame quantization scale, 0..63
-0x014   2028   bs_data          - compressed bitstream payload chunk
+0x002   2      type             - 0x8001
+0x004   2      chunk_number     - 0-indexed position of this sector within the frame
+0x006   2      chunks_per_frame - total sectors needed to complete this frame
+0x008   4      frame_number     - sequential, wraps at 0xFFFF
+0x00C   4      frame_size_bytes - total demuxed bytes across all chunks for this frame
+0x010   2      width            - frame width in pixels (multiple of 16)
+0x012   2      height           - frame height in pixels (multiple of 16)
+0x014   12     replicated frame-header copy + zero padding (not used by the decoder)
+0x020   2016   demux payload chunk
 ```
 
 Multi-chunk frames: `StrFrameAssembler` accumulates sector payloads in arrival order. When
-`chunk_number + 1 == chunks_per_frame` the full bitstream is returned truncated to `bs_data_size`.
-Non-video sectors (magic ≠ 0x0160) are skipped silently.
+`chunk_number + 1 == chunks_per_frame` the demuxed frame is returned, truncated to
+`frame_size_bytes`. Non-video sectors (magic ≠ 0x0160) are skipped silently.
 
 Implementation: `crates/mdec/src/str_sector.rs` (`StrFrameAssembler`).
 
-## MDEC decoder
+## MDEC decoder (Iki bitstream)
 
-`MdecDecoder::decode_frame(bs)` converts a complete BS v2 bitstream into an RGBA8 pixel buffer.
-Clean-room port; source: PSX-SPX §MDEC Decompression.
+`MdecDecoder::decode_frame(frame)` converts a complete demuxed frame into an RGBA8 pixel buffer.
+Legaia's movies use the PSX **"Iki"** bitstream variant, **not** the common STRv2 layout. The
+distinguishing trait: the per-block DC and quantization scale are **not** in the entropy bitstream
+- they live in a separate LZSS-compressed lookup table right after the frame header, and the
+bitstream carries only AC coefficients. (STRv2 would put a per-frame qscale in the header and each
+block's DC inside the bitstream; Legaia overwrites STRv2's header qscale/version fields with the
+frame width/height, which is what a strict STRv2 parser rejects.) Clean-room port; sources:
+PSX-SPX BS-compression pages + jPSXdec's `PlayStation1_STR_format.txt` (format docs only).
 
-### 1. Bitstream header
+### 1. Frame header (10 bytes)
 
-4 bytes preceding the macroblock data: `u16 n_words` (number of 32-bit words) + `u16 qs`
-(per-frame quantization scale, 0–63, also embedded in the STR sector header above).
-
-### 2. VLC decoding
-
-Each 8×8 block decodes its DC coefficient first, then AC coefficients until an EOB token.
-
-**DC coefficient** - luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). The
-table gives a size in bits; that many sign-extended bits follow as the delta value. DC is
-delta-coded: each block's DC is the previous block's DC plus the delta, per-component
-(Cr/Cb/Y0-Y3 each have independent running state).
-
-**AC coefficients** - MPEG-1 Table B.14 (run/level pairs). Each entry gives `(run, level)`: skip
-`run` zero coefficients, then insert `level`. Escape sequences carry a 6-bit run + 8-bit signed
-level directly. The EOB code (`run == 64`) ends the block.
-
-After VLC, coefficients are arranged in JPEG zigzag scan order.
-
-### 3. Dequantize
-
-```
-coef[i] = clamp( (coef[i] * qs * Q_MAT[i] + 4) / 8, -2048, 2047 )
+```text
+Offset  Bytes  Field
+0x000   2      mdec_code_count
+0x002   2      0x3800 magic
+0x004   2      width
+0x006   2      height
+0x008   2      lzss_size   - byte length of the compressed qscale/DC table that follows
 ```
 
-`Q_MAT` is the standard PSX quantization matrix (DC position always gets `qs = 2` applied
-independently before the formula).
+### 2. LZSS qscale/DC table
 
-### 4. 8×8 IDCT
+The `lzss_size` bytes after the header decompress to a `block_count * 2`-byte table. The LZSS scheme:
+one control byte whose 8 bits are tested LSB-first; a `0` bit copies one literal byte, a `1` bit is a
+back-reference - a length byte (`+3`, range 3..=258) then a 1- or 2-byte offset (high bit of the
+first byte selects the 2-byte form; offset is `+1`, relative to the current output position;
+overlapping copies allowed). For block `i` the packed word is
+`(table[i] << 8) | table[i + block_count]`: top 6 bits = quant scale, low 10 bits = signed DC.
 
-Two-pass separable 2D IDCT using a precomputed cosine table `IDCT_C[k][n]` (values pre-scaled by
-2048). Row IDCT followed by column IDCT; output clamped to `[-128, 127]`.
+### 3. AC bitstream
+
+Read as **16-bit little-endian words, MSB-first within each word**, beginning immediately after the
+compressed table. Per block: AC run/level codes from the PSX VLC table (`AC_CODES`), terminated by
+the End-of-Block code `10`. The escape code `000001` is followed by a 16-bit raw MDEC value
+(`run << 10 | signed-10-bit level`). A block that fills all 63 AC positions is *still* terminated by
+an explicit EOB, so the decode loop always reads the next code rather than stopping when the
+coefficient index saturates.
+
+### 4. Dequantize + IDCT
+
+DC: `coef[0] = DC * Q_MAT[0]`. AC: `coef[zigzag[i]] = (level * Q_MAT[i] * qscale + 4) >> 3`
+(arithmetic shift = floor, matching PSX rounding; not range-clamped - escape codes carry large
+levels). Two-pass separable 8×8 IDCT using `IDCT_C[k][n]` (pre-scaled by 2048); the row pass keeps
+full `i64` precision and the single `>> 24` after the column pass normalises a DC-only block to
+`coef[0] / 8`.
 
 ### 5. Macroblock layout
 
-Macroblocks are 16×16 pixels in raster order. Each macroblock decodes 6 × 8×8 blocks in this
-order: **Cr, Cb, Y0 (top-left), Y1 (top-right), Y2 (bottom-left), Y3 (bottom-right)**.
+Each macroblock decodes 6 × 8×8 blocks in the order **Cr, Cb, Y0 (top-left), Y1 (top-right),
+Y2 (bottom-left), Y3 (bottom-right)**. Macroblocks are laid out **column-major**: down each 16-pixel
+column top-to-bottom, then the next column to the right.
 
 ### 6. 4:2:0 upsampling + BT.601 colour conversion
 
-Each Cb/Cr sample covers a 2×2 luma region. Chroma values are center-biased (nominal ~128,
-subtracted before the matrix). Fixed-point BT.601 YCbCr → RGBA8:
+Each Cb/Cr sample covers a 2×2 luma region. PSX MDEC outputs signed (zero-centred) samples, so the
+luma is offset by `+128` on the final RGB. Fixed-point BT.601 YCbCr → RGBA8:
 
 ```
-R = Y + ((91881 * Cr) >> 16)
-G = Y - ((22554 * Cb + 46802 * Cr) >> 16)
-B = Y + ((116130 * Cb) >> 16)
+R = (Y+128) + ((91881 * Cr) >> 16)
+G = (Y+128) - ((22554 * Cb + 46802 * Cr) >> 16)
+B = (Y+128) + ((116130 * Cb) >> 16)
 A = 255
 ```
 
 Output is a `width × height` RGBA8 buffer in row-major order.
 
-Implementation: `crates/mdec/src/lib.rs` (`MdecDecoder`, VLC tables, `IDCT_C`, `Q_MAT`).
+Implementation: `crates/mdec/src/lib.rs` (`MdecDecoder`, `AC_CODES`, `iki_lzss_decompress`,
+`IDCT_C`, `Q_MAT`). The disc-gated `str_mdec_decode_is_pixel_stable` test pins a decoded-frame
+fingerprint as a regression guard.
 
 ## XA audio
 
@@ -432,7 +446,7 @@ Disc-gated coverage: `crates/engine-core/tests/opdeene_timeline_execution.rs` co
 | Subject | Source |
 |---|---|
 | STR sector header layout | `crates/mdec/src/str_sector.rs`; PSX-SPX §STR Video Files |
-| BS v2 VLC tables (DC/AC) | `crates/mdec/src/lib.rs`; PSX-SPX Tables B.12–B.14 |
+| Iki AC VLC table + LZSS qscale/DC table | `crates/mdec/src/lib.rs`; PSX-SPX BS-compression pages + jPSXdec `PlayStation1_STR_format.txt` (format docs) |
 | IDCT + dequantize formula | `crates/mdec/src/lib.rs`; PSX-SPX §MDEC |
 | BT.601 coefficients | `crates/mdec/src/lib.rs` |
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
