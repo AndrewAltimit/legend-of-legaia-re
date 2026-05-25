@@ -110,6 +110,11 @@ export const legaiaviewer_slot4_wireframe_bounds: (a: number, b: number, c: numb
 export const legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
 export const legaiaviewer_slot4_wireframe_points: (a: number, b: number, c: number, d: number) => [number, number];
 export const legaiaviewer_status: (a: number) => [number, number];
+export const legaiaviewer_walk_ground_cba_tsb: (a: number) => [number, number];
+export const legaiaviewer_walk_ground_indices: (a: number) => [number, number];
+export const legaiaviewer_walk_ground_positions: (a: number) => [number, number];
+export const legaiaviewer_walk_ground_quad_count: (a: number) => number;
+export const legaiaviewer_walk_ground_uvs: (a: number) => [number, number];
 export const legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
 export const wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;

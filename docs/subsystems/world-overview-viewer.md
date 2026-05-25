@@ -42,6 +42,57 @@ The "normalize unplaced" toggle disables both transforms (falls back
 to the legacy constant scale + TMD-local-origin pivot) so the user
 can ground-truth against retail.
 
+## Continent ground heightfield
+
+The viewer draws the kingdom's full continent terrain the same way the
+native engine's world-map render does: a procedural **heightfield
+surface** built from the walk `.MAP` floor grid, per-cell-textured from a
+terrain-type-keyed multi-page atlas. This is the bulk ground (grass /
+mountain / water / forest), distinct from the sparse slot-1 landmark
+meshes layered on top. The heightfield model and per-cell texturing are
+pinned in [`world-map.md`](world-map.md) "Ground texturing"; the surface
+math is `legaia_asset::field_objects::build_walk_heightfield`
+(`FUN_80019278` bilinear floor sampler).
+
+The WASM viewer builds the same surface from the raw PROT.DAT it already
+has in hand (`legaia_web_viewer::build_walk_ground`), mirroring
+`Scene::walk_heightfield` without the full `ProtIndex` / CDNAME stack:
+
+- **Walk `.MAP`** is the entry two slots before the kingdom block start
+  (`prot_base - 2`), identified by its `0x12000` extended footprint. The
+  within-block `0x12000` entry is a decoy with the wrong continent (only a
+  handful of `0x1000` cells); the preceding "duplicate"-cluster entry is
+  the real grid.
+- **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the
+  kingdom bundle's MAN slot (slot 2) — the same bytes
+  `Scene::field_floor_height_lut` reads.
+
+`build_walk_ground` reuses `build_walk_heightfield` for the grid math, so
+its output is **byte-identical** to the engine's `Scene::walk_heightfield`
+(positions + per-cell UVs + per-cell `[clut, tpage]` + indices), asserted
+for all three kingdoms by the disc-gated test
+`crates/web-viewer/tests/walk_ground_parity.rs`.
+
+The heightfield's per-cell `[clut, tpage]` reference the terrain atlas
+VRAM pages (grass `0x1A` at fb `(640, 256)`, mountain `0x0C` at fb
+`(768, 0)`, water `0x1B`/`0x1C`, forest `0x0B`). Those pages are already
+resident: the kingdom bundle's slot-0 TIM_LIST (uploaded to VRAM by
+`set_scene_kingdom` for the landmark meshes) is the *same* atlas the
+native `SceneLoadKind::WorldMap` VRAM build uses, so the ground samples
+correct terrain textures from the VRAM the viewer already has.
+
+The `walk_ground_{positions,uvs,cba_tsb,indices,quad_count}` WASM
+accessors hand the surface to the WebGL renderer. `TmdRenderer.uploadGround`
+keeps it resident as one mesh; `renderAssembled` draws it after the ocean
+plane (so land occludes water via depth-test) and before the landmark
+placements (so they sit on top), with a fixed `diag(1, -1, 1)` model — the
+same Y-flip the placement models apply, since the heightfield is already in
+world coordinates. The "terrain" checkbox toggles the ground pass
+(read per-frame, no kingdom re-entry). When the heightfield is present it
+also drives the default camera framing (centred on its XZ centroid, sized
+to its extent); the "lock to retail top-view" button still recentres on the
+captured spawn anchor on demand.
+
 ## Distance-cue fog pass
 
 The viewer's fog toggle approximates the retail world-map fog: the
