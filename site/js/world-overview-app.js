@@ -98,6 +98,7 @@
   const $showUnplaced = document.getElementById('wo-show-unplaced');
   const $normalizeUnplaced = document.getElementById('wo-normalize-unplaced');
   const $fogEnable  = document.getElementById('wo-fog-enable');
+  const $showTerrain = document.getElementById('wo-show-terrain');
   const $lockTopView = document.getElementById('wo-lock-topview');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
@@ -211,9 +212,11 @@
     const $unplacedWrap = document.getElementById('wo-show-unplaced-wrap');
     const $normalizeWrap = document.getElementById('wo-normalize-unplaced-wrap');
     const $fogWrap = document.getElementById('wo-fog-wrap');
+    const $terrainWrap = document.getElementById('wo-show-terrain-wrap');
     if ($unplacedWrap)  $unplacedWrap.hidden  = meshOnly;
     if ($normalizeWrap) $normalizeWrap.hidden = meshOnly;
     if ($fogWrap)       $fogWrap.hidden       = meshOnly;
+    if ($terrainWrap)   $terrainWrap.hidden   = meshOnly;
     if ($lockTopView)   $lockTopView.hidden   = meshOnly;
     $resetCam.hidden = false;
     /* Re-enter the active kingdom so the right path renders. */
@@ -248,6 +251,15 @@
   if ($oceanEnable) {
     $oceanEnable.addEventListener('change', () => {
       pushOceanParamsToRenderer();
+    });
+  }
+  if ($showTerrain) {
+    $showTerrain.addEventListener('change', () => {
+      /* The ground draw flag is read per-frame, so a flip takes effect
+       * without re-entering the kingdom. */
+      if (glRenderer && typeof glRenderer.setGroundEnable === 'function') {
+        glRenderer.setGroundEnable($showTerrain.checked);
+      }
     });
   }
   if ($lockTopView) {
@@ -570,6 +582,23 @@
     /* Upload the disc-side ocean texture + 13-frame CLUT animation
      * table now that slot 0 has been decompressed. */
     pushOceanAssetsToRenderer();
+    /* Walk-view continent ground: the procedural heightfield surface the
+     * native engine draws (per-cell terrain-atlas textured from the same
+     * slot-0 VRAM uploaded above). set_scene_kingdom already built it;
+     * upload it once here and let renderAssembled draw it under the
+     * landmark placements. */
+    const groundQuads = viewer.walk_ground_quad_count();
+    if (groundQuads > 0) {
+      glRenderer.uploadGround(
+        viewer.walk_ground_positions(),
+        viewer.walk_ground_uvs(),
+        viewer.walk_ground_cba_tsb(),
+        viewer.walk_ground_indices(),
+      );
+    } else {
+      glRenderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
+    }
+    glRenderer.setGroundEnable(!$showTerrain || $showTerrain.checked);
     /* Upload a single pack mesh on demand; return true if its mesh data
      * is renderable (some slots have non-textured flat-shaded prims that
      * the WebGL path skips). */
@@ -805,7 +834,7 @@
         }
       }
     }
-    frameWorldCam(drawPlacements, ext);
+    frameWorldCam(drawPlacements, ext, glRenderer.getGroundAabb());
     worldCam.pitch = 0;
     const unplacedShownTotal = unplacedShown.landmark
       + unplacedShown.decoration + unplacedShown.ground_tile
@@ -845,9 +874,12 @@
       ` + ${renderCounts.global_pool} global-pool placeholders`;
     const skippedSummary = renderCounts.skipped === 0 ? '' :
       ` (${renderCounts.skipped} skipped)`;
+    const terrainSummary = groundQuads > 0
+      ? ` + ${groundQuads}-cell ground heightfield`
+      : '';
     $meshLabel.textContent =
       `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
-      + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
+      + terrainSummary + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
@@ -866,8 +898,20 @@
    * and the cluster. This keeps the viewer's initial view aligned with
    * the retail spawn (where the kingdom's exit drops the player onto
    * the world map) while still showing every placed landmark. */
-  function frameWorldCam(drawPlacements, ext) {
+  function frameWorldCam(drawPlacements, ext, groundAabb) {
     const retail = KINGDOM_CAM[currentKingdom];
+    /* When the continent ground heightfield is present it's the dominant
+     * geometry, so frame the whole continent (centred on its XZ centroid,
+     * sized to cover its extent + a margin) rather than the sparse
+     * landmark cluster. The "lock to retail top-view" button still gives
+     * the retail spawn framing on demand. */
+    if (groundAabb && groundAabb.sx > 0 && groundAabb.sz > 0) {
+      worldCam.centerX = groundAabb.cx;
+      worldCam.centerZ = groundAabb.cz;
+      worldCam.halfWidth  = groundAabb.sx / 2 + 1000;
+      worldCam.halfHeight = groundAabb.sz / 2 + 1000;
+      return;
+    }
     if (drawPlacements && drawPlacements.length > 0) {
       let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
       for (const p of drawPlacements) {
