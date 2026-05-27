@@ -7,7 +7,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_save::card::{
     RETAIL_CHAR_RECORD_HEADER_SIZE, RETAIL_CHAR_RECORD_STRIDE, RETAIL_GAME_DATA_OFFSET,
-    SAVE_BLOCK_MAGIC,
+    RETAIL_INVENTORY_OFFSET, RETAIL_INVENTORY_SIZE, RETAIL_STORY_FLAGS_OFFSET,
+    RETAIL_STORY_FLAGS_SIZE, SAVE_BLOCK_MAGIC,
 };
 use legaia_save::{
     BLOCK_SIZE, CHARACTER_RECORD_SIZE, CharacterRecord, Party, parse_card, read_block,
@@ -377,7 +378,19 @@ fn annotate_sc_offset(off: usize) -> &'static str {
     } else if off < RETAIL_GAME_DATA_OFFSET + 0x220 {
         "scene CDNAME (previous)"
     } else if off < RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE {
-        "global header (story_flags / inventory candidate)"
+        // game+0x220..0x3C8: remaining global header fields (party gold is at
+        // game+0x25C). The character-record array begins at game+0x3C8.
+        "header (late)"
+    } else if (RETAIL_STORY_FLAGS_OFFSET..RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE)
+        .contains(&off)
+    {
+        // The 512-byte story-flag bitmap physically overlaps record [3]'s tail.
+        "story flags (record [3] tail)"
+    } else if (RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE)
+        .contains(&off)
+    {
+        // The 72-slot inventory also overlaps record [3]'s tail.
+        "inventory (record [3] tail)"
     } else {
         let into_records = off - RETAIL_GAME_DATA_OFFSET - RETAIL_CHAR_RECORD_HEADER_SIZE;
         let rec_idx = into_records / RETAIL_CHAR_RECORD_STRIDE;
@@ -591,15 +604,21 @@ mod tests {
             annotate_sc_offset(0x208 + RETAIL_GAME_DATA_OFFSET),
             "scene CDNAME (current)"
         );
-        // Mid-display-header (where story flags / inventory live).
-        let header_mid = RETAIL_GAME_DATA_OFFSET + 0x400;
-        assert_eq!(
-            annotate_sc_offset(header_mid),
-            "global header (story_flags / inventory candidate)"
-        );
-        // Inside char record [0].
+        // Late display header (before the record array at game+0x3C8).
+        let header_late = RETAIL_GAME_DATA_OFFSET + 0x300;
+        assert_eq!(annotate_sc_offset(header_late), "header (late)");
+        // Inside char record [0] (its base is game+0x3C8).
         let rec0 = RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE + 4;
         assert_eq!(annotate_sc_offset(rec0), "char record [0]");
+        // The story-flag bitmap and inventory overlap record [3]'s tail.
+        assert_eq!(
+            annotate_sc_offset(RETAIL_STORY_FLAGS_OFFSET + 4),
+            "story flags (record [3] tail)"
+        );
+        assert_eq!(
+            annotate_sc_offset(RETAIL_INVENTORY_OFFSET + 4),
+            "inventory (record [3] tail)"
+        );
     }
 
     #[test]

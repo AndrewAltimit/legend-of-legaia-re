@@ -47,7 +47,7 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 | `inv_count` | `0x0D` | - | 1 B | LGSF v2: variable-length list. |
 | `ext.inventory` pairs | `0x0E` (2 × `N` bytes) | `0x1818` (72 × 2 bytes) | varies | SC layout is fixed 72-slot; `(0, 0)` empty slots are dropped on read so LGSF order/length is `compact`. |
 | `party_count` | after inventory | - | 1 B | |
-| `party.members[i].raw` | follows | `0x0200 + 0x66F + i*0x414` | `0x414` per record | Both writers preserve the record's raw bytes verbatim; offsets within the record are documented in `docs/subsystems/battle.md`. |
+| `party.members[i].raw` | follows | `0x0200 + 0x3C8 + i*0x414` | `0x414` per record | Both writers preserve the record's raw bytes verbatim; offsets within the record are documented in `docs/subsystems/battle.md`. The record base is `game+0x3C8` (live RAM `0x80084708`); the display name is at record `+0x2A7`, so the names appear at `0x0200 + 0x66F + i*0x414`. |
 | `LGX2` ext block | after party records | - | varies | LGSF v2 only |
 | `ext_v2.play_time_seconds` | inside LGX2 | engine-only | 4 B | |
 | `ext_v2.active_party` | inside LGX2 | engine-only | 1 B + N | |
@@ -61,8 +61,9 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 
 ## `SC`-block-only fields the engine doesn't read
 
-The retail SC block also stores a display header at `+0x200..+0x86F`
-(location name, primary display name, recent CDNAME labels). The
+The retail SC block also stores a display header at `+0x200..+0x5C8`
+(location name, primary display name, recent CDNAME labels, party gold).
+The
 engine's `SaveFile` doesn't model these yet: the writer zero-pads the
 region and the reader skips it. When a future engine pass adds those
 fields, extend this schema doc and the K2 test in lockstep.

@@ -7,6 +7,13 @@
 //! `FUN_80042558` / `FUN_80042DBC` / `FUN_800432BC` / `FUN_800431FC` /
 //! `FUN_80043264`. Offsets that aren't documented are kept verbatim in
 //! [`CharacterRecord::raw`] so a round-trip preserves them.
+//!
+//! All offsets are relative to the record's base (`0x80084708 + n*0x414`).
+//! Note the **display name** is at internal offset [`NAME_OFFSET`] (`+0x2A7`),
+//! not the record start - the start holds an undocumented field. In the
+//! retail SC save block the names are therefore visible at `game_data +
+//! 0x66F + n*0x414`, which is *not* the record base; see
+//! [`crate::card::RETAIL_CHAR_RECORD_HEADER_SIZE`].
 
 /// Byte size of one character record.
 pub const CHARACTER_RECORD_SIZE: usize = 0x414;
@@ -32,6 +39,20 @@ const EQUIPMENT_SLOT_COUNT: usize = 8;
 /// overlay) caps display at 7 entries; the on-record array is sized for
 /// 16 to fill the gap to the equipment-slot field at `+0x196`.
 pub const MAX_DISPLAYED_SKILLS: usize = 16;
+
+/// Byte offset of the display-name field within a character record.
+///
+/// The NUL-padded ASCII name (`Vahn` / `Noa` / `Gala` / `Terra`, or the
+/// player-entered lead name) sits here - pinned across six in-game RAM
+/// captures at live RAM `0x80084708 + n*0x414 + 0x2A7` for all four roster
+/// slots. The field is bounded by the active-spell-slot table at `+0x2B0`,
+/// so it holds at most [`NAME_LEN`] bytes. In the retail SC save block this
+/// lands at `game_data + 0x66F + n*0x414` (SC `+0x86F` for slot 0), which is
+/// where the names are visible - see [`crate::card::RETAIL_CHAR_RECORD_HEADER_SIZE`].
+pub const NAME_OFFSET: usize = 0x2A7;
+
+/// Length of the display-name field (`+0x2A7..+0x2B0`).
+pub const NAME_LEN: usize = 9;
 
 /// Stat-cap clamp value the runtime applies via `FUN_80042558`.
 pub const STAT_CAP: u16 = 0x3E7;
@@ -303,6 +324,25 @@ impl CharacterRecord {
     /// Replace the stat-cap field.
     pub fn set_stat_cap(&mut self, value: u16) {
         self.raw[0x11A..0x11C].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// Display name, decoded from the NUL-padded ASCII field at
+    /// [`NAME_OFFSET`]. Bytes from the first NUL on are dropped; non-ASCII
+    /// bytes are passed through as their raw `char` value.
+    pub fn name(&self) -> String {
+        let field = &self.raw[NAME_OFFSET..NAME_OFFSET + NAME_LEN];
+        let end = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+        field[..end].iter().map(|&b| b as char).collect()
+    }
+
+    /// Write the display name into [`NAME_OFFSET`], truncated to [`NAME_LEN`]
+    /// bytes and NUL-padded.
+    pub fn set_name(&mut self, name: &str) {
+        let field = &mut self.raw[NAME_OFFSET..NAME_OFFSET + NAME_LEN];
+        field.fill(0);
+        for (dst, b) in field.iter_mut().zip(name.bytes()) {
+            *dst = b;
+        }
     }
 
     /// Spell list at `+0x13C..0x184`.

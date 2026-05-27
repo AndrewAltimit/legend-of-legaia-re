@@ -311,7 +311,7 @@ Pinned addresses (live in `name_input_ui`):
 | Live name buffer | `0x801F2A6C` | The name being edited (`Vahn` by default). |
 | Cursor index | `0x8007BB88` | Linear position over a **7-row × 17-col** navigation space (`0..0x77` = 119), wrapped modulo `0x77`. Cells `0..0x66` (102) are the glyph rows; `0x66..0x77` are the control row. `row = cursor/17`, `col = cursor%17`. |
 | Pad edge bits | `0x8007BB84` | Just-pressed mask for this frame (d-pad tested as `0x1000`/`0x4000`/`0x2000`, confirm via the button-mask table AND-ed with held pad `0x8007B874`). |
-| Char-record pointer / op-0x49 slot | `0x8007B450` | The field-VM op-`0x49` STATE_RESUME state slot (`0` idle, `1` done, else an armed PC pointer). While name entry is open it holds `0x800EB297` = the opening timeline's `0x49` op address + 1 (the script is suspended there). The live character record being named is reachable through it; the committed name lands at `record + 0x86F` (stride `0x414`). |
+| Char-record pointer / op-0x49 slot | `0x8007B450` | The field-VM op-`0x49` STATE_RESUME state slot (`0` idle, `1` done, else an armed PC pointer). While name entry is open it holds `0x800EB297` = the opening timeline's `0x49` op address + 1 (the script is suspended there). The live character record being named is reachable through it; the committed name lands at record offset `+0x2A7` (record base `0x80084708 + n*0x414`; save-block offset `+0x86F` for slot 0). |
 | Prompts | `0x801CF698`+ | "Is this name okay?", "Cannot enter that name.", "Tell me my name.", "Select your name.", "[Nameless]". |
 
 Two functions carry the screen:
@@ -320,7 +320,7 @@ Two functions carry the screen:
 - **`FUN_801F03F0`** (state machine) — substate at `struct+0x54`, dispatched through a **5-entry jump table at `0x801CF71C`**:
   - `0x801F0444` **init** — sets the active flag and advances to interactive.
   - `0x801F0480` **interactive** — d-pad deltas `-0x11` (up) / `+0x11` (down) / `+1` (right) / `-1` (left); after each move the cursor wraps modulo `0x77` and **skips non-selectable cells** (the `|`=`0x7C` separators in the glyph rows) in the direction of travel. Confirm resolves the cell: a glyph cell appends its character to the name (length-bounded by the proportional-font pixel width, cap `0x39`=57 px); a control-row cell runs its action via the row's sentinel bytes — `0x66` = **Backspace** (truncate one glyph), `0x64` = **Space**, `0x65` = **End** (gated on a non-empty name via the `blez` check → advances to confirm).
-  - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** — the "Is this name okay?" Yes/No prompt; Yes commits the name into `record+0x86F` and exits, No returns to interactive.
+  - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** — the "Is this name okay?" Yes/No prompt; Yes commits the name into the record's name field at `+0x2A7` (save-block `+0x86F`) and exits, No returns to interactive.
 
 The control row (grid row 6) tiles those sentinel bytes across its columns: `00 00 | 66×6 | 64×6 | 65×3` (filler / Backspace / Space / End).
 
