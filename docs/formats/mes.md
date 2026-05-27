@@ -131,5 +131,5 @@ mes stats-all  <PATH>             # event-type histogram across every message
 ## Related
 
 - [`dialog-font.md`](dialog-font.md) - proportional dialog font in VRAM.
-- [`reference/functions.md`](../reference/functions.md) - all four interpreter functions plus `FUN_8001FD44` (dialog opener).
-- [`subsystems/script-vm.md`](../subsystems/script-vm.md) - script VM op `0x3F` calls the dialog opener.
+- [`reference/functions.md`](../reference/functions.md) - the four MES interpreter functions. (`FUN_8001FD44` is **not** one of them — it is the scene-change packet; field dialogue is opened/advanced via the `0x4C` nibble-5 sub-3/4 path and the message text is the record's inline `0x1F` segment pool.)
+- [`subsystems/script-vm.md`](../subsystems/script-vm.md) - field-VM opcode reference. Note `0x3F` is the named scene-change, not a dialog op.
