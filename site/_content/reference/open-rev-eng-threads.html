@@ -116,7 +116,7 @@
       <tr>
         <td>Seru growth-rate extraction</td>
         <td><code>open</code></td>
-        <td>Extract per-Seru stat-growth bytes (Seru struct <code>+0x74</code>) from a Seru-data PROT entry, surface as typed <code>legaia_gamedata::SeruGrowth</code>, and wire into <code>apply_battle_loot</code> for level-up stat application.</td>
+        <td>Recover the per-character per-level HP/MP/stat grant source and wire it into <code>apply_battle_loot</code> for level-up stat application. The &ldquo;Seru struct <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> (those reads are a <code>0x80808080</code> battle-state flag &mdash; see <a href="../subsystems/level-up.html#stat-gains">level-up</a>); a static grep also comes up empty, so the next step is an empirical save-pair diff (<code>LevelUpObservation</code>) or a mid-execution overlay capture of the Seru-load path, <strong>not</strong> another static search.</td>
         <td><code>project_shop_ui_and_levelup.md</code> + <code>project_next_session_backlog.md</code> &sect; H</td>
       </tr>
       <tr>

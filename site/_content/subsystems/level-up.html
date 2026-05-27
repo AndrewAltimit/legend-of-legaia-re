@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; level-up</div>
   <h1>Level-Up</h1>
-  <p class="lede">Post-battle XP distribution, per-level stat gains, and banner display. Driven by <code>engine-core::levelup::LevelUpTracker</code>. The XP threshold table is from <code>SCUS_942.54</code> at <code>0x8007123C</code> (98 u16 increments). Stat growth comes from per-Seru structs loaded at runtime, not from a static table in the overlay.</p>
+  <p class="lede">Post-battle XP distribution, per-level stat gains, and banner display. Driven by <code>engine-core::levelup::LevelUpTracker</code>. The XP threshold table is from <code>SCUS_942.54</code> at <code>0x8007123C</code> (98 u16 increments). Per-character stat growth does not come from a static overlay table, and its producing writer is uncaptured &mdash; the earlier &ldquo;Seru struct <code>+0x74</code>&rdquo; reading is falsified, so the engine ships placeholder flat rates.</p>
 </header>
 
 <section class="doc-section" id="xp-table">
@@ -23,7 +23,7 @@
 
 <section class="doc-section" id="stat-gains">
   <h2>Stat gains</h2>
-  <p>Retail HP/MP growth does not come from a per-character per-level table in the overlay binary. Stat increments are sourced from <strong>per-Seru structs</strong> loaded from PROT entries at runtime. When a Seru gains a level the Seru struct field at <code>+0x74</code> (HP grant) and sibling fields are applied to the battle actor&rsquo;s stat block. The battle actor base lives at <code>DAT_801C9370[slot]</code> (8 slots: party 0&ndash;2, monsters 3&ndash;7); current HP is at <code>+0x14C</code>.</p>
+  <p>Retail HP/MP growth does not come from a per-character per-level table in the overlay binary &mdash; a writer-search across every captured <code>magic_level_up</code> dump finds no <code>sb</code>/<code>sh</code> writes to the record stat window. The earlier &ldquo;Seru struct <code>+0x74</code> HP grant&rdquo; reading is <strong>falsified</strong>: the only <code>+0x74</code> reads in the captured overlay surface a 32-bit battle-state flag the SCUS handler <code>FUN_800480D8</code> stamps with the constant <code>0x80808080</code>, not a stat-growth value. The real grant table lives in a still-uncaptured overlay (battle-data init / Seru-equip path) or inline in a Seru PROT entry the current captures don&rsquo;t surface, so per-character growth stays <strong>unmeasured</strong>. (Battle actor base <code>DAT_801C9370[slot]</code>, 8 slots: party 0&ndash;2, monsters 3&ndash;7; current HP at <code>+0x14C</code>.)</p>
   <p>The level-up overlay data section (<code>overlay_magic_level_up_full.bin</code>, full 256&nbsp;KB <code>0x801C0000&ndash;0x801FFFFF</code>) was dumped. It contains UI display indices and animation tables, not stat increment arrays. Key data addresses:</p>
   <table>
     <thead><tr><th>Address</th><th>Content</th></tr></thead>
@@ -35,7 +35,7 @@
       <tr><td><code>0x801F6000+</code></td><td>Live animation state globals (zero at rest)</td></tr>
     </tbody>
   </table>
-  <p><code>StatGain::default()</code> uses placeholder flat rates (+10 HP / +5 MP per level for all characters). Different characters (Vahn, Noa, Gala) have distinct curves in retail, derived from their respective Seru rosters. Override via <code>LevelUpTracker::with_stat_gains([StatGain; 4])</code>.</p>
+  <p><code>StatGain::default()</code> uses placeholder flat rates (+10 HP / +5 MP per level for all characters). Retail almost certainly varies growth per character (Vahn, Noa, Gala), but the source of that variation is <strong>not</strong> the falsified <code>+0x74</code> path &mdash; don&rsquo;t fabricate numbers; populate a measured curve via <code>LevelUpTracker::with_stat_gains([StatGain; 4])</code> once a capture lands.</p>
 </section>
 
 <section class="doc-section" id="flow">

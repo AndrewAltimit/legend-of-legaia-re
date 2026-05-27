@@ -45,8 +45,9 @@ in ten 4 KB blocks. Key findings:
 | `0x801F6000+` | Live animation state globals (zero at rest) |
 
 Per-character HP/MP/STR/DEF growth does not come from a static table in the
-overlay. Stat increments are sourced from per-Seru structs loaded from PROT
-entries at runtime (HP grant at Seru `+0x74`). See
+overlay, and the producing writer is not in the captured `magic_level_up`
+dumps. The earlier "HP grant at Seru `+0x74`" reading is **falsified** — those
+`+0x74` reads surface a `0x80808080` battle-state flag, not a stat grant. See
 [`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 
 ## Capturing with PCSX-Redux
