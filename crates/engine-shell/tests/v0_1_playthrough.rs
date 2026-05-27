@@ -25,10 +25,12 @@
 //! (Still open: the dialogue box's Yes/No selection is undecoded — the engine
 //! treats accept as dismiss, faithful for the forced tutorial.)
 //!
-//! The recording lives at `scripts/replays/v0_1_playthrough.toml`
-//! (override via `LEGAIA_V0_1_REPLAY`). Five tests run here:
+//! The Field-leg recording lives at `scripts/replays/v0_1_playthrough.toml`
+//! (override via `LEGAIA_V0_1_REPLAY`); the Battle-leg fixture lives at
+//! `scripts/replays/v0_1_battle_leg.toml`. The tests run here:
 //!
-//! 1. **Replay smoke (always).** The replay file parses + validates.
+//! 1. **Replay smoke (always).** The Field + Battle replay files parse +
+//!    validate.
 //! 2. **Determinism gate (disc-free, always).** Drives a synthetic
 //!    [`legaia_engine_core::world::World`] through the replay twice and
 //!    asserts byte-identical per-frame state traces.
@@ -41,6 +43,10 @@
 //! 5. **Emergent Battle leg (disc-gated).** New-game cold boot -> the player
 //!    walks (BFS path + `nav_step_toward`) to the sparring partner -> talks via
 //!    the interaction probe -> accepts -> Battle. No teleport, no script.
+//! 6. **Battle-leg mode-trace (disc-gated).** The Field -> Battle engine
+//!    mode-trace matches the literal `[[expected]]` rows in
+//!    `v0_1_battle_leg.toml` (via [`ReplayFile::diff`]) and the Battle frame
+//!    converges with the retail battle-loading anchor.
 //!
 //! Skip-pass cases (CLAUDE.md disc-gated convention):
 //!   - replay file missing (smoke test fails loudly; oracle test skips)
@@ -55,7 +61,8 @@ use std::path::PathBuf;
 use legaia_engine_core::world::{Actor, SceneMode, World};
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 use legaia_engine_shell::mode_trace_oracle::{
-    ModeTraceFrame, build_engine_mode_trace_field_live, first_mode_trace_divergence,
+    ModeTraceFrame, build_engine_mode_trace_field_live,
+    build_engine_mode_trace_new_game_battle_leg, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
 use legaia_engine_shell::replay::ReplayFile;
@@ -484,10 +491,16 @@ fn v0_1_oracle_convergence() {
         );
     }
 
-    // Deferred with the scripted-Tetsu Battle leg (need the armed trigger
-    // before these have meaningful frames to assert against):
-    //   - VRAM oracle at the title-screen frame.
-    //   - audio-trace oracle across the Battle<->Field BGM transition.
+    // The literal Battle mode-trace row now lands too — see
+    // `v0_1_battle_leg_mode_trace_matches_expected`, which diffs the
+    // Field -> Battle engine trace against `scripts/replays/v0_1_battle_leg.toml`.
+    //
+    // Still deferred (need a title-phase render path / a battle-BGM id the
+    // engine can resolve before they assert anything meaningful):
+    //   - VRAM oracle at the title-screen frame (the engine boots straight into
+    //     a scene and never renders the title screen, so there is no engine-side
+    //     title VRAM to diff).
+    //   - audio-trace oracle across the Battle<->Field BGM swap.
 }
 
 /// Walk `trace` left-to-right printing one row per `scene_mode`
@@ -833,4 +846,142 @@ fn bfs_field_path(
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------
+// Test 6: literal Battle mode-trace row (disc-gated)
+// ---------------------------------------------------------------------
+
+/// Default location of the Battle-leg replay fixture, relative to the
+/// workspace root.
+const BATTLE_REPLAY_DEFAULT: &str = "scripts/replays/v0_1_battle_leg.toml";
+
+fn battle_replay_path() -> PathBuf {
+    for candidate in [
+        BATTLE_REPLAY_DEFAULT,
+        &format!("../{BATTLE_REPLAY_DEFAULT}"),
+        &format!("../../{BATTLE_REPLAY_DEFAULT}"),
+    ] {
+        let p = PathBuf::from(candidate);
+        if p.exists() {
+            return p;
+        }
+    }
+    PathBuf::from(BATTLE_REPLAY_DEFAULT)
+}
+
+/// The Battle-leg replay fixture parses + validates (always runs). Keeps
+/// the committed fixture honest even without a disc.
+#[test]
+fn v0_1_battle_replay_file_parses_clean() {
+    let path = battle_replay_path();
+    assert!(
+        path.exists(),
+        "v0.1 battle-leg replay fixture missing at {}",
+        path.display(),
+    );
+    let replay = ReplayFile::from_path(&path).unwrap_or_else(|e| {
+        panic!(
+            "v0.1 battle-leg replay {} did not parse: {e:#}",
+            path.display()
+        )
+    });
+    replay.validate().unwrap_or_else(|e| {
+        panic!(
+            "v0.1 battle-leg replay {} failed validate: {e:#}",
+            path.display()
+        )
+    });
+    // The fixture must carry a literal Battle expectation - that's its
+    // whole reason to exist (the Field leg lives in v0_1_playthrough.toml).
+    assert!(
+        replay.expected.iter().any(|e| e.scene_mode == "Battle"),
+        "battle-leg fixture must pin at least one Battle row"
+    );
+}
+
+/// The Battle-leg engine mode-trace matches the literal `[[expected]]`
+/// Field -> Battle fixture, and the recorded Battle frame converges with the
+/// retail battle-loading anchor (`game_mode 0x15`).
+///
+/// This is the v0.1 P1 "literal replay Battle mode-trace row" deliverable:
+/// where `v0_1_battle_leg_reaches_battle_from_new_game` asserts the engine
+/// *reaches* Battle and brackets it against the retail Field/Battle anchors,
+/// this test pins the engine's per-frame `(scene_mode, active_scene)` trace
+/// against a committed fixture via [`ReplayFile::diff`], so a regression that
+/// changed *when* or *whether* the transition lands fails loudly.
+///
+/// Skip-passes without disc data / extracted assets (CLAUDE.md convention).
+#[test]
+fn v0_1_battle_leg_mode_trace_matches_expected() {
+    let path = battle_replay_path();
+    let replay = match ReplayFile::from_path(&path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!(
+                "[skip] battle-leg replay {} unreadable: {e:#}",
+                path.display()
+            );
+            return;
+        }
+    };
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let trace =
+        build_engine_mode_trace_new_game_battle_leg("town01", &extracted, None, replay.meta.frames)
+            .expect("build battle-leg mode trace");
+    print_scene_mode_transitions("v0_1_battle_leg", &trace);
+
+    // Literal-fixture diff: every `[[expected]]` row must match the recorded
+    // frame at that index. This is the sharper assertion the Field-leg oracle
+    // already runs, now extended through the Field -> Battle flip.
+    if let Some(d) = replay.diff(&trace) {
+        panic!(
+            "v0.1 battle-leg fixture drift at frame {}: kind={:?} expected={:?} \
+             recorded(scene_mode={}, active_scene={:?})",
+            d.frame, d.kind, d.expected, d.recorded.scene_mode, d.recorded.active_scene,
+        );
+    }
+
+    // Retail convergence for the Battle frame: the engine's Battle row must
+    // agree with the battle-loading anchor's snapshot (scene_mode=Battle).
+    // Resolved from the immutable library backup; skipped if absent.
+    if let Some(manifest_path) = manifest_path() {
+        let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse scenarios");
+        if let Some(scn) = manifest
+            .scenarios
+            .iter()
+            .find(|s| s.label.as_str() == "v0_1_battle_loading_tetsu")
+            && let Ok(save) = manifest.mednafen_save_path(scn, library_dir().as_deref())
+            && save.exists()
+        {
+            let retail = load_runtime_mode_trace_from_save(&save)
+                .expect("load battle-loading anchor snapshot");
+            assert_eq!(
+                retail.scene_mode, "Battle",
+                "battle-loading anchor should read Battle"
+            );
+            if let Some(d) = first_mode_trace_divergence(&trace, &retail) {
+                panic!(
+                    "v0.1 battle-leg retail convergence failed: {:?}: \
+                     engine(scene_mode={}) vs retail(scene_mode={})",
+                    d.kind, d.engine.scene_mode, d.retail.scene_mode,
+                );
+            }
+        }
+    }
+
+    eprintln!(
+        "[ok] v0.1 battle-leg mode-trace matches the literal Field -> Battle fixture \
+         over {} frames",
+        trace.len()
+    );
 }

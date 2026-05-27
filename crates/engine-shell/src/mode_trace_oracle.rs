@@ -164,6 +164,95 @@ pub fn build_engine_mode_trace_field_live(
     Ok(out)
 }
 
+/// Drive a NEW GAME cold boot through the opening Rim Elm training-fight
+/// transition, sampling `(scene_mode, active_scene)` each frame so the
+/// resulting trace carries the Field → Battle flip.
+///
+/// This is the Battle-leg sibling of [`build_engine_mode_trace_field_live`]:
+/// where that builder stops at Field, this one mirrors the proven
+/// `v0_1_battle_leg_reaches_battle_from_new_game` test path so the v0.1
+/// oracle can assert a *literal* `[[expected]]` Battle row in the replay
+/// fixture, not just converge against the bracketing retail anchors. The
+/// sequence is:
+///
+/// 1. [`BootSession::begin_new_game`] seeds the opening party (Vahn, the
+///    game's pre-Tetsu story state — there is no earlier save).
+/// 2. [`BootSession::enter_field_live`] drops into `scene_name` with the live
+///    loop armed; the cold boot auto-installs the town's sparring carrier.
+/// 3. A real field-interact op on the carrier's slot opens its dialogue; a
+///    just-pressed confirm (Cross) advances/dismisses it, which engages the
+///    scripted lone-Tetsu encounter and flips Field → Battle.
+///
+/// Sampled through [`BootSession::tick`] (so the trace is the same shape the
+/// other builders emit). The Field → Battle transition is a scene-*mode* flip
+/// on the same loaded scene, not a scene change, so `active_scene` stays
+/// `scene_name` across the boundary. Returns `frames + 1` records; ticking
+/// continues for the full budget after Battle is reached so a downstream
+/// `[[expected]]` row can pin any post-transition frame.
+pub fn build_engine_mode_trace_new_game_battle_leg(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    frames: u64,
+) -> Result<Vec<ModeTraceFrame>> {
+    use legaia_engine_core::input::PadButton;
+
+    let cfg = BootConfig {
+        scene: scene_name.to_string(),
+        enable_audio: false,
+    };
+    let mut session = match disc {
+        Some(p) => BootSession::open_disc(p, &cfg)?,
+        None => BootSession::open(extracted_root, &cfg)?,
+    };
+    session.begin_new_game();
+    session.enter_field_live(
+        scene_name,
+        &crate::boot::FieldLiveOpts {
+            live_loop: true,
+            ..Default::default()
+        },
+    )?;
+
+    // The cold boot installs exactly one scripted-encounter carrier slot
+    // (the sparring partner). Drive its dialogue-accept op.
+    let slot = {
+        let mut slots: Vec<u8> = session
+            .host
+            .world
+            .field_carrier_slots
+            .keys()
+            .copied()
+            .collect();
+        slots.sort_unstable();
+        slots.first().copied().context(
+            "scene installs no scripted-encounter carrier slot (cannot drive the Battle leg)",
+        )?
+    };
+
+    let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
+    out.push(sample_engine_frame(&session));
+
+    // A real field-interact (op 0x3E, op0<100) on the carrier's slot, then the
+    // dialog-advance op (0x4C n5). Mirrors the battle-leg test bytecode.
+    session
+        .host
+        .world
+        .load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
+    let cross = PadButton::Cross.mask();
+    for i in 0..frames {
+        // Tick 1 opens the dialogue (pad 0); tick 2 confirms (just-pressed
+        // Cross); the transition resolves on the following frames at pad 0.
+        let pad = if i == 1 { cross } else { 0 };
+        session.host.world.set_pad(pad);
+        let _ = session.tick()?;
+        out.push(sample_engine_frame(&session));
+        // Keep ticking after Battle is reached so the trace runs the full
+        // budget; the SceneMode stays Battle (no further input flips it).
+    }
+    Ok(out)
+}
+
 fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
     ModeTraceFrame {
         frame: session.frames,
