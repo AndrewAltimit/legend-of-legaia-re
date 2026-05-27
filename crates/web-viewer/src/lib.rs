@@ -1727,6 +1727,70 @@ impl LegaiaViewer {
         out
     }
 
+    /// Metadata for **every** decodable action animation of monster `id`, as a
+    /// JSON array in `+0x4C` action-table order:
+    /// `[{"action_id":N,"part_count":P,"frame_count":F}, ...]`. Array index `0`
+    /// is the idle loop (see [`Self::monster_idle_animation_header`]); the rest
+    /// are the monster's attack / spell / special actions. The array index is
+    /// the handle the JS viewer passes to [`Self::monster_animation_frames_at`]
+    /// to fetch a given action's keyframes. `"[]"` if the slot is empty / filler
+    /// or carries no decodable animation.
+    pub fn monster_animations_json(&self, id: u16) -> String {
+        let Some(slice) = self.monster_archive_slice() else {
+            return "[]".to_string();
+        };
+        let anims = match legaia_asset::monster_archive::animations(slice, id) {
+            Ok(Some(a)) => a,
+            _ => return "[]".to_string(),
+        };
+        let arr: Vec<serde_json::Value> = anims
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "action_id": a.action_id,
+                    "part_count": a.part_count,
+                    "frame_count": a.frame_count,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(arr).to_string()
+    }
+
+    /// Keyframes for monster `id`'s action animation at array `index` (the
+    /// position in [`Self::monster_animations_json`]). Same flat layout as
+    /// [`Self::monster_idle_animation_frames`]: six `i32` per part per frame,
+    /// `[tx, ty, tz, rx, ry, rz]`, with frame `f` / part `p` / component `c` at
+    /// `(f * part_count + p) * 6 + c`. Empty if the index is out of range or the
+    /// slot has no decodable animation.
+    pub fn monster_animation_frames_at(&self, id: u16, index: u32) -> Vec<i32> {
+        let Some(slice) = self.monster_archive_slice() else {
+            return Vec::new();
+        };
+        let Some(anims) = legaia_asset::monster_archive::animations(slice, id)
+            .ok()
+            .flatten()
+        else {
+            return Vec::new();
+        };
+        let Some(anim) = anims.get(index as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(anim.frame_count * anim.part_count * 6);
+        for frame in &anim.frames {
+            for p in frame {
+                out.extend_from_slice(&[
+                    p.tx as i32,
+                    p.ty as i32,
+                    p.tz as i32,
+                    p.rx as i32,
+                    p.ry as i32,
+                    p.rz as i32,
+                ]);
+            }
+        }
+        out
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

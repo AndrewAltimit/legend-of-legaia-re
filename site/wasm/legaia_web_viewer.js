@@ -875,6 +875,47 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Keyframes for monster `id`'s action animation at array `index` (the
+     * position in [`Self::monster_animations_json`]). Same flat layout as
+     * [`Self::monster_idle_animation_frames`]: six `i32` per part per frame,
+     * `[tx, ty, tz, rx, ry, rz]`, with frame `f` / part `p` / component `c` at
+     * `(f * part_count + p) * 6 + c`. Empty if the index is out of range or the
+     * slot has no decodable animation.
+     * @param {number} id
+     * @param {number} index
+     * @returns {Int32Array}
+     */
+    monster_animation_frames_at(id, index) {
+        const ret = wasm.legaiaviewer_monster_animation_frames_at(this.__wbg_ptr, id, index);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Metadata for **every** decodable action animation of monster `id`, as a
+     * JSON array in `+0x4C` action-table order:
+     * `[{"action_id":N,"part_count":P,"frame_count":F}, ...]`. Array index `0`
+     * is the idle loop (see [`Self::monster_idle_animation_header`]); the rest
+     * are the monster's attack / spell / special actions. The array index is
+     * the handle the JS viewer passes to [`Self::monster_animation_frames_at`]
+     * to fetch a given action's keyframes. `"[]"` if the slot is empty / filler
+     * or carries no decodable animation.
+     * @param {number} id
+     * @returns {string}
+     */
+    monster_animations_json(id) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_monster_animations_json(this.__wbg_ptr, id);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Decode the global monster stat archive (PROT entry 867, the
      * `battle_data` block's extended footprint) into a JSON array of every
      * populated record. Sony bytes never leave the browser — the archive is
