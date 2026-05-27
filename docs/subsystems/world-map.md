@@ -207,14 +207,18 @@ back to a `text_id` -> scene-MES lookup for the message-table dialogue paths. Th
 geometry-header layout and multi-segment (full menu) rendering are not yet pinned
 - the first segment renders today.
 
-> **Not the `0x3F` op.** Earlier notes attributed this inline text to a `0x3F`
-> "Dialog" opcode. That is wrong: `0x3F` is the **named scene-change** (it copies
-> a destination scene *name* and calls the scene-change packet `FUN_8001FD44`; see
-> [`script-vm.md`](script-vm.md) and [scene destinations](#scene-destinations)).
-> Field dialogue boxes are opened/advanced via the `0x4C` nibble-5 sub-3/4 path;
-> the NPC *text* is the structural `0x1F` pool above. The `0x3F`-as-dialog reading
-> only arises when the over-approximating walk desyncs on a literal `?` (`0x3F`)
-> inside a message.
+> **Not the `0x3F` op — and not any opcode.** Earlier notes attributed this
+> inline text to a `0x3F` "Dialog" opcode; `0x3F` is actually the **named
+> scene-change** (it copies a destination scene *name* and calls the scene-change
+> packet `FUN_8001FD44`; see [`script-vm.md`](script-vm.md) and
+> [scene destinations](#scene-destinations)). In fact field dialogue has **no
+> dedicated opcode**: the field-interact op (`0x3E`, `op0 < 100`) arms the actor's
+> interaction context, and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
+> (`FUN_801D84D0`) display the actor's inline interaction-script MES text — the
+> structural `0x1F` pool above. See
+> [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode).
+> The `0x3F`-as-dialog reading only arises when the over-approximating walk
+> desyncs on a literal `?` (`0x3F`) inside a message.
 
 Entities without a config fall back to the shared formation and a generic
 interaction.

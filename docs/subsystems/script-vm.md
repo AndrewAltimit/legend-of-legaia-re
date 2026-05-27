@@ -212,7 +212,7 @@ PC += 4.
 | 0x3C | `PARTY_ADD` | `[3C, char_id]` | Add character to party (sorted insertion into `_DAT_80084598..` array, count at `DAT_80084594`). Caps at 4 members. Updates `_DAT_8007B8F8` (party leader) when count was 0. Calls `FUN_801DE190()` (refresh display). Special: if count becomes 2 with `_DAT_80084598 == 0x100`, calls `func_0x800423E0()` and returns. |
 | 0x3D | `PARTY_REMOVE` | `[3D, char_id]` | Remove character (linear search, shift, count--). Updates leader if affected. Refresh via `FUN_801DE190()`. |
 | 0x3E | `WARP / INTERACT` | `[3E, op0, op1, …]` | If `op0 == 0xFF` or `op0 < 100`: trigger field interact at index `op1` on system context (`func_0x8003C83C(0xFB)`); writes `sys_ctx[+0x94] = scene_data + op1 * stride + 1`, calls `func_0x8003CE08(0xE)`. Else (`op0 >= 100`): scene transition - `_DAT_8007BA34 = op0 - 100` (map id), `_DAT_8007B83C = 0x18`, clears `player[+0x10] & 0x80000`, calls `func_0x8003CE08(0xE)`. |
-| 0x3F | `SCENE_CHANGE` (named warp) | `[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` | **Named scene-change ("warp by name"), NOT a dialog op.** Copies the `name_len`-byte destination scene NAME from operand+3 into a local buffer (null-terminated) and calls `func_0x8001FD44(name, idx)` — the **scene-change packet** (writes the name into the active scene-name buffers `0x8007050C` / `0x80084548`; sets the transition flag `_DAT_1F800394 \|= 0x40`). `idx` is the sign-extended `i16` at operand[0..2] (a story/entry id; distinct from the `0x3E` 7-id `map_id`). Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, +0x40 if high bit) and facing from `dir & 7`. PC += 7 + name_len. A scene's controller script lists every reachable destination as one of these ops — see [world-map § scene destinations](world-map.md). (Field **dialogue** is the `0x4C` nibble-5 sub-3/4 path; this op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text.) |
+| 0x3F | `SCENE_CHANGE` (named warp) | `[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` | **Named scene-change ("warp by name"), NOT a dialog op.** Copies the `name_len`-byte destination scene NAME from operand+3 into a local buffer (null-terminated) and calls `func_0x8001FD44(name, idx)` — the **scene-change packet** (writes the name into the active scene-name buffers `0x8007050C` / `0x80084548`; sets the transition flag `_DAT_1F800394 \|= 0x40`). `idx` is the sign-extended `i16` at operand[0..2] (a story/entry id; distinct from the `0x3E` 7-id `map_id`). Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, +0x40 if high bit) and facing from `dir & 7`. PC += 7 + name_len. A scene's controller script lists every reachable destination as one of these ops — see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode — see [§ Field dialogue](#field-dialogue-has-no-opcode).) |
 | 0x40 | `DATA_BLOCK` | `[40, len, ...len bytes]` | Skips `len` bytes after header - embeds raw inline data. PC += 2 + len. |
 | 0x42 | `COND_JMP` | `[42, mode, op1, op2, op3]` | Multi-mode conditional. `mode == 0`: test `_DAT_8007B8F4 & (1 << (op1 & 0x1F))` - if clear, return `pc + 5` (skip). `mode == 1`: test screen-mode (`_DAT_8007B850`) against `_DAT_801F28D0[op1*4]` (8-entry table) for `op1 < 8`, bit 0x20 for `op1 == 8`, 0x40 for 9, 0x80 for 10, 0x10 for 11; **`op1 >= 0xC` falls through to the unconditional take-jump path** (no test). `mode >= 2` hits the dispatcher's default arm - halts at PC. Successful jump target = `pc + 3 + LE_u16(op2,op3)`; skip target = `pc + 5`. |
 
@@ -495,10 +495,42 @@ A growing set of small leaf helpers in the dispatcher's call graph are pure arit
 
 The Rust ports are exhaustively tested (39 tests covering escape sequences, terminator placement, bit ordering, search bounds, LE byte assembly across short / full-width / over-long buffers, and tile-center high-bit and zero-input edge cases). Tests live alongside the ports in `field_helpers.rs`.
 
+## Field dialogue has no opcode
+
+There is **no dedicated "open dialogue" field-VM opcode.** Talking to a field
+NPC is the **interaction pipeline**, not a text-carrying instruction:
+
+1. **Trigger** — the field-interact op (`0x3E` with `op0 < 100`) arms the actor's
+   interaction context: it sets `sys_ctx[+0x94]` to the actor's interaction-script
+   pointer (`scene_data + op1*stride + 1`) and `sys_ctx[+0x8a] = 1`. (`0x3E` with
+   `op0 >= 100` is the door-warp; `0x3F` is the named scene-change — neither is
+   dialogue.)
+2. **Text source** — the dialogue text is the **actor's own inline
+   interaction-script MES** at `actor[+0x90] + actor[+0x9e]` (the actor's script
+   buffer base + the running text offset). Confirmed by `FUN_80039b7c`, which sets
+   the pager's text pointer `_DAT_801f3538 = *(actor+0x90) + (short)*(actor+0x9e)`.
+   This is the same `0x1F`-lead / glyph stream the placement classifier finds
+   structurally.
+3. **Display** — the per-frame **actor-dialog SM `FUN_80039b7c`** advances
+   `actor[+0x9c]` through `0 → 1 → 2` in lockstep with the pager state
+   `_DAT_801f2734`, walking MES glyph bytes (the `0xC0`-stride / `< 0x20`-terminator
+   rule), and feeds the **dialog pager `FUN_801D84D0`** (line-pointer array
+   `&DAT_801f3540[line]`, line count `_DAT_801f2740`). `FUN_80039b7c` runs per
+   frame, per entity, from the entity SM `FUN_801DA51C`'s interaction tail.
+
+So the engine's `0x3F → open_dialog(text_id, inline, …)` is wrong twice over:
+`0x3F` is the named scene-change, and field dialogue is the interaction-driven
+actor-text pipeline above, not an inline-text opcode. (The `0x4C` nibble-5
+sub-3/4 op — `FUN_801d65d8` — is an actor-script wait/sync, **not** the dialog
+open/poll an earlier note assumed.) Re-grounding the engine means opening dialogue
+from `field_interact` reading the actor's inline text and freeing `0x3F`; the
+engine already renders that inline text via the structural path, so the data is
+in place — what changes is the trigger.
+
 ## Connection to other crates
 
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
-- [`crates/mes`](../formats/mes.md) - field **dialogue** is driven by the `0x4C` nibble-5 sub-3/4 path (the dialog-advance hook), and the NPC message text is the record's `0x1F` segment pool that `crates/mes` / the inline-dialog decoder parses. (Opcode `0x3F` is the named scene-change — `func_0x8001FD44` is the scene-change packet, not a dialog opener; see the opcode table above.)
+- [`crates/mes`](../formats/mes.md) - field **dialogue** has no dedicated opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)): it is the **actor's inline interaction-script MES text**, shown by the per-frame actor-dialog SM (`FUN_80039b7c`) + pager (`FUN_801D84D0`), triggered by the **field-interact op** (`0x3E` with `op0 < 100`). The text `crates/mes` parses is that inline `0x1F`/glyph stream. (Opcode `0x3F` is the named scene-change, not a dialog opener.)
 - [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 plays 3D animations via `func_0x800252EC` - likely the ANM consumer.
 - [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - destination for the clean-room Rust port. Adds a `field_vm` module sister to the existing actor VM. Reuses the `Host` trait pattern.
 
