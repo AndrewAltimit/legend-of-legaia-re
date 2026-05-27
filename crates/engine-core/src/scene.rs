@@ -1825,11 +1825,14 @@ impl SceneHost {
                             }
                             PlacementKind::Npc {
                                 interact_id,
-                                dialog_text_id,
                                 dialog_inline,
                             } => crate::world::WorldMapEntityConfig::Npc {
                                 interact_id: interact_id.unwrap_or(0),
-                                text_id: dialog_text_id,
+                                // No `text_id` from the MAN classifier: the `0x3F`
+                                // op it was sourced from is the scene-change
+                                // opcode, not a dialog op. The real NPC text is the
+                                // structural `inline` block below.
+                                text_id: None,
                                 inline: dialog_inline.unwrap_or_default(),
                             },
                             PlacementKind::Plain => return None,
