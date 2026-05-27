@@ -49,10 +49,37 @@
 //! (see [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
 use legaia_asset::man_section::{ActorPlacement, ManFile};
-use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, YieldKind};
+use legaia_engine_vm::field_disasm::{
+    FlagKind, InsnInfo, LinearWalker, YieldKind, scene_change_name,
+};
 
 use crate::encounter_record::EncounterRecord;
 use crate::world::FieldCarrierConfig;
+
+/// Inclusive `op0` range a genuine field-VM warp (`scene_transition`) uses.
+///
+/// The WARP opcode is `0x3E` with `op0 = map_id + 100`, and only **7** door-warp
+/// destinations exist — `map_id 0..=6` (each selects a scene-*type* code overlay
+/// at PROT `0x4d + map_id`; see [`crate::scene::DefaultMapIdResolver`] and
+/// `docs/subsystems/asset-loader.md`). So a real warp's `op0` is `100..=106`.
+///
+/// This range matters for [`classify_placement`]: the per-actor walk is an
+/// over-approximating linear disassembly that *desyncs* inside embedded message
+/// text, and a desynced read can land on a `0x3E` whose following byte happens
+/// to be `>= 100` — a phantom warp. Every observed phantom carries an `op0` far
+/// outside this range (175 / 179 / 200, i.e. SJIS or dialog bytes) and rides the
+/// `0x80` cross-context prefix, while every genuine corpus warp is the *base*
+/// `0x3E` with `op0` in `100..=106`. So the kind decision requires both signals.
+const WARP_OP0_RANGE: std::ops::RangeInclusive<u8> = 100..=106;
+
+/// `true` when a decoded `WarpOrInteract` instruction is a *genuine* door-warp
+/// (not a text-desync phantom): the base `0x3E` opcode (no `0x80` cross-context
+/// prefix) carrying `op0` in [`WARP_OP0_RANGE`]. `op0` is the raw operand byte
+/// (`map_id + 100`); `extended` is the disassembler's cross-context-target field
+/// (`Some` iff the `0x80` prefix bit was set on the leading opcode byte).
+fn is_genuine_warp(op0: u8, extended: Option<u8>) -> bool {
+    extended.is_none() && WARP_OP0_RANGE.contains(&op0)
+}
 
 /// One field-VM `Yield` instruction in a partition-1 script, annotated with
 /// the inline encounter-record decode of its trailing operand window.
@@ -228,14 +255,15 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
 ///
 /// A field-scene interaction record is dominated by its embedded message text,
 /// and that text contains bytes that look like field-VM opcodes (a literal
-/// `>` is `0x3E`, the `scene_transition`/interact opcode; ASCII punctuation
-/// hits `0x37`/`0x41` yield bytes). A linear disassembly therefore *desyncs*
-/// inside the text and reports phantom interact / dialog ops with garbage
-/// operands. So the message text is located by scanning for the `0x1F`-lead
-/// segment block directly, and the (unreliable, for field scenes) opcode-decoded
-/// `dialog_text_id` / `interact_id` are kept only as best-effort hints. The
-/// warp scan is still opcode-based: a warp anywhere in the record marks the
-/// actor a portal, and warp records carry no inline text block to confuse it.
+/// `>` is `0x3E`, the `scene_transition`/interact opcode; a literal `?` is
+/// `0x3F`, the named-scene-change opcode; ASCII punctuation hits `0x37`/`0x41`
+/// yield bytes). A linear disassembly therefore *desyncs* inside the text and
+/// reports phantom interact / scene-change ops with garbage operands. So the
+/// message text is located by scanning for the `0x1F`-lead segment block
+/// directly, and the (unreliable, for field scenes) opcode-decoded `interact_id`
+/// is kept only as a best-effort hint. The warp scan is opcode-based but gated
+/// (see [`is_genuine_warp`]): a *genuine* warp marks the actor a portal, and
+/// genuine warp records carry no inline text block to confuse it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlacementKind {
     /// The script warps to another scene. `target_map` is the field-VM map id
@@ -245,18 +273,15 @@ pub enum PlacementKind {
     /// The actor carries an inline dialog-text block and/or a field-interact
     /// op but never warps - a talk-to NPC / sign / event trigger.
     Npc {
-        /// Best-effort `0x3F`-op box-config id from the opcode walk. Unreliable
-        /// for field scenes (the walk desyncs on embedded text); the real
-        /// message text is [`dialog_inline`](Self::Npc::dialog_inline).
-        dialog_text_id: Option<u16>,
-        /// Best-effort `0x3E`-op interact selector from the opcode walk. Like
-        /// `dialog_text_id`, unreliable for text-heavy field records.
+        /// Best-effort `0x3E`-op interact selector from the opcode walk.
+        /// Unreliable for text-heavy field records (the walk desyncs inside the
+        /// message); the real message text is
+        /// [`dialog_inline`](Self::Npc::dialog_inline).
         interact_id: Option<u8>,
         /// Record bytes from the start of the first inline `0x1F`-lead text
-        /// segment through the record's bounded end. This - not
-        /// `dialog_text_id`, which is a box-config id - is the actual message
-        /// text; [`crate::dialog::OwnedDialogPanel::from_inline_dialog`]
-        /// renders it (it re-finds the `0x1F` lead and types the first segment).
+        /// segment through the record's bounded end — the actual message text;
+        /// [`crate::dialog::OwnedDialogPanel::from_inline_dialog`] renders it
+        /// (it re-finds the `0x1F` lead and types the first segment).
         dialog_inline: Option<Vec<u8>>,
     },
     /// No warp / dialog / interact opcode: a decorative or script-only actor
@@ -314,6 +339,95 @@ pub fn classify_placements(man_file: &ManFile, man: &[u8]) -> Vec<(ActorPlacemen
         .collect()
 }
 
+/// One inline scene destination decoded from a `0x3F` named-scene-change op.
+///
+/// A field/overworld scene's controller script lists every place it can warp to
+/// as a `0x3F` op that carries the destination scene **name** directly in the
+/// bytecode (plus an `index` id and an entry tile). This is the disc-sourced
+/// counterpart to [`crate::scene::DefaultMapIdResolver`]'s positional guess: the
+/// destination names are *in the data*, not in an uncaptured overlay. (The
+/// separate `0x3E` door-warp carries only a 7-id scene-*type* selector, whose
+/// name resolution does still live in an uncaptured handler.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneDestination {
+    /// Destination CDNAME scene label (e.g. `"town0c"`, `"rikuroa"`).
+    pub scene_name: String,
+    /// The `i16` index operand the op carries (a story/entry id; *not* the
+    /// `0x3E` door-warp `map_id` — distinct id space, observed past 100).
+    pub index: i16,
+    /// Entry tile X byte at the destination (`& 0x7F` tile, `& 0x80` half-tile).
+    pub entry_x: u8,
+    /// Entry tile Z byte at the destination (same encoding as `entry_x`).
+    pub entry_z: u8,
+}
+
+/// Recover the inline scene-destination table from a scene's MAN by decoding the
+/// `0x3F` named-scene-change ops across its partition-1 scripts.
+///
+/// Returns one [`SceneDestination`] per distinct `(scene_name, index)` reached,
+/// in first-seen order. Only ops whose inline name passes
+/// [`scene_change_name`]'s clean-CDNAME-label gate are kept, so the
+/// over-approximating walk's text-desync phantoms (a literal `?` = `0x3F` inside
+/// a message, which decodes a bogus name) are dropped — exactly the desync
+/// hazard the `0x3E` warp gate guards against. Genuine destinations recur with
+/// stable indices across the controller's records; phantoms don't survive the
+/// gate.
+pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestination> {
+    // The `0x3F` destination table is a data blob the scene controller appends
+    // *after* its small per-actor records (in `map01` it trails the last
+    // partition-1 record, well past `record_end_bound`, which clips on the next
+    // partition/section). So bound each partition-1 record by the **next
+    // partition-1 record start** (man-end for the last record) rather than the
+    // tight per-record ceiling, letting the final record's walk reach the table.
+    // The clean-name gate + `(name, index)` dedup absorb the over-walk: a record
+    // viewed from an earlier start re-sees the same ops, and desync junk past the
+    // table fails the gate.
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    let mut starts: Vec<usize> = (0..n1)
+        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
+        .collect();
+    starts.sort_unstable();
+    let mut out: Vec<SceneDestination> = Vec::new();
+    for (k, &start) in starts.iter().enumerate() {
+        let end = starts.get(k + 1).copied().unwrap_or(man.len());
+        let pc0 = {
+            let locals = *man.get(start).unwrap_or(&0) as usize;
+            1 + locals * 2 + 4
+        };
+        if start + pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            let InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                ..
+            } = insn.info
+            else {
+                continue;
+            };
+            let Some(scene_name) = scene_change_name(body, &insn) else {
+                continue;
+            };
+            if out
+                .iter()
+                .any(|d| d.index == index && d.scene_name == scene_name)
+            {
+                continue;
+            }
+            out.push(SceneDestination {
+                scene_name,
+                index,
+                entry_x,
+                entry_z,
+            });
+        }
+    }
+    out
+}
+
 /// Classify a single placement by scanning its script. See [`PlacementKind`].
 pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> PlacementKind {
     let start = p.record_offset;
@@ -323,22 +437,31 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     }
     let body = &man[start..end];
 
-    // Opcode-walk pass: a warp wins outright (the actor is a portal). A real
-    // warp is `0x3E op0 ...` with `op0 >= 100`, so it is not aliased by a
-    // literal `>` (0x3E) in message text (there the next byte is the segment
-    // terminator `0x00`, i.e. `op0 < 100`, an interact). The decoded interact /
-    // dialog hints, by contrast, *are* unreliable on text-heavy field records
-    // (the walk desyncs inside the message), so they are best-effort only - the
-    // real dialog text is recovered structurally below.
-    let mut dialog_text_id = None;
+    // Opcode-walk pass: a *genuine* door-warp wins outright (the actor is a
+    // portal). A real warp is the base `0x3E op0 ...` with `op0` in the 7-id
+    // door-warp range ([`WARP_OP0_RANGE`]). The over-approximating linear walk
+    // can still desync inside embedded message / SJIS text and land on a `0x3E`
+    // whose next byte is `>= 100` — but every such phantom in the corpus rides
+    // the `0x80` cross-context prefix and carries an out-of-range `op0`
+    // (175 / 179 / 200), so [`is_genuine_warp`] rejects it. The decoded interact
+    // / dialog hints, likewise, are unreliable on text-heavy field records (the
+    // walk desyncs inside the message), so they are best-effort only — the real
+    // dialog text is recovered structurally below.
     let mut interact_id = None;
     for insn in LinearWalker::new(body, p.script_pc0).flatten() {
         match insn.info {
+            // A warp wins outright — but only when it is a *genuine* door-warp,
+            // not a text-desync phantom (see [`is_genuine_warp`]). A phantom
+            // warp (cross-context `0x80` prefix and/or `op0` outside the 7-id
+            // door-warp range) is dropped here so the actor falls through to the
+            // structural dialog pass, which classifies a text-bearing record as
+            // an [`Npc`] (e.g. `geremi`'s talk NPC) rather than a portal to a
+            // non-existent map.
             InsnInfo::WarpOrInteract {
                 op0, is_warp: true, ..
-            } => {
+            } if is_genuine_warp(op0, insn.extended) => {
                 return PlacementKind::Portal {
-                    target_map: op0.wrapping_sub(100),
+                    target_map: op0 - 100,
                 };
             }
             InsnInfo::WarpOrInteract {
@@ -348,9 +471,11 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
             } => {
                 interact_id.get_or_insert(op1);
             }
-            InsnInfo::Dialog { text_id, .. } => {
-                dialog_text_id.get_or_insert(text_id);
-            }
+            // NB: `0x3F` (`InsnInfo::SceneChange`) is deliberately *not* read as a
+            // dialog hint here — it is the named scene-change opcode, not a dialog
+            // op (field dialogue is the `0x4C` nibble-5 path). Its inline string is
+            // a destination scene name, recovered by the scene-destination resolver,
+            // not NPC message text.
             _ => {}
         }
     }
@@ -362,7 +487,6 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
 
     if dialog_inline.is_some() || interact_id.is_some() {
         PlacementKind::Npc {
-            dialog_text_id,
             interact_id,
             dialog_inline,
         }
@@ -747,14 +871,73 @@ mod tests {
 
     #[test]
     fn classify_warp_script_is_a_portal() {
-        // `0x3E` with op0 = 110 (>= 100) is a warp to map id 110 - 100 = 10.
-        let (mf, man) = man_with_placement_script(&[0x3E, 110, 0, 0, 0, 0]);
+        // `0x3E` with op0 = 103 is a genuine door-warp to map id 103 - 100 = 3
+        // (within the 7-id `WARP_OP0_RANGE`).
+        let (mf, man) = man_with_placement_script(&[0x3E, 103, 0, 0, 0, 0]);
         let placements = mf.actor_placements(&man);
         assert_eq!(placements.len(), 1, "record 0 is the controller");
         assert_eq!(
             classify_placement(&mf, &man, &placements[0]),
-            PlacementKind::Portal { target_map: 10 }
+            PlacementKind::Portal { target_map: 3 }
         );
+    }
+
+    #[test]
+    fn is_genuine_warp_gate() {
+        // Base opcode, in-range op0 -> genuine (map_id 0..=6 -> op0 100..=106).
+        assert!(is_genuine_warp(100, None)); // map_id 0
+        assert!(is_genuine_warp(106, None)); // map_id 6
+        // Out-of-range op0 (the desync phantoms: 175 / 179 / 200) -> rejected.
+        assert!(!is_genuine_warp(107, None));
+        assert!(!is_genuine_warp(200, None));
+        // Cross-context `0x80`-prefixed warp -> rejected even with in-range op0.
+        assert!(!is_genuine_warp(103, Some(0xF8)));
+    }
+
+    #[test]
+    fn classify_out_of_range_warp_is_not_a_portal() {
+        // `0x3E` with op0 = 200 decodes as `is_warp` (op0 >= 100) but lands far
+        // outside the 7-id door-warp range — the signature of a text-desynced
+        // read (corpus: `geremi` op0=200, `other7` op0=175/179). With no inline
+        // text after it, the actor is Plain, never a phantom portal to map 100.
+        let (mf, man) = man_with_placement_script(&[0x3E, 200, 0, 0, 0, 0, 0x21]);
+        let placements = mf.actor_placements(&man);
+        assert_eq!(
+            classify_placement(&mf, &man, &placements[0]),
+            PlacementKind::Plain,
+            "an out-of-range pseudo-warp must not classify as a portal"
+        );
+    }
+
+    #[test]
+    fn scene_destinations_decodes_named_warp() {
+        // A script with a 0x3F named scene-change to "dolk" (index 60, entry
+        // tile bytes 0x10/0x20, dir 0x30) followed by a halt.
+        let mut script = vec![0x3Fu8, 60, 0, 4];
+        script.extend_from_slice(b"dolk");
+        script.extend_from_slice(&[0x10, 0x20, 0x30, 0x21]);
+        let (mf, man) = man_with_placement_script(&script);
+        let dests = scene_destinations(&mf, &man);
+        assert_eq!(
+            dests,
+            vec![SceneDestination {
+                scene_name: "dolk".to_string(),
+                index: 60,
+                entry_x: 0x10,
+                entry_z: 0x20,
+            }]
+        );
+    }
+
+    #[test]
+    fn scene_destinations_rejects_text_desync_name() {
+        // A 0x3F whose "name" is uppercase/punctuation (a literal '?' inside
+        // message text) is not a clean CDNAME label and is dropped.
+        let mut script = vec![0x3Fu8, 0, 0, 4];
+        script.extend_from_slice(b"Hi! ");
+        script.extend_from_slice(&[0x00, 0x00, 0x00, 0x21]);
+        let (mf, man) = man_with_placement_script(&script);
+        assert!(scene_destinations(&mf, &man).is_empty());
     }
 
     #[test]
@@ -765,7 +948,6 @@ mod tests {
         assert_eq!(
             classify_placement(&mf, &man, &placements[0]),
             PlacementKind::Npc {
-                dialog_text_id: None,
                 interact_id: Some(0x07),
                 dialog_inline: None,
             }
@@ -958,7 +1140,7 @@ mod tests {
         sparring.extend_from_slice(&[0x1F, b's', b'p', b'a', b'r', 0x00]);
         let mut npc = vec![0x00, 0x10, 0x00, 10, 12];
         npc.extend_from_slice(&[0x1F, b'h', b'i', b'!', 0x00]);
-        let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 110, 0, 0, 0, 0];
+        let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 103, 0, 0, 0, 0];
         let decorative = vec![0x00, 0x12, 0x00, 6, 6, 0x21];
         let (mf, man) = man_with_placements(&[controller, sparring, npc, portal, decorative]);
 

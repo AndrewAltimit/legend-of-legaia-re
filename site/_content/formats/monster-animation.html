@@ -38,7 +38,14 @@ v5 = b7 | (b8 &amp; 0xf0) &lt;&lt; 4     rz</code></pre>
 
 <section class="doc-section" id="playback">
   <h2>Playback</h2>
-  <p>The renderer (<code>FUN_80048a08</code>) keeps a 12.4 fixed-point phase in the per-actor draw struct (<code>+0x68</code>): integer frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xf</code>. The decoder (<code>FUN_8004998c</code>) interpolates between frame <code>i</code> and <code>i+1</code>: <strong>linear</strong> for translation, <strong>shortest-path angle-wrap</strong> for rotation. The result is written to a pose buffer (6 shorts per object) and applied per object via the GTE in the draw loop, then <code>FUN_800495c8</code> / <code>FUN_8005b038</code> blend it onto the object vertices. The enemy-table viewer mirrors this: it plays action 0 and poses each part relative to its rest frame, so frame 0 is exactly the static model.</p>
+  <p>The renderer (<code>FUN_80048a08</code>) keeps a 12.4 fixed-point phase in the per-actor draw struct (<code>+0x68</code>): integer frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xf</code>. The decoder (<code>FUN_8004998c</code>) interpolates between frame <code>i</code> and <code>i+1</code>: <strong>linear</strong> for translation, <strong>shortest-path angle-wrap</strong> for rotation. The result is written to a pose buffer (6 shorts per object) and applied per object via the GTE in the draw loop, then <code>FUN_800495c8</code> / <code>FUN_8005b038</code> blend it onto the object vertices. The enemy-table viewer mirrors this: it plays each action and poses every part relative to its rest frame, so frame 0 is exactly the static model.</p>
+</section>
+
+<section class="doc-section" id="export">
+  <h2>Export (glTF)</h2>
+  <p><code>legaia_asset::monster_gltf::export_glb</code> packs a monster's mesh, its baked texture, and <strong>every</strong> action animation into one binary glTF (<code>.glb</code>) — the universal interchange format. The rigid-per-object model maps straight onto glTF node animation: each TMD object becomes a node, the keyframe stream's translation + Euler rotation drive that node's <code>translation</code> / <code>rotation</code> channels (the <code>Rz·Ry·Rx</code> order recomposed as a quaternion), and a root node rotates the rig 180° about X to convert PSX <code>+Y</code>-down space to glTF's <code>+Y</code>-up. The per-prim CLUTs (<code>cba &amp; 0x3F</code>) that a single material can't index are baked into a vertical palette atlas, with each vertex's <code>V</code> remapped into its band.</p>
+  <div class="cli"><code>asset monster-archive … --id N --glb enemy.glb</code></div>
+  <p class="caption">The <a href="../monsters.html">enemy table</a> exposes the same export as a per-enemy download button.</p>
 </section>
 
 <section class="doc-section" id="provenance">

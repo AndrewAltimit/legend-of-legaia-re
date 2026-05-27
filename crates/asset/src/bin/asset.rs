@@ -347,6 +347,11 @@ enum Cmd {
         /// the idle action's per-object motion ranges). Requires `--id`.
         #[arg(long)]
         anim: bool,
+        /// Export the monster's mesh + texture + all action animations as a
+        /// binary glTF (`.glb`) to this path — a universal format that carries
+        /// geometry, material, and animation together. Requires `--id`.
+        #[arg(long)]
+        glb: Option<PathBuf>,
     },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
@@ -689,6 +694,7 @@ fn main() -> Result<()> {
             texture_png,
             palette,
             anim,
+            glb,
         } => monster_archive_one(
             &input,
             id,
@@ -696,6 +702,7 @@ fn main() -> Result<()> {
             texture_png.as_deref(),
             palette,
             anim,
+            glb.as_deref(),
         ),
         Cmd::Validate {
             dir,
@@ -3509,6 +3516,7 @@ fn monster_archive_one(
     texture_png: Option<&Path>,
     palette: Option<usize>,
     anim: bool,
+    glb: Option<&Path>,
 ) -> Result<()> {
     use legaia_asset::monster_archive;
     let bytes = std::fs::read(input)?;
@@ -3641,6 +3649,22 @@ fn monster_archive_one(
                 }
             }
             _ => println!("  id {id}: no action animations (filler slot / no mesh)"),
+        }
+    }
+    if let Some(glb_path) = glb {
+        let Some(id) = id else {
+            anyhow::bail!("--glb requires --id <N>");
+        };
+        match legaia_asset::monster_gltf::export_glb(&bytes, id)? {
+            Some(glb) => {
+                std::fs::write(glb_path, &glb)?;
+                println!(
+                    "  wrote glTF -> {} ({} bytes, mesh + texture + animations)",
+                    glb_path.display(),
+                    glb.len(),
+                );
+            }
+            None => println!("  id {id}: no exportable mesh (out of range / filler slot)"),
         }
     }
     Ok(())

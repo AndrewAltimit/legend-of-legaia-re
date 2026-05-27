@@ -371,6 +371,26 @@ export class LegaiaViewer {
     mesh_positions(): Float32Array;
     mesh_uvs(): Uint8Array;
     /**
+     * Keyframes for monster `id`'s action animation at array `index` (the
+     * position in [`Self::monster_animations_json`]). Same flat layout as
+     * [`Self::monster_idle_animation_frames`]: six `i32` per part per frame,
+     * `[tx, ty, tz, rx, ry, rz]`, with frame `f` / part `p` / component `c` at
+     * `(f * part_count + p) * 6 + c`. Empty if the index is out of range or the
+     * slot has no decodable animation.
+     */
+    monster_animation_frames_at(id: number, index: number): Int32Array;
+    /**
+     * Metadata for **every** decodable action animation of monster `id`, as a
+     * JSON array in `+0x4C` action-table order:
+     * `[{"action_id":N,"part_count":P,"frame_count":F}, ...]`. Array index `0`
+     * is the idle loop (see [`Self::monster_idle_animation_header`]); the rest
+     * are the monster's attack / spell / special actions. The array index is
+     * the handle the JS viewer passes to [`Self::monster_animation_frames_at`]
+     * to fetch a given action's keyframes. `"[]"` if the slot is empty / filler
+     * or carries no decodable animation.
+     */
+    monster_animations_json(id: number): string;
+    /**
      * Decode the global monster stat archive (PROT entry 867, the
      * `battle_data` block's extended footprint) into a JSON array of every
      * populated record. Sony bytes never leave the browser — the archive is
@@ -391,6 +411,14 @@ export class LegaiaViewer {
      * LZS decode failure.
      */
     monster_archive_json(): string;
+    /**
+     * Monster `id`'s mesh + baked texture + **all** action animations packed
+     * into one binary glTF (`.glb`) blob — the universal format that carries
+     * geometry, material, and animation together (Blender / three.js / etc.).
+     * Each TMD object becomes an animated node; the texture is baked into a
+     * per-palette atlas. Empty if the slot has no exportable mesh.
+     */
+    monster_glb(id: number): Uint8Array;
     /**
      * Monster `id`'s idle animation keyframes as a flat `i32` array, six values
      * per part per frame: `[tx, ty, tz, rx, ry, rz]`. Frame `f`, part `p`,
@@ -828,7 +856,10 @@ export interface InitOutput {
     readonly legaiaviewer_mesh_indices: (a: number) => [number, number];
     readonly legaiaviewer_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaviewer_monster_animation_frames_at: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_monster_animations_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_archive_json: (a: number) => [number, number];
+    readonly legaiaviewer_monster_glb: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_idle_animation_frames: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_idle_animation_header: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_bounds: (a: number, b: number) => [number, number];

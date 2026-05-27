@@ -45,8 +45,9 @@ in ten 4 KB blocks. Key findings:
 | `0x801F6000+` | Live animation state globals (zero at rest) |
 
 Per-character HP/MP/STR/DEF growth does not come from a static table in the
-overlay. Stat increments are sourced from per-Seru structs loaded from PROT
-entries at runtime (HP grant at Seru `+0x74`). See
+overlay, and the producing writer is not in the captured `magic_level_up`
+dumps. The earlier "HP grant at Seru `+0x74`" reading is **falsified** — those
+`+0x74` reads surface a `0x80808080` battle-state flag, not a stat grant. See
 [`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 
 ## Capturing with PCSX-Redux
@@ -256,8 +257,10 @@ piece is the renderer's overlay-resident byte→quad pipeline.
 
 What to look for after import:
 - Strings near the overlay base - Japanese / English glyph table headers.
-- Functions that take a `MES container ptr + msg_id + (x, y)` shape - likely
-  the dialog opener `FUN_8001FD44`'s overlay callee.
+- Functions that take a `MES container ptr + msg_id + (x, y)` shape - likely a
+  message-box renderer feeding the dialog pager `FUN_801D84D0`. (Field NPC
+  dialogue itself has no opener function: it's the actor's inline MES walked by
+  `FUN_80039b7c` — see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode). `FUN_8001FD44` is the scene-change packet, not a dialog opener.)
 - `LoadImage`-shaped writes to VRAM via `_DAT_8007AF40`-region SPU/GPU regs
   - that's the per-page glyph upload.
 

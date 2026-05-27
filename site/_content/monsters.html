@@ -59,6 +59,15 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   padding: 0.35rem 0.6rem; font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer;
 }
 .mesh-viewer-controls button:hover { border-color: var(--accent); }
+.mesh-anim-label { color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.7rem; }
+.mesh-anim-actions { display: flex; gap: 0.35rem; margin-top: 0.3rem; flex-wrap: wrap; }
+.mesh-anim-btn {
+  background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border);
+  padding: 0.25rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem; cursor: pointer;
+  border-radius: 3px;
+}
+.mesh-anim-btn:hover { border-color: var(--accent); color: var(--text); }
+.mesh-anim-btn.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .mesh-viewer-hint { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.5rem; line-height: 1.5; max-width: 42ch; }
 </style>
 <script src="js/rom-cache.js"></script>
@@ -141,11 +150,20 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <a href="subsystems/renderer.html">Renderer</a>
   </div>
 
-  <h2>Idle animation</h2>
-  <p>The model isn't static: the viewer plays the monster's <strong>idle loop</strong> — the gentle resting pose the engine runs between actions — by re-posing each body part frame to frame, just as the battle renderer does. Each enemy's attack and spell animations sit alongside it in the same archive.</p>
+  <h2>Animations</h2>
+  <p>The model isn't static. Every action an enemy can play — its <strong>idle</strong> resting loop, its <strong>attack</strong>, and each <strong>spell / special</strong> — ships as its own transform-keyframe stream in the same archive. The viewer opens on the idle loop; when a monster carries more than one animation, a row of toggle buttons appears beside the model so you can switch between them. Each one re-poses the body parts frame to frame exactly as the battle renderer does.</p>
   <div class="cli"><code>asset monster-archive … --id N --anim</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="formats/monster-animation.html">Monster animation</a>
+  </div>
+
+  <h2>Download</h2>
+  <p>The <strong>⬇ .glb</strong> button packs the selected enemy — mesh, baked texture, and <em>all</em> of its action animations — into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file. glTF is the universal 3D interchange format, so the model drops straight into Blender, three.js, the Windows 3D Viewer, or any glTF tool, animations and all. Each TMD body part becomes an animated node; the per-part palettes are baked into one texture atlas. The same export is available offline from the CLI.</p>
+  <div class="cli"><code>asset monster-archive … --id N --glb enemy.glb</code></div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/tmd.html">Legaia TMD</a>
     <a href="formats/monster-animation.html">Monster animation</a>
   </div>
 </section>
@@ -168,6 +186,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   let viewer = null;       // WASM LegaiaViewer (hoisted so the mesh view can call it)
   let selectedId = null;   // currently-rendered monster id
   let meshView = null;     // MonsterMeshView (lazily created on first selection)
+  let animList = [];       // [{action_id,part_count,frame_count}] for selectedId
+  let curActionIdx = 0;    // index into animList of the playing action (0 = idle)
 
   function normalize(r) {
     const s = r.stats || [];
@@ -384,6 +404,12 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     //   relative to frame 0 (so frame 0 == the static rest pose).
     setMesh(positions, normals, indices, bounds, uvs, palIdx, tex, anim) {
       const gl = this.gl;
+      // Keep the pristine per-object local geometry so a later action switch
+      // (setAnimation) can re-pose without re-uploading the whole mesh/textures.
+      this._basePos = positions;
+      this._baseNrm = normals;
+      this._objIds = (anim && anim.objectIds) || null;
+      this._staticBounds = bounds;
       this._setupAnim(positions, normals, anim);
       // When animating, the raw TMD objects are all modelled at the origin and
       // the per-part transforms assemble them; upload the assembled rest pose.
@@ -441,6 +467,35 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       // The static bounds frame the collapsed mesh; the assembled rest pose is
       // larger and re-centred, so frame that instead when animating.
       if (this.anim) { this.center = this.anim.viewCenter.slice(); this.radius = this.anim.viewRadius; }
+    }
+
+    // Swap the active action animation in place, reusing the mesh geometry and
+    // textures already uploaded by setMesh. `meta` is { partCount, frameCount,
+    // frames(Int32Array) } for the new action (the part count is constant per
+    // monster, so only the keyframes change). Re-frames the camera on the new
+    // rest pose but leaves the user's current orbit alone. Pass null to fall
+    // back to the static (un-posed) mesh.
+    setAnimation(meta) {
+      const gl = this.gl;
+      const anim = (meta && this._objIds)
+        ? { objectIds: this._objIds, partCount: meta.partCount, frameCount: meta.frameCount, frames: meta.frames }
+        : null;
+      this._setupAnim(this._basePos, this._baseNrm, anim);
+      const pos0 = this.anim ? this.anim.out : this._basePos;
+      const nrm0 = this.anim ? this.anim.outN : this._baseNrm;
+      gl.bindVertexArray(this.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, pos0, this.anim ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, nrm0, this.anim ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+      gl.bindVertexArray(null);
+      if (this.anim) {
+        this.center = this.anim.viewCenter.slice();
+        this.radius = this.anim.viewRadius;
+      } else {
+        this.center = [this._staticBounds[0], this._staticBounds[1], this._staticBounds[2]];
+        this.radius = this._staticBounds[3] || 1;
+      }
     }
 
     // Precompute the idle-animation state. The monster TMD models each body
@@ -661,11 +716,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <div class="mesh-viewer-controls">
               <button id="mesh-spin-btn" type="button">⏸ stop spin</button>
               <button id="mesh-reset-btn" type="button">↺ reset view</button>
+              <button id="mesh-glb-btn" type="button" title="Download mesh + texture + all animations as a glTF .glb">⬇ .glb</button>
               <button id="mesh-close-btn" type="button">✕ close</button>
             </div>
+            <div class="mesh-anim-label" id="mesh-anim-label" style="display:none">Animation</div>
+            <div class="mesh-anim-actions" id="mesh-anim-actions"></div>
             <p class="mesh-viewer-hint">
               Drag to orbit · scroll to zoom · double-click to reset.
-              Textured, directional-lit, playing the idle loop.
+              Textured, directional-lit, playing the selected action.
             </p>
           </div>
         </div>
@@ -678,6 +736,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       updateSpinLabel(meshView.cam.autoRotate);
     });
     detailRow.querySelector('#mesh-reset-btn').addEventListener('click', () => meshView?.resetView());
+    detailRow.querySelector('#mesh-glb-btn').addEventListener('click', () => downloadCurrentGlb());
     detailRow.querySelector('#mesh-close-btn').addEventListener('click', () => {
       selectedId = null;
       render();
@@ -726,17 +785,27 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const tex = (texIdx.length && texPal.length && dims[0])
       ? { idx: Uint8Array.from(texIdx), pal: Uint8Array.from(texPal), w: dims[0], h: dims[1] }
       : null;
-    // Idle animation (action 0): per-object transform keyframes + per-vertex
-    // object id. See formats/monster-animation.html.
+    // Animations: every action the enemy can play sits in the same archive as
+    // a per-object transform-keyframe stream (action 0 = idle, then attack /
+    // spell / special). The per-vertex object id maps each vertex to the part
+    // whose transform poses it. See formats/monster-animation.html.
     const objIds = viewer.monster_mesh_object_ids(id);
-    const animHdr = viewer.monster_idle_animation_header(id);
-    const animFrames = viewer.monster_idle_animation_frames(id);
-    const anim = (objIds.length && animHdr[0] && animHdr[1] > 1 && animFrames.length)
+    // `wasmIdx` is the entry's true position in the unfiltered WASM array (the
+    // handle monster_animation_frames_at expects); keep it through the filter
+    // so dropped entries can't desync the indices. We only list genuinely
+    // animated actions (>1 keyframe) — a single-frame entry has no rest pose to
+    // assemble and the raw per-object geometry sits collapsed at the origin.
+    animList = JSON.parse(viewer.monster_animations_json(id) || '[]')
+      .map((a, i) => ({ ...a, wasmIdx: i }))
+      .filter(a => a.part_count && a.frame_count > 1);
+    curActionIdx = 0;
+    // Build the idle (action 0) keyframes for the initial pose.
+    const idleAnim = (objIds.length && animList.length)
       ? {
           objectIds: Uint32Array.from(objIds),
-          partCount: animHdr[0],
-          frameCount: animHdr[1],
-          frames: Int32Array.from(animFrames),
+          partCount: animList[0].part_count,
+          frameCount: animList[0].frame_count,
+          frames: Int32Array.from(viewer.monster_animation_frames_at(id, animList[0].wasmIdx)),
         }
       : null;
     try {
@@ -751,16 +820,100 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         uvs.length ? Float32Array.from(uvs) : null,
         palIdx.length ? Float32Array.from(palIdx) : null,
         tex,
-        anim,
+        idleAnim,
       );
       meshView.resetView();
-      statsEl.innerHTML =
+      const meshStats =
         `<b>${(indices.length / 3) | 0}</b> triangles · <b>${(positions.length / 3) | 0}</b> vertices` +
-        (tex ? ` · ${tex.w}×${tex.h} texture` : ' · untextured') +
-        (anim ? ` · <b>idle</b> ${anim.frameCount}f animation` : '');
+        (tex ? ` · ${tex.w}×${tex.h} texture` : ' · untextured');
+      statsEl.dataset.meshStats = meshStats;
+      buildActionToggle(id);
+      updateActionStats();
     } catch (err) {
       statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
     }
+  }
+
+  // A short label for an animation entry. The decoder hands one down
+  // (`meta.label`: Idle / Attack / Action 0xNN, disambiguated on collision);
+  // the local fallback keeps the UI working if an older WASM build is cached.
+  function actionLabel(meta, idx) {
+    if (meta && meta.label) return meta.label;
+    if (idx === 0) return 'Idle';
+    if (meta.action_id === 1) return 'Attack';
+    return 'Action 0x' + meta.action_id.toString(16).toUpperCase().padStart(2, '0');
+  }
+
+  // Render one toggle button per decodable animation. Switching re-poses the
+  // already-loaded mesh in place (no texture / geometry re-upload).
+  function buildActionToggle(id) {
+    const wrap = detailRow.querySelector('#mesh-anim-actions');
+    const label = detailRow.querySelector('#mesh-anim-label');
+    wrap.innerHTML = '';
+    // Nothing to toggle when the slot carries 0 or 1 animations.
+    if (animList.length < 2) { label.style.display = 'none'; return; }
+    label.style.display = '';
+    label.textContent = `Animations (${animList.length})`;
+    animList.forEach((meta, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mesh-anim-btn' + (idx === curActionIdx ? ' is-active' : '');
+      btn.textContent = actionLabel(meta, idx);
+      btn.dataset.idx = idx;
+      btn.addEventListener('click', () => selectAction(id, idx));
+      wrap.appendChild(btn);
+    });
+  }
+
+  // Play animation `idx` for monster `id`, reusing the loaded mesh.
+  function selectAction(id, idx) {
+    if (!meshView || idx === curActionIdx) return;
+    const meta = animList[idx];
+    if (!meta) return;
+    const frames = viewer.monster_animation_frames_at(id, meta.wasmIdx);
+    if (!frames.length) return;
+    meshView.setAnimation({
+      partCount: meta.part_count,
+      frameCount: meta.frame_count,
+      frames: Int32Array.from(frames),
+    });
+    curActionIdx = idx;
+    detailRow.querySelectorAll('.mesh-anim-btn').forEach(b => {
+      b.classList.toggle('is-active', Number(b.dataset.idx) === idx);
+    });
+    updateActionStats();
+  }
+
+  // Export the selected monster as a binary glTF (.glb) — mesh + baked texture
+  // + every action animation, in one universal file — and trigger a download.
+  function downloadCurrentGlb() {
+    if (!viewer || selectedId === null) return;
+    const btn = detailRow.querySelector('#mesh-glb-btn');
+    const bytes = viewer.monster_glb(selectedId);
+    if (!bytes || !bytes.length) {
+      if (btn) { btn.textContent = '⬇ no mesh'; setTimeout(() => (btn.textContent = '⬇ .glb'), 1500); }
+      return;
+    }
+    const rec = records.find(r => r.id === selectedId);
+    const base = ((rec && rec.name) ? rec.name : `monster_${selectedId}`).replace(/[^A-Za-z0-9_-]+/g, '_');
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'model/gltf-binary' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${base}.glb`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  // Refresh the stats line to reflect the playing action.
+  function updateActionStats() {
+    const statsEl = detailRow.querySelector('#mesh-viewer-stats');
+    const meta = animList[curActionIdx];
+    const animStr = meta
+      ? ` · <b>${escapeHtml(actionLabel(meta, curActionIdx).toLowerCase())}</b> ${meta.frame_count}f animation`
+      : '';
+    statsEl.innerHTML = (statsEl.dataset.meshStats || '') + animStr;
   }
 
   /* `f` is a fresh File pick or a RomCache cache-backed source; both

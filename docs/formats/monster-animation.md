@@ -79,6 +79,20 @@ loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
 - `FUN_800495c8` / `FUN_8005b038` — GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
 - `FUN_80054cb0` — monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` (`ghidra/scripts/funcs/80054cb0.txt`).
 
+## Export
+
+`legaia_asset::monster_gltf::export_glb(entry, id)` packs a monster's mesh, its
+baked texture, and **every** action animation into one binary glTF (`.glb`) — the
+universal interchange format. The rigid-per-object model maps directly onto glTF
+node animation: each TMD object becomes a node, the keyframe stream's
+translation + Euler rotation drive that node's `translation` / `rotation`
+channels (the `Rz·Ry·Rx` order recomposed as a quaternion), and a root node
+rotates the rig 180° about X to convert the PSX `+Y`-down space to glTF's
+`+Y`-up. The per-prim CLUTs (`cba & 0x3F`) that a single glTF material can't
+index are baked into a vertical palette atlas, with each vertex's `V` remapped
+into its palette band. CLI: `asset monster-archive --id N --glb <out>`; the
+enemy-table web page exposes the same export as a download button.
+
 ## See also
 
 - [Legaia TMD](tmd.md) - the mesh whose vertices these keyframes morph.

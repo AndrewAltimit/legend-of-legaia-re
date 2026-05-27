@@ -193,7 +193,7 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 |---|---|---|
 | `0x1F800314` | i16[] | Inverted-Y mirror table (op 0x4C nibble-9 sub-E writes `-words[i]` here). |
 | `0x1F800393` | u8 | Per-frame tick byte. Global frame-time scalar. Read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C. Also subtracted from the title-attract countdown at `0x801EF16C` every tick (see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)) and exposed via `World::tick_move_vms_with_delta` in the engine port. |
-| `0x1F800394` | u32 | **Global story-flag word.** Read by `GFLAG_TST` (0x30); written by `GFLAG_SET` / `GFLAG_CLR` (0x2E / 0x2F); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. Set by the dialog opener with bit 0x40 (`"dialog active"` lock). |
+| `0x1F800394` | u32 | **Global story-flag word.** Read by `GFLAG_TST` (0x30); written by `GFLAG_SET` / `GFLAG_CLR` (0x2E / 0x2F); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. Bit 0x40 is set by the scene-change packet `FUN_8001FD44` (a scene-transition-pending flag, **not** a "dialog active" lock — an earlier mislabel). |
 | `0x1F8003E8` | u32 | Render-config block (op 0x46). |
 | `0x1F8003EC` | u8[] | Tile-flag bitmap base used by op 0x4C nibble-7 (rectangle SET/CLEAR over `+0x4000` offset). |
 | `0x1F8003F8` / `0x1F8003FA` | i16 | Camera-scroll values used by op 0x23 player path. |

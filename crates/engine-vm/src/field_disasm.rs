@@ -125,13 +125,34 @@ pub enum InsnInfo {
         skip_delta: u16,
         skip_target: usize,
     },
-    /// `0x3F DIALOG`.
-    Dialog {
-        text_id: u16,
-        len: u8,
-        xb: u8,
-        zb: u8,
-        depth_id: u8,
+    /// `0x3F` — **named scene-change** ("warp by name").
+    ///
+    /// Copies a length-prefixed destination scene *name* from the bytecode and
+    /// hands it to the scene-change packet (`FUN_8001FD44`, which writes the
+    /// name into the active scene-name buffers `0x8007050C`/`0x80084548`), then
+    /// sets the destination entry tile + facing. Operand layout (after the
+    /// opcode byte): `[i16 index][u8 name_len][name_len name bytes][entry_x]`
+    /// `[entry_z][dir]`, so the instruction is `header + 6 + name_len` bytes.
+    ///
+    /// The destination name is a *slice of the bytecode* at `operand + 3`, not
+    /// carried inline here; recover it with [`scene_change_name`]. This is
+    /// **not** a dialog opcode — field dialogue is the `0x4C` nibble-5 sub-3/4
+    /// path ([`MenuCtrlKind::Nibble5Dialog`]); only the over-approximating walk
+    /// desyncing on a literal `?` (`0x3F`) in message text makes it *look* like
+    /// one in text-heavy records.
+    SceneChange {
+        /// Sign-extended `i16` at `operand[0..2]` — the destination's
+        /// story/entry index (`FUN_8003CE9C` read). Not the 7-id door-warp
+        /// `map_id`; distinct id space (observed values reach 155+).
+        index: i16,
+        /// Length of the inline destination-name string at `operand + 3`.
+        name_len: u8,
+        /// Entry tile X byte (`& 0x7F` = tile, `& 0x80` = +half-tile).
+        entry_x: u8,
+        /// Entry tile Z byte (same encoding as `entry_x`).
+        entry_z: u8,
+        /// Facing/depth selector (`& 7` indexes the entry-direction table).
+        dir: u8,
     },
     /// `0x40 DATA_BLOCK`.
     DataBlock { len: u8 },
@@ -668,19 +689,19 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
         }
         0x3F => {
             need(3)?;
-            let text_id = u16::from_le_bytes([bytecode[operand], bytecode[operand + 1]]);
-            let len = bytecode[operand + 2];
-            let len_usize = len as usize;
+            let index = i16::from_le_bytes([bytecode[operand], bytecode[operand + 1]]);
+            let name_len = bytecode[operand + 2];
+            let len_usize = name_len as usize;
             need(3 + len_usize + 3)?;
             let pos_start = operand + 3 + len_usize;
             mk(
                 header_size + 6 + len_usize,
-                InsnInfo::Dialog {
-                    text_id,
-                    len,
-                    xb: bytecode[pos_start],
-                    zb: bytecode[pos_start + 1],
-                    depth_id: bytecode[pos_start + 2],
+                InsnInfo::SceneChange {
+                    index,
+                    name_len,
+                    entry_x: bytecode[pos_start],
+                    entry_z: bytecode[pos_start + 1],
+                    dir: bytecode[pos_start + 2],
                 },
             )
         }
@@ -1651,13 +1672,15 @@ fn render_mnemonic(insn: &Insn) -> String {
             skip_target,
             ..
         } => format!("BBoxTest [{x_min},{z_min}..{x_max},{z_max}] skip-> 0x{skip_target:04X}"),
-        Dialog {
-            text_id,
-            len,
-            xb,
-            zb,
+        SceneChange {
+            index,
+            name_len,
+            entry_x,
+            entry_z,
             ..
-        } => format!("Dialog text_id={text_id} len={len} xb=0x{xb:02X} zb=0x{zb:02X}"),
+        } => format!(
+            "SceneChange index={index} name_len={name_len} entry=(0x{entry_x:02X},0x{entry_z:02X})"
+        ),
         DataBlock { len } => format!("DataBlock len={len}"),
         WaitFrames { target } => format!("WaitFrames target={target}"),
         InventoryCmp {
@@ -1684,6 +1707,44 @@ fn render_mnemonic(insn: &Insn) -> String {
         Byte { value } => format!(".byte 0x{value:02X}"),
     };
     format!("{ext}{body}")
+}
+
+/// Recover the destination scene name of a [`InsnInfo::SceneChange`] (`0x3F`)
+/// instruction from the bytecode it was decoded against.
+///
+/// The name is a `name_len`-byte slice at `insn_start + header + 3` (header is
+/// 2 for the `0x80` cross-context form, 1 otherwise). Returns `None` when `insn`
+/// is not a `SceneChange`, the slice runs past `bytecode`, or the bytes aren't a
+/// clean ASCII scene label — the same desync guard the `0x3E` warp gate uses:
+/// the linear walk hits literal `?` (`0x3F`) bytes inside message text, so a
+/// caller must reject names that aren't lowercase-ASCII-ish CDNAME labels.
+/// Genuine destinations are short (`town01`, `dolk`, `rikuroa`, …).
+pub fn scene_change_name(bytecode: &[u8], insn: &Insn) -> Option<String> {
+    let InsnInfo::SceneChange { name_len, .. } = insn.info else {
+        return None;
+    };
+    let header = if insn.extended.is_some() { 2 } else { 1 };
+    let start = insn.pc + header + 3;
+    let raw = bytecode.get(start..start + name_len as usize)?;
+    clean_scene_name(raw)
+}
+
+/// The clean-CDNAME-label gate shared by [`scene_change_name`] and the field-VM
+/// `0x3F` executor. A genuine destination name is short, non-empty, and a
+/// lowercase-ASCII / digit CDNAME label (`town01`, `dolk`, `rikuroa`, …).
+/// Rejects anything else — the desync guard for a literal `?` (`0x3F`) landing
+/// inside message text, which would otherwise decode a bogus "name". Returns the
+/// owned name on success.
+pub fn clean_scene_name(raw: &[u8]) -> Option<String> {
+    if raw.is_empty()
+        || raw.len() > 12
+        || !raw
+            .iter()
+            .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(String::from_utf8_lossy(raw).into_owned())
 }
 
 /// Map a retail FMV index to its filename via the runtime FMV-state
@@ -1911,27 +1972,38 @@ mod tests {
     }
 
     #[test]
-    fn dialog_consumes_inline_payload() {
-        // [3F, lo, hi, len=4, b0, b1, b2, b3, xb, zb, depth].
-        let bc = [0x3Fu8, 1, 0, 4, 0xAA, 0xBB, 0xCC, 0xDD, 0x10, 0x20, 0x30];
+    fn scene_change_consumes_inline_payload_and_recovers_name() {
+        // [3F, index_lo, index_hi, name_len=4, 'd','o','l','k', entry_x, entry_z, dir].
+        let bc = [0x3Fu8, 60, 0, 4, b'd', b'o', b'l', b'k', 0x10, 0x20, 0x30];
         let insn = decode(&bc, 0).unwrap();
-        assert_eq!(insn.size, 11);
+        assert_eq!(insn.size, 11); // header 1 + 6 + name_len 4
         match insn.info {
-            InsnInfo::Dialog {
-                text_id,
-                len,
-                xb,
-                zb,
-                depth_id,
+            InsnInfo::SceneChange {
+                index,
+                name_len,
+                entry_x,
+                entry_z,
+                dir,
             } => {
-                assert_eq!(text_id, 1);
-                assert_eq!(len, 4);
-                assert_eq!(xb, 0x10);
-                assert_eq!(zb, 0x20);
-                assert_eq!(depth_id, 0x30);
+                assert_eq!(index, 60);
+                assert_eq!(name_len, 4);
+                assert_eq!(entry_x, 0x10);
+                assert_eq!(entry_z, 0x20);
+                assert_eq!(dir, 0x30);
             }
-            _ => panic!(),
+            other => panic!("expected SceneChange, got {other:?}"),
         }
+        // The destination name is recovered from the bytecode slice.
+        assert_eq!(scene_change_name(&bc, &insn).as_deref(), Some("dolk"));
+    }
+
+    #[test]
+    fn scene_change_name_rejects_text_desync_phantom() {
+        // A 0x3F whose "name" bytes are uppercase/punctuation (a literal '?'
+        // landing inside message text) is not a clean CDNAME label.
+        let bc = [0x3Fu8, 0, 0, 4, b'H', b'i', b'!', b' ', 0x00, 0x00, 0x00];
+        let insn = decode(&bc, 0).unwrap();
+        assert_eq!(scene_change_name(&bc, &insn), None);
     }
 
     #[test]

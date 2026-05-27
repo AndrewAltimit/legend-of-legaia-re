@@ -2345,42 +2345,33 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3F - DIALOG: open a dialog box.
-        // Encoding: [3F, lo, hi, len, [len bytes inline], xb, zb, depth_id]
-        // - text_id = lo + hi*0x100 (16-bit, little-endian)
-        // - inline buffer holds `len` raw bytes (the original copies up to
-        //   16 bytes into a local buffer, null-terminated)
-        // - xb / zb decode to grid_to_world coords
-        // - depth_id is the raw byte (original indexes a depth-lookup table)
-        // PC += header_size + 3 + len + 3
+        // 0x3F - SCENE_CHANGE (named warp). `[3F, idx_lo, idx_hi, name_len,
+        // <name_len name bytes>, entry_x, entry_z, dir]`. Copies the inline
+        // destination scene NAME and (in retail) hands it to the scene-change
+        // packet FUN_8001FD44; here it calls `host.scene_transition_named`. The
+        // name is gated as a clean CDNAME label so a desync-phantom `0x3F` inside
+        // message text doesn't warp to garbage - on a failed gate the op is a
+        // no-op transition but still advances the PC. (This op is NOT a dialog
+        // opener; field dialogue is the field-interact path. See
+        // docs/subsystems/script-vm.md.) PC += header + 6 + name_len.
         0x3F => {
-            let Some(&lo) = bytecode.get(operand) else {
+            let Some(&name_len) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let Some(&hi) = bytecode.get(operand + 1) else {
-                return StepResult::Unknown { opcode, pc };
-            };
-            let Some(&len) = bytecode.get(operand + 2) else {
-                return StepResult::Unknown { opcode, pc };
-            };
-            let text_id = u16::from_le_bytes([lo, hi]);
-            let len_usize = len as usize;
-            let inline_start = operand + 3;
-            let inline_end = inline_start + len_usize;
-            let pos_start = inline_end;
-            // Need pos_start + 3 bytes (xb, zb, depth_id).
-            if pos_start + 3 > bytecode.len() {
+            let name_len = name_len as usize;
+            let name_start = operand + 3;
+            // Need the name + entry_x / entry_z / dir to advance correctly.
+            if bytecode.len() < name_start + name_len + 3 {
                 return StepResult::Unknown { opcode, pc };
             }
-            let inline = &bytecode[inline_start..inline_end];
-            let xb = bytecode[pos_start];
-            let zb = bytecode[pos_start + 1];
-            let depth_id = bytecode[pos_start + 2];
-            let world_x = grid_to_world(xb);
-            let world_z = grid_to_world(zb);
-            host.open_dialog(text_id, inline, world_x, world_z, depth_id);
+            let raw = &bytecode[name_start..name_start + name_len];
+            if let Some(name) = crate::field_disasm::clean_scene_name(raw) {
+                let entry_x = bytecode[name_start + name_len];
+                let entry_z = bytecode[name_start + name_len + 1];
+                host.scene_transition_named(&name, entry_x, entry_z);
+            }
             StepResult::Advance {
-                next_pc: pc + header_size + 6 + len_usize,
+                next_pc: pc + header_size + 6 + name_len,
             }
         }
 

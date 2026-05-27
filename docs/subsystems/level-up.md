@@ -38,11 +38,22 @@ Total XP to reach level N (from level 1):
 ## Stat gains
 
 Retail HP / MP growth does not come from a per-character per-level table in
-the overlay binary. Stat increments are sourced from **per-Seru structs** loaded
-from PROT entries at runtime: when a Seru gains a level, the Seru struct field
-at `+0x74` (HP grant) and sibling fields are applied to the battle actor's stat
-block. The battle actor base lives at `DAT_801C9370[slot]` (8 slots: party 0..2,
-monsters 3..7); its current HP sits at `+0x14C`.
+the overlay binary — a writer-search across every captured
+`overlay_magic_level_up_*` dump returns no `sb` / `sh` writes targeting the
+record stat window (`+0x10E`, `+0x11C..+0x12C`, `+0x130`, `+0x161`).
+
+**FALSIFIED: the "Seru struct `+0x74`" growth hypothesis.** An earlier reading
+held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant" to the
+battle actor. That is wrong — the only `+0x74` reads in the captured overlay
+surface a 32-bit battle-state flag the SCUS-side handler `FUN_800480D8` stamps
+with the constant `0x80808080`, not a stat-growth value. The real grant table
+likely lives in a still-uncaptured overlay (battle-data init or the Seru-equip
+path) or is encoded inline in a Seru PROT entry the current capture set doesn't
+surface. So per-character growth remains **uncaptured**; `engine-core::levelup`
+ships placeholder flat rates (see below) and exposes
+`LevelUpTracker::with_seru_roster` / `SeruStatTable::insert` for explicit curves
+once the writer is pinned. (Battle actor base: `DAT_801C9370[slot]`, 8 slots —
+party 0..2, monsters 3..7; current HP at `+0x14C`.)
 
 The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 `0x801C0000–0x801FFFFF`, full 256 KB) contains:
@@ -55,14 +66,18 @@ The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 | `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner `FUN_80050ED4` |
 | `0x801F6000+` | Live animation state globals (runtime values; zero at rest) |
 
-No static HP/MP/STR/DEF increment table was found in the overlay. To extract
-per-Seru stat grants, dump the Seru struct data from a live PROT entry load
-(see [`formats/field-pack.md`](../formats/field-pack.md) for the Seru data
-container and the Seru struct layout investigation).
+No static HP/MP/STR/DEF increment table was found in the overlay. The remaining
+capture path is an empirical one: diff a pre-/post-level-up save pair across the
+character-record window (`LevelUpObservation` + the `mednafen-state diff`
+toolkit) to recover the *observed* per-level deltas, since the producing writer
+isn't in the captured overlays. Only one early-game card save exists today, so
+the per-character curves stay unmeasured.
 
-`StatGain::default()` uses placeholder flat rates: +10 HP / +5 MP per level
-for all characters. Different characters (Vahn, Noa, Gala) have distinct curves
-in retail (derived from their respective Seru rosters).
+`StatGain::default()` uses placeholder flat rates: +10 HP / +5 MP per level for
+all characters. Retail almost certainly varies growth per character (Vahn, Noa,
+Gala), but the source of that variation is **not** the falsified `+0x74` path
+above — don't fabricate numbers; populate a measured curve via
+`with_xp_table` / `SeruStatTable` once a capture lands.
 
 The tracker supports per-slot overrides via `with_stat_gains([StatGain; 4])`.
 

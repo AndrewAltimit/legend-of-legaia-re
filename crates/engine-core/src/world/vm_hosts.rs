@@ -557,6 +557,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_scene_transition = Some(map_id);
     }
 
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
+        // Named scene-change (op 0x3F): the destination name is inline, so no
+        // map-id resolver is needed. Recorded for SceneHost::tick to drain,
+        // the same deferral as the map-id path above (the bytecode swap can't
+        // run while we're stepping through it).
+        self.world.pending_named_scene_transition = Some((scene.to_string(), entry_x, entry_z));
+    }
+
     fn is_scripted_encounter_armed(&self) -> bool {
         self.world.scripted_encounter_armed
     }
@@ -734,6 +742,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     fn field_interact(&mut self, interact_id: u8, slot: u8) {
         self.world.last_field_interact = Some((interact_id, slot));
+        // Open the interacted actor's inline interaction-script dialogue, if it
+        // has any. This is the real field-dialogue path (the actor's own inline
+        // MES at retail `actor[+0x90]`, keyed by the `slot` the op carries),
+        // replacing the old `0x3F`-as-dialog stand-in. Actors with no inline
+        // text (signs that only set a flag, etc.) just surface the interaction.
+        if let Some(inline) = self.world.field_npc_dialog.get(&slot).cloned() {
+            // text_id 0 / no box coords: the text is the inline buffer itself,
+            // anchored on the actor (the retail box geometry isn't pinned yet).
+            self.open_dialog(0, &inline, 0, 0, 0);
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::FieldInteract { interact_id, slot });

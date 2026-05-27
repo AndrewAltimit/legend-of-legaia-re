@@ -33,6 +33,7 @@ struct TestHost {
     party_removed: Vec<u8>,
     interacts: Vec<(u8, u8)>,
     scene_transitions: Vec<u8>,
+    named_scene_transitions: Vec<(String, u8, u8)>, // (scene, entry_x, entry_z)
     render_long: Vec<(u8, u8, u8, u8)>,
     render_short: Vec<(u8, u8, u8, u8)>,
     scene_regs: Vec<(u8, u8, u8)>,
@@ -279,6 +280,10 @@ impl FieldHost for TestHost {
     }
     fn scene_transition(&mut self, map_id: u8) {
         self.scene_transitions.push(map_id);
+    }
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
+        self.named_scene_transitions
+            .push((scene.to_string(), entry_x, entry_z));
     }
     fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
         self.render_long.push((b1, b2, b3, b4));
@@ -1333,51 +1338,63 @@ fn move_to_player_path_uses_flag_bit() {
     assert!(host.move_tos[0].3); // is_player == true
 }
 
-// -- 0x3F DIALOG -----------------------------------------------------
+// -- 0x3F SCENE_CHANGE (named warp) ----------------------------------
 
 #[test]
-fn dialog_decodes_text_id_and_inline() {
-    // text_id = 0x0042, len = 4, inline = [DE AD BE EF],
-    // x=1, z=2, depth=3.
+fn scene_change_decodes_name_and_entry() {
+    // idx = 0x0042, name_len = 4 ("dolk"), entry_x = 1, entry_z = 2, dir = 3.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let bc = [
-        0x3F, 0x42, 0x00, // opcode + text_id (LE)
-        0x04, 0xDE, 0xAD, 0xBE, 0xEF, // len + inline
-        0x01, 0x02, 0x03, // x, z, depth
+        0x3F, 0x42, 0x00, // opcode + idx (LE)
+        0x04, b'd', b'o', b'l', b'k', // name_len + name
+        0x01, 0x02, 0x03, // entry_x, entry_z, dir
     ];
     let r = step(&mut host, &mut ctx, &bc, 0);
-    // header_size 1 + 3 (lo,hi,len) + 4 (inline) + 3 (x,z,depth) = 11.
+    // header_size 1 + 3 (idx,len) + 4 (name) + 3 (entry) = 11.
     assert_eq!(r, StepResult::Advance { next_pc: 11 });
-    assert_eq!(host.dialogs.len(), 1);
-    let (text_id, inline, world_x, world_z, depth) = &host.dialogs[0];
-    assert_eq!(*text_id, 0x0042);
-    assert_eq!(inline, &vec![0xDE, 0xAD, 0xBE, 0xEF]);
-    // x=1 -> 0x80 + 0x40 = 0xC0; z=2 -> 0x100 + 0x40 = 0x140.
-    assert_eq!(*world_x, 0x00C0);
-    assert_eq!(*world_z, 0x0140);
-    assert_eq!(*depth, 0x03);
+    assert_eq!(
+        host.named_scene_transitions,
+        vec![("dolk".to_string(), 0x01, 0x02)]
+    );
+    // It is not a dialog opener.
+    assert!(host.dialogs.is_empty());
 }
 
 #[test]
-fn dialog_zero_length_inline() {
+fn scene_change_phantom_name_stages_no_transition() {
+    // A 0x3F whose "name" is uppercase/punctuation (a literal '?' inside text)
+    // fails the clean-CDNAME gate: no transition, but the PC still advances.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let bc = [
-        0x3F, 0x10, 0x00, 0x00, // opcode + text_id + len=0
-        0x00, 0x00, 0x00, // x, z, depth
+        0x3F, 0x10, 0x00, 0x04, b'H', b'i', b'!', b' ', // idx + len + "Hi! "
+        0x00, 0x00, 0x00, // entry_x, entry_z, dir
+    ];
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 11 });
+    assert!(host.named_scene_transitions.is_empty());
+}
+
+#[test]
+fn scene_change_empty_name_no_transition() {
+    // name_len = 0 -> empty name -> no transition; advances header + 6.
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let bc = [
+        0x3F, 0x10, 0x00, 0x00, // opcode + idx + name_len=0
+        0x00, 0x00, 0x00, // entry_x, entry_z, dir
     ];
     let r = step(&mut host, &mut ctx, &bc, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 7 });
-    assert_eq!(host.dialogs.len(), 1);
-    assert!(host.dialogs[0].1.is_empty());
+    assert!(host.named_scene_transitions.is_empty());
 }
 
 #[test]
-fn dialog_truncated_buffer_returns_unknown() {
+fn scene_change_truncated_buffer_returns_unknown() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // len = 10 but bytecode only has 5 trailing bytes - should error.
+    // name_len = 10 but bytecode only has 5 trailing bytes - should error.
     let bc = [0x3F, 0x00, 0x00, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05];
     let r = step(&mut host, &mut ctx, &bc, 0);
     assert!(matches!(
@@ -1387,7 +1404,7 @@ fn dialog_truncated_buffer_returns_unknown() {
             pc: 0
         }
     ));
-    assert!(host.dialogs.is_empty());
+    assert!(host.named_scene_transitions.is_empty());
 }
 
 // -- 0x35 BGM --------------------------------------------------------

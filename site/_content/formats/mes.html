@@ -209,8 +209,8 @@ mes stats-all  &lt;PATH&gt;             # event-type histogram across every mess
   <h2>Related</h2>
   <ul class="bullets">
     <li><a href="dialog-font.html"><code>dialog-font.md</code></a> - proportional dialog font in VRAM.</li>
-    <li><a href="../reference/functions.html"><code>reference/functions.md</code></a> - all four interpreter functions plus <code>FUN_8001FD44</code> (dialog opener).</li>
-    <li><a href="../subsystems/script-vm.html"><code>subsystems/script-vm.md</code></a> - script VM op <code>0x3F</code> calls the dialog opener.</li>
+    <li><a href="../reference/functions.html"><code>reference/functions.md</code></a> - the four MES interpreter functions. (<code>FUN_8001FD44</code> is <strong>not</strong> one &mdash; it is the scene-change packet. Field dialogue has no dedicated opcode: it is the actor's inline interaction-script MES, shown by <code>FUN_80039b7c</code> + pager <code>FUN_801D84D0</code>, triggered by the field-interact op <code>0x3E op0&lt;100</code>.)</li>
+    <li><a href="../subsystems/script-vm.html"><code>subsystems/script-vm.md</code></a> - field-VM opcode reference. Note <code>0x3F</code> is the named scene-change, not a dialog op.</li>
   </ul>
 </section>
 

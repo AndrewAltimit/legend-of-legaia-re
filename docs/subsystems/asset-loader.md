@@ -33,7 +33,7 @@ Per-scene reference resolution is partial - many scene-bundle entries cross-refe
 
 ### WARP opcode → scene transition flow (map_id)
 
-The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op0 - 100`. This is stored in `_DAT_8007ba34` and the game mode switches to `0xe` (SCENE_TRANSITION), which calls `FUN_80025980`.
+The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op0 - 100`. This is stored in `_DAT_8007ba34` and the game mode switches to `0xe` (SCENE_TRANSITION), which calls `FUN_80025980`. Because only 7 destinations exist, a genuine warp's `op0` is always `100..=106`; this range (plus the absence of the `0x80` cross-context prefix) is what the placement classifier uses to reject text-desync phantoms — see [`world-map.md` → classifying the entity kind](world-map.md#classifying-the-entity-kind-from-its-script).
 
 `FUN_80025980` loads a **code overlay** at PROT index `map_id + 0x4d` (or `map_id + 0x4f` when `map_id >= 6`). Only 7 distinct warp destinations exist (map_id 0–6), each loading a different scene-type overlay at PROT 0x4D–0x55. These overlays contain scene-specific entry functions at overlay-resident addresses (`0x801CF070`, `0x801CE8A0`, etc.).
 
@@ -52,6 +52,8 @@ The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascendi
 ### Name-based scene change (`FUN_8001FD44`)
 
 Distinct from the map-id door-warp above, the engine has a **name-based scene-change packet** that sets the destination scene by its CDNAME string. **`FUN_8001FD44(name_ptr)`** copies the target name into `0x8007050C`, syncs it to the active buffer `0x80084548` (`FUN_8001D7F8`), and stages the load (gated retail-vs-debug on `_DAT_8007B8C2`); `s_ERR_CHANGE_PACKET` guards re-entry while a packet is pending (`_DAT_8007BA3C`). This is the path the opening `opdeene`→`town01` handoff uses — see [`subsystems/boot.md`](boot.md#opdeene--town01-handoff-scene-change-packet). Because the destination name is supplied as a code/data string (the opening's `"town01"` is the overlay literal at `0x801CE82C`), this path is **not** constrained to the 7 door-warp map_ids.
+
+The field VM reaches this packet through **opcode `0x3F`** (named scene-change), which carries the destination name *inline in the bytecode* (`[0x3F][i16 index][u8 name_len][name][entry_x][entry_z][dir]`) and calls `FUN_8001FD44(name, index)`. So most in-game scene transitions — including overworld town/dungeon entry, which a scene's controller script lists as a table of `0x3F` ops — carry a recoverable destination name; see [`world-map.md` → scene destinations](world-map.md#scene-destinations) and [`script-vm.md`](script-vm.md). (`0x3F` is not a dialog opcode, despite an older mislabel.)
 
 ## Asset descriptor walker (`FUN_80020224`)
 

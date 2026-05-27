@@ -127,7 +127,7 @@
 </tr>
 </tbody>
 </table>
-  <p>Per-character HP/MP/STR/DEF growth does not come from a static table in the overlay. Stat increments are sourced from per-Seru structs loaded from PROT entries at runtime (HP grant at Seru <code>+0x74</code>). See <a href="../subsystems/level-up.html#stat-gains"><code>subsystems/level-up.md</code></a>.</p>
+  <p>Per-character HP/MP/STR/DEF growth does not come from a static table in the overlay, and the producing writer is not in the captured <code>magic_level_up</code> dumps. The earlier &ldquo;HP grant at Seru <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> &mdash; those <code>+0x74</code> reads surface a <code>0x80808080</code> battle-state flag, not a stat grant. See <a href="../subsystems/level-up.html#stat-gains"><code>subsystems/level-up.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="capturing-with-pcsx-redux">
@@ -331,7 +331,7 @@ scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing</code></
   <p>What to look for after import:</p>
   <ul class="bullets">
     <li>Strings near the overlay base - Japanese / English glyph table headers.</li>
-    <li>Functions that take a <code>MES container ptr + msg_id + (x, y)</code> shape - likely the dialog opener <code>FUN_8001FD44</code>'s overlay callee.</li>
+    <li>Functions that take a <code>MES container ptr + msg_id + (x, y)</code> shape - likely a message-box renderer feeding the dialog pager <code>FUN_801D84D0</code>. (Field NPC dialogue has no opener function: it's the actor's inline MES walked by <code>FUN_80039b7c</code>; <code>FUN_8001FD44</code> is the scene-change packet, not a dialog opener.)</li>
     <li><code>LoadImage</code>-shaped writes to VRAM via <code>_DAT_8007AF40</code>-region SPU/GPU regs - that's the per-page glyph upload.</li>
   </ul>
   <p>This unblocks the dialog-rendering side of the engine. Once captured, the crate <code>legaia-mes</code> already has the bytecode walker; the renderer-side quads can land in <code>crates/engine-render</code> against the extracted font atlas.</p>

@@ -369,3 +369,92 @@ fn battle_render_mesh_injects_pool_and_relocates_cba_tsb() {
         "a relocated prim samples populated VRAM after injection"
     );
 }
+
+/// Disc-gated: export a real monster to binary glTF and structurally validate
+/// the container. Catches accessor/bufferView index or bounds regressions, a
+/// malformed GLB header, and animation label/channel drift.
+#[test]
+fn monster_glb_export_is_structurally_valid() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Tetsu (id 79) is the Rim Elm boss: rigged mesh, texture, many actions.
+    let glb = legaia_asset::monster_gltf::export_glb(&entry, 79)
+        .expect("glb export")
+        .expect("Tetsu has an exportable mesh");
+
+    // GLB header: magic, version 2, total length self-consistent.
+    assert_eq!(&glb[0..4], b"glTF", "GLB magic");
+    assert_eq!(
+        u32::from_le_bytes(glb[4..8].try_into().unwrap()),
+        2,
+        "GLB version"
+    );
+    assert_eq!(
+        u32::from_le_bytes(glb[8..12].try_into().unwrap()) as usize,
+        glb.len(),
+        "GLB total length"
+    );
+
+    // First chunk is JSON; second is BIN.
+    let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    assert_eq!(&glb[16..20], b"JSON", "JSON chunk tag");
+    let json: serde_json::Value =
+        serde_json::from_slice(&glb[20..20 + json_len]).expect("glTF JSON parses");
+    let bin_off = 20 + json_len;
+    assert_eq!(&glb[bin_off + 4..bin_off + 8], b"BIN\0", "BIN chunk tag");
+    let bin_len = u32::from_le_bytes(glb[bin_off..bin_off + 4].try_into().unwrap()) as usize;
+
+    assert_eq!(json["asset"]["version"], "2.0");
+    let buffers = json["buffers"].as_array().unwrap();
+    assert_eq!(buffers.len(), 1);
+    assert_eq!(buffers[0]["byteLength"].as_u64().unwrap() as usize, bin_len);
+
+    let accessors = json["accessors"].as_array().unwrap();
+    let views = json["bufferViews"].as_array().unwrap();
+    // Every bufferView stays inside the binary buffer and is 4-byte aligned.
+    for v in views {
+        let off = v["byteOffset"].as_u64().unwrap_or(0) as usize;
+        let len = v["byteLength"].as_u64().unwrap() as usize;
+        assert!(off.is_multiple_of(4), "bufferView offset 4-aligned");
+        assert!(off + len <= bin_len, "bufferView within buffer");
+    }
+    // Every accessor references a real bufferView.
+    for a in accessors {
+        let bv = a["bufferView"].as_u64().unwrap() as usize;
+        assert!(bv < views.len(), "accessor bufferView in range");
+    }
+
+    // Animations: at least the idle + several actions, each channel targeting a
+    // real node + sampler, and every label unique (collision disambiguation).
+    let anims = json["animations"].as_array().unwrap();
+    assert!(anims.len() >= 3, "Tetsu exports multiple actions");
+    assert_eq!(anims[0]["name"], "Idle", "first animation is the idle loop");
+    let nodes = json["nodes"].as_array().unwrap().len();
+    let mut labels = std::collections::HashSet::new();
+    for an in anims {
+        let name = an["name"].as_str().unwrap().to_string();
+        assert!(
+            labels.insert(name.clone()),
+            "animation label {name} is unique"
+        );
+        let samplers = an["samplers"].as_array().unwrap().len();
+        for ch in an["channels"].as_array().unwrap() {
+            assert!((ch["sampler"].as_u64().unwrap() as usize) < samplers);
+            assert!((ch["target"]["node"].as_u64().unwrap() as usize) < nodes);
+        }
+    }
+
+    // The texture image is an embedded PNG.
+    let img_view = json["images"][0]["bufferView"]
+        .as_u64()
+        .expect("image bufferView") as usize;
+    let off = views[img_view]["byteOffset"].as_u64().unwrap_or(0) as usize;
+    assert_eq!(
+        &glb[bin_off + 8 + off..bin_off + 8 + off + 8],
+        b"\x89PNG\r\n\x1a\n",
+        "image is PNG"
+    );
+}

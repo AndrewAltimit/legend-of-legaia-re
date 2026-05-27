@@ -95,10 +95,14 @@ iterates the sprite-descriptor list at `DAT_801C93C8`. Present only in the
 
 Entry: `(entity_ptr)`. 5-state dispatcher on `entity[+0x8A]` (jump table at
 `0x801CEC28`). When `_DAT_80083808 == 0` and the entity state is 0: calls
-`FUN_800243F0` (BGM/asset resolver) to look up the scene associated with the
-entity's location. Handles pad-button checks against `_DAT_8007BB38` for
-entity interaction. Called once per world-map entity per frame by the entity
-pool tick loop.
+`FUN_800243F0` (the per-frame **BGM/asset poller** — it resolves the pending
+BGM id to a PROT slot, see [`asset-loader.md`](asset-loader.md#bgm-lookup); it is
+*not* a location→scene resolver) and handles pad-button checks against
+`_DAT_8007BB38` for entity interaction. Called once per world-map entity per
+frame by the entity pool tick loop. (The body is the encounter→battle handoff —
+state 1 installs the formation cell and state 2/3 writes `_DAT_8007B83C = 8`;
+**scene/town transitions are not here** — those are the field-VM `0x3F`
+named-scene-change op, see [scene destinations](#scene-destinations).)
 
 #### Encounter-record installation
 
@@ -179,31 +183,42 @@ via `install_world_map_entities_with_configs`):
   surfaces a `FieldEvent::WorldMapTransition { target_map, slot }` for the host
   to load the target scene.
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
-  with that id. When the placement script carries a `0x3F` Dialog op, `inline`
-  is the op's inline dialog-text buffer (see [dialog text source](#npc-dialogue-text-source));
-  `tick_world_map` opens it (sets `World::current_dialog` + emits
-  `FieldEvent::OpenDialog`, both carrying the inline bytes) when the player
-  presses confirm while standing within one tile of the entity, and dismisses
-  it on the next confirm/cancel press. This is the overworld talk-to path -
-  portals are walk-onto, NPCs are talk-to. (On the field the per-entity field
-  VM runs the `0x3F` itself; the overworld has no per-entity VM ticking, so the
-  world owns the open/dismiss directly.)
+  with that id. `inline` is the record's structural inline dialog-text block (see
+  [dialog text source](#npc-dialogue-text-source)); `tick_world_map` opens it
+  (sets `World::current_dialog` + emits `FieldEvent::OpenDialog`, both carrying
+  the inline bytes) when the player presses confirm while standing within one
+  tile of the entity, and dismisses it on the next confirm/cancel press. This is
+  the overworld talk-to path - portals are walk-onto, NPCs are talk-to. (`text_id`
+  is no longer sourced from the script — it was mis-read off the `0x3F` op, which
+  is the named scene-change, not a dialog op; the MAN classifier now passes
+  `None` and the inline block is the text source.)
 
 #### NPC dialogue text source
 
-Placement-NPC and event dialogue text is **inline** in the script, not in the
-scene MES container. The `0x3F` Dialog op is `[3F, lo, hi, len, <len inline
-bytes>, xb, zb, depth]`; the `text_id` (`lo|hi<<8`) is a **box-config id**, not
-an MES message index (these ids - e.g. `0x2900` - do not resolve through
-`SceneMes::message_offset`). The message text is the `len`-byte inline buffer:
-a small box-geometry header (position / size / option-layout, some bytes
-falling in the glyph range) followed by `0x1F`-lead text/option segments of MES
-glyph bytecode. `OwnedDialogPanel::from_inline_dialog` skips to the first `0x1F`
-lead marker and decodes the segment after it through the standard MES
+Placement-NPC and event dialogue text is **inline** in the record, not in the
+scene MES container — and it is found **structurally**, not by a dialog opcode.
+A field-scene interaction record carries its message as a run of `0x1F`-lead /
+`0x00`-terminated MES-glyph segments; `first_inline_dialog_offset` locates the
+first such segment directly (the field-VM walk can't be trusted inside text — it
+desyncs on glyph bytes that look like opcodes). `OwnedDialogPanel::from_inline_dialog`
+skips to that `0x1F` lead and decodes the segment through the standard MES
 interpreter; `SceneHost::open_pending_dialog` prefers this inline path and falls
-back to the `text_id` -> scene-MES lookup (used by the message-table dialogue
-paths). The geometry-header layout and multi-segment (full menu) rendering are
-not yet pinned - the first segment renders today.
+back to a `text_id` -> scene-MES lookup for the message-table dialogue paths. The
+geometry-header layout and multi-segment (full menu) rendering are not yet pinned
+- the first segment renders today.
+
+> **Not the `0x3F` op — and not any opcode.** Earlier notes attributed this
+> inline text to a `0x3F` "Dialog" opcode; `0x3F` is actually the **named
+> scene-change** (it copies a destination scene *name* and calls the scene-change
+> packet `FUN_8001FD44`; see [`script-vm.md`](script-vm.md) and
+> [scene destinations](#scene-destinations)). In fact field dialogue has **no
+> dedicated opcode**: the field-interact op (`0x3E`, `op0 < 100`) arms the actor's
+> interaction context, and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
+> (`FUN_801D84D0`) display the actor's inline interaction-script MES text — the
+> structural `0x1F` pool above. See
+> [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode).
+> The `0x3F`-as-dialog reading only arises when the over-approximating walk
+> desyncs on a literal `?` (`0x3F`) inside a message.
 
 Entities without a config fall back to the shared formation and a generic
 interaction.
@@ -326,19 +341,35 @@ linearly disassembles each placement's per-entity interaction script (records
 `1..` are the actor interaction scripts) and reads the kind off its
 distinguishing opcodes:
 
-- a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`) → a
-  **Portal** whose target is the field-VM map id `op0 - 100` (its scene-name
-  table lives in an uncaptured overlay, so the id is reported raw);
-- a **dialog** (`0x3F`) or **field interact** (`0x3E` with `op0 < 100`) and no
-  warp → an **NPC** (sign / talk-to / event trigger);
+- a **genuine warp** (the *base* `0x3E` with `op0` in `100..=106`, retail
+  `scene_transition`) → a **Portal** whose target is the field-VM map id
+  `op0 - 100` (`0..=6`). The map id selects a scene-*type* code overlay
+  (PROT `0x4d + map_id`), **not** a unique scene — the destination scene *name*
+  is set separately by the pre-WARP handler / scene-change packet, which lives in
+  an uncaptured overlay, so the id is reported raw (see
+  [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--scene-transition-flow-map_id));
+- an inline `0x1F`-lead **dialog-text block** or a **field interact** (`0x3E`
+  with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event trigger).
+  (The dialog signal is the *structural* `0x1F` text scan, not an opcode — see
+  [NPC dialogue text source](#npc-dialogue-text-source);
 - none of those → **Plain** (a moving / animated / model-only actor, e.g. the
   lead-actor slot).
 
 The walk is the same over-approximating linear disassembly the encounter-arm
 hunt uses (it reads every opcode-shaped byte, not only one control-flow path),
-so a warp anywhere in the record marks the actor a portal. Real data: `town01`
-classifies 14 NPCs / 38 plain, the overworlds carry a handful of warp portals
-(`map02`/`map03` each expose one to a field map id).
+so it **desyncs inside embedded message / SJIS text** and can land on a `0x3E`
+whose next byte is `>= 100`. Every such phantom in the corpus rides the `0x80`
+cross-context prefix and carries an out-of-range `op0` (175 / 179 / 200, i.e.
+text bytes), so the genuine-warp gate (`!extended && op0 in 100..=106`, see
+[`man_field_scripts::classify_placement`](../../crates/engine-core/src/man_field_scripts.rs))
+rejects it — `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
+(`op0=175/179`) used to mis-classify as portals to non-existent maps 75 / 79 / 86
+/ 100. Real data: `town01` classifies 14 NPCs / 38 plain; across the whole PROT
+corpus exactly **11** genuine door-warp portals survive (all map_id `0..=6`),
+clustered in interior/town scenes (`koin1` exposes exits to maps 3/4/5, `koin3`
+to 6, `balden` to 3) plus a single overworld fishing-spot warp each on
+`map02`/`map03` (map id 0). A disc-gated regression
+(`world_map_portal_classification_disc.rs`) pins the invariant.
 
 `SceneHost::enter_world_map_scene` seeds these typed entities on the
 boot/transition path via [`World::install_world_map_entities_at`]: each Portal /
@@ -346,6 +377,48 @@ NPC placement installs a matching
 [`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) **with its spawn
 position** (Plain placements are skipped). So overworld portals + NPCs are
 **disc-sourced**, not synthetic.
+
+#### Scene destinations
+
+The overworld doesn't enter towns through a partition-1 warp NPC — a corpus scan
+finds none on the kingdom maps (only fishing-spot `0x3E` warps). Instead the
+scene's **controller script lists every destination as a `0x3F` named
+scene-change op** that carries the destination scene *name* inline (`[0x3F]`
+`[i16 index][u8 name_len][name][entry_x][entry_z][dir]`; the op hands the name to
+the scene-change packet `FUN_8001FD44`). So the destinations are recoverable
+straight from the disc bytes — the answer the "`map_id` → scene-name table lives
+in an uncaptured overlay" note assumed unreachable (that note is about the
+*separate* `0x3E` door-warp, whose 7-id selector still resolves its name in an
+uncaptured handler).
+
+[`man_field_scripts::scene_destinations`](../../crates/engine-core/src/man_field_scripts.rs)
+walks the partition-1 records, decodes the `0x3F` ops, and keeps each whose
+inline name passes a clean-CDNAME-label gate (rejecting the text-desync phantoms
+a literal `?` = `0x3F` inside a message produces). On `map01` (Drake overworld)
+it recovers `town01`, `town0b`, `town0c`, `dolk`, `dolk2`, `rikuroa`, `cave01`,
+`vell`, `vozz`, `suimon`, `keikoku`, `jou` — all real CDNAME scenes. Disc-gated
+`scene_destinations_disc.rs` pins the set + asserts every recovered name is a
+known CDNAME label.
+
+**Live wiring.** `SceneHost` decodes + caches this table on every scene load
+(`load_scene` → `refresh_scene_destinations`) and exposes it as
+`SceneHost::scene_destinations()` plus a `SceneDestinationResolver`
+(`SceneHost::destination_resolver()`) — an `i16`-keyed `index → scene-name`
+resolver rebuilt from disc per scene. The `0x3F` op's `i16 index` is a
+story/entry id in its **own** id space (observed past `u8` range, e.g. `630`),
+so the resolver keys on `i16` and is deliberately **not** the `u8`-keyed
+[`MapIdResolver`](#) (which serves the separate `0x3E` door-warp's 7 scene-*type*
+selectors `0..=6`).
+
+**Runtime transition (live).** The field-VM executor drives `0x3F` as a live
+named scene-change: it decodes the inline destination name (gated by the
+clean-CDNAME-label check), calls `host.scene_transition_named`, and
+[`SceneHost::tick`] drains the resulting `World::pending_named_scene_transition`
+to load that scene directly (world-map vs field routed by `is_world_map_scene`),
+ahead of the `0x3E` map-id path. Field **dialogue** was re-grounded off `0x3F`
+onto its real trigger — the field-interact op (`0x3E` with `op0 < 100`) opens the
+interacted actor's inline interaction-script text (see
+[`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode)).
 
 #### Loading the kingdom geometry (engine port)
 

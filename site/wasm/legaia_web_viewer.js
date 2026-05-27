@@ -875,6 +875,47 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Keyframes for monster `id`'s action animation at array `index` (the
+     * position in [`Self::monster_animations_json`]). Same flat layout as
+     * [`Self::monster_idle_animation_frames`]: six `i32` per part per frame,
+     * `[tx, ty, tz, rx, ry, rz]`, with frame `f` / part `p` / component `c` at
+     * `(f * part_count + p) * 6 + c`. Empty if the index is out of range or the
+     * slot has no decodable animation.
+     * @param {number} id
+     * @param {number} index
+     * @returns {Int32Array}
+     */
+    monster_animation_frames_at(id, index) {
+        const ret = wasm.legaiaviewer_monster_animation_frames_at(this.__wbg_ptr, id, index);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Metadata for **every** decodable action animation of monster `id`, as a
+     * JSON array in `+0x4C` action-table order:
+     * `[{"action_id":N,"part_count":P,"frame_count":F}, ...]`. Array index `0`
+     * is the idle loop (see [`Self::monster_idle_animation_header`]); the rest
+     * are the monster's attack / spell / special actions. The array index is
+     * the handle the JS viewer passes to [`Self::monster_animation_frames_at`]
+     * to fetch a given action's keyframes. `"[]"` if the slot is empty / filler
+     * or carries no decodable animation.
+     * @param {number} id
+     * @returns {string}
+     */
+    monster_animations_json(id) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_monster_animations_json(this.__wbg_ptr, id);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Decode the global monster stat archive (PROT entry 867, the
      * `battle_data` block's extended footprint) into a JSON array of every
      * populated record. Sony bytes never leave the browser — the archive is
@@ -906,6 +947,21 @@ export class LegaiaViewer {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * Monster `id`'s mesh + baked texture + **all** action animations packed
+     * into one binary glTF (`.glb`) blob — the universal format that carries
+     * geometry, material, and animation together (Blender / three.js / etc.).
+     * Each TMD object becomes an animated node; the texture is baked into a
+     * per-palette atlas. Empty if the slot has no exportable mesh.
+     * @param {number} id
+     * @returns {Uint8Array}
+     */
+    monster_glb(id) {
+        const ret = wasm.legaiaviewer_monster_glb(this.__wbg_ptr, id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * Monster `id`'s idle animation keyframes as a flat `i32` array, six values
@@ -1845,7 +1901,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 512, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 538, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
             return ret;
         },
