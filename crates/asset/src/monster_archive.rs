@@ -870,6 +870,45 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
     Ok(Some(out))
 }
 
+/// Short, display-ready labels for a monster's decoded animations, parallel to
+/// the slice returned by [`animations`]. Index 0 is the idle loop; `action_id`
+/// `1` is the basic attack; the rest are the monster's spell / special actions
+/// (`Action 0xNN`). When two entries would share a label (some monsters carry
+/// several actions with the same `action_id`), a ` #N` suffix disambiguates so
+/// every label is unique — handy for toggle buttons and glTF animation names.
+pub fn action_labels(anims: &[MonsterAnimation]) -> Vec<String> {
+    use std::collections::HashMap;
+    let base: Vec<String> = anims
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            if i == 0 {
+                "Idle".to_string()
+            } else if a.action_id == 1 {
+                "Attack".to_string()
+            } else {
+                format!("Action 0x{:02X}", a.action_id)
+            }
+        })
+        .collect();
+    let mut totals: HashMap<String, usize> = HashMap::new();
+    for b in &base {
+        *totals.entry(b.clone()).or_default() += 1;
+    }
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    base.into_iter()
+        .map(|b| {
+            if totals.get(&b).copied().unwrap_or(0) > 1 {
+                let n = seen.entry(b.clone()).or_default();
+                *n += 1;
+                format!("{b} #{n}")
+            } else {
+                b
+            }
+        })
+        .collect()
+}
+
 /// Decode just the **idle** animation (action index 0) for monster id `id`.
 ///
 /// This is the neutral pose loop the battle engine plays when the monster is

@@ -1743,13 +1743,16 @@ impl LegaiaViewer {
             Ok(Some(a)) => a,
             _ => return "[]".to_string(),
         };
+        let labels = legaia_asset::monster_archive::action_labels(&anims);
         let arr: Vec<serde_json::Value> = anims
             .iter()
-            .map(|a| {
+            .enumerate()
+            .map(|(i, a)| {
                 serde_json::json!({
                     "action_id": a.action_id,
                     "part_count": a.part_count,
                     "frame_count": a.frame_count,
+                    "label": labels.get(i),
                 })
             })
             .collect();
@@ -1789,6 +1792,21 @@ impl LegaiaViewer {
             }
         }
         out
+    }
+
+    /// Monster `id`'s mesh + baked texture + **all** action animations packed
+    /// into one binary glTF (`.glb`) blob — the universal format that carries
+    /// geometry, material, and animation together (Blender / three.js / etc.).
+    /// Each TMD object becomes an animated node; the texture is baked into a
+    /// per-palette atlas. Empty if the slot has no exportable mesh.
+    pub fn monster_glb(&self, id: u16) -> Vec<u8> {
+        let Some(slice) = self.monster_archive_slice() else {
+            return Vec::new();
+        };
+        legaia_asset::monster_gltf::export_glb(slice, id)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
     }
 
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.

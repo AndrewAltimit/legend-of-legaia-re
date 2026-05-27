@@ -72,6 +72,7 @@ export const legaiaviewer_mesh_uvs: (a: number) => [number, number];
 export const legaiaviewer_monster_animation_frames_at: (a: number, b: number, c: number) => [number, number];
 export const legaiaviewer_monster_animations_json: (a: number, b: number) => [number, number];
 export const legaiaviewer_monster_archive_json: (a: number) => [number, number];
+export const legaiaviewer_monster_glb: (a: number, b: number) => [number, number];
 export const legaiaviewer_monster_idle_animation_frames: (a: number, b: number) => [number, number];
 export const legaiaviewer_monster_idle_animation_header: (a: number, b: number) => [number, number];
 export const legaiaviewer_monster_mesh_bounds: (a: number, b: number) => [number, number];

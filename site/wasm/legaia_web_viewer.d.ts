@@ -412,6 +412,14 @@ export class LegaiaViewer {
      */
     monster_archive_json(): string;
     /**
+     * Monster `id`'s mesh + baked texture + **all** action animations packed
+     * into one binary glTF (`.glb`) blob — the universal format that carries
+     * geometry, material, and animation together (Blender / three.js / etc.).
+     * Each TMD object becomes an animated node; the texture is baked into a
+     * per-palette atlas. Empty if the slot has no exportable mesh.
+     */
+    monster_glb(id: number): Uint8Array;
+    /**
      * Monster `id`'s idle animation keyframes as a flat `i32` array, six values
      * per part per frame: `[tx, ty, tz, rx, ry, rz]`. Frame `f`, part `p`,
      * component `c` is at `(f * part_count + p) * 6 + c`. Translations are
@@ -851,6 +859,7 @@ export interface InitOutput {
     readonly legaiaviewer_monster_animation_frames_at: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_monster_animations_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_archive_json: (a: number) => [number, number];
+    readonly legaiaviewer_monster_glb: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_idle_animation_frames: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_idle_animation_header: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_bounds: (a: number, b: number) => [number, number];
