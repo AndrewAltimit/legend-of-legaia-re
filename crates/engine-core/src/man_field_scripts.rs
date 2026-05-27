@@ -52,6 +52,7 @@ use legaia_asset::man_section::{ActorPlacement, ManFile};
 use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, YieldKind};
 
 use crate::encounter_record::EncounterRecord;
+use crate::world::FieldCarrierConfig;
 
 /// One field-VM `Yield` instruction in a partition-1 script, annotated with
 /// the inline encounter-record decode of its trailing operand window.
@@ -368,6 +369,77 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     } else {
         PlacementKind::Plain
     }
+}
+
+/// `true` when `p` is the Rim Elm sparring partner: the partition-1 placement
+/// pinned at [`RIM_ELM_SPARRING_CARRIER_TILE`] carrying
+/// [`RIM_ELM_SPARRING_CARRIER_MODEL`] (the NPC whose talk-menu installs the
+/// opening lone-Tetsu training fight). See [`crate::encounter_record`].
+pub fn is_rim_elm_sparring_carrier(p: &ActorPlacement) -> bool {
+    (p.tile_x, p.tile_z) == crate::encounter_record::RIM_ELM_SPARRING_CARRIER_TILE
+        && p.model_index == crate::encounter_record::RIM_ELM_SPARRING_CARRIER_MODEL
+}
+
+/// A field carrier derived from one MAN partition-1 placement: the placement it
+/// came from plus the [`FieldCarrierConfig`] its identity / script implies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerivedFieldCarrier {
+    /// Partition-1 record index of the source placement (retail actor record).
+    pub placement_index: usize,
+    /// Source placement tile (column, row).
+    pub tile: (u8, u8),
+    /// Source placement model byte.
+    pub model: u8,
+    /// The carrier role to install for this placement.
+    pub config: FieldCarrierConfig,
+}
+
+/// Derive field-carrier configs **directly from a scene MAN's actor
+/// placements**, instead of hand-building them.
+///
+/// Each interactable placement ([`PlacementKind::Npc`]) becomes a carrier:
+///
+/// - the pinned Rim Elm sparring partner ([`is_rim_elm_sparring_carrier`]) maps
+///   to [`FieldCarrierConfig::ScriptedEncounter`] for the training formation
+///   ([`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]);
+/// - every other talk-to NPC maps to [`FieldCarrierConfig::Npc`] keyed by its
+///   partition-1 record index (the retail interaction-script selector).
+///
+/// Decorative ([`PlacementKind::Plain`]) and warp ([`PlacementKind::Portal`])
+/// placements carry no engageable carrier SM and are skipped; each
+/// [`DerivedFieldCarrier`] keeps its `placement_index` so a caller can map a
+/// carrier-Vec index back to the MAN actor.
+///
+/// The formation **index** the sparring carrier launches (`= 4`) is still a
+/// pinned constant: a town01 field interaction record selects its formation by
+/// index, not via an inline `[count][ids]` literal (proven by the partition-1
+/// script walk), so the selection bytecode is not yet decoded. What this
+/// derives from the MAN is the carrier's *identity and placement* — which actor
+/// is the carrier, where it stands, and that the scene actually contains it —
+/// rather than fabricating a standalone carrier with no MAN linkage.
+pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedFieldCarrier> {
+    classify_placements(man_file, man)
+        .into_iter()
+        .filter_map(|(p, kind)| {
+            let config = if is_rim_elm_sparring_carrier(&p) {
+                FieldCarrierConfig::ScriptedEncounter {
+                    formation_id: crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID,
+                }
+            } else if matches!(kind, PlacementKind::Npc { .. }) {
+                FieldCarrierConfig::Npc {
+                    interact_id: p.index as u8,
+                }
+            } else {
+                return None;
+            };
+            Some(DerivedFieldCarrier {
+                placement_index: p.index,
+                tile: (p.tile_x, p.tile_z),
+                model: p.model_index,
+                config,
+            })
+        })
+        .collect()
 }
 
 /// One field-VM **global-flag write** (`GFLAG_SET` / `GFLAG_CLEAR`, opcodes
@@ -838,6 +910,80 @@ mod tests {
 
         // A count byte past the end returns None rather than panicking.
         assert_eq!(partition2_record_script_offset(&[0x06]), None);
+    }
+
+    /// Build a MAN whose partition 1 is `[controller, records...]`. Each
+    /// `records[i]` is a full placement record body
+    /// (`[N=0][model][actions][tx][tz][script...]`); `records[0]` is the
+    /// scene controller (skipped by `actor_placements`).
+    fn man_with_placements(records: &[Vec<u8>]) -> (ManFile, Vec<u8>) {
+        let data_region_offset = 0x40usize;
+        let mut man = vec![0u8; data_region_offset];
+        let mut offsets = Vec::new();
+        for rec in records {
+            offsets.push((man.len() - data_region_offset) as u32);
+            man.extend_from_slice(rec);
+        }
+        let header = ManHeader {
+            status_flags: 0,
+            low_flag: false,
+            depth_lut: [0; 16],
+            partition_counts: [0, records.len() as i16, 0],
+            u24_at_28: 0,
+        };
+        let man_file = ManFile {
+            header,
+            partitions: [vec![], offsets, vec![]],
+            data_region_offset,
+            sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+                offset: man.len(),
+                length: 0,
+            }),
+        };
+        (man_file, man)
+    }
+
+    #[test]
+    fn derive_field_carriers_maps_sparring_carrier_and_npcs() {
+        use crate::encounter_record::{
+            RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
+            RIM_ELM_TRAINING_FORMATION_ID,
+        };
+        let (tx, tz) = RIM_ELM_SPARRING_CARRIER_TILE;
+        // controller (idx 0), sparring carrier (idx 1, pinned tile/model + dialog),
+        // a plain talk NPC (idx 2, dialog), a portal (idx 3), a decorative actor
+        // (idx 4, halt only).
+        let controller = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x21];
+        let mut sparring = vec![0x00, RIM_ELM_SPARRING_CARRIER_MODEL, 0x00, tx, tz];
+        sparring.extend_from_slice(&[0x1F, b's', b'p', b'a', b'r', 0x00]);
+        let mut npc = vec![0x00, 0x10, 0x00, 10, 12];
+        npc.extend_from_slice(&[0x1F, b'h', b'i', b'!', 0x00]);
+        let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 110, 0, 0, 0, 0];
+        let decorative = vec![0x00, 0x12, 0x00, 6, 6, 0x21];
+        let (mf, man) = man_with_placements(&[controller, sparring, npc, portal, decorative]);
+
+        let carriers = derive_field_carriers(&mf, &man);
+        // Portal + decorative carry no engageable carrier; only the sparring
+        // partner and the talk NPC survive.
+        assert_eq!(carriers.len(), 2, "portal + decorative are skipped");
+
+        // The sparring carrier is first and maps to the training formation.
+        assert_eq!(carriers[0].placement_index, 1);
+        assert_eq!(carriers[0].tile, RIM_ELM_SPARRING_CARRIER_TILE);
+        assert_eq!(carriers[0].model, RIM_ELM_SPARRING_CARRIER_MODEL);
+        assert_eq!(
+            carriers[0].config,
+            FieldCarrierConfig::ScriptedEncounter {
+                formation_id: RIM_ELM_TRAINING_FORMATION_ID
+            }
+        );
+
+        // The plain talk NPC maps to an Npc carrier keyed by its record index.
+        assert_eq!(carriers[1].placement_index, 2);
+        assert_eq!(
+            carriers[1].config,
+            FieldCarrierConfig::Npc { interact_id: 2 }
+        );
     }
 
     #[test]

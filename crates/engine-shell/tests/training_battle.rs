@@ -35,6 +35,23 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
+/// Load and parse the town01 scene MAN from extracted assets (the same
+/// resolution path `enter_field_scene` uses), returning `(ManFile, man bytes)`.
+fn load_town01_man(extracted: &std::path::Path) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
+    use legaia_engine_core::scene::{ProtIndex, Scene};
+    let index = ProtIndex::open_extracted(extracted).expect("open ProtIndex");
+    let scene = Scene::load(&index, SCENE).expect("load town01");
+    let bundle = legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 bundle");
+    let entry_bytes = index
+        .entry_bytes_extended(bundle.entry_idx())
+        .expect("entry bytes");
+    let man = legaia_engine_core::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
+        .expect("man extract")
+        .expect("town01 MAN payload");
+    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    (man_file, man)
+}
+
 #[test]
 fn training_encounter_reaches_battle_with_real_monster() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -239,12 +256,15 @@ fn training_reaches_battle_via_man_formation_index() {
     );
 }
 
-/// The field-resident carrier SM path: place a scripted-encounter carrier in
-/// the cold-booted town01 (the field-mode use of `FUN_801DA51C`), advance it
-/// via `engage_field_carrier` (the dialogue-accept stand-in), and let the
-/// per-frame `tick_field_carriers` run the state-1 formation copy + the
-/// `case 2/3` fall-through battle handoff. This drives the transition through
-/// the actual entity SM rather than a manual `install_man_formation` +
+/// The field-resident carrier SM path, driven from the **real MAN actor**:
+/// derive the carrier set from town01's actor-placement partition
+/// (`install_field_carriers_from_man`), so the Rim Elm sparring partner's
+/// identity comes from the scene data rather than a hand-built config. Advance
+/// the derived carrier via `engage_field_carrier` (the dialogue-accept
+/// stand-in), and let the per-frame `tick_field_carriers` run the state-1
+/// formation copy + the `case 2/3` fall-through battle handoff. This drives the
+/// transition through the actual entity SM (the field-mode use of
+/// `FUN_801DA51C`) rather than a manual `install_man_formation` +
 /// `on_field_step`, against the real per-scene MAN formation table.
 #[test]
 fn training_reaches_battle_via_field_carrier_sm() {
@@ -273,29 +293,41 @@ fn training_reaches_battle_via_field_carrier_sm() {
         .expect("enter field live");
     assert_eq!(session.host.world.mode, SceneMode::Field);
 
-    // Place the Tetsu carrier (formation index 4 = lone monster 0x4F, loaded
-    // from town01's real MAN at scene entry).
-    session
+    // Derive the carrier set straight from town01's real MAN actor-placement
+    // partition (instead of a hand-built config): the pinned Rim Elm sparring
+    // partner becomes the scripted-encounter carrier for formation 4, every
+    // other talk NPC a plain carrier. The returned index is the sparring
+    // carrier's slot in the installed Vec.
+    let (man_file, man) = load_town01_man(&extracted);
+    let sparring_idx = session
         .host
         .world
-        .install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
-            formation_id: RIM_ELM_TRAINING_FORMATION_ID,
-        }]);
+        .install_field_carriers_from_man(&man_file, &man)
+        .expect("town01 MAN contains the Rim Elm sparring carrier");
+    assert!(
+        matches!(
+            session.host.world.field_carrier_configs[sparring_idx],
+            FieldCarrierConfig::ScriptedEncounter {
+                formation_id: RIM_ELM_TRAINING_FORMATION_ID
+            }
+        ),
+        "derived carrier launches the training formation"
+    );
 
-    // Idle carrier never self-fires (town01 is 0% random): several ticks stay
+    // Idle carriers never self-fire (town01 is 0% random): several ticks stay
     // in the field.
     for _ in 0..16 {
         let _ = session.tick().expect("tick");
         assert_eq!(
             session.host.world.mode,
             SceneMode::Field,
-            "idle carrier waits"
+            "idle carriers wait"
         );
     }
 
-    // The dialogue-accept advances the carrier; the SM runs the transition and
-    // flips Field -> Battle within a couple of ticks.
-    session.host.world.engage_field_carrier(0);
+    // The dialogue-accept advances the sparring carrier; the SM runs the
+    // transition and flips Field -> Battle within a couple of ticks.
+    session.host.world.engage_field_carrier(sparring_idx);
     let mut reached_battle = false;
     for _ in 0..8 {
         let _ = session.tick().expect("tick");

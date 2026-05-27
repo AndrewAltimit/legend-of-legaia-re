@@ -237,6 +237,19 @@ scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training(
 remains for the equivalent hand-built `[count=1][0x4F]` window used by the
 arm-seam path.
 
+The carrier set the field entity SM acts on is derived **from the MAN itself**
+rather than hand-built: `man_field_scripts::derive_field_carriers` walks the
+partition-1 placements and maps each interactable actor to a `FieldCarrierConfig`
+— the pinned sparring partner (`is_rim_elm_sparring_carrier`, by tile + model)
+becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
+`Npc` keyed by its record index; decorative/warp placements carry no carrier.
+`World::install_field_carriers_from_man` installs that derived set and returns the
+sparring carrier's slot, so `engage_field_carrier` (the dialogue-accept
+stand-in) advances the actual MAN actor's `FUN_801DA51C` SM. The formation
+*index* (`4`) is still a pinned constant — the interaction record selects its
+formation by index, not via an inline `[count][ids]` literal — but which actor is
+the carrier, and where it stands, now come from the scene data.
+
 ## Scripted-battle id path (`FUN_8005567c`)
 
 The `actor[+0x94]` record path above is one of **two** ways the formation cell is
