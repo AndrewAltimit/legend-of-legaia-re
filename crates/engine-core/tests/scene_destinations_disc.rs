@@ -16,9 +16,11 @@
 //! keeps junk out. Skips when `extracted/PROT/` or `LEGAIA_DISC_BIN` is missing.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use legaia_asset::scene_asset_table;
 use legaia_engine_core::man_field_scripts::scene_destinations;
+use legaia_engine_core::scene::{ProtIndex, SceneHost};
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [
@@ -121,4 +123,70 @@ fn map01_controller_lists_its_overworld_destinations() {
             d.scene_name,
         );
     }
+}
+
+#[test]
+fn scene_host_builds_destination_resolver_on_entry() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(root) = extracted_root() else {
+        eprintln!("[skip] extracted/ (CDNAME.TXT) missing");
+        return;
+    };
+
+    // The live host decodes + caches the scene's named scene-change
+    // destinations on every scene load, and exposes them as a
+    // SceneDestinationResolver (a MapIdResolver over the 0x3F index space).
+    let index = Arc::new(ProtIndex::open_extracted(&root).expect("prot index"));
+    let mut host = SceneHost::new(index);
+    host.load_scene("map01").expect("load map01");
+
+    // Snapshot the catalog (owned) so the immutable borrow ends before the
+    // mutable `load_scene` below.
+    let dests = host.scene_destinations().to_vec();
+    assert!(
+        !dests.is_empty(),
+        "SceneHost should populate the map01 destination catalog on entry"
+    );
+
+    let names: std::collections::BTreeSet<String> =
+        dests.iter().map(|d| d.scene_name.clone()).collect();
+
+    // Every destination index resolves to a catalogued scene name (the resolver
+    // dedups by index, so when two names share an index it returns the first;
+    // either way the result is a real destination in this scene). The index is
+    // i16 — observed past u8 range — so the resolver keys on i16, not u8.
+    let resolver = host.destination_resolver();
+    for d in &dests {
+        let resolved = resolver
+            .resolve(d.index)
+            .unwrap_or_else(|| panic!("index {} resolved to nothing", d.index));
+        assert!(
+            names.contains(resolved),
+            "index {} resolved to {resolved:?}, not a catalogued destination",
+            d.index,
+        );
+    }
+    for expected in ["town0c", "dolk", "rikuroa", "cave01"] {
+        assert!(
+            names.contains(expected),
+            "map01 live catalog missing {expected:?}; got {names:?}"
+        );
+    }
+
+    // Entering a different scene rebuilds the catalog (it isn't stale).
+    host.load_scene("town01").expect("load town01");
+    // town01 is a town, not an overworld; whatever its destination set is, the
+    // catalog must reflect town01 now, not map01's Drake list.
+    let town_names: std::collections::BTreeSet<String> = host
+        .scene_destinations()
+        .iter()
+        .map(|d| d.scene_name.clone())
+        .collect();
+    assert_ne!(
+        names, town_names,
+        "destination catalog must rebuild per scene (map01 != town01)"
+    );
 }

@@ -1058,6 +1058,60 @@ impl MapIdResolver for DefaultMapIdResolver {
     }
 }
 
+/// A resolver backed by a scene's **disc-sourced** scene-destination table
+/// ([`crate::man_field_scripts::scene_destinations`]).
+///
+/// This resolves the **named scene-change** (`0x3F`) id space: each `0x3F` op
+/// carries an `i16` index alongside the inline destination name, and a scene's
+/// controller script lists every reachable destination as one such op.
+/// [`SceneHost`] rebuilds one per scene from the entered scene's MAN, so the
+/// engine has a live, byte-accurate index → scene-name map (no uncaptured
+/// overlay needed).
+///
+/// **Not a [`MapIdResolver`].** That trait keys on a `u8` map id (the `0x3E`
+/// door-warp's 7 scene-*type* selectors, `0..=6`). The `0x3F` index is a
+/// distinct, wider id space — `i16`, observed past `u8` range (e.g. `630`) — so
+/// a `u8`-keyed resolver can't represent it without lossy truncation. Hence the
+/// dedicated [`Self::resolve`]/[`Self::destination`] by `i16`.
+#[derive(Debug, Clone, Default)]
+pub struct SceneDestinationResolver {
+    by_index: std::collections::HashMap<i16, crate::man_field_scripts::SceneDestination>,
+}
+
+impl SceneDestinationResolver {
+    /// Build from a decoded destination list (first entry per index wins, which
+    /// matches [`scene_destinations`](crate::man_field_scripts::scene_destinations)'s
+    /// first-seen dedup).
+    pub fn new(destinations: Vec<crate::man_field_scripts::SceneDestination>) -> Self {
+        let mut by_index = std::collections::HashMap::new();
+        for d in destinations {
+            by_index.entry(d.index).or_insert(d);
+        }
+        Self { by_index }
+    }
+
+    /// Resolve an `i16` scene-change index to its destination scene name.
+    pub fn resolve(&self, index: i16) -> Option<&str> {
+        self.by_index.get(&index).map(|d| d.scene_name.as_str())
+    }
+
+    /// The full destination record for an `i16` scene-change index (name +
+    /// entry tile).
+    pub fn destination(&self, index: i16) -> Option<&crate::man_field_scripts::SceneDestination> {
+        self.by_index.get(&index)
+    }
+
+    /// Number of distinct destinations (indices) in the table.
+    pub fn len(&self) -> usize {
+        self.by_index.len()
+    }
+
+    /// `true` when the table carries no destinations.
+    pub fn is_empty(&self) -> bool {
+        self.by_index.is_empty()
+    }
+}
+
 /// Per-tick outcome from [`SceneHost::tick`]. Engines route this back into
 /// their UI layer (e.g. log scene transitions, update HUD on battle end).
 #[derive(Debug, Clone)]
@@ -1133,6 +1187,11 @@ pub struct SceneHost {
     /// serves every scene. Populated on the first field entry that needs
     /// real monster stats. See [`legaia_asset::monster_archive`].
     monster_archive_cache: Option<Arc<Vec<u8>>>,
+    /// The current scene's disc-sourced **named scene-change destinations**
+    /// (`0x3F` ops), decoded from its MAN on entry via
+    /// [`crate::man_field_scripts::scene_destinations`]. Empty for scenes with
+    /// no MAN / no destination table. Drives [`Self::destination_resolver`].
+    scene_destinations: Vec<crate::man_field_scripts::SceneDestination>,
 }
 
 impl SceneHost {
@@ -1147,6 +1206,7 @@ impl SceneHost {
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
             monster_archive_cache: None,
+            scene_destinations: Vec::new(),
         }
     }
 
@@ -1227,7 +1287,42 @@ impl SceneHost {
         let assets = crate::scene_assets::SceneAssets::build(&scene);
         self.scene = Some(scene);
         self.assets = Some(assets);
+        self.refresh_scene_destinations();
         Ok(self.scene.as_ref().unwrap())
+    }
+
+    /// Decode + cache the just-loaded scene's named scene-change destinations
+    /// (`0x3F` ops) from its MAN, via
+    /// [`crate::man_field_scripts::scene_destinations`]. Clears to empty when
+    /// the scene carries no MAN or it doesn't parse. Called by [`Self::load_scene`]
+    /// so every scene-entry path keeps the table current.
+    fn refresh_scene_destinations(&mut self) {
+        self.scene_destinations = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
+            .and_then(|man| {
+                let mf = legaia_asset::man_section::parse(&man).ok()?;
+                Some(crate::man_field_scripts::scene_destinations(&mf, &man))
+            })
+            .unwrap_or_default();
+    }
+
+    /// The current scene's disc-sourced **named scene-change destinations**
+    /// (`0x3F` ops): every town / dungeon its controller script can warp to,
+    /// each with its `i16` index + entry tile. Empty when no scene is loaded or
+    /// the scene has no destination table. See
+    /// [`crate::man_field_scripts::scene_destinations`].
+    pub fn scene_destinations(&self) -> &[crate::man_field_scripts::SceneDestination] {
+        &self.scene_destinations
+    }
+
+    /// A [`SceneDestinationResolver`] over the current scene's destinations —
+    /// the live resolver for the `0x3F` named-scene-change `i16` index space,
+    /// rebuilt from disc each scene entry. (The `0x3E` door-warp keeps the
+    /// separate `u8`-keyed [`map_resolver`](Self::map_resolver).)
+    pub fn destination_resolver(&self) -> SceneDestinationResolver {
+        SceneDestinationResolver::new(self.scene_destinations.clone())
     }
 
     /// Borrow the current scene's typed asset snapshot. `None` if no scene
@@ -2656,6 +2751,35 @@ opdeene = "MOV/MV1.STR"
     fn default_map_id_resolver_empty_returns_none() {
         let r = DefaultMapIdResolver::default();
         assert_eq!(r.resolve(0), None);
+    }
+
+    #[test]
+    fn scene_destination_resolver_resolves_by_index() {
+        use crate::man_field_scripts::SceneDestination;
+        let r = SceneDestinationResolver::new(vec![
+            SceneDestination {
+                scene_name: "town0c".into(),
+                index: 21,
+                entry_x: 0x10,
+                entry_z: 0x20,
+            },
+            SceneDestination {
+                scene_name: "rikuroa".into(),
+                index: 155,
+                entry_x: 0x30,
+                entry_z: 0x40,
+            },
+        ]);
+        assert_eq!(r.len(), 2);
+        // Resolve by the i16 index (the 0x3F index space — wider than u8).
+        assert_eq!(r.resolve(21), Some("town0c"));
+        assert_eq!(r.resolve(155), Some("rikuroa"));
+        assert_eq!(r.resolve(99), None);
+        // The richer accessor returns the full record (name + entry tile).
+        let d = r.destination(155).expect("rikuroa destination");
+        assert_eq!(d.scene_name, "rikuroa");
+        assert_eq!((d.entry_x, d.entry_z), (0x30, 0x40));
+        assert!(SceneDestinationResolver::default().is_empty());
     }
 
     /// Smoke test: BGM index math matches the documented retail resolver.

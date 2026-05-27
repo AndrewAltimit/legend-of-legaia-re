@@ -1726,8 +1726,16 @@ pub fn scene_change_name(bytecode: &[u8], insn: &Insn) -> Option<String> {
     let header = if insn.extended.is_some() { 2 } else { 1 };
     let start = insn.pc + header + 3;
     let raw = bytecode.get(start..start + name_len as usize)?;
-    // CDNAME labels are short, non-empty, and printable lower-ASCII (letters +
-    // digits). Reject anything else as a text-desync phantom.
+    clean_scene_name(raw)
+}
+
+/// The clean-CDNAME-label gate shared by [`scene_change_name`] and the field-VM
+/// `0x3F` executor. A genuine destination name is short, non-empty, and a
+/// lowercase-ASCII / digit CDNAME label (`town01`, `dolk`, `rikuroa`, …).
+/// Rejects anything else — the desync guard for a literal `?` (`0x3F`) landing
+/// inside message text, which would otherwise decode a bogus "name". Returns the
+/// owned name on success.
+pub fn clean_scene_name(raw: &[u8]) -> Option<String> {
     if raw.is_empty()
         || raw.len() > 12
         || !raw

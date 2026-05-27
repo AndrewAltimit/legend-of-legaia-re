@@ -2345,13 +2345,18 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3F - DIALOG: open a dialog box.
-        // Encoding: [3F, lo, hi, len, [len bytes inline], xb, zb, depth_id]
-        // - text_id = lo + hi*0x100 (16-bit, little-endian)
-        // - inline buffer holds `len` raw bytes (the original copies up to
-        //   16 bytes into a local buffer, null-terminated)
-        // - xb / zb decode to grid_to_world coords
-        // - depth_id is the raw byte (original indexes a depth-lookup table)
+        // 0x3F - the engine drives this as DIALOG (open a dialog box), but RE
+        // shows retail's `0x3F` is the **named scene-change** ("warp by name"):
+        // the inline bytes are a destination scene NAME and `func_0x8001FD44` is
+        // the scene-change packet, not a dialog opener (see
+        // `field_disasm::InsnInfo::SceneChange`, `man_field_scripts::
+        // scene_destinations`, docs/subsystems/script-vm.md). The engine's
+        // field-dialogue rendering is currently built on this (incorrect) 0x3F
+        // mapping (field_dialog_smoke / field_op_3f_emits_open_dialog), so it is
+        // KEPT here until field dialogue is re-grounded on its real opcode and
+        // `0x3F` can be flipped to a live scene-change. The byte layout is
+        // identical either way ([3F, lo, hi, len, <len inline>, xb, zb, depth]),
+        // so the PC math is correct regardless of the semantic.
         // PC += header_size + 3 + len + 3
         0x3F => {
             let Some(&lo) = bytecode.get(operand) else {

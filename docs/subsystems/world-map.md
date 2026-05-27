@@ -394,8 +394,24 @@ a literal `?` = `0x3F` inside a message produces). On `map01` (Drake overworld)
 it recovers `town01`, `town0b`, `town0c`, `dolk`, `dolk2`, `rikuroa`, `cave01`,
 `vell`, `vozz`, `suimon`, `keikoku`, `jou` — all real CDNAME scenes. Disc-gated
 `scene_destinations_disc.rs` pins the set + asserts every recovered name is a
-known CDNAME label. (The `i16 index` each op carries is a story/entry id, a
-different id space from the `0x3E` door-warp `map_id`.)
+known CDNAME label.
+
+**Live wiring.** `SceneHost` decodes + caches this table on every scene load
+(`load_scene` → `refresh_scene_destinations`) and exposes it as
+`SceneHost::scene_destinations()` plus a `SceneDestinationResolver`
+(`SceneHost::destination_resolver()`) — an `i16`-keyed `index → scene-name`
+resolver rebuilt from disc per scene. The `0x3F` op's `i16 index` is a
+story/entry id in its **own** id space (observed past `u8` range, e.g. `630`),
+so the resolver keys on `i16` and is deliberately **not** the `u8`-keyed
+[`MapIdResolver`](#) (which serves the separate `0x3E` door-warp's 7 scene-*type*
+selectors `0..=6`).
+
+> **Runtime transition is not yet flipped.** The engine's field-VM executor
+> still drives `0x3F` as `open_dialog` (its field-dialogue rendering is built on
+> that — now-disproven — mapping; `field_dialog_smoke` / `field_op_3f_emits_open_dialog`
+> depend on it). Flipping `0x3F` to a live scene-change requires first
+> re-grounding field dialogue onto its real opcode, so it is deferred; the
+> destination catalog + resolver above are live and queryable in the meantime.
 
 #### Loading the kingdom geometry (engine port)
 
