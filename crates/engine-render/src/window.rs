@@ -349,17 +349,21 @@ pub fn walk_view_camera_mvp(
 ///   via `setCopControlWord` - the focal length / zoom.
 ///
 /// Unlike [`orbit_camera_mvp`] (which rotates with wall-clock time) this is a
-/// static cinematic shot: the eye orbits the focus by `yaw_radians` at a
+/// static cinematic shot: the eye orbits the focus by `(yaw, pitch)` at a
 /// distance derived from the scene AABB. Geometry uses the same PSX Y-down
 /// convention as [`orbit_camera_mvp`] / [`world_map_camera_mvp`] (eye pushed to
 /// *negative* Y to sit above, `+Y` look-at up vector).
 ///
-/// The eye **distance** itself is not a pinned op-`0x45` param (retail derives
-/// it through the GTE projection rather than an explicit translate), so the
-/// orbit radius is a scene-sized approximation; the FOV and heading are from
-/// real params. See `docs/subsystems/cutscene.md`.
+/// `pitch_radians` is the decoded op-`0x45` camera pitch (slot 0 =
+/// `_DAT_8007B790`, the GTE `RotMatrixX` angle; see `docs/subsystems/cutscene.md`):
+/// positive tilts the eye **above** the focus looking down. Heading and pitch
+/// are real params; the FOV is the op-`0x45` GTE `H` (slot 9). The eye
+/// **distance** is *not* a pinned param (retail places the eye at the GTE
+/// translation and projects through `H` rather than using an explicit eye
+/// offset), so the orbit radius stays a scene-sized approximation.
 pub fn cutscene_camera_mvp(
     look_at: [f32; 3],
+    pitch_radians: f32,
     yaw_radians: f32,
     fov_radians: f32,
     aabb_lo: [f32; 3],
@@ -373,10 +377,14 @@ pub fn cutscene_camera_mvp(
     // Slightly tighter than the orbit framing so the cinematic shot fills more
     // of the screen.
     let distance = radius / 30f32.to_radians().tan() * 1.2;
-    // Orbit the focus by the cutscene heading. At yaw 0 the eye sits in front
-    // (`+Z`) and above (`-Y` under Y-down), matching the default framing.
-    let (sin, cos) = yaw_radians.sin_cos();
-    let eye = center + Vec3::new(distance * sin, -distance * 0.45, distance * cos);
+    // Spherical orbit of the focus by the decoded heading + pitch. At yaw 0 the
+    // eye sits in front (`+Z`); positive pitch raises it above the focus (`-Y`
+    // under Y-down) so the shot looks down. Pitch is clamped shy of straight
+    // down/up so the look-at up vector never degenerates.
+    let pitch = pitch_radians.clamp(-80f32.to_radians(), 80f32.to_radians());
+    let (ys, yc) = yaw_radians.sin_cos();
+    let (ps, pc) = pitch.sin_cos();
+    let eye = center + Vec3::new(distance * pc * ys, -distance * ps, distance * pc * yc);
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
     let near = (distance * 0.05).max(0.1);
     let far = distance * 4.0 + 1000.0;
@@ -402,6 +410,7 @@ pub fn cutscene_camera_mvp(
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneCameraInterp {
     look_at: [f32; 3],
+    pitch: f32,
     yaw: f32,
     fov: f32,
     initialized: bool,
@@ -418,31 +427,34 @@ impl CutsceneCameraInterp {
     }
 
     /// Ease the held camera toward `target` by `t` (clamped to `0..=1`) and
-    /// return the smoothed `(look_at, yaw, fov)`. The first call after a reset
-    /// (or construction) snaps directly to the target.
+    /// return the smoothed `(look_at, pitch, yaw, fov)`. The first call after a
+    /// reset (or construction) snaps directly to the target.
     pub fn approach(
         &mut self,
         target_look_at: [f32; 3],
+        target_pitch: f32,
         target_yaw: f32,
         target_fov: f32,
         t: f32,
-    ) -> ([f32; 3], f32, f32) {
+    ) -> ([f32; 3], f32, f32, f32) {
         if !self.initialized {
             self.look_at = target_look_at;
+            self.pitch = target_pitch;
             self.yaw = target_yaw;
             self.fov = target_fov;
             self.initialized = true;
-            return (self.look_at, self.yaw, self.fov);
+            return (self.look_at, self.pitch, self.yaw, self.fov);
         }
         let t = t.clamp(0.0, 1.0);
         for (cur, &tgt) in self.look_at.iter_mut().zip(target_look_at.iter()) {
             *cur += (tgt - *cur) * t;
         }
-        // Shortest-arc yaw ease so a wrap across ±π takes the short way.
-        let delta = wrap_pi(target_yaw - self.yaw);
-        self.yaw = wrap_pi(self.yaw + delta * t);
+        // Shortest-arc eases for both angles so a wrap across ±π takes the
+        // short way.
+        self.pitch = wrap_pi(self.pitch + wrap_pi(target_pitch - self.pitch) * t);
+        self.yaw = wrap_pi(self.yaw + wrap_pi(target_yaw - self.yaw) * t);
         self.fov += (target_fov - self.fov) * t;
-        (self.look_at, self.yaw, self.fov)
+        (self.look_at, self.pitch, self.yaw, self.fov)
     }
 }
 
@@ -538,7 +550,15 @@ mod camera_tests {
 
     #[test]
     fn cutscene_camera_mvp_is_finite() {
-        let m = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 60f32.to_radians(), LO, HI, 16.0 / 9.0);
+        let m = cutscene_camera_mvp(
+            [0.0, 0.0, 0.0],
+            0.0,
+            0.0,
+            60f32.to_radians(),
+            LO,
+            HI,
+            16.0 / 9.0,
+        );
         assert!(finite(&m));
     }
 
@@ -547,19 +567,20 @@ mod camera_tests {
         // Re-targeting the camera (the pinned op-0x45 focus params changing)
         // must change the projection - the shot follows the cutscene target.
         let fov = 60f32.to_radians();
-        let a = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, fov, LO, HI, 1.5);
-        let b = cutscene_camera_mvp([500.0, 0.0, -300.0], 0.0, fov, LO, HI, 1.5);
+        let a = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, fov, LO, HI, 1.5);
+        let b = cutscene_camera_mvp([500.0, 0.0, -300.0], 0.0, 0.0, fov, LO, HI, 1.5);
         assert_ne!(a.to_cols_array(), b.to_cols_array());
         assert!(finite(&b));
     }
 
     #[test]
-    fn cutscene_camera_yaw_and_fov_change_the_view() {
+    fn cutscene_camera_pitch_yaw_and_fov_change_the_view() {
         let fov = 60f32.to_radians();
-        let base = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, fov, LO, HI, 1.5);
+        let base = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, fov, LO, HI, 1.5);
         // A quarter-turn heading orbits the eye -> different projection.
         let yawed = cutscene_camera_mvp(
             [0.0, 0.0, 0.0],
+            0.0,
             std::f32::consts::FRAC_PI_2,
             fov,
             LO,
@@ -567,19 +588,31 @@ mod camera_tests {
             1.5,
         );
         assert_ne!(base.to_cols_array(), yawed.to_cols_array());
+        // The decoded op-0x45 pitch (slot 0) tilts the eye -> different view.
+        let pitched =
+            cutscene_camera_mvp([0.0, 0.0, 0.0], 30f32.to_radians(), 0.0, fov, LO, HI, 1.5);
+        assert_ne!(base.to_cols_array(), pitched.to_cols_array());
+        assert!(finite(&pitched));
+        // Pitch is clamped shy of straight-down so the up vector never
+        // degenerates into a non-finite look-at.
+        let steep =
+            cutscene_camera_mvp([0.0, 0.0, 0.0], 200f32.to_radians(), 0.0, fov, LO, HI, 1.5);
+        assert!(finite(&steep));
         // A narrower FOV (more zoom, from a larger GTE H) also changes it, and
         // an out-of-range FOV is clamped to a finite matrix.
-        let zoomed = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 20f32.to_radians(), LO, HI, 1.5);
+        let zoomed =
+            cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 20f32.to_radians(), LO, HI, 1.5);
         assert_ne!(base.to_cols_array(), zoomed.to_cols_array());
-        let clamped = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, LO, HI, 1.5);
+        let clamped = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, LO, HI, 1.5);
         assert!(finite(&clamped));
     }
 
     #[test]
     fn cutscene_interp_first_call_snaps_to_target() {
         let mut it = CutsceneCameraInterp::new();
-        let (la, yaw, fov) = it.approach([100.0, 0.0, -50.0], 1.0, 0.8, 0.2);
+        let (la, pitch, yaw, fov) = it.approach([100.0, 0.0, -50.0], 0.3, 1.0, 0.8, 0.2);
         assert_eq!(la, [100.0, 0.0, -50.0]);
+        assert_eq!(pitch, 0.3);
         assert_eq!(yaw, 1.0);
         assert_eq!(fov, 0.8);
     }
@@ -588,9 +621,9 @@ mod camera_tests {
     fn cutscene_interp_eases_toward_a_changed_beat() {
         let mut it = CutsceneCameraInterp::new();
         // Snap to beat A.
-        it.approach([0.0, 0.0, 0.0], 0.0, 1.0, 0.25);
+        it.approach([0.0, 0.0, 0.0], 0.0, 0.0, 1.0, 0.25);
         // Beat B re-targets; one ease step covers a fraction, not all of it.
-        let (la, _, fov) = it.approach([100.0, 0.0, 0.0], 0.0, 2.0, 0.25);
+        let (la, _, _, fov) = it.approach([100.0, 0.0, 0.0], 0.0, 0.0, 2.0, 0.25);
         assert!(
             (la[0] - 25.0).abs() < 1e-3,
             "look_at eased 25% -> {}",
@@ -599,9 +632,9 @@ mod camera_tests {
         assert!((fov - 1.25).abs() < 1e-3, "fov eased 25% -> {fov}");
         // Repeated steps converge toward the target.
         for _ in 0..200 {
-            it.approach([100.0, 0.0, 0.0], 0.0, 2.0, 0.25);
+            it.approach([100.0, 0.0, 0.0], 0.0, 0.0, 2.0, 0.25);
         }
-        let (la, _, fov) = it.approach([100.0, 0.0, 0.0], 0.0, 2.0, 0.25);
+        let (la, _, _, fov) = it.approach([100.0, 0.0, 0.0], 0.0, 0.0, 2.0, 0.25);
         assert!((la[0] - 100.0).abs() < 1e-2);
         assert!((fov - 2.0).abs() < 1e-2);
     }
@@ -613,8 +646,8 @@ mod camera_tests {
         // Start just below +π, target just above -π (i.e. ~6° apart across the
         // wrap). The ease must move the short way (toward +π / over the seam),
         // never unwind ~352° the long way.
-        it.approach([0.0, 0.0, 0.0], PI - 0.05, 1.0, 0.5);
-        let (_, yaw, _) = it.approach([0.0, 0.0, 0.0], -PI + 0.05, 1.0, 0.5);
+        it.approach([0.0, 0.0, 0.0], 0.0, PI - 0.05, 1.0, 0.5);
+        let (_, _, yaw, _) = it.approach([0.0, 0.0, 0.0], 0.0, -PI + 0.05, 1.0, 0.5);
         // Halfway across a ~0.1 rad arc lands near ±π, not near 0.
         assert!(
             yaw.abs() > PI - 0.1,
@@ -625,9 +658,9 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_reset_resnaps() {
         let mut it = CutsceneCameraInterp::new();
-        it.approach([0.0, 0.0, 0.0], 0.0, 1.0, 0.25);
+        it.approach([0.0, 0.0, 0.0], 0.0, 0.0, 1.0, 0.25);
         it.reset();
-        let (la, _, _) = it.approach([500.0, 0.0, 0.0], 0.0, 0.25, 0.25);
+        let (la, _, _, _) = it.approach([500.0, 0.0, 0.0], 0.0, 0.25, 0.25, 0.25);
         assert_eq!(la, [500.0, 0.0, 0.0], "reset snaps the next approach");
     }
 }
