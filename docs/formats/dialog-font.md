@@ -98,7 +98,7 @@ When `string_id != 0`, the renderer calls `FUN_8002C488(x, y + y_offset, string_
 | Source preprocessor | `FUN_80036514` | Expands authoring-time `^X` (0x5E) escapes into runtime `0xCE (X-0x2D)` escape stream. |
 | Word-wrap pre-pass | `FUN_80036044` | Called from `FUN_8003CC98`. Wraps lines to fit the dialog box width. |
 | Single-line renderer | `FUN_80036888` | Iterates bytes, dispatches escapes, emits one GP0 0x64 sprite per glyph. |
-| Multi-line wrapper | `FUN_8003CC98` | `FUN_80036044` + `FUN_80036888`. Used by the field VM dialog opener. |
+| Multi-line wrapper | `FUN_8003CC98` | `FUN_80036044` + `FUN_80036888`. Used by the field dialogue renderer chain. |
 | Text-actor tick | `FUN_80031D00` | Per-actor text rendering; uses an alternate width-bucketed glyph layout for HUD/status numbers (column-0 stride 8 px, height 12 px) - see `DAT_80073DCC`. |
 
 Per-glyph GP0 packet (variable-size textured rectangle, opaque, with raw-texture color):
@@ -137,7 +137,15 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 | Author-time `^X` preprocessor | `ghidra/scripts/funcs/80036514.txt` lines 246-249 |
 | Multi-line wrapper | `ghidra/scripts/funcs/8003cc98.txt` |
 
-The dialog opener that reaches this renderer chain from the [field script VM](../subsystems/script-vm.md) opcode `0x3F` is `FUN_8001FD44` - it sets the "dialog active" story flag (`_DAT_1F800394 |= 0x40`) before forwarding into the renderer.
+This renderer chain draws **field dialogue**, which has no dedicated opcode: a
+field NPC's text is its inline interaction-script MES (retail `actor[+0x90]`),
+shown by the per-frame actor-dialog SM `FUN_80039b7c` + the dialog pager
+`FUN_801D84D0`, triggered by the field-interact op (`0x3E` with `op0 < 100`) —
+see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode).
+(`FUN_8001FD44` is **not** the opener — it is the scene-change packet, reached
+by the `0x3F` named scene-change; an earlier note mislabeled it. The
+`_DAT_1F800394 |= 0x40` it sets is a scene-transition-pending flag, not a
+"dialog active" lock.)
 
 ## What's still open
 
