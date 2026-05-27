@@ -7,6 +7,7 @@ The format itself is documented externally; the Legaia-specific notes are:
 - The dominant on-disc carrier is the [scene-VAB-prefixed streaming](scene-bundles.md) shape - the VAB body is preceded by a 4-byte chunk0 header. `crates/vab::parse_header(buf, offset)` accepts a starting offset so callers can skip the wrapper.
 - A bulk scan finds 1191 `VABp` headers across 239 PROT entries. Top: `0889_sound_data2` (207), `0891_level_up` (206), `0890_sound_data2` (203) - multi-bank archives. The `vab_01` cluster (1072..1194) is the standard distributed-bank layout: 120 entries with 1–3 banks each.
 - Block names from CDNAME can be misleading; trust the `VABp` magic rather than the surrounding cluster name.
+- The trailing VAG size table (256 × `u16`) is **1-indexed**: `vag_table[1..=vs]` hold each sample's size in 8-byte units, so `vag_table[0]` is a reserved leading spacer. It is universally `0` across the retail corpus (986 / 986 VABs, asserted by the disc-gated `corpus_vag_spacer` test) - it is **not** a master pitch / sample-rate shift, so no pitch offset is derived from it (`VabReport::vag_table_spacer` surfaces the raw byte only).
 
 ## API
 

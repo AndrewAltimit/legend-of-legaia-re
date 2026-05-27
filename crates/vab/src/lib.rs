@@ -21,15 +21,18 @@
 //! 0x820        VagAtr[16][ps] 32 bytes each, 16 tones per program slot
 //!              -> tones section size = 512 * ps
 //! +(2048+512*ps) u16 vag_table[256]
-//!                first entry is master shift (often 0 in v7)
-//!                entries 1..=vs hold cumulative VAG sizes / 8 (8-byte units)
+//!                entry 0 is a reserved spacer (the table is 1-indexed)
+//!                entries 1..=vs hold per-sample VAG sizes / 8 (8-byte units)
 //! + 0x200 (after table) VAG bodies (raw SPU ADPCM, 16-byte blocks)
 //! ```
 //!
 //! Entries past `vs` in `vag_table` are zero. The decoder treats `vag_table[i+1]`
 //! (in 8-byte units) as the *size* of sample `i`; samples are concatenated
-//! immediately after the table. PSX SDK treats entry 0 as the master shift
-//! / pitch correction; we preserve it but don't apply it.
+//! immediately after the table. The table is **1-indexed**, so `vag_table[0]`
+//! is a reserved leading spacer — universally `0` across the retail corpus
+//! (986 / 986 VABs), surfaced as [`VabReport::vag_table_spacer`]. It is **not**
+//! a master pitch / sample-rate shift: that hypothesis is falsified by the
+//! all-zero corpus, so nothing derives a pitch offset from it.
 //!
 //! VAG body = stream of 16-byte SPU ADPCM blocks:
 //! ```text
@@ -116,7 +119,13 @@ pub struct VabReport {
     pub tones: Vec<Vec<VagAtr>>,
     /// Byte offset (within input buffer) + size of each VAG sample body.
     pub vag_samples: Vec<VagSampleSpan>,
-    pub master_shift: u16,
+    /// `vag_table[0]` — the reserved leading entry of the VAG size table. The
+    /// table is **1-indexed**: `vag_table[1..=vs]` hold the sample sizes, so
+    /// entry 0 is a spacer that is universally `0` across the retail corpus
+    /// (986 / 986 VABs). It is **not** a master pitch / sample-rate shift (that
+    /// hypothesis is falsified by the all-zero corpus); nothing should derive a
+    /// pitch offset from it. Kept on the report only to surface the raw byte.
+    pub vag_table_spacer: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -287,13 +296,15 @@ pub fn parse(buf: &[u8], offset: usize) -> Result<VabReport> {
         tones.push(row);
     }
 
-    // VAG offset table: 256 u16 entries; entry 0 is master shift, entries 1..=vs
-    // are sample sizes in 8-byte units. Sample bodies start at vag_bodies_off.
+    // VAG size table: 256 u16 entries; the table is 1-indexed, so entry 0 is a
+    // reserved spacer (universally 0 across the retail corpus, not a pitch /
+    // sample-rate shift) and entries 1..=vs are sample sizes in 8-byte units.
+    // Sample bodies start at vag_bodies_off.
     let table = &buf[table_off..table_off + 2 * VAG_TABLE_ENTRIES];
     let entries: Vec<u16> = (0..VAG_TABLE_ENTRIES)
         .map(|i| u16::from_le_bytes(table[i * 2..i * 2 + 2].try_into().unwrap()))
         .collect();
-    let master_shift = entries[0];
+    let vag_table_spacer = entries[0];
 
     let mut samples = Vec::with_capacity(vs);
     let mut cursor = vag_bodies_off;
@@ -326,7 +337,7 @@ pub fn parse(buf: &[u8], offset: usize) -> Result<VabReport> {
         programs,
         tones,
         vag_samples: samples,
-        master_shift,
+        vag_table_spacer,
     })
 }
 
