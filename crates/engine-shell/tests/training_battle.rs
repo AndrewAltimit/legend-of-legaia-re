@@ -35,23 +35,6 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-/// Load and parse the town01 scene MAN from extracted assets (the same
-/// resolution path `enter_field_scene` uses), returning `(ManFile, man bytes)`.
-fn load_town01_man(extracted: &std::path::Path) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
-    use legaia_engine_core::scene::{ProtIndex, Scene};
-    let index = ProtIndex::open_extracted(extracted).expect("open ProtIndex");
-    let scene = Scene::load(&index, SCENE).expect("load town01");
-    let bundle = legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 bundle");
-    let entry_bytes = index
-        .entry_bytes_extended(bundle.entry_idx())
-        .expect("entry bytes");
-    let man = legaia_engine_core::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
-        .expect("man extract")
-        .expect("town01 MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
-    (man_file, man)
-}
-
 #[test]
 fn training_encounter_reaches_battle_with_real_monster() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -257,8 +240,9 @@ fn training_reaches_battle_via_man_formation_index() {
 }
 
 /// The field-resident carrier SM path, driven from the **real MAN actor**:
-/// derive the carrier set from town01's actor-placement partition
-/// (`install_field_carriers_from_man`), so the Rim Elm sparring partner's
+/// entering town01 auto-installs the carrier set derived from its
+/// actor-placement partition (`enter_field_scene` ->
+/// `install_field_carriers_from_man`), so the Rim Elm sparring partner's
 /// identity comes from the scene data rather than a hand-built config. Advance
 /// the derived carrier via `engage_field_carrier` (the dialogue-accept
 /// stand-in), and let the per-frame `tick_field_carriers` run the state-1
@@ -293,26 +277,24 @@ fn training_reaches_battle_via_field_carrier_sm() {
         .expect("enter field live");
     assert_eq!(session.host.world.mode, SceneMode::Field);
 
-    // Derive the carrier set straight from town01's real MAN actor-placement
-    // partition (instead of a hand-built config): the pinned Rim Elm sparring
-    // partner becomes the scripted-encounter carrier for formation 4, every
-    // other talk NPC a plain carrier. The returned index is the sparring
-    // carrier's slot in the installed Vec.
-    let (man_file, man) = load_town01_man(&extracted);
+    // Entering the field auto-installed the carrier set derived from town01's
+    // real MAN actor-placement partition (no hand-built config): the pinned Rim
+    // Elm sparring partner is the scripted-encounter carrier for formation 4,
+    // every other talk NPC a plain carrier. Find the sparring carrier's slot.
     let sparring_idx = session
         .host
         .world
-        .install_field_carriers_from_man(&man_file, &man)
-        .expect("town01 MAN contains the Rim Elm sparring carrier");
-    assert!(
-        matches!(
-            session.host.world.field_carrier_configs[sparring_idx],
-            FieldCarrierConfig::ScriptedEncounter {
-                formation_id: RIM_ELM_TRAINING_FORMATION_ID
-            }
-        ),
-        "derived carrier launches the training formation"
-    );
+        .field_carrier_configs
+        .iter()
+        .position(|c| {
+            matches!(
+                c,
+                FieldCarrierConfig::ScriptedEncounter {
+                    formation_id: RIM_ELM_TRAINING_FORMATION_ID
+                }
+            )
+        })
+        .expect("field entry auto-installs the Rim Elm sparring carrier from the MAN");
 
     // Idle carriers never self-fire (town01 is 0% random): several ticks stay
     // in the field.

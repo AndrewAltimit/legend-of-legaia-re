@@ -1505,6 +1505,29 @@ impl SceneHost {
                 }
             }
         }
+        // Install the scene's field entity-SM carriers derived from the same
+        // MAN actor-placement partition (retail builds one record per
+        // MAN-placed entity at scene load). They sit Idle - the sparring
+        // carrier only advances when `engage_field_carrier` is called on the
+        // dialogue-accept - so this is inert for the cold-boot path but makes
+        // the derived carrier set live (and is the counterpart to the MAN
+        // encounter-table install above). Soft-fail: a scene without a MAN, or
+        // with no interactable placements, just installs an empty set.
+        match self
+            .scene
+            .as_ref()
+            .map(|s| s.field_man_payload(&self.index))
+        {
+            Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
+                Ok(man_file) => {
+                    self.world
+                        .install_field_carriers_from_man(&man_file, &man_bytes);
+                }
+                Err(err) => eprintln!("[scene] field-carrier MAN parse skipped: {err:#}"),
+            },
+            Some(Err(err)) => eprintln!("[scene] field-carrier MAN payload skipped: {err:#}"),
+            _ => {}
+        }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
         // a handful of scenes carry VDF data (8/124 in the retail

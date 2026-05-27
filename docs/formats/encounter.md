@@ -244,8 +244,10 @@ partition-1 placements and maps each interactable actor to a `FieldCarrierConfig
 becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
 `Npc` keyed by its record index; decorative/warp placements carry no carrier.
 `World::install_field_carriers_from_man` installs that derived set and returns the
-sparring carrier's slot, so `engage_field_carrier` (the dialogue-accept
-stand-in) advances the actual MAN actor's `FUN_801DA51C` SM. The formation
+sparring carrier's slot; `enter_field_scene` calls it on every field entry (the
+counterpart to the MAN encounter-table install), so the carriers are live from
+the scene's own data. They sit Idle until `engage_field_carrier` (the
+dialogue-accept stand-in) advances the actual MAN actor's `FUN_801DA51C` SM. The formation
 *index* (`4`) is still a pinned constant — the interaction record selects its
 formation by index, not via an inline `[count][ids]` literal — but which actor is
 the carrier, and where it stands, now come from the scene data.
