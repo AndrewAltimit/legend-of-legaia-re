@@ -246,11 +246,19 @@ becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
 `World::install_field_carriers_from_man` installs that derived set and returns the
 sparring carrier's slot; `enter_field_scene` calls it on every field entry (the
 counterpart to the MAN encounter-table install), so the carriers are live from
-the scene's own data. They sit Idle until `engage_field_carrier` (the
-dialogue-accept stand-in) advances the actual MAN actor's `FUN_801DA51C` SM. The formation
-*index* (`4`) is still a pinned constant — the interaction record selects its
-formation by index, not via an inline `[count][ids]` literal — but which actor is
-the carrier, and where it stands, now come from the scene data.
+the scene's own data. They sit Idle until the carrier is engaged, which advances
+the actual MAN actor's `FUN_801DA51C` SM. Engagement is driven by the
+field-interact dialogue-accept: a field-interact op (`0x3E`, `op0 < 100`) on the
+sparring carrier's placement opens its inline dialogue and arms the engage, and
+accepting the prompt (the dialog-advance dismiss, `0x4C` n5 sub-4) engages it —
+so the field-VM bytecode drives the fight, not a manual API. (`engage_field_carrier`
+remains the direct entry point the auto-arm and tests call.) Because the
+sparring dialogue's Yes/No box-selection logic is still undecoded, the engine
+treats the accept as the dialog dismiss; the tutorial fight is forced, so there
+is no decline path to gate. The formation *index* (`4`) is still a pinned
+constant — the interaction record selects its formation by index, not via an
+inline `[count][ids]` literal — but which actor is the carrier, and where it
+stands, now come from the scene data.
 
 ## Scripted-battle id path (`FUN_8005567c`)
 

@@ -3,10 +3,9 @@
 //! Drives one scripted `j-replay-v1` recording through the engine and
 //! checks it against the retail parity oracles. The v0.1 target path is:
 //!
-//!   boot -> field scene -> [deferred: scripted encounter -> battle ->
-//!   loot -> save back]
+//!   boot -> field scene -> scripted encounter -> battle [-> loot -> save back]
 //!
-//! **Phase 1 (current).** The engine drives a cold boot into Field for the
+//! **Field leg.** The engine drives a cold boot into Field for the
 //! scenario's scene via [`build_engine_mode_trace_field_live`]
 //! ([`BootSession::enter_field_live`]) and asserts:
 //!   - it actually reaches `SceneMode::Field` (not stuck in `Title`);
@@ -14,15 +13,20 @@
 //!   - the retail mode-trace converges (when a non-drifted save resolves);
 //!   - an SC round-trip on the post-Field world is byte-identical.
 //!
-//! **Deferred Battle leg.** Reaching BattleMode is the scripted Tetsu
-//! tutorial fight, gated on mc7's story state (a cold boot into town01
-//! record 0 produces no dialogue; town scenes have a 0% random rate). It
-//! needs mc7's save state seeded into the World so the trigger arms, then
-//! the field-VM dialogue-accept -> scripted-encounter install. The VRAM
-//! (title frame) and audio-trace (BGM swap) hooks land with it.
+//! **Battle leg.** A NEW GAME cold boot reaches `SceneMode::Battle` for the
+//! opening Rim Elm training fight (`BootSession::begin_new_game` seeds Vahn; the
+//! cold boot installs town01's sparring carrier). It is the game's first fight,
+//! so the new-game seed *is* retail's pre-fight story state. Convergence is
+//! against the cataloged retail anchors that bracket the transition: the
+//! pre-fight dialogue-accept frame reads Field and the battle-loading frame
+//! reads Battle. Two flavours: the dialogue-accept auto-arm (drives the
+//! field-interact op directly), and the fully **emergent** path where the
+//! player walks to the partner and talks to it through the interaction probe.
+//! (Still open: the dialogue box's Yes/No selection is undecoded — the engine
+//! treats accept as dismiss, faithful for the forced tutorial.)
 //!
 //! The recording lives at `scripts/replays/v0_1_playthrough.toml`
-//! (override via `LEGAIA_V0_1_REPLAY`). Three tests run here:
+//! (override via `LEGAIA_V0_1_REPLAY`). Five tests run here:
 //!
 //! 1. **Replay smoke (always).** The replay file parses + validates.
 //! 2. **Determinism gate (disc-free, always).** Drives a synthetic
@@ -32,6 +36,11 @@
 //!    `meta.scenario`, runs the field-live engine driver, and asserts the
 //!    Field-reach + replay-fixture + retail convergence + SC round-trip
 //!    above. Skip-passes without disc data (CLAUDE.md convention).
+//! 4. **Battle leg (disc-gated).** New-game cold boot -> dialogue-accept ->
+//!    Battle (Vahn vs Tetsu), converging with the retail Field/Battle anchors.
+//! 5. **Emergent Battle leg (disc-gated).** New-game cold boot -> the player
+//!    walks (BFS path + `nav_step_toward`) to the sparring partner -> talks via
+//!    the interaction probe -> accepts -> Battle. No teleport, no script.
 //!
 //! Skip-pass cases (CLAUDE.md disc-gated convention):
 //!   - replay file missing (smoke test fails loudly; oracle test skips)
@@ -504,4 +513,324 @@ fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) 
             prev = Some(f.scene_mode.as_str());
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Test 4: v0.1 Battle leg (disc-gated)
+// ---------------------------------------------------------------------
+
+/// The v0.1 oracle's Battle leg: a NEW GAME cold boot reaches `SceneMode::Battle`
+/// for the opening Rim Elm training fight, driven entirely by the field-VM
+/// dialogue-accept (no manual engage, no script injection beyond the real
+/// field-interact op).
+///
+/// **Story-seed.** `BootSession::begin_new_game` seeds the opening party (Vahn,
+/// 180 HP) from the `SCUS_942.54` template. The Tetsu fight is the game's first
+/// battle, so this fresh state *is* retail's pre-fight story state — there is no
+/// earlier save to seed from (you cannot save before the tutorial fight). Cold
+/// boot then installs the sparring carrier from town01's MAN, so interacting
+/// with it and accepting its prompt arms and launches the fight.
+///
+/// **Convergence.** The cataloged retail anchors bracket the transition: the
+/// pre-fight dialogue-accept frame reads Field (`game_mode 0x03`) and the
+/// battle-loading frame reads Battle (`0x15`), matching the engine's
+/// Field → Battle. Resolved from the immutable library backups; each retail leg
+/// is skipped if its backup isn't present locally.
+///
+/// Skip-passes without disc data / extracted assets (CLAUDE.md convention).
+#[test]
+fn v0_1_battle_leg_reaches_battle_from_new_game() {
+    use legaia_engine_core::input::PadButton;
+    const TETSU: u16 = legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    // Story-seed: the new-game opening party = retail pre-Tetsu state.
+    session.begin_new_game();
+    session
+        .enter_field_live(
+            "town01",
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+
+    let w = &mut session.host.world;
+    assert_eq!(
+        w.mode,
+        SceneMode::Field,
+        "new-game cold boot reaches the field"
+    );
+    assert_eq!(w.party_count, 1, "the opening party is Vahn alone");
+    assert_eq!(
+        w.actors[0].battle.max_hp, 180,
+        "Vahn seeded from the new-game template (180 HP)"
+    );
+
+    // Cold boot installed town01's sparring carrier: exactly one scripted-
+    // encounter slot.
+    let slot = {
+        let mut slots: Vec<u8> = w.field_carrier_slots.keys().copied().collect();
+        slots.sort_unstable();
+        assert_eq!(
+            slots.len(),
+            1,
+            "town01 installs one scripted-encounter carrier slot, got {slots:?}"
+        );
+        slots[0]
+    };
+
+    // Drive the dialogue-accept auto-arm: a real field-interact on the carrier's
+    // slot opens its dialogue; accepting (just-pressed Cross) engages it.
+    let mut modes: Vec<SceneMode> = vec![w.mode];
+    w.load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
+    w.set_pad(0);
+    let _ = w.tick();
+    modes.push(w.mode);
+    let cross = PadButton::Cross.mask();
+    for i in 0..16u32 {
+        w.set_pad(if i == 0 { cross } else { 0 });
+        let _ = w.tick();
+        modes.push(w.mode);
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+    }
+
+    assert!(
+        modes.contains(&SceneMode::Battle),
+        "v0.1 Battle leg: engine never reached Battle (modes: {modes:?})"
+    );
+    assert_eq!(
+        w.actors[0].battle.max_hp, 180,
+        "Vahn survives the field -> battle handoff"
+    );
+    let monster_slot = w.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        w.actors[monster_slot].battle_monster_id,
+        Some(TETSU),
+        "enemy slot is the training opponent (Tetsu 0x4F)"
+    );
+
+    // Retail convergence: pre-fight anchor reads Field, battle anchor reads
+    // Battle — matching the engine's Field -> Battle.
+    let Some(manifest_path) = manifest_path() else {
+        return;
+    };
+    let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse scenarios manifest");
+    let check = |label: &str, want: &str| {
+        let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
+            return;
+        };
+        let Ok(path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
+            return;
+        };
+        if !path.exists() {
+            eprintln!(
+                "[skip] retail anchor {label}: no save at {}",
+                path.display()
+            );
+            return;
+        }
+        let f = load_runtime_mode_trace_from_save(&path)
+            .unwrap_or_else(|e| panic!("retail anchor {label} trace: {e:#}"));
+        assert_eq!(
+            f.scene_mode, want,
+            "retail anchor {label} should read scene_mode={want} (got {})",
+            f.scene_mode
+        );
+    };
+    check("v0_1_tetsu_dialogue_accept", "Field");
+    check("v0_1_battle_loading_tetsu", "Battle");
+
+    eprintln!(
+        "[ok] v0.1 Battle leg: new-game cold boot -> dialogue-accept -> Battle \
+         (Vahn 180 HP vs Tetsu 0x4F), converges with retail Field/Battle anchors"
+    );
+}
+
+// ---------------------------------------------------------------------
+// Test 5: v0.1 Battle leg, fully emergent (walk + talk + accept)
+// ---------------------------------------------------------------------
+
+/// The fully input-driven Battle leg: a NEW GAME cold boot, then the player
+/// **walks** from the spawn to the sparring partner (BFS path over the real
+/// collision grid, driven through `World::nav_step_toward`), **talks** to it via
+/// the interaction probe, and **accepts** — reaching Battle with no teleport,
+/// no script injection, no manual engage.
+///
+/// The opening sequence repositions the partner next to Vahn for the tutorial
+/// ([`RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`] — its placement tile (76,65) is the
+/// unreachable post-tutorial village spot); the cold boot skips that reposition,
+/// so the test places the carrier at its tutorial position first (standing in
+/// for the opening). From there the walk is fully emergent.
+#[test]
+fn v0_1_battle_leg_walk_talk_accept() {
+    use legaia_engine_core::encounter_record::RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS as TUT;
+    use legaia_engine_core::input::PadButton;
+    const TETSU: u16 = legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session.begin_new_game();
+    session
+        .enter_field_live(
+            "town01",
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // Place the scripted carrier at its tutorial position (the opening reposition
+    // the cold boot skips). After this, everything is emergent.
+    let slot = *session
+        .host
+        .world
+        .field_carrier_slots
+        .keys()
+        .next()
+        .expect("town01 installs the scripted-encounter carrier slot");
+    session
+        .host
+        .world
+        .field_npc_positions
+        .insert(slot, (TUT.0, TUT.1));
+
+    // BFS a path from the player spawn to the carrier over the real collision
+    // grid (64-unit sub-cells, 4-connected — the locomotion axes).
+    let (sx, sz) = {
+        let p = session.host.world.player_actor_slot.expect("player") as usize;
+        let ms = &session.host.world.actors[p].move_state;
+        (ms.world_x as i32, ms.world_z as i32)
+    };
+    let waypoints = bfs_field_path(&session.host.world, (sx, sz), (TUT.0 as i32, TUT.1 as i32))
+        .expect("a walkable path from spawn to the carrier exists");
+    assert!(
+        waypoints.len() >= 4,
+        "the partner is a multi-step walk from spawn, got {} waypoints",
+        waypoints.len()
+    );
+
+    // Walk the player along the path (emergent locomotion + collision).
+    for &(wx, wz) in &waypoints {
+        let mut reached = false;
+        for _ in 0..64 {
+            if session.host.world.nav_step_toward(wx as i16, wz as i16, 24) {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "nav reaches waypoint ({wx}, {wz})");
+    }
+
+    // Talk: the interaction probe opens the (now adjacent) carrier's dialogue.
+    session.host.world.input.set_pad(PadButton::Cross.mask());
+    let _ = session.host.world.tick();
+    assert!(
+        session.host.world.current_dialog.is_some(),
+        "walking up + action button opens the sparring partner's dialogue"
+    );
+
+    // Accept: release, press again -> dismiss -> engage -> Battle.
+    session.host.world.input.set_pad(0);
+    let _ = session.host.world.tick();
+    session.host.world.input.set_pad(PadButton::Cross.mask());
+    let mut reached_battle = false;
+    for _ in 0..8 {
+        let _ = session.host.world.tick();
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+        session.host.world.input.set_pad(0);
+    }
+    assert!(
+        reached_battle,
+        "walk + talk + accept flips Field -> Battle (fully emergent)"
+    );
+    let world = &session.host.world;
+    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(TETSU),
+        "the emergent fight is against Tetsu (0x4F)"
+    );
+    eprintln!(
+        "[ok] v0.1 Battle leg (emergent): walked {} waypoints -> talk -> accept -> Battle vs Tetsu",
+        waypoints.len()
+    );
+}
+
+/// BFS a walkable path on the field collision grid from world `(sx, sz)` to
+/// `(gx, gz)`, returning a sparse list of world-position waypoints (one per
+/// 64-unit sub-cell along the route), or `None` if unreachable.
+fn bfs_field_path(
+    world: &World,
+    (sx, sz): (i32, i32),
+    (gx, gz): (i32, i32),
+) -> Option<Vec<(i32, i32)>> {
+    use std::collections::{HashMap, VecDeque};
+    let cell = |x: i32, z: i32| (x / 64, z / 64);
+    let center = |c: i32| c * 64 + 32;
+    let wall = |cx: i32, cz: i32| world.field_tile_is_wall(center(cx) as i16, center(cz) as i16);
+    let start = cell(sx, sz);
+    let goal = cell(gx, gz);
+    let mut prev: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
+    let mut q = VecDeque::new();
+    q.push_back(start);
+    prev.insert(start, start);
+    while let Some((cx, cz)) = q.pop_front() {
+        if (cx, cz) == goal {
+            // Reconstruct, then map cells -> world centers.
+            let mut path = vec![(center(goal.0), center(goal.1))];
+            let mut cur = goal;
+            while cur != start {
+                cur = prev[&cur];
+                path.push((center(cur.0), center(cur.1)));
+            }
+            path.reverse();
+            return Some(path);
+        }
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let n = (cx + dx, cz + dz);
+            if n.0 < 0 || n.1 < 0 || n.0 >= 256 || n.1 >= 256 {
+                continue;
+            }
+            if prev.contains_key(&n) || wall(n.0, n.1) {
+                continue;
+            }
+            prev.insert(n, (cx, cz));
+            q.push_back(n);
+        }
+    }
+    None
 }

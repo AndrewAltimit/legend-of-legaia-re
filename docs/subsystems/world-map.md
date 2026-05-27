@@ -152,8 +152,11 @@ clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
 - `SceneMode::Field` via `tick_field_carriers`, for the scene's MAN-placed
   carriers. A `FieldCarrierConfig::ScriptedEncounter { formation_id }` sits
   Idle (towns run a 0% random rate, so its `encounter_enabled` host gate is
-  `false` and it never self-fires) until `World::engage_field_carrier` — the
-  dialogue-accept stand-in — advances it Idle → Activating. The next
+  `false` and it never self-fires) until the field-interact dialogue-accept
+  engages it: interacting with the carrier's placement (op `0x3E`, `op0 < 100`)
+  arms the engage, and accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss)
+  calls `World::engage_field_carrier`, advancing it Idle → Activating — so the
+  field-VM bytecode drives the fight rather than a manual API. The next
   `tick_field_carriers` then runs the state-1 body (`on_activating`, the
   `entity[+0x94]` formation copy) immediately followed by the `case 2/3`
   fall-through (`on_scene_transition`, the `_DAT_8007B83C = 8` battle handoff),

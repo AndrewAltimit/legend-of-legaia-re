@@ -656,13 +656,24 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.world.current_dialog.is_none() {
             return false;
         }
-        let dismissed = self.world.input.just_pressed(input::PadButton::Cross)
-            || self.world.input.just_pressed(input::PadButton::Circle);
+        let dismissed = (self.world.input.just_pressed(input::PadButton::Cross)
+            || self.world.input.just_pressed(input::PadButton::Circle))
+            && !self.world.dialog_input_consumed;
         if dismissed {
+            self.world.dialog_input_consumed = true;
             self.world.current_dialog = None;
             self.world
                 .pending_field_events
                 .push(FieldEvent::DialogDismissed);
+            // Accepting a scripted-encounter carrier's prompt engages it: this is
+            // the dialogue-accept that advances the carrier SM (`FUN_801DA51C`)
+            // to its scene-transition. The battle launches on the next
+            // `tick_field_carriers`. (The tutorial fight is forced, so any
+            // dismiss is the accept; the undecoded Yes/No box-selection logic
+            // would gate this once pinned.)
+            if let Some(idx) = self.world.pending_carrier_engage.take() {
+                self.world.engage_field_carrier(idx);
+            }
             return false;
         }
         true
@@ -741,20 +752,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        self.world.last_field_interact = Some((interact_id, slot));
-        // Open the interacted actor's inline interaction-script dialogue, if it
-        // has any. This is the real field-dialogue path (the actor's own inline
-        // MES at retail `actor[+0x90]`, keyed by the `slot` the op carries),
-        // replacing the old `0x3F`-as-dialog stand-in. Actors with no inline
-        // text (signs that only set a flag, etc.) just surface the interaction.
-        if let Some(inline) = self.world.field_npc_dialog.get(&slot).cloned() {
-            // text_id 0 / no box coords: the text is the inline buffer itself,
-            // anchored on the actor (the retail box geometry isn't pinned yet).
-            self.open_dialog(0, &inline, 0, 0, 0);
-        }
-        self.world
-            .pending_field_events
-            .push(FieldEvent::FieldInteract { interact_id, slot });
+        // The real field-dialogue path: open the interacted actor's own inline
+        // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
+        // arm/engage a scripted-encounter carrier on that slot (the dialogue-
+        // accept auto-arm). Shared with the interaction probe via
+        // [`World::trigger_field_interact`].
+        self.world.trigger_field_interact(interact_id, slot);
     }
 
     fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {

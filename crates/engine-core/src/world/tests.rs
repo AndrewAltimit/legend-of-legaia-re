@@ -2069,6 +2069,257 @@ fn field_interact_without_inline_text_opens_no_dialogue() {
     );
 }
 
+/// The field-VM dialogue-accept auto-arms a scripted-encounter carrier.
+///
+/// Interacting with the carrier's placement (field-interact op `0x3E`,
+/// `op0 < 100`) opens its dialogue and arms the engage; accepting the prompt
+/// (the dialog-advance dismiss, op `0x4C` n5 sub-4) engages the carrier, so the
+/// SM (`FUN_801DA51C`) runs its scene-transition and flips Field -> Battle —
+/// with no manual `engage_field_carrier` call. This is the field-VM-driven
+/// counterpart to the carrier-engage API.
+#[test]
+fn field_dialogue_accept_auto_arms_scripted_carrier() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.set_formation_table(
+        crate::monster_catalog::vanilla_formation_table(),
+        crate::monster_catalog::vanilla_monster_catalog(),
+    );
+    world.set_active_scene_label("town01");
+    world.mode = SceneMode::Field;
+
+    // Carrier 0 = scripted encounter (vanilla formation 1); carrier 1 = plain
+    // NPC. Wire the slot map the way install_field_carriers_from_man would:
+    // only the scripted carrier gets a slot entry (slot 3 -> carrier 0). The
+    // plain NPC's slot 7 has dialogue but no carrier-slot entry.
+    world.install_field_carriers(vec![
+        FieldCarrierConfig::ScriptedEncounter { formation_id: 1 },
+        FieldCarrierConfig::Npc { interact_id: 7 },
+    ]);
+    world.field_carrier_slots.insert(3, 0);
+    world
+        .field_npc_dialog
+        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world
+        .field_npc_dialog
+        .insert(7, vec![0x1F, b'y', b'o', 0x00]);
+
+    // Interact with the scripted carrier's slot, then poll the dialog.
+    world.load_field_script(vec![0x3E, 0x05, 0x03, 0x4C, 0x54]);
+    world.input.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "interacting with the carrier opens its dialogue"
+    );
+    assert_eq!(
+        world.pending_carrier_engage,
+        Some(0),
+        "the scripted carrier's engage is armed, waiting for the accept"
+    );
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "no battle while the prompt is still up"
+    );
+
+    // Accept (just-pressed Cross): dismiss -> engage -> SM -> Field -> Battle.
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.pending_carrier_engage.is_none(),
+        "the armed engage is consumed on the accept"
+    );
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "accepting the scripted carrier's prompt launches the fight via the SM"
+    );
+}
+
+/// The interaction probe (retail `FUN_801cf9f4`): a just-pressed action button
+/// talks to the NPC within ±1 tile of the player, and only that one — a distant
+/// NPC is not triggered.
+#[test]
+fn interaction_probe_talks_to_adjacent_npc_only() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    // Player at tile 20 (world 20*128 + 0x40 = 2624).
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    // Adjacent NPC at tile (21, 20); a far NPC at tile 40 that must not trigger.
+    world
+        .field_npc_dialog
+        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.field_npc_positions.insert(5, (2752, 2624)); // tile (21, 20)
+    world.field_npc_dialog.insert(6, vec![0x1F, b'x', 0x00]);
+    world.field_npc_positions.insert(6, (5120, 5120)); // tile (40, 40)
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    let req = world
+        .current_dialog
+        .as_ref()
+        .expect("action button near an NPC opens its dialogue");
+    assert_eq!(
+        req.inline,
+        vec![0x1F, b'h', b'i', 0x00],
+        "the probe opened the adjacent NPC (slot 5), not the far one"
+    );
+}
+
+/// The probe is inert when no NPC is within range: pressing the action button in
+/// open field opens nothing.
+#[test]
+fn interaction_probe_no_npc_in_range_opens_nothing() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    world.field_npc_dialog.insert(6, vec![0x1F, b'x', 0x00]);
+    world.field_npc_positions.insert(6, (5120, 5120)); // tile (40, 40), far
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_none(),
+        "no NPC within +-1 tile -> the action button opens no dialogue"
+    );
+}
+
+/// Walking up to the scripted-encounter carrier and pressing the action button
+/// twice (talk, then accept) starts the fight through the probe — the fully
+/// input-driven counterpart to the field-VM dialogue-accept.
+#[test]
+fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.set_formation_table(
+        crate::monster_catalog::vanilla_formation_table(),
+        crate::monster_catalog::vanilla_monster_catalog(),
+    );
+    world.set_active_scene_label("town01");
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624; // tile 20
+    world.actors[0].move_state.world_z = 2624;
+
+    // Carrier 0 = scripted encounter; its NPC (slot 5) stands at the adjacent
+    // tile (21, 20) with the sparring dialogue.
+    world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
+        formation_id: 1,
+    }]);
+    world.field_carrier_slots.insert(5, 0);
+    world
+        .field_npc_dialog
+        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.field_npc_positions.insert(5, (2752, 2624));
+
+    // Talk: the probe opens the carrier's dialogue and arms the engage.
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "walking up + action button opens the carrier's dialogue"
+    );
+    assert_eq!(world.pending_carrier_engage, Some(0), "engage armed");
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "no battle while the prompt is up"
+    );
+
+    // Release, then accept: the probe dismisses the box and engages -> Battle.
+    world.input.set_pad(0);
+    let _ = world.tick();
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "accepting the probe-opened prompt starts the fight (no script, no manual engage)"
+    );
+}
+
+/// `nav_step_toward` walks the player to a target across open field (no walls).
+#[test]
+fn nav_step_toward_walks_player_to_target() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    // Open field (no collision grid installed -> nothing is a wall). Target ~6
+    // tiles away; the player should reach it within a generous frame budget.
+    let (tx, tz) = (2752i16, 1856i16);
+    let mut arrived = false;
+    for _ in 0..4000 {
+        if world.nav_step_toward(tx, tz, 32) {
+            arrived = true;
+            break;
+        }
+    }
+    assert!(arrived, "nav walks the player to the target in open field");
+    let ms = &world.actors[0].move_state;
+    assert!(
+        (ms.world_x - tx).abs() <= 32 && (ms.world_z - tz).abs() <= 32,
+        "player ends within tolerance of the target ({}, {})",
+        ms.world_x,
+        ms.world_z
+    );
+}
+
+/// A plain talk NPC never auto-arms a battle: interacting opens its dialogue and
+/// dismissing it returns to free roam (no carrier-slot entry -> nothing armed).
+#[test]
+fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.set_formation_table(
+        crate::monster_catalog::vanilla_formation_table(),
+        crate::monster_catalog::vanilla_monster_catalog(),
+    );
+    world.mode = SceneMode::Field;
+    world.install_field_carriers(vec![FieldCarrierConfig::Npc { interact_id: 7 }]);
+    // No scripted carrier -> field_carrier_slots stays empty.
+    world
+        .field_npc_dialog
+        .insert(7, vec![0x1F, b'y', b'o', 0x00]);
+
+    world.load_field_script(vec![0x3E, 0x05, 0x07, 0x4C, 0x54]);
+    world.input.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "plain NPC opens its dialogue"
+    );
+    assert_eq!(
+        world.pending_carrier_engage, None,
+        "a plain NPC arms no engage"
+    );
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "dismissing a plain NPC's dialogue stays in the field"
+    );
+}
+
 /// Dialog-advance host hook (`op 0x4C n5 sub-4`): when `current_dialog`
 /// is set, the VM halts at the poll site. A just-pressed Cross /
 /// Circle clears the request inline and unblocks the VM the same

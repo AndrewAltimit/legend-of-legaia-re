@@ -978,6 +978,29 @@ pub struct World {
     /// scene-change, not dialogue). Empty between field scenes.
     pub field_npc_dialog: std::collections::HashMap<u8, Vec<u8>>,
 
+    /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
+    /// same `slot` as [`Self::field_npc_dialog`]. Populated at field-scene entry
+    /// from the MAN actor placements. The interaction probe
+    /// ([`Self::tick_field_interaction_probe`]) box-tests the player's position
+    /// against these to fire a `field_interact` on the action button — the
+    /// clean-room analogue of retail's `FUN_801cf9f4` adjacency test.
+    ///
+    /// The runtime actor frame **is** the MAN placement frame: `FUN_8003A1E4`
+    /// spawns each actor at `world = tile*128 + 0x40` (the placement's
+    /// [`world_x`](legaia_asset::man_section::ActorPlacement::world_x)), stored
+    /// straight into `actor[+0x14/+0x18]` by `FUN_80024C88` with no anchor, and
+    /// the player cold-spawn `0xA40` is `tile 20*128 + 0x40` in that same frame.
+    /// So these placement positions compare directly against the player's
+    /// [`crate::vm::ActorMoveState::world_x`]. (Positions are the *spawn* tile;
+    /// the engine does not yet walk field NPCs, so spawn == current.)
+    pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
+
+    /// Per-tick guard: set when a Cross/Circle press is consumed by a field
+    /// dialogue open or dismiss this tick, so the script's `0x4C` dialog poll
+    /// and the interaction probe can't both act on the same edge (double
+    /// open/dismiss). Reset at the top of each [`SceneMode::Field`] tick.
+    pub dialog_input_consumed: bool,
+
     /// Active party slot for the leader (op 0x4C sub-0 writes here, plus
     /// `party_add` populates it on the first member).
     pub party_leader_slot: Option<u8>,
@@ -1410,6 +1433,22 @@ pub struct World {
     /// between transitions.
     pub pending_field_carrier_battle: Option<u16>,
 
+    /// Field-interact `slot` -> [`Self::field_carriers`] index, for the
+    /// **scripted-encounter** carriers only. Built by
+    /// [`Self::install_field_carriers_from_man`] so a field-interact on the
+    /// sparring partner's placement can find its carrier and auto-arm the fight
+    /// (the dialogue-accept drives the engage instead of the manual API). Plain
+    /// talk NPCs are deliberately absent — interacting with them never launches
+    /// a battle.
+    pub field_carrier_slots: std::collections::HashMap<u8, usize>,
+
+    /// A scripted-encounter carrier whose dialogue the player opened via a
+    /// field-interact and which engages when that dialogue is dismissed (the
+    /// accept). Set in [`crate::world::vm_hosts`]'s `field_interact`, consumed
+    /// by the dialog-advance dismiss (`op 0x4C n5 sub-4`). `None` when no
+    /// scripted carrier's prompt is up.
+    pub pending_carrier_engage: Option<usize>,
+
     /// Per-party-slot display names. Seeded from the starting-party template
     /// at [`Self::seed_starting_party`] and overwritten by the name-entry
     /// overlay ([`Self::open_name_entry`]). Indexed by party slot; a slot with
@@ -1678,6 +1717,8 @@ impl World {
             current_dialog: None,
             last_field_interact: None,
             field_npc_dialog: std::collections::HashMap::new(),
+            field_npc_positions: std::collections::HashMap::new(),
+            dialog_input_consumed: false,
             party_leader_slot: None,
             money: 0,
             inventory: std::collections::HashMap::new(),
@@ -1740,6 +1781,8 @@ impl World {
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
             pending_field_carrier_battle: None,
+            field_carrier_slots: std::collections::HashMap::new(),
+            pending_carrier_engage: None,
             party_names: Vec::new(),
             name_entry: None,
             cutscene_narration: None,
@@ -3524,10 +3567,18 @@ impl World {
                 }
             }
             SceneMode::Field => {
+                // Per-tick: one Cross/Circle edge feeds at most one of the
+                // script's 0x4C dialog poll or the interaction probe.
+                self.dialog_input_consumed = false;
                 self.step_cutscene_timeline();
                 self.step_field();
                 self.tick_tile_board();
                 self.step_field_locomotion();
+                // Interaction probe (retail FUN_801cf9f4): talk to an adjacent
+                // NPC / dismiss its box on the action button. Runs before the
+                // carrier tick so a dialogue-accept engage launches the battle
+                // the same frame.
+                self.tick_field_interaction_probe();
                 self.tick_field_carriers();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
@@ -4062,6 +4113,11 @@ impl World {
             .collect();
         self.field_carrier_configs = configs;
         self.pending_field_carrier_battle = None;
+        // The slot map is only meaningful for a MAN-derived install; a
+        // hand-built set has no placement slots. Clear it (and any armed engage)
+        // so a re-install never leaves a stale slot pointing at the old set.
+        self.field_carrier_slots.clear();
+        self.pending_carrier_engage = None;
     }
 
     /// Install the scene's field carriers **derived from its MAN actor-placement
@@ -4085,7 +4141,22 @@ impl World {
         let sparring_idx = derived
             .iter()
             .position(|d| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }));
+
+        // Map each scripted-encounter carrier's placement slot -> its carrier-Vec
+        // index, so a field-interact on that placement auto-arms the fight. The
+        // carrier index is the position in `derived` (install_field_carriers
+        // preserves order). Plain talk NPCs are intentionally excluded: talking
+        // to them must never launch a battle.
+        let carrier_slots: std::collections::HashMap<u8, usize> = derived
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }))
+            .filter_map(|(idx, d)| u8::try_from(d.placement_index).ok().map(|slot| (slot, idx)))
+            .collect();
+
         self.install_field_carriers(derived.into_iter().map(|d| d.config).collect());
+        // install_field_carriers cleared the slot map; repopulate for this set.
+        self.field_carrier_slots = carrier_slots;
 
         // Capture each actor's inline interaction-script dialogue, keyed by its
         // partition-1 record index (= the `slot` a field-interact op carries),
@@ -4093,6 +4164,7 @@ impl World {
         // This is the actor's own inline MES text (retail `actor[+0x90]`), the
         // mechanism `0x3F` was wrongly standing in for.
         self.field_npc_dialog.clear();
+        self.field_npc_positions.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
@@ -4101,10 +4173,134 @@ impl World {
                 && let Ok(slot) = u8::try_from(placement.index)
             {
                 self.field_npc_dialog.insert(slot, inline);
+                // The interaction probe box-tests the player against this spawn
+                // position (= runtime actor frame; see `field_npc_positions`).
+                self.field_npc_positions
+                    .insert(slot, (placement.world_x, placement.world_z));
             }
         }
 
         sparring_idx
+    }
+
+    /// Trigger a field interaction on placement `slot` (retail's field-interact
+    /// op `0x3E` with `op0 < 100`, and the interaction-probe dispatch). Opens
+    /// the actor's inline dialogue if it has any, arms / engages a scripted-
+    /// encounter carrier on that slot (the dialogue-accept auto-arm), and
+    /// surfaces a [`FieldEvent::FieldInteract`]. Shared by the field VM host and
+    /// [`Self::tick_field_interaction_probe`].
+    pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
+        self.last_field_interact = Some((interact_id, slot));
+        let opened_dialog = if let Some(inline) = self.field_npc_dialog.get(&slot).cloned() {
+            self.open_field_dialog(inline);
+            true
+        } else {
+            false
+        };
+        // A scripted-encounter carrier on this slot (the sparring partner): with
+        // a prompt up, the engage waits for the accept (dialog dismiss); a
+        // carrier with no inline text engages immediately on interaction.
+        if let Some(&carrier_idx) = self.field_carrier_slots.get(&slot) {
+            if opened_dialog {
+                self.pending_carrier_engage = Some(carrier_idx);
+            } else {
+                self.engage_field_carrier(carrier_idx);
+            }
+        }
+        self.pending_field_events
+            .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
+    }
+
+    /// Open a field dialogue box from an inline interaction-script buffer (the
+    /// text is the buffer itself; the retail box geometry isn't pinned, so the
+    /// box coords are zero). Sets [`Self::current_dialog`] and surfaces a
+    /// [`FieldEvent::OpenDialog`].
+    fn open_field_dialog(&mut self, inline: Vec<u8>) {
+        self.current_dialog = Some(DialogRequest {
+            text_id: 0,
+            inline: inline.clone(),
+            world_x: 0,
+            world_z: 0,
+            depth_id: 0,
+        });
+        self.pending_field_events
+            .push(crate::field_events::FieldEvent::OpenDialog {
+                text_id: 0,
+                inline,
+                world_x: 0,
+                world_z: 0,
+                depth_id: 0,
+            });
+    }
+
+    /// Clean-room interaction probe — retail `FUN_801cf9f4`, the action-button
+    /// adjacency test that talks to a nearby field NPC.
+    ///
+    /// Mirrors [`Self::tick_world_map_npc_dialog`] for field mode: a single
+    /// handler for both opening and dismissing a field dialogue on player input,
+    /// so a probe-opened box (talking to an NPC by walking up to it, with no
+    /// script `0x4C` poll) still dismisses.
+    ///
+    /// - **Box up:** a just-pressed Cross / Circle dismisses it (and engages a
+    ///   pending scripted-encounter carrier — the dialogue-accept).
+    /// - **No box:** a just-pressed Cross with a talkable NPC within ±1 tile of
+    ///   the player opens its dialogue via [`Self::trigger_field_interact`].
+    ///
+    /// The [`Self::dialog_input_consumed`] per-tick guard keeps this and the
+    /// field VM's `0x4C` dialog poll from both acting on the same button edge.
+    /// No-op without a player actor or installed NPC positions.
+    ///
+    /// PORT: FUN_801cf9f4
+    /// REF: FUN_8003A1E4, FUN_80024C88
+    fn tick_field_interaction_probe(&mut self) {
+        use crate::input::PadButton;
+        let confirm = self.input.just_pressed(PadButton::Cross);
+        let cancel = self.input.just_pressed(PadButton::Circle);
+
+        if self.current_dialog.is_some() {
+            if (confirm || cancel) && !self.dialog_input_consumed {
+                self.dialog_input_consumed = true;
+                self.current_dialog = None;
+                self.pending_field_events
+                    .push(crate::field_events::FieldEvent::DialogDismissed);
+                if let Some(idx) = self.pending_carrier_engage.take() {
+                    self.engage_field_carrier(idx);
+                }
+            }
+            return;
+        }
+
+        if self.dialog_input_consumed || !confirm || self.field_npc_positions.is_empty() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return;
+        }
+        let (px, pz) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x as i32 >> 7, ms.world_z as i32 >> 7)
+        };
+        // Nearest talkable NPC within ±1 tile of the player (the retail box test
+        // is a ~0x50-unit footprint; ±1 tile is the same shape at tile
+        // granularity, matching the world-map probe).
+        let mut best: Option<(i32, u8)> = None;
+        for (&npc_slot, &(nx, nz)) in &self.field_npc_positions {
+            let (tx, tz) = (nx as i32 >> 7, nz as i32 >> 7);
+            if (tx - px).abs() <= 1 && (tz - pz).abs() <= 1 {
+                let d = (tx - px).pow(2) + (tz - pz).pow(2);
+                if best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, npc_slot));
+                }
+            }
+        }
+        if let Some((_, npc_slot)) = best {
+            self.dialog_input_consumed = true;
+            self.trigger_field_interact(0, npc_slot);
+        }
     }
 
     /// Host signal that the player engaged field carrier `idx` (accepted the
@@ -4797,6 +4993,48 @@ impl World {
             }
             remaining -= FIELD_STEP_UNIT;
         }
+    }
+
+    /// Step the player one navigation frame toward world position `(tx, tz)`,
+    /// using the same per-axis field collision as pad locomotion
+    /// ([`Self::advance_with_collision`]) but a world-space direction. Returns
+    /// `true` once the player is within `tol` units of the target on both axes.
+    ///
+    /// This is the auto-navigation primitive a driver loops (following a path of
+    /// waypoints) to walk the player to a target — e.g. the v0.1 oracle walking
+    /// from the cold-boot spawn to the sparring partner before talking to it.
+    /// It drives the real locomotion stepping/collision, just without the pad →
+    /// camera-relative remap. No-op without an active player actor.
+    pub fn nav_step_toward(&mut self, tx: i16, tz: i16, tol: i16) -> bool {
+        let Some(slot) = self.player_actor_slot else {
+            return false;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return false;
+        }
+        let (cx, cz) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
+        if (cx - tx).abs() <= tol && (cz - tz).abs() <= tol {
+            return true;
+        }
+        let mut dir = 0u16;
+        if tz > cz {
+            dir |= 0x1000; // Z+
+        } else if tz < cz {
+            dir |= 0x4000; // Z-
+        }
+        if tx > cx {
+            dir |= 0x2000; // X+
+        } else if tx < cx {
+            dir |= 0x8000; // X-
+        }
+        if dir != 0 {
+            self.advance_with_collision(slot, dir, FIELD_BASE_STEP);
+        }
+        false
     }
 
     // --- live gameplay loop: Field <-> Battle round trip ------------------
