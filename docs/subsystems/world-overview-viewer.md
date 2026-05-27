@@ -73,6 +73,13 @@ its output is **byte-identical** to the engine's `Scene::walk_heightfield`
 for all three kingdoms by the disc-gated test
 `crates/web-viewer/tests/walk_ground_parity.rs`.
 
+Per-cell UVs follow the retail emitter's corner orientation: U along +X/col,
+**V flipped vs +Z/row** (the low-Z corner samples the tile's bottom texel row).
+This is baked into `build_walk_heightfield`, so the viewer inherits it for free;
+it is what makes directional transition tiles (coastline sand, ridge faces) flow
+continuously instead of mirroring in place. See
+[`world-map.md`](world-map.md) "Ground texturing".
+
 The heightfield's per-cell `[clut, tpage]` reference the terrain atlas
 VRAM pages (grass `0x1A` at fb `(640, 256)`, mountain `0x0C` at fb
 `(768, 0)`, water `0x1B`/`0x1C`, forest `0x0B`). Those pages are already
