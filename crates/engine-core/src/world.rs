@@ -1410,6 +1410,22 @@ pub struct World {
     /// between transitions.
     pub pending_field_carrier_battle: Option<u16>,
 
+    /// Field-interact `slot` -> [`Self::field_carriers`] index, for the
+    /// **scripted-encounter** carriers only. Built by
+    /// [`Self::install_field_carriers_from_man`] so a field-interact on the
+    /// sparring partner's placement can find its carrier and auto-arm the fight
+    /// (the dialogue-accept drives the engage instead of the manual API). Plain
+    /// talk NPCs are deliberately absent — interacting with them never launches
+    /// a battle.
+    pub field_carrier_slots: std::collections::HashMap<u8, usize>,
+
+    /// A scripted-encounter carrier whose dialogue the player opened via a
+    /// field-interact and which engages when that dialogue is dismissed (the
+    /// accept). Set in [`crate::world::vm_hosts`]'s `field_interact`, consumed
+    /// by the dialog-advance dismiss (`op 0x4C n5 sub-4`). `None` when no
+    /// scripted carrier's prompt is up.
+    pub pending_carrier_engage: Option<usize>,
+
     /// Per-party-slot display names. Seeded from the starting-party template
     /// at [`Self::seed_starting_party`] and overwritten by the name-entry
     /// overlay ([`Self::open_name_entry`]). Indexed by party slot; a slot with
@@ -1740,6 +1756,8 @@ impl World {
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
             pending_field_carrier_battle: None,
+            field_carrier_slots: std::collections::HashMap::new(),
+            pending_carrier_engage: None,
             party_names: Vec::new(),
             name_entry: None,
             cutscene_narration: None,
@@ -4062,6 +4080,11 @@ impl World {
             .collect();
         self.field_carrier_configs = configs;
         self.pending_field_carrier_battle = None;
+        // The slot map is only meaningful for a MAN-derived install; a
+        // hand-built set has no placement slots. Clear it (and any armed engage)
+        // so a re-install never leaves a stale slot pointing at the old set.
+        self.field_carrier_slots.clear();
+        self.pending_carrier_engage = None;
     }
 
     /// Install the scene's field carriers **derived from its MAN actor-placement
@@ -4085,7 +4108,22 @@ impl World {
         let sparring_idx = derived
             .iter()
             .position(|d| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }));
+
+        // Map each scripted-encounter carrier's placement slot -> its carrier-Vec
+        // index, so a field-interact on that placement auto-arms the fight. The
+        // carrier index is the position in `derived` (install_field_carriers
+        // preserves order). Plain talk NPCs are intentionally excluded: talking
+        // to them must never launch a battle.
+        let carrier_slots: std::collections::HashMap<u8, usize> = derived
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }))
+            .filter_map(|(idx, d)| u8::try_from(d.placement_index).ok().map(|slot| (slot, idx)))
+            .collect();
+
         self.install_field_carriers(derived.into_iter().map(|d| d.config).collect());
+        // install_field_carriers cleared the slot map; repopulate for this set.
+        self.field_carrier_slots = carrier_slots;
 
         // Capture each actor's inline interaction-script dialogue, keyed by its
         // partition-1 record index (= the `slot` a field-interact op carries),

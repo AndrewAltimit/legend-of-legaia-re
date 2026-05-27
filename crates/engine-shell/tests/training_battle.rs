@@ -336,3 +336,109 @@ fn training_reaches_battle_via_field_carrier_sm() {
         "Tetsu's real HP via the carrier SM path"
     );
 }
+
+/// The fully field-VM-driven path: no manual `engage_field_carrier`. A cold boot
+/// auto-installs the town01 carriers **and** their interact-slot map, so a real
+/// field-interact (`0x3E`, `op0 < 100`) on the sparring partner's placement
+/// slot, driven through the field VM, opens its dialogue and arms the engage;
+/// accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss on a just-pressed
+/// Cross) engages the carrier and the SM flips Field -> Battle against the real
+/// per-scene MAN formation, with Tetsu (`0x4F`) in the enemy slot. This is the
+/// dialogue-accept auto-arm end to end on disc data — the field-VM bytecode now
+/// drives the engage the manual API stood in for.
+#[test]
+fn training_reaches_battle_via_field_vm_dialogue_accept() {
+    use legaia_engine_core::input::PadButton;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    let world = &mut session.host.world;
+
+    // Cold boot auto-installed the carrier slot map from town01's MAN: exactly
+    // one scripted-encounter (sparring) carrier carries an interact-slot entry,
+    // and that slot holds the sparring partner's inline dialogue.
+    let slot = {
+        let mut slots: Vec<u8> = world.field_carrier_slots.keys().copied().collect();
+        slots.sort_unstable();
+        assert_eq!(
+            slots.len(),
+            1,
+            "town01 derives exactly one scripted-encounter carrier slot, got {slots:?}"
+        );
+        slots[0]
+    };
+    assert!(
+        world.field_npc_dialog.contains_key(&slot),
+        "the sparring carrier's slot carries inline dialogue"
+    );
+
+    // Drive a real field-interact on that slot, then a dialog-advance poll.
+    world.load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
+    world.input.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "the field-interact opens the sparring partner's dialogue"
+    );
+    assert!(
+        world.pending_carrier_engage.is_some(),
+        "the scripted carrier's engage is armed, waiting for the accept"
+    );
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "still in the field while the prompt is up"
+    );
+
+    // Accept: just-pressed Cross dismisses the dialogue and engages the carrier;
+    // the SM runs the transition and flips Field -> Battle within a few ticks.
+    world.input.set_pad(PadButton::Cross.mask());
+    let mut reached_battle = false;
+    for _ in 0..8 {
+        let _ = world.tick();
+        if world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+        // Release the button so a later tick doesn't re-trigger a dismiss.
+        world.input.set_pad(0);
+    }
+    assert!(
+        reached_battle,
+        "the dialogue-accept auto-arm flips Field -> Battle (no manual engage)"
+    );
+
+    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+        "enemy slot tagged with the training monster id"
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "Tetsu's real HP merged from the disc archive at scene entry"
+    );
+}
