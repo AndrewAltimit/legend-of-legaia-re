@@ -269,6 +269,8 @@ pub struct EffectMarker {
 /// `docs/formats/effect.md`), so a host that samples VRAM here will draw the
 /// faithful geometry/animation with whatever is resident; the `page`/`clut`/
 /// `uv` carry the real coordinates so textures appear once that upload lands.
+///
+/// REF: FUN_801E0088
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectSprite {
     /// Child world position in world units (effect origin + spread offset).
@@ -609,6 +611,8 @@ pub struct BattleBuff {
 
 /// One monster's chosen action for its turn, produced by the action picker
 /// [`World::pick_monster_action`] (the port of `FUN_801E9FD4`'s decision core).
+///
+/// REF: FUN_801E9FD4
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MonsterAction {
     /// Physical strike against party slot `target`.
@@ -814,6 +818,8 @@ pub struct World {
     /// carries real SPD the next-actor selector switches to the SPD-seeded
     /// initiative scheme ([`World::next_combatant_by_initiative`], the port of
     /// `recompute_battle_order` / `FUN_801daba4`).
+    ///
+    /// REF: FUN_801DABA4
     pub battle_speed: [u16; 8],
 
     /// "Previous action cleared" gate - toggled by the engine when an
@@ -1396,6 +1402,8 @@ pub struct World {
     /// [`Self::tick_world_map`] rolls it once per 128-unit tile the player
     /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
     /// `None` on a camera-only world map (no region data routed).
+    ///
+    /// REF: FUN_801D9E1C
     pub world_map_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
 
     /// Player tile (`world >> 7`) at the previous overworld step check, for

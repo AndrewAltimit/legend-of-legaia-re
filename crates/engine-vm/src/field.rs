@@ -916,6 +916,8 @@ pub trait FieldHost {
     ///
     /// The default impl returns `false`, so generic script yields never get
     /// mistaken for encounter arms.
+    ///
+    /// REF: FUN_801DA51C
     fn is_scripted_encounter_armed(&self) -> bool {
         false
     }

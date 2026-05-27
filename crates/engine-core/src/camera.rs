@@ -96,6 +96,11 @@ impl Camera {
     /// fold them into this camera. Non-camera events are restored to the
     /// world queue so engine layers that also consume them aren't shorted.
     /// Returns the number of camera events applied this frame.
+    ///
+    /// The op-`0x45` Configure slot→camera mapping mirrors the retail apply
+    /// handler; the GTE rotation build it feeds is `FUN_8001CF50`.
+    ///
+    /// REF: FUN_801DE084
     pub fn route_camera_events(&mut self, world: &mut World) -> usize {
         let mut applied = 0usize;
         let mut leftover = Vec::new();
