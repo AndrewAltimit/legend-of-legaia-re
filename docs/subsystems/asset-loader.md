@@ -33,7 +33,7 @@ Per-scene reference resolution is partial - many scene-bundle entries cross-refe
 
 ### WARP opcode → scene transition flow (map_id)
 
-The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op0 - 100`. This is stored in `_DAT_8007ba34` and the game mode switches to `0xe` (SCENE_TRANSITION), which calls `FUN_80025980`.
+The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op0 - 100`. This is stored in `_DAT_8007ba34` and the game mode switches to `0xe` (SCENE_TRANSITION), which calls `FUN_80025980`. Because only 7 destinations exist, a genuine warp's `op0` is always `100..=106`; this range (plus the absence of the `0x80` cross-context prefix) is what the placement classifier uses to reject text-desync phantoms — see [`world-map.md` → classifying the entity kind](world-map.md#classifying-the-entity-kind-from-its-script).
 
 `FUN_80025980` loads a **code overlay** at PROT index `map_id + 0x4d` (or `map_id + 0x4f` when `map_id >= 6`). Only 7 distinct warp destinations exist (map_id 0–6), each loading a different scene-type overlay at PROT 0x4D–0x55. These overlays contain scene-specific entry functions at overlay-resident addresses (`0x801CF070`, `0x801CE8A0`, etc.).
 

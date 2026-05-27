@@ -326,9 +326,13 @@ linearly disassembles each placement's per-entity interaction script (records
 `1..` are the actor interaction scripts) and reads the kind off its
 distinguishing opcodes:
 
-- a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`) → a
-  **Portal** whose target is the field-VM map id `op0 - 100` (its scene-name
-  table lives in an uncaptured overlay, so the id is reported raw);
+- a **genuine warp** (the *base* `0x3E` with `op0` in `100..=106`, retail
+  `scene_transition`) → a **Portal** whose target is the field-VM map id
+  `op0 - 100` (`0..=6`). The map id selects a scene-*type* code overlay
+  (PROT `0x4d + map_id`), **not** a unique scene — the destination scene *name*
+  is set separately by the pre-WARP handler / scene-change packet, which lives in
+  an uncaptured overlay, so the id is reported raw (see
+  [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--scene-transition-flow-map_id));
 - a **dialog** (`0x3F`) or **field interact** (`0x3E` with `op0 < 100`) and no
   warp → an **NPC** (sign / talk-to / event trigger);
 - none of those → **Plain** (a moving / animated / model-only actor, e.g. the
@@ -336,9 +340,19 @@ distinguishing opcodes:
 
 The walk is the same over-approximating linear disassembly the encounter-arm
 hunt uses (it reads every opcode-shaped byte, not only one control-flow path),
-so a warp anywhere in the record marks the actor a portal. Real data: `town01`
-classifies 14 NPCs / 38 plain, the overworlds carry a handful of warp portals
-(`map02`/`map03` each expose one to a field map id).
+so it **desyncs inside embedded message / SJIS text** and can land on a `0x3E`
+whose next byte is `>= 100`. Every such phantom in the corpus rides the `0x80`
+cross-context prefix and carries an out-of-range `op0` (175 / 179 / 200, i.e.
+text bytes), so the genuine-warp gate (`!extended && op0 in 100..=106`, see
+[`man_field_scripts::classify_placement`](../../crates/engine-core/src/man_field_scripts.rs))
+rejects it — `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
+(`op0=175/179`) used to mis-classify as portals to non-existent maps 75 / 79 / 86
+/ 100. Real data: `town01` classifies 14 NPCs / 38 plain; across the whole PROT
+corpus exactly **11** genuine door-warp portals survive (all map_id `0..=6`),
+clustered in interior/town scenes (`koin1` exposes exits to maps 3/4/5, `koin3`
+to 6, `balden` to 3) plus a single overworld fishing-spot warp each on
+`map02`/`map03` (map id 0). A disc-gated regression
+(`world_map_portal_classification_disc.rs`) pins the invariant.
 
 `SceneHost::enter_world_map_scene` seeds these typed entities on the
 boot/transition path via [`World::install_world_map_entities_at`]: each Portal /

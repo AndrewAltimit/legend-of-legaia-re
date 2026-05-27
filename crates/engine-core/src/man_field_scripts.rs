@@ -54,6 +54,31 @@ use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, YieldKind
 use crate::encounter_record::EncounterRecord;
 use crate::world::FieldCarrierConfig;
 
+/// Inclusive `op0` range a genuine field-VM warp (`scene_transition`) uses.
+///
+/// The WARP opcode is `0x3E` with `op0 = map_id + 100`, and only **7** door-warp
+/// destinations exist — `map_id 0..=6` (each selects a scene-*type* code overlay
+/// at PROT `0x4d + map_id`; see [`crate::scene::DefaultMapIdResolver`] and
+/// `docs/subsystems/asset-loader.md`). So a real warp's `op0` is `100..=106`.
+///
+/// This range matters for [`classify_placement`]: the per-actor walk is an
+/// over-approximating linear disassembly that *desyncs* inside embedded message
+/// text, and a desynced read can land on a `0x3E` whose following byte happens
+/// to be `>= 100` — a phantom warp. Every observed phantom carries an `op0` far
+/// outside this range (175 / 179 / 200, i.e. SJIS or dialog bytes) and rides the
+/// `0x80` cross-context prefix, while every genuine corpus warp is the *base*
+/// `0x3E` with `op0` in `100..=106`. So the kind decision requires both signals.
+const WARP_OP0_RANGE: std::ops::RangeInclusive<u8> = 100..=106;
+
+/// `true` when a decoded `WarpOrInteract` instruction is a *genuine* door-warp
+/// (not a text-desync phantom): the base `0x3E` opcode (no `0x80` cross-context
+/// prefix) carrying `op0` in [`WARP_OP0_RANGE`]. `op0` is the raw operand byte
+/// (`map_id + 100`); `extended` is the disassembler's cross-context-target field
+/// (`Some` iff the `0x80` prefix bit was set on the leading opcode byte).
+fn is_genuine_warp(op0: u8, extended: Option<u8>) -> bool {
+    extended.is_none() && WARP_OP0_RANGE.contains(&op0)
+}
+
 /// One field-VM `Yield` instruction in a partition-1 script, annotated with
 /// the inline encounter-record decode of its trailing operand window.
 #[derive(Debug, Clone)]
@@ -323,22 +348,32 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     }
     let body = &man[start..end];
 
-    // Opcode-walk pass: a warp wins outright (the actor is a portal). A real
-    // warp is `0x3E op0 ...` with `op0 >= 100`, so it is not aliased by a
-    // literal `>` (0x3E) in message text (there the next byte is the segment
-    // terminator `0x00`, i.e. `op0 < 100`, an interact). The decoded interact /
-    // dialog hints, by contrast, *are* unreliable on text-heavy field records
-    // (the walk desyncs inside the message), so they are best-effort only - the
-    // real dialog text is recovered structurally below.
+    // Opcode-walk pass: a *genuine* door-warp wins outright (the actor is a
+    // portal). A real warp is the base `0x3E op0 ...` with `op0` in the 7-id
+    // door-warp range ([`WARP_OP0_RANGE`]). The over-approximating linear walk
+    // can still desync inside embedded message / SJIS text and land on a `0x3E`
+    // whose next byte is `>= 100` — but every such phantom in the corpus rides
+    // the `0x80` cross-context prefix and carries an out-of-range `op0`
+    // (175 / 179 / 200), so [`is_genuine_warp`] rejects it. The decoded interact
+    // / dialog hints, likewise, are unreliable on text-heavy field records (the
+    // walk desyncs inside the message), so they are best-effort only — the real
+    // dialog text is recovered structurally below.
     let mut dialog_text_id = None;
     let mut interact_id = None;
     for insn in LinearWalker::new(body, p.script_pc0).flatten() {
         match insn.info {
+            // A warp wins outright — but only when it is a *genuine* door-warp,
+            // not a text-desync phantom (see [`is_genuine_warp`]). A phantom
+            // warp (cross-context `0x80` prefix and/or `op0` outside the 7-id
+            // door-warp range) is dropped here so the actor falls through to the
+            // structural dialog pass, which classifies a text-bearing record as
+            // an [`Npc`] (e.g. `geremi`'s talk NPC) rather than a portal to a
+            // non-existent map.
             InsnInfo::WarpOrInteract {
                 op0, is_warp: true, ..
-            } => {
+            } if is_genuine_warp(op0, insn.extended) => {
                 return PlacementKind::Portal {
-                    target_map: op0.wrapping_sub(100),
+                    target_map: op0 - 100,
                 };
             }
             InsnInfo::WarpOrInteract {
@@ -747,13 +782,41 @@ mod tests {
 
     #[test]
     fn classify_warp_script_is_a_portal() {
-        // `0x3E` with op0 = 110 (>= 100) is a warp to map id 110 - 100 = 10.
-        let (mf, man) = man_with_placement_script(&[0x3E, 110, 0, 0, 0, 0]);
+        // `0x3E` with op0 = 103 is a genuine door-warp to map id 103 - 100 = 3
+        // (within the 7-id `WARP_OP0_RANGE`).
+        let (mf, man) = man_with_placement_script(&[0x3E, 103, 0, 0, 0, 0]);
         let placements = mf.actor_placements(&man);
         assert_eq!(placements.len(), 1, "record 0 is the controller");
         assert_eq!(
             classify_placement(&mf, &man, &placements[0]),
-            PlacementKind::Portal { target_map: 10 }
+            PlacementKind::Portal { target_map: 3 }
+        );
+    }
+
+    #[test]
+    fn is_genuine_warp_gate() {
+        // Base opcode, in-range op0 -> genuine (map_id 0..=6 -> op0 100..=106).
+        assert!(is_genuine_warp(100, None)); // map_id 0
+        assert!(is_genuine_warp(106, None)); // map_id 6
+        // Out-of-range op0 (the desync phantoms: 175 / 179 / 200) -> rejected.
+        assert!(!is_genuine_warp(107, None));
+        assert!(!is_genuine_warp(200, None));
+        // Cross-context `0x80`-prefixed warp -> rejected even with in-range op0.
+        assert!(!is_genuine_warp(103, Some(0xF8)));
+    }
+
+    #[test]
+    fn classify_out_of_range_warp_is_not_a_portal() {
+        // `0x3E` with op0 = 200 decodes as `is_warp` (op0 >= 100) but lands far
+        // outside the 7-id door-warp range — the signature of a text-desynced
+        // read (corpus: `geremi` op0=200, `other7` op0=175/179). With no inline
+        // text after it, the actor is Plain, never a phantom portal to map 100.
+        let (mf, man) = man_with_placement_script(&[0x3E, 200, 0, 0, 0, 0, 0x21]);
+        let placements = mf.actor_placements(&man);
+        assert_eq!(
+            classify_placement(&mf, &man, &placements[0]),
+            PlacementKind::Plain,
+            "an out-of-range pseudo-warp must not classify as a portal"
         );
     }
 
@@ -958,7 +1021,7 @@ mod tests {
         sparring.extend_from_slice(&[0x1F, b's', b'p', b'a', b'r', 0x00]);
         let mut npc = vec![0x00, 0x10, 0x00, 10, 12];
         npc.extend_from_slice(&[0x1F, b'h', b'i', b'!', 0x00]);
-        let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 110, 0, 0, 0, 0];
+        let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 103, 0, 0, 0, 0];
         let decorative = vec![0x00, 0x12, 0x00, 6, 6, 0x21];
         let (mf, man) = man_with_placements(&[controller, sparring, npc, portal, decorative]);
 

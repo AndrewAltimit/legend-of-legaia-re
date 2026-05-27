@@ -80,7 +80,7 @@
 
   <p>When the field VM executes opcode <code>0x3E</code> with <code>op0 &ge; 100</code>, it stores <code>map_id = op0 - 100</code> in <code>DAT_8007ba34</code> and switches game mode to <code>0xe</code> (SCENE_TRANSITION). The mode handler <code>FUN_80025980</code> then loads a <strong>code overlay</strong> at PROT index <code>map_id + 0x4d</code> (or <code>map_id + 0x4f</code> when <code>map_id &ge; 6</code>).</p>
 
-  <p>Only <strong>7 distinct WARP destinations</strong> exist (map_ids 0&ndash;6), each loading a scene-type overlay at PROT 0x4D&ndash;0x55 whose entry function resides at an overlay-resident address (<code>0x801CF070</code>, <code>0x801CE8A0</code>, etc.).</p>
+  <p>Only <strong>7 distinct WARP destinations</strong> exist (map_ids 0&ndash;6), each loading a scene-type overlay at PROT 0x4D&ndash;0x55 whose entry function resides at an overlay-resident address (<code>0x801CF070</code>, <code>0x801CE8A0</code>, etc.). A genuine warp's <code>op0</code> is therefore always <code>100..=106</code>; the placement classifier uses this range (plus the absence of the <code>0x80</code> cross-context prefix) to reject text-desync phantom warps &mdash; see the <a href="world-map.html">World map</a> entity-classification notes.</p>
 
   <p>The <strong>scene name</strong> (stored at <code>DAT_80084548</code>, max 8 chars) is pre-set before <code>FUN_80025980</code> executes. The overlay entry function reads this buffer and passes it to <code>FUN_8001F7C0</code> and <code>FUN_80020118</code>. The mechanism that writes the scene name before the WARP fires is in a pre-transition handler not yet fully traced.</p>
 
