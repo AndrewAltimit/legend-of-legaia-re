@@ -194,6 +194,26 @@ fn read_vector(buf: &[u8], off: usize) -> Result<Vector> {
     })
 }
 
+/// Parse a Legaia TMD blob into its object list.
+///
+/// This is the clean-room reimplementation of the retail TMD object-table
+/// *descriptor builder*, not the renderer (that's [`descriptor`], tagged for
+/// `FUN_8002735C`):
+///
+/// PORT: FUN_800268dc
+/// REF: FUN_80026b4c
+///
+/// `FUN_80026b4c` is the per-submesh registrar (validates the `0x80000002`
+/// magic, then stores the blob pointer into the global `DAT_8007C018` table —
+/// that pointer-table install is ported in `engine-core::scene_resources`). It
+/// hands the validated blob to `FUN_800268dc`, the descriptor builder this
+/// function mirrors: it walks the `nobj` (`+0x8`) object table of `0x1C`-byte
+/// records at `+0xC` (`vert_top` / `n_vert` / `normal_top` / `n_normal` /
+/// `prim_top` / `n_primitive` / `scale`) — exactly the [`OBJECT_SIZE`]-stride
+/// loop below. We read the same `id` word at `+0` and require the `FLIST_BIT`
+/// high bit the magic carries (rejecting the absolute-pointer `0x00000041`
+/// form), since the offsets are byte-relative and statically parseable only
+/// with that bit set.
 pub fn parse(buf: &[u8]) -> Result<Tmd> {
     if buf.len() < HEADER_SIZE {
         bail!("buffer too small for TMD header ({} bytes)", buf.len());

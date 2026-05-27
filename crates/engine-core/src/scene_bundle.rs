@@ -471,6 +471,16 @@ pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEve
 /// `[u32 count][u32 byte_offsets[count]][bodies]` layout the field-VM
 /// `0x4C 0xD8` opcode resolves via [`crate::world::World::vdf_record_bytes`].
 ///
+/// PORT: FUN_8001fbcc
+///
+/// This is the engine's realization of the retail asset-type-0x07 (`VDF`)
+/// install handler `FUN_8001fbcc` (asset-dispatcher `FUN_8001F05C` case 7).
+/// Retail walks the chunk's sub-entries and materializes a parallel pointer
+/// table at `0x80083E58`; the engine keeps the raw chunk body instead and
+/// indexes the embedded `count`/`byte_offsets` table lazily per record in
+/// [`crate::world::World::vdf_record_bytes`] (which mirrors the *consumer*
+/// `FUN_801D77F4`), so no separate pointer array is built.
+///
 /// Returns `None` when no VDF chunk is reachable from the scene. Some
 /// scenes (utility / cutscene / world-map) carry no VDF data; that's
 /// not an error.
