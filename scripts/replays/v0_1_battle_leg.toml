@@ -1,0 +1,41 @@
+# v0.1 playthrough oracle — Battle-leg fixture.
+#
+# Companion to v0_1_playthrough.toml (the Field leg). Where that file pins
+# the cold-boot-reproducible Field anchor, this one pins the *literal*
+# Field -> Battle mode-trace the engine produces for the opening Rim Elm
+# training fight.
+#
+# The trace is built by `build_engine_mode_trace_new_game_battle_leg`: a NEW
+# GAME cold boot (Vahn seeded from the SCUS template — the game's pre-Tetsu
+# story state), `enter_field_live` into town01 (which auto-installs the
+# sparring carrier), then a real field-interact + dialogue-accept on the
+# carrier slot that arms the scripted lone-Tetsu encounter and flips the
+# scene mode Field -> Battle. The transition is a scene-*mode* flip on the
+# same loaded scene, so `active_scene` stays `town01` across the boundary.
+#
+# No `[[event]]` rows: unlike the Field leg, the battle-leg builder drives
+# the field-VM dialogue-accept itself (it injects the interact + advance
+# bytecode), so there is no replay-supplied pad stream to expand. `frames`
+# is the tick budget the builder runs; the engine reaches Battle within the
+# first couple of frames and stays there for the remainder.
+[meta]
+schema = "j-replay-v1"
+scenario = "v0_1_battle_loading_tetsu"
+rng_seed = 3735929054
+frames = 64
+
+# Pre-transition: still on the field, parked on the carrier before the
+# confirm press resolves.
+[[expected]]
+frame = 0
+scene_mode = "Field"
+active_scene = "town01"
+
+# Post-transition: the scripted lone-Tetsu encounter has flipped the scene
+# mode to Battle (overlay on town01). The retail ground-truth for this is
+# the BattleMode anchor `v0_1_battle_loading_tetsu` (game_mode 0x15); see
+# scripts/scenarios.toml.
+[[expected]]
+frame = 32
+scene_mode = "Battle"
+active_scene = "town01"
