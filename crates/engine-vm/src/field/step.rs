@@ -2345,47 +2345,33 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3F - the engine drives this as DIALOG (open a dialog box), but RE
-        // shows retail's `0x3F` is the **named scene-change** ("warp by name"):
-        // the inline bytes are a destination scene NAME and `func_0x8001FD44` is
-        // the scene-change packet, not a dialog opener (see
-        // `field_disasm::InsnInfo::SceneChange`, `man_field_scripts::
-        // scene_destinations`, docs/subsystems/script-vm.md). The engine's
-        // field-dialogue rendering is currently built on this (incorrect) 0x3F
-        // mapping (field_dialog_smoke / field_op_3f_emits_open_dialog), so it is
-        // KEPT here until field dialogue is re-grounded on its real opcode and
-        // `0x3F` can be flipped to a live scene-change. The byte layout is
-        // identical either way ([3F, lo, hi, len, <len inline>, xb, zb, depth]),
-        // so the PC math is correct regardless of the semantic.
-        // PC += header_size + 3 + len + 3
+        // 0x3F - SCENE_CHANGE (named warp). `[3F, idx_lo, idx_hi, name_len,
+        // <name_len name bytes>, entry_x, entry_z, dir]`. Copies the inline
+        // destination scene NAME and (in retail) hands it to the scene-change
+        // packet FUN_8001FD44; here it calls `host.scene_transition_named`. The
+        // name is gated as a clean CDNAME label so a desync-phantom `0x3F` inside
+        // message text doesn't warp to garbage - on a failed gate the op is a
+        // no-op transition but still advances the PC. (This op is NOT a dialog
+        // opener; field dialogue is the field-interact path. See
+        // docs/subsystems/script-vm.md.) PC += header + 6 + name_len.
         0x3F => {
-            let Some(&lo) = bytecode.get(operand) else {
+            let Some(&name_len) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let Some(&hi) = bytecode.get(operand + 1) else {
-                return StepResult::Unknown { opcode, pc };
-            };
-            let Some(&len) = bytecode.get(operand + 2) else {
-                return StepResult::Unknown { opcode, pc };
-            };
-            let text_id = u16::from_le_bytes([lo, hi]);
-            let len_usize = len as usize;
-            let inline_start = operand + 3;
-            let inline_end = inline_start + len_usize;
-            let pos_start = inline_end;
-            // Need pos_start + 3 bytes (xb, zb, depth_id).
-            if pos_start + 3 > bytecode.len() {
+            let name_len = name_len as usize;
+            let name_start = operand + 3;
+            // Need the name + entry_x / entry_z / dir to advance correctly.
+            if bytecode.len() < name_start + name_len + 3 {
                 return StepResult::Unknown { opcode, pc };
             }
-            let inline = &bytecode[inline_start..inline_end];
-            let xb = bytecode[pos_start];
-            let zb = bytecode[pos_start + 1];
-            let depth_id = bytecode[pos_start + 2];
-            let world_x = grid_to_world(xb);
-            let world_z = grid_to_world(zb);
-            host.open_dialog(text_id, inline, world_x, world_z, depth_id);
+            let raw = &bytecode[name_start..name_start + name_len];
+            if let Some(name) = crate::field_disasm::clean_scene_name(raw) {
+                let entry_x = bytecode[name_start + name_len];
+                let entry_z = bytecode[name_start + name_len + 1];
+                host.scene_transition_named(&name, entry_x, entry_z);
+            }
             StepResult::Advance {
-                next_pc: pc + header_size + 6 + len_usize,
+                next_pc: pc + header_size + 6 + name_len,
             }
         }
 

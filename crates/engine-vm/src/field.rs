@@ -225,12 +225,16 @@ pub trait FieldHost {
         let _ = (ctx, world_x, world_z, is_player);
     }
 
-    /// Open a dialog box. The text ID + inline buffer feed the MES bytecode
-    /// that `crates/mes` parses; `func_0x8001FD44` was the original opener.
-    /// `world_x` / `world_z` are pre-decoded grid coordinates for the box
-    /// position; `depth_id` is the raw byte (the original indexes a length-8
-    /// `_DAT_xxx` lookup table for the actual depth value - the host decides
-    /// whether to use the same table or its own scheme).
+    /// Open a dialog box. The text ID + inline buffer feed the MES bytecode that
+    /// `crates/mes` parses. **Not** wired to a field-VM opcode: it is the host's
+    /// dialogue-open primitive, invoked from [`Self::field_interact`] with the
+    /// interacted actor's inline interaction-script text (the real field-dialogue
+    /// source — retail `actor[+0x90]`). Field dialogue has no dedicated opcode;
+    /// `0x3F` is the named scene-change, not a dialog op (see
+    /// `docs/subsystems/script-vm.md` § Field dialogue). `world_x` / `world_z`
+    /// are pre-decoded grid coordinates for the box position; `depth_id` is a raw
+    /// depth selector. (`func_0x8001FD44` is the scene-change packet, not the
+    /// original opener — an earlier mislabel.)
     fn open_dialog(
         &mut self,
         text_id: u16,
@@ -339,6 +343,20 @@ pub trait FieldHost {
     /// so a no-op host still mirrors the player-flag write.
     fn scene_transition(&mut self, map_id: u8) {
         let _ = map_id;
+    }
+
+    /// Trigger a *named* scene transition (op `0x3F`, the named scene-change /
+    /// "warp by name"). Unlike [`Self::scene_transition`] (the `0x3E` door-warp,
+    /// which carries only a 7-id scene-*type* `map_id`), this op carries the
+    /// **destination scene name inline** in the bytecode, so the host loads
+    /// `scene` directly with no map-id resolver. `entry_x` / `entry_z` are the
+    /// destination entry-tile bytes the op also carries (`& 0x7F` tile,
+    /// `& 0x80` half-tile). Default is a no-op so a bare host still advances past
+    /// the op. The VM only passes a name that cleared the clean-CDNAME-label gate
+    /// ([`crate::field_disasm::clean_scene_name`]); a desync-phantom `0x3F` inside
+    /// message text is skipped (no transition) but still advances the PC.
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
+        let _ = (scene, entry_x, entry_z);
     }
 
     /// Render-config write (op 0x46, long form `op0 == 0x24`). Original

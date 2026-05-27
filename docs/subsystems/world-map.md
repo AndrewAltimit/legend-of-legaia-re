@@ -410,12 +410,15 @@ so the resolver keys on `i16` and is deliberately **not** the `u8`-keyed
 [`MapIdResolver`](#) (which serves the separate `0x3E` door-warp's 7 scene-*type*
 selectors `0..=6`).
 
-> **Runtime transition is not yet flipped.** The engine's field-VM executor
-> still drives `0x3F` as `open_dialog` (its field-dialogue rendering is built on
-> that — now-disproven — mapping; `field_dialog_smoke` / `field_op_3f_emits_open_dialog`
-> depend on it). Flipping `0x3F` to a live scene-change requires first
-> re-grounding field dialogue onto its real opcode, so it is deferred; the
-> destination catalog + resolver above are live and queryable in the meantime.
+**Runtime transition (live).** The field-VM executor drives `0x3F` as a live
+named scene-change: it decodes the inline destination name (gated by the
+clean-CDNAME-label check), calls `host.scene_transition_named`, and
+[`SceneHost::tick`] drains the resulting `World::pending_named_scene_transition`
+to load that scene directly (world-map vs field routed by `is_world_map_scene`),
+ahead of the `0x3E` map-id path. Field **dialogue** was re-grounded off `0x3F`
+onto its real trigger — the field-interact op (`0x3E` with `op0 < 100`) opens the
+interacted actor's inline interaction-script text (see
+[`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode)).
 
 #### Loading the kingdom geometry (engine port)
 

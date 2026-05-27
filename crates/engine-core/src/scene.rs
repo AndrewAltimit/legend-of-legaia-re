@@ -1971,6 +1971,22 @@ impl SceneHost {
         let _ = self.world.tick();
         self.world
             .materialize_actor_spawns(crate::world::FIELD_SPAWN_START_SLOT);
+        // Named scene-change (field-VM op 0x3F) takes precedence over the
+        // map-id door-warp: its destination name is carried inline by the op,
+        // so it loads directly without the map-id resolver. This is the live
+        // consumer of the disc-sourced scene-destination data — the same names
+        // [`crate::man_field_scripts::scene_destinations`] catalogs.
+        if let Some((name, _entry_x, _entry_z)) = self.world.pending_named_scene_transition.take() {
+            // Drop a stale map-id request from the same frame; the named target
+            // is unambiguous.
+            self.world.pending_scene_transition = None;
+            if is_world_map_scene(&name) {
+                self.enter_world_map_scene(&name)?;
+            } else {
+                self.enter_field_scene(&name, 0)?;
+            }
+            return Ok(SceneTickEvent::SceneEntered { name });
+        }
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {
                 Some(name) => {

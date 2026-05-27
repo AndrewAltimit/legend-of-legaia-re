@@ -518,14 +518,19 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    `&DAT_801f3540[line]`, line count `_DAT_801f2740`). `FUN_80039b7c` runs per
    frame, per entity, from the entity SM `FUN_801DA51C`'s interaction tail.
 
-So the engine's `0x3F → open_dialog(text_id, inline, …)` is wrong twice over:
-`0x3F` is the named scene-change, and field dialogue is the interaction-driven
-actor-text pipeline above, not an inline-text opcode. (The `0x4C` nibble-5
-sub-3/4 op — `FUN_801d65d8` — is an actor-script wait/sync, **not** the dialog
-open/poll an earlier note assumed.) Re-grounding the engine means opening dialogue
-from `field_interact` reading the actor's inline text and freeing `0x3F`; the
-engine already renders that inline text via the structural path, so the data is
-in place — what changes is the trigger.
+An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
+wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
+interaction-driven actor-text pipeline above, not an inline-text opcode. (The
+`0x4C` nibble-5 sub-3/4 op — `FUN_801d65d8` — is an actor-script wait/sync,
+**not** the dialog open/poll an earlier note assumed.)
+
+**Engine wiring (re-grounded).** The clean-room engine now matches this:
+`field_interact` (`0x3E` with `op0 < 100`) opens the interacted actor's inline
+dialogue from `World::field_npc_dialog` (the per-actor inline interaction-script
+text, keyed by `slot` = the actor's MAN record index, populated at field-scene
+entry), via the host's `open_dialog` primitive. `0x3F` is now a **live named
+scene-change** (`host.scene_transition_named` → `SceneHost::tick`), no longer a
+dialog opener. The dialog-dismiss gate stays on the `0x4C` nibble-5 sub-4 poll.
 
 ## Connection to other crates
 

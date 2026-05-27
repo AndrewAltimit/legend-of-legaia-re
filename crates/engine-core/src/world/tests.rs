@@ -1978,24 +1978,95 @@ fn field_op_35_sub1_emits_bgm_event_and_pins_current() {
     assert_eq!(world.current_bgm, Some(0x42));
 }
 
-/// Op 0x3F (open dialog) populates `current_dialog` and emits an
-/// `OpenDialog` event. Encoding: `[0x3F, lo, hi, len, ...inline, xb, zb, depth]`.
+/// Op 0x3F is the **named scene-change** (not dialog): it stages a pending
+/// named scene transition from the inline destination name. Encoding:
+/// `[0x3F, idx_lo, idx_hi, name_len, <name bytes>, entry_x, entry_z, dir]`.
 #[test]
-fn field_op_3f_emits_open_dialog() {
+fn field_op_3f_stages_named_scene_transition() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    // text_id = 0xAB, len = 0, then xb / zb / depth_id (3 bytes).
-    let bytecode = vec![0x3F, 0xAB, 0x00, 0x00, 0x01, 0x02, 0x03];
+    // idx = 60, name_len = 4 ("dolk"), entry_x = 0x01, entry_z = 0x02, dir = 0x03.
+    let mut bytecode = vec![0x3F, 60, 0x00, 4];
+    bytecode.extend_from_slice(b"dolk");
+    bytecode.extend_from_slice(&[0x01, 0x02, 0x03]);
     world.load_field_script(bytecode);
     let _ = world.tick();
+    assert_eq!(
+        world.pending_named_scene_transition,
+        Some(("dolk".to_string(), 0x01, 0x02)),
+        "0x3F must stage a named scene transition to the inline destination"
+    );
+    // It is NOT a dialog opener.
+    assert!(
+        world.current_dialog.is_none(),
+        "0x3F must not open a dialog box"
+    );
+}
+
+/// A 0x3F whose inline "name" is a text-desync phantom (non-CDNAME bytes)
+/// stages no transition but still advances the PC.
+#[test]
+fn field_op_3f_rejects_phantom_name() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    let mut bytecode = vec![0x3F, 0x00, 0x00, 4];
+    bytecode.extend_from_slice(b"Hi! ");
+    bytecode.extend_from_slice(&[0x00, 0x00, 0x00]);
+    world.load_field_script(bytecode);
+    let _ = world.tick();
+    assert!(world.pending_named_scene_transition.is_none());
+}
+
+/// Field dialogue opens from the **field-interact op** (`0x3E` with
+/// `op0 < 100`) reading the interacted actor's inline interaction-script
+/// text (keyed by the op's `slot` = the actor's MAN record index) — the real
+/// field-dialogue mechanism that replaces the `0x3F`-as-dialog stand-in.
+#[test]
+fn field_interact_opens_actor_inline_dialogue() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    // Seed actor slot 3's inline interaction-script dialogue.
+    world
+        .field_npc_dialog
+        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    // 0x3E with op0 = 5 (< 100 -> field interact), op1 = slot 3.
+    world.load_field_script(vec![0x3E, 0x05, 0x03]);
+    let _ = world.tick();
+    let req = world
+        .current_dialog
+        .as_ref()
+        .expect("field_interact on an actor with inline text must open dialogue");
+    assert_eq!(req.inline, vec![0x1F, b'h', b'i', 0x00]);
     let evs = world.drain_field_events();
     assert!(
-        evs.iter().any(
-            |e| matches!(e, FieldEvent::OpenDialog { text_id: 0xAB, inline, .. } if inline.is_empty())
-        ),
-        "expected OpenDialog event, got {evs:?}"
+        evs.iter()
+            .any(|e| matches!(e, FieldEvent::OpenDialog { inline, .. } if !inline.is_empty())),
+        "expected OpenDialog from the field-interact path, got {evs:?}"
     );
-    assert_eq!(world.current_dialog.as_ref().map(|d| d.text_id), Some(0xAB));
+    assert!(
+        evs.iter().any(|e| matches!(
+            e,
+            FieldEvent::FieldInteract {
+                interact_id: 5,
+                slot: 3
+            }
+        )),
+        "field_interact must still surface the FieldInteract event"
+    );
+}
+
+/// A field-interact on an actor with **no** inline text just surfaces the
+/// interaction (a sign / flag-only NPC) — no dialogue box.
+#[test]
+fn field_interact_without_inline_text_opens_no_dialogue() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.load_field_script(vec![0x3E, 0x05, 0x07]);
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_none(),
+        "no inline text for slot 7 -> no dialogue"
+    );
 }
 
 /// Dialog-advance host hook (`op 0x4C n5 sub-4`): when `current_dialog`
@@ -2010,12 +2081,17 @@ fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
 
-    // Open dialog then arm a poll (4C 54) followed by a sentinel op.
-    // 0x3F header: text_id=0xAB, len=0, then xb/zb/depth (3 bytes).
+    // Open dialogue via the field-interact path (the real opener), then arm a
+    // poll (4C 54) followed by a sentinel op.
+    // 0x3E 0x05 0x03: field-interact (op0<100) on actor slot 3 -> opens its
+    //   seeded inline dialogue (3 bytes).
     // 0x4C 0x54: dialog-advance poll (2 bytes).
-    // 0x1A: bgm-end-style nop / unknown — anything that makes
-    //   `step_field` advance further when the dialog clears.
-    let bc = vec![0x3F, 0xAB, 0x00, 0x00, 0x01, 0x02, 0x03, 0x4C, 0x54, 0x00];
+    // 0x00: sentinel that makes `step_field` advance further once the dialog
+    //   clears.
+    world
+        .field_npc_dialog
+        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    let bc = vec![0x3E, 0x05, 0x03, 0x4C, 0x54, 0x00];
     world.load_field_script(bc);
 
     // Tick 1: open the dialog. The 4C 54 poll runs next tick.

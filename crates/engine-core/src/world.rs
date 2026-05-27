@@ -842,6 +842,14 @@ pub struct World {
     /// loads it, and reinitialises the field VM. `None` between transitions.
     pub pending_scene_transition: Option<u8>,
 
+    /// Pending **named** scene transition (field-VM op `0x3F`, the named
+    /// scene-change). When `Some`, the op carried the destination scene name
+    /// inline (no map-id resolver needed); [`crate::scene::SceneHost::tick`]
+    /// drains it and loads that scene directly. Fields: `(scene, entry_x,
+    /// entry_z)` — the entry-tile bytes are kept for future destination
+    /// spawn-point wiring. `None` between transitions.
+    pub pending_named_scene_transition: Option<(String, u8, u8)>,
+
     /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
     /// the field VM has signalled that the next-game-mode global should
     /// transition to game mode 26 (StrInit) with the given index. Engines
@@ -959,6 +967,16 @@ pub struct World {
     /// Last `field_interact` request. Cleared by the engine when handled
     /// (set to `None`).
     pub last_field_interact: Option<(u8, u8)>,
+
+    /// Per-actor inline interaction-script dialogue, keyed by the actor's
+    /// MAN partition-1 record index — the `slot` a field-interact op
+    /// (`0x3E` with `op0 < 100`) carries. Populated at field-scene entry from
+    /// the scene's actor placements. This is the **real** field NPC dialogue
+    /// source (the actor's inline MES text at retail `actor[+0x90]`), so
+    /// [`crate::world::vm_hosts`]'s `field_interact` opens the interacted
+    /// actor's dialogue from here — not from a `0x3F` op (which is the named
+    /// scene-change, not dialogue). Empty between field scenes.
+    pub field_npc_dialog: std::collections::HashMap<u8, Vec<u8>>,
 
     /// Active party slot for the leader (op 0x4C sub-0 writes here, plus
     /// `party_add` populates it on the first member).
@@ -1643,6 +1661,7 @@ impl World {
             battle_end: None,
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
+            pending_named_scene_transition: None,
             pending_fmv_trigger: None,
             pending_scripted_encounter: None,
             scripted_encounter_armed: false,
@@ -1658,6 +1677,7 @@ impl World {
             battle_bgm_active: false,
             current_dialog: None,
             last_field_interact: None,
+            field_npc_dialog: std::collections::HashMap::new(),
             party_leader_slot: None,
             money: 0,
             inventory: std::collections::HashMap::new(),
@@ -1774,6 +1794,7 @@ impl World {
         self.money = NEW_GAME_STARTING_GOLD;
         self.inventory.clear();
         self.pending_scene_transition = None;
+        self.pending_named_scene_transition = None;
         self.pending_fmv_trigger = None;
         self.pending_scripted_encounter = None;
         self.scripted_encounter_armed = false;
@@ -4065,6 +4086,24 @@ impl World {
             .iter()
             .position(|d| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }));
         self.install_field_carriers(derived.into_iter().map(|d| d.config).collect());
+
+        // Capture each actor's inline interaction-script dialogue, keyed by its
+        // partition-1 record index (= the `slot` a field-interact op carries),
+        // so `field_interact` can open the interacted actor's real dialogue.
+        // This is the actor's own inline MES text (retail `actor[+0x90]`), the
+        // mechanism `0x3F` was wrongly standing in for.
+        self.field_npc_dialog.clear();
+        for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
+            if let crate::man_field_scripts::PlacementKind::Npc {
+                dialog_inline: Some(inline),
+                ..
+            } = kind
+                && let Ok(slot) = u8::try_from(placement.index)
+            {
+                self.field_npc_dialog.insert(slot, inline);
+            }
+        }
+
         sparring_idx
     }
 
