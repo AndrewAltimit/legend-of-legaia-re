@@ -18,6 +18,13 @@ file) carries the tile + page + palette in its `+0x14..+0x18` run:
   * `+0x16..+0x18` -> the PSX `clut` (CBA) word.
 
 So grass, mountain, water, and forest cells each sample a different VRAM page.
+
+Corner orientation: within the 32x32 rect, U runs along +X/col but V is FLIPPED
+relative to +Z/row (the low-Z corner takes the tile's bottom texel row). Measured
+camera-independently from the prim pool: recovering each quad's world (col,row)
+and reading its per-corner UVs gives a uniform vertical mirror for ~96-100% of
+cells across both captures and every terrain page (not a per-cell rotation). See
+docs/subsystems/world-map.md "Ground texturing".
 (An earlier reading - "single 3x3 grass page, positional (col%3, row%3), +0x14
 unused" - was a misread: grass cells happen to use page 0x1A with `+0x14` in the
 top-left 3x3 block, so the mod-3 cross-row sequence was coincidental.)

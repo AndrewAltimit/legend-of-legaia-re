@@ -521,6 +521,19 @@ through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool
 | `+0x15` | PSX **`tpage`** word — the terrain VRAM page (= terrain type) |
 | `+0x16..+0x18` | PSX **`clut`** (CBA) word (`r[0x16] | r[0x17] << 8`) |
 
+**Corner→texel orientation.** Within each cell's `32×32` rect, **U runs along
++X/col** (left edge = the tile's `u_lo`) but **V is flipped relative to +Z/row**:
+the low-Z (row) corner takes the tile's *bottom* texel row, the high-Z corner the
+*top* row. Measured camera-independently from the retail prim pool — recovering
+each ground `POLY_FT4`'s world `(col, row)` (run-aligned + per-cell tile/page/clut
+matched) and reading its per-corner UVs gives `(c,r)→(u_lo,v_hi)`,
+`(c,r+1)→(u_lo,v_lo)` for **~96–100%** of cells across the mountain + coast
+captures and *every* terrain page (a uniform vertical mirror, not a per-cell
+rotation; the `<4%` residue is projection edge-noise, no systematic alternate).
+Baking V the other way mirrors every tile in place: uniform tiles (grass) still
+look right, but directional transition tiles (coastline sand, ridge faces) face
+the wrong way and break continuity with their row-neighbours.
+
 Observed `+0x15` pages: `0x1A` fb `(640,256)` **grass**, `0x0C` fb `(768,0)`
 **mountain/rock** (a full `8×8` atlas), `0x1B`/`0x1C` fb `(704/768,256)`
 **water**, `0x0B` fb `(704,0)` **forest/coastal**, with a family of CLUTs per

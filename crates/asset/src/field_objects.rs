@@ -485,22 +485,31 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             hf.positions.push([x0, corner_y(col, row + 1), z1]);
             hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
             // Per-cell atlas tile from +0x14: the 8x8 atlas places tile `id` at
-            // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`; the four corners map to
-            // its 32x32 rect (U along +X/col, V along +Z/row). Compute in a wide
-            // type and clamp to the u8 page extent: the bottom-right tile origin
-            // is `(224, 224)` and `+31` reaches the page edge `(255, 255)`, but
-            // the intermediate `224 + 32` overflows a u8 — so widen, then cast.
+            // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`. Compute in a wide type
+            // and clamp to the u8 page extent: the bottom-right tile origin is
+            // `(224, 224)` and `+31` reaches the page edge `(255, 255)`, but the
+            // intermediate `224 + 32` overflows a u8 — so widen, then cast.
             let px = GROUND_ATLAS_TILE_PX as usize;
-            let u0 = (tile_id as usize % GROUND_ATLAS_AXIS) * px;
-            let v0 = (tile_id as usize / GROUND_ATLAS_AXIS) * px;
-            let u1 = (u0 + px - 1).min(255) as u8;
-            let v1 = (v0 + px - 1).min(255) as u8;
-            let u0 = u0.min(255) as u8;
-            let v0 = v0.min(255) as u8;
-            hf.uvs.push([u0, v0]); // NW
-            hf.uvs.push([u1, v0]); // NE
-            hf.uvs.push([u0, v1]); // SW
-            hf.uvs.push([u1, v1]); // SE
+            let u_lo = ((tile_id as usize % GROUND_ATLAS_AXIS) * px).min(255) as u8;
+            let v_lo = ((tile_id as usize / GROUND_ATLAS_AXIS) * px).min(255) as u8;
+            let u_hi = (u_lo as usize + px - 1).min(255) as u8;
+            let v_hi = (v_lo as usize + px - 1).min(255) as u8;
+            // Corner→texel mapping. U runs along +X/col (left tile edge = u_lo).
+            // V is FLIPPED relative to +Z/row: the retail terrain emitter maps the
+            // low-Z (row) corner to the tile's *bottom* texel row and the high-Z
+            // corner to the *top* row. Measured camera-independently from the
+            // retail prim pool: recovering each ground POLY_FT4's world (col,row)
+            // and reading its per-corner UVs gives, for ~96–100% of cells across
+            // the mountain + coast captures and every terrain page,
+            // `(c,r)→(u_lo,v_hi)`, `(c,r+1)→(u_lo,v_lo)` — i.e. V decreases as the
+            // row index increases. Baking V the other way mirrors every tile
+            // vertically in place, which leaves uniform tiles (grass) looking fine
+            // but makes directional transition tiles (coastline sand, ridges) face
+            // the wrong way and break continuity with their row-neighbours.
+            hf.uvs.push([u_lo, v_hi]); // (col,   row)   low-Z
+            hf.uvs.push([u_hi, v_hi]); // (col+1, row)
+            hf.uvs.push([u_lo, v_lo]); // (col,   row+1) high-Z
+            hf.uvs.push([u_hi, v_lo]); // (col+1, row+1)
             for _ in 0..4 {
                 hf.tile_ids.push(tile_id);
                 hf.cba_tsb.push([clut, tpage]);
@@ -635,12 +644,13 @@ mod tests {
         // Every vertex carries the cell's +0x14 tile id.
         assert!(hf.tile_ids.iter().all(|&t| t == 0x2A));
         // Atlas tile 0x2A = 42 -> (42 % 8, 42 / 8) = (col 2, row 5) -> UV origin
-        // (64, 160), spanning a 32x32 rect.
+        // (64, 160), spanning a 32x32 rect. V is flipped vs the row axis (retail
+        // emitter): the low-Z (row) corner takes the tile's bottom texel row.
         assert_eq!(hf.uvs.len(), 4);
-        assert_eq!(hf.uvs[0], [64, 160]); // NW
-        assert_eq!(hf.uvs[1], [95, 160]); // NE
-        assert_eq!(hf.uvs[2], [64, 191]); // SW
-        assert_eq!(hf.uvs[3], [95, 191]); // SE
+        assert_eq!(hf.uvs[0], [64, 191]); // (col,   row)   low-Z -> bottom row
+        assert_eq!(hf.uvs[1], [95, 191]); // (col+1, row)
+        assert_eq!(hf.uvs[2], [64, 160]); // (col,   row+1) high-Z -> top row
+        assert_eq!(hf.uvs[3], [95, 160]); // (col+1, row+1)
         // Every vertex carries the cell's [clut, tpage] from +0x15 / +0x16..+0x18.
         assert!(hf.cba_tsb.iter().all(|&ct| ct == [0x7EC0, 0x000C]));
     }
@@ -671,12 +681,13 @@ mod tests {
 
         let hf = build_walk_heightfield(&map, &lut);
         assert_eq!(hf.quad_count(), 2);
-        // First cell (grass): tile 9 -> UV (32, 32), page 0x1A / CLUT 0x7C40.
-        assert_eq!(hf.uvs[0], [32, 32]);
+        // First cell (grass): tile 9 -> origin (32, 32); first (low-Z) corner takes
+        // the bottom texel row (V flipped vs row), page 0x1A / CLUT 0x7C40.
+        assert_eq!(hf.uvs[0], [32, 63]);
         assert_eq!(hf.cba_tsb[0], [0x7C40, 0x001A]);
-        // Second cell (water): tile 17 -> (17 % 8, 17 / 8) = (1, 2) -> UV (32, 64),
-        // page 0x1B / CLUT 0x7F41.
-        assert_eq!(hf.uvs[4], [32, 64]);
+        // Second cell (water): tile 17 -> (17 % 8, 17 / 8) = (1, 2) -> origin
+        // (32, 64); first corner -> bottom row (32, 95), page 0x1B / CLUT 0x7F41.
+        assert_eq!(hf.uvs[4], [32, 95]);
         assert_eq!(hf.cba_tsb[4], [0x7F41, 0x001B]);
     }
 
