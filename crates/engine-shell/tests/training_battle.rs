@@ -442,3 +442,101 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "Tetsu's real HP merged from the disc archive at scene entry"
     );
 }
+
+/// The fully input-driven path via the interaction probe (retail `FUN_801cf9f4`):
+/// standing next to the sparring partner and pressing the action button talks to
+/// it, and pressing again accepts — starting the fight with no script injection
+/// and no manual engage. The runtime actor frame is the MAN placement frame
+/// (`FUN_8003A1E4` spawns at `tile*128 + 0x40`, the placement's `world_x`), so
+/// the probe box-tests the player against the carrier's stored placement
+/// position. Positioning the player on the carrier's tile stands in for walking
+/// there (the cold spawn is tile 20; the carrier is across the map).
+#[test]
+fn training_reaches_battle_via_interaction_probe() {
+    use legaia_engine_core::input::PadButton;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    session.begin_new_game();
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // The sparring carrier's slot (the one scripted-encounter slot) and its
+    // stored placement position — what the probe box-tests against.
+    let (slot, cx, cz) = {
+        let w = &session.host.world;
+        let slot = *w
+            .field_carrier_slots
+            .keys()
+            .next()
+            .expect("town01 installs the scripted-encounter carrier slot");
+        let &(cx, cz) = w
+            .field_npc_positions
+            .get(&slot)
+            .expect("the carrier slot carries a placement position");
+        (slot, cx, cz)
+    };
+
+    // Stand the player on the carrier's tile (stands in for walking across the
+    // map from the tile-20 cold spawn).
+    let pslot = session.host.world.player_actor_slot.expect("player actor") as usize;
+    session.host.world.actors[pslot].move_state.world_x = cx;
+    session.host.world.actors[pslot].move_state.world_z = cz;
+
+    // Talk: the probe opens the carrier's dialogue and arms the engage.
+    session.host.world.input.set_pad(PadButton::Cross.mask());
+    let _ = session.host.world.tick();
+    assert!(
+        session.host.world.current_dialog.is_some(),
+        "the interaction probe opens the sparring partner's dialogue (slot {slot})"
+    );
+    assert!(
+        session.host.world.pending_carrier_engage.is_some(),
+        "the scripted carrier's engage is armed"
+    );
+
+    // Accept: release, then press again -> dismiss -> engage -> Battle.
+    session.host.world.input.set_pad(0);
+    let _ = session.host.world.tick();
+    session.host.world.input.set_pad(PadButton::Cross.mask());
+    let mut reached_battle = false;
+    for _ in 0..8 {
+        let _ = session.host.world.tick();
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+        session.host.world.input.set_pad(0);
+    }
+    assert!(
+        reached_battle,
+        "the interaction probe (talk + accept) flips Field -> Battle"
+    );
+    let world = &session.host.world;
+    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+        "the probe-driven fight is against Tetsu (0x4F)"
+    );
+}

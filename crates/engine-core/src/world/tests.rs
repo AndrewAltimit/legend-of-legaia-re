@@ -2138,6 +2138,120 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
     );
 }
 
+/// The interaction probe (retail `FUN_801cf9f4`): a just-pressed action button
+/// talks to the NPC within ±1 tile of the player, and only that one — a distant
+/// NPC is not triggered.
+#[test]
+fn interaction_probe_talks_to_adjacent_npc_only() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    // Player at tile 20 (world 20*128 + 0x40 = 2624).
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    // Adjacent NPC at tile (21, 20); a far NPC at tile 40 that must not trigger.
+    world
+        .field_npc_dialog
+        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.field_npc_positions.insert(5, (2752, 2624)); // tile (21, 20)
+    world.field_npc_dialog.insert(6, vec![0x1F, b'x', 0x00]);
+    world.field_npc_positions.insert(6, (5120, 5120)); // tile (40, 40)
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    let req = world
+        .current_dialog
+        .as_ref()
+        .expect("action button near an NPC opens its dialogue");
+    assert_eq!(
+        req.inline,
+        vec![0x1F, b'h', b'i', 0x00],
+        "the probe opened the adjacent NPC (slot 5), not the far one"
+    );
+}
+
+/// The probe is inert when no NPC is within range: pressing the action button in
+/// open field opens nothing.
+#[test]
+fn interaction_probe_no_npc_in_range_opens_nothing() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    world.field_npc_dialog.insert(6, vec![0x1F, b'x', 0x00]);
+    world.field_npc_positions.insert(6, (5120, 5120)); // tile (40, 40), far
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_none(),
+        "no NPC within +-1 tile -> the action button opens no dialogue"
+    );
+}
+
+/// Walking up to the scripted-encounter carrier and pressing the action button
+/// twice (talk, then accept) starts the fight through the probe — the fully
+/// input-driven counterpart to the field-VM dialogue-accept.
+#[test]
+fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.set_formation_table(
+        crate::monster_catalog::vanilla_formation_table(),
+        crate::monster_catalog::vanilla_monster_catalog(),
+    );
+    world.set_active_scene_label("town01");
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624; // tile 20
+    world.actors[0].move_state.world_z = 2624;
+
+    // Carrier 0 = scripted encounter; its NPC (slot 5) stands at the adjacent
+    // tile (21, 20) with the sparring dialogue.
+    world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
+        formation_id: 1,
+    }]);
+    world.field_carrier_slots.insert(5, 0);
+    world
+        .field_npc_dialog
+        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.field_npc_positions.insert(5, (2752, 2624));
+
+    // Talk: the probe opens the carrier's dialogue and arms the engage.
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "walking up + action button opens the carrier's dialogue"
+    );
+    assert_eq!(world.pending_carrier_engage, Some(0), "engage armed");
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "no battle while the prompt is up"
+    );
+
+    // Release, then accept: the probe dismisses the box and engages -> Battle.
+    world.input.set_pad(0);
+    let _ = world.tick();
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "accepting the probe-opened prompt starts the fight (no script, no manual engage)"
+    );
+}
+
 /// A plain talk NPC never auto-arms a battle: interacting opens its dialogue and
 /// dismissing it returns to free roam (no carrier-slot entry -> nothing armed).
 #[test]

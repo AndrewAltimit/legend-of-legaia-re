@@ -656,9 +656,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.world.current_dialog.is_none() {
             return false;
         }
-        let dismissed = self.world.input.just_pressed(input::PadButton::Cross)
-            || self.world.input.just_pressed(input::PadButton::Circle);
+        let dismissed = (self.world.input.just_pressed(input::PadButton::Cross)
+            || self.world.input.just_pressed(input::PadButton::Circle))
+            && !self.world.dialog_input_consumed;
         if dismissed {
+            self.world.dialog_input_consumed = true;
             self.world.current_dialog = None;
             self.world
                 .pending_field_events
@@ -750,36 +752,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        self.world.last_field_interact = Some((interact_id, slot));
-        // Open the interacted actor's inline interaction-script dialogue, if it
-        // has any. This is the real field-dialogue path (the actor's own inline
-        // MES at retail `actor[+0x90]`, keyed by the `slot` the op carries),
-        // replacing the old `0x3F`-as-dialog stand-in. Actors with no inline
-        // text (signs that only set a flag, etc.) just surface the interaction.
-        let opened_dialog = if let Some(inline) = self.world.field_npc_dialog.get(&slot).cloned() {
-            // text_id 0 / no box coords: the text is the inline buffer itself,
-            // anchored on the actor (the retail box geometry isn't pinned yet).
-            self.open_dialog(0, &inline, 0, 0, 0);
-            true
-        } else {
-            false
-        };
-        // If this placement is a scripted-encounter carrier (the Rim Elm sparring
-        // partner), talking to it arms the fight — the dialogue-accept drives the
-        // carrier SM, so the field-VM bytecode no longer needs the manual
-        // `engage_field_carrier` API. With a prompt up, the engage waits for the
-        // accept (the dialog dismiss, handled in `op4c_n_5_sub_4_dialog_advance`);
-        // a carrier with no inline text engages immediately on interaction.
-        if let Some(&carrier_idx) = self.world.field_carrier_slots.get(&slot) {
-            if opened_dialog {
-                self.world.pending_carrier_engage = Some(carrier_idx);
-            } else {
-                self.world.engage_field_carrier(carrier_idx);
-            }
-        }
-        self.world
-            .pending_field_events
-            .push(FieldEvent::FieldInteract { interact_id, slot });
+        // The real field-dialogue path: open the interacted actor's own inline
+        // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
+        // arm/engage a scripted-encounter carrier on that slot (the dialogue-
+        // accept auto-arm). Shared with the interaction probe via
+        // [`World::trigger_field_interact`].
+        self.world.trigger_field_interact(interact_id, slot);
     }
 
     fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
