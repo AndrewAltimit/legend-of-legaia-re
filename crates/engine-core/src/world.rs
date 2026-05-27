@@ -4043,6 +4043,31 @@ impl World {
         self.pending_field_carrier_battle = None;
     }
 
+    /// Install the scene's field carriers **derived from its MAN actor-placement
+    /// partition** ([`crate::man_field_scripts::derive_field_carriers`]) rather
+    /// than from a hand-built list, replacing any previously installed set.
+    ///
+    /// Returns the carrier-Vec index of the Rim Elm sparring partner (the
+    /// [`FieldCarrierConfig::ScriptedEncounter`] carrier) when the scene MAN
+    /// contains it (town01), so the caller can [`Self::engage_field_carrier`] it
+    /// on the dialogue-accept; `None` for scenes without that placement.
+    ///
+    /// This is the faithful counterpart to the hand-built
+    /// [`Self::install_field_carriers`]: the carrier set, and the sparring
+    /// carrier's identity within it, come from the real scene data.
+    pub fn install_field_carriers_from_man(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) -> Option<usize> {
+        let derived = crate::man_field_scripts::derive_field_carriers(man_file, man);
+        let sparring_idx = derived
+            .iter()
+            .position(|d| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }));
+        self.install_field_carriers(derived.into_iter().map(|d| d.config).collect());
+        sparring_idx
+    }
+
     /// Host signal that the player engaged field carrier `idx` (accepted the
     /// Tetsu "Come at me!" dialogue / pressed confirm on the NPC). Advances the
     /// carrier's `FUN_801DA51C` SM from Idle to **Activating** and drains its

@@ -50,12 +50,47 @@ pub fn vram_to_le_bytes(vram: &legaia_tim::Vram) -> Vec<u8> {
     out
 }
 
+/// The load kind the standalone oracle build uses for `scene_name`, mirroring
+/// the live `enter_field_scene` choice: world-map scenes (`map\d\d`) decode
+/// their slot-0 terrain atlas via [`SceneLoadKind::WorldMap`], every other
+/// scene uses [`SceneLoadKind::Field`]. Without the world-map kind the generic
+/// TIM scanner can't see the kingdom bundle's descriptor-table slot, so the
+/// oracle would report the terrain pages (grass / water) as a phantom gap the
+/// engine doesn't actually have.
+pub fn oracle_load_kind(scene_name: &str) -> SceneLoadKind {
+    if legaia_engine_core::scene::is_world_map_scene(scene_name) {
+        SceneLoadKind::WorldMap
+    } else {
+        SceneLoadKind::Field
+    }
+}
+
 /// Build engine-side VRAM via the targeted-upload pre-pass. No
-/// `BootSession` involvement - fast and stateless.
+/// `BootSession` involvement - fast and stateless. Picks the load kind via
+/// [`oracle_load_kind`] so the standalone build matches what the engine
+/// uploads live.
 pub fn build_engine_vram_bytes_prepass(
     scene_name: &str,
     extracted_root: &Path,
     disc: Option<&Path>,
+) -> Result<Vec<u8>> {
+    build_engine_vram_bytes_prepass_with_kind(
+        scene_name,
+        extracted_root,
+        disc,
+        oracle_load_kind(scene_name),
+    )
+}
+
+/// As [`build_engine_vram_bytes_prepass`] but with the load kind forced. The
+/// auto-selecting wrapper is the parity path; this exists so a regression test
+/// can contrast the kinds (the world-map alignment lifts terrain-page
+/// residency vs a field-kind build).
+pub fn build_engine_vram_bytes_prepass_with_kind(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    kind: SceneLoadKind,
 ) -> Result<Vec<u8>> {
     let index = open_index(extracted_root, disc)?;
     let scene =
@@ -67,11 +102,11 @@ pub fn build_engine_vram_bytes_prepass(
         }
     }
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-    // Parity oracle: field-mode dispatch + DMA-every-TIM. The retail field
-    // loader uploads every scene TIM to VRAM, not just the render-targeted
-    // subset a mesh prim samples, so the oracle build does the same.
+    // Parity oracle: the retail field loader uploads every scene TIM to VRAM,
+    // not just the render-targeted subset a mesh prim samples, so
+    // `upload_all_tims` is on regardless of kind.
     let options = BuildOptions {
-        kind: SceneLoadKind::Field,
+        kind,
         upload_all_tims: true,
     };
     let (mut resources, _) =

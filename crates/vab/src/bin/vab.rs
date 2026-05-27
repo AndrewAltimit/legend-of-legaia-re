@@ -76,9 +76,10 @@ fn list(file: &PathBuf) -> Result<()> {
             i, off, h.version, h.vab_id, h.fsize, h.ps, h.ts, h.vs, h.mvol, h.pan
         );
         println!(
-            "    sample bodies: {} bytes total ({:.1} KB)",
+            "    sample bodies: {} bytes total ({:.1} KB)  vag_table[0]={}",
             total_samples_bytes,
-            total_samples_bytes as f64 / 1024.0
+            total_samples_bytes as f64 / 1024.0,
+            report.vag_table_spacer,
         );
         for s in &report.vag_samples {
             println!(

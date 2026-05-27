@@ -239,12 +239,16 @@ fn training_reaches_battle_via_man_formation_index() {
     );
 }
 
-/// The field-resident carrier SM path: place a scripted-encounter carrier in
-/// the cold-booted town01 (the field-mode use of `FUN_801DA51C`), advance it
-/// via `engage_field_carrier` (the dialogue-accept stand-in), and let the
-/// per-frame `tick_field_carriers` run the state-1 formation copy + the
-/// `case 2/3` fall-through battle handoff. This drives the transition through
-/// the actual entity SM rather than a manual `install_man_formation` +
+/// The field-resident carrier SM path, driven from the **real MAN actor**:
+/// entering town01 auto-installs the carrier set derived from its
+/// actor-placement partition (`enter_field_scene` ->
+/// `install_field_carriers_from_man`), so the Rim Elm sparring partner's
+/// identity comes from the scene data rather than a hand-built config. Advance
+/// the derived carrier via `engage_field_carrier` (the dialogue-accept
+/// stand-in), and let the per-frame `tick_field_carriers` run the state-1
+/// formation copy + the `case 2/3` fall-through battle handoff. This drives the
+/// transition through the actual entity SM (the field-mode use of
+/// `FUN_801DA51C`) rather than a manual `install_man_formation` +
 /// `on_field_step`, against the real per-scene MAN formation table.
 #[test]
 fn training_reaches_battle_via_field_carrier_sm() {
@@ -273,29 +277,39 @@ fn training_reaches_battle_via_field_carrier_sm() {
         .expect("enter field live");
     assert_eq!(session.host.world.mode, SceneMode::Field);
 
-    // Place the Tetsu carrier (formation index 4 = lone monster 0x4F, loaded
-    // from town01's real MAN at scene entry).
-    session
+    // Entering the field auto-installed the carrier set derived from town01's
+    // real MAN actor-placement partition (no hand-built config): the pinned Rim
+    // Elm sparring partner is the scripted-encounter carrier for formation 4,
+    // every other talk NPC a plain carrier. Find the sparring carrier's slot.
+    let sparring_idx = session
         .host
         .world
-        .install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
-            formation_id: RIM_ELM_TRAINING_FORMATION_ID,
-        }]);
+        .field_carrier_configs
+        .iter()
+        .position(|c| {
+            matches!(
+                c,
+                FieldCarrierConfig::ScriptedEncounter {
+                    formation_id: RIM_ELM_TRAINING_FORMATION_ID
+                }
+            )
+        })
+        .expect("field entry auto-installs the Rim Elm sparring carrier from the MAN");
 
-    // Idle carrier never self-fires (town01 is 0% random): several ticks stay
+    // Idle carriers never self-fire (town01 is 0% random): several ticks stay
     // in the field.
     for _ in 0..16 {
         let _ = session.tick().expect("tick");
         assert_eq!(
             session.host.world.mode,
             SceneMode::Field,
-            "idle carrier waits"
+            "idle carriers wait"
         );
     }
 
-    // The dialogue-accept advances the carrier; the SM runs the transition and
-    // flips Field -> Battle within a couple of ticks.
-    session.host.world.engage_field_carrier(0);
+    // The dialogue-accept advances the sparring carrier; the SM runs the
+    // transition and flips Field -> Battle within a couple of ticks.
+    session.host.world.engage_field_carrier(sparring_idx);
     let mut reached_battle = false;
     for _ in 0..8 {
         let _ = session.tick().expect("tick");
