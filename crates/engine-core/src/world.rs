@@ -4995,6 +4995,48 @@ impl World {
         }
     }
 
+    /// Step the player one navigation frame toward world position `(tx, tz)`,
+    /// using the same per-axis field collision as pad locomotion
+    /// ([`Self::advance_with_collision`]) but a world-space direction. Returns
+    /// `true` once the player is within `tol` units of the target on both axes.
+    ///
+    /// This is the auto-navigation primitive a driver loops (following a path of
+    /// waypoints) to walk the player to a target — e.g. the v0.1 oracle walking
+    /// from the cold-boot spawn to the sparring partner before talking to it.
+    /// It drives the real locomotion stepping/collision, just without the pad →
+    /// camera-relative remap. No-op without an active player actor.
+    pub fn nav_step_toward(&mut self, tx: i16, tz: i16, tol: i16) -> bool {
+        let Some(slot) = self.player_actor_slot else {
+            return false;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return false;
+        }
+        let (cx, cz) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
+        if (cx - tx).abs() <= tol && (cz - tz).abs() <= tol {
+            return true;
+        }
+        let mut dir = 0u16;
+        if tz > cz {
+            dir |= 0x1000; // Z+
+        } else if tz < cz {
+            dir |= 0x4000; // Z-
+        }
+        if tx > cx {
+            dir |= 0x2000; // X+
+        } else if tx < cx {
+            dir |= 0x8000; // X-
+        }
+        if dir != 0 {
+            self.advance_with_collision(slot, dir, FIELD_BASE_STEP);
+        }
+        false
+    }
+
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
     /// Per-frame field-side driver for the live gameplay loop. Gated by

@@ -2252,6 +2252,35 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
     );
 }
 
+/// `nav_step_toward` walks the player to a target across open field (no walls).
+#[test]
+fn nav_step_toward_walks_player_to_target() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    // Open field (no collision grid installed -> nothing is a wall). Target ~6
+    // tiles away; the player should reach it within a generous frame budget.
+    let (tx, tz) = (2752i16, 1856i16);
+    let mut arrived = false;
+    for _ in 0..4000 {
+        if world.nav_step_toward(tx, tz, 32) {
+            arrived = true;
+            break;
+        }
+    }
+    assert!(arrived, "nav walks the player to the target in open field");
+    let ms = &world.actors[0].move_state;
+    assert!(
+        (ms.world_x - tx).abs() <= 32 && (ms.world_z - tz).abs() <= 32,
+        "player ends within tolerance of the target ({}, {})",
+        ms.world_x,
+        ms.world_z
+    );
+}
+
 /// A plain talk NPC never auto-arms a battle: interacting opens its dialogue and
 /// dismissing it returns to free roam (no carrier-slot entry -> nothing armed).
 #[test]

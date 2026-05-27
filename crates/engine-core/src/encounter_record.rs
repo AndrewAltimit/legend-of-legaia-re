@@ -108,6 +108,22 @@ pub const RIM_ELM_SPARRING_CARRIER_TILE: (u8, u8) = (76, 65);
 /// Model byte of the [`RIM_ELM_SPARRING_CARRIER_TILE`] placement.
 pub const RIM_ELM_SPARRING_CARRIER_MODEL: u8 = 0x6A;
 
+/// The sparring carrier's **runtime tutorial position** `(world_x, world_z)`,
+/// distinct from its MAN placement tile ([`RIM_ELM_SPARRING_CARRIER_TILE`] =
+/// `(76, 65)` → world `(9792, 8384)`).
+///
+/// The placement tile is the partner's *post-tutorial* village spot, in a
+/// town01 sub-area not walk-reachable from the cold-boot spawn (tile 20). For
+/// the opening tutorial fight the engine's opening sequence repositions the
+/// partner next to Vahn — pinned here from a retail capture at the dialogue-
+/// accept frame (the live actor's `+0x14/+0x18`), tile `(21, 14)`, a short
+/// walk-reachable hop from the spawn. The clean-room cold boot enters town01
+/// free-roam without replaying that reposition, so a driver that needs the
+/// partner where retail's tutorial puts it uses this position. Confirmed: the
+/// live actor at this position resolves (via `actor[+0x90]`) to the
+/// `(76, 65)` / model `0x6A` placement record — same carrier, repositioned.
+pub const RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS: (i16, i16) = (2752, 1856);
+
 /// Decoded encounter record.
 ///
 /// `monster_ids` always has length `FORMATION_SLOTS`; trailing slots beyond
