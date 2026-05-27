@@ -59,8 +59,9 @@
 #
 #   mc2 → STR 0 (fmv_id 0)    mc3 → STR 1 (fmv_id 1)
 #   mc4 → STR 2 (fmv_id 2)    mc5 → ROTATED (title_screen_new_game)
-#   mc6 → STR 4 (fmv_id 4)    mc7 → ROTATED (v0.1 slice C; was fmv_id 5)
-#   mc8 → ROTATED (v0.1 slice C+; was fmv_id 6)
+#   mc6 → ROTATED (v0.1 slice C+, dialogue-accept; was STR 4 / fmv_id 4)
+#   mc7 → ROTATED (v0.1 slice C; was fmv_id 5)
+#   mc8 → ROTATED (v0.1 slice E, post-battle; was fmv_id 6)
 #   mc9 → STR 7 (fmv_id 7)
 #   mc0 → ROTATED (v0.1 slice D; was fmv_id 8)
 #
@@ -219,9 +220,17 @@ hint = "Active scene: `map01` (debug-menu trigger from the same field scene as t
 # engine's `enter_field_live` drives a cold boot into Field/town01,
 # which is exactly this state, so it is the convergence anchor for the
 # v0.1 playthrough oracle's Phase-1 Field leg.
+#
+# LIBRARY-ONLY: its live slot has since been refreshed to hold anchor C+
+# (the dialogue-accept frame, below). This anchor survives as its
+# immutable content-hashed copy in saves/library/ and resolves via
+# `backup_fingerprint`, so `slot` is the 255 "no live mednafen slot"
+# sentinel. The v0.1 replay's `meta.scenario` points here and resolves
+# the library copy in preference to any live slot, so the Field leg is
+# unaffected.
 # ----------------------------------------------------------------------
 [[scenarios]]
-slot = 6
+slot = 255
 label = "v0_1_pre_battle_tetsu"
 ram_fingerprint_sha256 = "cf9fede947e0269460b41f4773011edd7490dc4d202f041bced7cecc5bfcdde7"
 backup_fingerprint = "4c650a3bb872b22029851a2a2e919fd8e3bb05eee19abaec9f5c82976424a779"
@@ -230,6 +239,37 @@ topics = ["v0.1 slice", "pre-battle", "field", "Tetsu tutorial", "town01"]
 phase = "field"
 expected_active_scene = "town01"
 expected_game_mode = 0x03
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# ----------------------------------------------------------------------
+# v0.1 playthrough oracle anchor C+: the pre-fight dialogue-accept frame.
+#
+# The chronological bridge between anchor C (free movement, before
+# talking to Tetsu) and the battle anchors below: still at game mode 0x03
+# (field) on `town01`, but now parked on the sparring partner's accept
+# prompt. Advancing the dialogue one more step (the confirm press) runs
+# the field-VM dialogue-accept that arms the scripted lone-Tetsu
+# encounter and crosses into game mode 0x15 BattleMode.
+#
+# This is the mid-dialogue town01 frame the Battle-leg oracle needs to
+# drive the Field -> Battle transition from real data rather than the
+# engine's manual carrier-engage API. Because it is a field-mode state,
+# `expected_active_scene = town01` is set and the auto-discover oracles
+# can key off it (unlike the BattleMode anchors, which must skip).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 6
+label = "v0_1_tetsu_dialogue_accept"
+ram_fingerprint_sha256 = "a7dddfc36cf9aa2733ef04735b42e68b86ddec2a0b3215e06507bd134ed4dc1b"
+backup_fingerprint = "d3d14657aabafdeeb5ee8503091a25ef1aa1dd56974a8c89e75bbcd79bc22011"
+description = "v0.1 slice anchor C+: town01 field (game_mode 0x03), sparring-partner dialogue at the accept prompt; the confirm press arms the scripted lone-Tetsu fight and enters BattleMode"
+topics = ["v0.1 slice", "field dialogue", "dialogue accept", "Tetsu tutorial", "scripted encounter", "town01"]
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town01"
 
 [scenarios.overlay_slice]
 start = 0x801C0000
