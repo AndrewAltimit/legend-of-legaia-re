@@ -18,6 +18,7 @@ N-character rosters.
 | `+0x11A` | stat cap (clamped to `0x3E7`) | `FUN_80042558` |
 | `+0x13C..0x184` | spell list (count + IDs + levels, 36 entries) | `FUN_80042DBC` |
 | `+0x196..0x19D` | equipment slots (8 bytes) | inventory consumers |
+| `+0x2A7..0x2B0` | display name (NUL-padded ASCII, 9 bytes) | RAM captures (all 4 roster slots) |
 | `+0x2B0..0x380` | active-spell slots (stride 0x14) | `FUN_800432BC` |
 
 Untyped offsets pass through unchanged via [`CharacterRecord::raw`].

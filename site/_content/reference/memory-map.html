@@ -77,8 +77,8 @@
       <span class="memmap-label">Battle 8-actor pointer table</span>
     </div>
     <div class="memmap-row" data-key="char-records">
-      <span class="memmap-addr">0x80084708</span>
-      <span class="memmap-label">Character record array (stride 0x414)</span>
+      <span class="memmap-addr">0x80084708 + n*0x414</span>
+      <span class="memmap-label">Per-character record (4 slots; display name at internal +0x2A7). Slot 3 (Terra) runs into the story-flag bitmap at 0x80085600, so its tail (+0x2BC..) aliases the globals.</span>
     </div>
     <div class="memmap-row" data-key="ability-bitmask">
       <span class="memmap-addr">0x80074358 - 0x80074367</span>

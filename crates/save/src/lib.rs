@@ -55,7 +55,7 @@ pub use card::{
 };
 pub use character::{
     ABILITY_BITS_LEN, CHARACTER_RECORD_SIZE, CharacterRecord, EquipmentSlots, HpMpSp, MAX_SPELLS,
-    Party, SpellList,
+    NAME_LEN, NAME_OFFSET, Party, SpellList,
 };
 pub use ext::{
     CharSaveExt, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION,

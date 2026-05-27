@@ -332,7 +332,7 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x13D..+0x160` | u8 spell IDs (variable-length; up to 36). |
 | `+0x161..+0x184` | u8 parallel spell-level / experience array. |
 | `+0x196..+0x19D` | u8 equipment slot bytes (8 slots; weapon, armour, accessories). |
-| `+0x141`-ish | Character name string (used by the `FUN_80036044` `0xC1` text-escape). |
+| `+0x2A7..+0x2B0` | NUL-padded ASCII display name (`Vahn`/`Noa`/`Gala`/`Terra`/player-entered lead), 9 bytes bounded by the active-spell table at `+0x2B0`. Pinned across six in-game RAM captures for all four roster slots. In the retail SC save block this lands at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0); see [`save-screen.md`](save-screen.md). Accessor `legaia_save::CharacterRecord::name` (`NAME_OFFSET`). |
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
 | `+0xF4..0x100` | "Active abilities" 16-byte block - OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
 | `+0x104..0x110` | HP / MP / SP triplets (cur, max stored as separate u16s). |

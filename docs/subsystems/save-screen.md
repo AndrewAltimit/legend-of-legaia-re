@@ -271,12 +271,12 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `0x0060` | 32 | 16-color icon palette (16 × u16 LE BGR5) |
 | `0x0080` | 128 | icon pixels (16×16 @ 4bpp) |
 | `0x0100` | 256 | (duplicate icon frame or padding) |
-| `0x0200` | 0x66F | display/global header (see below) |
-| `0x086F` | 0x414 × N | character records (Vahn, Noa, Gala, Terra…) |
-| `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) |
-| `0x1818` | 0x90 | inventory array — 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) |
+| `0x0200` | 0x3C8 | display/global header (see below) |
+| `0x05C8` | 0x414 × 4 | character records (Vahn, Noa, Gala, Terra) — base `game+0x3C8` = live RAM `0x80084708` |
+| `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) — overlaps record [3]'s tail |
+| `0x1818` | 0x90 | inventory array — 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) — overlaps record [3]'s tail |
 
-**Display header** (`0x0200..0x086E`):
+**Display header** (`0x0200..0x05C7`):
 
 | Offset | Size | Field |
 |---|---|---|
@@ -284,14 +284,22 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `+0x054` | 12 | Primary character display name (for save-select screen) |
 | `+0x208` | 8 | CDNAME label of most-recently-visited scene (e.g. `town0b`) |
 | `+0x218` | 8 | CDNAME label of previous scene (e.g. `town01`) |
+| `+0x25C` | 4 | Party gold (mirrors RAM `0x8008459C`) |
 
-**Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each, name at record+0x000.
-Minimum 4 records observed: Vahn, Noa, Gala, Terra. Empty slots have all-zero bytes;
-`read_retail_char_records` stops at first all-zero record.
+**Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each. The SC block is a
+verbatim dump of the resident save state, so the record array's base is `game+0x3C8`
+(live RAM `0x80084708`), *not* the name field. Each record's **display name** is at
+internal offset `+0x2A7` (`legaia_save::NAME_OFFSET`), so the visible "Vahn"/"Noa"/"Gala"/
+"Terra" strings sit at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0). Four roster slots
+exist; the array runs into the global story-flag / inventory region, so slot 3 (Terra)'s
+tail (record offset ≥ `+0x2BC`) aliases the story-flag bitmap — her meaningful fields
+(name, live stats at `+0x104`, RecordStats at `+0x11C`) sit before that boundary. Empty
+slots are all-zero; `read_retail_char_records` stops at the first all-zero record.
 
 `legaia_save::card::read_retail_char_records(sc_block, max_records)` implements extraction.
-Constants: `RETAIL_GAME_DATA_OFFSET` (0x200), `RETAIL_CHAR_RECORD_HEADER_SIZE` (0x66F),
-`RETAIL_CHAR_RECORD_STRIDE` (0x414). All re-exported from the `legaia_save` crate root.
+Constants: `RETAIL_GAME_DATA_OFFSET` (0x200), `RETAIL_CHAR_RECORD_HEADER_SIZE` (0x3C8 = the
+true record base), `RETAIL_CHAR_RECORD_STRIDE` (0x414). All re-exported from the
+`legaia_save` crate root.
 
 ## Sprite asset sources (Continue → Load screen)
 

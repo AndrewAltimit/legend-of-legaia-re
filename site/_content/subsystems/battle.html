@@ -225,11 +225,12 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
       <tr><td><code>+0x161..+0x184</code></td><td>u8 parallel spell-level / experience array</td></tr>
       <tr><td><code>+0x185..+0x195</code></td><td>Displayed-skills list (count-prefixed; head-insert on item-use)</td></tr>
       <tr><td><code>+0x196..+0x19D</code></td><td>u8 equipment slot bytes (8 slots; weapon, armour, accessories)</td></tr>
-      <tr><td><code>+0x141</code>-ish</td><td>Character name string (used by <code>FUN_80036044</code> <code>0xC1</code> text-escape)</td></tr>
+      <tr><td><code>+0x2A7..+0x2B0</code></td><td>NUL-padded ASCII display name (<code>Vahn</code>/<code>Noa</code>/<code>Gala</code>/<code>Terra</code>/player-entered lead), 9 bytes bounded by the active-spell table at <code>+0x2B0</code>. In the retail SC save block this lands at <code>game+0x66F + n*0x414</code> (SC <code>+0x86F</code> for slot 0). Accessor <code>legaia_save::CharacterRecord::name</code> (<code>NAME_OFFSET</code>).</td></tr>
       <tr><td><code>+0x2B0..+0x37F</code></td><td>Active spell-slot array (stride <code>0x14</code>)</td></tr>
       <tr><td><code>+0xF4..0x100</code></td><td>"Active abilities" 16-byte block - OR'd into global ability bitmask</td></tr>
-      <tr><td><code>+0x104..0x110</code></td><td>HP / MP / SP triplets</td></tr>
+      <tr><td><code>+0x104..0x110</code></td><td>HP / MP / SP triplets (live stats)</td></tr>
       <tr><td><code>+0x11A</code></td><td>Stat-cap field (clamped to <code>0x3E7</code>)</td></tr>
+      <tr><td><code>+0x11C..+0x122</code></td><td>Six adjacent stat bytes (RecordStats; incremented on level-up)</td></tr>
     </tbody>
   </table>
 </section>

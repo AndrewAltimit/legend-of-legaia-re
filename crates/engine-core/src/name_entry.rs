@@ -12,7 +12,8 @@
 //! - charset grid at `0x801F29F0` - six rows of seventeen bytes; `|` (0x7C)
 //!   at columns 5 and 11 are non-selectable group separators.
 //! - the committed name is written into the live character record's name
-//!   field at `record + 0x86F` (record stride `0x414`).
+//!   field at record offset `+0x2A7` (record base `0x80084708 + n*0x414`),
+//!   which surfaces at save-block offset `+0x86F` for slot 0.
 //!
 //! The interactive handler moves a linear cursor over a 7-row x 17-column
 //! navigation space (`0x77` = 119 cells, wrapped modulo 119): rows 0..5 hold

@@ -315,30 +315,53 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
 /// game-data region begins at +0x200.
 pub const RETAIL_GAME_DATA_OFFSET: usize = 0x200;
 
-/// Byte offset from the game data start to the first character record.
+/// Byte offset from the game data start to the first character record's base.
 ///
-/// The display / global header occupies `0x000..0x66E`; character records begin
-/// at `0x66F`. Known header fields: location name at `+0x000`, primary character
-/// display name at `+0x054`, most-recently-visited CDNAME label at `+0x208`,
-/// previous scene CDNAME label at `+0x218`. Verified against a real Legaia save.
-pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x66F;
+/// The SC block is a verbatim dump of the resident save-state region (the
+/// linear map `block_offset = RETAIL_GAME_DATA_OFFSET + (ram_addr -
+/// SAVE_GAME_DATA_RAM_BASE)`, so `game_data` mirrors live RAM from
+/// `0x80084340`). Character record `n` lives at live RAM `0x80084708 +
+/// n*0x414`, i.e. `game_data + 0x3C8` - confirmed across six in-game RAM
+/// captures (mid-game stats at `record+0x104`/`+0x11C` read back the
+/// expected per-character HP/MP for all four roster slots).
+///
+/// The display / global header therefore occupies `game_data 0x000..0x3C7`:
+/// location name at `+0x000`, primary character display name at `+0x054`,
+/// most-recently-visited CDNAME label at `+0x208`, previous scene CDNAME at
+/// `+0x218`, party gold at `+0x25C`.
+///
+/// NB: a record's **display name** is at internal offset `+0x2A7`
+/// ([`crate::character::NAME_OFFSET`]), so the visible "Vahn"/"Noa"/"Gala"/
+/// "Terra" strings land at `game_data + 0x66F + n*0x414` (SC `+0x86F` for
+/// slot 0). Anchoring the record region at the *name* (`0x66F`) rather than
+/// the true base (`0x3C8`) was an earlier off-by-`0x2A7` that made
+/// [`crate::character::CharacterRecord`]'s stat offsets read into the wrong
+/// fields on a populated save.
+pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x3C8;
 
 /// Stride between character records in the retail save format (matches
 /// `CHARACTER_RECORD_SIZE` = 0x414 used in `crates/save/src/character.rs`).
 ///
-/// Confirmed by observing Vahn at `game+0x66F`, Noa at `game+0xA83`,
-/// Gala at `game+0xE97`, Terra at `game+0x12AB` - all at 0x414-byte intervals.
+/// Confirmed by the four roster slots at live RAM `0x80084708 + n*0x414`
+/// (Vahn / Noa / Gala / Terra) - the names land at `+0x2A7` within each,
+/// i.e. `game+0x66F / 0xA83 / 0xE97 / 0x12AB`.
 pub const RETAIL_CHAR_RECORD_STRIDE: usize = 0x414;
 
-/// Maximum number of non-overlapping character record slots in the retail
-/// SC layout.
+/// Maximum number of fully non-overlapping character record slots in the
+/// retail SC layout.
 ///
-/// `RETAIL_CHAR_RECORD_HEADER_SIZE + N*RETAIL_CHAR_RECORD_STRIDE` first
-/// collides with [`RETAIL_STORY_FLAGS_OFFSET`] at `N=3` (slot 3 starts at
-/// SC offset `0x14AB`, which the 512-byte story-flag bitmap at `+0x14C0`
-/// would overlap). Retail handles slot 3 (Terra) via a special-case path
-/// the reverse-engineering doesn't yet model, so callers that want a
-/// conservative non-overlapping walk should cap at 3 records.
+/// The four-slot record array is immediately followed by the global game
+/// data, so slot 3 (Terra)'s `0x414`-byte footprint runs from `game+0x1004`
+/// to `game+0x1418` and its **tail** (from internal offset `+0x2BC`,
+/// i.e. `game+0x12C0`) overlaps the 512-byte story-flag bitmap at
+/// [`RETAIL_STORY_FLAGS_OFFSET`] and the inventory at
+/// [`RETAIL_INVENTORY_OFFSET`]. Terra's meaningful fields all sit *before*
+/// that boundary - her name (`+0x2A7`), live HP/MP (`+0x104`) and
+/// RecordStats (`+0x11C`) are in exclusive space - and she is the New Game
+/// template's fourth roster entry (HP 400) but never a savable battle-party
+/// member, so the tail aliasing is benign: there is no special-case code
+/// path; the global region simply begins partway through the fourth slot.
+/// Callers that want a strictly non-overlapping record walk cap at 3.
 pub const RETAIL_MAX_CHAR_RECORDS: usize = 3;
 
 /// Byte offset from the SC block start to the story-flag bitmap.
@@ -789,5 +812,45 @@ mod tests {
             0xAB,
             "story-flag region survives the record write"
         );
+    }
+
+    #[test]
+    fn char_record_region_is_base_anchored_with_name_at_0x2a7() {
+        // Regression for the off-by-0x2A7 record anchor. The record region
+        // begins at the true record base (game+0x3C8 = live RAM 0x80084708),
+        // NOT the visible name field (game+0x66F). A record built with known
+        // stats + name must round-trip through write/read + `CharacterRecord`
+        // with the stats reading back from their documented offsets, and the
+        // name must land in the SC block at game+0x66F (SC +0x86F for slot 0),
+        // i.e. record base + `NAME_OFFSET`.
+        use crate::character::{CharacterRecord, HpMpSp, NAME_OFFSET};
+
+        let mut block = fresh_sc_block();
+        let mut rec = CharacterRecord::zeroed();
+        rec.set_hp_mp_sp(HpMpSp {
+            hp_cur: 180,
+            hp_max: 180,
+            mp_cur: 20,
+            mp_max: 20,
+            sp_cur: 0,
+            sp_max: 0,
+        });
+        rec.set_name("Vahn");
+        write_retail_char_records(&mut block, std::slice::from_ref(&rec.raw)).unwrap();
+
+        let read = read_retail_char_records(&block, 4).unwrap();
+        assert_eq!(read.len(), 1, "first slot only");
+        let parsed = CharacterRecord::parse(&read[0]).unwrap();
+        assert_eq!(
+            parsed.hp_mp_sp().hp_max,
+            180,
+            "HP must read back from +0x106, not a 0x2A7-shifted field"
+        );
+        assert_eq!(parsed.name(), "Vahn");
+
+        // The name lands at SC +0x86F = game+0x66F = record base + NAME_OFFSET.
+        let sc_name = RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE + NAME_OFFSET;
+        assert_eq!(sc_name, RETAIL_GAME_DATA_OFFSET + 0x66F);
+        assert_eq!(&block[sc_name..sc_name + 4], b"Vahn");
     }
 }

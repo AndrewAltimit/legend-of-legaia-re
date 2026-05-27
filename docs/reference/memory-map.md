@@ -52,7 +52,7 @@ citation table.
 | `0x8007B6A8` | u16 | Save-anywhere allow flag. | `Save Anywhere (Press Select+X)`. |
 | `0x8007B6F4` | u16 | Camera mode word. | `Control Camera` and `Small Maps` cheats. |
 | `0x8007B790` | u16 | Camera zoom-state register. | `Control Camera` reads here. |
-| `0x80084708 + n*0x414` | u8[0x414] | Per-character record (4 slots). | Hundreds of cheats; see [`docs/formats/save-record.md`](../formats/save-record.md). |
+| `0x80084708 + n*0x414` | u8[0x414] | Per-character record (4 slots; display name at internal `+0x2A7`). Slot 3 (Terra) runs into the story-flag bitmap at `0x80085600`, so its tail (`+0x2BC`..) aliases the globals — see [`docs/formats/save-record.md`](../formats/save-record.md). | Hundreds of cheats. |
 
 ### Mini-game scratch cells
 

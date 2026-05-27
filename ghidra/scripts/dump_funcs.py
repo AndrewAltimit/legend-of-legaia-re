@@ -12,6 +12,10 @@ from ghidra.util.task import ConsoleTaskMonitor
 PROGRAM = "SCUS_942.54"  # default; override with OVERLAY_PROGRAM=overlay.bin per-run
 
 TARGETS = [
+    # Effect-texture (flame) atlas loader: loads PROT entry 0x366 (870) into
+    # VRAM via FUN_8001fc00 -> FUN_8003e8a8, gated on _DAT_8007b868 == 0.
+    "80020050",
+    "8001fc00",  # PROT-index -> VRAM upload wrapper (calls FUN_8003e8a8)
     # Asset dispatcher + sub-asset loader chain
     "8003e8a8",  # sub-asset address resolver (PROT[id], sub_id)
     "8003e800",  # sub-asset loader (dst, addr, sub_id)

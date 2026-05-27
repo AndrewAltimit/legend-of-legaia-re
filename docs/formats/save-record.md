@@ -8,10 +8,21 @@ contiguously in main RAM at `0x80084708 + slot * 0x414`:
 | 0 | `0x80084708` | Vahn |
 | 1 | `0x80084B1C` | Noa |
 | 2 | `0x80084F30` | Gala |
-| 3 | `0x80085344` | guest / future-party-member |
+| 3 | `0x80085344` | Terra (New Game template's 4th roster entry; never a savable battle-party member) |
 
-The on-disc save block (PSX memory-card record) embeds the same
-layout starting at `block + 0x86F`; see
+The display name sits at record offset `+0x2A7` (9 bytes, NUL-padded),
+bounded by the active-spell table at `+0x2B0`.
+
+Slot 3's `0x414` footprint runs into the global story-flag bitmap
+(RAM `0x80085600`, record offset `+0x2BC`) and inventory, so only its
+leading fields (name, live stats `+0x104`, RecordStats `+0x11C`) are
+exclusive; the tail aliases the globals. This is benign — Terra is never
+saved as an active member.
+
+The on-disc save block (PSX memory-card record) is a verbatim dump of
+this resident region: record `n`'s base is `block + 0x5C8 + n*0x414`
+(`game_data + 0x3C8`), and the `+0x2A7` display name therefore surfaces
+at `block + 0x86F + n*0x414`. See
 [`docs/subsystems/save-screen.md`](../subsystems/save-screen.md)
 for the wrapper around it.
 
