@@ -127,15 +127,40 @@ impl From<StatGain> for StatGrowthCurve {
     }
 }
 
-/// Cumulative XP thresholds for levels 2..=`MAX_LEVEL` from the retail game.
+/// Cumulative XP thresholds for levels 2..=`MAX_LEVEL`.
 ///
 /// `table[i]` = total XP required to reach level `i + 2` (from level 1).
-/// Derived by prefix-summing the 98 u16 LE per-level increments stored at
-/// `SCUS_942.54` address `0x8007123C` (increments: 50, 56, 62, 69, … 650, 656).
+/// Prefix-summed from the 98 u16 values below.
 ///
-/// [`LevelUpTracker::default`] uses this table.
+/// **Provenance is unproven.** The values were originally documented as
+/// extracted from `SCUS_942.54` virtual address `0x8007123C` — that
+/// address is an off-by-`0x800` (PSX EXE header size) confusion between
+/// file offset `0x6123C` and virtual `0x80070A3C`, and the bytes at either
+/// location are not an XP table: they are a slice of the shared 4096-entry
+/// full-circle sin LUT at `0x80070A2C` that the GTE rotation builders
+/// `RotMatrixX/Y/Z` (`0x800461A4 / 0x8004629C / 0x8004638C`) and the
+/// cutscene-camera composer `FUN_8001CF50` consume. Every u16 in that
+/// 8 KB block matches `round(4096 × sin(i/4096 × 2π))` to within ±1; the
+/// 98 numbers below are `sin[0x408..0x46A]`.
+///
+/// Two non-exclusive possibilities remain open: (a) the retail designers
+/// reused the sin slice deliberately (early-quadrant sin samples form a
+/// near-linear ramp with mild curvature, a reasonable JRPG XP curve shape;
+/// 1998-era PSX games frequently shared static tables across subsystems),
+/// or (b) the real XP table lives in an uncaptured overlay and this
+/// engine-side data is unverified. No retail reader for either address has
+/// been found across SCUS + every captured overlay (LUI+ADDIU /
+/// gp-relative / LUI+LHU encodings all return zero hits), and a save-pair
+/// diff against an in-game level-up has not been performed. The implied
+/// L99 cumulative (34 663 XP) is conspicuously small for the era.
+///
+/// [`LevelUpTracker::default`] uses this table; override via
+/// [`LevelUpTracker::with_xp_table`] when a verified curve lands. See
+/// [`docs/subsystems/level-up.md`](https://github.com/altimit-mii/legend-of-legaia-re/blob/main/docs/subsystems/level-up.md#xp-table)
+/// for the full write-up.
 pub fn retail_xp_table() -> Vec<u32> {
-    // Per-level increments from SCUS_942.54 0x8007123C (98 u16 values, L1→2 .. L98→99).
+    // 98 u16 values from SCUS_942.54 file offset 0x61A3C (virtual 0x80070A3C,
+    // = sin LUT base 0x80070A2C + 0x10). See docstring above for provenance.
     const INCREMENTS: [u16; 98] = [
         50, 56, 62, 69, 75, 81, 87, 94, 100, 106, 113, 119, 125, 131, 138, 144, 150, 157, 163, 169,
         175, 182, 188, 194, 200, 207, 213, 219, 226, 232, 238, 244, 251, 257, 263, 269, 276, 282,
