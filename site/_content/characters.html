@@ -922,9 +922,13 @@ table.arts-list .cmd-tag {
     // the number of bones the record drives (typically the TMD's nobj); the
     // animator pads beyond the record's own bone_count with identity
     // transforms. `meta.frameCount` × `meta.partCount` × 6 i32s in
-    // `meta.frames` carry `[tx, ty, tz, rx, ry, rz]` per part per frame
-    // (same shape MonsterMeshView consumes). Frame 0 is the rest pose -
-    // the WASM emitter computes deltas from frame 0 so identity falls out.
+    // `meta.frames` carry `[tx, ty, tz, rx, ry, rz]` per part per frame,
+    // as ABSOLUTE per-frame transforms. Frame 0 is the rest-pose assembly:
+    // it places each TMD object at its joint position. This matches what
+    // the retail engine does (FUN_8001B964 → FUN_8001BE80) — the TMD
+    // vertices live in object-local space and the bone (T, R) places them
+    // in the actor's frame before the actor's own rotation/translation
+    // composes on top.
     setAnimation(meta) {
       if (!meta || !meta.frameCount || meta.frameCount < 2 ||
           !this._objIds || !this._basePos) {
@@ -938,39 +942,28 @@ table.arts-list .cmd-tag {
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, this._baseNrm);
         return;
       }
-      // Per-object centroid: player TMDs ship in MODEL SPACE so each bone's
-      // anatomical pivot is approximated as the mean of its assigned
-      // vertices. Rotation about that point keeps each limb anchored to the
-      // body instead of swinging around the model's origin.
-      const partCount = meta.partCount;
-      const cx = new Float32Array(partCount);
-      const cy = new Float32Array(partCount);
-      const cz = new Float32Array(partCount);
-      const cn = new Uint32Array(partCount);
-      const ids = this._objIds, base = this._basePos;
-      const n = base.length / 3;
-      for (let v = 0; v < n; v++) {
-        const o = ids[v];
-        if (o < partCount) {
-          cx[o] += base[v*3]; cy[o] += base[v*3+1]; cz[o] += base[v*3+2];
-          cn[o]++;
-        }
-      }
-      for (let p = 0; p < partCount; p++) {
-        const k = cn[p] || 1;
-        cx[p] /= k; cy[p] /= k; cz[p] /= k;
-      }
       this.anim = {
         out: new Float32Array(this._basePos),
         outN: new Float32Array(this._baseNrm),
-        partCount,
+        partCount: meta.partCount,
         frameCount: meta.frameCount,
         frames: meta.frames,    // Int32Array(frameCount*partCount*6)
-        centroids: { cx, cy, cz },
       };
       this._startMs = performance.now();
       this._frameOverride = 0;
-      this._poseAt(0);          // settle to rest pose (frame 0 = identity)
+      this._poseAt(0);          // settle to the rest pose
+      // Re-fit the camera on the assembled rest pose - the static AABB
+      // only covers the collapsed object-local geometry, which is much
+      // smaller than the assembled character.
+      let lo = [Infinity, Infinity, Infinity];
+      let hi = [-Infinity, -Infinity, -Infinity];
+      const o = this.anim.out, n = o.length / 3;
+      for (let v = 0; v < n; v++) for (let k = 0; k < 3; k++) {
+        const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
+      }
+      this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
+      this.radius = Math.max(1, Math.hypot(
+        (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
     }
 
     setPlaying(on) {
@@ -996,8 +989,12 @@ table.arts-list .cmd-tag {
       return { t: [a[o], a[o+1], a[o+2]], r: [a[o+3], a[o+4], a[o+5]] };
     }
 
-    // Apply per-bone (translation, rotation) to the base mesh, centering each
-    // bone's rotation at its vertex centroid. Re-uploads positions + normals.
+    // Apply per-bone absolute (T, R) to the object-local base mesh, placing
+    // each TMD object at its joint position with its bone-frame rotation.
+    // Mirrors the retail GTE path: vertex_world = R_bone · vertex_object_local
+    // + T_bone (the actor's own rotation/translation composes on top in the
+    // real engine; in this viewer the actor frame is identity). Re-uploads
+    // positions + normals.
     _poseAt(frameIdx) {
       const A = this.anim;
       if (!A) return;
@@ -1006,7 +1003,6 @@ table.arts-list .cmd-tag {
       const base = this._basePos, baseN = this._baseNrm;
       const out = A.out, outN = A.outN;
       const ids = this._objIds, n = base.length / 3;
-      const cx = A.centroids.cx, cy = A.centroids.cy, cz = A.centroids.cz;
       // Per-bone Euler -> sin/cos once
       const sin = new Float32Array(A.partCount * 3);
       const cos = new Float32Array(A.partCount * 3);
@@ -1030,17 +1026,16 @@ table.arts-list .cmd-tag {
         const sx = sin[o*3], cxx = cos[o*3];
         const sy = sin[o*3+1], cyy = cos[o*3+1];
         const sz = sin[o*3+2], czz = cos[o*3+2];
-        // Translate to bone-local (centered on centroid).
-        let x = base[v*3]   - cx[o];
-        let y = base[v*3+1] - cy[o];
-        let z = base[v*3+2] - cz[o];
+        // Rotate the object-local vertex about its own origin, then add the
+        // bone's absolute world translation.
+        let x = base[v*3], y = base[v*3+1], z = base[v*3+2];
         // Rz * Ry * Rx
         let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
         let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
         nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
-        out[v*3]   = x + cx[o] + tr[o*3];
-        out[v*3+1] = y + cy[o] + tr[o*3+1];
-        out[v*3+2] = z + cz[o] + tr[o*3+2];
+        out[v*3]   = x + tr[o*3];
+        out[v*3+1] = y + tr[o*3+1];
+        out[v*3+2] = z + tr[o*3+2];
         // Normals (no translation; same rotation)
         let nx0 = baseN[v*3], ny0 = baseN[v*3+1], nz0 = baseN[v*3+2];
         ny = ny0*cxx - nz0*sx; nz = ny0*sx + nz0*cxx; ny0 = ny; nz0 = nz;

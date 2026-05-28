@@ -380,16 +380,24 @@ exactly:
 
 verified byte-exact across all **296 records** in the 5 pinned scenes (and
 across every other scene's bundle the corpus sweep finds; `f(a,b) == size`
-falls out 100%). The layout is:
+falls out 100%). The runtime layout (traced through
+[`FUN_8001B964`](../../ghidra/scripts/funcs/8001b964.txt) — the per-actor
+animated character renderer):
 
 ```text
 +0x00..+0x08    header (a, b, marker_1=0x080C, flag)
-+0x08..+0x10    per-anim leading 8 bytes (frame_0 / rest-pose hint -
-                  exact meaning still TBC, see "Open thread" below)
-+0x10..+end     b frames; per frame:
++0x08..+end-8  b frames; per frame:
                    (a & 0xFF) bones × 8 bytes
-                 each 8-byte entry is one bone's pose for that frame
+                 each 8-byte entry is one bone's TR for that frame
++end-8..+end    8 zero bytes (record-boundary padding to 16)
 ```
+
+The body sits **immediately after the 8-byte header**, frame-major. The 8
+extra bytes in the size formula are a zero-padding trailer (every record
+in the corpus has the last 8 bytes set to zero). The runtime pointer
+`actor[+0x4C]` points at the record's byte 0; the sanity check
+`*pbVar6 == nobj` matches header byte 0 (`a & 0xFF`) against the TMD's
+animated-object count.
 
 - `a & 0xFF` = **bone count** (number of animated TMD objects in this
   clip). The high byte of `a` appears to be a sub-format selector: clear
@@ -405,40 +413,47 @@ size invariant on every record before declaring a bundle parsed; the
 disc-gated regression `crates/asset/tests/player_anm_real.rs` pins this
 byte-exact across the corpus.
 
-### Open thread: the 4 `i16` per (bone, frame)
+### Per-(bone, frame) 8-byte encoding
 
-Each per-bone, per-frame entry is **8 bytes = 4 little-endian `i16`s**.
-Their exact semantic isn't pinned yet. Observed properties from the
-field-form bundle's record 8 (a 25-frame walk-like clip with 6 animated
-bones):
+Each entry decodes to a `(T, R)` transform via
+[`FUN_8001BE80`](../../ghidra/scripts/funcs/8001be80.txt):
 
-- Most bones are constant across all 25 frames; only 3 of the 6 vary,
-  consistent with character animation where most bones stay rested and
-  the limbs / hips move.
-- The varying bones' values drift smoothly over frames — increments of
-  `1`/`-1`/`-256` per frame in different bytes, consistent with a
-  packed fixed-point representation.
-- Magnitudes are up to `±32000` — large enough to be 12-bit Q-format
-  angles (PSX standard) rather than translations (which are usually
-  ≤ a few hundred in PSX model units).
+```text
+  byte 0   = low8(T0)
+  byte 1   = low8(T1)
+  byte 2   = (high4(T1) << 4) | high4(T0)     ; nibble-packed sign bits
+  byte 3   = low8(T2)
+  byte 4   = ??                | high4(T2)    ; high nibble unused
+  byte 5   = u8 rot-X (left-shifted by 4 to make a 12-bit PSX angle)
+  byte 6   = u8 rot-Y
+  byte 7   = u8 rot-Z
+```
 
-Working hypothesis the site viewer applies: the first three `i16`s are
-`(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point (`4096` = 360°), the
-fourth is auxiliary (its semantic is unconfirmed). The WASM emitter
+- `T0..T2` are **signed 12-bit translation values** (sign-extend to i32
+  via `if (v & 0x800) v |= 0xFFFFF000`). These hold the joint offset in
+  actor-local space; the runtime pushes them through the GTE's `MVMVA`
+  with the actor's rotation matrix, then loads the result into the GTE
+  `TR` registers as the per-object world-space translation.
+- The three u8 rotations build into the GTE rotation matrix in the order
+  Z, Y, X (post-multiplication) via the PsyQ-shape rotation builders at
+  [`FUN_8004638C`](../../ghidra/scripts/funcs/8004638c.txt) /
+  [`FUN_8004629C`](../../ghidra/scripts/funcs/8004629c.txt) /
+  [`FUN_800461A4`](../../ghidra/scripts/funcs/800461a4.txt). Each function
+  reads from the global sin / cos tables at `DAT_80070A2C` /
+  `DAT_8007122C` and composes a single-axis rotation into the current
+  matrix.
+
+Frame 0 of an idle animation is the rest-pose assembly transform — it
+places each TMD object at its joint position with its rest-pose
+orientation. For Vahn's field form (nobj=12, bone_count=10) the rest
+pose decodes to a bilaterally symmetric humanoid with joint centroids
+distributed where you'd expect torso / head / arms / legs.
+
+The decoder helper `legaia_asset::player_anm::BoneTransform::decode`
+returns `(t_x, t_y, t_z, r_x, r_y, r_z)` directly; the WASM
 [`LegaiaViewer::player_anm_record_pose_frames`](../../crates/web-viewer/src/lib.rs)
-converts the corpus to the monster animator's
-`[tx, ty, tz, rx, ry, rz]` shape with translations zeroed and rotations
-computed as **deltas from frame 0**, so frame 0 always reads as identity
-(rest pose) regardless of any per-record offset baked into the bytes.
-
-This is enough to drive visible motion in the viewer, but the falsification
-path is still owed: the per-frame interpreter that consumes
-`actor[+0x4C]` for op-code `0x0B` (set by `play_anm_by_id` at
-`FUN_80024CFC`) lives somewhere outside `FUN_80021DF4`'s `+0x5A == 6`
-block (which uses a *different*, 24-byte-per-bone keyframe layout
-already documented above). Capturing that interpreter is the next step
-to pin the four `i16`s; until then the site applies the working
-hypothesis and labels it as such.
+emits the per-frame absolute transforms in that shape for the site's
+character viewer.
 
 ## Allocator preamble
 

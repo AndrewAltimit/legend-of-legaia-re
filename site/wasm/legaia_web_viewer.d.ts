@@ -742,32 +742,37 @@ export class LegaiaViewer {
     /**
      * Decoded per-record header for one player-ANM record. Returned as a
      * `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
-     * prologue_u8[0..8]]` — total 14 entries. Returns an empty Vec on
-     * out-of-range record or size-invariant failure.
+     * frame0_bone0_u8[0..8]]` — total 14 entries (the 8 bytes after the
+     * header are bone 0 of frame 0's TR entry, since the body sits
+     * immediately after the 8-byte header — there is no prologue).
+     * Returns an empty Vec on out-of-range record or size-invariant failure.
      */
     player_anm_record_header(prot_index: number, record_index: number): Int32Array;
     /**
-     * Player-ANM record frames decoded into the **monster-animation pose
-     * format** the site's `MonsterMeshView`-style animator consumes:
-     * `Int32Array`, `6` entries per part per frame as
-     * `[tx, ty, tz, rx, ry, rz]`. Translations are in PSX model units;
-     * rotations are unsigned 12-bit angles (`4096` = a full turn). The
-     * JS-side `_assemble()` reads this directly.
+     * Player-ANM record frames decoded into the same pose format the
+     * site's `MonsterMeshView` animator consumes:
+     * `Int32Array`, `6` entries per part per frame, as
+     * `[tx, ty, tz, rx, ry, rz]`.
+     *
+     * Each 8-byte (bone, frame) entry is decoded as the retail engine does
+     * it (`FUN_8001BE80`): bytes 0..4 hold three signed 12-bit translation
+     * values (joint offset in actor-local space, PSX model units), bytes
+     * 5/6/7 hold three u8 rotation angles that map to PSX 12-bit angles via
+     * `<< 4` (so the JS animator's `4096`-unit convention applies
+     * directly).
+     *
+     * The transforms are **absolute** per frame (NOT delta-from-frame-0):
+     * frame 0 carries the rest-pose assembly transform that places each
+     * TMD object at its joint position with its rest-pose orientation.
+     * Applying these to objects whose vertices are in object-local space
+     * produces the assembled character.
      *
      * The output is padded to `target_part_count` parts (typically the
      * TMD's `nobj`) — bones beyond the record's own `bone_count` get
-     * identity transforms so the un-animated parts stay at the TMD's
-     * rest pose. Pass `0` to leave the part count at the record's own
+     * identity transforms so the un-animated parts (e.g. field-form
+     * equipment templates at groups 10/11) stay at their TMD-local
+     * origin. Pass `0` to leave the part count at the record's own
      * bone_count.
-     *
-     * Working hypothesis for the 4 `i16` per (bone, frame): the first 3
-     * are `(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point, the 4th is
-     * an auxiliary flag (its semantic is unconfirmed). Translations are
-     * emitted as zero - the disc bytes don't seem to carry per-bone
-     * translation deltas at this layout, and the TMD vertices are
-     * already in model-space (see `project-character-tmds-are-model-space`).
-     * See `docs/formats/anm.md` § "Open threads" for the falsification
-     * path.
      */
     player_anm_record_pose_frames(prot_index: number, record_index: number, target_part_count: number): Int32Array;
     prev_entry(): number;

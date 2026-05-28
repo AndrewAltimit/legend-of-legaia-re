@@ -53,23 +53,50 @@
 //! ```
 //!
 //! where `a & 0xFF` is the **bone count** (number of animated objects in the
-//! TMD) and `b` is the **frame count**. The 16 = 8 (header) + 8 (per-anim
-//! constants / first-frame reference) precedes a contiguous frame table:
+//! TMD) and `b` is the **frame count**. The body sits **immediately after
+//! the 8-byte header**, with an 8-byte zero-padding trailer at the end of
+//! the record (so the record always rounds to a 16-byte boundary). The
+//! runtime layout, traced through `FUN_8001B964` (per-actor animated
+//! renderer) → `FUN_8001BE80` (per-(bone, frame) decoder):
 //!
 //! ```text
 //! +0x00..+0x08    header (a, b, marker_1, flag)
-//! +0x08..+0x10    per-anim leading 8 bytes (frame_0 / rest-pose hint -
-//!                  exact meaning still TBC, see "Open threads" below)
-//! +0x10..+end     frame_count frames; per frame:
+//! +0x08..+end-8  frame_count frames; per frame:
 //!                    bone_count × 8 bytes
-//!                  each 8-byte entry is one bone's pose for that frame
+//!                  each 8-byte entry is one bone's TR for that frame
+//! +end-8..+end    8 zero bytes (record-boundary padding)
 //! ```
 //!
-//! Each per-bone, per-frame 8-byte entry is read as **4 `i16` values**.
-//! The exact semantic layout (rotation/translation packing) is the
-//! still-open thread - see the **Open threads** note in
-//! [`docs/formats/anm.md`](../../../docs/formats/anm.md) for the working
-//! hypothesis and the falsification status.
+//! The first frame (`+0x08..+0x08 + bone_count*8`) holds the **rest-pose**
+//! assembly transform - frame 0 bone 0 has all-zero bytes only when the
+//! root joint sits at origin. The runtime pointer `actor[+0x4C]` points
+//! at the record's byte 0, and `*pbVar6 == nobj` is a sanity check
+//! (header byte 0 = `a & 0xFF` = bone count = the TMD's nobj).
+//!
+//! ### Per-(bone, frame) 8-byte encoding
+//!
+//! Decoded by `FUN_8001BE80` (signed 12-bit unpacking + PsyQ rotation
+//! composition via `FUN_8004638C` / `FUN_8004629C` / `FUN_800461A4`):
+//!
+//! ```text
+//!   byte 0   = low8(T0)
+//!   byte 1   = low8(T1)
+//!   byte 2   = (high4(T1) << 4) | high4(T0)
+//!   byte 3   = low8(T2)
+//!   byte 4   = ???                | high4(T2)   ; high nibble unused
+//!   byte 5   = u8 rot-X (left-shifted by 4 to make a 12-bit PSX angle)
+//!   byte 6   = u8 rot-Y
+//!   byte 7   = u8 rot-Z
+//! ```
+//!
+//! `T0..T2` are signed 12-bit translation values (sign-extended to i32 via
+//! `if (v & 0x800) v |= 0xFFFFF000`). The translation is pushed through the
+//! GTE's MVMVA with the actor's rotation matrix - i.e., it's the joint's
+//! offset in actor-local space, transformed to world space before being
+//! loaded into the GTE TR registers. The three rotation angles compose
+//! into the GTE rotation matrix in the order Z, Y, X (post-multiplication),
+//! producing the per-bone orientation that `FUN_8002735C` then renders the
+//! object with.
 //!
 //! Runtime form (what `FUN_8001F05C` case 6 allocates at `DAT_8007B7C8`):
 //!
@@ -102,12 +129,14 @@ pub const ANM_MARKER_1: u16 = 0x080C;
 /// [`legaia_anm::RECORD_HEADER_SIZE`]).
 pub const RECORD_HEADER_SIZE: usize = 8;
 
-/// Size of the per-anim leading block that precedes the frame table.
-/// Empirically `8` across every record in the corpus.
-pub const RECORD_PROLOGUE_SIZE: usize = 8;
+/// Size of the trailing zero-padding block after the body. Empirically
+/// `8` across every record in the corpus, padding the record to a 16-byte
+/// boundary.
+pub const RECORD_TRAILER_SIZE: usize = 8;
 
 /// Bytes per (bone, frame) entry. Empirically `8` across every record in
-/// the corpus; size formula `16 + 8 * (a & 0xFF) * b` falls out of this.
+/// the corpus; size formula `16 + 8 * (a & 0xFF) * b` falls out of this
+/// (8-byte header + body + 8-byte trailer).
 pub const BONE_FRAME_BYTES: usize = 8;
 
 /// One decoded player-ANM record (one animation clip).
@@ -129,9 +158,6 @@ pub struct PlayerAnmRecord {
     pub bone_count: u16,
     /// Computed frame count = `b`.
     pub frame_count: u16,
-    /// Per-anim leading 8 bytes (frame_0 reference / rest-pose hint -
-    /// exact semantic still TBC).
-    pub prologue: [u8; 8],
 }
 
 /// A single decoded player-ANM bundle (one type-0x05 section's worth of
@@ -176,14 +202,15 @@ impl PlayerAnmBundle {
     }
 
     /// Decode record `index`'s header + sizes. Errors if the record's
-    /// size doesn't satisfy the `16 + 8 * (a & 0xFF) * b` invariant.
+    /// size doesn't satisfy the `16 + 8 * (a & 0xFF) * b` invariant
+    /// (8-byte header + body + 8-byte trailer).
     pub fn record(&self, index: usize) -> Result<PlayerAnmRecord> {
         let r = self.record_bytes(index);
-        if r.len() < RECORD_HEADER_SIZE + RECORD_PROLOGUE_SIZE {
+        if r.len() < RECORD_HEADER_SIZE + RECORD_TRAILER_SIZE {
             bail!(
-                "record {index} too small for header + prologue ({} < {})",
+                "record {index} too small for header + trailer ({} < {})",
                 r.len(),
-                RECORD_HEADER_SIZE + RECORD_PROLOGUE_SIZE
+                RECORD_HEADER_SIZE + RECORD_TRAILER_SIZE
             );
         }
         let a = u16::from_le_bytes([r[0], r[1]]);
@@ -193,18 +220,16 @@ impl PlayerAnmBundle {
         let bone_count = a & 0xFF;
         let frame_count = b;
         let expected = RECORD_HEADER_SIZE
-            + RECORD_PROLOGUE_SIZE
-            + (bone_count as usize) * (frame_count as usize) * BONE_FRAME_BYTES;
+            + (bone_count as usize) * (frame_count as usize) * BONE_FRAME_BYTES
+            + RECORD_TRAILER_SIZE;
         if r.len() != expected {
             bail!(
                 "record {index} size mismatch: a=0x{a:04X} (bone_count={bone_count}), b={frame_count}, \
-                 expected size = 16 + 8 * {bone_count} * {frame_count} = {expected}, \
+                 expected size = 8 + 8 * {bone_count} * {frame_count} + 8 = {expected}, \
                  actual = {}",
                 r.len()
             );
         }
-        let mut prologue = [0u8; 8];
-        prologue.copy_from_slice(&r[RECORD_HEADER_SIZE..RECORD_HEADER_SIZE + RECORD_PROLOGUE_SIZE]);
         Ok(PlayerAnmRecord {
             a,
             b,
@@ -212,15 +237,15 @@ impl PlayerAnmBundle {
             flag,
             bone_count,
             frame_count,
-            prologue,
         })
     }
 
     /// Borrow the per-frame slice (`bone_count * 8` bytes) for one frame.
-    /// Returns `&[]` on out-of-range record or frame.
+    /// Returns `&[]` on out-of-range record or frame. The body sits
+    /// immediately after the 8-byte header, frame-major.
     pub fn frame_bytes(&self, record_index: usize, frame_index: usize) -> &[u8] {
         let r = self.record_bytes(record_index);
-        if r.len() < RECORD_HEADER_SIZE + RECORD_PROLOGUE_SIZE {
+        if r.len() < RECORD_HEADER_SIZE + RECORD_TRAILER_SIZE {
             return &[];
         }
         let bone_count = (u16::from_le_bytes([r[0], r[1]]) & 0xFF) as usize;
@@ -229,7 +254,7 @@ impl PlayerAnmBundle {
             return &[];
         }
         let frame_bytes = bone_count * BONE_FRAME_BYTES;
-        let off = RECORD_HEADER_SIZE + RECORD_PROLOGUE_SIZE + frame_index * frame_bytes;
+        let off = RECORD_HEADER_SIZE + frame_index * frame_bytes;
         if off + frame_bytes > r.len() {
             return &[];
         }
@@ -254,6 +279,65 @@ impl PlayerAnmBundle {
             return &[];
         }
         &f[off..off + BONE_FRAME_BYTES]
+    }
+
+    /// Decode one (bone, frame) 8-byte entry into the (T, R) transform the
+    /// retail engine pushes through the GTE - see `FUN_8001BE80`.
+    /// Returns `None` if any index is out of range.
+    pub fn bone_transform(
+        &self,
+        record_index: usize,
+        frame_index: usize,
+        bone_index: usize,
+    ) -> Option<BoneTransform> {
+        let bf = self.bone_frame_bytes(record_index, frame_index, bone_index);
+        if bf.len() != BONE_FRAME_BYTES {
+            return None;
+        }
+        Some(BoneTransform::decode(bf))
+    }
+}
+
+/// Per-(bone, frame) transform decoded from one 8-byte entry. `t*` are the
+/// joint's translation in actor-local space (signed 12-bit, sign-extended
+/// to i32). `r_x/y/z` are PSX rotation units (0..4096 = 0..360°), composed
+/// in the order Z, Y, X via post-multiplication of the actor's rotation
+/// matrix (see `FUN_8001B964`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BoneTransform {
+    pub t_x: i32,
+    pub t_y: i32,
+    pub t_z: i32,
+    pub r_x: i32,
+    pub r_y: i32,
+    pub r_z: i32,
+}
+
+impl BoneTransform {
+    /// Decode the 8-byte (bone, frame) entry as the retail engine does.
+    /// Panics if `bytes.len() < 8`.
+    pub fn decode(bytes: &[u8]) -> Self {
+        let unpack = |lo: u8, hi4: u8| -> i32 {
+            let mut v = (lo as u32) | (((hi4 & 0x0F) as u32) << 8);
+            if v & 0x800 != 0 {
+                v |= 0xFFFF_F000;
+            }
+            v as i32
+        };
+        let t_x = unpack(bytes[0], bytes[2] & 0x0F);
+        let t_y = unpack(bytes[1], bytes[2] >> 4);
+        let t_z = unpack(bytes[3], bytes[4] & 0x0F);
+        let r_x = (bytes[5] as i32) << 4;
+        let r_y = (bytes[6] as i32) << 4;
+        let r_z = (bytes[7] as i32) << 4;
+        BoneTransform {
+            t_x,
+            t_y,
+            t_z,
+            r_x,
+            r_y,
+            r_z,
+        }
     }
 }
 
@@ -365,9 +449,10 @@ mod tests {
 
     /// Build a synthetic bundle that mirrors the real disc layout:
     /// absolute offsets, marker at byte +4 of each record, and
-    /// `size = 16 + 8 * bone_count * frame_count`.
+    /// `size = 8 + 8 * bone_count * frame_count + 8` (header + body +
+    /// 8-byte zero trailer).
     fn synthetic_two_records() -> Vec<u8> {
-        // Two records: (a=2 bones, b=3 frames, size = 16 + 8*2*3 = 64) twice.
+        // Two records: (a=2 bones, b=3 frames, size = 8 + 8*2*3 + 8 = 64) twice.
         let count: u32 = 2;
         let table_end = 4 + 4 * count as usize;
         let rec_size = 64;
@@ -383,16 +468,15 @@ mod tests {
             buf.extend_from_slice(&3u16.to_le_bytes());
             buf.extend_from_slice(&ANM_MARKER_1.to_le_bytes());
             buf.extend_from_slice(&0x0002u16.to_le_bytes());
-            // prologue (8 bytes)
-            buf.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11]);
             // 3 frames × 2 bones × 8 bytes = 48 bytes, tag with record index
             for f in 0..3u8 {
                 for bidx in 0..2u8 {
-                    // 4 i16s: tag with record/frame/bone for visibility
                     let v: u8 = (r as u8) * 100 + f * 10 + bidx;
                     buf.extend_from_slice(&[v, 0, v + 1, 0, v + 2, 0, v + 3, 0]);
                 }
             }
+            // 8-byte trailer (zero in real records)
+            buf.extend_from_slice(&[0u8; 8]);
         }
         buf
     }
@@ -419,16 +503,16 @@ mod tests {
         assert_eq!(r0.flag, 0x0002);
         assert_eq!(r0.bone_count, 2);
         assert_eq!(r0.frame_count, 3);
-        assert_eq!(
-            r0.prologue,
-            [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11]
-        );
     }
 
     #[test]
     fn frame_and_bone_indexing() {
         let buf = synthetic_two_records();
         let bundle = parse(&buf).unwrap();
+        // Record 0, frame 0, bone 0: tagged with (0*100 + 0*10 + 0) = 0
+        let bf = bundle.bone_frame_bytes(0, 0, 0);
+        assert_eq!(bf.len(), 8);
+        assert_eq!(bf[0], 0);
         // Record 0, frame 1, bone 0: tagged with (0*100 + 1*10 + 0) = 10
         let bf = bundle.bone_frame_bytes(0, 1, 0);
         assert_eq!(bf.len(), 8);
@@ -441,6 +525,21 @@ mod tests {
         assert!(bundle.bone_frame_bytes(0, 99, 0).is_empty());
         // Out-of-range bone returns empty
         assert!(bundle.bone_frame_bytes(0, 0, 99).is_empty());
+    }
+
+    #[test]
+    fn bone_transform_decode_signed_12bit() {
+        // Reproduce a known-good runtime decode: bytes from town01 record 17,
+        // frame 0 bone 2: `E6 AB FF FE 0F C0 FD 43` should decode to
+        // T=(-26, -85, -2) and R=(0xC00, 0xFD0, 0x430).
+        let bf = [0xE6, 0xAB, 0xFF, 0xFE, 0x0F, 0xC0, 0xFD, 0x43];
+        let t = BoneTransform::decode(&bf);
+        assert_eq!(t.t_x, -26);
+        assert_eq!(t.t_y, -85);
+        assert_eq!(t.t_z, -2);
+        assert_eq!(t.r_x, 0xC00);
+        assert_eq!(t.r_y, 0xFD0);
+        assert_eq!(t.r_z, 0x430);
     }
 
     #[test]
@@ -475,8 +574,7 @@ mod tests {
         buf.extend_from_slice(&3u16.to_le_bytes());
         buf.extend_from_slice(&ANM_MARKER_1.to_le_bytes());
         buf.extend_from_slice(&0x0002u16.to_le_bytes());
-        // prologue + only 16 bytes (vs the expected 48 = 3 frames * 2 bones * 8)
-        buf.extend_from_slice(&[0u8; 8]);
+        // 16 bytes of body (vs expected 8 + 8*2*3 + 8 = 64 trailing bytes)
         buf.extend_from_slice(&[0u8; 16]);
         let bundle = parse(&buf).unwrap();
         assert!(bundle.record(0).is_err());

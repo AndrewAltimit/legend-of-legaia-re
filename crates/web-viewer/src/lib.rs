@@ -2387,8 +2387,10 @@ impl LegaiaViewer {
 
     /// Decoded per-record header for one player-ANM record. Returned as a
     /// `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
-    /// prologue_u8[0..8]]` — total 14 entries. Returns an empty Vec on
-    /// out-of-range record or size-invariant failure.
+    /// frame0_bone0_u8[0..8]]` — total 14 entries (the 8 bytes after the
+    /// header are bone 0 of frame 0's TR entry, since the body sits
+    /// immediately after the 8-byte header — there is no prologue).
+    /// Returns an empty Vec on out-of-range record or size-invariant failure.
     pub fn player_anm_record_header(&self, prot_index: u32, record_index: u32) -> Vec<i32> {
         let decoded = self.player_anm_decoded(prot_index);
         let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
@@ -2405,7 +2407,10 @@ impl LegaiaViewer {
             rec.bone_count as i32,
             rec.frame_count as i32,
         ];
-        out.extend(rec.prologue.iter().map(|&b| b as i32));
+        let bf = bundle.bone_frame_bytes(record_index as usize, 0, 0);
+        for i in 0..8 {
+            out.push(*bf.get(i).unwrap_or(&0) as i32);
+        }
         out
     }
 
@@ -2442,27 +2447,30 @@ impl LegaiaViewer {
         out
     }
 
-    /// Player-ANM record frames decoded into the **monster-animation pose
-    /// format** the site's `MonsterMeshView`-style animator consumes:
-    /// `Int32Array`, `6` entries per part per frame as
-    /// `[tx, ty, tz, rx, ry, rz]`. Translations are in PSX model units;
-    /// rotations are unsigned 12-bit angles (`4096` = a full turn). The
-    /// JS-side `_assemble()` reads this directly.
+    /// Player-ANM record frames decoded into the same pose format the
+    /// site's `MonsterMeshView` animator consumes:
+    /// `Int32Array`, `6` entries per part per frame, as
+    /// `[tx, ty, tz, rx, ry, rz]`.
+    ///
+    /// Each 8-byte (bone, frame) entry is decoded as the retail engine does
+    /// it (`FUN_8001BE80`): bytes 0..4 hold three signed 12-bit translation
+    /// values (joint offset in actor-local space, PSX model units), bytes
+    /// 5/6/7 hold three u8 rotation angles that map to PSX 12-bit angles via
+    /// `<< 4` (so the JS animator's `4096`-unit convention applies
+    /// directly).
+    ///
+    /// The transforms are **absolute** per frame (NOT delta-from-frame-0):
+    /// frame 0 carries the rest-pose assembly transform that places each
+    /// TMD object at its joint position with its rest-pose orientation.
+    /// Applying these to objects whose vertices are in object-local space
+    /// produces the assembled character.
     ///
     /// The output is padded to `target_part_count` parts (typically the
     /// TMD's `nobj`) — bones beyond the record's own `bone_count` get
-    /// identity transforms so the un-animated parts stay at the TMD's
-    /// rest pose. Pass `0` to leave the part count at the record's own
+    /// identity transforms so the un-animated parts (e.g. field-form
+    /// equipment templates at groups 10/11) stay at their TMD-local
+    /// origin. Pass `0` to leave the part count at the record's own
     /// bone_count.
-    ///
-    /// Working hypothesis for the 4 `i16` per (bone, frame): the first 3
-    /// are `(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point, the 4th is
-    /// an auxiliary flag (its semantic is unconfirmed). Translations are
-    /// emitted as zero - the disc bytes don't seem to carry per-bone
-    /// translation deltas at this layout, and the TMD vertices are
-    /// already in model-space (see `project-character-tmds-are-model-space`).
-    /// See `docs/formats/anm.md` § "Open threads" for the falsification
-    /// path.
     pub fn player_anm_record_pose_frames(
         &self,
         prot_index: u32,
@@ -2479,52 +2487,21 @@ impl LegaiaViewer {
         let anm_bone_count = rec.bone_count as usize;
         let frame_count = rec.frame_count as usize;
         let part_count = (target_part_count as usize).max(anm_bone_count);
-        // Compute REST pose from frame 0 so all values get reported as DELTAS
-        // (frame_i - frame_0). This makes the animation visible regardless of
-        // any rest-pose offset the bytes carry, and frame 0 always yields an
-        // identity transform - matching the monster animator's convention
-        // (frame 0 = the rest pose).
-        let mut rest = vec![[0i16; 4]; anm_bone_count];
-        for (b, slot) in rest.iter_mut().enumerate().take(anm_bone_count) {
-            let bf = bundle.bone_frame_bytes(record_index as usize, 0, b);
-            if bf.len() != 8 {
-                return Vec::new();
-            }
-            for k in 0..4 {
-                slot[k] = i16::from_le_bytes([bf[k * 2], bf[k * 2 + 1]]);
-            }
-        }
         let mut out = Vec::with_capacity(frame_count * part_count * 6);
         for f in 0..frame_count {
-            // We iterate `p` across the padded part count and index `rest`
-            // only when in-bounds — switching to `rest.iter().enumerate()`
-            // would lose the iteration past anm_bone_count where we emit
-            // identity transforms.
             #[allow(clippy::needless_range_loop)]
             for p in 0..part_count {
                 if p < anm_bone_count {
-                    let bf = bundle.bone_frame_bytes(record_index as usize, f, p);
-                    if bf.len() != 8 {
+                    let Some(t) = bundle.bone_transform(record_index as usize, f, p) else {
                         return Vec::new();
-                    }
-                    let v = [
-                        i16::from_le_bytes([bf[0], bf[1]]),
-                        i16::from_le_bytes([bf[2], bf[3]]),
-                        i16::from_le_bytes([bf[4], bf[5]]),
-                        i16::from_le_bytes([bf[6], bf[7]]),
-                    ];
-                    // tx, ty, tz = 0
-                    out.push(0);
-                    out.push(0);
-                    out.push(0);
-                    // rx, ry, rz = (v[0..3] - rest[0..3]) wrapped to [0, 4096)
-                    for k in 0..3 {
-                        let mut delta = (v[k] as i32) - (rest[p][k] as i32);
-                        delta = delta.rem_euclid(4096);
-                        out.push(delta);
-                    }
+                    };
+                    out.push(t.t_x);
+                    out.push(t.t_y);
+                    out.push(t.t_z);
+                    out.push(t.r_x);
+                    out.push(t.r_y);
+                    out.push(t.r_z);
                 } else {
-                    // Identity transform for parts not covered by the ANM.
                     out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
                 }
             }
