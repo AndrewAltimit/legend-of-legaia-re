@@ -864,11 +864,18 @@ pub trait FieldHost {
     /// position / collision-Y refresh. PC += 2.
     fn player_render_resync(&mut self) {}
 
-    /// Op 0x4C sub-3 sub-F (field I/O resync).
+    /// Op 0x4C sub-3 sub-F (per-character TMD-pose copy).
     ///
-    /// 2-byte instruction `[4C, 0x3F]`. Calls `func_0x8001ebec()` - an SCUS
-    /// helper related to per-frame I/O / render-bank toggling (the same
-    /// function called from a TMD-table setup path). PC += 2.
+    /// 2-byte instruction `[4C, 0x3F]`. Calls `FUN_8001ebec()`, which is a
+    /// 3-iteration per-party-slot copier (slots 0..2, character-record stride
+    /// `0x414`): for each slot, indexes the global TMD pool `DAT_8007C018`
+    /// through the slot-byte at `_DAT_8007B824 + i` (the slot-4 freeze flag
+    /// area), then writes 7 u32s of pose data (28 bytes) at TMD offset
+    /// `+0xC + bytes[i]*0x1C` from either `+0x124..0x140` or `+0x140..0x158`,
+    /// gated on a per-record flag byte at `record+0x75E`. (Earlier comments
+    /// labelled `FUN_8001ebec` the "retail dialog-box renderer" — that's
+    /// wrong; the disassembly shows the TMD-pose copier described above.
+    /// The real dialog SM is `FUN_80039b7c`, pager `FUN_801D84D0`.) PC += 2.
     fn field_io_resync(&mut self) {}
 
     /// Op 0x34 sub-2 (actor-pool capture-and-yield).

@@ -35,8 +35,15 @@ use std::sync::Arc;
 /// most segments are consecutive speech lines, and the field-VM script (gated
 /// on story flags via `COND_JMP`) selects which segment to start at, how many
 /// lines fill one box, and which are selectable options. Mapping segments →
-/// boxes/options needs the box-geometry header that precedes the run (op `0x3F`
-/// → `func_0x8001ebec`), which is not yet decoded.
+/// boxes/options needs the box-geometry header that precedes the run, which is
+/// not yet decoded. The real per-actor dialog SM is `FUN_80039b7c` (advances
+/// `actor[+0x9c]` 0→1→2 through `0x1F`-lead segments) with pager `FUN_801D84D0`;
+/// the box-geometry header decoder is upstream of those, likely among the
+/// helpers that initialise both `actor[+0x9c]` and the cursor `actor[+0x9e]`
+/// (`FUN_8003AB2C`, `FUN_8003BDE0`, …). An earlier note pointed at
+/// `func_0x8001ebec` as the renderer — that is **wrong**; the disassembly
+/// shows it is a per-character TMD-pose copier indexed by the slot-4 freeze
+/// flag, not the dialog box renderer.
 ///
 /// So this returns the raw segment pool, faithfully, leaving the box/option
 /// interpretation to a future consumer once the header semantics are pinned.
