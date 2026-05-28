@@ -71,7 +71,37 @@
 
 <section class="doc-section" id="textures">
   <h2>Textures</h2>
-  <p>The character TMDs reference texture pages and CLUTs the engine uploads from <strong>PROT 0876</strong> (<code>player_data</code>), the streaming-format file with a VAB + a 256&times;256 TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; both blocks are pinned in <a href="../subsystems/asset-loader.html#field_shared_blocks"><code>FIELD_SHARED_BLOCKS</code></a> so they survive every field-scene transition without being re-uploaded. PROT 0874 itself carries <strong>no character textures</strong> &mdash; its remaining sections are the effect 3D models (<code>etmd.dat</code>) and effect-texture TIMs (<code>etim.dat</code>), unrelated to the player mesh.</p>
+  <p>The field-form character TMDs reference texture pages and CLUTs the engine uploads from <strong>PROT 0876</strong> (<code>player_data</code>), the streaming-format file with a VAB + a 256&times;256 TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; both blocks are pinned in <a href="../subsystems/asset-loader.html#field_shared_blocks"><code>FIELD_SHARED_BLOCKS</code></a> so they survive every field-scene transition without being re-uploaded. PROT 0874 itself carries <strong>no character textures</strong> &mdash; its remaining sections are the effect 3D models (<code>etmd.dat</code>) and effect-texture TIMs (<code>etim.dat</code>), unrelated to the player mesh.</p>
+  <p>The battle form ships <strong>its own seven 256&times;256 4bpp character atlases</strong> in the trailer of <a href="#battle-form">PROT 1204</a>, with CLUTs at VRAM <code>(0, 490..495, 497)</code>. The battle-form character TMDs sample those rows; the field-form atlas at <code>fb=(768, 0)</code> is irrelevant in BattleMode.</p>
+</section>
+
+<section class="doc-section" id="battle-form">
+  <h2>Battle form &mdash; PROT 1204 (<code>other5</code>)</h2>
+  <p>When the engine enters BattleMode (<code>game_mode = 0x15</code>), the same <code>DAT_8007C018[0..=4]</code> table is <strong>repointed</strong> at a different five-TMD archive in PROT entry <code>1204</code>. The battle-form meshes are higher-fidelity than the field-form ones and the pack delivers its own character TIM atlases inline. Implementation: <code>legaia_asset::battle_char_pack</code>.</p>
+  <p>PROT 1204 is a flat streaming-format container (no LZS wrapper) with five chunks of <strong>asset type <code>0x09</code> (TMD2)</strong> plus a terminator plus seven trailing TIMs at fixed <code>0x8224</code> stride:</p>
+  <table>
+    <thead>
+      <tr><th>Region</th><th>Offset</th><th>Type</th><th>Size</th><th>Role</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>chunk 0</td><td><code>0x000004</code></td><td>TMD2</td><td>33 516</td><td>Vahn battle (<code>nobj=15</code>)</td></tr>
+      <tr><td>chunk 1</td><td><code>0x0082F4</code></td><td>TMD2</td><td>33 636</td><td>Noa battle (<code>nobj=16</code>)</td></tr>
+      <tr><td>chunk 2</td><td><code>0x01065C</code></td><td>TMD2</td><td>24 780</td><td>Gala battle (<code>nobj=15</code>)</td></tr>
+      <tr><td>chunk 3</td><td><code>0x01672C</code></td><td>TMD2</td><td>27 036</td><td>Extra battle character (<code>nobj=20</code>)</td></tr>
+      <tr><td>chunk 4</td><td><code>0x01D0CC</code></td><td>TMD2</td><td>33 340</td><td>Extra battle character (<code>nobj=15</code>)</td></tr>
+      <tr><td>atlas 0</td><td><code>0x025804</code></td><td>TIM</td><td>~33 312</td><td>256&times;256 4bpp + 256&times;1 CLUT @ <code>(0, 490)</code></td></tr>
+      <tr><td>atlas 1</td><td><code>0x02DA28</code></td><td>TIM</td><td>~33 312</td><td>CLUT @ <code>(0, 491)</code></td></tr>
+      <tr><td>atlas 2</td><td><code>0x035C4C</code></td><td>TIM</td><td>~33 312</td><td>CLUT @ <code>(0, 492)</code></td></tr>
+      <tr><td>atlas 3</td><td><code>0x03DE70</code></td><td>TIM</td><td>~33 312</td><td>CLUT @ <code>(0, 493)</code></td></tr>
+      <tr><td>atlas 4</td><td><code>0x046094</code></td><td>TIM</td><td>~33 312</td><td>CLUT @ <code>(0, 494)</code></td></tr>
+      <tr><td>atlas 5</td><td><code>0x04E2B8</code></td><td>TIM</td><td>~33 312</td><td>CLUT @ <code>(0, 495)</code></td></tr>
+      <tr><td>atlas 6</td><td><code>0x0564DC</code></td><td>TIM</td><td>~23 332</td><td>CLUT @ <code>(0, 497)</code> &mdash; truncated, last in pack</td></tr>
+    </tbody>
+  </table>
+  <p>Slots 0&ndash;2 are pinned by byte-equality against the live <code>DAT_8007C018[0..=2]</code> allocation in the <a href="../../scripts/scenarios.toml"><code>party_battle_gobu_gobu</code> save state</a> (Vahn / Noa / Gala mid-battle vs. a single Gobu Gobu). Slots 3 and 4 carry additional battle-form characters whose runtime identity depends on the active battle.</p>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN</code></div>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
 </section>
 
 <section class="doc-section" id="animation">

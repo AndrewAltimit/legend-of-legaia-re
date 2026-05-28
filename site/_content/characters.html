@@ -192,8 +192,32 @@ table.arts-list .cmd-tag {
     <a href="reference/functions.html">FUN_8001EBEC asm trace</a>
   </div>
 
+  <h2>The battle form</h2>
+  <p>When the engine enters BattleMode (<code>game_mode = 0x15</code>), the same <code>DAT_8007C018[0..=4]</code> table the field renderer reads is <strong>repointed</strong> at a different five-TMD archive at <strong>PROT 1204</strong> (<code>other5</code>). The battle-form meshes are higher-fidelity (typical disc-form <code>nobj</code> 15/16/15 vs. the field form's 12/12/12), and the pack carries its own seven 256x256 4bpp character TIM atlases at fixed stride <code>0x8224</code>, with CLUTs at VRAM rows <code>(0, 490..495, 497)</code>.</p>
+  <table>
+    <thead>
+      <tr><th>Slot</th><th>Field form (PROT 0874 §0)</th><th>Battle form (PROT 1204)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>0 — Vahn</td>     <td><code>nobj=12</code>, 13 220 bytes</td><td><code>nobj=15</code>, 33 516 bytes</td></tr>
+      <tr><td>1 — Noa</td>      <td><code>nobj=12</code>, 13 800 bytes</td><td><code>nobj=16</code>, 33 636 bytes</td></tr>
+      <tr><td>2 — Gala</td>     <td><code>nobj=12</code>, 11 656 bytes</td><td><code>nobj=15</code>, 24 780 bytes</td></tr>
+      <tr><td>3 — Extra</td>    <td><code>nobj=3</code>,   6 488 bytes</td><td><code>nobj=20</code>, 27 036 bytes</td></tr>
+      <tr><td>4 — Extra</td>    <td><code>nobj=2</code>,   1 048 bytes</td><td><code>nobj=15</code>, 33 340 bytes</td></tr>
+    </tbody>
+  </table>
+  <p>The battle form is delivered as a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. Slot identity is pinned by byte-equality against the live <code>DAT_8007C018[0..=2]</code> allocation in the <code>party_battle_gobu_gobu</code> save state. The 7 atlases are 256x256 4bpp TIMs with 256-color sub-CLUTs (the character face / hair / weapon textures the renderer samples).</p>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN</code></div>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
+
   <h2>What's next</h2>
-  <p>The view is currently <strong>untextured</strong> and <strong>static</strong>. The character texture atlas lives in <code>player_data</code> (PROT 0876, a streaming-format file the engine pins resident alongside the mesh pack); plugging that in is the next step. Per-character <em>animations</em> live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>; once the disc-side source is pinned, this page will surface every art / spell animation alongside the audio.</p>
+  <p>The view above is still <strong>untextured</strong> and <strong>static</strong>. The disjoint mesh parts reflect each TMD object sitting at its own local origin — without a pose to assemble them, they sit in their disc-form positions. Two known threads:</p>
+  <ul>
+    <li><strong>Field-form texture atlas</strong>. Lives in <code>player_data</code> (PROT 0876, a streaming-format file pinned resident alongside the mesh pack). The streaming <code>TIM_LIST</code> chunk uses a non-canonical head <code>(count=0)</code>; the canonical pack-walker can't unpack it yet.</li>
+    <li><strong>Battle-form texture atlas</strong>. <em>Pinned</em>. The seven trailing TIMs in PROT 1204 (above) already byte-validate against live VRAM. Wiring them through the in-page WebGL viewer is the next step.</li>
+    <li><strong>Animations</strong>. Live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>; the disc-side source is still open. Once pinned, this page will surface every art / spell animation alongside the audio, and the assembled pose will replace the disjoint disc-form layout.</li>
+  </ul>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/anm.html">ANM animation</a>

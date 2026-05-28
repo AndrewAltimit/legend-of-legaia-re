@@ -2057,6 +2057,196 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    // ------------------------------------------------------------------
+    // Battle-form character pack — PROT 1204 (`other5`).
+    //
+    // Sister pack to the field-form one above. Same 5-slot shape, but
+    // higher-fidelity battle TMDs (typical disc-nobj 15/16/15 vs 12/12/12)
+    // and an explicit 7-atlas trailer (256x256 4bpp TIMs at fixed stride).
+    // ------------------------------------------------------------------
+
+    /// JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+    /// 5 TMD slots + 7 character-atlas TIMs. Shape:
+    /// ```text
+    /// {
+    ///   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
+    ///   "atlases": [{"atlas":0,"clut_fb_y":490,"tim_bytes":33316,"file_offset":154628}, ...],
+    ///   "atlas_stride_bytes": 33316,
+    ///   "first_atlas_offset": 154628
+    /// }
+    /// ```
+    pub fn battle_char_pack_json(&self) -> String {
+        let Some(slice) = self.battle_char_pack_slice() else {
+            return r#"{"slots":[],"atlases":[]}"#.to_string();
+        };
+        let pack = match legaia_asset::battle_char_pack::parse(slice) {
+            Ok(p) => p,
+            Err(e) => {
+                return format!(r#"{{"slots":[],"atlases":[],"error":"battle char pack: {e}"}}"#);
+            }
+        };
+        let slots: Vec<serde_json::Value> = pack
+            .slots()
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "slot": s.slot,
+                    "label": legaia_asset::battle_char_pack::slot_label(s.slot),
+                    "disc_nobj": s.disc_nobj,
+                    "tmd_bytes": s.tmd_bytes.len(),
+                    "file_offset": s.file_offset,
+                })
+            })
+            .collect();
+        let atlases: Vec<serde_json::Value> = pack
+            .atlases
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "atlas": a.atlas_index,
+                    "clut_fb_y": a.clut_fb_y,
+                    "tim_bytes": a.tim_bytes.len(),
+                    "file_offset": a.file_offset,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "slots": slots,
+            "atlases": atlases,
+            "atlas_stride_bytes": legaia_asset::battle_char_pack::ATLAS_STRIDE_BYTES,
+            "first_atlas_offset": legaia_asset::battle_char_pack::FIRST_ATLAS_OFFSET,
+        })
+        .to_string()
+    }
+
+    fn battle_char_pack_slice(&self) -> Option<&[u8]> {
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        self.disc.get(off..end)
+    }
+
+    fn build_battle_char_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let raw = self.battle_char_pack_slice()?;
+        let pack = legaia_asset::battle_char_pack::parse(raw).ok()?;
+        let cslot = pack.slot(slot)?;
+        let tmd_bytes = cslot.tmd_bytes.clone();
+        let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
+        Some((tmd, tmd_bytes))
+    }
+
+    fn build_battle_char_vram_mesh(&self, slot: usize) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, bytes) = self.build_battle_char_mesh(slot)?;
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes))
+    }
+
+    /// Per-vertex positions for the battle-form character at pack slot `slot`.
+    pub fn battle_char_mesh_positions(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex normals for the battle-form character at slot `slot`.
+    pub fn battle_char_mesh_normals(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.normals.len() * 3);
+        for n in &mesh.normals {
+            out.extend_from_slice(&[n[0], n[1], n[2]]);
+        }
+        out
+    }
+
+    /// Triangle indices for the battle-form character at slot `slot`.
+    pub fn battle_char_mesh_indices(&self, slot: u32) -> Vec<u32> {
+        self.build_battle_char_vram_mesh(slot as usize)
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]` integer texel coords for the battle-form character.
+    pub fn battle_char_mesh_uvs(&self, slot: u32) -> Vec<i32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` for the battle-form character.
+    pub fn battle_char_mesh_cba_tsb(&self, slot: u32) -> Vec<u32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+    pub fn battle_char_mesh_bounds(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        let (lo, hi) = mesh.aabb();
+        let c = [
+            (lo[0] + hi[0]) * 0.5,
+            (lo[1] + hi[1]) * 0.5,
+            (lo[2] + hi[2]) * 0.5,
+        ];
+        let d = [
+            (hi[0] - lo[0]) * 0.5,
+            (hi[1] - lo[1]) * 0.5,
+            (hi[2] - lo[2]) * 0.5,
+        ];
+        let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
+        vec![c[0], c[1], c[2], r]
+    }
+
+    /// Raw disc-form TMD bytes for battle-form slot `slot`.
+    pub fn battle_char_tmd_bytes(&self, slot: u32) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
+            return Vec::new();
+        };
+        pack.slot(slot as usize)
+            .map(|s| s.tmd_bytes.clone())
+            .unwrap_or_default()
+    }
+
+    /// Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+    /// a 256x1 sub-CLUT row inside the TIM block.
+    pub fn battle_char_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
+            return Vec::new();
+        };
+        pack.atlas(atlas as usize)
+            .map(|a| a.tim_bytes.clone())
+            .unwrap_or_default()
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

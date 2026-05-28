@@ -122,26 +122,32 @@ start = 0x801C0000
 end = 0x80200000
 
 # ----------------------------------------------------------------------
-# mc1 - unrelated to the FMV corpus in this rotation. Held for legacy
-# scenario compatibility - the FMV-overlay residency test guards on the
-# overlay's residency signature and skip-passes if absent.
+# mc1 - mid-battle with full 3-character active party (Vahn/Noa/Gala) vs
+# 1 Gobu Gobu enemy, command menu open. game_mode = 0x15 (BattleMode).
+# Useful as the canonical "battle with full party" oracle because all
+# three battle-form character TMDs are simultaneously resident in
+# `DAT_8007C018[0..=2]` (different shape from the field-form pack at
+# PROT 0874 sect 0 - battle form is its own archive at PROT 1204 sect
+# `other5`, asset type 0x09 "TMD2", 5 chunks: Vahn / Noa / Gala / 2 aux).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 1
-label = "unassigned"
-description = "Slot not part of the per-STR FMV corpus; legacy reference"
-topics = ["unassigned"]
-diff_against = []
+label = "party_battle_gobu_gobu"
+backup_fingerprint = "a0c56d29eeeffd96aa809040bb807606545da792209b421274b9bea27c35e7f2"
+description = "Mid-battle with Vahn/Noa/Gala active party vs one Gobu Gobu (game_mode 0x15 BattleMode, command menu open); all three battle-form character TMDs resident in DAT_8007C018[0..=2]"
+topics = ["battle", "active party", "character meshes", "BattleMode", "DAT_8007C018", "battle-form TMD"]
+phase = "battle"
+expected_game_mode = 0x15
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene-bundle pool. Contents are corpus-rotation specific."
+label = "character_tmd_pointers"
+start = 0x8007C018
+end = 0x8007C02C
+hint = "DAT_8007C018[0..=4]: 5 character TMD pointers (Vahn/Noa/Gala + 2 aux); battle-form addresses differ from field-form."
 
 # ----------------------------------------------------------------------
 # mc2 - per-STR FMV trigger corpus, slot 2 maps to STR 0 (fmv_id 0).

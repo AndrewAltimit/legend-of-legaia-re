@@ -375,6 +375,27 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Decode the battle-form player-character mesh pack at PROT entry
+    /// `1204_other5`: five `TMD2` (asset type `0x09`) streaming chunks plus
+    /// seven 256x256 4bpp character TIM atlases at fixed `0x8224` stride.
+    /// This is the BattleMode counterpart to `character-pack` (which dumps the
+    /// field-form mesh pack at PROT 0874 §0).
+    BattleCharPack {
+        /// PROT entry 1204 bytes.
+        input: PathBuf,
+        /// Slot 0..=4 to inspect (omit to print all).
+        #[arg(long)]
+        slot: Option<usize>,
+        /// Write the raw TMD body for `--slot` to this path (only with `--slot`).
+        #[arg(long)]
+        out_tmd: Option<PathBuf>,
+        /// Atlas 0..=6 to write to `--out-tim` (only with `--out-tim`).
+        #[arg(long)]
+        atlas: Option<usize>,
+        /// Write the raw TIM bytes of `--atlas` to this path.
+        #[arg(long)]
+        out_tim: Option<PathBuf>,
+    },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
     /// event-script prescript at `+0x800`.
@@ -732,6 +753,13 @@ fn main() -> Result<()> {
             equip,
             out,
         } => character_pack_one(&input, slot, equip, out.as_deref()),
+        Cmd::BattleCharPack {
+            input,
+            slot,
+            out_tmd,
+            atlas,
+            out_tim,
+        } => battle_char_pack_one(&input, slot, out_tmd.as_deref(), atlas, out_tim.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -3614,6 +3642,76 @@ fn character_pack_one(
         );
         for s in pack.slots() {
             print_slot(s);
+        }
+    }
+    Ok(())
+}
+
+fn battle_char_pack_one(
+    input: &Path,
+    slot: Option<usize>,
+    out_tmd: Option<&Path>,
+    atlas: Option<usize>,
+    out_tim: Option<&Path>,
+) -> Result<()> {
+    use legaia_asset::battle_char_pack;
+    let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
+    let pack = battle_char_pack::parse(&bytes)?;
+    let print_slot = |s: &battle_char_pack::BattleCharacterSlot| {
+        let label = battle_char_pack::slot_label(s.slot);
+        println!(
+            "  slot {} ({:<7}) disc-nobj {:2}  TMD bytes {:6}  file offset 0x{:06X}",
+            s.slot,
+            label,
+            s.disc_nobj,
+            s.tmd_bytes.len(),
+            s.file_offset
+        );
+    };
+    let print_atlas = |a: &battle_char_pack::BattleCharacterAtlas| {
+        println!(
+            "  atlas {}  CLUT fb_y={:3}  file offset 0x{:06X}  {} bytes",
+            a.atlas_index,
+            a.clut_fb_y,
+            a.file_offset,
+            a.tim_bytes.len()
+        );
+    };
+    if let Some(s_idx) = slot {
+        let s = pack
+            .slot(s_idx)
+            .ok_or_else(|| anyhow::anyhow!("slot {s_idx} out of range (0..=4)"))?;
+        print_slot(s);
+        if let Some(p) = out_tmd {
+            std::fs::write(p, &s.tmd_bytes).with_context(|| format!("write {}", p.display()))?;
+            println!(
+                "  wrote raw disc TMD ({}) -> {}",
+                battle_char_pack::slot_label(s.slot),
+                p.display()
+            );
+        }
+    } else if atlas.is_none() && out_tim.is_none() {
+        println!(
+            "PROT {} (other5, battle character pack): {} slots + {} atlases",
+            battle_char_pack::PROT_ENTRY_INDEX,
+            pack.slots().len(),
+            pack.atlases.len()
+        );
+        for s in pack.slots() {
+            print_slot(s);
+        }
+        for a in &pack.atlases {
+            print_atlas(a);
+        }
+    }
+    if let Some(a_idx) = atlas {
+        let a = pack
+            .atlas(a_idx)
+            .ok_or_else(|| anyhow::anyhow!("atlas {a_idx} out of range (0..=6)"))?;
+        print_atlas(a);
+        if let Some(p) = out_tim {
+            std::fs::write(p, &a.tim_bytes).with_context(|| format!("write {}", p.display()))?;
+            println!("  wrote raw atlas {} TIM -> {}", a.atlas_index, p.display());
         }
     }
     Ok(())

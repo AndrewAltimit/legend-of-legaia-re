@@ -235,6 +235,52 @@ export class LegaiaViewer {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+     * a 256x1 sub-CLUT row inside the TIM block.
+     */
+    battle_char_atlas_bytes(atlas: number): Uint8Array;
+    /**
+     * Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+     */
+    battle_char_mesh_bounds(slot: number): Float32Array;
+    /**
+     * Per-vertex `[cba, tsb]` for the battle-form character.
+     */
+    battle_char_mesh_cba_tsb(slot: number): Uint32Array;
+    /**
+     * Triangle indices for the battle-form character at slot `slot`.
+     */
+    battle_char_mesh_indices(slot: number): Uint32Array;
+    /**
+     * Per-vertex normals for the battle-form character at slot `slot`.
+     */
+    battle_char_mesh_normals(slot: number): Float32Array;
+    /**
+     * Per-vertex positions for the battle-form character at pack slot `slot`.
+     */
+    battle_char_mesh_positions(slot: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` integer texel coords for the battle-form character.
+     */
+    battle_char_mesh_uvs(slot: number): Int32Array;
+    /**
+     * JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+     * 5 TMD slots + 7 character-atlas TIMs. Shape:
+     * ```text
+     * {
+     *   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
+     *   "atlases": [{"atlas":0,"clut_fb_y":490,"tim_bytes":33316,"file_offset":154628}, ...],
+     *   "atlas_stride_bytes": 33316,
+     *   "first_atlas_offset": 154628
+     * }
+     * ```
+     */
+    battle_char_pack_json(): string;
+    /**
+     * Raw disc-form TMD bytes for battle-form slot `slot`.
+     */
+    battle_char_tmd_bytes(slot: number): Uint8Array;
+    /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
      */
@@ -889,6 +935,15 @@ export interface InitOutput {
     readonly legaiaruntime_open_menu: (a: number) => void;
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
     readonly legaiaruntime_tick: (a: number) => bigint;
+    readonly legaiaviewer_battle_char_atlas_bytes: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_bounds: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_indices: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_positions: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_uvs: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_pack_json: (a: number) => [number, number];
+    readonly legaiaviewer_battle_char_tmd_bytes: (a: number, b: number) => [number, number];
     readonly legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
     readonly legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_catalog_len: (a: number) => number;

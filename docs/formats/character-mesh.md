@@ -92,17 +92,59 @@ group is on / off") and item identity is conveyed by the character's
 equivalent: given a slot's disc-form TMD bytes, a [`PatchSlot`], and the
 character's equipment toggle byte, it returns the patched TMD buffer.
 
-## Textures
+## Textures (field form)
 
-The character TMDs reference texture pages and CLUTs the engine uploads from
-**PROT 0876** (`player_data`), the streaming-format file with a VAB + a 256×256
-TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM `fb=(768, 0)`
-with CLUT at `(0, 500)`; both blocks are pinned in
+The field-form character TMDs reference texture pages and CLUTs the engine
+uploads from **PROT 0876** (`player_data`), the streaming-format file with a
+VAB + a 256×256 TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM
+`fb=(768, 0)` with CLUT at `(0, 500)`; both blocks are pinned in
 [`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field_shared_blocks) so
 they survive every field-scene transition without being re-uploaded. PROT 0874
 itself carries **no character textures** — its remaining sections are the
 effect 3D models (etmd.dat) and effect-texture TIMs (etim.dat), unrelated to
 the player mesh.
+
+The battle form ships **its own seven 256×256 4bpp character atlases** in the
+trailer of [PROT 1204](#battle-form--prot-1204-other5); the field-form atlas
+at `fb=(768, 0)` is irrelevant during BattleMode.
+
+## Battle form — PROT 1204 (`other5`)
+
+When the engine enters BattleMode (`game_mode = 0x15`), the same
+`DAT_8007C018[0..=4]` table is **repointed** at a different five-TMD archive
+in PROT entry `1204`. The battle-form meshes have higher `nobj` counts than
+the field-form ones (typical 15/16/15 vs. 12/12/12) and the pack delivers its
+own character TIM atlases inline. Implementation:
+`legaia_asset::battle_char_pack`.
+
+PROT 1204 is a flat streaming-format container (no LZS wrapper) with five
+chunks of **asset type `0x09` (TMD2)** plus a terminator plus seven trailing
+TIMs at fixed `0x8224` stride:
+
+| Region   | Offset      | Type | Size       | Role                                           |
+|----------|-------------|------|------------|------------------------------------------------|
+| chunk 0  | `0x000004`  | TMD2 | 33 516     | Vahn battle (`nobj=15`)                        |
+| chunk 1  | `0x0082F4`  | TMD2 | 33 636     | Noa battle (`nobj=16`)                         |
+| chunk 2  | `0x01065C`  | TMD2 | 24 780     | Gala battle (`nobj=15`)                        |
+| chunk 3  | `0x01672C`  | TMD2 | 27 036     | Extra battle character (`nobj=20`)             |
+| chunk 4  | `0x01D0CC`  | TMD2 | 33 340     | Extra battle character (`nobj=15`)             |
+| atlas 0  | `0x025804`  | TIM  | ~33 312    | 256×256 4bpp + 256×1 CLUT @ `(0, 490)`         |
+| atlas 1  | `0x02DA28`  | TIM  | ~33 312    | CLUT @ `(0, 491)`                              |
+| atlas 2  | `0x035C4C`  | TIM  | ~33 312    | CLUT @ `(0, 492)`                              |
+| atlas 3  | `0x03DE70`  | TIM  | ~33 312    | CLUT @ `(0, 493)`                              |
+| atlas 4  | `0x046094`  | TIM  | ~33 312    | CLUT @ `(0, 494)`                              |
+| atlas 5  | `0x04E2B8`  | TIM  | ~33 312    | CLUT @ `(0, 495)`                              |
+| atlas 6  | `0x0564DC`  | TIM  | ~23 332    | CLUT @ `(0, 497)` — truncated, last in pack    |
+
+Slots 0–2 are pinned by byte-equality against the live `DAT_8007C018[0..=2]`
+allocation in the [`party_battle_gobu_gobu`](../../scripts/scenarios.toml)
+save state (Vahn / Noa / Gala mid-battle vs. a single Gobu Gobu). Slots 3 and
+4 carry additional battle-form characters whose runtime identity depends on
+the active battle.
+
+The streaming chunk type `0x09` (TMD2) is recognized in [`AssetType`](
+../../crates/asset/src/lib.rs) as a distinct dispatcher tag from the regular
+TMD (type `0x02`); the TMD body shape is identical (magic `0x80000002`).
 
 ## Animation
 
@@ -125,8 +167,15 @@ state offsets.
 ## CLI
 
 ```bash
-# List the five-slot shape and active-party templates.
+# Field-form pack (PROT 0874 §0): list the five-slot shape + active-party templates.
 asset character-pack extracted/PROT/0874_befect_data.BIN
+
+# Battle-form pack (PROT 1204): list the five TMD2 chunks + seven character atlases.
+asset battle-char-pack extracted/PROT/1204_other5.BIN
+
+# Export one battle-form character TMD and one atlas TIM.
+asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd
+asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim
 
 # Apply the equipment swap for a single slot + export the patched TMD.
 asset character-pack extracted/PROT/0874_befect_data.BIN \

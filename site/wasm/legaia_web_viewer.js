@@ -503,6 +503,120 @@ export class LegaiaViewer {
         wasm.__wbg_legaiaviewer_free(ptr, 0);
     }
     /**
+     * Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+     * a 256x1 sub-CLUT row inside the TIM block.
+     * @param {number} atlas
+     * @returns {Uint8Array}
+     */
+    battle_char_atlas_bytes(atlas) {
+        const ret = wasm.legaiaviewer_battle_char_atlas_bytes(this.__wbg_ptr, atlas);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+     * @param {number} slot
+     * @returns {Float32Array}
+     */
+    battle_char_mesh_bounds(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_bounds(this.__wbg_ptr, slot);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[cba, tsb]` for the battle-form character.
+     * @param {number} slot
+     * @returns {Uint32Array}
+     */
+    battle_char_mesh_cba_tsb(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_cba_tsb(this.__wbg_ptr, slot);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Triangle indices for the battle-form character at slot `slot`.
+     * @param {number} slot
+     * @returns {Uint32Array}
+     */
+    battle_char_mesh_indices(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_indices(this.__wbg_ptr, slot);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex normals for the battle-form character at slot `slot`.
+     * @param {number} slot
+     * @returns {Float32Array}
+     */
+    battle_char_mesh_normals(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_normals(this.__wbg_ptr, slot);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex positions for the battle-form character at pack slot `slot`.
+     * @param {number} slot
+     * @returns {Float32Array}
+     */
+    battle_char_mesh_positions(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_positions(this.__wbg_ptr, slot);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` integer texel coords for the battle-form character.
+     * @param {number} slot
+     * @returns {Int32Array}
+     */
+    battle_char_mesh_uvs(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_uvs(this.__wbg_ptr, slot);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+     * 5 TMD slots + 7 character-atlas TIMs. Shape:
+     * ```text
+     * {
+     *   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
+     *   "atlases": [{"atlas":0,"clut_fb_y":490,"tim_bytes":33316,"file_offset":154628}, ...],
+     *   "atlas_stride_bytes": 33316,
+     *   "first_atlas_offset": 154628
+     * }
+     * ```
+     * @returns {string}
+     */
+    battle_char_pack_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_battle_char_pack_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Raw disc-form TMD bytes for battle-form slot `slot`.
+     * @param {number} slot
+     * @returns {Uint8Array}
+     */
+    battle_char_tmd_bytes(slot) {
+        const ret = wasm.legaiaviewer_battle_char_tmd_bytes(this.__wbg_ptr, slot);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
      * @param {number} id
