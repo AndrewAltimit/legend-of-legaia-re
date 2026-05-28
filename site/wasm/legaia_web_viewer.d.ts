@@ -241,6 +241,10 @@ export class LegaiaViewer {
     battle_char_atlas_bytes(atlas: number): Uint8Array;
     /**
      * Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+     * Uses the **vertex centroid** (mean position) rather than the AABB
+     * midpoint, so asymmetric poses (e.g. Vahn's stance with the weapon
+     * extended past the body's X axis) don't pull the camera target off the
+     * torso. Radius is the max distance from the centroid to any vertex.
      */
     battle_char_mesh_bounds(slot: number): Float32Array;
     /**
@@ -305,6 +309,8 @@ export class LegaiaViewer {
     catalog_len(): number;
     /**
      * Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+     * Uses [`centroid_bounds`] so asymmetric poses (weapon extended, arm out)
+     * don't pull the camera target off the body.
      */
     character_mesh_bounds(slot: number, equip_byte: number): Float32Array;
     /**

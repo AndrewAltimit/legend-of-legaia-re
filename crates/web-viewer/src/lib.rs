@@ -2019,6 +2019,8 @@ impl LegaiaViewer {
     }
 
     /// Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+    /// Uses [`centroid_bounds`] so asymmetric poses (weapon extended, arm out)
+    /// don't pull the camera target off the body.
     pub fn character_mesh_bounds(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
         let equip = (equip_byte >= 0).then_some(equip_byte as u8);
         let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
@@ -2027,19 +2029,7 @@ impl LegaiaViewer {
         if mesh.positions.is_empty() {
             return vec![0.0; 4];
         }
-        let (lo, hi) = mesh.aabb();
-        let c = [
-            (lo[0] + hi[0]) * 0.5,
-            (lo[1] + hi[1]) * 0.5,
-            (lo[2] + hi[2]) * 0.5,
-        ];
-        let d = [
-            (hi[0] - lo[0]) * 0.5,
-            (hi[1] - lo[1]) * 0.5,
-            (hi[2] - lo[2]) * 0.5,
-        ];
-        let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
-        vec![c[0], c[1], c[2], r]
+        centroid_bounds(&mesh.positions)
     }
 
     /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
@@ -2198,6 +2188,10 @@ impl LegaiaViewer {
     }
 
     /// Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+    /// Uses the **vertex centroid** (mean position) rather than the AABB
+    /// midpoint, so asymmetric poses (e.g. Vahn's stance with the weapon
+    /// extended past the body's X axis) don't pull the camera target off the
+    /// torso. Radius is the max distance from the centroid to any vertex.
     pub fn battle_char_mesh_bounds(&self, slot: u32) -> Vec<f32> {
         let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return vec![0.0; 4];
@@ -2205,19 +2199,7 @@ impl LegaiaViewer {
         if mesh.positions.is_empty() {
             return vec![0.0; 4];
         }
-        let (lo, hi) = mesh.aabb();
-        let c = [
-            (lo[0] + hi[0]) * 0.5,
-            (lo[1] + hi[1]) * 0.5,
-            (lo[2] + hi[2]) * 0.5,
-        ];
-        let d = [
-            (hi[0] - lo[0]) * 0.5,
-            (hi[1] - lo[1]) * 0.5,
-            (hi[2] - lo[2]) * 0.5,
-        ];
-        let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
-        vec![c[0], c[1], c[2], r]
+        centroid_bounds(&mesh.positions)
     }
 
     /// Raw disc-form TMD bytes for battle-form slot `slot`.
@@ -3379,6 +3361,41 @@ fn tim_block_targeting(tim: &legaia_tim::Tim, needs: &[PrimTarget]) -> (bool, bo
 
 fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
     a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Vertex-centroid bounding sphere — `[cx, cy, cz, r]`. The center is the
+/// mean of every vertex (mass-weighted by vertex count, since every vertex
+/// contributes equally), so a model whose AABB is asymmetric (an extended
+/// weapon, an arm thrown out for a strike pose) anchors the camera target on
+/// the bulk of the geometry instead of halfway between the body and the
+/// outlier. Radius is the maximum distance from the centroid to any vertex,
+/// which guarantees every vertex is visible at the default camera distance.
+fn centroid_bounds(positions: &[[f32; 3]]) -> Vec<f32> {
+    if positions.is_empty() {
+        return vec![0.0; 4];
+    }
+    let n = positions.len() as f32;
+    let mut sx = 0f32;
+    let mut sy = 0f32;
+    let mut sz = 0f32;
+    for p in positions {
+        sx += p[0];
+        sy += p[1];
+        sz += p[2];
+    }
+    let c = [sx / n, sy / n, sz / n];
+    let mut r2max = 0f32;
+    for p in positions {
+        let dx = p[0] - c[0];
+        let dy = p[1] - c[1];
+        let dz = p[2] - c[2];
+        let r2 = dx * dx + dy * dy + dz * dz;
+        if r2 > r2max {
+            r2max = r2;
+        }
+    }
+    let r = r2max.sqrt().max(1.0);
+    vec![c[0], c[1], c[2], r]
 }
 
 /// Expand a fixed-size PSX sprite (8x8 or 16x16) into the same 6-vertex
