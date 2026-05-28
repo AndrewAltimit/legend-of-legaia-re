@@ -300,6 +300,11 @@ table.arts-list .cmd-tag {
   let curForm = 'field'; // 'field' or 'battle'
   let curAnmBundleIdx = 0;   // index into anmCorpus.bundles
   let curAnmRecordIdx = 0;
+  // Per-form last-selected bundle index, so toggling field↔battle preserves
+  // each side's scrubber state instead of snapping back to the default.
+  // Initialised to -1 ("never picked"); on form switch we fall back to the
+  // form's default if the cached index is invalid or still -1.
+  let _bundleIdxByForm = { field: -1, battle: -1 };
   let meshView = null;   // CharacterMeshView (field) or BattleMeshView (battle)
   let artsData = null;   // arts.json contents, lazily fetched
   let curArtsKind = 'regular';
@@ -503,9 +508,39 @@ table.arts-list .cmd-tag {
               data-val="${b.val}" title="${escapeHtml(b.hint)}">${b.label}</button>`).join('');
   }
 
+  // Index of the per-scene player ANM bundle a field-form character should
+  // animate against by default (the corpus walks every scene, so we pick a
+  // common-purpose one — town01 (PROT 0004) — by lowest PROT index that
+  // isn't the battle bundle). Computed lazily on first form swap.
+  let _fieldBundleIdxCache = -1;
+  function defaultFieldBundleIdx() {
+    if (!anmCorpus || !anmCorpus.bundles) return 0;
+    if (_fieldBundleIdxCache >= 0) return _fieldBundleIdxCache;
+    let best = 0, bestProt = Infinity;
+    for (let i = 0; i < anmCorpus.bundles.length; i++) {
+      const pi = anmCorpus.bundles[i].prot_index | 0;
+      if (pi === 1203) continue; // battle-form bundle
+      if (pi < bestProt) { bestProt = pi; best = i; }
+    }
+    _fieldBundleIdxCache = best;
+    return best;
+  }
+
+  // Index of the battle-form bundle (PROT 1203 other5). Returns -1 if the
+  // corpus walk didn't pick it up — the form toggle won't engage unless
+  // battlePack is present, so this is mostly belt-and-suspenders.
+  function battleBundleIdx() {
+    if (!anmCorpus || !anmCorpus.bundles) return -1;
+    for (let i = 0; i < anmCorpus.bundles.length; i++) {
+      if ((anmCorpus.bundles[i].prot_index | 0) === 1203) return i;
+    }
+    return -1;
+  }
+
   function selectForm(form) {
     if (form === curForm) return;
     if (form === 'battle' && (!battlePack || !battlePack.slots || battlePack.slots.length === 0)) return;
+    const prevForm = curForm;
     curForm = form;
     // Destroy any current viewer so we can re-instantiate with the right class.
     if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
@@ -517,6 +552,24 @@ table.arts-list .cmd-tag {
       const fresh = oldCanvas.cloneNode(false);
       oldCanvas.replaceWith(fresh);
     }
+    // Route the ANM scrubber to the form-appropriate bundle so the user
+    // doesn't have to manually find PROT 1203 every time they swap forms.
+    // Remember the bundle they were on per-form so toggling field↔battle
+    // doesn't reset their scrubber position.
+    if (anmCorpus && anmCorpus.bundles && anmCorpus.bundles.length > 0) {
+      _bundleIdxByForm[prevForm] = curAnmBundleIdx;
+      const cached = _bundleIdxByForm[form] | 0;
+      let targetIdx = cached >= 0 && cached < anmCorpus.bundles.length ? cached : -1;
+      if (targetIdx < 0) {
+        targetIdx = form === 'battle' ? battleBundleIdx() : defaultFieldBundleIdx();
+      }
+      if (targetIdx >= 0 && targetIdx !== curAnmBundleIdx) {
+        curAnmBundleIdx = targetIdx;
+        curAnmRecordIdx = 0;
+        if (anmBundleSel) anmBundleSel.value = String(curAnmBundleIdx);
+        syncAnmSlider();
+      }
+    }
     renderFormToggle();
     // Re-render the grid + equip toggle against the active form's pack;
     // re-load the currently-selected slot's mesh.
@@ -526,6 +579,10 @@ table.arts-list .cmd-tag {
         const meta = p.slots[selectedSlot];
         nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
       }
+      // Pick a slot-appropriate default record for the newly-active bundle.
+      const p2 = activePack();
+      if (p2) curAnmRecordIdx = pickDefaultRecordFor(selectedSlot, p2);
+      syncAnmSlider();
     }
     renderGrid();
     renderEquipToggle();
@@ -624,6 +681,34 @@ table.arts-list .cmd-tag {
     if (!bundle || !bundle.records) return 0;
     const want = animatedBoneCountFor(slot, p);
 
+    // Battle form: the 30 records in PROT 1203 are organised in per-character
+    // banks. Empirically (bone_count grouped against PROT 1204 slot order):
+    //
+    //   recs 0..8   bone_count=15  → slot 0 Vahn  (15 disc-nobj)
+    //   recs 9..17  bone_count=16  → slot 1 Noa   (16 disc-nobj)
+    //   recs 18..26 bone_count=15  → slot 2 Gala  (15 disc-nobj)
+    //   recs 27..29 bone_count=10  → simplified rig (slot 3 Extra 0 fallback)
+    //
+    // Although slot 0 (Vahn) and slot 2 (Gala) have the same bone_count,
+    // each record's T values encode that character's specific joint
+    // positions — applying Vahn's rec 0 T to Gala's TMD would put Gala's
+    // shoulders where Vahn's are, which doesn't match her proportions.
+    // The first record of each bank is the combat-stance idle, which is
+    // what the engine holds at battle start.
+    if (curForm === 'battle' && bundle.prot_index === 1203) {
+      const BATTLE_BANK_START = { 0: 0, 1: 9, 2: 18, 3: 27, 4: 0 };
+      const start = BATTLE_BANK_START[slot] | 0;
+      for (let i = start; i < bundle.records.length; i++) {
+        if ((bundle.records[i].bone_count | 0) === want) return i;
+      }
+      // No bank-aware match (e.g. slot 3's 20-nobj has no 20-bone record).
+      // Fall through to a global first-match by bone_count.
+      for (let i = 0; i < bundle.records.length; i++) {
+        if ((bundle.records[i].bone_count | 0) === want) return i;
+      }
+      return 0;
+    }
+
     // Without a TMD to simulate against, fall back to the stillness score.
     let positions = null, objectIds = null;
     if (curForm === 'field' && viewer && p && p.slots[slot]) {
@@ -703,6 +788,7 @@ table.arts-list .cmd-tag {
       const cbaTsb   = viewer.battle_char_mesh_cba_tsb(slot);
       const indices  = viewer.battle_char_mesh_indices(slot);
       const bounds   = viewer.battle_char_mesh_bounds(slot);
+      const objectIds = viewer.battle_char_mesh_object_ids(slot);
       if (!positions.length || !indices.length) {
         statsEl.innerHTML = '<span style="color:var(--text-dim)">Battle mesh failed to parse. Is PROT 1204 present?</span>';
         return;
@@ -727,7 +813,14 @@ table.arts-list .cmd-tag {
           Uint16Array.from(cbaTsb),
           Uint32Array.from(indices),
           bounds,
+          objectIds && objectIds.length ? Uint32Array.from(objectIds) : null,
         );
+        // Hook playback → slider readout, same shape as the field-form view.
+        meshView.onFrame = (f) => {
+          if (!anmFrameSlider || anmFrameSlider.disabled) return;
+          anmFrameSlider.value = String(f);
+          if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
+        };
         meshView.resetView();
         const tri = (indices.length / 3) | 0;
         const vert = (positions.length / 3) | 0;
@@ -736,6 +829,9 @@ table.arts-list .cmd-tag {
           `<b>${tri}</b> triangles · <b>${vert}</b> vertices · battle form`;
         funEl.textContent =
           `nobj ${meta.disc_nobj} on disc · sampled from 7 character atlases (CLUTs at VRAM rows 490..495, 497)`;
+        // Re-apply the current ANM record to the freshly-loaded mesh
+        // (slot or form switch shouldn't drop the animation).
+        maybeLoadCurrentAnim();
       } catch (err) {
         statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
       }
@@ -788,16 +884,14 @@ table.arts-list .cmd-tag {
   }
 
   // Pull the (bundle, record) the scrubber currently points at and push it
-  // into the active CharacterMeshView. No-op when:
+  // into the active mesh view. Works for both CharacterMeshView (field form)
+  // and BattleMeshView (battle form) — they share an animator interface
+  // (setAnimation / setFrame / setPlaying / _poseAt). No-op when:
   //   - viewer isn't ready / disc isn't loaded
-  //   - the active view is the battle form (per-bone animation not wired)
-  //   - selected record has bone_count == 0 (shouldn't happen post-fix)
+  //   - selected record has bone_count == 0
   function maybeLoadCurrentAnim() {
     if (!viewer || !anmCorpus) return;
-    if (!(meshView instanceof CharacterMeshView)) {
-      // Battle-form animator not wired yet; leave any prior anim in place.
-      return;
-    }
+    if (!meshView || typeof meshView.setAnimation !== 'function') return;
     const bundle = anmCorpus.bundles[curAnmBundleIdx];
     if (!bundle) return;
     const rec = bundle.records[curAnmRecordIdx];
@@ -1326,6 +1420,22 @@ table.arts-list .cmd-tag {
       // Same orbit defaults as CharacterMeshView so the spin / drag / reset
       // controls feel identical between the two forms.
       this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
+      // Animation state — same shape as CharacterMeshView so the page-side
+      // animator can drive both views via a uniform interface. The battle
+      // form pose composition is identical to field form (v_world =
+      // R_bone · v_object_local + T_bone): the per-character battle TMDs
+      // at PROT 1204 ship their vertices in bone-local space, just like
+      // PROT 0874 §0, and the battle-form ANM at PROT 1203 (other5) carries
+      // the (T, R) per (bone, frame) that the engine pushes through the GTE
+      // at runtime (FUN_8001B964 → FUN_8001BE80).
+      this._basePos = null;     // pristine Float32Array(vertices*3)
+      this._objIds = null;      // Uint32Array per-vertex object index
+      this.anim = null;
+      this._frameOverride = -1;
+      this.playing = false;
+      this._startMs = 0;
+      this._lastPosedFrame = -1;
+      this.onFrame = null;
       this._loop = this._loop.bind(this);
       this._raf = 0;
       this._attachControls();
@@ -1336,7 +1446,7 @@ table.arts-list .cmd-tag {
       this.renderer.uploadVram(vramBytes);
     }
 
-    setMesh(positions, uvs8, cbaTsb, indices, bounds) {
+    setMesh(positions, uvs8, cbaTsb, indices, bounds, objectIds) {
       // The mesh sampler returns raw TMD-space vertices (PSX Y-down). The
       // TmdRenderer's MVP build expects this convention already (it flips
       // internally via the projection); we just feed positions through.
@@ -1344,6 +1454,154 @@ table.arts-list .cmd-tag {
       this.indexCount = indices.length;
       this.center = [bounds[0], bounds[1], bounds[2]];
       this.radius = bounds[3] || 1;
+      this._basePos = positions;
+      this._objIds = objectIds || null;
+      // Pre-compute per-object centroids so the animator can rotate each
+      // bone around its own anatomical pivot rather than around (0,0,0).
+      // Battle-form TMDs store many objects with non-zero centroids (e.g.
+      // Vahn battle obj 0 centroid X≈18, obj 1 X≈59) — applying a pure
+      // R·v + T composition would orbit those vertices around the world
+      // origin instead of around the bone's joint, leaving sockets visibly
+      // disjoint. Subtracting C and treating T as the joint world position
+      // (v_world = R·(v - C) + T) puts the centroid AT the joint.
+      this._objCentroids = null;
+      if (objectIds && objectIds.length) {
+        const counts = new Map();
+        const sums = new Map();
+        const n = positions.length / 3;
+        for (let v = 0; v < n; v++) {
+          const o = objectIds[v];
+          if (!sums.has(o)) { sums.set(o, [0, 0, 0]); counts.set(o, 0); }
+          const s = sums.get(o);
+          s[0] += positions[v*3];
+          s[1] += positions[v*3+1];
+          s[2] += positions[v*3+2];
+          counts.set(o, counts.get(o) + 1);
+        }
+        const maxId = Math.max(...sums.keys());
+        const cents = new Float32Array((maxId + 1) * 3);
+        for (const [o, s] of sums.entries()) {
+          const c = counts.get(o) || 1;
+          cents[o*3] = s[0] / c;
+          cents[o*3+1] = s[1] / c;
+          cents[o*3+2] = s[2] / c;
+        }
+        this._objCentroids = cents;
+      }
+      this.anim = null;
+      this.playing = false;
+      this._frameOverride = -1;
+    }
+
+    setAnimation(meta) {
+      if (!meta || !meta.frameCount || meta.frameCount < 2 ||
+          !this._objIds || !this._basePos) {
+        this.anim = null;
+        this.playing = false;
+        // Restore pristine geometry.
+        if (this._basePos) this.renderer.updatePositions(this._basePos);
+        return;
+      }
+      this.anim = {
+        out: new Float32Array(this._basePos),
+        partCount: meta.partCount,
+        frameCount: meta.frameCount,
+        frames: meta.frames,    // Int32Array(frameCount*partCount*6)
+      };
+      this._startMs = performance.now();
+      this._frameOverride = 0;
+      this._lastPosedFrame = -1;
+      this._poseAt(0);
+      // Re-fit the camera on the assembled rest pose (frame 0 of the
+      // selected battle ANM record is the actor's combat stance — for
+      // Vahn rec 0 frame 0 this is the sideways sword-ready pose).
+      let lo = [Infinity, Infinity, Infinity];
+      let hi = [-Infinity, -Infinity, -Infinity];
+      const o = this.anim.out, n = o.length / 3;
+      const ids = this._objIds;
+      const pc = this.anim.partCount;
+      for (let v = 0; v < n; v++) {
+        if (ids[v] >= pc) continue;
+        for (let k = 0; k < 3; k++) {
+          const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
+        }
+      }
+      if (lo[0] !== Infinity) {
+        this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
+        this.radius = Math.max(1, Math.hypot(
+          (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
+      }
+    }
+
+    setPlaying(on) {
+      if (!this.anim) { this.playing = false; return; }
+      this.playing = !!on;
+      if (this.playing) {
+        this._startMs = performance.now() - (this._frameOverride >= 0
+          ? (this._frameOverride / 14) * 1000
+          : 0);
+        this._frameOverride = -1;
+      }
+    }
+
+    setFrame(f) {
+      if (!this.anim) return;
+      this._frameOverride = f | 0;
+      this.playing = false;
+      this._poseAt(this._frameOverride);
+    }
+
+    _pose(f, p) {
+      const o = (f * this.anim.partCount + p) * 6, a = this.anim.frames;
+      return { t: [a[o], a[o+1], a[o+2]], r: [a[o+3], a[o+4], a[o+5]] };
+    }
+
+    _poseAt(frameIdx) {
+      const A = this.anim;
+      if (!A) return;
+      const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
+      const A2R = (Math.PI * 2) / 4096;
+      const base = this._basePos;
+      const out = A.out;
+      const cents = this._objCentroids;
+      const ids = this._objIds, n = base.length / 3;
+      const sin = new Float32Array(A.partCount * 3);
+      const cos = new Float32Array(A.partCount * 3);
+      const tr = new Float32Array(A.partCount * 3);
+      for (let p = 0; p < A.partCount; p++) {
+        const pose = this._pose(ff, p);
+        for (let k = 0; k < 3; k++) {
+          const a = pose.r[k] * A2R;
+          sin[p*3+k] = Math.sin(a);
+          cos[p*3+k] = Math.cos(a);
+          tr[p*3+k] = pose.t[k];
+        }
+      }
+      for (let v = 0; v < n; v++) {
+        const o = ids[v];
+        if (o >= A.partCount) {
+          out[v*3] = 0; out[v*3+1] = 0; out[v*3+2] = 0;
+          continue;
+        }
+        const sx = sin[o*3], cxx = cos[o*3];
+        const sy = sin[o*3+1], cyy = cos[o*3+1];
+        const sz = sin[o*3+2], czz = cos[o*3+2];
+        // Subtract per-object centroid before rotating, so each bone
+        // rotates around its own anatomical pivot rather than the actor
+        // origin. T then places the centroid at the joint world position.
+        const cx0 = cents ? cents[o*3] : 0;
+        const cy0 = cents ? cents[o*3+1] : 0;
+        const cz0 = cents ? cents[o*3+2] : 0;
+        let x = base[v*3] - cx0, y = base[v*3+1] - cy0, z = base[v*3+2] - cz0;
+        // Rz · Ry · Rx · (v - C) + T
+        let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
+        let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
+        nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
+        out[v*3]   = x + tr[o*3];
+        out[v*3+1] = y + tr[o*3+1];
+        out[v*3+2] = z + tr[o*3+2];
+      }
+      this.renderer.updatePositions(out);
     }
 
     resetView() {
@@ -1394,6 +1652,17 @@ table.arts-list .cmd-tag {
         this.canvas.width = w; this.canvas.height = h;
       }
       if (this.cam.autoRotate) this.cam.yaw += 0.006;
+      // Advance animation playback (~14 fps, matching CharacterMeshView).
+      if (this.anim && this.playing) {
+        const FPS = 14;
+        const t = (performance.now() - this._startMs) / 1000 * FPS;
+        const f = Math.floor(t) % this.anim.frameCount;
+        if (f !== this._lastPosedFrame) {
+          this._poseAt(f);
+          this._lastPosedFrame = f;
+          if (typeof this.onFrame === 'function') this.onFrame(f);
+        }
+      }
       // TmdRenderer.render takes (yaw, pitch, distance, panX, panY, center,
       // radius). The orbit camera here keeps panX/Y at 0 to match the
       // CharacterMeshView UX (drag rotates, doesn't pan).
