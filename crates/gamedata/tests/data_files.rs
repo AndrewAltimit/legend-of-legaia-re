@@ -211,6 +211,67 @@ fn enemy_drop_and_steal_keys_resolve() {
 }
 
 #[test]
+fn seru_spells_carry_absorb_chances() {
+    // Every `family = "seru"` spell now has Meth962-sourced Lv1/Lv2/Lv3
+    // absorption probabilities. Ra-Seru summons are egg-derived and
+    // don't have an absorption mechanic.
+    let db = Database::load();
+    let mut missing: Vec<&str> = Vec::new();
+    for spell in db.spells() {
+        if spell.family != legaia_gamedata::SpellFamily::Seru {
+            continue;
+        }
+        if spell.absorb_lv1.is_none() || spell.absorb_lv2.is_none() || spell.absorb_lv3.is_none() {
+            missing.push(&spell.name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "Seru spells missing absorb chances: {:?}",
+        missing
+    );
+}
+
+#[test]
+fn magic_leveling_xp_thresholds_are_monotonic() {
+    let xp = legaia_gamedata::magic_leveling::XP_TO_LEVEL;
+    for w in xp.windows(2) {
+        assert!(w[0] < w[1], "XP curve not monotonic: {:?}", xp);
+    }
+    // Sanity: lv9 cumulative cost matches Meth's published value.
+    assert_eq!(xp[7], 537);
+}
+
+#[test]
+fn magic_leveling_scaling_doubles_at_lv9() {
+    let s = legaia_gamedata::magic_leveling::SCALING_BP;
+    assert_eq!(s[0], 10_000, "Lv1 base 100%");
+    assert_eq!(s[8], 20_000, "Lv9 = +100%");
+    // Strictly increasing.
+    for w in s.windows(2) {
+        assert!(w[0] < w[1], "scaling not monotonic: {:?}", s);
+    }
+}
+
+#[test]
+fn magic_xp_award_brackets() {
+    use legaia_gamedata::magic_leveling::{xp_multi_target, xp_single_target};
+    // Single-target spot checks against the FAQ table.
+    assert_eq!(xp_single_target(100), 12);
+    assert_eq!(xp_single_target(95), 11);
+    assert_eq!(xp_single_target(80), 9);
+    assert_eq!(xp_single_target(50), 5);
+    assert_eq!(xp_single_target(20), 2);
+    assert_eq!(xp_single_target(5), 0);
+    // Multi-target.
+    assert_eq!(xp_multi_target(100), 4);
+    assert_eq!(xp_multi_target(80), 3);
+    assert_eq!(xp_multi_target(60), 2);
+    assert_eq!(xp_multi_target(30), 1);
+    assert_eq!(xp_multi_target(10), 0);
+}
+
+#[test]
 fn boss_item_rewards_resolve_to_known_keys() {
     let db = Database::load();
     for b in db.bosses() {

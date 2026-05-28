@@ -27,6 +27,9 @@ element = "dark"
 mp = 13
 attack = "Hell's Music"
 target = "single_enemy"
+absorb_lv1 = 30
+absorb_lv2 = 40
+absorb_lv3 = 50
 
 [[spell]]
 name = "Puera"
@@ -35,6 +38,9 @@ element = "dark"
 mp = 120
 attack = "Dream Illusion"
 target = "all_enemies"
+absorb_lv1 = 15
+absorb_lv2 = 15
+absorb_lv3 = 15
 
 [[spell]]
 name = "Mushura"
@@ -43,6 +49,9 @@ element = "earth"
 mp = 60
 attack = "Crazy Driver"
 target = "all_enemies"
+absorb_lv1 = 15
+absorb_lv2 = 25
+absorb_lv3 = 35
 
 [[spell]]
 name = "Kemaro"
@@ -51,6 +60,9 @@ element = "earth"
 mp = 72
 attack = "Canine Fangs"
 target = "single_enemy"
+absorb_lv1 = 15
+absorb_lv2 = 15
+absorb_lv3 = 15
 
 [[spell]]
 name = "Iota"
@@ -59,6 +71,9 @@ element = "earth"
 mp = 90
 attack = "Odd Dimension"
 target = "all_enemies"
+absorb_lv1 = 15
+absorb_lv2 = 15
+absorb_lv3 = 15
 
 [[spell]]
 name = "Gimard"
@@ -67,6 +82,9 @@ element = "fire"
 mp = 10
 attack = "Burning Attack"
 target = "single_enemy"
+absorb_lv1 = 55
+absorb_lv2 = 60
+absorb_lv3 = 80
 
 [[spell]]
 name = "Zenoir"
@@ -75,6 +93,9 @@ element = "fire"
 mp = 36
 attack = "Vertical Hammer"
 target = "single_enemy"
+absorb_lv1 = 20
+absorb_lv2 = 30
+absorb_lv3 = 40
 
 [[spell]]
 name = "Gola Gola"
@@ -83,6 +104,9 @@ element = "fire"
 mp = 40
 attack = "Spinning Flare"
 target = "all_enemies"
+absorb_lv1 = 15
+absorb_lv2 = 25
+absorb_lv3 = 35
 
 [[spell]]
 name = "Vera"
@@ -91,6 +115,9 @@ element = "light"
 mp = 6
 attack = "Mystic Care"
 target = "single_ally"
+absorb_lv1 = 60
+absorb_lv2 = 60
+absorb_lv3 = 70
 
 [[spell]]
 name = "Orb"
@@ -99,6 +126,9 @@ element = "light"
 mp = 18
 attack = "Holy Orb"
 target = "all_allies"
+absorb_lv1 = 40
+absorb_lv2 = 50
+absorb_lv3 = 60
 
 [[spell]]
 name = "Spoon"
@@ -107,6 +137,9 @@ element = "light"
 mp = 45
 attack = "Holy Eyes"
 target = "all_allies"
+absorb_lv1 = 15
+absorb_lv2 = 15
+absorb_lv3 = 15
 
 [[spell]]
 name = "Aluru"
@@ -115,6 +148,9 @@ element = "light"
 mp = 90
 attack = "Final Blast"
 target = "single_enemy"
+absorb_lv1 = 10
+absorb_lv2 = 25
+absorb_lv3 = 35
 
 [[spell]]
 name = "Theeder"
@@ -123,6 +159,9 @@ element = "thunder"
 mp = 24
 attack = "Turning Laser"
 target = "single_enemy"
+absorb_lv1 = 30
+absorb_lv2 = 50
+absorb_lv3 = 60
 
 [[spell]]
 name = "Viguro"
@@ -131,6 +170,9 @@ element = "thunder"
 mp = 64
 attack = "Plasma Storm"
 target = "all_enemies"
+absorb_lv1 = 10
+absorb_lv2 = 15
+absorb_lv3 = 35
 
 [[spell]]
 name = "Gilium"
@@ -139,6 +181,9 @@ element = "thunder"
 mp = 160
 attack = "Space Cannon"
 target = "all_enemies"
+absorb_lv1 = 1
+absorb_lv2 = 1
+absorb_lv3 = 1
 
 [[spell]]
 name = "Gizam"
@@ -147,6 +192,9 @@ element = "water"
 mp = 28
 attack = "Bubble Crush"
 target = "all_enemies"
+absorb_lv1 = 30
+absorb_lv2 = 40
+absorb_lv3 = 50
 
 [[spell]]
 name = "Freed"
@@ -155,6 +203,9 @@ element = "water"
 mp = 40
 attack = "Freezing Point"
 target = "all_enemies"
+absorb_lv1 = 15
+absorb_lv2 = 25
+absorb_lv3 = 35
 
 [[spell]]
 name = "Slippery"
@@ -163,6 +214,9 @@ element = "water"
 mp = 110
 attack = "Deadly Rain"
 target = "all_enemies"
+absorb_lv1 = 15
+absorb_lv2 = 15
+absorb_lv3 = 15
 
 [[spell]]
 name = "Swordie"
@@ -171,6 +225,9 @@ element = "wind"
 mp = 32
 attack = "Sonicizer"
 target = "single_enemy"
+absorb_lv1 = 15
+absorb_lv2 = 25
+absorb_lv3 = 35
 
 [[spell]]
 name = "Nova"
@@ -179,6 +236,9 @@ element = "wind"
 mp = 48
 attack = "Violent Wind"
 target = "single_enemy"
+absorb_lv1 = 10
+absorb_lv2 = 25
+absorb_lv3 = 35
 
 [[spell]]
 name = "Barra"
@@ -187,6 +247,9 @@ element = "wind"
 mp = 85
 attack = "Hell Dive"
 target = "single_enemy"
+absorb_lv1 = 15
+absorb_lv2 = 15
+absorb_lv3 = 15
 
 # ---------------------------------------------------------------------------
 # Ra-Seru summons (8 entries) - egg-bound, talisman-gated
