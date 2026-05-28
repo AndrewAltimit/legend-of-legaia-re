@@ -2247,6 +2247,28 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    /// Build the 1 MB PSX VRAM the battle-form character pack would have
+    /// at boot — each of the seven atlas TIMs uploaded at its declared
+    /// `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
+    /// `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
+    /// fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
+    /// to the battle character atlas pack.
+    pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
+            return Vec::new();
+        };
+        let mut vram = legaia_tim::Vram::new();
+        for atlas in &pack.atlases {
+            if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
+                vram.upload_tim(&tim);
+            }
+        }
+        vram.as_bytes().to_vec()
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

@@ -47,6 +47,7 @@ export const legaiaviewer_battle_char_mesh_positions: (a: number, b: number) => 
 export const legaiaviewer_battle_char_mesh_uvs: (a: number, b: number) => [number, number];
 export const legaiaviewer_battle_char_pack_json: (a: number) => [number, number];
 export const legaiaviewer_battle_char_tmd_bytes: (a: number, b: number) => [number, number];
+export const legaiaviewer_battle_char_vram_bytes: (a: number) => [number, number];
 export const legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
 export const legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];
 export const legaiaviewer_catalog_len: (a: number) => number;

@@ -617,6 +617,21 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Build the 1 MB PSX VRAM the battle-form character pack would have
+     * at boot — each of the seven atlas TIMs uploaded at its declared
+     * `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
+     * `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
+     * fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
+     * to the battle character atlas pack.
+     * @returns {Uint8Array}
+     */
+    battle_char_vram_bytes() {
+        const ret = wasm.legaiaviewer_battle_char_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
      * @param {number} id

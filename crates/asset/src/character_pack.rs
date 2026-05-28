@@ -12,8 +12,8 @@
 //!     0     |     12      |       13 220       | Vahn — active party slot 0
 //!     1     |     12      |       13 800       | Noa  — active party slot 1
 //!     2     |     12      |       11 656       | Gala — active party slot 2
-//!     3     |      3      |        6 488       | Auxiliary actor
-//!     4     |      2      |        1 048       | Auxiliary actor
+//!     3     |      3      |        6 488       | Savepoint (save crystal)
+//!     4     |      2      |        1 048       | Auxiliary actor (untriaged)
 //! ```
 //!
 //! The "runtime body bytes" column is what the LZS-bounded decode produces
@@ -53,15 +53,19 @@ use crate::{DecodeMode, decode, pack, parse_player_lzs};
 pub const PROT_ENTRY_INDEX: u32 = 874;
 
 /// Short display label for one player-character pack slot. Pack slots 0/1/2
-/// are the active-party characters (Vahn / Noa / Gala); slots 3/4 are the
-/// smaller auxiliary actors retained across field scenes alongside the
-/// party. Returns a short string suitable for UI chips / CLI tables.
+/// are the active-party characters (Vahn / Noa / Gala). Slot 3 is the
+/// **savepoint** mesh — the star-crystal interactable that lets the player
+/// save their game in towns and dungeons (its mesh is small enough at
+/// `nobj=3` / ~6.5 KB that it's worth pinning resident alongside the party
+/// so the engine doesn't re-page it every time the player approaches a save
+/// point). Slot 4 is a small auxiliary actor whose runtime role is still
+/// untriaged.
 pub fn slot_label(slot: usize) -> &'static str {
     match slot {
         0 => "Vahn",
         1 => "Noa",
         2 => "Gala",
-        3 => "Aux 0",
+        3 => "Savepoint",
         4 => "Aux 1",
         _ => "(out of range)",
     }

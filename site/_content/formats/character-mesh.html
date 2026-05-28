@@ -21,8 +21,8 @@
       <tr><td>0</td><td><code>0x0018</code></td><td>12</td><td>13 220</td><td>Vahn &mdash; active party slot 0</td></tr>
       <tr><td>1</td><td><code>0x33BC</code></td><td>12</td><td>13 800</td><td>Noa &mdash; active party slot 1</td></tr>
       <tr><td>2</td><td><code>0x69A4</code></td><td>12</td><td>11 656</td><td>Gala &mdash; active party slot 2</td></tr>
-      <tr><td>3</td><td><code>0x972C</code></td><td>3</td><td>6 488</td><td>Auxiliary actor</td></tr>
-      <tr><td>4</td><td><code>0xB084</code></td><td>2</td><td>1 048</td><td>Auxiliary actor</td></tr>
+      <tr><td>3</td><td><code>0x972C</code></td><td>3</td><td>6 488</td><td>Savepoint (save crystal)</td></tr>
+      <tr><td>4</td><td><code>0xB084</code></td><td>2</td><td>1 048</td><td>Auxiliary actor (untriaged)</td></tr>
     </tbody>
   </table>
   <p>The &ldquo;runtime body bytes&rdquo; column is what the LZS-bounded decode produces. Slot 4's underlying compressed stream would expand to roughly 20 KB if decoded unbounded, but the descriptor's compressed-size hint caps the decode at the first ~46 KB so slot 4 receives only its 1 048-byte TMD prefix &mdash; byte-equality verified against the live <code>DAT_8007C018[4]</code> allocation (see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay &sect; Disc-side source of <code>[0..4]</code></a>). The character pack is shared across every field scene; only the trailing field-pack at <code>[5..]</code> changes per scene.</p>

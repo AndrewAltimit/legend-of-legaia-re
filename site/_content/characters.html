@@ -146,6 +146,12 @@ table.arts-list .cmd-tag {
         <h3 id="char-name">—</h3>
         <div class="char-stat" id="char-stats"></div>
 
+        <div class="char-section-label">Form</div>
+        <div class="char-equip-toggle" id="char-form-toggle"></div>
+        <div class="char-info-note" id="char-form-note">
+          The field form (PROT 0874 §0) is the smaller mesh resident across every town and dungeon. The battle form (PROT 1204) is the higher-fidelity mesh + 7 character TIM atlases the engine swaps in for BattleMode; selecting it routes through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses, sampling the disc-pinned atlas pages.
+        </div>
+
         <div class="char-section-label">Equipment swap</div>
         <div class="char-equip-toggle" id="char-equip-toggle"></div>
         <div class="char-info-note" id="char-equip-note">
@@ -244,14 +250,17 @@ table.arts-list .cmd-tag {
   if (!fileInput) return;
 
   let viewer = null;     // WASM LegaiaViewer
-  let pack = null;       // parsed character pack JSON
+  let pack = null;       // parsed FIELD-form character pack JSON
+  let battlePack = null; // parsed BATTLE-form character pack JSON (PROT 1204)
   let selectedSlot = null;
   let curEquip = -1;     // -1 = disc form, 0 = unequipped template, 1 = equipped template
-  let meshView = null;
+  let curForm = 'field'; // 'field' or 'battle'
+  let meshView = null;   // CharacterMeshView (field) or BattleMeshView (battle)
   let artsData = null;   // arts.json contents, lazily fetched
   let curArtsKind = 'regular';
 
   // Map character pack slot index -> arts.json character name (lower-case).
+  // Slot 0/1/2 = Vahn/Noa/Gala in both field and battle forms.
   const SLOT_TO_ARTS_NAME = { 0: 'vahn', 1: 'noa', 2: 'gala' };
 
   async function ensureArts() {
@@ -307,14 +316,22 @@ table.arts-list .cmd-tag {
     ));
   }
 
+  // Active pack for whichever form is selected. Battle form uses PROT 1204
+  // and has no equipment-swap templates; field form uses PROT 0874 §0.
+  function activePack() {
+    return curForm === 'battle' ? battlePack : pack;
+  }
+
   // Render the slot picker (5 cards). Each card shows the role label + the
-  // raw RE provenance (nobj, patched group, equip byte offset).
+  // raw RE provenance (nobj for the selected form, patched group + equip
+  // byte offset for active-party field-form slots).
   function renderGrid() {
-    if (!pack) { gridEl.innerHTML = ''; return; }
-    gridEl.innerHTML = pack.slots.map(s => {
+    const p = activePack();
+    if (!p) { gridEl.innerHTML = ''; return; }
+    gridEl.innerHTML = p.slots.map(s => {
       const tag = s.patch
         ? `<span class="char-card-tag">group ${s.patch.patched_group_index} swap @ +0x${s.patch.equip_byte_record_offset.toString(16).toUpperCase()}</span>`
-        : `<span class="char-card-tag">auxiliary</span>`;
+        : `<span class="char-card-tag">${curForm === 'battle' ? 'battle TMD' : (s.slot === 3 ? 'savepoint' : 'auxiliary')}</span>`;
       return `
         <div class="char-card${s.slot === selectedSlot ? ' is-active' : ''}" data-slot="${s.slot}">
           <div class="char-card-name">${escapeHtml(s.label)}</div>
@@ -324,14 +341,37 @@ table.arts-list .cmd-tag {
     }).join('');
   }
 
-  // Build the equip-state toggle: only active-party slots get a meaningful
-  // toggle; auxiliary slots just show "disc form" as a single disabled button.
+  // Build the form toggle: field (PROT 0874 §0) vs battle (PROT 1204).
+  function renderFormToggle() {
+    const formToggle = document.getElementById('char-form-toggle');
+    if (!formToggle) return;
+    const haveBattle = !!battlePack && battlePack.slots && battlePack.slots.length > 0;
+    const buttons = [
+      { val: 'field',  label: 'field form',  hint: 'PROT 0874 §0 — the 5 TMDs the engine resides across every field scene', enabled: !!pack },
+      { val: 'battle', label: 'battle form', hint: 'PROT 1204 — higher-fidelity 5 TMD2 chunks + 7 character TIM atlases, sampled with the real PSX paletted pipeline', enabled: haveBattle },
+    ];
+    formToggle.innerHTML = buttons.map(b => `
+      <button class="char-equip-btn${b.val === curForm ? ' is-active' : ''}"
+              data-val="${b.val}" title="${escapeHtml(b.hint)}"${b.enabled ? '' : ' disabled'}>${b.label}</button>`).join('');
+  }
+
+  // Build the equip-state toggle: only field-form active-party slots get a
+  // meaningful toggle. Battle form has no equipment-swap templates baked into
+  // the disc TMDs (the battle character mesh is monolithic; equipment
+  // visibility is conveyed via the per-character texture atlas page).
   function renderEquipToggle() {
     if (selectedSlot === null) { equipToggle.innerHTML = ''; return; }
+    if (curForm === 'battle') {
+      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>n/a (battle form)</button>`;
+      equipNote.textContent = 'Battle-form TMDs (PROT 1204) carry no group-10/11 equipment-swap templates — the higher-fidelity battle mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
+      return;
+    }
     const slot = pack.slots[selectedSlot];
     if (!slot.patch) {
       equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>disc form</button>`;
-      equipNote.textContent = 'Auxiliary slots ship as-is — only active-party slots carry the FUN_8001EBEC equipment-swap templates at TMD+0x124 / TMD+0x140.';
+      equipNote.textContent = slot.slot === 3
+        ? 'The savepoint mesh ships as-is — it\'s an interactable object, not a character, so no FUN_8001EBEC patch runs on it.'
+        : 'Auxiliary slots ship as-is — only active-party slots carry the FUN_8001EBEC equipment-swap templates at TMD+0x124 / TMD+0x140.';
       return;
     }
     equipNote.innerHTML = `Toggles the byte at character record <code>+0x${slot.patch.equip_byte_record_offset.toString(16).toUpperCase()}</code>; zero copies the group-11 template over visible group ${slot.patch.patched_group_index}, non-zero copies group 10.`;
@@ -345,13 +385,44 @@ table.arts-list .cmd-tag {
               data-val="${b.val}" title="${escapeHtml(b.hint)}">${b.label}</button>`).join('');
   }
 
+  function selectForm(form) {
+    if (form === curForm) return;
+    if (form === 'battle' && (!battlePack || !battlePack.slots || battlePack.slots.length === 0)) return;
+    curForm = form;
+    // Destroy any current viewer so we can re-instantiate with the right class.
+    if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
+    meshView = null;
+    // Reset the canvas's GL context by replacing the element — switching
+    // contexts on a live canvas isn't permitted in WebGL.
+    const oldCanvas = document.getElementById('char-viewer-canvas');
+    if (oldCanvas) {
+      const fresh = oldCanvas.cloneNode(false);
+      oldCanvas.replaceWith(fresh);
+    }
+    renderFormToggle();
+    // Re-render the grid + equip toggle against the active form's pack;
+    // re-load the currently-selected slot's mesh.
+    if (selectedSlot !== null) {
+      const p = activePack();
+      if (p && p.slots && p.slots[selectedSlot]) {
+        const meta = p.slots[selectedSlot];
+        nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
+      }
+    }
+    renderGrid();
+    renderEquipToggle();
+    loadMesh();
+  }
+
   function selectSlot(slot) {
-    if (!viewer || !pack) return;
+    if (!viewer) return;
+    const p = activePack();
+    if (!p) return;
     if (slot === selectedSlot) { /* allow re-click to re-load */ }
     selectedSlot = slot;
     curEquip = -1;
     viewerWrap.style.display = 'grid';
-    const meta = pack.slots[slot];
+    const meta = p.slots[slot];
     nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
     renderGrid();
     renderEquipToggle();
@@ -370,6 +441,55 @@ table.arts-list .cmd-tag {
   function loadMesh() {
     if (selectedSlot === null) return;
     const slot = selectedSlot;
+    const canvasEl = document.getElementById('char-viewer-canvas');
+    if (curForm === 'battle') {
+      // Battle form — use TmdRenderer + the 7 atlas TIMs uploaded into a
+      // virtual 1024×512 PSX VRAM at their disc-pinned coords. The mesh
+      // sampler reads cba/tsb per primitive against that VRAM.
+      const positions = viewer.battle_char_mesh_positions(slot);
+      const uvsI32   = viewer.battle_char_mesh_uvs(slot);
+      const cbaTsb   = viewer.battle_char_mesh_cba_tsb(slot);
+      const indices  = viewer.battle_char_mesh_indices(slot);
+      const bounds   = viewer.battle_char_mesh_bounds(slot);
+      if (!positions.length || !indices.length) {
+        statsEl.innerHTML = '<span style="color:var(--text-dim)">Battle mesh failed to parse. Is PROT 1204 present?</span>';
+        return;
+      }
+      try {
+        if (!meshView || !(meshView instanceof BattleMeshView)) {
+          if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
+          meshView = new BattleMeshView(canvasEl);
+          // Upload VRAM once per BattleMeshView lifetime; same atlas pack
+          // covers every battle slot, so a single upload survives slot
+          // changes for free.
+          const vramBytes = viewer.battle_char_vram_bytes();
+          if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
+        }
+        // UV binding returns i32 (parallel to character_mesh_uvs); the
+        // TmdRenderer expects u8 (texel coords 0..255). Convert here.
+        const uvs8 = new Uint8Array(uvsI32.length);
+        for (let i = 0; i < uvsI32.length; i++) uvs8[i] = uvsI32[i] & 0xFF;
+        meshView.setMesh(
+          Float32Array.from(positions),
+          uvs8,
+          Uint16Array.from(cbaTsb),
+          Uint32Array.from(indices),
+          bounds,
+        );
+        meshView.resetView();
+        const tri = (indices.length / 3) | 0;
+        const vert = (positions.length / 3) | 0;
+        const meta = battlePack.slots[slot];
+        statsEl.innerHTML =
+          `<b>${tri}</b> triangles · <b>${vert}</b> vertices · battle form`;
+        funEl.textContent =
+          `nobj ${meta.disc_nobj} on disc · sampled from 7 character atlases (CLUTs at VRAM rows 490..495, 497)`;
+      } catch (err) {
+        statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
+      }
+      return;
+    }
+    // Field form (the original flat-shaded view).
     const equip = curEquip;
     const positions = viewer.character_mesh_positions(slot, equip);
     const normals = viewer.character_mesh_normals(slot, equip);
@@ -380,7 +500,10 @@ table.arts-list .cmd-tag {
       return;
     }
     try {
-      if (!meshView) meshView = new CharacterMeshView(canvas);
+      if (!meshView || !(meshView instanceof CharacterMeshView)) {
+        if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
+        meshView = new CharacterMeshView(canvasEl);
+      }
       meshView.setMesh(
         Float32Array.from(positions),
         Float32Array.from(normals),
@@ -418,6 +541,13 @@ table.arts-list .cmd-tag {
     if (Number.isFinite(val)) selectEquip(val);
   });
 
+  document.getElementById('char-form-toggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.char-equip-btn');
+    if (!btn || btn.disabled) return;
+    const val = btn.dataset.val;
+    if (val === 'field' || val === 'battle') selectForm(val);
+  });
+
   document.getElementById('char-arts-kinds').addEventListener('click', (e) => {
     const btn = e.target.closest('.char-arts-kind');
     if (!btn) return;
@@ -433,23 +563,20 @@ table.arts-list .cmd-tag {
   resetBtn.addEventListener('click', () => meshView?.resetView());
   tmdBtn.addEventListener('click', () => {
     if (!viewer || selectedSlot === null) return;
-    const bytes = viewer.character_tmd_bytes(selectedSlot);
+    const p = activePack();
+    if (!p) return;
+    const bytes = curForm === 'battle'
+      ? viewer.battle_char_tmd_bytes(selectedSlot)
+      : viewer.character_tmd_bytes(selectedSlot);
     if (!bytes || !bytes.length) return;
-    const meta = pack.slots[selectedSlot];
-    const equipTag = curEquip < 0 ? 'disc' : (curEquip === 0 ? 'unequipped' : 'equipped');
-    const base = `${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${equipTag}.tmd`;
-    // The raw download is the disc-form blob; if the user has the swap engaged
-    // we round-trip through the same code path the viewer uses so the file
-    // reflects what's on screen.
-    let blob;
-    if (curEquip >= 0 && meta.patch) {
-      // Re-derive the patched bytes via mesh accessors → reconstruct TMD bytes
-      // is awkward; for the download we just hand the disc-form TMD and note
-      // the equip state in the filename. The CLI gives the patched bytes.
-      blob = new Blob([bytes], { type: 'model/x-legaia-tmd' });
-    } else {
-      blob = new Blob([bytes], { type: 'model/x-legaia-tmd' });
-    }
+    const meta = p.slots[selectedSlot];
+    const formTag = curForm === 'battle'
+      ? 'battle'
+      : (curEquip < 0 ? 'field_disc' : (curEquip === 0 ? 'field_unequipped' : 'field_equipped'));
+    const base = `${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${formTag}.tmd`;
+    // The raw download is always the disc-form blob; the equip-swap CLI is
+    // the canonical way to produce a patched TMD.
+    const blob = new Blob([bytes], { type: 'model/x-legaia-tmd' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = base; a.click();
@@ -620,6 +747,117 @@ table.arts-list .cmd-tag {
 
       this._raf = requestAnimationFrame(this._loop);
     }
+
+    dispose() {
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this._raf = 0;
+    }
+  }
+
+  // Battle-form viewer. Wraps the shared TmdRenderer (the same R16UI paletted
+  // VRAM pipeline the world-overview viewer uses) so it can sample the seven
+  // 256×256 4bpp character atlases shipped inside PROT 1204 at their
+  // disc-pinned VRAM coords. Mirrors CharacterMeshView's lifecycle + orbit
+  // controls but routes the actual draw through TmdRenderer.
+  class BattleMeshView {
+    constructor(canvas) {
+      if (typeof window.TmdRenderer === 'undefined') {
+        throw new Error('TmdRenderer global missing (webgl-tmd.js not loaded?)');
+      }
+      this.canvas = canvas;
+      this.renderer = new window.TmdRenderer(canvas);
+      this.indexCount = 0;
+      this.center = [0, 0, 0];
+      this.radius = 1;
+      // Same orbit defaults as CharacterMeshView so the spin / drag / reset
+      // controls feel identical between the two forms.
+      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
+      this._loop = this._loop.bind(this);
+      this._raf = 0;
+      this._attachControls();
+      this._raf = requestAnimationFrame(this._loop);
+    }
+
+    uploadVram(vramBytes) {
+      this.renderer.uploadVram(vramBytes);
+    }
+
+    setMesh(positions, uvs8, cbaTsb, indices, bounds) {
+      // The mesh sampler returns raw TMD-space vertices (PSX Y-down). The
+      // TmdRenderer's MVP build expects this convention already (it flips
+      // internally via the projection); we just feed positions through.
+      this.renderer.uploadMesh(positions, uvs8, cbaTsb, indices);
+      this.indexCount = indices.length;
+      this.center = [bounds[0], bounds[1], bounds[2]];
+      this.radius = bounds[3] || 1;
+    }
+
+    resetView() {
+      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
+      updateSpinLabel(true);
+    }
+
+    _attachControls() {
+      const c = this.canvas;
+      let dragging = false, lastX = 0, lastY = 0;
+      const onDown = (e) => {
+        dragging = true; lastX = e.clientX; lastY = e.clientY;
+        this.cam.autoRotate = false;
+        updateSpinLabel(false);
+        c.setPointerCapture(e.pointerId);
+      };
+      const onUp = (e) => {
+        dragging = false;
+        c.releasePointerCapture(e.pointerId);
+      };
+      const onMove = (e) => {
+        if (!dragging) return;
+        this.cam.yaw   -= (e.clientX - lastX) * 0.008;
+        this.cam.pitch -= (e.clientY - lastY) * 0.008;
+        const lim = Math.PI / 2 - 0.05;
+        this.cam.pitch = Math.max(-lim, Math.min(lim, this.cam.pitch));
+        lastX = e.clientX; lastY = e.clientY;
+      };
+      const onWheel = (e) => {
+        e.preventDefault();
+        this.cam.distance *= e.deltaY > 0 ? 1.1 : 0.9;
+        this.cam.distance = Math.max(1.4, Math.min(8, this.cam.distance));
+      };
+      const onDbl = () => this.resetView();
+      c.addEventListener('pointerdown', onDown);
+      c.addEventListener('pointerup', onUp);
+      c.addEventListener('pointermove', onMove);
+      c.addEventListener('wheel', onWheel, { passive: false });
+      c.addEventListener('dblclick', onDbl);
+      this._handlers = { onDown, onUp, onMove, onWheel, onDbl };
+    }
+
+    _loop() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = (this.canvas.clientWidth || 640) * dpr;
+      const h = (this.canvas.clientHeight || 480) * dpr;
+      if (this.canvas.width !== w || this.canvas.height !== h) {
+        this.canvas.width = w; this.canvas.height = h;
+      }
+      if (this.cam.autoRotate) this.cam.yaw += 0.006;
+      // TmdRenderer.render takes (yaw, pitch, distance, panX, panY, center,
+      // radius). The orbit camera here keeps panX/Y at 0 to match the
+      // CharacterMeshView UX (drag rotates, doesn't pan).
+      this.renderer.render(
+        this.cam.yaw,
+        this.cam.pitch,
+        this.cam.distance,
+        0, 0,
+        this.center,
+        this.radius,
+      );
+      this._raf = requestAnimationFrame(this._loop);
+    }
+
+    dispose() {
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this._raf = 0;
+    }
   }
 
   // PSX-Y flipped via uniform; the canvas sits in a +Y-up viewport.
@@ -683,7 +921,21 @@ table.arts-list .cmd-tag {
         prog.fail('No character data found in this file.');
         return;
       }
-      status.textContent = `Loaded: ${f.name} — decoded ${pack.slots.length} character slots.`;
+      // Battle-form pack (PROT 1204). Best-effort: if absent or fails to parse
+      // we leave battlePack null and disable the form toggle in the UI.
+      try {
+        const bp = JSON.parse(viewer.battle_char_pack_json());
+        if (bp && !bp.error && bp.slots && bp.slots.length > 0) {
+          battlePack = bp;
+        }
+      } catch (e) {
+        console.debug('[characters] battle pack absent or unparseable:', e);
+      }
+      const battleNote = battlePack
+        ? ` · battle form (${battlePack.slots.length} slots + ${battlePack.atlases ? battlePack.atlases.length : 0} atlases)`
+        : '';
+      status.textContent = `Loaded: ${f.name} — decoded ${pack.slots.length} field-form slots${battleNote}.`;
+      renderFormToggle();
       renderGrid();
       // Auto-select Vahn so the user sees a model right away.
       selectSlot(0);
@@ -703,3 +955,9 @@ table.arts-list .cmd-tag {
      perspective, scaleMat). Classic global script, loaded after the module
      above declares its handlers; the module reads these as window globals. -->
 <script src="js/webgl-math.js?v=characters-1"></script>
+<!-- TmdRenderer + shared shaders. The battle-form view uses the same
+     1024x512 R16UI paletted VRAM pipeline the world-overview viewer uses,
+     so it can sample the seven character TIM atlases that ship inside
+     PROT 1204 at their disc-pinned VRAM coords. -->
+<script src="js/webgl-shaders.js?v=characters-1"></script>
+<script src="js/webgl-tmd.js?v=characters-1"></script>

@@ -16,8 +16,8 @@ canonical [`asset::pack`](pack.md) TMD pack with **five** Legaia TMDs:
 | 0 | `0x0018` | 12 |  13 220 | Vahn (party slot 0) |
 | 1 | `0x33BC` | 12 |  13 800 | Noa (party slot 1) |
 | 2 | `0x69A4` | 12 |  11 656 | Gala (party slot 2) |
-| 3 | `0x972C` |  3 |   6 488 | Auxiliary actor |
-| 4 | `0xB084` |  2 |   1 048 | Auxiliary actor |
+| 3 | `0x972C` |  3 |   6 488 | Savepoint (save crystal) |
+| 4 | `0xB084` |  2 |   1 048 | Auxiliary actor (untriaged) |
 
 The "body bytes (runtime)" column is the length the engine allocates for each
 slot — the descriptor's compressed-size hint bounds the LZS decode to ~46 KB
