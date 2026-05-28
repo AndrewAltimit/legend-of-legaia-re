@@ -329,6 +329,13 @@ struct AccessoriesFile {
 // ---------------------------------------------------------------------------
 
 /// One enemy entry.
+///
+/// The `hp` / `mp` / `exp` / `gold` / `atk` / `spd` / `udf` / `ldf` /
+/// `intel` / `agl` columns are from Meth962's GameFAQs walkthrough
+/// (v1.10 "Added all Enemy stats section"). They were extracted from
+/// in-RAM memory at runtime, so they are fan-recorded values rather than
+/// retail-binary-extracted constants - useful as labels for the monster
+/// records being reverse-engineered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Enemy {
     /// Display name (e.g. `"Aluru Lv2"`).
@@ -347,6 +354,39 @@ pub struct Enemy {
     /// Item key stolen with Evil God Icon.
     #[serde(default)]
     pub steal: Option<String>,
+    /// Hit Points.
+    #[serde(default)]
+    pub hp: Option<u32>,
+    /// Magic Points pool.
+    #[serde(default)]
+    pub mp: Option<u32>,
+    /// Experience awarded on defeat.
+    #[serde(default)]
+    pub exp: Option<u32>,
+    /// Gold awarded on defeat.
+    #[serde(default)]
+    pub gold: Option<u32>,
+    /// Attack stat.
+    #[serde(default)]
+    pub atk: Option<u32>,
+    /// Speed stat (initiative / block / escape contributor).
+    #[serde(default)]
+    pub spd: Option<u32>,
+    /// Upper defense stat.
+    #[serde(default)]
+    pub udf: Option<u32>,
+    /// Lower defense stat.
+    #[serde(default)]
+    pub ldf: Option<u32>,
+    /// Intelligence stat (magical damage / magical defense).
+    ///
+    /// Field name in TOML is `int`; renamed here because `int` is a
+    /// reserved keyword in Rust.
+    #[serde(default, rename = "int")]
+    pub intel: Option<u32>,
+    /// Agility stat (AGL fuels the attack-input gauge: 30 AGL = 1 hit slot).
+    #[serde(default)]
+    pub agl: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]

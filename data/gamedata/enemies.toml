@@ -7,1124 +7,3189 @@
 #
 # Walkthrough 2 (Psycho Penguin / squall_ff8) supplies the drop+steal
 # table verbatim with the original PSM Magazine attribution.
+#
+# Stat columns (`hp`, `mp`, `exp`, `gold`, `atk`, `spd`, `udf`, `ldf`,
+# `int`, `agl`, `element`) come from Meth962's GameFAQs walkthrough
+# (https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721),
+# v1.10 "Added all Enemy stats section". `element` is normalised to
+# lowercase; FAQ "Element: None" becomes no `element` field. Meth962
+# extracted these from in-RAM memory dumps, so they're authoritative
+# fan-recorded values, not back-of-the-walkthrough estimates.
 
 [[enemy]]
+
 name = "Acid Slime"
+element = "water"
 location = "Karisto"
 drop = "healing_berry"
 steal = "silver_compass"
+hp = 963
+mp = 25
+exp = 1161
+gold = 388
+atk = 298
+spd = 100
+udf = 412
+ldf = 404
+int = 11
+agl = 72
 
 [[enemy]]
+
 name = "Aluru"
 location = "Dohati's Castle, Sol"
 element = "light"
 drop = "power_elixir"
 steal = "healing_fruit"
+hp = 1028
+mp = 150
+exp = 1238
+gold = 368
+atk = 210
+spd = 152
+udf = 238
+ldf = 190
+int = 225
+agl = 86
 
 [[enemy]]
+
 name = "Aluru Lv2"
 location = "Nivora Ravine"
 element = "light"
 drop = "healing_berry"
 steal = "magic_leaf"
+hp = 1100
+mp = 200
+exp = 1575
+gold = 525
+atk = 250
+spd = 154
+udf = 240
+ldf = 192
+int = 225
+agl = 100
 
 [[enemy]]
+
 name = "Aluru Lv3"
 location = "Bio Castle"
 element = "light"
 drop = "healing_fruit"
 steal = "magic_fruit"
+hp = 2228
+mp = 250
+exp = 3015
+gold = 937
+atk = 290
+spd = 215
+udf = 410
+ldf = 328
+int = 321
+agl = 130
 
 [[enemy]]
+
 name = "Amethyst"
+element = "light"
 location = "Nivora Ravine"
 drop = "magic_leaf"
 steal = "magic_leaf"
+hp = 1050
+mp = 50
+exp = 1620
+gold = 625
+atk = 275
+spd = 190
+udf = 240
+ldf = 280
+int = 202
+agl = 54
 
 [[enemy]]
+
 name = "Barra"
 location = "Floating Castle, Rogue"
 element = "wind"
 drop = "door_of_wind"
 steal = "life_water"
+hp = 2044
+mp = 100
+exp = 2070
+gold = 781
+atk = 330
+spd = 202
+udf = 358
+ldf = 286
+int = 324
+agl = 101
 
 [[enemy]]
+
 name = "Barra Lv2"
 location = "Jette, Noaru Valley"
 element = "wind"
 drop = "magic_fruit"
 steal = "power_water"
+hp = 2442
+mp = 200
+exp = 2745
+gold = 921
+atk = 392
+spd = 220
+udf = 374
+ldf = 298
+int = 342
+agl = 101
 
 [[enemy]]
+
 name = "Barra Lv3"
 location = "Bio Castle"
 element = "wind"
 drop = "healing_fruit"
 steal = "guardian_water"
+hp = 2725
+mp = 350
+exp = 3825
+gold = 1000
+atk = 397
+spd = 231
+udf = 396
+ldf = 316
+int = 347
+agl = 101
 
 [[enemy]]
+
 name = "Berserker"
+element = "earth"
 location = "Sky Gardens"
 boss = true
 drop = "fire_book_ii"
 steal = "wonder_elixir"
+hp = 5000
+mp = 850
+exp = 7500
+gold = 2083
+atk = 201
+spd = 77
+udf = 198
+ldf = 198
+int = 181
+agl = 111
 
 [[enemy]]
+
 name = "Berserker Lv2"
+element = "earth"
 location = "Rogue's Tower"
 boss = true
 drop = "miracle_water"
 steal = "wonder_elixir"
+hp = 10000
+mp = 1000
+exp = 14999
+gold = 4166
+atk = 277
+spd = 144
+udf = 222
+ldf = 222
+int = 162
+agl = 111
 
 [[enemy]]
+
 name = "Berserker Lv3"
+element = "earth"
 location = "Rogue's Tower"
 boss = true
 drop = "miracle_water"
 steal = "wonder_elixir"
+hp = 15000
+mp = 1000
+exp = 22498
+gold = 6249
+atk = 416
+spd = 221
+udf = 222
+ldf = 222
+int = 248
+agl = 111
 
 [[enemy]]
+
 name = "Black Piura"
 location = "Snowdrift Cave"
 drop = "healing_leaf"
 steal = "healing_flower"
+hp = 85
+mp = 0
+exp = 47
+gold = 0
+atk = 30
+spd = 30
+udf = 36
+ldf = 32
+int = 27
+agl = 60
 
 [[enemy]]
+
 name = "Blue Piura"
 location = "Snowdrift Cave"
 drop = "healing_leaf"
 steal = "good_luck_bell"
+hp = 90
+mp = 0
+exp = 45
+gold = 0
+atk = 26
+spd = 32
+udf = 34
+ldf = 30
+int = 20
+agl = 84
 
 [[enemy]]
+
 name = "Boogie Pump"
+element = "wind"
 location = "Uru Mais"
 drop = "fury_boost"
 steal = "magic_fruit"
+hp = 1090
+mp = 40
+exp = 1530
+gold = 468
+atk = 312
+spd = 180
+udf = 240
+ldf = 192
+int = 315
+agl = 104
 
 [[enemy]]
+
 name = "Caruban"
+element = "fire"
 location = "Mt. Rikuroa"
 boss = true
 drop = "healing_bloom"
 steal = "wonder_elixir"
+hp = 1024
+mp = 300
+exp = 1500
+gold = 562
+atk = 82
+spd = 42
+udf = 80
+ldf = 72
+int = 54
+agl = 98
 
 [[enemy]]
+
 name = "Caruban Lv2"
+element = "fire"
 location = "Rogue's Tower"
 boss = true
 drop = "miracle_water"
+hp = 4096
+mp = 300
+exp = 6000
+gold = 2250
+atk = 260
+spd = 168
+udf = 320
+ldf = 288
+int = 216
+agl = 98
 
 [[enemy]]
+
 name = "Caruban Lv3"
+element = "fire"
 location = "Rogue's Tower"
 boss = true
 drop = "miracle_water"
+hp = 8192
+mp = 300
+exp = 12000
+gold = 4500
+atk = 395
+spd = 168
+udf = 320
+ldf = 288
+int = 312
+agl = 98
 
 [[enemy]]
+
 name = "Che Delilas"
+element = "earth"
 location = "Nivora Ravine"
 boss = true
 drop = "thunder_book_iii"
 steal = "wisdom_water"
+hp = 12000
+mp = 500
+exp = 11250
+gold = 9375
+atk = 275
+spd = 105
+udf = 326
+ldf = 286
+int = 90
+agl = 100
 
 [[enemy]]
+
 name = "Cort"
+element = "dark"
 location = "Jette's Fortress"
 boss = true
 drop = "magic_grail"
 steal = "wonder_elixir"
+hp = 50000
+mp = 1200
+exp = 40500
+gold = 15625
+atk = 160
+spd = 128
+udf = 256
+ldf = 256
+int = 288
+agl = 256
 
 [[enemy]]
+
 name = "Cort (Juggernaut)"
 location = "Juggernaut"
 boss = true
 steal = "evil_medallion"
+hp = 65535
+mp = 2500
+exp = 49152
+gold = 20479
+atk = 516
+spd = 119
+udf = 598
+ldf = 598
+int = 448
+agl = 800
 
 [[enemy]]
+
 name = "Curry Devil"
+element = "dark"
 location = "Octam (Mist)"
 drop = "door_of_wind"
 steal = "magic_fruit"
+hp = 666
+mp = 666
+exp = 500
+gold = 416
+atk = 207
+spd = 66
+udf = 132
+ldf = 132
+int = 74
+agl = 48
 
 [[enemy]]
+
 name = "Dark Ogre"
+element = "fire"
 location = "Karisto"
 drop = "power_elixir"
 steal = "healing_berry"
+hp = 3350
+mp = 140
+exp = 2610
+gold = 859
+atk = 390
+spd = 201
+udf = 394
+ldf = 314
+int = 248
+agl = 120
 
 [[enemy]]
+
 name = "Dead Bone"
+element = "dark"
 location = "Sol"
 drop = "magic_fruit"
 steal = "incense"
+hp = 999
+mp = 130
+exp = 1232
+gold = 416
+atk = 162
+spd = 130
+udf = 260
+ldf = 260
+int = 146
+agl = 130
 
 [[enemy]]
+
 name = "Death Trigger"
+element = "earth"
 location = "Karisto"
 drop = "healing_berry"
 steal = "healing_berry"
+hp = 1345
+mp = 0
+exp = 1598
+gold = 468
+atk = 355
+spd = 165
+udf = 332
+ldf = 264
+int = 253
+agl = 63
 
 [[enemy]]
+
 name = "Death Wings"
+element = "wind"
 location = "Sebucus"
 drop = "antidote"
 steal = "medicine"
+hp = 209
+mp = 0
+exp = 266
+gold = 80
+atk = 150
+spd = 84
+udf = 104
+ldf = 114
+int = 61
+agl = 37
 
 [[enemy]]
+
 name = "Demon Fly"
+element = "wind"
 location = "Ratayu"
 drop = "antidote"
 steal = "golden_compass"
+hp = 324
+mp = 0
+exp = 863
+gold = 281
+atk = 185
+spd = 88
+udf = 132
+ldf = 138
+int = 92
+agl = 38
 
 [[enemy]]
+
 name = "Devil Pump"
+element = "wind"
 location = "Vidna (Mist)"
 drop = "swift_water"
 steal = "magic_leaf"
+hp = 600
+mp = 150
+exp = 896
+gold = 262
+atk = 156
+spd = 95
+udf = 176
+ldf = 140
+int = 121
+agl = 100
 
 [[enemy]]
+
 name = "Dohati"
+element = "dark"
 location = "Dohati's Castle"
 boss = true
 drop = "mettle_armband"
 steal = "wonder_elixir"
+hp = 17200
+mp = 0
+exp = 27000
+gold = 10000
+atk = 265
+spd = 102
+udf = 284
+ldf = 226
+int = 159
+agl = 98
 
 [[enemy]]
+
 name = "Drake Ghost"
+element = "dark"
 location = "Drake Castle (Mist)"
 drop = "door_of_light"
 steal = "power_elixir"
+hp = 130
+mp = 40
+exp = 65
+gold = 25
+atk = 48
+spd = 24
+udf = 40
+ldf = 52
+int = 27
+agl = 90
 
 [[enemy]]
+
 name = "Evil Fly"
+element = "wind"
 location = "Drake"
 drop = "antidote"
 steal = "antidote"
+hp = 82
+mp = 0
+exp = 38
+gold = 13
+atk = 42
+spd = 24
+udf = 48
+ldf = 56
+int = 13
+agl = 36
 
 [[enemy]]
+
 name = "Evil Shadow"
+element = "dark"
 location = "Ratayu"
 drop = "phoenix"
 steal = "magic_leaf"
+hp = 999
+mp = 130
+exp = 975
+gold = 277
+atk = 123
+spd = 99
+udf = 198
+ldf = 158
+int = 111
+agl = 99
 
 [[enemy]]
+
 name = "Freed"
 location = "Fire Path (iced)"
 element = "water"
 drop = "magic_leaf"
 steal = "healing_fruit"
+hp = 753
+mp = 120
+exp = 788
+gold = 273
+atk = 112
+spd = 101
+udf = 190
+ldf = 152
+int = 137
+agl = 78
 
 [[enemy]]
+
 name = "Freed Lv2"
 location = "Uru Mais"
 element = "water"
 drop = "medicine"
 steal = "magic_leaf"
+hp = 1500
+mp = 180
+exp = 1594
+gold = 562
+atk = 218
+spd = 173
+udf = 308
+ldf = 246
+int = 258
+agl = 78
 
 [[enemy]]
+
 name = "Freed Lv3"
 location = "Bio Castle"
 element = "water"
 drop = "medicine"
 steal = "magic_fruit"
+hp = 3518
+mp = 240
+exp = 2835
+gold = 993
+atk = 255
+spd = 208
+udf = 362
+ldf = 288
+int = 272
+agl = 78
 
 [[enemy]]
+
 name = "Frog"
+element = "water"
 location = "Drake, Voz Forest"
 drop = "antidote"
 steal = "antidote"
+hp = 175
+mp = 0
+exp = 122
+gold = 37
+atk = 52
+spd = 40
+udf = 56
+ldf = 40
+int = 32
+agl = 75
 
 [[enemy]]
+
 name = "Garnet"
+element = "light"
 location = "Mt. Dhini"
 drop = "magic_fruit"
 steal = "magic_fruit"
+hp = 1499
+mp = 70
+exp = 1890
+gold = 718
+atk = 325
+spd = 215
+udf = 450
+ldf = 500
+int = 279
+agl = 54
 
 [[enemy]]
+
 name = "Gaza"
+element = "light"
 location = "Sol"
 boss = true
 steal = "life_water"
+hp = 12000
+mp = 300
+exp = 20250
+gold = 5625
+atk = 320
+spd = 146
+udf = 276
+ldf = 220
+int = 247
+agl = 112
 
 [[enemy]]
+
 name = "Gaza (Sim-Seru)"
+element = "dark"
 location = "Warrior's Square"
 boss = true
 steal = "power_water"
+hp = 15000
+mp = 1200
+exp = 31500
+gold = 9375
+atk = 360
+spd = 146
+udf = 444
+ldf = 400
+int = 247
+agl = 128
 
 [[enemy]]
+
 name = "Gel Frog"
+element = "water"
 location = "Fire Path"
 drop = "antidote"
 steal = "medicine"
+hp = 444
+mp = 0
+exp = 576
+gold = 187
+atk = 143
+spd = 92
+udf = 160
+ldf = 128
+int = 111
+agl = 76
 
 [[enemy]]
+
 name = "Ghost Knight"
+element = "dark"
 location = "Sol"
 drop = "door_of_light"
 steal = "speed_elixir"
+hp = 1280
+mp = 400
+exp = 1250
+gold = 513
+atk = 186
+spd = 157
+udf = 210
+ldf = 168
+int = 272
+agl = 134
 
 [[enemy]]
+
 name = "Gi Delilas"
+element = "fire"
 location = "Nivora Ravine"
 boss = true
 drop = "fire_book_iii"
 steal = "swift_water"
+hp = 10000
+mp = 500
+exp = 11250
+gold = 9375
+atk = 200
+spd = 141
+udf = 330
+ldf = 314
+int = 155
+agl = 168
 
 [[enemy]]
+
 name = "Giant Rat"
+element = "lightning"
 location = "Karisto"
 drop = "healing_flower"
 steal = "healing_berry"
+hp = 1884
+mp = 0
+exp = 1725
+gold = 541
+atk = 330
+spd = 174
+udf = 338
+ldf = 270
+int = 184
+agl = 84
 
 [[enemy]]
+
 name = "Gilium"
 location = "Jette's Fortress"
 element = "thunder"
 steal = "power_water"
+hp = 2880
+mp = 250
+exp = 2700
+gold = 937
+atk = 187
+spd = 181
+udf = 424
+ldf = 470
+int = 267
+agl = 178
 
 [[enemy]]
+
 name = "Gilium Lv2"
 location = "Noaru Valley"
 element = "thunder"
 steal = "guardian_water"
+hp = 3280
+mp = 400
+exp = 3150
+gold = 1093
+atk = 225
+spd = 201
+udf = 442
+ldf = 478
+int = 335
+agl = 178
 
 [[enemy]]
+
 name = "Gilium Lv3"
 location = "Bio Castle"
 element = "thunder"
 steal = "wonder_elixir"
+hp = 3542
+mp = 550
+exp = 5250
+gold = 1406
+atk = 237
+spd = 228
+udf = 472
+ldf = 498
+int = 357
+agl = 178
 
 [[enemy]]
+
 name = "Gimard"
 location = "Rim Elm, Drake Castle"
 element = "fire"
 drop = "healing_leaf"
 steal = "healing_leaf"
+hp = 99
+mp = 20
+exp = 42
+gold = 18
+atk = 28
+spd = 22
+udf = 24
+ldf = 30
+int = 18
+agl = 60
 
 [[enemy]]
+
 name = "Gimard Lv2"
 location = "Biron Monastery"
 element = "fire"
 drop = "magic_leaf"
 steal = "healing_berry"
+hp = 224
+mp = 60
+exp = 171
+gold = 59
+atk = 80
+spd = 52
+udf = 74
+ldf = 80
+int = 83
+agl = 64
 
 [[enemy]]
+
 name = "Gimard Lv3"
 location = "Bio Castle"
 element = "fire"
 drop = "healing_berry"
 steal = "magic_fruit"
+hp = 1242
+mp = 160
+exp = 2700
+gold = 937
+atk = 243
+spd = 232
+udf = 276
+ldf = 288
+int = 201
+agl = 164
 
 [[enemy]]
+
 name = "Gizam"
 location = "Voz, Zeto"
 element = "water"
 drop = "antidote"
 steal = "healing_leaf"
+hp = 266
+mp = 80
+exp = 225
+gold = 68
+atk = 78
+spd = 41
+udf = 102
+ldf = 80
+int = 69
+agl = 76
 
 [[enemy]]
+
 name = "Gizam Lv2"
 location = "Shadow Gate"
 element = "water"
 drop = "healing_fruit"
 steal = "magic_leaf"
+hp = 567
+mp = 100
+exp = 510
+gold = 138
+atk = 122
+spd = 56
+udf = 166
+ldf = 132
+int = 137
+agl = 89
 
 [[enemy]]
+
 name = "Gizam Lv3"
 location = "Bio Castle"
 element = "water"
 drop = "healing_berry"
 steal = "magic_fruit"
+hp = 2192
+mp = 240
+exp = 2790
+gold = 968
+atk = 240
+spd = 152
+udf = 344
+ldf = 274
+int = 225
+agl = 122
 
 [[enemy]]
+
 name = "Gobu Gobu"
+element = "earth"
 location = "Drake, Snowdrift Cave"
 drop = "healing_leaf"
 steal = "healing_flower"
+hp = 76
+mp = 15
+exp = 36
+gold = 15
+atk = 21
+spd = 30
+udf = 30
+ldf = 28
+int = 11
+agl = 84
 
 [[enemy]]
+
 name = "Gola Gola"
 location = "Fire Path"
 element = "fire"
 drop = "healing_berry"
 steal = "healing_fruit"
+hp = 728
+mp = 140
+exp = 720
+gold = 250
+atk = 163
+spd = 97
+udf = 234
+ldf = 186
+int = 114
+agl = 52
 
 [[enemy]]
+
 name = "Gola Gola Lv2"
 location = "Rogue Tower"
 element = "fire"
 drop = "healing_fruit"
 steal = "magic_leaf"
+hp = 2050
+mp = 200
+exp = 2520
+gold = 781
+atk = 250
+spd = 192
+udf = 328
+ldf = 262
+int = 302
+agl = 82
 
 [[enemy]]
+
 name = "Gola Gola Lv3"
 location = "Bio Castle"
 element = "fire"
 drop = "magic_fruit"
 steal = "magic_leaf"
+hp = 2400
+mp = 280
+exp = 2970
+gold = 1031
+atk = 268
+spd = 209
+udf = 376
+ldf = 300
+int = 345
+agl = 100
 
 [[enemy]]
+
 name = "Gold Bison"
+element = "earth"
 location = "Conkram"
 drop = "healing_berry"
 steal = "healing_berry"
+hp = 3800
+mp = 0
+exp = 2610
+gold = 1875
+atk = 441
+spd = 195
+udf = 424
+ldf = 338
+int = 330
+agl = 101
 
 [[enemy]]
+
 name = "Gold Face"
 location = "Shadow Gate"
 drop = "magic_leaf"
 steal = "power_water"
+hp = 2182
+mp = 130
+exp = 750
+gold = 312
+atk = 280
+spd = 94
+udf = 364
+ldf = 290
+int = 139
+agl = 60
 
 [[enemy]]
+
 name = "Golem"
 location = "Mt. Rikuroa"
 drop = "guardian_water"
 steal = "life_water"
+hp = 640
+mp = 100
+exp = 600
+gold = 375
+atk = 45
+spd = 20
+udf = 64
+ldf = 48
+int = 49
+agl = 70
 
 [[enemy]]
+
 name = "Gomboo"
+element = "earth"
 location = "Drake"
 drop = "healing_leaf"
 steal = "healing_fruit"
+hp = 250
+mp = 20
+exp = 192
+gold = 68
+atk = 55
+spd = 52
+udf = 68
+ldf = 68
+int = 31
+agl = 108
 
 [[enemy]]
+
 name = "Green Slime"
+element = "water"
 location = "Drake"
 drop = "healing_leaf"
 steal = "healing_leaf"
+hp = 69
+mp = 24
+exp = 32
+gold = 11
+atk = 36
+spd = 12
+udf = 76
+ldf = 68
+int = 9
+agl = 52
 
 [[enemy]]
+
 name = "Grude"
+element = "lightning"
 location = "Karisto"
 drop = "healing_fruit"
 steal = "fury_boost"
+hp = 1686
+mp = 30
+exp = 1215
+gold = 406
+atk = 168
+spd = 138
+udf = 246
+ldf = 196
+int = 73
+agl = 148
 
 [[enemy]]
+
 name = "Guardian"
+element = "dark"
 location = "Jeremi"
 drop = "door_of_wind"
 steal = "shield_elixir"
+hp = 440
+mp = 120
+exp = 379
+gold = 173
+atk = 115
+spd = 83
+udf = 174
+ldf = 138
+int = 105
+agl = 112
 
 [[enemy]]
+
 name = "Heavy Grude"
+element = "lightning"
 location = "Karisto"
 drop = "healing_berry"
 steal = "fury_boost"
+hp = 2498
+mp = 50
+exp = 2520
+gold = 812
+atk = 273
+spd = 208
+udf = 486
+ldf = 388
+int = 229
+agl = 158
 
 [[enemy]]
+
 name = "Hell's Rat"
+element = "lightning"
 location = "Mt. Letona"
 drop = "magic_leaf"
 steal = "healing_flower"
+hp = 678
+mp = 0
+exp = 1027
+gold = 390
+atk = 173
+spd = 110
+udf = 196
+ldf = 156
+int = 96
+agl = 84
 
 [[enemy]]
+
 name = "Hell's Trigger"
+element = "earth"
 location = "Sebucus"
 drop = "healing_flower"
 steal = "healing_flower"
+hp = 304
+mp = 0
+exp = 259
+gold = 78
+atk = 103
+spd = 67
+udf = 118
+ldf = 94
+int = 60
+agl = 60
 
 [[enemy]]
+
 name = "High Gomboo"
+element = "earth"
 location = "Sebucus"
 drop = "healing_fruit"
 steal = "healing_berry"
+hp = 710
+mp = 25
+exp = 810
+gold = 250
+atk = 151
+spd = 138
+udf = 278
+ldf = 222
+int = 150
+agl = 138
 
 [[enemy]]
+
 name = "High Mantis"
+element = "lightning"
 location = "Karisto"
 drop = "healing_fruit"
 steal = "healing_fruit"
+hp = 1551
+mp = 0
+exp = 1710
+gold = 462
+atk = 323
+spd = 180
+udf = 334
+ldf = 266
+int = 273
+agl = 121
 
 [[enemy]]
+
 name = "Hornet"
+element = "wind"
 location = "Drake"
 drop = "antidote"
 steal = "antidote"
+hp = 188
+mp = 88
+exp = 198
+gold = 27
+atk = 110
+spd = 88
+udf = 176
+ldf = 176
+int = 99
+agl = 88
 
 [[enemy]]
+
 name = "Iota"
 location = "Rogue Tower"
 element = "earth"
 drop = "nature_amulet"
 steal = "swift_water"
+hp = 1900
+mp = 160
+exp = 1875
+gold = 625
+atk = 300
+spd = 180
+udf = 300
+ldf = 240
+int = 225
+agl = 136
 
 [[enemy]]
+
 name = "Iota Lv2"
 location = "Jette's Fortress"
 element = "earth"
 drop = "spirit_talisman"
 steal = "wisdom_water"
+hp = 2500
+mp = 240
+exp = 2430
+gold = 968
+atk = 337
+spd = 225
+udf = 360
+ldf = 288
+int = 236
+agl = 136
 
 [[enemy]]
+
 name = "Iota Lv3"
 location = "Bio Castle"
 element = "earth"
 drop = "spirit_talisman"
 steal = "life_grail"
+hp = 2750
+mp = 320
+exp = 3990
+gold = 937
+atk = 287
+spd = 240
+udf = 368
+ldf = 294
+int = 297
+agl = 136
 
 [[enemy]]
+
 name = "Ironman"
 location = "Mt. Dhini"
 drop = "power_water"
 steal = "life_water"
+hp = 2300
+mp = 200
+exp = 1890
+gold = 625
+atk = 350
+spd = 120
+udf = 420
+ldf = 340
+int = 360
+agl = 140
 
 [[enemy]]
+
 name = "Jette"
+element = "dark"
 location = "Jette's Fortress"
 boss = true
 drop = "miracle_water"
 steal = "wisdom_water"
+hp = 34567
+mp = 1000
+exp = 38250
+gold = 12500
+atk = 277
+spd = 274
+udf = 412
+ldf = 328
+int = 225
+agl = 198
 
 [[enemy]]
+
 name = "Kabuki Rat"
+element = "lightning"
 location = "Jeremi"
 drop = "healing_bloom"
 steal = "healing_leaf"
+hp = 349
+mp = 0
+exp = 284
+gold = 87
+atk = 98
+spd = 79
+udf = 128
+ldf = 102
+int = 51
+agl = 69
 
 [[enemy]]
+
 name = "Kemaro"
 location = "Sol"
 element = "earth"
 drop = "healing_berry"
 steal = "swift_water"
+hp = 1400
+mp = 120
+exp = 1350
+gold = 500
+atk = 213
+spd = 182
+udf = 388
+ldf = 310
+int = 241
+agl = 100
 
 [[enemy]]
+
 name = "Kemaro Lv2"
 location = "Conkram (Mist)"
 element = "earth"
 drop = "healing_fruit"
 steal = "wisdom_water"
+hp = 1600
+mp = 240
+exp = 1980
+gold = 625
+atk = 238
+spd = 182
+udf = 388
+ldf = 310
+int = 241
+agl = 120
 
 [[enemy]]
+
 name = "Kemaro Lv3"
 location = "Bio Castle"
 element = "earth"
 drop = "healing_fruit"
 steal = "spirit_talisman"
+hp = 1940
+mp = 360
+exp = 3720
+gold = 1031
+atk = 263
+spd = 222
+udf = 394
+ldf = 314
+int = 331
+agl = 140
 
 [[enemy]]
+
 name = "Killer Bee"
+element = "wind"
 location = "Octam"
 drop = "antidote"
 steal = "medicine"
+hp = 288
+mp = 288
+exp = 441
+gold = 55
+atk = 235
+spd = 188
+udf = 176
+ldf = 176
+int = 99
+agl = 88
 
 [[enemy]]
+
 name = "Killer Bison"
+element = "earth"
 location = "Sebucus"
 drop = "healing_flower"
 steal = "healing_leaf"
+hp = 492
+mp = 0
+exp = 443
+gold = 181
+atk = 135
+spd = 68
+udf = 194
+ldf = 154
+int = 45
+agl = 70
 
 [[enemy]]
+
 name = "Killer Wolf"
+element = "wind"
 location = "Usha Research Center"
 drop = "door_of_wind"
 steal = "healing_flower"
+hp = 1180
+mp = 70
+exp = 1584
+gold = 489
+atk = 283
+spd = 201
+udf = 246
+ldf = 196
+int = 157
+agl = 58
 
 [[enemy]]
+
 name = "King Frog"
+element = "water"
 location = "Mt. Letona"
 drop = "medicine"
 steal = "phoenix"
+hp = 597
+mp = 0
+exp = 900
+gold = 312
+atk = 101
+spd = 91
+udf = 156
+ldf = 124
+int = 124
+agl = 108
 
 [[enemy]]
+
 name = "Koru"
 location = "Nivora Ravine"
 drop = "healing_fruit"
+hp = 20000
+mp = 1000
+exp = 45000
+gold = 18750
+atk = 125
+spd = 100
+udf = 200
+ldf = 160
+int = 112
+agl = 200
 
 [[enemy]]
+
 name = "Lamia"
+element = "dark"
 location = "Conkram"
 drop = "magic_fruit"
 steal = "magic_water"
+hp = 2491
+mp = 300
+exp = 2315
+gold = 906
+atk = 225
+spd = 220
+udf = 320
+ldf = 320
+int = 315
+agl = 130
 
 [[enemy]]
+
 name = "Lapis"
+element = "light"
 location = "Mt. Dhini"
 boss = true
 drop = "evil_medallion"
+hp = 64800
+mp = 4000
+exp = 47250
+gold = 15625
+atk = 850
+spd = 451
+udf = 1950
+ldf = 1974
+int = 1123
+agl = 240
 
 [[enemy]]
+
 name = "Lava Face"
+element = "fire"
 location = "Nivora Ravine"
 drop = "magic_fruit"
 steal = "guardian_water"
+hp = 1270
+mp = 150
+exp = 1680
+gold = 531
+atk = 325
+spd = 96
+udf = 378
+ldf = 302
+int = 303
+agl = 60
 
 [[enemy]]
+
 name = "Lip Kid"
 location = "Vidna, Ratayu"
 drop = "magic_leaf"
 steal = "lippian_flute"
+hp = 458
+mp = 18
+exp = 417
+gold = 109
+atk = 168
+spd = 100
+udf = 138
+ldf = 110
+int = 0
+agl = 53
 
 [[enemy]]
+
 name = "Lip King"
 location = "Mt. Letona"
 drop = "lippian_flute"
 steal = "lippian_flute"
+hp = 888
+mp = 15
+exp = 990
+gold = 328
+atk = 250
+spd = 140
+udf = 220
+ldf = 220
+int = 112
+agl = 56
 
 [[enemy]]
+
 name = "Lippian"
 location = "Drake, Voz"
 drop = "medicine"
 steal = "lippian_flute"
+hp = 220
+mp = 10
+exp = 128
+gold = 43
+atk = 80
+spd = 64
+udf = 38
+ldf = 38
+int = 24
+agl = 44
 
 [[enemy]]
+
 name = "Lu Delilas"
+element = "lightning"
 location = "Nivora Ravine"
 boss = true
 drop = "wind_book_iii"
 steal = "magic_water"
+hp = 9500
+mp = 500
+exp = 11250
+gold = 9375
+atk = 123
+spd = 165
+udf = 226
+ldf = 246
+int = 135
+agl = 200
 
 [[enemy]]
+
 name = "Lucifer"
+element = "dark"
 location = "Nivora Ravine"
 drop = "magic_fruit"
 steal = "magic_water"
+hp = 1666
+mp = 666
+exp = 1500
+gold = 416
+atk = 457
+spd = 166
+udf = 198
+ldf = 158
+int = 299
+agl = 48
 
 [[enemy]]
+
 name = "Mad Bird"
+element = "water"
 location = "Conkram"
 drop = "fury_boost"
 steal = "spikefish_flute"
+hp = 477
+mp = 77
+exp = 583
+gold = 242
+atk = 346
+spd = 77
+udf = 154
+ldf = 154
+int = 86
+agl = 77
 
 [[enemy]]
+
 name = "Mad Golem"
 location = "Conkram"
 drop = "healing_berry"
 steal = "magic_water"
+hp = 3600
+mp = 400
+exp = 1980
+gold = 625
+atk = 358
+spd = 140
+udf = 420
+ldf = 360
+int = 202
+agl = 160
 
 [[enemy]]
+
 name = "Mad Mantis"
+element = "lightning"
 location = "Octam"
 drop = "healing_bloom"
 steal = "healing_flower"
+hp = 600
+mp = 0
+exp = 468
+gold = 143
+atk = 113
+spd = 93
+udf = 158
+ldf = 126
+int = 119
+agl = 99
 
 [[enemy]]
+
 name = "Mad Ogre"
+element = "fire"
 location = "Sebucus"
 drop = "power_elixir"
 steal = "healing_fruit"
+hp = 968
+mp = 70
+exp = 901
+gold = 309
+atk = 257
+spd = 72
+udf = 216
+ldf = 172
+int = 83
+agl = 80
 
 [[enemy]]
+
 name = "Mage"
+element = "light"
 location = "Sol"
 drop = "magic_fruit"
 steal = "magic_leaf"
+hp = 1313
+mp = 100
+exp = 1395
+gold = 562
+atk = 197
+spd = 160
+udf = 280
+ldf = 224
+int = 180
+agl = 80
 
 [[enemy]]
+
 name = "Medusa"
+element = "dark"
 location = "Sol"
 drop = "magic_leaf"
 steal = "wisdom_water"
+hp = 1100
+mp = 200
+exp = 1440
+gold = 609
+atk = 137
+spd = 170
+udf = 220
+ldf = 240
+int = 270
+agl = 90
 
 [[enemy]]
+
 name = "Moldy Worm"
+element = "earth"
 location = "Mt. Rikuroa"
 drop = "medicine"
 steal = "phoenix"
+hp = 900
+mp = 0
+exp = 1206
+gold = 312
+atk = 292
+spd = 143
+udf = 298
+ldf = 238
+int = 145
+agl = 64
 
 [[enemy]]
+
 name = "Mush Mush"
+element = "earth"
 location = "Snowdrift Cave"
 drop = "medicine"
 steal = "healing_shroom"
+hp = 448
+mp = 0
+exp = 465
+gold = 179
+atk = 117
+spd = 107
+udf = 90
+ldf = 72
+int = 90
+agl = 92
 
 [[enemy]]
+
 name = "Mushrin"
+element = "earth"
 location = "Snowdrift Cave"
 drop = "healing_shroom"
 steal = "healing_shroom"
+hp = 209
+mp = 0
+exp = 212
+gold = 62
+atk = 65
+spd = 62
+udf = 84
+ldf = 66
+int = 27
+agl = 78
 
 [[enemy]]
+
 name = "Mushroom"
+element = "earth"
 location = "Snowdrift Cave"
 drop = "healing_shroom"
 steal = "healing_shroom"
+hp = 68
+mp = 0
+exp = 38
+gold = 14
+atk = 22
+spd = 48
+udf = 38
+ldf = 32
+int = 13
+agl = 60
 
 [[enemy]]
+
 name = "Mushura"
 location = "Ratayu"
 element = "earth"
 drop = "speed_elixir"
 steal = "healing_flower"
+hp = 882
+mp = 150
+exp = 1040
+gold = 263
+atk = 232
+spd = 147
+udf = 310
+ldf = 248
+int = 126
+agl = 68
 
 [[enemy]]
+
 name = "Mushura Lv2"
 location = "Floating Castle"
 element = "earth"
 drop = "healing_berry"
 steal = "healing_fruit"
+hp = 1770
+mp = 200
+exp = 1845
+gold = 671
+atk = 338
+spd = 199
+udf = 404
+ldf = 322
+int = 238
+agl = 68
 
 [[enemy]]
+
 name = "Mushura Lv3"
 location = "Bio Castle"
 element = "earth"
 drop = "healing_berry"
 steal = "healing_berry"
+hp = 2608
+mp = 250
+exp = 3060
+gold = 1062
+atk = 380
+spd = 203
+udf = 460
+ldf = 368
+int = 235
+agl = 68
 
 [[enemy]]
+
 name = "Neo Bison"
+element = "earth"
 location = "Mt. Dhini"
 drop = "healing_fruit"
 steal = "healing_flower"
+hp = 2579
+mp = 0
+exp = 1800
+gold = 906
+atk = 431
+spd = 147
+udf = 386
+ldf = 308
+int = 281
+agl = 87
 
 [[enemy]]
+
 name = "Neo Grude"
+element = "lightning"
 location = "Nivora Ravine"
 drop = "healing_fruit"
 steal = "fury_boost"
+hp = 1700
+mp = 40
+exp = 1530
+gold = 500
+atk = 187
+spd = 168
+udf = 266
+ldf = 212
+int = 112
+agl = 158
 
 [[enemy]]
+
 name = "Nightmare"
+element = "dark"
 location = "Conkram"
 drop = "magic_water"
 steal = "door_of_wind"
+hp = 999
+mp = 130
+exp = 2400
+gold = 812
+atk = 277
+spd = 183
+udf = 378
+ldf = 302
+int = 749
+agl = 89
 
 [[enemy]]
+
 name = "Nighto"
 location = "West Voz Forest"
 element = "dark"
 drop = "phoenix"
 steal = "healing_leaf"
+hp = 234
+mp = 60
+exp = 195
+gold = 56
+atk = 85
+spd = 52
+udf = 80
+ldf = 100
+int = 90
+agl = 20
 
 [[enemy]]
+
 name = "Nighto Lv2"
 location = "Jeremi"
 element = "dark"
 drop = "magic_leaf"
 steal = "magic_leaf"
+hp = 288
+mp = 120
+exp = 336
+gold = 62
+atk = 100
+spd = 72
+udf = 114
+ldf = 128
+int = 101
+agl = 20
 
 [[enemy]]
+
 name = "Nighto Lv3"
 location = "Bio Castle"
 element = "dark"
 drop = "magic_fruit"
 steal = "magic_fruit"
+hp = 1605
+mp = 180
+exp = 3402
+gold = 984
+atk = 335
+spd = 209
+udf = 334
+ldf = 408
+int = 216
+agl = 20
 
 [[enemy]]
+
 name = "Nova"
 location = "Fire Path"
 element = "wind"
 drop = "healing_berry"
 steal = "healing_leaf"
+hp = 598
+mp = 130
+exp = 549
+gold = 208
+atk = 145
+spd = 89
+udf = 156
+ldf = 124
+int = 109
+agl = 92
 
 [[enemy]]
+
 name = "Nova Lv2"
 location = "Dohati's Castle"
 element = "wind"
 drop = "shield_elixir"
 steal = "healing_flower"
+hp = 1001
+mp = 190
+exp = 1080
+gold = 468
+atk = 180
+spd = 135
+udf = 204
+ldf = 162
+int = 140
+agl = 102
 
 [[enemy]]
+
 name = "Nova Lv3"
 location = "Bio Castle"
 element = "wind"
 drop = "healing_fruit"
 steal = "healing_fruit"
+hp = 3484
+mp = 260
+exp = 2880
+gold = 1000
+atk = 203
+spd = 217
+udf = 284
+ldf = 226
+int = 406
+agl = 125
 
 [[enemy]]
+
 name = "Nurga"
+element = "dark"
 location = "Karisto"
 drop = "magic_leaf"
 steal = "wisdom_water"
+hp = 1300
+mp = 250
+exp = 1548
+gold = 593
+atk = 162
+spd = 180
+udf = 260
+ldf = 260
+int = 281
+agl = 110
 
 [[enemy]]
+
 name = "Oak Slime"
+element = "water"
 location = "Sebucus"
 drop = "healing_bloom"
 steal = "healing_flower"
+hp = 300
+mp = 25
+exp = 398
+gold = 132
+atk = 123
+spd = 50
+udf = 198
+ldf = 198
+int = 5
+agl = 62
 
 [[enemy]]
+
 name = "Ogre"
+element = "fire"
 location = "Sebucus"
 drop = "power_elixir"
 steal = "healing_bloom"
+hp = 450
+mp = 35
+exp = 279
+gold = 93
+atk = 156
+spd = 48
+udf = 134
+ldf = 106
+int = 45
+agl = 56
 
 [[enemy]]
+
 name = "Orb"
 location = "Octam"
 element = "light"
 drop = "magic_leaf"
 steal = "healing_flower"
+hp = 500
+mp = 800
+exp = 428
+gold = 150
+atk = 100
+spd = 80
+udf = 120
+ldf = 96
+int = 90
+agl = 80
 
 [[enemy]]
+
 name = "Orb Lv2"
 location = "Vidna"
 element = "light"
 drop = "healing_bloom"
 steal = "healing_bloom"
+hp = 800
+mp = 220
+exp = 855
+gold = 281
+atk = 123
+spd = 99
+udf = 198
+ldf = 158
+int = 111
+agl = 128
 
 [[enemy]]
+
 name = "Orb Lv3"
 location = "Bio Castle"
 element = "light"
 drop = "magic_fruit"
 steal = "healing_fruit"
+hp = 3120
+mp = 280
+exp = 2850
+gold = 984
+atk = 286
+spd = 206
+udf = 350
+ldf = 280
+int = 221
+agl = 78
 
 [[enemy]]
+
 name = "Ostrich"
+element = "earth"
 location = "Drake"
 drop = "healing_leaf"
 steal = "healing_leaf"
+hp = 226
+mp = 0
+exp = 134
+gold = 40
+atk = 67
+spd = 36
+udf = 64
+ldf = 60
+int = 27
+agl = 59
 
 [[enemy]]
+
 name = "Poisonous Worm"
+element = "earth"
 location = "Sebucus"
 drop = "antidote"
 steal = "medicine"
+hp = 284
+mp = 0
+exp = 384
+gold = 131
+atk = 128
+spd = 58
+udf = 128
+ldf = 102
+int = 21
+agl = 64
 
 [[enemy]]
+
 name = "Pump Bat"
+element = "wind"
 location = "Mt. Rikuroa"
 drop = "phoenix"
 steal = "healing_leaf"
+hp = 109
+mp = 40
+exp = 83
+gold = 34
+atk = 45
+spd = 40
+udf = 40
+ldf = 48
+int = 27
+agl = 80
 
 [[enemy]]
+
 name = "Puera"
 location = "Floating Castle"
 element = "dark"
 steal = "magic_water"
+hp = 1600
+mp = 240
+exp = 2250
+gold = 937
+atk = 267
+spd = 296
+udf = 410
+ldf = 328
+int = 245
+agl = 102
 
 [[enemy]]
+
 name = "Puera Lv2"
 location = "Jette's Fortress"
 element = "dark"
 steal = "life_water"
+hp = 1800
+mp = 360
+exp = 2340
+gold = 812
+atk = 267
+spd = 298
+udf = 410
+ldf = 328
+int = 245
+agl = 102
 
 [[enemy]]
+
 name = "Puera Lv3"
 location = "Bio Castle"
 element = "dark"
 steal = "crimson_book"
+hp = 2000
+mp = 480
+exp = 3991
+gold = 1093
+atk = 367
+spd = 350
+udf = 410
+ldf = 328
+int = 245
+agl = 102
 
 [[enemy]]
+
 name = "Queen Bee"
+element = "wind"
 location = "Karisto / Rim Elm hidden tree"
 drop = "antidote"
 steal = "phoenix"
+hp = 888
+mp = 888
+exp = 1191
+gold = 496
+atk = 360
+spd = 188
+udf = 376
+ldf = 376
+int = 211
+agl = 88
 
 [[enemy]]
+
 name = "Red Piura"
 location = "Snowdrift Cave"
 drop = "healing_leaf"
 steal = "healing_leaf"
+hp = 75
+mp = 0
+exp = 32
+gold = 0
+atk = 27
+spd = 26
+udf = 34
+ldf = 30
+int = 18
+agl = 48
 
 [[enemy]]
+
 name = "Rock Lizard"
+element = "water"
 location = "Nivora Ravine"
 drop = "healing_fruit"
 steal = "guardian_water"
+hp = 1450
+mp = 150
+exp = 1620
+gold = 625
+atk = 305
+spd = 100
+udf = 320
+ldf = 256
+int = 216
+agl = 48
 
 [[enemy]]
+
 name = "Rogue"
 location = "Rogue's Tower"
 boss = true
 steal = "guardian_water"
+hp = 28200
+mp = 0
+exp = 36000
+gold = 15625
+atk = 162
+spd = 151
+udf = 390
+ldf = 414
+int = 155
+agl = 128
 
 [[enemy]]
+
 name = "Scale Lizard"
+element = "water"
 location = "Karisto"
 drop = "door_of_wind"
 steal = "swift_water"
+hp = 3030
+mp = 300
+exp = 2545
+gold = 915
+atk = 490
+spd = 143
+udf = 340
+ldf = 272
+int = 275
+agl = 48
 
 [[enemy]]
+
 name = "Shade"
+element = "dark"
 location = "Sol"
 drop = "magic_fruit"
 steal = "magic_fruit"
+hp = 999
+mp = 130
+exp = 1250
+gold = 416
+atk = 248
+spd = 166
+udf = 332
+ldf = 264
+int = 374
+agl = 94
 
 [[enemy]]
+
 name = "Skeleton"
+element = "dark"
 location = "Sol / Muscle Dome"
 drop = "magic_leaf"
 steal = "incense"
+hp = 99
+mp = 13
+exp = 59
+gold = 22
+atk = 30
+spd = 38
+udf = 48
+ldf = 40
+int = 14
+agl = 99
 
 [[enemy]]
+
 name = "Skull Knight"
+element = "dark"
 location = "Ratayu"
 drop = "magic_leaf"
 steal = "incense"
+hp = 666
+mp = 99
+exp = 1027
+gold = 353
+atk = 162
+spd = 99
+udf = 198
+ldf = 198
+int = 146
+agl = 99
 
 [[enemy]]
+
 name = "Slippery"
 location = "Conkram"
 element = "water"
 drop = "door_of_wind"
 steal = "power_water"
+hp = 2000
+mp = 100
+exp = 2250
+gold = 750
+atk = 237
+spd = 204
+udf = 404
+ldf = 436
+int = 236
+agl = 136
 
 [[enemy]]
+
 name = "Slippery Lv2"
 location = "Rogue Tower"
 element = "water"
 drop = "lost_grail"
 steal = "guardian_water"
+hp = 2600
+mp = 300
+exp = 2700
+gold = 875
+atk = 262
+spd = 226
+udf = 428
+ldf = 436
+int = 247
+agl = 136
 
 [[enemy]]
+
 name = "Slippery Lv3"
 location = "Bio Castle"
 element = "water"
 drop = "lost_grail"
 steal = "magic_grail"
+hp = 3004
+mp = 400
+exp = 3900
+gold = 1062
+atk = 275
+spd = 240
+udf = 444
+ldf = 456
+int = 258
+agl = 138
 
 [[enemy]]
+
 name = "Songi (1st)"
+element = "dark"
 location = "Mt. Letona"
 boss = true
 drop = "mettle_ring"
 steal = "wonder_elixir"
+hp = 888
+mp = 88
+exp = 1500
+gold = 937
+atk = 85
+spd = 8
+udf = 176
+ldf = 140
+int = 99
+agl = 136
 
 [[enemy]]
+
 name = "Songi (2nd)"
+element = "dark"
 location = "Zeto's Dungeon"
 boss = true
 drop = "thunder_book_ii"
 steal = "wonder_elixir"
+hp = 12888
+mp = 800
+exp = 18000
+gold = 6250
+atk = 167
+spd = 115
+udf = 206
+ldf = 164
+int = 135
+agl = 124
 
 [[enemy]]
+
 name = "Songi (3rd)"
+element = "dark"
 location = "Valley of Noaru"
 boss = true
 steal = "magic_water"
+hp = 48000
+mp = 3000
+exp = 45000
+gold = 18750
+atk = 477
+spd = 196
+udf = 402
+ldf = 320
+int = 324
+agl = 124
 
 [[enemy]]
+
 name = "Sorcerer"
+element = "light"
 location = "Buma"
 drop = "magic_fruit"
 steal = "magic_fruit"
+hp = 1520
+mp = 110
+exp = 1575
+gold = 625
+atk = 222
+spd = 180
+udf = 300
+ldf = 240
+int = 270
+agl = 80
 
 [[enemy]]
+
 name = "Speed Wolf"
+element = "wind"
 location = "Snowdrift Cave"
 drop = "swift_water"
 steal = "healing_berry"
+hp = 1444
+mp = 60
+exp = 1667
+gold = 578
+atk = 327
+spd = 300
+udf = 286
+ldf = 228
+int = 158
+agl = 72
 
 [[enemy]]
+
 name = "Spike Fish"
+element = "water"
 location = "Jeremi"
 drop = "healing_flower"
 steal = "spikefish_flute"
+hp = 177
+mp = 77
+exp = 358
+gold = 55
+atk = 221
+spd = 77
+udf = 154
+ldf = 154
+int = 86
+agl = 77
 
 [[enemy]]
+
 name = "Spoon"
 location = "Sol"
 element = "light"
 drop = "healing_berry"
 steal = "magic_water"
+hp = 1450
+mp = 60
+exp = 1221
+gold = 468
+atk = 135
+spd = 108
+udf = 202
+ldf = 160
+int = 126
+agl = 80
 
 [[enemy]]
+
 name = "Spoon Lv2"
 location = "Rogue / Jette"
 element = "light"
 drop = "healing_berry"
 steal = "life_water"
+hp = 1850
+mp = 90
+exp = 2397
+gold = 781
+atk = 147
+spd = 188
+udf = 362
+ldf = 288
+int = 238
+agl = 100
 
 [[enemy]]
+
 name = "Spoon Lv3"
 location = "Bio Castle"
 element = "light"
 drop = "healing_berry"
 steal = "life_grail"
+hp = 2450
+mp = 120
+exp = 4668
+gold = 1100
+atk = 180
+spd = 228
+udf = 422
+ldf = 336
+int = 308
+agl = 128
 
 [[enemy]]
+
 name = "Stone Lizard"
+element = "water"
 location = "Fire Path"
 drop = "healing_fruit"
 steal = "power_water"
+hp = 671
+mp = 100
+exp = 666
+gold = 225
+atk = 227
+spd = 65
+udf = 320
+ldf = 256
+int = 162
+agl = 48
 
 [[enemy]]
+
 name = "Swordie"
 location = "Jeremi, Dohati"
 element = "wind"
 drop = "speed_elixir"
 steal = "healing_flower"
+hp = 420
+mp = 100
+exp = 315
+gold = 103
+atk = 111
+spd = 72
+udf = 154
+ldf = 122
+int = 73
+agl = 72
 
 [[enemy]]
+
 name = "Swordie Lv2"
 location = "Vidna"
 element = "wind"
 drop = "healing_berry"
 steal = "healing_bloom"
+hp = 780
+mp = 120
+exp = 825
+gold = 296
+atk = 131
+spd = 132
+udf = 154
+ldf = 122
+int = 151
+agl = 72
 
 [[enemy]]
+
 name = "Swordie Lv3"
 location = "Bio Castle"
 element = "wind"
 drop = "healing_berry"
 steal = "healing_fruit"
+hp = 2780
+mp = 150
+exp = 2808
+gold = 984
+atk = 325
+spd = 187
+udf = 396
+ldf = 316
+int = 274
+agl = 72
 
 [[enemy]]
+
 name = "Terror Face"
+element = "dark"
 location = "Floating Castle"
 drop = "healing_fruit"
 steal = "swift_water"
+hp = 2740
+mp = 260
+exp = 2055
+gold = 625
+atk = 416
+spd = 202
+udf = 444
+ldf = 354
+int = 337
+agl = 60
 
 [[enemy]]
+
 name = "Theeder"
 location = "Snowdrift Cave"
 element = "thunder"
 drop = "healing_leaf"
 steal = "magic_leaf"
+hp = 100
+mp = 50
+exp = 50
+gold = 18
+atk = 32
+spd = 24
+udf = 40
+ldf = 48
+int = 20
+agl = 52
 
 [[enemy]]
+
 name = "Theeder Lv2"
 location = "Monastery, Zeto"
 element = "thunder"
 drop = "magic_leaf"
 steal = "magic_leaf"
+hp = 255
+mp = 70
+exp = 180
+gold = 56
+atk = 85
+spd = 61
+udf = 76
+ldf = 84
+int = 78
+agl = 52
 
 [[enemy]]
+
 name = "Theeder Lv3"
 location = "Bio Castle"
 element = "thunder"
 drop = "healing_flower"
 steal = "magic_fruit"
+hp = 1325
+mp = 200
+exp = 2745
+gold = 953
+atk = 205
+spd = 213
+udf = 296
+ldf = 376
+int = 171
+agl = 122
 
 [[enemy]]
+
 name = "Thermo"
+element = "light"
 location = "Karisto"
 drop = "magic_fruit"
 steal = "wisdom_water"
+hp = 1833
+mp = 120
+exp = 2025
+gold = 875
+atk = 306
+spd = 195
+udf = 350
+ldf = 280
+int = 360
+agl = 80
 
 [[enemy]]
+
 name = "Topaz"
+element = "light"
 location = "Floating Castle"
 drop = "magic_fruit"
 steal = "wisdom_water"
+hp = 1968
+mp = 100
+exp = 2070
+gold = 875
+atk = 375
+spd = 220
+udf = 500
+ldf = 560
+int = 289
+agl = 54
 
 [[enemy]]
+
 name = "Twin Tomb"
+element = "lightning"
 location = "Sol"
 drop = "healing_bloom"
 steal = "healing_leaf"
+hp = 262
+mp = 0
+exp = 207
+gold = 62
+atk = 65
+spd = 43
+udf = 80
+ldf = 80
+int = 36
+agl = 92
 
 [[enemy]]
+
 name = "Van Saryu"
+element = "dark"
 location = "Ratayu"
 boss = true
 drop = "lost_grail"
 steal = "wonder_elixir"
+hp = 13245
+mp = 900
+exp = 22500
+gold = 9375
+atk = 171
+spd = 118
+udf = 308
+ldf = 246
+int = 174
+agl = 110
 
 [[enemy]]
+
 name = "Vera"
 location = "Mt. Rikuroa, Voz"
 element = "light"
 drop = "healing_leaf"
 steal = "healing_leaf"
+hp = 102
+mp = 20
+exp = 90
+gold = 31
+atk = 30
+spd = 48
+udf = 44
+ldf = 48
+int = 24
+agl = 72
 
 [[enemy]]
+
 name = "Vera Lv2"
 location = "Zeto's Dungeon"
 element = "light"
 drop = "healing_flower"
 steal = "healing_flower"
+hp = 279
+mp = 40
+exp = 248
+gold = 80
+atk = 72
+spd = 68
+udf = 98
+ldf = 120
+int = 52
+agl = 85
 
 [[enemy]]
+
 name = "Vera Lv3"
 location = "Bio Castle"
 element = "light"
 drop = "healing_fruit"
 steal = "healing_berry"
+hp = 1486
+mp = 90
+exp = 2808
+gold = 975
+atk = 155
+spd = 235
+udf = 270
+ldf = 400
+int = 271
+agl = 118
 
 [[enemy]]
+
 name = "Verial"
+element = "dark"
 location = "Vidna"
 drop = "magic_fruit"
 steal = "phoenix"
+hp = 666
+mp = 666
+exp = 773
+gold = 208
+atk = 332
+spd = 166
+udf = 132
+ldf = 132
+int = 280
+agl = 48
 
 [[enemy]]
+
 name = "Viguro"
 location = "Ratayu, Voz"
 element = "thunder"
 drop = "golden_compass"
 steal = "wonder_elixir"
+hp = 1280
+mp = 160
+exp = 1125
+gold = 375
+atk = 105
+spd = 73
+udf = 110
+ldf = 88
+int = 76
+agl = 98
 
 [[enemy]]
+
 name = "Viguro Lv2"
 location = "Ratayu"
 element = "thunder"
 drop = "healing_fruit"
 steal = "healing_fruit"
+hp = 1280
+mp = 200
+exp = 1155
+gold = 312
+atk = 150
+spd = 108
+udf = 150
+ldf = 120
+int = 219
+agl = 128
 
 [[enemy]]
+
 name = "Viguro Lv3"
 location = "Bio Castle"
 element = "thunder"
 drop = "healing_berry"
 steal = "healing_berry"
+hp = 3020
+mp = 300
+exp = 3600
+gold = 937
+atk = 125
+spd = 163
+udf = 370
+ldf = 296
+int = 230
+agl = 198
 
 [[enemy]]
+
 name = "Wailing Bird"
+element = "water"
 location = "Conkram"
 drop = "healing_fruit"
 steal = "spikefish_flute"
+hp = 777
+mp = 77
+exp = 1333
+gold = 485
+atk = 471
+spd = 177
+udf = 354
+ldf = 354
+int = 199
+agl = 77
 
 [[enemy]]
+
 name = "Warfish"
+element = "water"
 location = "Nivora Ravine"
 drop = "medicine"
 steal = "incense"
+hp = 1520
+mp = 500
+exp = 1657
+gold = 512
+atk = 256
+spd = 179
+udf = 280
+ldf = 224
+int = 202
+agl = 71
 
 [[enemy]]
+
 name = "Warhalf"
+element = "water"
 location = "Sol"
 drop = "healing_flower"
 steal = "door_of_wind"
+hp = 1458
+mp = 300
+exp = 1350
+gold = 378
+atk = 243
+spd = 129
+udf = 268
+ldf = 214
+int = 135
+agl = 71
 
 [[enemy]]
+
 name = "Warman"
+element = "water"
 location = "Sol"
 drop = "healing_flower"
 steal = "door_of_light"
+hp = 567
+mp = 200
+exp = 488
+gold = 200
+atk = 181
+spd = 89
+udf = 168
+ldf = 134
+int = 111
+agl = 71
 
 [[enemy]]
+
 name = "Wolf"
+element = "wind"
 location = "Sebucus"
 drop = "phoenix"
 steal = "healing_leaf"
+hp = 580
+mp = 50
+exp = 750
+gold = 311
+atk = 215
+spd = 127
+udf = 180
+ldf = 168
+int = 106
+agl = 52
 
 [[enemy]]
+
 name = "Worm"
+element = "earth"
 location = "Karisto"
 drop = "antidote"
 steal = "antidote"
+hp = 122
+mp = 0
+exp = 72
+gold = 25
+atk = 35
+spd = 24
+udf = 40
+ldf = 40
+int = 19
+agl = 60
 
 [[enemy]]
+
 name = "Xain"
+element = "earth"
 location = "Fire Path"
 boss = true
 drop = "wind_book_ii"
 steal = "wonder_elixir"
+hp = 9511
+mp = 0
+exp = 13500
+gold = 2500
+atk = 272
+spd = 82
+udf = 292
+ldf = 232
+int = 61
+agl = 96
 
 [[enemy]]
+
 name = "Zenoir"
 location = "Zeto's Dungeon"
 element = "fire"
 drop = "healing_flower"
 steal = "healing_leaf"
+hp = 428
+mp = 70
+exp = 257
+gold = 93
+atk = 93
+spd = 59
+udf = 134
+ldf = 106
+int = 90
+agl = 72
 
 [[enemy]]
+
 name = "Zenoir Lv2"
 location = "Dohati's Castle"
 element = "fire"
 drop = "magic_leaf"
 steal = "healing_flower"
+hp = 628
+mp = 100
+exp = 543
+gold = 203
+atk = 168
+spd = 92
+udf = 214
+ldf = 170
+int = 114
+agl = 72
 
 [[enemy]]
+
 name = "Zenoir Lv3"
 location = "Bio Castle"
 element = "fire"
 drop = "magic_fruit"
 steal = "healing_berry"
+hp = 2800
+mp = 200
+exp = 2901
+gold = 1006
+atk = 268
+spd = 252
+udf = 390
+ldf = 312
+int = 182
+agl = 72
 
 [[enemy]]
+
 name = "Zeto"
+element = "water"
 location = "Zeto's Dungeon"
 boss = true
 drop = "silver_compass"
 steal = "wonder_elixir"
+hp = 5000
+mp = 512
+exp = 6750
+gold = 2500
+atk = 135
+spd = 66
+udf = 190
+ldf = 152
+int = 131
+agl = 240
 
 [[enemy]]
+
 name = "Zora"
+element = "dark"
 location = "Floating Castle"
 boss = true
 steal = "swift_water"
+hp = 22422
+mp = 2000
+exp = 33750
+gold = 9375
+atk = 315
+spd = 164
+udf = 412
+ldf = 328
+int = 272
+agl = 148
+
+[[enemy]]
+name = "Tetsu (Rematch)"
+location = "Rim Elm (endgame)"
+element = "light"
+boss = true
+hp = 9999
+mp = 999
+exp = 2812
+gold = 1041
+atk = 375
+spd = 300
+udf = 600
+ldf = 600
+int = 337
+agl = 300
+
+[[enemy]]
+name = "Tetsu (Training)"
+location = "Rim Elm (training)"
+element = "light"
+boss = true
+hp = 999
+mp = 999
+exp = 750
+gold = 103
+atk = 30
+spd = 19
+udf = 32
+ldf = 24
+int = 111
+agl = 99
+

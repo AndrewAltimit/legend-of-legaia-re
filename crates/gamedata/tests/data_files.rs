@@ -211,6 +211,43 @@ fn enemy_drop_and_steal_keys_resolve() {
 }
 
 #[test]
+fn enemy_stat_coverage_is_universal() {
+    // Meth962 ingest landed stats for every enemy; the test gates that we
+    // don't regress that coverage as new entries get added.
+    let db = Database::load();
+    let mut missing: Vec<&str> = Vec::new();
+    for enemy in db.enemies() {
+        if enemy.hp.is_none() || enemy.exp.is_none() || enemy.atk.is_none() {
+            missing.push(&enemy.name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "enemies without hp/exp/atk: {:?}",
+        missing
+    );
+}
+
+#[test]
+fn enemy_stat_ranges_are_plausible() {
+    // Ground sanity: HP/MP/AGL within Meth962's observed bounds. Lapis has
+    // the highest stats in the corpus; the upper bounds here are well
+    // beyond his to flag obvious paste errors without false positives.
+    let db = Database::load();
+    for enemy in db.enemies() {
+        if let Some(hp) = enemy.hp {
+            assert!(hp <= 70_000, "{:?} hp out of range: {}", enemy.name, hp);
+        }
+        if let Some(mp) = enemy.mp {
+            assert!(mp <= 5_000, "{:?} mp out of range: {}", enemy.name, mp);
+        }
+        if let Some(agl) = enemy.agl {
+            assert!(agl <= 1_000, "{:?} agl out of range: {}", enemy.name, agl);
+        }
+    }
+}
+
+#[test]
 fn weapons_have_consistent_user() {
     let db = Database::load();
     for w in db.weapons() {
