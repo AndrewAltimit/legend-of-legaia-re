@@ -396,6 +396,35 @@ enum Cmd {
         #[arg(long)]
         out_tim: Option<PathBuf>,
     },
+    /// Find every player-character animation bundle inside one PROT entry.
+    /// Decodes the entry as a `parse_player_lzs`-shaped container, walks each
+    /// type-0x05 ("MOVE") section, LZS-decompresses it, and reports
+    /// containers that parse as canonical ANM data (records starting with
+    /// `marker_1 = 0x080C`). With `--out`, writes each bundle's decoded
+    /// bytes to `<out>/<entry>_sect<i>.anm`.
+    PlayerAnm {
+        /// PROT entry to inspect (e.g. `extracted/PROT/0004_town01.BIN`).
+        input: PathBuf,
+        /// `parse_player_lzs` descriptor count (typically 3, 5, 6, or 7).
+        #[arg(long, default_value_t = 6)]
+        desc_count: usize,
+        /// Write each cleanly-parsed bundle's LZS-decoded bytes here.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Bulk-scan every PROT entry under `dir` for player-ANM bundles. Reports
+    /// per-entry record count + decoded-bytes for each type-0x05 section that
+    /// parses cleanly. With `--cdname`, prefixes each line with the CDNAME
+    /// scene label.
+    PlayerAnmScan {
+        dir: PathBuf,
+        /// CDNAME.TXT for nicer entry titles. Optional.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// `parse_player_lzs` descriptor count.
+        #[arg(long, default_value_t = 6)]
+        desc_count: usize,
+    },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
     /// event-script prescript at `+0x800`.
@@ -677,6 +706,16 @@ fn main() -> Result<()> {
             only_hits,
         } => battle_data_pack_scan(&dir, cdname.as_deref(), only_hits),
         Cmd::EffectBundleScan { dir, only_hits } => effect_bundle_scan(&dir, only_hits),
+        Cmd::PlayerAnm {
+            input,
+            desc_count,
+            out,
+        } => player_anm_one(&input, desc_count, out.as_deref()),
+        Cmd::PlayerAnmScan {
+            dir,
+            cdname,
+            desc_count,
+        } => player_anm_scan(&dir, cdname.as_deref(), desc_count),
         Cmd::SceneV12 {
             input,
             scripts,
@@ -3715,6 +3754,120 @@ fn battle_char_pack_one(
         }
     }
     Ok(())
+}
+
+fn player_anm_one(input: &Path, desc_count: usize, out: Option<&Path>) -> Result<()> {
+    use legaia_asset::player_anm;
+    let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
+    let bundles = player_anm::find_in_entry(&bytes, desc_count);
+    if bundles.is_empty() {
+        println!(
+            "no player-ANM bundles found in {} (desc_count={}; try 3 / 5 / 7)",
+            input.display(),
+            desc_count
+        );
+        return Ok(());
+    }
+    let entry_stem = input
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "entry".into());
+    println!(
+        "{}: {} player-ANM bundle(s)",
+        input.display(),
+        bundles.len()
+    );
+    for (i, b) in bundles.iter().enumerate() {
+        let r0 = b.record_marker_1(0).unwrap_or(0);
+        println!(
+            "  bundle {i}: count={}  decoded={} bytes  record0 marker_1=0x{r0:04X}",
+            b.record_count,
+            b.decoded.len()
+        );
+        if let Some(out_dir) = out {
+            std::fs::create_dir_all(out_dir)
+                .with_context(|| format!("create_dir_all {}", out_dir.display()))?;
+            let p = out_dir.join(format!("{entry_stem}_sect{i}.anm"));
+            std::fs::write(&p, &b.decoded).with_context(|| format!("write {}", p.display()))?;
+            println!("    wrote {} ({} bytes)", p.display(), b.decoded.len());
+        }
+    }
+    Ok(())
+}
+
+fn player_anm_scan(dir: &Path, cdname_path: Option<&Path>, desc_count: usize) -> Result<()> {
+    use legaia_asset::player_anm;
+    let cdname = cdname_path
+        .map(|p| std::fs::read_to_string(p).with_context(|| format!("read CDNAME {}", p.display())))
+        .transpose()?;
+    let cdname_map: std::collections::HashMap<u32, String> =
+        cdname.as_deref().map(parse_cdname_text).unwrap_or_default();
+
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+        .with_context(|| format!("read_dir {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "BIN"))
+        .collect();
+    entries.sort();
+
+    let mut total = 0usize;
+    for path in &entries {
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
+        let bundles = player_anm::find_in_entry(&bytes, desc_count);
+        if bundles.is_empty() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        // PROT index: parse the 4-digit prefix.
+        let prot_idx: u32 = name
+            .split('_')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let label = cdname_map.get(&prot_idx).cloned().unwrap_or_default();
+        for (i, b) in bundles.iter().enumerate() {
+            total += 1;
+            println!(
+                "  {name:32} bundle {i}: count={:3}  decoded={:6} bytes  {}",
+                b.record_count,
+                b.decoded.len(),
+                label
+            );
+        }
+    }
+    println!(
+        "\n{total} player-ANM bundle(s) across {} entries",
+        entries.len()
+    );
+    Ok(())
+}
+
+fn parse_cdname_text(text: &str) -> std::collections::HashMap<u32, String> {
+    // CDNAME.TXT format: `#define <label> <PROT_index>` lines.
+    // The label inherits forward until the next #define; we still only
+    // emit the explicit (label, prot_index) pairs here.
+    let mut out = std::collections::HashMap::new();
+    for line in text.lines() {
+        let l = line.trim();
+        let Some(rest) = l.strip_prefix("#define ") else {
+            continue;
+        };
+        let mut parts = rest.split_whitespace();
+        let Some(label) = parts.next() else { continue };
+        let Some(idx_str) = parts.next() else {
+            continue;
+        };
+        if let Ok(idx) = idx_str.parse::<u32>() {
+            out.insert(idx, label.to_string());
+        }
+    }
+    out
 }
 
 fn monster_archive_one(

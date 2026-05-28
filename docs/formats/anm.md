@@ -329,6 +329,43 @@ in-flight strike capture's pointer (`0x801621D0`) point at distinct
 records that share this struct shape - the loader pages a different
 ANM record into the heap when the action ID changes.
 
+## Disc source - per-scene ANM bundle
+
+The player-character ANM data ships **inside each scene's first asset
+bundle** (not as a dedicated PROT entry). The bundle is a
+[`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container; section
+2 (the third descriptor) is tagged **type byte `0x05`** in the dispatcher
+table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`
+](asset-type.md)) but the actual content LZS-decodes to a canonical ANM
+container with `marker_1 = 0x080C` records.
+
+The mismatch between the asset type byte (`0x05` = "MOVE") and the
+[`FUN_8001f05c` case 6](../../ghidra/scripts/funcs/8001f05c.txt) (which
+allocates `_DAT_8007B7C8` with the `anm_malloc_err` string and labeled
+**ANM** dispatch) is a documented quirk; the runtime case selector indexes
+asset bytes differently than the [`AssetType`] enum's display label
+suggests.
+
+Confirmed corpus (byte-equality against live `DAT_8007B7C8` in the
+[`v0_1_pre_battle_tetsu`](../../scripts/scenarios.toml) field-mode save
+state, mc7):
+
+| PROT entry | CDNAME      | Section | Records | Decoded bytes  |
+|------------|-------------|---------|---------|----------------|
+| `0004`     | town01      | 2       | 69      | 96 448         |
+| `0013`     | town0b      | 2       | 69      | 91 784         |
+| `0183`     | balden      | 2       | 72      | 71 604         |
+| `0408`     | bubu1       | 2       | 70      | 87 844         |
+| `1203`     | other5      | 2       | 30      | 87 684 (battle-form) |
+
+The field-form bundles all have 69-72 records (the full player-locomotion
++ interaction anim set). PROT `1203_other5` is the battle-form variant
+sitting alongside the [battle character mesh pack](character-mesh.md#battle-form--prot-1204-other5)
+at PROT 1204. Other scenes either share an ANM blob with one of these via
+runtime caching, or have a smaller per-scene player-ANM section.
+
+Parser: `legaia_asset::player_anm` (CLI sweep + per-entry detector).
+
 ## Allocator preamble
 
 When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd

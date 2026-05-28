@@ -39,6 +39,7 @@ pub mod monster_gltf;
 pub mod new_game;
 pub mod overlay_ptr_table;
 pub mod pack;
+pub mod player_anm;
 pub mod scene_asset_table;
 pub mod scene_event_scripts;
 pub mod scene_scripted_asset_table;
