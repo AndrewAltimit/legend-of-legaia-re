@@ -2,7 +2,11 @@
 
 The five player-character TMDs the retail engine keeps resident across every
 field scene at `DAT_8007C018[0..=4]`. They live in the head section of PROT
-entry **0874** (`befect_data`). Implementation:
+entry **0874** (`befect_data`). The **same** pack also supplies the party
+meshes in battle — the battle scene loader reloads it as `etmd.dat`; there is
+no separate battle-character mesh (see
+[§ Battle reuses the field form](#battle-reuses-the-field-form--there-is-no-separate-battle-character-pack)).
+Implementation:
 [`legaia_asset::character_pack`](../../crates/asset/src/character_pack.rs).
 
 ## On-disc layout
@@ -104,18 +108,49 @@ itself carries **no character textures** — its remaining sections are the
 effect 3D models (etmd.dat) and effect-texture TIMs (etim.dat), unrelated to
 the player mesh.
 
-The battle form ships **its own seven 256×256 4bpp character atlases** in the
-trailer of [PROT 1204](#battle-form--prot-1204-other5); the field-form atlas
-at `fb=(768, 0)` is irrelevant during BattleMode.
+## Battle reuses the field form — there is no separate battle-character pack
 
-## Battle form — PROT 1204 (`other5`)
+There is **no distinct battle-character mesh**. A real main-game battle renders
+the party from the **same PROT 0874 §0 pack** as the field. The battle scene
+loader `FUN_800520F0` is a multi-step async state machine (sub-state byte at
+`gp+0xa59`); its character-pack steps are:
 
-When the engine enters BattleMode (`game_mode = 0x15`), the same
-`DAT_8007C018[0..=4]` table is **repointed** at a different five-TMD archive
-in PROT entry `1204`. The battle-form meshes have higher `nobj` counts than
-the field-form ones (typical 15/16/15 vs. 12/12/12) and the pack delivers its
-own character TIM atlases inline. Implementation:
-`legaia_asset::battle_char_pack`.
+- **state `0xb`** loads the battle model pack — dev path `FUN_8003e68c(0x36a)`
+  (PROT index `0x36a` = **874**) into the work buffer, with `0x369` (873) as the
+  index; retail path opens `h:\prot\battle\etmd.dat` (the dual-mode loader pulls
+  the same data from ISO9660 vs. the PROT TOC).
+- **state `0xc`** walks that pack and calls `tmd_register` on every entry —
+  `tmd_register` is `jal 0x80026b4c` = **`FUN_80026B4C`**, the sole
+  `DAT_8007C018` installer. So the battle installs PROT 874's TMDs into
+  `DAT_8007C018[0..=4]` exactly the way the field initializer does.
+
+The companion battle files are sibling PROT entries in the same `befect_data`
+block, **not** sections of 874: `etim.dat` = PROT `0x368` (872, battle TIMs),
+`efect.dat` = PROT `0x36b` (875, effects), plus a paired stage pack at
+`0x367`/`0x36d` (871/877). Confirmed in `ghidra/scripts/funcs/800520f0.txt`.
+
+Empirically: in settled-battle save states the party actors' mesh pointer
+`actor[+0x230]` equals `DAT_8007C018[0..=2]`, and during a real battle's load
+transition (`_DAT_8007B83C` mode `0x9`) the field-form `DAT_8007C018[1..=4]`
+entries are still resident. The field-form `nobj` (12/12/12/3/2 on disc,
+≈10/10/10/3/2 after the equipment swap) is what renders in battle — the higher
+`nobj` 17/18/17 pack belongs to the Baka Fighter minigame (below), not battle.
+
+## Baka Fighter minigame roster — PROT 1203–1221 (`other5`)
+
+PROT entry `1204` (`other5`) is the character pack for the **Baka Fighter**
+fist-fight minigame, **not** the main battle party. Baka Fighter lets you play
+*as* Vahn / Noa / Gala, so its roster reuses recognizably the same characters —
+which is why a save state captured during a Baka Fighter match shows
+`DAT_8007C018[0..=4]` repointed at this archive (the minigame's
+`overlay_baka_fighter` loads `data\field\other5.lzs` + PROT 1205/1206; debug
+string `"OTHER5 %d %d"`). The earlier reading of PROT 1204 as a "battle form"
+that repoints `DAT_8007C018` on `game_mode = 0x15` was a misidentification: the
+`game_mode 0x15` save states that pinned it were Baka Fighter sessions (their
+"enemy" actor's mesh also resolves to `other5`, PROT 1208/1209 — a real enemy
+would come from the monster archive PROT 867). Parser:
+`legaia_asset::battle_char_pack` (the name is a historical misnomer — it parses
+the Baka Fighter pack).
 
 PROT 1204 is a flat streaming-format container (no LZS wrapper) with five
 chunks of **asset type `0x09` (TMD2)** plus a terminator plus seven trailing
@@ -123,11 +158,11 @@ TIMs at fixed `0x8224` stride:
 
 | Region   | Offset      | Type | Size       | Role                                           |
 |----------|-------------|------|------------|------------------------------------------------|
-| chunk 0  | `0x000004`  | TMD2 | 33 516     | Vahn battle (`nobj=15`)                        |
-| chunk 1  | `0x0082F4`  | TMD2 | 33 636     | Noa battle (`nobj=16`)                         |
-| chunk 2  | `0x01065C`  | TMD2 | 24 780     | Gala battle (`nobj=15`)                        |
-| chunk 3  | `0x01672C`  | TMD2 | 27 036     | Extra battle character (`nobj=20`)             |
-| chunk 4  | `0x01D0CC`  | TMD2 | 33 340     | Extra battle character (`nobj=15`)             |
+| chunk 0  | `0x000004`  | TMD2 | 33 516     | Vahn fighter (`nobj=15`)                       |
+| chunk 1  | `0x0082F4`  | TMD2 | 33 636     | Noa fighter (`nobj=16`)                        |
+| chunk 2  | `0x01065C`  | TMD2 | 24 780     | Gala fighter (`nobj=15`)                        |
+| chunk 3  | `0x01672C`  | TMD2 | 27 036     | Extra fighter (`nobj=20`)                       |
+| chunk 4  | `0x01D0CC`  | TMD2 | 33 340     | Extra fighter (`nobj=15`)                       |
 | atlas 0  | `0x025804`  | TIM  | ~33 312    | 256×256 4bpp + 256×1 CLUT @ `(0, 490)`         |
 | atlas 1  | `0x02DA28`  | TIM  | ~33 312    | CLUT @ `(0, 491)`                              |
 | atlas 2  | `0x035C4C`  | TIM  | ~33 312    | CLUT @ `(0, 492)`                              |
@@ -136,15 +171,11 @@ TIMs at fixed `0x8224` stride:
 | atlas 5  | `0x04E2B8`  | TIM  | ~33 312    | CLUT @ `(0, 495)`                              |
 | atlas 6  | `0x0564DC`  | TIM  | ~23 332    | CLUT @ `(0, 497)` — truncated, last in pack    |
 
-Slots 0–2 are pinned by byte-equality against the live `DAT_8007C018[0..=2]`
-allocation in the [`party_battle_gobu_gobu`](../../scripts/scenarios.toml)
-save state (Vahn / Noa / Gala mid-battle vs. a single Gobu Gobu). Slots 3 and
-4 carry additional battle-form characters whose runtime identity depends on
-the active battle.
-
-The streaming chunk type `0x09` (TMD2) is recognized in [`AssetType`](
-../../crates/asset/src/lib.rs) as a distinct dispatcher tag from the regular
-TMD (type `0x02`); the TMD body shape is identical (magic `0x80000002`).
+The bundled CLUTs are the correct Baka-Fighter palettes (the roster renders
+to match the in-game PLAYER SELECT screen). The streaming chunk type `0x09`
+(TMD2) is recognized in [`AssetType`](../../crates/asset/src/lib.rs) as a
+distinct dispatcher tag from the regular TMD (type `0x02`); the TMD body shape
+is identical (magic `0x80000002`).
 
 ## Animation
 
@@ -160,7 +191,7 @@ state offsets.
 
 | Function | Role |
 |---|---|
-| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The retail loader chain that calls FUN_8001F05C with PROT 0874 specifically is **not yet pinned** — open work item in [`world-map-overlay.md`](world-map-overlay.md). |
+| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The **field** caller is `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. The **battle** caller is the battle scene loader `FUN_800520F0` (state `0xb` loads PROT 874 / `etmd.dat`, state `0xc` `tmd_register`s it via `jal 0x80026b4c`) — see [§ Battle reuses the field form](#battle-reuses-the-field-form--there-is-no-separate-battle-character-pack). |
 | `FUN_8001E890` | "DATA_FIELD player loader" — post-install, caps `entry[+0x08] = 10` for the three active-party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, then dispatches the per-character equipment-conditional patch to `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in [`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt). |
 
@@ -170,11 +201,11 @@ state offsets.
 # Field-form pack (PROT 0874 §0): list the five-slot shape + active-party templates.
 asset character-pack extracted/PROT/0874_befect_data.BIN
 
-# Battle-form pack (PROT 1204): list the five TMD2 chunks + seven character atlases.
+# Baka Fighter minigame pack (PROT 1204): list the five TMD2 chunks + seven character atlases.
 asset battle-char-pack extracted/PROT/1204_other5.BIN
 
-# Export one battle-form character TMD and one atlas TIM.
-asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd
+# Export one Baka Fighter character TMD and one atlas TIM.
+asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_baka.tmd
 asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim
 
 # Apply the equipment swap for a single slot + export the patched TMD.

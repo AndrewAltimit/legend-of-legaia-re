@@ -4,12 +4,23 @@ The battle overlay (`0898_xxx_dat`) carries the battle scene loader, the per-act
 
 ## Battle scene loader (`FUN_800520F0`)
 
-11-case state machine. Notable cases:
+Multi-step async state machine; sub-state byte at `gp+0xa59`. The dual-mode
+loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
+`h:\prot\battle\*.dat` ISO9660 files (retail) for the same data. Notable steps:
 
-- **Case 6** - loads the `befect_data` bundle (PROT 0x369–0x36B).
-- **Case 0xE** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
-- **Case 0xFF** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
+- **State `0x8`** - loads the battle texture pack: PROT `0x368` (872) / `etim.dat`.
+- **State `0xb`** - loads the battle **model** pack: PROT `0x36a` (**874**) / `etmd.dat`
+  (`FUN_8003e68c(0x36a)` + `async_lba_loader`), with PROT `0x369` (873) as its index.
+- **State `0xc`** - walks the loaded 874 pack and calls `tmd_register` on every
+  entry (`jal 0x80026b4c` = `FUN_80026B4C`, the sole `DAT_8007C018` installer),
+  then loads `efect.dat` / PROT `0x36b` (875). **This is how the party meshes get
+  into battle: PROT 874 is the same `befect_data` §0 character pack the field uses
+  ([character-mesh.md](../formats/character-mesh.md#battle-reuses-the-field-form--there-is-no-separate-battle-character-pack)) — there is no separate battle-character mesh.** The party actors' mesh pointer
+  `actor[+0x230]` resolves to `DAT_8007C018[0..=2]` for Vahn/Noa/Gala.
+- **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
+- **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
 
+A paired stage pack loads at PROT `0x367`/`0x36d` (871/877) in states 2/4/6.
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
