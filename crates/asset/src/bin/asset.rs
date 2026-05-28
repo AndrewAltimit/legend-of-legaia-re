@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_asset::{
     AssetType, DecodeMode, Descriptor, battle_data_pack, categorize, decode, effect_bundle,
@@ -353,6 +353,28 @@ enum Cmd {
         #[arg(long)]
         glb: Option<PathBuf>,
     },
+    /// Decode the player-character mesh pack at PROT entry `0874_befect_data`
+    /// (§0). Prints the 5-slot shape (Vahn / Noa / Gala / + 2 auxiliary slots)
+    /// with disc-form `nobj` and TMD body sizes; optionally applies the
+    /// FUN_8001EBEC equipment-swap patch and writes the resulting TMD bytes.
+    CharacterPack {
+        /// PROT entry 874 bytes (extended footprint).
+        input: PathBuf,
+        /// Slot 0..=4 to inspect / patch (omit to print all).
+        #[arg(long)]
+        slot: Option<usize>,
+        /// Equipment toggle byte (0 → group 11 template, anything else → group
+        /// 10 template). Mirrors the per-character byte at record offsets
+        /// 0x196 / 0x199 / 0x19B. Requires `--slot` and only applies to the
+        /// 3 active-party slots (0..=2).
+        #[arg(long)]
+        equip: Option<u8>,
+        /// Write the patched (or raw, if `--equip` is omitted) TMD body for
+        /// `--slot` to this path. Format = disc-form Legaia TMD; parses with
+        /// `legaia_tmd::parse`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
     /// event-script prescript at `+0x800`.
@@ -704,6 +726,12 @@ fn main() -> Result<()> {
             anim,
             glb.as_deref(),
         ),
+        Cmd::CharacterPack {
+            input,
+            slot,
+            equip,
+            out,
+        } => character_pack_one(&input, slot, equip, out.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -3507,6 +3535,102 @@ fn load_man_bytes(
     }
     let (decoded, _) = legaia_lzs::decompress_tracked(&buf[start..], man.size as usize)?;
     Ok((decoded, man))
+}
+
+/// Display label for one player-character pack slot. Pack slots 0/1/2 are
+/// the active-party characters (Vahn / Noa / Gala); slots 3/4 are smaller
+/// auxiliary actors retained across field scenes alongside the party.
+pub fn character_slot_label(slot: usize) -> &'static str {
+    match slot {
+        0 => "Vahn",
+        1 => "Noa",
+        2 => "Gala",
+        3 => "Aux 0",
+        4 => "Aux 1",
+        _ => "(out of range)",
+    }
+}
+
+fn character_pack_one(
+    input: &Path,
+    slot: Option<usize>,
+    equip: Option<u8>,
+    out: Option<&Path>,
+) -> Result<()> {
+    use legaia_asset::character_pack;
+    let bytes = std::fs::read(input)
+        .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
+    let pack = character_pack::parse(&bytes)?;
+    let active_patches = character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+
+    let print_slot = |s: &character_pack::CharacterSlot| {
+        let label = character_slot_label(s.slot);
+        let patch = active_patches.iter().find(|p| (p.slot as usize) == s.slot);
+        let patch_note = match patch {
+            Some(p) => format!(
+                "patched group {} @ record byte +0x{:03X}",
+                p.patched_group_index, p.equip_byte_record_offset
+            ),
+            None => "auxiliary (no equipment swap)".to_string(),
+        };
+        println!(
+            "  slot {} ({:<5}) disc-nobj {:2}  TMD bytes {:6}  {}",
+            s.slot,
+            label,
+            s.disc_nobj,
+            s.tmd_bytes.len(),
+            patch_note,
+        );
+    };
+
+    if let Some(idx) = slot {
+        let slot = pack
+            .slot(idx)
+            .ok_or_else(|| anyhow::anyhow!("slot {idx} out of range (0..=4)"))?;
+        print_slot(slot);
+        if let Some(equip_byte) = equip {
+            let Some(patch) = active_patches
+                .iter()
+                .find(|p| (p.slot as usize) == slot.slot)
+            else {
+                anyhow::bail!(
+                    "slot {} ({}) is not an active-party slot; equipment swap only applies to 0..=2",
+                    slot.slot,
+                    character_slot_label(slot.slot)
+                );
+            };
+            let patched =
+                character_pack::equipment_swap::apply(&slot.tmd_bytes, *patch, equip_byte);
+            let template = if equip_byte == 0 { 11 } else { 10 };
+            println!(
+                "  applied swap: equip byte 0x{:02X} -> group-{} template overwrites visible group {}",
+                equip_byte, template, patch.patched_group_index
+            );
+            if let Some(out_path) = out {
+                std::fs::write(out_path, &patched)?;
+                println!("  wrote patched TMD -> {}", out_path.display());
+            }
+        } else if let Some(out_path) = out {
+            std::fs::write(out_path, &slot.tmd_bytes)?;
+            println!("  wrote raw disc TMD -> {}", out_path.display());
+        }
+    } else {
+        if equip.is_some() {
+            anyhow::bail!("--equip requires --slot <N>");
+        }
+        if out.is_some() {
+            anyhow::bail!("--out requires --slot <N>");
+        }
+        println!(
+            "PROT {} (befect_data §0): {} character slots",
+            character_pack::PROT_ENTRY_INDEX,
+            pack.slots().len()
+        );
+        for s in pack.slots() {
+            print_slot(s);
+        }
+    }
+    Ok(())
 }
 
 fn monster_archive_one(

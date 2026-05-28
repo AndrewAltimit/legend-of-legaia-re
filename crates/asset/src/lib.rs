@@ -21,6 +21,7 @@ pub mod anm_detect;
 pub mod battle_data_pack;
 pub mod befect_cluster;
 pub mod categorize;
+pub mod character_pack;
 pub mod cutscene_text;
 pub mod data_field_truncated;
 pub mod effect_bundle;
