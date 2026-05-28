@@ -232,20 +232,20 @@
       </tr>
       <tr>
         <td>Title screen mode-table PROT</td>
-        <td><code>open</code></td>
-        <td>Pin the PROT entry referenced by the title-screen mode in the 14-entry mode table at <code>0x8007078C</code>. Adjacent entries are settled (PROT 973 = slot machine, 899 = options menu); title is still open.</td>
+        <td><code>resolved (no such entry)</code></td>
+        <td><strong>The premise is wrong</strong>: there is no title-screen entry in the 28-entry mode table at <code>0x8007078C</code>. Per <a href="../subsystems/boot.html#title-screen-is-not-in-the-mode-table">boot.md</a> the title overlay is loaded by a <strong>pre-mode-dispatch boot routine</strong> ahead of the mode table being consulted at all &mdash; its tick <code>FUN_801DD35C</code> lives in the unindexed 60-sector PROT.DAT gap between TOC entries 899 and 900. <code>legaia_asset::title_pak</code> reads the wordmark TIM out of PROT 888/890; PROT 899 carries the options-menu config bundle. NEW GAME is how control crosses from the title overlay into the mode table at mode 2. Row kept so the &ldquo;title entry is unresolved&rdquo; framing isn&rsquo;t re-opened.</td>
         <td><code>project_mode_table_structure.md</code></td>
       </tr>
       <tr>
         <td>Load-screen panel 9-slice geometry</td>
-        <td><code>open</code></td>
-        <td>Determine the 9-slice tile geometry the load-screen panel uses to draw its frame. TIM + CLUT source is pinned (<code>PROT.DAT[0x018E0]</code> CLUT row 2, byte-equal to retail VRAM).</td>
+        <td><code>resolved (engine renders byte-perfect)</code></td>
+        <td>Pinned in <a href="../subsystems/save-screen.html#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2">save-screen.md</a>: retail composes the 81&times;29 panel at dst <code>(6, 4)</code> from 14 textured-sprite primitives (GP0 cmd <code>0x64</code>) sampling the system-UI sheet with CLUT <code>(32, 511)</code>. The exact per-tile rects are exported as <code>legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*</code> and emitted by <code>legaia_engine_render::save_select_chrome_draws_for</code> (covered by <code>save_select_chrome_emits_9slice_panel_and_pills</code> test). No interior fill sprite is drawn &mdash; the &ldquo;marbled blue&rdquo; look is the dimmed title art bleeding through the empty middle of the frame.</td>
         <td><code>project_load_screen_panel_source_pinned.md</code></td>
       </tr>
       <tr>
         <td>Debug flags <code>0x8007B8C2</code> / <code>0x8007B98F</code></td>
-        <td><code>open</code></td>
-        <td>Identify the overlay-resident writers of the two debug flags. Static analysis finds zero SCUS writers, but the dual-mode loader pattern at <code>FUN_8003E360</code> reads <code>_DAT_8007B8C2</code>, so at least one writer must exist in an unscanned overlay.</td>
+        <td><code>partial (writer absent by design in retail)</code></td>
+        <td>Both addresses are in the SBSS/BSS region (zero-initialised at boot). The retail code paths only ever consult them as <strong>dev-vs-retail build-time selectors</strong>: <code>FUN_8003E360</code>'s dual-mode loader pattern routes through ISO9660 when <code>_DAT_8007B8C2 == 0</code> (the retail path) and through the PROT-index loader when non-zero (the dev path); same shape at <code>FUN_8001FA88</code> / <code>FUN_8001FC00</code> (sound) and <code>FUN_8001F7C0</code> (per-scene field-asset loader). The earlier &ldquo;at least one writer must exist in an unscanned overlay&rdquo; framing was wrong: a retail build whose selector lives at zero needs <strong>no writer at all</strong> &mdash; BSS init alone establishes the retail config, and the dev branches are never taken because no code path flips the flag. <code>_DAT_8007B98F</code> follows the same pattern (the new-game opening-scene seed at SCUS <code>0x80078C4C</code> reads it for an optional <code>initmap.txt</code> override when clear). What's still open: whether either flag is referenced as a <em>dynamic</em> selector anywhere (a real runtime mode toggle, not a build-time slug); a directed Lua write-watchpoint on both addresses across a full retail playthrough would settle it.</td>
         <td><code>project_debug_flags.md</code></td>
       </tr>
       <tr>
