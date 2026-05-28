@@ -21,7 +21,9 @@
 //!    follows the runtime convention - [`MiracleArt::replacement`] is the
 //!    *post-mask* action constants ready to write into the queue.
 //!
-//! Source: external researcher's `Miracle Arts Data` spreadsheet.
+//! Source: ZetaPhoenix's public "Legaia Arts Data" Google Sheets
+//! spreadsheet (Miracle Arts tab). See the README's Acknowledgments
+//! section for the link.
 
 use crate::queue::{ActionConstant, ActionQueue, Character, Command};
 

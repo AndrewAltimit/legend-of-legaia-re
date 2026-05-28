@@ -241,6 +241,7 @@ legend-of-legaia-re/
 
 - [**The Cutting Room Floor**](https://tcrf.net/Legend_of_Legaia) - developer attribution (Prokion / Contrail), debug-flag addresses, the catalog of 14 known builds.
 - [Sam Ste's PROT.DAT unpacker](https://github.com/SamSteProjects/LegendOfLegaia_.Dat_unpacker) - early Python proof-of-concept that pointed at the right TOC slots and the TIM-pack heuristic.
+- [**ZetaPhoenix's "Legaia Arts Data" spreadsheet**](https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link) - public Google Sheets catalog of the Tactical Arts / Miracle Arts / Super Arts trigger strings and finisher replacements. The `legaia-art` `MiracleMatcher` / `SuperMatcher` tables (`crates/art/src/miracle.rs`, `super_art.rs`) cross-reference and validate against it.
 - The PSX scene generally - Sony PsyQ docs, Martin Korth's [PSX-SPX](https://problemkaputt.de/psx-spx.htm), and decades of accumulated TIM/TMD/SPU documentation.
 - Reference projects whose legal pattern this repo follows: ScummVM, OpenRCT2, OpenMW, OpenLara.
 
