@@ -1540,6 +1540,67 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * JSON summary of every player-ANM bundle accessible from this disc.
+     * Shape:
+     * ```text
+     * {
+     *   "bundles": [
+     *     {
+     *       "prot_index": 4,
+     *       "record_count": 69,
+     *       "decoded_bytes": 96448,
+     *       "records": [
+     *         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C },
+     *         ...
+     *       ]
+     *     }, ...
+     *   ]
+     * }
+     * ```
+     * Surveys the corpus by walking each scene's first PROT slot
+     * (parse_player_lzs descriptor count = 6, the canonical scene-bundle
+     * shape) and emitting one entry per cleanly-decoded type-0x05 section.
+     * @returns {string}
+     */
+    player_anm_corpus_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_player_anm_corpus_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Find a single player-ANM bundle by its PROT entry index and return
+     * the LZS-decoded bytes. Empty if the entry doesn't carry a bundle.
+     * @param {number} prot_index
+     * @returns {Uint8Array}
+     */
+    player_anm_decoded(prot_index) {
+        const ret = wasm.legaiaviewer_player_anm_decoded(this.__wbg_ptr, prot_index);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Raw bytes of one record from the player-ANM bundle at `prot_index`.
+     * Includes the per-record header (`marker_1 = 0x080C`, flag, …) plus
+     * the per-bone keyframe data following it.
+     * @param {number} prot_index
+     * @param {number} record_index
+     * @returns {Uint8Array}
+     */
+    player_anm_record_bytes(prot_index, record_index) {
+        const ret = wasm.legaiaviewer_player_anm_record_bytes(this.__wbg_ptr, prot_index, record_index);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * @returns {number}
      */
     prev_entry() {

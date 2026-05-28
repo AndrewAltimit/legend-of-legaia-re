@@ -2251,6 +2251,111 @@ impl LegaiaViewer {
         vram.as_bytes().to_vec()
     }
 
+    // ------------------------------------------------------------------
+    // Player ANM bundles — per-scene asset bundle, section 2, type 0x05
+    // ("MOVE" label but canonical ANM content with marker_1 = 0x080C).
+    // See `legaia_asset::player_anm` + docs/formats/anm.md.
+    // ------------------------------------------------------------------
+
+    /// JSON summary of every player-ANM bundle accessible from this disc.
+    /// Shape:
+    /// ```text
+    /// {
+    ///   "bundles": [
+    ///     {
+    ///       "prot_index": 4,
+    ///       "record_count": 69,
+    ///       "decoded_bytes": 96448,
+    ///       "records": [
+    ///         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C },
+    ///         ...
+    ///       ]
+    ///     }, ...
+    ///   ]
+    /// }
+    /// ```
+    /// Surveys the corpus by walking each scene's first PROT slot
+    /// (parse_player_lzs descriptor count = 6, the canonical scene-bundle
+    /// shape) and emitting one entry per cleanly-decoded type-0x05 section.
+    pub fn player_anm_corpus_json(&self) -> String {
+        let toc = match parse_prot_toc(&self.disc) {
+            Some(t) => t,
+            None => return r#"{"bundles":[],"error":"no PROT TOC"}"#.to_string(),
+        };
+        let mut bundles: Vec<serde_json::Value> = Vec::new();
+        for meta in &toc {
+            let off = meta.byte_offset as usize;
+            let end = off.saturating_add(meta.size_bytes as usize);
+            let Some(buf) = self.disc.get(off..end) else {
+                continue;
+            };
+            // The vast majority of scene bundles use 6 descriptors; that's the
+            // detector spread the disc-gated test pins. Lower counts catch a
+            // handful of `befect_data` / `other5` variants.
+            for desc_count in [6, 3, 5, 7] {
+                let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
+                if !found.is_empty() {
+                    for b in found {
+                        let recs: Vec<serde_json::Value> = (0..b.record_count as usize)
+                            .map(|i| {
+                                let bytes = b.record_bytes(i);
+                                serde_json::json!({
+                                    "index": i,
+                                    "offset": b.record_offsets[i],
+                                    "size": bytes.len(),
+                                    "marker_1": b.record_marker_1(i).unwrap_or(0),
+                                })
+                            })
+                            .collect();
+                        bundles.push(serde_json::json!({
+                            "prot_index": meta.index,
+                            "record_count": b.record_count,
+                            "decoded_bytes": b.decoded.len(),
+                            "records": recs,
+                        }));
+                    }
+                    break;
+                }
+            }
+        }
+        serde_json::json!({ "bundles": bundles }).to_string()
+    }
+
+    /// Find a single player-ANM bundle by its PROT entry index and return
+    /// the LZS-decoded bytes. Empty if the entry doesn't carry a bundle.
+    pub fn player_anm_decoded(&self, prot_index: u32) -> Vec<u8> {
+        let toc = match parse_prot_toc(&self.disc) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+        let Some(meta) = toc.into_iter().find(|e| e.index == prot_index) else {
+            return Vec::new();
+        };
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        let Some(buf) = self.disc.get(off..end) else {
+            return Vec::new();
+        };
+        for desc_count in [6, 3, 5, 7] {
+            let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
+            if let Some(b) = found.into_iter().next() {
+                return b.decoded;
+            }
+        }
+        Vec::new()
+    }
+
+    /// Raw bytes of one record from the player-ANM bundle at `prot_index`.
+    /// Includes the per-record header (`marker_1 = 0x080C`, flag, …) plus
+    /// the per-bone keyframe data following it.
+    pub fn player_anm_record_bytes(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        bundle.record_bytes(record_index as usize).to_vec()
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

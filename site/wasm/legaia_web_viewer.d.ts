@@ -670,6 +670,40 @@ export class LegaiaViewer {
      * pack's per-slot TMDs all sample from this one shared image.
      */
     pack_vram_bytes(): Uint8Array;
+    /**
+     * JSON summary of every player-ANM bundle accessible from this disc.
+     * Shape:
+     * ```text
+     * {
+     *   "bundles": [
+     *     {
+     *       "prot_index": 4,
+     *       "record_count": 69,
+     *       "decoded_bytes": 96448,
+     *       "records": [
+     *         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C },
+     *         ...
+     *       ]
+     *     }, ...
+     *   ]
+     * }
+     * ```
+     * Surveys the corpus by walking each scene's first PROT slot
+     * (parse_player_lzs descriptor count = 6, the canonical scene-bundle
+     * shape) and emitting one entry per cleanly-decoded type-0x05 section.
+     */
+    player_anm_corpus_json(): string;
+    /**
+     * Find a single player-ANM bundle by its PROT entry index and return
+     * the LZS-decoded bytes. Empty if the entry doesn't carry a bundle.
+     */
+    player_anm_decoded(prot_index: number): Uint8Array;
+    /**
+     * Raw bytes of one record from the player-ANM bundle at `prot_index`.
+     * Includes the per-record header (`marker_1 = 0x080C`, flag, …) plus
+     * the per-bone keyframe data following it.
+     */
+    player_anm_record_bytes(prot_index: number, record_index: number): Uint8Array;
     prev_entry(): number;
     /**
      * Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
@@ -1029,6 +1063,9 @@ export interface InitOutput {
     readonly legaiaviewer_pack_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_pack_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_player_anm_corpus_json: (a: number) => [number, number];
+    readonly legaiaviewer_player_anm_decoded: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_bytes: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];

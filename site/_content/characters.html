@@ -102,6 +102,17 @@ table.arts-list .cmd-tag {
   background: var(--bg-code); border: 1px solid var(--border);
   font-size: 0.72rem; margin-right: 0.15rem;
 }
+.char-anm-wrap { display: flex; flex-direction: column; gap: 0.45rem; }
+.char-anm-select {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem; font: inherit; border-radius: 3px;
+}
+.char-anm-row { display: flex; align-items: center; gap: 0.55rem; }
+.char-anm-row input[type=range] { flex: 1; }
+.char-anm-readout {
+  font: 0.78rem/1.0 var(--font-mono, monospace);
+  color: var(--text-muted); min-width: 13ch; text-align: right;
+}
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
@@ -165,6 +176,18 @@ table.arts-list .cmd-tag {
           <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
         </div>
         <div class="char-fun" id="char-fun"></div>
+
+        <div class="char-section-label">Animation</div>
+        <div class="char-anm-wrap" id="char-anm-wrap">
+          <select id="char-anm-bundle" class="char-anm-select"></select>
+          <div class="char-anm-row">
+            <input type="range" id="char-anm-record" min="0" max="0" value="0">
+            <span id="char-anm-record-label" class="char-anm-readout">—</span>
+          </div>
+          <div class="char-info-note" id="char-anm-info">
+            Pinned: 87 player-ANM bundles ship across the corpus, one per scene. Slide the bar to browse the records inside each bundle; each record is one animation clip (idle, walk, attack, …) made of per-bone keyframes (`marker_1 = 0x080C` opens every record body). The viewer shows the bundle / record metadata here; per-frame pose application against the TMD is the still-open thread.
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -250,14 +273,21 @@ table.arts-list .cmd-tag {
   const resetBtn = document.getElementById('char-reset-btn');
   const tmdBtn = document.getElementById('char-tmd-btn');
   const funEl = document.getElementById('char-fun');
+  const anmBundleSel = document.getElementById('char-anm-bundle');
+  const anmRecordSlider = document.getElementById('char-anm-record');
+  const anmRecordLabel = document.getElementById('char-anm-record-label');
+  const anmInfo = document.getElementById('char-anm-info');
   if (!fileInput) return;
 
   let viewer = null;     // WASM LegaiaViewer
   let pack = null;       // parsed FIELD-form character pack JSON
   let battlePack = null; // parsed BATTLE-form character pack JSON (PROT 1204)
+  let anmCorpus = null;  // parsed player_anm_corpus_json (cached after disc load)
   let selectedSlot = null;
   let curEquip = -1;     // -1 = disc form, 0 = unequipped template, 1 = equipped template
   let curForm = 'field'; // 'field' or 'battle'
+  let curAnmBundleIdx = 0;   // index into anmCorpus.bundles
+  let curAnmRecordIdx = 0;
   let meshView = null;   // CharacterMeshView (field) or BattleMeshView (battle)
   let artsData = null;   // arts.json contents, lazily fetched
   let curArtsKind = 'regular';
@@ -356,6 +386,79 @@ table.arts-list .cmd-tag {
     formToggle.innerHTML = buttons.map(b => `
       <button class="char-equip-btn${b.val === curForm ? ' is-active' : ''}"
               data-val="${b.val}" title="${escapeHtml(b.hint)}"${b.enabled ? '' : ' disabled'}>${b.label}</button>`).join('');
+  }
+
+  // ----- Player ANM scrubber -----
+  // Surfaces the 87-bundle corpus the disc carries (one per scene) and lets
+  // the user step through each bundle's records. The bundle dropdown groups
+  // by PROT entry index + CDNAME label (with record count); the record
+  // slider walks 0..count-1 inside whichever bundle is selected. We report
+  // record size + the (always 0x080C) marker byte so it's clear data IS
+  // there. Per-frame pose application is still owed (the per-record
+  // keyframe table layout isn't fully decoded yet — see TODO in the
+  // panel's info note).
+  // scenes.json (loaded once on demand). Sorted by prot_start so a binary
+  // search resolves any PROT index to the owning CDNAME block.
+  let scenesData = null;
+  async function ensureScenes() {
+    if (scenesData) return scenesData;
+    try {
+      const r = await fetch('scenes.json', { cache: 'force-cache' });
+      if (!r.ok) return null;
+      scenesData = await r.json();
+      return scenesData;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function findCdnameLabel(protIdx) {
+    if (!scenesData) return `PROT ${String(protIdx).padStart(4, '0')}`;
+    // Linear walk — only 124 entries; the corpus has 87 lookups per disc
+    // load so a 124-entry walk per lookup is ~10k ops, well under the
+    // dropdown-render budget.
+    for (const s of scenesData) {
+      if (protIdx >= s.prot_start && protIdx <= s.prot_end) {
+        return `${s.label} · PROT ${String(protIdx).padStart(4, '0')}`;
+      }
+    }
+    return `PROT ${String(protIdx).padStart(4, '0')}`;
+  }
+
+  function renderAnmPanel() {
+    if (!anmCorpus || !anmBundleSel) return;
+    const opts = anmCorpus.bundles.map((b, i) => {
+      const label = findCdnameLabel(b.prot_index);
+      const isBattle = b.prot_index === 1203;
+      const tag = isBattle ? ' [battle]' : '';
+      return `<option value="${i}">${label} — ${b.record_count} records, ${b.decoded_bytes.toLocaleString()} bytes${tag}</option>`;
+    }).join('');
+    anmBundleSel.innerHTML = opts;
+    anmBundleSel.value = String(Math.min(curAnmBundleIdx, anmCorpus.bundles.length - 1));
+    syncAnmSlider();
+  }
+
+  function syncAnmSlider() {
+    if (!anmCorpus) return;
+    const bundle = anmCorpus.bundles[curAnmBundleIdx];
+    if (!bundle) return;
+    anmRecordSlider.min = '0';
+    anmRecordSlider.max = String(Math.max(0, bundle.record_count - 1));
+    anmRecordSlider.value = String(Math.min(curAnmRecordIdx, bundle.record_count - 1));
+    updateAnmReadout();
+  }
+
+  function updateAnmReadout() {
+    if (!anmCorpus) return;
+    const bundle = anmCorpus.bundles[curAnmBundleIdx];
+    if (!bundle) return;
+    const rec = bundle.records[curAnmRecordIdx];
+    if (!rec) {
+      anmRecordLabel.textContent = '—';
+      return;
+    }
+    const m = rec.marker_1.toString(16).padStart(4, '0').toUpperCase();
+    anmRecordLabel.textContent = `rec ${curAnmRecordIdx}/${bundle.record_count - 1}  ·  ${rec.size}B  ·  m1=0x${m}`;
   }
 
   // Build the equip-state toggle: only field-form active-party slots get a
@@ -550,6 +653,24 @@ table.arts-list .cmd-tag {
     const val = btn.dataset.val;
     if (val === 'field' || val === 'battle') selectForm(val);
   });
+
+  if (anmBundleSel) {
+    anmBundleSel.addEventListener('change', () => {
+      const idx = Number(anmBundleSel.value);
+      if (!Number.isFinite(idx)) return;
+      curAnmBundleIdx = idx;
+      curAnmRecordIdx = 0;
+      syncAnmSlider();
+    });
+  }
+  if (anmRecordSlider) {
+    anmRecordSlider.addEventListener('input', () => {
+      const idx = Number(anmRecordSlider.value);
+      if (!Number.isFinite(idx)) return;
+      curAnmRecordIdx = idx;
+      updateAnmReadout();
+    });
+  }
 
   document.getElementById('char-arts-kinds').addEventListener('click', (e) => {
     const btn = e.target.closest('.char-arts-kind');
@@ -934,12 +1055,33 @@ table.arts-list .cmd-tag {
       } catch (e) {
         console.debug('[characters] battle pack absent or unparseable:', e);
       }
+      // Player-ANM corpus (87 bundles across the disc, one per scene that
+      // ships the per-scene anim section). Lazily decoded; if anything throws
+      // we leave anmCorpus null and hide the scrubber.
+      try {
+        prog.indeterminate('Cataloguing player-ANM bundles…');
+        await prog.paint();
+        const ac = JSON.parse(viewer.player_anm_corpus_json());
+        if (ac && Array.isArray(ac.bundles) && ac.bundles.length > 0) {
+          anmCorpus = ac;
+        }
+      } catch (e) {
+        console.debug('[characters] ANM corpus walk failed:', e);
+      }
       const battleNote = battlePack
         ? ` · battle form (${battlePack.slots.length} slots + ${battlePack.atlases ? battlePack.atlases.length : 0} atlases)`
         : '';
-      status.textContent = `Loaded: ${f.name} — decoded ${pack.slots.length} field-form slots${battleNote}.`;
+      const anmNote = anmCorpus
+        ? ` · player ANM (${anmCorpus.bundles.length} bundles)`
+        : '';
+      status.textContent = `Loaded: ${f.name} — decoded ${pack.slots.length} field-form slots${battleNote}${anmNote}.`;
       renderFormToggle();
       renderGrid();
+      // Fire-and-forget scenes.json fetch + re-render so the dropdown gets
+      // CDNAME-labeled options (e.g. "town01 · PROT 0004") instead of the
+      // bare PROT-index fallback.
+      ensureScenes().then(() => renderAnmPanel());
+      renderAnmPanel();
       // Auto-select Vahn so the user sees a model right away.
       selectSlot(0);
       prog.done(`Ready (${pack.slots.length} slots).`);
