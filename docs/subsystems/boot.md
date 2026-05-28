@@ -75,7 +75,9 @@ The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the bo
 
 `FUN_801D6704` then reads this seeded state from globals during the field scene init; it is generic field entry used for every scene transition, not new-game-specific.
 
-**The title screen is not one of the 28 modes** — its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2).
+#### Title screen is not in the mode table
+
+The title screen is not one of the 28 modes — its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2). The title overlay code lives in the unindexed 60-sector gap inside `PROT.DAT` between TOC entries 899 and 900 (see [§ Title-overlay source on disc](#title-overlay-source-on-disc) below). The title *wordmark* TIM is PROT 888/890 (read by `legaia_asset::title_pak`); PROT 899 carries the options-menu config bundle. So the recurring "which mode-table row is the title screen?" question has an empty answer — there isn't one.
 
 ### CD-read API stack
 

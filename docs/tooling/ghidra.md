@@ -205,8 +205,8 @@ Every script needs the `# @runtime Jython` header line (with `# @category Legaia
 | `find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
 | `find_gte_users.py` | Count COP2 / GTE instructions per function - surfaces renderer + transform candidates. |
 | `find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
-| `find_xp_table_readers.py` | LUI+ADDIU resolver narrowed to the retail XP table at `0x8007123C..0x80071300`. Single-program variant. |
-| `find_xp_table_all_overlays.py` | Same scan, intended for `-process -recursive` over every imported program (SCUS + overlays). Used to confirm no static reader for the XP table surfaces in the current overlay set. |
+| `find_xp_table_readers.py` | LUI+ADDIU resolver targeting the address originally documented as the retail XP table (`0x8007123C..0x80071300`). **The address was wrong** (off-by-`0x800` file/virtual confusion; the bytes at the corrected address `0x80070A3C` are a sin-LUT slice, not an XP table — see [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table)). Kept for the LUI+ADDIU resolver pattern itself, which is generic; retarget the address before re-running. |
+| `find_xp_table_all_overlays.py` | Same scan, recursive across every imported program. Returns zero hits — but that finding is moot in the current framing (see the row above). |
 | `find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
 | `find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
 | `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |

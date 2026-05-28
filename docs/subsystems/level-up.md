@@ -7,33 +7,45 @@ overlay (partial coverage).
 
 ## XP table
 
-The cumulative XP thresholds for levels 2–99 are derived by prefix-summing the
-98 u16 LE per-level increment values stored at `SCUS_942.54` address `0x8007123C`:
+**The previously-documented "XP increment table at `0x8007123C`" is FALSIFIED
+by inspection of the SCUS bytes.** The address was an off-by-`0x800` (PSX EXE
+header size) confusion between the file offset `0x6123C` and the virtual
+address `0x80070A3C`; and the bytes at the *correct* virtual address are not
+an XP table at all — they are deep samples (entries `0x408..0x469`) of the
+shared **4096-entry full-circle sin LUT** at `0x80070A2C` that the GTE
+rotation builders `RotMatrixX/Y/Z` (`0x800461A4` / `0x8004629C` / `0x8004638C`,
+documented under [`reference/functions.md`](../reference/functions.md)) and
+the cutscene camera (`FUN_8001CF50`,
+[`subsystems/cutscene.md`](cutscene.md#camera-rotation-build)) consume. Every
+one of the 4096 u16 entries at `0x80070A2C` matches `round(4096 × sin(i/4096
+× 2π))` to within ±1; the quadrant breakpoints land exactly (`[0x000]=0`,
+`[0x400]=4096`, `[0x800]=0`, `[0xC00]=-4096`), `cos[i] = sin[i + 0x400]`.
 
-| Levels | Increment range |
-|---|---|
-| L1→2 | 50 |
-| L2→3 | 56 |
-| L3→4 | 62 |
-| … | … |
-| L98→99 | 656 |
+`engine_core::levelup::retail_xp_table()` therefore embeds a 98-entry slice of
+that sin LUT (`sin[0x408..0x46A]` = `50, 56, 62, 69, 75, … 650, 656`) and
+prefix-sums it as cumulative XP thresholds. The data behaves consistently
+under the engine's self-tests (50 XP reaches L2, 106 reaches L3, …) but its
+provenance as retail XP is **unproven**: an in-engine save-pair diff against
+a real retail level-up has not been done, no retail reader has been found
+loading this address as XP, and the L99 cumulative the slice produces
+(34 663 XP) is conspicuously small for a 1998-era JRPG. The two non-exclusive
+possibilities remain open:
 
-`retail_xp_table()` in `engine-core::levelup` builds the cumulative table by
-prefix-summing these 98 values. `LevelUpTracker::default()` uses it; the XP
-table can be overridden via `with_xp_table(Vec<u32>)`.
+1. **Designed reuse** — Legaia's level designers picked the early sin LUT
+   slice deliberately because `4096 × sin(small angle)` is near-linear with
+   mild curvature (≈ `idx × 6.25 + small_quadratic_term`), which is a
+   reasonable XP curve shape. JRPGs of that era frequently shared static
+   tables across subsystems to save ROM.
+2. **Engine fabrication** — the 50/56/62/… numbers were read from this sin
+   slot by an earlier extraction pass that mistook the address for an XP
+   table, and the real XP curve lives elsewhere (likely an uncaptured
+   overlay; static SCUS + every captured overlay carries no reader for
+   either the wrong address `0x8007123C` or the sin-LUT-slice address
+   `0x80070A3C`, regardless of LUI+ADDIU / gp-rel / LUI+LHU encoding).
 
-Total XP to reach level N (from level 1):
-- Level 2: 50
-- Level 3: 106
-- Level 5: 312
-- Level 10: 949
-- Level 20: 3093
-- Level 50: 14655
-- Level 99: 34663
-
-(Computed by prefix-summing the 98 u16 LE increments at SCUS_942.54
-`0x8007123C`. Verified by `legaia_save::RETAIL_XP_CUMULATIVE` and
-`level_for_cumulative_xp` round-trip.)
+`LevelUpTracker::default()` uses the slice. Override via `with_xp_table(Vec<u32>)`
+when the real source lands. Total XP to reach level N (from the slice):
+L2 = 50, L3 = 106, L5 = 312, L10 = 949, L20 = 3093, L50 = 14 655, L99 = 34 663.
 
 ## Stat gains
 
@@ -313,18 +325,23 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
   has not been traced from the stat aggregator.
-- **Pin the retail XP divisor.** The current port divides the monster XP
-  pool by `alive_count` (surviving party members) and credits each
-  surviving slot the floored share. A LUI+ADDIU sweep across `SCUS_942.54`
-  and every captured overlay (`overlay_magic_level_up`,
-  `overlay_battle_action`, …) does not surface a static reader for the
-  XP table at `0x8007123C`, so the reader is either in an
-  overlay slice that hasn't been captured yet or accesses the table via
-  a runtime-computed index that LUI+ADDIU resolution misses. The
-  scanner [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
+- **Find the real retail XP table source.** The current port divides the
+  monster XP pool by `alive_count` (surviving party members) and credits each
+  surviving slot the floored share. The thresholds it grants come from a
+  98-entry slice of the shared sin LUT (see *XP table* above) whose
+  provenance as retail XP is unproven. A LUI+ADDIU / gp-relative / LUI+LHU
+  sweep across `SCUS_942.54` and every captured overlay
+  (`overlay_magic_level_up`, `overlay_battle_action`, …) finds **zero**
+  readers for either the wrong address `0x8007123C` or the sin-LUT-slice
+  address `0x80070A3C` in any encoding, so either the reader lives in an
+  uncaptured overlay slice, or the table is genuinely the sin LUT (read by
+  the cutscene/GTE consumer at `0x800461C4` for unrelated rotation math,
+  with the level-up consumer indexing a different sub-slice through the
+  same base). The scanner
+  [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
   + [`scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
-  are kept around so the divisor + dead-member exclusion can be re-verified
-  once the gap closes.
+  were targeting `0x8007123C` (the wrong address); update or replace them
+  before re-running.
 - **Overlay display.** The retail level-up overlay shows per-stat increments
   (STR, INT, VIT, etc.) with an animated counter. Only HP/MP are tracked in the
   current port; other stats are handled by the per-character record's stat

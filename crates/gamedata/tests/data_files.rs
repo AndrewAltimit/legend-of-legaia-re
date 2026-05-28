@@ -211,6 +211,146 @@ fn enemy_drop_and_steal_keys_resolve() {
 }
 
 #[test]
+fn seru_spells_carry_absorb_chances() {
+    // Every `family = "seru"` spell now has Meth962-sourced Lv1/Lv2/Lv3
+    // absorption probabilities. Ra-Seru summons are egg-derived and
+    // don't have an absorption mechanic.
+    let db = Database::load();
+    let mut missing: Vec<&str> = Vec::new();
+    for spell in db.spells() {
+        if spell.family != legaia_gamedata::SpellFamily::Seru {
+            continue;
+        }
+        if spell.absorb_lv1.is_none() || spell.absorb_lv2.is_none() || spell.absorb_lv3.is_none() {
+            missing.push(&spell.name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "Seru spells missing absorb chances: {:?}",
+        missing
+    );
+}
+
+#[test]
+fn magic_leveling_xp_thresholds_are_monotonic() {
+    let xp = legaia_gamedata::magic_leveling::XP_TO_LEVEL;
+    for w in xp.windows(2) {
+        assert!(w[0] < w[1], "XP curve not monotonic: {:?}", xp);
+    }
+    // Sanity: lv9 cumulative cost matches Meth's published value.
+    assert_eq!(xp[7], 537);
+}
+
+#[test]
+fn magic_leveling_scaling_doubles_at_lv9() {
+    let s = legaia_gamedata::magic_leveling::SCALING_BP;
+    assert_eq!(s[0], 10_000, "Lv1 base 100%");
+    assert_eq!(s[8], 20_000, "Lv9 = +100%");
+    // Strictly increasing.
+    for w in s.windows(2) {
+        assert!(w[0] < w[1], "scaling not monotonic: {:?}", s);
+    }
+}
+
+#[test]
+fn magic_xp_award_brackets() {
+    use legaia_gamedata::magic_leveling::{xp_multi_target, xp_single_target};
+    // Single-target spot checks against the FAQ table.
+    assert_eq!(xp_single_target(100), 12);
+    assert_eq!(xp_single_target(95), 11);
+    assert_eq!(xp_single_target(80), 9);
+    assert_eq!(xp_single_target(50), 5);
+    assert_eq!(xp_single_target(20), 2);
+    assert_eq!(xp_single_target(5), 0);
+    // Multi-target.
+    assert_eq!(xp_multi_target(100), 4);
+    assert_eq!(xp_multi_target(80), 3);
+    assert_eq!(xp_multi_target(60), 2);
+    assert_eq!(xp_multi_target(30), 1);
+    assert_eq!(xp_multi_target(10), 0);
+}
+
+#[test]
+fn boss_item_rewards_resolve_to_known_keys() {
+    let db = Database::load();
+    for b in db.bosses() {
+        if let Some(ref key) = b.item_reward {
+            assert!(
+                db.resolve_key(key).is_some(),
+                "boss {:?} item_reward {:?} not found in items.toml",
+                b.name,
+                key
+            );
+        }
+    }
+}
+
+#[test]
+fn meth_tagged_bosses_carry_full_fight_data() {
+    // Any boss with a `meth_id` field came in through the Meth962 ingest
+    // and should have the per-fight columns populated. Skip the Cort
+    // (Juggernaut) final boss whose rewards are 0/0 by design.
+    let db = Database::load();
+    for b in db.bosses() {
+        let Some(ref id) = b.meth_id else { continue };
+        assert!(b.hp_min > 0 && b.hp_min == b.hp_max, "{} hp range odd", id);
+        if id == "B0014" {
+            continue; // final boss has no rewards
+        }
+        assert!(
+            b.exp_reward.is_some() && b.gold_reward.is_some(),
+            "{} ({}) missing exp_reward or gold_reward",
+            id,
+            b.name
+        );
+        assert!(
+            b.recommended_level.is_some(),
+            "{} ({}) missing recommended_level",
+            id,
+            b.name
+        );
+    }
+}
+
+#[test]
+fn enemy_stat_coverage_is_universal() {
+    // Meth962 ingest landed stats for every enemy; the test gates that we
+    // don't regress that coverage as new entries get added.
+    let db = Database::load();
+    let mut missing: Vec<&str> = Vec::new();
+    for enemy in db.enemies() {
+        if enemy.hp.is_none() || enemy.exp.is_none() || enemy.atk.is_none() {
+            missing.push(&enemy.name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "enemies without hp/exp/atk: {:?}",
+        missing
+    );
+}
+
+#[test]
+fn enemy_stat_ranges_are_plausible() {
+    // Ground sanity: HP/MP/AGL within Meth962's observed bounds. Lapis has
+    // the highest stats in the corpus; the upper bounds here are well
+    // beyond his to flag obvious paste errors without false positives.
+    let db = Database::load();
+    for enemy in db.enemies() {
+        if let Some(hp) = enemy.hp {
+            assert!(hp <= 70_000, "{:?} hp out of range: {}", enemy.name, hp);
+        }
+        if let Some(mp) = enemy.mp {
+            assert!(mp <= 5_000, "{:?} mp out of range: {}", enemy.name, mp);
+        }
+        if let Some(agl) = enemy.agl {
+            assert!(agl <= 1_000, "{:?} agl out of range: {}", enemy.name, agl);
+        }
+    }
+}
+
+#[test]
 fn weapons_have_consistent_user() {
     let db = Database::load();
     for w in db.weapons() {

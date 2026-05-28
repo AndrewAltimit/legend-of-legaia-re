@@ -159,7 +159,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>Download</h2>
-  <p>The <strong>⬇ .glb</strong> button packs the selected enemy — mesh, baked texture, and <em>all</em> of its action animations — into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file. glTF is the universal 3D interchange format, so the model drops straight into Blender, three.js, the Windows 3D Viewer, or any glTF tool, animations and all. Each TMD body part becomes an animated node; the per-part palettes are baked into one texture atlas. The same export is available offline from the CLI.</p>
+  <p>The <strong>⬇ Download .glb</strong> button packs the selected enemy — mesh, baked texture, and <em>all</em> of its action animations — into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file. glTF is the universal 3D interchange format, so the model drops straight into Blender, three.js, the Windows 3D Viewer, or any glTF tool, animations and all. Each TMD body part becomes an animated node; the per-part palettes are baked into one texture atlas. The same export is available offline from the CLI.</p>
   <div class="cli"><code>asset monster-archive … --id N --glb enemy.glb</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -716,7 +716,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <div class="mesh-viewer-controls">
               <button id="mesh-spin-btn" type="button">⏸ stop spin</button>
               <button id="mesh-reset-btn" type="button">↺ reset view</button>
-              <button id="mesh-glb-btn" type="button" title="Download mesh + texture + all animations as a glTF .glb">⬇ .glb</button>
+              <button id="mesh-glb-btn" type="button" title="Download mesh + texture + all animations as a glTF .glb">⬇ Download .glb</button>
               <button id="mesh-close-btn" type="button">✕ close</button>
             </div>
             <div class="mesh-anim-label" id="mesh-anim-label" style="display:none">Animation</div>
@@ -891,7 +891,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const btn = detailRow.querySelector('#mesh-glb-btn');
     const bytes = viewer.monster_glb(selectedId);
     if (!bytes || !bytes.length) {
-      if (btn) { btn.textContent = '⬇ no mesh'; setTimeout(() => (btn.textContent = '⬇ .glb'), 1500); }
+      if (btn) { btn.textContent = '⬇ no mesh'; setTimeout(() => (btn.textContent = '⬇ Download .glb'), 1500); }
       return;
     }
     const rec = records.find(r => r.id === selectedId);

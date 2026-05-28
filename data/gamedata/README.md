@@ -1,10 +1,14 @@
 # `data/gamedata/`
 
 Curated TOML tables of *Legend of Legaia* (NTSC-U) game data, mined
-from two third-party walkthroughs:
+from third-party walkthroughs:
 
 1. Tan Yong Hua, "Legend of Legaia Walkthrough" v6.6 (1999).
 2. Psycho Penguin (mcfaddendaman), "Legend of Legaia Walkthrough" (2001).
+3. Meth962, "Legend of Legaia 100% Walkthrough" v1.11 (2015) - the
+   `enemies.toml` per-enemy stat columns, the `bosses.toml` per-fight
+   moveset / rewards layer, the Seru-magic `absorb_lv1`/`lv2`/`lv3`
+   fields, and the magic-leveling tables in `legaia_gamedata::magic_leveling`.
 
 Both are public GameFAQs guides; we keep the *factual* data only (item
 names, prices, art command sequences, MP costs, monster locations). No
@@ -36,13 +40,13 @@ exposes typed accessors.
 | File | Coverage |
 |---|---|
 | `arts.toml` | Per-character arts (regular / hyper / super / miracle) with command sequences (Arms / Ra-Seru / High / Low → raw direction bytes) and AP costs |
-| `magic.toml` | 21 Seru spells + 8 Ra-Seru summons (name, MP, element, attack name, target shape) |
+| `magic.toml` | 21 Seru spells + 8 Ra-Seru summons (name, MP, element, attack name, target shape); Seru spells additionally carry per-level absorb-chance fields |
 | `items.toml` | Consumables, key items, and special items (name, price, effect text) |
 | `weapons.toml` | Weapons (name, price, attack stat, primary user, alternate users) |
 | `armor.toml` | Body armor, helmets, shoes (name, type, price, UDF, LDF, equip restriction) |
 | `accessories.toml` | Accessories (name, price, effect text + structured effect class where pinned) |
-| `enemies.toml` | Enemies with location and (level-variant) item drop / steal table |
-| `bosses.toml` | Bosses with HP estimates from walkthrough (used for damage-formula sanity checks) |
+| `enemies.toml` | Enemies with location, drop / steal, and full per-enemy stat columns (HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL / element) |
+| `bosses.toml` | Per-fight boss summaries: named attacks + MP cost, XP / gold / item rewards, recommended party level (18 main-story bosses + Lapis + Muscle Dome rounds) |
 | `shops.toml` | Per-town shop inventories (Rim Elm through Conkram); each entry references an item key |
 | `casino.toml` | Sol/Vidna slot prizes + Muscle Dome courses |
 | `fishing.toml` | Vidna/Buma fishing pond prizes |

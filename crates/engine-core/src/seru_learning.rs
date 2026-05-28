@@ -26,6 +26,14 @@ use std::collections::HashMap;
 /// One Seru that can be captured. Engines populate a [`SeruRegistry`]
 /// with these at startup from the level_up overlay's `seru_table`
 /// (still partially overlay-blocked; vanilla data ships approximations).
+///
+/// **Per-encounter absorption probability** (the chance a single kill
+/// rolls success) is *not* a field on this struct. It lives in
+/// `legaia_gamedata::Spell::absorb_lv1` / `absorb_lv2` / `absorb_lv3`,
+/// keyed by spell name, sourced from Meth962's v1.10 Seru-magic table.
+/// Look it up via the [`crate::spells::SpellCatalog`] entry's name when
+/// rolling a capture attempt. `capture_points` / `learn_threshold` here
+/// model the *learning progression* once a capture succeeds.
 #[derive(Debug, Clone)]
 pub struct SeruDef {
     pub id: u16,
