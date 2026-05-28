@@ -19,6 +19,10 @@
 //! implement the VM `Host` traits themselves; this is the default.
 //! REF: FUN_8001E890, FUN_80021DF4, FUN_80026B4C, FUN_8003CA38, FUN_8003CE08, FUN_800520F0
 //! REF: FUN_801D65D8, FUN_801D77F4, FUN_801D8DE8, FUN_801DE840, FUN_801DFDF8
+//!
+//! PORT: FUN_800467E8 (`world_map_camera_relative_bits` — held-pad camera-yaw
+//!       remap; the engine reads the world-map camera azimuth directly from
+//!       [`WorldMapController`] rather than the retail `gp+0x2D8` quadrant.)
 
 use std::sync::Arc;
 
