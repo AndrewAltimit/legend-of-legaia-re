@@ -40,6 +40,7 @@ WIDE_PAGES: set[str] = {
     "minigames",
     "arts",
     "monsters",
+    "characters",
     "viewer",
     "media",
     "architecture",
@@ -91,6 +92,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
     ("arts.html",                  "Tactical Arts",                 "arts",                       "arts.html"),
     ("monsters.html",              "Enemy table (WASM)",            "monsters",                   "monsters.html"),
+    ("characters.html",            "Characters (WASM)",             "characters",                 "characters.html"),
     ("world-overview.html",        "World overview (3D)",           "world-overview",             "world-overview.html"),
     # depth = 1
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
@@ -142,6 +144,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/mes.html",           "MES dialog",                    "formats/mes",                "formats/mes.html"),
     ("formats/anm.html",           "ANM animation",                 "formats/anm",                "formats/anm.html"),
     ("formats/monster-animation.html","Monster animation",           "formats/monster-animation",  "formats/monster-animation.html"),
+    ("formats/character-mesh.html","Player-character mesh pack",     "formats/character-mesh",     "formats/character-mesh.html"),
     ("formats/mdt.html",           "MDT move table",                "formats/mdt",                "formats/mdt.html"),
     ("formats/art-data.html",      "Art data",                      "formats/art-data",           "formats/art-data.html"),
     ("formats/dialog-font.html",   "Dialog font",                   "formats/dialog-font",        "formats/dialog-font.html"),
