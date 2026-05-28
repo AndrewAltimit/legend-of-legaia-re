@@ -1456,35 +1456,44 @@ table.arts-list .cmd-tag {
       this.radius = bounds[3] || 1;
       this._basePos = positions;
       this._objIds = objectIds || null;
-      // Pre-compute per-object centroids so the animator can rotate each
-      // bone around its own anatomical pivot rather than around (0,0,0).
-      // Battle-form TMDs store many objects with non-zero centroids (e.g.
-      // Vahn battle obj 0 centroid X≈18, obj 1 X≈59) — applying a pure
-      // R·v + T composition would orbit those vertices around the world
-      // origin instead of around the bone's joint, leaving sockets visibly
-      // disjoint. Subtracting C and treating T as the joint world position
-      // (v_world = R·(v - C) + T) puts the centroid AT the joint.
+      // Pre-compute per-object pivot points. Two candidates considered:
+      //
+      //  - **centroid** (mean of all verts) — lands the bone's mean visible
+      //    mass at the joint T. Looks coherent for whole-body silhouette
+      //    but leaves joint-to-joint connections offset by ~half-bone (a
+      //    forearm's centroid lands at the elbow's parent T rather than at
+      //    the elbow joint itself).
+      //
+      //  - **closest-to-origin vertex** — lands the vertex nearest the
+      //    object-local origin at the joint T. For PSX battle TMDs the
+      //    proximal joint end IS typically near object-local origin (Noa
+      //    obj 3 has v0 = (0,0,0) exactly; many others sit within 0..15
+      //    units of origin). This puts the bone's PROXIMAL end at T, which
+      //    is what the retail engine's per-bone GTE pipeline (R·v + T)
+      //    produces when v is authored relative to the joint.
+      //
+      // We pick closest-to-origin: it makes adjacent bones share endpoints
+      // (upper-arm distal meets forearm proximal at the elbow) rather than
+      // overlapping by half a bone length. The cosmetic cost is that the
+      // body's mean mass no longer lands exactly at T, but the joint chain
+      // reads more correctly anatomically.
       this._objCentroids = null;
       if (objectIds && objectIds.length) {
-        const counts = new Map();
-        const sums = new Map();
+        const bestDist = new Map(); // obj_id -> { dist2, x, y, z }
         const n = positions.length / 3;
         for (let v = 0; v < n; v++) {
           const o = objectIds[v];
-          if (!sums.has(o)) { sums.set(o, [0, 0, 0]); counts.set(o, 0); }
-          const s = sums.get(o);
-          s[0] += positions[v*3];
-          s[1] += positions[v*3+1];
-          s[2] += positions[v*3+2];
-          counts.set(o, counts.get(o) + 1);
+          const x = positions[v*3], y = positions[v*3+1], z = positions[v*3+2];
+          const d2 = x*x + y*y + z*z;
+          const cur = bestDist.get(o);
+          if (!cur || d2 < cur.dist2) {
+            bestDist.set(o, { dist2: d2, x, y, z });
+          }
         }
-        const maxId = Math.max(...sums.keys());
+        const maxId = Math.max(...bestDist.keys());
         const cents = new Float32Array((maxId + 1) * 3);
-        for (const [o, s] of sums.entries()) {
-          const c = counts.get(o) || 1;
-          cents[o*3] = s[0] / c;
-          cents[o*3+1] = s[1] / c;
-          cents[o*3+2] = s[2] / c;
+        for (const [o, p] of bestDist.entries()) {
+          cents[o*3] = p.x; cents[o*3+1] = p.y; cents[o*3+2] = p.z;
         }
         this._objCentroids = cents;
       }
