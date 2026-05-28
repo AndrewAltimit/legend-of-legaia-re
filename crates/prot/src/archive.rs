@@ -1,3 +1,13 @@
+//! PROT.DAT archive reader.
+//!
+//! [`Archive::from_reader`] is the clean-room analogue of the retail boot-time
+//! TOC loader: it parses the PROT.DAT header sectors and walks the same TOC
+//! triple (`toc[p+2]` start LBA, `toc[p+3]` next start, `toc[p+5]` payload end)
+//! the SCUS dispatcher reads into `0x801C70F0` at boot. See
+//! [`docs/subsystems/boot.md`](../../../docs/subsystems/boot.md#toc-loader-fun_8003e4e8).
+//!
+//! PORT: FUN_8003E4E8
+
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
