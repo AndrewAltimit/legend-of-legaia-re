@@ -563,6 +563,19 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Per-vertex TMD object index for the battle-form character at slot
+     * `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
+     * player-ANM animator uses it to apply per-bone (per-object) transforms.
+     * @param {number} slot
+     * @returns {Uint32Array}
+     */
+    battle_char_mesh_object_ids(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_object_ids(this.__wbg_ptr, slot);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Per-vertex positions for the battle-form character at pack slot `slot`.
      * @param {number} slot
      * @returns {Float32Array}
@@ -721,6 +734,21 @@ export class LegaiaViewer {
     character_mesh_normals(slot, equip_byte) {
         const ret = wasm.legaiaviewer_character_mesh_normals(this.__wbg_ptr, slot, equip_byte);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index for the player character at pack slot
+     * `slot`, parallel to [`Self::character_mesh_positions`]. The JS-side
+     * player-ANM animator uses it to apply per-bone (per-object) transforms
+     * without re-uploading geometry.
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Uint32Array}
+     */
+    character_mesh_object_ids(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_object_ids(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
@@ -1588,8 +1616,9 @@ export class LegaiaViewer {
     }
     /**
      * Raw bytes of one record from the player-ANM bundle at `prot_index`.
-     * Includes the per-record header (`marker_1 = 0x080C`, flag, …) plus
-     * the per-bone keyframe data following it.
+     * Includes the per-record header (`a`, `b`, `marker_1 = 0x080C`, `flag`),
+     * the 8-byte per-anim prologue, and the
+     * `(frame_count × bone_count × 8)` byte frame table.
      * @param {number} prot_index
      * @param {number} record_index
      * @returns {Uint8Array}
@@ -1598,6 +1627,91 @@ export class LegaiaViewer {
         const ret = wasm.legaiaviewer_player_anm_record_bytes(this.__wbg_ptr, prot_index, record_index);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * `[bone_count, frame_count]` for one player-ANM record so the JS
+     * animator can size its scratch buffers without re-walking the bundle.
+     * Empty `[0, 0]` if the record doesn't exist or fails size invariants.
+     * @param {number} prot_index
+     * @param {number} record_index
+     * @returns {Uint32Array}
+     */
+    player_anm_record_dims(prot_index, record_index) {
+        const ret = wasm.legaiaviewer_player_anm_record_dims(this.__wbg_ptr, prot_index, record_index);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-frame bone-transform table for one player-ANM record, packed as
+     * `i16` LE for ease of JS-side `Int16Array` overlay.
+     *
+     * Layout: `frame_count * bone_count * 4 i16` (`8` bytes per (bone, frame)
+     * entry, read as 4 little-endian `i16`s). Returns an empty Vec on
+     * out-of-range record or size-invariant failure.
+     *
+     * The semantic meaning of the 4 i16s per (bone, frame) entry is the
+     * still-open thread (see `docs/formats/anm.md` § "Open threads"). The
+     * working hypothesis is `(rot_x, rot_y, rot_z, _flag)` in PSX 12-bit
+     * fixed-point (4096 = 360°). The viewer applies this and lets you see
+     * what motion the bytes describe.
+     * @param {number} prot_index
+     * @param {number} record_index
+     * @returns {Uint8Array}
+     */
+    player_anm_record_frames(prot_index, record_index) {
+        const ret = wasm.legaiaviewer_player_anm_record_frames(this.__wbg_ptr, prot_index, record_index);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Decoded per-record header for one player-ANM record. Returned as a
+     * `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
+     * prologue_u8[0..8]]` — total 14 entries. Returns an empty Vec on
+     * out-of-range record or size-invariant failure.
+     * @param {number} prot_index
+     * @param {number} record_index
+     * @returns {Int32Array}
+     */
+    player_anm_record_header(prot_index, record_index) {
+        const ret = wasm.legaiaviewer_player_anm_record_header(this.__wbg_ptr, prot_index, record_index);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Player-ANM record frames decoded into the **monster-animation pose
+     * format** the site's `MonsterMeshView`-style animator consumes:
+     * `Int32Array`, `6` entries per part per frame as
+     * `[tx, ty, tz, rx, ry, rz]`. Translations are in PSX model units;
+     * rotations are unsigned 12-bit angles (`4096` = a full turn). The
+     * JS-side `_assemble()` reads this directly.
+     *
+     * The output is padded to `target_part_count` parts (typically the
+     * TMD's `nobj`) — bones beyond the record's own `bone_count` get
+     * identity transforms so the un-animated parts stay at the TMD's
+     * rest pose. Pass `0` to leave the part count at the record's own
+     * bone_count.
+     *
+     * Working hypothesis for the 4 `i16` per (bone, frame): the first 3
+     * are `(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point, the 4th is
+     * an auxiliary flag (its semantic is unconfirmed). Translations are
+     * emitted as zero - the disc bytes don't seem to carry per-bone
+     * translation deltas at this layout, and the TMD vertices are
+     * already in model-space (see `project-character-tmds-are-model-space`).
+     * See `docs/formats/anm.md` § "Open threads" for the falsification
+     * path.
+     * @param {number} prot_index
+     * @param {number} record_index
+     * @param {number} target_part_count
+     * @returns {Int32Array}
+     */
+    player_anm_record_pose_frames(prot_index, record_index, target_part_count) {
+        const ret = wasm.legaiaviewer_player_anm_record_pose_frames(this.__wbg_ptr, prot_index, record_index, target_part_count);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
     /**

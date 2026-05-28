@@ -260,6 +260,12 @@ export class LegaiaViewer {
      */
     battle_char_mesh_normals(slot: number): Float32Array;
     /**
+     * Per-vertex TMD object index for the battle-form character at slot
+     * `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
+     * player-ANM animator uses it to apply per-bone (per-object) transforms.
+     */
+    battle_char_mesh_object_ids(slot: number): Uint32Array;
+    /**
      * Per-vertex positions for the battle-form character at pack slot `slot`.
      */
     battle_char_mesh_positions(slot: number): Float32Array;
@@ -328,6 +334,13 @@ export class LegaiaViewer {
      * Per-vertex normals parallel to [`Self::character_mesh_positions`].
      */
     character_mesh_normals(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex TMD object index for the player character at pack slot
+     * `slot`, parallel to [`Self::character_mesh_positions`]. The JS-side
+     * player-ANM animator uses it to apply per-bone (per-object) transforms
+     * without re-uploading geometry.
+     */
+    character_mesh_object_ids(slot: number, equip_byte: number): Uint32Array;
     /**
      * Per-vertex positions for the player character at pack slot `slot`,
      * optionally with the equipment swap applied (`equip_byte` < 0 means
@@ -700,10 +713,63 @@ export class LegaiaViewer {
     player_anm_decoded(prot_index: number): Uint8Array;
     /**
      * Raw bytes of one record from the player-ANM bundle at `prot_index`.
-     * Includes the per-record header (`marker_1 = 0x080C`, flag, …) plus
-     * the per-bone keyframe data following it.
+     * Includes the per-record header (`a`, `b`, `marker_1 = 0x080C`, `flag`),
+     * the 8-byte per-anim prologue, and the
+     * `(frame_count × bone_count × 8)` byte frame table.
      */
     player_anm_record_bytes(prot_index: number, record_index: number): Uint8Array;
+    /**
+     * `[bone_count, frame_count]` for one player-ANM record so the JS
+     * animator can size its scratch buffers without re-walking the bundle.
+     * Empty `[0, 0]` if the record doesn't exist or fails size invariants.
+     */
+    player_anm_record_dims(prot_index: number, record_index: number): Uint32Array;
+    /**
+     * Per-frame bone-transform table for one player-ANM record, packed as
+     * `i16` LE for ease of JS-side `Int16Array` overlay.
+     *
+     * Layout: `frame_count * bone_count * 4 i16` (`8` bytes per (bone, frame)
+     * entry, read as 4 little-endian `i16`s). Returns an empty Vec on
+     * out-of-range record or size-invariant failure.
+     *
+     * The semantic meaning of the 4 i16s per (bone, frame) entry is the
+     * still-open thread (see `docs/formats/anm.md` § "Open threads"). The
+     * working hypothesis is `(rot_x, rot_y, rot_z, _flag)` in PSX 12-bit
+     * fixed-point (4096 = 360°). The viewer applies this and lets you see
+     * what motion the bytes describe.
+     */
+    player_anm_record_frames(prot_index: number, record_index: number): Uint8Array;
+    /**
+     * Decoded per-record header for one player-ANM record. Returned as a
+     * `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
+     * prologue_u8[0..8]]` — total 14 entries. Returns an empty Vec on
+     * out-of-range record or size-invariant failure.
+     */
+    player_anm_record_header(prot_index: number, record_index: number): Int32Array;
+    /**
+     * Player-ANM record frames decoded into the **monster-animation pose
+     * format** the site's `MonsterMeshView`-style animator consumes:
+     * `Int32Array`, `6` entries per part per frame as
+     * `[tx, ty, tz, rx, ry, rz]`. Translations are in PSX model units;
+     * rotations are unsigned 12-bit angles (`4096` = a full turn). The
+     * JS-side `_assemble()` reads this directly.
+     *
+     * The output is padded to `target_part_count` parts (typically the
+     * TMD's `nobj`) — bones beyond the record's own `bone_count` get
+     * identity transforms so the un-animated parts stay at the TMD's
+     * rest pose. Pass `0` to leave the part count at the record's own
+     * bone_count.
+     *
+     * Working hypothesis for the 4 `i16` per (bone, frame): the first 3
+     * are `(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point, the 4th is
+     * an auxiliary flag (its semantic is unconfirmed). Translations are
+     * emitted as zero - the disc bytes don't seem to carry per-bone
+     * translation deltas at this layout, and the TMD vertices are
+     * already in model-space (see `project-character-tmds-are-model-space`).
+     * See `docs/formats/anm.md` § "Open threads" for the falsification
+     * path.
+     */
+    player_anm_record_pose_frames(prot_index: number, record_index: number, target_part_count: number): Int32Array;
     prev_entry(): number;
     /**
      * Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
@@ -989,6 +1055,7 @@ export interface InitOutput {
     readonly legaiaviewer_battle_char_mesh_cba_tsb: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_indices: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_object_ids: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_positions: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_uvs: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_pack_json: (a: number) => [number, number];
@@ -1001,6 +1068,7 @@ export interface InitOutput {
     readonly legaiaviewer_character_mesh_cba_tsb: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_indices: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_normals: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_object_ids: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_positions: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_uvs: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_pack_json: (a: number) => [number, number];
@@ -1066,6 +1134,10 @@ export interface InitOutput {
     readonly legaiaviewer_player_anm_corpus_json: (a: number) => [number, number];
     readonly legaiaviewer_player_anm_decoded: (a: number, b: number) => [number, number];
     readonly legaiaviewer_player_anm_record_bytes: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_dims: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_frames: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_header: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];

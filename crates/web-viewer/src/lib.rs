@@ -2032,6 +2032,18 @@ impl LegaiaViewer {
         centroid_bounds(&mesh.positions)
     }
 
+    /// Per-vertex TMD object index for the player character at pack slot
+    /// `slot`, parallel to [`Self::character_mesh_positions`]. The JS-side
+    /// player-ANM animator uses it to apply per-bone (per-object) transforms
+    /// without re-uploading geometry.
+    pub fn character_mesh_object_ids(&self, slot: u32, equip_byte: i32) -> Vec<u32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some((tmd, bytes)) = self.build_character_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes).1
+    }
+
     /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
     /// installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
     /// download / debug round-trip.
@@ -2202,6 +2214,16 @@ impl LegaiaViewer {
         centroid_bounds(&mesh.positions)
     }
 
+    /// Per-vertex TMD object index for the battle-form character at slot
+    /// `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
+    /// player-ANM animator uses it to apply per-bone (per-object) transforms.
+    pub fn battle_char_mesh_object_ids(&self, slot: u32) -> Vec<u32> {
+        let Some((tmd, bytes)) = self.build_battle_char_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes).1
+    }
+
     /// Raw disc-form TMD bytes for battle-form slot `slot`.
     pub fn battle_char_tmd_bytes(&self, slot: u32) -> Vec<u8> {
         let Some(raw) = self.battle_char_pack_slice() else {
@@ -2299,11 +2321,17 @@ impl LegaiaViewer {
                         let recs: Vec<serde_json::Value> = (0..b.record_count as usize)
                             .map(|i| {
                                 let bytes = b.record_bytes(i);
+                                let rec = b.record(i).ok();
                                 serde_json::json!({
                                     "index": i,
                                     "offset": b.record_offsets[i],
                                     "size": bytes.len(),
                                     "marker_1": b.record_marker_1(i).unwrap_or(0),
+                                    "a": rec.as_ref().map(|r| r.a).unwrap_or(0),
+                                    "b": rec.as_ref().map(|r| r.b).unwrap_or(0),
+                                    "flag": rec.as_ref().map(|r| r.flag).unwrap_or(0),
+                                    "bone_count": rec.as_ref().map(|r| r.bone_count).unwrap_or(0),
+                                    "frame_count": rec.as_ref().map(|r| r.frame_count).unwrap_or(0),
                                 })
                             })
                             .collect();
@@ -2346,14 +2374,176 @@ impl LegaiaViewer {
     }
 
     /// Raw bytes of one record from the player-ANM bundle at `prot_index`.
-    /// Includes the per-record header (`marker_1 = 0x080C`, flag, …) plus
-    /// the per-bone keyframe data following it.
+    /// Includes the per-record header (`a`, `b`, `marker_1 = 0x080C`, `flag`),
+    /// the 8-byte per-anim prologue, and the
+    /// `(frame_count × bone_count × 8)` byte frame table.
     pub fn player_anm_record_bytes(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
         let decoded = self.player_anm_decoded(prot_index);
         let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
             return Vec::new();
         };
         bundle.record_bytes(record_index as usize).to_vec()
+    }
+
+    /// Decoded per-record header for one player-ANM record. Returned as a
+    /// `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
+    /// prologue_u8[0..8]]` — total 14 entries. Returns an empty Vec on
+    /// out-of-range record or size-invariant failure.
+    pub fn player_anm_record_header(&self, prot_index: u32, record_index: u32) -> Vec<i32> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record_index as usize) else {
+            return Vec::new();
+        };
+        let mut out = vec![
+            rec.a as i32,
+            rec.b as i32,
+            rec.marker_1 as i32,
+            rec.flag as i32,
+            rec.bone_count as i32,
+            rec.frame_count as i32,
+        ];
+        out.extend(rec.prologue.iter().map(|&b| b as i32));
+        out
+    }
+
+    /// Per-frame bone-transform table for one player-ANM record, packed as
+    /// `i16` LE for ease of JS-side `Int16Array` overlay.
+    ///
+    /// Layout: `frame_count * bone_count * 4 i16` (`8` bytes per (bone, frame)
+    /// entry, read as 4 little-endian `i16`s). Returns an empty Vec on
+    /// out-of-range record or size-invariant failure.
+    ///
+    /// The semantic meaning of the 4 i16s per (bone, frame) entry is the
+    /// still-open thread (see `docs/formats/anm.md` § "Open threads"). The
+    /// working hypothesis is `(rot_x, rot_y, rot_z, _flag)` in PSX 12-bit
+    /// fixed-point (4096 = 360°). The viewer applies this and lets you see
+    /// what motion the bytes describe.
+    pub fn player_anm_record_frames(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record_index as usize) else {
+            return Vec::new();
+        };
+        let bone_count = rec.bone_count as usize;
+        let frame_count = rec.frame_count as usize;
+        let mut out = Vec::with_capacity(frame_count * bone_count * 8);
+        for f in 0..frame_count {
+            let frame = bundle.frame_bytes(record_index as usize, f);
+            if frame.len() != bone_count * 8 {
+                return Vec::new();
+            }
+            out.extend_from_slice(frame);
+        }
+        out
+    }
+
+    /// Player-ANM record frames decoded into the **monster-animation pose
+    /// format** the site's `MonsterMeshView`-style animator consumes:
+    /// `Int32Array`, `6` entries per part per frame as
+    /// `[tx, ty, tz, rx, ry, rz]`. Translations are in PSX model units;
+    /// rotations are unsigned 12-bit angles (`4096` = a full turn). The
+    /// JS-side `_assemble()` reads this directly.
+    ///
+    /// The output is padded to `target_part_count` parts (typically the
+    /// TMD's `nobj`) — bones beyond the record's own `bone_count` get
+    /// identity transforms so the un-animated parts stay at the TMD's
+    /// rest pose. Pass `0` to leave the part count at the record's own
+    /// bone_count.
+    ///
+    /// Working hypothesis for the 4 `i16` per (bone, frame): the first 3
+    /// are `(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point, the 4th is
+    /// an auxiliary flag (its semantic is unconfirmed). Translations are
+    /// emitted as zero - the disc bytes don't seem to carry per-bone
+    /// translation deltas at this layout, and the TMD vertices are
+    /// already in model-space (see `project-character-tmds-are-model-space`).
+    /// See `docs/formats/anm.md` § "Open threads" for the falsification
+    /// path.
+    pub fn player_anm_record_pose_frames(
+        &self,
+        prot_index: u32,
+        record_index: u32,
+        target_part_count: u32,
+    ) -> Vec<i32> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record_index as usize) else {
+            return Vec::new();
+        };
+        let anm_bone_count = rec.bone_count as usize;
+        let frame_count = rec.frame_count as usize;
+        let part_count = (target_part_count as usize).max(anm_bone_count);
+        // Compute REST pose from frame 0 so all values get reported as DELTAS
+        // (frame_i - frame_0). This makes the animation visible regardless of
+        // any rest-pose offset the bytes carry, and frame 0 always yields an
+        // identity transform - matching the monster animator's convention
+        // (frame 0 = the rest pose).
+        let mut rest = vec![[0i16; 4]; anm_bone_count];
+        for (b, slot) in rest.iter_mut().enumerate().take(anm_bone_count) {
+            let bf = bundle.bone_frame_bytes(record_index as usize, 0, b);
+            if bf.len() != 8 {
+                return Vec::new();
+            }
+            for k in 0..4 {
+                slot[k] = i16::from_le_bytes([bf[k * 2], bf[k * 2 + 1]]);
+            }
+        }
+        let mut out = Vec::with_capacity(frame_count * part_count * 6);
+        for f in 0..frame_count {
+            // We iterate `p` across the padded part count and index `rest`
+            // only when in-bounds — switching to `rest.iter().enumerate()`
+            // would lose the iteration past anm_bone_count where we emit
+            // identity transforms.
+            #[allow(clippy::needless_range_loop)]
+            for p in 0..part_count {
+                if p < anm_bone_count {
+                    let bf = bundle.bone_frame_bytes(record_index as usize, f, p);
+                    if bf.len() != 8 {
+                        return Vec::new();
+                    }
+                    let v = [
+                        i16::from_le_bytes([bf[0], bf[1]]),
+                        i16::from_le_bytes([bf[2], bf[3]]),
+                        i16::from_le_bytes([bf[4], bf[5]]),
+                        i16::from_le_bytes([bf[6], bf[7]]),
+                    ];
+                    // tx, ty, tz = 0
+                    out.push(0);
+                    out.push(0);
+                    out.push(0);
+                    // rx, ry, rz = (v[0..3] - rest[0..3]) wrapped to [0, 4096)
+                    for k in 0..3 {
+                        let mut delta = (v[k] as i32) - (rest[p][k] as i32);
+                        delta = delta.rem_euclid(4096);
+                        out.push(delta);
+                    }
+                } else {
+                    // Identity transform for parts not covered by the ANM.
+                    out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                }
+            }
+        }
+        out
+    }
+
+    /// `[bone_count, frame_count]` for one player-ANM record so the JS
+    /// animator can size its scratch buffers without re-walking the bundle.
+    /// Empty `[0, 0]` if the record doesn't exist or fails size invariants.
+    pub fn player_anm_record_dims(&self, prot_index: u32, record_index: u32) -> Vec<u32> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return vec![0, 0];
+        };
+        match bundle.record(record_index as usize) {
+            Ok(r) => vec![r.bone_count as u32, r.frame_count as u32],
+            Err(_) => vec![0, 0],
+        }
     }
 
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.

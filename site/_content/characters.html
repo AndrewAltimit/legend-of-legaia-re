@@ -184,8 +184,16 @@ table.arts-list .cmd-tag {
             <input type="range" id="char-anm-record" min="0" max="0" value="0">
             <span id="char-anm-record-label" class="char-anm-readout">—</span>
           </div>
+          <div class="char-controls">
+            <button id="char-anm-play-btn" type="button">▶ play</button>
+            <button id="char-anm-stop-btn" type="button" disabled>↺ rest pose</button>
+          </div>
+          <div class="char-anm-row">
+            <input type="range" id="char-anm-frame" min="0" max="0" value="0" disabled>
+            <span id="char-anm-frame-label" class="char-anm-readout">—</span>
+          </div>
           <div class="char-info-note" id="char-anm-info">
-            Pinned: 87 player-ANM bundles ship across the corpus, one per scene. Slide the bar to browse the records inside each bundle; each record is one animation clip (idle, walk, attack, …) made of per-bone keyframes (`marker_1 = 0x080C` opens every record body). The viewer shows the bundle / record metadata here; per-frame pose application against the TMD is the still-open thread.
+            87 player-ANM bundles ship across the corpus, one per scene. Each record is one animation clip (a varying-length frame table over a small set of animated bones; `marker_1 = 0x080C` opens every record body, with size obeying <code>16 + 8 × bone_count × frame_count</code> byte-exact across the 296-record corpus). Pick a bundle + record, then play to apply the per-frame per-bone transforms to the field-form TMD. Each 8-byte (bone, frame) entry is read as 4 little-endian i16s; the working hypothesis treats the first three as <code>(rx, ry, rz)</code> in PSX 12-bit fixed-point (4096 = 360°), applied as a delta from frame 0 about each object's vertex centroid. The exact semantic of the four shorts is the open thread — frame-0-as-rest-pose makes the animation visible regardless of the underlying scaling. (Battle-form posing follows; today only the field form is wired.)
           </div>
         </div>
       </div>
@@ -277,6 +285,10 @@ table.arts-list .cmd-tag {
   const anmRecordSlider = document.getElementById('char-anm-record');
   const anmRecordLabel = document.getElementById('char-anm-record-label');
   const anmInfo = document.getElementById('char-anm-info');
+  const anmPlayBtn = document.getElementById('char-anm-play-btn');
+  const anmStopBtn = document.getElementById('char-anm-stop-btn');
+  const anmFrameSlider = document.getElementById('char-anm-frame');
+  const anmFrameLabel = document.getElementById('char-anm-frame-label');
   if (!fileInput) return;
 
   let viewer = null;     // WASM LegaiaViewer
@@ -601,6 +613,7 @@ table.arts-list .cmd-tag {
     const normals = viewer.character_mesh_normals(slot, equip);
     const indices = viewer.character_mesh_indices(slot, equip);
     const bounds = viewer.character_mesh_bounds(slot, equip);
+    const objectIds = viewer.character_mesh_object_ids(slot, equip);
     if (!positions.length || !indices.length) {
       statsEl.innerHTML = '<span style="color:var(--text-dim)">Mesh failed to parse. Is this PROT 0874 §0?</span>';
       return;
@@ -615,7 +628,15 @@ table.arts-list .cmd-tag {
         Float32Array.from(normals),
         Uint32Array.from(indices),
         bounds,
+        objectIds && objectIds.length ? Uint32Array.from(objectIds) : null,
       );
+      // Hook RAF playback -> frame slider readout, no per-frame DOM cost when
+      // the slider isn't visible.
+      meshView.onFrame = (f) => {
+        if (!anmFrameSlider || anmFrameSlider.disabled) return;
+        anmFrameSlider.value = String(f);
+        if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
+      };
       meshView.resetView();
       const tri = (indices.length / 3) | 0;
       const vert = (positions.length / 3) | 0;
@@ -624,9 +645,66 @@ table.arts-list .cmd-tag {
         `<b>${tri}</b> triangles · <b>${vert}</b> vertices · ${escapeHtml(equipLabel)}`;
       funEl.textContent =
         `nobj ${pack.slots[slot].disc_nobj} on disc · engine caps active-party slots at 10 visible groups`;
+      // If the user already picked a record, re-apply it to the freshly
+      // loaded mesh (slot or equip switch shouldn't drop the animation).
+      maybeLoadCurrentAnim();
     } catch (err) {
       statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
     }
+  }
+
+  // Pull the (bundle, record) the scrubber currently points at and push it
+  // into the active CharacterMeshView. No-op when:
+  //   - viewer isn't ready / disc isn't loaded
+  //   - the active view is the battle form (per-bone animation not wired)
+  //   - selected record has bone_count == 0 (shouldn't happen post-fix)
+  function maybeLoadCurrentAnim() {
+    if (!viewer || !anmCorpus) return;
+    if (!(meshView instanceof CharacterMeshView)) {
+      // Battle-form animator not wired yet; leave any prior anim in place.
+      return;
+    }
+    const bundle = anmCorpus.bundles[curAnmBundleIdx];
+    if (!bundle) return;
+    const rec = bundle.records[curAnmRecordIdx];
+    if (!rec) return;
+    // Target part count = the active TMD's nobj (visible cap).
+    const p = activePack();
+    const slot = selectedSlot;
+    if (!p || slot === null || slot === undefined) return;
+    const targetParts = Math.max(1, p.slots[slot].disc_nobj | 0);
+    const dims = viewer.player_anm_record_dims(bundle.prot_index, curAnmRecordIdx);
+    const partCount = Math.max(targetParts, dims[0] | 0);
+    const frameCount = dims[1] | 0;
+    if (!frameCount) {
+      meshView.setAnimation(null);
+      anmFrameSlider.disabled = true;
+      anmFrameSlider.max = '0';
+      anmFrameSlider.value = '0';
+      if (anmFrameLabel) anmFrameLabel.textContent = '—';
+      anmPlayBtn.disabled = true;
+      anmStopBtn.disabled = true;
+      return;
+    }
+    const frames = viewer.player_anm_record_pose_frames(
+      bundle.prot_index, curAnmRecordIdx, targetParts,
+    );
+    if (!frames || !frames.length) {
+      meshView.setAnimation(null);
+      return;
+    }
+    meshView.setAnimation({
+      partCount, frameCount,
+      frames: Int32Array.from(frames),
+    });
+    anmFrameSlider.disabled = false;
+    anmFrameSlider.min = '0';
+    anmFrameSlider.max = String(Math.max(0, frameCount - 1));
+    anmFrameSlider.value = '0';
+    if (anmFrameLabel) anmFrameLabel.textContent = `f 0/${frameCount - 1}`;
+    anmPlayBtn.disabled = false;
+    anmStopBtn.disabled = false;
+    anmPlayBtn.textContent = '▶ play';
   }
 
   function updateSpinLabel(on) {
@@ -661,6 +739,7 @@ table.arts-list .cmd-tag {
       curAnmBundleIdx = idx;
       curAnmRecordIdx = 0;
       syncAnmSlider();
+      maybeLoadCurrentAnim();
     });
   }
   if (anmRecordSlider) {
@@ -669,6 +748,34 @@ table.arts-list .cmd-tag {
       if (!Number.isFinite(idx)) return;
       curAnmRecordIdx = idx;
       updateAnmReadout();
+      maybeLoadCurrentAnim();
+    });
+  }
+  if (anmPlayBtn) {
+    anmPlayBtn.addEventListener('click', () => {
+      if (!meshView || !meshView.anim) return;
+      const willPlay = !meshView.playing;
+      meshView.setPlaying(willPlay);
+      anmPlayBtn.textContent = willPlay ? '⏸ pause' : '▶ play';
+    });
+  }
+  if (anmStopBtn) {
+    anmStopBtn.addEventListener('click', () => {
+      if (!meshView || !meshView.anim) return;
+      meshView.setFrame(0);
+      meshView.playing = false;
+      anmPlayBtn.textContent = '▶ play';
+      anmFrameSlider.value = '0';
+      if (anmFrameLabel) anmFrameLabel.textContent = `f 0/${meshView.anim.frameCount - 1}`;
+    });
+  }
+  if (anmFrameSlider) {
+    anmFrameSlider.addEventListener('input', () => {
+      if (!meshView || !meshView.anim) return;
+      const f = Number(anmFrameSlider.value) | 0;
+      meshView.setFrame(f);
+      anmPlayBtn.textContent = '▶ play';
+      if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
     });
   }
 
@@ -758,6 +865,17 @@ table.arts-list .cmd-tag {
       this.indexCount = 0;
       this.center = [0, 0, 0];
       this.radius = 1;
+      // Animation state - set by setAnimation(meta); when null, the static
+      // mesh is drawn untouched. Holds objectIds + scratch buffers + the
+      // per-part centroids (player TMDs ship in model-space, so each bone's
+      // anatomical pivot is approximated as the mean of its vertices).
+      this.anim = null;
+      this._basePos = null;     // pristine Float32Array(vertices*3)
+      this._baseNrm = null;     // pristine Float32Array(vertices*3)
+      this._objIds = null;      // Uint32Array per-vertex object index
+      this._frameOverride = -1; // -1 = real-time playback; >=0 = pinned frame
+      this.playing = false;
+      this._startMs = 0;
       // PSX TMDs use Y-down + Z-forward; flipping pitch base lines the
       // model upright with the camera's expected up.
       this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
@@ -769,17 +887,26 @@ table.arts-list .cmd-tag {
       this._raf = requestAnimationFrame(this._loop);
     }
 
-    setMesh(positions, normals, indices, bounds) {
+    setMesh(positions, normals, indices, bounds, objectIds) {
       const gl = this.gl;
       gl.bindVertexArray(this.vao);
 
+      // Cache the pristine base geometry so we can re-pose without re-fetching
+      // from WASM. Per-vertex object ids drive the per-bone transform lookup.
+      this._basePos = positions;
+      this._baseNrm = normals;
+      this._objIds = objectIds || null;
+      this.anim = null;
+      this.playing = false;
+      this._frameOverride = -1;
+
       gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
       gl.enableVertexAttribArray(this.loc.pos);
       gl.vertexAttribPointer(this.loc.pos, 3, gl.FLOAT, false, 0, 0);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, normals, gl.DYNAMIC_DRAW);
       gl.enableVertexAttribArray(this.loc.nrm);
       gl.vertexAttribPointer(this.loc.nrm, 3, gl.FLOAT, false, 0, 0);
 
@@ -789,6 +916,143 @@ table.arts-list .cmd-tag {
 
       this.center = [bounds[0], bounds[1], bounds[2]];
       this.radius = bounds[3] || 1;
+    }
+
+    // Install a per-bone animation (player-ANM record). `meta.partCount` is
+    // the number of bones the record drives (typically the TMD's nobj); the
+    // animator pads beyond the record's own bone_count with identity
+    // transforms. `meta.frameCount` × `meta.partCount` × 6 i32s in
+    // `meta.frames` carry `[tx, ty, tz, rx, ry, rz]` per part per frame
+    // (same shape MonsterMeshView consumes). Frame 0 is the rest pose -
+    // the WASM emitter computes deltas from frame 0 so identity falls out.
+    setAnimation(meta) {
+      if (!meta || !meta.frameCount || meta.frameCount < 2 ||
+          !this._objIds || !this._basePos) {
+        this.anim = null;
+        this.playing = false;
+        // Restore base geometry on the GPU.
+        const gl = this.gl;
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this._basePos);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this._baseNrm);
+        return;
+      }
+      // Per-object centroid: player TMDs ship in MODEL SPACE so each bone's
+      // anatomical pivot is approximated as the mean of its assigned
+      // vertices. Rotation about that point keeps each limb anchored to the
+      // body instead of swinging around the model's origin.
+      const partCount = meta.partCount;
+      const cx = new Float32Array(partCount);
+      const cy = new Float32Array(partCount);
+      const cz = new Float32Array(partCount);
+      const cn = new Uint32Array(partCount);
+      const ids = this._objIds, base = this._basePos;
+      const n = base.length / 3;
+      for (let v = 0; v < n; v++) {
+        const o = ids[v];
+        if (o < partCount) {
+          cx[o] += base[v*3]; cy[o] += base[v*3+1]; cz[o] += base[v*3+2];
+          cn[o]++;
+        }
+      }
+      for (let p = 0; p < partCount; p++) {
+        const k = cn[p] || 1;
+        cx[p] /= k; cy[p] /= k; cz[p] /= k;
+      }
+      this.anim = {
+        out: new Float32Array(this._basePos),
+        outN: new Float32Array(this._baseNrm),
+        partCount,
+        frameCount: meta.frameCount,
+        frames: meta.frames,    // Int32Array(frameCount*partCount*6)
+        centroids: { cx, cy, cz },
+      };
+      this._startMs = performance.now();
+      this._frameOverride = 0;
+      this._poseAt(0);          // settle to rest pose (frame 0 = identity)
+    }
+
+    setPlaying(on) {
+      if (!this.anim) { this.playing = false; return; }
+      this.playing = !!on;
+      if (this.playing) {
+        this._startMs = performance.now() - (this._frameOverride >= 0
+          ? (this._frameOverride / 14) * 1000
+          : 0);
+        this._frameOverride = -1;
+      }
+    }
+
+    setFrame(f) {
+      if (!this.anim) return;
+      this._frameOverride = f | 0;
+      this.playing = false;
+      this._poseAt(this._frameOverride);
+    }
+
+    _pose(f, p) {
+      const o = (f * this.anim.partCount + p) * 6, a = this.anim.frames;
+      return { t: [a[o], a[o+1], a[o+2]], r: [a[o+3], a[o+4], a[o+5]] };
+    }
+
+    // Apply per-bone (translation, rotation) to the base mesh, centering each
+    // bone's rotation at its vertex centroid. Re-uploads positions + normals.
+    _poseAt(frameIdx) {
+      const A = this.anim;
+      if (!A) return;
+      const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
+      const A2R = (Math.PI * 2) / 4096;
+      const base = this._basePos, baseN = this._baseNrm;
+      const out = A.out, outN = A.outN;
+      const ids = this._objIds, n = base.length / 3;
+      const cx = A.centroids.cx, cy = A.centroids.cy, cz = A.centroids.cz;
+      // Per-bone Euler -> sin/cos once
+      const sin = new Float32Array(A.partCount * 3);
+      const cos = new Float32Array(A.partCount * 3);
+      const tr = new Float32Array(A.partCount * 3);
+      for (let p = 0; p < A.partCount; p++) {
+        const pose = this._pose(ff, p);
+        for (let k = 0; k < 3; k++) {
+          const a = pose.r[k] * A2R;
+          sin[p*3+k] = Math.sin(a);
+          cos[p*3+k] = Math.cos(a);
+          tr[p*3+k] = pose.t[k];
+        }
+      }
+      for (let v = 0; v < n; v++) {
+        const o = ids[v];
+        if (o >= A.partCount) {
+          out[v*3]   = base[v*3];   out[v*3+1] = base[v*3+1]; out[v*3+2] = base[v*3+2];
+          outN[v*3]  = baseN[v*3];  outN[v*3+1]= baseN[v*3+1];outN[v*3+2]= baseN[v*3+2];
+          continue;
+        }
+        const sx = sin[o*3], cxx = cos[o*3];
+        const sy = sin[o*3+1], cyy = cos[o*3+1];
+        const sz = sin[o*3+2], czz = cos[o*3+2];
+        // Translate to bone-local (centered on centroid).
+        let x = base[v*3]   - cx[o];
+        let y = base[v*3+1] - cy[o];
+        let z = base[v*3+2] - cz[o];
+        // Rz * Ry * Rx
+        let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
+        let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
+        nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
+        out[v*3]   = x + cx[o] + tr[o*3];
+        out[v*3+1] = y + cy[o] + tr[o*3+1];
+        out[v*3+2] = z + cz[o] + tr[o*3+2];
+        // Normals (no translation; same rotation)
+        let nx0 = baseN[v*3], ny0 = baseN[v*3+1], nz0 = baseN[v*3+2];
+        ny = ny0*cxx - nz0*sx; nz = ny0*sx + nz0*cxx; ny0 = ny; nz0 = nz;
+        nx = nx0*cyy + nz0*sy;  nz = -nx0*sy + nz0*cyy; nx0 = nx; nz0 = nz;
+        nx = nx0*czz - ny0*sz;  ny = nx0*sz + ny0*czz;  nx0 = nx; ny0 = ny;
+        outN[v*3] = nx0; outN[v*3+1] = ny0; outN[v*3+2] = nz0;
+      }
+      const gl = this.gl;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, out);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, outN);
     }
 
     resetView() {
@@ -837,6 +1101,20 @@ table.arts-list .cmd-tag {
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
       if (this.cam.autoRotate) this.cam.yaw += 0.006;
+
+      // Advance animation playback (~14 fps to match MonsterMeshView's idle
+      // cadence; the per-record `b` field is a generic frame count, no
+      // canonical FPS yet — 14 reads like a natural step).
+      if (this.anim && this.playing) {
+        const FPS = 14;
+        const t = (performance.now() - this._startMs) / 1000 * FPS;
+        const f = Math.floor(t) % this.anim.frameCount;
+        if (f !== this._lastPosedFrame) {
+          this._poseAt(f);
+          this._lastPosedFrame = f;
+          if (typeof this.onFrame === 'function') this.onFrame(f);
+        }
+      }
 
       gl.useProgram(this.prog);
       gl.bindVertexArray(this.vao);

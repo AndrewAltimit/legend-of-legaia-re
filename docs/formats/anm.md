@@ -366,6 +366,80 @@ runtime caching, or have a smaller per-scene player-ANM section.
 
 Parser: `legaia_asset::player_anm` (CLI sweep + per-entry detector).
 
+### Per-record layout (the disc form)
+
+The offsets in the offset table are **absolute byte offsets** into the
+LZS-decoded buffer (matches the standard `legaia_anm::parse` convention).
+Each record's first 8 bytes are the canonical `(a, b, marker_1, flag)`
+header from `legaia_anm::RecordHeader`. The per-record body size obeys
+exactly:
+
+```text
+    record_size = 16 + 8 * (a & 0xFF) * b
+```
+
+verified byte-exact across all **296 records** in the 5 pinned scenes (and
+across every other scene's bundle the corpus sweep finds; `f(a,b) == size`
+falls out 100%). The layout is:
+
+```text
++0x00..+0x08    header (a, b, marker_1=0x080C, flag)
++0x08..+0x10    per-anim leading 8 bytes (frame_0 / rest-pose hint -
+                  exact meaning still TBC, see "Open thread" below)
++0x10..+end     b frames; per frame:
+                   (a & 0xFF) bones × 8 bytes
+                 each 8-byte entry is one bone's pose for that frame
+```
+
+- `a & 0xFF` = **bone count** (number of animated TMD objects in this
+  clip). The high byte of `a` appears to be a sub-format selector: clear
+  for records 0..8 of every field-form bundle, set to `0x01` for records
+  9+ and for every record in the battle-form bundle.
+- `b` = **frame count** of this animation clip (3..60 across the corpus;
+  longer clips like Vahn's run-loop have higher counts).
+- `flag` = secondary sub-format byte (`0x02` / `0x04` in the field corpus;
+  `0x0201` / `0x0401` / `0x0402` in the battle-form bundle).
+
+The detector at `legaia_asset::player_anm::find_in_entry` validates the
+size invariant on every record before declaring a bundle parsed; the
+disc-gated regression `crates/asset/tests/player_anm_real.rs` pins this
+byte-exact across the corpus.
+
+### Open thread: the 4 `i16` per (bone, frame)
+
+Each per-bone, per-frame entry is **8 bytes = 4 little-endian `i16`s**.
+Their exact semantic isn't pinned yet. Observed properties from the
+field-form bundle's record 8 (a 25-frame walk-like clip with 6 animated
+bones):
+
+- Most bones are constant across all 25 frames; only 3 of the 6 vary,
+  consistent with character animation where most bones stay rested and
+  the limbs / hips move.
+- The varying bones' values drift smoothly over frames — increments of
+  `1`/`-1`/`-256` per frame in different bytes, consistent with a
+  packed fixed-point representation.
+- Magnitudes are up to `±32000` — large enough to be 12-bit Q-format
+  angles (PSX standard) rather than translations (which are usually
+  ≤ a few hundred in PSX model units).
+
+Working hypothesis the site viewer applies: the first three `i16`s are
+`(rot_x, rot_y, rot_z)` in PSX 12-bit fixed-point (`4096` = 360°), the
+fourth is auxiliary (its semantic is unconfirmed). The WASM emitter
+[`LegaiaViewer::player_anm_record_pose_frames`](../../crates/web-viewer/src/lib.rs)
+converts the corpus to the monster animator's
+`[tx, ty, tz, rx, ry, rz]` shape with translations zeroed and rotations
+computed as **deltas from frame 0**, so frame 0 always reads as identity
+(rest pose) regardless of any per-record offset baked into the bytes.
+
+This is enough to drive visible motion in the viewer, but the falsification
+path is still owed: the per-frame interpreter that consumes
+`actor[+0x4C]` for op-code `0x0B` (set by `play_anm_by_id` at
+`FUN_80024CFC`) lives somewhere outside `FUN_80021DF4`'s `+0x5A == 6`
+block (which uses a *different*, 24-byte-per-bone keyframe layout
+already documented above). Capturing that interpreter is the next step
+to pin the four `i16`s; until then the site applies the working
+hypothesis and labels it as such.
+
 ## Allocator preamble
 
 When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd

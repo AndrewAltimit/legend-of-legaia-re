@@ -116,7 +116,9 @@ fn pinned_scenes_decode() {
             pin.prot_index,
             pin.label
         );
-        // Every record's marker_1 should be 0x080C (the canonical ANM tag).
+        // Every record's marker_1 should be 0x080C (the canonical ANM tag),
+        // and the per-record size invariant `16 + 8 * (a & 0xFF) * b` must
+        // hold byte-exact for every record across every pinned scene.
         for i in 0..bundle.record_count as usize {
             assert_eq!(
                 bundle.record_marker_1(i),
@@ -125,6 +127,13 @@ fn pinned_scenes_decode() {
                 pin.prot_index,
                 pin.label
             );
+            // Size invariant: record(i) returns Ok iff size formula matches.
+            let _ = bundle.record(i).unwrap_or_else(|e| {
+                panic!(
+                    "PROT {:04} ({}) record {i}: size invariant failed: {e}",
+                    pin.prot_index, pin.label
+                )
+            });
         }
     }
 }
