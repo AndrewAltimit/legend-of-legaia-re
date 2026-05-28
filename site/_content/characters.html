@@ -828,7 +828,7 @@ table.arts-list .cmd-tag {
         statsEl.innerHTML =
           `<b>${tri}</b> triangles · <b>${vert}</b> vertices · battle form`;
         funEl.textContent =
-          `nobj ${meta.disc_nobj} on disc · sampled from 7 character atlases (CLUTs at VRAM rows 490..495, 497)`;
+          `nobj ${meta.disc_nobj} on disc · 7 character atlases · CLUTs scene-sourced from map01 sec0 (Vahn palette retail-correct; Noa/Gala pending dynamic-row port)`;
         // Re-apply the current ANM record to the freshly-loaded mesh
         // (slot or form switch shouldn't drop the animation).
         maybeLoadCurrentAnim();
