@@ -5499,7 +5499,7 @@ impl PlayWindowApp {
     ///   the GTE H projection register - the focal length. PSX projects onto a
     ///   ~240-tall frame, so the vertical FOV is `2*atan(120 / H)`. Inferred;
     ///   falls back to 60 deg when the param is absent or degenerate.
-    fn cutscene_view(&self) -> ([f32; 3], f32, f32) {
+    fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32) {
         use std::f32::consts::TAU;
         let world = &self.session.host.world;
         let params = &world.camera_state.params;
@@ -5533,11 +5533,17 @@ impl PlayWindowApp {
             param(8).map(|v| -v).unwrap_or(pz),
         ];
         let yaw = param(1).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
+        // Slot 0 = op-0x45 camera pitch (`_DAT_8007B790`, GTE RotMatrixX angle,
+        // 12-bit / 4096 = 360 deg). Beats that omit it default to the prior
+        // fixed ~24 deg downward framing so absent-pitch shots are unchanged.
+        let pitch = param(0)
+            .map(|v| v / 4096.0 * TAU)
+            .unwrap_or_else(|| 0.45f32.atan());
         let fov = param(9)
             .filter(|&h| h > 1.0)
             .map(|h| 2.0 * (120.0 / h).atan())
             .unwrap_or(60f32.to_radians());
-        (look_at, yaw, fov)
+        (look_at, pitch, yaw, fov)
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
@@ -6512,7 +6518,12 @@ impl PlayWindowApp {
                         for (i, row) in arts.arts.iter().enumerate() {
                             let sel = i as u8 == *cursor;
                             let marker = if sel { ">" } else { " " };
-                            let line = format!("{} {} x{}", marker, row.name, row.hits());
+                            let line = match row.miracle {
+                                Some(name) => {
+                                    format!("{} {} x{} *{}*", marker, row.name, row.hits(), name)
+                                }
+                                None => format!("{} {} x{}", marker, row.name, row.hits()),
+                            };
                             let color = if sel { white } else { dim };
                             out.extend(text_draws_for(
                                 &self.font.layout_ascii(&line),
@@ -7105,9 +7116,12 @@ impl ApplicationHandler for PlayWindowApp {
                 let cutscene_cam = if self.session.host.world.mode != SceneMode::WorldMap
                     && self.session.host.world.cutscene_timeline_active()
                 {
-                    let (look_at, yaw, fov) = self.cutscene_view();
+                    let (look_at, pitch, yaw, fov) = self.cutscene_view();
                     // ~0.15/frame ease => a few-frame blend at the redraw cadence.
-                    Some(self.cutscene_cam_interp.approach(look_at, yaw, fov, 0.15))
+                    Some(
+                        self.cutscene_cam_interp
+                            .approach(look_at, pitch, yaw, fov, 0.15),
+                    )
                 } else {
                     self.cutscene_cam_interp.reset();
                     None
@@ -7187,9 +7201,10 @@ impl ApplicationHandler for PlayWindowApp {
                                 cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
                             )
                         }
-                    } else if let Some((look_at, yaw, fov)) = cutscene_cam {
+                    } else if let Some((look_at, pitch, yaw, fov)) = cutscene_cam {
                         legaia_engine_render::window::cutscene_camera_mvp(
                             look_at,
+                            pitch,
                             yaw,
                             fov,
                             self.scene_aabb.0,

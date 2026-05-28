@@ -269,6 +269,8 @@ pub struct EffectMarker {
 /// `docs/formats/effect.md`), so a host that samples VRAM here will draw the
 /// faithful geometry/animation with whatever is resident; the `page`/`clut`/
 /// `uv` carry the real coordinates so textures appear once that upload lands.
+///
+/// REF: FUN_801E0088
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectSprite {
     /// Child world position in world units (effect origin + spread offset).
@@ -609,6 +611,8 @@ pub struct BattleBuff {
 
 /// One monster's chosen action for its turn, produced by the action picker
 /// [`World::pick_monster_action`] (the port of `FUN_801E9FD4`'s decision core).
+///
+/// REF: FUN_801E9FD4
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MonsterAction {
     /// Physical strike against party slot `target`.
@@ -814,6 +818,8 @@ pub struct World {
     /// carries real SPD the next-actor selector switches to the SPD-seeded
     /// initiative scheme ([`World::next_combatant_by_initiative`], the port of
     /// `recompute_battle_order` / `FUN_801daba4`).
+    ///
+    /// REF: FUN_801DABA4
     pub battle_speed: [u16; 8],
 
     /// "Previous action cleared" gate - toggled by the engine when an
@@ -1396,6 +1402,8 @@ pub struct World {
     /// [`Self::tick_world_map`] rolls it once per 128-unit tile the player
     /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
     /// `None` on a camera-only world map (no region data routed).
+    ///
+    /// REF: FUN_801D9E1C
     pub world_map_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
 
     /// Player tile (`world >> 7`) at the previous overworld step check, for
@@ -2615,10 +2623,7 @@ impl World {
     /// apply. Party slots 0/1/2 are Vahn/Noa/Gala; out-of-range slots (story
     /// guests, monsters) fall back to Vahn so the lookup never panics.
     fn caster_character(&self, slot: u8) -> legaia_art::Character {
-        legaia_art::Character::all()
-            .get(slot as usize)
-            .copied()
-            .unwrap_or(legaia_art::Character::Vahn)
+        crate::battle_arts::character_for_slot(slot)
     }
 
     /// Build the Arts submenu rows for `caster` from their saved chains. For
@@ -2628,13 +2633,26 @@ impl World {
     /// synthetic profile derived from the directional commands.
     fn build_battle_arts_rows(&self, caster: u8) -> Vec<crate::battle_arts::ArtRow> {
         use crate::battle_arts::{
-            ArtRow, chain_matches_record, power_from_record, synthetic_power,
+            ArtRow, chain_matches_record, miracle_for_chain, power_from_record, synthetic_power,
         };
         let character = self.caster_character(caster);
         self.saved_chains
             .iter()
             .filter(|c| c.char_slot == caster)
             .map(|c| {
+                // Miracle Arts win over a plain art-record match: a chain whose
+                // directional string is the caster's Miracle Art replaces the
+                // whole queue with the finisher sequence (the retail order:
+                // Miracle replacement runs before any tail Super expansion).
+                if let Some(miracle) = miracle_for_chain(character, &c.sequence) {
+                    let (power, enemy_effect) = self.miracle_strike_profile(character, miracle);
+                    return ArtRow {
+                        name: c.name.clone(),
+                        power,
+                        enemy_effect,
+                        miracle: Some(miracle.name),
+                    };
+                }
                 let best = self
                     .art_records
                     .iter()
@@ -2648,16 +2666,73 @@ impl World {
                             name: c.name.clone(),
                             power,
                             enemy_effect,
+                            miracle: None,
                         }
                     }
                     None => ArtRow {
                         name: c.name.clone(),
                         power: synthetic_power(&c.sequence),
                         enemy_effect: legaia_art::EnemyEffect::None,
+                        miracle: None,
                     },
                 }
             })
             .collect()
+    }
+
+    /// Resolve a Miracle Art's per-strike power profile from its
+    /// finisher-replacement queue. Runs the canonical command resolution
+    /// ([`legaia_engine_vm::battle_action::resolve_action_queue`]), which
+    /// replaces the directional input with the Miracle's component-art queue,
+    /// then turns each art constant in that queue into strikes:
+    ///
+    /// - if the `(character, art)` record is staged ([`Self::set_art_record`]),
+    ///   the art contributes its real damage power bytes + status effect;
+    /// - otherwise it contributes one tier-0 (`x12`) synthetic strike, the same
+    ///   graceful-degradation profile [`crate::battle_arts::synthetic_power`]
+    ///   uses when no disc art data is loaded.
+    ///
+    /// The first staged component art's status effect is adopted for the whole
+    /// finisher. Result is clamped to [`crate::battle_arts::MAX_ART_HITS`] and
+    /// floored at one strike.
+    fn miracle_strike_profile(
+        &self,
+        character: legaia_art::Character,
+        miracle: &legaia_art::MiracleArt,
+    ) -> (Vec<legaia_art::power::PowerByte>, legaia_art::EnemyEffect) {
+        use crate::battle_arts::MAX_ART_HITS;
+        use legaia_art::power::PowerByte;
+        // Synthetic UDF x12 - the tier-0 high strike a component art with no
+        // staged record degrades to.
+        const SYNTH_UDF_X12: u8 = 0x16;
+
+        let queue =
+            legaia_engine_vm::battle_action::resolve_action_queue(character, miracle.commands, &[]);
+        let mut power: Vec<PowerByte> = Vec::new();
+        let mut enemy_effect = legaia_art::EnemyEffect::None;
+        for action in queue.actions() {
+            if !action.is_art() {
+                continue;
+            }
+            match self.art_records.get(&(character, *action)) {
+                Some(rec) => {
+                    let (mut bytes, effect) = crate::battle_arts::power_from_record(rec);
+                    if enemy_effect == legaia_art::EnemyEffect::None {
+                        enemy_effect = effect;
+                    }
+                    power.append(&mut bytes);
+                }
+                None => power.push(PowerByte::from_byte(SYNTH_UDF_X12)),
+            }
+            if power.len() >= MAX_ART_HITS as usize {
+                break;
+            }
+        }
+        power.truncate(MAX_ART_HITS as usize);
+        if power.is_empty() {
+            power.push(PowerByte::from_byte(SYNTH_UDF_X12));
+        }
+        (power, enemy_effect)
     }
 
     /// Pull the cross-character saved-chain library out as a

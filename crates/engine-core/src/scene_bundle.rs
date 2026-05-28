@@ -481,6 +481,8 @@ pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEve
 /// [`crate::world::World::vdf_record_bytes`] (which mirrors the *consumer*
 /// `FUN_801D77F4`), so no separate pointer array is built.
 ///
+/// REF: FUN_801D77F4
+///
 /// Returns `None` when no VDF chunk is reachable from the scene. Some
 /// scenes (utility / cutscene / world-map) carry no VDF data; that's
 /// not an error.

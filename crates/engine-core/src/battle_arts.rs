@@ -31,7 +31,7 @@ use crate::target_picker::{
 };
 use legaia_art::power::PowerByte;
 use legaia_art::queue::Command;
-use legaia_art::{ArtRecord, EnemyEffect};
+use legaia_art::{ArtRecord, Character, EnemyEffect, MiracleArt, MiracleMatcher};
 
 /// Maximum hits one art resolves to in the live loop, so a pathological saved
 /// chain (or art record) can't deal unbounded damage in a single turn.
@@ -53,6 +53,12 @@ pub struct ArtRow {
     pub power: Vec<PowerByte>,
     /// Status effect the art inflicts on hit (if any).
     pub enemy_effect: EnemyEffect,
+    /// Set when this saved chain's directional command string exactly matches
+    /// the caster's Miracle Art (`MiracleMatcher::find`): the canonical Miracle
+    /// name (e.g. `"Vahn's Craze"`). The row's [`Self::power`] is then the
+    /// resolved finisher-queue strike profile, not the raw per-direction
+    /// fallback. `None` for an ordinary saved chain.
+    pub miracle: Option<&'static str>,
 }
 
 impl ArtRow {
@@ -189,8 +195,34 @@ pub fn chain_matches_record(sequence: &[u8], rec: &ArtRecord) -> bool {
     chain.ends_with(&want)
 }
 
+/// Detect whether a saved chain's packed command sequence triggers `character`'s
+/// Miracle Art. The retail Miracle match is an *exact* directional-string match
+/// ([`MiracleMatcher::find`]); we drop terminator (`0`) bytes, decode the rest
+/// to [`Command`]s, and look the sequence up. Returns the matched
+/// [`MiracleArt`] (carrying the finisher-replacement queue) or `None`.
+///
+/// Super Arts are intentionally *not* detected here: their find-patterns match
+/// a queue of chained named-art constants (`0x19 <art> ...`), which the
+/// saved-chain model doesn't carry - a chain stores only raw directions, not
+/// the art-constant queue. Wiring Super requires the chained-named-art input
+/// model the simplified live loop doesn't build yet.
+pub fn miracle_for_chain(character: Character, sequence: &[u8]) -> Option<&'static MiracleArt> {
+    let commands: Vec<Command> = sequence
+        .iter()
+        .filter(|&&b| b != 0)
+        .filter_map(|&b| Command::from_byte(b))
+        .collect();
+    if commands.is_empty() {
+        return None;
+    }
+    MiracleMatcher::with_default_table().find(character, &commands)
+}
+
 /// Build synthetic [`ArtRow`]s from a caster's saved chains (no art records) -
-/// convenience for the no-disc-data path and tests.
+/// convenience for the no-disc-data path and tests. Miracle-triggering chains
+/// are flagged (via [`miracle_for_chain`]) but keep the synthetic profile here;
+/// the real finisher-queue power profile is resolved by the World, which owns
+/// the art-record catalog.
 pub fn rows_from_chains(actor: u8, chains: &[legaia_save::SavedChainRecord]) -> Vec<ArtRow> {
     chains
         .iter()
@@ -199,8 +231,19 @@ pub fn rows_from_chains(actor: u8, chains: &[legaia_save::SavedChainRecord]) -> 
             name: c.name.clone(),
             power: synthetic_power(&c.sequence),
             enemy_effect: EnemyEffect::None,
+            miracle: miracle_for_chain(character_for_slot(actor), &c.sequence).map(|m| m.name),
         })
         .collect()
+}
+
+/// Map a party slot to the [`Character`] whose Tactical-Arts tables apply
+/// (slots 0/1/2 = Vahn/Noa/Gala). Out-of-range slots fall back to Vahn so the
+/// Miracle lookup never panics. Mirrors `World::caster_character`.
+pub fn character_for_slot(slot: u8) -> Character {
+    Character::all()
+        .get(slot as usize)
+        .copied()
+        .unwrap_or(Character::Vahn)
 }
 
 impl BattleArtsSession {
@@ -468,6 +511,37 @@ mod tests {
         let mut empty = rec.clone();
         empty.commands = vec![];
         assert!(!chain_matches_record(&[4, 4], &empty));
+    }
+
+    #[test]
+    fn miracle_for_chain_detects_vahns_craze() {
+        // Vahn's Craze: Right, Down, Left, Up, Left, Up, Right, Down, Left
+        // (command bytes Left=1 Right=2 Down=3 Up=4).
+        let craze = [2u8, 3, 1, 4, 1, 4, 2, 3, 1];
+        let m = miracle_for_chain(Character::Vahn, &craze).expect("matches");
+        assert_eq!(m.name, "Vahn's Craze");
+        // Terminator bytes are dropped before matching.
+        let mut padded = craze.to_vec();
+        padded.extend_from_slice(&[0, 0]);
+        assert_eq!(
+            miracle_for_chain(Character::Vahn, &padded).map(|m| m.name),
+            Some("Vahn's Craze")
+        );
+        // Wrong character, or any non-exact string, does not match.
+        assert!(miracle_for_chain(Character::Noa, &craze).is_none());
+        assert!(miracle_for_chain(Character::Vahn, &craze[..8]).is_none());
+        assert!(miracle_for_chain(Character::Vahn, &[]).is_none());
+    }
+
+    #[test]
+    fn rows_from_chains_flags_miracle_chain() {
+        // A Vahn chain that is exactly Vahn's Craze is flagged on the row.
+        let craze = chain(0, "MyCraze", &[2, 3, 1, 4, 1, 4, 2, 3, 1]);
+        let rows = rows_from_chains(0, &[craze]);
+        assert_eq!(rows[0].miracle, Some("Vahn's Craze"));
+        // An ordinary chain is not flagged.
+        let plain = rows_from_chains(0, &[chain(0, "Plain", &[1, 2, 3])]);
+        assert_eq!(plain[0].miracle, None);
     }
 
     #[test]

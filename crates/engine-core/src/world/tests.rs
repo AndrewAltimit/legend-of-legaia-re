@@ -4726,6 +4726,74 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
 }
 
 #[test]
+fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
+    use legaia_art::power::PowerByte;
+    use legaia_art::queue::{ActionConstant, Command};
+    use legaia_art::record::EnemyEffect;
+
+    // Vahn's Craze directional string: Right, Down, Left, Up, Left, Up,
+    // Right, Down, Left (Left=1 Right=2 Down=3 Up=4).
+    let craze_seq = vec![2u8, 3, 1, 4, 1, 4, 2, 3, 1];
+
+    // No art records staged: each of Vahn's Craze's six component arts
+    // (Art22/28/23/27/20/2A) degrades to one synthetic ×12 strike.
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.saved_chains.push(legaia_save::SavedChainRecord {
+        char_slot: 0,
+        name: "MyCraze".into(),
+        sequence: craze_seq.clone(),
+    });
+    let rows = world.build_battle_arts_rows(0);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].miracle,
+        Some("Vahn's Craze"),
+        "chain flagged Miracle"
+    );
+    assert_eq!(
+        rows[0].hits(),
+        6,
+        "six component arts -> six synthetic strikes with no records"
+    );
+    assert_eq!(rows[0].enemy_effect, EnemyEffect::None);
+
+    // Stage the first component art (Art22) with two damage strikes that
+    // burn: it contributes its real bytes; the other five stay synthetic.
+    let rec = legaia_art::ArtRecord {
+        action: ActionConstant::Art22,
+        commands: vec![Command::Up],
+        anim_index: 0,
+        anim_extra: vec![],
+        name: None,
+        power: vec![PowerByte::from_byte(0x1A), PowerByte::from_byte(0x1A)],
+        dmg_timing: vec![],
+        effect_cues: Default::default(),
+        hit_cues: vec![],
+        identifier: 0,
+        anim_speed: 0,
+        enemy_effect: EnemyEffect::Burned,
+        repeat_frames: Default::default(),
+        background: 0,
+        runtime_address: None,
+    };
+    world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art22, rec);
+    let rows = world.build_battle_arts_rows(0);
+    assert_eq!(
+        rows[0].hits(),
+        7,
+        "Art22 record (2 strikes) + 5 synthetic component arts"
+    );
+    assert_eq!(
+        rows[0].enemy_effect,
+        EnemyEffect::Burned,
+        "first staged component art's status effect is adopted"
+    );
+}
+
+#[test]
 fn apply_battle_loot_never_drops_when_rate_zero() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
     let mut cat = MonsterCatalog::new();

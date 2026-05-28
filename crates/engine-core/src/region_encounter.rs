@@ -42,6 +42,7 @@
 //! [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
 //!
 //! PORT: FUN_801D9E1C
+//! REF: FUN_80056798, FUN_800431D0, FUN_8003CE64
 
 use legaia_asset::man_section;
 

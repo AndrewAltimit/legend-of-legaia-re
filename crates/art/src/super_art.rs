@@ -14,7 +14,9 @@
 //!   finisher action constant for multi-hit Super Arts (e.g. Tri-Somersault
 //!   appends `0x2B` three times).
 //!
-//! Source: external researcher's `Super Arts Data` spreadsheet.
+//! Source: ZetaPhoenix's public "Legaia Arts Data" Google Sheets
+//! spreadsheet (Super Arts tab). See the README's Acknowledgments
+//! section for the link.
 
 use crate::queue::{ActionConstant, ActionQueue, Character};
 

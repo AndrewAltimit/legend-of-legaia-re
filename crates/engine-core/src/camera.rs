@@ -46,11 +46,13 @@ pub struct Camera {
     pub mode: CameraMode,
     /// Actor slot to follow when `mode == Follow`. Defaults to 0.
     pub follow_slot: u8,
-    /// Distance from target along the -Z axis when following. Engines bump
-    /// this from the camera-configure payload's `slot 1` (zoom param).
+    /// Distance from target along the -Z axis when following. This is an
+    /// engine framing choice - op-0x45 carries no eye-distance param (retail
+    /// places the eye at the GTE translation and projects through `H`), so it
+    /// is not driven by Camera Configure.
     pub follow_distance: f32,
-    /// Y offset added to `look_at`. Engines bump this from configure payload
-    /// `slot 2` (height param). Defaults to a comfortable shoulder height.
+    /// Y offset added to `look_at`. Engine framing default (comfortable
+    /// shoulder height); like `follow_distance`, not an op-0x45 param.
     pub follow_height: f32,
     /// Computed eye position in world coordinates.
     pub eye: [f32; 3],
@@ -94,6 +96,11 @@ impl Camera {
     /// fold them into this camera. Non-camera events are restored to the
     /// world queue so engine layers that also consume them aren't shorted.
     /// Returns the number of camera events applied this frame.
+    ///
+    /// The op-`0x45` Configure slot→camera mapping mirrors the retail apply
+    /// handler; the GTE rotation build it feeds is `FUN_8001CF50`.
+    ///
+    /// REF: FUN_801DE084
     pub fn route_camera_events(&mut self, world: &mut World) -> usize {
         let mut applied = 0usize;
         let mut leftover = Vec::new();
@@ -104,18 +111,34 @@ impl Camera {
                     apply_trigger,
                     mode,
                 } => {
-                    // Slot conventions inferred from CameraConfigure usage in
-                    // the field-VM: slot 1 = follow distance, slot 2 = height,
-                    // slot 3 = yaw delta. Other slots feed cinematic state.
-                    for p in &params {
-                        match p.slot {
-                            1 => self.follow_distance = (p.value as i16) as f32,
-                            2 => self.follow_height = (p.value as i16) as f32,
-                            3 => {
-                                self.yaw = (p.value as i16) as f32 * std::f32::consts::TAU / 4096.0
-                            }
-                            _ => {}
-                        }
+                    // Op-0x45 slot layout, pinned from the Camera Configure
+                    // apply handler `FUN_801DE084` (writes the camera globals)
+                    // + the GTE rotation build `FUN_8001CF50` (RotMatrixX/Y/Z
+                    // at 0x800461A4/629C/638C). The 10 slots are three Euler
+                    // angles, an offset trio, a focus trio, and H:
+                    //   0 = pitch  (`_DAT_8007B790`, RotX)   1 = yaw (RotY)
+                    //   2 = roll   (`_DAT_8007B794`, RotZ)   3,4,5 = offset
+                    //   6,7,8 = focus (negated translation)  9 = GTE H
+                    // Angles are 12-bit (4096 = 360 deg). See
+                    // docs/subsystems/cutscene.md.
+                    let ang = |v: u16| (v as i16) as f32 * std::f32::consts::TAU / 4096.0;
+                    let slot = |s: u8| params.iter().find(|p| p.slot == s).map(|p| p.value);
+                    if let Some(v) = slot(0) {
+                        self.pitch = ang(v);
+                    }
+                    if let Some(v) = slot(1) {
+                        self.yaw = ang(v);
+                    }
+                    // A full focus trio (slots 6/7/8) re-targets the cinematic
+                    // look-at. The focus globals are the negated GTE
+                    // translation, so X/Z are negated back to a world point
+                    // (matching the shell's `cutscene_view`).
+                    if let (Some(fx), Some(fy), Some(fz)) = (slot(6), slot(7), slot(8)) {
+                        self.look_at = [
+                            -((fx as i16) as f32),
+                            (fy as i16) as f32,
+                            -((fz as i16) as f32),
+                        ];
                     }
                     let _ = (apply_trigger, mode);
                     applied += 1;
@@ -269,20 +292,32 @@ mod tests {
 
     #[test]
     fn route_camera_events_consumes_camera_variants() {
+        use legaia_engine_vm::field::CameraParam;
         let mut w = World {
             mode: SceneMode::Field,
             ..World::default()
         };
+        // Decoded op-0x45 slots: 0 = pitch, 1 = yaw, 6/7/8 = focus.
+        // 1024 (12-bit) = quarter turn = TAU/4.
         w.pending_field_events = vec![
             FieldEvent::CameraConfigure {
                 params: vec![
-                    legaia_engine_vm::field::CameraParam {
+                    CameraParam {
+                        slot: 0,
+                        value: 512,
+                    }, // pitch 1/8 turn
+                    CameraParam {
                         slot: 1,
-                        value: 300,
+                        value: 1024,
+                    }, // yaw 1/4 turn
+                    CameraParam {
+                        slot: 6,
+                        value: (-100i16) as u16,
                     },
-                    legaia_engine_vm::field::CameraParam {
-                        slot: 2,
-                        value: 100,
+                    CameraParam { slot: 7, value: 40 },
+                    CameraParam {
+                        slot: 8,
+                        value: (-200i16) as u16,
                     },
                 ],
                 apply_trigger: 0,
@@ -297,8 +332,11 @@ mod tests {
         let mut c = Camera::default();
         let n = c.route_camera_events(&mut w);
         assert_eq!(n, 2);
-        assert_eq!(c.follow_distance, 300.0);
-        assert_eq!(c.follow_height, 100.0);
+        use std::f32::consts::TAU;
+        assert!((c.pitch - TAU / 8.0).abs() < 1e-3, "slot 0 -> pitch");
+        assert!((c.yaw - TAU / 4.0).abs() < 1e-3, "slot 1 -> yaw");
+        // Focus (6/7/8) -> look_at with X/Z negated back to world space.
+        assert_eq!(c.look_at, [100.0, 40.0, 200.0]);
         // Non-camera event preserved.
         assert_eq!(w.pending_field_events.len(), 1);
         match &w.pending_field_events[0] {

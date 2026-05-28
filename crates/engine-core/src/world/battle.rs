@@ -1231,7 +1231,7 @@ impl World {
     /// [`Self::resolve_monster_target`] (the `monster_setup` hook).
     ///
     /// PORT: FUN_801E9FD4
-    /// REF: FUN_801DABA4
+    /// REF: FUN_801DABA4, FUN_801DA51C
     fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
         let pc = self.party_count.max(1);
 
