@@ -43,8 +43,12 @@ data/gamedata/
   weapons.toml        - 27 weapons
   armor.toml          - 49 armor / helmet / shoes entries
   accessories.toml    - 70+ accessories with structured effect classes
-  enemies.toml        - 130+ enemies with location + drop / steal table
-  bosses.toml         - boss HP estimates (sanity-check data)
+  enemies.toml        - 177 enemies with location + drop / steal + full
+                        per-enemy stat columns (HP / MP / EXP / Gold /
+                        ATK / SPD / UDF / LDF / INT / AGL / element)
+  bosses.toml         - 18 main-story B-code bosses + Lapis + 7 Muscle
+                        Dome rounds; per-fight named attacks + MP cost,
+                        XP / gold / item rewards, recommended level
   shops.toml          - per-town shop inventories with item-key references
   casino.toml         - Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter
   sol_tower.toml      - Sol Tower floor map + side-quest chains
@@ -86,6 +90,28 @@ this.
 `water`, `earth`, `wind`, `thunder`, `light`, `dark`, `evil`).
 `target` is one of `single_enemy`, `all_enemies`, `single_ally`,
 `all_allies`, `self`.
+
+Seru spells additionally carry `absorb_lv1` / `absorb_lv2` /
+`absorb_lv3` integer-percent fields - the per-encounter chance a kill
+rolls capture success against the Lv1 / Lv2 / Lv3 mist variants of
+the source Seru. Source: Meth962 v1.10 Seru-magic table (range 1-80%;
+Gimard easiest at 55/60/80, Gilium hardest at 1/1/1). Ra-Seru summons
+are egg-derived and don't have an absorption mechanic.
+
+The magic-levelling curve (XP-to-level, damage / heal scaling per
+level) lives in [`legaia_gamedata::magic_leveling`](../../crates/gamedata/src/lib.rs):
+
+- `XP_TO_LEVEL`: 18, 51, 93, 145, 209, 289, 393, 537 (cumulative cost
+  Lv2 -> Lv9).
+- `SCALING_BP`: damage / heal multiplier in basis points
+  (Lv1 = 10000 / +0%, Lv9 = 20000 / +100%).
+- `VERA_HEAL` / `ORB_HEAL` / `SPOON_HEAL`: per-level healer outputs
+  (Vera 256-512 HP, Orb 512-1024 AoE HP, Spoon 1024-2048 AoE HP).
+- `NIGHTO_HIT_PCT`: Nighto's Confuse / Death roll base hit-chance per
+  level (Confuse:Death ratio is fixed at 8:1 regardless of level).
+- `xp_single_target` / `xp_multi_target`: bracket-resolvers that map
+  a cast's damage-as-fraction-of-target-HP to the 0..=12 (single) or
+  0..=4 (multi, per enemy) XP award per the FAQ tables.
 
 ### Items / weapons / armor / accessories
 
@@ -240,11 +266,26 @@ records being reverse-engineered:
   data — once the per-encounter table lives at a known RAM offset,
   the gamedata enables a sanity-check that the parsed bytes match
   the published drop list.
-- **Boss HP estimates** ground the damage-formula reverse engineering
-  in [`docs/subsystems/battle-formulas.md`](../subsystems/battle-formulas.md):
+- **Per-enemy stat columns** + **per-boss stat blocks** ground the
+  damage-formula reverse engineering in
+  [`docs/subsystems/battle-formulas.md`](../subsystems/battle-formulas.md):
   if the formulas predict the player needing N hits to defeat Jette
-  at level 50, that result has to fall in the walkthrough's
-  `33,200..=35,800` HP bracket.
+  at level 50, that result has to land near Meth's HP-34,567 /
+  ATK-277 / UDF-412 / SPD-274 stat block. Same direction for the
+  monster-stat records `crates/asset/src/monster_archive.rs` lifts
+  from PROT 0867 - the gamedata stat columns are the labels.
+- **Per-Seru absorption rates** ground the capture-roll reverse
+  engineering: a kill against a Gimard rolls capture at 55% per
+  attempt before any Ivory Book modifier; the engine's
+  `record_capture` path in
+  [`crates/engine-core/src/seru_learning.rs`](../../crates/engine-core/src/seru_learning.rs)
+  looks the rate up via `legaia_gamedata::Spell::absorb_lv1`.
+- **Magic XP curve** + **damage scaling tables** in
+  `legaia_gamedata::magic_leveling` close the loop for the
+  per-cast levelling code path - once the engine routes a successful
+  cast through `xp_single_target` / `xp_multi_target` and bumps a
+  level when `XP_TO_LEVEL[N]` is crossed, the `SCALING_BP[N]`
+  multiplier kicks in on the next cast.
 
 ## See also
 
