@@ -15,6 +15,7 @@
 //! through the [`crate::scene::SceneHost`] for the duration of the scene.
 //!
 //! PORT: FUN_8001F7C0, FUN_800255B8
+//! REF: FUN_80026B4C
 
 use legaia_asset::categorize::Class;
 use legaia_asset::{tim_scan, tmd_scan};

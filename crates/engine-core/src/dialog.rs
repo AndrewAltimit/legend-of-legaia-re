@@ -19,6 +19,7 @@
 //! [`text_draws_for`](../../legaia_engine_render/fn.text_draws_for.html)
 //! consumes the [`Self::page_glyphs`] byte stream via [`legaia_font::Font`].
 //! REF: FUN_80036888
+//! REF: FUN_80039B7C, FUN_801DE840
 
 use legaia_mes::{DialogPlayer, Interpreter, MesEvent, PlayerState};
 use std::sync::Arc;
