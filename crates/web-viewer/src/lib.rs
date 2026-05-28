@@ -2260,16 +2260,19 @@ impl LegaiaViewer {
     /// fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
     /// to the battle character atlas pack.
     ///
-    /// Note: the PROT 1204 atlas TIMs are **placeholder data** — both the
-    /// image bytes AND the CLUTs differ from what the retail engine
-    /// uploads to VRAM at battle entry (image bytes match by only ~2%,
-    /// CLUT bytes by 0%). The character viewer renders with the
-    /// placeholder pixels + a subset of placeholder sub-CLUTs that
-    /// happen to carry the correct colors, so most body parts (vest,
-    /// gi, pants, shoes) come out right while hair colors don't. See
-    /// `docs/reference/open-rev-eng-threads.md` § "Battle character CLUT
-    /// source" — fixing this needs the per-character image+CLUT pair
-    /// the engine loads at runtime, not just the CLUT.
+    /// Note: the PROT 1204 atlas TIMs ARE the real battle-form character
+    /// art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
+    /// rendering each atlas with its bundled CLUT). The earlier
+    /// "placeholder" framing was misleading — it came from
+    /// byte-comparing against a mid-battle mc1 retail VRAM snapshot,
+    /// which captures only one animation phase of the runtime upload.
+    /// What's actually missing: the targeted-CLUT upload pass that
+    /// populates rows 491/493/494/495 from non-PROT-1204 sources. The
+    /// TMD primitives reference CBAs across rows 481/492/495/496/503,
+    /// not just the atlas's own row, so a single character's polygons
+    /// need ALL those CLUT rows populated to render correct palettes.
+    /// See `docs/reference/open-rev-eng-threads.md` § "Battle character
+    /// image + CLUT source".
     pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
         let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
