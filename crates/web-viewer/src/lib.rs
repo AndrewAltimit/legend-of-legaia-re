@@ -1938,14 +1938,16 @@ impl LegaiaViewer {
     }
 
     /// Convenience: return the renderable `VramMesh` for slot `slot` under
-    /// the chosen equipment toggle.
+    /// the chosen equipment toggle. Uses the lenient extractor that keeps
+    /// flat-shaded primitives (the bulk of field-form character body
+    /// parts) — the standard one would drop them.
     fn build_character_vram_mesh(
         &self,
         slot: usize,
         equip: Option<u8>,
     ) -> Option<legaia_tmd::mesh::VramMesh> {
         let (tmd, bytes) = self.build_character_mesh(slot, equip)?;
-        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes))
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &bytes).0)
     }
 
     /// Per-vertex positions for the player character at pack slot `slot`,
@@ -2041,7 +2043,7 @@ impl LegaiaViewer {
         let Some((tmd, bytes)) = self.build_character_mesh(slot as usize, equip) else {
             return Vec::new();
         };
-        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes).1
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &bytes).1
     }
 
     /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
@@ -2322,6 +2324,27 @@ impl LegaiaViewer {
                             .map(|i| {
                                 let bytes = b.record_bytes(i);
                                 let rec = b.record(i).ok();
+                                // Stillness score for frame 0: sum of
+                                // each bone's rotation distance from a
+                                // cardinal {0, 4096} (= "twist away from
+                                // axis-aligned"). Lower = closer to an
+                                // idle / rest pose. Used by the site to
+                                // auto-pick an idle anim rather than a
+                                // mid-stride walk frame.
+                                let stillness = if let Some(r) = rec.as_ref() {
+                                    let mut score: i64 = 0;
+                                    for bone in 0..(r.bone_count as usize) {
+                                        if let Some(t) = b.bone_transform(i, 0, bone) {
+                                            for r_ang in [t.r_x, t.r_y, t.r_z] {
+                                                let m = r_ang.rem_euclid(4096);
+                                                score += m.min(4096 - m) as i64;
+                                            }
+                                        }
+                                    }
+                                    score
+                                } else {
+                                    i64::MAX
+                                };
                                 serde_json::json!({
                                     "index": i,
                                     "offset": b.record_offsets[i],
@@ -2332,6 +2355,7 @@ impl LegaiaViewer {
                                     "flag": rec.as_ref().map(|r| r.flag).unwrap_or(0),
                                     "bone_count": rec.as_ref().map(|r| r.bone_count).unwrap_or(0),
                                     "frame_count": rec.as_ref().map(|r| r.frame_count).unwrap_or(0),
+                                    "stillness": stillness,
                                 })
                             })
                             .collect();

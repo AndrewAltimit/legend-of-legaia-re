@@ -269,6 +269,78 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
     )
 }
 
+/// Like [`tmd_to_vram_mesh_with_object_ids`] but also includes untextured
+/// primitives, emitting them with sentinel `(0, 0)` UVs and per-prim
+/// `(cba, tsb)` (typically `(0, 0)` for flat-shaded prims). Use for character
+/// meshes where the bulk of body parts are flat-shaded — the standard
+/// extractor drops those, leaving only a few textured fragments. Consumers
+/// can decide how to render the sentinel-UV verts (e.g., solid-shaded
+/// fallback in the fragment shader).
+pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>) {
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut cba_tsb = Vec::new();
+    let mut indices = Vec::new();
+    let mut object_ids = Vec::new();
+
+    for (o_idx, o) in tmd.objects.iter().enumerate() {
+        let object_vert_count = o.header.n_vert;
+        let groups = legaia_prims::iter_groups_lenient(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+
+        for g in &groups {
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                let ct = [prim.cba, prim.tsb];
+                let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = positions.len() as u32;
+                    positions.push([v.x as f32, v.y as f32, v.z as f32]);
+                    let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
+                    uvs.push([u8v, v8v]);
+                    cba_tsb.push(ct);
+                    object_ids.push(o_idx as u32);
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        let i3 = push_vert(raw_idx[3], 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let normals = compute_smooth_normals(&positions, &indices);
+    (
+        VramMesh {
+            positions,
+            uvs,
+            cba_tsb,
+            indices,
+            normals,
+        },
+        object_ids,
+    )
+}
+
 /// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't
 /// have valid data when sampled - the caller's `keep_prim` closure decides
 /// per primitive whether the (CBA, TSB, UV) tuple has plausible VRAM data.

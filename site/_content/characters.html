@@ -532,6 +532,39 @@ table.arts-list .cmd-tag {
     loadMesh();
   }
 
+  // For active-party field-form slots (Vahn/Noa/Gala) the TMD ships with
+  // nobj=12 but the engine animates only the first 10 — groups 10/11 are
+  // equipment-conditional templates patched over visible groups 0/3/5
+  // rather than drawn as standalone objects. Other slots animate every
+  // disc object.
+  function animatedBoneCountFor(slot, p) {
+    if (curForm !== 'field') return p.slots[slot].disc_nobj | 0;
+    if (slot >= 0 && slot <= 2) {
+      return Math.max(1, (p.slots[slot].disc_nobj | 0) - 2);
+    }
+    return p.slots[slot].disc_nobj | 0;
+  }
+
+  // Pick the bone-count-matching record with the lowest "stillness"
+  // score, i.e. the most rest-pose-like one. Without this we'd default to
+  // the first match (which for Vahn in town01 is a mid-stride walk frame
+  // — left leg back, right leg forward — instead of his idle stance).
+  function pickDefaultRecordFor(slot, p) {
+    if (!anmCorpus) return 0;
+    const bundle = anmCorpus.bundles[curAnmBundleIdx];
+    if (!bundle || !bundle.records) return 0;
+    const want = animatedBoneCountFor(slot, p);
+    let bestIdx = -1;
+    let bestScore = Infinity;
+    for (let i = 0; i < bundle.records.length; i++) {
+      const r = bundle.records[i];
+      if ((r.bone_count | 0) !== want) continue;
+      const s = (typeof r.stillness === 'number') ? r.stillness : i;
+      if (s < bestScore) { bestScore = s; bestIdx = i; }
+    }
+    return bestIdx >= 0 ? bestIdx : 0;
+  }
+
   function selectSlot(slot) {
     if (!viewer) return;
     const p = activePack();
@@ -544,6 +577,11 @@ table.arts-list .cmd-tag {
     nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
     renderGrid();
     renderEquipToggle();
+    // Auto-pick a record matching the slot's bone count before loading
+    // the mesh — the chain selectSlot → loadMesh → maybeLoadCurrentAnim
+    // applies the selected record's frame-0 (T, R) as the rest pose.
+    curAnmRecordIdx = pickDefaultRecordFor(slot, p);
+    syncAnmSlider();
     loadMesh();
     // Fire-and-forget: load arts.json and render the per-character arts list.
     ensureArts().then(() => renderArts(slot));
@@ -672,9 +710,16 @@ table.arts-list .cmd-tag {
     const p = activePack();
     const slot = selectedSlot;
     if (!p || slot === null || slot === undefined) return;
-    const targetParts = Math.max(1, p.slots[slot].disc_nobj | 0);
     const dims = viewer.player_anm_record_dims(bundle.prot_index, curAnmRecordIdx);
-    const partCount = Math.max(targetParts, dims[0] | 0);
+    // Use the record's own bone count as partCount so vertices belonging
+    // to TMD objects past it (e.g. the field-form equipment templates at
+    // groups 10/11) hit the "o >= partCount" path in _poseAt and collapse
+    // to a degenerate point instead of floating at their object-local
+    // origin. We still hand the WASM emitter `targetParts` so it pads to
+    // at least the TMD's nobj on the (rare) record-bone-count <
+    // animated-count path.
+    const targetParts = (dims[0] | 0) || Math.max(1, p.slots[slot].disc_nobj | 0);
+    const partCount = dims[0] | 0;
     const frameCount = dims[1] | 0;
     if (!frameCount) {
       meshView.setAnimation(null);
@@ -954,16 +999,25 @@ table.arts-list .cmd-tag {
       this._poseAt(0);          // settle to the rest pose
       // Re-fit the camera on the assembled rest pose - the static AABB
       // only covers the collapsed object-local geometry, which is much
-      // smaller than the assembled character.
+      // smaller than the assembled character. Exclude vertices belonging
+      // to objects past partCount (equipment templates collapsed to origin
+      // in _poseAt) so they don't pull the AABB toward (0,0,0).
       let lo = [Infinity, Infinity, Infinity];
       let hi = [-Infinity, -Infinity, -Infinity];
       const o = this.anim.out, n = o.length / 3;
-      for (let v = 0; v < n; v++) for (let k = 0; k < 3; k++) {
-        const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
+      const ids = this._objIds;
+      const pc = this.anim.partCount;
+      for (let v = 0; v < n; v++) {
+        if (ids[v] >= pc) continue;
+        for (let k = 0; k < 3; k++) {
+          const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
+        }
       }
-      this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
-      this.radius = Math.max(1, Math.hypot(
-        (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
+      if (lo[0] !== Infinity) {
+        this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
+        this.radius = Math.max(1, Math.hypot(
+          (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
+      }
     }
 
     setPlaying(on) {
@@ -1019,8 +1073,15 @@ table.arts-list .cmd-tag {
       for (let v = 0; v < n; v++) {
         const o = ids[v];
         if (o >= A.partCount) {
-          out[v*3]   = base[v*3];   out[v*3+1] = base[v*3+1]; out[v*3+2] = base[v*3+2];
-          outN[v*3]  = baseN[v*3];  outN[v*3+1]= baseN[v*3+1];outN[v*3+2]= baseN[v*3+2];
+          // Object isn't animated by this ANM record. For field-form
+          // active-party characters the TMD ships with equipment-template
+          // objects (groups 10/11) that the retail engine patches OVER
+          // visible groups 0/3/5 rather than drawing as separate parts —
+          // they'd float at the model-space origin if rendered raw, which
+          // is wrong. Collapse them to a degenerate point so they don't
+          // produce visible geometry.
+          out[v*3]   = 0; out[v*3+1] = 0; out[v*3+2] = 0;
+          outN[v*3]  = 0; outN[v*3+1] = 1; outN[v*3+2] = 0;
           continue;
         }
         const sx = sin[o*3], cxx = cos[o*3];
