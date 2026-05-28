@@ -545,24 +545,120 @@ table.arts-list .cmd-tag {
     return p.slots[slot].disc_nobj | 0;
   }
 
-  // Pick the bone-count-matching record with the lowest "stillness"
-  // score, i.e. the most rest-pose-like one. Without this we'd default to
-  // the first match (which for Vahn in town01 is a mid-stride walk frame
-  // — left leg back, right leg forward — instead of his idle stance).
+  // Pick the bone-count-matching record whose frame-0 assembled mesh is
+  // most bilaterally symmetric across X=0. This handles two cases at
+  // once: characters whose TMD is X-symmetric (any near-identity rotation
+  // record looks idle) AND characters like Vahn whose field-form TMD has
+  // Z-mirrored legs (idle requires a 180° Y-rotation flip on one side
+  // that pure "stillness" heuristics would reject). The stillness score
+  // is used as a fallback when no mesh data is available.
+  function assemblySymmetryScore(positions, objectIds, frameZero, bones) {
+    // Apply frame-0 (T, R) to TMD vertices, returning the assembled
+    // vertex pool's symmetry score across X=0. Lower = more symmetric.
+    const A2R = (Math.PI * 2) / 4096;
+    const sinT = new Float32Array(bones * 3);
+    const cosT = new Float32Array(bones * 3);
+    const tr   = new Float32Array(bones * 3);
+    for (let p = 0; p < bones; p++) {
+      const o = p * 6;
+      tr[p*3]   = frameZero[o];
+      tr[p*3+1] = frameZero[o+1];
+      tr[p*3+2] = frameZero[o+2];
+      for (let k = 0; k < 3; k++) {
+        const a = frameZero[o + 3 + k] * A2R;
+        sinT[p*3+k] = Math.sin(a);
+        cosT[p*3+k] = Math.cos(a);
+      }
+    }
+    const n = positions.length / 3;
+    const out = new Float32Array(n * 3);
+    let kept = 0;
+    for (let v = 0; v < n; v++) {
+      const o = objectIds[v];
+      if (o >= bones) continue;
+      const sx = sinT[o*3], cxx = cosT[o*3];
+      const sy = sinT[o*3+1], cyy = cosT[o*3+1];
+      const sz = sinT[o*3+2], czz = cosT[o*3+2];
+      let x = positions[v*3], y = positions[v*3+1], z = positions[v*3+2];
+      let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
+      let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
+      nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
+      out[kept*3]   = x + tr[o*3];
+      out[kept*3+1] = y + tr[o*3+1];
+      out[kept*3+2] = z + tr[o*3+2];
+      kept++;
+    }
+    // Bin Y and Z values; for each vertex, look for an X-mirror partner
+    // in the same bin. Score = average distance to nearest mirror
+    // partner (lower = more symmetric assembled mesh).
+    if (kept === 0) return Infinity;
+    const bin = 8;
+    const bins = new Map();
+    for (let v = 0; v < kept; v++) {
+      const y = Math.round(out[v*3+1] / bin);
+      const z = Math.round(out[v*3+2] / bin);
+      const k = y + ',' + z;
+      let arr = bins.get(k); if (!arr) { arr = []; bins.set(k, arr); }
+      arr.push(out[v*3]);
+    }
+    let score = 0;
+    for (let v = 0; v < kept; v++) {
+      const y = Math.round(out[v*3+1] / bin);
+      const z = Math.round(out[v*3+2] / bin);
+      const k = y + ',' + z;
+      const candidates = bins.get(k) || [];
+      const target = -out[v*3];
+      let best = Infinity;
+      for (let i = 0; i < candidates.length; i++) {
+        const d = Math.abs(candidates[i] - target);
+        if (d < best) best = d;
+      }
+      score += best === Infinity ? Math.abs(out[v*3]) * 2 : best;
+    }
+    return score / kept;
+  }
+
   function pickDefaultRecordFor(slot, p) {
     if (!anmCorpus) return 0;
     const bundle = anmCorpus.bundles[curAnmBundleIdx];
     if (!bundle || !bundle.records) return 0;
     const want = animatedBoneCountFor(slot, p);
+
+    // Without a TMD to simulate against, fall back to the stillness score.
+    let positions = null, objectIds = null;
+    if (curForm === 'field' && viewer && p && p.slots[slot]) {
+      const equip = (curEquip >= 0) ? curEquip : -1;
+      const pos = viewer.character_mesh_positions(slot, equip);
+      const ids = viewer.character_mesh_object_ids(slot, equip);
+      if (pos && pos.length && ids && ids.length) {
+        positions = pos; objectIds = ids;
+      }
+    }
+
     let bestIdx = -1;
-    let bestScore = Infinity;
+    let bestSymScore = Infinity;
+    let stillFallbackIdx = -1;
+    let stillFallbackScore = Infinity;
     for (let i = 0; i < bundle.records.length; i++) {
       const r = bundle.records[i];
       if ((r.bone_count | 0) !== want) continue;
-      const s = (typeof r.stillness === 'number') ? r.stillness : i;
-      if (s < bestScore) { bestScore = s; bestIdx = i; }
+      const stillScore = (typeof r.stillness === 'number') ? r.stillness : i;
+      if (stillScore < stillFallbackScore) {
+        stillFallbackScore = stillScore; stillFallbackIdx = i;
+      }
+      if (!positions) continue;
+      const frames = viewer.player_anm_record_pose_frames(
+        bundle.prot_index, i, want,
+      );
+      if (!frames || frames.length < want * 6) continue;
+      const symScore = assemblySymmetryScore(positions, objectIds, frames, want);
+      if (symScore < bestSymScore) {
+        bestSymScore = symScore; bestIdx = i;
+      }
     }
-    return bestIdx >= 0 ? bestIdx : 0;
+    if (bestIdx >= 0) return bestIdx;
+    if (stillFallbackIdx >= 0) return stillFallbackIdx;
+    return 0;
   }
 
   function selectSlot(slot) {

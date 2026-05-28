@@ -2326,18 +2326,21 @@ impl LegaiaViewer {
                                 let rec = b.record(i).ok();
                                 // Stillness score for frame 0: sum of
                                 // each bone's rotation distance from a
-                                // cardinal {0, 4096} (= "twist away from
-                                // axis-aligned"). Lower = closer to an
-                                // idle / rest pose. Used by the site to
-                                // auto-pick an idle anim rather than a
-                                // mid-stride walk frame.
+                                // **90° cardinal** (multiples of 1024 in
+                                // PSX angle units). Rest-pose anims for
+                                // characters whose TMD has Z-mirrored
+                                // limbs (Vahn's field form) use an
+                                // ry≈180° flip on one shin to unmirror
+                                // it; measuring against cardinals (not
+                                // just 0/360°) keeps those records
+                                // scoring low. Lower = closer to an idle.
                                 let stillness = if let Some(r) = rec.as_ref() {
                                     let mut score: i64 = 0;
                                     for bone in 0..(r.bone_count as usize) {
                                         if let Some(t) = b.bone_transform(i, 0, bone) {
                                             for r_ang in [t.r_x, t.r_y, t.r_z] {
-                                                let m = r_ang.rem_euclid(4096);
-                                                score += m.min(4096 - m) as i64;
+                                                let m = r_ang.rem_euclid(1024);
+                                                score += m.min(1024 - m) as i64;
                                             }
                                         }
                                     }
