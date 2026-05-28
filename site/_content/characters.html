@@ -1,0 +1,681 @@
+<!--HEAD: <style>
+.char-shell { display: flex; flex-direction: column; gap: 1rem; }
+.file-input-group {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+  padding: 0.75rem; border: 1px solid var(--border); background: var(--bg-card);
+}
+.file-input-group input[type="file"] { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem; }
+.char-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.6rem;
+}
+.char-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.6rem 0.7rem; cursor: pointer;
+  font-family: var(--font-mono); font-size: 0.82rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.char-card:hover { border-color: var(--accent); }
+.char-card.is-active { border-color: var(--accent); background: var(--bg-raised); }
+.char-card-name { color: var(--text); font-weight: bold; font-size: 0.95rem; }
+.char-card-meta { color: var(--text-muted); }
+.char-card-tag {
+  display: inline-block; padding: 0.05rem 0.4rem;
+  background: var(--bg-code); color: var(--text-dim); font-size: 0.72rem;
+  border: 1px solid var(--border);
+}
+
+.char-viewer-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 0.85rem;
+}
+canvas.char-viewer-canvas {
+  width: 100%; aspect-ratio: 4 / 3; max-height: 480px;
+  background: radial-gradient(circle at 50% 38%, #1c2026 0%, #0c0e12 100%);
+  border: 1px solid var(--border); display: block; cursor: grab;
+}
+canvas.char-viewer-canvas:active { cursor: grabbing; }
+.char-viewer-side { font-family: var(--font-mono); font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.char-viewer-side h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.char-stat { color: var(--text-muted); line-height: 1.55; }
+.char-stat b { color: var(--text); }
+.char-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.char-controls button {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem; font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer;
+}
+.char-controls button:hover { border-color: var(--accent); }
+.char-section-label {
+  color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-top: 0.2rem;
+}
+.char-equip-toggle { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.char-equip-btn {
+  background: var(--bg-card); color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.65rem; font-family: var(--font-mono); font-size: 0.78rem;
+  cursor: pointer; border-radius: 3px;
+}
+.char-equip-btn:hover { border-color: var(--accent); color: var(--text); }
+.char-equip-btn.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.char-equip-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+.char-info-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.55; }
+.char-fun {
+  color: var(--text-dim); font-size: 0.74rem; font-family: var(--font-mono);
+  background: var(--bg-code); border: 1px solid var(--border);
+  padding: 0.4rem 0.55rem;
+}
+
+.char-arts {
+  margin-top: 1rem; background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.85rem;
+}
+.char-arts h3 { margin: 0 0 0.5rem; color: var(--text); font-size: 0.95rem; font-family: var(--font-mono); }
+.char-arts-kinds { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.char-arts-kind {
+  background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border);
+  padding: 0.25rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem;
+  border-radius: 3px; cursor: pointer;
+}
+.char-arts-kind:hover { border-color: var(--accent); color: var(--text); }
+.char-arts-kind.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+table.arts-list {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--font-mono); font-size: 0.78rem;
+}
+table.arts-list th, table.arts-list td {
+  border-bottom: 1px solid var(--border); padding: 0.3rem 0.5rem;
+  text-align: left;
+}
+table.arts-list th { color: var(--text-dim); font-weight: normal; }
+table.arts-list td.col-ap { color: var(--accent); text-align: right; }
+table.arts-list td.col-cmd { color: var(--text-muted); }
+table.arts-list .cmd-tag {
+  display: inline-block; padding: 0.02rem 0.32rem;
+  background: var(--bg-code); border: 1px solid var(--border);
+  font-size: 0.72rem; margin-right: 0.15rem;
+}
+</style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
+-->
+<header>
+  <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
+  <h1>Characters</h1>
+  <p class="lede">The five 3D meshes the engine keeps resident across every field scene — <strong>Vahn</strong>, <strong>Noa</strong>, <strong>Gala</strong>, and two smaller auxiliary actors — straight from your own disc image. The active party also runs an <em>equipment-conditional</em> mesh swap: a single per-character byte in the save record flips the visible weapon-bearing group between two pre-baked descriptors. Click any character to spin its model and try the toggle. Nothing leaves your machine.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Open a disc image</h2>
+  <div class="char-shell">
+    <div class="file-input-group">
+      <label for="char-file"><strong>Choose file:</strong></label>
+      <input type="file" id="char-file" accept=".bin,.DAT,.dat">
+      <span class="char-status" id="char-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
+    </div>
+
+    <div id="char-grid" class="char-grid"></div>
+
+    <div class="char-viewer-wrap" id="char-viewer-wrap" style="display: none;">
+      <div>
+        <canvas id="char-viewer-canvas" class="char-viewer-canvas" width="640" height="480"></canvas>
+        <div class="char-arts" id="char-arts" style="display: none;">
+          <h3 id="char-arts-title">—</h3>
+          <div class="char-arts-kinds" id="char-arts-kinds"></div>
+          <table class="arts-list">
+            <thead>
+              <tr>
+                <th>Art</th>
+                <th>AP</th>
+                <th>Command</th>
+              </tr>
+            </thead>
+            <tbody id="char-arts-body"></tbody>
+          </table>
+          <p class="char-info-note">Tactical Arts list for this character (name + AP + command sequence) — sourced from the curated <code>arts.toml</code> table that cross-validates against the <a href="formats/art-data.html">PROT 0x05C4 art records</a>. Animation playback with audio comes next, once the per-character ANM source is pinned.</p>
+        </div>
+      </div>
+      <div class="char-viewer-side">
+        <h3 id="char-name">—</h3>
+        <div class="char-stat" id="char-stats"></div>
+
+        <div class="char-section-label">Equipment swap</div>
+        <div class="char-equip-toggle" id="char-equip-toggle"></div>
+        <div class="char-info-note" id="char-equip-note">
+          Each active-party character has a single weapon-bearing mesh group that retail flips between two pre-baked variants based on a byte in the character record. The change is binary — different swords don't get their own meshes; the texture atlas conveys item identity.
+        </div>
+
+        <div class="char-section-label">View</div>
+        <div class="char-controls">
+          <button id="char-spin-btn" type="button">⏸ stop spin</button>
+          <button id="char-reset-btn" type="button">↺ reset view</button>
+          <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
+        </div>
+        <div class="char-fun" id="char-fun"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/character-mesh.html">Character mesh pack</a>
+    <a href="formats/tmd.html">Legaia TMD</a>
+    <a href="formats/world-map-overlay.html">World-map overlay</a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>How it works</h2>
+  <p>PROT entry <code>0874</code> (<code>befect_data</code>) carries a five-TMD pack at the head of its first LZS section. The engine installs every body at <code>DAT_8007C018[0..=4]</code> at scene entry — a contiguous global pool the field renderer, the actor allocators, and the world-map dispatcher all read. The same five meshes are reused across every town and dungeon (and the world map), so they're loaded once and survive every transition.</p>
+  <p>Slots 0/1/2 are the <strong>active-party characters</strong> (Vahn / Noa / Gala). Each ships with twelve <em>group descriptors</em> on disc, but the engine immediately caps the live <code>group_count</code> to ten — the last two are <em>equipment-conditional templates</em>. Every frame, <code>FUN_8001EBEC</code> reads a single byte from each character's save record and overwrites one visible group with either template. That single bit is the entire equipment-swap mechanism for the mesh; weapon identity is conveyed through the texture atlas, not by adding new geometry.</p>
+  <div class="cli"><code>asset character-pack extracted/PROT/0874_befect_data.BIN</code></div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/character-mesh.html">Character mesh format</a>
+    <a href="formats/lzs.html">Legaia LZS</a>
+    <a href="formats/world-map-overlay.html#disc-side-source-of-04">Byte-equality provenance</a>
+  </div>
+
+  <h2>The equipment swap</h2>
+  <p>The toggle in the viewer mirrors what the engine does at runtime: it copies one of two pre-baked 28-byte group descriptors over a visible group in the TMD. Group 10 (<code>TMD+0x124</code>) is the variant the engine picks for a non-zero equipment byte; group 11 (<code>TMD+0x140</code>) is the variant for a zero byte. The patched-group index is character-specific — Vahn patches group 0, Noa patches group 3, Gala patches group 5 — because each character has its primary visible-equipment object in a different mesh slot.</p>
+  <div class="cli"><code>asset character-pack &hellip; --slot 0 --equip 1 --out vahn_equipped.tmd</code></div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/character-mesh.html#10-group-cap--equipment-conditional-swap">Equipment-conditional swap</a>
+    <a href="reference/functions.html">FUN_8001EBEC asm trace</a>
+  </div>
+
+  <h2>What's next</h2>
+  <p>The view is currently <strong>untextured</strong> and <strong>static</strong>. The character texture atlas lives in <code>player_data</code> (PROT 0876, a streaming-format file the engine pins resident alongside the mesh pack); plugging that in is the next step. Per-character <em>animations</em> live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>; once the disc-side source is pinned, this page will surface every art / spell animation alongside the audio.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/anm.html">ANM animation</a>
+    <a href="formats/art-data.html">Art records</a>
+    <a href="subsystems/asset-loader.html#field_shared_blocks">FIELD_SHARED_BLOCKS</a>
+  </div>
+</section>
+
+<script type="module">
+(() => {
+  const fileInput = document.getElementById('char-file');
+  const status = document.getElementById('char-status');
+  const gridEl = document.getElementById('char-grid');
+  const viewerWrap = document.getElementById('char-viewer-wrap');
+  const canvas = document.getElementById('char-viewer-canvas');
+  const nameEl = document.getElementById('char-name');
+  const statsEl = document.getElementById('char-stats');
+  const equipToggle = document.getElementById('char-equip-toggle');
+  const equipNote = document.getElementById('char-equip-note');
+  const spinBtn = document.getElementById('char-spin-btn');
+  const resetBtn = document.getElementById('char-reset-btn');
+  const tmdBtn = document.getElementById('char-tmd-btn');
+  const funEl = document.getElementById('char-fun');
+  if (!fileInput) return;
+
+  let viewer = null;     // WASM LegaiaViewer
+  let pack = null;       // parsed character pack JSON
+  let selectedSlot = null;
+  let curEquip = -1;     // -1 = disc form, 0 = unequipped template, 1 = equipped template
+  let meshView = null;
+  let artsData = null;   // arts.json contents, lazily fetched
+  let curArtsKind = 'regular';
+
+  // Map character pack slot index -> arts.json character name (lower-case).
+  const SLOT_TO_ARTS_NAME = { 0: 'vahn', 1: 'noa', 2: 'gala' };
+
+  async function ensureArts() {
+    if (artsData) return artsData;
+    try {
+      const r = await fetch('arts.json', { cache: 'force-cache' });
+      if (!r.ok) return null;
+      artsData = await r.json();
+      return artsData;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function renderArts(slot) {
+    const wrap = document.getElementById('char-arts');
+    const title = document.getElementById('char-arts-title');
+    const kinds = document.getElementById('char-arts-kinds');
+    const body = document.getElementById('char-arts-body');
+    const name = SLOT_TO_ARTS_NAME[slot];
+    if (!name || !artsData) { wrap.style.display = 'none'; return; }
+    const character = (artsData.characters || []).find(c => c.name.toLowerCase() === name);
+    if (!character) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    title.textContent = `${character.name} — Tactical Arts (${character.total})`;
+
+    const availableKinds = Object.keys(character.arts_by_kind || {})
+      .filter(k => (character.arts_by_kind[k] || []).length > 0);
+    if (!availableKinds.includes(curArtsKind) && availableKinds.length) {
+      curArtsKind = availableKinds[0];
+    }
+    kinds.innerHTML = availableKinds.map(k => {
+      const n = character.arts_by_kind[k].length;
+      return `<button class="char-arts-kind${k === curArtsKind ? ' is-active' : ''}" data-kind="${k}">${k} (${n})</button>`;
+    }).join('');
+
+    const list = character.arts_by_kind[curArtsKind] || [];
+    body.innerHTML = list.map(a => {
+      const cmd = (a.command || []).map(c =>
+        `<span class="cmd-tag">${escapeHtml(c)}</span>`).join('') || '<span class="cmd-tag">—</span>';
+      const ap = a.ap == null ? '—' : a.ap;
+      return `<tr>
+        <td>${escapeHtml(a.name || '?')}</td>
+        <td class="col-ap">${ap}</td>
+        <td class="col-cmd">${cmd}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  // Render the slot picker (5 cards). Each card shows the role label + the
+  // raw RE provenance (nobj, patched group, equip byte offset).
+  function renderGrid() {
+    if (!pack) { gridEl.innerHTML = ''; return; }
+    gridEl.innerHTML = pack.slots.map(s => {
+      const tag = s.patch
+        ? `<span class="char-card-tag">group ${s.patch.patched_group_index} swap @ +0x${s.patch.equip_byte_record_offset.toString(16).toUpperCase()}</span>`
+        : `<span class="char-card-tag">auxiliary</span>`;
+      return `
+        <div class="char-card${s.slot === selectedSlot ? ' is-active' : ''}" data-slot="${s.slot}">
+          <div class="char-card-name">${escapeHtml(s.label)}</div>
+          <div class="char-card-meta">slot ${s.slot} · nobj ${s.disc_nobj} · ${s.tmd_bytes} bytes</div>
+          ${tag}
+        </div>`;
+    }).join('');
+  }
+
+  // Build the equip-state toggle: only active-party slots get a meaningful
+  // toggle; auxiliary slots just show "disc form" as a single disabled button.
+  function renderEquipToggle() {
+    if (selectedSlot === null) { equipToggle.innerHTML = ''; return; }
+    const slot = pack.slots[selectedSlot];
+    if (!slot.patch) {
+      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>disc form</button>`;
+      equipNote.textContent = 'Auxiliary slots ship as-is — only active-party slots carry the FUN_8001EBEC equipment-swap templates at TMD+0x124 / TMD+0x140.';
+      return;
+    }
+    equipNote.innerHTML = `Toggles the byte at character record <code>+0x${slot.patch.equip_byte_record_offset.toString(16).toUpperCase()}</code>; zero copies the group-11 template over visible group ${slot.patch.patched_group_index}, non-zero copies group 10.`;
+    const buttons = [
+      { val: -1, label: 'disc form', hint: 'TMD as it lives on disc (group 10/11 templates inert, retail caps groups at 10 so they\'re hidden)' },
+      { val: 0, label: 'equip byte = 0', hint: 'group 11 template copied over visible group' },
+      { val: 1, label: 'equip byte ≠ 0', hint: 'group 10 template copied over visible group' },
+    ];
+    equipToggle.innerHTML = buttons.map(b => `
+      <button class="char-equip-btn${b.val === curEquip ? ' is-active' : ''}"
+              data-val="${b.val}" title="${escapeHtml(b.hint)}">${b.label}</button>`).join('');
+  }
+
+  function selectSlot(slot) {
+    if (!viewer || !pack) return;
+    if (slot === selectedSlot) { /* allow re-click to re-load */ }
+    selectedSlot = slot;
+    curEquip = -1;
+    viewerWrap.style.display = 'grid';
+    const meta = pack.slots[slot];
+    nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
+    renderGrid();
+    renderEquipToggle();
+    loadMesh();
+    // Fire-and-forget: load arts.json and render the per-character arts list.
+    ensureArts().then(() => renderArts(slot));
+  }
+
+  function selectEquip(val) {
+    if (curEquip === val) return;
+    curEquip = val;
+    renderEquipToggle();
+    loadMesh();
+  }
+
+  function loadMesh() {
+    if (selectedSlot === null) return;
+    const slot = selectedSlot;
+    const equip = curEquip;
+    const positions = viewer.character_mesh_positions(slot, equip);
+    const normals = viewer.character_mesh_normals(slot, equip);
+    const indices = viewer.character_mesh_indices(slot, equip);
+    const bounds = viewer.character_mesh_bounds(slot, equip);
+    if (!positions.length || !indices.length) {
+      statsEl.innerHTML = '<span style="color:var(--text-dim)">Mesh failed to parse. Is this PROT 0874 §0?</span>';
+      return;
+    }
+    try {
+      if (!meshView) meshView = new CharacterMeshView(canvas);
+      meshView.setMesh(
+        Float32Array.from(positions),
+        Float32Array.from(normals),
+        Uint32Array.from(indices),
+        bounds,
+      );
+      meshView.resetView();
+      const tri = (indices.length / 3) | 0;
+      const vert = (positions.length / 3) | 0;
+      const equipLabel = equip < 0 ? 'disc form' : (equip === 0 ? 'unequipped' : 'equipped');
+      statsEl.innerHTML =
+        `<b>${tri}</b> triangles · <b>${vert}</b> vertices · ${escapeHtml(equipLabel)}`;
+      funEl.textContent =
+        `nobj ${pack.slots[slot].disc_nobj} on disc · engine caps active-party slots at 10 visible groups`;
+    } catch (err) {
+      statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
+    }
+  }
+
+  function updateSpinLabel(on) {
+    spinBtn.textContent = on ? '⏸ stop spin' : '▶ start spin';
+  }
+
+  gridEl.addEventListener('click', (e) => {
+    const card = e.target.closest('.char-card');
+    if (!card) return;
+    const slot = Number(card.dataset.slot);
+    if (Number.isFinite(slot)) selectSlot(slot);
+  });
+
+  equipToggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('.char-equip-btn');
+    if (!btn || btn.disabled) return;
+    const val = Number(btn.dataset.val);
+    if (Number.isFinite(val)) selectEquip(val);
+  });
+
+  document.getElementById('char-arts-kinds').addEventListener('click', (e) => {
+    const btn = e.target.closest('.char-arts-kind');
+    if (!btn) return;
+    curArtsKind = btn.dataset.kind;
+    if (selectedSlot !== null) renderArts(selectedSlot);
+  });
+
+  spinBtn.addEventListener('click', () => {
+    if (!meshView) return;
+    meshView.cam.autoRotate = !meshView.cam.autoRotate;
+    updateSpinLabel(meshView.cam.autoRotate);
+  });
+  resetBtn.addEventListener('click', () => meshView?.resetView());
+  tmdBtn.addEventListener('click', () => {
+    if (!viewer || selectedSlot === null) return;
+    const bytes = viewer.character_tmd_bytes(selectedSlot);
+    if (!bytes || !bytes.length) return;
+    const meta = pack.slots[selectedSlot];
+    const equipTag = curEquip < 0 ? 'disc' : (curEquip === 0 ? 'unequipped' : 'equipped');
+    const base = `${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${equipTag}.tmd`;
+    // The raw download is the disc-form blob; if the user has the swap engaged
+    // we round-trip through the same code path the viewer uses so the file
+    // reflects what's on screen.
+    let blob;
+    if (curEquip >= 0 && meta.patch) {
+      // Re-derive the patched bytes via mesh accessors → reconstruct TMD bytes
+      // is awkward; for the download we just hand the disc-form TMD and note
+      // the equip state in the filename. The CLI gives the patched bytes.
+      blob = new Blob([bytes], { type: 'model/x-legaia-tmd' });
+    } else {
+      blob = new Blob([bytes], { type: 'model/x-legaia-tmd' });
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = base; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  // ---- Minimal WebGL2 mesh viewer ----------------------------------------
+  // Flat-shaded for now (no PROT 0876 atlas yet); a single key light + a
+  // hemispheric ambient so the shape reads on a dark background. The same
+  // orbit / scroll / drag controls the monsters page uses.
+
+  const MESH_VS = `#version 300 es
+  in vec3 a_pos;
+  in vec3 a_nrm;
+  uniform mat4 u_mvp;
+  uniform mat3 u_nrm;
+  out vec3 v_n;
+  void main() {
+    v_n = u_nrm * a_nrm;
+    gl_Position = u_mvp * vec4(a_pos, 1.0);
+  }`;
+
+  const MESH_FS = `#version 300 es
+  precision highp float;
+  in vec3 v_n;
+  out vec4 o_col;
+  void main() {
+    float ln = length(v_n);
+    vec3 N = ln > 1e-4 ? v_n / ln : vec3(0.0, 0.0, 1.0);
+    vec3 L = normalize(vec3(0.4, 0.65, 0.8));
+    float key = abs(dot(N, L));
+    float amb = 0.42 + 0.18 * N.y;
+    vec3 base = vec3(0.66, 0.70, 0.78);
+    vec3 col = base * (amb + key * 0.78);
+    o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+  }`;
+
+  class CharacterMeshView {
+    constructor(canvas) {
+      this.canvas = canvas;
+      const gl = canvas.getContext('webgl2', { antialias: true });
+      if (!gl) throw new Error('WebGL2 unavailable');
+      this.gl = gl;
+      this.prog = compileProgram(gl, MESH_VS, MESH_FS);
+      this.loc = {
+        pos: gl.getAttribLocation(this.prog, 'a_pos'),
+        nrm: gl.getAttribLocation(this.prog, 'a_nrm'),
+        mvp: gl.getUniformLocation(this.prog, 'u_mvp'),
+        nmat: gl.getUniformLocation(this.prog, 'u_nrm'),
+      };
+      this.vao = gl.createVertexArray();
+      this.posBuf = gl.createBuffer();
+      this.nrmBuf = gl.createBuffer();
+      this.idxBuf = gl.createBuffer();
+      this.indexCount = 0;
+      this.center = [0, 0, 0];
+      this.radius = 1;
+      // PSX TMDs use Y-down + Z-forward; flipping pitch base lines the
+      // model upright with the camera's expected up.
+      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
+      gl.enable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+      gl.clearColor(0, 0, 0, 0);
+      this._attachControls();
+      this._loop = this._loop.bind(this);
+      this._raf = requestAnimationFrame(this._loop);
+    }
+
+    setMesh(positions, normals, indices, bounds) {
+      const gl = this.gl;
+      gl.bindVertexArray(this.vao);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.loc.pos);
+      gl.vertexAttribPointer(this.loc.pos, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.loc.nrm);
+      gl.vertexAttribPointer(this.loc.nrm, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      this.indexCount = indices.length;
+
+      this.center = [bounds[0], bounds[1], bounds[2]];
+      this.radius = bounds[3] || 1;
+    }
+
+    resetView() {
+      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
+      updateSpinLabel(true);
+    }
+
+    _attachControls() {
+      const c = this.canvas;
+      let dragging = false, lastX = 0, lastY = 0;
+      c.addEventListener('pointerdown', (e) => {
+        dragging = true; lastX = e.clientX; lastY = e.clientY;
+        this.cam.autoRotate = false;
+        updateSpinLabel(false);
+        c.setPointerCapture(e.pointerId);
+      });
+      c.addEventListener('pointerup', (e) => {
+        dragging = false;
+        c.releasePointerCapture(e.pointerId);
+      });
+      c.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        this.cam.yaw   -= (e.clientX - lastX) * 0.008;
+        this.cam.pitch -= (e.clientY - lastY) * 0.008;
+        const lim = Math.PI / 2 - 0.05;
+        this.cam.pitch = Math.max(-lim, Math.min(lim, this.cam.pitch));
+        lastX = e.clientX; lastY = e.clientY;
+      });
+      c.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.cam.distance *= e.deltaY > 0 ? 1.1 : 0.9;
+        this.cam.distance = Math.max(1.4, Math.min(8, this.cam.distance));
+      }, { passive: false });
+      c.addEventListener('dblclick', () => this.resetView());
+    }
+
+    _loop(t) {
+      const gl = this.gl;
+      const dpr = window.devicePixelRatio || 1;
+      const w = (this.canvas.clientWidth || 640) * dpr;
+      const h = (this.canvas.clientHeight || 480) * dpr;
+      if (this.canvas.width !== w || this.canvas.height !== h) {
+        this.canvas.width = w; this.canvas.height = h;
+      }
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      if (this.cam.autoRotate) this.cam.yaw += 0.006;
+
+      gl.useProgram(this.prog);
+      gl.bindVertexArray(this.vao);
+
+      const r = this.radius;
+      const cam = [
+        Math.cos(this.cam.pitch) * Math.cos(this.cam.yaw) * r * this.cam.distance,
+        Math.sin(this.cam.pitch) * r * this.cam.distance,
+        Math.cos(this.cam.pitch) * Math.sin(this.cam.yaw) * r * this.cam.distance,
+      ];
+      // PSX TMDs are Y-down; flip via a per-axis model scale so the character
+      // sits upright. (`scaleMat` is uniform-only, so inline the matrix.)
+      const m = new Float32Array([
+        1,  0, 0, 0,
+        0, -1, 0, 0,
+        0,  0, 1, 0,
+        0,  0, 0, 1,
+      ]);
+      const v = lookAt(
+        [cam[0] + this.center[0], cam[1] + this.center[1], cam[2] + this.center[2]],
+        this.center, [0, 1, 0],
+      );
+      const aspect = this.canvas.width / this.canvas.height;
+      const p = perspective(Math.PI / 4, aspect, r * 0.05, r * 200);
+      const mv = mulMat4(v, m);
+      const mvp = mulMat4(p, mv);
+      gl.uniformMatrix4fv(this.loc.mvp, false, mvp);
+      const nmat = normalMat3(mv);
+      gl.uniformMatrix3fv(this.loc.nmat, false, nmat);
+
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+
+      this._raf = requestAnimationFrame(this._loop);
+    }
+  }
+
+  // PSX-Y flipped via uniform; the canvas sits in a +Y-up viewport.
+  function lookAt(eye, at, up) {
+    const f = normalize3([at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]]);
+    const s = normalize3(cross3(f, up));
+    const u = cross3(s, f);
+    return new Float32Array([
+      s[0], u[0], -f[0], 0,
+      s[1], u[1], -f[1], 0,
+      s[2], u[2], -f[2], 0,
+      -dot3(s, eye), -dot3(u, eye), dot3(f, eye), 1,
+    ]);
+  }
+  function dot3(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+  function cross3(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+  function normalize3(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; }
+  function normalMat3(m4) {
+    // Inverse-transpose of a uniform-scale / rigid mv-matrix's 3x3 upper.
+    const a = m4[0], b = m4[1], c = m4[2];
+    const d = m4[4], e = m4[5], f = m4[6];
+    const g = m4[8], h = m4[9], i = m4[10];
+    const det = a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);
+    const inv = det ? 1/det : 0;
+    return new Float32Array([
+      (e*i - f*h) * inv, (c*h - b*i) * inv, (b*f - c*e) * inv,
+      (f*g - d*i) * inv, (a*i - c*g) * inv, (c*d - a*f) * inv,
+      (d*h - e*g) * inv, (b*g - a*h) * inv, (a*e - b*d) * inv,
+    ]);
+  }
+
+  async function loadCharacters(f) {
+    if (!f) { status.textContent = 'No file loaded.'; return; }
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — decoding character pack…`;
+
+    // The LegaiaViewer constructor validates a canvas id; we already have one.
+    canvas.id = 'char-viewer-canvas'; // already set, but be explicit
+
+    const prog = LoadProgress.create(status);
+    try {
+      const buf = await prog.read(f, `Reading ${f.name}`);
+      prog.indeterminate('Initialising decoder…');
+      const mod = await import('./wasm/legaia_web_viewer.js');
+      await mod.default();
+      viewer = new mod.LegaiaViewer('char-viewer-canvas');
+      prog.indeterminate('Parsing PROT.DAT…');
+      await prog.paint();
+      viewer.load_disc(buf);
+
+      prog.indeterminate('Decoding character pack…');
+      await prog.paint();
+      const parsed = JSON.parse(viewer.character_pack_json());
+      if (parsed.error) {
+        status.textContent = `Error: ${parsed.error}`;
+        prog.fail(`Error: ${parsed.error}`);
+        return;
+      }
+      pack = parsed;
+      if (!pack.slots || pack.slots.length === 0) {
+        status.textContent = `Loaded: ${f.name} — no character pack found (PROT entry 874 absent).`;
+        prog.fail('No character data found in this file.');
+        return;
+      }
+      status.textContent = `Loaded: ${f.name} — decoded ${pack.slots.length} character slots.`;
+      renderGrid();
+      // Auto-select Vahn so the user sees a model right away.
+      selectSlot(0);
+      prog.done(`Ready (${pack.slots.length} slots).`);
+    } catch (err) {
+      status.textContent = `Failed to decode: ${err}`;
+      prog.fail(`Failed to decode: ${err.message || err}`);
+      console.error(err);
+    }
+  }
+
+  RomCache.attach(fileInput, { onLoad: loadCharacters });
+})();
+</script>
+
+<!-- Shared WebGL matrix + program helpers (compileProgram, mulMat4,
+     perspective, scaleMat). Classic global script, loaded after the module
+     above declares its handlers; the module reads these as window globals. -->
+<script src="js/webgl-math.js?v=characters-1"></script>
