@@ -211,6 +211,48 @@ fn enemy_drop_and_steal_keys_resolve() {
 }
 
 #[test]
+fn boss_item_rewards_resolve_to_known_keys() {
+    let db = Database::load();
+    for b in db.bosses() {
+        if let Some(ref key) = b.item_reward {
+            assert!(
+                db.resolve_key(key).is_some(),
+                "boss {:?} item_reward {:?} not found in items.toml",
+                b.name,
+                key
+            );
+        }
+    }
+}
+
+#[test]
+fn meth_tagged_bosses_carry_full_fight_data() {
+    // Any boss with a `meth_id` field came in through the Meth962 ingest
+    // and should have the per-fight columns populated. Skip the Cort
+    // (Juggernaut) final boss whose rewards are 0/0 by design.
+    let db = Database::load();
+    for b in db.bosses() {
+        let Some(ref id) = b.meth_id else { continue };
+        assert!(b.hp_min > 0 && b.hp_min == b.hp_max, "{} hp range odd", id);
+        if id == "B0014" {
+            continue; // final boss has no rewards
+        }
+        assert!(
+            b.exp_reward.is_some() && b.gold_reward.is_some(),
+            "{} ({}) missing exp_reward or gold_reward",
+            id,
+            b.name
+        );
+        assert!(
+            b.recommended_level.is_some(),
+            "{} ({}) missing recommended_level",
+            id,
+            b.name
+        );
+    }
+}
+
+#[test]
 fn enemy_stat_coverage_is_universal() {
     // Meth962 ingest landed stats for every enemy; the test gates that we
     // don't regress that coverage as new entries get added.

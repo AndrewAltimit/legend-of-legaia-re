@@ -1,111 +1,426 @@
-# Boss HP estimates from walkthrough commentary. These are fan-recorded
-# observations, not retail-extracted constants - useful as sanity checks
-# for damage / HP-formula reverse-engineering, NOT as authoritative data.
+# Boss-fight summary. One entry per Meth962-cataloged boss battle (B0001
+# through B0014 plus the Lapis optional fight and key Muscle Dome rounds).
 #
-# `hp_min` / `hp_max` bracket the walkthrough's stated range; if the
-# walkthrough gives a single number, both fields hold the same value.
-# `tournament` (when set) names the Muscle Dome course where the HP
-# was measured (Beginner / Expert / Master).
+# Per-enemy stat columns (`hp`, `atk`, `udf`, ...) live in `enemies.toml`
+# — see entries with `boss = true` for the same names. This file adds the
+# *fight-specific* layer the enemy table doesn't capture:
+#
+#   - `meth_id`             - B0001..B0014 / s0005 boss ID from the FAQ.
+#   - `attacks`             - list of `{name, mp}` for the boss's named
+#                             special moves (the FAQ "Attacks:" line).
+#                             Regular auto-attacks aren't enumerated.
+#   - `exp_reward` / `gold_reward` - per-victory awards from the FAQ
+#                             "Rewards:" line.
+#   - `item_reward`         - item key (resolves through `items.toml`)
+#                             dropped on victory; `None` if none.
+#   - `recommended_level`   - the FAQ's suggested party level range
+#                             ("6-7", "27", "34" etc.).
+#
+# `hp_min` / `hp_max` are retained for the older Muscle Dome rows where
+# the walkthrough only gives an HP estimate (no full stat block). Main-
+# story bosses with a full stat block in `enemies.toml` set both fields
+# from the FAQ canonical HP (Sise_Neg's Japanese-book lift, per v1.07).
+#
+# Source: Meth962, "Legend of Legaia 100% Walkthrough" (GameFAQs FAQ
+# 53721), v1.11; HP values verified against v1.07 Sise_Neg correction.
+
+# ---------------------------------------------------------------------------
+# Main-story bosses (chronological / Meth's B-code order)
+# ---------------------------------------------------------------------------
+
+[[boss]]
+name = "Caruban"
+location = "Mt. Rikuroa"
+meth_id = "B0001"
+hp_min = 1024
+hp_max = 1024
+mp = 300
+attacks = [{ name = "Fire Breath", mp = 70 }]
+exp_reward = 750
+gold_reward = 450
+item_reward = "healing_bloom"
+recommended_level = "6-7"
+
+[[boss]]
+name = "Vigurox2"
+location = "East Voz Forest"
+meth_id = "B0002"
+hp_min = 1280
+hp_max = 1280
+mp = 160
+attacks = [{ name = "Thunder Break", mp = 50 }]
+exp_reward = 750
+gold_reward = 600
+recommended_level = "8-9"
+notes = "Pair fight; HP applies per Viguro. 10% absorption chance baseline (40% with Ivory Book)."
+
+[[boss]]
+name = "Songi (1st)"
+location = "Zeto's Dungeon"
+meth_id = "B0003"
+hp_min = 888
+hp_max = 888
+mp = 88
+attacks = [{ name = "Hyper Wave", mp = 44 }]
+exp_reward = 1500
+gold_reward = 750
+item_reward = "mettle_ring"
+recommended_level = "11"
+notes = "Gala-only duel."
 
 [[boss]]
 name = "Zeto"
 location = "Zeto's Dungeon"
+meth_id = "B0004"
 hp_min = 5000
 hp_max = 5000
+mp = 512
+attacks = [{ name = "Big Wave", mp = 100 }, { name = "Call Wave", mp = 0 }]
+exp_reward = 2250
+gold_reward = 2000
+recommended_level = "11-12"
+
+[[boss]]
+name = "Berserker"
+location = "Jeremi (Genesis Tree)"
+meth_id = "B0005"
+hp_min = 5000
+hp_max = 5000
+mp = 850
+attacks = [
+  { name = "Spore Gas", mp = 55 },
+  { name = "Poisonous Gas", mp = 0 },
+  { name = "Stone Circle", mp = 185 },
+]
+exp_reward = 2500
+gold_reward = 1667
+item_reward = "fire_book_ii"
+recommended_level = "13"
+notes = "Vulnerable to Nighto for an instant-kill route."
 
 [[boss]]
 name = "Xain"
 location = "Fire Path"
-hp_min = 10000
-hp_max = 10000
+meth_id = "B0006"
+hp_min = 9511
+hp_max = 9511
+mp = 0
+attacks = [{ name = "Terio Punch", mp = 0 }, { name = "Bloody Horns", mp = 0 }]
+exp_reward = 4500
+gold_reward = 2000
+item_reward = "wind_book_ii"
+recommended_level = "19"
 
 [[boss]]
-name = "Berserker (Master)"
-location = "Muscle Dome"
-hp_min = 4500
-hp_max = 4500
-tournament = "Master"
+name = "Songi (2nd)"
+location = "Mt. Letona"
+meth_id = "B0007"
+hp_min = 12888
+hp_max = 12888
+mp = 800
+attacks = [
+  { name = "Hyper Lightning", mp = 120 },
+  { name = "Hyper Crush", mp = 180 },
+]
+exp_reward = 6000
+gold_reward = 5000
+item_reward = "thunder_book_ii"
+recommended_level = "22"
 
 [[boss]]
-name = "Caruban (Expert)"
-location = "Muscle Dome"
-hp_min = 0
-hp_max = 1200
-tournament = "Expert"
-
-[[boss]]
-name = "Aluru (Expert)"
-location = "Muscle Dome"
-hp_min = 0
-hp_max = 1200
-tournament = "Expert"
-
-[[boss]]
-name = "Dark Ogre (Expert)"
-location = "Muscle Dome"
-hp_min = 3500
-hp_max = 3500
-tournament = "Expert"
-
-[[boss]]
-name = "Gold Bison (Expert)"
-location = "Muscle Dome"
-hp_min = 3500
-hp_max = 3500
-tournament = "Expert"
-
-[[boss]]
-name = "Ironman (Expert)"
-location = "Muscle Dome"
-hp_min = 2500
-hp_max = 2500
-tournament = "Expert"
+name = "Van Saryu"
+location = "Ratayu"
+meth_id = "B0008"
+hp_min = 13245
+hp_max = 13245
+mp = 900
+attacks = [
+  { name = "Earthquake", mp = 150 },
+  { name = "Jugger Power", mp = 100 },
+]
+exp_reward = 7500
+gold_reward = 7500
+recommended_level = "23"
 
 [[boss]]
 name = "Dohati"
 location = "Dohati's Castle"
-hp_min = 30000
-hp_max = 30000
+meth_id = "B0009"
+hp_min = 17200
+hp_max = 17200
+mp = 0
+attacks = [{ name = "Chaos Breath", mp = 0 }]
+exp_reward = 9000
+gold_reward = 8000
+recommended_level = "24"
+notes = "Chaos Breath inflicts Toxic/Venom; bring Pure Amulet or similar."
 
 [[boss]]
-name = "Lu Delilas"
-location = "Nivora Ravine"
-hp_min = 10000
-hp_max = 10000
-
-[[boss]]
-name = "Che Delilas"
-location = "Nivora Ravine"
+name = "Gaza"
+location = "Sol Top Floor"
+meth_id = "B000A"
 hp_min = 12000
 hp_max = 12000
+mp = 300
+attacks = [{ name = "Astral Slash", mp = 0 }]
+exp_reward = 6750
+gold_reward = 4500
+recommended_level = "25"
+notes = "First Gaza fight (pre Sim-Seru)."
+
+[[boss]]
+name = "Gaza (Sim-Seru)"
+location = "Sol Basement"
+meth_id = "B000B"
+hp_min = 15000
+hp_max = 15000
+mp = 1200
+attacks = [
+  { name = "Astral Wave", mp = 50 },
+  { name = "Neo Star Slash", mp = 200 },
+]
+exp_reward = 10500
+gold_reward = 7500
+item_reward = "astral_sword"
+recommended_level = "25-26"
 
 [[boss]]
 name = "Gi Delilas"
 location = "Nivora Ravine"
+meth_id = "B000C"
 hp_min = 10000
-hp_max = 11000
+hp_max = 10000
+mp = 500
+attacks = [{ name = "Blazing Slash", mp = 0 }]
+exp_reward = 11250
+gold_reward = 7500
+item_reward = "fire_book_iii"
+recommended_level = "27"
+notes = "Delilas trio fight; siblings attack on a fixed atk-atk-special cycle."
+
+[[boss]]
+name = "Che Delilas"
+location = "Nivora Ravine"
+meth_id = "B000C"
+hp_min = 12000
+hp_max = 12000
+mp = 500
+attacks = [{ name = "Megaton Press", mp = 0 }]
+exp_reward = 11250
+gold_reward = 7500
+item_reward = "thunder_book_iii"
+recommended_level = "27"
+
+[[boss]]
+name = "Lu Delilas"
+location = "Nivora Ravine"
+meth_id = "B000C"
+hp_min = 9500
+hp_max = 9500
+mp = 500
+attacks = [{ name = "Plasma Strike", mp = 0 }]
+exp_reward = 11250
+gold_reward = 7500
+item_reward = "wind_book_iii"
+recommended_level = "27"
+
+[[boss]]
+name = "Koru"
+location = "Nivora Ravine"
+meth_id = "B000D"
+hp_min = 20000
+hp_max = 20000
+mp = 1000
+attacks = [
+  { name = "Blade Breath", mp = 100 },
+  { name = "Thunder Needle", mp = 100 },
+  { name = "Gigaton Press", mp = 100 },
+  { name = "Ultra Charge", mp = 100 },
+  { name = "Dead End Crisis", mp = 100 },
+]
+exp_reward = 15000
+gold_reward = 15000
+recommended_level = "28"
+notes = "Four-turn timed kill; failure is game over."
 
 [[boss]]
 name = "Zora"
 location = "Floating Castle"
-hp_min = 21500
-hp_max = 22500
+meth_id = "B000E"
+hp_min = 22422
+hp_max = 22422
+mp = 2000
+attacks = [
+  { name = "Darkness Typhoon", mp = 200 },
+  { name = "Glare", mp = 170 },
+]
+exp_reward = 11250
+gold_reward = 7500
+recommended_level = "30"
+notes = "Glare petrifies; Wonder Amulet bypass."
+
+[[boss]]
+name = "Rogue"
+location = "Rogue's Tower"
+meth_id = "B000F"
+hp_min = 28200
+hp_max = 28200
+mp = 0
+attacks = [
+  { name = "Rogue Flame", mp = 0 },
+  { name = "Rogue Wind", mp = 0 },
+  { name = "Rogue Thunder", mp = 0 },
+]
+exp_reward = 12000
+gold_reward = 12500
+recommended_level = "33"
+notes = "Cycles element each turn; alternate attack-then-spirit cadence."
 
 [[boss]]
 name = "Jette"
 location = "Jette's Fortress"
-hp_min = 33200
-hp_max = 35800
+meth_id = "B0010"
+hp_min = 34567
+hp_max = 34567
+mp = 1000
+attacks = [{ name = "Shadow Break", mp = 200 }]
+exp_reward = 12750
+gold_reward = 10000
+recommended_level = "34"
+notes = "Spawns up to three clones; clone-spawn refills MP."
+
+[[boss]]
+name = "Cort"
+location = "Jette's Fortress (deep)"
+meth_id = "B0011"
+hp_min = 50000
+hp_max = 50000
+mp = 1000
+attacks = [
+  { name = "Mystic Shield", mp = 170 },
+  { name = "Guilty Cross", mp = 0 },
+  { name = "Mystic Circle", mp = 100 },
+  { name = "Evil Seru Magic", mp = 255 },
+]
+exp_reward = 13500
+gold_reward = 12500
+recommended_level = "35"
+notes = "Shield breaks around 25k HP and unlocks Mystic Circle (1200+ AoE)."
+
+[[boss]]
+name = "Tetsu (Rematch)"
+location = "Rim Elm beach"
+meth_id = "B0012"
+hp_min = 9999
+hp_max = 9999
+mp = 999
+exp_reward = 13500
+gold_reward = 12500
+item_reward = "mettle_gem"
+recommended_level = "36"
+notes = "Master-vs-student duel after Sky Gardens story arc."
+
+[[boss]]
+name = "Songi (3rd)"
+location = "Seru-Kai"
+meth_id = "B0013"
+hp_min = 48000
+hp_max = 48000
+mp = 3000
+attacks = [
+  { name = "Chaos Flare", mp = 120 },
+  { name = "Genocidal Cannon", mp = 255 },
+]
+exp_reward = 15000
+gold_reward = 15000
+recommended_level = "36"
+
+[[boss]]
+name = "Cort (Juggernaut)"
+location = "Bio Castle"
+meth_id = "B0014"
+hp_min = 65535
+hp_max = 65535
+mp = 2500
+attacks = [
+  { name = "Ultra Charge", mp = 100 },
+  { name = "Final Crisis", mp = 100 },
+  { name = "Doomsday", mp = 255 },
+]
+exp_reward = 0
+gold_reward = 0
+notes = "Final boss; rewards N/A (post-victory ending follows)."
+
+# ---------------------------------------------------------------------------
+# Optional / superboss
+# ---------------------------------------------------------------------------
 
 [[boss]]
 name = "Lapis"
-location = "Mt. Dhini (top)"
-hp_min = 70000
-hp_max = 70000
+location = "Mt. Dhini (summit)"
+meth_id = "s0005"
+hp_min = 64800
+hp_max = 64800
+mp = 4000
+attacks = [{ name = "Lapis Wave", mp = 255 }]
+exp_reward = 47250
+gold_reward = 15625
+item_reward = "evil_medallion"
+recommended_level = "42"
+notes = "Optional superboss; sole drop is Evil Medallion."
+
+# ---------------------------------------------------------------------------
+# Muscle Dome tournament rounds (Master / Expert)
+#
+# Older fan-recorded HP-only estimates. Most match a corresponding L2/L3
+# variant in enemies.toml (Berserker Lv2, Caruban Lv2/Lv3, etc.).
+# ---------------------------------------------------------------------------
+
+[[boss]]
+name = "Berserker (Master)"
+location = "Muscle Dome"
+tournament = "Master"
+hp_min = 4500
+hp_max = 4500
+
+[[boss]]
+name = "Caruban (Expert)"
+location = "Muscle Dome"
+tournament = "Expert"
+hp_min = 0
+hp_max = 1200
+
+[[boss]]
+name = "Aluru (Expert)"
+location = "Muscle Dome"
+tournament = "Expert"
+hp_min = 0
+hp_max = 1200
+
+[[boss]]
+name = "Dark Ogre (Expert)"
+location = "Muscle Dome"
+tournament = "Expert"
+hp_min = 3500
+hp_max = 3500
+
+[[boss]]
+name = "Gold Bison (Expert)"
+location = "Muscle Dome"
+tournament = "Expert"
+hp_min = 3500
+hp_max = 3500
+
+[[boss]]
+name = "Ironman (Expert)"
+location = "Muscle Dome"
+tournament = "Expert"
+hp_min = 2500
+hp_max = 2500
 
 [[boss]]
 name = "Viguro Lv2 (Master)"
 location = "Muscle Dome"
+tournament = "Master"
 hp_min = 1200
 hp_max = 1200
-tournament = "Master"

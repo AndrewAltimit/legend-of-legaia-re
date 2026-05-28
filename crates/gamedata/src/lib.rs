@@ -398,7 +398,12 @@ struct EnemiesFile {
 // Bosses
 // ---------------------------------------------------------------------------
 
-/// One boss-HP estimate.
+/// One boss-fight summary.
+///
+/// `hp_min` / `hp_max` and the per-enemy stat columns in `enemies.toml`
+/// overlap for main-story bosses; this struct adds the *fight-specific*
+/// layer (attack moveset, victory rewards, recommended party level).
+/// Muscle Dome tournament rounds use the HP-only legacy shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Boss {
     /// Display name (mirrors `enemies.toml`).
@@ -412,6 +417,39 @@ pub struct Boss {
     /// Muscle Dome course this estimate was measured in (if applicable).
     #[serde(default)]
     pub tournament: Option<String>,
+    /// Meth962 FAQ boss ID (`B0001`-`B0014`, or `s0005` for Lapis).
+    #[serde(default)]
+    pub meth_id: Option<String>,
+    /// MP pool at battle start (FAQ stat block).
+    #[serde(default)]
+    pub mp: Option<u32>,
+    /// Named special attacks; auto-attacks aren't enumerated.
+    #[serde(default)]
+    pub attacks: Vec<BossAttack>,
+    /// Experience awarded on victory.
+    #[serde(default)]
+    pub exp_reward: Option<u32>,
+    /// Gold awarded on victory.
+    #[serde(default)]
+    pub gold_reward: Option<u32>,
+    /// Item key dropped on victory (resolves through `items.toml`).
+    #[serde(default)]
+    pub item_reward: Option<String>,
+    /// FAQ's recommended party level range, free-text ("6-7", "34" etc.).
+    #[serde(default)]
+    pub recommended_level: Option<String>,
+    /// Free-text notes (strategy hint, mechanic gotcha).
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+/// One special attack in a boss's moveset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BossAttack {
+    /// Move name as displayed in the battle log.
+    pub name: String,
+    /// MP cost (0 = free).
+    pub mp: u32,
 }
 
 #[derive(Debug, Deserialize)]
