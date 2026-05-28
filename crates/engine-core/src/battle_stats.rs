@@ -29,6 +29,8 @@
 //!   ORed across every party member.
 //! - The character-record byte layout - `legaia_save::CharacterRecord`
 //!   exposes the relevant fields. This module is layout-agnostic.
+//!
+//! REF: FUN_801EC3E4
 
 use legaia_engine_vm::status_effects::StatusKind;
 

@@ -114,6 +114,29 @@ Lives in the dialog overlay. Distinct from the byte-level interpreter - this is 
 
 The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crates/engine-vm/README.md) as the dialog-window state machine.
 
+### Box geometry
+
+Max lines per box is stored at `_DAT_801F2740`. The overlay's `case 6` / `case 9` init arms (the two box-open states) **both pin this to 3** — the standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
+
+### Post-page dispatch (state `0x19`)
+
+When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_800846D4`), state `0x19` reads the **next control byte** past the box (`*pbVar14 & 0x7F`) and selects the follow-on state directly:
+
+| Control byte | Next pager state | Effect |
+|---|---|---|
+| `0x25` | `0` (idle) | end conversation |
+| `0x24` | `3` (next-line) | continue text on the next line, same box |
+| `0x48` | `9` (init new box) | open a fresh box for the next page |
+| `0x4C` followed by `0xFF` | `6` (terminate) | close the dialog |
+| `0x2A` | `0x11` (box resize) | start the box geometry animation |
+| `0x27` | `0x13` -> `0x12` (init -> 2-option picker) | 2-option `Yes`/`No`-style menu |
+| `0x28` | `0x15` -> `0x14` (init -> 3-option picker) | 3-option menu |
+| `0x29` | `0x17` -> `0x16` (init -> 4-option picker) | 4-option menu |
+
+So the picker controls are MES `0x27` / `0x28` / `0x29` (the same byte masks as the `< 0x20` line terminator test, **with the high bit set** — `0xA7` / `0xA8` / `0xA9` in the raw bytecode). Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`. On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option list) — same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch — and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`; higher-level branching on which option was picked is the dialog SM's job (`FUN_80039B7C`), not the pager's.
+
+The "selectable option labels" the pager surfaces aren't a separate adjacent-segment escape — they are inline 2-byte entries inside the option-list region between the `0x27` / `0x28` / `0x29` picker-open byte and the continuation byte, immediately following the prompt segment. Multi-segment NPC text and option labels share the same `0x1F`-lead glyph encoding; the picker just lays each option out at a fixed N-byte stride.
+
 ## Live blob example
 
 A town-overlay save state captured a live MES blob in RAM at `0x80109270` (3893 bytes). The header + bytecode structure matches both Compact and Records expectations after small variant-specific tweaks. The blob is used to validate the Rust parser end-to-end.
