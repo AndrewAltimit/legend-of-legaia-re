@@ -436,6 +436,21 @@ impl WalkHeightfield {
 /// floor nibble of the corner tile (`-lut[nibble]`), giving a continuous
 /// heightfield (adjacent cells share corner heights). Empty if the map has no
 /// grid.
+///
+/// REF: FUN_80019278
+///
+/// `FUN_80019278` (SCUS `0x80019278`, always-resident, no overlay aliasing)
+/// is the **bilinear ground-height sampler** retail uses to read an entity's
+/// height at runtime: it reads the entity's XZ, gates on the object grid's
+/// `0x1000` cell bit, and bilinearly interpolates the floor height from the
+/// `2 x 2` block of `+0x4000` nibbles (`grid[0], [1], [0x80], [0x81]`, each
+/// `& 0xF` -> `DAT_1F80035C[nibble]` LUT, weighted by the sub-tile XZ
+/// position, `>> 0xE`). This builder shares the nibble-LUT decode but only at
+/// integer cell corners — pre-baking the heightfield mesh once so the
+/// renderer's GPU vertex interpolation supplies the same bilinear surface in
+/// a single pass. A clean-room per-entity bilinear sampler (what
+/// `FUN_80019278` literally does) is not currently needed — entities walking
+/// on the heightfield get implicit interpolation from the rasteriser.
 pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfield {
     let mut hf = WalkHeightfield::default();
     let Some(obj_grid) = field_map.get(OBJECT_GRID_OFFSET..) else {

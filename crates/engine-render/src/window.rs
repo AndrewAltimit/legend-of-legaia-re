@@ -361,6 +361,18 @@ pub fn walk_view_camera_mvp(
 /// **distance** is *not* a pinned param (retail places the eye at the GTE
 /// translation and projects through `H` rather than using an explicit eye
 /// offset), so the orbit radius stays a scene-sized approximation.
+///
+/// REF: FUN_8001CF50, FUN_800461A4, FUN_8004629C, FUN_8004638C
+///
+/// `FUN_8001CF50` (SCUS) composes the retail view rotation by rotating about
+/// each axis with the three camera-angle globals — `RotMatrixX(pitch)` at
+/// `0x800461A4`, `RotMatrixY(yaw)` at `0x8004629C`, `RotMatrixZ(roll)` at
+/// `0x8004638C` — each masking the 12-bit angle (`4096 = 360 deg`), indexing
+/// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. Roll is
+/// rarely non-zero in retail shots, so this MVP folds the pitch + yaw
+/// composition into a spherical orbit + `glam::Mat4::look_at_rh` rather than
+/// a literal `RotMatrixX` * `RotMatrixY` matrix product; the visible result
+/// matches retail's framing for non-rolled shots.
 pub fn cutscene_camera_mvp(
     look_at: [f32; 3],
     pitch_radians: f32,

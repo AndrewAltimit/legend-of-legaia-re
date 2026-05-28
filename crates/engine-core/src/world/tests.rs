@@ -1104,8 +1104,8 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     world.enter_world_map();
     world.install_field_player(0);
     world.set_world_map_encounter(false, 50, 0, 64);
-    // Inline dialog bytes in the field-VM box format: a geometry header then a
-    // `0x1F`-lead text segment ("Hi").
+    // Inline dialog bytes in the field-VM box format: a one-byte prologue
+    // then a `0x1F`-lead text segment ("Hi").
     let inline = vec![0x00u8, 0x1F, b'H', b'i', 0x00];
     world.install_world_map_entities_at(vec![(
         WorldMapEntityConfig::Npc {

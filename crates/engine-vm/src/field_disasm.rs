@@ -324,6 +324,22 @@ pub enum MenuCtrlKind {
     },
     /// Outer nibble 5 sub-0 - 4-byte sound-directional.
     Nibble5Sub0 { value: i16 },
+    /// Outer nibble 5 sub-1 - 6-byte NPC / player move-to-tile with run
+    /// dispatch. Operand bytes are `[x_enc, z_enc, depth, move_id]`; tile
+    /// coords use the same `(byte & 0x7F)<<7 + (bit7 ? 0x80 : 0x40)` decode
+    /// the placement header uses, and the `is_player` selector reads
+    /// `ctx.flags & 0x0100_0000`. Drives the step handler's
+    /// `op4c_n5_sub1_npc_run` host hook.
+    Nibble5NpcRun {
+        x_enc: u8,
+        z_enc: u8,
+        depth: u8,
+        move_id: u8,
+    },
+    /// Outer nibble 5 sub-2 - 3-byte menu-activation poll. Operand byte is the
+    /// `menu_id`; the script halts at PC until the host's
+    /// `op4c_n5_sub2_menu_activation` hook returns true.
+    Nibble5MenuPoll { menu_id: u8 },
     /// Outer nibble 5 sub-3 / sub-4 - 2-byte dialog poll.
     Nibble5Dialog { sub: u8 },
     /// Outer nibble 6 sub-0 - 14-byte 6-word emitter call.
@@ -1285,6 +1301,36 @@ fn decode_menu_ctrl(
                     let value = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
                     mk(header_size + 3, MenuCtrlKind::Nibble5Sub0 { value })
                 }
+                // Sub-1: 6-byte NPC / player move-to-tile with run dispatch.
+                // Mirrors the step handler's `[4C, 0x51, x_enc, z_enc, depth,
+                // move_id]` encoding (`crates/engine-vm/src/field/step.rs`).
+                // Common in placement records — without this arm the linear
+                // walker desyncs across every dialog NPC's `[story-flag,
+                // move-to-tile, JmpRel]` per-branch prologue.
+                1 => {
+                    need(5)?;
+                    let x_enc = bytecode[operand + 1];
+                    let z_enc = bytecode[operand + 2];
+                    let depth = bytecode[operand + 3];
+                    let move_id = bytecode[operand + 4];
+                    mk(
+                        header_size + 5,
+                        MenuCtrlKind::Nibble5NpcRun {
+                            x_enc,
+                            z_enc,
+                            depth,
+                            move_id,
+                        },
+                    )
+                }
+                // Sub-2: 3-byte menu-activation poll `[4C, 0x52, menu_id]`.
+                // The step handler halts at PC until the host returns
+                // activated; for the disasm we just emit the 3-byte form.
+                2 => {
+                    need(2)?;
+                    let menu_id = bytecode[operand + 1];
+                    mk(header_size + 2, MenuCtrlKind::Nibble5MenuPoll { menu_id })
+                }
                 3 | 4 => mk(header_size + 1, MenuCtrlKind::Nibble5Dialog { sub }),
                 _ => Err(DisasmError::UnknownSubOp {
                     pc,
@@ -1332,10 +1378,15 @@ fn decode_menu_ctrl(
             let encoded = match sub {
                 1 => 9,
                 2 | 4 | 0xC => 2,
+                3 => 1, // sub-3: box-fill table halt-acquire (pending in step.rs); halts at PC
+                5 | 0xE | 0xF => 1, // halt-acquire idiom; step.rs halts at PC, no operand bytes consumed
                 6 => 15,
                 7 => 1, // halt at PC; encoded width is 1
                 8 => 5,
+                9 => 3, // sub-9: 4-byte total `[4C, 0x89, lo, hi]`
                 0xA => 10,
+                0xB => 4, // sub-B: 5-byte `[4C, 0x8B, type_byte, target_lo, target_hi]`
+                0xD => 5, // sub-D: 6-byte char-actor search
                 _ => {
                     return Err(DisasmError::UnknownSubOp {
                         pc,
