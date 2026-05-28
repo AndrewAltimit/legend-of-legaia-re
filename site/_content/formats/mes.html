@@ -189,6 +189,24 @@
   <h2>Dialog window pager - <code>FUN_801D84D0</code></h2>
   <p>Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (<code>_DAT_801F2734</code>, range <code>0..0x19</code>) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in <code>_DAT_801F3540[line]</code> (16-line buffer at <code>0x801F3580</code>). Test <code>(byte &amp; 0x7F) &lt; 0x20</code> is used to detect line terminators (catches both <code>0x00..0x1F</code> and <code>0x80..0x9F</code>).</p>
   <p>The crate-level Rust port of this pager lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/README.md"><code>crates/engine-vm</code></a> as the dialog-window state machine.</p>
+  <h3>Box geometry</h3>
+  <p>Max lines per box is stored at <code>_DAT_801F2740</code>. The overlay's <code>case 6</code> / <code>case 9</code> init arms (the two box-open states) <strong>both pin this to 3</strong> &mdash; the standard dialog box scrolls in up to three lines, then state <code>0xD</code> advances to the "page full, wait for input" state <code>0xE</code>. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.</p>
+  <h3>Post-page dispatch (state <code>0x19</code>)</h3>
+  <p>When the page is full and the user presses confirm (<code>_DAT_800846D0</code> / <code>_DAT_800846D4</code>), state <code>0x19</code> reads the <strong>next control byte</strong> past the box (<code>*pbVar14 &amp; 0x7F</code>) and selects the follow-on state directly:</p>
+  <table class="basic">
+    <thead><tr><th>Control byte</th><th>Next pager state</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x25</code></td><td><code>0</code> (idle)</td><td>end conversation</td></tr>
+      <tr><td><code>0x24</code></td><td><code>3</code> (next-line)</td><td>continue text on the next line, same box</td></tr>
+      <tr><td><code>0x48</code></td><td><code>9</code> (init new box)</td><td>open a fresh box for the next page</td></tr>
+      <tr><td><code>0x4C</code> followed by <code>0xFF</code></td><td><code>6</code> (terminate)</td><td>close the dialog</td></tr>
+      <tr><td><code>0x2A</code></td><td><code>0x11</code> (box resize)</td><td>start the box geometry animation</td></tr>
+      <tr><td><code>0x27</code></td><td><code>0x13</code> -&gt; <code>0x12</code></td><td>2-option <code>Yes</code> / <code>No</code> menu</td></tr>
+      <tr><td><code>0x28</code></td><td><code>0x15</code> -&gt; <code>0x14</code></td><td>3-option menu</td></tr>
+      <tr><td><code>0x29</code></td><td><code>0x17</code> -&gt; <code>0x16</code></td><td>4-option menu</td></tr>
+    </tbody>
+  </table>
+  <p>So the picker controls are MES <code>0x27</code> / <code>0x28</code> / <code>0x29</code> (the same byte masks as the <code>&lt; 0x20</code> line-terminator test, <strong>with the high bit set</strong> &mdash; <code>0xA7</code> / <code>0xA8</code> / <code>0xA9</code> in the raw bytecode). Each picker arm sets the box dimensions from a per-N table and clamps the choice cursor at <code>*(DAT_801c6ea4 + 0xc)</code>. On confirm in the picker (<code>case 0x12</code> / <code>0x14</code> / <code>0x16</code> / <code>0x18</code>), the pager reads the <strong>continuation byte at <code>pbVar14[N*2 + 1]</code></strong> (past the N-option list) &mdash; same <code>0x24</code> / <code>0x48</code> / <code>0x4C 0xFF</code> jump table as the post-page dispatch &mdash; and advances. The chosen index lives in <code>*(DAT_801c6ea4 + 0xc)</code>; higher-level branching on which option was picked is the dialog SM's job (<code>FUN_80039B7C</code>), not the pager's.</p>
 </section>
 
 <section class="doc-section" id="live-blob-example">

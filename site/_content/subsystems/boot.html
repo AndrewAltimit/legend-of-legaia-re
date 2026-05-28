@@ -241,11 +241,11 @@ _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
   <table>
     <thead><tr><th>Address</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td><code>_DAT_8007B8C2</code></td><td>Dev/retail build toggle. Sound init, the field loader, and the monster-bank loader all carry an "if dev" branch keyed on this byte.</td></tr>
+      <tr><td><code>_DAT_8007B8C2</code></td><td>Dev/retail build toggle. Sound init, the field loader, the monster-bank loader, the save-card path, the scene-change packet, and the title overlay all carry an "if dev" branch keyed on this byte.</td></tr>
       <tr><td><code>_DAT_8007B98F</code></td><td>Separate debug-mode flag (NA build offset; JP retail uses <code>0x07D51F</code>, an <code>0x1B90</code> build-shift).</td></tr>
     </tbody>
   </table>
-  <p>Neither flag has a writer in <code>SCUS_942.54</code>. The input dispatcher <code>FUN_8001822C</code> reads them but doesn't write them. The writers must live in an unswept overlay (most likely the option-menu / cheat-menu cluster), and TCRF GameShark codes confirm both flags are runtime-writable.</p>
+  <p><strong>Both are read-only at runtime.</strong> An exhaustive sweep across the whole dump corpus (<code>SCUS_942.54</code> + every captured overlay function dump, 2661 files) returns <strong>zero writes</strong> to <code>_DAT_8007B8C2</code> and <strong>zero references</strong> (read or write) to <code>_DAT_8007B98F</code>. So <code>_DAT_8007B8C2</code> is BSS-resident (initialised to 0 = retail at boot) and is only mutated via external POKE &mdash; the TCRF GameShark codes that flip it to dev mode are the only known writers. <code>_DAT_8007B98F</code> exists in BSS (GameShark codes confirm it's runtime-writable), but no retail code path consumes it: the dev branches it would gate appear to have been stripped at link time, leaving the byte addressable but inert. The earlier "writers must live in an unswept overlay" framing is falsified.</p>
 </section>
 
 <section class="doc-section" id="see-also">
