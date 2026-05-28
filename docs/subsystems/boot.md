@@ -452,10 +452,10 @@ The TIM-upload helper for these (and for the title overlay's per-frame sprites) 
 
 ## Debug flags
 
-- `_DAT_8007B8C2` - dev/retail build toggle. Several subsystems (sound init, field loader) carry an "if dev" branch keyed on this byte. No writers exist in `SCUS_942.54`; the writer must live in an unswept overlay or come from external POKE (TCRF GameShark codes confirm both this flag and `_DAT_8007B98F` are runtime-writable).
-- `_DAT_8007B98F` - separate debug-mode flag (NA build offset; JP retail uses `0x07D51F`, an `0x1B90` build-shift).
+- `_DAT_8007B8C2` - dev/retail build toggle. Several subsystems (sound init, field loader, save-card path, scene-change packet, title overlay) carry an "if dev" branch keyed on this byte. **Read-only at runtime**: every captured caller (`FUN_8001D424`, `FUN_8001D8FC`, `FUN_8001FA88`, `FUN_8001FC00`, `FUN_80020118`, `FUN_8003DE7C`, `overlay_menu_801DE234`, `overlay_field_battle_intro_801CF5BC`, `overlay_save_ui_*_801DD35C`, `overlay_title_801DD6B8/CCC`, ...) does a `_DAT_8007B8C2 == 0` retail-mode test; a sweep across the entire dump corpus (`SCUS_942.54` + 2660 overlay function dumps) returns **zero writes**. So the flag is BSS-resident (initialised to 0 = retail at boot) and is only mutated via external POKE — the TCRF GameShark codes that flip it to dev mode are the only known writers.
+- `_DAT_8007B98F` - separate debug-mode flag (NA build offset; JP retail uses `0x07D51F`, an `0x1B90` build-shift). **Unreferenced in the dump corpus** — the same sweep returns zero reads as well as zero writes. The flag exists in BSS (TCRF GameShark codes confirm it's runtime-writable), but no retail code path consumes it: the dev branches it would gate appear to have been stripped at link time, leaving the byte addressable but inert.
 
-The input dispatcher `FUN_8001822C` reads these flags but doesn't write them; the writer is downstream of one of the option-menu / cheat-menu overlays (`0896` or similar).
+The input dispatcher `FUN_8001822C` reads `_DAT_8007B8C2` but doesn't write it; both flags' writers, if they ever existed, are outside any captured overlay.
 
 ## See also
 
