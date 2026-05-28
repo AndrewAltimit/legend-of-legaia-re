@@ -18,6 +18,9 @@
 # glue. Engine maps the surrounding logic to native equivalents (kernel events
 # -> std::sync, FlushCache -> no-op on a non-MIPS host, etc.).
 [bios]
+"80056608" = "LoadAndExecute (BIOS A0 0x51) - li t2,0xA0; jr t2; li t1,0x51"
+"80056628" = "_bu_init (BIOS A0 0x71) - li t2,0xA0; jr t2; li t1,0x71"
+"80056648" = "OpenEvent BIOS thunk (jr 0xB0, t1=0x09)"
 "80056658" = "TestEvent BIOS thunk (jr 0xB0, t1=0x0B)"
 "80056678" = "EnterCriticalSection (syscall(0), a0=1)"
 "80056688" = "ExitCriticalSection (syscall(0), a0=2)"
@@ -30,10 +33,14 @@
 "800566f8" = "B-vector thunk (li t2,0xB0; jr t2)"
 "80056708" = "B-vector thunk (li t2,0xB0; jr t2)"
 "80056718" = "B-vector thunk (li t2,0xB0; jr t2)"
-"80056738" = "A-vector thunk (jr 0xA0) - libapi BIOS dispatcher"
+"80056728" = "strcat (BIOS A0 0x15) - li t2,0xA0; jr t2; li t1,0x15"
+"80056738" = "strcmp (BIOS A0 0x17) - li t2,0xA0; jr t2; li t1,0x17"
 "80056748" = "strncmp (BIOS A0 0x18)"
 "80056758" = "strncpy (BIOS A0 0x19) - li t2,0xA0; jr t2; li t1,0x19"
 "80056768" = "strlen (BIOS A0 0x1B)"
+"80056788" = "memset (BIOS A0 0x2B) - li t2,0xA0; jr t2; li t1,0x2B"
+"80056798" = "srand (BIOS A0 0x2F) - li t2,0xA0; jr t2; li t1,0x2F"
+"800567a8" = "printf BIOS thunk (BIOS A0 0x3F) - li t2,0xA0; jr t2; li t1,0x3F"
 "80057014" = "rand (BIOS A0 0x2E)"
 "8005acd8" = "GPU_cw (BIOS A0 0x49)"
 "8005ace8" = "A-vector thunk (jr 0xA0)"
