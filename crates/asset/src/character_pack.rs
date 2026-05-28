@@ -52,6 +52,21 @@ use crate::{DecodeMode, decode, pack, parse_player_lzs};
 /// PROT entry index that carries the player-character pack (`befect_data` head).
 pub const PROT_ENTRY_INDEX: u32 = 874;
 
+/// Short display label for one player-character pack slot. Pack slots 0/1/2
+/// are the active-party characters (Vahn / Noa / Gala); slots 3/4 are the
+/// smaller auxiliary actors retained across field scenes alongside the
+/// party. Returns a short string suitable for UI chips / CLI tables.
+pub fn slot_label(slot: usize) -> &'static str {
+    match slot {
+        0 => "Vahn",
+        1 => "Noa",
+        2 => "Gala",
+        3 => "Aux 0",
+        4 => "Aux 1",
+        _ => "(out of range)",
+    }
+}
+
 /// Number of TMDs in the player-character pack (slots 0..=4).
 pub const SLOT_COUNT: usize = 5;
 

@@ -539,6 +539,137 @@ export class LegaiaViewer {
         return ret >>> 0;
     }
     /**
+     * Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Float32Array}
+     */
+    character_mesh_bounds(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_bounds(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[cba, tsb]` (CLUT-base / texture-page descriptor) so the
+     * JS shader can resolve VRAM texel + palette per the standard PSX TMD
+     * model. `2 u32` per vertex, parallel to [`Self::character_mesh_positions`].
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Uint32Array}
+     */
+    character_mesh_cba_tsb(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_cba_tsb(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Triangle indices for the player character at pack slot `slot`,
+     * `u32`, multiple of 3.
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Uint32Array}
+     */
+    character_mesh_indices(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_indices(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex normals parallel to [`Self::character_mesh_positions`].
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Float32Array}
+     */
+    character_mesh_normals(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_normals(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex positions for the player character at pack slot `slot`,
+     * optionally with the equipment swap applied (`equip_byte` < 0 means
+     * "no swap, draw disc-form mesh"). Empty if `slot` is out of range or
+     * the disc isn't loaded.
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Float32Array}
+     */
+    character_mesh_positions(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_positions(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` integer texel coords (parallel to
+     * [`Self::character_mesh_positions`], 2 i32 per vertex). The site page
+     * pairs these with the PROT 0876 atlas page to do its own NEAREST
+     * sample; we keep the integer texels here instead of normalising
+     * because the atlas dimensions aren't surfaced yet.
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Int32Array}
+     */
+    character_mesh_uvs(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_uvs(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * JSON summary of the five character-pack slots.
+     *
+     * Shape:
+     * ```json
+     * { "slots": [
+     *     { "slot": 0, "label": "Vahn", "disc_nobj": 12,
+     *       "tmd_bytes": 13220,
+     *       "patch": { "patched_group_index": 0,
+     *                  "equip_byte_record_offset": 406 } },
+     *     ...
+     *   ],
+     *   "patched_group_offset": 12,
+     *   "group_descriptor_bytes": 28,
+     *   "equip_group_zero_offset": 320,
+     *   "equip_group_nonzero_offset": 292
+     * }
+     * ```
+     * `patch` is present only for the 3 active-party slots (0..=2); slots
+     * 3/4 carry the auxiliary actors with no equipment swap. Returns
+     * `{"slots":[],"error":"..."}` when the disc is missing PROT 0874 or
+     * the LZS section fails to decode.
+     * @returns {string}
+     */
+    character_pack_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_character_pack_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+     * installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
+     * download / debug round-trip.
+     * @param {number} slot
+     * @returns {Uint8Array}
+     */
+    character_tmd_bytes(slot) {
+        const ret = wasm.legaiaviewer_character_tmd_bytes(this.__wbg_ptr, slot);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Number of TMDs in the currently-loaded continent pack. 0 when no
      * continent pack was found for this kingdom.
      * @returns {number}
@@ -1901,7 +2032,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 538, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 557, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
             return ret;
         },

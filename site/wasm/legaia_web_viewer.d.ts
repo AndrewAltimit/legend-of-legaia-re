@@ -249,6 +249,70 @@ export class LegaiaViewer {
      */
     catalog_len(): number;
     /**
+     * Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+     */
+    character_mesh_bounds(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex `[cba, tsb]` (CLUT-base / texture-page descriptor) so the
+     * JS shader can resolve VRAM texel + palette per the standard PSX TMD
+     * model. `2 u32` per vertex, parallel to [`Self::character_mesh_positions`].
+     */
+    character_mesh_cba_tsb(slot: number, equip_byte: number): Uint32Array;
+    /**
+     * Triangle indices for the player character at pack slot `slot`,
+     * `u32`, multiple of 3.
+     */
+    character_mesh_indices(slot: number, equip_byte: number): Uint32Array;
+    /**
+     * Per-vertex normals parallel to [`Self::character_mesh_positions`].
+     */
+    character_mesh_normals(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex positions for the player character at pack slot `slot`,
+     * optionally with the equipment swap applied (`equip_byte` < 0 means
+     * "no swap, draw disc-form mesh"). Empty if `slot` is out of range or
+     * the disc isn't loaded.
+     */
+    character_mesh_positions(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` integer texel coords (parallel to
+     * [`Self::character_mesh_positions`], 2 i32 per vertex). The site page
+     * pairs these with the PROT 0876 atlas page to do its own NEAREST
+     * sample; we keep the integer texels here instead of normalising
+     * because the atlas dimensions aren't surfaced yet.
+     */
+    character_mesh_uvs(slot: number, equip_byte: number): Int32Array;
+    /**
+     * JSON summary of the five character-pack slots.
+     *
+     * Shape:
+     * ```json
+     * { "slots": [
+     *     { "slot": 0, "label": "Vahn", "disc_nobj": 12,
+     *       "tmd_bytes": 13220,
+     *       "patch": { "patched_group_index": 0,
+     *                  "equip_byte_record_offset": 406 } },
+     *     ...
+     *   ],
+     *   "patched_group_offset": 12,
+     *   "group_descriptor_bytes": 28,
+     *   "equip_group_zero_offset": 320,
+     *   "equip_group_nonzero_offset": 292
+     * }
+     * ```
+     * `patch` is present only for the 3 active-party slots (0..=2); slots
+     * 3/4 carry the auxiliary actors with no equipment swap. Returns
+     * `{"slots":[],"error":"..."}` when the disc is missing PROT 0874 or
+     * the LZS section fails to decode.
+     */
+    character_pack_json(): string;
+    /**
+     * Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+     * installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
+     * download / debug round-trip.
+     */
+    character_tmd_bytes(slot: number): Uint8Array;
+    /**
      * Number of TMDs in the currently-loaded continent pack. 0 when no
      * continent pack was found for this kingdom.
      */
@@ -828,6 +892,14 @@ export interface InitOutput {
     readonly legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
     readonly legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_catalog_len: (a: number) => number;
+    readonly legaiaviewer_character_mesh_bounds: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_cba_tsb: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_indices: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_normals: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_positions: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_uvs: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_pack_json: (a: number) => [number, number];
+    readonly legaiaviewer_character_tmd_bytes: (a: number, b: number) => [number, number];
     readonly legaiaviewer_continent_pack_count: (a: number) => number;
     readonly legaiaviewer_continent_pack_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_continent_pack_mesh_bounds: (a: number) => [number, number];

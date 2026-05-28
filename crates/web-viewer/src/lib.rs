@@ -1809,6 +1809,254 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    // -----------------------------------------------------------------------
+    // Player-character pack (PROT 0874 §0) — Vahn / Noa / Gala + 2 auxiliary
+    //
+    // Sister accessors of `monster_*`: surface the five character TMDs the
+    // engine keeps resident at `DAT_8007C018[0..=4]`. The active-party slots
+    // expose the `FUN_8001EBEC` equipment swap so the JS viewer can flip the
+    // visible weapon-bearing group descriptor in place.
+    // -----------------------------------------------------------------------
+
+    /// JSON summary of the five character-pack slots.
+    ///
+    /// Shape:
+    /// ```json
+    /// { "slots": [
+    ///     { "slot": 0, "label": "Vahn", "disc_nobj": 12,
+    ///       "tmd_bytes": 13220,
+    ///       "patch": { "patched_group_index": 0,
+    ///                  "equip_byte_record_offset": 406 } },
+    ///     ...
+    ///   ],
+    ///   "patched_group_offset": 12,
+    ///   "group_descriptor_bytes": 28,
+    ///   "equip_group_zero_offset": 320,
+    ///   "equip_group_nonzero_offset": 292
+    /// }
+    /// ```
+    /// `patch` is present only for the 3 active-party slots (0..=2); slots
+    /// 3/4 carry the auxiliary actors with no equipment swap. Returns
+    /// `{"slots":[],"error":"..."}` when the disc is missing PROT 0874 or
+    /// the LZS section fails to decode.
+    pub fn character_pack_json(&self) -> String {
+        let Some(slice) = self.character_pack_slice() else {
+            return r#"{"slots":[]}"#.to_string();
+        };
+        let pack = match legaia_asset::character_pack::parse(slice) {
+            Ok(p) => p,
+            Err(e) => {
+                return format!(r#"{{"slots":[],"error":"character pack: {e}"}}"#);
+            }
+        };
+        let active = legaia_asset::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+        let slots: Vec<serde_json::Value> = pack
+            .slots()
+            .iter()
+            .map(|s| {
+                let patch = active
+                    .iter()
+                    .find(|p| (p.slot as usize) == s.slot)
+                    .map(|p| {
+                        serde_json::json!({
+                            "patched_group_index": p.patched_group_index,
+                            "equip_byte_record_offset": p.equip_byte_record_offset,
+                        })
+                    });
+                serde_json::json!({
+                    "slot": s.slot,
+                    "label": legaia_asset::character_pack::slot_label(s.slot),
+                    "disc_nobj": s.disc_nobj,
+                    "tmd_bytes": s.tmd_bytes.len(),
+                    "patch": patch,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "slots": slots,
+            "first_group_descriptor_offset":
+                legaia_asset::character_pack::FIRST_GROUP_DESCRIPTOR_OFFSET,
+            "group_descriptor_bytes":
+                legaia_asset::character_pack::GROUP_DESCRIPTOR_BYTES,
+            "equip_group_zero_offset":
+                legaia_asset::character_pack::EQUIP_GROUP_ZERO_OFFSET,
+            "equip_group_nonzero_offset":
+                legaia_asset::character_pack::EQUIP_GROUP_NONZERO_OFFSET,
+        })
+        .to_string()
+    }
+
+    /// Slice of the disc holding PROT 0874 (`befect_data` extended footprint).
+    /// Shared by every `character_*` accessor.
+    fn character_pack_slice(&self) -> Option<&[u8]> {
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == legaia_asset::character_pack::PROT_ENTRY_INDEX)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        self.disc.get(off..end)
+    }
+
+    /// Build slot `slot`'s renderable mesh, optionally with the equipment
+    /// swap applied. `equip` of `None` returns the disc-form mesh
+    /// (with retail's 10-group cap applied so groups 10/11 templates aren't
+    /// drawn directly); `Some(byte)` runs the FUN_8001EBEC patch with that
+    /// byte before parsing.
+    fn build_character_mesh(
+        &self,
+        slot: usize,
+        equip: Option<u8>,
+    ) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let raw = self.character_pack_slice()?;
+        let pack = legaia_asset::character_pack::parse(raw).ok()?;
+        let cslot = pack.slot(slot)?;
+        // Retail caps the active-party slots at 10 live groups (FUN_8001E890);
+        // mirror that so groups 10/11 (the equip templates) aren't drawn as
+        // visible geometry. The patched copy still contains the templates at
+        // their disc offsets but `parse` walks only the first `nobj`.
+        let mut tmd_bytes = if let Some(equip_byte) = equip {
+            let active = legaia_asset::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+            if let Some(patch) = active.iter().find(|p| (p.slot as usize) == slot) {
+                legaia_asset::character_pack::equipment_swap::apply(
+                    &cslot.tmd_bytes,
+                    *patch,
+                    equip_byte,
+                )
+            } else {
+                cslot.tmd_bytes.clone()
+            }
+        } else {
+            cslot.tmd_bytes.clone()
+        };
+        if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
+            // Overwrite TMD header `nobj` to 10 — the retail cap.
+            let cap = 10u32.to_le_bytes();
+            tmd_bytes[0x08..0x0C].copy_from_slice(&cap);
+        }
+        let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
+        Some((tmd, tmd_bytes))
+    }
+
+    /// Convenience: return the renderable `VramMesh` for slot `slot` under
+    /// the chosen equipment toggle.
+    fn build_character_vram_mesh(
+        &self,
+        slot: usize,
+        equip: Option<u8>,
+    ) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, bytes) = self.build_character_mesh(slot, equip)?;
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes))
+    }
+
+    /// Per-vertex positions for the player character at pack slot `slot`,
+    /// optionally with the equipment swap applied (`equip_byte` < 0 means
+    /// "no swap, draw disc-form mesh"). Empty if `slot` is out of range or
+    /// the disc isn't loaded.
+    pub fn character_mesh_positions(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex normals parallel to [`Self::character_mesh_positions`].
+    pub fn character_mesh_normals(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.normals.len() * 3);
+        for n in &mesh.normals {
+            out.extend_from_slice(&[n[0], n[1], n[2]]);
+        }
+        out
+    }
+
+    /// Triangle indices for the player character at pack slot `slot`,
+    /// `u32`, multiple of 3.
+    pub fn character_mesh_indices(&self, slot: u32, equip_byte: i32) -> Vec<u32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        self.build_character_vram_mesh(slot as usize, equip)
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]` integer texel coords (parallel to
+    /// [`Self::character_mesh_positions`], 2 i32 per vertex). The site page
+    /// pairs these with the PROT 0876 atlas page to do its own NEAREST
+    /// sample; we keep the integer texels here instead of normalising
+    /// because the atlas dimensions aren't surfaced yet.
+    pub fn character_mesh_uvs(&self, slot: u32, equip_byte: i32) -> Vec<i32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` (CLUT-base / texture-page descriptor) so the
+    /// JS shader can resolve VRAM texel + palette per the standard PSX TMD
+    /// model. `2 u32` per vertex, parallel to [`Self::character_mesh_positions`].
+    pub fn character_mesh_cba_tsb(&self, slot: u32, equip_byte: i32) -> Vec<u32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+    pub fn character_mesh_bounds(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        let (lo, hi) = mesh.aabb();
+        let c = [
+            (lo[0] + hi[0]) * 0.5,
+            (lo[1] + hi[1]) * 0.5,
+            (lo[2] + hi[2]) * 0.5,
+        ];
+        let d = [
+            (hi[0] - lo[0]) * 0.5,
+            (hi[1] - lo[1]) * 0.5,
+            (hi[2] - lo[2]) * 0.5,
+        ];
+        let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
+        vec![c[0], c[1], c[2], r]
+    }
+
+    /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+    /// installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
+    /// download / debug round-trip.
+    pub fn character_tmd_bytes(&self, slot: u32) -> Vec<u8> {
+        let Some(raw) = self.character_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::character_pack::parse(raw) else {
+            return Vec::new();
+        };
+        pack.slot(slot as usize)
+            .map(|s| s.tmd_bytes.clone())
+            .unwrap_or_default()
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

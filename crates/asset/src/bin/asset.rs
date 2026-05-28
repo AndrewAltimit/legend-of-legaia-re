@@ -3537,20 +3537,6 @@ fn load_man_bytes(
     Ok((decoded, man))
 }
 
-/// Display label for one player-character pack slot. Pack slots 0/1/2 are
-/// the active-party characters (Vahn / Noa / Gala); slots 3/4 are smaller
-/// auxiliary actors retained across field scenes alongside the party.
-pub fn character_slot_label(slot: usize) -> &'static str {
-    match slot {
-        0 => "Vahn",
-        1 => "Noa",
-        2 => "Gala",
-        3 => "Aux 0",
-        4 => "Aux 1",
-        _ => "(out of range)",
-    }
-}
-
 fn character_pack_one(
     input: &Path,
     slot: Option<usize>,
@@ -3564,7 +3550,7 @@ fn character_pack_one(
     let active_patches = character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
 
     let print_slot = |s: &character_pack::CharacterSlot| {
-        let label = character_slot_label(s.slot);
+        let label = character_pack::slot_label(s.slot);
         let patch = active_patches.iter().find(|p| (p.slot as usize) == s.slot);
         let patch_note = match patch {
             Some(p) => format!(
@@ -3596,7 +3582,7 @@ fn character_pack_one(
                 anyhow::bail!(
                     "slot {} ({}) is not an active-party slot; equipment swap only applies to 0..=2",
                     slot.slot,
-                    character_slot_label(slot.slot)
+                    character_pack::slot_label(slot.slot)
                 );
             };
             let patched =
