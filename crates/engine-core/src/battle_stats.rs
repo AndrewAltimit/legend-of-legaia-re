@@ -179,6 +179,24 @@ fn mul_clamp(value: u16, mult: f32) -> u16 {
 /// Compute resolved [`BattleStats`] from a base [`StatRecord`], the
 /// equipment catalog, and the set of active status kinds. Pure
 /// function - does not mutate any input.
+///
+/// PORT: FUN_801CF650 (menu overlay variant)
+///
+/// `FUN_801CF650` in the menu overlay (`overlay_menu_801cf650.txt`) is
+/// retail's equipment-stat aggregator for the menu / status / equipment
+/// subscreens: it walks the 5 equipment bytes at `char_record + 0x196`, for
+/// each non-zero slot looks up the item entry at stride `0xC` from the item
+/// table (`0x8007433C`), gates on `entry[0] == 1` (equippable type), reads
+/// the stat-bonus row at `entry[1] * 8` from `0x8007EF68`, and accumulates
+/// into the menu's stat-display globals (`DAT_801EF08C/090/094/098/09C` —
+/// STR / INT / DEF / LUCK / …). This function is the clean-room equivalent:
+/// it consumes the same five equipment ids (`record.equip`), looks each up
+/// in the engine's [`EquipmentTable`] (analogue of the `0x8007EF68` bonus
+/// row), and accumulates the modifiers into [`BattleStats`]. It also folds
+/// status-effect multipliers, which the SCUS pass leaves to the battle-side
+/// kernels in `FUN_801EC3E4`. (The town-overlay alias at the same address —
+/// emitter ramp-actor allocator — is a separate function; see
+/// `docs/reference/functions.md`.)
 pub fn compute_battle_stats(
     record: &StatRecord,
     table: &EquipmentTable,
