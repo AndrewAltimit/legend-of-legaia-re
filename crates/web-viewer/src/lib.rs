@@ -2259,6 +2259,17 @@ impl LegaiaViewer {
     /// `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
     /// fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
     /// to the battle character atlas pack.
+    ///
+    /// Note: the PROT 1204 atlas TIMs are **placeholder data** — both the
+    /// image bytes AND the CLUTs differ from what the retail engine
+    /// uploads to VRAM at battle entry (image bytes match by only ~2%,
+    /// CLUT bytes by 0%). The character viewer renders with the
+    /// placeholder pixels + a subset of placeholder sub-CLUTs that
+    /// happen to carry the correct colors, so most body parts (vest,
+    /// gi, pants, shoes) come out right while hair colors don't. See
+    /// `docs/reference/open-rev-eng-threads.md` § "Battle character CLUT
+    /// source" — fixing this needs the per-character image+CLUT pair
+    /// the engine loads at runtime, not just the CLUT.
     pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
         let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
