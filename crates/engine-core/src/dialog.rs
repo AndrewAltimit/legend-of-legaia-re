@@ -34,21 +34,37 @@ use std::sync::Arc;
 /// `"Yes"` / `"No"`). It is **not** a single box's "prompt then option labels":
 /// most segments are consecutive speech lines, and the field-VM script (gated
 /// on story flags via `COND_JMP`) selects which segment to start at, how many
-/// lines fill one box, and which are selectable options. Mapping segments →
-/// boxes/options needs the box-geometry header that precedes the run, which is
-/// not yet decoded. The real per-actor dialog SM is `FUN_80039b7c` (advances
-/// `actor[+0x9c]` 0→1→2 through `0x1F`-lead segments) with pager `FUN_801D84D0`;
-/// the box-geometry header decoder is upstream of those, likely among the
-/// helpers that initialise both `actor[+0x9c]` and the cursor `actor[+0x9e]`
-/// (`FUN_8003AB2C`, `FUN_8003BDE0`, …). An earlier note pointed at
-/// `func_0x8001ebec` as the renderer — that is **wrong**; the disassembly
-/// shows it is a per-character TMD-pose copier indexed by the slot-4 freeze
-/// flag, not the dialog box renderer.
+/// lines fill one box, and which are selectable options.
+///
+/// **There is no separate "box-geometry header" format.** The bytes between
+/// the placement's `script_pc0` and the first `0x1F` lead are normal field-VM
+/// bytecode — `CFlag` / `SysFlag.Test` / `JmpRel` / `Nop` / `0x4C 0x51`
+/// NPC-move-to-tile — that runs as the NPC's interaction prologue (face the
+/// player, set conversation flags, walk to the talk position, branch on story
+/// flags). It is consumed by the field-VM dispatcher `FUN_801DE840` from
+/// state 0 of the per-actor dialog SM `FUN_80039b7c`, which loops until the
+/// dispatcher leaves the actor's PC on a byte where `& 0x7F < 0x20` (a
+/// `0x1F` lead or a `0x21` terminator) and then transitions into the pager
+/// `FUN_801D84D0`. The "select which segment to start at" mechanism is the
+/// story-flag-gated `SysFlag.Test` branches themselves: the script
+/// `JmpRel`s past unwanted segments to the desired one. See
+/// `field_actor_placements_disc::dialog_prefix_decodes_as_field_vm_bytecode`
+/// for the disc-gated proof. An earlier note pointed at `func_0x8001ebec` as
+/// the renderer — that is **wrong**; the disassembly shows it is a
+/// per-character TMD-pose copier indexed by the slot-4 freeze flag, not the
+/// dialog box renderer.
+///
+/// What's still open is finer-grained: how the dialog SM packs multiple
+/// segments into one box (likely via the MES `0xC?` 2-byte escapes
+/// `FUN_80039b7c` skips), and which segments are exposed as selectable
+/// options (likely the segments adjacent to `"Yes"` / `"No"` labels). Both
+/// are inside the MES bytecode and the pager, not in any header before the
+/// first `0x1F`.
 ///
 /// So this returns the raw segment pool, faithfully, leaving the box/option
-/// interpretation to a future consumer once the header semantics are pinned.
-/// The geometry header before the first `0x1F` is skipped (its bytes can fall
-/// in the glyph range, so it is not interpreted as text).
+/// interpretation to a future consumer once the pager semantics are pinned.
+/// The field-VM bytecode preceding the first `0x1F` is skipped (its bytes
+/// can fall in the glyph range, so it is not interpreted as text).
 pub fn decode_inline_segments(inline: &[u8]) -> Vec<Vec<u8>> {
     let mut segments = Vec::new();
     let mut cursor = 0usize;
@@ -262,24 +278,33 @@ impl OwnedDialogPanel {
         Some(Self::new(Arc::new(mes.bytes.clone()), pc))
     }
 
-    /// Build a panel over the **inline** dialog bytes a field-VM `0x3F` op
-    /// carries (stored on [`crate::world::DialogRequest::inline`]).
+    /// Build a panel over the **inline** dialog bytes a placement's
+    /// interaction record carries (stored on
+    /// [`crate::world::DialogRequest::inline`]).
     ///
     /// Placement-NPC and event dialogue does not live in the scene MES (its
     /// `text_id` is a box-config id, not a message index - it never resolves
     /// through [`Self::from_scene_mes`]); the message text is the inline buffer
-    /// itself, in the field-VM dialog-box format `[box-geometry header]` then
-    /// `0x1F`-lead text/option segments (MES glyph bytecode). The geometry
-    /// header is opaque here (it carries box position/size and option-layout
-    /// bytes, some of which fall in the glyph range), so this skips to the
-    /// first `0x1F` lead marker and types the first segment from just past it
-    /// through the standard MES [`Interpreter`](legaia_mes::Interpreter).
+    /// itself, a run of `0x1F`-lead text/option segments (MES glyph bytecode)
+    /// preceded by the actor's field-VM interaction prologue — `CFlag` /
+    /// `SysFlag.Test` / `JmpRel` / `0x4C 0x51` NPC-move-to-tile / `Nop`,
+    /// branched on story flags. The prologue is **not a custom header
+    /// format**; it is normal field-VM bytecode that retail consumes through
+    /// `FUN_801DE840` from state 0 of the per-actor dialog SM `FUN_80039B7C`
+    /// (which transitions to the pager only when the dispatcher lands on a
+    /// byte where `& 0x7F < 0x20`). This implementation skips past it to the
+    /// first `0x1F` lead marker and types the first segment from just past
+    /// it through the standard MES
+    /// [`Interpreter`](legaia_mes::Interpreter).
     ///
     /// Only the first segment is typed: the record holds the NPC's whole
-    /// dialogue line pool (see [`decode_inline_segments`]), and choosing which
-    /// segment to start at — and how many lines / which option labels make up
-    /// one box — is the field-VM script's job, gated on story flags, via the
-    /// box-geometry header that is not yet decoded.
+    /// dialogue line pool (see [`decode_inline_segments`]). Retail picks
+    /// which segment to land on via the prologue's story-flag-gated
+    /// `JmpRel`s (not a header); how multiple segments fill one box and
+    /// which segments are options is pager-side state, inside the MES
+    /// bytecode and `FUN_801D84D0` — still open. See the
+    /// `field_actor_placements_disc::dialog_prefix_decodes_as_field_vm_bytecode`
+    /// regression for the prologue-is-field-VM-bytecode proof.
     ///
     /// Returns `None` when no `0x1F` lead marker is present (nothing
     /// renderable), so a caller can fall back to the MES path.
@@ -411,12 +436,13 @@ mod tests {
         assert!(panel.is_done());
     }
 
-    /// Inline field-VM dialog: a box-geometry header (leading bytes, some in
-    /// the glyph range) then a `0x1F`-lead text segment. `from_inline_dialog`
-    /// must skip the header to the first `0x1F` marker and type the text after
-    /// it - here `"Hi"` from `[00 56 00 1F 'H' 'i' 00]`.
+    /// Inline field-VM dialog: a few prologue bytes (field-VM bytecode, some
+    /// in the glyph range) then a `0x1F`-lead text segment.
+    /// `from_inline_dialog` must skip the prologue to the first `0x1F`
+    /// marker and type the text after it - here `"Hi"` from `[00 56 00 1F
+    /// 'H' 'i' 00]`.
     #[test]
-    fn from_inline_dialog_skips_geometry_header_and_types_text() {
+    fn from_inline_dialog_skips_prologue_and_types_text() {
         let inline = vec![0x00u8, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
         let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
         for _ in 0..2 {
