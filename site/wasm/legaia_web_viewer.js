@@ -641,26 +641,19 @@ export class LegaiaViewer {
      * fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
      * to the battle character atlas pack.
      *
-     * The PROT 1204 atlas IMAGES are the real battle-form character art
-     * (atlas 0 = Vahn, 2 = Noa, 4 = Gala), but the atlas's **bundled
-     * CLUTs are wrong defaults** (0/512 vs the retail palette). The
-     * correct palettes live in the **active field scene's decompressed
-     * sec0 TIM_LIST** and reach VRAM via the GPU upload queue
-     * (`FUN_80059BD4`, op-type 8) at battle-actor render — see
-     * `docs/reference/open-rev-eng-threads.md` § "Battle character
-     * image + CLUT source" (resolved). This builder therefore uploads
-     * the PROT 1204 atlas images, then **overlays the scene-sourced
-     * character CLUTs** decompressed from `map01` sec0.
-     *
-     * Scope: `map01` is the world map (Vahn is its only field avatar),
-     * so its sec0 carries **Vahn's** row-490 palette byte-exact — that
-     * is corrected deterministically. Noa/Gala's vibrant battle
-     * palettes are NOT in `map01` sec0 at their nominal CBA rows
-     * (492/494): the retail engine allocates their VRAM rows
-     * dynamically per-battle and relocates the TMD CBA to match, so
-     * pinning them needs a Noa/Gala-present scene bundle or a port of
-     * the runtime allocation. Until then those two keep the bundled
-     * palette.
+     * Note: the PROT 1204 atlas TIMs ARE the real battle-form character
+     * art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
+     * rendering each atlas with its bundled CLUT). The earlier
+     * "placeholder" framing was misleading — it came from
+     * byte-comparing against a mid-battle mc1 retail VRAM snapshot,
+     * which captures only one animation phase of the runtime upload.
+     * What's actually missing: the targeted-CLUT upload pass that
+     * populates rows 491/493/494/495 from non-PROT-1204 sources. The
+     * TMD primitives reference CBAs across rows 481/492/495/496/503,
+     * not just the atlas's own row, so a single character's polygons
+     * need ALL those CLUT rows populated to render correct palettes.
+     * See `docs/reference/open-rev-eng-threads.md` § "Battle character
+     * image + CLUT source".
      * @returns {Uint8Array}
      */
     battle_char_vram_bytes() {
