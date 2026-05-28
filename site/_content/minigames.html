@@ -104,6 +104,12 @@
   <p>Rock-paper-scissors variant with life meters. Each round shows a button sequence the player must reproduce. Completing all 14 rounds pays out coins.</p>
   <div id="baka-fighter-meta" class="notice"></div>
   <div id="baka-fighter-rounds"></div>
+
+  <h3 id="baka-fighter-meshes">The fighters (3D meshes)</h3>
+  <p>The minigame's fighters are their own character pack — <strong>PROT 1203-1206</strong> (CDNAME <code>other5</code>), loaded by <code>overlay_baka_fighter</code> via <code>func_0x8003e6bc("data\field\other5.lzs", …)</code> + <code>func_0x8003eb98(0x4B5/0x4B6, …)</code> (debug string <code>"OTHER5 %d %d"</code>). Each is a flat streaming-format container: five <a href="formats/tmd.html">TMD2</a> meshes (asset type <code>0x09</code>) plus seven 256×256 4bpp character TIM atlases (CLUTs at VRAM rows <code>490..495, 497</code>). The PLAYER SELECT roster — the red-gi fighter, the red-haired fighter in the blue/orange vest, the green-trousered fighter — is exactly these meshes.</p>
+  <div class="notice">
+    <strong>View them in 3D.</strong> The same meshes render textured + animated (per-frame per-bone <a href="formats/anm.html">ANM</a> from PROT 1203) in the interactive viewer on the <a href="characters.html#baka-fighter-meshes">characters page</a> — open your disc image, pick a slot, and toggle <em>Baka Fighter</em> to orbit and play each fighter's animation. The bundled atlas CLUTs are the correct Baka-Fighter palettes (these are <em>not</em> the party's main-battle appearance — see the note there).
+  </div>
 </section>
 
 <section class="doc-section" id="related">
