@@ -18,7 +18,7 @@ use anyhow::{Result, bail};
 use serde::Serialize;
 
 pub mod anm_detect;
-pub mod baka_fighter_pack;
+pub mod battle_char_pack;
 pub mod battle_data_pack;
 pub mod befect_cluster;
 pub mod categorize;

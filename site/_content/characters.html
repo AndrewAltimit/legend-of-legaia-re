@@ -160,7 +160,7 @@ table.arts-list .cmd-tag {
         <div class="char-section-label">Form</div>
         <div class="char-equip-toggle" id="char-form-toggle"></div>
         <div class="char-info-note" id="char-form-note">
-          The field form (PROT 0874 §0) is the smaller mesh resident across every town and dungeon. The "Baka Fighter" toggle loads the higher-fidelity mesh + 7 character TIM atlases of the <a href="minigames.html#baka-fighter-meshes">Baka Fighter minigame</a> (PROT 1203-1206, <code>other5</code>); selecting it routes through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses, sampling the disc-pinned atlas pages.
+          The <strong>field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon. The <strong>battle form</strong> toggle loads the higher-fidelity party mesh + 7 character TIM atlases from <strong>PROT 1204</strong> (<code>other5</code>) — the meshes the engine installs into <code>DAT_8007C018[0..=2]</code> for every turn-based battle (the <a href="minigames.html#baka-fighter-meshes">Baka Fighter minigame</a> reuses this same pack). Selecting it routes through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses, sampling the disc-pinned atlas pages.
         </div>
 
         <div class="char-section-label">Equipment swap</div>
@@ -229,12 +229,13 @@ table.arts-list .cmd-tag {
     <a href="reference/functions.html">FUN_8001EBEC asm trace</a>
   </div>
 
-  <h2 id="baka-fighter-meshes">The "Baka Fighter" form</h2>
-  <p><strong>Correction:</strong> the higher-fidelity five-TMD archive at <strong>PROT 1203-1206</strong> (<code>other5</code>) — toggled here as "Baka Fighter" — is <em>not</em> the party's main battle form. It is the character roster of the <a href="minigames.html">Baka Fighter</a> fist-fight minigame: <code>overlay_baka_fighter</code> loads it via <code>func_0x8003e6bc("data\field\other5.lzs", …)</code> + <code>func_0x8003eb98(0x4B5/0x4B6, …)</code>, and the rendered meshes match the in-game Baka Fighter PLAYER SELECT screen exactly. (The pack carries its own seven 256×256 4bpp TIM atlases at stride <code>0x8224</code>, CLUTs at rows <code>490..495, 497</code> — those bundled CLUTs are the correct Baka-Fighter palettes.)</p>
-  <p><strong>Resolved:</strong> the real main-battle party uses <em>no separate pack</em> — it renders the <strong>field form (PROT 0874 §0)</strong>, the same five TMDs shown above. The battle scene loader <code>FUN_800520F0</code> reloads PROT 874 as <code>etmd.dat</code> (state <code>0xb</code>) and installs its TMDs into <code>DAT_8007C018[0..=4]</code> via <code>tmd_register</code> (<code>FUN_80026B4C</code>, state <code>0xc</code>) — identical to the field initializer. In settled-battle save states the party actors' mesh pointer (<code>actor[+0x230]</code>) equals <code>DAT_8007C018[0..=2]</code>. So Vahn/Noa/Gala wear their field models in battle; there is no distinct "battle form" mesh.</p>
+  <h2 id="baka-fighter-meshes">The battle form — PROT 1204</h2>
+  <p>The party's <strong>in-battle</strong> meshes are a separate, higher-fidelity five-TMD archive at <strong>PROT 1204</strong> (<code>other5</code>) — not the field pack. The engine installs the active party into <code>DAT_8007C018[0..=2]</code> for every turn-based battle.</p>
+  <p><strong>Provenance (decisive).</strong> Reading the live party mesh pointers <code>DAT_8007C018[0..=2]</code> out of real-battle save states and byte-matching each runtime TMD's pose-independent vertex pool against the two candidate packs shows the party meshes match PROT 1204 and <em>never</em> the field pack 0874 — across the Tetsu tutorial fight, the <strong>Gimard Seru-boss fight</strong> (an unambiguous turn-based battle), and a full-party Gobu Gobu capture. The runtime <code>nobj</code> is +2 over disc (15/16/15 → 17/18/17) via the same <code>FUN_8001EBEC</code> equipment-group patch the field form uses. <em>(An earlier read had this backwards — claiming battle reused the field pack and that 1204 was a Baka-Fighter-only roster.)</em></p>
+  <p>The <a href="minigames.html">Baka Fighter</a> fist-fight minigame <strong>reuses this same pack</strong> — it lets you play <em>as</em> Vahn/Noa/Gala, so it borrows the battle character models (<code>overlay_baka_fighter</code> loads <code>data\field\other5.lzs</code> + PROT 1205/1206). It is a shared battle/minigame pack, not a minigame-exclusive roster.</p>
   <table>
     <thead>
-      <tr><th>Slot</th><th>Field form (PROT 0874 §0)</th><th>Baka Fighter (PROT 1203-1206)</th></tr>
+      <tr><th>Slot</th><th>Field form (PROT 0874 §0)</th><th>Battle form (PROT 1204)</th></tr>
     </thead>
     <tbody>
       <tr><td>0 — Vahn</td>     <td><code>nobj=12</code>, 13 220 bytes</td><td><code>nobj=15</code>, 33 516 bytes</td></tr>
@@ -244,10 +245,10 @@ table.arts-list .cmd-tag {
       <tr><td>4 — Extra</td>    <td><code>nobj=2</code>,   1 048 bytes</td><td><code>nobj=15</code>, 33 340 bytes</td></tr>
     </tbody>
   </table>
-  <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs (the fighter face / hair / outfit textures the renderer samples). These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page.</p>
-  <div class="cli"><code>asset baka-fighter-pack extracted/PROT/1204_other5.BIN</code></div>
-  <div class="cli"><code>asset baka-fighter-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_baka.tmd</code></div>
-  <div class="cli"><code>asset baka-fighter-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
+  <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs at stride <code>0x8224</code> (CLUTs at rows <code>490..495, 497</code>) — the face / hair / outfit textures the renderer samples. These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page (where this pack drives the Baka Fighter roster).</p>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN</code></div>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
+  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
 
   <h2>What's next</h2>
   <p>Three open threads, in priority order of what changes the picture above:</p>
@@ -398,8 +399,8 @@ table.arts-list .cmd-tag {
     if (!formToggle) return;
     const haveBattle = !!battlePack && battlePack.slots && battlePack.slots.length > 0;
     const buttons = [
-      { val: 'field',  label: 'field form',  hint: 'PROT 0874 §0 — the 5 TMDs the engine resides across every field scene', enabled: !!pack },
-      { val: 'battle', label: 'Baka Fighter', hint: 'PROT 1203-1206 (other5) — the Baka Fighter minigame fighters: 5 TMD2 chunks + 7 character TIM atlases, sampled with the real PSX paletted pipeline (loaded by overlay_baka_fighter)', enabled: haveBattle },
+      { val: 'field',  label: 'field form',  hint: 'PROT 0874 §0 — the 5 low-poly TMDs the engine keeps resident across every field scene', enabled: !!pack },
+      { val: 'battle', label: 'battle form', hint: 'PROT 1204 (other5) — the higher-detail party meshes the engine installs for turn-based battles (5 TMD2 chunks + 7 character TIM atlases, sampled with the real PSX paletted pipeline). The Baka Fighter minigame reuses this same pack.', enabled: haveBattle },
     ];
     formToggle.innerHTML = buttons.map(b => `
       <button class="char-equip-btn${b.val === curForm ? ' is-active' : ''}"
@@ -486,8 +487,8 @@ table.arts-list .cmd-tag {
   function renderEquipToggle() {
     if (selectedSlot === null) { equipToggle.innerHTML = ''; return; }
     if (curForm === 'battle') {
-      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>n/a (Baka Fighter)</button>`;
-      equipNote.textContent = 'Baka Fighter TMDs (PROT 1204) carry no group-10/11 equipment-swap templates — the higher-fidelity fighter mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
+      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>n/a (battle form)</button>`;
+      equipNote.textContent = 'Battle-form TMDs (PROT 1204) carry no group-10/11 equipment-swap templates — the higher-fidelity battle mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
       return;
     }
     const slot = pack.slots[selectedSlot];
@@ -784,12 +785,12 @@ table.arts-list .cmd-tag {
       // Battle form — use TmdRenderer + the 7 atlas TIMs uploaded into a
       // virtual 1024×512 PSX VRAM at their disc-pinned coords. The mesh
       // sampler reads cba/tsb per primitive against that VRAM.
-      const positions = viewer.baka_fighter_mesh_positions(slot);
-      const uvsI32   = viewer.baka_fighter_mesh_uvs(slot);
-      const cbaTsb   = viewer.baka_fighter_mesh_cba_tsb(slot);
-      const indices  = viewer.baka_fighter_mesh_indices(slot);
-      const bounds   = viewer.baka_fighter_mesh_bounds(slot);
-      const objectIds = viewer.baka_fighter_mesh_object_ids(slot);
+      const positions = viewer.battle_char_mesh_positions(slot);
+      const uvsI32   = viewer.battle_char_mesh_uvs(slot);
+      const cbaTsb   = viewer.battle_char_mesh_cba_tsb(slot);
+      const indices  = viewer.battle_char_mesh_indices(slot);
+      const bounds   = viewer.battle_char_mesh_bounds(slot);
+      const objectIds = viewer.battle_char_mesh_object_ids(slot);
       if (!positions.length || !indices.length) {
         statsEl.innerHTML = '<span style="color:var(--text-dim)">Battle mesh failed to parse. Is PROT 1204 present?</span>';
         return;
@@ -801,7 +802,7 @@ table.arts-list .cmd-tag {
           // Upload VRAM once per BattleMeshView lifetime; same atlas pack
           // covers every battle slot, so a single upload survives slot
           // changes for free.
-          const vramBytes = viewer.baka_fighter_vram_bytes();
+          const vramBytes = viewer.battle_char_vram_bytes();
           if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
         }
         // UV binding returns i32 (parallel to character_mesh_uvs); the
@@ -827,7 +828,7 @@ table.arts-list .cmd-tag {
         const vert = (positions.length / 3) | 0;
         const meta = battlePack.slots[slot];
         statsEl.innerHTML =
-          `<b>${tri}</b> triangles · <b>${vert}</b> vertices · Baka Fighter`;
+          `<b>${tri}</b> triangles · <b>${vert}</b> vertices · battle form`;
         funEl.textContent =
           `nobj ${meta.disc_nobj} on disc · sampled from 7 character atlases (CLUTs at VRAM rows 490..495, 497)`;
         // Re-apply the current ANM record to the freshly-loaded mesh
@@ -1033,7 +1034,7 @@ table.arts-list .cmd-tag {
     const p = activePack();
     if (!p) return;
     const bytes = curForm === 'battle'
-      ? viewer.baka_fighter_tmd_bytes(selectedSlot)
+      ? viewer.battle_char_tmd_bytes(selectedSlot)
       : viewer.character_tmd_bytes(selectedSlot);
     if (!bytes || !bytes.length) return;
     const meta = p.slots[selectedSlot];
@@ -1763,7 +1764,7 @@ table.arts-list .cmd-tag {
       // Battle-form pack (PROT 1204). Best-effort: if absent or fails to parse
       // we leave battlePack null and disable the form toggle in the UI.
       try {
-        const bp = JSON.parse(viewer.baka_fighter_pack_json());
+        const bp = JSON.parse(viewer.battle_char_pack_json());
         if (bp && !bp.error && bp.slots && bp.slots.length > 0) {
           battlePack = bp;
         }

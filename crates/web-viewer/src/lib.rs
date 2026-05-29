@@ -2079,11 +2079,11 @@ impl LegaiaViewer {
     ///   "first_atlas_offset": 154628
     /// }
     /// ```
-    pub fn baka_fighter_pack_json(&self) -> String {
-        let Some(slice) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_pack_json(&self) -> String {
+        let Some(slice) = self.battle_char_pack_slice() else {
             return r#"{"slots":[],"atlases":[]}"#.to_string();
         };
-        let pack = match legaia_asset::baka_fighter_pack::parse(slice) {
+        let pack = match legaia_asset::battle_char_pack::parse(slice) {
             Ok(p) => p,
             Err(e) => {
                 return format!(r#"{{"slots":[],"atlases":[],"error":"battle char pack: {e}"}}"#);
@@ -2095,7 +2095,7 @@ impl LegaiaViewer {
             .map(|s| {
                 serde_json::json!({
                     "slot": s.slot,
-                    "label": legaia_asset::baka_fighter_pack::slot_label(s.slot),
+                    "label": legaia_asset::battle_char_pack::slot_label(s.slot),
                     "disc_nobj": s.disc_nobj,
                     "tmd_bytes": s.tmd_bytes.len(),
                     "file_offset": s.file_offset,
@@ -2117,38 +2117,38 @@ impl LegaiaViewer {
         serde_json::json!({
             "slots": slots,
             "atlases": atlases,
-            "atlas_stride_bytes": legaia_asset::baka_fighter_pack::ATLAS_STRIDE_BYTES,
-            "first_atlas_offset": legaia_asset::baka_fighter_pack::FIRST_ATLAS_OFFSET,
+            "atlas_stride_bytes": legaia_asset::battle_char_pack::ATLAS_STRIDE_BYTES,
+            "first_atlas_offset": legaia_asset::battle_char_pack::FIRST_ATLAS_OFFSET,
         })
         .to_string()
     }
 
-    fn baka_fighter_pack_slice(&self) -> Option<&[u8]> {
+    fn battle_char_pack_slice(&self) -> Option<&[u8]> {
         let meta = parse_prot_toc(&self.disc)?
             .into_iter()
-            .find(|e| e.index == legaia_asset::baka_fighter_pack::PROT_ENTRY_INDEX)?;
+            .find(|e| e.index == legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)?;
         let off = meta.byte_offset as usize;
         let end = off.saturating_add(meta.size_bytes as usize);
         self.disc.get(off..end)
     }
 
-    fn build_baka_fighter_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
-        let raw = self.baka_fighter_pack_slice()?;
-        let pack = legaia_asset::baka_fighter_pack::parse(raw).ok()?;
+    fn build_battle_char_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let raw = self.battle_char_pack_slice()?;
+        let pack = legaia_asset::battle_char_pack::parse(raw).ok()?;
         let cslot = pack.slot(slot)?;
         let tmd_bytes = cslot.tmd_bytes.clone();
         let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
         Some((tmd, tmd_bytes))
     }
 
-    fn build_baka_fighter_vram_mesh(&self, slot: usize) -> Option<legaia_tmd::mesh::VramMesh> {
-        let (tmd, bytes) = self.build_baka_fighter_mesh(slot)?;
+    fn build_battle_char_vram_mesh(&self, slot: usize) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, bytes) = self.build_battle_char_mesh(slot)?;
         Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes))
     }
 
     /// Per-vertex positions for the battle-form character at pack slot `slot`.
-    pub fn baka_fighter_mesh_positions(&self, slot: u32) -> Vec<f32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_positions(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.positions.len() * 3);
@@ -2159,8 +2159,8 @@ impl LegaiaViewer {
     }
 
     /// Per-vertex normals for the battle-form character at slot `slot`.
-    pub fn baka_fighter_mesh_normals(&self, slot: u32) -> Vec<f32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_normals(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.normals.len() * 3);
@@ -2171,15 +2171,15 @@ impl LegaiaViewer {
     }
 
     /// Triangle indices for the battle-form character at slot `slot`.
-    pub fn baka_fighter_mesh_indices(&self, slot: u32) -> Vec<u32> {
-        self.build_baka_fighter_vram_mesh(slot as usize)
+    pub fn battle_char_mesh_indices(&self, slot: u32) -> Vec<u32> {
+        self.build_battle_char_vram_mesh(slot as usize)
             .map(|m| m.indices)
             .unwrap_or_default()
     }
 
     /// Per-vertex `[u, v]` integer texel coords for the battle-form character.
-    pub fn baka_fighter_mesh_uvs(&self, slot: u32) -> Vec<i32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_uvs(&self, slot: u32) -> Vec<i32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
@@ -2190,8 +2190,8 @@ impl LegaiaViewer {
     }
 
     /// Per-vertex `[cba, tsb]` for the battle-form character.
-    pub fn baka_fighter_mesh_cba_tsb(&self, slot: u32) -> Vec<u32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_cba_tsb(&self, slot: u32) -> Vec<u32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
@@ -2206,8 +2206,8 @@ impl LegaiaViewer {
     /// midpoint, so asymmetric poses (e.g. Vahn's stance with the weapon
     /// extended past the body's X axis) don't pull the camera target off the
     /// torso. Radius is the max distance from the centroid to any vertex.
-    pub fn baka_fighter_mesh_bounds(&self, slot: u32) -> Vec<f32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_bounds(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return vec![0.0; 4];
         };
         if mesh.positions.is_empty() {
@@ -2217,21 +2217,21 @@ impl LegaiaViewer {
     }
 
     /// Per-vertex TMD object index for the battle-form character at slot
-    /// `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+    /// `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
     /// player-ANM animator uses it to apply per-bone (per-object) transforms.
-    pub fn baka_fighter_mesh_object_ids(&self, slot: u32) -> Vec<u32> {
-        let Some((tmd, bytes)) = self.build_baka_fighter_mesh(slot as usize) else {
+    pub fn battle_char_mesh_object_ids(&self, slot: u32) -> Vec<u32> {
+        let Some((tmd, bytes)) = self.build_battle_char_mesh(slot as usize) else {
             return Vec::new();
         };
         legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes).1
     }
 
     /// Raw disc-form TMD bytes for battle-form slot `slot`.
-    pub fn baka_fighter_tmd_bytes(&self, slot: u32) -> Vec<u8> {
-        let Some(raw) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_tmd_bytes(&self, slot: u32) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
             return Vec::new();
         };
         pack.slot(slot as usize)
@@ -2241,11 +2241,11 @@ impl LegaiaViewer {
 
     /// Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
     /// a 256x1 sub-CLUT row inside the TIM block.
-    pub fn baka_fighter_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
-        let Some(raw) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
             return Vec::new();
         };
         pack.atlas(atlas as usize)
@@ -2273,11 +2273,11 @@ impl LegaiaViewer {
     /// need ALL those CLUT rows populated to render correct palettes.
     /// See `docs/reference/open-rev-eng-threads.md` § "Battle character
     /// image + CLUT source".
-    pub fn baka_fighter_vram_bytes(&self) -> Vec<u8> {
-        let Some(raw) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
             return Vec::new();
         };
         let mut vram = legaia_tim::Vram::new();

@@ -1,11 +1,11 @@
-//! Disc-gated regression for [`legaia_asset::baka_fighter_pack`].
+//! Disc-gated regression for [`legaia_asset::battle_char_pack`].
 //!
 //! Pins the on-disc layout of PROT 1204 (`other5`): five battle-form character
 //! TMD chunks at the streaming offsets the doc page lists + seven 256x256 4bpp
 //! TIM atlases at fixed `0x8224` stride. Skips when `LEGAIA_DISC_BIN` is
 //! unset so CI works without redistributing Sony data.
 
-use legaia_asset::baka_fighter_pack::{
+use legaia_asset::battle_char_pack::{
     ATLAS_CLUT_ROWS, ATLAS_COUNT, ATLAS_STRIDE_BYTES, BATTLE_TMD_CHUNK_TYPE, FIRST_ATLAS_OFFSET,
     PROT_ENTRY_INDEX, SLOT_COUNT, parse, slot_label,
 };
@@ -106,4 +106,78 @@ fn real_pack_layout() {
     // Sanity: streaming chunks are type 0x09 (the dispatcher tag for
     // battle-form character TMDs).
     assert_eq!(BATTLE_TMD_CHUNK_TYPE, 0x09);
+}
+
+/// The battle pack (1204) and the field pack (0874 §0) are **distinct** mesh
+/// sets, not two views of the same geometry. This is the disc-only half of the
+/// "battle does not reuse the field pack" finding: the empirical (save-state)
+/// half lives outside the committed tree (it reads `DAT_8007C018[0..=2]` out of
+/// real-battle RAM and byte-matches the party vertex data to this pack and not
+/// to 0874 — see the module-level provenance note). Here we assert the two
+/// packs share no character geometry: the battle pack's Vahn vertex pool does
+/// not appear anywhere in the field-pack entry.
+#[test]
+fn battle_pack_is_distinct_from_field_pack() {
+    let Some(prot_dir) = extracted_root() else {
+        eprintln!("LEGAIA_DISC_BIN or extracted/PROT not available; skipping");
+        return;
+    };
+    let Some(path_1204) = locate_prot_1204() else {
+        return;
+    };
+    // Locate the field-form character pack entry (PROT 0874).
+    let field_idx = legaia_asset::character_pack::PROT_ENTRY_INDEX;
+    let mut field_path = None;
+    for e in std::fs::read_dir(&prot_dir).unwrap().flatten() {
+        let s = e.file_name().to_string_lossy().into_owned();
+        if s.starts_with(&format!("{field_idx:04}_")) && s.ends_with(".BIN") {
+            field_path = Some(e.path());
+        }
+    }
+    let Some(field_path) = field_path else {
+        eprintln!("PROT 0874 entry missing; skipping");
+        return;
+    };
+
+    let battle_bytes = std::fs::read(&path_1204).expect("read PROT 1204");
+    let battle = parse(&battle_bytes).expect("parse battle pack");
+    let field_bytes = std::fs::read(&field_path).expect("read PROT 0874");
+
+    // Battle Vahn (slot 0) is nobj 15; the field Vahn is nobj 12 — different
+    // object counts to begin with.
+    assert_eq!(battle.slot(0).unwrap().disc_nobj, 15);
+
+    // Take a window of battle-Vahn's first object's vertex pool and assert it
+    // does NOT occur in the field-pack entry bytes. (Vertex SVECTORs are
+    // pose-independent geometry: if the two packs were the same mesh, this
+    // window would be present in both.)
+    let vahn = legaia_tmd::parse(&battle.slot(0).unwrap().tmd_bytes).expect("battle Vahn TMD");
+    let obj0 = &vahn.objects[0];
+    // Rebuild the raw 8-byte SVECTOR stream (x,y,z,pad LE) from the parsed
+    // vertices — pack-form-independent geometry bytes.
+    let mut vbytes = Vec::with_capacity(obj0.vertices.len() * 8);
+    for v in &obj0.vertices {
+        vbytes.extend_from_slice(&v.x.to_le_bytes());
+        vbytes.extend_from_slice(&v.y.to_le_bytes());
+        vbytes.extend_from_slice(&v.z.to_le_bytes());
+        vbytes.extend_from_slice(&v._pad.to_le_bytes());
+    }
+    assert!(vbytes.len() >= 104, "battle Vahn obj0 has enough vertices");
+    let needle = &vbytes[8..8 + 96];
+    assert!(
+        find_subslice(&field_bytes, needle).is_none(),
+        "battle-Vahn vertex geometry must not appear in the field pack (the packs are distinct)"
+    );
+    // ...and it *does* appear in its own pack, as a control.
+    assert!(
+        find_subslice(&battle_bytes, needle).is_some(),
+        "control: battle-Vahn vertex geometry is present in its own pack entry"
+    );
+}
+
+fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > hay.len() {
+        return None;
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
 }

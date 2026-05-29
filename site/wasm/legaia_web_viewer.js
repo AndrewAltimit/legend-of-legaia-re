@@ -508,8 +508,8 @@ export class LegaiaViewer {
      * @param {number} atlas
      * @returns {Uint8Array}
      */
-    baka_fighter_atlas_bytes(atlas) {
-        const ret = wasm.legaiaviewer_baka_fighter_atlas_bytes(this.__wbg_ptr, atlas);
+    battle_char_atlas_bytes(atlas) {
+        const ret = wasm.legaiaviewer_battle_char_atlas_bytes(this.__wbg_ptr, atlas);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
@@ -523,8 +523,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Float32Array}
      */
-    baka_fighter_mesh_bounds(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_bounds(this.__wbg_ptr, slot);
+    battle_char_mesh_bounds(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_bounds(this.__wbg_ptr, slot);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -534,8 +534,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Uint32Array}
      */
-    baka_fighter_mesh_cba_tsb(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_cba_tsb(this.__wbg_ptr, slot);
+    battle_char_mesh_cba_tsb(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_cba_tsb(this.__wbg_ptr, slot);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -545,8 +545,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Uint32Array}
      */
-    baka_fighter_mesh_indices(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_indices(this.__wbg_ptr, slot);
+    battle_char_mesh_indices(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_indices(this.__wbg_ptr, slot);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -556,21 +556,21 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Float32Array}
      */
-    baka_fighter_mesh_normals(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_normals(this.__wbg_ptr, slot);
+    battle_char_mesh_normals(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_normals(this.__wbg_ptr, slot);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
     /**
      * Per-vertex TMD object index for the battle-form character at slot
-     * `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+     * `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
      * player-ANM animator uses it to apply per-bone (per-object) transforms.
      * @param {number} slot
      * @returns {Uint32Array}
      */
-    baka_fighter_mesh_object_ids(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_object_ids(this.__wbg_ptr, slot);
+    battle_char_mesh_object_ids(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_object_ids(this.__wbg_ptr, slot);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -580,8 +580,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Float32Array}
      */
-    baka_fighter_mesh_positions(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_positions(this.__wbg_ptr, slot);
+    battle_char_mesh_positions(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_positions(this.__wbg_ptr, slot);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -591,8 +591,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Int32Array}
      */
-    baka_fighter_mesh_uvs(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_uvs(this.__wbg_ptr, slot);
+    battle_char_mesh_uvs(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_uvs(this.__wbg_ptr, slot);
         var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -610,11 +610,11 @@ export class LegaiaViewer {
      * ```
      * @returns {string}
      */
-    baka_fighter_pack_json() {
+    battle_char_pack_json() {
         let deferred1_0;
         let deferred1_1;
         try {
-            const ret = wasm.legaiaviewer_baka_fighter_pack_json(this.__wbg_ptr);
+            const ret = wasm.legaiaviewer_battle_char_pack_json(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -627,8 +627,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Uint8Array}
      */
-    baka_fighter_tmd_bytes(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_tmd_bytes(this.__wbg_ptr, slot);
+    battle_char_tmd_bytes(slot) {
+        const ret = wasm.legaiaviewer_battle_char_tmd_bytes(this.__wbg_ptr, slot);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
@@ -656,8 +656,8 @@ export class LegaiaViewer {
      * image + CLUT source".
      * @returns {Uint8Array}
      */
-    baka_fighter_vram_bytes() {
-        const ret = wasm.legaiaviewer_baka_fighter_vram_bytes(this.__wbg_ptr);
+    battle_char_vram_bytes() {
+        const ret = wasm.legaiaviewer_battle_char_vram_bytes(this.__wbg_ptr);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
