@@ -273,16 +273,29 @@ apart** (stream offsets `~0x548F`, `~0x1C004`, `~0x9F948`). `0861` itself has a
 (`lzs-decode probe` → no container) — the battle-setup overlay knows the per-
 record offsets via its own index (`s0 = *(*(0x801C92F0)+8) + per-char-offset`).
 
-**Engine/site reproduction (and the remaining gap).** The palette IS disc-derived
-— decompress each of a character's CLUT-struct streams from `0861`, set bit 15 on
-non-zero colours, place at `palette_row + base*2` (byte-exact except the ~3
-equipment entries). But a *robust* extractor needs `0861`'s archive index (which
-streams belong to which character), which is overlay-resident and **not yet
-traced**; only Vahn's three stream offsets are pinned empirically, and the Tetsu
-fight is Vahn-only so Noa/Gala's records are unknown (a full-party capture, or
-tracing the `0x801C92F0` index, would supply them). Hardcoding Vahn's three
-scattered offsets would be fragile and Vahn-only, so the site Battle form stays on
-the bundled palette until the index is in hand.
+**The disc mesh only needs these 3 structs.** The disc 1204 Vahn mesh (`nobj=15`,
+no equipment) samples CBA columns **0, 16, 64, 80, 112, 128** only — all inside
+the captured structs (`0..0x1F`, `0x40..0x6F`, `0x70..0x8F`). The extra columns
+the *runtime* mesh uses (`176/192/208/224`, cells `0x784B..0x784E`) belong to the
++2 equipment groups (`nobj=17`), which the disc mesh doesn't have. So Vahn's
+3 captured structs are the **complete** palette for the site's disc mesh, and a
+combat-driven enumeration (`autorun_clut_copy_combat.lua`, ~3000 vsyncs through
+the fight) confirms no further `FUN_80053B9C` calls.
+
+**Engine/site reproduction (and why a clean wiring is still blocked).** The
+palette IS disc-derived — decompress a character's CLUT-struct streams from `0861`,
+set bit 15 on non-zero colours, place at `palette_row + base*2`. The 3 structs'
+exact colours were captured and verified to extract **byte-exact** from `0861`
+(struct#2 stream `0x2D82`, struct#3 `0x1C004`). **But the streams are not at real
+boundaries:** `0861` is a pochi-padded, **un-indexed** archive, so the offsets
+`lzs-decode find` returns are LZS *re-sync* points, not record starts — they put
+the structs at output offsets of `0x1BAC` / `0x5E08` / **`0x30D29`** (struct#5
+needs a ~200 KB decode). A robust extractor needs `0861`'s real per-record index,
+which is overlay-resident (`s0 = *(*(0x801C92F0)+8) + per-char-offset`) and **not
+yet traced**; and Noa/Gala live in *other* per-character files entirely (Tetsu is
+Vahn-only, so they never load there). Hardcoding Vahn's three re-sync offsets with
+200 KB decodes would be fragile and Vahn-only, so the site Battle form stays on the
+bundled palette until the archive index is traced.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
