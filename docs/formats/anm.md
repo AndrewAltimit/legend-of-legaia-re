@@ -329,6 +329,134 @@ in-flight strike capture's pointer (`0x801621D0`) point at distinct
 records that share this struct shape - the loader pages a different
 ANM record into the heap when the action ID changes.
 
+## Disc source - per-scene ANM bundle
+
+The player-character ANM data ships **inside each scene's first asset
+bundle** (not as a dedicated PROT entry). The bundle is a
+[`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container; section
+2 (the third descriptor) is tagged **type byte `0x05`** in the dispatcher
+table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`
+](asset-type.md)) but the actual content LZS-decodes to a canonical ANM
+container with `marker_1 = 0x080C` records.
+
+The mismatch between the asset type byte (`0x05` = "MOVE") and the
+[`FUN_8001f05c` case 6](../../ghidra/scripts/funcs/8001f05c.txt) (which
+allocates `_DAT_8007B7C8` with the `anm_malloc_err` string and labeled
+**ANM** dispatch) is a documented quirk; the runtime case selector indexes
+asset bytes differently than the [`AssetType`] enum's display label
+suggests.
+
+Confirmed corpus (byte-equality against live `DAT_8007B7C8` in the
+[`v0_1_pre_battle_tetsu`](../../scripts/scenarios.toml) field-mode save
+state, mc7):
+
+| PROT entry | CDNAME      | Section | Records | Decoded bytes  |
+|------------|-------------|---------|---------|----------------|
+| `0004`     | town01      | 2       | 69      | 96 448         |
+| `0013`     | town0b      | 2       | 69      | 91 784         |
+| `0183`     | balden      | 2       | 72      | 71 604         |
+| `0408`     | bubu1       | 2       | 70      | 87 844         |
+| `1203`     | other5      | 2       | 30      | 87 684 (Baka Fighter) |
+
+The field-form bundles all have 69-72 records (the full player-locomotion
++ interaction anim set). PROT `1203_other5` is the **Baka Fighter** minigame
+variant, sitting alongside the [Baka Fighter character mesh pack](character-mesh.md#baka-fighter-minigame-roster--prot-1203-1221-other5)
+at PROT 1204 (not the main battle — that reuses the field-form mesh, and its
+player animation source is still open). Other scenes either share an ANM blob
+with one of these via runtime caching, or have a smaller per-scene player-ANM
+section.
+
+Parser: `legaia_asset::player_anm` (CLI sweep + per-entry detector).
+
+### Per-record layout (the disc form)
+
+The offsets in the offset table are **absolute byte offsets** into the
+LZS-decoded buffer (matches the standard `legaia_anm::parse` convention).
+Each record's first 8 bytes are the canonical `(a, b, marker_1, flag)`
+header from `legaia_anm::RecordHeader`. The per-record body size obeys
+exactly:
+
+```text
+    record_size = 16 + 8 * (a & 0xFF) * b
+```
+
+verified byte-exact across all **296 records** in the 5 pinned scenes (and
+across every other scene's bundle the corpus sweep finds; `f(a,b) == size`
+falls out 100%). The runtime layout (traced through
+[`FUN_8001B964`](../../ghidra/scripts/funcs/8001b964.txt) — the per-actor
+animated character renderer):
+
+```text
++0x00..+0x08    header (a, b, marker_1=0x080C, flag)
++0x08..+end-8  b frames; per frame:
+                   (a & 0xFF) bones × 8 bytes
+                 each 8-byte entry is one bone's TR for that frame
++end-8..+end    8 zero bytes (record-boundary padding to 16)
+```
+
+The body sits **immediately after the 8-byte header**, frame-major. The 8
+extra bytes in the size formula are a zero-padding trailer (every record
+in the corpus has the last 8 bytes set to zero). The runtime pointer
+`actor[+0x4C]` points at the record's byte 0; the sanity check
+`*pbVar6 == nobj` matches header byte 0 (`a & 0xFF`) against the TMD's
+animated-object count.
+
+- `a & 0xFF` = **bone count** (number of animated TMD objects in this
+  clip). The high byte of `a` appears to be a sub-format selector: clear
+  for records 0..8 of every field-form bundle, set to `0x01` for records
+  9+ and for every record in the Baka Fighter bundle.
+- `b` = **frame count** of this animation clip (3..60 across the corpus;
+  longer clips like Vahn's run-loop have higher counts).
+- `flag` = secondary sub-format byte (`0x02` / `0x04` in the field corpus;
+  `0x0201` / `0x0401` / `0x0402` in the Baka Fighter bundle).
+
+The detector at `legaia_asset::player_anm::find_in_entry` validates the
+size invariant on every record before declaring a bundle parsed; the
+disc-gated regression `crates/asset/tests/player_anm_real.rs` pins this
+byte-exact across the corpus.
+
+### Per-(bone, frame) 8-byte encoding
+
+Each entry decodes to a `(T, R)` transform via
+[`FUN_8001BE80`](../../ghidra/scripts/funcs/8001be80.txt):
+
+```text
+  byte 0   = low8(T0)
+  byte 1   = low8(T1)
+  byte 2   = (high4(T1) << 4) | high4(T0)     ; nibble-packed sign bits
+  byte 3   = low8(T2)
+  byte 4   = ??                | high4(T2)    ; high nibble unused
+  byte 5   = u8 rot-X (left-shifted by 4 to make a 12-bit PSX angle)
+  byte 6   = u8 rot-Y
+  byte 7   = u8 rot-Z
+```
+
+- `T0..T2` are **signed 12-bit translation values** (sign-extend to i32
+  via `if (v & 0x800) v |= 0xFFFFF000`). These hold the joint offset in
+  actor-local space; the runtime pushes them through the GTE's `MVMVA`
+  with the actor's rotation matrix, then loads the result into the GTE
+  `TR` registers as the per-object world-space translation.
+- The three u8 rotations build into the GTE rotation matrix in the order
+  Z, Y, X (post-multiplication) via the PsyQ-shape rotation builders at
+  [`FUN_8004638C`](../../ghidra/scripts/funcs/8004638c.txt) /
+  [`FUN_8004629C`](../../ghidra/scripts/funcs/8004629c.txt) /
+  [`FUN_800461A4`](../../ghidra/scripts/funcs/800461a4.txt). Each function
+  reads from the global sin / cos tables at `DAT_80070A2C` /
+  `DAT_8007122C` and composes a single-axis rotation into the current
+  matrix.
+
+Frame 0 of an idle animation is the rest-pose assembly transform — it
+places each TMD object at its joint position with its rest-pose
+orientation. For Vahn's field form (nobj=12, bone_count=10) the rest
+pose decodes to a bilaterally symmetric humanoid with joint centroids
+distributed where you'd expect torso / head / arms / legs.
+
+The decoder helper `legaia_asset::player_anm::BoneTransform::decode`
+returns `(t_x, t_y, t_z, r_x, r_y, r_z)` directly; the WASM
+[`LegaiaViewer::player_anm_record_pose_frames`](../../crates/web-viewer/src/lib.rs)
+emits the per-frame absolute transforms in that shape for the site's
+character viewer.
+
 ## Allocator preamble
 
 When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd

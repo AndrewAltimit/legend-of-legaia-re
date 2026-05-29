@@ -385,7 +385,7 @@ class TmdRenderer {
     gl.bindVertexArray(this.vao);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(this.locPos);
     gl.vertexAttribPointer(this.locPos, 3, gl.FLOAT, false, 0, 0);
 
@@ -404,7 +404,18 @@ class TmdRenderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
     this.indexCount = indices.length;
+    this.posByteLength = positions.byteLength;
     gl.bindVertexArray(null);
+  }
+
+  /* Replace just the position buffer in-place (DYNAMIC_DRAW). For animation:
+   * UVs / CBA-TSB / indices stay the same per-frame, only positions change.
+   * `positions` must match the byte length of the last `uploadMesh` call. */
+  updatePositions(positions) {
+    const gl = this.gl;
+    if (positions.byteLength !== this.posByteLength) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
   }
 
   /* center: [cx, cy, cz]; radius: bounding-sphere half-extent;

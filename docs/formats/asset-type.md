@@ -21,8 +21,8 @@ result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_on
 | `0x02` | `TMD` | Pack of meshes; calls `FUN_80026B4C` per submesh |
 | `0x03` | `MAN` | Raw load |
 | `0x04` | `MES` | Dialog text |
-| `0x05` | `MOVE` | Raw load |
-| `0x06` | `ANM` | Animation, raw load |
+| `0x05` | `MOVE` | Raw load. Also carries the **per-scene player ANM bundle** despite the "MOVE" label — see [`anm.md` § Disc source](anm.md#disc-source---per-scene-anm-bundle); content is a canonical ANM container with `marker_1 = 0x080C` records. The dispatcher's "ANM malloc-err" string at `FUN_8001F05C` case 6 indexes this type, not type `0x06`. |
+| `0x06` | `ANM` | Reserved by the asset-type enum but **not the player ANM source** on disc — those are stored under type `0x05` (above). The type-`0x06` descriptors that appear in PROT entries are all small (4-172 bytes) placeholders. |
 | `0x07` | `VDF` | Post-processed via `FUN_8001FBCC` per entry |
 | `0x08` | `SIN` | Raw load |
 | `0x09` | `TMD2` | Single bare TMD blob (no pack header). Hands directly to `FUN_80026B4C`; same on-disc format as a single member of the TMD-pack used by case 2. Parse with `crates/tmd::parse` directly. |

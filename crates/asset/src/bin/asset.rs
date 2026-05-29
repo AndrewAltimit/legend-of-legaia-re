@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_asset::{
     AssetType, DecodeMode, Descriptor, battle_data_pack, categorize, decode, effect_bundle,
@@ -353,6 +353,78 @@ enum Cmd {
         #[arg(long)]
         glb: Option<PathBuf>,
     },
+    /// Decode the player-character mesh pack at PROT entry `0874_befect_data`
+    /// (§0). Prints the 5-slot shape (Vahn / Noa / Gala / + 2 auxiliary slots)
+    /// with disc-form `nobj` and TMD body sizes; optionally applies the
+    /// FUN_8001EBEC equipment-swap patch and writes the resulting TMD bytes.
+    CharacterPack {
+        /// PROT entry 874 bytes (extended footprint).
+        input: PathBuf,
+        /// Slot 0..=4 to inspect / patch (omit to print all).
+        #[arg(long)]
+        slot: Option<usize>,
+        /// Equipment toggle byte (0 → group 11 template, anything else → group
+        /// 10 template). Mirrors the per-character byte at record offsets
+        /// 0x196 / 0x199 / 0x19B. Requires `--slot` and only applies to the
+        /// 3 active-party slots (0..=2).
+        #[arg(long)]
+        equip: Option<u8>,
+        /// Write the patched (or raw, if `--equip` is omitted) TMD body for
+        /// `--slot` to this path. Format = disc-form Legaia TMD; parses with
+        /// `legaia_tmd::parse`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Decode the Baka Fighter minigame character pack at PROT entry
+    /// `1204_other5`: five `TMD2` (asset type `0x09`) streaming chunks plus
+    /// seven 256x256 4bpp character TIM atlases at fixed `0x8224` stride.
+    /// This is the fist-fight minigame roster, NOT the main battle party (the
+    /// real battle reuses the field-form `character-pack` at PROT 0874 §0).
+    BakaFighterPack {
+        /// PROT entry 1204 bytes.
+        input: PathBuf,
+        /// Slot 0..=4 to inspect (omit to print all).
+        #[arg(long)]
+        slot: Option<usize>,
+        /// Write the raw TMD body for `--slot` to this path (only with `--slot`).
+        #[arg(long)]
+        out_tmd: Option<PathBuf>,
+        /// Atlas 0..=6 to write to `--out-tim` (only with `--out-tim`).
+        #[arg(long)]
+        atlas: Option<usize>,
+        /// Write the raw TIM bytes of `--atlas` to this path.
+        #[arg(long)]
+        out_tim: Option<PathBuf>,
+    },
+    /// Find every player-character animation bundle inside one PROT entry.
+    /// Decodes the entry as a `parse_player_lzs`-shaped container, walks each
+    /// type-0x05 ("MOVE") section, LZS-decompresses it, and reports
+    /// containers that parse as canonical ANM data (records starting with
+    /// `marker_1 = 0x080C`). With `--out`, writes each bundle's decoded
+    /// bytes to `<out>/<entry>_sect<i>.anm`.
+    PlayerAnm {
+        /// PROT entry to inspect (e.g. `extracted/PROT/0004_town01.BIN`).
+        input: PathBuf,
+        /// `parse_player_lzs` descriptor count (typically 3, 5, 6, or 7).
+        #[arg(long, default_value_t = 6)]
+        desc_count: usize,
+        /// Write each cleanly-parsed bundle's LZS-decoded bytes here.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Bulk-scan every PROT entry under `dir` for player-ANM bundles. Reports
+    /// per-entry record count + decoded-bytes for each type-0x05 section that
+    /// parses cleanly. With `--cdname`, prefixes each line with the CDNAME
+    /// scene label.
+    PlayerAnmScan {
+        dir: PathBuf,
+        /// CDNAME.TXT for nicer entry titles. Optional.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// `parse_player_lzs` descriptor count.
+        #[arg(long, default_value_t = 6)]
+        desc_count: usize,
+    },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
     /// event-script prescript at `+0x800`.
@@ -634,6 +706,16 @@ fn main() -> Result<()> {
             only_hits,
         } => battle_data_pack_scan(&dir, cdname.as_deref(), only_hits),
         Cmd::EffectBundleScan { dir, only_hits } => effect_bundle_scan(&dir, only_hits),
+        Cmd::PlayerAnm {
+            input,
+            desc_count,
+            out,
+        } => player_anm_one(&input, desc_count, out.as_deref()),
+        Cmd::PlayerAnmScan {
+            dir,
+            cdname,
+            desc_count,
+        } => player_anm_scan(&dir, cdname.as_deref(), desc_count),
         Cmd::SceneV12 {
             input,
             scripts,
@@ -704,6 +786,19 @@ fn main() -> Result<()> {
             anim,
             glb.as_deref(),
         ),
+        Cmd::CharacterPack {
+            input,
+            slot,
+            equip,
+            out,
+        } => character_pack_one(&input, slot, equip, out.as_deref()),
+        Cmd::BakaFighterPack {
+            input,
+            slot,
+            out_tmd,
+            atlas,
+            out_tim,
+        } => baka_fighter_pack_one(&input, slot, out_tmd.as_deref(), atlas, out_tim.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -3507,6 +3602,272 @@ fn load_man_bytes(
     }
     let (decoded, _) = legaia_lzs::decompress_tracked(&buf[start..], man.size as usize)?;
     Ok((decoded, man))
+}
+
+fn character_pack_one(
+    input: &Path,
+    slot: Option<usize>,
+    equip: Option<u8>,
+    out: Option<&Path>,
+) -> Result<()> {
+    use legaia_asset::character_pack;
+    let bytes = std::fs::read(input)
+        .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
+    let pack = character_pack::parse(&bytes)?;
+    let active_patches = character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+
+    let print_slot = |s: &character_pack::CharacterSlot| {
+        let label = character_pack::slot_label(s.slot);
+        let patch = active_patches.iter().find(|p| (p.slot as usize) == s.slot);
+        let patch_note = match patch {
+            Some(p) => format!(
+                "patched group {} @ record byte +0x{:03X}",
+                p.patched_group_index, p.equip_byte_record_offset
+            ),
+            None => "auxiliary (no equipment swap)".to_string(),
+        };
+        println!(
+            "  slot {} ({:<5}) disc-nobj {:2}  TMD bytes {:6}  {}",
+            s.slot,
+            label,
+            s.disc_nobj,
+            s.tmd_bytes.len(),
+            patch_note,
+        );
+    };
+
+    if let Some(idx) = slot {
+        let slot = pack
+            .slot(idx)
+            .ok_or_else(|| anyhow::anyhow!("slot {idx} out of range (0..=4)"))?;
+        print_slot(slot);
+        if let Some(equip_byte) = equip {
+            let Some(patch) = active_patches
+                .iter()
+                .find(|p| (p.slot as usize) == slot.slot)
+            else {
+                anyhow::bail!(
+                    "slot {} ({}) is not an active-party slot; equipment swap only applies to 0..=2",
+                    slot.slot,
+                    character_pack::slot_label(slot.slot)
+                );
+            };
+            let patched =
+                character_pack::equipment_swap::apply(&slot.tmd_bytes, *patch, equip_byte);
+            let template = if equip_byte == 0 { 11 } else { 10 };
+            println!(
+                "  applied swap: equip byte 0x{:02X} -> group-{} template overwrites visible group {}",
+                equip_byte, template, patch.patched_group_index
+            );
+            if let Some(out_path) = out {
+                std::fs::write(out_path, &patched)?;
+                println!("  wrote patched TMD -> {}", out_path.display());
+            }
+        } else if let Some(out_path) = out {
+            std::fs::write(out_path, &slot.tmd_bytes)?;
+            println!("  wrote raw disc TMD -> {}", out_path.display());
+        }
+    } else {
+        if equip.is_some() {
+            anyhow::bail!("--equip requires --slot <N>");
+        }
+        if out.is_some() {
+            anyhow::bail!("--out requires --slot <N>");
+        }
+        println!(
+            "PROT {} (befect_data §0): {} character slots",
+            character_pack::PROT_ENTRY_INDEX,
+            pack.slots().len()
+        );
+        for s in pack.slots() {
+            print_slot(s);
+        }
+    }
+    Ok(())
+}
+
+fn baka_fighter_pack_one(
+    input: &Path,
+    slot: Option<usize>,
+    out_tmd: Option<&Path>,
+    atlas: Option<usize>,
+    out_tim: Option<&Path>,
+) -> Result<()> {
+    use legaia_asset::baka_fighter_pack;
+    let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
+    let pack = baka_fighter_pack::parse(&bytes)?;
+    let print_slot = |s: &baka_fighter_pack::BakaFighterSlot| {
+        let label = baka_fighter_pack::slot_label(s.slot);
+        println!(
+            "  slot {} ({:<7}) disc-nobj {:2}  TMD bytes {:6}  file offset 0x{:06X}",
+            s.slot,
+            label,
+            s.disc_nobj,
+            s.tmd_bytes.len(),
+            s.file_offset
+        );
+    };
+    let print_atlas = |a: &baka_fighter_pack::BakaFighterAtlas| {
+        println!(
+            "  atlas {}  CLUT fb_y={:3}  file offset 0x{:06X}  {} bytes",
+            a.atlas_index,
+            a.clut_fb_y,
+            a.file_offset,
+            a.tim_bytes.len()
+        );
+    };
+    if let Some(s_idx) = slot {
+        let s = pack
+            .slot(s_idx)
+            .ok_or_else(|| anyhow::anyhow!("slot {s_idx} out of range (0..=4)"))?;
+        print_slot(s);
+        if let Some(p) = out_tmd {
+            std::fs::write(p, &s.tmd_bytes).with_context(|| format!("write {}", p.display()))?;
+            println!(
+                "  wrote raw disc TMD ({}) -> {}",
+                baka_fighter_pack::slot_label(s.slot),
+                p.display()
+            );
+        }
+    } else if atlas.is_none() && out_tim.is_none() {
+        println!(
+            "PROT {} (other5, battle character pack): {} slots + {} atlases",
+            baka_fighter_pack::PROT_ENTRY_INDEX,
+            pack.slots().len(),
+            pack.atlases.len()
+        );
+        for s in pack.slots() {
+            print_slot(s);
+        }
+        for a in &pack.atlases {
+            print_atlas(a);
+        }
+    }
+    if let Some(a_idx) = atlas {
+        let a = pack
+            .atlas(a_idx)
+            .ok_or_else(|| anyhow::anyhow!("atlas {a_idx} out of range (0..=6)"))?;
+        print_atlas(a);
+        if let Some(p) = out_tim {
+            std::fs::write(p, &a.tim_bytes).with_context(|| format!("write {}", p.display()))?;
+            println!("  wrote raw atlas {} TIM -> {}", a.atlas_index, p.display());
+        }
+    }
+    Ok(())
+}
+
+fn player_anm_one(input: &Path, desc_count: usize, out: Option<&Path>) -> Result<()> {
+    use legaia_asset::player_anm;
+    let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
+    let bundles = player_anm::find_in_entry(&bytes, desc_count);
+    if bundles.is_empty() {
+        println!(
+            "no player-ANM bundles found in {} (desc_count={}; try 3 / 5 / 7)",
+            input.display(),
+            desc_count
+        );
+        return Ok(());
+    }
+    let entry_stem = input
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "entry".into());
+    println!(
+        "{}: {} player-ANM bundle(s)",
+        input.display(),
+        bundles.len()
+    );
+    for (i, b) in bundles.iter().enumerate() {
+        let r0 = b.record_marker_1(0).unwrap_or(0);
+        println!(
+            "  bundle {i}: count={}  decoded={} bytes  record0 marker_1=0x{r0:04X}",
+            b.record_count,
+            b.decoded.len()
+        );
+        if let Some(out_dir) = out {
+            std::fs::create_dir_all(out_dir)
+                .with_context(|| format!("create_dir_all {}", out_dir.display()))?;
+            let p = out_dir.join(format!("{entry_stem}_sect{i}.anm"));
+            std::fs::write(&p, &b.decoded).with_context(|| format!("write {}", p.display()))?;
+            println!("    wrote {} ({} bytes)", p.display(), b.decoded.len());
+        }
+    }
+    Ok(())
+}
+
+fn player_anm_scan(dir: &Path, cdname_path: Option<&Path>, desc_count: usize) -> Result<()> {
+    use legaia_asset::player_anm;
+    let cdname = cdname_path
+        .map(|p| std::fs::read_to_string(p).with_context(|| format!("read CDNAME {}", p.display())))
+        .transpose()?;
+    let cdname_map: std::collections::HashMap<u32, String> =
+        cdname.as_deref().map(parse_cdname_text).unwrap_or_default();
+
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+        .with_context(|| format!("read_dir {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "BIN"))
+        .collect();
+    entries.sort();
+
+    let mut total = 0usize;
+    for path in &entries {
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
+        let bundles = player_anm::find_in_entry(&bytes, desc_count);
+        if bundles.is_empty() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        // PROT index: parse the 4-digit prefix.
+        let prot_idx: u32 = name
+            .split('_')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let label = cdname_map.get(&prot_idx).cloned().unwrap_or_default();
+        for (i, b) in bundles.iter().enumerate() {
+            total += 1;
+            println!(
+                "  {name:32} bundle {i}: count={:3}  decoded={:6} bytes  {}",
+                b.record_count,
+                b.decoded.len(),
+                label
+            );
+        }
+    }
+    println!(
+        "\n{total} player-ANM bundle(s) across {} entries",
+        entries.len()
+    );
+    Ok(())
+}
+
+fn parse_cdname_text(text: &str) -> std::collections::HashMap<u32, String> {
+    // CDNAME.TXT format: `#define <label> <PROT_index>` lines.
+    // The label inherits forward until the next #define; we still only
+    // emit the explicit (label, prot_index) pairs here.
+    let mut out = std::collections::HashMap::new();
+    for line in text.lines() {
+        let l = line.trim();
+        let Some(rest) = l.strip_prefix("#define ") else {
+            continue;
+        };
+        let mut parts = rest.split_whitespace();
+        let Some(label) = parts.next() else { continue };
+        let Some(idx_str) = parts.next() else {
+            continue;
+        };
+        if let Ok(idx) = idx_str.parse::<u32>() {
+            out.insert(idx, label.to_string());
+        }
+    }
+    out
 }
 
 fn monster_archive_one(

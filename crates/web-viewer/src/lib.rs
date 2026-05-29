@@ -1809,6 +1809,761 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    // -----------------------------------------------------------------------
+    // Player-character pack (PROT 0874 §0) — Vahn / Noa / Gala + 2 auxiliary
+    //
+    // Sister accessors of `monster_*`: surface the five character TMDs the
+    // engine keeps resident at `DAT_8007C018[0..=4]`. The active-party slots
+    // expose the `FUN_8001EBEC` equipment swap so the JS viewer can flip the
+    // visible weapon-bearing group descriptor in place.
+    // -----------------------------------------------------------------------
+
+    /// JSON summary of the five character-pack slots.
+    ///
+    /// Shape:
+    /// ```json
+    /// { "slots": [
+    ///     { "slot": 0, "label": "Vahn", "disc_nobj": 12,
+    ///       "tmd_bytes": 13220,
+    ///       "patch": { "patched_group_index": 0,
+    ///                  "equip_byte_record_offset": 406 } },
+    ///     ...
+    ///   ],
+    ///   "patched_group_offset": 12,
+    ///   "group_descriptor_bytes": 28,
+    ///   "equip_group_zero_offset": 320,
+    ///   "equip_group_nonzero_offset": 292
+    /// }
+    /// ```
+    /// `patch` is present only for the 3 active-party slots (0..=2); slots
+    /// 3/4 carry the auxiliary actors with no equipment swap. Returns
+    /// `{"slots":[],"error":"..."}` when the disc is missing PROT 0874 or
+    /// the LZS section fails to decode.
+    pub fn character_pack_json(&self) -> String {
+        let Some(slice) = self.character_pack_slice() else {
+            return r#"{"slots":[]}"#.to_string();
+        };
+        let pack = match legaia_asset::character_pack::parse(slice) {
+            Ok(p) => p,
+            Err(e) => {
+                return format!(r#"{{"slots":[],"error":"character pack: {e}"}}"#);
+            }
+        };
+        let active = legaia_asset::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+        let slots: Vec<serde_json::Value> = pack
+            .slots()
+            .iter()
+            .map(|s| {
+                let patch = active
+                    .iter()
+                    .find(|p| (p.slot as usize) == s.slot)
+                    .map(|p| {
+                        serde_json::json!({
+                            "patched_group_index": p.patched_group_index,
+                            "equip_byte_record_offset": p.equip_byte_record_offset,
+                        })
+                    });
+                serde_json::json!({
+                    "slot": s.slot,
+                    "label": legaia_asset::character_pack::slot_label(s.slot),
+                    "disc_nobj": s.disc_nobj,
+                    "tmd_bytes": s.tmd_bytes.len(),
+                    "patch": patch,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "slots": slots,
+            "first_group_descriptor_offset":
+                legaia_asset::character_pack::FIRST_GROUP_DESCRIPTOR_OFFSET,
+            "group_descriptor_bytes":
+                legaia_asset::character_pack::GROUP_DESCRIPTOR_BYTES,
+            "equip_group_zero_offset":
+                legaia_asset::character_pack::EQUIP_GROUP_ZERO_OFFSET,
+            "equip_group_nonzero_offset":
+                legaia_asset::character_pack::EQUIP_GROUP_NONZERO_OFFSET,
+        })
+        .to_string()
+    }
+
+    /// Slice of the disc holding PROT 0874 (`befect_data` extended footprint).
+    /// Shared by every `character_*` accessor.
+    fn character_pack_slice(&self) -> Option<&[u8]> {
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == legaia_asset::character_pack::PROT_ENTRY_INDEX)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        self.disc.get(off..end)
+    }
+
+    /// Build slot `slot`'s renderable mesh, optionally with the equipment
+    /// swap applied. `equip` of `None` returns the disc-form mesh
+    /// (with retail's 10-group cap applied so groups 10/11 templates aren't
+    /// drawn directly); `Some(byte)` runs the FUN_8001EBEC patch with that
+    /// byte before parsing.
+    fn build_character_mesh(
+        &self,
+        slot: usize,
+        equip: Option<u8>,
+    ) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let raw = self.character_pack_slice()?;
+        let pack = legaia_asset::character_pack::parse(raw).ok()?;
+        let cslot = pack.slot(slot)?;
+        // Retail caps the active-party slots at 10 live groups (FUN_8001E890);
+        // mirror that so groups 10/11 (the equip templates) aren't drawn as
+        // visible geometry. The patched copy still contains the templates at
+        // their disc offsets but `parse` walks only the first `nobj`.
+        let mut tmd_bytes = if let Some(equip_byte) = equip {
+            let active = legaia_asset::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+            if let Some(patch) = active.iter().find(|p| (p.slot as usize) == slot) {
+                legaia_asset::character_pack::equipment_swap::apply(
+                    &cslot.tmd_bytes,
+                    *patch,
+                    equip_byte,
+                )
+            } else {
+                cslot.tmd_bytes.clone()
+            }
+        } else {
+            cslot.tmd_bytes.clone()
+        };
+        if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
+            // Overwrite TMD header `nobj` to 10 — the retail cap.
+            let cap = 10u32.to_le_bytes();
+            tmd_bytes[0x08..0x0C].copy_from_slice(&cap);
+        }
+        let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
+        Some((tmd, tmd_bytes))
+    }
+
+    /// Convenience: return the renderable `VramMesh` for slot `slot` under
+    /// the chosen equipment toggle. Uses the lenient extractor that keeps
+    /// flat-shaded primitives (the bulk of field-form character body
+    /// parts) — the standard one would drop them.
+    fn build_character_vram_mesh(
+        &self,
+        slot: usize,
+        equip: Option<u8>,
+    ) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, bytes) = self.build_character_mesh(slot, equip)?;
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &bytes).0)
+    }
+
+    /// Per-vertex positions for the player character at pack slot `slot`,
+    /// optionally with the equipment swap applied (`equip_byte` < 0 means
+    /// "no swap, draw disc-form mesh"). Empty if `slot` is out of range or
+    /// the disc isn't loaded.
+    pub fn character_mesh_positions(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex normals parallel to [`Self::character_mesh_positions`].
+    pub fn character_mesh_normals(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.normals.len() * 3);
+        for n in &mesh.normals {
+            out.extend_from_slice(&[n[0], n[1], n[2]]);
+        }
+        out
+    }
+
+    /// Triangle indices for the player character at pack slot `slot`,
+    /// `u32`, multiple of 3.
+    pub fn character_mesh_indices(&self, slot: u32, equip_byte: i32) -> Vec<u32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        self.build_character_vram_mesh(slot as usize, equip)
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]` integer texel coords (parallel to
+    /// [`Self::character_mesh_positions`], 2 i32 per vertex). The site page
+    /// pairs these with the PROT 0876 atlas page to do its own NEAREST
+    /// sample; we keep the integer texels here instead of normalising
+    /// because the atlas dimensions aren't surfaced yet.
+    pub fn character_mesh_uvs(&self, slot: u32, equip_byte: i32) -> Vec<i32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` (CLUT-base / texture-page descriptor) so the
+    /// JS shader can resolve VRAM texel + palette per the standard PSX TMD
+    /// model. `2 u32` per vertex, parallel to [`Self::character_mesh_positions`].
+    pub fn character_mesh_cba_tsb(&self, slot: u32, equip_byte: i32) -> Vec<u32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+    /// Uses [`centroid_bounds`] so asymmetric poses (weapon extended, arm out)
+    /// don't pull the camera target off the body.
+    pub fn character_mesh_bounds(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some(mesh) = self.build_character_vram_mesh(slot as usize, equip) else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        centroid_bounds(&mesh.positions)
+    }
+
+    /// Per-vertex TMD object index for the player character at pack slot
+    /// `slot`, parallel to [`Self::character_mesh_positions`]. The JS-side
+    /// player-ANM animator uses it to apply per-bone (per-object) transforms
+    /// without re-uploading geometry.
+    pub fn character_mesh_object_ids(&self, slot: u32, equip_byte: i32) -> Vec<u32> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some((tmd, bytes)) = self.build_character_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &bytes).1
+    }
+
+    /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+    /// installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
+    /// download / debug round-trip.
+    pub fn character_tmd_bytes(&self, slot: u32) -> Vec<u8> {
+        let Some(raw) = self.character_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::character_pack::parse(raw) else {
+            return Vec::new();
+        };
+        pack.slot(slot as usize)
+            .map(|s| s.tmd_bytes.clone())
+            .unwrap_or_default()
+    }
+
+    // ------------------------------------------------------------------
+    // Battle-form character pack — PROT 1204 (`other5`).
+    //
+    // Sister pack to the field-form one above. Same 5-slot shape, but
+    // higher-fidelity battle TMDs (typical disc-nobj 15/16/15 vs 12/12/12)
+    // and an explicit 7-atlas trailer (256x256 4bpp TIMs at fixed stride).
+    // ------------------------------------------------------------------
+
+    /// JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+    /// 5 TMD slots + 7 character-atlas TIMs. Shape:
+    /// ```text
+    /// {
+    ///   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
+    ///   "atlases": [{"atlas":0,"clut_fb_y":490,"tim_bytes":33316,"file_offset":154628}, ...],
+    ///   "atlas_stride_bytes": 33316,
+    ///   "first_atlas_offset": 154628
+    /// }
+    /// ```
+    pub fn baka_fighter_pack_json(&self) -> String {
+        let Some(slice) = self.baka_fighter_pack_slice() else {
+            return r#"{"slots":[],"atlases":[]}"#.to_string();
+        };
+        let pack = match legaia_asset::baka_fighter_pack::parse(slice) {
+            Ok(p) => p,
+            Err(e) => {
+                return format!(r#"{{"slots":[],"atlases":[],"error":"battle char pack: {e}"}}"#);
+            }
+        };
+        let slots: Vec<serde_json::Value> = pack
+            .slots()
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "slot": s.slot,
+                    "label": legaia_asset::baka_fighter_pack::slot_label(s.slot),
+                    "disc_nobj": s.disc_nobj,
+                    "tmd_bytes": s.tmd_bytes.len(),
+                    "file_offset": s.file_offset,
+                })
+            })
+            .collect();
+        let atlases: Vec<serde_json::Value> = pack
+            .atlases
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "atlas": a.atlas_index,
+                    "clut_fb_y": a.clut_fb_y,
+                    "tim_bytes": a.tim_bytes.len(),
+                    "file_offset": a.file_offset,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "slots": slots,
+            "atlases": atlases,
+            "atlas_stride_bytes": legaia_asset::baka_fighter_pack::ATLAS_STRIDE_BYTES,
+            "first_atlas_offset": legaia_asset::baka_fighter_pack::FIRST_ATLAS_OFFSET,
+        })
+        .to_string()
+    }
+
+    fn baka_fighter_pack_slice(&self) -> Option<&[u8]> {
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == legaia_asset::baka_fighter_pack::PROT_ENTRY_INDEX)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        self.disc.get(off..end)
+    }
+
+    fn build_baka_fighter_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let raw = self.baka_fighter_pack_slice()?;
+        let pack = legaia_asset::baka_fighter_pack::parse(raw).ok()?;
+        let cslot = pack.slot(slot)?;
+        let tmd_bytes = cslot.tmd_bytes.clone();
+        let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
+        Some((tmd, tmd_bytes))
+    }
+
+    fn build_baka_fighter_vram_mesh(&self, slot: usize) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, bytes) = self.build_baka_fighter_mesh(slot)?;
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes))
+    }
+
+    /// Per-vertex positions for the battle-form character at pack slot `slot`.
+    pub fn baka_fighter_mesh_positions(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex normals for the battle-form character at slot `slot`.
+    pub fn baka_fighter_mesh_normals(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.normals.len() * 3);
+        for n in &mesh.normals {
+            out.extend_from_slice(&[n[0], n[1], n[2]]);
+        }
+        out
+    }
+
+    /// Triangle indices for the battle-form character at slot `slot`.
+    pub fn baka_fighter_mesh_indices(&self, slot: u32) -> Vec<u32> {
+        self.build_baka_fighter_vram_mesh(slot as usize)
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]` integer texel coords for the battle-form character.
+    pub fn baka_fighter_mesh_uvs(&self, slot: u32) -> Vec<i32> {
+        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` for the battle-form character.
+    pub fn baka_fighter_mesh_cba_tsb(&self, slot: u32) -> Vec<u32> {
+        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+    /// Uses the **vertex centroid** (mean position) rather than the AABB
+    /// midpoint, so asymmetric poses (e.g. Vahn's stance with the weapon
+    /// extended past the body's X axis) don't pull the camera target off the
+    /// torso. Radius is the max distance from the centroid to any vertex.
+    pub fn baka_fighter_mesh_bounds(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        centroid_bounds(&mesh.positions)
+    }
+
+    /// Per-vertex TMD object index for the battle-form character at slot
+    /// `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+    /// player-ANM animator uses it to apply per-bone (per-object) transforms.
+    pub fn baka_fighter_mesh_object_ids(&self, slot: u32) -> Vec<u32> {
+        let Some((tmd, bytes)) = self.build_baka_fighter_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes).1
+    }
+
+    /// Raw disc-form TMD bytes for battle-form slot `slot`.
+    pub fn baka_fighter_tmd_bytes(&self, slot: u32) -> Vec<u8> {
+        let Some(raw) = self.baka_fighter_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+            return Vec::new();
+        };
+        pack.slot(slot as usize)
+            .map(|s| s.tmd_bytes.clone())
+            .unwrap_or_default()
+    }
+
+    /// Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+    /// a 256x1 sub-CLUT row inside the TIM block.
+    pub fn baka_fighter_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
+        let Some(raw) = self.baka_fighter_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+            return Vec::new();
+        };
+        pack.atlas(atlas as usize)
+            .map(|a| a.tim_bytes.clone())
+            .unwrap_or_default()
+    }
+
+    /// Build the 1 MB PSX VRAM the battle-form character pack would have
+    /// at boot — each of the seven atlas TIMs uploaded at its declared
+    /// `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
+    /// `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
+    /// fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
+    /// to the battle character atlas pack.
+    ///
+    /// Note: the PROT 1204 atlas TIMs ARE the real battle-form character
+    /// art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
+    /// rendering each atlas with its bundled CLUT). The earlier
+    /// "placeholder" framing was misleading — it came from
+    /// byte-comparing against a mid-battle mc1 retail VRAM snapshot,
+    /// which captures only one animation phase of the runtime upload.
+    /// What's actually missing: the targeted-CLUT upload pass that
+    /// populates rows 491/493/494/495 from non-PROT-1204 sources. The
+    /// TMD primitives reference CBAs across rows 481/492/495/496/503,
+    /// not just the atlas's own row, so a single character's polygons
+    /// need ALL those CLUT rows populated to render correct palettes.
+    /// See `docs/reference/open-rev-eng-threads.md` § "Battle character
+    /// image + CLUT source".
+    pub fn baka_fighter_vram_bytes(&self) -> Vec<u8> {
+        let Some(raw) = self.baka_fighter_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+            return Vec::new();
+        };
+        let mut vram = legaia_tim::Vram::new();
+        for atlas in &pack.atlases {
+            if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
+                vram.upload_tim(&tim);
+            }
+        }
+        vram.as_bytes().to_vec()
+    }
+
+    // ------------------------------------------------------------------
+    // Player ANM bundles — per-scene asset bundle, section 2, type 0x05
+    // ("MOVE" label but canonical ANM content with marker_1 = 0x080C).
+    // See `legaia_asset::player_anm` + docs/formats/anm.md.
+    // ------------------------------------------------------------------
+
+    /// JSON summary of every player-ANM bundle accessible from this disc.
+    /// Shape:
+    /// ```text
+    /// {
+    ///   "bundles": [
+    ///     {
+    ///       "prot_index": 4,
+    ///       "record_count": 69,
+    ///       "decoded_bytes": 96448,
+    ///       "records": [
+    ///         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C },
+    ///         ...
+    ///       ]
+    ///     }, ...
+    ///   ]
+    /// }
+    /// ```
+    /// Surveys the corpus by walking each scene's first PROT slot
+    /// (parse_player_lzs descriptor count = 6, the canonical scene-bundle
+    /// shape) and emitting one entry per cleanly-decoded type-0x05 section.
+    pub fn player_anm_corpus_json(&self) -> String {
+        let toc = match parse_prot_toc(&self.disc) {
+            Some(t) => t,
+            None => return r#"{"bundles":[],"error":"no PROT TOC"}"#.to_string(),
+        };
+        let mut bundles: Vec<serde_json::Value> = Vec::new();
+        for meta in &toc {
+            let off = meta.byte_offset as usize;
+            let end = off.saturating_add(meta.size_bytes as usize);
+            let Some(buf) = self.disc.get(off..end) else {
+                continue;
+            };
+            // The vast majority of scene bundles use 6 descriptors; that's the
+            // detector spread the disc-gated test pins. Lower counts catch a
+            // handful of `befect_data` / `other5` variants.
+            for desc_count in [6, 3, 5, 7] {
+                let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
+                if !found.is_empty() {
+                    for b in found {
+                        let recs: Vec<serde_json::Value> = (0..b.record_count as usize)
+                            .map(|i| {
+                                let bytes = b.record_bytes(i);
+                                let rec = b.record(i).ok();
+                                // Stillness score for frame 0: sum of
+                                // each bone's rotation distance from a
+                                // **90° cardinal** (multiples of 1024 in
+                                // PSX angle units). Rest-pose anims for
+                                // characters whose TMD has Z-mirrored
+                                // limbs (Vahn's field form) use an
+                                // ry≈180° flip on one shin to unmirror
+                                // it; measuring against cardinals (not
+                                // just 0/360°) keeps those records
+                                // scoring low. Lower = closer to an idle.
+                                let stillness = if let Some(r) = rec.as_ref() {
+                                    let mut score: i64 = 0;
+                                    for bone in 0..(r.bone_count as usize) {
+                                        if let Some(t) = b.bone_transform(i, 0, bone) {
+                                            for r_ang in [t.r_x, t.r_y, t.r_z] {
+                                                let m = r_ang.rem_euclid(1024);
+                                                score += m.min(1024 - m) as i64;
+                                            }
+                                        }
+                                    }
+                                    score
+                                } else {
+                                    i64::MAX
+                                };
+                                serde_json::json!({
+                                    "index": i,
+                                    "offset": b.record_offsets[i],
+                                    "size": bytes.len(),
+                                    "marker_1": b.record_marker_1(i).unwrap_or(0),
+                                    "a": rec.as_ref().map(|r| r.a).unwrap_or(0),
+                                    "b": rec.as_ref().map(|r| r.b).unwrap_or(0),
+                                    "flag": rec.as_ref().map(|r| r.flag).unwrap_or(0),
+                                    "bone_count": rec.as_ref().map(|r| r.bone_count).unwrap_or(0),
+                                    "frame_count": rec.as_ref().map(|r| r.frame_count).unwrap_or(0),
+                                    "stillness": stillness,
+                                })
+                            })
+                            .collect();
+                        bundles.push(serde_json::json!({
+                            "prot_index": meta.index,
+                            "record_count": b.record_count,
+                            "decoded_bytes": b.decoded.len(),
+                            "records": recs,
+                        }));
+                    }
+                    break;
+                }
+            }
+        }
+        serde_json::json!({ "bundles": bundles }).to_string()
+    }
+
+    /// Find a single player-ANM bundle by its PROT entry index and return
+    /// the LZS-decoded bytes. Empty if the entry doesn't carry a bundle.
+    pub fn player_anm_decoded(&self, prot_index: u32) -> Vec<u8> {
+        let toc = match parse_prot_toc(&self.disc) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+        let Some(meta) = toc.into_iter().find(|e| e.index == prot_index) else {
+            return Vec::new();
+        };
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        let Some(buf) = self.disc.get(off..end) else {
+            return Vec::new();
+        };
+        for desc_count in [6, 3, 5, 7] {
+            let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
+            if let Some(b) = found.into_iter().next() {
+                return b.decoded;
+            }
+        }
+        Vec::new()
+    }
+
+    /// Raw bytes of one record from the player-ANM bundle at `prot_index`.
+    /// Includes the per-record header (`a`, `b`, `marker_1 = 0x080C`, `flag`),
+    /// the 8-byte per-anim prologue, and the
+    /// `(frame_count × bone_count × 8)` byte frame table.
+    pub fn player_anm_record_bytes(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        bundle.record_bytes(record_index as usize).to_vec()
+    }
+
+    /// Decoded per-record header for one player-ANM record. Returned as a
+    /// `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
+    /// frame0_bone0_u8[0..8]]` — total 14 entries (the 8 bytes after the
+    /// header are bone 0 of frame 0's TR entry, since the body sits
+    /// immediately after the 8-byte header — there is no prologue).
+    /// Returns an empty Vec on out-of-range record or size-invariant failure.
+    pub fn player_anm_record_header(&self, prot_index: u32, record_index: u32) -> Vec<i32> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record_index as usize) else {
+            return Vec::new();
+        };
+        let mut out = vec![
+            rec.a as i32,
+            rec.b as i32,
+            rec.marker_1 as i32,
+            rec.flag as i32,
+            rec.bone_count as i32,
+            rec.frame_count as i32,
+        ];
+        let bf = bundle.bone_frame_bytes(record_index as usize, 0, 0);
+        for i in 0..8 {
+            out.push(*bf.get(i).unwrap_or(&0) as i32);
+        }
+        out
+    }
+
+    /// Per-frame bone-transform table for one player-ANM record, packed as
+    /// `i16` LE for ease of JS-side `Int16Array` overlay.
+    ///
+    /// Layout: `frame_count * bone_count * 4 i16` (`8` bytes per (bone, frame)
+    /// entry, read as 4 little-endian `i16`s). Returns an empty Vec on
+    /// out-of-range record or size-invariant failure.
+    ///
+    /// The semantic meaning of the 4 i16s per (bone, frame) entry is the
+    /// still-open thread (see `docs/formats/anm.md` § "Open threads"). The
+    /// working hypothesis is `(rot_x, rot_y, rot_z, _flag)` in PSX 12-bit
+    /// fixed-point (4096 = 360°). The viewer applies this and lets you see
+    /// what motion the bytes describe.
+    pub fn player_anm_record_frames(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record_index as usize) else {
+            return Vec::new();
+        };
+        let bone_count = rec.bone_count as usize;
+        let frame_count = rec.frame_count as usize;
+        let mut out = Vec::with_capacity(frame_count * bone_count * 8);
+        for f in 0..frame_count {
+            let frame = bundle.frame_bytes(record_index as usize, f);
+            if frame.len() != bone_count * 8 {
+                return Vec::new();
+            }
+            out.extend_from_slice(frame);
+        }
+        out
+    }
+
+    /// Player-ANM record frames decoded into the same pose format the
+    /// site's `MonsterMeshView` animator consumes:
+    /// `Int32Array`, `6` entries per part per frame, as
+    /// `[tx, ty, tz, rx, ry, rz]`.
+    ///
+    /// Each 8-byte (bone, frame) entry is decoded as the retail engine does
+    /// it (`FUN_8001BE80`): bytes 0..4 hold three signed 12-bit translation
+    /// values (joint offset in actor-local space, PSX model units), bytes
+    /// 5/6/7 hold three u8 rotation angles that map to PSX 12-bit angles via
+    /// `<< 4` (so the JS animator's `4096`-unit convention applies
+    /// directly).
+    ///
+    /// The transforms are **absolute** per frame (NOT delta-from-frame-0):
+    /// frame 0 carries the rest-pose assembly transform that places each
+    /// TMD object at its joint position with its rest-pose orientation.
+    /// Applying these to objects whose vertices are in object-local space
+    /// produces the assembled character.
+    ///
+    /// The output is padded to `target_part_count` parts (typically the
+    /// TMD's `nobj`) — bones beyond the record's own `bone_count` get
+    /// identity transforms so the un-animated parts (e.g. field-form
+    /// equipment templates at groups 10/11) stay at their TMD-local
+    /// origin. Pass `0` to leave the part count at the record's own
+    /// bone_count.
+    pub fn player_anm_record_pose_frames(
+        &self,
+        prot_index: u32,
+        record_index: u32,
+        target_part_count: u32,
+    ) -> Vec<i32> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record_index as usize) else {
+            return Vec::new();
+        };
+        let anm_bone_count = rec.bone_count as usize;
+        let frame_count = rec.frame_count as usize;
+        let part_count = (target_part_count as usize).max(anm_bone_count);
+        let mut out = Vec::with_capacity(frame_count * part_count * 6);
+        for f in 0..frame_count {
+            #[allow(clippy::needless_range_loop)]
+            for p in 0..part_count {
+                if p < anm_bone_count {
+                    let Some(t) = bundle.bone_transform(record_index as usize, f, p) else {
+                        return Vec::new();
+                    };
+                    out.push(t.t_x);
+                    out.push(t.t_y);
+                    out.push(t.t_z);
+                    out.push(t.r_x);
+                    out.push(t.r_y);
+                    out.push(t.r_z);
+                } else {
+                    out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                }
+            }
+        }
+        out
+    }
+
+    /// `[bone_count, frame_count]` for one player-ANM record so the JS
+    /// animator can size its scratch buffers without re-walking the bundle.
+    /// Empty `[0, 0]` if the record doesn't exist or fails size invariants.
+    pub fn player_anm_record_dims(&self, prot_index: u32, record_index: u32) -> Vec<u32> {
+        let decoded = self.player_anm_decoded(prot_index);
+        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+            return vec![0, 0];
+        };
+        match bundle.record(record_index as usize) {
+            Ok(r) => vec![r.bone_count as u32, r.frame_count as u32],
+            Err(_) => vec![0, 0],
+        }
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex
@@ -2919,6 +3674,41 @@ fn tim_block_targeting(tim: &legaia_tim::Tim, needs: &[PrimTarget]) -> (bool, bo
 
 fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
     a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Vertex-centroid bounding sphere — `[cx, cy, cz, r]`. The center is the
+/// mean of every vertex (mass-weighted by vertex count, since every vertex
+/// contributes equally), so a model whose AABB is asymmetric (an extended
+/// weapon, an arm thrown out for a strike pose) anchors the camera target on
+/// the bulk of the geometry instead of halfway between the body and the
+/// outlier. Radius is the maximum distance from the centroid to any vertex,
+/// which guarantees every vertex is visible at the default camera distance.
+fn centroid_bounds(positions: &[[f32; 3]]) -> Vec<f32> {
+    if positions.is_empty() {
+        return vec![0.0; 4];
+    }
+    let n = positions.len() as f32;
+    let mut sx = 0f32;
+    let mut sy = 0f32;
+    let mut sz = 0f32;
+    for p in positions {
+        sx += p[0];
+        sy += p[1];
+        sz += p[2];
+    }
+    let c = [sx / n, sy / n, sz / n];
+    let mut r2max = 0f32;
+    for p in positions {
+        let dx = p[0] - c[0];
+        let dy = p[1] - c[1];
+        let dz = p[2] - c[2];
+        let r2 = dx * dx + dy * dy + dz * dz;
+        if r2 > r2max {
+            r2max = r2;
+        }
+    }
+    let r = r2max.sqrt().max(1.0);
+    vec![c[0], c[1], c[2], r]
 }
 
 /// Expand a fixed-size PSX sprite (8x8 or 16x16) into the same 6-vertex

@@ -6,12 +6,14 @@
 architecture.html
 arts.html
 arts.json
+characters.html
 formats/anm.html
 formats/art-data.html
 formats/asset-descriptor.html
 formats/asset-type.html
 formats/battle-data-pack.html
 formats/cdname.html
+formats/character-mesh.html
 formats/data-field.html
 formats/dialog-font.html
 formats/disc.html

@@ -30,6 +30,7 @@ const NAV = [
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
       { href: 'arts.html',                      text: 'Tactical Arts',            key: 'arts' },
       { href: 'monsters.html',                  text: 'Enemy table',              key: 'monsters' },
+      { href: 'characters.html',                text: 'Characters',               key: 'characters' },
       { href: 'world-overview.html',            text: 'World overview (3D)',      key: 'world-overview' },
     ],
   },

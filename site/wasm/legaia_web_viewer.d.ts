@@ -235,6 +235,85 @@ export class LegaiaViewer {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+     * a 256x1 sub-CLUT row inside the TIM block.
+     */
+    baka_fighter_atlas_bytes(atlas: number): Uint8Array;
+    /**
+     * Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
+     * Uses the **vertex centroid** (mean position) rather than the AABB
+     * midpoint, so asymmetric poses (e.g. Vahn's stance with the weapon
+     * extended past the body's X axis) don't pull the camera target off the
+     * torso. Radius is the max distance from the centroid to any vertex.
+     */
+    baka_fighter_mesh_bounds(slot: number): Float32Array;
+    /**
+     * Per-vertex `[cba, tsb]` for the battle-form character.
+     */
+    baka_fighter_mesh_cba_tsb(slot: number): Uint32Array;
+    /**
+     * Triangle indices for the battle-form character at slot `slot`.
+     */
+    baka_fighter_mesh_indices(slot: number): Uint32Array;
+    /**
+     * Per-vertex normals for the battle-form character at slot `slot`.
+     */
+    baka_fighter_mesh_normals(slot: number): Float32Array;
+    /**
+     * Per-vertex TMD object index for the battle-form character at slot
+     * `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+     * player-ANM animator uses it to apply per-bone (per-object) transforms.
+     */
+    baka_fighter_mesh_object_ids(slot: number): Uint32Array;
+    /**
+     * Per-vertex positions for the battle-form character at pack slot `slot`.
+     */
+    baka_fighter_mesh_positions(slot: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` integer texel coords for the battle-form character.
+     */
+    baka_fighter_mesh_uvs(slot: number): Int32Array;
+    /**
+     * JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+     * 5 TMD slots + 7 character-atlas TIMs. Shape:
+     * ```text
+     * {
+     *   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
+     *   "atlases": [{"atlas":0,"clut_fb_y":490,"tim_bytes":33316,"file_offset":154628}, ...],
+     *   "atlas_stride_bytes": 33316,
+     *   "first_atlas_offset": 154628
+     * }
+     * ```
+     */
+    baka_fighter_pack_json(): string;
+    /**
+     * Raw disc-form TMD bytes for battle-form slot `slot`.
+     */
+    baka_fighter_tmd_bytes(slot: number): Uint8Array;
+    /**
+     * Build the 1 MB PSX VRAM the battle-form character pack would have
+     * at boot — each of the seven atlas TIMs uploaded at its declared
+     * `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
+     * `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
+     * fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
+     * to the battle character atlas pack.
+     *
+     * Note: the PROT 1204 atlas TIMs ARE the real battle-form character
+     * art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
+     * rendering each atlas with its bundled CLUT). The earlier
+     * "placeholder" framing was misleading — it came from
+     * byte-comparing against a mid-battle mc1 retail VRAM snapshot,
+     * which captures only one animation phase of the runtime upload.
+     * What's actually missing: the targeted-CLUT upload pass that
+     * populates rows 491/493/494/495 from non-PROT-1204 sources. The
+     * TMD primitives reference CBAs across rows 481/492/495/496/503,
+     * not just the atlas's own row, so a single character's polygons
+     * need ALL those CLUT rows populated to render correct palettes.
+     * See `docs/reference/open-rev-eng-threads.md` § "Battle character
+     * image + CLUT source".
+     */
+    baka_fighter_vram_bytes(): Uint8Array;
+    /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
      */
@@ -248,6 +327,79 @@ export class LegaiaViewer {
      * Number of cataloged TIMs in the loaded PROT.DAT.
      */
     catalog_len(): number;
+    /**
+     * Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
+     * Uses [`centroid_bounds`] so asymmetric poses (weapon extended, arm out)
+     * don't pull the camera target off the body.
+     */
+    character_mesh_bounds(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex `[cba, tsb]` (CLUT-base / texture-page descriptor) so the
+     * JS shader can resolve VRAM texel + palette per the standard PSX TMD
+     * model. `2 u32` per vertex, parallel to [`Self::character_mesh_positions`].
+     */
+    character_mesh_cba_tsb(slot: number, equip_byte: number): Uint32Array;
+    /**
+     * Triangle indices for the player character at pack slot `slot`,
+     * `u32`, multiple of 3.
+     */
+    character_mesh_indices(slot: number, equip_byte: number): Uint32Array;
+    /**
+     * Per-vertex normals parallel to [`Self::character_mesh_positions`].
+     */
+    character_mesh_normals(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex TMD object index for the player character at pack slot
+     * `slot`, parallel to [`Self::character_mesh_positions`]. The JS-side
+     * player-ANM animator uses it to apply per-bone (per-object) transforms
+     * without re-uploading geometry.
+     */
+    character_mesh_object_ids(slot: number, equip_byte: number): Uint32Array;
+    /**
+     * Per-vertex positions for the player character at pack slot `slot`,
+     * optionally with the equipment swap applied (`equip_byte` < 0 means
+     * "no swap, draw disc-form mesh"). Empty if `slot` is out of range or
+     * the disc isn't loaded.
+     */
+    character_mesh_positions(slot: number, equip_byte: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` integer texel coords (parallel to
+     * [`Self::character_mesh_positions`], 2 i32 per vertex). The site page
+     * pairs these with the PROT 0876 atlas page to do its own NEAREST
+     * sample; we keep the integer texels here instead of normalising
+     * because the atlas dimensions aren't surfaced yet.
+     */
+    character_mesh_uvs(slot: number, equip_byte: number): Int32Array;
+    /**
+     * JSON summary of the five character-pack slots.
+     *
+     * Shape:
+     * ```json
+     * { "slots": [
+     *     { "slot": 0, "label": "Vahn", "disc_nobj": 12,
+     *       "tmd_bytes": 13220,
+     *       "patch": { "patched_group_index": 0,
+     *                  "equip_byte_record_offset": 406 } },
+     *     ...
+     *   ],
+     *   "patched_group_offset": 12,
+     *   "group_descriptor_bytes": 28,
+     *   "equip_group_zero_offset": 320,
+     *   "equip_group_nonzero_offset": 292
+     * }
+     * ```
+     * `patch` is present only for the 3 active-party slots (0..=2); slots
+     * 3/4 carry the auxiliary actors with no equipment swap. Returns
+     * `{"slots":[],"error":"..."}` when the disc is missing PROT 0874 or
+     * the LZS section fails to decode.
+     */
+    character_pack_json(): string;
+    /**
+     * Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+     * installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
+     * download / debug round-trip.
+     */
+    character_tmd_bytes(slot: number): Uint8Array;
     /**
      * Number of TMDs in the currently-loaded continent pack. 0 when no
      * continent pack was found for this kingdom.
@@ -545,6 +697,98 @@ export class LegaiaViewer {
      * pack's per-slot TMDs all sample from this one shared image.
      */
     pack_vram_bytes(): Uint8Array;
+    /**
+     * JSON summary of every player-ANM bundle accessible from this disc.
+     * Shape:
+     * ```text
+     * {
+     *   "bundles": [
+     *     {
+     *       "prot_index": 4,
+     *       "record_count": 69,
+     *       "decoded_bytes": 96448,
+     *       "records": [
+     *         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C },
+     *         ...
+     *       ]
+     *     }, ...
+     *   ]
+     * }
+     * ```
+     * Surveys the corpus by walking each scene's first PROT slot
+     * (parse_player_lzs descriptor count = 6, the canonical scene-bundle
+     * shape) and emitting one entry per cleanly-decoded type-0x05 section.
+     */
+    player_anm_corpus_json(): string;
+    /**
+     * Find a single player-ANM bundle by its PROT entry index and return
+     * the LZS-decoded bytes. Empty if the entry doesn't carry a bundle.
+     */
+    player_anm_decoded(prot_index: number): Uint8Array;
+    /**
+     * Raw bytes of one record from the player-ANM bundle at `prot_index`.
+     * Includes the per-record header (`a`, `b`, `marker_1 = 0x080C`, `flag`),
+     * the 8-byte per-anim prologue, and the
+     * `(frame_count × bone_count × 8)` byte frame table.
+     */
+    player_anm_record_bytes(prot_index: number, record_index: number): Uint8Array;
+    /**
+     * `[bone_count, frame_count]` for one player-ANM record so the JS
+     * animator can size its scratch buffers without re-walking the bundle.
+     * Empty `[0, 0]` if the record doesn't exist or fails size invariants.
+     */
+    player_anm_record_dims(prot_index: number, record_index: number): Uint32Array;
+    /**
+     * Per-frame bone-transform table for one player-ANM record, packed as
+     * `i16` LE for ease of JS-side `Int16Array` overlay.
+     *
+     * Layout: `frame_count * bone_count * 4 i16` (`8` bytes per (bone, frame)
+     * entry, read as 4 little-endian `i16`s). Returns an empty Vec on
+     * out-of-range record or size-invariant failure.
+     *
+     * The semantic meaning of the 4 i16s per (bone, frame) entry is the
+     * still-open thread (see `docs/formats/anm.md` § "Open threads"). The
+     * working hypothesis is `(rot_x, rot_y, rot_z, _flag)` in PSX 12-bit
+     * fixed-point (4096 = 360°). The viewer applies this and lets you see
+     * what motion the bytes describe.
+     */
+    player_anm_record_frames(prot_index: number, record_index: number): Uint8Array;
+    /**
+     * Decoded per-record header for one player-ANM record. Returned as a
+     * `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
+     * frame0_bone0_u8[0..8]]` — total 14 entries (the 8 bytes after the
+     * header are bone 0 of frame 0's TR entry, since the body sits
+     * immediately after the 8-byte header — there is no prologue).
+     * Returns an empty Vec on out-of-range record or size-invariant failure.
+     */
+    player_anm_record_header(prot_index: number, record_index: number): Int32Array;
+    /**
+     * Player-ANM record frames decoded into the same pose format the
+     * site's `MonsterMeshView` animator consumes:
+     * `Int32Array`, `6` entries per part per frame, as
+     * `[tx, ty, tz, rx, ry, rz]`.
+     *
+     * Each 8-byte (bone, frame) entry is decoded as the retail engine does
+     * it (`FUN_8001BE80`): bytes 0..4 hold three signed 12-bit translation
+     * values (joint offset in actor-local space, PSX model units), bytes
+     * 5/6/7 hold three u8 rotation angles that map to PSX 12-bit angles via
+     * `<< 4` (so the JS animator's `4096`-unit convention applies
+     * directly).
+     *
+     * The transforms are **absolute** per frame (NOT delta-from-frame-0):
+     * frame 0 carries the rest-pose assembly transform that places each
+     * TMD object at its joint position with its rest-pose orientation.
+     * Applying these to objects whose vertices are in object-local space
+     * produces the assembled character.
+     *
+     * The output is padded to `target_part_count` parts (typically the
+     * TMD's `nobj`) — bones beyond the record's own `bone_count` get
+     * identity transforms so the un-animated parts (e.g. field-form
+     * equipment templates at groups 10/11) stay at their TMD-local
+     * origin. Pass `0` to leave the part count at the record's own
+     * bone_count.
+     */
+    player_anm_record_pose_frames(prot_index: number, record_index: number, target_part_count: number): Int32Array;
     prev_entry(): number;
     /**
      * Render cataloged TIM `id` with CLUT `clut` into the 2D canvas named
@@ -825,9 +1069,29 @@ export interface InitOutput {
     readonly legaiaruntime_open_menu: (a: number) => void;
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
     readonly legaiaruntime_tick: (a: number) => bigint;
+    readonly legaiaviewer_baka_fighter_atlas_bytes: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_bounds: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_indices: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_object_ids: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_positions: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_mesh_uvs: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_pack_json: (a: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_tmd_bytes: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_baka_fighter_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
     readonly legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_catalog_len: (a: number) => number;
+    readonly legaiaviewer_character_mesh_bounds: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_cba_tsb: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_indices: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_normals: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_object_ids: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_positions: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_uvs: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_pack_json: (a: number) => [number, number];
+    readonly legaiaviewer_character_tmd_bytes: (a: number, b: number) => [number, number];
     readonly legaiaviewer_continent_pack_count: (a: number) => number;
     readonly legaiaviewer_continent_pack_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_continent_pack_mesh_bounds: (a: number) => [number, number];
@@ -886,6 +1150,13 @@ export interface InitOutput {
     readonly legaiaviewer_pack_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_pack_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_player_anm_corpus_json: (a: number) => [number, number];
+    readonly legaiaviewer_player_anm_decoded: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_bytes: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_dims: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_frames: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_header: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_player_anm_record_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: number, d: number, e: number) => [number, number];
