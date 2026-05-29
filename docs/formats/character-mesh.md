@@ -225,18 +225,28 @@ work-arena holding it is `memset`-zeroed at load by the `sw $zero` loop at SCUS
 `0x80055F14` (`base = *(0x8007BD3C)`, `0x1e8d` words), then sparsely filled — the
 palette sits at `arena_base + 0x4048` as an isolated non-zero island.
 
-**It is not a stored disc blob — most likely runtime-assembled.** Exhaustively
-ruled out as stored bytes: absent uncompressed (full 512-byte row *and* every
-32-byte sub-CLUT window across all PROT / `SCUS` / `init_data`); absent from the
-LZS-*container* sections of every entry; and **not the decompressed output of any
-LZS stream at any byte offset** in the battle / scene / character entries (the
-town01 scene bundle `0003..0011`, `0865`/`0867`/`0871..0876`/`0896`/`0900`/`1204`
-brute-decompressed from every offset, output windows to 24 KB — past the
-`0x4048` depth), nor anywhere in the ≤2 MB corpus (1 KB windows). The brute tool
-is `lzs-decode find` (validated: it relocates a known container section at output
-offset 0). Since the palette is deterministic yet stored nowhere verbatim, it is
-assembled/computed at battle entry from some other source (a transform of a base
-palette, or a gather of scattered sub-CLUTs), not copied or decompressed.
+**It is built by a CLUT-copy routine that OR-sets the STP bit.** A write-watchpoint
+on `0x800EBEE8` (`scripts/pcsx-redux/autorun_battle_palette_writer.lua`, run on a
+clean Tetsu fight) pins the assembler: **`FUN_80053B9C`** (per-colour store at
+`0x80053C6C`: `sh a0, 0x894(v0)`). It reads a source CLUT struct
+`[u16 base][u16 count][count × BGR555]` at a pointer `s0`, and for each colour
+copies it into the per-character palette block at
+`dst = arena + slot*0x1E0 + (base+idx)*2` while **`OR`-ing in `0xFFFF8000`
+(bit 15, the PSX semi-transparency / STP flag) on every non-zero colour**
+(`or vX, vY, 0xFFFF8000`, written back in place). So the **runtime** palette has
+bit 15 set (`0x9D40…`); the **disc-stored source has bit 15 clear** (`0x1D40…`).
+The source pointer derives from the battle overlay context:
+`s0 = *(*(0x801C92F0) + 8) + per-char-offset`, into a transient buffer (the
+`0x800Dxxxx` region, freed after the copy).
+
+**This is why every brute missed, and the disc source is still not byte-pinned.**
+The earlier searches used the bit-15-**set** needle (`40 9d 70 90…`); the disc
+form is bit-15-**clear** (`40 1d 70 10…`). But even the corrected (cleared) 32-
+colour CLUT is **not** found raw (PROT / `SCUS`) nor as LZS-decompressed output in
+the battle / scene / character entries (`lzs-decode find`, windows to 24 KB) — so
+the transient source buffer is itself decompressed or composed from a
+not-yet-located disc source. Pinning it needs tracing the `0x801C92F0` overlay
+context to the buffer's loader, or a write-watchpoint on the source buffer.
 
 > **Retraction.** An earlier reading ("LZS-decompressed from the `town0c` scene
 > bundle at `0x23430`") was wrong: that write-watchpoint caught the **scene
