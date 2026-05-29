@@ -216,20 +216,32 @@ the runtime TMD land at the scattered columns of that character's row. It is
 and is **not the field character palette** (a set test puts only 10 of Vahn's
 130 battle-novel colours — and **0** of Noa's / Gala's — in any field-pack CLUT).
 
-It is **not recoverable from the disc by byte search.** Exhaustively: absent
-uncompressed from every PROT entry / `SCUS` / `init_data` (both the full 512-byte
-row *and* every 32-byte per-sub-CLUT window miss); **0** hits across the LZS
-*container* sections of **all** PROT entries; and **146 of Vahn's 256** runtime
-colours appear in *no* CLUT the 1204 pack ships, so it is a genuinely distinct
-asset, not a recolour of the bundled (Baka) palette. It is therefore either
-stored in a **non-container / arbitrary-offset LZS stream** (which only the
-loader's DMA source address pins) or **assembled at load** from a non-obvious
-source — distinguishing the two, and recovering it, needs the
-**uncaptured battle-entry/party-setup overlay** (the same overlay that performs
-the TSB/CBA relocation above). Pinning it is an open thread
-(see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)); the
-route is a full-party **battle-LOAD** capture → overlay slice → trace the
-CLUT-gather DMA (`FUN_80059BD4` / `LoadImage`) back to its disc entry+offset.
+It is absent from the disc *uncompressed* (the full 512-byte row *and* every
+32-byte per-sub-CLUT window miss across all PROT / `SCUS` / `init_data`), absent
+from the LZS-*container* sections of every PROT entry, and **146 of Vahn's 256**
+runtime colours appear in *no* CLUT the 1204 pack ships — a genuinely distinct
+asset, not a recolour of bundled, not a standalone raw blob.
+
+**It is on disc, LZS-compressed, decompressed into the resident block at battle
+load.** Pinned by a write-watchpoint on `0x800EBEE8` driven through a live battle
+(`scripts/pcsx-redux/autorun_battle_palette_source.lua`): the writes come from
+**`FUN_8001A55C`** (the universal LZS decoder — `pc=0x8001A664`, the match-copy
+store; signature `(a0=src_len, a1=src_ptr→s0 input, a2=dst_ptr→s1 output)`, ring
+at `s3`). The battle work-arena holding the block is `memset`-zeroed first by the
+`sw $zero` loop at SCUS `0x80055F14` (`base = *(0x8007BD3C)`, `0x1e8d` words),
+then filled. At the palette write the decoder's input cursor (`s0`) points
+**inside the loaded scene bundle**: for a `town0c` battle the source buffer at
+`0x80180000` byte-matches **PROT entry 0022 (`town0c`) from offset `0x23430`**
+(40/40 distinctive windows) — so the compressed palette is an embedded
+(non-container, arbitrary-offset) LZS stream **inside the scene bundle**, and
+*mid-block* (the palette is not the stream's first output byte, which is exactly
+why container-search and stream-start brute miss it). This **supersedes** the
+earlier "VRAM-residue / never-LZS-decoded / runtime-assembled /
+not-disc-recoverable" readings. Open detail: the exact `(scene-bundle, byte
+offset)` of the stream and whether it is per-scene or a shared block (see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)); the route is a
+stable battle-load capture of the full palette → offline LZS brute of the source
+bundle.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
