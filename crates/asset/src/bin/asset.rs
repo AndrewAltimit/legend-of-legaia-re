@@ -375,12 +375,12 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// Decode the battle-form player-character mesh pack at PROT entry
+    /// Decode the Baka Fighter minigame character pack at PROT entry
     /// `1204_other5`: five `TMD2` (asset type `0x09`) streaming chunks plus
     /// seven 256x256 4bpp character TIM atlases at fixed `0x8224` stride.
-    /// This is the BattleMode counterpart to `character-pack` (which dumps the
-    /// field-form mesh pack at PROT 0874 §0).
-    BattleCharPack {
+    /// This is the fist-fight minigame roster, NOT the main battle party (the
+    /// real battle reuses the field-form `character-pack` at PROT 0874 §0).
+    BakaFighterPack {
         /// PROT entry 1204 bytes.
         input: PathBuf,
         /// Slot 0..=4 to inspect (omit to print all).
@@ -792,13 +792,13 @@ fn main() -> Result<()> {
             equip,
             out,
         } => character_pack_one(&input, slot, equip, out.as_deref()),
-        Cmd::BattleCharPack {
+        Cmd::BakaFighterPack {
             input,
             slot,
             out_tmd,
             atlas,
             out_tim,
-        } => battle_char_pack_one(&input, slot, out_tmd.as_deref(), atlas, out_tim.as_deref()),
+        } => baka_fighter_pack_one(&input, slot, out_tmd.as_deref(), atlas, out_tim.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -3686,18 +3686,18 @@ fn character_pack_one(
     Ok(())
 }
 
-fn battle_char_pack_one(
+fn baka_fighter_pack_one(
     input: &Path,
     slot: Option<usize>,
     out_tmd: Option<&Path>,
     atlas: Option<usize>,
     out_tim: Option<&Path>,
 ) -> Result<()> {
-    use legaia_asset::battle_char_pack;
+    use legaia_asset::baka_fighter_pack;
     let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
-    let pack = battle_char_pack::parse(&bytes)?;
-    let print_slot = |s: &battle_char_pack::BattleCharacterSlot| {
-        let label = battle_char_pack::slot_label(s.slot);
+    let pack = baka_fighter_pack::parse(&bytes)?;
+    let print_slot = |s: &baka_fighter_pack::BakaFighterSlot| {
+        let label = baka_fighter_pack::slot_label(s.slot);
         println!(
             "  slot {} ({:<7}) disc-nobj {:2}  TMD bytes {:6}  file offset 0x{:06X}",
             s.slot,
@@ -3707,7 +3707,7 @@ fn battle_char_pack_one(
             s.file_offset
         );
     };
-    let print_atlas = |a: &battle_char_pack::BattleCharacterAtlas| {
+    let print_atlas = |a: &baka_fighter_pack::BakaFighterAtlas| {
         println!(
             "  atlas {}  CLUT fb_y={:3}  file offset 0x{:06X}  {} bytes",
             a.atlas_index,
@@ -3725,14 +3725,14 @@ fn battle_char_pack_one(
             std::fs::write(p, &s.tmd_bytes).with_context(|| format!("write {}", p.display()))?;
             println!(
                 "  wrote raw disc TMD ({}) -> {}",
-                battle_char_pack::slot_label(s.slot),
+                baka_fighter_pack::slot_label(s.slot),
                 p.display()
             );
         }
     } else if atlas.is_none() && out_tim.is_none() {
         println!(
             "PROT {} (other5, battle character pack): {} slots + {} atlases",
-            battle_char_pack::PROT_ENTRY_INDEX,
+            baka_fighter_pack::PROT_ENTRY_INDEX,
             pack.slots().len(),
             pack.atlases.len()
         );

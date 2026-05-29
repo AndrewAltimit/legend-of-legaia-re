@@ -245,9 +245,9 @@ table.arts-list .cmd-tag {
     </tbody>
   </table>
   <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs (the fighter face / hair / outfit textures the renderer samples). These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page.</p>
-  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN</code></div>
-  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
-  <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
+  <div class="cli"><code>asset baka-fighter-pack extracted/PROT/1204_other5.BIN</code></div>
+  <div class="cli"><code>asset baka-fighter-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_baka.tmd</code></div>
+  <div class="cli"><code>asset baka-fighter-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
 
   <h2>What's next</h2>
   <p>Three open threads, in priority order of what changes the picture above:</p>
@@ -784,12 +784,12 @@ table.arts-list .cmd-tag {
       // Battle form — use TmdRenderer + the 7 atlas TIMs uploaded into a
       // virtual 1024×512 PSX VRAM at their disc-pinned coords. The mesh
       // sampler reads cba/tsb per primitive against that VRAM.
-      const positions = viewer.battle_char_mesh_positions(slot);
-      const uvsI32   = viewer.battle_char_mesh_uvs(slot);
-      const cbaTsb   = viewer.battle_char_mesh_cba_tsb(slot);
-      const indices  = viewer.battle_char_mesh_indices(slot);
-      const bounds   = viewer.battle_char_mesh_bounds(slot);
-      const objectIds = viewer.battle_char_mesh_object_ids(slot);
+      const positions = viewer.baka_fighter_mesh_positions(slot);
+      const uvsI32   = viewer.baka_fighter_mesh_uvs(slot);
+      const cbaTsb   = viewer.baka_fighter_mesh_cba_tsb(slot);
+      const indices  = viewer.baka_fighter_mesh_indices(slot);
+      const bounds   = viewer.baka_fighter_mesh_bounds(slot);
+      const objectIds = viewer.baka_fighter_mesh_object_ids(slot);
       if (!positions.length || !indices.length) {
         statsEl.innerHTML = '<span style="color:var(--text-dim)">Battle mesh failed to parse. Is PROT 1204 present?</span>';
         return;
@@ -801,7 +801,7 @@ table.arts-list .cmd-tag {
           // Upload VRAM once per BattleMeshView lifetime; same atlas pack
           // covers every battle slot, so a single upload survives slot
           // changes for free.
-          const vramBytes = viewer.battle_char_vram_bytes();
+          const vramBytes = viewer.baka_fighter_vram_bytes();
           if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
         }
         // UV binding returns i32 (parallel to character_mesh_uvs); the
@@ -1033,7 +1033,7 @@ table.arts-list .cmd-tag {
     const p = activePack();
     if (!p) return;
     const bytes = curForm === 'battle'
-      ? viewer.battle_char_tmd_bytes(selectedSlot)
+      ? viewer.baka_fighter_tmd_bytes(selectedSlot)
       : viewer.character_tmd_bytes(selectedSlot);
     if (!bytes || !bytes.length) return;
     const meta = p.slots[selectedSlot];
@@ -1757,7 +1757,7 @@ table.arts-list .cmd-tag {
       // Battle-form pack (PROT 1204). Best-effort: if absent or fails to parse
       // we leave battlePack null and disable the form toggle in the UI.
       try {
-        const bp = JSON.parse(viewer.battle_char_pack_json());
+        const bp = JSON.parse(viewer.baka_fighter_pack_json());
         if (bp && !bp.error && bp.slots && bp.slots.length > 0) {
           battlePack = bp;
         }

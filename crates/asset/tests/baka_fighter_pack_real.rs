@@ -1,11 +1,11 @@
-//! Disc-gated regression for [`legaia_asset::battle_char_pack`].
+//! Disc-gated regression for [`legaia_asset::baka_fighter_pack`].
 //!
 //! Pins the on-disc layout of PROT 1204 (`other5`): five battle-form character
 //! TMD chunks at the streaming offsets the doc page lists + seven 256x256 4bpp
 //! TIM atlases at fixed `0x8224` stride. Skips when `LEGAIA_DISC_BIN` is
 //! unset so CI works without redistributing Sony data.
 
-use legaia_asset::battle_char_pack::{
+use legaia_asset::baka_fighter_pack::{
     ATLAS_CLUT_ROWS, ATLAS_COUNT, ATLAS_STRIDE_BYTES, BATTLE_TMD_CHUNK_TYPE, FIRST_ATLAS_OFFSET,
     PROT_ENTRY_INDEX, SLOT_COUNT, parse, slot_label,
 };

@@ -149,7 +149,7 @@ that repoints `DAT_8007C018` on `game_mode = 0x15` was a misidentification: the
 `game_mode 0x15` save states that pinned it were Baka Fighter sessions (their
 "enemy" actor's mesh also resolves to `other5`, PROT 1208/1209 — a real enemy
 would come from the monster archive PROT 867). Parser:
-`legaia_asset::battle_char_pack` (the name is a historical misnomer — it parses
+`legaia_asset::baka_fighter_pack` (the name is a historical misnomer — it parses
 the Baka Fighter pack).
 
 PROT 1204 is a flat streaming-format container (no LZS wrapper) with five
@@ -202,11 +202,11 @@ state offsets.
 asset character-pack extracted/PROT/0874_befect_data.BIN
 
 # Baka Fighter minigame pack (PROT 1204): list the five TMD2 chunks + seven character atlases.
-asset battle-char-pack extracted/PROT/1204_other5.BIN
+asset baka-fighter-pack extracted/PROT/1204_other5.BIN
 
 # Export one Baka Fighter character TMD and one atlas TIM.
-asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_baka.tmd
-asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim
+asset baka-fighter-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_baka.tmd
+asset baka-fighter-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim
 
 # Apply the equipment swap for a single slot + export the patched TMD.
 asset character-pack extracted/PROT/0874_befect_data.BIN \
