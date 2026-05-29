@@ -356,13 +356,15 @@ state, mc7):
 | `0013`     | town0b      | 2       | 69      | 91 784         |
 | `0183`     | balden      | 2       | 72      | 71 604         |
 | `0408`     | bubu1       | 2       | 70      | 87 844         |
-| `1203`     | other5      | 2       | 30      | 87 684 (battle-form) |
+| `1203`     | other5      | 2       | 30      | 87 684 (Baka Fighter) |
 
 The field-form bundles all have 69-72 records (the full player-locomotion
-+ interaction anim set). PROT `1203_other5` is the battle-form variant
-sitting alongside the [battle character mesh pack](character-mesh.md#battle-form--prot-1204-other5)
-at PROT 1204. Other scenes either share an ANM blob with one of these via
-runtime caching, or have a smaller per-scene player-ANM section.
++ interaction anim set). PROT `1203_other5` is the **Baka Fighter** minigame
+variant, sitting alongside the [Baka Fighter character mesh pack](character-mesh.md#baka-fighter-minigame-roster--prot-1203-1221-other5)
+at PROT 1204 (not the main battle — that reuses the field-form mesh, and its
+player animation source is still open). Other scenes either share an ANM blob
+with one of these via runtime caching, or have a smaller per-scene player-ANM
+section.
 
 Parser: `legaia_asset::player_anm` (CLI sweep + per-entry detector).
 
@@ -402,11 +404,11 @@ animated-object count.
 - `a & 0xFF` = **bone count** (number of animated TMD objects in this
   clip). The high byte of `a` appears to be a sub-format selector: clear
   for records 0..8 of every field-form bundle, set to `0x01` for records
-  9+ and for every record in the battle-form bundle.
+  9+ and for every record in the Baka Fighter bundle.
 - `b` = **frame count** of this animation clip (3..60 across the corpus;
   longer clips like Vahn's run-loop have higher counts).
 - `flag` = secondary sub-format byte (`0x02` / `0x04` in the field corpus;
-  `0x0201` / `0x0401` / `0x0402` in the battle-form bundle).
+  `0x0201` / `0x0401` / `0x0402` in the Baka Fighter bundle).
 
 The detector at `legaia_asset::player_anm::find_in_entry` validates the
 size invariant on every record before declaring a bundle parsed; the

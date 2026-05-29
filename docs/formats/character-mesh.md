@@ -136,7 +136,7 @@ entries are still resident. The field-form `nobj` (12/12/12/3/2 on disc,
 ≈10/10/10/3/2 after the equipment swap) is what renders in battle — the higher
 `nobj` 17/18/17 pack belongs to the Baka Fighter minigame (below), not battle.
 
-## Baka Fighter minigame roster — PROT 1203–1221 (`other5`)
+## Baka Fighter minigame roster — PROT 1203-1221 (`other5`)
 
 PROT entry `1204` (`other5`) is the character pack for the **Baka Fighter**
 fist-fight minigame, **not** the main battle party. Baka Fighter lets you play

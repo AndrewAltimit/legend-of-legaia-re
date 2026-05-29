@@ -486,8 +486,8 @@ table.arts-list .cmd-tag {
   function renderEquipToggle() {
     if (selectedSlot === null) { equipToggle.innerHTML = ''; return; }
     if (curForm === 'battle') {
-      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>n/a (battle form)</button>`;
-      equipNote.textContent = 'Battle-form TMDs (PROT 1204) carry no group-10/11 equipment-swap templates — the higher-fidelity battle mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
+      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>n/a (Baka Fighter)</button>`;
+      equipNote.textContent = 'Baka Fighter TMDs (PROT 1204) carry no group-10/11 equipment-swap templates — the higher-fidelity fighter mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
       return;
     }
     const slot = pack.slots[selectedSlot];
@@ -1380,9 +1380,15 @@ table.arts-list .cmd-tag {
         0,  0, 1, 0,
         0,  0, 0, 1,
       ]);
+      // The model matrix `m` flips Y (PSX is Y-down), so the rendered geometry
+      // lives at -Y relative to `this.center` (computed from the raw, pre-flip
+      // vertex positions). Flip the look-at target's Y to match — otherwise the
+      // camera aims 2·centroidY away from the figure and it sits off-centre
+      // (too high) in frame.
+      const at = [this.center[0], -this.center[1], this.center[2]];
       const v = lookAt(
-        [cam[0] + this.center[0], cam[1] + this.center[1], cam[2] + this.center[2]],
-        this.center, [0, 1, 0],
+        [at[0] + cam[0], at[1] + cam[1], at[2] + cam[2]],
+        at, [0, 1, 0],
       );
       const aspect = this.canvas.width / this.canvas.height;
       const p = perspective(Math.PI / 4, aspect, r * 0.05, r * 200);
