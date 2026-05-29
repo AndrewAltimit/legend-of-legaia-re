@@ -273,6 +273,21 @@ apart** (stream offsets `~0x548F`, `~0x1C004`, `~0x9F948`). `0861` itself has a
 (`lzs-decode probe` → no container) — the battle-setup overlay knows the per-
 record offsets via its own index (`s0 = *(*(0x801C92F0)+8) + per-char-offset`).
 
+**The archive index (`autorun_clut_decode_args.lua`).** The CLUT records are
+decoded by a loop in `FUN_80053B9C`'s caller (`ra = 0x80053130`) that walks a
+**record-descriptor pointer table at `0x801C92F0`**:
+`a1 = *(0x801C92F0 + idx); a0 = *a1 (u32 len); FUN_8001A55C(a0, a1+4, dst)` — so
+each record is `[u32 len][LZS data]`, and successive records decode into buffer
+slots `+0x2000` apart. The five CLUT-region decodes captured come from this loop;
+their source records live at **scattered** `0861` offsets (`0x1C004`, `0x28804`,
+… — *not* a fixed stride), and one record decodes to a *block* holding several
+CLUT structs (e.g. Vahn's `base=0x40` and `base=0x00` are in one record at output
+`0` and `+0x45C`). The pointer table at `0x801C92F0` is populated by an
+**uncaptured `0861` parser**; recovering the *static* per-record `0861` offsets
+(so an offline extractor needn't guess) means tracing that parser, since the
+empirical RAM→offset map is unreliable across runs (heap addresses vary) and the
+`lzs-decode find` offsets are LZS re-sync points, not record starts.
+
 **The disc mesh only needs these 3 structs.** The disc 1204 Vahn mesh (`nobj=15`,
 no equipment) samples CBA columns **0, 16, 64, 80, 112, 128** only — all inside
 the captured structs (`0..0x1F`, `0x40..0x6F`, `0x70..0x8F`). The extra columns
