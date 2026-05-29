@@ -262,12 +262,27 @@ block `arena + slot*0x1E0`) → DMA to VRAM rows 481/482/483.
 > bundle's** decompression into the *shared* work-arena (its `0x800ebee8` value
 > `0x7965481F` ≠ the Vahn palette). The real source is `PROT 0861`, above.
 
-**Engine/site reproduction:** decompress the `0861` stream, read each CLUT struct,
-set bit 15 on non-zero colours, and place them at the per-character palette rows
-— byte-exact except the ~3 equipment-conditional entries (a small follow-on). The
-Tetsu fight is Vahn-only, so only Vahn's CLUT is confirmed here; Noa/Gala are
-expected in the same `0861` block (a full-party capture would confirm their
-offsets).
+**Per-character structure (Exec-BP on `FUN_80053B9C`, `autorun_clut_copy_calls.lua`).**
+The copy routine is called **once per CLUT struct, several times per character**,
+with `a3 = slot` → VRAM row `481 + slot` and `a0` = the source struct. For Vahn
+it fires for **three** structs — `base=0x00 count=0x20`, `base=0x40 count=0x30`,
+`base=0x70 count=0x20` (colours `0..0x8F`) — plus two `count=0` no-ops. Each
+struct is its **own LZS stream** in `0861`, and the three are **scattered far
+apart** (stream offsets `~0x548F`, `~0x1C004`, `~0x9F948`). `0861` itself has a
+**pochi-fill header** (`"pochipochi…"`) and **no parseable stream table**
+(`lzs-decode probe` → no container) — the battle-setup overlay knows the per-
+record offsets via its own index (`s0 = *(*(0x801C92F0)+8) + per-char-offset`).
+
+**Engine/site reproduction (and the remaining gap).** The palette IS disc-derived
+— decompress each of a character's CLUT-struct streams from `0861`, set bit 15 on
+non-zero colours, place at `palette_row + base*2` (byte-exact except the ~3
+equipment entries). But a *robust* extractor needs `0861`'s archive index (which
+streams belong to which character), which is overlay-resident and **not yet
+traced**; only Vahn's three stream offsets are pinned empirically, and the Tetsu
+fight is Vahn-only so Noa/Gala's records are unknown (a full-party capture, or
+tracing the `0x801C92F0` index, would supply them). Hardcoding Vahn's three
+scattered offsets would be fragile and Vahn-only, so the site Battle form stays on
+the bundled palette until the index is in hand.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
