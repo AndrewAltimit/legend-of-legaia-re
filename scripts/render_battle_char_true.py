@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """Render a battle-form character (PROT 1204) in its TRUE palette.
 
-This is the offline validation of the battle-CLUT composition: it proves the
-1204 atlas image + the true (scene-composed) palette + the texpage->row
-relocation + the per-prim CBA column together produce a correctly-coloured
-character (e.g. blue-haired Vahn), which the bundled 1204 CLUT (the Baka
-Fighter palette) does NOT.
+Offline validation of the battle-CLUT reading: the 1204 atlas image + the party
+palette resident at the mesh's NOMINAL CBA rows (490..497) produce a correctly-
+coloured character (blue-haired Vahn, etc.), which the bundled 1204 CLUT (the
+Baka Fighter palette) does NOT. The battle character renderer uses the nominal
+CBA directly — there is NO texpage->row relocation for characters (see
+`docs/formats/character-mesh.md` -> Battle palette).
 
-The true palette is read from a real-battle mednafen save state's VRAM at the
-texpage-relocated rows (see `docs/formats/character-mesh.md` -> Battle palette).
-Save-state VRAM is Sony data and stays local; this script writes a local PNG
-only (never commit the output).
+The palette is read from a CLEAN battle mednafen save state's VRAM (command-menu
+or Begin-menu, no effect animation). Mid-battle captures overwrite the character
+CLUT rows and read back garbage. Save-state VRAM is Sony data and stays local;
+this script writes a local PNG only (never commit the output).
 
 Inputs:
   --pack    extracted/PROT/1204_other5.BIN
-  --save    a real-battle mednafen save (VRAM + the 0x8007BEC0 table source)
+  --save    a clean-battle mednafen save (VRAM source)
   --slot    0=Vahn 1=Noa 2=Gala
   --out     output PNG (local only)
 
@@ -67,10 +68,6 @@ def main():
         # VRAM via vram-dump (BGR555) is cleaner; use it:
         run(args.mstate_bin, "vram-dump", args.save, "--out-bin", vram_bin)
         vram = open(vram_bin, "rb").read()
-        tab_bin = os.path.join(td, "tab.bin")
-        run(args.mstate_bin, "extract", args.save,
-            "--start", "0x8007BEC0", "--end", "0x8007BF00", "--out", tab_bin)
-        table = struct.unpack_from("<32H", open(tab_bin, "rb").read(), 0)
 
     def color(row, col):
         w = struct.unpack_from("<H", vram, row * 2048 + col * 2)[0]
@@ -90,7 +87,7 @@ def main():
         tp = (tx >> 6) + (ty >> 8) * 16
         if tp not in atlas_imgoff:
             continue
-        row = table[tp]
+        row = (cba >> 6) & 0x1ff  # nominal CBA row (no texpage relocation)
         uvs = re.findall(r"\((\d+),\s*(\d+)\)", m.group(6))
         if len(uvs) < 3:
             continue
@@ -114,9 +111,8 @@ def main():
                 idx = (byte & 0xf) if (xx & 1) == 0 else (byte >> 4)
                 px[xx, yy] = color(row, cba_x + idx)
     img.save(args.out)
-    print(f"wrote {args.out} (texpage->row table: "
-          f"Vahn p10->{table[10]}, Noa p26->{table[26]}/p27->{table[27]}, "
-          f"Gala p8->{table[8]}/p9->{table[9]})")
+    print(f"wrote {args.out} (nominal CBA rows: Vahn 490/491, Noa 492/493, "
+          f"Gala 494/495 — sampled from the clean-battle save's VRAM)")
 
 
 if __name__ == "__main__":
