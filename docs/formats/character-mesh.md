@@ -165,40 +165,56 @@ Lua write-watchpoint on `0x8007C018` during a real battle-entry transition would
 pin it. (`ghidra/scripts/funcs/800520f0.txt` for the loader; sibling battle
 files `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
 
-### Battle palette is runtime-composed (CLUT relocation)
+### Battle palette is VRAM residue (nominal CBA, no relocation)
 
 The 1204 atlases ship with **bundled CLUTs** that are the **Baka Fighter**
-palette (red hair / blue vest). The **true battle palette** (blue hair / red
-tunic / purple pants) is *not* the bundled one and is *not* at the mesh's
-nominal CBA row. The battle renderer relocates CLUT rows through the
-**texpage→CLUT-row table at `0x8007BEC0`** (32×u16, built per-scene by
-`FUN_800198E0` as each scene/battle TIM uploads):
+palette (red hair). The **true battle palette** (blue-haired Vahn, etc.) is
+*not* the bundled one — but, crucially, the battle character renderer samples
+each prim with the mesh's **nominal CBA** (CLUT rows 490..497):
+`row = (cba>>6)&0x1ff`, `col = (cba&0x3f)*16`. There is **no texpage→row
+relocation for characters.** (The `0x8007BEC0` table that `FUN_800198E0` builds
+— `table[image_texpage] = clut_y` — drives the *scene/background* renderer, not
+the party meshes. An earlier reading that relocated character CLUTs through it
+was an artifact of a contaminated mid-battle save and is **falsified**.)
 
-- A prim's actual CLUT **row** = `table[texpage]`, where
-  `texpage = (img_x>>6) + (img_y>>8)*16`. The TMD2 CBA's nominal row is
-  **ignored**; the CBA only supplies the sub-CLUT **column**.
-- **Vahn**'s texpage `(640,0)` → idx 10 → **row 486** (consistent across the
-  scene-0x0c and scene-0x3c/Drake battle captures). Rendering the 1204 Vahn
-  atlas with VRAM **row 486** gives the true blue-toned Vahn; the bundled
-  CLUT at nominal row 490 gives the brown/red Baka Fighter look. Row 486's
-  palette is present **raw in town01** (PROT 0003/0005).
-- Per full-party Drake capture: Noa texpages → rows 489/487, Gala → 485/490.
-  The palette **values** for the party are composed from *multiple* disc
-  sources per scene — the active scene bundle (Vahn ← town01) plus
-  battle-system entries (`level_up` PROT 0892 / `card_data` PROT 0894 carry
-  much of Gala's), with per-scene row relocation. There is **no single
-  canonical disc block** holding all three; a faithful clean-room render
-  must replicate the runtime multi-source CLUT upload + the `0x8007BEC0`
-  relocation. (This corrects the prior "Noa/Gala palettes not recoverable"
-  finding — they *are* on disc; the gap was searching nominal rather than
-  texpage-relocated rows.)
+So how does the *true* palette get to rows 490..497 if the pack ships the Baka
+one? **It is VRAM residue.** Every field/world-map scene's `tim.dat` (driver
+`FUN_8002541C` → per-TIM `FUN_800198E0`) uploads CLUT-only TIMs whose `(cx, cy)`
+is **baked into the TIM header** (`cy` 490..497, matching the nominal CBA), and
+battle entry **never clears those rows** — so the party palette the player's
+scenes uploaded simply persists into the fight. Party nominal rows:
+**Vahn 490/491, Noa 492/493, Gala 494/495, aux 496/497.**
 
-The composition is **validated end-to-end** by
-[`scripts/render_battle_char_true.py`](../../scripts/render_battle_char_true.py):
-it decodes the 1204 atlas with the texpage-relocated palette from a real-battle
-save's VRAM and renders a recognizable true-coloured character (blue-haired
-Vahn, pink-haired Noa, gold-marked Gala) — confirming the atlas + relocated-row
-palette + per-prim CBA-column mapping is correct before the engine-side wiring.
+#### Battle palette provenance — scattered scene residue
+
+A corpus-wide scan (raw + LZS-decoded, every PROT entry, validated against a
+clean-battle VRAM) places the band across the scenes a world-map battle passed
+through — no single asset holds it:
+
+- Rows **490, 495, 496, 497** — LZS-compressed CLUT-only TIMs in the **map01**
+  bundle (PROT 0086).
+- Rows **491, 492, 493** — raw CLUT-only TIMs in **town** bundles (town01
+  `0003`/`0005`, town0b/0c/0d, urudre1, town0e); row 493 also in **dolk** (0061).
+- Row **494** (Gala's body) — **runtime-generated; absent from the disc
+  entirely** (raw + LZS, all 1232 entries) and from main RAM at stable saves
+  (transient decompress→DMA→free). Its generator is in the uncaptured
+  party-setup overlay — an open thread
+  (see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+
+**Reproduction recipe** (clean-room, from the disc): replay the CLUT uploads of
+the visited scenes — for each, decompress its LZS sections, find CLUT-bearing
+TIMs (`magic 0x10`, `flags & 8`, `cy` 490..497, `ch`≤4) and paint each at its
+baked `(cx, cy)`; then sample the mesh's nominal CBA. Replaying
+`dolk → town01 → map01` reproduces rows 490–493, 495, 496 **byte-exact** vs a
+real battle; row 494 is the only gap. The web viewer's
+`battle_char_true_vram_bytes` implements exactly this (uploading the bundled
+1204 CLUTs first as the row-494 fallback, then overlaying the replayed band),
+sampled with the nominal `battle_char_mesh_cba_tsb`.
+
+> Use a **clean** battle capture as ground truth (command-menu / Begin-menu, no
+> effect animation). Mid-battle captures (e.g. a Drake fight paused during an
+> effect) overwrite the character CLUT rows and read back garbage — that
+> contamination produced the earlier, wrong relocation reading.
 
 ### Equipment groups (battle only)
 

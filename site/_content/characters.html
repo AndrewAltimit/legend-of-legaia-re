@@ -160,7 +160,7 @@ table.arts-list .cmd-tag {
         <div class="char-section-label">Form</div>
         <div class="char-equip-toggle" id="char-form-toggle"></div>
         <div class="char-info-note" id="char-form-note">
-          The <strong>field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon. The <strong>battle form</strong> toggle loads the higher-fidelity party mesh + 7 character TIM atlases from <strong>PROT 1204</strong> (<code>other5</code>) — the meshes the engine installs into <code>DAT_8007C018[0..=2]</code> for every turn-based battle (the <a href="minigames.html#baka-fighter-meshes">Baka Fighter minigame</a> reuses this same pack). Selecting it routes through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses, sampling the disc-pinned atlas pages.
+          Three forms, all from your own disc. <strong>Field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon. <strong>Battle form</strong> and <strong>Baka Fighter</strong> are the <em>same</em> higher-fidelity party meshes (PROT 1204 <code>other5</code>, installed into <code>DAT_8007C018[0..=2]</code> for every turn-based battle) — they differ only in <em>palette</em>. The battle form shows the <strong>true turn-based battle colours</strong> (blue-haired Vahn, etc.): the atlas images plus the party CLUT band assembled from disc and sampled through the runtime <code>texpage→row</code> CLUT relocation (table at <code>0x8007BEC0</code>). The Baka Fighter form shows the palette the pack ships <em>bundled</em> — the <a href="minigames.html#baka-fighter-meshes">fist-fight minigame</a> colours. Both route through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses.
         </div>
 
         <div class="char-section-label">Equipment swap</div>
@@ -245,7 +245,11 @@ table.arts-list .cmd-tag {
       <tr><td>4 — Extra</td>    <td><code>nobj=2</code>,   1 048 bytes</td><td><code>nobj=15</code>, 33 340 bytes</td></tr>
     </tbody>
   </table>
-  <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs at stride <code>0x8224</code> (CLUTs at rows <code>490..495, 497</code>) — the face / hair / outfit textures the renderer samples. These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page (where this pack drives the Baka Fighter roster).</p>
+  <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs at stride <code>0x8224</code> (bundled CLUTs at rows <code>490..495, 497</code>) — the face / hair / outfit textures the renderer samples. These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page (where this pack drives the Baka Fighter roster).</p>
+
+  <h2 id="battle-palette">The true battle palette — VRAM residue, not a battle asset</h2>
+  <p>The bundled CLUTs in PROT 1204 are the <strong>Baka Fighter</strong> palette (red-haired Vahn). The <strong>turn-based battle</strong> colours (blue-haired Vahn, pink-haired Noa) are <em>not</em> in the pack and are <em>not</em> uploaded by the battle loader. The battle character renderer samples each prim with the mesh's <strong>nominal CBA</strong> (CLUT rows 490–497) — there is no texpage relocation for characters. The party palette that sits at those rows is <strong>VRAM residue</strong>: every field/world-map scene's <code>tim.dat</code> (driver <code>FUN_8002541C</code> → per-TIM <code>FUN_800198E0</code>) uploads CLUT-only TIMs whose row is baked into the TIM header, and battle entry never clears them — so the rows accumulate the party palette from the scenes you passed through.</p>
+  <p>Consequently the band is split across scenes: rows 490/495/496/497 come from the <strong>map01</strong> bundle, 491/492/493 from <strong>town</strong> bundles, 493 from <strong>dolk</strong>. The viewer rebuilds it by replaying the CLUT uploads of <code>dolk → town01 → map01</code> — those rows reproduce a real battle <strong>byte-exact</strong>. The one exception is Gala's row <strong>494</strong> (his body), which is <strong>runtime-generated and absent from the disc entirely</strong> (its generator lives in the uncaptured party-setup overlay — an <a href="open-rev-eng-threads.html">open thread</a>); the viewer leaves the bundled CLUT there as a fallback. The Battle form above renders against this replayed VRAM with nominal CBA; the Baka Fighter form keeps the bundled palette.</p>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
@@ -254,7 +258,8 @@ table.arts-list .cmd-tag {
   <p>Three open threads, in priority order of what changes the picture above:</p>
   <ul>
     <li><strong>Field-form texture atlas</strong>. Lives in <code>player_data</code> (PROT 0876, a streaming-format file pinned resident alongside the mesh pack). The streaming <code>TIM_LIST</code> chunk uses a non-canonical head <code>(count=0)</code>; the canonical pack-walker can't unpack it yet. Without it, the field form renders flat-shaded — the disc vertices ARE in model-space (byte-equal vs live <code>DAT_8007C018</code> allocation in the catalogued save state) but the low-poly geometry looks like floating planes without textures.</li>
-    <li><strong>Battle-form texture atlas</strong>. <em>Wired.</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does. Gala renders fully assembled (yellow hair, red shirt, fists raised); Noa renders with her tall hair piece reading as a separate shape (which it is in the source TMD — the design has the hair as a distinct mesh object); Vahn's stored pose has the weapon arm extended along +X, so the AABB is wide and the body sits offset from frame center. Orbit / zoom to inspect.</li>
+    <li><strong>Battle-form rendering</strong>. <em>Wired, true palette.</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does. The Battle form now renders in the true battle palette (the party CLUT band assembled from disc and sampled via the relocated CBA), the Baka Fighter form in the bundled palette. Noa renders with her tall hair piece reading as a separate shape (which it is in the source TMD); Vahn's stored pose has the weapon arm extended along +X, so the AABB is wide and the body sits offset from frame center. Orbit / zoom to inspect.</li>
+    <li><strong>Gala's row 494</strong>. The one party CLUT row absent from the disc entirely — runtime-generated by the uncaptured party-setup overlay. The viewer falls back to the bundled CLUT there, so Gala's body reads in the Baka palette until the generator is captured (a VRAM write-watchpoint on row 494 at battle entry would pin it). See <a href="open-rev-eng-threads.html">open threads</a>.</li>
     <li><strong>Animations</strong>. Live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>; the disc-side source is still open. The disc TMD itself stores a single static pose (the engine's chosen default frame); to switch poses or play arts / spells, per-object transforms have to come from the ANM stream — that's the unblocking step for an animated preview of each art with audio.</li>
   </ul>
   <div class="char-info-note">
@@ -299,15 +304,20 @@ table.arts-list .cmd-tag {
   let anmCorpus = null;  // parsed player_anm_corpus_json (cached after disc load)
   let selectedSlot = null;
   let curEquip = -1;     // -1 = disc form, 0 = unequipped template, 1 = equipped template
-  let curForm = 'field'; // 'field' or 'battle'
+  let curForm = 'field'; // 'field' | 'battle' | 'baka'
+  // 'battle' and 'baka' both render the PROT 1204 meshes; they differ only in
+  // palette: 'battle' = the true turn-based battle colours (atlas images +
+  // the disc-assembled party CLUT band sampled via the relocated CBA), 'baka'
+  // = the Baka Fighter minigame palette the pack ships bundled (nominal CBA).
+  const isBattlePackForm = (f) => f === 'battle' || f === 'baka';
   let curAnmBundleIdx = 0;   // index into anmCorpus.bundles
   let curAnmRecordIdx = 0;
-  // Per-form last-selected bundle index, so toggling field↔battle preserves
-  // each side's scrubber state instead of snapping back to the default.
+  // Per-form last-selected bundle index, so swapping forms preserves each
+  // side's scrubber state instead of snapping back to the default.
   // Initialised to -1 ("never picked"); on form switch we fall back to the
   // form's default if the cached index is invalid or still -1.
-  let _bundleIdxByForm = { field: -1, battle: -1 };
-  let meshView = null;   // CharacterMeshView (field) or BattleMeshView (battle)
+  let _bundleIdxByForm = { field: -1, battle: -1, baka: -1 };
+  let meshView = null;   // CharacterMeshView (field) or BattleMeshView (battle/baka)
   let artsData = null;   // arts.json contents, lazily fetched
   let curArtsKind = 'regular';
 
@@ -368,10 +378,10 @@ table.arts-list .cmd-tag {
     ));
   }
 
-  // Active pack for whichever form is selected. Battle form uses PROT 1204
-  // and has no equipment-swap templates; field form uses PROT 0874 §0.
+  // Active pack for whichever form is selected. Battle + Baka Fighter forms
+  // use PROT 1204 (no equipment-swap templates); field form uses PROT 0874 §0.
   function activePack() {
-    return curForm === 'battle' ? battlePack : pack;
+    return isBattlePackForm(curForm) ? battlePack : pack;
   }
 
   // Render the slot picker (5 cards). Each card shows the role label + the
@@ -383,7 +393,7 @@ table.arts-list .cmd-tag {
     gridEl.innerHTML = p.slots.map(s => {
       const tag = s.patch
         ? `<span class="char-card-tag">group ${s.patch.patched_group_index} swap @ +0x${s.patch.equip_byte_record_offset.toString(16).toUpperCase()}</span>`
-        : `<span class="char-card-tag">${curForm === 'battle' ? 'battle TMD' : (s.slot === 3 ? 'savepoint' : 'auxiliary')}</span>`;
+        : `<span class="char-card-tag">${isBattlePackForm(curForm) ? (curForm === 'baka' ? 'baka TMD' : 'battle TMD') : (s.slot === 3 ? 'savepoint' : 'auxiliary')}</span>`;
       return `
         <div class="char-card${s.slot === selectedSlot ? ' is-active' : ''}" data-slot="${s.slot}">
           <div class="char-card-name">${escapeHtml(s.label)}</div>
@@ -400,7 +410,8 @@ table.arts-list .cmd-tag {
     const haveBattle = !!battlePack && battlePack.slots && battlePack.slots.length > 0;
     const buttons = [
       { val: 'field',  label: 'field form',  hint: 'PROT 0874 §0 — the 5 low-poly TMDs the engine keeps resident across every field scene', enabled: !!pack },
-      { val: 'battle', label: 'battle form', hint: 'PROT 1204 (other5) — the higher-detail party meshes the engine installs for turn-based battles (5 TMD2 chunks + 7 character TIM atlases, sampled with the real PSX paletted pipeline). The Baka Fighter minigame reuses this same pack.', enabled: haveBattle },
+      { val: 'battle', label: 'battle form', hint: 'PROT 1204 (other5) — the higher-detail party meshes the engine installs for turn-based battles, in their TRUE battle palette (blue-haired Vahn). The party palette is VRAM residue inherited from the field scenes you walked through; the viewer rebuilds it by replaying the CLUT uploads of dolk/town01/map01, sampled with the mesh nominal CBA (no relocation).', enabled: haveBattle },
+      { val: 'baka',   label: 'Baka Fighter', hint: 'The same PROT 1204 meshes rendered with the palette the pack ships BUNDLED — the Baka Fighter fist-fight minigame colours. (The minigame reuses the battle meshes; only the palette differs from the turn-based battle form.)', enabled: haveBattle },
     ];
     formToggle.innerHTML = buttons.map(b => `
       <button class="char-equip-btn${b.val === curForm ? ' is-active' : ''}"
@@ -486,9 +497,10 @@ table.arts-list .cmd-tag {
   // visibility is conveyed via the per-character texture atlas page).
   function renderEquipToggle() {
     if (selectedSlot === null) { equipToggle.innerHTML = ''; return; }
-    if (curForm === 'battle') {
-      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>n/a (battle form)</button>`;
-      equipNote.textContent = 'Battle-form TMDs (PROT 1204) carry no group-10/11 equipment-swap templates — the higher-fidelity battle mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
+    if (isBattlePackForm(curForm)) {
+      const lbl = curForm === 'baka' ? 'n/a (Baka Fighter)' : 'n/a (battle form)';
+      equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>${lbl}</button>`;
+      equipNote.textContent = 'PROT 1204 TMDs carry no group-10/11 equipment-swap templates — the higher-fidelity mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
       return;
     }
     const slot = pack.slots[selectedSlot];
@@ -541,7 +553,7 @@ table.arts-list .cmd-tag {
 
   function selectForm(form) {
     if (form === curForm) return;
-    if (form === 'battle' && (!battlePack || !battlePack.slots || battlePack.slots.length === 0)) return;
+    if (isBattlePackForm(form) && (!battlePack || !battlePack.slots || battlePack.slots.length === 0)) return;
     const prevForm = curForm;
     curForm = form;
     // Destroy any current viewer so we can re-instantiate with the right class.
@@ -563,7 +575,7 @@ table.arts-list .cmd-tag {
       const cached = _bundleIdxByForm[form] | 0;
       let targetIdx = cached >= 0 && cached < anmCorpus.bundles.length ? cached : -1;
       if (targetIdx < 0) {
-        targetIdx = form === 'battle' ? battleBundleIdx() : defaultFieldBundleIdx();
+        targetIdx = isBattlePackForm(form) ? battleBundleIdx() : defaultFieldBundleIdx();
       }
       if (targetIdx >= 0 && targetIdx !== curAnmBundleIdx) {
         curAnmBundleIdx = targetIdx;
@@ -697,7 +709,7 @@ table.arts-list .cmd-tag {
     // shoulders where Vahn's are, which doesn't match her proportions.
     // The first record of each bank is the combat-stance idle, which is
     // what the engine holds at battle start.
-    if (curForm === 'battle' && bundle.prot_index === 1203) {
+    if (isBattlePackForm(curForm) && bundle.prot_index === 1203) {
       const BATTLE_BANK_START = { 0: 0, 1: 9, 2: 18, 3: 27, 4: 0 };
       const start = BATTLE_BANK_START[slot] | 0;
       for (let i = start; i < bundle.records.length; i++) {
@@ -781,12 +793,19 @@ table.arts-list .cmd-tag {
     if (selectedSlot === null) return;
     const slot = selectedSlot;
     const canvasEl = document.getElementById('char-viewer-canvas');
-    if (curForm === 'battle') {
-      // Battle form — use TmdRenderer + the 7 atlas TIMs uploaded into a
-      // virtual 1024×512 PSX VRAM at their disc-pinned coords. The mesh
-      // sampler reads cba/tsb per primitive against that VRAM.
+    if (isBattlePackForm(curForm)) {
+      // Battle / Baka Fighter forms — the SAME PROT 1204 meshes, rendered with
+      // TmdRenderer against a virtual 1024×512 PSX VRAM. They differ only in
+      // palette:
+      //   battle → true battle colours: atlas images + the disc-assembled
+      //            party CLUT band, sampled via the relocated CBA.
+      //   baka   → the pack's bundled (Baka Fighter minigame) palette, nominal CBA.
+      const trueBattle = curForm === 'battle';
       const positions = viewer.battle_char_mesh_positions(slot);
       const uvsI32   = viewer.battle_char_mesh_uvs(slot);
+      // Both forms use the mesh's nominal CBA (no relocation). They differ only
+      // in the CLUT values at VRAM rows 490..497: the true-battle VRAM overlays
+      // the resident party palette there; the Baka VRAM keeps the bundled one.
       const cbaTsb   = viewer.battle_char_mesh_cba_tsb(slot);
       const indices  = viewer.battle_char_mesh_indices(slot);
       const bounds   = viewer.battle_char_mesh_bounds(slot);
@@ -799,10 +818,12 @@ table.arts-list .cmd-tag {
         if (!meshView || !(meshView instanceof BattleMeshView)) {
           if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
           meshView = new BattleMeshView(canvasEl);
-          // Upload VRAM once per BattleMeshView lifetime; same atlas pack
-          // covers every battle slot, so a single upload survives slot
-          // changes for free.
-          const vramBytes = viewer.battle_char_vram_bytes();
+          // Upload VRAM once per BattleMeshView lifetime. selectForm() disposes
+          // the view on every form switch, so battle↔baka re-uploads the
+          // form-appropriate palette VRAM here.
+          const vramBytes = trueBattle
+            ? viewer.battle_char_true_vram_bytes()
+            : viewer.battle_char_vram_bytes();
           if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
         }
         // UV binding returns i32 (parallel to character_mesh_uvs); the
@@ -828,9 +849,10 @@ table.arts-list .cmd-tag {
         const vert = (positions.length / 3) | 0;
         const meta = battlePack.slots[slot];
         statsEl.innerHTML =
-          `<b>${tri}</b> triangles · <b>${vert}</b> vertices · battle form`;
-        funEl.textContent =
-          `nobj ${meta.disc_nobj} on disc · sampled from 7 character atlases (CLUTs at VRAM rows 490..495, 497)`;
+          `<b>${tri}</b> triangles · <b>${vert}</b> vertices · ${trueBattle ? 'battle form' : 'Baka Fighter form'}`;
+        funEl.textContent = trueBattle
+          ? `nobj ${meta.disc_nobj} on disc · true battle palette (party CLUT band = VRAM residue replayed from field scenes dolk/town01/map01, nominal CBA; Gala's runtime-only body row falls back to bundled)`
+          : `nobj ${meta.disc_nobj} on disc · bundled Baka Fighter palette (CLUTs at VRAM rows 490..495, 497)`;
         // Re-apply the current ANM record to the freshly-loaded mesh
         // (slot or form switch shouldn't drop the animation).
         maybeLoadCurrentAnim();
@@ -966,7 +988,7 @@ table.arts-list .cmd-tag {
     const btn = e.target.closest('.char-equip-btn');
     if (!btn || btn.disabled) return;
     const val = btn.dataset.val;
-    if (val === 'field' || val === 'battle') selectForm(val);
+    if (val === 'field' || val === 'battle' || val === 'baka') selectForm(val);
   });
 
   if (anmBundleSel) {
@@ -1033,13 +1055,13 @@ table.arts-list .cmd-tag {
     if (!viewer || selectedSlot === null) return;
     const p = activePack();
     if (!p) return;
-    const bytes = curForm === 'battle'
+    const bytes = isBattlePackForm(curForm)
       ? viewer.battle_char_tmd_bytes(selectedSlot)
       : viewer.character_tmd_bytes(selectedSlot);
     if (!bytes || !bytes.length) return;
     const meta = p.slots[selectedSlot];
-    const formTag = curForm === 'battle'
-      ? 'battle'
+    const formTag = isBattlePackForm(curForm)
+      ? (curForm === 'baka' ? 'baka' : 'battle')
       : (curEquip < 0 ? 'field_disc' : (curEquip === 0 ? 'field_unequipped' : 'field_equipped'));
     const base = `${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${formTag}.tmd`;
     // The raw download is always the disc-form blob; the equip-swap CLI is

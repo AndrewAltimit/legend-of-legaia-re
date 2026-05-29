@@ -634,26 +634,42 @@ export class LegaiaViewer {
         return v1;
     }
     /**
-     * Build the 1 MB PSX VRAM the battle-form character pack would have
-     * at boot — each of the seven atlas TIMs uploaded at its declared
-     * `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
-     * `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
-     * fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
-     * to the battle character atlas pack.
+     * Build the 1 MB PSX VRAM for the **true turn-based battle** appearance:
+     * PROT 1204's atlas images + the resident party CLUT band (rows 490..497).
      *
-     * Note: the PROT 1204 atlas TIMs ARE the real battle-form character
-     * art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
-     * rendering each atlas with its bundled CLUT). The earlier
-     * "placeholder" framing was misleading — it came from
-     * byte-comparing against a mid-battle mc1 retail VRAM snapshot,
-     * which captures only one animation phase of the runtime upload.
-     * What's actually missing: the targeted-CLUT upload pass that
-     * populates rows 491/493/494/495 from non-PROT-1204 sources. The
-     * TMD primitives reference CBAs across rows 481/492/495/496/503,
-     * not just the atlas's own row, so a single character's polygons
-     * need ALL those CLUT rows populated to render correct palettes.
-     * See `docs/reference/open-rev-eng-threads.md` § "Battle character
-     * image + CLUT source".
+     * The party battle palette is **not a battle asset** — it is VRAM residue
+     * the battle inherits from the field/world-map scenes the player passed
+     * through. Each scene's `tim.dat` (driver `FUN_8002541C` -> per-TIM
+     * `FUN_800198E0`) uploads CLUT-only TIMs whose `cy` (490..497) is baked
+     * into the TIM header — matching the mesh's **nominal CBA**, so there is no
+     * relocation — and battle entry never clears those rows. We reconstruct the
+     * band by replaying the CLUT uploads of a representative world-map battle's
+     * scene history ([`BATTLE_CLUT_SCENES`] = dolk + town01 + map01): rows
+     * 490/491 (Vahn), 492/493 (Noa), 495 (Gala head) come out **byte-exact**
+     * vs a real battle. Gala's row **494** (body) is runtime-generated and
+     * absent from the disc, so the bundled 1204 CLUT (uploaded first) is left
+     * in place there as a fallback. The Battle form renders against this VRAM
+     * with the **nominal** CBA ([`Self::battle_char_mesh_cba_tsb`]), same as the
+     * Baka form — the two differ only in the CLUT values at rows 490..497.
+     * @returns {Uint8Array}
+     */
+    battle_char_true_vram_bytes() {
+        const ret = wasm.legaiaviewer_battle_char_true_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
+     * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`.
+     * This is the **Baka Fighter** appearance: the bundled sub-CLUTs (rows
+     * 490..495, 497) are the minigame's palette, the colours the pack ships
+     * with. The Baka Fighter form on the site renders against this VRAM with
+     * the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
+     *
+     * For the true turn-based **battle** appearance (blue-haired Vahn etc.)
+     * the runtime replaces these palettes — see
+     * [`Self::battle_char_true_vram_bytes`].
      * @returns {Uint8Array}
      */
     battle_char_vram_bytes() {
