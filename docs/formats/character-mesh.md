@@ -239,27 +239,35 @@ The source pointer derives from the battle overlay context:
 `s0 = *(*(0x801C92F0) + 8) + per-char-offset`, into a transient buffer (the
 `0x800Dxxxx` region, freed after the copy).
 
-**This is why every brute missed, and the disc source is still not byte-pinned.**
-The earlier searches used the bit-15-**set** needle (`40 9d 70 90…`); the disc
-form is bit-15-**clear** (`40 1d 70 10…`). But even the corrected (cleared) 32-
-colour CLUT is **not** found raw (PROT / `SCUS`) nor as LZS-decompressed output in
-the battle / scene / character entries (`lzs-decode find`, windows to 24 KB) — so
-the transient source buffer is itself decompressed or composed from a
-not-yet-located disc source. Pinning it needs tracing the `0x801C92F0` overlay
-context to the buffer's loader, or a write-watchpoint on the source buffer.
+**The source CLUT is LZS-compressed in PROT `0861_edstati3` — SOLVED.** A second
+write-watchpoint, on the source struct header `0x800D6C98`, shows it is written by
+`FUN_8001A55C` (the LZS decoder); the decoder's input buffer byte-matches **PROT
+entry `0861` (`edstati3`)** (237-window match, fixed delta — it is loaded raw,
+then a stream inside it is decompressed). `lzs-decode find` pins the stream: from
+`0861` offset **`~0x5980`**, the decompressed block holds the party CLUT structs
+`[u16 base][u16 count][BGR555]`, and applying the runtime STP-set
+(`colour |= 0x8000` on non-zero) reproduces the live Vahn battle palette
+**29 of 32 colours byte-exact**. The 3 that differ (indices 17/20/21) persist
+across every candidate stream start, so they are **runtime equipment-patches**
+(the same equipment-swap mechanism that adds the +2 mesh groups), not decode
+error. **So the battle palette IS disc-recoverable** — every earlier search
+missed only because it used the bit-15-**set** runtime needle (`40 9d 70 90…`)
+instead of the disc's bit-15-**clear** form (`40 1d 70 10…`). The full chain:
+`PROT 0861` raw-load → `FUN_8001A55C` LZS-decompress (→ CLUT structs, bit-15-clear)
+→ `FUN_80053B9C` per-CLUT copy with STP-set + a few equipment patches (→ palette
+block `arena + slot*0x1E0`) → DMA to VRAM rows 481/482/483.
 
 > **Retraction.** An earlier reading ("LZS-decompressed from the `town0c` scene
 > bundle at `0x23430`") was wrong: that write-watchpoint caught the **scene
-> bundle's** LZS decompression into the *shared* work-arena (the value left at
-> `0x800ebee8` in that capture, `0x7965481F`, is **not** the Vahn palette
-> `0x409d…`). The party palette is a separate, later write that overwrites the
-> arena; its source is the open thread. (The work-arena *is* LZS-filled with
-> scene data at load — that part holds — but it is not the palette source.)
+> bundle's** decompression into the *shared* work-arena (its `0x800ebee8` value
+> `0x7965481F` ≠ the Vahn palette). The real source is `PROT 0861`, above.
 
-Cracking it needs a **write-watchpoint on the *final* party-palette write** in a
-clean Tetsu/Drake fight (capture the writer PC + source registers) to see the
-assembly — a base-palette transform vs a scattered gather (see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+**Engine/site reproduction:** decompress the `0861` stream, read each CLUT struct,
+set bit 15 on non-zero colours, and place them at the per-character palette rows
+— byte-exact except the ~3 equipment-conditional entries (a small follow-on). The
+Tetsu fight is Vahn-only, so only Vahn's CLUT is confirmed here; Noa/Gala are
+expected in the same `0861` block (a full-party capture would confirm their
+offsets).
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
