@@ -239,23 +239,23 @@ The source pointer derives from the battle overlay context:
 `s0 = *(*(0x801C92F0) + 8) + per-char-offset`, into a transient buffer (the
 `0x800Dxxxx` region, freed after the copy).
 
-**The source CLUT is LZS-compressed in PROT `0861_edstati3` — SOLVED.** A second
+**The source CLUTs are LZS-compressed inside the PLAYER file — SOLVED.** A second
 write-watchpoint, on the source struct header `0x800D6C98`, shows it is written by
-`FUN_8001A55C` (the LZS decoder); the decoder's input buffer byte-matches **PROT
-entry `0861` (`edstati3`)** (237-window match, fixed delta — it is loaded raw,
-then a stream inside it is decompressed). `lzs-decode find` pins the stream: from
-`0861` offset **`~0x5980`**, the decompressed block holds the party CLUT structs
-`[u16 base][u16 count][BGR555]`, and applying the runtime STP-set
-(`colour |= 0x8000` on non-zero) reproduces the live Vahn battle palette
-**29 of 32 colours byte-exact**. The 3 that differ (indices 17/20/21) persist
-across every candidate stream start, so they are **runtime equipment-patches**
-(the same equipment-swap mechanism that adds the +2 mesh groups), not decode
-error. **So the battle palette IS disc-recoverable** — every earlier search
-missed only because it used the bit-15-**set** runtime needle (`40 9d 70 90…`)
-instead of the disc's bit-15-**clear** form (`40 1d 70 10…`). The full chain:
-`PROT 0861` raw-load → `FUN_8001A55C` LZS-decompress (→ CLUT structs, bit-15-clear)
-→ `FUN_80053B9C` per-CLUT copy with STP-set + a few equipment patches (→ palette
-block `arena + slot*0x1E0`) → DMA to VRAM rows 481/482/483.
+`FUN_8001A55C` (the LZS decoder). The loaded `data\battle\PLAYER1` buffer
+content-matches a region of **PROT entry `0861` (`edstati3`)** (the PROT label is
+incidental, and `0861`'s copy is *un-staged* — see the note below), so early
+`lzs-decode find` probes located the streams there. Running the full
+`FUN_80052FA0` decode+assembly, the decompressed records hold the party CLUT
+structs `[u16 base][u16 count][BGR555]`,
+and running the full `FUN_80052FA0` decode+assembly then applying the runtime
+STP-set (`colour |= 0x8000` on non-zero) reproduces the live Vahn battle palette
+**byte-exact, all 3 bands** (no residual "equipment-patch" colours — that earlier
+3-colour discrepancy was the budget-less scratch decoder, since corrected). Every
+earlier byte-search missed only because it used the bit-15-**set** runtime needle
+(`40 9d 70 90…`) instead of the disc's bit-15-**clear** form (`40 1d 70 10…`). The
+full chain: PLAYER-file raw-load → `FUN_8001A55C` LZS-decompress (→ CLUT structs,
+bit-15-clear) → `FUN_80053B9C` per-CLUT copy with STP-set (→ palette block
+`arena + slot*0x1E0`) → DMA to VRAM rows 481/482/483.
 
 > **Retraction.** An earlier reading ("LZS-decompressed from the `town0c` scene
 > bundle at `0x23430`") was wrong: that write-watchpoint caught the **scene
@@ -284,53 +284,63 @@ incidental). `FUN_80052FA0` then LZS-decodes `record[0]` (`len@+0xC`,
 advancing offsets, and STP-copies CLUTs from offsets *within* the decoded buffer
 (`buf + *(record[0]+4)` / `+8`, plus each flagged sub-record) to VRAM row
 `481+slot` via `FUN_80053B9C`. So the CLUTs are embedded in the decoded character
-records. **Extraction status:** record[0]'s CLUT (struct#3) extracts byte-exact,
-but the sub-record CLUTs (struct#2/#5) don't — a standalone LZS decode of the
-sub-record streams diverges from the game's output past ~`0x1C00` (despite a
-byte-identical decoder algorithm and grep-confirmed stream starts), likely due to
-the `a0`=token-count loop bound interacting with the descriptor-driven
-overlapping work buffer. So a byte-exact, all-CLUT offline extraction is not yet
-achievable; a faithful site render would need to *run* the `FUN_80052FA0`
-decode/assembly logic, not a static per-stream extract.
+records.
 
-**The archive index (`autorun_clut_decode_args.lua`).** The CLUT records are
-decoded by a loop in `FUN_80053B9C`'s caller (`ra = 0x80053130`) that walks a
-**record-descriptor pointer table at `0x801C92F0`**:
-`a1 = *(0x801C92F0 + idx); a0 = *a1 (u32 len); FUN_8001A55C(a0, a1+4, dst)` — so
-each record is `[u32 len][LZS data]`, and successive records decode into buffer
-slots `+0x2000` apart. The five CLUT-region decodes captured come from this loop;
-their source records live at **scattered** `0861` offsets (`0x1C004`, `0x28804`,
-… — *not* a fixed stride), and one record decodes to a *block* holding several
-CLUT structs (e.g. Vahn's `base=0x40` and `base=0x00` are in one record at output
-`0` and `+0x45C`). The pointer table at `0x801C92F0` is populated by an
-**uncaptured `0861` parser**; recovering the *static* per-record `0861` offsets
-(so an offline extractor needn't guess) means tracing that parser, since the
-empirical RAM→offset map is unreliable across runs (heap addresses vary) and the
-`lzs-decode find` offsets are LZS re-sync points, not record starts.
+**Extraction status — SOLVED, byte-exact.** Running `FUN_80052FA0`'s
+decode+assembly *as a unit* (not a per-stream extract) reproduces the live battle
+VRAM exactly. The earlier "sub-record decode diverges past ~`0x1C00`" was a bug in
+a throwaway scratch decoder, **not** a data problem: `FUN_8001A55C`'s first
+argument is an **output-byte budget** (decremented once per literal *and* once per
+match-copied byte; loop runs `while budget > 0`). A decoder that ignores the
+budget runs off the stream into the next record. `legaia_lzs::decompress` already
+honors this (`while out.len() < size`), so the port is just one
+`decompress(stream, budget)` per record. Clean-room parser:
+[`legaia_asset::battle_char_palette`].
 
-**The disc mesh only needs these 3 structs.** The disc 1204 Vahn mesh (`nobj=15`,
-no equipment) samples CBA columns **0, 16, 64, 80, 112, 128** only — all inside
-the captured structs (`0..0x1F`, `0x40..0x6F`, `0x70..0x8F`). The extra columns
-the *runtime* mesh uses (`176/192/208/224`, cells `0x784B..0x784E`) belong to the
-+2 equipment groups (`nobj=17`), which the disc mesh doesn't have. So Vahn's
-3 captured structs are the **complete** palette for the site's disc mesh, and a
-combat-driven enumeration (`autorun_clut_copy_combat.lua`, ~3000 vsyncs through
-the fight) confirms no further `FUN_80053B9C` calls.
+**Pre-staged PLAYER-file layout (the parser input).** `FUN_80052770` streams the
+PLAYER file contiguously into RAM, so the RAM layout *is* the file layout, and the
+file is self-describing relative to `record[0]` at offset 0:
 
-**Engine/site reproduction (and why a clean wiring is still blocked).** The
-palette IS disc-derived — decompress a character's CLUT-struct streams from `0861`,
-set bit 15 on non-zero colours, place at `palette_row + base*2`. The 3 structs'
-exact colours were captured and verified to extract **byte-exact** from `0861`
-(struct#2 stream `0x2D82`, struct#3 `0x1C004`). **But the streams are not at real
-boundaries:** `0861` is a pochi-padded, **un-indexed** archive, so the offsets
-`lzs-decode find` returns are LZS *re-sync* points, not record starts — they put
-the structs at output offsets of `0x1BAC` / `0x5E08` / **`0x30D29`** (struct#5
-needs a ~200 KB decode). A robust extractor needs `0861`'s real per-record index,
-which is overlay-resident (`s0 = *(*(0x801C92F0)+8) + per-char-offset`) and **not
-yet traced**; and Noa/Gala live in *other* per-character files entirely (Tetsu is
-Vahn-only, so they never load there). Hardcoding Vahn's three re-sync offsets with
-200 KB decodes would be fragile and Vahn-only, so the site Battle form stays on the
-bundled palette until the archive index is traced.
+```text
++0x00  u32  desc_off    descriptor-table offset (= end of record[0]'s stream)
++0x04  u32  clut_a_off  offset of CLUT A within record[0]'s DECODED output
++0x08  u32  clut_b_off  offset of CLUT B
++0x0C  u32  budget      record[0] decoded size; LZS stream begins at +0x10
+desc_off: 12-byte entries [u32 id, u32 running_a, u32 size]; the table runs while
+          `a[i+1] == a[i] + size[i]`, so sub#0 = desc_off + count*12.
+sub0_off + 0x2000*k  (k = 0..4): a staged sub-record, [u32 budget][LZS stream].
+```
+
+The five sub-records are at a **fixed `0x2000` stride** in the *pre-staged* PLAYER
+file (sub#5's "budget" is garbage → exactly 5, matching the loop bound
+`iVar15 < 5`). The decode loop's `ra = 0x80053130` callsite reads each as
+`a0 = *a1 (budget); FUN_8001A55C(a0, a1+4, dst)`.
+
+**Assembly + the 3 bands.** Decode `record[0]` at work offset 0; read CLUT A
+@`clut_a_off` and CLUT B @`clut_b_off` *immediately* (the sub-records overwrite the
+region from `clut_a_off` on). Set `cur = clut_a_off`; for each of the 5
+sub-records, decode it at `cur`, take `adv = u32[cur+0x0C]` and `flag =
+u16[cur+0x12]`, and if `flag != 0` its trailing CLUT is at `cur + adv`; then
+`cur += adv`. A CLUT struct is `[u16 base][u16 count][count × BGR555]`; upload sets
+bit 15 on every non-zero colour. Vahn's **3 effective bands** (validated byte-exact
+against a live battle VRAM capture, STP applied): `base=0x00 count=0x20` =
+`record[0]`'s CLUT B; `base=0x40 count=0x30` = sub#0's trailing CLUT;
+`base=0x70 count=0x20` = sub#4's trailing CLUT. (CLUT A and sub#1's CLUT are
+`count=0` no-ops.)
+
+These 3 bands are the **complete** palette for the disc `1204` Vahn mesh
+(`nobj=15`, no equipment): it samples CBA columns `0, 16, 64, 80, 112, 128` only —
+all inside `0..0x1F` / `0x40..0x6F` / `0x70..0x8F`. The extra columns the *runtime*
+mesh uses (`176/192/208/224`) belong to the +2 equipment groups (`nobj=17`), which
+the disc mesh doesn't have.
+
+> **PROT `0861` vs the PLAYER file.** PROT `0861` (`edstati3`) contains one
+> *un-staged* copy of `record[0]` (at file `0x1000`, after a `"pochi…"` header),
+> but its `+0x587C+0x2000*k` region is **not** pre-staged — the loader selects and
+> stages the 5 sub-records at load time (the equipment machinery). The canonical
+> input is the ISO file `data\battle\PLAYERn` (loaded by disc index `char+0x360`),
+> which *is* pre-staged. Noa/Gala live in `PLAYER2`/`PLAYER3`; the Tetsu tutorial
+> is Vahn-only, so a tutorial save only ever stages `PLAYER1`.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object

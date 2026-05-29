@@ -19,6 +19,7 @@ use serde::Serialize;
 
 pub mod anm_detect;
 pub mod battle_char_pack;
+pub mod battle_char_palette;
 pub mod battle_data_pack;
 pub mod befect_cluster;
 pub mod categorize;
