@@ -193,6 +193,13 @@ nominal CBA row. The battle renderer relocates CLUT rows through the
   finding — they *are* on disc; the gap was searching nominal rather than
   texpage-relocated rows.)
 
+The composition is **validated end-to-end** by
+[`scripts/render_battle_char_true.py`](../../scripts/render_battle_char_true.py):
+it decodes the 1204 atlas with the texpage-relocated palette from a real-battle
+save's VRAM and renders a recognizable true-coloured character (blue-haired
+Vahn, pink-haired Noa, gold-marked Gala) — confirming the atlas + relocated-row
+palette + per-prim CBA-column mapping is correct before the engine-side wiring.
+
 ### Equipment groups (battle only)
 
 A live battle character carries +2 `nobj` over the disc form (Vahn 15→17).
