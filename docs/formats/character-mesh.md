@@ -273,6 +273,26 @@ apart** (stream offsets `~0x548F`, `~0x1C004`, `~0x9F948`). `0861` itself has a
 (`lzs-decode probe` → no container) — the battle-setup overlay knows the per-
 record offsets via its own index (`s0 = *(*(0x801C92F0)+8) + per-char-offset`).
 
+**The parser/loader is `FUN_80052770` + `FUN_80052FA0` (static trace).**
+`FUN_80052770` sets `_DAT_801c92f0` to the asset-table base, points each
+character's 28-byte entry at the player files **`data\battle\PLAYER1..4`**
+(Vahn/Noa/Gala/Terra), and loads each via the disc resolver at index
+`char_id + 0x360` (`FUN_8003e8a8`). The loaded PLAYER1 buffer **byte-matches
+`0861`**, so `0861`'s content *is* Vahn's player data (the PROT label is
+incidental). `FUN_80052FA0` then LZS-decodes `record[0]` (`len@+0xC`,
+`data@+0x10`) into a `0x19000` work buffer, decodes 5 sub-records into it at
+advancing offsets, and STP-copies CLUTs from offsets *within* the decoded buffer
+(`buf + *(record[0]+4)` / `+8`, plus each flagged sub-record) to VRAM row
+`481+slot` via `FUN_80053B9C`. So the CLUTs are embedded in the decoded character
+records. **Extraction status:** record[0]'s CLUT (struct#3) extracts byte-exact,
+but the sub-record CLUTs (struct#2/#5) don't — a standalone LZS decode of the
+sub-record streams diverges from the game's output past ~`0x1C00` (despite a
+byte-identical decoder algorithm and grep-confirmed stream starts), likely due to
+the `a0`=token-count loop bound interacting with the descriptor-driven
+overlapping work buffer. So a byte-exact, all-CLUT offline extraction is not yet
+achievable; a faithful site render would need to *run* the `FUN_80052FA0`
+decode/assembly logic, not a static per-stream extract.
+
 **The archive index (`autorun_clut_decode_args.lua`).** The CLUT records are
 decoded by a loop in `FUN_80053B9C`'s caller (`ra = 0x80053130`) that walks a
 **record-descriptor pointer table at `0x801C92F0`**:
