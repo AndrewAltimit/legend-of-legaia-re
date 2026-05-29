@@ -165,6 +165,44 @@ Lua write-watchpoint on `0x8007C018` during a real battle-entry transition would
 pin it. (`ghidra/scripts/funcs/800520f0.txt` for the loader; sibling battle
 files `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
 
+### Battle palette is runtime-composed (CLUT relocation)
+
+The 1204 atlases ship with **bundled CLUTs** that are the **Baka Fighter**
+palette (red hair / blue vest). The **true battle palette** (blue hair / red
+tunic / purple pants) is *not* the bundled one and is *not* at the mesh's
+nominal CBA row. The battle renderer relocates CLUT rows through the
+**texpage→CLUT-row table at `0x8007BEC0`** (32×u16, built per-scene by
+`FUN_800198E0` as each scene/battle TIM uploads):
+
+- A prim's actual CLUT **row** = `table[texpage]`, where
+  `texpage = (img_x>>6) + (img_y>>8)*16`. The TMD2 CBA's nominal row is
+  **ignored**; the CBA only supplies the sub-CLUT **column**.
+- **Vahn**'s texpage `(640,0)` → idx 10 → **row 486** (consistent across the
+  scene-0x0c and scene-0x3c/Drake battle captures). Rendering the 1204 Vahn
+  atlas with VRAM **row 486** gives the true blue-toned Vahn; the bundled
+  CLUT at nominal row 490 gives the brown/red Baka Fighter look. Row 486's
+  palette is present **raw in town01** (PROT 0003/0005).
+- Per full-party Drake capture: Noa texpages → rows 489/487, Gala → 485/490.
+  The palette **values** for the party are composed from *multiple* disc
+  sources per scene — the active scene bundle (Vahn ← town01) plus
+  battle-system entries (`level_up` PROT 0892 / `card_data` PROT 0894 carry
+  much of Gala's), with per-scene row relocation. There is **no single
+  canonical disc block** holding all three; a faithful clean-room render
+  must replicate the runtime multi-source CLUT upload + the `0x8007BEC0`
+  relocation. (This corrects the prior "Noa/Gala palettes not recoverable"
+  finding — they *are* on disc; the gap was searching nominal rather than
+  texpage-relocated rows.)
+
+### Equipment groups (battle only)
+
+A live battle character carries +2 `nobj` over the disc form (Vahn 15→17).
+The equipment swap (`FUN_8001EBEC`, the same mechanism the field pack uses)
+replaces several visible groups at battle setup; the replacement geometry
+(the equipped weapon/gear) is **not present in the 1204 TMD** — it is sourced
+externally (a separate weapon mesh), so the in-battle silhouette differs from
+both the unarmed disc form and the Baka Fighter form (a fist-fight, which
+keeps the unarmed mesh). The external weapon-mesh source is an open thread.
+
 ### On-disc layout (PROT 1204)
 
 PROT 1204 is a flat streaming-format container (no LZS wrapper) with five
