@@ -45,6 +45,23 @@ enum Cmd {
         #[arg(long)]
         tsv: Option<PathBuf>,
     },
+    /// Brute-search a file (or every `*.BIN` in a directory) for an embedded
+    /// LZS stream whose DECOMPRESSED output contains `needle`. Tries every byte
+    /// offset as a stream start, decompresses up to `--max-out` bytes (stopping
+    /// gracefully at EOF), and reports `(file, stream-offset, needle-offset-in-
+    /// output)` for every hit. Finds non-container, arbitrary-offset LZS streams
+    /// embedded in raw-loaded bundles (e.g. the in-battle party palette inside a
+    /// scene bundle) that container/stream-start scans miss.
+    Find {
+        /// File or directory of `*.BIN` entries to search.
+        path: PathBuf,
+        /// Needle as a hex string (e.g. `409d709079be16b6`).
+        #[arg(long)]
+        needle: String,
+        /// Max decompressed bytes to produce per candidate offset.
+        #[arg(long, default_value_t = 4096)]
+        max_out: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -59,7 +76,120 @@ fn main() -> Result<()> {
         Cmd::Probe { input } => probe(&input),
         Cmd::Scan { dir } => scan(&dir),
         Cmd::Audit { dir, tsv } => audit(&dir, tsv.as_ref()),
+        Cmd::Find {
+            path,
+            needle,
+            max_out,
+        } => find(&path, &needle, max_out),
     }
+}
+
+/// Graceful LZS decode: emit up to `max_out` bytes from `input[start..]` into
+/// `out` (cleared first), stopping at the cap or at EOF (no error). Mirrors
+/// `legaia_lzs::decompress` byte-for-byte; `out` + `window` are caller-owned so a
+/// brute loop reuses them instead of allocating per offset.
+fn decode_into(
+    input: &[u8],
+    start: usize,
+    max_out: usize,
+    out: &mut Vec<u8>,
+    window: &mut [u8; 4096],
+) {
+    window.iter_mut().for_each(|b| *b = 0);
+    let mut wpos: usize = 0xFEE;
+    out.clear();
+    let mut src = start;
+    let mut control: u32 = 0;
+    while out.len() < max_out {
+        if (control & 0x100) == 0 {
+            if src >= input.len() {
+                break;
+            }
+            control = (input[src] as u32) | 0xFF00;
+            src += 1;
+        }
+        if (control & 1) != 0 {
+            if src >= input.len() {
+                break;
+            }
+            let v = input[src];
+            src += 1;
+            out.push(v);
+            window[wpos] = v;
+            wpos = (wpos + 1) & 0xFFF;
+        } else {
+            if src + 2 > input.len() {
+                break;
+            }
+            let b0 = input[src] as u32;
+            let b1 = input[src + 1] as u32;
+            src += 2;
+            let base = b0 | ((b1 & 0xF0) << 4);
+            let len = ((b1 & 0x0F) + 3) as usize;
+            for n in 0..len {
+                let v = window[((base + n as u32) & 0xFFF) as usize];
+                out.push(v);
+                window[wpos] = v;
+                wpos = (wpos + 1) & 0xFFF;
+                if out.len() >= max_out {
+                    break;
+                }
+            }
+        }
+        control >>= 1;
+    }
+}
+
+fn find(path: &PathBuf, needle_hex: &str, max_out: usize) -> Result<()> {
+    let needle: Vec<u8> = (0..needle_hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&needle_hex[i..i + 2], 16))
+        .collect::<std::result::Result<_, _>>()
+        .map_err(|e| anyhow::anyhow!("bad --needle hex: {e}"))?;
+    if needle.is_empty() {
+        bail!("--needle is empty");
+    }
+    let files: Vec<PathBuf> = if path.is_dir() {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(path)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|x| x == "BIN").unwrap_or(false))
+            .collect();
+        v.sort();
+        v
+    } else {
+        vec![path.clone()]
+    };
+    let mut total = 0usize;
+    let mut out: Vec<u8> = Vec::with_capacity(max_out + 64);
+    let mut window = [0u8; 4096];
+    for f in &files {
+        let d = std::fs::read(f)?;
+        if d.len() < 2 {
+            continue;
+        }
+        for off in 0..d.len() - 1 {
+            decode_into(&d, off, max_out, &mut out, &mut window);
+            if let Some(pos) = find_sub(&out, &needle) {
+                println!(
+                    "{}  stream_off=0x{:X}  needle_out_off=0x{:X}  decoded={}B",
+                    f.file_name().unwrap().to_string_lossy(),
+                    off,
+                    pos,
+                    out.len()
+                );
+                total += 1;
+            }
+        }
+    }
+    eprintln!("[find] {} hit(s) across {} file(s)", total, files.len());
+    Ok(())
+}
+
+fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.len() > hay.len() {
+        return None;
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 fn raw(input: &PathBuf, size: usize, skip: usize, out: Option<&PathBuf>) -> Result<()> {

@@ -216,32 +216,40 @@ the runtime TMD land at the scattered columns of that character's row. It is
 and is **not the field character palette** (a set test puts only 10 of Vahn's
 130 battle-novel colours — and **0** of Noa's / Gala's — in any field-pack CLUT).
 
-It is absent from the disc *uncompressed* (the full 512-byte row *and* every
-32-byte per-sub-CLUT window miss across all PROT / `SCUS` / `init_data`), absent
-from the LZS-*container* sections of every PROT entry, and **146 of Vahn's 256**
-runtime colours appear in *no* CLUT the 1204 pack ships — a genuinely distinct
-asset, not a recolour of bundled, not a standalone raw blob.
+The palette is **produced fresh at battle load** — it is absent from main RAM in
+the pre-battle field saves (name-entry, standing-in-front-of-Tetsu, and the
+load-initiating frame all miss) and present as a **single** copy only once the
+battle is up, byte-identical between the Tetsu tutorial fight and the Drake-castle
+fight (so it is **character-intrinsic**, deterministic per character). The
+work-arena holding it is `memset`-zeroed at load by the `sw $zero` loop at SCUS
+`0x80055F14` (`base = *(0x8007BD3C)`, `0x1e8d` words), then sparsely filled — the
+palette sits at `arena_base + 0x4048` as an isolated non-zero island.
 
-**It is on disc, LZS-compressed, decompressed into the resident block at battle
-load.** Pinned by a write-watchpoint on `0x800EBEE8` driven through a live battle
-(`scripts/pcsx-redux/autorun_battle_palette_source.lua`): the writes come from
-**`FUN_8001A55C`** (the universal LZS decoder — `pc=0x8001A664`, the match-copy
-store; signature `(a0=src_len, a1=src_ptr→s0 input, a2=dst_ptr→s1 output)`, ring
-at `s3`). The battle work-arena holding the block is `memset`-zeroed first by the
-`sw $zero` loop at SCUS `0x80055F14` (`base = *(0x8007BD3C)`, `0x1e8d` words),
-then filled. At the palette write the decoder's input cursor (`s0`) points
-**inside the loaded scene bundle**: for a `town0c` battle the source buffer at
-`0x80180000` byte-matches **PROT entry 0022 (`town0c`) from offset `0x23430`**
-(40/40 distinctive windows) — so the compressed palette is an embedded
-(non-container, arbitrary-offset) LZS stream **inside the scene bundle**, and
-*mid-block* (the palette is not the stream's first output byte, which is exactly
-why container-search and stream-start brute miss it). This **supersedes** the
-earlier "VRAM-residue / never-LZS-decoded / runtime-assembled /
-not-disc-recoverable" readings. Open detail: the exact `(scene-bundle, byte
-offset)` of the stream and whether it is per-scene or a shared block (see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)); the route is a
-stable battle-load capture of the full palette → offline LZS brute of the source
-bundle.
+**It is not a stored disc blob — most likely runtime-assembled.** Exhaustively
+ruled out as stored bytes: absent uncompressed (full 512-byte row *and* every
+32-byte sub-CLUT window across all PROT / `SCUS` / `init_data`); absent from the
+LZS-*container* sections of every entry; and **not the decompressed output of any
+LZS stream at any byte offset** in the battle / scene / character entries (the
+town01 scene bundle `0003..0011`, `0865`/`0867`/`0871..0876`/`0896`/`0900`/`1204`
+brute-decompressed from every offset, output windows to 24 KB — past the
+`0x4048` depth), nor anywhere in the ≤2 MB corpus (1 KB windows). The brute tool
+is `lzs-decode find` (validated: it relocates a known container section at output
+offset 0). Since the palette is deterministic yet stored nowhere verbatim, it is
+assembled/computed at battle entry from some other source (a transform of a base
+palette, or a gather of scattered sub-CLUTs), not copied or decompressed.
+
+> **Retraction.** An earlier reading ("LZS-decompressed from the `town0c` scene
+> bundle at `0x23430`") was wrong: that write-watchpoint caught the **scene
+> bundle's** LZS decompression into the *shared* work-arena (the value left at
+> `0x800ebee8` in that capture, `0x7965481F`, is **not** the Vahn palette
+> `0x409d…`). The party palette is a separate, later write that overwrites the
+> arena; its source is the open thread. (The work-arena *is* LZS-filled with
+> scene data at load — that part holds — but it is not the palette source.)
+
+Cracking it needs a **write-watchpoint on the *final* party-palette write** in a
+clean Tetsu/Drake fight (capture the writer PC + source registers) to see the
+assembly — a base-palette transform vs a scattered gather (see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
