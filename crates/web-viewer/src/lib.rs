@@ -215,15 +215,6 @@ pub struct LegaiaViewer {
     walk_placements: Option<Vec<WalkPlacement>>,
 }
 
-/// Scene bundles whose `tim.dat` CLUT uploads, replayed in visit order,
-/// reconstruct the resident party CLUT band (VRAM rows 490..497) that a
-/// world-map battle inherits. The party battle palette is VRAM residue from
-/// the field scenes the player passed through, not a battle asset; dolk +
-/// town01 + map01 cover the party rows (Vahn 490/491, Noa 492/493, Gala 495 —
-/// byte-exact vs a real battle). Gala's row 494 (body) is runtime-generated and
-/// absent from the disc. See [`LegaiaViewer::battle_char_true_vram_bytes`].
-const BATTLE_CLUT_SCENES: [u32; 3] = [61, 3, 86]; // dolk, town01, map01
-
 #[wasm_bindgen]
 impl LegaiaViewer {
     #[wasm_bindgen(constructor)]
@@ -2263,15 +2254,20 @@ impl LegaiaViewer {
     }
 
     /// Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
-    /// uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`.
-    /// This is the **Baka Fighter** appearance: the bundled sub-CLUTs (rows
-    /// 490..495, 497) are the minigame's palette, the colours the pack ships
-    /// with. The Baka Fighter form on the site renders against this VRAM with
-    /// the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
+    /// uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
+    /// (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+    /// palette** — what the Baka Fighter minigame renders with directly. Both
+    /// the Battle and Baka Fighter forms on the site render against this VRAM
+    /// with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
     ///
-    /// For the true turn-based **battle** appearance (blue-haired Vahn etc.)
-    /// the runtime replaces these palettes — see
-    /// [`Self::battle_char_true_vram_bytes`].
+    /// A real turn-based battle relocates the same geometry + textures into a
+    /// packed per-slot VRAM band (rows 481..483) and recolours it with a
+    /// per-battle party palette that is a **separate, battle-allocated runtime
+    /// asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+    /// distinct from this bundled palette and **not recoverable from the disc by
+    /// byte search** (see `docs/formats/character-mesh.md`). Until that palette's
+    /// disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+    /// the Battle form is the bundled-palette render, visually identical to Baka.
     pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
         let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
@@ -2286,107 +2282,6 @@ impl LegaiaViewer {
             }
         }
         vram.as_bytes().to_vec()
-    }
-
-    /// Look up any PROT entry's on-disc byte slice by its TOC index.
-    fn prot_entry_slice(&self, index: u32) -> Option<&[u8]> {
-        let meta = parse_prot_toc(&self.disc)?
-            .into_iter()
-            .find(|e| e.index == index)?;
-        let off = meta.byte_offset as usize;
-        let end = off.saturating_add(meta.size_bytes as usize);
-        self.disc.get(off..end)
-    }
-
-    /// Build the 1 MB PSX VRAM for the **true turn-based battle** appearance:
-    /// PROT 1204's atlas images + the resident party CLUT band (rows 490..497).
-    ///
-    /// The party battle palette is **not a battle asset** — it is VRAM residue
-    /// the battle inherits from the field/world-map scenes the player passed
-    /// through. Each scene's `tim.dat` (driver `FUN_8002541C` -> per-TIM
-    /// `FUN_800198E0`) uploads CLUT-only TIMs whose `cy` (490..497) is baked
-    /// into the TIM header — matching the mesh's **nominal CBA**, so there is no
-    /// relocation — and battle entry never clears those rows. We reconstruct the
-    /// band by replaying the CLUT uploads of a representative world-map battle's
-    /// scene history ([`BATTLE_CLUT_SCENES`] = dolk + town01 + map01): rows
-    /// 490/491 (Vahn), 492/493 (Noa), 495 (Gala head) come out **byte-exact**
-    /// vs a real battle. Gala's row **494** (body) is runtime-generated and
-    /// absent from the disc, so the bundled 1204 CLUT (uploaded first) is left
-    /// in place there as a fallback. The Battle form renders against this VRAM
-    /// with the **nominal** CBA ([`Self::battle_char_mesh_cba_tsb`]), same as the
-    /// Baka form — the two differ only in the CLUT values at rows 490..497.
-    pub fn battle_char_true_vram_bytes(&self) -> Vec<u8> {
-        let mut vram = legaia_tim::Vram::new();
-        // 1) 1204 atlas IMAGES + bundled CLUTs. The bundled CLUTs (Baka palette,
-        //    rows 490..497) are the fallback for Gala's runtime-only row 494 and
-        //    are overwritten below for every disc-available party row.
-        if let Some(raw) = self.battle_char_pack_slice()
-            && let Ok(pack) = legaia_asset::battle_char_pack::parse(raw)
-        {
-            for atlas in &pack.atlases {
-                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
-                    vram.upload_tim(&tim);
-                }
-            }
-        }
-        // 2) overlay the true party CLUT band by replaying the scene CLUT uploads.
-        for idx in BATTLE_CLUT_SCENES {
-            self.paint_scene_party_cluts(&mut vram, idx);
-        }
-        vram.as_bytes().to_vec()
-    }
-
-    /// Paint every CLUT-only TIM (`cy` in 490..=497) from one scene bundle's raw
-    /// + LZS-decompressed sections into `vram` at its baked `(cx, cy)`. Mirrors
-    /// the retail per-scene `tim.dat` CLUT upload. These TIMs carry the reserved
-    /// high flag bit (`0x80000008`) that `legaia_tim::parse_strict` rejects, so
-    /// we walk the CLUT block by hand.
-    fn paint_scene_party_cluts(&self, vram: &mut legaia_tim::Vram, index: u32) {
-        let Some(buf) = self.prot_entry_slice(index) else {
-            return;
-        };
-        let scan = tim_scan::scan_entry(buf);
-        let mut sources: Vec<&[u8]> = vec![buf];
-        sources.extend(scan.lzs_sections.iter().map(|s| s.as_slice()));
-        for src in sources {
-            let mut i = 0usize;
-            while i + 20 <= src.len() {
-                if src[i] == 0x10 && src[i + 1] == 0 && src[i + 2] == 0 && src[i + 3] == 0 {
-                    let flags =
-                        u32::from_le_bytes([src[i + 4], src[i + 5], src[i + 6], src[i + 7]]);
-                    let hi = flags & 0xffff_0000;
-                    if flags & 8 != 0 && (hi == 0 || hi == 0x8000_0000) {
-                        let bsize =
-                            u32::from_le_bytes([src[i + 8], src[i + 9], src[i + 10], src[i + 11]])
-                                as usize;
-                        let cx = u16::from_le_bytes([src[i + 12], src[i + 13]]);
-                        let cy = u16::from_le_bytes([src[i + 14], src[i + 15]]);
-                        let cw = u16::from_le_bytes([src[i + 16], src[i + 17]]) as usize;
-                        let ch = u16::from_le_bytes([src[i + 18], src[i + 19]]) as usize;
-                        if (490..=497).contains(&cy)
-                            && (1..=4).contains(&ch)
-                            && (1..=256).contains(&cw)
-                            && (12 + cw * ch * 2) <= bsize
-                            && bsize <= 2000
-                            && (cx as usize) < 1024
-                        {
-                            let cdata = i + 20;
-                            for j in 0..ch {
-                                let rowoff = cdata + j * cw * 2;
-                                if rowoff + cw * 2 <= src.len() {
-                                    vram.write_clut_row(
-                                        cx,
-                                        cy + j as u16,
-                                        &src[rowoff..rowoff + cw * 2],
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                i += 1;
-            }
-        }
     }
 
     // ------------------------------------------------------------------

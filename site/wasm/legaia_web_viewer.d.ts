@@ -291,36 +291,21 @@ export class LegaiaViewer {
      */
     battle_char_tmd_bytes(slot: number): Uint8Array;
     /**
-     * Build the 1 MB PSX VRAM for the **true turn-based battle** appearance:
-     * PROT 1204's atlas images + the resident party CLUT band (rows 490..497).
-     *
-     * The party battle palette is **not a battle asset** — it is VRAM residue
-     * the battle inherits from the field/world-map scenes the player passed
-     * through. Each scene's `tim.dat` (driver `FUN_8002541C` -> per-TIM
-     * `FUN_800198E0`) uploads CLUT-only TIMs whose `cy` (490..497) is baked
-     * into the TIM header — matching the mesh's **nominal CBA**, so there is no
-     * relocation — and battle entry never clears those rows. We reconstruct the
-     * band by replaying the CLUT uploads of a representative world-map battle's
-     * scene history ([`BATTLE_CLUT_SCENES`] = dolk + town01 + map01): rows
-     * 490/491 (Vahn), 492/493 (Noa), 495 (Gala head) come out **byte-exact**
-     * vs a real battle. Gala's row **494** (body) is runtime-generated and
-     * absent from the disc, so the bundled 1204 CLUT (uploaded first) is left
-     * in place there as a fallback. The Battle form renders against this VRAM
-     * with the **nominal** CBA ([`Self::battle_char_mesh_cba_tsb`]), same as the
-     * Baka form — the two differ only in the CLUT values at rows 490..497.
-     */
-    battle_char_true_vram_bytes(): Uint8Array;
-    /**
      * Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
-     * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`.
-     * This is the **Baka Fighter** appearance: the bundled sub-CLUTs (rows
-     * 490..495, 497) are the minigame's palette, the colours the pack ships
-     * with. The Baka Fighter form on the site renders against this VRAM with
-     * the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
+     * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
+     * (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+     * palette** — what the Baka Fighter minigame renders with directly. Both
+     * the Battle and Baka Fighter forms on the site render against this VRAM
+     * with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
      *
-     * For the true turn-based **battle** appearance (blue-haired Vahn etc.)
-     * the runtime replaces these palettes — see
-     * [`Self::battle_char_true_vram_bytes`].
+     * A real turn-based battle relocates the same geometry + textures into a
+     * packed per-slot VRAM band (rows 481..483) and recolours it with a
+     * per-battle party palette that is a **separate, battle-allocated runtime
+     * asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+     * distinct from this bundled palette and **not recoverable from the disc by
+     * byte search** (see `docs/formats/character-mesh.md`). Until that palette's
+     * disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+     * the Battle form is the bundled-palette render, visually identical to Baka.
      */
     battle_char_vram_bytes(): Uint8Array;
     /**
@@ -1089,7 +1074,6 @@ export interface InitOutput {
     readonly legaiaviewer_battle_char_mesh_uvs: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_pack_json: (a: number) => [number, number];
     readonly legaiaviewer_battle_char_tmd_bytes: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_battle_char_true_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_battle_char_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
     readonly legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];

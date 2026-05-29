@@ -206,19 +206,30 @@ band pages byte-match the atlases at **73–98 %** — the shortfall is the
 equipment groups overlaying parts. So the battle textures are fully
 disc-reproducible.
 
-**Palette** is a resident party-palette block in main RAM (≈ 480 bytes / 15
-sub-CLUTs per character) that the loader DMAs to VRAM rows 481/482/483. It is
+**Palette** is a resident party-palette block in main RAM that the loader DMAs
+to VRAM rows 481/482/483. In a clean full-party battle save the blocks are
+contiguous at **`0x800ebee8` (Vahn) / `0x800ec0c8` (Noa) / `0x800ec2a8` (Gala)**,
+a fixed **`0x1E0` (480-byte) stride** — exactly **15 × 16-colour sub-CLUTs per
+character, one per disc mesh object**; the per-object CBA columns read back off
+the runtime TMD land at the scattered columns of that character's row. It is
 **battle-allocated** (the same RAM address holds unrelated data in a field save)
-and is **not the field character palette** (field Vahn samples row 478; values
-differ). It is **not recoverable from the disc by scanning**: absent raw from
-every PROT entry / `SCUS` / `init_data`, not the CLUT of any strict-parsed TIM,
-and not in any of the 142 valid LZS-*container* entries. It *is* on disc (the
-loader uploads it) but in a non-container embedded LZS section at an offset only
-the **uncaptured battle-entry/party-setup overlay** knows — the same overlay
-that performs the TSB/CBA relocation above. Pinning it is an open thread
+and is **not the field character palette** (a set test puts only 10 of Vahn's
+130 battle-novel colours — and **0** of Noa's / Gala's — in any field-pack CLUT).
+
+It is **not recoverable from the disc by byte search.** Exhaustively: absent
+uncompressed from every PROT entry / `SCUS` / `init_data` (both the full 512-byte
+row *and* every 32-byte per-sub-CLUT window miss); **0** hits across the LZS
+*container* sections of **all** PROT entries; and **146 of Vahn's 256** runtime
+colours appear in *no* CLUT the 1204 pack ships, so it is a genuinely distinct
+asset, not a recolour of the bundled (Baka) palette. It is therefore either
+stored in a **non-container / arbitrary-offset LZS stream** (which only the
+loader's DMA source address pins) or **assembled at load** from a non-obvious
+source — distinguishing the two, and recovering it, needs the
+**uncaptured battle-entry/party-setup overlay** (the same overlay that performs
+the TSB/CBA relocation above). Pinning it is an open thread
 (see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)); the
 route is a full-party **battle-LOAD** capture → overlay slice → trace the
-CLUT-gather.
+CLUT-gather DMA (`FUN_80059BD4` / `LoadImage`) back to its disc entry+offset.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
