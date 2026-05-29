@@ -165,56 +165,72 @@ Lua write-watchpoint on `0x8007C018` during a real battle-entry transition would
 pin it. (`ghidra/scripts/funcs/800520f0.txt` for the loader; sibling battle
 files `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
 
-### Battle palette is VRAM residue (nominal CBA, no relocation)
+### Battle render: load-time TSB/CBA relocation
 
-The 1204 atlases ship with **bundled CLUTs** that are the **Baka Fighter**
-palette (red hair). The **true battle palette** (blue-haired Vahn, etc.) is
-*not* the bundled one — but, crucially, the battle character renderer samples
-each prim with the mesh's **nominal CBA** (CLUT rows 490..497):
-`row = (cba>>6)&0x1ff`, `col = (cba&0x3f)*16`. There is **no texpage→row
-relocation for characters.** (The `0x8007BEC0` table that `FUN_800198E0` builds
-— `table[image_texpage] = clut_y` — drives the *scene/background* renderer, not
-the party meshes. An earlier reading that relocated character CLUTs through it
-was an artifact of a contaminated mid-battle save and is **falsified**.)
+At battle entry the party-setup overlay does three things to each party
+character: registers the 1204 mesh (`flags` 0→1, object-table pointers fixed to
+absolute RAM), patches in the equipment groups (`nobj` +2), and — crucially —
+**rewrites every primitive's TSB (texpage) and CBA (CLUT) fields** to a packed
+per-party-slot runtime VRAM band. The TSB/CBA stored on disc are an **authoring
+layout** (the one the Baka Fighter minigame renders directly, with the bundled
+CLUTs); a normal battle relocates them. The remap is fixed and scene-independent
+(byte-identical across a town battle and a world-map battle):
 
-So how does the *true* palette get to rows 490..497 if the pack ships the Baka
-one? **It is VRAM residue.** Every field/world-map scene's `tim.dat` (driver
-`FUN_8002541C` → per-TIM `FUN_800198E0`) uploads CLUT-only TIMs whose `(cx, cy)`
-is **baked into the TIM header** (`cy` 490..497, matching the nominal CBA), and
-battle entry **never clears those rows** — so the party palette the player's
-scenes uploaded simply persists into the fight. Party nominal rows:
-**Vahn 490/491, Noa 492/493, Gala 494/495, aux 496/497.**
+| slot | char | disc texpages (authoring) | runtime texpages | disc CBA rows | runtime CBA row |
+|---|---|---|---|---|---|
+| 0 | Vahn | (640,0) + (704,0) | **(512,256) + (576,256)** | 490 / 491 | **481** |
+| 1 | Noa  | (640,256) + (704,256) | (640,256) + (704,256) | 492 / 493 | **482** |
+| 2 | Gala | (512,0) + (576,0) | **(768,256) + (832,256)** | 494 / 495 | **483** |
 
-#### Battle palette provenance — scattered scene residue
+The CBA **column is preserved** (`(cba & 0x3f) * 16`); only the page and row
+change. Both disc CBA rows of a character collapse to a single runtime row, so
+each character ends up with **one 256-colour palette** at its runtime row. The
+party textures pack into the band `x ∈ [512, 896), y = 256` (one 128-px,
+two-page slot each).
 
-A corpus-wide scan (raw + LZS-decoded, every PROT entry, validated against a
-clean-battle VRAM) places the band across the scenes a world-map battle passed
-through — no single asset holds it:
+There is no involvement of the `0x8007BEC0` texpage→row table for party
+characters — that table (`FUN_800198E0`: `table[image_texpage] = clut_y`) is the
+*scene/background* renderer's. (Earlier readings of this format claimed "nominal
+CBA, no relocation, palette is scene VRAM residue at rows 490..497" — that is
+**falsified**. Rows 490..497 hold *scene environment* palette, shared between a
+scene's field and battle modes, which is why field and battle matched there; the
+party palette is at rows 481..483 and is uploaded by the battle loader, not
+inherited as residue. Both prior errors came from reading the disc mesh's
+authoring TSB/CBA, or from a world-map save whose authoring pages happen to hold
+terrain.)
 
-- Rows **490, 495, 496, 497** — LZS-compressed CLUT-only TIMs in the **map01**
-  bundle (PROT 0086).
-- Rows **491, 492, 493** — raw CLUT-only TIMs in **town** bundles (town01
-  `0003`/`0005`, town0b/0c/0d, urudre1, town0e); row 493 also in **dolk** (0061).
-- Row **494** (Gala's body) — **runtime-generated; absent from the disc
-  entirely** (raw + LZS, all 1232 entries) and from main RAM at stable saves
-  (transient decompress→DMA→free). Its generator is in the uncaptured
-  party-setup overlay — an open thread
-  (see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+**Textures** are the 1204 atlases themselves, relocated into the band:
+atlas 0/1 → Vahn, atlas 2/3 → Noa, atlas 4/5 → Gala (atlas dest → runtime page
+follows the table above). Against a clean full-party battle (Drake Castle) the
+band pages byte-match the atlases at **73–98 %** — the shortfall is the
+equipment groups overlaying parts. So the battle textures are fully
+disc-reproducible.
 
-**Reproduction recipe** (clean-room, from the disc): replay the CLUT uploads of
-the visited scenes — for each, decompress its LZS sections, find CLUT-bearing
-TIMs (`magic 0x10`, `flags & 8`, `cy` 490..497, `ch`≤4) and paint each at its
-baked `(cx, cy)`; then sample the mesh's nominal CBA. Replaying
-`dolk → town01 → map01` reproduces rows 490–493, 495, 496 **byte-exact** vs a
-real battle; row 494 is the only gap. The web viewer's
-`battle_char_true_vram_bytes` implements exactly this (uploading the bundled
-1204 CLUTs first as the row-494 fallback, then overlaying the replayed band),
-sampled with the nominal `battle_char_mesh_cba_tsb`.
+**Palette** is a resident party-palette block in main RAM (≈ 480 bytes / 15
+sub-CLUTs per character) that the loader DMAs to VRAM rows 481/482/483. It is
+**battle-allocated** (the same RAM address holds unrelated data in a field save)
+and is **not the field character palette** (field Vahn samples row 478; values
+differ). It is **not recoverable from the disc by scanning**: absent raw from
+every PROT entry / `SCUS` / `init_data`, not the CLUT of any strict-parsed TIM,
+and not in any of the 142 valid LZS-*container* entries. It *is* on disc (the
+loader uploads it) but in a non-container embedded LZS section at an offset only
+the **uncaptured battle-entry/party-setup overlay** knows — the same overlay
+that performs the TSB/CBA relocation above. Pinning it is an open thread
+(see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)); the
+route is a full-party **battle-LOAD** capture → overlay slice → trace the
+CLUT-gather.
+
+**How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
+a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
+pointers); convert each object pointer `p → (p − base − 12)` and clear `flags`,
+then walk it as a normal Legaia TMD — the resulting prims carry the *relocated*
+TSB/CBA. Sampling the save's VRAM with those prims renders the correct
+characters (blue-haired Vahn, pink-haired Noa, brown-haired Gala). The disc mesh
+walked as-is samples the authoring pages and renders incoherently.
 
 > Use a **clean** battle capture as ground truth (command-menu / Begin-menu, no
-> effect animation). Mid-battle captures (e.g. a Drake fight paused during an
-> effect) overwrite the character CLUT rows and read back garbage — that
-> contamination produced the earlier, wrong relocation reading.
+> effect animation). Mid-battle captures paused during an effect can overwrite
+> VRAM regions and read back garbage.
 
 ### Equipment groups (battle only)
 
@@ -247,9 +263,12 @@ TIMs at fixed `0x8224` stride:
 | atlas 5  | `0x04E2B8`  | TIM  | ~33 312    | CLUT @ `(0, 495)`                              |
 | atlas 6  | `0x0564DC`  | TIM  | ~23 332    | CLUT @ `(0, 497)` — truncated, last in pack    |
 
-The bundled CLUTs are the pack's own palettes (the roster renders to match the
-in-game characters — also the Baka Fighter PLAYER SELECT screen, which reuses
-this pack). The streaming chunk type `0x09`
+The bundled CLUTs (declared at rows 490..497) are the pack's **authoring
+palette** — what the Baka Fighter minigame renders with directly. A normal
+battle does **not** use them: it relocates the mesh to rows 481..483 and uploads
+a different, battle-allocated party palette there (see
+[§ Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)).
+The streaming chunk type `0x09`
 (TMD2) is recognized in [`AssetType`](../../crates/asset/src/lib.rs) as a
 distinct dispatcher tag from the regular TMD (type `0x02`); the TMD body shape
 is identical (magic `0x80000002`).
