@@ -883,10 +883,11 @@ fn summon_overlay_cmd(input: &Path, base: u32) -> Result<()> {
         ov.parts.len()
     );
     for (i, p) in ov.parts.iter().enumerate() {
-        let kind = if p.is_transform_node() {
-            "transform-node".to_string()
-        } else {
-            format!("mesh-sel {}", p.model_sel)
+        use legaia_asset::summon_overlay::SummonPartKind;
+        let kind = match p.kind() {
+            SummonPartKind::TransformNode => "transform-node".to_string(),
+            SummonPartKind::LibraryMesh => format!("mesh-sel {}", p.model_sel),
+            SummonPartKind::Sentinel => format!("sentinel {:#06x}", p.model_sel as u16),
         };
         println!(
             "  part {i:2}: rec @ file {:#06x} (rt {:#010x})  {kind}  flags {:#06x}  bytecode {:#x}..{:#x} ({} bytes)",
