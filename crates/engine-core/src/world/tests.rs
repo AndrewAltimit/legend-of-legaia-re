@@ -5259,6 +5259,33 @@ fn fold_battle_event_other_variants_dont_modify_state() {
 }
 
 #[test]
+fn spell_anim_trigger_requests_summon_only_for_seru_ids() {
+    let mut world = World::new();
+    world.party_count = 1;
+    world.actors[0].active = true;
+
+    // A non-summon id (a monster attack) requests nothing.
+    world.fold_battle_event(&BattleEvent::SpellAnimTrigger {
+        party_slot: 0,
+        spell_id: 0x27,
+    });
+    assert!(world.take_pending_summon_spawn().is_none());
+
+    // Gimard Tail Fire (0x81) requests a summon spawn at the caster's pos.
+    world.actors[0].move_state.world_x = 11;
+    world.actors[0].move_state.world_y = 22;
+    world.actors[0].move_state.world_z = 33;
+    world.fold_battle_event(&BattleEvent::SpellAnimTrigger {
+        party_slot: 0,
+        spell_id: 0x81,
+    });
+    let req = world.take_pending_summon_spawn();
+    assert_eq!(req, Some((0x81, [11, 22, 33])));
+    // Taken once.
+    assert!(world.take_pending_summon_spawn().is_none());
+}
+
+#[test]
 fn use_item_heals_hp_clamped_to_max() {
     let mut world = World::new();
     world.party_count = 1;

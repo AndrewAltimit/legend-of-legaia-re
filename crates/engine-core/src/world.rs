@@ -1265,6 +1265,22 @@ pub struct World {
     /// [`Actor::tmd_ref`] on synchronous-spawn.
     pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
 
+    /// Active Seru-magic summon scene-graph, while one is playing. Spawned off
+    /// the battle-action cast band (or [`World::spawn_summon`] for the debug
+    /// path); ticked each frame through the move VM by [`World::tick_summon`]
+    /// and drained when every part finishes. Rendered via
+    /// [`World::active_summon_part_draws`].
+    pub active_summon: Option<crate::summon::SummonScene>,
+    /// Production cast-band request: a player Seru-magic cast (spell id
+    /// `0x81..=0x8b`) sets `(spell_id, target world pos)` here — the engine
+    /// equivalent of the retail cast band resolving the per-summon overlay
+    /// (`FUN_8003EC70(id-0x79)`). The host (which has the PROT index) drains it
+    /// via [`World::take_pending_summon_spawn`], loads the summon overlay
+    /// (`PROT 905 + (id - 0x81)`), and calls [`World::spawn_summon`]. Kept as a
+    /// host-fulfilled request because `World` is index-agnostic (same pattern
+    /// as the capture-archive load).
+    pub pending_summon_spawn: Option<(u8, [i16; 3])>,
+
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the in-`tick` Field <-> Battle round trip.
     ///
@@ -1724,6 +1740,8 @@ impl World {
             story_flags: 0,
             story_flag_bits: Vec::new(),
             rng_state: 0x1234_5678,
+            active_summon: None,
+            pending_summon_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
             spell_costs: Default::default(),
@@ -2766,6 +2784,29 @@ impl World {
                 }
                 None
             }
+            // Cast band (SM path): the per-actor action SM fires
+            // `spell_anim_trigger` at `MagicPreCastWait`. For a player Seru-magic
+            // id, request the summon spawn (the host resolves the overlay PROT
+            // entry + spawns). Origin = the caster party slot's position when
+            // available, else a default forward cast point.
+            BattleEvent::SpellAnimTrigger {
+                party_slot,
+                spell_id,
+            } => {
+                let origin = self
+                    .actors
+                    .get(*party_slot as usize)
+                    .map(|a| {
+                        [
+                            a.move_state.world_x,
+                            a.move_state.world_y,
+                            a.move_state.world_z,
+                        ]
+                    })
+                    .unwrap_or([0, -300, -645]);
+                self.request_summon_spawn(*spell_id, origin);
+                None
+            }
             _ => None,
         }
     }
@@ -3712,6 +3753,79 @@ impl World {
         m.pos_z = (world_pos[2] * 256.0) as i32;
         m.model_index = Some(tmd_index);
         true
+    }
+
+    /// Spawn a Seru-magic summon scene-graph from a parsed stager overlay (e.g.
+    /// PROT 0905, Gimard *Tail Fire*) at `origin` (world units). `record_bytes`
+    /// is the overlay's raw bytes (the buffer `overlay` was parsed from);
+    /// `model_base` is the pool index a part's `model_sel == 0` resolves to
+    /// (the summon's mesh-set base, e.g. [`crate::scene::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
+    /// Replaces any in-flight summon. Tick it with [`Self::tick_summon`].
+    pub fn spawn_summon(
+        &mut self,
+        overlay: &legaia_asset::summon_overlay::SummonOverlay,
+        record_bytes: &[u8],
+        model_base: usize,
+        origin: [i16; 3],
+    ) {
+        self.active_summon = Some(crate::summon::SummonScene::spawn(
+            overlay,
+            record_bytes,
+            model_base,
+            origin,
+        ));
+    }
+
+    /// Advance the active summon one frame through the move VM. No-op when no
+    /// summon is playing; drains the scene once every part has finished.
+    /// `frame_delta` is the per-part wait-timer drain (anim-speed × frame-rate).
+    pub fn tick_summon(&mut self, frame_delta: u16) {
+        let Some(mut scene) = self.active_summon.take() else {
+            return;
+        };
+        {
+            // Borrow split: the move-VM host borrows the rest of `World` (sin
+            // LUT etc.) while the scene's part states live in `scene`, taken out
+            // above. `current_slot = None` — summon parts are not World actors,
+            // so the slot-routed callbacks are inert for them.
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+            };
+            scene.tick(&mut host, frame_delta);
+        }
+        if !scene.finished() {
+            self.active_summon = Some(scene);
+        }
+    }
+
+    /// Per-part render draws for the active summon's mesh-bearing parts (empty
+    /// when no summon is playing). Each draw's `model_index` indexes
+    /// [`Self::global_tmd_pool`]. See [`crate::summon::SummonScene::part_draws`]
+    /// for the faithful-tick / interpreted-transform boundary.
+    pub fn active_summon_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+        self.active_summon
+            .as_ref()
+            .map(|s| s.part_draws())
+            .unwrap_or_default()
+    }
+
+    /// Take the pending production summon-spawn request, if a player Seru-magic
+    /// cast set one this step. Returns `(spell_id, origin)`; the host maps
+    /// `spell_id` to the overlay PROT entry (`905 + (spell_id - 0x81)`), loads
+    /// it, and calls [`Self::spawn_summon`]. See [`Self::pending_summon_spawn`].
+    pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
+        self.pending_summon_spawn.take()
+    }
+
+    /// Request a summon spawn for `spell_id` at `origin` if it is a player
+    /// Seru-magic id (`0x81..=0x8b`). Idempotent within a step (last cast wins);
+    /// no-op for non-summon ids. The retail cast band's overlay-resolve point.
+    pub(crate) fn request_summon_spawn(&mut self, spell_id: u8, origin: [i16; 3]) {
+        if (crate::summon::SERU_SUMMON_IDS).contains(&spell_id) {
+            self.pending_summon_spawn = Some((spell_id, origin));
+        }
     }
 
     /// Dev/visualization helper: seat one synthetic active effect into the

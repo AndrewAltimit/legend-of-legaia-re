@@ -123,6 +123,17 @@ enum Cmd {
         #[arg(long, default_value = "32768,65536,98304,131072,196608,262144")]
         lzs_sizes: String,
     },
+    /// Parse a per-summon stager overlay (e.g. PROT 0905, Gimard Tail Fire) into
+    /// its move-VM part-record scene-graph: scan the `FUN_80021B04` spawn calls
+    /// and print each part's record offset, mesh selector, flags, and bytecode
+    /// span. Input is the raw overlay `.BIN`.
+    SummonOverlay {
+        input: PathBuf,
+        /// Overlay link/load base (`*DAT_80010390`); default is the pinned
+        /// shared summon-overlay buffer base.
+        #[arg(long, value_parser = parse_hex_u32, default_value = "0x801F69D8")]
+        base: u32,
+    },
     /// Scan PROT entries (raw + LZS-decoded) for embedded PSX TIMs.
     /// Reports per-entry hit counts; with `--out` extracts each TIM to
     /// `<out>/<entry>/raw_off<H>.tim` (or `lzs<i>_off<H>.tim`).
@@ -852,7 +863,42 @@ fn main() -> Result<()> {
             top,
             lzs_sizes,
         } => find_overlay(&dir, top, &lzs_sizes),
+        Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
     }
+}
+
+/// Parse a per-summon stager overlay and print its move-VM part-record list.
+fn summon_overlay_cmd(input: &Path, base: u32) -> Result<()> {
+    let bytes = std::fs::read(input)?;
+    let ov = legaia_asset::summon_overlay::parse(&bytes, base);
+    println!(
+        "summon overlay {}: {} bytes, link base {:#010x}",
+        input.display(),
+        bytes.len(),
+        ov.link_base
+    );
+    println!(
+        "{} FUN_80021B04 spawn site(s), {} part record(s) recovered",
+        ov.spawn_sites,
+        ov.parts.len()
+    );
+    for (i, p) in ov.parts.iter().enumerate() {
+        let kind = if p.is_transform_node() {
+            "transform-node".to_string()
+        } else {
+            format!("mesh-sel {}", p.model_sel)
+        };
+        println!(
+            "  part {i:2}: rec @ file {:#06x} (rt {:#010x})  {kind}  flags {:#06x}  bytecode {:#x}..{:#x} ({} bytes)",
+            p.record_off,
+            base.wrapping_add(p.record_off as u32),
+            p.flags,
+            p.bytecode.start,
+            p.bytecode.end,
+            p.bytecode.len(),
+        );
+    }
+    Ok(())
 }
 
 /// `jr $ra` opcode (0x03E00008) in little-endian byte order.

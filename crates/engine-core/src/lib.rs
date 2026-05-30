@@ -69,6 +69,7 @@ pub mod shop;
 pub mod spell_menu;
 pub mod spells;
 pub mod status_screen;
+pub mod summon;
 pub mod tactical_arts;
 pub mod tactical_arts_editor;
 pub mod target_picker;
