@@ -133,9 +133,30 @@ When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_8008
 | `0x28` | `0x15` -> `0x14` (init -> 3-option picker) | 3-option menu |
 | `0x29` | `0x17` -> `0x16` (init -> 4-option picker) | 4-option menu |
 
-So the picker controls are MES `0x27` / `0x28` / `0x29` (the same byte masks as the `< 0x20` line terminator test, **with the high bit set** — `0xA7` / `0xA8` / `0xA9` in the raw bytecode). Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`. On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option list) — same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch — and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`; higher-level branching on which option was picked is the dialog SM's job (`FUN_80039B7C`), not the pager's.
+So the picker controls are MES `0x27` / `0x28` / `0x29` (the open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x29` form and the high-bit `0xA7..0xA9` form are accepted; the field corpus stores the bare form). Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`. On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) — same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch — and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
 
-The "selectable option labels" the pager surfaces aren't a separate adjacent-segment escape — they are inline 2-byte entries inside the option-list region between the `0x27` / `0x28` / `0x29` picker-open byte and the continuation byte, immediately following the prompt segment. Multi-segment NPC text and option labels share the same `0x1F`-lead glyph encoding; the picker just lays each option out at a fixed N-byte stride.
+### Picker control-region layout
+
+Relative to the open byte at index `O`, a picker occupies:
+
+```text
+[ .. 0x1F prompt segment .. 0x00 ]   the box text shown above the menu
+O                                     open byte (0x27 / 0x28 / 0x29)
+O+1 .. O+N*2                          N option entries, 2 bytes each (i16 LE)
+O+N*2+1                               continuation byte (0x24/0x25/0x48/0x4C 0xFF)
+[ optional 0x4C 0xFF terminate ]
+N * [ 0x1F label segment 0x00 ]       the on-screen option labels
+```
+
+The on-screen **option labels are standard `0x1F`-lead glyph segments located after the continuation byte** (the pager render loop at `FUN_801D84D0` ~lines 2166-2185 measures each with `FUN_8003CA38` and draws it with `FUN_80036888`). An earlier note that "the option labels are the 2-byte entries between the open byte and the continuation" is **falsified** — those 2-byte entries are the per-option **jump table**, not the labels.
+
+Each 2-byte entry is a **signed 16-bit little-endian relative jump**. The inline-script control handler `FUN_80038050` (the per-actor `actor[+0x90]` script stepper, distinct from the pager) applies it on confirm: it reads the cursor at `DAT_801C6EA4+0xC` and sets the script PC `actor[+0x9E]` to
+
+```text
+new_pc = (O + 1 + index*2) + i16_LE(entry[index])
+```
+
+i.e. the displacement is relative to the **start of that option's own 2-byte entry**. Pinned empirically: across the four story-branch re-emissions of the `izumi` book menu, all four option entries shift by an identical per-emission delta (-518 / -564 / -549) — the signature of relative addressing to a moving site — and every decoded option across the field corpus jumps to a byte inside its own script. Parser `legaia_mes::picker` (`scan_pickers` / `parse_picker_at` + `Picker::jump_target`); disc-gated regression `field_dialog_pickers_disc`.
 
 ## Live blob example
 
