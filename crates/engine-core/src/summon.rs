@@ -15,12 +15,20 @@
 //!   opcode handlers, wait-timer gate, and tween/anim-bank state the retail move
 //!   VM produces. (Validated: every Gimard *Tail Fire* part record runs without
 //!   hitting an unimplemented opcode.)
-//! - **Interpreted:** turning each part's move-VM state into a *render
-//!   transform*. Retail composes that in the per-summon render overlay (PROT
-//!   0900: `RotMatrixX/Y/Z` + GTE prim emit over the part hierarchy), which is
-//!   not yet decoded. [`SummonScene::part_draws`] derives a transform from the
-//!   move-VM world position + rotation banks as the engine's best
-//!   interpretation; it is clearly the open piece, not pinned parity.
+//! - **Faithful (translation):** the per-part *position* is decoded from the
+//!   PROT 0900 render overlay (phase A, `0x801F82A0`): when the keyframe gate
+//!   `*(i16)(actor+0x9C) == *(i16)(actor+0x9E)` holds, the world position is
+//!   overwritten by the move-VM anim-bank slots (`anim_3c/3e/40`, op `0x00`,
+//!   `v << 3`) and `+0x9E` is cleared. [`tick`](SummonScene::tick) applies that
+//!   latch (the anim banks are summon-local, so [`SummonScene::origin`] is
+//!   added). This is why a part animates off the spawn point with no `WORLD_ADD`
+//!   op — its motion lives in the anim banks.
+//! - **Interpreted (rotation):** the part's *orientation*. Retail composes it in
+//!   PROT 0900 with `RotMatrixX/Y/Z` (a per-part local rotation plus the camera
+//!   angles `_DAT_8007B790/2/4`, gated per axis) over the part hierarchy. The
+//!   exact actor→render-node rotation source isn't pinned yet, so
+//!   [`SummonScene::part_draws`] derives Euler angles from the move-VM rotation
+//!   banks as the engine's interpretation — the remaining open piece.
 
 use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
@@ -126,6 +134,16 @@ impl SummonScene {
     /// Advance every live part one frame through the move VM. `frame_delta` is
     /// the wait-timer drain (retail's per-actor anim-speed × frame-rate scalar
     /// product); a typical value keeps the parts on their authored timing.
+    ///
+    /// After the move-VM step, applies the **render-side translation latch**
+    /// decoded from the PROT 0900 render overlay (phase A at `0x801F82A0`):
+    /// when the keyframe gate `*(i16)(actor+0x9C) == *(i16)(actor+0x9E)` holds,
+    /// the part's world position is **overwritten** by the move-VM anim-bank
+    /// slots (`anim_3c/3e/40`, set by op `0x00 ANIM_BANK_SET` as `v << 3`) and
+    /// `+0x9E` is cleared (`sh zero, 0x9E(s0)`). The anim banks are summon-local
+    /// offsets, so the engine adds [`Self::origin`] to place the part at the
+    /// cast target. This is why a summon part animates off the spawn point even
+    /// though no `WORLD_ADD` op runs — its motion lives in the anim banks.
     pub fn tick<H: MoveHost + ?Sized>(&mut self, host: &mut H, frame_delta: u16) {
         self.frame = self.frame.wrapping_add(1);
         for part in &mut self.parts {
@@ -139,6 +157,7 @@ impl SummonScene {
                 }
                 _ => {}
             }
+            apply_translation_latch(&mut part.state, self.origin);
         }
     }
 
@@ -207,13 +226,41 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     })
 }
 
+/// Render-side translation latch — port of the PROT 0900 render overlay's
+/// phase A (`0x801F82A0`):
+///
+/// ```text
+///   lh v1, 0x9c(s0) ; lh v0, 0x9e(s0) ; bne v1, v0, skip
+///   lhu (anim_3c/3e/40/42) ; sh -> 0x14/0x16/0x18/0x1a(s0) ; sh zero, 0x9e(s0)
+/// ```
+///
+/// When the keyframe gate holds, the part's world position is overwritten by
+/// the anim-bank slots (op `0x00`, summon-local), then `+0x9E` is cleared. The
+/// anim banks are local offsets, so `origin` (the cast target) is added to seat
+/// the part in world space — the engine renders parts directly (no parent
+/// transform), where retail places the whole summon via the camera/parent.
+fn apply_translation_latch(state: &mut ActorState, origin: [i16; 3]) {
+    // Retail reads `*(i16)(actor+0x9C)` (low half of the i32 field_9c) and
+    // `*(i16)(actor+0x9E)` (field_9e).
+    let gate_a = (state.field_9c & 0xFFFF) as i16;
+    let gate_b = state.field_9e as i16;
+    if gate_a == gate_b {
+        state.world_x = origin[0].wrapping_add(state.anim_3c);
+        state.world_y = origin[1].wrapping_add(state.anim_3e);
+        state.world_z = origin[2].wrapping_add(state.anim_40);
+        state.world_y_mirror = state.world_y;
+        state.field_9e = 0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 
     /// A synthetic overlay: one transform node + one mesh part with a tiny
-    /// move-VM program (`0x01 WORLD_ADD 1,2,3` then `0x08 HALT`).
+    /// move-VM program (`0x00 ANIM_BANK_SET 1,2,3` then `0x08 HALT`) — the
+    /// anim banks are the per-part position the render-side latch reads.
     fn synthetic() -> (Vec<u8>, SummonOverlay) {
         // Record layout: [i16 model_sel][u16 flags][u16 move-VM bytecode...].
         // Build two records back-to-back in one byte buffer.
@@ -224,11 +271,12 @@ mod tests {
         bytes.extend_from_slice(&0u16.to_le_bytes()); // flags
         bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
         bytes.extend_from_slice(&0u16.to_le_bytes()); // pad to even record
-        // record 1 @ next: model_sel = 0 (mesh), program: WORLD_ADD 1,2,3 ; HALT
+        // record 1 @ next: model_sel = 0 (mesh), program: ANIM_BANK_SET 1,2,3 ; HALT.
+        // Op 0x00 sets anim_3c/3e/40 = v << 3 -> (8, 16, 24).
         let r1 = bytes.len();
         bytes.extend_from_slice(&0i16.to_le_bytes());
         bytes.extend_from_slice(&0u16.to_le_bytes());
-        bytes.extend_from_slice(&0x01u16.to_le_bytes()); // WORLD_ADD
+        bytes.extend_from_slice(&0x00u16.to_le_bytes()); // ANIM_BANK_SET
         bytes.extend_from_slice(&1u16.to_le_bytes());
         bytes.extend_from_slice(&2u16.to_le_bytes());
         bytes.extend_from_slice(&3u16.to_le_bytes());
@@ -272,21 +320,43 @@ mod tests {
     }
 
     #[test]
-    fn ticks_parts_through_the_move_vm_and_applies_world_add() {
+    fn tick_latches_anim_banks_into_world_pos_plus_origin() {
         let (bytes, ov) = synthetic();
         let mut scene = SummonScene::spawn(&ov, &bytes, 26, [100, 200, 300]);
         let mut host = H;
         scene.tick(&mut host, 0x1000);
-        // The mesh part ran WORLD_ADD 1,2,3 then HALT.
+        // The mesh part ran ANIM_BANK_SET 1,2,3 (-> anim = 8,16,24). With the
+        // keyframe gate held (field_9c == field_9e == 0), the render-side latch
+        // overwrites world pos with origin + anim bank.
         let mesh = scene.parts.iter().find(|p| p.model_sel == 0).unwrap();
         assert_eq!(
+            (mesh.state.anim_3c, mesh.state.anim_3e, mesh.state.anim_40),
+            (8, 16, 24),
+            "op 0x00 set the anim banks to v << 3"
+        );
+        assert_eq!(
             (mesh.state.world_x, mesh.state.world_y, mesh.state.world_z),
-            (101, 202, 303),
-            "WORLD_ADD moved the part off the origin"
+            (108, 216, 324),
+            "latch: world = origin + anim bank"
         );
         // Both tiny programs HALT on the first frame.
         scene.tick(&mut host, 0x1000);
         assert!(scene.finished(), "both parts halted");
+    }
+
+    #[test]
+    fn latch_holds_part_at_origin_when_anim_banks_are_zero() {
+        // The transform-node part (no anim ops) stays at the origin after the
+        // latch (origin + 0).
+        let (bytes, ov) = synthetic();
+        let mut scene = SummonScene::spawn(&ov, &bytes, 26, [40, 50, 60]);
+        let mut host = H;
+        scene.tick(&mut host, 0x1000);
+        let node = &scene.parts[0];
+        assert_eq!(
+            (node.state.world_x, node.state.world_y, node.state.world_z),
+            (40, 50, 60)
+        );
     }
 
     #[test]
