@@ -43,6 +43,7 @@
 pub mod card;
 pub mod character;
 pub mod ext;
+pub mod retail_inventory;
 
 pub use card::{
     BLOCK_SIZE, CARD_MAGIC, CARD_SIZE, DIR_FRAMES, DirEntry, RETAIL_CHAR_RECORD_HEADER_SIZE,
@@ -60,6 +61,9 @@ pub use character::{
 pub use ext::{
     CharSaveExt, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION,
     SAVE_FILE_VERSION_V1, SAVE_FILE_VERSION_V2, SaveExt, SaveExtV2, SaveFile, SavedChainRecord,
+};
+pub use retail_inventory::{
+    AddOutcome, ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, RetailInventory, STACK_CAP,
 };
 
 /// Cumulative XP thresholds for levels 2..=99 derived from the retail

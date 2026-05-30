@@ -60,6 +60,12 @@ bitmap mirroring RAM `0x80085600..0x80085800` - the engine carries it in
 [`SaveExt::story_flag_bits`] alongside the narrower 32-bit scratchpad
 word at `_DAT_1F800394`.
 
+The [`retail_inventory`](src/retail_inventory.rs) module is a separate,
+memory-safe RE model of the retail fixed-window item-inventory accessors
+(find / consume / compact / add), faithfully reproducing the full-bag
+out-of-bounds add primitive (`FUN_800421D4`) as data without performing
+any unsafe write.
+
 ## What this is NOT
 
 - A drop-in replacement for the retail save format. Money + the LGSF v2
