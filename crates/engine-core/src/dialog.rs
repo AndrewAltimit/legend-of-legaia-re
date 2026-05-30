@@ -334,6 +334,18 @@ impl OwnedDialogPanel {
         Some(panel)
     }
 
+    /// Build a panel that types the `0x1F` text segment whose **lead byte** is
+    /// at `seg_lead` (i.e. `bytes[seg_lead] == 0x1F`), attaching any picker that
+    /// immediately follows it. Used by the inline-script field-VM runner
+    /// ([`crate::inline_dialogue`]), which lands the VM on each text segment and
+    /// opens a box there. Unlike [`Self::from_inline_dialog`] it does not search
+    /// for the first segment — the caller already knows the exact lead.
+    pub fn at_segment(bytes: Arc<Vec<u8>>, seg_lead: usize) -> Self {
+        let mut panel = Self::new(bytes, seg_lead + 1);
+        panel.picker = Self::picker_following_segment(&panel.bytes, seg_lead + 1);
+        panel
+    }
+
     /// End index of the `0x1F` text segment whose glyph run starts at `from`
     /// (where the standard MES interpreter halts).
     fn segment_end(bytes: &[u8], from: usize) -> usize {
