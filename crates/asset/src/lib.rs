@@ -436,6 +436,10 @@ pub struct StreamReport {
 /// info plus a layout report. Stops on terminator or on bounds violation.
 ///
 /// Set `max_chunks` to bound runaway parses. A reasonable cap is 4096.
+///
+/// PORT: FUN_8002541C (the `0x14` DATA_FIELD-chunk-walker branch of the
+/// streaming-asset driver; the `0xA` tim.dat / `0xF` move.mdt branches are
+/// handled by their own per-format parsers, not here).
 pub fn parse_streaming(buffer: &[u8], max_chunks: usize) -> Result<StreamReport> {
     let mut chunks = Vec::new();
     let mut pos = 0usize;

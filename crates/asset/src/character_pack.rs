@@ -308,6 +308,8 @@ pub mod equipment_swap {
 
     /// Apply the runtime equipment-swap patch to a disc-form character TMD.
     ///
+    /// PORT: FUN_8001EBEC (one active-party-slot iteration of the group-swap)
+    ///
     /// Mirrors one iteration of `FUN_8001EBEC` for a single active-party slot:
     /// copies the 28-byte template at [`template_offset_for_equip_byte`] over
     /// the visible group descriptor at index `patched_group_index`. The result
