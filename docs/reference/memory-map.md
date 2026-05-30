@@ -27,6 +27,16 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
 | `0x800845A4` | u32 | Casino coin bank. "Infinite Coins" cheat writes `0x05F5_E0FF`. |
 
+## Game-mode state machine
+
+Companions of the 28-entry × 24-byte mode-dispatch table at `0x8007078C` (the table itself is documented in [`subsystems/boot.md`](../subsystems/boot.md) and [`functions.md` § Game-mode state machine](functions.md)).
+
+| Address | Type | Purpose |
+|---|---|---|
+| `0x8007B83C` | u16 | **Next game-mode index** (master mode selector; stored via `sh`). Drives the per-frame mode dispatcher: `0x02` field-launch, `0x03` field-run, `0x15` battle, `0x1A` STR FMV. Title-attract underflow writes `0x1A` (see `0x801EF018`). Also indexes the mode table — `(&DAT_800707A0)[_DAT_8007B83C * 0x18]` (entry·24 + 0x14 = the mode's `param`) — which `FUN_8001DCF8` uses to seed the **lower 16 bits** of the field-VM flag word `0x1F800394` on each mode switch (see the `0x1F800394` row and [`save-screen.md`](../subsystems/save-screen.md)). |
+| `0x8007B87C` | index | Mode index rendered on the dev **CONFIG / test screen**. `FUN_800188C8:340`: `(&PTR_s_CONFIG_8007078c)[_DAT_8007B87C * 6]` — indexes the `0x8007078C` table at stride **6 words = 24 bytes** (independently re-confirms the 24-byte entry stride) to fetch the entry's CONFIG label string for `FUN_8001AA68` to draw. Provenance: [`ghidra/scripts/funcs/800188c8.txt`](../../ghidra/scripts/funcs/800188c8.txt). |
+| `0x8007B7AC` | flag | Mode-dispatch-cluster flag read by `FUN_8001DCF8:370` (`if (_DAT_8007B7AC == 1)`), a function that also branches on `_DAT_8007B83C` against mode constants `0x0E/0x02/0x18/0x14`. Used as a boolean gate here; exact semantics **open**. Provenance: [`ghidra/scripts/funcs/8001dcf8.txt`](../../ghidra/scripts/funcs/8001dcf8.txt). |
+
 ## Cheat-database-pinned globals
 
 These are RAM cells the GameShark cheat database has named anchors
@@ -229,7 +239,7 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 |---|---|---|
 | `0x1F800314` | i16[] | Inverted-Y mirror table (op 0x4C nibble-9 sub-E writes `-words[i]` here). |
 | `0x1F800393` | u8 | Per-frame tick byte. Global frame-time scalar. Read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C. Also subtracted from the title-attract countdown at `0x801EF16C` every tick (see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)) and exposed via `World::tick_move_vms_with_delta` in the engine port. |
-| `0x1F800394` | u32 | **Global story-flag word.** Read by `GFLAG_TST` (0x30); written by `GFLAG_SET` / `GFLAG_CLR` (0x2E / 0x2F); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. Bit 0x40 is set by the scene-change packet `FUN_8001FD44` (a scene-transition-pending flag, **not** a "dialog active" lock — an earlier mislabel). |
+| `0x1F800394` | u32 | **Field-VM transient flag word** (32-bit; **not** persisted — distinct from the saved story-flag bitmap at `0x80085600..0x80085800`, ops `FUN_8003CE08/CE34/CE64`). Script-VM bits are set/clear/tested by `GFLAG_SET` / `GFLAG_CLR` / `GFLAG_TST` (ops 0x2E / 0x2F / 0x30, `1 << (idx & 0x1f)` at `FUN_801DE840:5280/5284`); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. The **lower 16 bits** are re-seeded on every mode switch from `mode_table[_DAT_8007B83C].param` (`+0x14`) by `FUN_8001DCF8 @ 0x8001E17C` — its sole non-RMW writer (see [`save-screen.md`](../subsystems/save-screen.md)). Bit 0x40 is set by the scene-change packet `FUN_8001FD44` (a scene-transition-pending flag, **not** a "dialog active" lock — an earlier mislabel). |
 | `0x1F8003E8` | u32 | Render-config block (op 0x46). |
 | `0x1F8003EC` | u8[] | Tile-flag bitmap base used by op 0x4C nibble-7 (rectangle SET/CLEAR over `+0x4000` offset). |
 | `0x1F8003F8` / `0x1F8003FA` | i16 | Camera-scroll values used by op 0x23 player path. |
