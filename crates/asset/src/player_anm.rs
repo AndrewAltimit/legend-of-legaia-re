@@ -316,6 +316,9 @@ pub struct BoneTransform {
 impl BoneTransform {
     /// Decode the 8-byte (bone, frame) entry as the retail engine does.
     /// Panics if `bytes.len() < 8`.
+    // PORT: FUN_8001BE80 - the per-(bone, frame) entry decoder: unpacks the
+    // three nibble-packed signed 12-bit translations (sign-extend on bit 0x800)
+    // and the three u8 rotation angles (each << 4 into a 12-bit PSX angle).
     pub fn decode(bytes: &[u8]) -> Self {
         let unpack = |lo: u8, hi4: u8| -> i32 {
             let mut v = (lo as u32) | (((hi4 & 0x0F) as u32) << 8);
