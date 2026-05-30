@@ -16,13 +16,23 @@
 //!   VM produces. (Validated: every Gimard *Tail Fire* part record runs without
 //!   hitting an unimplemented opcode.)
 //! - **Faithful (translation):** the per-part *position* is decoded from the
-//!   PROT 0900 render overlay (phase A, `0x801F82A0`): when the keyframe gate
-//!   `*(i16)(actor+0x9C) == *(i16)(actor+0x9E)` holds, the world position is
-//!   overwritten by the move-VM anim-bank slots (`anim_3c/3e/40`, op `0x00`,
-//!   `v << 3`) and `+0x9E` is cleared. [`tick`](SummonScene::tick) applies that
-//!   latch (the anim banks are summon-local, so [`SummonScene::origin`] is
-//!   added). This is why a part animates off the spawn point with no `WORLD_ADD`
-//!   op — its motion lives in the anim banks.
+//!   summon render overlay `FUN_801F811C` (the per-frame part-position update;
+//!   present byte-identical in the dance and baka-fighter overlay images at the
+//!   same RAM address — see `ghidra/scripts/funcs/overlay_dance_801f811c.txt`).
+//!   Each frame the world position (`+0x14/16/18`) **LERPs** toward the move-VM
+//!   anim-bank target (`anim_3c/3e/40`, op `0x00`, `v << 3`) over the time ratio
+//!   `+0x9C / +0x9E`, advancing `+0x9C` by the per-frame delta `DAT_1F800393`
+//!   and clamping it to `+0x9E`. The per-axis interpolation is the generic
+//!   `FUN_801DE4C8(target, cur, t, D, 1)` (mode 1 = plain linear interp:
+//!   `cur + (target - cur)*t/D`, integer truncating div; returns `target` when
+//!   `t >= D`) whose result is stored via `FUN_801DE648` (a sized store). When
+//!   `+0x9C` reaches `+0x9E` the position **latches** exactly to the anim-bank
+//!   target and `+0x9E` is cleared (`+0x9E == 0` then means "no active tween →
+//!   snap to target"). [`tick`](SummonScene::tick) ports this whole sequence;
+//!   the anim banks are summon-local, so [`SummonScene::origin`] (the cast
+//!   target) is added to the lerp endpoint. This is why a summon part animates
+//!   off the spawn point with no `WORLD_ADD` op — its motion lives in the anim
+//!   banks, and it now glides there instead of snapping on completion.
 //! - **Interpreted (rotation):** the part's *orientation*. Retail composes it in
 //!   PROT 0900 with `RotMatrixX/Y/Z` (a per-part local rotation plus the camera
 //!   angles `_DAT_8007B790/2/4`, gated per axis) over the part hierarchy. The
@@ -135,15 +145,21 @@ impl SummonScene {
     /// the wait-timer drain (retail's per-actor anim-speed × frame-rate scalar
     /// product); a typical value keeps the parts on their authored timing.
     ///
-    /// After the move-VM step, applies the **render-side translation latch**
-    /// decoded from the PROT 0900 render overlay (phase A at `0x801F82A0`):
-    /// when the keyframe gate `*(i16)(actor+0x9C) == *(i16)(actor+0x9E)` holds,
-    /// the part's world position is **overwritten** by the move-VM anim-bank
-    /// slots (`anim_3c/3e/40`, set by op `0x00 ANIM_BANK_SET` as `v << 3`) and
-    /// `+0x9E` is cleared (`sh zero, 0x9E(s0)`). The anim banks are summon-local
-    /// offsets, so the engine adds [`Self::origin`] to place the part at the
-    /// cast target. This is why a summon part animates off the spawn point even
-    /// though no `WORLD_ADD` op runs — its motion lives in the anim banks.
+    /// After the move-VM step, applies the **render-side translation update**
+    /// ported from the summon render overlay `FUN_801F811C`: the part's world
+    /// position LERPs toward the move-VM anim-bank target (`anim_3c/3e/40`, set
+    /// by op `0x00 ANIM_BANK_SET` as `v << 3`) over the time ratio
+    /// `+0x9C / +0x9E`, with `+0x9C` advanced by `frame_delta` each frame (the
+    /// engine's analog of retail's `DAT_1F800393`) and clamped to `+0x9E`. On
+    /// reaching `+0x9E` the position latches exactly to the target and `+0x9E`
+    /// is cleared. The anim banks are summon-local offsets, so the engine adds
+    /// [`Self::origin`] to seat the part at the cast target. This is why a
+    /// summon part animates off the spawn point even though no `WORLD_ADD` op
+    /// runs — its motion lives in the anim banks.
+    ///
+    /// `frame_delta` doubles as the wait-timer drain (retail's per-actor
+    /// anim-speed × frame-rate scalar) and the `+0x9C` interpolation advance,
+    /// matching retail where both are driven off the same per-frame delta.
     pub fn tick<H: MoveHost + ?Sized>(&mut self, host: &mut H, frame_delta: u16) {
         self.frame = self.frame.wrapping_add(1);
         for part in &mut self.parts {
@@ -157,7 +173,7 @@ impl SummonScene {
                 }
                 _ => {}
             }
-            apply_translation_latch(&mut part.state, self.origin);
+            apply_translation_update(&mut part.state, self.origin, frame_delta);
         }
     }
 
@@ -226,28 +242,109 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     })
 }
 
-/// Render-side translation latch — port of the PROT 0900 render overlay's
-/// phase A (`0x801F82A0`):
+/// Per-axis linear interpolation, port of `FUN_801DE4C8(a, b, t, D, 1)` for the
+/// `mode == 1` path the summon render overlay always uses:
 ///
 /// ```text
-///   lh v1, 0x9c(s0) ; lh v0, 0x9e(s0) ; bne v1, v0, skip
-///   lhu (anim_3c/3e/40/42) ; sh -> 0x14/0x16/0x18/0x1a(s0) ; sh zero, 0x9e(s0)
+///   if (a == b || D <= t) return a;          // at/past the endpoint → target
+///   return (a - b) * t / D + b;              // integer truncating division
 /// ```
 ///
-/// When the keyframe gate holds, the part's world position is overwritten by
-/// the anim-bank slots (op `0x00`, summon-local), then `+0x9E` is cleared. The
-/// anim banks are local offsets, so `origin` (the cast target) is added to seat
-/// the part in world space — the engine renders parts directly (no parent
-/// transform), where retail places the whole summon via the camera/parent.
-fn apply_translation_latch(state: &mut ActorState, origin: [i16; 3]) {
+/// `a` = target, `b` = current, `t` = current time, `D` = duration. The full
+/// `FUN_801DE4C8` is a multi-mode interpolator (modes 2/3/4 add ease curves);
+/// `FUN_801F811C` only ever calls it with `mode = 1` (plain linear), so only
+/// that arm is ported. Retail divides `i32`s with truncation toward zero, which
+/// is exactly Rust's `/` on `i32`.
+// PORT: FUN_801DE4C8
+fn lerp_axis(target: i32, cur: i32, t: i32, d: i32) -> i32 {
+    if target == cur || d <= t {
+        return target;
+    }
+    (target - cur) * t / d + cur
+}
+
+/// Render-side translation update — port of the summon render overlay
+/// `FUN_801F811C` (per-frame part-position update; byte-identical in the dance
+/// and baka-fighter overlay images, see
+/// `ghidra/scripts/funcs/overlay_dance_801f811c.txt`).
+///
+/// ```text
+///   if (actor[+0x9e] == 0) { actor[+0x14..1a] = actor[+0x3c..42]; }   // snap
+///   else {
+///     actor[+0x9c] += DAT_1f800393;                                   // advance
+///     if (actor[+0x9e] < actor[+0x9c]) actor[+0x9c] = actor[+0x9e];   // clamp
+///     for axis in {x:3c↔14, y:3e↔16, z:40↔18, w:42↔1a}:
+///       if (target != cur) cur = FUN_801de4c8(target, cur, +0x9c, +0x9e, 1);
+///     if (actor[+0x9c] == actor[+0x9e]) {                             // reached
+///       actor[+0x9e] = 0; actor[+0x14..1a] = actor[+0x3c..42];        // latch
+///     }
+///   }
+/// ```
+///
+/// The anim banks are summon-local offsets, so the engine adds `origin` (the
+/// cast target) to the lerp endpoint to seat the part in world space — the
+/// engine renders parts directly (no parent transform), where retail places the
+/// whole summon via the camera/parent. The engine models the world `w` axis
+/// (`+0x1a`, only consumed by the render quad emit) implicitly and tracks just
+/// the x/y/z it renders.
+///
+/// `frame_delta` is the engine's analog of retail's per-frame `DAT_1F800393`:
+/// the `+0x9C` interpolation cursor advances by it each frame, exactly as the
+/// overlay advances the keyframe time.
+// PORT: FUN_801F811C
+// REF: FUN_801DE648 (sized store of the lerp result; here a plain field write)
+fn apply_translation_update(state: &mut ActorState, origin: [i16; 3], frame_delta: u16) {
     // Retail reads `*(i16)(actor+0x9C)` (low half of the i32 field_9c) and
-    // `*(i16)(actor+0x9E)` (field_9e).
-    let gate_a = (state.field_9c & 0xFFFF) as i16;
-    let gate_b = state.field_9e as i16;
-    if gate_a == gate_b {
-        state.world_x = origin[0].wrapping_add(state.anim_3c);
-        state.world_y = origin[1].wrapping_add(state.anim_3e);
-        state.world_z = origin[2].wrapping_add(state.anim_40);
+    // `*(i16)(actor+0x9E)` (field_9e). Targets are summon-local anim banks +
+    // origin (the cast target).
+    let target = [
+        origin[0].wrapping_add(state.anim_3c),
+        origin[1].wrapping_add(state.anim_3e),
+        origin[2].wrapping_add(state.anim_40),
+    ];
+
+    let duration = state.field_9e as i16;
+    if duration == 0 {
+        // No active tween → snap to target (the `+0x9E == 0` arm).
+        state.world_x = target[0];
+        state.world_y = target[1];
+        state.world_z = target[2];
+        state.world_y_mirror = state.world_y;
+        return;
+    }
+
+    // Advance the keyframe cursor by the per-frame delta and clamp to duration.
+    let mut t = (state.field_9c & 0xFFFF) as i16;
+    t = t.wrapping_add(frame_delta as i16);
+    if duration < t {
+        t = duration;
+    }
+    state.field_9c = (state.field_9c & !0xFFFF) | (t as u16 as i32);
+
+    // Per-axis LERP toward the (origin + anim-bank) target. Skips an axis whose
+    // current value already equals the target (the `target != cur` guard in
+    // retail), matching `FUN_801DE4C8`'s early `a == b` return.
+    let t_i = t as i32;
+    let d_i = duration as i32;
+    let cur = [state.world_x, state.world_y, state.world_z];
+    for (i, &c) in cur.iter().enumerate() {
+        if target[i] != c {
+            let v = lerp_axis(target[i] as i32, c as i32, t_i, d_i) as i16;
+            match i {
+                0 => state.world_x = v,
+                1 => state.world_y = v,
+                _ => state.world_z = v,
+            }
+        }
+    }
+    state.world_y_mirror = state.world_y;
+
+    // Reached the endpoint → latch exactly to the target and clear duration
+    // (`+0x9E == 0` means "no active tween" on the next frame).
+    if t == duration {
+        state.world_x = target[0];
+        state.world_y = target[1];
+        state.world_z = target[2];
         state.world_y_mirror = state.world_y;
         state.field_9e = 0;
     }
@@ -342,6 +439,105 @@ mod tests {
         // Both tiny programs HALT on the first frame.
         scene.tick(&mut host, 0x1000);
         assert!(scene.finished(), "both parts halted");
+    }
+
+    #[test]
+    fn lerp_axis_matches_fun_801de4c8_mode1() {
+        // Port of `FUN_801DE4C8(a, b, t, D, 1)`: returns `b + (a-b)*t/D` with
+        // integer truncating div, and `a` exactly when `t >= D` or `a == b`.
+        assert_eq!(lerp_axis(100, 0, 0, 10), 0, "t=0 → start");
+        assert_eq!(lerp_axis(100, 0, 5, 10), 50, "midpoint");
+        assert_eq!(lerp_axis(100, 0, 10, 10), 100, "t=D → exact target");
+        assert_eq!(lerp_axis(100, 0, 11, 10), 100, "t>D → clamped to target");
+        assert_eq!(lerp_axis(50, 50, 3, 10), 50, "a==b → target");
+        // Truncation toward zero (retail `div`): (10-0)*3/10 = 3.
+        assert_eq!(lerp_axis(10, 0, 3, 10), 3);
+        // Negative direction truncates toward zero too: (0-10)*3/10 = -3.
+        assert_eq!(lerp_axis(0, 10, 3, 10), 7);
+    }
+
+    #[test]
+    fn tick_drives_the_lerp_update_for_a_live_part() {
+        // The integration path: one `tick` runs the move VM (which sets the
+        // anim banks to 8/16/24) and then `apply_translation_update`. With a
+        // fresh part (`+0x9E == 0`), that is the snap-to-target arm.
+        let (bytes, ov) = synthetic();
+        let mut scene = SummonScene::spawn(&ov, &bytes, 26, [100, 200, 300]);
+        let mut host = H;
+        scene.tick(&mut host, 0x1000);
+        let mesh = scene.parts.iter().find(|p| p.model_sel == 0).unwrap();
+        assert_eq!(
+            (mesh.state.world_x, mesh.state.world_y, mesh.state.world_z),
+            (108, 216, 324),
+            "tick wires apply_translation_update (snap arm: origin + anim bank)"
+        );
+    }
+
+    #[test]
+    fn lerp_update_glides_toward_target_and_lands_exactly_on_completion() {
+        // Drive `apply_translation_update` (the ported FUN_801F811C) across
+        // several frames with an active interpolation window (+0x9E = duration)
+        // and assert the world position moves monotonically toward the
+        // (origin + anim-bank) target and reaches it exactly on completion.
+        let origin = [100_i16, 200, 300];
+        let mut state = ActorState::new();
+        // Anim banks (summon-local target offsets); the move VM op 0x00 would
+        // have set these to v << 3 = (8, 16, 24).
+        state.anim_3c = 8;
+        state.anim_3e = 16;
+        state.anim_40 = 24;
+        // Start at the bare origin, with a 40-tick interpolation window.
+        state.world_x = origin[0];
+        state.world_y = origin[1];
+        state.world_z = origin[2];
+        state.world_y_mirror = origin[1];
+        state.field_9c = 0;
+        state.field_9e = 40;
+
+        let target = [108_i16, 216, 324]; // origin + (8, 16, 24)
+
+        // One step (t advances 0 → 10, D = 40): x = 100 + (108-100)*10/40 = 102.
+        apply_translation_update(&mut state, origin, 10);
+        assert_eq!(
+            (state.world_x, state.world_y, state.world_z),
+            (102, 204, 306),
+            "first lerp step is partial, not a snap"
+        );
+        assert_ne!(state.field_9e, 0, "still mid-tween");
+        assert_eq!(state.world_y_mirror, state.world_y, "y mirror tracks y");
+
+        // Continue ticking; assert monotonic approach and exact landing.
+        let mut prev = [state.world_x, state.world_y, state.world_z];
+        let mut reached = false;
+        for step in 0..6 {
+            apply_translation_update(&mut state, origin, 10);
+            let pos = [state.world_x, state.world_y, state.world_z];
+            for axis in 0..3 {
+                assert!(
+                    pos[axis] >= prev[axis] && pos[axis] <= target[axis],
+                    "axis {axis} step {step}: {} not in [{}, {}]",
+                    pos[axis],
+                    prev[axis],
+                    target[axis]
+                );
+            }
+            if pos == target {
+                reached = true;
+                assert_eq!(state.field_9e, 0, "duration cleared on completion");
+                break;
+            }
+            prev = pos;
+        }
+        assert!(reached, "part reached the target exactly on completion");
+
+        // After completion, +0x9E == 0, so the next update is the snap arm and
+        // the part stays pinned exactly on the target.
+        apply_translation_update(&mut state, origin, 10);
+        assert_eq!(
+            (state.world_x, state.world_y, state.world_z),
+            (target[0], target[1], target[2]),
+            "post-completion snap holds on target"
+        );
     }
 
     #[test]
