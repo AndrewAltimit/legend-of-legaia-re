@@ -95,13 +95,15 @@ pub struct BattleCharPalette {
 }
 
 fn rd_u32(b: &[u8], o: usize) -> Result<u32> {
-    b.get(o..o + 4)
+    o.checked_add(4)
+        .and_then(|e| b.get(o..e))
         .map(|s| u32::from_le_bytes(s.try_into().unwrap()))
         .ok_or_else(|| anyhow::anyhow!("u32 read out of range at 0x{o:X}"))
 }
 
 fn rd_u16(b: &[u8], o: usize) -> Result<u16> {
-    b.get(o..o + 2)
+    o.checked_add(2)
+        .and_then(|e| b.get(o..e))
         .map(|s| u16::from_le_bytes(s.try_into().unwrap()))
         .ok_or_else(|| anyhow::anyhow!("u16 read out of range at 0x{o:X}"))
 }
@@ -110,12 +112,12 @@ fn rd_u16(b: &[u8], o: usize) -> Result<u16> {
 /// Returns `None` for a count-0 (no-op) struct. Errors only on truncation.
 fn read_clut(buf: &[u8], off: usize) -> Result<Option<PaletteBand>> {
     let base = rd_u16(buf, off)?;
-    let count = rd_u16(buf, off + 2)? as usize;
+    let count = rd_u16(buf, off.saturating_add(2))? as usize;
     if count == 0 {
         return Ok(None);
     }
-    let start = off + 4;
-    let end = start + count * 2;
+    let start = off.saturating_add(4);
+    let end = start.saturating_add(count * 2);
     let bytes = buf
         .get(start..end)
         .ok_or_else(|| anyhow::anyhow!("CLUT colours out of range at 0x{start:X}..0x{end:X}"))?;
@@ -164,18 +166,22 @@ fn walk_descriptors(file: &[u8], desc_off: usize) -> Result<(Vec<DescEntry>, usi
 /// Derive the five sub-record file offsets from the descriptor table, exactly as
 /// the runtime loader stages them. See the module docs.
 fn derive_sub_offsets(rec0: usize, entries: &[DescEntry], recbase: usize) -> Vec<usize> {
-    let sec_base = (recbase + 0xFFF) & !0xFFF;
+    // Saturating arithmetic throughout: a malformed candidate record (find_record0
+    // probes many offsets) can carry garbage descriptor values, and `usize` is
+    // 32-bit on wasm — an offset that overruns the file is rejected later by the
+    // bounds checks in `parse_record`, so saturating to a huge value is safe.
+    let sec_base = (recbase.saturating_add(0xFFF)) & !0xFFF;
     let mut subs = Vec::new();
     // sub0..3: the record following each internal id=0 separator (a separator
     // that is the table's last entry is the terminator, not a section start).
     for (i, (id, _, _)) in entries.iter().enumerate() {
         if *id == 0 && i + 1 < entries.len() {
-            subs.push(sec_base + entries[i + 1].1 as usize);
+            subs.push(sec_base.saturating_add(entries[i + 1].1 as usize));
         }
     }
     // sub4: the byte just past the whole descriptor span.
     let (_, a_last, sz_last) = entries[entries.len() - 1];
-    subs.push(rec0 + (a_last + sz_last) as usize);
+    subs.push(rec0.saturating_add((a_last.saturating_add(sz_last)) as usize));
     subs
 }
 
@@ -216,18 +222,20 @@ pub fn parse_record(file: &[u8], rec0: usize) -> Result<BattleCharPalette> {
     let mut cur = clut_a_off;
     for (k, &p) in sub_offsets.iter().enumerate() {
         let sub_budget = rd_u32(file, p)? as usize;
-        if cur + 0x14 > WORK_SIZE || cur.checked_add(sub_budget).is_none_or(|e| e > WORK_SIZE) {
+        if cur.saturating_add(0x14) > WORK_SIZE
+            || cur.checked_add(sub_budget).is_none_or(|e| e > WORK_SIZE)
+        {
             bail!("sub-record #{k} dst 0x{cur:X}+0x{sub_budget:X} overruns work buffer");
         }
         let sub_stream = file
-            .get(p + 4..)
+            .get(p.saturating_add(4)..)
             .ok_or_else(|| anyhow::anyhow!("sub-record #{k} at 0x{p:X} stream truncated"))?;
         let dec = legaia_lzs::decompress(sub_stream, sub_budget)?;
         work[cur..cur + dec.len()].copy_from_slice(&dec);
 
         let adv = rd_u32(&work, cur + 0x0C)? as usize;
         let flag = rd_u16(&work, cur + 0x12)?;
-        let clut_pos = cur + adv;
+        let clut_pos = cur.saturating_add(adv);
         if flag != 0
             && let Some(b) = read_clut(&work, clut_pos)?
         {
