@@ -750,6 +750,27 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Per-vertex flat/gouraud shading attribute for the field-character
+     * **hybrid** render, parallel to [`Self::character_mesh_positions`]: 4
+     * bytes per vertex `[r, g, b, textured_flag]`. The field-form player mesh
+     * mixes textured prims (face / skin / clothing that sample the PROT 0874
+     * §2 atlas — `textured_flag == 1`) with untextured flat / gouraud prims
+     * (the bulk of the body — `textured_flag == 0`) that carry per-vertex RGB
+     * in the TMD instead of UVs. The shader samples VRAM for textured verts
+     * and uses `[r, g, b]` for untextured verts, so the body parts the pure
+     * textured path would discard render in their real colours. Vertex order
+     * matches the other `character_mesh_*` getters (same TMD walk).
+     * @param {number} slot
+     * @param {number} equip_byte
+     * @returns {Uint8Array}
+     */
+    character_mesh_flat_colors(slot, equip_byte) {
+        const ret = wasm.legaiaviewer_character_mesh_flat_colors(this.__wbg_ptr, slot, equip_byte);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Triangle indices for the player character at pack slot `slot`,
      * `u32`, multiple of 3.
      * @param {number} slot
@@ -1082,6 +1103,27 @@ export class LegaiaViewer {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * Build the 1 MB PSX VRAM with the **field-character textures** (PROT
+     * 0874 **section 2**) uploaded, so the Field-form meshes render textured.
+     *
+     * Section 2 of the `player.lzs` container is an 8-TIM pack; entries 1/2/3
+     * are the Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with their
+     * CLUTs on row 478 (cols 0..63 / 64..127 / 128..191). Each TIM is uploaded
+     * via the retail `FUN_800198e0` semantic — image at its declared rect, CLUT
+     * as a **flat horizontal strip** (`w*h` colours at one row), STP off — so
+     * the meshes' per-primitive CBA columns sample the right palettes. Byte-
+     * exact against a live field VRAM dump (see
+     * [`legaia_asset::field_char_textures`]). The Field form renders against
+     * this VRAM through the same paletted pipeline the Battle form uses.
+     * @returns {Uint8Array}
+     */
+    field_char_vram_bytes() {
+        const ret = wasm.legaiaviewer_field_char_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
