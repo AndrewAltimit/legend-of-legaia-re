@@ -6982,6 +6982,59 @@ impl ApplicationHandler for PlayWindowApp {
                         .spawn_debug_effect_model(pos, model_index);
                     return;
                 }
+                // `G`: debug-spawn the Gimard *Tail Fire* summon scene-graph
+                // (PROT 0905). Loads the stager overlay, parses its part
+                // records, and seats a `SummonScene` at the first active actor;
+                // it then animates each frame via `tick_summon` (the move VM)
+                // and renders through the summon-part draw block below. Not the
+                // production cast-band trigger (state 0x29) -- a hand-spawn to
+                // exercise the driver, like the `F`-key static effect spawn.
+                if matches!(code, KeyCode::KeyG)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    const PROT_GIMARD_SUMMON_STAGER: u32 = 905;
+                    let origin = self
+                        .session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .find(|a| a.active)
+                        .map(|a| {
+                            [
+                                a.move_state.world_x,
+                                a.move_state.world_y,
+                                a.move_state.world_z,
+                            ]
+                        })
+                        .unwrap_or([0, 0, 0]);
+                    match self
+                        .session
+                        .host
+                        .index
+                        .entry_bytes(PROT_GIMARD_SUMMON_STAGER)
+                    {
+                        Ok(bytes) => {
+                            let overlay = legaia_asset::summon_overlay::parse(
+                                &bytes,
+                                legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
+                            );
+                            self.session.host.world.spawn_summon(
+                                &overlay,
+                                &bytes,
+                                legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX,
+                                origin,
+                            );
+                            log::info!(
+                                "spawned Gimard summon: {} parts at {origin:?}",
+                                overlay.parts.len()
+                            );
+                        }
+                        Err(e) => log::warn!("summon spawn: read PROT 0905: {e:#}"),
+                    }
+                    return;
+                }
                 // `N`: open the name-entry overlay for the lead character. The
                 // NEW GAME flow now opens it automatically at the `opdeene` ->
                 // `town01` opening hand-off (see the prologue-handoff block
@@ -7173,6 +7226,9 @@ impl ApplicationHandler for PlayWindowApp {
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
+                    // Advance an active Seru-magic summon scene-graph (debug
+                    // spawn via the `G` key) through the move VM each frame.
+                    self.session.host.world.tick_summon(0x0400);
                     if self.menu_runtime.is_open() {
                         let p = self.pad;
                         let input = MenuInput {
@@ -7691,6 +7747,53 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     }
                     for (mesh, model) in &effect_model_draws {
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                        });
+                    }
+
+                    // Active Seru-magic summon scene-graph (debug-spawned via
+                    // `G`): one textured mesh per move-VM-driven part, posed by
+                    // the part's interpreted transform (world pos + rotation
+                    // banks). The animation computation is faithful (move VM);
+                    // the transform composition is the open PROT 0900 piece.
+                    let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
+                    if !self.boot_ui.is_active() && !in_world_map {
+                        for sp in self.session.host.world.active_summon_part_draws() {
+                            let Some(gtmd) = self
+                                .session
+                                .host
+                                .world
+                                .global_tmd(sp.model_index as i16)
+                                .map(std::sync::Arc::clone)
+                            else {
+                                continue;
+                            };
+                            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
+                            if vmesh.indices.is_empty() {
+                                continue;
+                            }
+                            match r.upload_vram_mesh(
+                                &vmesh.positions,
+                                &vmesh.uvs,
+                                &vmesh.cba_tsb,
+                                &vmesh.normals,
+                                &vmesh.indices,
+                            ) {
+                                Ok(m) => {
+                                    let model = Mat4::from_translation(Vec3::from(sp.world_pos))
+                                        * Mat4::from_rotation_y(sp.rot[1])
+                                        * Mat4::from_rotation_x(sp.rot[0])
+                                        * Mat4::from_rotation_z(sp.rot[2])
+                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                    summon_part_draws.push((m, model));
+                                }
+                                Err(e) => log::warn!("summon part mesh upload: {e:#}"),
+                            }
+                        }
+                    }
+                    for (mesh, model) in &summon_part_draws {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * *model,

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_engine_core::summon::SummonScene;
+use legaia_engine_core::world::World;
 use legaia_engine_vm::move_vm::MoveHost;
 use legaia_prot::archive::Archive;
 
@@ -130,5 +131,52 @@ fn gimard_summon_spawns_and_ticks_through_the_move_vm() {
         draws.len(),
         scene.frame,
         scene.finished()
+    );
+}
+
+#[test]
+fn world_spawns_and_ticks_the_gimard_summon() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive.entries[PROT_GIMARD_SUMMON_STAGER].clone();
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0905");
+    let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
+
+    // Drive the whole spawn -> tick -> draw path through World (exercises the
+    // borrow-split tick that runs the move VM with the World's host).
+    let mut world = World::new();
+    assert!(world.active_summon.is_none());
+    world.spawn_summon(&overlay, &bytes, GIMARD_TAIL_FIRE_MODEL_INDEX, [0, 0, 0]);
+    assert!(world.active_summon.is_some(), "summon spawned");
+    assert!(
+        !world.active_summon_part_draws().is_empty(),
+        "mesh parts produce draws"
+    );
+
+    // Tick through the World host; the scene either keeps animating or drains
+    // once every part finishes. Either way the call must not panic and the
+    // draws stay in the model-pool band while it's alive.
+    for _ in 0..600 {
+        world.tick_summon(0x0400);
+        for d in world.active_summon_part_draws() {
+            assert!(d.model_index >= GIMARD_TAIL_FIRE_MODEL_INDEX);
+        }
+        if world.active_summon.is_none() {
+            break;
+        }
+    }
+    eprintln!(
+        "World summon tick: active_after_600={}",
+        world.active_summon.is_some()
     );
 }

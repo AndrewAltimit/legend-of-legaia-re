@@ -1265,6 +1265,13 @@ pub struct World {
     /// [`Actor::tmd_ref`] on synchronous-spawn.
     pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
 
+    /// Active Seru-magic summon scene-graph, while one is playing. Spawned off
+    /// the battle-action cast band (or [`World::spawn_summon`] for the debug
+    /// path); ticked each frame through the move VM by [`World::tick_summon`]
+    /// and drained when every part finishes. Rendered via
+    /// [`World::active_summon_part_draws`].
+    pub active_summon: Option<crate::summon::SummonScene>,
+
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the in-`tick` Field <-> Battle round trip.
     ///
@@ -1724,6 +1731,7 @@ impl World {
             story_flags: 0,
             story_flag_bits: Vec::new(),
             rng_state: 0x1234_5678,
+            active_summon: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
             spell_costs: Default::default(),
@@ -3712,6 +3720,62 @@ impl World {
         m.pos_z = (world_pos[2] * 256.0) as i32;
         m.model_index = Some(tmd_index);
         true
+    }
+
+    /// Spawn a Seru-magic summon scene-graph from a parsed stager overlay (e.g.
+    /// PROT 0905, Gimard *Tail Fire*) at `origin` (world units). `record_bytes`
+    /// is the overlay's raw bytes (the buffer `overlay` was parsed from);
+    /// `model_base` is the pool index a part's `model_sel == 0` resolves to
+    /// (the summon's mesh-set base, e.g. [`crate::scene::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
+    /// Replaces any in-flight summon. Tick it with [`Self::tick_summon`].
+    pub fn spawn_summon(
+        &mut self,
+        overlay: &legaia_asset::summon_overlay::SummonOverlay,
+        record_bytes: &[u8],
+        model_base: usize,
+        origin: [i16; 3],
+    ) {
+        self.active_summon = Some(crate::summon::SummonScene::spawn(
+            overlay,
+            record_bytes,
+            model_base,
+            origin,
+        ));
+    }
+
+    /// Advance the active summon one frame through the move VM. No-op when no
+    /// summon is playing; drains the scene once every part has finished.
+    /// `frame_delta` is the per-part wait-timer drain (anim-speed × frame-rate).
+    pub fn tick_summon(&mut self, frame_delta: u16) {
+        let Some(mut scene) = self.active_summon.take() else {
+            return;
+        };
+        {
+            // Borrow split: the move-VM host borrows the rest of `World` (sin
+            // LUT etc.) while the scene's part states live in `scene`, taken out
+            // above. `current_slot = None` — summon parts are not World actors,
+            // so the slot-routed callbacks are inert for them.
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+            };
+            scene.tick(&mut host, frame_delta);
+        }
+        if !scene.finished() {
+            self.active_summon = Some(scene);
+        }
+    }
+
+    /// Per-part render draws for the active summon's mesh-bearing parts (empty
+    /// when no summon is playing). Each draw's `model_index` indexes
+    /// [`Self::global_tmd_pool`]. See [`crate::summon::SummonScene::part_draws`]
+    /// for the faithful-tick / interpreted-transform boundary.
+    pub fn active_summon_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+        self.active_summon
+            .as_ref()
+            .map(|s| s.part_draws())
+            .unwrap_or_default()
     }
 
     /// Dev/visualization helper: seat one synthetic active effect into the
