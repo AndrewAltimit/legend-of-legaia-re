@@ -6939,23 +6939,36 @@ impl ApplicationHandler for PlayWindowApp {
                     self.session.host.world.open_name_entry(0);
                     return;
                 }
-                // Menu cursor: while the active dialog box is a multiple-choice
+                // Menu input: while the active dialog box is a multiple-choice
                 // menu (a picker decoded from the inline interaction script),
-                // Up/Down move the option cursor instead of driving movement.
-                if state == ElementState::Pressed
-                    && let Some(panel) = self.active_dialog.as_mut()
-                    && panel.menu_active()
-                {
-                    match code {
-                        KeyCode::ArrowUp => {
+                // Up/Down move the option cursor and a confirm button applies
+                // the chosen option's relative jump (`FUN_80038050`) instead of
+                // driving movement / dismissing the box. Resolve the key->button
+                // first so the immutable `mapping` borrow ends before the
+                // mutable `active_dialog` borrow.
+                if state == ElementState::Pressed {
+                    let is_confirm = matches!(
+                        self.mapping.pad_button_for_key(keycode_to_name(code)),
+                        Some(
+                            legaia_engine_core::input::PadButton::Cross
+                                | legaia_engine_core::input::PadButton::Circle
+                        )
+                    );
+                    if let Some(panel) = self.active_dialog.as_mut()
+                        && panel.menu_active()
+                    {
+                        if matches!(code, KeyCode::ArrowUp) {
                             panel.move_picker_cursor(-1);
                             return;
                         }
-                        KeyCode::ArrowDown => {
+                        if matches!(code, KeyCode::ArrowDown) {
                             panel.move_picker_cursor(1);
                             return;
                         }
-                        _ => {}
+                        if is_confirm {
+                            panel.confirm_menu();
+                            return;
+                        }
                     }
                 }
                 let key_name = keycode_to_name(code);

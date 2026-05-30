@@ -329,21 +329,72 @@ impl OwnedDialogPanel {
         // segment, decode it so the host can render the option labels + a
         // cursor. The picker's open byte must sit exactly where the prompt's
         // typewriter run ends (a normal NPC whose later story branches contain
-        // a Yes/No picker must NOT pop a menu after its greeting). The prompt's
-        // end index is where the standard MES interpreter halts from `lead+1`.
-        let prompt_end = {
-            let mut interp = Interpreter::new_at(inline, lead + 1);
-            loop {
-                match interp.next_event() {
-                    Some(MesEvent::EndOfMessage(_)) | None => break interp.pc(),
-                    _ => {}
-                }
-            }
-        };
-        panel.picker = legaia_mes::scan_pickers(inline)
-            .into_iter()
-            .find(|p| p.open == prompt_end);
+        // a Yes/No picker must NOT pop a menu after its greeting).
+        panel.picker = Self::picker_following_segment(inline, lead + 1);
         Some(panel)
+    }
+
+    /// End index of the `0x1F` text segment whose glyph run starts at `from`
+    /// (where the standard MES interpreter halts).
+    fn segment_end(bytes: &[u8], from: usize) -> usize {
+        let mut interp = Interpreter::new_at(bytes, from);
+        loop {
+            match interp.next_event() {
+                Some(MesEvent::EndOfMessage(_)) | None => break interp.pc(),
+                _ => {}
+            }
+        }
+    }
+
+    /// The option-picker (if any) that sits immediately after the text segment
+    /// whose glyph run starts at `seg_start` — i.e. whose open byte equals the
+    /// segment's end index. This is the faithful "is this box a menu?" test:
+    /// the picker open byte directly follows the box's last typed line.
+    fn picker_following_segment(bytes: &[u8], seg_start: usize) -> Option<legaia_mes::Picker> {
+        let end = Self::segment_end(bytes, seg_start);
+        legaia_mes::scan_pickers(bytes)
+            .into_iter()
+            .find(|p| p.open == end)
+    }
+
+    /// Confirm the highlighted menu option: apply its relative jump and resume
+    /// the dialogue at the chosen branch's reply (mirrors the retail inline-
+    /// script control handler `FUN_80038050`, which sets the script PC to
+    /// `(open + 1 + index*2) + i16_LE(entry[index])`). The panel jumps to the
+    /// branch, skips any leading non-text bytecode to the next `0x1F` reply
+    /// segment, types it, and re-attaches a nested menu if one follows. With no
+    /// reply segment at/after the target the conversation ends (`Done`).
+    ///
+    /// Returns the chosen option index, or `None` if no menu is active.
+    pub fn confirm_menu(&mut self) -> Option<usize> {
+        if !self.menu_active {
+            return None;
+        }
+        let picker = self.picker.as_ref()?;
+        let cursor = self.picker_cursor;
+        let target = picker.jump_target(cursor)?;
+        // Resume at the chosen branch: find its first reply text segment.
+        let next_lead = self.bytes[target.min(self.bytes.len())..]
+            .iter()
+            .position(|&b| b == 0x1F)
+            .map(|rel| target + rel);
+        self.page.clear();
+        self.menu_active = false;
+        self.waiting_for_input = false;
+        self.picker_cursor = 0;
+        match next_lead {
+            Some(lead) => {
+                self.pc = lead + 1;
+                self.picker = Self::picker_following_segment(&self.bytes, lead + 1);
+                self.state = PanelState::Typing;
+            }
+            None => {
+                self.picker = None;
+                self.done = true;
+                self.state = PanelState::Done;
+            }
+        }
+        Some(cursor)
     }
 
     /// The decoded option-picker following the prompt, if this box is a
@@ -565,6 +616,65 @@ mod tests {
         assert_eq!(panel.picker_cursor(), 0, "wraps");
         panel.move_picker_cursor(-1);
         assert_eq!(panel.picker_cursor(), 1, "wraps backward");
+    }
+
+    /// Confirming a menu option applies its relative jump and resumes typing
+    /// the chosen branch's reply segment (mirrors `FUN_80038050`).
+    #[test]
+    fn confirm_menu_jumps_to_the_chosen_branch_reply() {
+        // Layout: prompt "OK?" + 0x27 picker (Yes/No) + two reply segments.
+        // Build it, then back-fill each option's i16 jump so it lands on its
+        // reply lead: target = (open + 1 + index*2) + rel_jump.
+        let mut b = vec![0x1F, b'O', b'K', b'?', 0x00]; // prompt, ends at pc=5
+        let open = b.len(); // 5
+        b.push(0x27); // open
+        let entries_at = b.len(); // 6
+        b.extend_from_slice(&[0, 0, 0, 0]); // 2 entries, filled in below
+        b.push(0x24); // continuation
+        b.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]); // label0
+        b.extend_from_slice(&[0x1F, b'N', b'o', 0x00]); // label1
+        let reply0 = b.len();
+        b.extend_from_slice(&[0x1F, b'Y', b'!', 0x00]); // reply for option 0
+        let reply1 = b.len();
+        b.extend_from_slice(&[0x1F, b'N', b'!', 0x00]); // reply for option 1
+        // rel_jump[i] so (open + 1 + i*2) + rel = reply_lead.
+        let j0 = (reply0 as i32 - (open as i32 + 1)) as i16;
+        let j1 = (reply1 as i32 - (open as i32 + 1 + 2)) as i16;
+        b[entries_at..entries_at + 2].copy_from_slice(&j0.to_le_bytes());
+        b[entries_at + 2..entries_at + 4].copy_from_slice(&j1.to_le_bytes());
+
+        // Choose option 1 ("No") and confirm -> should type the "N!" reply.
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
+        for _ in 0..4 {
+            panel.tick();
+        }
+        assert!(panel.menu_active());
+        panel.move_picker_cursor(1);
+        assert_eq!(panel.confirm_menu(), Some(1));
+        assert!(!panel.menu_active(), "menu resolved");
+        for _ in 0..2 {
+            panel.tick();
+        }
+        assert_eq!(panel.page_bytes(), vec![b'N', b'!']);
+        assert_eq!(panel.tick(), PanelState::Done);
+
+        // Option 0 ("Yes") -> "Y!".
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
+        for _ in 0..4 {
+            panel.tick();
+        }
+        assert_eq!(panel.confirm_menu(), Some(0));
+        for _ in 0..2 {
+            panel.tick();
+        }
+        assert_eq!(panel.page_bytes(), vec![b'Y', b'!']);
+    }
+
+    /// `confirm_menu` is a no-op (returns `None`) when no menu is active.
+    #[test]
+    fn confirm_menu_without_active_menu_is_none() {
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&[0x1F, b'H', b'i', 0x00]).unwrap();
+        assert_eq!(panel.confirm_menu(), None);
     }
 
     /// Plain dialogue (no picker) still types and goes `Done`.
