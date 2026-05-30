@@ -54,6 +54,7 @@
 "8006ee34" = "B-vector thunk (li t2,0xB0; jr t2) - menu/text helper cluster"
 "8006ee6c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4E)"
 "8006ee7c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x50)"
+"8006ef68" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4C). One of the SPU-voice-init B0 thunks called in sequence by 8006ef18 (libspu init)"
 
 
 # libc / PsyQ runtime glue. Each maps to a Rust stdlib equivalent.
@@ -97,6 +98,9 @@
 "8003d1a4" = "GTE control-word restore: 8x ctc2 of an 8-word array into COP2 control regs 0x0000..0x3800 (rotation/light matrix region). The restore counterpart explicitly named by the 8003d20c (save) entry above; brackets the billboard projector 800195a8. Engine emits GTE-equivalent matrices via glam/wgpu"
 "8003d254" = "SetGeomScreen (GTE H / projection-plane-distance write): single `ctc2 a0, 0xD000; jr ra`. Engine carries the focal length as Camera::h (crates/engine-render::gte) and projects through the wgpu pipeline; no GTE COP2 path"
 "8003d178" = "GTE rotation-matrix identity reset: ctc2 0x1000 (=1.0) into COP2 control regs 0x0000/0x1000/0x2000 (R11/R22/R33) and 0 into 0x0800/0x1800 (off-diagonals). The identity-reset third of the save (8003d20c) / restore (8003d1a4) GTE control-word trio; engine uses glam::Mat3::IDENTITY"
+"8005b818" = "SetGeomScreen (libgte): `ctc2 a0, 0xD000; jr ra` writes the GTE H/projection-plane-distance control reg. The PsyQ-library copy of the same one-liner the game-side 8003d254 inlines; engine carries focal length as Camera::h"
+"8005b7f8" = "SetGeomOffset (libgte): writes OFX/OFY (a0<<16 -> cop2 ctrl 0xC000, a1<<16 -> 0xC800). Engine applies the screen-space offset via the wgpu viewport / Camera projection"
+"8005b0b8" = "GTE leading-zero-count bit converter (texture/color bit packing): setCopReg(2,0xF000) / getCopReg(2,0xF800) = GTE LZCS/LZCR normalise-shift. Sibling of the already-listed 8005ba1c GTE sqrt/normalise; engine does bit packing in plain Rust"
 
 
 # libcd primitives and the ISO9660 / streaming-read stack above them.
@@ -122,6 +126,7 @@
 "8005e574" = "CD sector-reader state machine / streaming-read per-IRQ callback"
 "8005e788" = "Streaming-read starter (registers 8005e574 as IRQ callback)"
 "8005e9a4" = "Public streaming-read API (sector_count, dest_buffer, mode_flags)"
+"8005becc" = "libcd completion-callback swap-setter: loads the callback pointer at DAT_800793AC, stores the new a0, returns the previous (the CdReadSyncCallback-family slot; sibling of the already-listed 8005bee4 setter for DAT_800793B0). Engine reads PROT.DAT through legaia-iso/legaia-prot, no libcd callback slots"
 
 
 # libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
@@ -314,3 +319,17 @@
 # passthrough; there is nothing to model.
 [identity_thunks]
 "801e38d0" = "Overlay identity thunk (`jr ra; move v0, a0`). Called by FUN_801DD35C menu dispatcher (`a0 = state[+0x204]`) and the title-overlay tick at `801dd6b0`; the menu / title state code reads the input value back unmodified. See `docs/subsystems/boot.md` lines 216, 228."
+
+
+# Empty-bodied stubs: functions whose entire body is a prologue/epilogue with no
+# side effects (`jr ra; nop`, or `addiu sp,-N; addiu sp,+N; jr ra`). These are
+# retail-stripped leaves - dev/debug or alternate-build code paths the linker
+# emptied out, leaving an inert entry point that does nothing. There is no
+# behavior to port. (The 8002b9xx cluster is the stripped per-tile sprite-emit
+# leaf family; cf. FUN_8002B96C, also `jr ra; nop`.)
+[noop_stubs]
+"8002b93c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8002b944" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8002b94c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8002b954" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8003e7f0" = "Empty-bodied stub: `addiu sp,sp,-0x90; addiu sp,sp,0x90; jr ra` - sets up and tears down a stack frame with no body (retail-stripped, near the dev host-FS reader 8003e6bc). Does nothing."
