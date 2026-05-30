@@ -1,6 +1,11 @@
 //! Per-scene MAN (asset type `0x03`) multi-section header walker.
 //!
-//! PORT: FUN_8003AEB0, FUN_8003A1E4
+//! PORT: FUN_8003AEB0, FUN_8003A1E4, FUN_8003A110
+//!
+//! (`FUN_8003A110` is the section-0 carve: it reads the three stride bytes that
+//! follow the section-0 pointer and walks `count * stride + 1` past each
+//! sub-table to derive the formation / condition / region table bases — the
+//! exact layout the [`EncounterSection`] parse + `region_records` reproduce.)
 //!
 //! The MAN sub-asset is the third descriptor in every scene's
 //! [`scene_asset_table`](crate::scene_asset_table) bundle. After the asset
