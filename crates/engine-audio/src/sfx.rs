@@ -237,6 +237,14 @@ impl SfxScheduler {
 
     /// Queue a cue. The cue fires when `frames_remaining` reaches zero
     /// during a [`Self::tick_frame`] call.
+    ///
+    // PORT: FUN_80035B50 - retail's SFX-cue enqueue writes the cue id into the
+    // next slot of a fixed 4-entry u16 ring at &DAT_8007B6D8 and advances the
+    // head; this models the same "queue a one-shot SFX" contract with an
+    // unbounded queue + per-cue countdown instead of the 4-slot ring.
+    // REF: FUN_80035BD0 - the retail "overwrite current slot" variant (replace
+    // an in-flight cue without advancing the head, e.g. bonk overriding a
+    // pending step) is not separately modeled; cues simply queue here.
     pub fn enqueue(&mut self, cue: PendingCue) {
         self.queue.push(cue);
     }

@@ -147,6 +147,7 @@
 # none of these have engine equivalents.
 [libetc]
 "8001a068" = "in-game dev-string formatter / on-screen log printer. Reads format string, writes RGB 0x808080 cell, %-escape walker. Called via 8001a09c-style wrapper that takes (fmt, args...) and pushes a text primitive."
+"8001aa68" = "fixed-cell debug-string drawer: (str, x, y) -> per-glyph sprite into the scratchpad OT at _DAT_1F8003A0, source cell chosen by character class (digits/upper/lower/punct). The dev/CONFIG-test-screen monospaced text path (sibling of the 8001a068 formatter); the clean-room engine renders text via the proportional legaia-font atlas instead."
 "8003e6bc" = "dev host-FS reader: (path, dest) -> fopen + fseek/SEEK_END for size + fread + zero-pad to 0x800 sector. Calls libapi 800608f0/80060920/80060944/80060910. The retail dual-mode loader's debug branch; clean-room engine reads from disc via ISO9660 only."
 "8005fb84" = "VSync(N) handler - wraps 8005fccc with frame-counter math"
 
