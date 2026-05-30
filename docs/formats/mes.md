@@ -118,6 +118,14 @@ The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crat
 
 Max lines per box is stored at `_DAT_801F2740`. The overlay's `case 6` / `case 9` init arms (the two box-open states) **both pin this to 3** — the standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
 
+### Multi-segment box packing
+
+A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <glyphs> 0x00`. The SM packs **consecutive** lines into one window of `_DAT_801F2740 = 3` rows: the byte after a line's `0x00` terminator being another `0x1F` means "same box, next row". A box ends after at most three rows, at the post-page control byte the pager reads in state `0x19` (the table below). So a three-line speech box is three back-to-back `0x1F` lines followed by a single `0x24` (next page); multi-page speech is several such boxes chained by `0x24`.
+
+The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range — e.g. a `0xC1 0x00` character-name substitution — does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
+
+Decoded by `legaia_mes::dialog_box` (`pack_box` packs one box from a `0x1F` lead, capped at `LINES_PER_BOX = 3`, reporting the terminating `Dispatch`; `pack_boxes` chains pages while the dispatch continues, stopping at `End` / `Terminate` / a `Picker` / field-VM bytecode). Pinned on real disc bytes by `field_dialog_boxpack_disc`: the Rim Elm sparring partner's (Tetsu) opening narration packs into three full 3-row pages chained by `0x24`, then a 2-row box that opens the 4-option "do you want something today?" topic menu — and that narration's `Mist appeared, .., but` line keeps its tail past a `0xC1 0x00` escape. Note the pool also holds the NPC's *other* story-branch lines; the contiguous box run stops where the pager hands control back to the field VM (a non-pager control byte), which `Dispatch::Unknown` marks.
+
 ### Post-page dispatch (state `0x19`)
 
 When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_800846D4`), state `0x19` reads the **next control byte** past the box (`*pbVar14 & 0x7F`) and selects the follow-on state directly:

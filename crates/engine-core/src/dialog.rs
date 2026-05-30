@@ -55,15 +55,17 @@ use std::sync::Arc;
 /// per-character TMD-pose copier indexed by the slot-4 freeze flag, not the
 /// dialog box renderer.
 ///
-/// What's still open is finer-grained: how the dialog SM packs multiple
-/// segments into one box (likely via the MES `0xC?` 2-byte escapes
-/// `FUN_80039b7c` skips), and which segments are exposed as selectable
-/// options (likely the segments adjacent to `"Yes"` / `"No"` labels). Both
-/// are inside the MES bytecode and the pager, not in any header before the
-/// first `0x1F`.
+/// The box/option grouping is now pinned: the dialog SM packs up to
+/// [`legaia_mes::LINES_PER_BOX`] (`_DAT_801F2740` = 3) consecutive `0x1F`
+/// lines into one window, terminated by a post-page control byte
+/// ([`legaia_mes::Dispatch`]); `0xC0..=0xCF` escapes inside a line are 2-byte
+/// (so a `0x00` argument doesn't end the line early). See
+/// [`legaia_mes::pack_box`] / [`legaia_mes::pack_boxes`] and the disc-gated
+/// `field_dialog_boxpack_disc` regression.
 ///
-/// So this returns the raw segment pool, faithfully, leaving the box/option
-/// interpretation to a future consumer once the pager semantics are pinned.
+/// This function still returns the raw, ungrouped segment pool — the simplest
+/// faithful view of the record's whole line set. Callers that want boxes use
+/// the `pack_box` decoder on the same bytes.
 /// The field-VM bytecode preceding the first `0x1F` is skipped (its bytes
 /// can fall in the glyph range, so it is not interpreted as text).
 pub fn decode_inline_segments(inline: &[u8]) -> Vec<Vec<u8>> {
@@ -314,9 +316,10 @@ impl OwnedDialogPanel {
     /// Only the first segment is typed: the record holds the NPC's whole
     /// dialogue line pool (see [`decode_inline_segments`]). Retail picks
     /// which segment to land on via the prologue's story-flag-gated
-    /// `JmpRel`s (not a header); how multiple segments fill one box and
-    /// which segments are options is pager-side state, inside the MES
-    /// bytecode and `FUN_801D84D0` — still open. See the
+    /// `JmpRel`s (not a header), then packs up to `_DAT_801F2740` = 3
+    /// consecutive `0x1F` lines into one box paged by the post-page control
+    /// byte (decoded by [`legaia_mes::pack_box`]; pinned by
+    /// `field_dialog_boxpack_disc`). See the
     /// `field_actor_placements_disc::dialog_prefix_decodes_as_field_vm_bytecode`
     /// regression for the prologue-is-field-VM-bytecode proof.
     ///
