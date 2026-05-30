@@ -266,6 +266,19 @@
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
 
+# Ghidra phantom leaves: addresses Ghidra promoted to fake `FUN_xxxxxxxx`
+# entries that are NOT real call targets - a disassembler split an instruction
+# off the head/tail of a genuine function. They are dumped + documented (each
+# has a row in `docs/reference/functions.md` recording the mis-attribution) but
+# there is nothing to port: the real work lives in the enclosing function. They
+# inflate the worklist with phantom citation counts, so they are scoped out
+# here. (Distinct from `field_vm_labels`, which are real dispatcher PC-delta
+# exit targets - these are not even that.)
+[ghidra_phantoms]
+"80034b6c" = "One-instruction tail fragment before FUN_80034B78: Ghidra split a `sw param_1, gp[+0x14c]` store (text-row state byte the text-actor tick FUN_80031D00 writes) into a phantom leaf. Not a real call target; an earlier engine REF mis-guessed it a GPU-packet allocator. See docs/reference/functions.md row `80034B6C`."
+"8005da40" = "`lui v1, 0x8008` instruction inside FUN_8005D9A0 (the CD-DMA-channel-3 read primitive, itself ignore-listed under [libcd]); Ghidra promotes the intra-function label to a fake FUN_8005DA40. No real function, no `_DAT_800795B4` table. See docs/reference/functions.md row `FUN_8005DA40`."
+
+
 # Identity / no-op thunks at addresses outside the PsyQ region. These are
 # `jr ra; move v0, a0` two-instruction wrappers that return their input
 # verbatim - probably leftover dev scaffolding or placeholder slots in a
