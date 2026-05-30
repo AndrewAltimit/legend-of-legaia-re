@@ -2401,6 +2401,7 @@ impl World {
     /// effects run before the reply. `up`/`down` move a menu cursor. No-op when
     /// no inline dialogue is running.
     // PORT: FUN_80039B7C
+    // REF: FUN_80038050 (the option-jump apply is delegated to OwnedDialogPanel::confirm_menu)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
         use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
         let Some(mut id) = self.inline_dialogue.take() else {

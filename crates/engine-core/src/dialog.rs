@@ -378,6 +378,7 @@ impl OwnedDialogPanel {
     /// reply segment at/after the target the conversation ends (`Done`).
     ///
     /// Returns the chosen option index, or `None` if no menu is active.
+    // PORT: FUN_80038050
     pub fn confirm_menu(&mut self) -> Option<usize> {
         if !self.menu_active {
             return None;
