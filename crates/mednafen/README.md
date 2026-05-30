@@ -30,6 +30,7 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
 mednafen-state info SAVE              # section table + PSX register snapshot
 mednafen-state extract SAVE [--start ADDR --end ADDR --out PATH]
 mednafen-state diff LEFT RIGHT [--start ADDR --end ADDR --json PATH]
+mednafen-state write-taxonomy LEFT RIGHT [--start ADDR --end ADDR --samples N]
 mednafen-state bisect --addr ADDR SAVE...
 mednafen-state trace  --addr ADDR SAVE...
 mednafen-state watch LABEL [--manifest PATH]

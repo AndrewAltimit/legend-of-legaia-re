@@ -79,6 +79,23 @@ enum Cmd {
         #[arg(long, default_value_t = 32)]
         top: usize,
     },
+    /// Diff two save states and roll the changed bytes up into a per-region
+    /// write taxonomy (via `legaia_cheats::classify_address`): how many bytes
+    /// changed in each subsystem (inventory / character record / battle actor
+    /// / story flags / script-VM scratch / ...), flagging writes that land
+    /// outside every known data region. The classification half of a
+    /// gameplay-driven write tracer.
+    WriteTaxonomy {
+        left: PathBuf,
+        right: PathBuf,
+        #[arg(long, value_parser = parse_addr)]
+        start: Option<u32>,
+        #[arg(long, value_parser = parse_addr)]
+        end: Option<u32>,
+        /// Sample classifications to print per region bucket.
+        #[arg(long, default_value_t = 8)]
+        samples: usize,
+    },
     /// Walk a sequence of save states; report the first one in which a
     /// target address has a non-zero value.
     Bisect {
@@ -297,6 +314,13 @@ fn main() -> Result<()> {
                 top,
             },
         ),
+        Cmd::WriteTaxonomy {
+            left,
+            right,
+            start,
+            end,
+            samples,
+        } => cmd_write_taxonomy(&left, &right, start, end, samples),
         Cmd::Bisect {
             addr,
             predicate,
@@ -501,6 +525,64 @@ fn hex_short(bytes: &[u8]) -> String {
         out.push_str(&format!("{b:02X}"));
     }
     out
+}
+
+fn cmd_write_taxonomy(
+    left: &Path,
+    right: &Path,
+    start: Option<u32>,
+    end: Option<u32>,
+    samples: usize,
+) -> Result<()> {
+    let l = SaveState::from_path(left)?;
+    let r = SaveState::from_path(right)?;
+    let lram = l.main_ram()?;
+    let rram = r.main_ram()?;
+    let lo = start.unwrap_or(PSX_RAM_KSEG0).saturating_sub(PSX_RAM_KSEG0) as usize;
+    let hi = end
+        .unwrap_or(PSX_RAM_KSEG0 + PSX_RAM_SIZE as u32)
+        .saturating_sub(PSX_RAM_KSEG0)
+        .min(PSX_RAM_SIZE as u32) as usize;
+
+    // Exact per-byte changed addresses (no region merging) so each byte is
+    // classified into its own subsystem.
+    let changed = (lo..hi)
+        .filter(|&i| lram[i] != rram[i])
+        .map(|i| PSX_RAM_KSEG0 + i as u32);
+    let tax = legaia_cheats::classify_writes_with_samples(changed, samples);
+
+    println!(
+        "[taxonomy] {} <-> {}",
+        left.file_name().and_then(|s| s.to_str()).unwrap_or("left"),
+        right
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("right"),
+    );
+    println!("[taxonomy] {} changed bytes in main RAM", tax.total);
+    if let Some(d) = tax.dominant() {
+        println!(
+            "[taxonomy] dominant region: {:?} ({} bytes)",
+            d.category, d.count
+        );
+    }
+    println!("[taxonomy] per-region:");
+    for b in &tax.buckets {
+        println!("  {:<18?} {:>8} bytes", b.category, b.count);
+        for s in &b.samples {
+            println!("        0x{:08X}  {}", s.addr, s.detail);
+        }
+    }
+    let interesting: Vec<_> = tax.interesting().collect();
+    if interesting.is_empty() {
+        println!("[taxonomy] no writes landed outside known data regions.");
+    } else {
+        println!("[taxonomy] !! writes outside known data regions (attack-surface candidates):");
+        for b in interesting {
+            println!("  {:<18?} {:>8} bytes", b.category, b.count);
+        }
+    }
+    Ok(())
 }
 
 fn cmd_bisect(addr: u32, predicate: &str, saves: &[PathBuf]) -> Result<()> {
