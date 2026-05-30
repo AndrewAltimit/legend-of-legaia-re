@@ -441,20 +441,6 @@ enum Cmd {
         #[arg(long, default_value_t = 6)]
         desc_count: usize,
     },
-    /// Inspect a Seru-summon code overlay's embedded record table (e.g.
-    /// `extracted/PROT/0905_xxx_dat.BIN` = Gimard Tail Fire). Locates the table
-    /// (or uses `--offset`/`--count`) and prints each part record's `model_sel`,
-    /// flags, and move-VM bytecode head.
-    SummonOverlay {
-        /// PROT entry of a summon overlay (PROT 905..915).
-        input: PathBuf,
-        /// Table file offset; defaults to the structural locator (PROT 905).
-        #[arg(long, value_parser = parse_hex_u32)]
-        offset: Option<u32>,
-        /// Record count; defaults to the PROT 905 pinned count (19).
-        #[arg(long)]
-        count: Option<usize>,
-    },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
     /// event-script prescript at `+0x800`.
@@ -746,11 +732,6 @@ fn main() -> Result<()> {
             cdname,
             desc_count,
         } => player_anm_scan(&dir, cdname.as_deref(), desc_count),
-        Cmd::SummonOverlay {
-            input,
-            offset,
-            count,
-        } => summon_overlay_one(&input, offset.map(|o| o as usize), count),
         Cmd::SceneV12 {
             input,
             scripts,
@@ -3853,51 +3834,6 @@ fn battle_char_pack_one(
             std::fs::write(p, &a.tim_bytes).with_context(|| format!("write {}", p.display()))?;
             println!("  wrote raw atlas {} TIM -> {}", a.atlas_index, p.display());
         }
-    }
-    Ok(())
-}
-
-fn summon_overlay_one(input: &Path, offset: Option<usize>, count: Option<usize>) -> Result<()> {
-    use legaia_asset::summon_overlay::{self, GIMARD_RECORD_COUNT};
-    let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
-
-    let table_offset = match offset {
-        Some(o) => o,
-        None => summon_overlay::locate_table_offset(&bytes, 0x4000).with_context(|| {
-            format!(
-                "could not locate a summon record table in {} (pass --offset)",
-                input.display()
-            )
-        })?,
-    };
-    let n = count.unwrap_or(GIMARD_RECORD_COUNT);
-    let table = summon_overlay::parse_at(&bytes, table_offset, n)
-        .with_context(|| format!("table [{table_offset:#X}, {n} records] runs past end of file"))?;
-
-    println!(
-        "{}: summon record table @{:#06X}, {} records (stride {:#X})",
-        input.display(),
-        table.table_offset,
-        table.records.len(),
-        summon_overlay::SUMMON_RECORD_STRIDE,
-    );
-    for (i, rec) in table.records.iter().enumerate() {
-        let kind = if rec.is_transform_node() {
-            "transform-node".to_string()
-        } else {
-            format!("mesh DAT_8007C018[{}+base]", rec.model_sel)
-        };
-        let head: Vec<String> = rec.bytecode[..8]
-            .iter()
-            .map(|b| format!("{b:02X}"))
-            .collect();
-        println!(
-            "  rec {i:2}  model_sel={:6}  flags={:#06X}  {:24}  bytecode: {} ...",
-            rec.model_sel,
-            rec.flags,
-            kind,
-            head.join(" "),
-        );
     }
     Ok(())
 }
