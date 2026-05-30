@@ -32,6 +32,19 @@
 //! (This corrects an earlier reading that placed the records "beyond the 0x5800
 //! file" — that conflated the 905 stager with the 900 render overlay's base.)
 //!
+//! ## The whole player-summon block
+//!
+//! The eleven player Seru-magic summons (`spell_id 0x81..=0x8B`) each ship a
+//! stager overlay in [`PLAYER_SUMMON_STAGER_PROT`] (PROT 0905..=0915, resolved
+//! retail-side by `FUN_8003EC70(id - 0x79)`). [`parse`] recovers a move-VM
+//! scene-graph from every one of them — Gimard (0905) is transform-node-dominated
+//! with a handful of small library-mesh indices; the larger summons (e.g. 0906,
+//! 0911, 0915) carry many more parts, a good fraction of which classify as
+//! [`SummonPartKind::Sentinel`] (node-mode markers in the record's first word, not
+//! library indices). The structural recovery is pinned across the block by the
+//! disc-gated `summon_overlay_block` sweep; the per-summon model-library base
+//! (`gp[0x754]`) and the precise sentinel semantics are a live-trace follow-up.
+//!
 //! Recovery is by scanning the stager's `jal FUN_80021B04` call sites and
 //! recovering the `a2` (record-pointer) each one passes — the records are
 //! variable-length move-VM bytecode, not a fixed-stride table, so the call sites
@@ -43,6 +56,22 @@ use std::ops::Range;
 /// SCUS actor-spawn helper `FUN_80021B04`. Each summon part is one call.
 pub const SPAWN_HELPER: u32 = 0x8002_1B04;
 
+/// CDNAME (`xxx_dat`) PROT entries that hold the per-summon stager overlays for
+/// the player Seru-magic block `spell_id 0x81..=0x8B`. Retail resolves the entry
+/// as `FUN_8003EC70(id - 0x79)` → PROT `(id - 0x81) + 905`, so the eleven player
+/// summons map one-to-one onto `905..=915` (Gimard *Tail Fire* = `0x81` → 905).
+/// Every entry in this range parses through [`parse`] into a move-VM
+/// scene-graph; see the disc-gated `summon_overlay_block` sweep.
+pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 905..=915;
+
+/// Upper bound (exclusive) on a `model_sel` that indexes the small effect-model
+/// library (`DAT_8007C018[model_sel + gp[0x754]]`; ~30 entries). A `model_sel`
+/// at or above this is not a plain library index — it is one of the move-VM
+/// node-mode sentinels (the `0x1000` / `0x4000` render-mode markers, or a
+/// `0x8000`-class bit) the larger summons carry in the record's first word.
+/// Mirrors `engine_core::summon::MAX_MESH_SEL`.
+pub const LIBRARY_MESH_SEL_MAX: i16 = 0x100;
+
 /// Link / load base of the per-summon overlay buffer (`*DAT_80010390`),
 /// empirically pinned by byte-matching the resident overlay in a mid-cast save
 /// state (`0x801F8000` ↔ file offset `0x1628`). Both the PROT 0905 stager and
@@ -52,6 +81,30 @@ pub const SUMMON_OVERLAY_LINK_BASE: u32 = 0x801F_69D8;
 /// `model_sel` value marking a transform/pivot node (no direct mesh; the mesh is
 /// bound by the move-VM anim-bank ops).
 pub const MODEL_SEL_TRANSFORM_NODE: i16 = -1;
+
+/// What the first word of a part record (`model_sel`) selects.
+///
+/// Gimard *Tail Fire* (PROT 0905) is dominated by [`Self::TransformNode`] parts
+/// with a handful of small [`Self::LibraryMesh`] indices, so its records read
+/// cleanly. The larger summons (e.g. PROT 0906/0911/0915) carry many records
+/// whose first word is a [`Self::Sentinel`] node-mode marker rather than a plain
+/// library index — the records are genuine (each is a statically-resolved
+/// `FUN_80021B04` `a2` pointer, an explicit `lui`/`addiu` immediate that cannot
+/// be mis-resolved), the move VM just drives those nodes through a different
+/// render mode. Naming the kind keeps the parse output honest instead of
+/// printing a sentinel as a bogus "mesh-sel".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SummonPartKind {
+    /// `model_sel == -1`: a transform/pivot node; the mesh (if any) is bound by
+    /// the move-VM anim-bank ops, not the record header.
+    TransformNode,
+    /// `0 <= model_sel < `[`LIBRARY_MESH_SEL_MAX`]: a plain effect-model-library
+    /// index (`DAT_8007C018[model_sel + gp[0x754]]`).
+    LibraryMesh,
+    /// Any other value: a move-VM node-mode sentinel (`0x1000` / `0x4000` /
+    /// `0x8000`-class), not a library index.
+    Sentinel,
+}
 
 /// One staged summon part.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +124,17 @@ impl SummonPart {
     /// `true` when this part is a transform/pivot node (`model_sel == -1`).
     pub fn is_transform_node(&self) -> bool {
         self.model_sel == MODEL_SEL_TRANSFORM_NODE
+    }
+
+    /// Classify the record's first word ([`model_sel`](Self::model_sel)).
+    pub fn kind(&self) -> SummonPartKind {
+        if self.model_sel == MODEL_SEL_TRANSFORM_NODE {
+            SummonPartKind::TransformNode
+        } else if (0..LIBRARY_MESH_SEL_MAX).contains(&self.model_sel) {
+            SummonPartKind::LibraryMesh
+        } else {
+            SummonPartKind::Sentinel
+        }
     }
 }
 

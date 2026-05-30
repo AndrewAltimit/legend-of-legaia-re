@@ -1467,6 +1467,11 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // Anything `>= 0x3D` is reserved / unknown - treat as default arm
         // since the original switch had no entries past 0x3C and would land
         // in `default:` (size 1 + iVar16 << 16, treated as fall-through here).
+        // FUN_801D362C guards the JT jump with `sltiu sub_op, 0x3D` (the
+        // sub-opcode is loaded `lh` = sign-extended, so the *unsigned* compare
+        // also rejects negative values), branching to its return on
+        // out-of-range - so the extension dispatch has no OOB-jump path; this
+        // catch-all is the faithful mirror of that guarded return.
         _ => MoveExtResult::default_arm(),
     }
 }
