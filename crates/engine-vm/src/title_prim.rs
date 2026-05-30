@@ -62,7 +62,7 @@
 //! No Sony bytes are stored in this module - only call shapes, struct
 //! layouts (numeric offsets), and the dispatch control flow.
 //! REF: FUN_800583C8, FUN_801DD35C, FUN_801E1C1C, FUN_801E36C4, FUN_801E373C, FUN_801E3EE0
-//! REF: FUN_8002C69C, FUN_80034B6C, FUN_80035F04, FUN_80036888, FUN_8003CA38, FUN_801E0598
+//! REF: FUN_8002C69C, FUN_80035F04, FUN_80036888, FUN_8003CA38, FUN_801E0598
 //! REF: FUN_801E435C
 
 #![forbid(unsafe_code)]
@@ -261,11 +261,14 @@ pub trait PrimHost {
     // side-effect-free emit; engines override to wire to the renderer.
     // ------------------------------------------------------------------
 
-    /// Equivalent of `FUN_80034b6c(packet_type)` - allocate a GPU
-    /// primitive packet of the given type tag.
+    /// Allocate a GPU primitive packet of the given type tag, called
+    /// by `FUN_801E36C4` with `packet_type = 0x44` before emitting its
+    /// horizontal bar.
     ///
-    /// `FUN_801E36C4` calls this with `packet_type = 0x44` before
-    /// emitting its horizontal bar.
+    /// (The retail allocator entry point for this is not yet pinned;
+    /// `FUN_80034B6C` was an earlier mis-guess — that address is a
+    /// one-instruction tail fragment of the number formatter
+    /// `FUN_80034B78`, not a packet allocator.)
     fn prim_packet_alloc(&mut self, _packet_type: u8) {}
 
     /// Equivalent of `FUN_8002c69c(x, y, w, color)` - queue a horizontal

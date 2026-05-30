@@ -120,6 +120,11 @@ impl GteMat3 {
 
     /// Build a rotation matrix about the +Y axis by `angle` radians, with
     /// elements quantized to q3.12 (matches the GTE precision).
+    ///
+    // PORT: FUN_8004629C - retail RotMatrixY: indexes the cos/sin LUT pair
+    // (&DAT_80070A2C / &DAT_8007122C) by a 12-bit angle (4096 = 2*PI) and
+    // composes via the GTE; this builds the same +Y rotation in q3.12 with a
+    // radian input (ROT_ONE = 0x1000 matches the LUT's 1.0).
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -129,6 +134,9 @@ impl GteMat3 {
     }
 
     /// Build a rotation about the +X axis (pitch).
+    ///
+    // PORT: FUN_800461A4 - retail RotMatrixX (same cos/sin LUT + 12-bit angle
+    // as FUN_8004629C, about the +X axis).
     pub fn rot_x(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -138,6 +146,9 @@ impl GteMat3 {
     }
 
     /// Build a rotation about the +Z axis (roll).
+    ///
+    // PORT: FUN_8004638C - retail RotMatrixZ (same cos/sin LUT + 12-bit angle
+    // as FUN_8004629C, about the +Z axis).
     pub fn rot_z(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;

@@ -65,6 +65,8 @@
 "80057024" = "memmove (overlap-safe direction-aware copy)"
 "8005acac" = "memset"
 "8005e540" = "memcpy (forward-only byte copy)"
+"8003ca78" = "encoding-aware strcpy for Legaia dialog text: copies src->dst treating a 0xC0-class lead byte ((b & 0xf0) == 0xc0) plus its trailing byte as one 2-byte glyph/control unit; NUL-terminates. No GPU/OT/GTE; engine builds text via legaia-font layout"
+"8003cac4" = "encoding-aware strcat for Legaia dialog text: scans dst to the first byte <= 0x1e (counting 0xC0-class pairs as one unit) then appends src via the same copy loop as 8003ca78. No GPU/OT/GTE"
 "8005fccc" = "VSync wait spin (frame-budget gated)"
 "8005ff04" = "irq_mask_swap16 (atomic swap on the 16-bit IRQ mask)"
 "80060a04" = "BREAK 0x105 debug trap"
@@ -86,6 +88,12 @@
 "800460ac" = "GTE NCDS (cop2 0x280030) - 3-iter normal color-depth color single loop; engine emits lighting via wgpu fragment shader"
 "800172c0" = "Camera / geometry init (Euler -> matrix via 80026988 + SetGeomScreen/Offset/Translation 8005B648/B3A8/B4B8 + NCLIP 8003D344); pure libgte chain replaced by glam Mat4 + wgpu pipeline"
 "8005bb48" = "InitGeom - exception-handler table install + FlushCache"
+"8005b7d8" = "SetColorMatrix-family GTE control-word loader (three ctc2 writes: a0<<4 -> 0xA800, a1<<4 -> 0xB000, a2<<4 -> 0xB800 = cop2 control regs 21/22/23, the color/light matrix region); sibling of 8005b7c0 SetRotMatrix / 8005b7cc SetTransMatrix"
+"8003d20c" = "GTE control-word save: 8x cfc2 of COP2 control regs 0x0000..0x3800 (rotation/light matrix region) into param_1[0..7]. Save counterpart of 8003d1a4 (restore) / 8003d178 (identity reset); brackets the billboard projector 800195a8. Engine emits GTE-equivalent matrices via glam/wgpu"
+"8003d368" = "GTE DPCS (cop2 0x180001) depth-cue-color-single wrapper: loads RGB from param_1, reads back reg 0x0F + ORGB (reg 0x16) into param_2. Sibling of 8003d344 NCLIP / 800460ac NCDS; engine emits depth-cue/lighting via wgpu fragment shader"
+"8005b3a8" = "RotMatrix-family matrix-vector product: loads rotation matrix into COP2 control regs 0x0000-0x2000, runs three cop2 0x486012 ops feeding IR data regs, reads MAC1/2/3, repacks into the MATRIX. Sibling cited in the 800172c0 geometry chain; engine emits via glam Mat3/Mat4"
+"8005b6a8" = "SetTransMatrix translation-vector loader: three ctc2 of param+0x14/0x18/0x1c into COP2 control regs 0x2800/0x3000/0x3800 (TRX/TRY/TRZ). Parallels 8005b7cc SetTransMatrix; engine emits translation via glam"
+"8005b308" = "PopMatrix (GTE matrix-stack pop): decrements 0x20-stride SP global DAT_80079010 (underflow -> printf), reloads rotation matrix (ctc2 ctrl 0x0000-0x2000) + translation vector (0x2800/0x3000/0x3800) from the popped frame. libgte stack bookkeeping; engine uses a glam transform stack"
 
 
 # libcd primitives and the ISO9660 / streaming-read stack above them.
@@ -121,6 +129,7 @@
 # in the 100s).
 [libgs]
 "8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
+"80059010" = "SetDrawMode primitive constructor: fills a DR_MODE primitive (GP0 0xE1 texture-page word via 80059510, GP0 0xE2 texture-window word via 80059744). 1:1 PsyQ libgpu shape; engine-render emits its own GP0 draw-mode / tpage state"
 "80057c44" = "ResetGraph (vtable dispatch + dev-string printf wrapper)"
 "80057fec" = "GetGraphDebug (returns DAT_80078d54)"
 "8005800c" = "DrawSyncCallback"
@@ -147,6 +156,9 @@
 # none of these have engine equivalents.
 [libetc]
 "8001a068" = "in-game dev-string formatter / on-screen log printer. Reads format string, writes RGB 0x808080 cell, %-escape walker. Called via 8001a09c-style wrapper that takes (fmt, args...) and pushes a text primitive."
+"8001aa68" = "fixed-cell debug-string drawer: (str, x, y) -> per-glyph sprite into the scratchpad OT at _DAT_1F8003A0, source cell chosen by character class (digits/upper/lower/punct). The dev/CONFIG-test-screen monospaced text path (sibling of the 8001a068 formatter); the clean-room engine renders text via the proportional legaia-font atlas instead."
+"8001ad38" = "low-level fixed-cell sprite-glyph emitter: pushes one sprite prim (tag 0x3000000, color 0x74808080) into the scratchpad OT _DAT_1F8003A0 + linkPrim 8003d2c4. The per-glyph primitive behind the dev monospaced text path 8001aa68"
+"80017d98" = "draws one fixed-cell dev-font glyph (cell u=0x50, v=0xf8) at signed (x,y) via 8001ad38; thin wrapper in the 8001aa68 dev/CONFIG monospaced text family. Engine renders text via legaia-font"
 "8003e6bc" = "dev host-FS reader: (path, dest) -> fopen + fseek/SEEK_END for size + fread + zero-pad to 0x800 sector. Calls libapi 800608f0/80060920/80060944/80060910. The retail dual-mode loader's debug branch; clean-room engine reads from disc via ISO9660 only."
 "8005fb84" = "VSync(N) handler - wraps 8005fccc with frame-counter math"
 
@@ -170,6 +182,8 @@
 "80061e94" = "SsSeqClose short-arg shim (tail-calls 80061d18)"
 "80061edc" = "SsSeqSetVol"
 "8006206c" = "_SsSetSlideVolume (ramp from->to over N ticks)"
+"80062004" = "SsSeqSetVol short-arg shim: sign-extends its two args and tail-calls 80061edc SsSeqSetVol with track=0"
+"80064bd0" = "SsVabClose voice-teardown loop: iterates DAT_801ce344 voices, builds a default SpuVoiceAttr (pitch 0x1000, vol 0x80ff, ADSR 0x4000) on stack, broadcasts via 8006c048 (SpuSetVoiceAttr) and resets each per-slot record via 80067480; pure libsnd/libspu, replaced by engine-audio"
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"
 "80062410" = "_SsSeqInit (validates magic + reads PPQN / BPM / TPQ)"
 "8006275c" = "SsSeqPlay (clears stop/end flags, sets active bit)"
