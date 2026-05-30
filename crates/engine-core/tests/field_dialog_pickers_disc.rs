@@ -56,6 +56,8 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
     scenes.dedup();
 
     let mut total_pickers = 0usize;
+    let mut total_options = 0usize;
+    let mut options_with_reply = 0usize;
     // (scene, slot) -> sorted option label strings, for spot-checks.
     let mut by_scene: Vec<(String, usize, usize, Vec<String>)> = Vec::new();
 
@@ -105,6 +107,14 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
                         inline.len(),
                         pk.options[i].rel_jump
                     );
+                    // `OwnedDialogPanel::confirm_menu` resumes by scanning from
+                    // the jump target for the branch's first `0x1F` reply
+                    // segment. Count how many real option branches actually
+                    // have downstream reply text reachable that way.
+                    if inline[t..].contains(&0x1F) {
+                        options_with_reply += 1;
+                    }
+                    total_options += 1;
                 }
                 let labels: Vec<String> = pk.options.iter().map(|o| label_str(&o.label)).collect();
                 by_scene.push((name.clone(), p.index, pk.n, labels));
@@ -114,9 +124,21 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
     }
 
     eprintln!("[pickers] {total_pickers} decoded across the field corpus");
+    eprintln!(
+        "[pickers] {options_with_reply}/{total_options} option branches reach a reply segment"
+    );
     for (s, slot, n, labels) in &by_scene {
         eprintln!("  [{s}] slot {slot} N={n} {labels:?}");
     }
+
+    // confirm_menu's resume premise: the vast majority of real option branches
+    // have downstream reply text the jump lands before (the rest are
+    // conversation-end branches with nothing after). A high ratio confirms the
+    // relative-jump targets point into live script, not noise.
+    assert!(
+        total_options > 0 && options_with_reply * 10 >= total_options * 8,
+        "expected >=80% of option branches to reach a reply, got {options_with_reply}/{total_options}"
+    );
 
     // Coverage floor: the corpus carries dozens of genuine menus (config
     // On/Off/Exit, shop haggling, the Genesis Tree quiz, story prompts).
