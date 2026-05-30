@@ -2291,40 +2291,69 @@ impl LegaiaViewer {
     /// [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
     /// mesh's nominal CBA samples.
     ///
-    /// Vahn (slot 0) is validated byte-exact against a live battle VRAM capture;
-    /// his record is `edstati3` PROT `0861`. Noa/Gala fall back to the bundled
-    /// (authoring) palette until their `edstati3` records are confirmed. The
-    /// Baka Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled
-    /// palette is the correct minigame colouring).
+    /// Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
+    /// VRAM capture (his tutorial-equipped state via
+    /// [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
+    /// `0864`) uses the equipment-robust
+    /// [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
+    /// section separators' unequipped-default CLUTs, filtered to the columns her
+    /// mesh samples (validated ~98% vs a full-party capture). Gala's full palette
+    /// isn't recovered yet (his record0 is PROT `0865`, a battle_data container
+    /// whose sub-records aren't laid out like a player file), so he falls back to
+    /// the bundled palette. The Baka Fighter form keeps
+    /// [`Self::battle_char_vram_bytes`] (the bundled palette is the correct
+    /// minigame colouring).
     pub fn battle_char_vram_bytes_battle(&self) -> Vec<u8> {
         let mut vram = self.battle_char_vram_bytes();
         if vram.is_empty() {
             return vram;
         }
-        // (mesh slot, edstati3 PROT index). Only Vahn is confirmed.
-        for &(slot, prot_index) in &[(0usize, 861u32)] {
-            let Some(pal) = self.edstati3_palette(prot_index) else {
-                continue;
-            };
-            let rows = self.battle_char_clut_rows(slot);
-            overlay_palette_rows(&mut vram, &rows, &pal);
+        // Vahn (slot 0): the validated tutorial-equipped assembly.
+        if let Some(pal) = self.edstati3_palette(861) {
+            overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(0), &pal);
+        }
+        // Noa (slot 1, PROT 0864 rec0=0): equipment-robust collection filtered to
+        // the columns her mesh actually samples.
+        if let Some(pal) = self.collected_palette(864, 1) {
+            overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(1), &pal);
         }
         vram
     }
 
-    /// Parse the battle CLUT bands out of a character's `edstati3` PROT entry.
+    /// Parse the battle CLUT bands out of a character's `edstati3` PROT entry
+    /// (the fixed-stride [`parse_record`](legaia_asset::battle_char_palette::parse_record)
+    /// assembly — exact for Vahn).
     fn edstati3_palette(
         &self,
         prot_index: u32,
     ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+        let slice = self.prot_entry(prot_index)?;
+        let rec0 = legaia_asset::battle_char_palette::find_record0(slice)?;
+        legaia_asset::battle_char_palette::parse_record(slice, rec0).ok()
+    }
+
+    /// Equipment-robust palette for `mesh_slot`'s character from PROT `prot_index`
+    /// (record0 at file offset 0), filtered to the columns the mesh samples.
+    fn collected_palette(
+        &self,
+        prot_index: u32,
+        mesh_slot: usize,
+    ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+        let cols = self.battle_char_clut_cols(mesh_slot);
+        if cols.is_empty() {
+            return None;
+        }
+        let slice = self.prot_entry(prot_index)?;
+        legaia_asset::battle_char_palette::collect_palette(slice, 0, &cols).ok()
+    }
+
+    fn prot_entry(&self, prot_index: u32) -> Option<&[u8]> {
         let meta = parse_prot_toc(&self.disc)?
             .into_iter()
             .find(|e| e.index == prot_index)?;
         let off = meta.byte_offset as usize;
         let end = off.saturating_add(meta.size_bytes as usize);
-        let slice = self.disc.get(off..end)?;
-        let rec0 = legaia_asset::battle_char_palette::find_record0(slice)?;
-        legaia_asset::battle_char_palette::parse_record(slice, rec0).ok()
+        self.disc.get(off..end)
     }
 
     /// Distinct VRAM CLUT rows the battle mesh at `slot` samples (decoded from
@@ -2338,6 +2367,18 @@ impl LegaiaViewer {
         rows.sort_unstable();
         rows.dedup();
         rows
+    }
+
+    /// Distinct CLUT x-columns the battle mesh at `slot` samples
+    /// (`(cba & 0x3F) * 16`) — the band bases that belong to this character.
+    fn battle_char_clut_cols(&self, slot: usize) -> Vec<u16> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot) else {
+            return Vec::new();
+        };
+        let mut cols: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] & 0x3F) * 16).collect();
+        cols.sort_unstable();
+        cols.dedup();
+        cols
     }
 
     // ------------------------------------------------------------------

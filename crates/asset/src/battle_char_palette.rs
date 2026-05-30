@@ -271,6 +271,89 @@ pub fn find_record0(file: &[u8]) -> Option<usize> {
     None
 }
 
+/// Collect a character's battle palette the **equipment-robust** way: gather
+/// CLUT bands from `record0`'s CLUT A/B plus every section *separator* (`id == 0`)
+/// record's flagged trailing CLUT and the trailing "final" record, then keep only
+/// bands whose base is one of the columns the character's mesh actually samples
+/// (`mesh_cols`, the distinct `(cba & 0x3F) * 16` of the battle TMD).
+///
+/// [`parse_record`] reproduces a *specific* equipment configuration — its
+/// fixed-stride assembly is exact for Vahn's tutorial state, but a character with
+/// more equipment variants overflows the `0x19000` work buffer. On disc each band
+/// ships once per equipment id plus an `id == 0` separator (the **unequipped
+/// default**); this takes the separator default and lets the mesh's sampled
+/// columns pick which bands belong to the character. Validated against a
+/// full-party battle VRAM capture: Noa (PROT 0864) covers every sampled column at
+/// ~98% (misses are equipment patches in the late-game reference).
+pub fn collect_palette(file: &[u8], rec0: usize, mesh_cols: &[u16]) -> Result<BattleCharPalette> {
+    let desc_off = rec0 + rd_u32(file, rec0)? as usize;
+    let clut_a_off = rd_u32(file, rec0 + 4)? as usize;
+    let clut_b_off = rd_u32(file, rec0 + 8)? as usize;
+    let budget = rd_u32(file, rec0 + 0xC)? as usize;
+    if budget > WORK_SIZE {
+        bail!("record0 budget 0x{budget:X} exceeds work buffer 0x{WORK_SIZE:X}");
+    }
+    let stream = file
+        .get(rec0 + 0x10..)
+        .ok_or_else(|| anyhow::anyhow!("file truncated before record0 stream"))?;
+    let rec0_out = legaia_lzs::decompress(stream, budget)?;
+
+    let mut bands: Vec<PaletteBand> = Vec::new();
+    let keep = |bands: &mut Vec<PaletteBand>, band: PaletteBand| {
+        if mesh_cols.contains(&band.base) && !bands.iter().any(|b| b.base == band.base) {
+            bands.push(band);
+        }
+    };
+
+    for &off in &[clut_a_off, clut_b_off] {
+        if let Some(b) = read_clut(&rec0_out, off)? {
+            keep(&mut bands, b);
+        }
+    }
+
+    let (entries, recbase) = walk_descriptors(file, desc_off)?;
+    let sec_base = recbase.saturating_add(0xFFF) & !0xFFF;
+    let (_, a_last, sz_last) = entries[entries.len() - 1];
+    let total = a_last.saturating_add(sz_last) as usize;
+
+    // Each section separator's record (the unequipped default) + the final record.
+    let mut sub_offsets: Vec<usize> = entries
+        .iter()
+        .filter(|(id, _, _)| *id == 0)
+        .map(|(_, a, _)| sec_base.saturating_add(*a as usize))
+        .collect();
+    sub_offsets.push(rec0.saturating_add(total));
+
+    for p in sub_offsets {
+        let Some(stream) = file.get(p.saturating_add(4)..) else {
+            continue;
+        };
+        let Ok(blen) = rd_u32(file, p) else {
+            continue;
+        };
+        let blen = blen as usize;
+        if !(0x400..=0x20000).contains(&blen) {
+            continue;
+        }
+        let Ok(dec) = legaia_lzs::decompress(stream, blen) else {
+            continue;
+        };
+        if dec.len() < 0x14 {
+            continue;
+        }
+        let flag = rd_u16(&dec, 0x12)?;
+        let adv = rd_u32(&dec, 0xC)? as usize;
+        if flag != 0
+            && let Ok(Some(b)) = read_clut(&dec, adv)
+        {
+            keep(&mut bands, b);
+        }
+    }
+
+    bands.sort_by_key(|b| b.base);
+    Ok(BattleCharPalette { bands })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,5 +473,79 @@ mod tests {
         let mut file = vec![0u8; 0x20];
         file[0xC..0x10].copy_from_slice(&(WORK_SIZE as u32 + 1).to_le_bytes());
         assert!(parse_record(&file, 0).is_err());
+    }
+
+    /// `collect_palette`: record0 CLUT B + a separator record's trailing CLUT +
+    /// the final record, with a non-mesh-column band filtered out.
+    #[test]
+    fn collect_filters_to_mesh_columns() {
+        let clut_a_off = 0x20usize; // empty
+        let clut_b_off = 0x40usize;
+        let budget = 0x100usize;
+        let mut rec0 = vec![0u8; budget];
+        rec0[clut_a_off..clut_a_off + 4].copy_from_slice(&clut_struct(0x00, &[]));
+        let cb = clut_struct(0x10, &[0x0000, 0x1234]);
+        rec0[clut_b_off..clut_b_off + cb.len()].copy_from_slice(&cb);
+
+        // Sub images must be >= the 0x400 budget floor `collect_palette` uses
+        // (real sub-records decode to >= 0x3C0C bytes).
+        let make_sub = |base: u16, colors: &[u16]| {
+            let adv = 0x40usize;
+            let mut img = vec![0u8; 0x440];
+            img[0x0C..0x10].copy_from_slice(&(adv as u32).to_le_bytes());
+            img[0x12..0x14].copy_from_slice(&1u16.to_le_bytes());
+            let sc = clut_struct(base, colors);
+            img[adv..adv + sc.len()].copy_from_slice(&sc);
+            img
+        };
+        let sep0_sub = make_sub(0x40, &[0x0506, 0x0708]); // mesh col -> kept
+        let sep1_sub = make_sub(0x90, &[0x0A0B, 0x0C0D]); // NOT a mesh col -> dropped
+        let final_sub = make_sub(0x70, &[0x7FFF, 0x0001]); // mesh col -> kept
+
+        // Descriptor: two id=0 separators with the running-sum invariant.
+        let mut desc = Vec::new();
+        desc.extend_from_slice(&desc_entry(0, 0x0, 0x400)); // separator 0
+        desc.extend_from_slice(&desc_entry(0, 0x400, 0x400)); // separator 1 (last)
+        let total = 0x800u32; // a_last + size_last
+
+        let stream0 = lit_compress(&rec0);
+        let desc_off = 0x10 + stream0.len();
+        let recbase = desc_off + 2 * 12;
+        let sec_base = (recbase + 0xFFF) & !0xFFF;
+
+        let mut file = Vec::new();
+        file.extend_from_slice(&(desc_off as u32).to_le_bytes());
+        file.extend_from_slice(&(clut_a_off as u32).to_le_bytes());
+        file.extend_from_slice(&(clut_b_off as u32).to_le_bytes());
+        file.extend_from_slice(&(budget as u32).to_le_bytes());
+        file.extend_from_slice(&stream0);
+        file.extend_from_slice(&desc);
+
+        let place = |file: &mut Vec<u8>, off: usize, img: &[u8]| {
+            if file.len() < off {
+                file.resize(off, 0);
+            }
+            file.extend_from_slice(&(img.len() as u32).to_le_bytes());
+            file.extend_from_slice(&lit_compress(img));
+        };
+        // sep0 @ sec_base+0, sep1 @ sec_base+0x400, final @ rec0+total (0x800).
+        let mut placements = [
+            (total as usize, &final_sub),
+            (sec_base, &sep0_sub),
+            (sec_base + 0x400, &sep1_sub),
+        ];
+        placements.sort_by_key(|(o, _)| *o);
+        for (off, img) in placements {
+            place(&mut file, off, img);
+        }
+
+        let pal = collect_palette(&file, 0, &[0x10, 0x40, 0x70]).expect("collect");
+        let bases: Vec<u16> = pal.bands.iter().map(|b| b.base).collect();
+        assert_eq!(bases, vec![0x10, 0x40, 0x70], "0x90 should be filtered out");
+        let by: std::collections::BTreeMap<u16, &PaletteBand> =
+            pal.bands.iter().map(|b| (b.base, b)).collect();
+        assert_eq!(by[&0x10].colors, vec![0x0000, 0x1234]);
+        assert_eq!(by[&0x40].colors, vec![0x0506, 0x0708]);
+        assert_eq!(by[&0x70].colors, vec![0x7FFF, 0x0001]);
     }
 }

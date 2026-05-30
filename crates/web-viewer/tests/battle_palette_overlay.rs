@@ -73,3 +73,56 @@ fn vahn_battle_palette_lands_on_mesh_rows() {
     let got = u16::from_le_bytes([vram[off], vram[off + 1]]);
     assert_eq!(got, want, "band@0x00[0] STP-set at row 490 col 0");
 }
+
+/// Noa's equipment-robust palette (PROT 0864) covers every column her battle
+/// mesh samples — the condition for a colour-complete render.
+#[test]
+fn noa_collected_palette_covers_mesh_columns() {
+    let Some(path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping");
+        return;
+    };
+    let disc = std::fs::read(&path).expect("disc image");
+    let prot = extract_prot_dat(&disc).expect("PROT.DAT");
+
+    // Noa = PROT 1204 slot 1; her sampled CLUT columns.
+    let pack_raw =
+        prot_entry(&prot, legaia_asset::battle_char_pack::PROT_ENTRY_INDEX).expect("1204");
+    let pack = legaia_asset::battle_char_pack::parse(pack_raw).expect("parse 1204");
+    let tmd_bytes = pack.slot(1).expect("slot 1").tmd_bytes.clone();
+    let tmd = legaia_tmd::parse(&tmd_bytes).expect("Noa battle TMD");
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_bytes);
+    let mut cols: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] & 0x3F) * 16).collect();
+    cols.sort_unstable();
+    cols.dedup();
+
+    // Noa's record is PROT 0864 (record0 at offset 0).
+    let edstati3 = prot_entry(&prot, 864).expect("PROT 0864 present");
+    let pal = legaia_asset::battle_char_palette::collect_palette(edstati3, 0, &cols)
+        .expect("collect Noa palette");
+
+    // Every band base is a sampled column, and every sampled column is covered by
+    // some band's [base, base+count) span.
+    use std::collections::BTreeSet;
+    let mut covered: BTreeSet<u16> = BTreeSet::new();
+    for band in &pal.bands {
+        assert!(
+            cols.contains(&band.base),
+            "band@{:X} not a mesh column",
+            band.base
+        );
+        for i in 0..band.colors.len() as u16 {
+            covered.insert(band.base + i);
+        }
+    }
+    let uncovered: Vec<u16> = cols
+        .iter()
+        .copied()
+        .filter(|c| !covered.contains(c))
+        .collect();
+    assert!(
+        uncovered.is_empty(),
+        "Noa palette leaves mesh columns uncovered: {uncovered:X?} (bands {:X?})",
+        pal.bands.iter().map(|b| b.base).collect::<Vec<_>>()
+    );
+}
