@@ -2046,6 +2046,55 @@ impl LegaiaViewer {
         legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &bytes).1
     }
 
+    /// Per-vertex flat/gouraud shading attribute for the field-character
+    /// **hybrid** render, parallel to [`Self::character_mesh_positions`]: 4
+    /// bytes per vertex `[r, g, b, textured_flag]`. The field-form player mesh
+    /// mixes textured prims (face / skin / clothing that sample the PROT 0874
+    /// §2 atlas — `textured_flag == 1`) with untextured flat / gouraud prims
+    /// (the bulk of the body — `textured_flag == 0`) that carry per-vertex RGB
+    /// in the TMD instead of UVs. The shader samples VRAM for textured verts
+    /// and uses `[r, g, b]` for untextured verts, so the body parts the pure
+    /// textured path would discard render in their real colours. Vertex order
+    /// matches the other `character_mesh_*` getters (same TMD walk).
+    pub fn character_mesh_flat_colors(&self, slot: u32, equip_byte: i32) -> Vec<u8> {
+        let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+        let Some((tmd, bytes)) = self.build_character_mesh(slot as usize, equip) else {
+            return Vec::new();
+        };
+        let (_mesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
+        // The flag rides in the alpha byte; the JS binds this attribute
+        // normalised, so emit 255 (→ 1.0) for textured and 0 for untextured.
+        let mut out = Vec::with_capacity(shading.colors.len() * 4);
+        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
+            out.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
+        }
+        out
+    }
+
+    /// Build the 1 MB PSX VRAM with the **field-character textures** (PROT
+    /// 0874 **section 2**) uploaded, so the Field-form meshes render textured.
+    ///
+    /// Section 2 of the `player.lzs` container is an 8-TIM pack; entries 1/2/3
+    /// are the Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with their
+    /// CLUTs on row 478 (cols 0..63 / 64..127 / 128..191). Each TIM is uploaded
+    /// via the retail `FUN_800198e0` semantic — image at its declared rect, CLUT
+    /// as a **flat horizontal strip** (`w*h` colours at one row), STP off — so
+    /// the meshes' per-primitive CBA columns sample the right palettes. Byte-
+    /// exact against a live field VRAM dump (see
+    /// [`legaia_asset::field_char_textures`]). The Field form renders against
+    /// this VRAM through the same paletted pipeline the Battle form uses.
+    pub fn field_char_vram_bytes(&self) -> Vec<u8> {
+        let Some(raw) = self.character_pack_slice() else {
+            return Vec::new();
+        };
+        let Ok(pack) = legaia_asset::field_char_textures::parse(raw) else {
+            return Vec::new();
+        };
+        let mut vram = legaia_tim::Vram::new();
+        pack.upload_to_vram(&mut vram, false);
+        vram.as_bytes().to_vec()
+    }
+
     /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
     /// installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
     /// download / debug round-trip.

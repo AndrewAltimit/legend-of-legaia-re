@@ -121,17 +121,24 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
+/* Per-vertex flat/gouraud colour for the field-character hybrid render:
+ * rgb in 0..1 (normalised from u8), a = 1.0 textured / 0.0 untextured.
+ * Only consulted when u_use_flat_colors != 0; defaults to (1,1,1,1) when the
+ * attribute isn't bound, so scene / world-map draws are unaffected. */
+in vec4 a_flat_rgba;
 
 out vec3 v_world;
 out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
+out vec4 v_flat_rgba;
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
   v_world = world_pos.xyz;
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
+  v_flat_rgba = a_flat_rgba;
   /* Mirror the per-vertex Z_far the overlay leaves compute. The retail
    * pipeline pulls Z from the GTE's screen-space pipeline after rtpt;
    * here we approximate using XZ-plane distance to the camera origin
@@ -174,6 +181,11 @@ uniform int u_no_discard;
 /* When non-zero, blend the per-vertex distance-cue fog LUT into the
  * diffuse term. Mirrors the overlay leaves' dpcs/dpct post-process. */
 uniform int u_fog_enable;
+/* When non-zero, the field-character hybrid path is active: vertices whose
+ * a_flat_rgba.a < 0.5 are untextured (flat/gouraud) prims and take their
+ * colour from v_flat_rgba.rgb instead of sampling VRAM. Default 0 → all other
+ * draws (scene, world map, monsters, battle/baka characters) are unchanged. */
+uniform int u_use_flat_colors;
 /* Per-kingdom baseline fog tint (BGR555 -> RGB linear in 0..1). Used as
  * the fog color when u_fog_lut hasn't been bound to a captured LUT yet
  * so the LUT-less path still produces a visually-meaningful gradient. */
@@ -183,6 +195,7 @@ in vec3 v_world;
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
+in vec4 v_flat_rgba;
 
 out vec4 o_color;
 
@@ -213,6 +226,19 @@ void main() {
   uint tpage_x = (tsb & 15u) * 64u;
   uint tpage_y = ((tsb >> 4u) & 1u) * 256u;
   uint depth   = (tsb >> 7u) & 3u;
+
+  /* Field-character hybrid path: an untextured (flat/gouraud) prim carries no
+   * UVs, so it would sample empty VRAM and discard. Take its TMD vertex colour
+   * instead, shade it, and return. Gated by u_use_flat_colors so no other draw
+   * is affected. */
+  if (u_use_flat_colors != 0 && v_flat_rgba.a < 0.5) {
+    vec3 dxf = dFdx(v_world);
+    vec3 dyf = dFdy(v_world);
+    vec3 nf = normalize(cross(dxf, dyf)) * u_normal_sign;
+    float lf = max(dot(nf, normalize(-u_light)), 0.0);
+    o_color = vec4(v_flat_rgba.rgb * (0.45 + 0.55 * lf), 1.0);
+    return;
+  }
 
   vec4 color;
   if (depth == 0u) {

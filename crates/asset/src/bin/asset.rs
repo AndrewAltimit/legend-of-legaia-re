@@ -397,6 +397,21 @@ enum Cmd {
         #[arg(long)]
         out_tim: Option<PathBuf>,
     },
+    /// Decode the field-character texture pack at PROT 0874 **section 2**
+    /// (the third LZS descriptor of `player.lzs`). Lists the eight TIM
+    /// entries with their VRAM image / CLUT rects. Entries 1/2/3 are the
+    /// Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478).
+    /// With `--out-tim <PATH>` + `--entry <N>`, writes that entry's raw TIM.
+    FieldCharTex {
+        /// PROT entry 874 bytes (`extracted/PROT/0874_befect_data.BIN`).
+        input: PathBuf,
+        /// Entry 0..=7 to write to `--out-tim` (only with `--out-tim`).
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Write the raw TIM bytes of `--entry` to this path.
+        #[arg(long)]
+        out_tim: Option<PathBuf>,
+    },
     /// Find every player-character animation bundle inside one PROT entry.
     /// Decodes the entry as a `parse_player_lzs`-shaped container, walks each
     /// type-0x05 ("MOVE") section, LZS-decompresses it, and reports
@@ -800,6 +815,11 @@ fn main() -> Result<()> {
             atlas,
             out_tim,
         } => battle_char_pack_one(&input, slot, out_tmd.as_deref(), atlas, out_tim.as_deref()),
+        Cmd::FieldCharTex {
+            input,
+            entry,
+            out_tim,
+        } => field_char_tex_one(&input, entry, out_tim.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -3683,6 +3703,67 @@ fn character_pack_one(
         for s in pack.slots() {
             print_slot(s);
         }
+    }
+    Ok(())
+}
+
+fn field_char_tex_one(input: &Path, entry: Option<usize>, out_tim: Option<&Path>) -> Result<()> {
+    use legaia_asset::field_char_textures;
+    let bytes = std::fs::read(input)
+        .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
+    let pack = field_char_textures::parse(&bytes)?;
+
+    println!(
+        "PROT {} (player.lzs §2): {} field-texture TIM entries",
+        field_char_textures::PROT_ENTRY_INDEX,
+        pack.textures.len()
+    );
+    let role = |i: usize| match i {
+        1 => "Vahn atlas page (CLUT cols 0..63)",
+        2 => "Noa atlas page (CLUT cols 64..127)",
+        3 => "Gala atlas page (CLUT cols 128..191)",
+        6 | 7 => "atlas extension (lower)",
+        _ => "shared / auxiliary page",
+    };
+    for t in &pack.textures {
+        let img = &t.tim.image;
+        let clut = t.tim.clut.as_ref();
+        let (cx, cy, cn) = clut.map_or((0, 0, 0), |c| (c.fb_x, c.fb_y, c.entries.len()));
+        println!(
+            "  entry {} img=({:>3},{:>3}) {:>3}w x {:>3}h  clut=({:>3},{:>3}) {:>3}col  {}",
+            t.index,
+            img.fb_x,
+            img.fb_y,
+            img.fb_w,
+            img.h,
+            cx,
+            cy,
+            cn,
+            role(t.index),
+        );
+    }
+
+    if let Some(idx) = entry {
+        let t = pack
+            .textures
+            .get(idx)
+            .ok_or_else(|| anyhow::anyhow!("entry {idx} out of range (0..=7)"))?;
+        if let Some(out_path) = out_tim {
+            // Re-extract the raw TIM bytes by re-walking the pack (the parsed
+            // `Tim` is lossy on exact block padding; the raw slice is exact).
+            let container =
+                legaia_asset::parse_player_lzs(&bytes, field_char_textures::CONTAINER_DESCRIPTORS)?;
+            let section = &container.descriptors[field_char_textures::CONTAINER_SECTION];
+            let decoded = legaia_asset::decode(&bytes, section, legaia_asset::DecodeMode::Lzs)?;
+            let bodies = legaia_asset::pack::extract_pack(&decoded)?;
+            std::fs::write(out_path, bodies[idx])?;
+            println!("  wrote entry {idx} TIM -> {}", out_path.display());
+        } else {
+            anyhow::bail!("--entry requires --out-tim <PATH>");
+        }
+        let _ = t;
+    } else if out_tim.is_some() {
+        anyhow::bail!("--out-tim requires --entry <N>");
     }
     Ok(())
 }

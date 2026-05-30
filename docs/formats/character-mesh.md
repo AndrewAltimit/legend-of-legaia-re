@@ -104,15 +104,85 @@ character's equipment toggle byte, it returns the patched TMD buffer.
 
 ## Textures (field form)
 
-The field-form character TMDs reference texture pages and CLUTs the engine
-uploads from **PROT 0876** (`player_data`), the streaming-format file with a
-VAB + a 256×256 TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM
-`fb=(768, 0)` with CLUT at `(0, 500)`; both blocks are pinned in
-[`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field_shared_blocks) so
-they survive every field-scene transition without being re-uploaded. PROT 0874
-itself carries **no character textures** — its remaining sections are the
-effect 3D models (etmd.dat) and effect-texture TIMs (etim.dat), unrelated to
-the player mesh.
+The field-form character textures live in **PROT 0874 section 2** — the third
+LZS descriptor of the `player.lzs` container (the "etim.dat" texture section),
+parser [`legaia_asset::field_char_textures`](../../crates/asset/src/field_char_textures.rs).
+They are **not** in PROT 0876 (`player_data` is VAB + an empty TIM_LIST + SEQ,
+and carries neither the atlas nor the CLUTs, raw or LZS).
+
+`FUN_8001E890` (the field player loader) loads `player.lzs` (disc index `0x36c`,
+the same 3-descriptor container the extractor labels PROT 0874) and LZS-decodes
+all three sections (`piVar2[2..7]`): §0 → the 5-TMD mesh pack
+([§ On-disc layout](#on-disc-layout)), §1 → effect / `vdf` models, and **§2 → a
+[`pack`](pack.md) of eight asset chunks, each uploaded to VRAM via
+`FUN_800198e0`.** The eight entries (byte-exact against a live field-scene VRAM
+dump):
+
+| entry | image `(x, y, w_words, h)` | CLUT `(x, y, colours)` | role |
+|---:|---|---|---|
+| 0 | `(448, 0, 64, 256)` | `(0, 473, 256)` | shared 256-colour page |
+| 1 | `(832, 256, 20, 128)` | `(0, 478, 64)` | **Vahn** atlas + palettes cols 0..63 |
+| 2 | `(852, 256, 20, 128)` | `(64, 478, 64)` | **Noa** atlas + palettes cols 64..127 |
+| 3 | `(872, 256, 20, 128)` | `(128, 478, 64)` | **Gala** atlas + palettes cols 128..191 |
+| 4 | `(320, 256, 64, 256)` | `(0, 475, 256)` | shared 256-colour page |
+| 5 | `(384, 256, 64, 256)` | `(0, 475, 256)` | shared 256-colour page |
+| 6 | `(880, 384, 16, 64)` | `(192, 478, 32)` | atlas extension (lower) |
+| 7 | `(880, 448, 16, 64)` | `(224, 478, 32)` | atlas extension (lower) |
+
+Entries 1/2/3 tile horizontally (`832 + 20 + 20 = 872`) to fill the 4bpp
+texpage `(832, 256)` (`tsb 0x3D`) that every field-form character primitive
+samples; their CLUTs occupy VRAM **row 478**, columns 0..191 (Vahn 0..63 / Noa
+64..127 / Gala 128..191) — exactly the per-primitive CBA columns the meshes
+carry (Vahn 0/16/32/48, Noa 64/80, Gala 128/144). The textures are
+character-intrinsic and resident: byte-identical across every field scene, kept
+across transitions by the [`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field_shared_blocks)
+residency, not re-uploaded per scene.
+
+### CLUT upload semantic (`FUN_800198e0`)
+
+Each entry is a standard PSX TIM (`magic 0x10`, `flags & 8` = has CLUT, 4bpp).
+The image block is uploaded verbatim at its declared rect, but the CLUT block is
+written as a **flat horizontal strip** — `LoadImage(rect = { x = clut_x, y =
+clut_y, w = clut_w * clut_h, h = 1 })`, **not** the declared `clut_w × clut_h`
+rectangle. So a CLUT header of `(0, 478, 16, 4)` lands as 64 colours at row 478
+columns 0..63 (four 16-colour palettes side by side), which is why a single
+character occupies several CBA *columns* of one row. STP (`| 0x8000` on non-zero
+colours) is applied only when `_DAT_8007b998 != 0`; the field upload runs with
+that flag **0**, so field CLUTs are bit-15-clear (the row-479 NPC CLUTs are
+STP-set by a separate upload — see [`npc-palette.md`](npc-palette.md)).
+
+Verified byte-exact: `legaia_asset::field_char_textures::parse` +
+`upload_to_vram(stp = false)` reproduces the live field VRAM at every uploaded
+rect (disc-gated `field_char_textures_real`, FNV-pinned). CLI:
+`asset field-char-tex extracted/PROT/0874_befect_data.BIN`.
+
+### Hybrid render (textured + untextured prims)
+
+A field-form character mesh is **not** fully textured. Only ~⅓ of its
+primitives are textured (`FT*`/`GT*` — the face, eyes, skin, and parts of the
+clothing, sampling the atlas above); the rest are **untextured** flat / gouraud
+prims (`F*`/`G*` — hair, vest, boots) that carry **per-vertex RGB in the TMD**,
+not UVs. A texture-only renderer drops those (their `(cba, tsb)` is `(0, 0)`, so
+they sample empty VRAM → transparent), leaving holes where the body should be.
+
+The untextured-prim colour block sits at the **start of the prim**, immediately
+before the vertex indices (the same slot a textured prim's texture block
+occupies). Its length is the descriptor's `vertex_offset`
+([`tmd.md`](tmd.md) / [`legaia_tmd::descriptor`](../../crates/tmd/src/descriptor.rs)):
+
+- **Flat** (`F3`/`F4`): one RGB (`[r, g, b]` + a code byte) shared by every corner.
+- **Gouraud** (`G3`/`G4`): one RGB per corner at a 4-byte stride
+  (`colour[v] = bytes[v*4 .. v*4+3]`).
+
+`legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid` returns the per-vertex
+[`VertexShading`] (flat/gouraud RGB + a textured flag) parallel to the mesh, so a
+renderer can sample VRAM for textured verts and use the stored colour for
+untextured ones. The web viewer's [`/characters.html`](../../site/_content/characters.html)
+Field form does exactly this (a `u_use_flat_colors`-gated branch in the shared
+`TmdRenderer` fragment shader); a software-rasterizer replica of that path
+renders all three party members in their real colours (blue-haired Vahn, auburn
+green-eyed Noa, orange-haired Gala). Field TMDs are model-space, so the pieces
+assemble without an ANM rest pose.
 
 ## Battle form — PROT 1204
 

@@ -160,7 +160,7 @@ table.arts-list .cmd-tag {
         <div class="char-section-label">Form</div>
         <div class="char-equip-toggle" id="char-form-toggle"></div>
         <div class="char-info-note" id="char-form-note">
-          Three forms, all from your own disc. <strong>Field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon. <strong>Battle form</strong> and <strong>Baka Fighter</strong> are the <em>same</em> higher-fidelity party meshes (PROT 1204 <code>other5</code>, installed into <code>DAT_8007C018[0..=2]</code> for every turn-based battle). A real turn-based battle relocates the mesh into a packed VRAM band (rows 481..483) and recolours it with a <em>separate per-battle palette</em> — that palette is embedded (LZS-compressed) in the character's player record and decoded by <code>FUN_80052FA0</code>; the <strong>Battle form</strong> here decodes all three party palettes straight from your disc (Vahn PROT 0861 byte-exact, Noa PROT 0864, Gala PROT 0865) and renders their real colours — blue-haired Vahn, pink-haired Noa, brown-haired Gala — while the <strong>Baka Fighter</strong> form shows the pack's <em>bundled (authoring) palette</em>. Both route through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses.
+          Three forms, all from your own disc. <strong>Field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon, textured from its atlas in <strong>PROT 0874 §2</strong> (texpage 832,256 · CLUTs row 478). <strong>Battle form</strong> and <strong>Baka Fighter</strong> are the <em>same</em> higher-fidelity party meshes (PROT 1204 <code>other5</code>, installed into <code>DAT_8007C018[0..=2]</code> for every turn-based battle). A real turn-based battle relocates the mesh into a packed VRAM band (rows 481..483) and recolours it with a <em>separate per-battle palette</em> — that palette is embedded (LZS-compressed) in the character's player record and decoded by <code>FUN_80052FA0</code>; the <strong>Battle form</strong> here decodes all three party palettes straight from your disc (Vahn PROT 0861 byte-exact, Noa PROT 0864, Gala PROT 0865) and renders their real colours — blue-haired Vahn, pink-haired Noa, brown-haired Gala — while the <strong>Baka Fighter</strong> form shows the pack's <em>bundled (authoring) palette</em>. Both route through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses.
         </div>
 
         <div class="char-section-label">Equipment swap</div>
@@ -254,16 +254,16 @@ table.arts-list .cmd-tag {
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
 
-  <h2>What's next</h2>
-  <p>Three open threads, in priority order of what changes the picture above:</p>
+  <h2>What's wired</h2>
+  <p>The status of each rendering input behind the viewer above:</p>
   <ul>
-    <li><strong>Field-form texture atlas</strong>. Lives in <code>player_data</code> (PROT 0876, a streaming-format file pinned resident alongside the mesh pack). The streaming <code>TIM_LIST</code> chunk uses a non-canonical head <code>(count=0)</code>; the canonical pack-walker can't unpack it yet. Without it, the field form renders flat-shaded (geometry assembles correctly via the per-scene ANM; only the textures are missing).</li>
+    <li><strong>Field-form texture atlas</strong>. <em>Wired (textured).</em> The atlas is <strong>not</strong> in <code>player_data</code> (PROT 0876 is a VAB + an empty <code>TIM_LIST</code> + a SEQ trailer); it lives in <strong>PROT 0874 section 2</strong>, the third LZS section of the <code>player.lzs</code> container. <code>FUN_8001E890</code> loads that container (disc index <code>0x36c</code>) and uploads §2 to VRAM via <code>FUN_800198e0</code>: three atlas pages at texpage <code>(832, 256)</code> (Vahn / Noa / Gala, tiling cols 832..892) with per-character CLUTs on <strong>row 478</strong> (cols 0..63 / 64..127 / 128..191). The CLUT goes up as a <em>flat horizontal strip</em> (<code>w·h</code> colours at one row), not the declared <code>w×h</code> rectangle — which is exactly why each character samples several CBA <em>columns</em> of one row. Byte-exact against a live field VRAM dump; the Field form above renders against this VRAM through the same paletted pipeline the Battle form uses. The field mesh is a <strong>hybrid</strong>: only about a third of its prims are textured (the face / eyes / skin), and the rest — hair, vest, boots — are untextured flat / gouraud prims that carry per-vertex RGB in the TMD (a colour block before the vertex indices: one RGB for flat prims, one per corner for gouraud). The shader uses those colours for the untextured body parts (a <code>u_use_flat_colors</code>-gated branch) instead of sampling VRAM, so the whole figure renders in its real colours — blue-haired Vahn, auburn green-eyed Noa, orange-haired Gala — not just a textured face on an empty body.</li>
     <li><strong>Battle-form rendering</strong>. <em>Wired (geometry + textures + assembly + Vahn's true palette).</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does, and the Battle form overlays Vahn's true per-battle palette (decoded from <code>edstati3</code> PROT 0861) onto the rows his mesh samples — see <a href="#battle-palette">the battle-palette section</a>. The party mesh is assembled exactly as the retail engine does it (each object's local origin placed at its joint via the ANM per-bone <code>(T, R)</code>; see the Animation panel and note below). Orbit / zoom to inspect.</li>
     <li><strong>All three party palettes are wired</strong>. Vahn (PROT 0861, byte-exact), Noa (PROT 0864, ~98%) and Gala (PROT 0865, 100%) are decoded from your disc. The player files are resolved by <code>char + 0x360</code> → <code>FUN_8003e8a8</code> reading <code>toc[idx+2]</code> as a sector offset into <code>PROT.DAT</code> (the retail ISO9660 open <code>FUN_800608f0</code> is a <code>trap</code> stub on this build). Terra (PROT 0866) would follow the same path if a fourth battle slot ever needed it.</li>
     <li><strong>Animations</strong>. <em>Wired.</em> Live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>. The disc source is pinned: per-scene bundles for the field rig, and PROT 1203 (<code>other5</code>) for the battle rig, whose 30 records are organised in per-character banks (15-bone Vahn / 16-bone Noa / 15-bone Gala). The Animation panel steps records and plays frames; each frame poses through the exact retail per-bone pipeline (<code>R·v + T</code>, <code>FUN_8001B964</code> / <code>FUN_8001BE80</code>), so the rig stays assembled across the whole clip. Frame 0 of each bank's idle record is the combat-stance rest pose.</li>
   </ul>
   <div class="char-info-note">
-    <strong>Note on assembly.</strong> Each character is a set of object-local TMD pieces (head, torso, limbs), <em>not</em> a single pre-assembled mesh. The retail engine places each piece by rotating its object-local vertices about their own origin and translating to the joint position — <code>v_world = R<sub>bone</sub>·v + T<sub>bone</sub></code>, a flat per-object transform with no skeleton hierarchy (<code>FUN_8001B964</code> loads the actor matrix, <code>FUN_8001BE80</code> decodes the bone <code>(T, R)</code> and pushes <code>T</code> through the GTE's <code>MVMVA</code>, then <code>FUN_8002735C</code> draws the piece). The <code>(T, R)</code> values come from the ANM stream; frame 0 of the idle clip is the rest pose. This viewer applies that exact pipeline, so the pieces connect at their joints the way they do in-game. The remaining field-form caveat is texture-only: until the <code>player_data</code> atlas unpacks, the low-poly field rig renders flat-shaded.
+    <strong>Note on assembly.</strong> Each character is a set of object-local TMD pieces (head, torso, limbs), <em>not</em> a single pre-assembled mesh. The retail engine places each piece by rotating its object-local vertices about their own origin and translating to the joint position — <code>v_world = R<sub>bone</sub>·v + T<sub>bone</sub></code>, a flat per-object transform with no skeleton hierarchy (<code>FUN_8001B964</code> loads the actor matrix, <code>FUN_8001BE80</code> decodes the bone <code>(T, R)</code> and pushes <code>T</code> through the GTE's <code>MVMVA</code>, then <code>FUN_8002735C</code> draws the piece). The <code>(T, R)</code> values come from the ANM stream; frame 0 of the idle clip is the rest pose. This viewer applies that exact pipeline, so the pieces connect at their joints the way they do in-game. Both forms are textured: the field rig samples its atlas from PROT 0874 §2, the battle rig from PROT 1204.
   </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -318,7 +318,7 @@ table.arts-list .cmd-tag {
   // Initialised to -1 ("never picked"); on form switch we fall back to the
   // form's default if the cached index is invalid or still -1.
   let _bundleIdxByForm = { field: -1, battle: -1, baka: -1 };
-  let meshView = null;   // CharacterMeshView (field) or BattleMeshView (battle/baka)
+  let meshView = null;   // BattleMeshView (TmdRenderer) for all three forms
   let _loadedBattleVramForm = null; // which palette VRAM is in the BattleMeshView
   let artsData = null;   // arts.json contents, lazily fetched
   let curArtsKind = 'regular';
@@ -886,28 +886,54 @@ table.arts-list .cmd-tag {
       }
       return;
     }
-    // Field form (the original flat-shaded view).
+    // Field form — the low-poly PROT 0874 §0 meshes, now rendered TEXTURED
+    // through the same TmdRenderer (paletted 1024×512 VRAM) the battle form
+    // uses. The textures come from PROT 0874 §2 (the third LZS section of the
+    // player.lzs container): three atlas pages at texpage (832,256) with
+    // per-character CLUTs on row 478, uploaded via the retail FUN_800198e0
+    // flat-strip-CLUT semantic (legaia_asset::field_char_textures). The mesh's
+    // own per-primitive UVs + CBA/TSB index into that VRAM.
     const equip = curEquip;
     const positions = viewer.character_mesh_positions(slot, equip);
-    const normals = viewer.character_mesh_normals(slot, equip);
-    const indices = viewer.character_mesh_indices(slot, equip);
-    const bounds = viewer.character_mesh_bounds(slot, equip);
+    const uvsI32   = viewer.character_mesh_uvs(slot, equip);
+    const cbaTsb   = viewer.character_mesh_cba_tsb(slot, equip);
+    const indices  = viewer.character_mesh_indices(slot, equip);
+    const bounds   = viewer.character_mesh_bounds(slot, equip);
     const objectIds = viewer.character_mesh_object_ids(slot, equip);
+    // Per-vertex flat/gouraud colours + textured flag (4 bytes/vertex). The
+    // field mesh is a hybrid: textured prims sample the §2 atlas, untextured
+    // body prims use these colours (the pure textured path would drop them).
+    const flatRgba = viewer.character_mesh_flat_colors(slot, equip);
     if (!positions.length || !indices.length) {
       statsEl.innerHTML = '<span style="color:var(--text-dim)">Mesh failed to parse. Is this PROT 0874 §0?</span>';
       return;
     }
     try {
-      if (!meshView || !(meshView instanceof CharacterMeshView)) {
+      if (!meshView || !(meshView instanceof BattleMeshView)) {
         if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
-        meshView = new CharacterMeshView(canvasEl);
+        meshView = new BattleMeshView(canvasEl);
+        _loadedBattleVramForm = null;
       }
+      // Upload the field texture VRAM once per entry into the field form
+      // (`_loadedBattleVramForm` keys the resident palette VRAM; the 'field'
+      // key re-uploads when toggling in from battle/baka, and switching equip
+      // keeps the same atlas so it doesn't re-upload).
+      if (_loadedBattleVramForm !== curForm) {
+        const vramBytes = viewer.field_char_vram_bytes();
+        if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
+        _loadedBattleVramForm = curForm;
+      }
+      // UV binding returns i32 (texel coords); TmdRenderer expects u8 0..255.
+      const uvs8 = new Uint8Array(uvsI32.length);
+      for (let i = 0; i < uvsI32.length; i++) uvs8[i] = uvsI32[i] & 0xFF;
       meshView.setMesh(
         Float32Array.from(positions),
-        Float32Array.from(normals),
+        uvs8,
+        Uint16Array.from(cbaTsb),
         Uint32Array.from(indices),
         bounds,
         objectIds && objectIds.length ? Uint32Array.from(objectIds) : null,
+        flatRgba && flatRgba.length ? Uint8Array.from(flatRgba) : null,
       );
       // Hook RAF playback -> frame slider readout, no per-frame DOM cost when
       // the slider isn't visible.
@@ -923,7 +949,7 @@ table.arts-list .cmd-tag {
       statsEl.innerHTML =
         `<b>${tri}</b> triangles · <b>${vert}</b> vertices · ${escapeHtml(equipLabel)}`;
       funEl.textContent =
-        `nobj ${pack.slots[slot].disc_nobj} on disc · engine caps active-party slots at 10 visible groups`;
+        `nobj ${pack.slots[slot].disc_nobj} on disc · textures from PROT 0874 §2 (atlas @texpage 832,256 · CLUTs row 478)`;
       // If the user already picked a record, re-apply it to the freshly
       // loaded mesh (slot or equip switch shouldn't drop the animation).
       maybeLoadCurrentAnim();
@@ -933,9 +959,9 @@ table.arts-list .cmd-tag {
   }
 
   // Pull the (bundle, record) the scrubber currently points at and push it
-  // into the active mesh view. Works for both CharacterMeshView (field form)
-  // and BattleMeshView (battle form) — they share an animator interface
-  // (setAnimation / setFrame / setPlaying / _poseAt). No-op when:
+  // into the active mesh view (BattleMeshView / TmdRenderer drives all three
+  // forms via its animator interface: setAnimation / setFrame / setPlaying /
+  // _poseAt). No-op when:
   //   - viewer isn't ready / disc isn't loaded
   //   - selected record has bone_count == 0
   function maybeLoadCurrentAnim() {
@@ -1098,370 +1124,11 @@ table.arts-list .cmd-tag {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
-  // ---- Minimal WebGL2 mesh viewer ----------------------------------------
-  // Flat-shaded for now (no PROT 0876 atlas yet); a single key light + a
-  // hemispheric ambient so the shape reads on a dark background. The same
-  // orbit / scroll / drag controls the monsters page uses.
-
-  const MESH_VS = `#version 300 es
-  in vec3 a_pos;
-  in vec3 a_nrm;
-  uniform mat4 u_mvp;
-  uniform mat3 u_nrm;
-  out vec3 v_n;
-  void main() {
-    v_n = u_nrm * a_nrm;
-    gl_Position = u_mvp * vec4(a_pos, 1.0);
-  }`;
-
-  const MESH_FS = `#version 300 es
-  precision highp float;
-  in vec3 v_n;
-  out vec4 o_col;
-  void main() {
-    float ln = length(v_n);
-    vec3 N = ln > 1e-4 ? v_n / ln : vec3(0.0, 0.0, 1.0);
-    vec3 L = normalize(vec3(0.4, 0.65, 0.8));
-    float key = abs(dot(N, L));
-    float amb = 0.42 + 0.18 * N.y;
-    vec3 base = vec3(0.66, 0.70, 0.78);
-    vec3 col = base * (amb + key * 0.78);
-    o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
-  }`;
-
-  class CharacterMeshView {
-    constructor(canvas) {
-      this.canvas = canvas;
-      const gl = canvas.getContext('webgl2', { antialias: true });
-      if (!gl) throw new Error('WebGL2 unavailable');
-      this.gl = gl;
-      this.prog = compileProgram(gl, MESH_VS, MESH_FS);
-      this.loc = {
-        pos: gl.getAttribLocation(this.prog, 'a_pos'),
-        nrm: gl.getAttribLocation(this.prog, 'a_nrm'),
-        mvp: gl.getUniformLocation(this.prog, 'u_mvp'),
-        nmat: gl.getUniformLocation(this.prog, 'u_nrm'),
-      };
-      this.vao = gl.createVertexArray();
-      this.posBuf = gl.createBuffer();
-      this.nrmBuf = gl.createBuffer();
-      this.idxBuf = gl.createBuffer();
-      this.indexCount = 0;
-      this.center = [0, 0, 0];
-      this.radius = 1;
-      // Animation state - set by setAnimation(meta); when null, the static
-      // mesh is drawn untouched. Holds objectIds + scratch buffers + the
-      // per-part centroids (player TMDs ship in model-space, so each bone's
-      // anatomical pivot is approximated as the mean of its vertices).
-      this.anim = null;
-      this._basePos = null;     // pristine Float32Array(vertices*3)
-      this._baseNrm = null;     // pristine Float32Array(vertices*3)
-      this._objIds = null;      // Uint32Array per-vertex object index
-      this._frameOverride = -1; // -1 = real-time playback; >=0 = pinned frame
-      this.playing = false;
-      this._startMs = 0;
-      // PSX TMDs use Y-down + Z-forward; flipping pitch base lines the
-      // model upright with the camera's expected up.
-      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
-      gl.enable(gl.DEPTH_TEST);
-      gl.disable(gl.CULL_FACE);
-      gl.clearColor(0, 0, 0, 0);
-      this._attachControls();
-      this._loop = this._loop.bind(this);
-      this._raf = requestAnimationFrame(this._loop);
-    }
-
-    setMesh(positions, normals, indices, bounds, objectIds) {
-      const gl = this.gl;
-      gl.bindVertexArray(this.vao);
-
-      // Cache the pristine base geometry so we can re-pose without re-fetching
-      // from WASM. Per-vertex object ids drive the per-bone transform lookup.
-      this._basePos = positions;
-      this._baseNrm = normals;
-      this._objIds = objectIds || null;
-      this.anim = null;
-      this.playing = false;
-      this._frameOverride = -1;
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
-      gl.enableVertexAttribArray(this.loc.pos);
-      gl.vertexAttribPointer(this.loc.pos, 3, gl.FLOAT, false, 0, 0);
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, normals, gl.DYNAMIC_DRAW);
-      gl.enableVertexAttribArray(this.loc.nrm);
-      gl.vertexAttribPointer(this.loc.nrm, 3, gl.FLOAT, false, 0, 0);
-
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-      this.indexCount = indices.length;
-
-      this.center = [bounds[0], bounds[1], bounds[2]];
-      this.radius = bounds[3] || 1;
-    }
-
-    // Install a per-bone animation (player-ANM record). `meta.partCount` is
-    // the number of bones the record drives (typically the TMD's nobj); the
-    // animator pads beyond the record's own bone_count with identity
-    // transforms. `meta.frameCount` × `meta.partCount` × 6 i32s in
-    // `meta.frames` carry `[tx, ty, tz, rx, ry, rz]` per part per frame,
-    // as ABSOLUTE per-frame transforms. Frame 0 is the rest-pose assembly:
-    // it places each TMD object at its joint position. This matches what
-    // the retail engine does (FUN_8001B964 → FUN_8001BE80) — the TMD
-    // vertices live in object-local space and the bone (T, R) places them
-    // in the actor's frame before the actor's own rotation/translation
-    // composes on top.
-    setAnimation(meta) {
-      if (!meta || !meta.frameCount || meta.frameCount < 2 ||
-          !this._objIds || !this._basePos) {
-        this.anim = null;
-        this.playing = false;
-        // Restore base geometry on the GPU.
-        const gl = this.gl;
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this._basePos);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this._baseNrm);
-        return;
-      }
-      this.anim = {
-        out: new Float32Array(this._basePos),
-        outN: new Float32Array(this._baseNrm),
-        partCount: meta.partCount,
-        frameCount: meta.frameCount,
-        frames: meta.frames,    // Int32Array(frameCount*partCount*6)
-      };
-      this._startMs = performance.now();
-      this._frameOverride = 0;
-      this._poseAt(0);          // settle to the rest pose
-      // Re-fit the camera on the assembled rest pose - the static AABB
-      // only covers the collapsed object-local geometry, which is much
-      // smaller than the assembled character. Exclude vertices belonging
-      // to objects past partCount (equipment templates collapsed to origin
-      // in _poseAt) so they don't pull the AABB toward (0,0,0).
-      let lo = [Infinity, Infinity, Infinity];
-      let hi = [-Infinity, -Infinity, -Infinity];
-      const o = this.anim.out, n = o.length / 3;
-      const ids = this._objIds;
-      const pc = this.anim.partCount;
-      for (let v = 0; v < n; v++) {
-        if (ids[v] >= pc) continue;
-        for (let k = 0; k < 3; k++) {
-          const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
-        }
-      }
-      if (lo[0] !== Infinity) {
-        this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
-        this.radius = Math.max(1, Math.hypot(
-          (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
-      }
-    }
-
-    setPlaying(on) {
-      if (!this.anim) { this.playing = false; return; }
-      this.playing = !!on;
-      if (this.playing) {
-        this._startMs = performance.now() - (this._frameOverride >= 0
-          ? (this._frameOverride / 14) * 1000
-          : 0);
-        this._frameOverride = -1;
-      }
-    }
-
-    setFrame(f) {
-      if (!this.anim) return;
-      this._frameOverride = f | 0;
-      this.playing = false;
-      this._poseAt(this._frameOverride);
-    }
-
-    _pose(f, p) {
-      const o = (f * this.anim.partCount + p) * 6, a = this.anim.frames;
-      return { t: [a[o], a[o+1], a[o+2]], r: [a[o+3], a[o+4], a[o+5]] };
-    }
-
-    // Apply per-bone absolute (T, R) to the object-local base mesh, placing
-    // each TMD object at its joint position with its bone-frame rotation.
-    // Mirrors the retail GTE path: vertex_world = R_bone · vertex_object_local
-    // + T_bone (the actor's own rotation/translation composes on top in the
-    // real engine; in this viewer the actor frame is identity). Re-uploads
-    // positions + normals.
-    _poseAt(frameIdx) {
-      const A = this.anim;
-      if (!A) return;
-      const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
-      const A2R = (Math.PI * 2) / 4096;
-      const base = this._basePos, baseN = this._baseNrm;
-      const out = A.out, outN = A.outN;
-      const ids = this._objIds, n = base.length / 3;
-      // Per-bone Euler -> sin/cos once
-      const sin = new Float32Array(A.partCount * 3);
-      const cos = new Float32Array(A.partCount * 3);
-      const tr = new Float32Array(A.partCount * 3);
-      for (let p = 0; p < A.partCount; p++) {
-        const pose = this._pose(ff, p);
-        for (let k = 0; k < 3; k++) {
-          const a = pose.r[k] * A2R;
-          sin[p*3+k] = Math.sin(a);
-          cos[p*3+k] = Math.cos(a);
-          tr[p*3+k] = pose.t[k];
-        }
-      }
-      for (let v = 0; v < n; v++) {
-        const o = ids[v];
-        if (o >= A.partCount) {
-          // Object isn't animated by this ANM record. For field-form
-          // active-party characters the TMD ships with equipment-template
-          // objects (groups 10/11) that the retail engine patches OVER
-          // visible groups 0/3/5 rather than drawing as separate parts —
-          // they'd float at the model-space origin if rendered raw, which
-          // is wrong. Collapse them to a degenerate point so they don't
-          // produce visible geometry.
-          out[v*3]   = 0; out[v*3+1] = 0; out[v*3+2] = 0;
-          outN[v*3]  = 0; outN[v*3+1] = 1; outN[v*3+2] = 0;
-          continue;
-        }
-        const sx = sin[o*3], cxx = cos[o*3];
-        const sy = sin[o*3+1], cyy = cos[o*3+1];
-        const sz = sin[o*3+2], czz = cos[o*3+2];
-        // Rotate the object-local vertex about its own origin, then add the
-        // bone's absolute world translation.
-        let x = base[v*3], y = base[v*3+1], z = base[v*3+2];
-        // Rz * Ry * Rx
-        let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
-        let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
-        nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
-        out[v*3]   = x + tr[o*3];
-        out[v*3+1] = y + tr[o*3+1];
-        out[v*3+2] = z + tr[o*3+2];
-        // Normals (no translation; same rotation)
-        let nx0 = baseN[v*3], ny0 = baseN[v*3+1], nz0 = baseN[v*3+2];
-        ny = ny0*cxx - nz0*sx; nz = ny0*sx + nz0*cxx; ny0 = ny; nz0 = nz;
-        nx = nx0*cyy + nz0*sy;  nz = -nx0*sy + nz0*cyy; nx0 = nx; nz0 = nz;
-        nx = nx0*czz - ny0*sz;  ny = nx0*sz + ny0*czz;  nx0 = nx; ny0 = ny;
-        outN[v*3] = nx0; outN[v*3+1] = ny0; outN[v*3+2] = nz0;
-      }
-      const gl = this.gl;
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, out);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, outN);
-    }
-
-    resetView() {
-      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
-      updateSpinLabel(true);
-    }
-
-    _attachControls() {
-      const c = this.canvas;
-      let dragging = false, lastX = 0, lastY = 0;
-      c.addEventListener('pointerdown', (e) => {
-        dragging = true; lastX = e.clientX; lastY = e.clientY;
-        this.cam.autoRotate = false;
-        updateSpinLabel(false);
-        c.setPointerCapture(e.pointerId);
-      });
-      c.addEventListener('pointerup', (e) => {
-        dragging = false;
-        c.releasePointerCapture(e.pointerId);
-      });
-      c.addEventListener('pointermove', (e) => {
-        if (!dragging) return;
-        this.cam.yaw   -= (e.clientX - lastX) * 0.008;
-        this.cam.pitch -= (e.clientY - lastY) * 0.008;
-        const lim = Math.PI / 2 - 0.05;
-        this.cam.pitch = Math.max(-lim, Math.min(lim, this.cam.pitch));
-        lastX = e.clientX; lastY = e.clientY;
-      });
-      c.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        this.cam.distance *= e.deltaY > 0 ? 1.1 : 0.9;
-        this.cam.distance = Math.max(1.4, Math.min(8, this.cam.distance));
-      }, { passive: false });
-      c.addEventListener('dblclick', () => this.resetView());
-    }
-
-    _loop(t) {
-      const gl = this.gl;
-      const dpr = window.devicePixelRatio || 1;
-      const w = (this.canvas.clientWidth || 640) * dpr;
-      const h = (this.canvas.clientHeight || 480) * dpr;
-      if (this.canvas.width !== w || this.canvas.height !== h) {
-        this.canvas.width = w; this.canvas.height = h;
-      }
-      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-      if (this.cam.autoRotate) this.cam.yaw += 0.006;
-
-      // Advance animation playback (~14 fps to match MonsterMeshView's idle
-      // cadence; the per-record `b` field is a generic frame count, no
-      // canonical FPS yet — 14 reads like a natural step).
-      if (this.anim && this.playing) {
-        const FPS = 14;
-        const t = (performance.now() - this._startMs) / 1000 * FPS;
-        const f = Math.floor(t) % this.anim.frameCount;
-        if (f !== this._lastPosedFrame) {
-          this._poseAt(f);
-          this._lastPosedFrame = f;
-          if (typeof this.onFrame === 'function') this.onFrame(f);
-        }
-      }
-
-      gl.useProgram(this.prog);
-      gl.bindVertexArray(this.vao);
-
-      const r = this.radius;
-      const cam = [
-        Math.cos(this.cam.pitch) * Math.cos(this.cam.yaw) * r * this.cam.distance,
-        Math.sin(this.cam.pitch) * r * this.cam.distance,
-        Math.cos(this.cam.pitch) * Math.sin(this.cam.yaw) * r * this.cam.distance,
-      ];
-      // PSX TMDs are Y-down; flip via a per-axis model scale so the character
-      // sits upright. (`scaleMat` is uniform-only, so inline the matrix.)
-      const m = new Float32Array([
-        1,  0, 0, 0,
-        0, -1, 0, 0,
-        0,  0, 1, 0,
-        0,  0, 0, 1,
-      ]);
-      // The model matrix `m` flips Y (PSX is Y-down), so the rendered geometry
-      // lives at -Y relative to `this.center` (computed from the raw, pre-flip
-      // vertex positions). Flip the look-at target's Y to match — otherwise the
-      // camera aims 2·centroidY away from the figure and it sits off-centre
-      // (too high) in frame.
-      const at = [this.center[0], -this.center[1], this.center[2]];
-      const v = lookAt(
-        [at[0] + cam[0], at[1] + cam[1], at[2] + cam[2]],
-        at, [0, 1, 0],
-      );
-      const aspect = this.canvas.width / this.canvas.height;
-      const p = perspective(Math.PI / 4, aspect, r * 0.05, r * 200);
-      const mv = mulMat4(v, m);
-      const mvp = mulMat4(p, mv);
-      gl.uniformMatrix4fv(this.loc.mvp, false, mvp);
-      const nmat = normalMat3(mv);
-      gl.uniformMatrix3fv(this.loc.nmat, false, nmat);
-
-      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
-
-      this._raf = requestAnimationFrame(this._loop);
-    }
-
-    dispose() {
-      if (this._raf) cancelAnimationFrame(this._raf);
-      this._raf = 0;
-    }
-  }
-
   // Battle-form viewer. Wraps the shared TmdRenderer (the same R16UI paletted
   // VRAM pipeline the world-overview viewer uses) so it can sample the seven
   // 256×256 4bpp character atlases shipped inside PROT 1204 at their
-  // disc-pinned VRAM coords. Mirrors CharacterMeshView's lifecycle + orbit
-  // controls but routes the actual draw through TmdRenderer.
+  // disc-pinned VRAM coords (and, for the field form, the PROT 0874 §2
+  // atlas). Orbit / scroll / drag controls route the draw through TmdRenderer.
   class BattleMeshView {
     constructor(canvas) {
       if (typeof window.TmdRenderer === 'undefined') {
@@ -1472,11 +1139,11 @@ table.arts-list .cmd-tag {
       this.indexCount = 0;
       this.center = [0, 0, 0];
       this.radius = 1;
-      // Same orbit defaults as CharacterMeshView so the spin / drag / reset
-      // controls feel identical between the two forms.
+      // Orbit defaults: the spin / drag / reset controls feel identical
+      // across all three forms.
       this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
-      // Animation state — same shape as CharacterMeshView so the page-side
-      // animator can drive both views via a uniform interface. The battle
+      // Animation state — the page-side animator drives every form through a
+      // uniform interface (setAnimation / setFrame / setPlaying). The battle
       // form pose composition is identical to field form (v_world =
       // R_bone · v_object_local + T_bone): the per-character battle TMDs
       // at PROT 1204 ship their vertices in bone-local space, just like
@@ -1501,11 +1168,14 @@ table.arts-list .cmd-tag {
       this.renderer.uploadVram(vramBytes);
     }
 
-    setMesh(positions, uvs8, cbaTsb, indices, bounds, objectIds) {
+    setMesh(positions, uvs8, cbaTsb, indices, bounds, objectIds, flatRgba) {
       // The mesh sampler returns raw TMD-space vertices (PSX Y-down). The
       // TmdRenderer's MVP build expects this convention already (it flips
       // internally via the projection); we just feed positions through.
-      this.renderer.uploadMesh(positions, uvs8, cbaTsb, indices);
+      // `flatRgba` (field form only) carries per-vertex flat/gouraud colours so
+      // the untextured body prims render in their real colours; omitting it
+      // (battle / baka forms) leaves the renderer in pure-textured mode.
+      this.renderer.uploadMesh(positions, uvs8, cbaTsb, indices, flatRgba || null);
       this.indexCount = indices.length;
       this.center = [bounds[0], bounds[1], bounds[2]];
       this.radius = bounds[3] || 1;
@@ -1676,7 +1346,7 @@ table.arts-list .cmd-tag {
         this.canvas.width = w; this.canvas.height = h;
       }
       if (this.cam.autoRotate) this.cam.yaw += 0.006;
-      // Advance animation playback (~14 fps, matching CharacterMeshView).
+      // Advance animation playback (~14 fps).
       if (this.anim && this.playing) {
         const FPS = 14;
         const t = (performance.now() - this._startMs) / 1000 * FPS;
@@ -1688,8 +1358,8 @@ table.arts-list .cmd-tag {
         }
       }
       // TmdRenderer.render takes (yaw, pitch, distance, panX, panY, center,
-      // radius). The orbit camera here keeps panX/Y at 0 to match the
-      // CharacterMeshView UX (drag rotates, doesn't pan).
+      // radius). The orbit camera here keeps panX/Y at 0 for the
+      // orbit UX (drag rotates, doesn't pan).
       this.renderer.render(
         this.cam.yaw,
         this.cam.pitch,

@@ -341,6 +341,131 @@ pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramM
     )
 }
 
+/// Per-vertex shading attributes for the **field-character hybrid render**.
+///
+/// Parallel (index-aligned) to the vertex arrays of
+/// [`tmd_to_vram_mesh_with_object_ids_lenient`]: one entry per emitted vertex.
+/// Field-form player meshes mix textured prims (the face / skin / clothing
+/// that sample the PROT 0874 §2 atlas) with **untextured** flat / gouraud prims
+/// (the bulk of the body) that carry per-vertex RGB in the TMD, not UVs. The
+/// textured renderer alone discards the untextured prims (their `(cba, tsb)` is
+/// `(0, 0)`, so they sample empty VRAM → transparent), leaving holes. This
+/// surfaces the untextured prims' colours so a hybrid shader can fill them.
+#[derive(Debug, Clone, Default)]
+pub struct VertexShading {
+    /// Per-vertex RGB (0..=255). Meaningful only where `textured[i] == 0`;
+    /// `[255, 255, 255]` for textured verts (unused by the shader there).
+    pub colors: Vec<[u8; 3]>,
+    /// Per-vertex flag: `1` if the prim is textured (sample VRAM), `0` if it
+    /// is untextured (use `colors[i]`).
+    pub textured: Vec<u8>,
+}
+
+/// Like [`tmd_to_vram_mesh_with_object_ids_lenient`] but also returns the
+/// per-vertex [`VertexShading`] (flat/gouraud RGB + a textured flag) the
+/// field-character hybrid renderer needs. The mesh + object-id arrays are
+/// produced by the exact same walk, so all four outputs are index-aligned.
+///
+/// Untextured-prim colour layout (standard PSX packet, mirrored in the TMD):
+/// the colour block precedes the vertex indices at the prim's start. A **flat**
+/// prim (`F3`/`F4`) carries one RGB shared by every corner; a **gouraud** prim
+/// (`G3`/`G4`) carries one RGB per corner at a 4-byte stride. The colour block
+/// ends exactly where the texture block would begin for a textured prim (the
+/// descriptor's `vertex_offset`).
+pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>, VertexShading) {
+    use crate::descriptor::Descriptor;
+
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut cba_tsb = Vec::new();
+    let mut indices = Vec::new();
+    let mut object_ids = Vec::new();
+    let mut colors = Vec::new();
+    let mut textured_flags = Vec::new();
+
+    for (o_idx, o) in tmd.objects.iter().enumerate() {
+        let object_vert_count = o.header.n_vert;
+        let groups = legaia_prims::iter_groups_lenient(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+
+        for g in &groups {
+            let desc = Descriptor::for_flags(g.header.flags);
+            let is_textured = desc.is_some_and(|d| d.packet_shape.is_textured());
+            let is_gouraud = desc.is_some_and(|d| d.packet_shape.is_gouraud());
+            // The colour block runs [prim_start .. vertex_offset). Gouraud
+            // prims store one 4-byte RGB(+code) per corner; flat prims store a
+            // single RGB shared by all corners.
+            let color_of = |prim: &legaia_prims::Prim, corner: usize| -> [u8; 3] {
+                if is_textured {
+                    return [255, 255, 255];
+                }
+                let off = prim.bytes_offset + if is_gouraud { corner * 4 } else { 0 };
+                if off + 3 <= buf.len() {
+                    [buf[off], buf[off + 1], buf[off + 2]]
+                } else {
+                    [128, 128, 128]
+                }
+            };
+
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                let ct = [prim.cba, prim.tsb];
+                let tex_flag = if is_textured { 1u8 } else { 0u8 };
+                let mut push_vert = |vidx: u16, uv_idx: usize, corner: usize| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = positions.len() as u32;
+                    positions.push([v.x as f32, v.y as f32, v.z as f32]);
+                    let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
+                    uvs.push([u8v, v8v]);
+                    cba_tsb.push(ct);
+                    object_ids.push(o_idx as u32);
+                    colors.push(color_of(prim, corner));
+                    textured_flags.push(tex_flag);
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(raw_idx[0], 0, 0);
+                        let i1 = push_vert(raw_idx[1], 1, 1);
+                        let i2 = push_vert(raw_idx[2], 2, 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(raw_idx[0], 0, 0);
+                        let i1 = push_vert(raw_idx[1], 1, 1);
+                        let i2 = push_vert(raw_idx[2], 2, 2);
+                        let i3 = push_vert(raw_idx[3], 3, 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let normals = compute_smooth_normals(&positions, &indices);
+    (
+        VramMesh {
+            positions,
+            uvs,
+            cba_tsb,
+            indices,
+            normals,
+        },
+        object_ids,
+        VertexShading {
+            colors,
+            textured: textured_flags,
+        },
+    )
+}
+
 /// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't
 /// have valid data when sampled - the caller's `keep_prim` closure decides
 /// per primitive whether the (CBA, TSB, UV) tuple has plausible VRAM data.

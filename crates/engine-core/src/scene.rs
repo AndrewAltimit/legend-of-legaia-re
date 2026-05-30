@@ -2252,16 +2252,23 @@ fn effect_model_library_loaded(world: &crate::world::World) -> bool {
 /// (`etmd.dat`, the global-TMD-pool head), 1 = `vdf.dat`, 2 = `etim.dat`.
 const BEFECT_ETIM_SECTION: usize = 2;
 
-/// Upload the battle effect textures (`etim.dat`, PROT 0874 section 2) into
-/// `vram`. These 4bpp TIMs (pages at `fb_x≥320`, CLUTs in rows 473..478) are
-/// the texel source for the 3D effect *models* (`etmd.dat`, section 0, the
-/// global-TMD-pool head) - the model primitives reference exactly these CLUT
-/// rows. Pinned pixel-exact against a live battle VRAM capture (Gimard's Tail
-/// Fire, a 3D flame mesh; see `docs/formats/effect.md`). Retail blits them at
-/// battle load via `FUN_800520F0` → `FUN_800198E0` (`LoadImage`); the engine
-/// keeps the field VRAM resident across the battle scene-mode overlay, so
-/// uploading at scene entry is equivalent and harmless to field rendering
-/// (the effect pages sit outside the field meshes' sampled region).
+/// Upload the player `player.lzs` texture section (PROT 0874 section 2) into
+/// `vram`. This 8-TIM pack carries **both** the 3D effect-model textures
+/// (`etim.dat`, the texel source for `etmd.dat` / section 0's global-TMD-pool
+/// head) **and the field-character texture atlas**: entries 1/2/3 are the
+/// Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with per-character CLUTs
+/// on row 478 (the field-form player meshes sample exactly these). Retail
+/// uploads the whole section at field-init via `FUN_8001E890 → FUN_800198E0`
+/// (`LoadImage`) and keeps it resident across the battle scene-mode overlay, so
+/// uploading at scene entry is equivalent. See
+/// [`docs/formats/character-mesh.md` § Textures (field form)] for the full
+/// entry table.
+///
+/// CLUT blocks are uploaded as **flat horizontal strips** (`FUN_800198e0`:
+/// `LoadImage(rect = { x, y, w*h, 1 })`), not as the declared `w x h`
+/// rectangle - see the inline note. (`legaia_asset::field_char_textures` is the
+/// standalone parser + verifier for the same section, byte-exact against a live
+/// field VRAM dump.)
 ///
 /// This makes the texels resident for effect-model rendering. (It does *not*
 /// feed the 2D `efect.dat` sprite-atlas billboards, which sample a separate
@@ -2304,7 +2311,21 @@ pub fn upload_effect_textures_into_vram(
     for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
         match legaia_tim::parse(&decoded[target.offset..]) {
             Ok(tim) => {
-                vram.upload_tim_partial(&tim, true, upload_clut);
+                // Image page: declared rect, verbatim.
+                vram.upload_tim_partial(&tim, true, false);
+                // CLUT: `FUN_800198e0` uploads the CLUT block as a FLAT
+                // horizontal strip - `LoadImage(rect = { x, y, w*h, 1 })` -
+                // not the declared `w x h` rectangle. This matters for §2's
+                // field-character TIMs (entries 1/2/3, CLUT `w=16 h=4`): a
+                // rect upload puts Vahn's four 16-colour palettes at rows
+                // 478..481 col 0, but the meshes sample them as columns
+                // 0/16/32/48 of row 478. The strip places them correctly.
+                // (Field upload runs with STP off, `_DAT_8007b998 == 0`.)
+                if upload_clut && let Some(clut) = tim.clut.as_ref() {
+                    let strip: Vec<u8> =
+                        clut.entries.iter().flat_map(|c| c.to_le_bytes()).collect();
+                    vram.write_clut_row(clut.fb_x, clut.fb_y, &strip);
+                }
                 uploaded += 1;
             }
             Err(err) => {
@@ -2416,6 +2437,18 @@ mod tests {
             vram.region_has_data(832, 256, 20, 64),
             "etim fire-sprite tile @fb(832,256) should be populated"
         );
+        // The field-character CLUTs land as flat strips on row 478: Vahn at
+        // cols 0..63, Noa 64..127, Gala 128..191. A rect upload (the prior
+        // bug) would only populate cols 0..15 of row 478, leaving Noa's and
+        // Gala's palette columns empty. Assert all three character palette
+        // bands are present at row 478.
+        for (col, who) in [(0usize, "Vahn"), (64, "Noa"), (128, "Gala")] {
+            assert!(
+                vram.region_has_data(col, 478, 16, 1),
+                "field-char CLUT strip for {who} @row 478 col {col} should be populated \
+                 (flat-strip CLUT upload)"
+            );
+        }
     }
 
     /// Disc-gated: the flame-atlas TIMs (PROT 870) decode and upload into a

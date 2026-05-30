@@ -70,6 +70,27 @@ The per-prim layout depends on the prim type. The renderer (`FUN_8002735C`) inde
 
 Each entry's first u32 has bytes `[?, ?, ?, type_bits]` where the low 2 bits of byte 3 select the OT packet shape (0/1/2/3 → different DrawPolyXX variants). Each entry's second u32 has the vertex-index offset (in u16 units) within the prim in its low byte.
 
+### Per-prim color / texture block
+
+The bytes from the prim's start up to the vertex-index offset hold either a
+**texture block** (`FT*`/`GT*` textured prims) or a **color block** (`F*`/`G*`
+untextured prims) — selected by the packet shape (byte-3 low 2 bits: `1` / `3`
+are textured, `0` / `2` are flat / gouraud). [`legaia_tmd::descriptor`](../../crates/tmd/src/descriptor.rs)
+resolves the shape and the `vertex_offset` per group.
+
+- **Textured** (`legaia_prims::extract_textures`): `[u0, v0, cba_lo, cba_hi, u1,
+  v1, tsb_lo, tsb_hi, u2, v2 (, u3, v3)]` — the block ends exactly at the
+  vertex-index offset.
+- **Untextured**: a per-vertex BGR colour block. **Flat** (`F3`/`F4`) stores one
+  RGB (`[r, g, b]` + a code byte) shared by all corners; **gouraud** (`G3`/`G4`)
+  stores one RGB per corner at a 4-byte stride (`colour[v] = bytes[v*4 .. v*4+3]`).
+
+Mis-reading an untextured colour block as a texture block yields bogus `(cba,
+tsb)` and samples a random VRAM page — the historic "flat green tint / transparent
+hole". `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid` surfaces both (textured
+UVs + untextured colours) for a hybrid render; see
+[`character-mesh.md` § Hybrid render](character-mesh.md#hybrid-render-textured--untextured-prims).
+
 ## Worked example
 
 Small TMD `0001.tmd` (5 prims, 168-byte section):

@@ -357,6 +357,19 @@ export class LegaiaViewer {
      */
     character_mesh_cba_tsb(slot: number, equip_byte: number): Uint32Array;
     /**
+     * Per-vertex flat/gouraud shading attribute for the field-character
+     * **hybrid** render, parallel to [`Self::character_mesh_positions`]: 4
+     * bytes per vertex `[r, g, b, textured_flag]`. The field-form player mesh
+     * mixes textured prims (face / skin / clothing that sample the PROT 0874
+     * §2 atlas — `textured_flag == 1`) with untextured flat / gouraud prims
+     * (the bulk of the body — `textured_flag == 0`) that carry per-vertex RGB
+     * in the TMD instead of UVs. The shader samples VRAM for textured verts
+     * and uses `[r, g, b]` for untextured verts, so the body parts the pure
+     * textured path would discard render in their real colours. Vertex order
+     * matches the other `character_mesh_*` getters (same TMD walk).
+     */
+    character_mesh_flat_colors(slot: number, equip_byte: number): Uint8Array;
+    /**
      * Triangle indices for the player character at pack slot `slot`,
      * `u32`, multiple of 3.
      */
@@ -488,6 +501,21 @@ export class LegaiaViewer {
      * dimensions, has-TMD flag. The UI uses this to populate a sidebar list / search.
      */
     entry_list_json(): string;
+    /**
+     * Build the 1 MB PSX VRAM with the **field-character textures** (PROT
+     * 0874 **section 2**) uploaded, so the Field-form meshes render textured.
+     *
+     * Section 2 of the `player.lzs` container is an 8-TIM pack; entries 1/2/3
+     * are the Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with their
+     * CLUTs on row 478 (cols 0..63 / 64..127 / 128..191). Each TIM is uploaded
+     * via the retail `FUN_800198e0` semantic — image at its declared rect, CLUT
+     * as a **flat horizontal strip** (`w*h` colours at one row), STP off — so
+     * the meshes' per-primitive CBA columns sample the right palettes. Byte-
+     * exact against a live field VRAM dump (see
+     * [`legaia_asset::field_char_textures`]). The Field form renders against
+     * this VRAM through the same paletted pipeline the Battle form uses.
+     */
+    field_char_vram_bytes(): Uint8Array;
     /**
      * Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
      * 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
@@ -1103,6 +1131,7 @@ export interface InitOutput {
     readonly legaiaviewer_catalog_len: (a: number) => number;
     readonly legaiaviewer_character_mesh_bounds: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_cba_tsb: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaviewer_character_mesh_flat_colors: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_indices: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_normals: (a: number, b: number, c: number) => [number, number];
     readonly legaiaviewer_character_mesh_object_ids: (a: number, b: number, c: number) => [number, number];
@@ -1129,6 +1158,7 @@ export interface InitOutput {
     readonly legaiaviewer_deep_catalog_len: (a: number) => number;
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
+    readonly legaiaviewer_field_char_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
     readonly legaiaviewer_init_pak_logo_rgba: (a: number, b: number) => [number, number];
     readonly legaiaviewer_init_pak_logos_json: (a: number) => [number, number];

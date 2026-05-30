@@ -60,14 +60,22 @@ class TmdRenderer {
     this.locFogOrigin   = gl.getUniformLocation(this.program, 'u_fog_origin');
     this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
     this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
+    this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
+    this.locFlatRgba = gl.getAttribLocation(this.program, 'a_flat_rgba');
+
+    /* Field-character hybrid mode: when set, draws bind the per-vertex
+     * a_flat_rgba colours and the FS uses them for untextured prims. Off for
+     * every other consumer (scene, world map, monsters, battle characters). */
+    this.useFlatColors = false;
 
     this.vao    = gl.createVertexArray();
     this.posBuf = gl.createBuffer();
     this.uvBuf  = gl.createBuffer();
     this.ctBuf  = gl.createBuffer();
+    this.flatBuf = gl.createBuffer();
     this.idxBuf = gl.createBuffer();
     this.tex    = gl.createTexture();
     this.fogTex = gl.createTexture();
@@ -380,7 +388,13 @@ class TmdRenderer {
     return m ? m.aabb : null;
   }
 
-  uploadMesh(positions, uvs, cbaTsb, indices) {
+  /* `flatRgba` (optional): Uint8Array, 4 bytes per vertex [r, g, b, flag],
+   * for the field-character hybrid render. When present, the field body's
+   * untextured prims (flag byte 0) draw with their TMD colour instead of
+   * sampling VRAM; textured verts carry flag byte 255. Omit it for every
+   * other mesh (the attribute falls back to a constant (1,1,1,1) and
+   * u_use_flat_colors stays 0, so behaviour is unchanged). */
+  uploadMesh(positions, uvs, cbaTsb, indices, flatRgba) {
     const gl = this.gl;
     gl.bindVertexArray(this.vao);
 
@@ -399,6 +413,18 @@ class TmdRenderer {
     gl.bufferData(gl.ARRAY_BUFFER, cbaTsb, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(this.locCbaTsb);
     gl.vertexAttribIPointer(this.locCbaTsb, 2, gl.UNSIGNED_SHORT, 0, 0);
+
+    /* Optional per-vertex flat colours (normalised u8 → 0..1). */
+    this.useFlatColors = !!(flatRgba && flatRgba.length && this.locFlatRgba >= 0);
+    if (this.useFlatColors) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.flatBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, flatRgba, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.locFlatRgba);
+      gl.vertexAttribPointer(this.locFlatRgba, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+    } else if (this.locFlatRgba >= 0) {
+      gl.disableVertexAttribArray(this.locFlatRgba);
+      gl.vertexAttrib4f(this.locFlatRgba, 1.0, 1.0, 1.0, 1.0);
+    }
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
@@ -443,6 +469,9 @@ class TmdRenderer {
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
     gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
+    /* Field-character hybrid: untextured prims use their vertex colour. Set
+     * explicitly every frame (the uniform persists on the shared program). */
+    gl.uniform1i(this.locUseFlatColors, this.useFlatColors ? 1 : 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
@@ -663,6 +692,7 @@ class TmdRenderer {
      * non-mirrored orbit view instead of collapsing to the ambient floor. */
     gl.uniform1f(this.locNormalSign, -1.0);
     gl.uniform1i(this.locNoDisc, 1);  /* assembled scene: paint silhouettes instead of discarding */
+    gl.uniform1i(this.locUseFlatColors, 0);  /* scenes never use the character flat-colour path */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
