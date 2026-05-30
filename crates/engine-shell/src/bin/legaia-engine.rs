@@ -6769,20 +6769,47 @@ impl PlayWindowApp {
         // single-line layout the retail field VM emits). The panel mirrors
         // `World::current_dialog`; the world owns dismissal.
         if let Some(panel) = self.active_dialog.as_ref() {
-            let page: String = panel
-                .page_bytes()
-                .iter()
-                .map(|&b| {
-                    if (0x20..=0x7E).contains(&b) {
-                        b as char
-                    } else {
-                        '?'
-                    }
-                })
-                .collect();
+            let to_ascii = |bytes: &[u8]| -> String {
+                bytes
+                    .iter()
+                    .map(|&b| {
+                        if (0x20..=0x7E).contains(&b) {
+                            b as char
+                        } else {
+                            '?'
+                        }
+                    })
+                    .collect()
+            };
+            let page = to_ascii(&panel.page_bytes());
             let layout = self.font.layout_ascii(&page);
             let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
             out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
+
+            // Multiple-choice menu: draw the decoded option labels under the
+            // prompt, one row each, with a `>` cursor on the highlighted option
+            // (the picker decoded from the inline interaction script).
+            if panel.menu_active()
+                && let Some(picker) = panel.picker()
+            {
+                // The proportional dialog font is a ~14px cell; one row per
+                // option below the prompt.
+                let line_h = 16i32;
+                let cursor = panel.picker_cursor();
+                for (i, opt) in picker.options.iter().enumerate() {
+                    let selected = i == cursor;
+                    let marker = if selected { "> " } else { "  " };
+                    let label = format!("{marker}{}", to_ascii(&opt.label));
+                    let row_layout = self.font.layout_ascii(&label);
+                    let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
+                    let color = if selected {
+                        [1.0, 1.0, 0.6, 1.0]
+                    } else {
+                        [0.8, 0.85, 1.0, 1.0]
+                    };
+                    out.extend(text_draws_for(&row_layout, row_pen, color));
+                }
+            }
         }
         out
     }
@@ -6911,6 +6938,25 @@ impl ApplicationHandler for PlayWindowApp {
                 {
                     self.session.host.world.open_name_entry(0);
                     return;
+                }
+                // Menu cursor: while the active dialog box is a multiple-choice
+                // menu (a picker decoded from the inline interaction script),
+                // Up/Down move the option cursor instead of driving movement.
+                if state == ElementState::Pressed
+                    && let Some(panel) = self.active_dialog.as_mut()
+                    && panel.menu_active()
+                {
+                    match code {
+                        KeyCode::ArrowUp => {
+                            panel.move_picker_cursor(-1);
+                            return;
+                        }
+                        KeyCode::ArrowDown => {
+                            panel.move_picker_cursor(1);
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {

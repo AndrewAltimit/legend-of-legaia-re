@@ -250,6 +250,16 @@ pub struct OwnedDialogPanel {
     pub page: Vec<PanelGlyph>,
     /// CLUT pen color tracked through `0xCF` color escapes.
     pub current_clut: u8,
+    /// Option-picker that follows the prompt segment, if this inline box is a
+    /// multiple-choice menu (decoded by [`legaia_mes::picker`]). `None` for
+    /// plain dialogue. When present, the panel enters a "menu" wait once the
+    /// prompt finishes typing instead of going [`PanelState::Done`].
+    picker: Option<legaia_mes::Picker>,
+    /// Highlighted option index `0..picker.n` while the menu is active.
+    picker_cursor: usize,
+    /// `true` once the prompt has finished typing and the menu is awaiting a
+    /// choice. Only meaningful when [`Self::picker`] is `Some`.
+    menu_active: bool,
     state: PanelState,
     waiting_for_input: bool,
     done: bool,
@@ -266,6 +276,9 @@ impl OwnedDialogPanel {
             glyphs_per_frame: 1,
             page: Vec::new(),
             current_clut: 0,
+            picker: None,
+            picker_cursor: 0,
+            menu_active: false,
             state: PanelState::Typing,
             waiting_for_input: false,
             done: false,
@@ -311,7 +324,54 @@ impl OwnedDialogPanel {
     /// renderable), so a caller can fall back to the MES path.
     pub fn from_inline_dialog(inline: &[u8]) -> Option<Self> {
         let lead = inline.iter().position(|&b| b == 0x1F)?;
-        Some(Self::new(Arc::new(inline.to_vec()), lead + 1))
+        let mut panel = Self::new(Arc::new(inline.to_vec()), lead + 1);
+        // If a multiple-choice menu **immediately follows** this box's prompt
+        // segment, decode it so the host can render the option labels + a
+        // cursor. The picker's open byte must sit exactly where the prompt's
+        // typewriter run ends (a normal NPC whose later story branches contain
+        // a Yes/No picker must NOT pop a menu after its greeting). The prompt's
+        // end index is where the standard MES interpreter halts from `lead+1`.
+        let prompt_end = {
+            let mut interp = Interpreter::new_at(inline, lead + 1);
+            loop {
+                match interp.next_event() {
+                    Some(MesEvent::EndOfMessage(_)) | None => break interp.pc(),
+                    _ => {}
+                }
+            }
+        };
+        panel.picker = legaia_mes::scan_pickers(inline)
+            .into_iter()
+            .find(|p| p.open == prompt_end);
+        Some(panel)
+    }
+
+    /// The decoded option-picker following the prompt, if this box is a
+    /// multiple-choice menu. `None` for plain dialogue.
+    pub fn picker(&self) -> Option<&legaia_mes::Picker> {
+        self.picker.as_ref()
+    }
+
+    /// `true` once the prompt has finished typing and a menu is awaiting a
+    /// choice (the host should draw the options + cursor and route Up/Down).
+    pub fn menu_active(&self) -> bool {
+        self.menu_active
+    }
+
+    /// Highlighted option index while the menu is active (`0` otherwise).
+    pub fn picker_cursor(&self) -> usize {
+        self.picker_cursor
+    }
+
+    /// Move the menu cursor by `delta`, wrapping within `0..n`. No-op when the
+    /// box isn't a menu.
+    pub fn move_picker_cursor(&mut self, delta: i32) {
+        if let Some(p) = &self.picker
+            && p.n > 0
+        {
+            let n = p.n as i32;
+            self.picker_cursor = (((self.picker_cursor as i32 + delta) % n + n) % n) as usize;
+        }
     }
 
     pub fn set_glyphs_per_frame(&mut self, n: u8) {
@@ -353,8 +413,18 @@ impl OwnedDialogPanel {
                 clut: self.current_clut,
             }),
             Some(MesEvent::EndOfMessage(_)) | None => {
-                self.done = true;
-                self.state = PanelState::Done;
+                // A menu box stops at the prompt terminator and waits on the
+                // option list instead of tearing down: the retail inline-script
+                // handler `FUN_80038050` reads the chosen index here and jumps
+                // via the picker's relative-offset table.
+                if self.picker.is_some() && !self.menu_active {
+                    self.menu_active = true;
+                    self.waiting_for_input = true;
+                    self.state = PanelState::PageBreak;
+                } else {
+                    self.done = true;
+                    self.state = PanelState::Done;
+                }
             }
             Some(_) => {
                 // Spacing / Substitute / Truncated - engine-side
@@ -458,6 +528,56 @@ mod tests {
     #[test]
     fn from_inline_dialog_without_lead_marker_is_none() {
         assert!(OwnedDialogPanel::from_inline_dialog(&[0x00, 0x10, 0x00]).is_none());
+    }
+
+    /// A prompt followed by a `0x27` Yes/No picker: the panel types the prompt,
+    /// then enters a menu wait exposing the two decoded option labels + a
+    /// movable cursor (instead of going `Done`).
+    #[test]
+    fn from_inline_dialog_surfaces_a_following_picker_menu() {
+        // [1F 'O' 'K' '?' 00]  27  <j0:i16> <j1:i16>  24  [1F 'Y' 'e' 's' 00][1F 'N' 'o' 00]
+        let mut inline = vec![0x1F, b'O', b'K', b'?', 0x00];
+        inline.push(0x27); // open, N=2
+        inline.extend_from_slice(&0x10i16.to_le_bytes());
+        inline.extend_from_slice(&0x20i16.to_le_bytes());
+        inline.push(0x24); // continuation
+        inline.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]);
+        inline.extend_from_slice(&[0x1F, b'N', b'o', 0x00]);
+
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
+        assert!(panel.picker().is_some(), "the following picker decodes");
+        // Type the prompt "OK?" then hit the terminator.
+        for _ in 0..4 {
+            panel.tick();
+        }
+        assert_eq!(panel.page_bytes(), vec![b'O', b'K', b'?']);
+        assert!(panel.menu_active(), "menu waits after the prompt");
+        assert!(!panel.is_done(), "menu box is not Done");
+        let opts = panel.picker().unwrap();
+        assert_eq!(opts.options.len(), 2);
+        assert_eq!(opts.options[0].label, b"Yes");
+        assert_eq!(opts.options[1].label, b"No");
+        // Cursor wraps within 0..2.
+        assert_eq!(panel.picker_cursor(), 0);
+        panel.move_picker_cursor(1);
+        assert_eq!(panel.picker_cursor(), 1);
+        panel.move_picker_cursor(1);
+        assert_eq!(panel.picker_cursor(), 0, "wraps");
+        panel.move_picker_cursor(-1);
+        assert_eq!(panel.picker_cursor(), 1, "wraps backward");
+    }
+
+    /// Plain dialogue (no picker) still types and goes `Done`.
+    #[test]
+    fn from_inline_dialog_without_picker_is_not_a_menu() {
+        let inline = vec![0x1F, b'H', b'i', 0x00];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        assert!(panel.picker().is_none());
+        for _ in 0..2 {
+            panel.tick();
+        }
+        assert_eq!(panel.tick(), PanelState::Done);
+        assert!(!panel.menu_active());
     }
 
     /// The segment-pool decoder recovers **every** `0x1F`-lead segment, not
