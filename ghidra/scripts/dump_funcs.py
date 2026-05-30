@@ -265,6 +265,12 @@ TARGETS = [
     "8005c2d4",  # caller of 0x8005DA50 (thin bool wrapper FUN_8005c2c4)
     "8003ef68",  # scene-loader that sets dest/size for the field-buffer DMA
                  # (FUN_8005c2c4's saved-ra from the runtime grid-writer capture)
+
+    # Cited-but-not-dumped closers (dump worklist). Each is referenced by an
+    # already-dumped function but had no decomp of its own.
+    "8005a4a0",  # cited by 8005a1c0 (GPU command-queue / CLUT-upload cluster)
+    "80025358",  # cited by 8004f0e8 (battle-victory reward writer)
+    "8004e568",  # cited by 8004f0e8 (battle-victory reward writer)
 ]
 
 OUT_DIR = "/scripts/funcs"
