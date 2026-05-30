@@ -32,7 +32,8 @@ TARGETS = [
 
     # Battle archive loaders
     "80052fa0",
-    "800542c8",
+    "800542c8",  # battle archive loader; per-member party-mesh install loop
+    "800513f0",  # battle scene-loader state; lead-actor party-mesh install + FUN_80052fa0 palette
     "8004f0e8",  # battle-victory reward writer (writes party gold 0x8008459C)
 
     # Asset-table init

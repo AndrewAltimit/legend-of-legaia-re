@@ -16,9 +16,15 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   then loads `efect.dat` / PROT `0x36b` (875). **This registration fills the
   effect/model window `DAT_8007C018[3..]`, NOT the party `[0..=2]`.** The party
   battle meshes come from a **separate** pack — **PROT 1204 (`other5`)**,
-  installed into `DAT_8007C018[0..=2]` for Vahn/Noa/Gala by an as-yet-uncaptured
-  battle-setup overlay (the party meshes sit in a distinct high RAM region, e.g.
-  Vahn at `0x80165f48`). The party actors' mesh pointer `actor[+0x230]` resolves
+  installed into `DAT_8007C018[0..=2]` for Vahn/Noa/Gala by **static SCUS battle
+  state-handlers** (NOT an overlay): `FUN_800513F0` registers the active-actor
+  meshes (`tmd_register(*(actor+0x50)+0x18)` in a `while<3` loop, alongside the
+  `FUN_80052FA0` palette decode) and `FUN_800542C8` registers the additional
+  party members (per-member loop, `tmd_register(*(*rec+4))`). Both are dispatched
+  indirectly, so a static `DAT_8007C018` cross-reference finds no writer; pinned
+  by a write-watchpoint at battle entry ([`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua),
+  installed pointers byte-match the battle form — e.g. Vahn at `0x80165f48`). The
+  party actors' mesh pointer `actor[+0x230]` resolves
   to those `[0..=2]` entries. Pinned empirically by byte-matching the live party
   vertex pools to PROT 1204 across the Tetsu / Gimard-boss / Gobu-Gobu battles
   ([character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--prot-1204)).

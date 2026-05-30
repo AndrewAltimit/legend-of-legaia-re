@@ -251,17 +251,48 @@ simplified rig. The first record of each bank is that character's idle. The site
 `/characters.html` viewer assembles all three party meshes this way (the
 `BattleMeshView` pose path mirrors the GTE pipeline above).
 
-**Loader provenance (partly open).** The captured battle scene loader
-`FUN_800520F0` (sub-state byte at `gp+0xa59`) loads PROT `0x367/0x368/0x369/
-0x36a/0x36b` and `tmd_register`s `0x36a` — but that registration fills the
-**effect/model window `DAT_8007C018[3..]`** (`etmd.dat`), not the party
-`[0..=2]` (the party meshes live in a separate high RAM region, e.g. Vahn at
-`0x80165f48`). The party-mesh load that installs PROT 1204 into `[0..=2]` for a
-normal battle is in an as-yet-uncaptured battle-setup overlay (only
-`overlay_baka_fighter` references the `other5` family in the current dumps). A
-Lua write-watchpoint on `0x8007C018` during a real battle-entry transition would
-pin it. (`ghidra/scripts/funcs/800520f0.txt` for the loader; sibling battle
-files `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
+**Loader provenance — pinned (write-watchpoint).** The party meshes are
+installed by the generic registrar `tmd_register` (`FUN_80026B4C`, the store at
+`0x80026BA8`) called from **two static SCUS functions** — not an overlay. A Lua
+write-watchpoint on `DAT_8007C018[0..2]` across a live field→battle transition
+(the auto-starting Rim Elm Queen Bee fight) catches all three installs at
+`game_mode 0x15`, and the installed pointers byte-match the battle form (Vahn →
+`0x80165F48`, the exact value a real battle save holds in `DAT_8007C018[0]`):
+
+- **`FUN_800513F0`** (the battle scene-loader state handler) registers the
+  active-party meshes in a `while (i < 3)` loop, **gated per slot** by the
+  active-member-ID array `DAT_8007bd10[i]`:
+  `if (DAT_8007bd10[i] != 0) tmd_register(*(actor + 0x50) + 0x18, 0)`, where
+  `actor = *(0x801C9360 + i*4)` (the active-actor pointer table). The *same*
+  function runs the party-palette decode `FUN_80052FA0` immediately before the
+  loop. (Caught installing Vahn / slot 0; caller `ra = 0x8005148C`.)
+- **`FUN_800542C8`** (the battle archive loader) registers each additional party
+  member in a per-member loop bounded by the member count at `*(rec + 0x4a)`:
+  `tmd_register(*(*rec + 4), 0)`. (Caught installing Noa + Gala / slots 1–2;
+  caller `ra = 0x80054804`.)
+
+`DAT_8007bd10[i]` is the **per-slot active-member ID** — `1`=Vahn, `2`=Noa,
+`3`=Gala, `0`=empty — not a 0/1 flag. A Vahn-solo fight has `[1,0,0,0]`, so
+`FUN_800513F0`'s loop installs only slot 0 and `FUN_800542C8` fills the rest
+(this is what the live Queen Bee capture shows, since every PCSX-Redux library
+save is `party_count=1`). A **full party has `[1,2,3,0]`**, so the loop's guard
+passes for all three slots and `FUN_800513F0` installs Vahn/Noa/Gala itself —
+confirmed against the full-party battle save states `mc1`/`mc6`/`mc7`
+(`game_mode 0x15`, `party_count=3`, `DAT_8007bd10=[1,2,3,0]`, and
+`DAT_8007C018[0..2] = 0x80165E38 / 0x8017A908 / 0x8018D550`, all three
+battle-form meshes). So the `while (i<3)` loop is gated by the active-member
+array, not hardcoded to the lead.
+
+Both functions are reached **indirectly** (battle state-handler dispatch), which
+is why a static cross-reference on `0x8007C018` finds no writer and the install
+was long assumed to live in an overlay. The captured loader `FUN_800520F0`
+separately `tmd_register`s PROT `0x36a` into the **effect/model window
+`DAT_8007C018[3..]`** (`etmd.dat`) — that is the effect window, not the party
+slots. Probe:
+[`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua);
+dumps [`ghidra/scripts/funcs/800513f0.txt`](../../ghidra/scripts/funcs/800513f0.txt)
++ [`800542c8.txt`](../../ghidra/scripts/funcs/800542c8.txt). (Sibling battle
+files: `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
 
 ### Battle render: load-time TSB/CBA relocation
 
@@ -546,7 +577,9 @@ state offsets.
 
 | Function | Role |
 |---|---|
-| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 **field-form** TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The field caller is `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. (The battle-form party meshes come from PROT 1204 via an uncaptured loader — see [§ Battle form](#battle-form--prot-1204). `FUN_800520F0` state `0xc` `tmd_register`s PROT `0x36a` into the *effect* window `[3..]`, not the party.) |
+| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 **field-form** TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The field caller is `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. |
+| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after decoding the party palette via `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry — see [§ Battle form, Loader provenance](#assembly--object-local-pieces-posed-by-the-battle-anm). |
+| `FUN_800542C8` → `FUN_80026B4C` | **Battle-form party install (additional members).** Battle archive loader; per-member loop bounded by `*(rec+0x4a)`, registering `*(*rec+4)`. Dispatched indirectly (no static `0x8007C018` xref). `FUN_800520F0` state `0xc` separately `tmd_register`s PROT `0x36a` into the *effect* window `[3..]`, not the party. |
 | `FUN_8001E890` | "DATA_FIELD player loader" — post-install, caps `entry[+0x08] = 10` for the three active-party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, then dispatches the per-character equipment-conditional patch to `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in [`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt). |
 
