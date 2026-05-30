@@ -144,6 +144,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 |---|---|
 | `8001822C` | Per-frame input handler / debug dispatcher. Reads BIOS pad at `0x800840F8`, builds button mask `_DAT_8007B850`. Gates upper 16 bits and all debug bindings on `_DAT_8007B98C != 0`. |
 | `80016230` | Dev-print driver. Loads `program_no=%d` / `..\..\FIELD\PROGRAM\....\%d` strings only when debug enable is non-zero. |
+| `8001AA68` | **Fixed-cell debug string drawer.** `(str: *const u8, x: i16, y: i16)`. Walks an ASCII string and, per character, emits one sprite primitive into the scratchpad ordering-table pointer `_DAT_1F8003A0` (advancing it 4 words per glyph; tag `0x3000000`). The glyph's source cell is chosen by character class — digits `0x30..0x39` → cell-row `v=0xF8`, `u=(c-0x30)*8`; upper `0x41..0x5A` and lower `0x61..0x7A` → `v=0xF0`, `u=(c-0x40)*8` / `(c-0x60)*8`; `'='`/`'-'`/`'_'` map to fixed cells; space `0x20` and `'.'` `0x2E` advance without drawing; any other byte ends the string. This is the **dev / CONFIG-test-screen monospaced text path** (the `0x8007078C` mode-label strings `FUN_800188C8` fetches are drawn through it), distinct from the proportional dialog font (`legaia-font`). High fan-in across the debug-menu / world-map dev overlays. `see ghidra/scripts/funcs/8001aa68.txt`. |
 
 ## Move / animation subsystem
 

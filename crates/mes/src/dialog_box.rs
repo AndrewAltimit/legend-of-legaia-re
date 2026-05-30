@@ -37,6 +37,9 @@
 //! ends only at a terminator byte that is *not* a `0xC?` escape argument. The
 //! standard [`Interpreter`] already decodes every `0xC0..=0xCF` byte as a
 //! 2-byte token, so [`line_end`] reuses it and inherits the correct stride.
+//!
+//! REF: FUN_801D84D0  (window pager: `_DAT_801F2740` = 3-row capacity, the
+//!                     state-`0x19` post-page dispatch table)
 
 use std::ops::Range;
 
@@ -160,6 +163,13 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
 /// Pack one dialog box starting at `pc`. `pc` should point at a `0x1F` lead;
 /// returns `None` if it doesn't. Collects up to [`LINES_PER_BOX`] consecutive
 /// `0x1F` lines and decodes the control byte that follows the last one.
+///
+/// Ports the line-grouping + box-advance of the per-actor dialog SM: the
+/// state-`0x2` loop in `FUN_80039B7C` that walks a shown line (`for (; 0x1e <
+/// *pbVar4; ...)`, skipping `0xC?` 2-byte escapes) and stops at the next yield
+/// byte. `World::step_inline_dialogue`'s port of `FUN_80039B7C` drives the
+/// per-segment VM stepping; this is the box-packing half it doesn't cover.
+// PORT: FUN_80039B7C
 pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     if buf.get(pc) != Some(&0x1F) {
         return None;
