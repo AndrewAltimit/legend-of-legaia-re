@@ -988,6 +988,21 @@ pub struct World {
     /// scene-change, not dialogue). Empty between field scenes.
     pub field_npc_dialog: std::collections::HashMap<u8, Vec<u8>>,
 
+    /// Prologue-aware companion to [`Self::field_npc_dialog`], keyed by the same
+    /// `slot`. Carries each talk NPC's **untruncated** interaction record (full
+    /// body + entry PC + first-segment offset) so the opt-in field-VM dialogue
+    /// runner ([`Self::use_vm_dialogue`]) can execute the interaction prologue —
+    /// the story-flag `SysFlag.Test`/`JmpRel` segment-selection bytecode before
+    /// the first `0x1F` — instead of starting at the first segment. The default
+    /// simplified path ignores this and uses `field_npc_dialog` unchanged.
+    pub field_npc_dialog_prologue:
+        std::collections::HashMap<u8, crate::man_field_scripts::InlineDialogPrologue>,
+
+    /// The interaction-prologue record for the dialogue [`Self::trigger_field_interact`]
+    /// most recently opened (taken by [`Self::drive_inline_dialogue`] when it
+    /// starts the runner). `None` when the opened NPC has no prologue record.
+    pub active_inline_prologue: Option<crate::man_field_scripts::InlineDialogPrologue>,
+
     /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
     /// same `slot` as [`Self::field_npc_dialog`]. Populated at field-scene entry
     /// from the MAN actor placements. The interaction probe
@@ -1743,6 +1758,8 @@ impl World {
             current_dialog: None,
             last_field_interact: None,
             field_npc_dialog: std::collections::HashMap::new(),
+            field_npc_dialog_prologue: std::collections::HashMap::new(),
+            active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
             dialog_input_consumed: false,
             party_leader_slot: None,
@@ -2356,6 +2373,25 @@ impl World {
         self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
     }
 
+    /// Start the inline-script runner on a full interaction record, executing the
+    /// prologue from `entry_pc` (the record's `script_pc0`) before the first text
+    /// segment at `first_segment`. The prologue's `SysFlag.Test`/`JmpRel` chain
+    /// selects which segment the box opens at per story state; if it can't reach a
+    /// segment the runner falls back to `first_segment`. See
+    /// [`crate::inline_dialogue::InlineDialogue::with_prologue`].
+    pub fn start_inline_dialogue_with_prologue(
+        &mut self,
+        body: Vec<u8>,
+        entry_pc: usize,
+        first_segment: usize,
+    ) {
+        self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
+            std::sync::Arc::new(body),
+            entry_pc,
+            first_segment,
+        ));
+    }
+
     /// Advance the running inline interaction script one tick. Between text
     /// boxes the field VM executes the control bytecode (prologue story-flag
     /// tests, `SET`/`CLEAR` flag ops, scene changes) through the World host; at
@@ -2419,13 +2455,23 @@ impl World {
             // lead (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode.
             if b & 0x7F < 0x20 {
                 if b == 0x1F {
+                    // Reached a text segment. A prologue (if any) selected it, so
+                    // retire the fallback and open the box here.
+                    id.fallback_segment_pc = None;
                     id.panel = Some(crate::dialog::OwnedDialogPanel::at_segment(
                         std::sync::Arc::clone(&id.bytecode),
                         id.pc,
                     ));
-                } else {
-                    id.done = true;
+                    break;
                 }
+                // A non-`0x1F` terminator before any box opened: if a prologue
+                // fallback is pending, resume at the first segment (so the box
+                // still shows); otherwise the conversation ends.
+                if let Some(fb) = id.fallback_segment_pc.take() {
+                    id.pc = fb;
+                    continue;
+                }
+                id.done = true;
                 break;
             }
             match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
@@ -2434,9 +2480,16 @@ impl World {
                 // A wait/hold, an unhandled op, or an end: stop. (Unlike the
                 // cutscene timeline the runner does not force-advance past a
                 // Halt — an inline interaction script that can't proceed ends.)
+                // While a prologue is still running (no box opened yet), a halt
+                // means the prologue can't proceed — fall back to the first
+                // segment so the dialogue is never worse than the truncated path.
                 FieldStepResult::Halt { .. }
                 | FieldStepResult::Pending { .. }
                 | FieldStepResult::Unknown { .. } => {
+                    if let Some(fb) = id.fallback_segment_pc.take() {
+                        id.pc = fb;
+                        continue;
+                    }
                     id.done = true;
                     break;
                 }
@@ -2455,9 +2508,18 @@ impl World {
         if !self.use_vm_dialogue {
             return;
         }
-        // Start the runner the frame a dialogue request appears.
+        // Start the runner the frame a dialogue request appears. When the opened
+        // NPC carries a prologue record, run it from the entry PC so the
+        // interaction prologue (segment selection) executes; otherwise start at
+        // the first segment from the request's inline buffer.
         if self.inline_dialogue.is_none() {
-            if let Some(req) = self.current_dialog.as_ref() {
+            if let Some(prologue) = self.active_inline_prologue.take() {
+                self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
+                    std::sync::Arc::new(prologue.body),
+                    prologue.entry_pc,
+                    prologue.first_segment,
+                ));
+            } else if let Some(req) = self.current_dialog.as_ref() {
                 if !req.inline.is_empty() {
                     self.start_inline_dialogue(req.inline.clone());
                 } else {
@@ -4396,6 +4458,7 @@ impl World {
         // This is the actor's own inline MES text (retail `actor[+0x90]`), the
         // mechanism `0x3F` was wrongly standing in for.
         self.field_npc_dialog.clear();
+        self.field_npc_dialog_prologue.clear();
         self.field_npc_positions.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             if let crate::man_field_scripts::PlacementKind::Npc {
@@ -4405,6 +4468,14 @@ impl World {
                 && let Ok(slot) = u8::try_from(placement.index)
             {
                 self.field_npc_dialog.insert(slot, inline);
+                // Stash the untruncated record so the opt-in field-VM runner can
+                // execute the interaction prologue (segment selection) — purely
+                // additive; the default path keeps using `field_npc_dialog`.
+                if let Some(prologue) =
+                    crate::man_field_scripts::placement_inline_prologue(man_file, man, &placement)
+                {
+                    self.field_npc_dialog_prologue.insert(slot, prologue);
+                }
                 // The interaction probe box-tests the player against this spawn
                 // position (= runtime actor frame; see `field_npc_positions`).
                 self.field_npc_positions
@@ -4423,6 +4494,10 @@ impl World {
     /// [`Self::tick_field_interaction_probe`].
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
         self.last_field_interact = Some((interact_id, slot));
+        // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
+        // runner can execute its interaction prologue. Always reassigned (to
+        // `None` when absent) so a prior interaction's prologue can't leak.
+        self.active_inline_prologue = self.field_npc_dialog_prologue.get(&slot).cloned();
         let opened_dialog = if let Some(inline) = self.field_npc_dialog.get(&slot).cloned() {
             self.open_field_dialog(inline);
             true

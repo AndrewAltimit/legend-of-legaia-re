@@ -124,6 +124,39 @@ fn field_interact_slot_opens_real_npc_dialogue() {
         );
     }
 
+    // The prologue-aware companion map must agree byte-for-byte: every dialogue
+    // slot has an untruncated record whose tail from `first_segment` equals the
+    // truncated `field_npc_dialog` buffer, and whose `entry_pc <= first_segment`.
+    // At least one NPC must carry a real prologue (`entry_pc < first_segment`) so
+    // this is non-vacuous — proving the segment-selection bytecode the opt-in
+    // VM-dialogue runner executes is actually present on real disc data.
+    let mut npcs_with_prologue = 0usize;
+    for (idx, inline) in &expected {
+        let slot = *idx as u8;
+        let prologue = world
+            .field_npc_dialog_prologue
+            .get(&slot)
+            .unwrap_or_else(|| panic!("field_npc_dialog_prologue[{slot}] must be populated"));
+        assert!(
+            prologue.entry_pc <= prologue.first_segment,
+            "prologue entry_pc {} must precede first_segment {} (slot {slot})",
+            prologue.entry_pc,
+            prologue.first_segment
+        );
+        assert_eq!(
+            &prologue.body[prologue.first_segment..],
+            inline.as_slice(),
+            "prologue body tail from first_segment must equal field_npc_dialog[{slot}]"
+        );
+        if prologue.entry_pc < prologue.first_segment {
+            npcs_with_prologue += 1;
+        }
+    }
+    assert!(
+        npcs_with_prologue > 0,
+        "at least one town01 NPC must carry a pre-first-segment interaction prologue"
+    );
+
     // End-to-end: feed each populated slot through the field VM as a real
     // [0x3E, op0, slot] interact (op0 = 5 < 100 -> field-interact arm) and assert
     // it opens exactly that placement's own inline dialogue.
