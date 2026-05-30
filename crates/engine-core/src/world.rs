@@ -741,7 +741,7 @@ pub struct World {
     /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
     /// pairs (target, current); engines apply per-frame interpolation.
     pub scratchpad_targets: [i16; 16],
-    /// Shared system flag bank at `_DAT_80086D70` - bitfield read / written
+    /// Shared system flag bank at `_DAT_80085758` - bitfield read / written
     /// by:
     /// - field VM high-byte default routes 0x5x / 0x6x / 0x7x
     ///   (`system_flag_set` / `system_flag_clear` / `system_flag_test`)
@@ -1265,6 +1265,13 @@ pub struct World {
     /// play-window`, the v0.1 playthrough oracle) set this once after boot.
     pub live_gameplay_loop: bool,
 
+    /// Opt-in: route field NPC dialogue through the inline-script field-VM
+    /// runner ([`Self::drive_inline_dialogue`]) instead of the simplified
+    /// `current_dialog` / `OwnedDialogPanel` path, so dialogue branch handlers
+    /// actually execute (story-flag tests, `SET`/`CLEAR`, scene changes). Off
+    /// by default — when off, behaviour is identical to before.
+    pub use_vm_dialogue: bool,
+
     /// Opt-in for a **player-driven** battle inside the live loop. When
     /// `false` (the default) the live loop auto-resolves each party turn with
     /// a physical Attack on the first living monster (the historical spine
@@ -1492,6 +1499,13 @@ pub struct World {
     /// camera path + actor moves play and the hand-off bit fires by execution.
     /// See [`crate::cutscene_timeline::CutsceneTimeline`].
     pub cutscene_timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
+
+    /// A running inline interaction script driven through the field VM (the
+    /// faithful dialogue path). Opt-in alternative to the simplified
+    /// [`Self::current_dialog`] / `OwnedDialogPanel` path: it *executes* the
+    /// prologue flag tests, branch flag-sets, and scene changes between text
+    /// boxes. See [`crate::inline_dialogue`] and [`Self::step_inline_dialogue`].
+    pub inline_dialogue: Option<crate::inline_dialogue::InlineDialogue>,
 
     /// `true` only while [`Self::step_cutscene_timeline`] is executing the
     /// spawned cutscene context. The field-VM host reads it to suppress the
@@ -1770,6 +1784,7 @@ impl World {
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
             live_gameplay_loop: false,
+            use_vm_dialogue: false,
             battle_player_driven: false,
             battle_command: None,
             battle_item_menu: None,
@@ -1799,6 +1814,7 @@ impl World {
             name_entry: None,
             cutscene_narration: None,
             cutscene_timeline: None,
+            inline_dialogue: None,
             in_cutscene_timeline: false,
             prologue_naming_pending: false,
             prologue_naming_armed: false,
@@ -2329,6 +2345,138 @@ impl World {
             self.cutscene_timeline = None;
         } else {
             self.cutscene_timeline = Some(tl);
+        }
+    }
+
+    /// Begin running an inline interaction script through the field VM (the
+    /// faithful dialogue path — see [`crate::inline_dialogue`]). `inline` is the
+    /// actor's interaction-script bytes (e.g. [`DialogRequest::inline`]), which
+    /// begin at the first `0x1F` text segment. Replaces any running script.
+    pub fn start_inline_dialogue(&mut self, inline: Vec<u8>) {
+        self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
+    }
+
+    /// Advance the running inline interaction script one tick. Between text
+    /// boxes the field VM executes the control bytecode (prologue story-flag
+    /// tests, `SET`/`CLEAR` flag ops, scene changes) through the World host; at
+    /// each `0x1F` segment it opens / ticks a dialog box. `confirm` dismisses the
+    /// current box, or commits a menu choice — applying that option's relative
+    /// jump (`FUN_80038050`) and handing the branch to the VM so its side
+    /// effects run before the reply. `up`/`down` move a menu cursor. No-op when
+    /// no inline dialogue is running.
+    // PORT: FUN_80039B7C
+    pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
+        use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
+        let Some(mut id) = self.inline_dialogue.take() else {
+            return;
+        };
+        if id.done {
+            self.inline_dialogue = Some(id);
+            return;
+        }
+
+        // A box is open: tick the typewriter + route input.
+        if let Some(panel) = id.panel.as_mut() {
+            if panel.menu_active() {
+                if up {
+                    panel.move_picker_cursor(-1);
+                }
+                if down {
+                    panel.move_picker_cursor(1);
+                }
+            }
+            panel.tick();
+            if confirm {
+                if panel.menu_active() {
+                    // Commit the choice: apply the option's relative jump and
+                    // resume the VM at the branch handler (its flag-sets /
+                    // scene-change run before the reply box).
+                    let choice = panel.picker_cursor();
+                    let target = panel.picker().and_then(|pk| pk.jump_target(choice));
+                    id.last_choice = Some(choice);
+                    match target {
+                        Some(t) => id.pc = t,
+                        None => id.done = true,
+                    }
+                    id.panel = None;
+                } else if panel.is_waiting_for_input() || panel.is_done() {
+                    // Plain box dismissed: resume the VM just past this segment.
+                    id.pc = panel.pc;
+                    id.panel = None;
+                }
+            }
+            self.inline_dialogue = Some(id);
+            return;
+        }
+
+        // No box open: step the VM until the next text segment or an end.
+        let mut host = FieldHostImpl { world: self };
+        let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
+        while budget > 0 {
+            budget -= 1;
+            let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
+            // Retail SM transition test: a byte with `& 0x7F < 0x20` is a text
+            // lead (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode.
+            if b & 0x7F < 0x20 {
+                if b == 0x1F {
+                    id.panel = Some(crate::dialog::OwnedDialogPanel::at_segment(
+                        std::sync::Arc::clone(&id.bytecode),
+                        id.pc,
+                    ));
+                } else {
+                    id.done = true;
+                }
+                break;
+            }
+            match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
+                FieldStepResult::Advance { next_pc } => id.pc = next_pc,
+                FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
+                // A wait/hold, an unhandled op, or an end: stop. (Unlike the
+                // cutscene timeline the runner does not force-advance past a
+                // Halt — an inline interaction script that can't proceed ends.)
+                FieldStepResult::Halt { .. }
+                | FieldStepResult::Pending { .. }
+                | FieldStepResult::Unknown { .. } => {
+                    id.done = true;
+                    break;
+                }
+            }
+        }
+        self.inline_dialogue = Some(id);
+    }
+
+    /// Live-loop bridge for the inline-script runner: when [`Self::use_vm_dialogue`]
+    /// is set, this starts the runner the frame a field dialogue opens (from
+    /// [`Self::current_dialog`]'s inline buffer), steps it from the current pad
+    /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
+    /// (clearing `current_dialog`) when the conversation ends. No-op when the
+    /// flag is off, so the default simplified path is untouched.
+    pub fn drive_inline_dialogue(&mut self) {
+        if !self.use_vm_dialogue {
+            return;
+        }
+        // Start the runner the frame a dialogue request appears.
+        if self.inline_dialogue.is_none() {
+            if let Some(req) = self.current_dialog.as_ref() {
+                if !req.inline.is_empty() {
+                    self.start_inline_dialogue(req.inline.clone());
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        let confirm = self.input.just_pressed(input::PadButton::Cross)
+            || self.input.just_pressed(input::PadButton::Circle);
+        let up = self.input.just_pressed(input::PadButton::Up);
+        let down = self.input.just_pressed(input::PadButton::Down);
+        self.step_inline_dialogue(confirm, up, down);
+        if self.inline_dialogue.as_ref().is_some_and(|d| d.is_done()) {
+            self.inline_dialogue = None;
+            self.current_dialog = None;
+            self.pending_field_events
+                .push(crate::field_events::FieldEvent::DialogDismissed);
         }
     }
 
@@ -3659,6 +3807,9 @@ impl World {
                 // the same frame.
                 self.tick_field_interaction_probe();
                 self.tick_field_carriers();
+                // Faithful dialogue path (opt-in): drive a just-opened field
+                // dialogue through the field VM so branch handlers execute.
+                self.drive_inline_dialogue();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
                 }
@@ -4074,8 +4225,10 @@ impl World {
         // A box is up: a confirm/cancel press dismisses it (and the locomotion
         // + auto-engage steps stay gated off `current_dialog` meanwhile).
         if self.current_dialog.is_some() {
-            if self.input.just_pressed(input::PadButton::Cross)
-                || self.input.just_pressed(input::PadButton::Circle)
+            // The inline-script runner, when active, owns dismissal.
+            if self.inline_dialogue.is_none()
+                && (self.input.just_pressed(input::PadButton::Cross)
+                    || self.input.just_pressed(input::PadButton::Circle))
             {
                 self.current_dialog = None;
                 self.pending_field_events.push(FieldEvent::DialogDismissed);
@@ -4337,7 +4490,9 @@ impl World {
         let cancel = self.input.just_pressed(PadButton::Circle);
 
         if self.current_dialog.is_some() {
-            if (confirm || cancel) && !self.dialog_input_consumed {
+            // The inline-script runner, when active, owns box dismissal.
+            if self.inline_dialogue.is_none() && (confirm || cancel) && !self.dialog_input_consumed
+            {
                 self.dialog_input_consumed = true;
                 self.current_dialog = None;
                 self.pending_field_events

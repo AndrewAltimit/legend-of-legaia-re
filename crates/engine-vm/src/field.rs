@@ -647,7 +647,7 @@ pub trait FieldHost {
     ///
     /// 2-byte instruction `[4C, 0x32]`. The original zeroes the 512 bytes at
     /// `[0x80085718 .. 0x80085918)` - a region holding party / inventory state
-    /// adjacent to the fourth-flag-bank bitfield (`DAT_80086D70`). Hosts model
+    /// adjacent to the fourth-flag-bank bitfield (`DAT_80085758`). Hosts model
     /// their own party-state representation and call this hook to reset it.
     /// PC += 2.
     fn clear_party_state_region(&mut self) {}
@@ -1116,7 +1116,7 @@ pub trait FieldHost {
     /// Set a bit in the **system flag bank** (the 4th of the four flag banks
     /// the field VM exposes). Wired by the high-byte default-route opcode
     /// `0x5x` (SET) at the dispatcher's default arm. Mirrors `func_0x8003CE08`
-    /// which sets `(&DAT_80086D70)[idx >> 3] |= (0x80 >> (idx & 7))`.
+    /// which sets `(&DAT_80085758)[idx >> 3] |= (0x80 >> (idx & 7))`.
     ///
     /// `idx` is a 16-bit value computed by the VM as
     /// `((opcode_byte & 0x8F) << 8) | operand_byte` - bits 0..=7 from the

@@ -6,6 +6,7 @@
 pub mod classify;
 pub mod gs_text;
 pub mod mednafen_cht;
+pub mod taxonomy;
 
 pub use classify::{
     BATTLE_ACTOR_BASE, BATTLE_ACTOR_STRIDE, CHAR_RECORD_BASES, Category, ClassifiedAddress,
@@ -13,6 +14,7 @@ pub use classify::{
 };
 pub use gs_text::parse_gs_text;
 pub use mednafen_cht::parse_mednafen_cht;
+pub use taxonomy::{TaxonomyBucket, WriteTaxonomy, classify_writes, classify_writes_with_samples};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

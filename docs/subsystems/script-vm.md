@@ -518,6 +518,16 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    `&DAT_801f3540[line]`, line count `_DAT_801f2740`). `FUN_80039b7c` runs per
    frame, per entity, from the entity SM `FUN_801DA51C`'s interaction tail.
 
+   The engine ports this SM as `engine_core::inline_dialogue` /
+   `World::step_inline_dialogue` (PORT `FUN_80039b7c`): it drives the actor's
+   inline interaction script through the **real field VM** (`vm::field::step`),
+   executing the control bytecode between text segments (story-flag tests,
+   `SET`/`CLEAR`, scene changes) and pausing at each `0x1F` segment to show a
+   box, applying a menu choice's relative jump (`FUN_80038050`) so the branch
+   handler's side effects run before its reply. Opt-in via `World::use_vm_dialogue`
+   (`play-window --vm-dialogue`); the default path stays the simplified
+   `OwnedDialogPanel` typewriter. See [`formats/mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0).
+
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
 interaction-driven actor-text pipeline above, not an inline-text opcode. (The

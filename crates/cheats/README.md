@@ -38,3 +38,15 @@ The runtime cheat applier wired into `legaia-engine play-window
 --cheat-file <PATH>` lives in `legaia_engine_core::cheat_applier`
 and uses this crate plus the `ram_map` registry to dispatch each
 write to the appropriate engine cell.
+
+## Write taxonomy
+
+`taxonomy::classify_writes(addrs)` rolls a set of changed RAM
+addresses up into per-region buckets via `classify::classify_address`,
+flagging writes that land outside every known data region
+(`Category::Unknown`) or in the `0x8007Bxxx` script-VM / build-flag
+scratch. It is the classification half of a gameplay-driven write
+tracer; feed it the per-byte deltas from a pair of save states (see
+`mednafen-state write-taxonomy LEFT RIGHT`) to see *what* changed,
+bucketed by subsystem. Pure and capture-free — unit-tested with
+synthetic deltas.

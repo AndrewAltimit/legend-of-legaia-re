@@ -538,7 +538,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.screen_mode
     }
 
-    // Shared system flag bank - same fourth-flag-bank at `_DAT_80086D70`
+    // Shared system flag bank - same fourth-flag-bank at `_DAT_80085758`
     // that move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D query, plus the
     // 0x5x / 0x6x / 0x7x default-route opcodes.
     fn system_flag_set(&mut self, idx: u16) {
@@ -653,7 +653,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// dialog or when the dismiss button just fired (clears the request
     /// and unblocks the VM in one step).
     fn op4c_n_5_sub_4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
-        if self.world.current_dialog.is_none() {
+        // When the inline-script field-VM runner owns the box, it advances /
+        // dismisses it (see `World::drive_inline_dialogue`); the simplified
+        // dialog-advance must not clear the box out from under it.
+        if self.world.current_dialog.is_none() || self.world.inline_dialogue.is_some() {
             return false;
         }
         let dismissed = (self.world.input.just_pressed(input::PadButton::Cross)

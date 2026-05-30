@@ -61,6 +61,19 @@ diff-friendly form; `EventStats` is a histogram. See
 [`docs/formats/mes.md`](../../docs/formats/mes.md) for the event
 catalogue.
 
+## Option-picker decoder
+
+`picker` decodes the multiple-choice menus embedded in field-VM inline
+interaction scripts (open bytes `0x27`/`0x28`/`0x29` = 2/3/4 options). A
+picker is `[open][N×2-byte i16 LE jump table][continuation][N × 0x1F label
+segments]`; each 2-byte entry is a signed relative jump the inline-script
+control handler `FUN_80038050` applies on confirm
+(`new_pc = (open + 1 + index*2) + rel_jump`). `scan_pickers` finds every
+genuine picker in an inline buffer (structural validation rejects coincidental
+open bytes); `parse_picker_at` decodes one at a known offset;
+`Picker::jump_target` resolves an option's branch. See
+[`docs/formats/mes.md` § Picker control-region layout](../../docs/formats/mes.md).
+
 ## CLI
 
 ```bash

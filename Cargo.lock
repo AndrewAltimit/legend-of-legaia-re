@@ -1424,6 +1424,7 @@ dependencies = [
  "clap",
  "flate2",
  "legaia-asset",
+ "legaia-cheats",
  "legaia-engine-core",
  "png",
  "serde",

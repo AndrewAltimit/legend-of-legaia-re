@@ -715,6 +715,11 @@ enum Cmd {
         /// the Attack command.
         #[arg(long, default_value_t = false)]
         player_battle: bool,
+        /// Route field NPC dialogue through the inline-script field-VM runner
+        /// (branch handlers execute their flag-sets / scene-changes) instead of
+        /// the simplified typewriter. Up/Down navigate a menu, Cross confirms.
+        #[arg(long, default_value_t = false)]
+        vm_dialogue: bool,
         /// BGM id to cross-fade to when a live-loop encounter starts; the
         /// field track resumes when the battle ends. Routed through the same
         /// BGM director as field op-`0x35` starts, so the id must resolve in
@@ -1157,6 +1162,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            vm_dialogue,
             battle_bgm,
         } => cmd_play_window(
             &scene,
@@ -1172,6 +1178,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            vm_dialogue,
             battle_bgm,
         ),
         Cmd::Save {
@@ -2766,6 +2773,7 @@ fn cmd_record(
         save_dir,
         None,
         None,
+        false,
         false,
         false,
         false,
@@ -6199,6 +6207,13 @@ impl PlayWindowApp {
     /// frame the world clears the request. It never clears `current_dialog`
     /// itself, so it can't race the world's dismiss.
     fn sync_dialog_panel(&mut self) {
+        // When the inline-script field-VM runner owns dialogue, it manages its
+        // own box (rendered from `world.inline_dialogue`); don't also open the
+        // simplified panel.
+        if self.session.host.world.use_vm_dialogue {
+            self.active_dialog = None;
+            return;
+        }
         if self.session.host.world.current_dialog.is_none() {
             self.active_dialog = None;
             return;
@@ -6769,20 +6784,90 @@ impl PlayWindowApp {
         // single-line layout the retail field VM emits). The panel mirrors
         // `World::current_dialog`; the world owns dismissal.
         if let Some(panel) = self.active_dialog.as_ref() {
-            let page: String = panel
-                .page_bytes()
-                .iter()
-                .map(|&b| {
-                    if (0x20..=0x7E).contains(&b) {
-                        b as char
-                    } else {
-                        '?'
-                    }
-                })
-                .collect();
+            let to_ascii = |bytes: &[u8]| -> String {
+                bytes
+                    .iter()
+                    .map(|&b| {
+                        if (0x20..=0x7E).contains(&b) {
+                            b as char
+                        } else {
+                            '?'
+                        }
+                    })
+                    .collect()
+            };
+            let page = to_ascii(&panel.page_bytes());
             let layout = self.font.layout_ascii(&page);
             let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
             out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
+
+            // Multiple-choice menu: draw the decoded option labels under the
+            // prompt, one row each, with a `>` cursor on the highlighted option
+            // (the picker decoded from the inline interaction script).
+            if panel.menu_active()
+                && let Some(picker) = panel.picker()
+            {
+                // The proportional dialog font is a ~14px cell; one row per
+                // option below the prompt.
+                let line_h = 16i32;
+                let cursor = panel.picker_cursor();
+                for (i, opt) in picker.options.iter().enumerate() {
+                    let selected = i == cursor;
+                    let marker = if selected { "> " } else { "  " };
+                    let label = format!("{marker}{}", to_ascii(&opt.label));
+                    let row_layout = self.font.layout_ascii(&label);
+                    let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
+                    let color = if selected {
+                        [1.0, 1.0, 0.6, 1.0]
+                    } else {
+                        [0.8, 0.85, 1.0, 1.0]
+                    };
+                    out.extend(text_draws_for(&row_layout, row_pen, color));
+                }
+            }
+        }
+
+        // Inline-script field-VM runner box (the `--vm-dialogue` faithful path).
+        // Same layout as the simplified panel, but the source is
+        // `world.inline_dialogue`, which the world ticks itself.
+        if let Some(id) = self.session.host.world.inline_dialogue.as_ref() {
+            let to_ascii = |bytes: &[u8]| -> String {
+                bytes
+                    .iter()
+                    .map(|&b| {
+                        if (0x20..=0x7E).contains(&b) {
+                            b as char
+                        } else {
+                            '?'
+                        }
+                    })
+                    .collect()
+            };
+            let page = to_ascii(&id.page_bytes());
+            if !page.is_empty() {
+                let layout = self.font.layout_ascii(&page);
+                let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
+                out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
+                if id.menu_active()
+                    && let Some(picker) = id.picker()
+                {
+                    let line_h = 16i32;
+                    let cursor = id.picker_cursor();
+                    for (i, opt) in picker.options.iter().enumerate() {
+                        let selected = i == cursor;
+                        let marker = if selected { "> " } else { "  " };
+                        let label = format!("{marker}{}", to_ascii(&opt.label));
+                        let row_layout = self.font.layout_ascii(&label);
+                        let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
+                        let color = if selected {
+                            [1.0, 1.0, 0.6, 1.0]
+                        } else {
+                            [0.8, 0.85, 1.0, 1.0]
+                        };
+                        out.extend(text_draws_for(&row_layout, row_pen, color));
+                    }
+                }
+            }
         }
         out
     }
@@ -6911,6 +6996,38 @@ impl ApplicationHandler for PlayWindowApp {
                 {
                     self.session.host.world.open_name_entry(0);
                     return;
+                }
+                // Menu input: while the active dialog box is a multiple-choice
+                // menu (a picker decoded from the inline interaction script),
+                // Up/Down move the option cursor and a confirm button applies
+                // the chosen option's relative jump (`FUN_80038050`) instead of
+                // driving movement / dismissing the box. Resolve the key->button
+                // first so the immutable `mapping` borrow ends before the
+                // mutable `active_dialog` borrow.
+                if state == ElementState::Pressed {
+                    let is_confirm = matches!(
+                        self.mapping.pad_button_for_key(keycode_to_name(code)),
+                        Some(
+                            legaia_engine_core::input::PadButton::Cross
+                                | legaia_engine_core::input::PadButton::Circle
+                        )
+                    );
+                    if let Some(panel) = self.active_dialog.as_mut()
+                        && panel.menu_active()
+                    {
+                        if matches!(code, KeyCode::ArrowUp) {
+                            panel.move_picker_cursor(-1);
+                            return;
+                        }
+                        if matches!(code, KeyCode::ArrowDown) {
+                            panel.move_picker_cursor(1);
+                            return;
+                        }
+                        if is_confirm {
+                            panel.confirm_menu();
+                            return;
+                        }
+                    }
                 }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {
@@ -7914,6 +8031,7 @@ fn cmd_play_window(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    vm_dialogue: bool,
     battle_bgm: Option<u16>,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -7930,6 +8048,7 @@ fn cmd_play_window(
         cheat_strict,
         live_loop,
         player_battle,
+        vm_dialogue,
         battle_bgm,
         None,
     )
@@ -7950,6 +8069,7 @@ fn cmd_play_window_with_record(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    vm_dialogue: bool,
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -8009,6 +8129,9 @@ fn cmd_play_window_with_record(
         Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
         None => BootSession::open(extracted_root, &cfg)?,
     };
+    // Opt-in: drive field dialogue through the inline-script field-VM runner
+    // (branch handlers execute). Off by default → identical to before.
+    session.host.world.use_vm_dialogue = vm_dialogue;
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {

@@ -35,6 +35,7 @@ pub mod field_events;
 pub mod field_menu;
 pub mod field_menu_dispatch;
 pub mod game_over;
+pub mod inline_dialogue;
 pub mod inn;
 pub mod input;
 pub mod inventory_use;

@@ -512,7 +512,7 @@ pub trait MoveHost {
     }
 
     /// Extension sub-op 0x13 / 0x14 - `func_0x8003CE64(flag_index)` - query
-    /// the fourth-flag-bank bitfield (`DAT_80086D70`). Returns 0 if clear,
+    /// the fourth-flag-bank bitfield (`DAT_80085758`). Returns 0 if clear,
     /// non-zero otherwise. The VM uses the result to decide between the
     /// fall-through and predicate-skip arms.
     fn ext_query_flag_bank(&self, _flag_index: i16) -> u32 {
@@ -955,7 +955,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         }
 
         // 0x13 / 0x14 - flag-bank predicate tests against the fourth flag
-        // bank `DAT_80086D70` (via `func_0x8003CE64`). op_w(2) = flag index.
+        // bank `DAT_80085758` (via `func_0x8003CE64`). op_w(2) = flag index.
         // Both jump to the shared `LAB_801D4830` epilogue: returns 1 when
         // `predicate != 0`, else 4. 0x13 falls through unconditionally
         // (`goto LAB_801D4830`); 0x14 inverts (returns 4 when predicate is
