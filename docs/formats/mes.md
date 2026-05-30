@@ -160,6 +160,8 @@ i.e. the displacement is relative to the **start of that option's own 2-byte ent
 
 The engine consumes this directly: `engine_core::dialog::OwnedDialogPanel::from_inline_dialog` attaches the picker when it immediately follows the box's prompt segment; `legaia-engine play-window` draws the option labels under the prompt with an Up/Down cursor, and a confirm press runs `OwnedDialogPanel::confirm_menu` — the engine port of `FUN_80038050`: it applies the chosen option's relative jump, resumes typing at that branch's reply segment, and re-attaches a nested menu if one follows.
 
+For the **faithful** path, `engine_core::inline_dialogue` (`World::step_inline_dialogue`, the port of the dialog SM `FUN_80039B7C`) drives the whole inline interaction script through the real field VM: it executes the control bytecode between text segments (story-flag tests, `SET`/`CLEAR` flag ops, scene changes) and only pauses at each `0x1F` segment to show a box, so a chosen option's branch handler runs its side effects before the reply. It is opt-in via `World::use_vm_dialogue` (`legaia-engine play-window --vm-dialogue`).
+
 ## Live blob example
 
 A town-overlay save state captured a live MES blob in RAM at `0x80109270` (3893 bytes). The header + bytecode structure matches both Compact and Records expectations after small variant-specific tweaks. The blob is used to validate the Rust parser end-to-end.

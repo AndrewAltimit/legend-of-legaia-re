@@ -89,6 +89,17 @@ impl InlineDialogue {
         self.panel.as_ref().is_some_and(|p| p.menu_active())
     }
 
+    /// The decoded option picker of the open menu box, for rendering the
+    /// option labels (`None` unless a menu box is open).
+    pub fn picker(&self) -> Option<&legaia_mes::Picker> {
+        self.panel.as_ref().and_then(|p| p.picker())
+    }
+
+    /// Highlighted option index of the open menu box.
+    pub fn picker_cursor(&self) -> usize {
+        self.panel.as_ref().map_or(0, |p| p.picker_cursor())
+    }
+
     pub fn is_done(&self) -> bool {
         self.done
     }

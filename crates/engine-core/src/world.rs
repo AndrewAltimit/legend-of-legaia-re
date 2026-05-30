@@ -1265,6 +1265,13 @@ pub struct World {
     /// play-window`, the v0.1 playthrough oracle) set this once after boot.
     pub live_gameplay_loop: bool,
 
+    /// Opt-in: route field NPC dialogue through the inline-script field-VM
+    /// runner ([`Self::drive_inline_dialogue`]) instead of the simplified
+    /// `current_dialog` / `OwnedDialogPanel` path, so dialogue branch handlers
+    /// actually execute (story-flag tests, `SET`/`CLEAR`, scene changes). Off
+    /// by default — when off, behaviour is identical to before.
+    pub use_vm_dialogue: bool,
+
     /// Opt-in for a **player-driven** battle inside the live loop. When
     /// `false` (the default) the live loop auto-resolves each party turn with
     /// a physical Attack on the first living monster (the historical spine
@@ -1777,6 +1784,7 @@ impl World {
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
             live_gameplay_loop: false,
+            use_vm_dialogue: false,
             battle_player_driven: false,
             battle_command: None,
             battle_item_menu: None,
@@ -2435,6 +2443,41 @@ impl World {
             }
         }
         self.inline_dialogue = Some(id);
+    }
+
+    /// Live-loop bridge for the inline-script runner: when [`Self::use_vm_dialogue`]
+    /// is set, this starts the runner the frame a field dialogue opens (from
+    /// [`Self::current_dialog`]'s inline buffer), steps it from the current pad
+    /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
+    /// (clearing `current_dialog`) when the conversation ends. No-op when the
+    /// flag is off, so the default simplified path is untouched.
+    pub fn drive_inline_dialogue(&mut self) {
+        if !self.use_vm_dialogue {
+            return;
+        }
+        // Start the runner the frame a dialogue request appears.
+        if self.inline_dialogue.is_none() {
+            if let Some(req) = self.current_dialog.as_ref() {
+                if !req.inline.is_empty() {
+                    self.start_inline_dialogue(req.inline.clone());
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        let confirm = self.input.just_pressed(input::PadButton::Cross)
+            || self.input.just_pressed(input::PadButton::Circle);
+        let up = self.input.just_pressed(input::PadButton::Up);
+        let down = self.input.just_pressed(input::PadButton::Down);
+        self.step_inline_dialogue(confirm, up, down);
+        if self.inline_dialogue.as_ref().is_some_and(|d| d.is_done()) {
+            self.inline_dialogue = None;
+            self.current_dialog = None;
+            self.pending_field_events
+                .push(crate::field_events::FieldEvent::DialogDismissed);
+        }
     }
 
     /// Install the VDF ("set_mime") buffer for the active scene. The bytes
@@ -3764,6 +3807,9 @@ impl World {
                 // the same frame.
                 self.tick_field_interaction_probe();
                 self.tick_field_carriers();
+                // Faithful dialogue path (opt-in): drive a just-opened field
+                // dialogue through the field VM so branch handlers execute.
+                self.drive_inline_dialogue();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
                 }
@@ -4179,8 +4225,10 @@ impl World {
         // A box is up: a confirm/cancel press dismisses it (and the locomotion
         // + auto-engage steps stay gated off `current_dialog` meanwhile).
         if self.current_dialog.is_some() {
-            if self.input.just_pressed(input::PadButton::Cross)
-                || self.input.just_pressed(input::PadButton::Circle)
+            // The inline-script runner, when active, owns dismissal.
+            if self.inline_dialogue.is_none()
+                && (self.input.just_pressed(input::PadButton::Cross)
+                    || self.input.just_pressed(input::PadButton::Circle))
             {
                 self.current_dialog = None;
                 self.pending_field_events.push(FieldEvent::DialogDismissed);
@@ -4442,7 +4490,9 @@ impl World {
         let cancel = self.input.just_pressed(PadButton::Circle);
 
         if self.current_dialog.is_some() {
-            if (confirm || cancel) && !self.dialog_input_consumed {
+            // The inline-script runner, when active, owns box dismissal.
+            if self.inline_dialogue.is_none() && (confirm || cancel) && !self.dialog_input_consumed
+            {
                 self.dialog_input_consumed = true;
                 self.current_dialog = None;
                 self.pending_field_events
