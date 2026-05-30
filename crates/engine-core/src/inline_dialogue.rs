@@ -48,6 +48,13 @@ pub struct InlineDialogue {
     /// Records the most recent option index the player picked (for hosts /
     /// tests that want to observe which branch was taken).
     pub last_choice: Option<usize>,
+    /// When the runner is started with a prologue (`pc` points before the first
+    /// text segment), this holds the offset of that first `0x1F` segment. If the
+    /// prologue terminates — hits a `Halt`/`Unknown` op or a non-`0x1F`
+    /// terminator — before opening any box, the runner resumes here instead of
+    /// ending, so prologue execution is never worse than the truncated path.
+    /// Consumed (set to `None`) the first time a box opens or the fallback fires.
+    pub fallback_segment_pc: Option<usize>,
 }
 
 impl InlineDialogue {
@@ -61,12 +68,33 @@ impl InlineDialogue {
             panel: None,
             done: false,
             last_choice: None,
+            fallback_segment_pc: None,
         }
     }
 
     /// Convenience constructor from an owned inline buffer.
     pub fn from_inline(inline: Vec<u8>) -> Self {
         Self::new(Arc::new(inline), 0)
+    }
+
+    /// Start running the full interaction record `bytecode` from `entry_pc` (the
+    /// record's `script_pc0`) so the **interaction prologue** — the field-VM
+    /// bytecode before the first text segment — executes first. The prologue's
+    /// `SysFlag.Test`/`JmpRel` chain selects which segment the box opens at per
+    /// story state. `first_segment` is the offset of the first `0x1F`; if the
+    /// prologue can't reach a segment the runner falls back to it. Mirrors retail
+    /// `FUN_80039B7C` state 0 calling the dispatcher on the record from
+    /// `actor[+0x9E]` rather than from the first segment.
+    pub fn with_prologue(bytecode: Arc<Vec<u8>>, entry_pc: usize, first_segment: usize) -> Self {
+        Self {
+            bytecode,
+            ctx: FieldCtx::default(),
+            pc: entry_pc,
+            panel: None,
+            done: false,
+            last_choice: None,
+            fallback_segment_pc: Some(first_segment),
+        }
     }
 
     /// The glyph bytes of the box currently being typed (empty if no box).

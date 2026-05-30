@@ -1865,6 +1865,76 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
     assert!(world.inline_dialogue.as_ref().unwrap().is_done());
 }
 
+/// Step the inline runner until a box is open and the typewriter has fully
+/// revealed it (the glyph bytes stop growing), then return its page glyph bytes.
+/// Panics if no stable box appears within a bounded number of ticks.
+fn run_inline_until_box(world: &mut World) -> Vec<u8> {
+    let mut last: Vec<u8> = Vec::new();
+    let mut stable = 0;
+    for _ in 0..400 {
+        world.step_inline_dialogue(false, false, false);
+        let pb = world.inline_dialogue.as_ref().unwrap().page_bytes();
+        if pb.is_empty() {
+            continue;
+        }
+        if pb == last {
+            stable += 1;
+            if stable >= 2 {
+                return pb;
+            }
+        } else {
+            stable = 0;
+            last = pb;
+        }
+    }
+    panic!("box never opened / finished typing");
+}
+
+#[test]
+fn inline_dialogue_prologue_selects_segment_by_story_flag() {
+    // The interaction record's prologue is a single `SysFlag.Test` (op `0x70`)
+    // on story flag 7: when the flag is set it jumps to segment B, otherwise it
+    // falls through to segment A. This is the retail segment-selection mechanism
+    // — the prologue's story-flag-gated jump chooses which line the box opens at.
+    //
+    //   pc 0: 70 07 06 00   SysFlag.Test flag 7 -> jump to pc (2 + 6) = 8
+    //   pc 4: 1F 'A' 'A' 00  segment A (fall-through)
+    //   pc 8: 1F 'B' 'B' 00  segment B (selected when flag 7 set)
+    let body = vec![
+        0x70, 0x07, 0x06, 0x00, // SysFlag.Test flag 7
+        0x1F, b'A', b'A', 0x00, // segment A @ 4
+        0x1F, b'B', b'B', 0x00, // segment B @ 8
+    ];
+    let entry_pc = 0;
+    let first_segment = 4;
+
+    // Flag clear: the test falls through to segment A.
+    let mut world = World::new();
+    assert!(!world.system_flag_test(7));
+    world.start_inline_dialogue_with_prologue(body.clone(), entry_pc, first_segment);
+    assert_eq!(run_inline_until_box(&mut world), b"AA");
+
+    // Flag set: the prologue jumps to segment B.
+    let mut world = World::new();
+    world.system_flag_set(7);
+    world.start_inline_dialogue_with_prologue(body, entry_pc, first_segment);
+    assert_eq!(run_inline_until_box(&mut world), b"BB");
+}
+
+#[test]
+fn inline_dialogue_prologue_falls_back_when_it_cannot_reach_a_segment() {
+    // A prologue that can't proceed (here a `CFLAG_TST` on a clear ctx bit, which
+    // halts) must not silently drop the dialogue: the runner falls back to the
+    // first segment so the box still shows — never worse than the truncated path.
+    //
+    //   pc 0: 33 05         CFLAG_TST bit 5 (clear on a fresh ctx) -> Halt
+    //   pc 2: 1F 'X' 'X' 00 first segment (fallback target)
+    let body = vec![0x33, 0x05, 0x1F, b'X', b'X', 0x00];
+    let mut world = World::new();
+    world.start_inline_dialogue_with_prologue(body, 0, 2);
+    assert_eq!(run_inline_until_box(&mut world), b"XX");
+}
+
 /// Build the A/B menu script used by the inline-dialogue tests: prompt "Hi",
 /// a 2-option picker whose option A branch SETs system flag 5 and option B SETs
 /// flag 6, each followed by a reply + conversation-end terminator.

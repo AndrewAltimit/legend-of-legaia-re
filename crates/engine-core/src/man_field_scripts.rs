@@ -495,6 +495,56 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     }
 }
 
+/// The prologue-aware form of a talk NPC's inline interaction script.
+///
+/// [`classify_placement`]'s [`PlacementKind::Npc::dialog_inline`] is the record
+/// truncated to start at the first `0x1F` text segment — enough for the
+/// simplified renderer, but it discards the **interaction prologue**: the
+/// field-VM bytecode between the record's `script_pc0` and that first segment
+/// (story-flag `SysFlag.Test` / `JmpRel` chains, `CFlag.Set`, NPC move-to-tile).
+/// Retail runs that prologue first; its `SysFlag.Test` branches are how the box
+/// *selects which segment to start at* per story state. This struct carries the
+/// untruncated record so the opt-in field-VM dialogue runner can execute it.
+///
+/// `entry_pc` and `first_segment` are byte offsets **into `body`** (the record
+/// from `record_offset` to its bounded end). The runner steps the VM from
+/// `entry_pc`; if the prologue reaches a text segment it opens there, otherwise
+/// it falls back to `first_segment` (the old start), so it is never worse than
+/// the truncated path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineDialogPrologue {
+    /// The full interaction record body (`man[record_offset..record_end]`).
+    pub body: Vec<u8>,
+    /// Offset of the interaction-script entry (`script_pc0`) within `body`.
+    pub entry_pc: usize,
+    /// Offset of the first `0x1F` text segment within `body`.
+    pub first_segment: usize,
+}
+
+/// Recover the [`InlineDialogPrologue`] for placement `p`, or `None` when the
+/// record carries no inline text segment (a decorative / warp-only actor). The
+/// `body`/`entry_pc`/`first_segment` are derived from the same bounds
+/// [`classify_placement`] uses, so `body[first_segment..]` equals that
+/// placement's `dialog_inline` byte-for-byte.
+pub fn placement_inline_prologue(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<InlineDialogPrologue> {
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return None;
+    }
+    let body = &man[start..end];
+    let first_segment = first_inline_dialog_offset(body, p.script_pc0)?;
+    Some(InlineDialogPrologue {
+        body: body.to_vec(),
+        entry_pc: p.script_pc0,
+        first_segment,
+    })
+}
+
 /// `true` when `p` is the Rim Elm sparring partner: the partition-1 placement
 /// pinned at [`RIM_ELM_SPARRING_CARRIER_TILE`] carrying
 /// [`RIM_ELM_SPARRING_CARRIER_MODEL`] (the NPC whose talk-menu installs the
