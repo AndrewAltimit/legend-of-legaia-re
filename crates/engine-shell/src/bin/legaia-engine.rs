@@ -7226,8 +7226,38 @@ impl ApplicationHandler for PlayWindowApp {
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
-                    // Advance an active Seru-magic summon scene-graph (debug
-                    // spawn via the `G` key) through the move VM each frame.
+                    // Production cast-band trigger: a player Seru-magic cast
+                    // (spell id 0x81..=0x8b) requests a summon spawn; the host
+                    // resolves the per-summon overlay PROT entry, loads it,
+                    // parses the part records, and seats the scene-graph. The
+                    // engine equivalent of the retail cast band's overlay load.
+                    if let Some((spell_id, origin)) =
+                        self.session.host.world.take_pending_summon_spawn()
+                        && let Some(entry) =
+                            legaia_engine_core::summon::summon_stager_prot_entry(spell_id)
+                    {
+                        match self.session.host.index.entry_bytes(entry) {
+                            Ok(bytes) => {
+                                let overlay = legaia_asset::summon_overlay::parse(
+                                    &bytes,
+                                    legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
+                                );
+                                self.session.host.world.spawn_summon(
+                                    &overlay,
+                                    &bytes,
+                                    legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX,
+                                    origin,
+                                );
+                                log::info!(
+                                    "summon cast: spell {spell_id:#04x} -> PROT {entry}, {} parts",
+                                    overlay.parts.len()
+                                );
+                            }
+                            Err(e) => log::warn!("summon cast: read PROT {entry}: {e:#}"),
+                        }
+                    }
+                    // Advance an active Seru-magic summon scene-graph (the cast
+                    // above, or the `G` debug spawn) through the move VM.
                     self.session.host.world.tick_summon(0x0400);
                     if self.menu_runtime.is_open() {
                         let p = self.pad;

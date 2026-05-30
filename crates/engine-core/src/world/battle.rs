@@ -488,6 +488,25 @@ impl World {
             let outcome = cast_spell(def, t, &snap);
             self.fold_spell_outcome(outcome);
         }
+        // Cast band (live-loop path): a player Seru-magic id resolves to a
+        // per-summon overlay. Request the spawn at the first real target's
+        // battle position so the host can seat the summon scene-graph. The
+        // engine equivalent of the retail cast band's `FUN_8003EC70` overlay
+        // load (see `crate::summon`).
+        if crate::summon::SERU_SUMMON_IDS.contains(&def.id) {
+            let origin = targets
+                .iter()
+                .find_map(|&t| self.actors.get(t as usize))
+                .map(|a| {
+                    [
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                    ]
+                })
+                .unwrap_or([0, -300, -645]);
+            self.request_summon_spawn(def.id, origin);
+        }
         true
     }
 

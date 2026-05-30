@@ -29,6 +29,20 @@ use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
 /// has no explicit limit but breaks on WAIT / HALT / end-of-buffer).
 pub const SUMMON_PART_BUDGET: usize = 256;
 
+/// Player Seru-magic spell-id range that resolves to a per-summon overlay at
+/// the battle-action cast band (`FUN_801E295C` state `0x29`: `actor[+0x1DF] >=
+/// 0x81`). Gimard *Tail Fire* = `0x81`.
+pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
+
+/// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
+/// or `None` if `spell_id` is not a summon. Retail: `FUN_8003EC70(id - 0x79)`
+/// loads PROT `(id - 0x79) + 0x381`, i.e. `0x81..=0x8B → 905..=915`.
+pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
+    SERU_SUMMON_IDS
+        .contains(&spell_id)
+        .then(|| 905 + (spell_id - 0x81) as u32)
+}
+
 /// Upper bound on a `model_sel` that names a real mesh (`DAT_8007C018[model_sel
 /// + base]`). The model library is small (~30 entries), so a part whose
 /// `model_sel` is `-1` (transform node) or a large sentinel (`0x1000`, `0x4000`,
@@ -273,6 +287,15 @@ mod tests {
         // Both tiny programs HALT on the first frame.
         scene.tick(&mut host, 0x1000);
         assert!(scene.finished(), "both parts halted");
+    }
+
+    #[test]
+    fn summon_prot_entry_maps_the_seru_block() {
+        assert_eq!(summon_stager_prot_entry(0x81), Some(905)); // Gimard Tail Fire
+        assert_eq!(summon_stager_prot_entry(0x8B), Some(915)); // last player summon
+        assert_eq!(summon_stager_prot_entry(0x80), None); // below the block
+        assert_eq!(summon_stager_prot_entry(0x8C), None); // above the block
+        assert_eq!(summon_stager_prot_entry(0x27), None); // a monster attack id
     }
 
     #[test]
