@@ -2294,15 +2294,15 @@ impl LegaiaViewer {
     /// Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
     /// VRAM capture (his tutorial-equipped state via
     /// [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
-    /// `0864`) uses the equipment-robust
+    /// `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
     /// [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
-    /// section separators' unequipped-default CLUTs, filtered to the columns her
-    /// mesh samples (validated ~98% vs a full-party capture). Gala's full palette
-    /// isn't recovered yet (his record0 is PROT `0865`, a battle_data container
-    /// whose sub-records aren't laid out like a player file), so he falls back to
-    /// the bundled palette. The Baka Fighter form keeps
-    /// [`Self::battle_char_vram_bytes`] (the bundled palette is the correct
-    /// minigame colouring).
+    /// section separators' unequipped-default CLUTs, filtered to the columns each
+    /// mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
+    /// All three player files load by `char + 0x360` → `FUN_8003e8a8` →
+    /// `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
+    /// the start of `0865` begin exactly at those player-file regions. The Baka
+    /// Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
+    /// the correct minigame colouring).
     pub fn battle_char_vram_bytes_battle(&self) -> Vec<u8> {
         let mut vram = self.battle_char_vram_bytes();
         if vram.is_empty() {
@@ -2312,10 +2312,13 @@ impl LegaiaViewer {
         if let Some(pal) = self.edstati3_palette(861) {
             overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(0), &pal);
         }
-        // Noa (slot 1, PROT 0864 rec0=0): equipment-robust collection filtered to
-        // the columns her mesh actually samples.
-        if let Some(pal) = self.collected_palette(864, 1) {
-            overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(1), &pal);
+        // Noa (slot 1, PROT 0864 rec0=0) and Gala (slot 2, PROT 0865 rec0=0):
+        // equipment-robust collection filtered to the columns each mesh samples.
+        // (0865's entry begins exactly at Gala's player-file region in PROT.DAT.)
+        for &(prot_index, slot) in &[(864u32, 1usize), (865, 2)] {
+            if let Some(pal) = self.collected_palette(prot_index, slot) {
+                overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(slot), &pal);
+            }
         }
         vram
     }

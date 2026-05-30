@@ -38,7 +38,9 @@
 //! running_a, u32 size]` that run while `a[i+1] == a[i] + size[i]`; `id == 0`
 //! marks a section boundary. The five sub-records are located by:
 //!
-//! - `sec_base = align_up(recbase, 0x1000)` (recbase = end of the table)
+//! - `sec_base = rec0 + align_up(recbase - rec0, 0x2000)` (recbase = table end;
+//!   the `0x2000` alignment is rec0-relative — `0x1000` happens to match for
+//!   Vahn/Noa but misplaces Gala by 0x1000)
 //! - sub0..3 = `sec_base + a[entry following each internal id=0 separator]`
 //! - sub4    = `rec0 + (a_last + size_last)` (the descriptor's total span)
 //!
@@ -170,7 +172,7 @@ fn derive_sub_offsets(rec0: usize, entries: &[DescEntry], recbase: usize) -> Vec
     // probes many offsets) can carry garbage descriptor values, and `usize` is
     // 32-bit on wasm — an offset that overruns the file is rejected later by the
     // bounds checks in `parse_record`, so saturating to a huge value is safe.
-    let sec_base = (recbase.saturating_add(0xFFF)) & !0xFFF;
+    let sec_base = rec0 + (recbase.saturating_sub(rec0).saturating_add(0x1FFF) & !0x1FFF);
     let mut subs = Vec::new();
     // sub0..3: the record following each internal id=0 separator (a separator
     // that is the table's last entry is the terminator, not a section start).
@@ -312,7 +314,7 @@ pub fn collect_palette(file: &[u8], rec0: usize, mesh_cols: &[u16]) -> Result<Ba
     }
 
     let (entries, recbase) = walk_descriptors(file, desc_off)?;
-    let sec_base = recbase.saturating_add(0xFFF) & !0xFFF;
+    let sec_base = rec0 + (recbase.saturating_sub(rec0).saturating_add(0x1FFF) & !0x1FFF);
     let (_, a_last, sz_last) = entries[entries.len() - 1];
     let total = a_last.saturating_add(sz_last) as usize;
 
@@ -420,11 +422,11 @@ mod tests {
         // head's `a` must point sub_head at sec_base + a.
         let stream0 = lit_compress(&rec0);
         let desc_off = 0x10 + stream0.len();
-        // recbase = desc_off + 4*12; sec_base = align_up(recbase, 0x1000).
+        // recbase = desc_off + 4*12; sec_base = align_up(recbase, 0x2000).
         // Four entries: [run, separator(id0), section-head, terminator(id0)].
         // derive_sub_offsets => sub_head @ sec_base + a_head, sub_final @ total.
         let recbase = desc_off + 4 * 12;
-        let sec_base = (recbase + 0xFFF) & !0xFFF;
+        let sec_base = (recbase + 0x1FFF) & !0x1FFF;
         let a_head = 0x800u32;
         let total = 0x1000u32; // a_last + size_last of the terminator entry
 
@@ -511,7 +513,7 @@ mod tests {
         let stream0 = lit_compress(&rec0);
         let desc_off = 0x10 + stream0.len();
         let recbase = desc_off + 2 * 12;
-        let sec_base = (recbase + 0xFFF) & !0xFFF;
+        let sec_base = (recbase + 0x1FFF) & !0x1FFF;
 
         let mut file = Vec::new();
         file.extend_from_slice(&(desc_off as u32).to_le_bytes());

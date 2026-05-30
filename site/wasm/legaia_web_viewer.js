@@ -668,15 +668,15 @@ export class LegaiaViewer {
      * Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
      * VRAM capture (his tutorial-equipped state via
      * [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
-     * `0864`) uses the equipment-robust
+     * `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
      * [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
-     * section separators' unequipped-default CLUTs, filtered to the columns her
-     * mesh samples (validated ~98% vs a full-party capture). Gala's full palette
-     * isn't recovered yet (his record0 is PROT `0865`, a battle_data container
-     * whose sub-records aren't laid out like a player file), so he falls back to
-     * the bundled palette. The Baka Fighter form keeps
-     * [`Self::battle_char_vram_bytes`] (the bundled palette is the correct
-     * minigame colouring).
+     * section separators' unequipped-default CLUTs, filtered to the columns each
+     * mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
+     * All three player files load by `char + 0x360` → `FUN_8003e8a8` →
+     * `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
+     * the start of `0865` begin exactly at those player-file regions. The Baka
+     * Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
+     * the correct minigame colouring).
      * @returns {Uint8Array}
      */
     battle_char_vram_bytes_battle() {
