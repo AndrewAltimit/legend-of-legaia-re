@@ -171,6 +171,17 @@ goto v0;                                                  // computed jump</code
   </ul>
 </section>
 
+<section class="doc-section" id="summon-interpolation">
+  <h2>Summon part position interpolation</h2>
+  <p>The per-part world position during a Seru-magic summon is driven by <code>FUN_801F811C</code> (the per-frame summon-part position update in the render overlay). It is a keyframe interpolation that is now <strong>ported in full</strong> as <code>summon::apply_translation_update</code> in <code>engine-core</code> - the completion latch is its terminal case, not the whole behaviour.</p>
+  <ul class="bullets">
+    <li>Each frame the part's keyframe time (<code>actor+0x9C</code>) advances toward its duration (<code>actor+0x9E</code>) by the per-frame delta <code>_DAT_1F800393</code>.</li>
+    <li>The world position (<code>+0x14/16/18</code>) interpolates toward the move-VM anim-bank target (<code>anim_3c/3e/40</code>, set by op <code>0x00 ANIM_BANK_SET</code> as <code>v &lt;&lt; 3</code>) each frame via the <code>FUN_801DE4C8</code> mode-1 fixed-point lerp (<code>(target - cur) * t / dur + cur</code>, truncating integer divide) plus the sized-store helper <code>FUN_801DE648</code>.</li>
+    <li>On the frame the keyframe time reaches the duration, the position latches exactly to the target and <code>+0x9E</code> is cleared. The anim banks are summon-local, so the engine adds the cast origin to seat the part in world space.</li>
+  </ul>
+  <p>The part's <strong>orientation</strong> is a separate path (<code>FUN_801F7088</code>, a camera + local-Euler rotation via <code>RotMatrix</code>) whose node source is not yet pinned, so the rotation stays approximate - see <a href="../reference/open-rev-eng-threads.html">open reverse-engineering threads</a>.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">

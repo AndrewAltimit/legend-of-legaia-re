@@ -215,6 +215,48 @@ The interpreter loops: read opcode at `actor[+0x70]`, dispatch, write the new PC
 
 After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_80021DF4`) gets a "tick complete for this actor" signal. The next frame's `FUN_80021DF4` updates physics, then re-enters `FUN_80023070` from the saved PC.
 
+## Summon part interpolation (P3)
+
+The summon scene-graph driver (`crates/engine-core/src/summon.rs`) ticks each
+part through this move VM, then applies the render-side position update
+`FUN_801F811C` (the per-frame summon-part position update; present byte-identical
+in the dance / baka-fighter overlay images at the same RAM address —
+`ghidra/scripts/funcs/overlay_dance_801f811c.txt`). The whole update is decoded
+and **ported** as `summon::apply_translation_update`.
+
+`FUN_801F811C(actor)` per frame:
+
+- **No active tween (`+0x9E == 0`).** Snap world pos `+0x14/16/18/1a` to the
+  anim-bank target `+0x3c/3e/40/42`.
+- **Active tween (`+0x9E != 0`).** Advance the keyframe cursor
+  `+0x9C += DAT_1F800393` and clamp it to `+0x9E`. Then for each axis
+  (`x:3c↔14, y:3e↔16, z:40↔18, w:42↔1a`), if `target != cur`, lerp
+  `cur = FUN_801DE4C8(target, cur, +0x9C, +0x9E, 1)` and store the result via
+  `FUN_801DE648(value, &cur, 4)`. **Phase A (the `+0x9C == +0x9E` latch arm at
+  `0x801F82A0`)** — not a separate function but the terminal branch of this same
+  body — then latches the world pos exactly to the anim-bank target and clears
+  `+0x9E`. The function finally emits 4 render quads.
+
+The two helpers (overlay-resident at the field-VM RAM band, dumped):
+
+- `FUN_801DE4C8(a, b, t, D, mode)` — `if (a == b || D <= t) return a;`. Mode 1
+  (the only mode the summon caller uses) is plain linear interp
+  `(a - b) * t / D + b` with integer truncating division (no rounding). Modes
+  2/3/4 add ease curve segments. See
+  `ghidra/scripts/funcs/overlay_dance_801de4c8.txt`. Ported as
+  `summon::lerp_axis` (the mode-1 arm).
+- `FUN_801DE648(value, *dst, size)` — a sized store (`size` 1/2/4 → `sb`/`sh`/`sw`).
+  The summon caller always passes `size = 4`. See
+  `ghidra/scripts/funcs/overlay_baka_fighter_801de648.txt`. Collapses to a plain
+  `i16` field write in the engine.
+
+The engine models anim banks as summon-local offsets, so `summon::SummonScene`
+adds the cast-target `origin` to each axis's lerp endpoint (retail places the
+whole summon via the camera/parent). `frame_delta` is the engine's analog of
+`DAT_1F800393`: the same per-frame delta drives both the wait-timer drain and the
+`+0x9C` interpolation advance. The summon part now glides to its keyframe target
+instead of snapping on completion.
+
 ## Connection to other crates
 
 - **`crates/mdt`** - parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, `crates/mdt` can grow a disassembler.

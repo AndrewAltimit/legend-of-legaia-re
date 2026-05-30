@@ -269,8 +269,10 @@ pub trait FieldHost {
     }
 
     /// Play a sound effect (op 0x39). The original calls
-    /// `func_0x8004313C()` (likely a "stop current SFX" cleanup) then
-    /// `func_0x800421D4(sfx_id, 1)` to start the new one.
+    /// `func_0x8004313C()` (HUD/inventory window-bounds setup — writes the
+    /// `gp+0x2D2/0x2D4/0x2D6` start/end/span triple; see
+    /// `docs/reference/functions.md` `8004313C` — NOT a "stop current SFX"
+    /// cleanup) then `func_0x800421D4(sfx_id, 1)` to start the new one.
     fn play_sfx(&mut self, sfx_id: u8) {
         let _ = sfx_id;
     }
