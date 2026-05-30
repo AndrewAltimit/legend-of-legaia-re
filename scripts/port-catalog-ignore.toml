@@ -94,6 +94,9 @@
 "8005b3a8" = "RotMatrix-family matrix-vector product: loads rotation matrix into COP2 control regs 0x0000-0x2000, runs three cop2 0x486012 ops feeding IR data regs, reads MAC1/2/3, repacks into the MATRIX. Sibling cited in the 800172c0 geometry chain; engine emits via glam Mat3/Mat4"
 "8005b6a8" = "SetTransMatrix translation-vector loader: three ctc2 of param+0x14/0x18/0x1c into COP2 control regs 0x2800/0x3000/0x3800 (TRX/TRY/TRZ). Parallels 8005b7cc SetTransMatrix; engine emits translation via glam"
 "8005b308" = "PopMatrix (GTE matrix-stack pop): decrements 0x20-stride SP global DAT_80079010 (underflow -> printf), reloads rotation matrix (ctc2 ctrl 0x0000-0x2000) + translation vector (0x2800/0x3000/0x3800) from the popped frame. libgte stack bookkeeping; engine uses a glam transform stack"
+"8003d1a4" = "GTE control-word restore: 8x ctc2 of an 8-word array into COP2 control regs 0x0000..0x3800 (rotation/light matrix region). The restore counterpart explicitly named by the 8003d20c (save) entry above; brackets the billboard projector 800195a8. Engine emits GTE-equivalent matrices via glam/wgpu"
+"8003d254" = "SetGeomScreen (GTE H / projection-plane-distance write): single `ctc2 a0, 0xD000; jr ra`. Engine carries the focal length as Camera::h (crates/engine-render::gte) and projects through the wgpu pipeline; no GTE COP2 path"
+"8003d178" = "GTE rotation-matrix identity reset: ctc2 0x1000 (=1.0) into COP2 control regs 0x0000/0x1000/0x2000 (R11/R22/R33) and 0 into 0x0800/0x1800 (off-diagonals). The identity-reset third of the save (8003d20c) / restore (8003d1a4) GTE control-word trio; engine uses glam::Mat3::IDENTITY"
 
 
 # libcd primitives and the ISO9660 / streaming-read stack above them.
@@ -148,6 +151,21 @@
 "80059bd4" = "LoadImage2 / MoveImage internal (DMA over GPU MMIO ports DAT_80078e24/E28)"
 "80059c00" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
 "80059de4" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
+
+
+# SCUS-resident PSX GPU/GTE render-pipeline scaffolding. Unlike the [libgs] /
+# [libgte] entries above (which are PsyQ library entry points), these are
+# game-side functions that build and drive the PSX ordering-table / packet-pool
+# / display-env / software-clip machinery. The clean-room renderer in
+# `crates/engine-render` emits a wgpu pipeline with no OT, no packet pool, no
+# DISPENV/DRAWENV, and hardware clipping/rasterisation - so the entire concept
+# these encode is replaced rather than line-ported. (Each is documented in
+# `docs/reference/functions.md`.)
+[render_pipeline]
+"8001e3b8" = "Primitive-packet buffer + ordering-table allocator (OT = 1<<depth entries, double-buffered packet pool into DISPENV @ 0x8007BF30; malloc via 80017888). engine-render uses a wgpu pipeline with no OT/packet-pool"
+"8001daf8" = "Display-environment + GTE screen setup: builds the double-buffered DISPENV/DRAWENV pair (libgpu 8005731c/8005724c), selects 320x240 / 640x480, primes GTE SetGeomScreen/Offset. Engine sets the viewport via the winit surface + Camera::for_viewport"
+"80044798" = "Cluster-A primitive off-screen reject test: reads GTE FIFO SXY0/1/2 and rejects a 4-vertex prim when any corner leaves [0,0xF0)x[0,0x140). Engine relies on wgpu viewport/scissor + NDC clipping; no software reject"
+"800195a8" = "Billboard / screen-space textured-quad projector: GTE-projects a center point, builds four +/-half_w/half_h corner SXY (optional Z-rotate via 8004638c), brackets the GTE save/restore pair 8003d20c/8003d1a4. Engine emits billboard quads through the EffectSprite -> wgpu path"
 
 
 # libetc / libcomb (VSync, frame-pacing) plus SCUS-resident dev-instrumentation
