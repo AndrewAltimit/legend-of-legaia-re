@@ -297,24 +297,36 @@ honors this (`while out.len() < size`), so the port is just one
 `decompress(stream, budget)` per record. Clean-room parser:
 [`legaia_asset::battle_char_palette`].
 
-**Pre-staged PLAYER-file layout (the parser input).** `FUN_80052770` streams the
-PLAYER file contiguously into RAM, so the RAM layout *is* the file layout, and the
-file is self-describing relative to `record[0]` at offset 0:
+**On-disc record layout (the parser is self-describing).** The `data\battle\PLAYERn`
+path resolves (via disc index `char+0x360`, `FUN_8003e8a8`) to the **`edstati3`
+PROT entry** — *not* an ISO9660 file (the disc filesystem holds only `SYSTEM.CNF`,
+`SCUS_942.54`, `PROT.DAT`, `DMY.DAT`, `CDNAME.TXT`, `MOV/`, `XA/`). The record is
+self-describing relative to `record[0]`:
 
 ```text
-+0x00  u32  desc_off    descriptor-table offset (= end of record[0]'s stream)
-+0x04  u32  clut_a_off  offset of CLUT A within record[0]'s DECODED output
-+0x08  u32  clut_b_off  offset of CLUT B
-+0x0C  u32  budget      record[0] decoded size; LZS stream begins at +0x10
+rec0+0x00  u32  desc_off    descriptor-table offset (rec0-relative)
+rec0+0x04  u32  clut_a_off  offset of CLUT A within record[0]'s DECODED output
+rec0+0x08  u32  clut_b_off  offset of CLUT B
+rec0+0x0C  u32  budget      record[0] decoded size; LZS stream begins at +0x10
 desc_off: 12-byte entries [u32 id, u32 running_a, u32 size]; the table runs while
-          `a[i+1] == a[i] + size[i]`, so sub#0 = desc_off + count*12.
-sub0_off + 0x2000*k  (k = 0..4): a staged sub-record, [u32 budget][LZS stream].
+          `a[i+1] == a[i] + size[i]`; `id == 0` marks a section boundary.
 ```
 
-The five sub-records are at a **fixed `0x2000` stride** in the *pre-staged* PLAYER
-file (sub#5's "budget" is garbage → exactly 5, matching the loop bound
-`iVar15 < 5`). The decode loop's `ra = 0x80053130` callsite reads each as
-`a0 = *a1 (budget); FUN_8001A55C(a0, a1+4, dst)`.
+On disc the five sub-records are **scattered**, located by:
+
+```text
+sec_base = align_up(recbase, 0x1000)              (recbase = end of the table)
+sub0..3  = sec_base + a[entry after each internal id=0 separator]
+sub4     = rec0 + (a_last + size_last)            (the descriptor's total span)
+```
+
+Each sub-record is `[u32 budget][LZS stream]`. At load time `FUN_80052770` streams
+these into one buffer at a **`0x2000` stride** (the runtime layout the decode loop's
+`ra = 0x80053130` callsite walks via `a0 = *a1 (budget); FUN_8001A55C(a0, a1+4,
+dst)`), but the parser reconstructs the scattered disc offsets directly — no capture
+needed. Byte-exact for Vahn (PROT `0861`, `rec0 = 0x1000` past the `"pochi"`
+header); see [`legaia_asset::battle_char_palette`] + the disc-gated
+`battle_char_palette_real` test.
 
 **Assembly + the 3 bands.** Decode `record[0]` at work offset 0; read CLUT A
 @`clut_a_off` and CLUT B @`clut_b_off` *immediately* (the sub-records overwrite the
@@ -334,13 +346,16 @@ all inside `0..0x1F` / `0x40..0x6F` / `0x70..0x8F`. The extra columns the *runti
 mesh uses (`176/192/208/224`) belong to the +2 equipment groups (`nobj=17`), which
 the disc mesh doesn't have.
 
-> **PROT `0861` vs the PLAYER file.** PROT `0861` (`edstati3`) contains one
-> *un-staged* copy of `record[0]` (at file `0x1000`, after a `"pochi…"` header),
-> but its `+0x587C+0x2000*k` region is **not** pre-staged — the loader selects and
-> stages the 5 sub-records at load time (the equipment machinery). The canonical
-> input is the ISO file `data\battle\PLAYERn` (loaded by disc index `char+0x360`),
-> which *is* pre-staged. Noa/Gala live in `PLAYER2`/`PLAYER3`; the Tetsu tutorial
-> is Vahn-only, so a tutorial save only ever stages `PLAYER1`.
+> **Disc source = PROT `0861` (`edstati3`).** `"data\battle\PLAYER1"` is a dev-tree
+> label; the bytes live in the `edstati3` PROT cluster (`0858..0863`, the same data
+> at different `pochi`-padding alignments — `0861` has `record[0]` at `0x1000`,
+> `0863` at `0x0`). The five sub-records sit at the *scattered* disc offsets above
+> (`0x1C000 / 0x28800 / 0x66000 / 0x85800 / 0xA2000` for Vahn), **not** the runtime
+> `0x2000` stride — that stride exists only in the RAM buffer the loader stages.
+> The parser derives the scattered offsets from the descriptor table, so it reads
+> the palette straight from PROT `0861` with no capture. Noa/Gala resolve through
+> `char+0x360` to their own player numbers; the Tetsu tutorial is Vahn-only, so a
+> tutorial save only loads `PLAYER1`.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
