@@ -658,6 +658,27 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Battle VRAM with the **true per-battle palette** overlaid for the slots
+     * whose disc palette source is known. This is the colour-correct render a
+     * real turn-based battle produces — the party CLUTs decoded from the
+     * character's `edstati3` record (`FUN_80052FA0`, see
+     * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+     * mesh's nominal CBA samples.
+     *
+     * Vahn (slot 0) is validated byte-exact against a live battle VRAM capture;
+     * his record is `edstati3` PROT `0861`. Noa/Gala fall back to the bundled
+     * (authoring) palette until their `edstati3` records are confirmed. The
+     * Baka Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled
+     * palette is the correct minigame colouring).
+     * @returns {Uint8Array}
+     */
+    battle_char_vram_bytes_battle() {
+        const ret = wasm.legaiaviewer_battle_char_vram_bytes_battle(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
      * @param {number} id

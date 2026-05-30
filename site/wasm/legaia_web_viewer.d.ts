@@ -309,6 +309,21 @@ export class LegaiaViewer {
      */
     battle_char_vram_bytes(): Uint8Array;
     /**
+     * Battle VRAM with the **true per-battle palette** overlaid for the slots
+     * whose disc palette source is known. This is the colour-correct render a
+     * real turn-based battle produces — the party CLUTs decoded from the
+     * character's `edstati3` record (`FUN_80052FA0`, see
+     * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+     * mesh's nominal CBA samples.
+     *
+     * Vahn (slot 0) is validated byte-exact against a live battle VRAM capture;
+     * his record is `edstati3` PROT `0861`. Noa/Gala fall back to the bundled
+     * (authoring) palette until their `edstati3` records are confirmed. The
+     * Baka Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled
+     * palette is the correct minigame colouring).
+     */
+    battle_char_vram_bytes_battle(): Uint8Array;
+    /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
      */
@@ -1075,6 +1090,7 @@ export interface InitOutput {
     readonly legaiaviewer_battle_char_pack_json: (a: number) => [number, number];
     readonly legaiaviewer_battle_char_tmd_bytes: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_battle_char_vram_bytes_battle: (a: number) => [number, number];
     readonly legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
     readonly legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_catalog_len: (a: number) => number;

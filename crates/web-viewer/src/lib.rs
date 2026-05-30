@@ -2284,6 +2284,62 @@ impl LegaiaViewer {
         vram.as_bytes().to_vec()
     }
 
+    /// Battle VRAM with the **true per-battle palette** overlaid for the slots
+    /// whose disc palette source is known. This is the colour-correct render a
+    /// real turn-based battle produces — the party CLUTs decoded from the
+    /// character's `edstati3` record (`FUN_80052FA0`, see
+    /// [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+    /// mesh's nominal CBA samples.
+    ///
+    /// Vahn (slot 0) is validated byte-exact against a live battle VRAM capture;
+    /// his record is `edstati3` PROT `0861`. Noa/Gala fall back to the bundled
+    /// (authoring) palette until their `edstati3` records are confirmed. The
+    /// Baka Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled
+    /// palette is the correct minigame colouring).
+    pub fn battle_char_vram_bytes_battle(&self) -> Vec<u8> {
+        let mut vram = self.battle_char_vram_bytes();
+        if vram.is_empty() {
+            return vram;
+        }
+        // (mesh slot, edstati3 PROT index). Only Vahn is confirmed.
+        for &(slot, prot_index) in &[(0usize, 861u32)] {
+            let Some(pal) = self.edstati3_palette(prot_index) else {
+                continue;
+            };
+            let rows = self.battle_char_clut_rows(slot);
+            overlay_palette_rows(&mut vram, &rows, &pal);
+        }
+        vram
+    }
+
+    /// Parse the battle CLUT bands out of a character's `edstati3` PROT entry.
+    fn edstati3_palette(
+        &self,
+        prot_index: u32,
+    ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == prot_index)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        let slice = self.disc.get(off..end)?;
+        let rec0 = legaia_asset::battle_char_palette::find_record0(slice)?;
+        legaia_asset::battle_char_palette::parse_record(slice, rec0).ok()
+    }
+
+    /// Distinct VRAM CLUT rows the battle mesh at `slot` samples (decoded from
+    /// each primitive's CBA: `row = (cba >> 6) & 0x1FF`). The true palette is
+    /// written to each of these rows so the mesh's nominal CBA picks it up.
+    fn battle_char_clut_rows(&self, slot: usize) -> Vec<u16> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot) else {
+            return Vec::new();
+        };
+        let mut rows: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] >> 6) & 0x1FF).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
     // ------------------------------------------------------------------
     // Player ANM bundles — per-scene asset bundle, section 2, type 0x05
     // ("MOVE" label but canonical ANM content with marker_1 = 0x080C).
@@ -4458,5 +4514,32 @@ impl LegaiaAudio {
 impl Default for LegaiaAudio {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Write a character's true battle palette into the 1 MB PSX VRAM byte buffer.
+/// Each band's STP-set colours (`PaletteBand::vram_words`) are written at
+/// `(row, base + i)` for every CLUT row the mesh samples — the runtime collapses
+/// a character's two nominal rows to one palette, so writing both is equivalent.
+fn overlay_palette_rows(
+    vram: &mut [u8],
+    rows: &[u16],
+    pal: &legaia_asset::battle_char_palette::BattleCharPalette,
+) {
+    const VRAM_W: usize = 1024;
+    for &row in rows {
+        for band in &pal.bands {
+            for (i, w) in band.vram_words().iter().enumerate() {
+                let col = band.base as usize + i;
+                if col >= VRAM_W {
+                    break;
+                }
+                let off = (row as usize * VRAM_W + col) * 2;
+                if off + 2 <= vram.len() {
+                    vram[off] = (*w & 0xFF) as u8;
+                    vram[off + 1] = (*w >> 8) as u8;
+                }
+            }
+        }
     }
 }
