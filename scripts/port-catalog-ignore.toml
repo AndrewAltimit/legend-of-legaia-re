@@ -89,6 +89,7 @@
 "800172c0" = "Camera / geometry init (Euler -> matrix via 80026988 + SetGeomScreen/Offset/Translation 8005B648/B3A8/B4B8 + NCLIP 8003D344); pure libgte chain replaced by glam Mat4 + wgpu pipeline"
 "8005bb48" = "InitGeom - exception-handler table install + FlushCache"
 "8005b7d8" = "SetColorMatrix-family GTE control-word loader (three ctc2 writes: a0<<4 -> 0xA800, a1<<4 -> 0xB000, a2<<4 -> 0xB800 = cop2 control regs 21/22/23, the color/light matrix region); sibling of 8005b7c0 SetRotMatrix / 8005b7cc SetTransMatrix"
+"8003d20c" = "GTE control-word save: 8x cfc2 of COP2 control regs 0x0000..0x3800 (rotation/light matrix region) into param_1[0..7]. Save counterpart of 8003d1a4 (restore) / 8003d178 (identity reset); brackets the billboard projector 800195a8. Engine emits GTE-equivalent matrices via glam/wgpu"
 
 
 # libcd primitives and the ISO9660 / streaming-read stack above them.
@@ -175,6 +176,7 @@
 "80061e94" = "SsSeqClose short-arg shim (tail-calls 80061d18)"
 "80061edc" = "SsSeqSetVol"
 "8006206c" = "_SsSetSlideVolume (ramp from->to over N ticks)"
+"80062004" = "SsSeqSetVol short-arg shim: sign-extends its two args and tail-calls 80061edc SsSeqSetVol with track=0"
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"
 "80062410" = "_SsSeqInit (validates magic + reads PPQN / BPM / TPQ)"
 "8006275c" = "SsSeqPlay (clears stop/end flags, sets active bit)"
