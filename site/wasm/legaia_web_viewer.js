@@ -508,8 +508,8 @@ export class LegaiaViewer {
      * @param {number} atlas
      * @returns {Uint8Array}
      */
-    baka_fighter_atlas_bytes(atlas) {
-        const ret = wasm.legaiaviewer_baka_fighter_atlas_bytes(this.__wbg_ptr, atlas);
+    battle_char_atlas_bytes(atlas) {
+        const ret = wasm.legaiaviewer_battle_char_atlas_bytes(this.__wbg_ptr, atlas);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
@@ -523,8 +523,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Float32Array}
      */
-    baka_fighter_mesh_bounds(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_bounds(this.__wbg_ptr, slot);
+    battle_char_mesh_bounds(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_bounds(this.__wbg_ptr, slot);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -534,8 +534,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Uint32Array}
      */
-    baka_fighter_mesh_cba_tsb(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_cba_tsb(this.__wbg_ptr, slot);
+    battle_char_mesh_cba_tsb(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_cba_tsb(this.__wbg_ptr, slot);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -545,8 +545,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Uint32Array}
      */
-    baka_fighter_mesh_indices(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_indices(this.__wbg_ptr, slot);
+    battle_char_mesh_indices(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_indices(this.__wbg_ptr, slot);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -556,21 +556,21 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Float32Array}
      */
-    baka_fighter_mesh_normals(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_normals(this.__wbg_ptr, slot);
+    battle_char_mesh_normals(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_normals(this.__wbg_ptr, slot);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
     /**
      * Per-vertex TMD object index for the battle-form character at slot
-     * `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+     * `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
      * player-ANM animator uses it to apply per-bone (per-object) transforms.
      * @param {number} slot
      * @returns {Uint32Array}
      */
-    baka_fighter_mesh_object_ids(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_object_ids(this.__wbg_ptr, slot);
+    battle_char_mesh_object_ids(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_object_ids(this.__wbg_ptr, slot);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -580,8 +580,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Float32Array}
      */
-    baka_fighter_mesh_positions(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_positions(this.__wbg_ptr, slot);
+    battle_char_mesh_positions(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_positions(this.__wbg_ptr, slot);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -591,8 +591,8 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Int32Array}
      */
-    baka_fighter_mesh_uvs(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_mesh_uvs(this.__wbg_ptr, slot);
+    battle_char_mesh_uvs(slot) {
+        const ret = wasm.legaiaviewer_battle_char_mesh_uvs(this.__wbg_ptr, slot);
         var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -610,11 +610,11 @@ export class LegaiaViewer {
      * ```
      * @returns {string}
      */
-    baka_fighter_pack_json() {
+    battle_char_pack_json() {
         let deferred1_0;
         let deferred1_1;
         try {
-            const ret = wasm.legaiaviewer_baka_fighter_pack_json(this.__wbg_ptr);
+            const ret = wasm.legaiaviewer_battle_char_pack_json(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -627,37 +627,60 @@ export class LegaiaViewer {
      * @param {number} slot
      * @returns {Uint8Array}
      */
-    baka_fighter_tmd_bytes(slot) {
-        const ret = wasm.legaiaviewer_baka_fighter_tmd_bytes(this.__wbg_ptr, slot);
+    battle_char_tmd_bytes(slot) {
+        const ret = wasm.legaiaviewer_battle_char_tmd_bytes(this.__wbg_ptr, slot);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
     }
     /**
-     * Build the 1 MB PSX VRAM the battle-form character pack would have
-     * at boot — each of the seven atlas TIMs uploaded at its declared
-     * `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
-     * `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
-     * fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
-     * to the battle character atlas pack.
+     * Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
+     * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
+     * (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+     * palette** — what the Baka Fighter minigame renders with directly. Both
+     * the Battle and Baka Fighter forms on the site render against this VRAM
+     * with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
      *
-     * Note: the PROT 1204 atlas TIMs ARE the real battle-form character
-     * art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
-     * rendering each atlas with its bundled CLUT). The earlier
-     * "placeholder" framing was misleading — it came from
-     * byte-comparing against a mid-battle mc1 retail VRAM snapshot,
-     * which captures only one animation phase of the runtime upload.
-     * What's actually missing: the targeted-CLUT upload pass that
-     * populates rows 491/493/494/495 from non-PROT-1204 sources. The
-     * TMD primitives reference CBAs across rows 481/492/495/496/503,
-     * not just the atlas's own row, so a single character's polygons
-     * need ALL those CLUT rows populated to render correct palettes.
-     * See `docs/reference/open-rev-eng-threads.md` § "Battle character
-     * image + CLUT source".
+     * A real turn-based battle relocates the same geometry + textures into a
+     * packed per-slot VRAM band (rows 481..483) and recolours it with a
+     * per-battle party palette that is a **separate, battle-allocated runtime
+     * asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+     * distinct from this bundled palette and **not recoverable from the disc by
+     * byte search** (see `docs/formats/character-mesh.md`). Until that palette's
+     * disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+     * the Battle form is the bundled-palette render, visually identical to Baka.
      * @returns {Uint8Array}
      */
-    baka_fighter_vram_bytes() {
-        const ret = wasm.legaiaviewer_baka_fighter_vram_bytes(this.__wbg_ptr);
+    battle_char_vram_bytes() {
+        const ret = wasm.legaiaviewer_battle_char_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Battle VRAM with the **true per-battle palette** overlaid for the slots
+     * whose disc palette source is known. This is the colour-correct render a
+     * real turn-based battle produces — the party CLUTs decoded from the
+     * character's `edstati3` record (`FUN_80052FA0`, see
+     * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+     * mesh's nominal CBA samples.
+     *
+     * Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
+     * VRAM capture (his tutorial-equipped state via
+     * [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
+     * `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
+     * [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
+     * section separators' unequipped-default CLUTs, filtered to the columns each
+     * mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
+     * All three player files load by `char + 0x360` → `FUN_8003e8a8` →
+     * `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
+     * the start of `0865` begin exactly at those player-file regions. The Baka
+     * Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
+     * the correct minigame colouring).
+     * @returns {Uint8Array}
+     */
+    battle_char_vram_bytes_battle() {
+        const ret = wasm.legaiaviewer_battle_char_vram_bytes_battle(this.__wbg_ptr);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;

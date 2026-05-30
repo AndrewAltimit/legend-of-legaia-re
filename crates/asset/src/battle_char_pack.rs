@@ -1,18 +1,32 @@
-//! Baka Fighter minigame character pack — PROT entry `1204` (`other5`).
+//! Battle-form character mesh pack — PROT entry `1204` (`other5`).
 //!
-//! This is the character roster for the **Baka Fighter** fist-fight minigame,
-//! **not** the main battle party. (The minigame lets you play *as* Vahn / Noa /
-//! Gala, so it reuses recognizably the same characters — but as a distinct,
-//! more detailed mesh set than the field/battle pack.) It is loaded by
-//! `overlay_baka_fighter` (`data\field\other5.lzs` + PROT 1205/1206; debug
-//! string `"OTHER5 %d %d"`), which repoints `DAT_8007C018[0..=4]` during a
-//! Baka Fighter session. The five fighter TMDs have larger `nobj` counts than
-//! the field/battle pack (typically `nobj` 15/16/15 on disc vs. 12/12/12).
+//! This is the party's **in-battle** character mesh set: the higher-detail
+//! Vahn / Noa / Gala models (plus two extra fighter slots) the engine installs
+//! into `DAT_8007C018[0..=2]` for every turn-based battle. The five fighter
+//! TMDs have larger `nobj` counts than the field pack (`nobj` 15/16/15 on disc
+//! vs. the field pack's 12/12/12; the runtime patches +2 equipment groups, so
+//! a live battle slot reads 17/18/17).
 //!
-//! **The real main battle does NOT use this pack** — it renders the party from
-//! the field-form pack (PROT 0874 §0, see [`crate::character_pack`]), reloaded
-//! by the battle scene loader `FUN_800520F0` as `etmd.dat`. This module's name
-//! is historical; it parses the Baka Fighter pack.
+//! The **Baka Fighter** fist-fight minigame reuses this same pack — it lets you
+//! play *as* Vahn / Noa / Gala, so it borrows the battle character models
+//! (`overlay_baka_fighter` loads `data\field\other5.lzs` + PROT 1205/1206 with
+//! the debug string `"OTHER5 %d %d"`). That minigame reuse is why earlier
+//! captures pinned this pack during Baka Fighter sessions; it is **not** a
+//! minigame-exclusive roster.
+//!
+//! The field-form pack (PROT 0874 §0, see [`crate::character_pack`]) is the
+//! *field-only* low-poly walk/talk models; it is **not** used in battle. The
+//! captured battle scene loader `FUN_800520F0` fills the effect/model window
+//! `DAT_8007C018[3..]` from `etmd.dat`; the party-mesh load that installs this
+//! pack into `[0..=2]` is in an as-yet-uncaptured battle-setup overlay (only
+//! `overlay_baka_fighter` references the `other5` family in the current dumps).
+//!
+//! **Provenance (empirical, decisive).** The party slots' live vertex data,
+//! read out of `DAT_8007C018[0..=2]` in real-battle save states, byte-matches
+//! this pack and **not** the field pack — across the Tetsu tutorial fight, the
+//! Gimard Seru-boss fight (an unambiguous turn-based battle), and the
+//! full-party `party_battle_gobu_gobu` capture. See
+//! [`battle_char_pack_real`](../../tests/battle_char_pack_real.rs).
 //!
 //! ## On-disc layout
 //!
@@ -136,7 +150,7 @@ pub fn slot_label(slot: usize) -> &'static str {
 /// One decoded slot of the battle-form character pack: a Legaia TMD plus its
 /// provenance.
 #[derive(Debug, Clone)]
-pub struct BakaFighterSlot {
+pub struct BattleCharSlot {
     /// 0-based slot inside the disc pack (`0..=4`).
     pub slot: usize,
     /// `nobj` from the TMD header on disc.
@@ -150,7 +164,7 @@ pub struct BakaFighterSlot {
 /// One character texture atlas: a 256x256 4bpp PSX TIM with its own 256x1
 /// sub-CLUT, at a fixed VRAM coordinate.
 #[derive(Debug, Clone)]
-pub struct BakaFighterAtlas {
+pub struct BattleCharAtlas {
     /// 0-based atlas index inside the pack (`0..=6`).
     pub atlas_index: usize,
     /// VRAM Y coordinate of the atlas's CLUT block (X is `0`). Mirrors
@@ -166,24 +180,24 @@ pub struct BakaFighterAtlas {
 /// The full parsed battle-form character pack — five TMD slots + seven TIM
 /// atlases in disc order.
 #[derive(Debug, Clone)]
-pub struct BakaFighterPack {
-    pub slots: [BakaFighterSlot; SLOT_COUNT],
-    pub atlases: [BakaFighterAtlas; ATLAS_COUNT],
+pub struct BattleCharPack {
+    pub slots: [BattleCharSlot; SLOT_COUNT],
+    pub atlases: [BattleCharAtlas; ATLAS_COUNT],
 }
 
-impl BakaFighterPack {
+impl BattleCharPack {
     /// Borrowed view of all five slots.
-    pub fn slots(&self) -> &[BakaFighterSlot; SLOT_COUNT] {
+    pub fn slots(&self) -> &[BattleCharSlot; SLOT_COUNT] {
         &self.slots
     }
 
     /// Get one slot by its 0-based pack index.
-    pub fn slot(&self, idx: usize) -> Option<&BakaFighterSlot> {
+    pub fn slot(&self, idx: usize) -> Option<&BattleCharSlot> {
         self.slots.get(idx)
     }
 
     /// Get one atlas by its 0-based pack index.
-    pub fn atlas(&self, idx: usize) -> Option<&BakaFighterAtlas> {
+    pub fn atlas(&self, idx: usize) -> Option<&BattleCharAtlas> {
         self.atlases.get(idx)
     }
 }
@@ -200,11 +214,11 @@ fn read_u32_le(buf: &[u8], off: usize) -> Result<u32> {
 /// Walks the five [`BATTLE_TMD_CHUNK_TYPE`] streaming chunks, then reads the
 /// seven trailing TIM atlases at their fixed stride. Validates each slot's
 /// TMD magic and each atlas's TIM magic; bails on the first inconsistency.
-pub fn parse(prot_1204_bytes: &[u8]) -> Result<BakaFighterPack> {
+pub fn parse(prot_1204_bytes: &[u8]) -> Result<BattleCharPack> {
     let buf = prot_1204_bytes;
 
     // -- 5 streaming TMD2 chunks --
-    let mut slots: Vec<BakaFighterSlot> = Vec::with_capacity(SLOT_COUNT);
+    let mut slots: Vec<BattleCharSlot> = Vec::with_capacity(SLOT_COUNT);
     let mut cursor = 0usize;
     for slot in 0..SLOT_COUNT {
         let head = read_u32_le(buf, cursor)?;
@@ -212,7 +226,7 @@ pub fn parse(prot_1204_bytes: &[u8]) -> Result<BakaFighterPack> {
         let size = (head & 0x00FF_FFFF) as usize;
         if typ != BATTLE_TMD_CHUNK_TYPE {
             bail!(
-                "baka_fighter_pack slot {slot}: expected streaming chunk type 0x{:02X} (TMD2), found 0x{:02X}",
+                "battle_char_pack slot {slot}: expected streaming chunk type 0x{:02X} (TMD2), found 0x{:02X}",
                 BATTLE_TMD_CHUNK_TYPE,
                 typ
             );
@@ -220,27 +234,27 @@ pub fn parse(prot_1204_bytes: &[u8]) -> Result<BakaFighterPack> {
         let body_off = cursor + 4;
         if body_off + size > buf.len() {
             bail!(
-                "baka_fighter_pack slot {slot}: chunk body (size {size}) overruns buffer (len {})",
+                "battle_char_pack slot {slot}: chunk body (size {size}) overruns buffer (len {})",
                 buf.len()
             );
         }
         let body = &buf[body_off..body_off + size];
         if body.len() < 0x0C {
             bail!(
-                "baka_fighter_pack slot {slot}: chunk body too short ({}) for a Legaia TMD header",
+                "battle_char_pack slot {slot}: chunk body too short ({}) for a Legaia TMD header",
                 body.len()
             );
         }
         let magic = u32::from_le_bytes(body[..4].try_into().unwrap());
         if magic != TMD_MAGIC {
             bail!(
-                "baka_fighter_pack slot {slot}: expected Legaia TMD magic 0x{:08X}, got 0x{:08X}",
+                "battle_char_pack slot {slot}: expected Legaia TMD magic 0x{:08X}, got 0x{:08X}",
                 TMD_MAGIC,
                 magic
             );
         }
         let disc_nobj = u32::from_le_bytes(body[0x08..0x0C].try_into().unwrap());
-        slots.push(BakaFighterSlot {
+        slots.push(BattleCharSlot {
             slot,
             disc_nobj,
             file_offset: body_off,
@@ -255,42 +269,42 @@ pub fn parse(prot_1204_bytes: &[u8]) -> Result<BakaFighterPack> {
         let next = read_u32_le(buf, cursor)?;
         let next_typ = ((next >> 24) & 0xFF) as u8;
         if next_typ == BATTLE_TMD_CHUNK_TYPE {
-            bail!("baka_fighter_pack: unexpected 6th TMD2 chunk after slot {SLOT_COUNT}");
+            bail!("battle_char_pack: unexpected 6th TMD2 chunk after slot {SLOT_COUNT}");
         }
     }
-    let slots: [BakaFighterSlot; SLOT_COUNT] = slots
+    let slots: [BattleCharSlot; SLOT_COUNT] = slots
         .try_into()
         .map_err(|v: Vec<_>| anyhow::anyhow!("expected {SLOT_COUNT} slots, got {}", v.len()))?;
 
     // -- 7 trailing TIM atlases at fixed stride --
-    let mut atlases: Vec<BakaFighterAtlas> = Vec::with_capacity(ATLAS_COUNT);
+    let mut atlases: Vec<BattleCharAtlas> = Vec::with_capacity(ATLAS_COUNT);
     for (atlas_index, &clut_row) in ATLAS_CLUT_ROWS.iter().enumerate() {
         let tim_off = FIRST_ATLAS_OFFSET + atlas_index * ATLAS_STRIDE_BYTES;
         if tim_off + 8 > buf.len() {
             bail!(
-                "baka_fighter_pack atlas {atlas_index}: offset 0x{tim_off:X} past end of PROT 1204 (len {})",
+                "battle_char_pack atlas {atlas_index}: offset 0x{tim_off:X} past end of PROT 1204 (len {})",
                 buf.len()
             );
         }
         let magic = read_u32_le(buf, tim_off)?;
         if magic != 0x10 {
             bail!(
-                "baka_fighter_pack atlas {atlas_index}: expected TIM magic 0x10 at 0x{tim_off:X}, got 0x{magic:08X}"
+                "battle_char_pack atlas {atlas_index}: expected TIM magic 0x10 at 0x{tim_off:X}, got 0x{magic:08X}"
             );
         }
         let end = (tim_off + ATLAS_STRIDE_BYTES).min(buf.len());
-        atlases.push(BakaFighterAtlas {
+        atlases.push(BattleCharAtlas {
             atlas_index,
             clut_fb_y: clut_row,
             file_offset: tim_off,
             tim_bytes: buf[tim_off..end].to_vec(),
         });
     }
-    let atlases: [BakaFighterAtlas; ATLAS_COUNT] = atlases
+    let atlases: [BattleCharAtlas; ATLAS_COUNT] = atlases
         .try_into()
         .map_err(|v: Vec<_>| anyhow::anyhow!("expected {ATLAS_COUNT} atlases, got {}", v.len()))?;
 
-    Ok(BakaFighterPack { slots, atlases })
+    Ok(BattleCharPack { slots, atlases })
 }
 
 #[cfg(test)]

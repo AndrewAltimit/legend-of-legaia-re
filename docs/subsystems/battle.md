@@ -13,10 +13,16 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   (`FUN_8003e68c(0x36a)` + `async_lba_loader`), with PROT `0x369` (873) as its index.
 - **State `0xc`** - walks the loaded 874 pack and calls `tmd_register` on every
   entry (`jal 0x80026b4c` = `FUN_80026B4C`, the sole `DAT_8007C018` installer),
-  then loads `efect.dat` / PROT `0x36b` (875). **This is how the party meshes get
-  into battle: PROT 874 is the same `befect_data` §0 character pack the field uses
-  ([character-mesh.md](../formats/character-mesh.md#battle-reuses-the-field-form--there-is-no-separate-battle-character-pack)) — there is no separate battle-character mesh.** The party actors' mesh pointer
-  `actor[+0x230]` resolves to `DAT_8007C018[0..=2]` for Vahn/Noa/Gala.
+  then loads `efect.dat` / PROT `0x36b` (875). **This registration fills the
+  effect/model window `DAT_8007C018[3..]`, NOT the party `[0..=2]`.** The party
+  battle meshes come from a **separate** pack — **PROT 1204 (`other5`)**,
+  installed into `DAT_8007C018[0..=2]` for Vahn/Noa/Gala by an as-yet-uncaptured
+  battle-setup overlay (the party meshes sit in a distinct high RAM region, e.g.
+  Vahn at `0x80165f48`). The party actors' mesh pointer `actor[+0x230]` resolves
+  to those `[0..=2]` entries. Pinned empirically by byte-matching the live party
+  vertex pools to PROT 1204 across the Tetsu / Gimard-boss / Gobu-Gobu battles
+  ([character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--prot-1204)).
+  The field pack 0874 §0 is field-only.
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
 - **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
 

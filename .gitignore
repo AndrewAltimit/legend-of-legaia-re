@@ -121,3 +121,6 @@ Thumbs.db
 
 # Jython-compiled bytecode from running ghidra/scripts/*.py in the container
 *$py.class
+
+# stray mednafen-state vram-dump default output (Sony VRAM bytes)
+/vram.png

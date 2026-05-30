@@ -2079,11 +2079,11 @@ impl LegaiaViewer {
     ///   "first_atlas_offset": 154628
     /// }
     /// ```
-    pub fn baka_fighter_pack_json(&self) -> String {
-        let Some(slice) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_pack_json(&self) -> String {
+        let Some(slice) = self.battle_char_pack_slice() else {
             return r#"{"slots":[],"atlases":[]}"#.to_string();
         };
-        let pack = match legaia_asset::baka_fighter_pack::parse(slice) {
+        let pack = match legaia_asset::battle_char_pack::parse(slice) {
             Ok(p) => p,
             Err(e) => {
                 return format!(r#"{{"slots":[],"atlases":[],"error":"battle char pack: {e}"}}"#);
@@ -2095,7 +2095,7 @@ impl LegaiaViewer {
             .map(|s| {
                 serde_json::json!({
                     "slot": s.slot,
-                    "label": legaia_asset::baka_fighter_pack::slot_label(s.slot),
+                    "label": legaia_asset::battle_char_pack::slot_label(s.slot),
                     "disc_nobj": s.disc_nobj,
                     "tmd_bytes": s.tmd_bytes.len(),
                     "file_offset": s.file_offset,
@@ -2117,38 +2117,38 @@ impl LegaiaViewer {
         serde_json::json!({
             "slots": slots,
             "atlases": atlases,
-            "atlas_stride_bytes": legaia_asset::baka_fighter_pack::ATLAS_STRIDE_BYTES,
-            "first_atlas_offset": legaia_asset::baka_fighter_pack::FIRST_ATLAS_OFFSET,
+            "atlas_stride_bytes": legaia_asset::battle_char_pack::ATLAS_STRIDE_BYTES,
+            "first_atlas_offset": legaia_asset::battle_char_pack::FIRST_ATLAS_OFFSET,
         })
         .to_string()
     }
 
-    fn baka_fighter_pack_slice(&self) -> Option<&[u8]> {
+    fn battle_char_pack_slice(&self) -> Option<&[u8]> {
         let meta = parse_prot_toc(&self.disc)?
             .into_iter()
-            .find(|e| e.index == legaia_asset::baka_fighter_pack::PROT_ENTRY_INDEX)?;
+            .find(|e| e.index == legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)?;
         let off = meta.byte_offset as usize;
         let end = off.saturating_add(meta.size_bytes as usize);
         self.disc.get(off..end)
     }
 
-    fn build_baka_fighter_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
-        let raw = self.baka_fighter_pack_slice()?;
-        let pack = legaia_asset::baka_fighter_pack::parse(raw).ok()?;
+    fn build_battle_char_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let raw = self.battle_char_pack_slice()?;
+        let pack = legaia_asset::battle_char_pack::parse(raw).ok()?;
         let cslot = pack.slot(slot)?;
         let tmd_bytes = cslot.tmd_bytes.clone();
         let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
         Some((tmd, tmd_bytes))
     }
 
-    fn build_baka_fighter_vram_mesh(&self, slot: usize) -> Option<legaia_tmd::mesh::VramMesh> {
-        let (tmd, bytes) = self.build_baka_fighter_mesh(slot)?;
+    fn build_battle_char_vram_mesh(&self, slot: usize) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, bytes) = self.build_battle_char_mesh(slot)?;
         Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes))
     }
 
     /// Per-vertex positions for the battle-form character at pack slot `slot`.
-    pub fn baka_fighter_mesh_positions(&self, slot: u32) -> Vec<f32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_positions(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.positions.len() * 3);
@@ -2159,8 +2159,8 @@ impl LegaiaViewer {
     }
 
     /// Per-vertex normals for the battle-form character at slot `slot`.
-    pub fn baka_fighter_mesh_normals(&self, slot: u32) -> Vec<f32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_normals(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.normals.len() * 3);
@@ -2171,15 +2171,15 @@ impl LegaiaViewer {
     }
 
     /// Triangle indices for the battle-form character at slot `slot`.
-    pub fn baka_fighter_mesh_indices(&self, slot: u32) -> Vec<u32> {
-        self.build_baka_fighter_vram_mesh(slot as usize)
+    pub fn battle_char_mesh_indices(&self, slot: u32) -> Vec<u32> {
+        self.build_battle_char_vram_mesh(slot as usize)
             .map(|m| m.indices)
             .unwrap_or_default()
     }
 
     /// Per-vertex `[u, v]` integer texel coords for the battle-form character.
-    pub fn baka_fighter_mesh_uvs(&self, slot: u32) -> Vec<i32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_uvs(&self, slot: u32) -> Vec<i32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
@@ -2190,8 +2190,8 @@ impl LegaiaViewer {
     }
 
     /// Per-vertex `[cba, tsb]` for the battle-form character.
-    pub fn baka_fighter_mesh_cba_tsb(&self, slot: u32) -> Vec<u32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_cba_tsb(&self, slot: u32) -> Vec<u32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
@@ -2206,8 +2206,8 @@ impl LegaiaViewer {
     /// midpoint, so asymmetric poses (e.g. Vahn's stance with the weapon
     /// extended past the body's X axis) don't pull the camera target off the
     /// torso. Radius is the max distance from the centroid to any vertex.
-    pub fn baka_fighter_mesh_bounds(&self, slot: u32) -> Vec<f32> {
-        let Some(mesh) = self.build_baka_fighter_vram_mesh(slot as usize) else {
+    pub fn battle_char_mesh_bounds(&self, slot: u32) -> Vec<f32> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
             return vec![0.0; 4];
         };
         if mesh.positions.is_empty() {
@@ -2217,21 +2217,21 @@ impl LegaiaViewer {
     }
 
     /// Per-vertex TMD object index for the battle-form character at slot
-    /// `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+    /// `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
     /// player-ANM animator uses it to apply per-bone (per-object) transforms.
-    pub fn baka_fighter_mesh_object_ids(&self, slot: u32) -> Vec<u32> {
-        let Some((tmd, bytes)) = self.build_baka_fighter_mesh(slot as usize) else {
+    pub fn battle_char_mesh_object_ids(&self, slot: u32) -> Vec<u32> {
+        let Some((tmd, bytes)) = self.build_battle_char_mesh(slot as usize) else {
             return Vec::new();
         };
         legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes).1
     }
 
     /// Raw disc-form TMD bytes for battle-form slot `slot`.
-    pub fn baka_fighter_tmd_bytes(&self, slot: u32) -> Vec<u8> {
-        let Some(raw) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_tmd_bytes(&self, slot: u32) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
             return Vec::new();
         };
         pack.slot(slot as usize)
@@ -2241,11 +2241,11 @@ impl LegaiaViewer {
 
     /// Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
     /// a 256x1 sub-CLUT row inside the TIM block.
-    pub fn baka_fighter_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
-        let Some(raw) = self.baka_fighter_pack_slice() else {
+    pub fn battle_char_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
             return Vec::new();
         };
         pack.atlas(atlas as usize)
@@ -2253,31 +2253,26 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
-    /// Build the 1 MB PSX VRAM the battle-form character pack would have
-    /// at boot — each of the seven atlas TIMs uploaded at its declared
-    /// `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
-    /// `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
-    /// fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
-    /// to the battle character atlas pack.
+    /// Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
+    /// uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
+    /// (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+    /// palette** — what the Baka Fighter minigame renders with directly. Both
+    /// the Battle and Baka Fighter forms on the site render against this VRAM
+    /// with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
     ///
-    /// Note: the PROT 1204 atlas TIMs ARE the real battle-form character
-    /// art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
-    /// rendering each atlas with its bundled CLUT). The earlier
-    /// "placeholder" framing was misleading — it came from
-    /// byte-comparing against a mid-battle mc1 retail VRAM snapshot,
-    /// which captures only one animation phase of the runtime upload.
-    /// What's actually missing: the targeted-CLUT upload pass that
-    /// populates rows 491/493/494/495 from non-PROT-1204 sources. The
-    /// TMD primitives reference CBAs across rows 481/492/495/496/503,
-    /// not just the atlas's own row, so a single character's polygons
-    /// need ALL those CLUT rows populated to render correct palettes.
-    /// See `docs/reference/open-rev-eng-threads.md` § "Battle character
-    /// image + CLUT source".
-    pub fn baka_fighter_vram_bytes(&self) -> Vec<u8> {
-        let Some(raw) = self.baka_fighter_pack_slice() else {
+    /// A real turn-based battle relocates the same geometry + textures into a
+    /// packed per-slot VRAM band (rows 481..483) and recolours it with a
+    /// per-battle party palette that is a **separate, battle-allocated runtime
+    /// asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+    /// distinct from this bundled palette and **not recoverable from the disc by
+    /// byte search** (see `docs/formats/character-mesh.md`). Until that palette's
+    /// disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+    /// the Battle form is the bundled-palette render, visually identical to Baka.
+    pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
+        let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::baka_fighter_pack::parse(raw) else {
+        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
             return Vec::new();
         };
         let mut vram = legaia_tim::Vram::new();
@@ -2287,6 +2282,106 @@ impl LegaiaViewer {
             }
         }
         vram.as_bytes().to_vec()
+    }
+
+    /// Battle VRAM with the **true per-battle palette** overlaid for the slots
+    /// whose disc palette source is known. This is the colour-correct render a
+    /// real turn-based battle produces — the party CLUTs decoded from the
+    /// character's `edstati3` record (`FUN_80052FA0`, see
+    /// [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+    /// mesh's nominal CBA samples.
+    ///
+    /// Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
+    /// VRAM capture (his tutorial-equipped state via
+    /// [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
+    /// `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
+    /// [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
+    /// section separators' unequipped-default CLUTs, filtered to the columns each
+    /// mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
+    /// All three player files load by `char + 0x360` → `FUN_8003e8a8` →
+    /// `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
+    /// the start of `0865` begin exactly at those player-file regions. The Baka
+    /// Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
+    /// the correct minigame colouring).
+    pub fn battle_char_vram_bytes_battle(&self) -> Vec<u8> {
+        let mut vram = self.battle_char_vram_bytes();
+        if vram.is_empty() {
+            return vram;
+        }
+        // Vahn (slot 0): the validated tutorial-equipped assembly.
+        if let Some(pal) = self.edstati3_palette(861) {
+            overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(0), &pal);
+        }
+        // Noa (slot 1, PROT 0864 rec0=0) and Gala (slot 2, PROT 0865 rec0=0):
+        // equipment-robust collection filtered to the columns each mesh samples.
+        // (0865's entry begins exactly at Gala's player-file region in PROT.DAT.)
+        for &(prot_index, slot) in &[(864u32, 1usize), (865, 2)] {
+            if let Some(pal) = self.collected_palette(prot_index, slot) {
+                overlay_palette_rows(&mut vram, &self.battle_char_clut_rows(slot), &pal);
+            }
+        }
+        vram
+    }
+
+    /// Parse the battle CLUT bands out of a character's `edstati3` PROT entry
+    /// (the fixed-stride [`parse_record`](legaia_asset::battle_char_palette::parse_record)
+    /// assembly — exact for Vahn).
+    fn edstati3_palette(
+        &self,
+        prot_index: u32,
+    ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+        let slice = self.prot_entry(prot_index)?;
+        let rec0 = legaia_asset::battle_char_palette::find_record0(slice)?;
+        legaia_asset::battle_char_palette::parse_record(slice, rec0).ok()
+    }
+
+    /// Equipment-robust palette for `mesh_slot`'s character from PROT `prot_index`
+    /// (record0 at file offset 0), filtered to the columns the mesh samples.
+    fn collected_palette(
+        &self,
+        prot_index: u32,
+        mesh_slot: usize,
+    ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+        let cols = self.battle_char_clut_cols(mesh_slot);
+        if cols.is_empty() {
+            return None;
+        }
+        let slice = self.prot_entry(prot_index)?;
+        legaia_asset::battle_char_palette::collect_palette(slice, 0, &cols).ok()
+    }
+
+    fn prot_entry(&self, prot_index: u32) -> Option<&[u8]> {
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == prot_index)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        self.disc.get(off..end)
+    }
+
+    /// Distinct VRAM CLUT rows the battle mesh at `slot` samples (decoded from
+    /// each primitive's CBA: `row = (cba >> 6) & 0x1FF`). The true palette is
+    /// written to each of these rows so the mesh's nominal CBA picks it up.
+    fn battle_char_clut_rows(&self, slot: usize) -> Vec<u16> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot) else {
+            return Vec::new();
+        };
+        let mut rows: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] >> 6) & 0x1FF).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
+    /// Distinct CLUT x-columns the battle mesh at `slot` samples
+    /// (`(cba & 0x3F) * 16`) — the band bases that belong to this character.
+    fn battle_char_clut_cols(&self, slot: usize) -> Vec<u16> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot) else {
+            return Vec::new();
+        };
+        let mut cols: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] & 0x3F) * 16).collect();
+        cols.sort_unstable();
+        cols.dedup();
+        cols
     }
 
     // ------------------------------------------------------------------
@@ -4463,5 +4558,32 @@ impl LegaiaAudio {
 impl Default for LegaiaAudio {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Write a character's true battle palette into the 1 MB PSX VRAM byte buffer.
+/// Each band's STP-set colours (`PaletteBand::vram_words`) are written at
+/// `(row, base + i)` for every CLUT row the mesh samples — the runtime collapses
+/// a character's two nominal rows to one palette, so writing both is equivalent.
+fn overlay_palette_rows(
+    vram: &mut [u8],
+    rows: &[u16],
+    pal: &legaia_asset::battle_char_palette::BattleCharPalette,
+) {
+    const VRAM_W: usize = 1024;
+    for &row in rows {
+        for band in &pal.bands {
+            for (i, w) in band.vram_words().iter().enumerate() {
+                let col = band.base as usize + i;
+                if col >= VRAM_W {
+                    break;
+                }
+                let off = (row as usize * VRAM_W + col) * 2;
+                if off + 2 <= vram.len() {
+                    vram[off] = (*w & 0xFF) as u8;
+                    vram[off + 1] = (*w >> 8) as u8;
+                }
+            }
+        }
     }
 }

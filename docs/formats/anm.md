@@ -356,15 +356,15 @@ state, mc7):
 | `0013`     | town0b      | 2       | 69      | 91 784         |
 | `0183`     | balden      | 2       | 72      | 71 604         |
 | `0408`     | bubu1       | 2       | 70      | 87 844         |
-| `1203`     | other5      | 2       | 30      | 87 684 (Baka Fighter) |
+| `1203`     | other5      | 2       | 30      | 87 684 (battle form) |
 
 The field-form bundles all have 69-72 records (the full player-locomotion
-+ interaction anim set). PROT `1203_other5` is the **Baka Fighter** minigame
-variant, sitting alongside the [Baka Fighter character mesh pack](character-mesh.md#baka-fighter-minigame-roster--prot-1203-1221-other5)
-at PROT 1204 (not the main battle — that reuses the field-form mesh, and its
-player animation source is still open). Other scenes either share an ANM blob
-with one of these via runtime caching, or have a smaller per-scene player-ANM
-section.
++ interaction anim set). PROT `1203_other5` is the **battle-form** player
+animation set, sitting alongside the [battle-form character mesh pack](character-mesh.md#battle-form--prot-1204)
+at PROT 1204 — the same `other5` family the engine installs for turn-based
+battles (and that the Baka Fighter minigame reuses). Other scenes either share
+an ANM blob with one of these via runtime caching, or have a smaller per-scene
+player-ANM section.
 
 Parser: `legaia_asset::player_anm` (CLI sweep + per-entry detector).
 

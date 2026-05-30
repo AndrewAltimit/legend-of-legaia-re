@@ -238,7 +238,7 @@ export class LegaiaViewer {
      * Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
      * a 256x1 sub-CLUT row inside the TIM block.
      */
-    baka_fighter_atlas_bytes(atlas: number): Uint8Array;
+    battle_char_atlas_bytes(atlas: number): Uint8Array;
     /**
      * Bounding-sphere `[cx, cy, cz, r]` for the battle-form character.
      * Uses the **vertex centroid** (mean position) rather than the AABB
@@ -246,33 +246,33 @@ export class LegaiaViewer {
      * extended past the body's X axis) don't pull the camera target off the
      * torso. Radius is the max distance from the centroid to any vertex.
      */
-    baka_fighter_mesh_bounds(slot: number): Float32Array;
+    battle_char_mesh_bounds(slot: number): Float32Array;
     /**
      * Per-vertex `[cba, tsb]` for the battle-form character.
      */
-    baka_fighter_mesh_cba_tsb(slot: number): Uint32Array;
+    battle_char_mesh_cba_tsb(slot: number): Uint32Array;
     /**
      * Triangle indices for the battle-form character at slot `slot`.
      */
-    baka_fighter_mesh_indices(slot: number): Uint32Array;
+    battle_char_mesh_indices(slot: number): Uint32Array;
     /**
      * Per-vertex normals for the battle-form character at slot `slot`.
      */
-    baka_fighter_mesh_normals(slot: number): Float32Array;
+    battle_char_mesh_normals(slot: number): Float32Array;
     /**
      * Per-vertex TMD object index for the battle-form character at slot
-     * `slot`, parallel to [`Self::baka_fighter_mesh_positions`]. The JS-side
+     * `slot`, parallel to [`Self::battle_char_mesh_positions`]. The JS-side
      * player-ANM animator uses it to apply per-bone (per-object) transforms.
      */
-    baka_fighter_mesh_object_ids(slot: number): Uint32Array;
+    battle_char_mesh_object_ids(slot: number): Uint32Array;
     /**
      * Per-vertex positions for the battle-form character at pack slot `slot`.
      */
-    baka_fighter_mesh_positions(slot: number): Float32Array;
+    battle_char_mesh_positions(slot: number): Float32Array;
     /**
      * Per-vertex `[u, v]` integer texel coords for the battle-form character.
      */
-    baka_fighter_mesh_uvs(slot: number): Int32Array;
+    battle_char_mesh_uvs(slot: number): Int32Array;
     /**
      * JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
      * 5 TMD slots + 7 character-atlas TIMs. Shape:
@@ -285,34 +285,51 @@ export class LegaiaViewer {
      * }
      * ```
      */
-    baka_fighter_pack_json(): string;
+    battle_char_pack_json(): string;
     /**
      * Raw disc-form TMD bytes for battle-form slot `slot`.
      */
-    baka_fighter_tmd_bytes(slot: number): Uint8Array;
+    battle_char_tmd_bytes(slot: number): Uint8Array;
     /**
-     * Build the 1 MB PSX VRAM the battle-form character pack would have
-     * at boot — each of the seven atlas TIMs uploaded at its declared
-     * `(fb_x, fb_y)`. Returns the raw 1024×512×2 byte blob suitable for
-     * `TmdRenderer.uploadVram`. Empty if PROT 1204 is absent or any atlas
-     * fails to parse. Mirrors [`Self::current_vram_bytes`] but specialized
-     * to the battle character atlas pack.
+     * Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
+     * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
+     * (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+     * palette** — what the Baka Fighter minigame renders with directly. Both
+     * the Battle and Baka Fighter forms on the site render against this VRAM
+     * with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
      *
-     * Note: the PROT 1204 atlas TIMs ARE the real battle-form character
-     * art (atlas 0 = Vahn portrait, 2 = Noa, 4 = Gala — verified by
-     * rendering each atlas with its bundled CLUT). The earlier
-     * "placeholder" framing was misleading — it came from
-     * byte-comparing against a mid-battle mc1 retail VRAM snapshot,
-     * which captures only one animation phase of the runtime upload.
-     * What's actually missing: the targeted-CLUT upload pass that
-     * populates rows 491/493/494/495 from non-PROT-1204 sources. The
-     * TMD primitives reference CBAs across rows 481/492/495/496/503,
-     * not just the atlas's own row, so a single character's polygons
-     * need ALL those CLUT rows populated to render correct palettes.
-     * See `docs/reference/open-rev-eng-threads.md` § "Battle character
-     * image + CLUT source".
+     * A real turn-based battle relocates the same geometry + textures into a
+     * packed per-slot VRAM band (rows 481..483) and recolours it with a
+     * per-battle party palette that is a **separate, battle-allocated runtime
+     * asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+     * distinct from this bundled palette and **not recoverable from the disc by
+     * byte search** (see `docs/formats/character-mesh.md`). Until that palette's
+     * disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+     * the Battle form is the bundled-palette render, visually identical to Baka.
      */
-    baka_fighter_vram_bytes(): Uint8Array;
+    battle_char_vram_bytes(): Uint8Array;
+    /**
+     * Battle VRAM with the **true per-battle palette** overlaid for the slots
+     * whose disc palette source is known. This is the colour-correct render a
+     * real turn-based battle produces — the party CLUTs decoded from the
+     * character's `edstati3` record (`FUN_80052FA0`, see
+     * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+     * mesh's nominal CBA samples.
+     *
+     * Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
+     * VRAM capture (his tutorial-equipped state via
+     * [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
+     * `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
+     * [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
+     * section separators' unequipped-default CLUTs, filtered to the columns each
+     * mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
+     * All three player files load by `char + 0x360` → `FUN_8003e8a8` →
+     * `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
+     * the start of `0865` begin exactly at those player-file regions. The Baka
+     * Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
+     * the correct minigame colouring).
+     */
+    battle_char_vram_bytes_battle(): Uint8Array;
     /**
      * Number of CLUT palettes available for cataloged TIM `id` (0 for
      * 16/24bpp TIMs, which carry no palette).
@@ -1069,17 +1086,18 @@ export interface InitOutput {
     readonly legaiaruntime_open_menu: (a: number) => void;
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
     readonly legaiaruntime_tick: (a: number) => bigint;
-    readonly legaiaviewer_baka_fighter_atlas_bytes: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_bounds: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_cba_tsb: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_indices: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_normals: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_object_ids: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_positions: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_mesh_uvs: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_pack_json: (a: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_tmd_bytes: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_baka_fighter_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_battle_char_atlas_bytes: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_bounds: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_indices: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_object_ids: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_positions: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_mesh_uvs: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_pack_json: (a: number) => [number, number];
+    readonly legaiaviewer_battle_char_tmd_bytes: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_battle_char_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_battle_char_vram_bytes_battle: (a: number) => [number, number];
     readonly legaiaviewer_catalog_clut_count: (a: number, b: number) => number;
     readonly legaiaviewer_catalog_info_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_catalog_len: (a: number) => number;
