@@ -873,9 +873,13 @@ table.arts-list .cmd-tag {
               ? `nobj ${meta.disc_nobj} on disc · TRUE per-battle palette decoded from edstati3 (PROT 0861), byte-exact vs a live battle capture`
               : `nobj ${meta.disc_nobj} on disc · bundled palette (this character's per-battle palette isn't identified yet)`)
           : `nobj ${meta.disc_nobj} on disc · bundled Baka Fighter palette (CLUTs at VRAM rows 490..495, 497)`;
-        // The battle/baka rig renders its static stored pose — the other5 ANM
-        // set pairs wrong against it (joints disconnect), so don't apply it.
-        // The Animation panel is hidden for these forms (updateAnmVisibility).
+        // Apply the current ANM record's FRAME 0 — the rest-pose assembly that
+        // positions each TMD object at its joint (without it the objects sit at
+        // their object-local origins and the rig looks scattered). The Animation
+        // panel is hidden for battle/baka (updateAnmVisibility), so the user
+        // can't scrub past frame 0 into the broken poses, but the rest pose
+        // still renders the mesh correctly.
+        maybeLoadCurrentAnim();
       } catch (err) {
         statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
       }
@@ -934,9 +938,6 @@ table.arts-list .cmd-tag {
   //   - viewer isn't ready / disc isn't loaded
   //   - selected record has bone_count == 0
   function maybeLoadCurrentAnim() {
-    // ANM is only wired for the field form; the battle/baka rig pairs the wrong
-    // (other5) animation set and disconnects the joints, so never apply it there.
-    if (isBattlePackForm(curForm)) return;
     if (!viewer || !anmCorpus) return;
     if (!meshView || typeof meshView.setAnimation !== 'function') return;
     const bundle = anmCorpus.bundles[curAnmBundleIdx];
