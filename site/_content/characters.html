@@ -257,13 +257,13 @@ table.arts-list .cmd-tag {
   <h2>What's next</h2>
   <p>Three open threads, in priority order of what changes the picture above:</p>
   <ul>
-    <li><strong>Field-form texture atlas</strong>. Lives in <code>player_data</code> (PROT 0876, a streaming-format file pinned resident alongside the mesh pack). The streaming <code>TIM_LIST</code> chunk uses a non-canonical head <code>(count=0)</code>; the canonical pack-walker can't unpack it yet. Without it, the field form renders flat-shaded — the disc vertices ARE in model-space (byte-equal vs live <code>DAT_8007C018</code> allocation in the catalogued save state) but the low-poly geometry looks like floating planes without textures.</li>
-    <li><strong>Battle-form rendering</strong>. <em>Wired (geometry + textures + Vahn's true palette).</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does, and the Battle form now overlays Vahn's true per-battle palette (decoded from <code>edstati3</code> PROT 0861) onto the rows his mesh samples — see <a href="#battle-palette">the battle-palette section</a>. Noa renders with her tall hair piece reading as a separate shape (which it is in the source TMD); Vahn's stored pose has the weapon arm extended along +X, so the AABB is wide and the body sits offset from frame center. Orbit / zoom to inspect.</li>
+    <li><strong>Field-form texture atlas</strong>. Lives in <code>player_data</code> (PROT 0876, a streaming-format file pinned resident alongside the mesh pack). The streaming <code>TIM_LIST</code> chunk uses a non-canonical head <code>(count=0)</code>; the canonical pack-walker can't unpack it yet. Without it, the field form renders flat-shaded (geometry assembles correctly via the per-scene ANM; only the textures are missing).</li>
+    <li><strong>Battle-form rendering</strong>. <em>Wired (geometry + textures + assembly + Vahn's true palette).</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does, and the Battle form overlays Vahn's true per-battle palette (decoded from <code>edstati3</code> PROT 0861) onto the rows his mesh samples — see <a href="#battle-palette">the battle-palette section</a>. The party mesh is assembled exactly as the retail engine does it (each object's local origin placed at its joint via the ANM per-bone <code>(T, R)</code>; see the Animation panel and note below). Orbit / zoom to inspect.</li>
     <li><strong>All three party palettes are wired</strong>. Vahn (PROT 0861, byte-exact), Noa (PROT 0864, ~98%) and Gala (PROT 0865, 100%) are decoded from your disc. The player files are resolved by <code>char + 0x360</code> → <code>FUN_8003e8a8</code> reading <code>toc[idx+2]</code> as a sector offset into <code>PROT.DAT</code> (the retail ISO9660 open <code>FUN_800608f0</code> is a <code>trap</code> stub on this build). Terra (PROT 0866) would follow the same path if a fourth battle slot ever needed it.</li>
-    <li><strong>Animations</strong>. Live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>; the disc-side source is still open. The disc TMD itself stores a single static pose (the engine's chosen default frame); to switch poses or play arts / spells, per-object transforms have to come from the ANM stream — that's the unblocking step for an animated preview of each art with audio.</li>
+    <li><strong>Animations</strong>. <em>Wired.</em> Live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>. The disc source is pinned: per-scene bundles for the field rig, and PROT 1203 (<code>other5</code>) for the battle rig, whose 30 records are organised in per-character banks (15-bone Vahn / 16-bone Noa / 15-bone Gala). The Animation panel steps records and plays frames; each frame poses through the exact retail per-bone pipeline (<code>R·v + T</code>, <code>FUN_8001B964</code> / <code>FUN_8001BE80</code>), so the rig stays assembled across the whole clip. Frame 0 of each bank's idle record is the combat-stance rest pose.</li>
   </ul>
   <div class="char-info-note">
-    <strong>Note on the disjoint look.</strong> The character TMDs ship <em>already</em> in model-space (no per-object rest-pose transform stack to apply). What looks "broken" — Vahn shrunken in frame, Noa with a floating hair piece — is the combination of (a) the static pose baked into the disc bytes, (b) flat-shading without textures (field form only), and (c) the model's AABB asymmetry when a weapon or limb extends past the body. The bounding sphere the camera frames against has been switched to a vertex-centroid sphere (instead of AABB-midpoint) so the body anchors the camera regardless of pose asymmetry.
+    <strong>Note on assembly.</strong> Each character is a set of object-local TMD pieces (head, torso, limbs), <em>not</em> a single pre-assembled mesh. The retail engine places each piece by rotating its object-local vertices about their own origin and translating to the joint position — <code>v_world = R<sub>bone</sub>·v + T<sub>bone</sub></code>, a flat per-object transform with no skeleton hierarchy (<code>FUN_8001B964</code> loads the actor matrix, <code>FUN_8001BE80</code> decodes the bone <code>(T, R)</code> and pushes <code>T</code> through the GTE's <code>MVMVA</code>, then <code>FUN_8002735C</code> draws the piece). The <code>(T, R)</code> values come from the ANM stream; frame 0 of the idle clip is the rest pose. This viewer applies that exact pipeline, so the pieces connect at their joints the way they do in-game. The remaining field-form caveat is texture-only: until the <code>player_data</code> atlas unpacks, the low-poly field rig renders flat-shaded.
   </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -553,16 +553,18 @@ table.arts-list .cmd-tag {
     return -1;
   }
 
-  // The ANM scrubber applies its per-bone transforms to the FIELD-form TMD.
-  // The battle/baka forms pair the wrong (other5 / PROT 1203) animation set
-  // against the higher-detail rig, which visibly disconnects the joints, so the
-  // Animation panel is hidden for those forms until battle-form posing is wired.
+  // The ANM scrubber applies its per-bone (T, R) transforms to whichever rig
+  // is active. Field form draws PROT 0874 §0 against its per-scene bundle;
+  // battle / Baka forms draw PROT 1204 against the other5 set at PROT 1203,
+  // whose 30 records are organised in per-character banks (see
+  // pickDefaultRecordFor). Both forms assemble via the exact retail pipeline
+  // (R·v + T about each object's local origin — FUN_8001B964 / FUN_8001BE80),
+  // so the panel is shown for every form.
   function updateAnmVisibility() {
-    const show = curForm === 'field';
     const wrap = document.getElementById('char-anm-wrap');
     const label = document.getElementById('char-anm-section-label');
-    if (wrap) wrap.style.display = show ? '' : 'none';
-    if (label) label.style.display = show ? '' : 'none';
+    if (wrap) wrap.style.display = '';
+    if (label) label.style.display = '';
   }
 
   function selectForm(form) {
@@ -873,12 +875,11 @@ table.arts-list .cmd-tag {
               ? `nobj ${meta.disc_nobj} on disc · TRUE per-battle palette decoded from edstati3 (PROT 0861), byte-exact vs a live battle capture`
               : `nobj ${meta.disc_nobj} on disc · bundled palette (this character's per-battle palette isn't identified yet)`)
           : `nobj ${meta.disc_nobj} on disc · bundled Baka Fighter palette (CLUTs at VRAM rows 490..495, 497)`;
-        // Apply the current ANM record's FRAME 0 — the rest-pose assembly that
-        // positions each TMD object at its joint (without it the objects sit at
-        // their object-local origins and the rig looks scattered). The Animation
-        // panel is hidden for battle/baka (updateAnmVisibility), so the user
-        // can't scrub past frame 0 into the broken poses, but the rest pose
-        // still renders the mesh correctly.
+        // Apply the current ANM record (frame 0 is the rest-pose assembly that
+        // positions each TMD object at its joint; without it the objects sit at
+        // their object-local origins and the rig looks scattered). The scrubber
+        // can step records / play frames — every frame poses through the same
+        // retail R·v + T pipeline, so playback stays assembled.
         maybeLoadCurrentAnim();
       } catch (err) {
         statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
@@ -1510,47 +1511,6 @@ table.arts-list .cmd-tag {
       this.radius = bounds[3] || 1;
       this._basePos = positions;
       this._objIds = objectIds || null;
-      // Pre-compute per-object pivot points. Two candidates considered:
-      //
-      //  - **centroid** (mean of all verts) — lands the bone's mean visible
-      //    mass at the joint T. Looks coherent for whole-body silhouette
-      //    but leaves joint-to-joint connections offset by ~half-bone (a
-      //    forearm's centroid lands at the elbow's parent T rather than at
-      //    the elbow joint itself).
-      //
-      //  - **closest-to-origin vertex** — lands the vertex nearest the
-      //    object-local origin at the joint T. For PSX battle TMDs the
-      //    proximal joint end IS typically near object-local origin (Noa
-      //    obj 3 has v0 = (0,0,0) exactly; many others sit within 0..15
-      //    units of origin). This puts the bone's PROXIMAL end at T, which
-      //    is what the retail engine's per-bone GTE pipeline (R·v + T)
-      //    produces when v is authored relative to the joint.
-      //
-      // We pick closest-to-origin: it makes adjacent bones share endpoints
-      // (upper-arm distal meets forearm proximal at the elbow) rather than
-      // overlapping by half a bone length. The cosmetic cost is that the
-      // body's mean mass no longer lands exactly at T, but the joint chain
-      // reads more correctly anatomically.
-      this._objCentroids = null;
-      if (objectIds && objectIds.length) {
-        const bestDist = new Map(); // obj_id -> { dist2, x, y, z }
-        const n = positions.length / 3;
-        for (let v = 0; v < n; v++) {
-          const o = objectIds[v];
-          const x = positions[v*3], y = positions[v*3+1], z = positions[v*3+2];
-          const d2 = x*x + y*y + z*z;
-          const cur = bestDist.get(o);
-          if (!cur || d2 < cur.dist2) {
-            bestDist.set(o, { dist2: d2, x, y, z });
-          }
-        }
-        const maxId = Math.max(...bestDist.keys());
-        const cents = new Float32Array((maxId + 1) * 3);
-        for (const [o, p] of bestDist.entries()) {
-          cents[o*3] = p.x; cents[o*3+1] = p.y; cents[o*3+2] = p.z;
-        }
-        this._objCentroids = cents;
-      }
       this.anim = null;
       this.playing = false;
       this._frameOverride = -1;
@@ -1626,7 +1586,6 @@ table.arts-list .cmd-tag {
       const A2R = (Math.PI * 2) / 4096;
       const base = this._basePos;
       const out = A.out;
-      const cents = this._objCentroids;
       const ids = this._objIds, n = base.length / 3;
       const sin = new Float32Array(A.partCount * 3);
       const cos = new Float32Array(A.partCount * 3);
@@ -1649,14 +1608,16 @@ table.arts-list .cmd-tag {
         const sx = sin[o*3], cxx = cos[o*3];
         const sy = sin[o*3+1], cyy = cos[o*3+1];
         const sz = sin[o*3+2], czz = cos[o*3+2];
-        // Subtract per-object centroid before rotating, so each bone
-        // rotates around its own anatomical pivot rather than the actor
-        // origin. T then places the centroid at the joint world position.
-        const cx0 = cents ? cents[o*3] : 0;
-        const cy0 = cents ? cents[o*3+1] : 0;
-        const cz0 = cents ? cents[o*3+2] : 0;
-        let x = base[v*3] - cx0, y = base[v*3+1] - cy0, z = base[v*3+2] - cz0;
-        // Rz · Ry · Rx · (v - C) + T
+        // Rotate the object-local vertex about its own origin (0,0,0), then
+        // add the bone's absolute translation. This is exactly the retail
+        // per-object GTE pipeline: FUN_8001B964 loads the actor base matrix,
+        // FUN_8001BE80 pushes the bone's decoded T through MVMVA (matrix · V0
+        // + TR) to land the per-object world translation, composes the bone's
+        // Rz·Ry·Rx onto the matrix, then FUN_8002735C draws the object's
+        // object-local vertices as M·v + TR. No pivot/centroid subtraction —
+        // the TMD authors each object so its local origin IS the joint.
+        let x = base[v*3], y = base[v*3+1], z = base[v*3+2];
+        // Rz · Ry · Rx · v + T
         let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
         let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
         nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
