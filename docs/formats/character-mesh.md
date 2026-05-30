@@ -353,9 +353,17 @@ the disc mesh doesn't have.
 > (`0x1C000 / 0x28800 / 0x66000 / 0x85800 / 0xA2000` for Vahn), **not** the runtime
 > `0x2000` stride — that stride exists only in the RAM buffer the loader stages.
 > The parser derives the scattered offsets from the descriptor table, so it reads
-> the palette straight from PROT `0861` with no capture. Noa/Gala resolve through
-> `char+0x360` to their own player numbers; the Tetsu tutorial is Vahn-only, so a
-> tutorial save only loads `PLAYER1`.
+> the palette straight from PROT `0861` with no capture — but the derivation rule
+> is **Vahn-specific** (validated byte-exact for Vahn only).
+>
+> **Noa = PROT `0864`, Gala = PROT `0865`** — identified by matching each record's
+> `record0` CLUT (header-read, no derivation) against a full-party battle VRAM
+> capture (Noa→row482 98%, Gala→row483 100%; misses are equipment patches). Their
+> *full* palette is **not yet assembled**: the five sub-records are staged by the
+> equipment loader (`FUN_80052770` case 4-8), and the Vahn rule doesn't generalize
+> (0864 overflows the `0x19000` work buffer and picks wrong bands). A correct
+> disc-only Noa/Gala assembly needs that staging reversed, or an unequipped
+> full-party capture; until then only Vahn is wired.
 
 **How the relocation was pinned (reproduction):** read `DAT_8007C018[slot]` from
 a clean battle save → dump the runtime TMD (it has `flags=1`, absolute object
