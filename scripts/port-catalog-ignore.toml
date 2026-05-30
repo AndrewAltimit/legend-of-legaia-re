@@ -297,6 +297,16 @@
 "8005da40" = "`lui v1, 0x8008` instruction inside FUN_8005D9A0 (the CD-DMA-channel-3 read primitive, itself ignore-listed under [libcd]); Ghidra promotes the intra-function label to a fake FUN_8005DA40. No real function, no `_DAT_800795B4` table. See docs/reference/functions.md row `FUN_8005DA40`."
 
 
+# Constant-address / global-buffer accessors: two- or three-instruction
+# functions whose entire body is `lui v0, HI; (jr ra;) addiu v0, v0, LO` -
+# they return the address of a fixed PSX-RAM global and nothing else. The
+# clean-room engine replaces raw global pointers with typed Rust fields, so
+# there is no function body to port (the callers' intent - e.g. walking the
+# returned buffer as a CDNAME char* - is modelled where the caller is ported).
+[global_accessors]
+"80019788" = "Global-buffer base getter: `lui v0, 0x8009; jr ra; ...` returns the fixed RAM pointer 0x80088758 (callers scan it as a char* for '_'-separator CDNAME names). Engine carries scene/name state as typed Rust fields (active_scene_label etc.); no body to port. See docs/reference/functions.md row 80019788."
+
+
 # Identity / no-op thunks at addresses outside the PsyQ region. These are
 # `jr ra; move v0, a0` two-instruction wrappers that return their input
 # verbatim - probably leftover dev scaffolding or placeholder slots in a
