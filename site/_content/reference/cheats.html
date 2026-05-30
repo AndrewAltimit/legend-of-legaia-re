@@ -37,6 +37,7 @@ cargo run -p legaia-cheats --bin cheat-tool -- diff data/cheats/legaia-ntsc-u.gs
 cargo run -p legaia-cheats --bin cheat-tool -- extract-offsets data/cheats/legaia-ntsc-u.cht
 cargo run -p legaia-cheats --bin cheat-tool -- offset-table data/cheats/legaia-ntsc-u.cht</code></pre>
   <p>Categories the classifier emits: <code>CharacterRecord</code>, <code>PartyMoney</code>, <code>Inventory</code>, <code>BattleActor</code>, <code>ScriptVmGlobal</code>, <code>CameraGlobal</code>, <code>PadInput</code>, <code>WorldStoryFlag</code>, <code>Minigame</code>, <code>FieldVmCollision</code>, <code>ScratchActiveActor</code>, <code>CodePatch</code>, <code>Unknown</code>.</p>
+  <p><code>taxonomy::classify_writes(addrs)</code> rolls a set of <em>changed</em> RAM addresses up into per-region buckets (the classification half of a gameplay-driven write tracer), flagging writes that land outside every known data region or in the <code>0x8007Bxxx</code> script-VM / build-flag scratch. Wired end-to-end as <code>mednafen-state write-taxonomy LEFT RIGHT</code>, which diffs two save states at byte granularity and prints the per-region roll-up + attack-surface candidates.</p>
 </section>
 
 <section class="doc-section" id="citations">

@@ -74,6 +74,20 @@ encoding as Format 1.
 | [`Database::dedupe_identical`] | Drop the "Have 99 Items × 70" duplicate sprawl |
 | [`classify_address`] | Map one address to a [`Category`] + detail label |
 | [`Category`] | Coarse buckets: CharacterRecord / Inventory / BattleActor / ScriptVmGlobal / CameraGlobal / PadInput / WorldStoryFlag / Minigame / FieldVmCollision / ScratchActiveActor / CodePatch / Unknown |
+| `classify_writes` | Roll a set of **changed** RAM addresses up into per-region buckets (the classification half of a gameplay-driven write tracer) |
+
+### Write taxonomy
+
+`taxonomy::classify_writes(addrs)` buckets a set of changed RAM addresses by
+the [`Category`] region they fall in (via [`classify_address`]), de-duped and
+with per-bucket sample classifications. It flags writes that land **outside**
+every known data region (`Category::Unknown`) or in the `0x8007Bxxx` script-VM /
+build-flag scratch (`Category::ScriptVmGlobal` — the band holding the
+`0x8007B8C2` build-mode selector and the debug-menu enable) — the anomalies a
+write tracer exists to surface. Pure and capture-free (input is a list of
+`u32`), so it is unit-tested with synthetic deltas. Wired end-to-end as
+`mednafen-state write-taxonomy LEFT RIGHT`, which diffs two save states at byte
+granularity and prints the per-region roll-up + attack-surface candidates.
 
 The companion `cheat-tool` CLI:
 
