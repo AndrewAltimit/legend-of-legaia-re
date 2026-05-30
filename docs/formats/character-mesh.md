@@ -153,6 +153,34 @@ shared battle/minigame pack, not a minigame-exclusive roster. (An earlier
 session had this backwards — concluding 1204 was Baka-Fighter-only and that
 battle reused the field pack.) Parser: `legaia_asset::battle_char_pack`.
 
+### Assembly — object-local pieces posed by the battle ANM
+
+Each battle TMD is a set of **object-local** pieces (head, torso, limbs), not a
+pre-assembled mesh. Every object authors its vertices relative to its own joint
+origin, and the engine places each piece with a **flat per-object transform** —
+no skeleton hierarchy:
+
+```text
+v_world = R_bone · v_local + T_bone        (rotation about the object's local origin)
+```
+
+The `(T, R)` come from the battle-form player ANM at **PROT 1203** (`other5`),
+decoded per [`anm.md`](anm.md#per-bone-frame-8-byte-encoding). The retail draw
+path is `FUN_8001B964` (loads the actor base matrix, walks the record one object
+at a time) → `FUN_8001BE80` (decodes the bone's 12-bit `T`, pushes it through the
+GTE's `MVMVA` = `matrix · V0 + TR` to land the per-object world translation, and
+composes the bone's `Rz·Ry·Rx` onto the matrix) → `FUN_8002735C` (draws the
+object's object-local vertices as `M·v + TR`). Frame 0 of the idle clip is the
+combat-stance rest pose. There is **no pivot/centroid subtraction** — placing a
+piece anywhere other than its local origin pulls the joints apart.
+
+PROT 1203's 30 records are organised in **per-character banks** by bone count
+(the retail loader requires `bone_count == nobj`): records 0–8 are the 15-bone
+Vahn set, 9–17 the 16-bone Noa set, 18–26 the 15-bone Gala set, 27–29 a 10-bone
+simplified rig. The first record of each bank is that character's idle. The site
+`/characters.html` viewer assembles all three party meshes this way (the
+`BattleMeshView` pose path mirrors the GTE pipeline above).
+
 **Loader provenance (partly open).** The captured battle scene loader
 `FUN_800520F0` (sub-state byte at `gp+0xa59`) loads PROT `0x367/0x368/0x369/
 0x36a/0x36b` and `tmd_register`s `0x36a` — but that registration fills the
