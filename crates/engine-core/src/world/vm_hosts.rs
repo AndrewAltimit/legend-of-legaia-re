@@ -538,7 +538,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.screen_mode
     }
 
-    // Shared system flag bank - same fourth-flag-bank at `_DAT_80086D70`
+    // Shared system flag bank - same fourth-flag-bank at `_DAT_80085758`
     // that move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D query, plus the
     // 0x5x / 0x6x / 0x7x default-route opcodes.
     fn system_flag_set(&mut self, idx: u16) {

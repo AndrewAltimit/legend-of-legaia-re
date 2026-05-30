@@ -3080,7 +3080,7 @@ pub fn step<H: FieldHost>(
         // Default arm: high-byte route. The original dispatcher's default
         // case checks `*pbVar43 & 0x70` (raw opcode byte) and routes to one
         // of three SCUS helpers - SET / CLEAR / TEST against the 256-bit
-        // bitfield at DAT_80086D70 (the **fourth flag bank**).
+        // bitfield at DAT_80085758 (the **fourth flag bank**).
         //
         // The masked opcode here is `opcode_byte & 0x7F`, so `0x5x`/`0x6x`/
         // `0x7x` ranges fall through to this arm. The flag index is built

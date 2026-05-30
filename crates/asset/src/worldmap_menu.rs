@@ -8,7 +8,7 @@
 //!   dedupes consecutive records that share the same name index, and a
 //!   record is only visible when the system-flag at index
 //!   `(byte[1] + 0x20)` is set in the fourth flag bank
-//!   (`FUN_8003ce64`, `DAT_80086D70`). Schema:
+//!   (`FUN_8003ce64`, `DAT_80085758`). Schema:
 //!
 //!   ```text
 //!   offset  size  field

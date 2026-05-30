@@ -22,7 +22,7 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x80084594` | u8 | Party member count. |
 | `0x80084598` | u8[] | Party member IDs (sorted insertion, cap 4). |
 | `0x80084628` | i16 | Set by op 0x4C nibble-8 sub-8. |
-| `0x80086D70` | u8[32] | **Fourth flag bank** - 256-bit bitfield, accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))`. |
+| `0x80085758` | u8[] | **Fourth flag bank** - bitfield accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))` (`FUN_8003CE08`/`_CE34`/`_CE64`). `idx` ranges `0..=0x87FF`, so it is **not** a fixed 256-bit array. The earlier `0x80086D70` was a double-count of the `0x1618` save displacement onto `0x80085758` (which itself already `= 0x80084140 + 0x1618`); see [`subsystems/script-vm.md`](../subsystems/script-vm.md). |
 | `0x80087AF8` | u32 | Result of `FUN_80020224` descriptor walker, set by town-overlay MAIN INIT. |
 | `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
 | `0x800845A4` | u32 | Casino coin bank. "Infinite Coins" cheat writes `0x05F5_E0FF`. |
@@ -130,7 +130,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x801CD2C0` | SsAPI 16-entry per-slot pointer table. Each entry → `0xB0`-byte sequence-state struct. |
 | `0x801C4BEC` | libcd directory-entry cache (up to 128 entries, populated by `FUN_8005DEA0`). |
 | `0x80074358` | Global 4×u32 ability bitmask. Written by `FUN_80042558` (OR-aggregate); read by `FUN_800431D0` (bit-test). |
-| `0x80086D70` | 256-bit "fourth flag bank" bitfield. Wired to field-VM ops `0x50` / `0x60` / `0x70` via `FUN_8003CE08` / `_CE34` / `_CE64`. |
+| `0x80085758` | "Fourth flag bank" bitfield. Wired to field-VM ops `0x50` / `0x60` / `0x70` (and the move VM) via `FUN_8003CE08` / `_CE34` / `_CE64`. (Formerly mis-listed at `0x80086D70` — a double-count of the `0x1618` save offset.) |
 
 ## World-map render pipeline
 
@@ -184,6 +184,42 @@ map, but the table layout is scene-independent.)
 | `0x8007B874` | "Newly pressed this frame" (edge detection). |
 
 JP retail uses build-shifted addresses (`0x07D51F` for the in-game debug menu enable; +0x1B90 from the NA address).
+
+### `0x8007B8C2` — build-mode (dev/retail) loader selector
+
+This byte is the single most-consulted build-mode switch in the executable: it
+selects between the **dev** asset-load path (open by PROT-TOC index from the
+in-RAM table at `0x801C70F0`) and the **retail** path (filename open via the
+`break 0x103` host trap), across the asset loader, the battle-data archive
+open, field locomotion's streaming read, and the world-map overlay's pool fill:
+
+- `FUN_8001FD44` scene-change packet stages the load gated on `_DAT_8007B8C2`
+  (see [`subsystems/asset-loader.md`](../subsystems/asset-loader.md)).
+- Field streaming read (`_DAT_8007b8c2 != 0` → `FUN_8003E8A8` PROT-TOC path,
+  see [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md)).
+- Battle-data archive open (`_DAT_8007B8C2 != 0` → `FUN_8003E8A8(0x365)`, see
+  [`subsystems/battle.md`](../subsystems/battle.md)).
+- World-map overlay pool fill (`FUN_8001E890` retail-PROT branch, see
+  [`formats/world-map-overlay.md`](../formats/world-map-overlay.md)).
+
+It is **BSS-resident and initialises to 0 (= retail)**, and a SCUS + all-overlay
+write sweep finds **zero code writers** — the shipped build only ever *reads* it
+(26 read sites, all comparisons). So in retail the value flips only by **external
+poke** (GameShark/cheat device or save-state edit), never through gameplay. The
+companion in-game debug-menu enable `0x8007B98F` is likewise inert in retail (the
+dev branches that gate on it appear stripped at link time; no references remain).
+None of the 557 catalogued GameShark / Pro-Action-Replay codes in
+[`legaia-cheats`](cheats.md) target `0x8007B8C2` or `0x8007B98F`.
+
+**Not reachable from the script-VM flag ops.** The field-VM SET/CLEAR/TEST flag
+ops (`0x50`/`0x60`/`0x70` → `FUN_8003CE08`/`_CE34`/`_CE64`, shared with the move
+VM) write `(&DAT_80085758)[(int)idx >> 3]` into the single fourth flag bank at
+`0x80085758`, with a 16-bit signed `idx`. The reachable byte window is therefore
+`0x80085758 ± (0x8000 >> 3)` = `[0x80084758, 0x80086757]`, which does **not**
+include `0x8007B8C2` (it lies below the lower bound) — there is no out-of-bounds
+flag-index path from script bytecode to the build-mode selector or the debug-menu
+enable. A clean-room engine should treat both as build-time constants and keep
+its flag-bank writes bounded.
 
 ## PSX scratchpad (`0x1F800000-0x1F8003FF`)
 

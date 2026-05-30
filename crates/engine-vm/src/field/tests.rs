@@ -82,7 +82,7 @@ struct TestHost {
     // 0x43 sub-9 / sub-0x10 / sub-0x11 / sub-0x15.
     sub9_tweens: Vec<(u16, u16, u16, u16)>,
     // High-byte default-route opcodes 0x5x/0x6x/0x7x.
-    // The in-game "system flag bank" at DAT_80086D70. Mirrors the
+    // The in-game "system flag bank" at DAT_80085758. Mirrors the
     // original's `idx >> 3` byte / `0x80 >> (idx & 7)` bit. Sized at
     // 8 KB so 16-bit indices never overflow the test slice.
     system_flags: Vec<u8>,
@@ -3492,7 +3492,7 @@ fn yield_saved_pc_is_pre_extended_when_extended_dispatch() {
 }
 
 // -- High-byte default-route opcodes 0x5x/0x6x/0x7x ------------------
-// (the **fourth flag bank** at DAT_80086D70). These fall through the
+// (the **fourth flag bank** at DAT_80085758). These fall through the
 // explicit opcode arm and hit the dispatcher's default route.
 
 #[test]

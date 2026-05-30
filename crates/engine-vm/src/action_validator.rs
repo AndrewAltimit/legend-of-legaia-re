@@ -170,7 +170,7 @@ pub trait ActionValidatorHost {
         0
     }
 
-    /// `FUN_8003CE64(flag_id)` - the system-flag query at `_DAT_80086D70`.
+    /// `FUN_8003CE64(flag_id)` - the system-flag query at `_DAT_80085758`.
     /// Returns true when bit `flag_id` is set. Arm 0x80 queries 5; arm 0x81
     /// queries 6. Default `false`.
     fn system_flag_test(&self, _flag_id: u8) -> bool {

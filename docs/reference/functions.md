@@ -132,7 +132,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `80036044` | Text-width measure for inline dialog/UI strings. Walks a byte stream: `>= 0x1F` = glyph (count 1); `0xC0..0xC7` = escape (substitutes from inventory / magic / item-name tables - `0xC1` = item-name @ `0x80084549 + idx*0x414`, `0xC2` = `PTR_DAT_8007436C[idx*3]`, `0xC3` = magic name @ `PTR_s_Magic_800754D0`, `0xC7` = `DAT_80073F24 + idx*8`); `0xCE` = newline (line++); `0xCF` = end-of-row. Returns total glyph count. |
 | `8003CC98` | Single-line text render-and-measure. `FUN_80036044(buf)` for length + `FUN_80036888(buf, palette, 0, x, y)` to draw, returns the length. |
 | `8003CD00` | Multi-line text layout. Walks a string line by line: measure with `FUN_80036044`, draw with `FUN_80036888`, advance Y by `0x0D` per line. Stops on the first sub-`0x20` control byte. Returns max line width. |
-| `8003CE08` / `CE34` / `CE64` | SET / CLEAR / TEST against the **fourth flag bank** (256-bit bitfield at `DAT_80086D70`). Wired by field-VM opcodes 0x50 / 0x60 / 0x70. |
+| `8003CE08` / `CE34` / `CE64` | SET / CLEAR / TEST against the **fourth flag bank** (256-bit bitfield at `DAT_80085758`). Wired by field-VM opcodes 0x50 / 0x60 / 0x70. |
 | `8003CE9C` | Signed-16-bit operand decoder (sign-extended `s16` from two bytes). |
 | `8003CEB8` | 24-bit LE decoder. Reads 3 bytes as a u24. |
 | `8003CED8` | 32-bit LE decoder. Reads 4 bytes as a u32. |

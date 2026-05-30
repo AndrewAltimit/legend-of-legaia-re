@@ -741,7 +741,7 @@ pub struct World {
     /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
     /// pairs (target, current); engines apply per-frame interpolation.
     pub scratchpad_targets: [i16; 16],
-    /// Shared system flag bank at `_DAT_80086D70` - bitfield read / written
+    /// Shared system flag bank at `_DAT_80085758` - bitfield read / written
     /// by:
     /// - field VM high-byte default routes 0x5x / 0x6x / 0x7x
     ///   (`system_flag_set` / `system_flag_clear` / `system_flag_test`)
