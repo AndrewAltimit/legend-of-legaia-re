@@ -605,10 +605,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::Bgm { text_id, sub_op });
     }
 
-    fn play_sfx(&mut self, sfx_id: u8) {
+    fn give_item(&mut self, item_id: u8) {
+        // Op 0x39 GIVE_ITEM: add one of `item_id` to the inventory, capacity-
+        // checked like the retail add-by-id primitive FUN_800421D4(item_id, 1).
+        let slot = self.world.inventory.entry(item_id).or_insert(0);
+        *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         self.world
             .pending_field_events
-            .push(FieldEvent::PlaySfx { sfx_id });
+            .push(FieldEvent::GiveItem { item_id });
     }
 
     fn open_dialog(

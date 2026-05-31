@@ -268,13 +268,15 @@ pub trait FieldHost {
         None
     }
 
-    /// Play a sound effect (op 0x39). The original calls
+    /// Give the player one of inline item `item_id` (op 0x39 `GIVE_ITEM` — the
+    /// treasure-chest / scripted-gift item-give). The original calls
     /// `func_0x8004313C()` (HUD/inventory window-bounds setup — writes the
     /// `gp+0x2D2/0x2D4/0x2D6` start/end/span triple; see
-    /// `docs/reference/functions.md` `8004313C` — NOT a "stop current SFX"
-    /// cleanup) then `func_0x800421D4(sfx_id, 1)` to start the new one.
-    fn play_sfx(&mut self, sfx_id: u8) {
-        let _ = sfx_id;
+    /// `docs/reference/functions.md` `8004313C`) then the capacity-checked
+    /// add-item-by-id primitive `func_0x800421D4(item_id, 1)`. (The earlier
+    /// `play_sfx` name was wrong: SFX cues go through `FUN_80035B50`, not 0x39.)
+    fn give_item(&mut self, item_id: u8) {
+        let _ = item_id;
     }
 
     /// Add or subtract money (op 0x3A). `delta` is a 24-bit two's-complement

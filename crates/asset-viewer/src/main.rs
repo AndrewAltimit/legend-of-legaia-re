@@ -2210,7 +2210,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
     use legaia_engine_core::field_events::FieldEvent as E;
     match e {
         E::Bgm { .. } => "Bgm",
-        E::PlaySfx { .. } => "PlaySfx",
+        E::GiveItem { .. } => "GiveItem",
         E::OpenDialog { .. } => "OpenDialog",
         E::DialogDismissed => "DialogDismissed",
         E::AddMoney { .. } => "AddMoney",

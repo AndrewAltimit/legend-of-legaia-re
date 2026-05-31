@@ -23,8 +23,9 @@ use legaia_engine_vm::field::CameraParam;
 pub enum FieldEvent {
     /// Field-VM op 0x35 (BGM control).
     Bgm { text_id: u16, sub_op: u8 },
-    /// Field-VM op 0x39 (play SFX).
-    PlaySfx { sfx_id: u8 },
+    /// Field-VM op 0x39 (`GIVE_ITEM`): the player was given one of `item_id`
+    /// (treasure chest / scripted gift). The world also adds it to inventory.
+    GiveItem { item_id: u8 },
     /// Field-VM op 0x3F (open dialog box).
     OpenDialog {
         text_id: u16,
@@ -177,7 +178,7 @@ impl FieldEvent {
             FieldEvent::Bgm { text_id, sub_op } => {
                 format!("Bgm(id={text_id}, sub={sub_op})")
             }
-            FieldEvent::PlaySfx { sfx_id } => format!("PlaySfx({sfx_id})"),
+            FieldEvent::GiveItem { item_id } => format!("GiveItem({item_id})"),
             FieldEvent::OpenDialog {
                 text_id,
                 inline,
@@ -301,7 +302,7 @@ mod tests {
                 text_id: 1,
                 sub_op: 1,
             },
-            FieldEvent::PlaySfx { sfx_id: 7 },
+            FieldEvent::GiveItem { item_id: 7 },
             FieldEvent::OpenDialog {
                 text_id: 0x42,
                 inline: vec![1, 2, 3],

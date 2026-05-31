@@ -325,12 +325,12 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x39 - PLAY_SFX. 2-byte instruction.
+        // 0x39 - GIVE_ITEM. 2-byte instruction: [0x39, item_id].
         0x39 => {
-            let Some(&sfx_id) = bytecode.get(operand) else {
+            let Some(&item_id) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.play_sfx(sfx_id);
+            host.give_item(item_id);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
