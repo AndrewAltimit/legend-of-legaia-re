@@ -127,6 +127,7 @@
 "8005e788" = "Streaming-read starter (registers 8005e574 as IRQ callback)"
 "8005e9a4" = "Public streaming-read API (sector_count, dest_buffer, mode_flags)"
 "8005becc" = "libcd completion-callback swap-setter: loads the callback pointer at DAT_800793AC, stores the new a0, returns the previous (the CdReadSyncCallback-family slot; sibling of the already-listed 8005bee4 setter for DAT_800793B0). Engine reads PROT.DAT through legaia-iso/legaia-prot, no libcd callback slots"
+"8005be8c" = "CdSync wrapper: 8-instruction tail-call to 8005ca34 (the CdSync/CdReady drive-status poll - s_CD_sync / s_CD_timeout / CdlSync diagnostics, drains the CD result registers). Engine reads PROT.DAT through legaia-iso/legaia-prot, no CD-drive transport"
 
 
 # libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
@@ -171,6 +172,8 @@
 "8001daf8" = "Display-environment + GTE screen setup: builds the double-buffered DISPENV/DRAWENV pair (libgpu 8005731c/8005724c), selects 320x240 / 640x480, primes GTE SetGeomScreen/Offset. Engine sets the viewport via the winit surface + Camera::for_viewport"
 "80044798" = "Cluster-A primitive off-screen reject test: reads GTE FIFO SXY0/1/2 and rejects a 4-vertex prim when any corner leaves [0,0xF0)x[0,0x140). Engine relies on wgpu viewport/scissor + NDC clipping; no software reject"
 "800195a8" = "Billboard / screen-space textured-quad projector: GTE-projects a center point, builds four +/-half_w/half_h corner SXY (optional Z-rotate via 8004638c), brackets the GTE save/restore pair 8003d20c/8003d1a4. Engine emits billboard quads through the EffectSprite -> wgpu path"
+"8003c1f8" = "Dialog-font glyph-cell sprite emitter: builds a GP0 0x64 textured-sprite packet (8x12 px, UV u=cell*8+0x50 v=0xD0, CLUT DAT_8007B454+0x7F86) into the scratchpad OT cursor _DAT_1F8003A0, sets the draw mode via the already-listed 80059010 (SetDrawMode), links via 8003D2C4. Engine renders dialog glyphs through the legaia-font atlas overlay, not GP0 cell pushes"
+"80024ee4" = "UI panel fill+tile GP0 packet emitter: pushes a fill/clear (0x05xxxxxx tag word) plus a textured-tile move packet (0x2bxxxxxx + 24-bit color) into the scratchpad OT cursor _DAT_1F8003A0, sets the draw mode via 80059010, links via 8003D2C4. Shared box-tile draw primitive across the cutscene/save-UI/fishing/slot/baka overlays; engine draws UI panels through its own text/overlay path with no GP0 submission"
 
 
 # libetc / libcomb (VSync, frame-pacing) plus SCUS-resident dev-instrumentation
@@ -241,6 +244,7 @@
 "8006ce30" = "SsSeqSetUserData"
 "8006d7b4" = "_SsSeqSetUserDataInner"
 "8006ddc8" = "SsSeqSetMarkCallback"
+"8002630c" = "Game-side VAB-bank upload wrapper (gated on _DAT_8007B868==0): drives the libsnd load sequence SsVabOpenHead (80068d34) -> SsVabTransBody (80069170) / SsVabTransBodyPartly (80069230) -> SsVabClose (80069390), with the literal 'SsVabOpenHead/SsVabTransBody/SsVabTransBodyPartly' dev error strings. Pure SsAPI orchestration; engine loads banks clean-room via legaia-vab + vab_bind"
 
 
 # libspu primitives + SPU DMA transfer engine. Replaced by clean-room
@@ -275,6 +279,8 @@
 "8006c6e4" = "_SsKey2Pitch (two-octave-table pitch math)"
 "8006d2ac" = "Audio subsystem init (wraps BIOS C0 thunk in Enter/ExitCriticalSection)"
 "8006ef18" = "SPU voice-state init sequence (calls 8006ef68 / 8006f088 / 8006f118 in order)"
+"80062a0c" = "SpuSetCommonAttr CD-volume + reverb-depth wrapper: packs a SpuCommonAttr struct (mask 0x200/0x100 = CD vol L/R, 0x2000/0x1000 = reverb depth L/R; field = arg & 0xff) and submits via the already-listed 8006bcb4. Engine models CD/reverb mix at the register level in engine-audio"
+"800643c4" = "SpuSetCommonAttr master-volume wrapper: clamps arg <= 0x7f, scales *0x102, packs a SpuCommonAttr struct (mask 0xc0 = master vol L/R, 0xc00 = main vol) and submits via the already-listed 8006bcb4. Engine sets Spu master_left/right directly"
 
 
 # Intra-function labels inside the field/event script-VM dispatcher
