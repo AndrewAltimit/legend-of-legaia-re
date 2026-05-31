@@ -25,6 +25,7 @@ const NAV = [
     items: [
       { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
       { href: 'media.html',                     text: 'Media browser',            key: 'media' },
+      { href: 'tooling/rom-patcher.html',       text: 'ROM patcher',              key: 'tooling/rom-patcher' },
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
