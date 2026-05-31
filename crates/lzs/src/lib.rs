@@ -21,9 +21,11 @@
 //! offsets `[2k]`/`[2k+1]` give `(decompressed_size, byte_offset_to_stream)`
 //! for each section. `decompress_container` parses that.
 //!
-//! [`compress`] is the inverse used for re-packing edited assets: a greedy
-//! LZSS matcher whose output the retail decoder accepts. It is not a bit-exact
-//! clone of Sony's packer - it is validated by `decompress(compress(x)) == x`.
+//! [`compress`] is the inverse used for re-packing edited assets: a
+//! lazy-matching LZSS matcher whose output the retail decoder accepts. It is
+//! not a bit-exact clone of Sony's packer - it is validated by
+//! `decompress(compress(x)) == x`, and it packs tightly enough that a re-packed
+//! asset fits its original (often slack-free) footprint for an in-place edit.
 
 use anyhow::{Result, bail};
 
@@ -117,8 +119,9 @@ pub fn decompress_tracked(input: &[u8], expected_output_size: usize) -> Result<(
 // The retail game ships only a *decoder* (`FUN_8001A55C`); there is no Sony
 // encoder to reverse. To re-pack edited assets (e.g. a disc patcher) we need an
 // encoder that produces a stream the retail decoder accepts byte-for-byte, not
-// a bit-identical match of whatever tool Sony used. This is a textbook greedy
-// LZSS matcher whose output is validated by `decompress(compress(x)) == x`.
+// a bit-identical match of whatever tool Sony used. This is a textbook LZSS
+// matcher with one-step lazy matching, whose output is validated by
+// `decompress(compress(x)) == x`.
 //
 // Why this maps cleanly onto the ring-buffer decoder: at the moment the decoder
 // is about to emit output byte `i`, its write cursor is `window_pos = (0xFEE +
@@ -156,10 +159,18 @@ fn hash3(d: &[u8], i: usize) -> usize {
 /// (the format carries no length prefix or end marker - the caller supplies the
 /// size), so a re-packer must record `input.len()` alongside the output.
 ///
-/// This is a greedy matcher, not a bit-exact clone of Sony's packer. It will
-/// not always match the original compressed bytes, but it always decodes back
-/// to the input, and it does real (not literal-only) compression so re-packed
-/// streams fit the slack in fixed-size slots.
+/// This is a matcher, not a bit-exact clone of Sony's packer. It will not always
+/// match the original compressed bytes, but it always decodes back to the input,
+/// and it does real (not literal-only) compression so re-packed streams fit the
+/// slack in fixed-size slots.
+///
+/// It uses **one-step lazy matching** (defer a match by a byte when the next
+/// position yields a strictly longer one), which closes the small, near-constant
+/// gap a purely greedy parse leaves versus the retail packer — enough that a
+/// re-packed asset fits its original tightly-packed footprint (e.g. a scene MAN,
+/// which has no compressed slack). Positions are inserted into the hash chain
+/// one at a time as the cursor reaches them so the lazy look-ahead at `i+1` sees
+/// position `i`.
 pub fn compress(input: &[u8]) -> Vec<u8> {
     let n = input.len();
     let mut out: Vec<u8> = Vec::with_capacity(n / 2 + 16);
@@ -170,11 +181,30 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     let mut head = vec![NONE; HASH_SIZE];
     let mut prev = vec![NONE; n];
 
+    // `inserted` = number of positions already linked into the hash chains, i.e.
+    // [0, inserted) are present and searchable. We keep `inserted == i` before a
+    // match search at `i` (so the chain holds only earlier positions), then push
+    // `i` itself before the lazy look-ahead at `i+1`.
+    let mut inserted = 0usize;
+    let insert_one = |head: &mut [usize], prev: &mut [usize], p: usize| {
+        if p + MIN_MATCH <= n {
+            let h = hash3(input, p);
+            prev[p] = head[h];
+            head[h] = p;
+        }
+    };
+
     let mut ctrl_pos = 0usize;
     let mut nbits = 0u32;
 
     let mut i = 0usize;
     while i < n {
+        // Catch the hash chains up to (but not including) `i`.
+        while inserted < i {
+            insert_one(&mut head, &mut prev, inserted);
+            inserted += 1;
+        }
+
         // Reserve a fresh control byte at the start of every group of 8 tokens.
         if nbits == 0 {
             ctrl_pos = out.len();
@@ -182,37 +212,46 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
         }
         let bit = nbits;
 
-        let (best_len, best_dist) = find_match(input, i, &head, &prev);
+        let (len1, dist1) = find_match(input, i, &head, &prev);
 
-        if best_len >= MIN_MATCH {
+        // Lazy look-ahead: if a non-maximal match here is beaten by the match at
+        // `i+1`, emit a literal now and let the longer match land next step.
+        let mut emit_literal = len1 < MIN_MATCH;
+        if !emit_literal && len1 < MAX_MATCH && i + 1 < n {
+            if inserted == i {
+                insert_one(&mut head, &mut prev, i);
+                inserted = i + 1;
+            }
+            let (len2, _) = find_match(input, i + 1, &head, &prev);
+            if len2 > len1 {
+                emit_literal = true;
+            }
+        }
+
+        if !emit_literal {
             // Back-reference token: control bit stays 0.
-            let matchpos = i - best_dist;
+            let matchpos = i - dist1;
             let base = (WINDOW_START_POS + matchpos) & 0xFFF;
-            let len_code = (best_len - MIN_MATCH) as u8; // 0..=15
+            let len_code = (len1 - MIN_MATCH) as u8; // 0..=15
             let b0 = (base & 0xFF) as u8;
             let b1 = ((((base >> 8) & 0xF) as u8) << 4) | len_code;
             out.push(b0);
             out.push(b1);
 
-            // Insert every position the match covers so later tokens can
-            // reference into the run.
-            let end = (i + best_len).min(n);
-            for (p, slot) in prev.iter_mut().enumerate().take(end).skip(i) {
-                if p + MIN_MATCH <= n {
-                    let h = hash3(input, p);
-                    *slot = head[h];
-                    head[h] = p;
-                }
+            // Insert every position the match covers (those not already linked).
+            let end = (i + len1).min(n);
+            while inserted < end {
+                insert_one(&mut head, &mut prev, inserted);
+                inserted += 1;
             }
             i = end;
         } else {
             // Literal token: set the control bit.
             out[ctrl_pos] |= 1u8 << bit;
             out.push(input[i]);
-            if i + MIN_MATCH <= n {
-                let h = hash3(input, i);
-                prev[i] = head[h];
-                head[h] = i;
+            if inserted == i {
+                insert_one(&mut head, &mut prev, i);
+                inserted = i + 1;
             }
             i += 1;
         }
