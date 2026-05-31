@@ -44,9 +44,11 @@ in ten 4 KB blocks. Key findings:
 | `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner |
 | `0x801F6000+` | Live animation state globals (zero at rest) |
 
-Per-character HP/MP/STR/DEF growth does not come from a static table in the
-overlay, and the producing writer is not in the captured `magic_level_up`
-dumps. The earlier "HP grant at Seru `+0x74`" reading is **falsified** — those
+Per-character growth does not come from a table in this *display* overlay — it
+is in static `SCUS_942.54` (`DAT_800769CC` curves + `DAT_80076918` param block),
+applied by the victory-path level-up function `FUN_801E9504`. The writer-search
+here came up empty because it scanned the `magic_level_up` overlay, not that
+applier. The earlier "HP grant at Seru `+0x74`" reading is **falsified** — those
 `+0x74` reads surface a `0x80808080` battle-state flag, not a stat grant. See
 [`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 

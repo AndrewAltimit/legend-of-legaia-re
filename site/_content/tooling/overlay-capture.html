@@ -127,7 +127,7 @@
 </tr>
 </tbody>
 </table>
-  <p>Per-character HP/MP/STR/DEF growth does not come from a static table in the overlay, and the producing writer is not in the captured <code>magic_level_up</code> dumps. The earlier &ldquo;HP grant at Seru <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> &mdash; those <code>+0x74</code> reads surface a <code>0x80808080</code> battle-state flag, not a stat grant. See <a href="../subsystems/level-up.html#stat-gains"><code>subsystems/level-up.md</code></a>.</p>
+  <p>Per-character growth does not come from a table in this <em>display</em> overlay &mdash; it is in static <code>SCUS_942.54</code> (<code>DAT_800769CC</code> curves + <code>DAT_80076918</code> param block), applied by the victory-path level-up function <code>FUN_801E9504</code>. The writer-search here came up empty because it scanned the <code>magic_level_up</code> overlay, not that applier. The earlier &ldquo;HP grant at Seru <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> &mdash; those <code>+0x74</code> reads surface a <code>0x80808080</code> battle-state flag, not a stat grant. See <a href="../subsystems/level-up.html#stat-gains"><code>subsystems/level-up.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="capturing-with-pcsx-redux">
