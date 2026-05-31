@@ -1,9 +1,9 @@
-//! Slot-4 (world-map overlay outlines) parser.
+//! Slot-4 container parser (per-record semantic open).
 //!
 //! Format reference: [`docs/formats/world-map-overlay.md`].
 //!
 //! Slot 4 of each kingdom bundle (PROT entries 0085 / 0244 / 0391) is the
-//! dev-menu top-view wireframe / coastline data - not the textured ground
+//! top-view data whose per-record semantic is open - it is not the ground
 //! tiles. Layout:
 //!
 //! ```text
@@ -16,21 +16,26 @@
 //!          8-byte trailer]
 //! ```
 //!
-//! Each of the `count_b` groups in a body is a polyline of `count_a` vertices.
-//! The top-down (X-Z) projection of those polylines traces continent
-//! coastlines (Drake body 12), the ±32 K world boundary frame (Drake body
-//! 13), and lower-resolution inner contours.
+//! NOTE: the historical reading - that each body's groups are polylines
+//! whose top-down (X-Z) projection traces continent coastlines / a world
+//! boundary frame - is **falsified** (no projection matches the in-game
+//! top-view in any kingdom). The working hypothesis is a runtime library
+//! of small object-local 3D meshes: bodies carry full X/Y/Z extents, not
+//! flat 2D contours. The consumer is pinned to two SCUS reader clusters;
+//! the per-record `attr` and per-body `kind` semantics are still open.
+//! The `top_down_*` / `Wireframe*` helpers below render record geometry
+//! for inspection only and do not assert the falsified interpretation.
 
-/// One vertex of a slot-4 polyline.
+/// One slot-4 record: an (x, y, z) point plus an `attr` tag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Slot4Record {
     pub x: i16,
     pub y: i16,
     pub z: i16,
     /// Per-record attribute byte. Always 0 for body 4; up to 214 distinct
-    /// values in Drake's body 12 (coastline). Probably packs a (tpage, clut)
-    /// tag or a zone id; semantic depends on the (still unidentified)
-    /// consumer.
+    /// values in Drake's body 12. The reader clusters are pinned, but this
+    /// field's meaning is not; candidates are a packed (tpage, clut) tag or
+    /// a zone id (see world-map-overlay.md).
     pub attr: i16,
 }
 
@@ -41,7 +46,7 @@ pub struct Slot4Body {
     pub index: usize,
     /// Records per group.
     pub count_a: u8,
-    /// Usually 0; observed `1` for Drake body 13 (the boundary frame).
+    /// Usually 0; observed `1` for Drake body 13 (a kind-4 body).
     pub flag_a: u8,
     /// Number of groups.
     pub count_b: u8,
@@ -259,7 +264,7 @@ pub enum PolylineMode {
     /// (`(k, g) -> (k, g + 1)`). Matches the slot-4 body-12 layout
     /// where consecutive groups share fixed X-bands across `count_a / 2`
     /// vertex pairs and Y varies as terrain elevation - i.e. the body
-    /// is a coarse heightfield mesh along the continent.
+    /// tests the (falsified) coarse-heightfield-mesh reading.
     Grid,
 }
 
@@ -289,7 +294,7 @@ impl Default for WireframeOptions {
         Self {
             strip_zero_records: true,
             skip_identical_group_bodies: true,
-            // Slot-4 groups are OPEN polylines (coastline curves, scan
+            // Slot-4 groups are OPEN polylines (the inspection default; scan
             // lines), not closed polygons. Closing them adds a spurious
             // diagonal from the last vertex back to the first that
             // visually scrambles the rendered shape. Keep them open by
@@ -299,7 +304,7 @@ impl Default for WireframeOptions {
             // RowMajor is what the live WebGL view uses today. Both
             // mode variants are visually noisy because the per-group
             // record layout isn't a simple polyline (see body 12: each
-            // group is 5 (left, right) edge pairs of a contour ring,
+            // group is 5 (left, right) edge pairs under one (falsified) reading,
             // not a 10-vertex polyline). Use [`record_points`] for a
             // topology-free dump.
             mode: PolylineMode::RowMajor,
@@ -575,8 +580,8 @@ const PALETTE: &[[u8; 4]] = &[
     [0xD9, 0xD9, 0x73, 0xFF], //  9  olive
     [0x73, 0xF2, 0xF2, 0xFF], // 10  aqua
     [0xF2, 0xA6, 0x73, 0xFF], // 11  apricot
-    [0x8C, 0xF2, 0xF2, 0xFF], // 12  coastline
-    [0xF2, 0xF2, 0xA6, 0xFF], // 13  boundary
+    [0x8C, 0xF2, 0xF2, 0xFF], // 12
+    [0xF2, 0xF2, 0xA6, 0xFF], // 13
     [0xA6, 0xF2, 0x8C, 0xFF], // 14  chartreuse
     [0xF2, 0x8C, 0xA6, 0xFF], // 15  blush
 ];
@@ -729,7 +734,7 @@ impl WireframeRaster {
     ///
     /// When `only_body` is `Some(i)`, only body index `i` is rendered.
     /// Render order is body-major: body 0 first, body N-1 last; the
-    /// coastline body (12 in Drake) therefore paints on top of the
+    /// the highest-index body (12 in Drake) therefore paints on top of the
     /// padded inner contours.
     pub fn draw_wireframe(
         &mut self,

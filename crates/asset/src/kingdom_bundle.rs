@@ -19,7 +19,7 @@
 //! | 1 | `0x02` TMD pack | Landmark TMDs (40 / 36 / 56 for Drake / Sebucus / Karisto) | [tmd.md] |
 //! | 2 | `0x03` MAN | Entity placement records (50 / 23 / 40 records) | scene-bundles.md |
 //! | 3 | `0x04` HD-OBJ index | Small structural index (~500B); semantic unpinned | - |
-//! | 4 | `0x05` "MOVE" | Top-view wireframe / coastline outlines | [world-map-overlay.md] |
+//! | 4 | `0x05` "MOVE" | Object-local 3D-mesh-shaped record bodies; per-record semantic open (old wireframe/coastline reading falsified) | [world-map-overlay.md] |
 //! | 5 | `0x06` | Unknown | - |
 //! | 6 | `0x07` | Unknown | - |
 //!
@@ -124,7 +124,7 @@ pub fn parse(buf: &[u8]) -> Option<KingdomBundle> {
 }
 
 /// Decode just one slot. Faster than `parse` when only a single slot
-/// is needed (e.g. slot 4 for the wireframe overlay).
+/// is needed (e.g. slot 4 for the world-map overlay data).
 pub fn decode_slot(buf: &[u8], slot: u8) -> Result<Vec<u8>, String> {
     let table_offset = find_asset_table_offset(buf).ok_or("no 7-asset table found")?;
     let table = &buf[table_offset..];

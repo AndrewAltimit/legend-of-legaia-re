@@ -784,3 +784,33 @@ backup_fingerprint = "de476a2791fba517ffddd4c23c92ce89cd03d52c69b47e602f85a3b723
 phase = "field"
 description = "Field, after the battle and the L2->L3 level-up have settled. Noa's L3 persistent character record (+0x11C..+0x12D). Diff against noa_levelup_field_pre for the byte-exact single-level stat deltas that reconcile the FUN_801E9504 gain arithmetic."
 topics = ["level-up", "stat growth", "Noa", "FUN_801E9504", "field", "post-level"]
+
+# ----------------------------------------------------------------
+# Gimard player-summon ("Burning Attack") capture states. Vahn is the
+# solo caster. Three phases across the cast; the live summon-part mesh
+# rotation window is the Burning Attack frame. These back the
+# FUN_801F7088 rotation-source probe (autorun_summon_rotation.lua).
+# NOTE: the PLAYER Gimard move is "Burning Attack"; the ENEMY Gimard
+# boss move is "Fire Tail" - distinct moves with distinct animations.
+# ----------------------------------------------------------------
+
+[[scenarios]]
+label = "gimard_summon_start"
+slot = 255
+pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate5"
+backup_fingerprint = "e7a26939600744e64577be4f3f5868f91a46fadbcd8d70baf90395202ac602c5"
+description = "Player Gimard Seru-magic cast, first frames of the summon (Vahn solo caster, no party). Pre-mesh-visible; the summon scene-graph spawn-stager window."
+
+[[scenarios]]
+label = "gimard_summon_visible"
+slot = 255
+pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate6"
+backup_fingerprint = "8aa0ee1a261277bc987b57eaf283fcd074474601abbefd3d4593e5725009a0d4"
+description = "Player Gimard summon with the mesh visible on screen, pre-attack (Vahn solo caster). Steady-state summon render; resident summon overlay + per-part transform target."
+
+[[scenarios]]
+label = "gimard_burning_attack"
+slot = 255
+pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate7"
+backup_fingerprint = "8653d14b3efae4e102e98b1e03d594d9a013baa028f4f481955d7e9a486d3050"
+description = "Player Gimard performing the Burning Attack move (move text + fire animation on screen, Vahn solo caster). The live summon-part mesh-rotation window for the FUN_801F7088 source hunt."
