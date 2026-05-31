@@ -699,8 +699,9 @@ pub trait BattleActionHost {
     }
 
     /// Returns the character ability bitmask at `0x80084708 + (party_id-1) *
-    /// 0x414 + 0xF4`. Bits `0x10`/`0x20` halve / quarter MP cost; `0x100` /
-    /// `0x200` scale impact magnitude; etc. Default returns 0.
+    /// 0x414 + 0xF4`. Bit `0x20` reduces MP cost by half, `0x10` by a quarter
+    /// (`0x20` wins when both are set); `0x100` / `0x200` scale impact
+    /// magnitude; etc. Default returns 0.
     fn character_ability_bits(&self, _party_slot: u8) -> u32 {
         0
     }
@@ -1251,19 +1252,15 @@ fn magic_cast_begin<H: BattleActionHost + ?Sized>(
         return transition(ctx, ActionState::MagicCaptureBranch);
     }
 
-    // Compute MP cost (with character ability bit half/quarter).
+    // Compute MP cost with the character ability-bit modifier (Half 0x20 takes
+    // priority over Quarter 0x10; see battle_formulas + the state-0x28 dump).
     let mp_cost = host.spell_mp_cost(spell_id);
     let bits = host.character_ability_bits(slot);
-    let cost = if bits & 0x10 != 0 {
-        mp_cost / 4
-    } else if bits & 0x20 != 0 {
-        mp_cost / 2
-    } else {
-        mp_cost
-    };
+    let modifier = crate::battle_formulas::MpCostModifier::from_ability_flags(bits);
+    let cost = crate::battle_formulas::mp_cost_after_ability_bits(mp_cost as u16, modifier);
     if let Some(actor) = host.actor_mut(slot) {
-        actor.mp = actor.mp.saturating_sub(cost as u16);
-        actor.last_mp_cost = cost as u16;
+        actor.mp = actor.mp.saturating_sub(cost);
+        actor.last_mp_cost = cost;
     }
 
     transition(ctx, ActionState::MagicPreCastWait)
@@ -1522,19 +1519,14 @@ fn spirit_pre_arm<H: BattleActionHost + ?Sized>(
         .unwrap_or(ActionCategory::Spirit);
     let spell_id = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
     if !matches!(category, ActionCategory::Item) {
-        // Spell path: compute MP cost, apply ability bits.
+        // Spell path: compute MP cost, apply ability bits (Half 0x20 first).
         let mp_cost = host.spell_mp_cost(spell_id);
         let bits = host.character_ability_bits(slot);
-        let cost = if bits & 0x10 != 0 {
-            mp_cost / 4
-        } else if bits & 0x20 != 0 {
-            mp_cost / 2
-        } else {
-            mp_cost
-        };
+        let modifier = crate::battle_formulas::MpCostModifier::from_ability_flags(bits);
+        let cost = crate::battle_formulas::mp_cost_after_ability_bits(mp_cost as u16, modifier);
         if let Some(actor) = host.actor_mut(slot) {
-            actor.mp = actor.mp.saturating_sub(cost as u16);
-            actor.last_mp_cost = cost as u16;
+            actor.mp = actor.mp.saturating_sub(cost);
+            actor.last_mp_cost = cost;
         }
         if slot < host.party_count() {
             host.ui_element(7, 0);
@@ -2471,10 +2463,10 @@ mod tests {
         host.actors[1].mp = 50;
         host.actors[1].params[0] = 0x10;
         host.spell_costs.insert(0x10, 20);
-        host.ability_bits.insert(1, 0x10); // quarter cost
+        host.ability_bits.insert(1, 0x10); // quarter (shave 25%: cost - cost>>2)
         step(&mut host, &mut ctx);
-        // 50 - 5 = 45
-        assert_eq!(host.actors[1].mp, 45);
+        // cost 20 -> 20 - (20>>2) = 15; 50 - 15 = 35
+        assert_eq!(host.actors[1].mp, 35);
     }
 
     #[test]
@@ -2829,23 +2821,23 @@ mod tests {
         assert_eq!(ctx.action_state, ActionState::EndOfAction.as_byte());
     }
 
-    /// `MagicCastBegin` with `bits & 0x10` set (quarter-cost) AND a divisible
-    /// cost - verifies the cost path picks the *quarter* branch over the
-    /// `bits & 0x20` half branch when both bits are set (retail's switch
-    /// checks bit 0x10 first via `if/else if`).
+    /// `MagicCastBegin` with both `bits & 0x10` and `bits & 0x20` set - verifies
+    /// the cost path picks the **Half** (`0x20`) branch over Quarter (`0x10`).
+    /// Dump-confirmed against the retail state-`0x28` block (`FUN_801E295C`
+    /// `0x801E3D0C`): `andi 0x20; bne <half>` short-circuits the `0x10` test.
     #[test]
-    fn magic_cast_begin_quarter_takes_priority_over_half() {
+    fn magic_cast_begin_half_takes_priority_over_quarter() {
         let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
         ctx.action_state = ActionState::MagicCastBegin.as_byte();
         host.actors[1].mp = 100;
         host.actors[1].params[0] = 0x10;
         host.spell_costs.insert(0x10, 40);
-        // Both bits set - retail picks 0x10 first.
+        // Both bits set - retail applies Half (0x20) and skips the 0x10 test.
         host.ability_bits.insert(1, 0x10 | 0x20);
         step(&mut host, &mut ctx);
-        // 100 - (40 / 4) = 90.
-        assert_eq!(host.actors[1].mp, 90);
-        assert_eq!(host.actors[1].last_mp_cost, 10);
+        // Half: 40 - (40>>1) = 20; 100 - 20 = 80.
+        assert_eq!(host.actors[1].mp, 80);
+        assert_eq!(host.actors[1].last_mp_cost, 20);
     }
 
     /// `PreActionWait` is gated on `previous_action_cleared`. With the gate
