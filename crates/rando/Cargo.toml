@@ -13,3 +13,4 @@ anyhow.workspace = true
 legaia-lzs = { path = "../lzs" }
 legaia-asset = { path = "../asset" }
 legaia-prot = { path = "../prot" }
+legaia-iso = { path = "../iso" }

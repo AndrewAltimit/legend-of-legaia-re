@@ -27,8 +27,11 @@
 //! - [`rng`] — a version-stable seeded PRNG so a seed always reproduces a run.
 //! - [`items`] — the valid item-id pool (from the SCUS item-name table).
 //! - [`drops`] — the drop-table planner (shuffle / random).
-//! - [`monster`] — apply an edit to a monster slot in the `battle_data` archive.
+//! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
+//! - [`disc`] — apply same-size PROT-entry edits to a real disc image
+//!   (`DiscPatcher`), via the Mode 2/2352 sector write-back in `legaia_iso`.
 
+pub mod disc;
 pub mod drops;
 pub mod items;
 pub mod monster;
