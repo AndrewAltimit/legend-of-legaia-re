@@ -116,8 +116,11 @@ pub enum InsnInfo {
     Yield { kind: YieldKind },
     /// `0x38 CAM_CFG` - 3-byte camera config.
     CamCfg { op0: u8, op1: u8 },
-    /// `0x39 PLAY_SFX`.
-    PlaySfx { sfx_id: u8 },
+    /// `0x39 GIVE_ITEM` — add one of inline item `item_id` to the inventory
+    /// (`FUN_8004313C` window setup + `FUN_800421D4(item_id, 1)`; dispatcher
+    /// `FUN_801DE840` case `0x39`). This is the treasure-chest item-give op; the
+    /// earlier `PLAY_SFX` label was wrong (SFX cues go through `FUN_80035B50`).
+    GiveItem { item_id: u8 },
     /// `0x3A ADD_MONEY` - 24-bit signed delta.
     AddMoney { signed_24: i32 },
     /// `0x3B SET_ITEM_COUNT`.
@@ -669,8 +672,8 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             need(1)?;
             mk(
                 header_size + 1,
-                InsnInfo::PlaySfx {
-                    sfx_id: bytecode[operand],
+                InsnInfo::GiveItem {
+                    item_id: bytecode[operand],
                 },
             )
         }
@@ -1720,7 +1723,7 @@ fn render_mnemonic(insn: &Insn) -> String {
         Bgm { text_id, sub_op } => format!("Bgm text_id={text_id} sub={sub_op:#x}"),
         Yield { kind } => format!("Yield ({kind:?})"),
         CamCfg { op0, op1 } => format!("CamCfg op0=0x{op0:02X} op1=0x{op1:02X}"),
-        PlaySfx { sfx_id } => format!("PlaySfx sfx_id={sfx_id}"),
+        GiveItem { item_id } => format!("GiveItem item_id={item_id}"),
         AddMoney { signed_24 } => format!("AddMoney delta={signed_24}"),
         SetItemCount { slot, count } => format!("SetItemCount slot={slot} count={count}"),
         PartyAdd { char_id } => format!("PartyAdd char_id={char_id}"),

@@ -9,19 +9,36 @@
 //!
 //! Finding the sites safely needs an **opcode-aware walk** — a naive `0x39`
 //! byte scan would hit literal `0x39` bytes inside dialogue / other operands.
-//! [`give_item_sites`] walks each partition-1 record's script from its true
-//! entry PC with the Track-1 field-VM disassembler ([`legaia_asset::field_disasm`])
-//! and stops at the first decode error (where the linear walk runs into the
-//! record's inline dialogue pool, which is not field-VM bytecode). Only `0x39`
-//! ops reached **before** any desync are returned, so every rewritten byte is a
-//! genuine give-item operand. This is a safe lower bound: a chest reached only
-//! through a branch the linear walk doesn't follow is left untouched rather than
-//! risk corrupting a non-script byte.
+//! [`give_item_sites`] walks each partition-1 record's interaction script from
+//! its true entry PC with the Track-1 field-VM disassembler
+//! ([`legaia_asset::field_disasm`]).
+//!
+//! A chest's give-item op almost always comes **after** the inline dialogue that
+//! announces it ("There is a {item} in the treasure chest!" → give → "{name} now
+//! has the {item}!"). The dialogue is a stream of `0x1F`-lead glyph segments, not
+//! field-VM bytecode, so the walk treats a decode error **at a `0x1F` byte** as a
+//! dialogue segment to skip (advance past `0x1F`, consume glyphs to the
+//! terminating `0x00`, treating `0xC?` top-nibble bytes as 2-byte escapes per the
+//! dialog box-pack format), then resumes decoding. The control bytes between
+//! segments (`0x24/0x25/0x48` Nop, `0x26` `JMP_REL`, `0x36` `SCENE_FADE`, …) are
+//! genuine field-VM ops that stay in sync, so the walk reaches the post-dialogue
+//! `0x39`. Any **other** decode error stops the walk. Each record's walk is
+//! bounded to the next record's start offset, so it can never run off the end of
+//! a record into unrelated data and mis-read a `0x39` data byte as an op.
+//!
+//! Multi-`0x39` runs are genuine multi-item gifts (e.g. a 10× consumable chest,
+//! or the fishing starter kit of a rod + several lures), not false positives —
+//! each `0x39 <id>` is its own 2-byte op in a coherent script flow.
+//!
+//! An earlier version stopped at the **first** `0x1F` (dialogue) instead of
+//! skipping it, which silently missed the ~85% of give-item sites that sit after
+//! their announcement text — including every chest in scenes whose first
+//! interactable record opens with dialogue.
 //!
 //! Edits are same-size (rewrite the id byte), then the MAN is recompressed and
 //! written back exactly like the [encounter](crate::encounter) path.
 
-use legaia_asset::field_disasm::{self, DisasmError};
+use legaia_asset::field_disasm;
 use legaia_asset::{man_section, scene_asset_table};
 
 const MAN_TYPE: u8 = 0x03;
@@ -85,12 +102,26 @@ impl SceneChests {
 
 /// Walk a decompressed MAN's partition-1 record scripts and return the absolute
 /// offsets (within `man`) of every `GIVE_ITEM` (op `0x39`) operand byte reached
-/// by a clean opcode-aware walk from each record's entry PC.
+/// by a dialogue-skipping opcode-aware walk from each record's entry PC. Sites
+/// are sorted and de-duplicated.
 pub fn give_item_sites(man: &[u8]) -> Vec<usize> {
     let mut sites = Vec::new();
     let Ok(mf) = man_section::parse(man) else {
         return sites;
     };
+    // All record offsets across every partition, sorted, to bound each record's
+    // walk to its own extent (the next record's start).
+    let mut bounds: Vec<usize> = Vec::new();
+    for part in &mf.partitions {
+        for ri in 0..part.len() {
+            if let Some(o) = mf.actor_placement_record_offset(ri, man.len()) {
+                bounds.push(o);
+            }
+        }
+    }
+    bounds.sort_unstable();
+    bounds.dedup();
+
     let n1 = mf.partitions[1].len();
     for ri in 0..n1 {
         let Some(rec) = mf.actor_placement_record_offset(ri, man.len()) else {
@@ -102,18 +133,46 @@ pub fn give_item_sites(man: &[u8]) -> Vec<usize> {
         if rec + pc0 >= man.len() {
             continue;
         }
-        walk_record_gives(man, rec, pc0, &mut sites);
+        // Extent = up to the next record's start (or end of MAN).
+        let end = bounds
+            .iter()
+            .copied()
+            .find(|&o| o > rec)
+            .unwrap_or(man.len());
+        walk_record_gives(man, rec, pc0, end, &mut sites);
     }
+    sites.sort_unstable();
+    sites.dedup();
     sites
 }
 
-/// Walk one record's script from `pc0` (relative to `rec`), pushing the absolute
-/// offset of each `0x39` operand byte reached before a decode error.
-fn walk_record_gives(man: &[u8], rec: usize, pc0: usize, out: &mut Vec<usize>) {
-    let script = &man[rec..];
+/// Skip one inline-dialogue `0x1F` segment beginning at `pc` (a `0x1F` byte),
+/// returning the offset just past its terminating `0x00`. `0xC?` top-nibble
+/// bytes are 2-byte escapes (the box-pack control codes), so a `0x00` inside an
+/// escape's argument does not terminate the segment.
+fn skip_dialogue_segment(script: &[u8], mut pc: usize) -> usize {
+    pc += 1; // past the 0x1F lead.
+    while pc < script.len() {
+        let b = script[pc];
+        if b == 0x00 {
+            return pc + 1;
+        }
+        pc += if b & 0xF0 == 0xC0 { 2 } else { 1 };
+    }
+    pc
+}
+
+/// Walk one record's interaction script from `pc0` to `end` (both relative to
+/// `rec`), pushing the absolute offset of each `0x39` give-item operand byte. A
+/// decode error at a `0x1F` byte skips the inline dialogue segment and continues;
+/// any other error stops the walk.
+fn walk_record_gives(man: &[u8], rec: usize, pc0: usize, end: usize, out: &mut Vec<usize>) {
+    let script = &man[rec..end.min(man.len())];
     let mut pc = pc0;
+    let mut guard = 0usize;
     loop {
-        if pc >= script.len() {
+        guard += 1;
+        if guard > 100_000 || pc >= script.len() {
             return;
         }
         match field_disasm::decode(script, pc) {
@@ -131,7 +190,12 @@ fn walk_record_gives(man: &[u8], rec: usize, pc0: usize, out: &mut Vec<usize>) {
                 }
                 pc += insn.size;
             }
-            Err(DisasmError::UnknownSubOp { .. }) | Err(_) => return,
+            // A decode error AT a 0x1F byte is the start of an inline dialogue
+            // segment (glyph text, not bytecode) — skip it and resume decoding.
+            Err(_) if script.get(pc) == Some(&0x1F) => {
+                pc = skip_dialogue_segment(script, pc);
+            }
+            Err(_) => return,
         }
     }
 }
@@ -156,23 +220,60 @@ mod tests {
         // 4-byte header (bytes 1..5) left zero.
         man.extend_from_slice(&[0x21, 0x39, 0xAB, 0x00]); // script at offset 5
         let mut sites = Vec::new();
-        walk_record_gives(&man, 0, 5, &mut sites);
+        walk_record_gives(&man, 0, 5, man.len(), &mut sites);
         assert_eq!(sites, vec![5 + 2], "operand byte of the 0x39 op");
         assert_eq!(man[sites[0]], 0xAB);
     }
 
     #[test]
     fn stops_at_desync_without_false_positives() {
-        // A 0x39 that appears only AFTER a decode error must NOT be reported.
-        // Use an unknown sub-op to force desync: 0x4C with a bogus sub-op.
+        // A 0x39 that appears only AFTER a non-dialogue decode error must NOT be
+        // reported. Use an unknown sub-op to force desync: 0x4C with a bogus
+        // sub-op (not a 0x1F dialogue byte, so the walk stops rather than skips).
         let mut man = vec![0u8; 5];
         man.extend_from_slice(&[0x4C, 0xFF, 0xFF, 0x39, 0xAB, 0x00]);
         let mut sites = Vec::new();
-        walk_record_gives(&man, 0, 5, &mut sites);
+        walk_record_gives(&man, 0, 5, man.len(), &mut sites);
         // The 0x39 after the desync point is not collected.
         assert!(
             !sites.contains(&(5 + 3)),
-            "0x39 past a desync must not be a site"
+            "0x39 past a non-dialogue desync must not be a site"
+        );
+    }
+
+    #[test]
+    fn skips_inline_dialogue_and_finds_post_text_give() {
+        // The give-item op sits AFTER an inline dialogue segment, exactly as a
+        // real chest does. Script at offset 5:
+        //   0x1F "Hi" 0xC1 0x00 0x00   (dialogue: glyphs + a 0xC? 2-byte escape
+        //                               whose arg is 0x00, then the 0x00 end)
+        //   0x39 0xAB                  (GIVE_ITEM after the text)
+        //   0x00                       (next-record prefix-like low byte: stop)
+        let mut man = vec![0u8; 5];
+        man.extend_from_slice(&[
+            0x1F, b'H', b'i', 0xC1, 0x00, 0x00, // dialogue segment
+            0x39, 0xAB, // GIVE_ITEM item 0xAB
+            0x00,
+        ]);
+        let give = 5 + 7; // operand byte of the 0x39
+        assert_eq!(man[give], 0xAB);
+        let mut sites = Vec::new();
+        walk_record_gives(&man, 0, 5, man.len(), &mut sites);
+        assert_eq!(sites, vec![give], "give-item after dialogue must be found");
+    }
+
+    #[test]
+    fn record_extent_bound_stops_the_walk() {
+        // A 0x39 beyond the record's extent (next record start) must NOT be a
+        // site even though it would decode cleanly on an unbounded walk.
+        let mut man = vec![0u8; 5];
+        man.extend_from_slice(&[0x21, 0x39, 0xAB, 0x00]); // 0x39 at abs offset 6
+        let mut sites = Vec::new();
+        // Bound the walk to end at offset 6 (before the 0x39 op).
+        walk_record_gives(&man, 0, 5, 6, &mut sites);
+        assert!(
+            sites.is_empty(),
+            "give-item past the record extent is excluded"
         );
     }
 }

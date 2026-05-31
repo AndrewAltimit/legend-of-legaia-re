@@ -814,3 +814,34 @@ slot = 255
 pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate7"
 backup_fingerprint = "8653d14b3efae4e102e98b1e03d594d9a013baa028f4f481955d7e9a486d3050"
 description = "Player Gimard performing the Burning Attack move (move text + fire animation on screen, Vahn solo caster). The live summon-part mesh-rotation window for the FUN_801F7088 source hunt."
+
+# ----------------------------------------------------------------
+# Treasure-chest give-item capture pair (scene "keikoku" = Ravine).
+# Slot 1 = standing in front of an unopened chest; slot 2 = the open-
+# chest action just starting (chest-open SFX queued, item not yet
+# granted). The scene MAN loads verbatim at RAM 0x8012f4c8; the four
+# chest actors' interaction records carry field-VM GIVE_ITEM (0x39)
+# ops after their announcement dialogue. The actor that advances its
+# open state between the two saves is the Phoenix chest (item 0x80).
+# Ground truth for the chest-randomizer dialogue-skipping walk.
+# ----------------------------------------------------------------
+
+[[scenarios]]
+slot = 1
+label = "keikoku_chest_pre"
+ram_fingerprint_sha256 = "f88dd9fc09e13f70772030bb5bfd296b6d13815ddb8fa31c9f7880b0d1a742d1"
+backup_fingerprint = "5c450953a321496e00c7410ba49f46e2d596beb983a863f74023cb8cf8e5f26a"
+phase = "field"
+expected_active_scene = "keikoku"
+description = "Field, standing directly in front of an unopened treasure chest in keikoku (Ravine). Pre-open snapshot for the chest give-item RE."
+topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "keikoku"]
+
+[[scenarios]]
+slot = 2
+label = "keikoku_chest_open"
+ram_fingerprint_sha256 = "ae775412134d561076123a8be7548a6bedd810efd2caa53c9315682a09dd53ff"
+backup_fingerprint = "c56db98557c3bae4066e8b42acda38827937d90442be53e610a4bdc74e1bf440"
+phase = "field"
+expected_active_scene = "keikoku"
+description = "Field, the open-chest action just starting (chest-open SFX 0x2d queued, item not yet added). Diff against keikoku_chest_pre: the Phoenix (0x80) chest actor advances its open-animation state; pins which give-item site the live game runs."
+topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "keikoku"]

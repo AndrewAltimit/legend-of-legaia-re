@@ -43,6 +43,29 @@ fn shuffle_chests_round_trips_on_disc() {
     let total_sites: usize = before.iter().map(|(_, s, _)| s.len()).sum();
     assert!(total_sites > 0, "expected chest give-item sites");
 
+    // The walk skips inline dialogue and reaches post-announcement give-item
+    // ops, so it must recover far more than the old first-dialogue-stops lower
+    // bound (38). A floor well above that catches a regression to that bug.
+    assert!(
+        total_sites > 150,
+        "expected the dialogue-skipping walk to find many post-text give sites, got {total_sites}"
+    );
+
+    // Ground truth from the keikoku (Ravine, PROT entry 112) chest savestate
+    // pair: 4 chest give-item ops; the chest the player opened gives Phoenix
+    // (item 0x80). The old walk found ZERO sites in this scene because every
+    // chest record opens with its announcement dialogue.
+    let keikoku = before
+        .iter()
+        .find(|(idx, _, _)| *idx == 112)
+        .expect("keikoku (entry 112) must have chest give-item sites");
+    assert_eq!(keikoku.1.len(), 4, "keikoku has 4 chests");
+    assert!(
+        keikoku.2.contains(&0x80),
+        "keikoku chest set includes Phoenix (0x80); got {:02x?}",
+        keikoku.2
+    );
+
     let mut patcher = DiscPatcher::open(original.clone()).unwrap();
     let report =
         apply::randomize_chests(&mut patcher, &[], seed, DropMode::Shuffle).expect("randomize");

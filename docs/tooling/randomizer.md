@@ -105,20 +105,36 @@ dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
 [script-vm.md](../subsystems/script-vm.md).) The give sites live in the MAN
 partition-1 per-actor interaction scripts (a chest is an interactable actor).
 
-`chest::give_item_sites` finds them with an **opcode-aware walk** — it walks each
-partition-1 record's script from its true entry PC with the field-VM
-disassembler ([`legaia_asset::field_disasm`], moved into Track 1 for exactly this
-reuse) and stops at the first decode error (where a linear walk runs into the
-record's inline dialogue pool, which is not bytecode). Only `0x39` ops reached
-**before** any desync are returned, so every rewritten byte is a genuine
-give-item operand — never a naive `0x39` byte scan (which would false-hit a
-literal `0x39` inside text, the same desync that bites the `0x3F` scan). This is
-a safe lower bound: a chest reached only through an unfollowed branch is left
-untouched rather than risk corrupting a non-script byte. Chest item ids are
-global inventory ids, so `apply::randomize_chests` reassigns them **globally**
-across every chest (`Shuffle` redistributes the existing chest-item multiset,
-`Random` draws from the valid item pool), then recompresses each touched MAN like
-the encounter path. On the retail disc this is 38 give sites across 16 scenes.
+`chest::give_item_sites` finds them with a **dialogue-skipping opcode-aware
+walk** — it walks each partition-1 record's interaction script from its true
+entry PC with the field-VM disassembler ([`legaia_asset::field_disasm`], moved
+into Track 1 for exactly this reuse). A chest's give op almost always sits
+**after** the inline dialogue that announces it ("There is a {item} in the
+treasure chest!" → give → "{name} now has the {item}!"). That dialogue is a
+stream of `0x1F`-lead glyph segments, not bytecode, so a decode error **at a
+`0x1F` byte** is treated as a segment to skip (advance past `0x1F`, consume
+glyphs to the terminating `0x00`, with `0xC?` top-nibble bytes as 2-byte
+escapes per the dialog box-pack format), and decoding resumes — the
+inter-segment control bytes (`0x24`/`0x25`/`0x48` Nop, `0x26` `JMP_REL`, `0x36`
+`SCENE_FADE`, …) are genuine ops that stay in sync, so the walk reaches the
+post-dialogue `0x39`. Any **other** decode error stops the walk, and each
+record's walk is bounded to the next record's start offset, so it can never run
+off into unrelated data and mis-read a `0x39` data byte as an op — never a naive
+`0x39` byte scan. (An earlier walk stopped at the *first* `0x1F` instead of
+skipping it, which silently missed the post-announcement give in roughly 85% of
+sites — including every chest in a scene whose first interactable record opens
+with dialogue, such as `keikoku`.) Multi-`0x39` runs are genuine multi-item
+gifts (a 10× consumable chest, the fishing starter kit of a rod + several lures,
+the Genesis-Tree Ra-Seru equipment sets), each `0x39 <id>` its own op.
+
+Chest item ids are global inventory ids, so `apply::randomize_chests` reassigns
+them **globally** across every site (`Shuffle` redistributes the existing
+multiset, `Random` draws from the valid item pool), then recompresses each
+touched MAN like the encounter path. A scene whose recompressed MAN overflows is
+excluded from the shuffle pool entirely (determined iteratively), so its items
+neither leave nor enter circulation and `Shuffle` preserves the global multiset
+exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
+too tight to re-pack, is skipped).
 
 ### Re-pack slack
 

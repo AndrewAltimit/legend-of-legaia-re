@@ -21,7 +21,7 @@ fn synthetic_record() -> Vec<u8> {
     // Op 0x35 sub-1 = BGM start, text_id = 0x12. Encoding is
     // `[0x35, lo, hi, sub_op]` (le16 text_id then sub_op byte).
     bc.extend_from_slice(&[0x35, 0x12, 0x00, 0x01]);
-    // Op 0x39 = play SFX, sfx_id = 0x42 (1 byte operand).
+    // Op 0x39 = GIVE_ITEM, item_id = 0x42 (1 byte operand).
     bc.extend_from_slice(&[0x39, 0x42]);
     // Op 0x3A = add money, 24-bit operand (LE) = +500.
     bc.extend_from_slice(&[0x3A, 0xF4, 0x01, 0x00]);
@@ -97,20 +97,20 @@ fn synthetic_record_emits_expected_event_shapes() {
 
     let events = world.drain_field_events();
     let mut has_bgm = false;
-    let mut has_sfx = false;
+    let mut has_give_item = false;
     let mut has_money = false;
     let mut has_party_add = false;
     for ev in &events {
         match ev {
             FieldEvent::Bgm { sub_op: 1, .. } => has_bgm = true,
-            FieldEvent::PlaySfx { .. } => has_sfx = true,
+            FieldEvent::GiveItem { .. } => has_give_item = true,
             FieldEvent::AddMoney { .. } => has_money = true,
             FieldEvent::PartyAdd { .. } => has_party_add = true,
             _ => {}
         }
     }
     assert!(has_bgm, "expected Bgm event from op 0x35 sub-1");
-    assert!(has_sfx, "expected PlaySfx event from op 0x39");
+    assert!(has_give_item, "expected GiveItem event from op 0x39");
     assert!(has_money, "expected AddMoney event from op 0x3A");
     assert!(has_party_add, "expected PartyAdd event from op 0x3C");
 }

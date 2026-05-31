@@ -33,10 +33,17 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use legaia_engine_shell::vram_oracle::{
-    build_engine_vram_bytes_prepass, compute_static_mask, first_static_upload_divergence,
-    load_runtime_vram_from_save,
+    NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
+    compute_static_mask, first_static_upload_divergence, load_runtime_vram_from_save,
 };
 use legaia_mednafen::ScenarioManifest;
+
+/// A scene only yields a trustworthy static mask when its captures are
+/// genuinely different same-scene states. If more than this fraction of the
+/// non-zero texpage band is identical across the captures, they are too similar
+/// (e.g. a before/after pair seconds apart) and the mask sweeps shared residual
+/// in; such a scene is skipped. town01's pre/post-battle pair sits at ~60%.
+const MAX_STATIC_FRACTION: f64 = 0.80;
 
 fn manifest_path() -> Option<PathBuf> {
     for candidate in [
@@ -139,6 +146,43 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
             .collect();
         let refs: Vec<&[u8]> = runtimes.iter().map(|v| v.as_slice()).collect();
         let mask = compute_static_mask(&refs);
+
+        // The static mask is only trustworthy when the captures are genuinely
+        // DIFFERENT same-scene states (town01 pre/post-battle differs ~40% of
+        // the texpage band -> ~60% static). Two near-simultaneous captures of
+        // the same moment (e.g. a before/after-opening-a-chest pair seconds
+        // apart) barely differ, so almost the whole texpage region counts as
+        // "static", sweeping shared residual (battle leftovers, animation
+        // frames) into the mask and falsely flagging the engine for not
+        // reproducing it. Skip a scene whose captures don't diverge enough.
+        let (mut nonzero, mut static_nonzero) = (0usize, 0usize);
+        for y in TEXPAGE_Y_START..VRAM_HEIGHT {
+            if NPC_CLUT_BAND_ROWS.contains(&y) {
+                continue;
+            }
+            for x in 0..VRAM_WIDTH {
+                let widx = y * VRAM_WIDTH + x;
+                let off = widx * 2;
+                if u16::from_le_bytes([refs[0][off], refs[0][off + 1]]) != 0 {
+                    nonzero += 1;
+                    if mask[widx] {
+                        static_nonzero += 1;
+                    }
+                }
+            }
+        }
+        let static_frac = static_nonzero as f64 / nonzero.max(1) as f64;
+        if static_frac > MAX_STATIC_FRACTION {
+            eprintln!(
+                "[skip]  scene={scene_name:<10} captures too similar for a static mask \
+                 ({:.1}% of the texpage band identical; need < {:.0}% - use captures \
+                 from genuinely different states)",
+                static_frac * 100.0,
+                MAX_STATIC_FRACTION * 100.0
+            );
+            continue;
+        }
+
         let static_words = mask.iter().filter(|&&b| b).count();
         // Diff the engine against the first snapshot; the static mask guarantees
         // every other snapshot holds the same value at the asserted pixels.

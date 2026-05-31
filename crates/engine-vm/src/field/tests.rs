@@ -26,7 +26,7 @@ struct TestHost {
     move_tos: Vec<(u16, u16, u16, bool)>,       // (script_id, world_x, world_z, is_player)
     dialogs: Vec<(u16, Vec<u8>, u16, u16, u8)>, // (text_id, inline, world_x, world_z, depth_id)
     bgm_calls: Vec<(u16, u8)>,                  // (text_id, sub_op)
-    sfx_calls: Vec<u8>,                         // sfx_id list
+    give_item_calls: Vec<u8>,                   // GIVE_ITEM item_id list
     money_deltas: Vec<i32>,
     item_writes: Vec<(u8, u8)>, // (slot_byte, count)
     party_added: Vec<u8>,
@@ -247,8 +247,8 @@ impl FieldHost for TestHost {
     fn cam_cfg_lookup(&self, index: u8) -> Option<u16> {
         self.cam_cfg_table.get(index as usize).copied()
     }
-    fn play_sfx(&mut self, sfx_id: u8) {
-        self.sfx_calls.push(sfx_id);
+    fn give_item(&mut self, item_id: u8) {
+        self.give_item_calls.push(item_id);
     }
     fn add_money(&mut self, delta: i32) {
         self.money_deltas.push(delta);
@@ -1468,15 +1468,15 @@ fn cam_cfg_halt_acquire_failed_predicate_halts_at_pc() {
     assert_eq!(host.halt_acquire_calls, vec![]);
 }
 
-// -- 0x39 PLAY_SFX ---------------------------------------------------
+// -- 0x39 GIVE_ITEM --------------------------------------------------
 
 #[test]
-fn play_sfx_calls_host() {
+fn give_item_calls_host() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x39, 0x42], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 2 });
-    assert_eq!(host.sfx_calls, vec![0x42]);
+    assert_eq!(host.give_item_calls, vec![0x42]);
 }
 
 // -- 0x3A ADD_MONEY --------------------------------------------------

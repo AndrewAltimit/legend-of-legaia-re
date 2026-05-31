@@ -2659,7 +2659,7 @@ fn drain_field_events_empties_queue() {
     let mut world = World::new();
     world
         .pending_field_events
-        .push(FieldEvent::PlaySfx { sfx_id: 1 });
+        .push(FieldEvent::GiveItem { item_id: 1 });
     let drained = world.drain_field_events();
     assert_eq!(drained.len(), 1);
     assert!(world.pending_field_events.is_empty());

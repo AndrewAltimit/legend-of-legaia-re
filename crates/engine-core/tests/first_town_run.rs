@@ -165,7 +165,7 @@ fn first_town_drives_scene_to_field_event_emission() {
     for ev in &all_events {
         let kind = match ev {
             FieldEvent::Bgm { .. } => "Bgm",
-            FieldEvent::PlaySfx { .. } => "PlaySfx",
+            FieldEvent::GiveItem { .. } => "GiveItem",
             FieldEvent::OpenDialog { .. } => "OpenDialog",
             FieldEvent::DialogDismissed => "DialogDismissed",
             FieldEvent::AddMoney { .. } => "AddMoney",

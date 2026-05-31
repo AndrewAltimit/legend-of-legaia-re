@@ -186,50 +186,125 @@ pub fn randomize_chests(
         return Ok(report);
     }
 
-    // Build the new id for every (scene, site) in a deterministic order.
-    let current: Vec<u8> = scenes.iter().flat_map(|s| s.current_items()).collect();
-    let mut rng = SplitMix64::new(seed);
-    let new_ids: Vec<u8> = match mode {
+    // Original item id at each (scene, site), kept so a skipped scene can be
+    // restored and excluded from the shuffle pool.
+    let originals: Vec<Vec<u8>> = scenes.iter().map(|s| s.current_items()).collect();
+    let entry_indices: Vec<usize> = scenes.iter().map(|s| s.entry_idx).collect();
+
+    // Indices of scenes whose recompressed MAN won't fit; these keep their
+    // original items and are excluded from the (multiset-preserving) shuffle
+    // pool. Determined iteratively: a fresh overflow shrinks the pool and we
+    // re-plan, so the writable set converges (it only ever shrinks).
+    let mut skipped: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+
+    match mode {
         DropMode::Shuffle => {
-            let mut v = current.clone();
-            rng.shuffle(&mut v);
-            v
+            // Each pass: shuffle the original items of the not-yet-skipped scenes
+            // among those same sites, repack, and fold any fresh overflow into
+            // `skipped` for the next pass. A permutation over the writable set
+            // preserves the chest-item multiset both over the written sites and
+            // globally (skipped items never enter the pool, so they neither
+            // appear nor disappear).
+            let mut streams: Vec<(usize, u64, Vec<u8>)> = Vec::new();
+            loop {
+                // Restore every site to its original, then assign the shuffle.
+                for (i, sc) in scenes.iter_mut().enumerate() {
+                    for (k, &off) in sc.sites.iter().enumerate() {
+                        sc.decoded[off] = originals[i][k];
+                    }
+                }
+                let mut pool: Vec<u8> = (0..scenes.len())
+                    .filter(|i| !skipped.contains(i))
+                    .flat_map(|i| originals[i].iter().copied())
+                    .collect();
+                let mut rng = SplitMix64::new(seed);
+                rng.shuffle(&mut pool);
+                let mut cur = 0usize;
+                for (i, sc) in scenes.iter_mut().enumerate() {
+                    if skipped.contains(&i) {
+                        continue;
+                    }
+                    for &off in &sc.sites {
+                        sc.decoded[off] = pool[cur];
+                        cur += 1;
+                    }
+                }
+
+                streams.clear();
+                let mut fresh_overflow = false;
+                for (i, sc) in scenes.iter().enumerate() {
+                    if skipped.contains(&i) {
+                        continue;
+                    }
+                    match sc.repack() {
+                        Some(stream) => streams.push((sc.entry_idx, sc.man_offset as u64, stream)),
+                        None => {
+                            skipped.insert(i);
+                            fresh_overflow = true;
+                        }
+                    }
+                }
+                if !fresh_overflow {
+                    break;
+                }
+            }
+
+            for (i, sc) in scenes.iter().enumerate() {
+                if skipped.contains(&i) {
+                    continue;
+                }
+                let changed = sc
+                    .sites
+                    .iter()
+                    .enumerate()
+                    .filter(|&(k, &off)| sc.decoded[off] != originals[i][k])
+                    .count();
+                if changed > 0 {
+                    report.scenes_changed += 1;
+                    report.items_changed += changed;
+                }
+            }
+            for (entry_idx, man_offset, stream) in streams {
+                patcher
+                    .patch_prot_entry(entry_idx, man_offset, &stream)
+                    .with_context(|| format!("write scene {entry_idx} MAN"))?;
+            }
         }
         DropMode::Random => {
             if item_pool.is_empty() {
                 return Ok(report);
             }
-            (0..current.len())
-                .map(|_| item_pool[rng.below(item_pool.len())])
-                .collect()
-        }
-    };
-
-    // Pass 2: write the assigned ids back per scene.
-    let mut cursor = 0usize;
-    for mut sc in scenes {
-        let mut changed = 0;
-        for &off in &sc.sites {
-            let v = new_ids[cursor];
-            cursor += 1;
-            if sc.decoded[off] != v {
-                sc.decoded[off] = v;
-                changed += 1;
+            // Each site is independent, so an overflowing scene just reverts
+            // (no multiset to preserve under Random).
+            let mut rng = SplitMix64::new(seed);
+            for (i, sc) in scenes.iter_mut().enumerate() {
+                let mut changed = 0;
+                for &off in &sc.sites {
+                    let v = item_pool[rng.below(item_pool.len())];
+                    if sc.decoded[off] != v {
+                        sc.decoded[off] = v;
+                        changed += 1;
+                    }
+                }
+                if changed == 0 {
+                    continue;
+                }
+                match sc.repack() {
+                    Some(stream) => {
+                        patcher
+                            .patch_prot_entry(sc.entry_idx, sc.man_offset as u64, &stream)
+                            .with_context(|| format!("write scene {} MAN", sc.entry_idx))?;
+                        report.scenes_changed += 1;
+                        report.items_changed += changed;
+                    }
+                    None => {
+                        skipped.insert(i);
+                    }
+                }
             }
-        }
-        if changed == 0 {
-            continue;
-        }
-        match sc.repack() {
-            Some(stream) => {
-                patcher
-                    .patch_prot_entry(sc.entry_idx, sc.man_offset as u64, &stream)
-                    .with_context(|| format!("write scene {} MAN", sc.entry_idx))?;
-                report.scenes_changed += 1;
-                report.items_changed += changed;
-            }
-            None => report.skipped.push(sc.entry_idx),
         }
     }
+
+    report.skipped = skipped.into_iter().map(|i| entry_indices[i]).collect();
     Ok(report)
 }
