@@ -11,7 +11,7 @@
   <ul class="bullets">
     <li><strong>Selector 0</strong> - the HP <em>applicator</em>: applies the pending HP delta (<code>actor[+0x14E] - actor[+0x14C]</code> within the target), capped at the per-party-slot ceiling table at <code>DAT_8007655C</code>. The attack-vs-defense hit value is computed earlier (see below) and staged into the actor first.</li>
     <li><strong>Selector 9</strong> - accuracy / evasion roll. <code>roll = rand() % (caster_acc + target_eva)</code>; hit when <code>target_eva &lt; roll</code> (hit probability <code>caster_acc / (caster_acc + target_eva)</code>). Standard JRPG-flat-roll model. <strong>Wired into the engine's live battle loop</strong> (arts/spell and basic-attack strike paths) - each actor's accuracy/evasion is its AGL-derived stat; the roll engages only when the attacker's accuracy is seeded, so an unseeded synthetic attacker auto-hits and consumes no RNG.</li>
-    <li><strong>Selectors 1..7</strong> - stat-buff ramps, multiplying the actor stat block by <code>6/5</code> with a <code>0xFFFF</code> clamp. Each stat is a working/base <em>pair</em> of halfwords, so a buff touches two halfwords per stat.</li>
+    <li><strong>Selectors 1..7</strong> - stat-buff ramps, multiplying the actor stat block by <code>6/5</code> with a <code>0xFFFF</code> clamp. Each stat is a working/base <em>pair</em> of halfwords, so a buff touches two halfwords per stat. <strong>Wired into the live loop:</strong> a stat-up buff ramps the live per-slot scalar by +20% (<code>buff_ramp</code>) and records the exact delta for precise revert; debuffs stay additive (retail debuff factor not yet pinned). Buffs consume no RNG.</li>
   </ul>
 </section>
 
