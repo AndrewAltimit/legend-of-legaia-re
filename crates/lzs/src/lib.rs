@@ -20,6 +20,10 @@
 //! `.lzs` *files* are containers: a small u32 header table where pairs at
 //! offsets `[2k]`/`[2k+1]` give `(decompressed_size, byte_offset_to_stream)`
 //! for each section. `decompress_container` parses that.
+//!
+//! [`compress`] is the inverse used for re-packing edited assets: a greedy
+//! LZSS matcher whose output the retail decoder accepts. It is not a bit-exact
+//! clone of Sony's packer - it is validated by `decompress(compress(x)) == x`.
 
 use anyhow::{Result, bail};
 
@@ -106,6 +110,158 @@ pub fn decompress_tracked(input: &[u8], expected_output_size: usize) -> Result<(
     }
 
     Ok((out, src))
+}
+
+// --- Encoder -------------------------------------------------------------
+//
+// The retail game ships only a *decoder* (`FUN_8001A55C`); there is no Sony
+// encoder to reverse. To re-pack edited assets (e.g. a disc patcher) we need an
+// encoder that produces a stream the retail decoder accepts byte-for-byte, not
+// a bit-identical match of whatever tool Sony used. This is a textbook greedy
+// LZSS matcher whose output is validated by `decompress(compress(x)) == x`.
+//
+// Why this maps cleanly onto the ring-buffer decoder: at the moment the decoder
+// is about to emit output byte `i`, its write cursor is `window_pos = (0xFEE +
+// i) & 0xFFF`, and `window[r]` holds the most recent output byte whose linear
+// position has residue `r`. A back-reference at linear distance `d` (i.e. copy
+// the run that started `d` bytes earlier) decodes to `base = (0xFEE + i - d) &
+// 0xFFF`. As long as `d <= 4096 - MAX_MATCH`, every read within the copy -
+// including the self-overlapping RLE case where `d < len` - resolves to exactly
+// `output[i - d + n]`, so a plain linear-history match is reproduced exactly.
+// We cap distance at `MAX_DIST` to keep that guarantee unambiguous (it avoids
+// the residue aliasing that can occur when a copy wraps across `window_pos`).
+
+const MIN_MATCH: usize = 3;
+const MAX_MATCH: usize = 18; // (b1 & 0x0F) + 3, max nibble 15 -> 18
+/// Largest back-reference distance we emit. The decoder's window is 4096 bytes;
+/// staying `MAX_MATCH` short of that keeps every in-copy read unambiguous.
+const MAX_DIST: usize = WINDOW_SIZE - MAX_MATCH; // 4078
+
+const HASH_BITS: usize = 15;
+const HASH_SIZE: usize = 1 << HASH_BITS;
+const NONE: usize = usize::MAX;
+/// Cap on hash-chain traversal per position. Real game assets compress well
+/// within a shallow walk; this bounds worst-case time on pathological input.
+const MAX_CHAIN: usize = 256;
+
+fn hash3(d: &[u8], i: usize) -> usize {
+    let h = (d[i] as u32).wrapping_mul(0x9E37_79B1)
+        ^ (d[i + 1] as u32).wrapping_mul(0x85EB_CA77)
+        ^ (d[i + 2] as u32).wrapping_mul(0xC2B2_AE3D);
+    (h >> (32 - HASH_BITS)) as usize & (HASH_SIZE - 1)
+}
+
+/// Compress `input` into a Legaia-LZS stream that `decompress(out, input.len())`
+/// reproduces exactly. The decompressed length is *not* stored in the stream
+/// (the format carries no length prefix or end marker - the caller supplies the
+/// size), so a re-packer must record `input.len()` alongside the output.
+///
+/// This is a greedy matcher, not a bit-exact clone of Sony's packer. It will
+/// not always match the original compressed bytes, but it always decodes back
+/// to the input, and it does real (not literal-only) compression so re-packed
+/// streams fit the slack in fixed-size slots.
+pub fn compress(input: &[u8]) -> Vec<u8> {
+    let n = input.len();
+    let mut out: Vec<u8> = Vec::with_capacity(n / 2 + 16);
+    if n == 0 {
+        return out;
+    }
+
+    let mut head = vec![NONE; HASH_SIZE];
+    let mut prev = vec![NONE; n];
+
+    let mut ctrl_pos = 0usize;
+    let mut nbits = 0u32;
+
+    let mut i = 0usize;
+    while i < n {
+        // Reserve a fresh control byte at the start of every group of 8 tokens.
+        if nbits == 0 {
+            ctrl_pos = out.len();
+            out.push(0);
+        }
+        let bit = nbits;
+
+        let (best_len, best_dist) = find_match(input, i, &head, &prev);
+
+        if best_len >= MIN_MATCH {
+            // Back-reference token: control bit stays 0.
+            let matchpos = i - best_dist;
+            let base = (WINDOW_START_POS + matchpos) & 0xFFF;
+            let len_code = (best_len - MIN_MATCH) as u8; // 0..=15
+            let b0 = (base & 0xFF) as u8;
+            let b1 = ((((base >> 8) & 0xF) as u8) << 4) | len_code;
+            out.push(b0);
+            out.push(b1);
+
+            // Insert every position the match covers so later tokens can
+            // reference into the run.
+            let end = (i + best_len).min(n);
+            for (p, slot) in prev.iter_mut().enumerate().take(end).skip(i) {
+                if p + MIN_MATCH <= n {
+                    let h = hash3(input, p);
+                    *slot = head[h];
+                    head[h] = p;
+                }
+            }
+            i = end;
+        } else {
+            // Literal token: set the control bit.
+            out[ctrl_pos] |= 1u8 << bit;
+            out.push(input[i]);
+            if i + MIN_MATCH <= n {
+                let h = hash3(input, i);
+                prev[i] = head[h];
+                head[h] = i;
+            }
+            i += 1;
+        }
+
+        nbits += 1;
+        if nbits == 8 {
+            nbits = 0;
+        }
+    }
+
+    out
+}
+
+/// Greedy longest-match search at `i` over the hash chain. Returns
+/// `(length, distance)`; `length < MIN_MATCH` means "emit a literal".
+fn find_match(input: &[u8], i: usize, head: &[usize], prev: &[usize]) -> (usize, usize) {
+    let n = input.len();
+    if i + MIN_MATCH > n {
+        return (0, 0);
+    }
+    let max_len = MAX_MATCH.min(n - i);
+    let min_pos = i.saturating_sub(MAX_DIST);
+    let h = hash3(input, i);
+    let mut cand = head[h];
+    let mut best_len = 0usize;
+    let mut best_dist = 0usize;
+    let mut depth = 0usize;
+    while cand != NONE && cand >= min_pos && depth < MAX_CHAIN {
+        depth += 1;
+        // Cheap reject: to beat the current best, byte at offset best_len must
+        // already match.
+        if best_len > 0 && (i + best_len >= n || input[cand + best_len] != input[i + best_len]) {
+            cand = prev[cand];
+            continue;
+        }
+        let mut l = 0usize;
+        while l < max_len && input[cand + l] == input[i + l] {
+            l += 1;
+        }
+        if l > best_len {
+            best_len = l;
+            best_dist = i - cand;
+            if l == max_len {
+                break;
+            }
+        }
+        cand = prev[cand];
+    }
+    (best_len, best_dist)
 }
 
 #[derive(Debug)]
@@ -377,6 +533,102 @@ mod tests {
         assert!(decompress(&input, 1_000_000).is_err());
         // Exact target decodes cleanly.
         assert_eq!(decompress(&input, 8).unwrap(), b"ABCDEFGH");
+    }
+
+    // --- Encoder round-trip tests -----------------------------------------
+
+    /// Assert `decompress(compress(x), x.len()) == x`.
+    fn assert_roundtrip(data: &[u8]) {
+        let packed = compress(data);
+        let unpacked = decompress(&packed, data.len()).expect("re-decode must succeed");
+        assert_eq!(unpacked, data, "round-trip mismatch (len {})", data.len());
+    }
+
+    #[test]
+    fn compress_empty() {
+        assert!(compress(&[]).is_empty());
+        assert_roundtrip(&[]);
+    }
+
+    #[test]
+    fn compress_short_inputs_below_min_match() {
+        assert_roundtrip(&[0x42]);
+        assert_roundtrip(&[0x01, 0x02]);
+        assert_roundtrip(b"AB");
+    }
+
+    #[test]
+    fn compress_literals_only() {
+        assert_roundtrip(b"ABCDEFGH");
+        assert_roundtrip(b"The quick brown fox jumps over the lazy dog");
+    }
+
+    #[test]
+    fn compress_long_zero_run_uses_rle() {
+        // A long zero run must compress well via overlapping (d=1) back-refs.
+        let data = vec![0u8; 4096];
+        let packed = compress(&data);
+        assert!(
+            packed.len() < data.len() / 4,
+            "zero run should compress hard, got {} from {}",
+            packed.len(),
+            data.len()
+        );
+        assert_roundtrip(&data);
+    }
+
+    #[test]
+    fn compress_repeated_pattern() {
+        let mut data = Vec::new();
+        for _ in 0..1000 {
+            data.extend_from_slice(b"ABCABCAB");
+        }
+        let packed = compress(&data);
+        assert!(packed.len() < data.len() / 4, "repetition should compress");
+        assert_roundtrip(&data);
+    }
+
+    #[test]
+    fn compress_overlapping_run_of_repeated_byte() {
+        // RLE via d=1 self-overlap: 0xAA repeated.
+        assert_roundtrip(&[0xAA; 500]);
+        // Mixed: short period that exercises overlap with d=2/3.
+        let data: Vec<u8> = (0..600).map(|i| (i % 3) as u8).collect();
+        assert_roundtrip(&data);
+    }
+
+    #[test]
+    fn compress_pseudorandom_incompressible() {
+        // A simple LCG produces incompressible-looking bytes; the encoder must
+        // still round-trip (falling back to literals where no match exists).
+        let mut x: u32 = 0x1234_5678;
+        let data: Vec<u8> = (0..20_000)
+            .map(|_| {
+                x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                (x >> 16) as u8
+            })
+            .collect();
+        assert_roundtrip(&data);
+    }
+
+    #[test]
+    fn compress_long_input_crossing_window_boundary() {
+        // Larger than the 4 KB window, with structure, to exercise the
+        // distance cap and chain eviction.
+        let mut data = Vec::new();
+        let mut x: u32 = 0xDEAD_BEEF;
+        for _ in 0..50_000 {
+            x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            // Bias toward a small alphabet so matches are common.
+            data.push(((x >> 20) & 0x0F) as u8);
+        }
+        assert_roundtrip(&data);
+    }
+
+    #[test]
+    fn compress_all_byte_values_boundary() {
+        let data: Vec<u8> = (0..=255u8).cycle().take(5000).collect();
+        assert_roundtrip(&data);
     }
 
     #[test]
