@@ -20,7 +20,8 @@ full design.
 | `drops` | The drop-table planner. `plan_drops` reassigns the monsters that currently drop something, in `Shuffle` mode (redistribute the existing drops — preserves the economy) or `Random` mode (draw from the item pool). Deterministic in `(current drops, pool, seed, mode)`. |
 | `monster` | Re-pack a monster slot in the `battle_data` archive (PROT 867). `repack_slot` decompresses the `0x14000`-byte slot, hands the decoded record to an in-place mutator, recompresses with `legaia_lzs::compress`, and zero-pads back to the original slot size so no offset moves. `set_drop` is the drop-id + chance wrapper. |
 | `disc` | `DiscPatcher`: own a mutable disc image, locate PROT.DAT + read its TOC, and apply same-size PROT-entry edits via the Mode 2/2352 sector write-back in `legaia_iso::write`. `patch_monster_slot` / `monster_slot` are the `battle_data` helpers; `patch_prot_entry` is the generic form. |
-| `apply` | High-level orchestration the CLI drives: `current_drops` reads every monster's drop off the archive, `apply_drop_plan` writes a planned drop table back (skipping the rare slot too full for our greedy packer and recording it in a `DropApplyReport`), and `randomize_drops` does plan + apply in one call. |
+| `encounter` | Random-encounter randomizer. `SceneEncounters::locate` finds a scene bundle's MAN inside a PROT entry and decompresses it; `randomize` rewrites the formation monster ids from the scene's own id pool (so every monster stays scene-loaded) in `Shuffle` (redistribute) or `Random` (draw from pool) mode; `repack` recompresses and reports whether it fits the original footprint. |
+| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), and `randomize_encounters` for every scene's formations (an `EncounterApplyReport` records scenes rewritten / ids changed / any MAN too tight to fit). |
 | `ppf` | PPF 3.0 patch writer. `diff_runs` reduces original-vs-patched to the changed byte runs, `write_ppf3` serializes them, `apply_ppf3` replays a patch (used by the round-trip test). The PPF is the redistributable deliverable — it ships only deltas the user already owns. |
 
 ## CLI (`legaia-rando`)
@@ -37,15 +38,18 @@ legaia-rando drops --input "Legend of Legaia (USA).bin"
 # Shuffle drops from a memorable seed -> a portable patch (default <input>.ppf).
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 
-# Random drops + a local patched image to play.
+# Random drops + shuffled encounters + a local patched image to play.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --patch run.ppf --output patched.bin
+    --encounters shuffle --patch run.ppf --output patched.bin
 ```
 
 `--seed` takes a number (decimal or `0x`-hex) or any string (hashed stably to a
 number); the resolved numeric seed is always printed so a run reproduces
-exactly. `--drops random` needs the SCUS item table off the disc to build the
-valid item pool; `shuffle` does not.
+exactly. `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
+`--drops random` needs the SCUS item table off the disc for the valid item
+pool; the others need no external table. `--encounters` reassigns each scene's
+formation monster ids from that scene's own id set, so every swapped-in monster
+is one the scene already loads (no missing model).
 
 ## How an edit reaches the disc
 
@@ -62,9 +66,12 @@ directory record moves.
   round-trip through a hand-built Mode 2 disc with a real-format PROT TOC.
 - Disc-gated: edit real monster drops and a real monster slot on a scratch copy
   of the disc, asserting the edit is surgical (drop applied; everything else
-  byte-identical) and the patched sectors stay EDC/ECC-valid; plus a full-archive
+  byte-identical) and the patched sectors stay EDC/ECC-valid; a full-archive
   shuffle that plans, applies, diffs into a PPF, and confirms the PPF reproduces
-  the patched image (and is deterministic for a fixed seed).
+  the patched image (and is deterministic for a fixed seed); and a whole-disc
+  encounter shuffle that re-decodes every patched scene MAN off the disc and
+  asserts counts + id multiset preserved, ids in-pool, sectors valid, and
+  deterministic.
 
 ```bash
 cargo test -p legaia-rando                                   # synthetic only

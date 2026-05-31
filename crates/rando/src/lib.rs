@@ -34,6 +34,7 @@
 pub mod apply;
 pub mod disc;
 pub mod drops;
+pub mod encounter;
 pub mod items;
 pub mod monster;
 pub mod ppf;

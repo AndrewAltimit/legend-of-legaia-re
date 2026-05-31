@@ -51,26 +51,44 @@ legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --patch run.ppf --output patched.bin
 ```
 
-`randomize` plans the run (`legaia_rando::apply::randomize_drops`), applies it to
-an in-memory copy of the disc, diffs the result against the original, and writes
-the changes as a **PPF 3.0** patch (default `<input>.ppf`). `--output` also
-writes a full patched `.bin` for local play. The seed is resolved from a number
-or a hashed string and always printed, so a run reproduces exactly; the same
-seed yields a byte-identical patched image and PPF.
+`randomize` plans the run, applies it to an in-memory copy of the disc, diffs
+the result against the original, and writes the changes as a **PPF 3.0** patch
+(default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
+play. The seed is resolved from a number or a hashed string and always printed,
+so a run reproduces exactly; the same seed yields a byte-identical patched image
+and PPF. `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
 
-Because a drop edit changes two bytes *inside* an LZS stream, the whole touched
-slot is re-packed, so the changed-byte count (and the PPF) is dominated by
+Because an edit changes bytes *inside* an LZS stream, the whole touched stream
+is re-packed, so the changed-byte count (and the PPF) is dominated by
 re-compression churn, not by the gameplay delta — this is inherent to editing
 compressed data, and every edit stays same-size. `--drops random` reads the SCUS
-item table off the disc for the valid item pool; `shuffle` needs no pool.
+item table off the disc for the valid item pool; the other modes need no
+external table.
 
-### Greedy-packer slack
+### Random encounters
 
-Our `legaia_lzs::compress` is weaker than Sony's, so a monster record already
-near the `0x14000` slot limit can re-pack a few bytes too large. `apply_drop_plan`
-**skips** such a slot (keeping its original drop) and records it in a
-`DropApplyReport`, rather than aborting the run, so the rest of the patch is still
-produced. The CLI prints any skipped monster ids.
+Formations live in the per-scene MAN asset (type `0x03`, descriptor index 2 of a
+scene bundle), inside an LZS stream; each formation record is
+`[3 reserved][u8 count 0..4][u8 ids...]` (see
+[encounter records](../formats/encounter.md)). `apply::randomize_encounters`
+walks every PROT entry, and for each scene bundle it locates the MAN
+(`SceneEncounters::locate`, straight from the entry bytes — no engine
+dependency), decompresses it, rewrites the formation monster ids
+(`Shuffle` redistributes the existing ids, `Random` draws from the pool),
+recompresses, and writes the stream back over the original (the LZS decoder
+stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
+safe). The id pool is **per scene** — only ids the scene already uses — so every
+swapped-in monster is one the scene loads; no missing model, no crash.
+
+### Re-pack slack
+
+A scene MAN is packed with **no compressed slack** (the next asset starts right
+after it), so the re-packed stream must be no larger than the original. The
+[LZS re-packer's lazy matching](../formats/lzs.md#encoding-re-packing) makes that
+hold for every scene MAN but one (and for every monster-archive slot). The rare
+stream that still overflows is **skipped** (its scene / slot left unchanged) and
+recorded in the apply report rather than aborting the run; the CLI prints the
+skipped entries.
 
 ## The patch chain
 
@@ -111,6 +129,7 @@ bit-for-bit.
 | `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
 | `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
+| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 

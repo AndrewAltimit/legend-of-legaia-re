@@ -59,6 +59,10 @@ struct RandomizeArgs {
     /// How monster item drops are reassigned.
     #[arg(long, value_enum, default_value_t = DropArg::Shuffle)]
     drops: DropArg,
+    /// How random-encounter formations are reassigned (within each scene's own
+    /// monster pool, so every monster stays scene-loaded).
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    encounters: DropArg,
     /// Write the portable PPF 3.0 patch here (defaults to `<input>.ppf`).
     #[arg(long)]
     patch: Option<PathBuf>,
@@ -70,12 +74,22 @@ struct RandomizeArgs {
 
 #[derive(Copy, Clone, ValueEnum)]
 enum DropArg {
-    /// Redistribute the existing drops among the dropping monsters.
+    /// Redistribute the existing values (drops / encounter ids).
     Shuffle,
-    /// Give each dropping monster a random item from the valid pool.
+    /// Draw each value uniformly from the valid pool.
     Random,
-    /// Leave drops untouched.
+    /// Leave untouched.
     None,
+}
+
+impl DropArg {
+    fn mode(self) -> Option<DropMode> {
+        match self {
+            DropArg::Shuffle => Some(DropMode::Shuffle),
+            DropArg::Random => Some(DropMode::Random),
+            DropArg::None => None,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -153,11 +167,8 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let original = load_image(&args.input)?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
 
-    let mode = match args.drops {
-        DropArg::Shuffle => Some(DropMode::Shuffle),
-        DropArg::Random => Some(DropMode::Random),
-        DropArg::None => None,
-    };
+    let mode = args.drops.mode();
+    let enc_mode = args.encounters.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
 
@@ -186,6 +197,23 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     } else {
         println!("drops: untouched");
+    }
+
+    if let Some(enc_mode) = enc_mode {
+        let report = apply::randomize_encounters(&mut patcher, seed, enc_mode)?;
+        println!(
+            "encounters: {} scenes rewritten, {} ids changed ({:?})",
+            report.scenes_changed, report.ids_changed, enc_mode
+        );
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} scene MAN(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+        }
+    } else {
+        println!("encounters: untouched");
     }
 
     // Diff original vs patched -> PPF.
