@@ -1453,6 +1453,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-rando"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-lzs",
+ "legaia-prot",
+]
+
+[[package]]
 name = "legaia-save"
 version = "0.1.0"
 dependencies = [
