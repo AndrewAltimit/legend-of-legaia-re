@@ -86,6 +86,25 @@ stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
 safe). The id pool is **per scene** — only ids the scene already uses — so every
 swapped-in monster is one the scene loads; no missing model, no crash.
 
+### Treasure chests (RE done; patcher pending a field-VM walk)
+
+A chest's item is given by the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
+`[0x39, item_id]` — the item id is a **single inline operand byte** in the
+per-scene field-VM event-script bytecode, not a per-scene table. (Pinned in the
+dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
+`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The
+standalone `FUN_801D71F0` add-item copy is dead/uncalled. See
+[script-vm.md](../subsystems/script-vm.md).) This resolves the open RE question
+("inline operand vs table") that gated the chest randomizer.
+
+Randomizing chests is therefore a same-size byte edit (rewrite the id after each
+`0x39`), but it requires an **opcode-aware field-VM walk** to find the `0x39`
+sites — a naive `0x39` byte scan is unsafe (a literal `0x39` inside text or
+another opcode's operand would be a false hit, the same desync that bites the
+`0x3F` scan). That walker is the remaining prerequisite; it is not yet available
+to the Track-1 randomizer crate (the field-VM disassembler currently lives in the
+engine crates), so the chest patcher is deferred behind that infra decision.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right
