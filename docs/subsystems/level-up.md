@@ -83,7 +83,7 @@ byte at `+0x6F8`.
   spread. (The leading `0x00B4` of the block is Vahn's HP `start` = 180, **not**
   a length word — an earlier note mislabeled it.)
 
-### Per-level gain arithmetic (decoded, NOT yet reconciled)
+### Per-level gain arithmetic (decoded + validated)
 
 Per stat per level (disassembly `0x801E9758..0x801E97F8` in
 `overlay_magic_level_up_801e9504.txt`):
@@ -101,24 +101,40 @@ Slots 1/2 also apply a per-character XP-threshold correction before the loop
 (`±(threshold×0x14)/scalar`; Noa subtracts, Gala adds) read from a runtime
 struct at `_DAT_8007B81C` — left out of the engine until pinned.
 
-**OPEN — the gain term overshoots the captured deltas.** Read literally the
-formula above gives, e.g., Noa HP ≈ 40/level (row 0, `(4500−150)×~85/9408`) and
-Gala HP ≈ 47/level, but the captured multi-level jumps show ~8/level and
-~11/level — a *non-constant* ~4.3..4.8x overshoot (Gala HP +44 observed vs
-core-sum ~188 = 4.27x; Noa HP +32 vs ~154 = 4.81x). The divisor is confirmed
-`0x24C0` and the record offsets are confirmed (the applier's `+0x6E4` block is
-the same RAM as the `+0x11C..+0x12D` record stat window below — the two bases
-differ by a constant `0x5C8` at the same `0x414` stride). So a factor in the
-model is still missing; the 4-level captures conflate too much to isolate it.
-**Reconciliation needs a single-level, RNG-pinned pre/post save pair** (jitter
-makes per-level values noisy; capturing one level-up with the curve byte known
-would pin the exact transform). Until then the engine does not drive level-up
-from this. Provenance: `ghidra/scripts/funcs/overlay_magic_level_up_801e9504.txt`
-(+ identical `overlay_battle_action_801e9504.txt` /
-`overlay_muscle_dome_801e9504.txt` aliases); decoded structure in
-`legaia_asset::level_up_tables` (`GrowthTables::char_params` /
-`level_gain_core`), validated by the disc-gated
+**The divisor `0x24C0` is the curve normalizer.** Each of the three growth
+curves sums to *exactly* `0x24C0` (= 9408), so the per-level term
+`(max−start)×byte/Σcurve` accumulates to exactly `(max−start)` across all 98
+levels — every stat lands precisely on its `max` at level 99. The record-write
+offsets are confirmed too: the applier's `+0x6E4` block is the same RAM as the
+`+0x11C..+0x12D` record stat window (the two bases differ by a constant `0x5C8`
+at the same `0x414` stride).
+
+**VALIDATED against a single-level capture.** The `noa_levelup_field_pre` /
+`noa_levelup_field_post` library saves (Noa, growth slot 1, **L2 → L3**, the
+`noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact
+single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3
+/ +4 / +3. Leveling **from** L2 reads `curve[row][1]`; every one of the 8 deltas
+lands within `[core − jitter, core + jitter]` of the formula above (e.g. HP
+core `(4500−150)×82/9408 = 37`, observed +39, jitter half-range 4). So the
+arithmetic is correct as written — the earlier "~4.3..4.8x overshoot" reading
+was an artifact of the *multi-level* corpus observations
+(`noa_4_level_jump` / `gala_4_level_jump`), whose stated HP deltas (≈+32 over a
+claimed 4 levels) are impossible under the validated ≈+38/level rate; those
+captures are unreliable for per-level growth (they still pin the write
+*footprint* + phase split, below). Provenance:
+`ghidra/scripts/funcs/overlay_magic_level_up_801e9504.txt` (+ identical
+`overlay_battle_action_801e9504.txt` / `overlay_muscle_dome_801e9504.txt`
+aliases); decoded + checked in `legaia_asset::level_up_tables`
+(`GrowthTables::char_params` / `level_gain_core`) by the disc-gated
 `crates/asset/tests/level_up_tables_real.rs`.
+
+**Remaining (engine wiring only):** retail adds the `rand() % (2×jitter+1) −
+jitter` spread per stat per level, so a faithful port must consume the same
+`rand()` stream in the same order to stay replay-deterministic; the per-character
+XP-threshold correction (slots 1/2) is also still runtime-sourced. The
+deterministic core is now trustworthy to wire (e.g. as a
+`StatGrowthCurve::PerLevel` built from the SCUS tables); the jitter RNG is the
+only piece holding back a bit-exact level-up.
 
 **FALSIFIED (still): the "Seru struct `+0x74`" growth hypothesis.** An earlier
 reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"

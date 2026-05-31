@@ -105,17 +105,32 @@ fn decodes_the_growth_tables_or_skips() {
         assert_eq!(st.start, gt[s], "Gala stat {s} start == template");
     }
 
-    // The decoded gain arithmetic is faithful to the applier but OVERSHOOTS the
-    // captured multi-level deltas (open reconciliation — see
-    // docs/subsystems/level-up.md § Stat gains). Pin the overshoot direction so
-    // the discrepancy stays visible: Noa HP (slot 1, row 0) summed L2->L6 core
-    // gain is well above the observed +32.
-    let noa_hp = g.char_params(1).unwrap().stats[0];
-    let core_sum: u32 = (2..6)
-        .map(|lvl| g.level_gain_core(&noa_hp, lvl).expect("gain core"))
-        .sum();
-    assert!(
-        core_sum > 32,
-        "core-sum {core_sum} overshoots observed +32 (open discrepancy)"
-    );
+    // Each curve sums to 0x24C0 (= the gain divisor): the divide is a
+    // normalizer, so the per-level term accumulates to exactly (max-start) over
+    // all 98 levels, landing each stat at `max` at L99.
+    for (r, c) in g.curves.iter().enumerate() {
+        let sum: u32 = c.iter().map(|&b| b as u32).sum();
+        assert_eq!(sum, 0x24C0, "curve row {r} sums to the gain divisor 0x24C0");
+    }
+
+    // VALIDATED against a single-level capture (Noa = growth slot 1, L2->L3,
+    // the noa_levelup_field_pre / _post library saves): leveling FROM L2 reads
+    // curve index level-1 = 1. Each observed record-stat delta falls within the
+    // deterministic core +/- the stat's jitter half-range. These small integer
+    // deltas are observations (not Sony bytes); the full footprint is the
+    // noa_levelup_* scenario set in scripts/scenarios.toml.
+    // Applier stat order: HP, MP, then the six record stats at +0x122..+0x12C.
+    let noa = g.char_params(1).unwrap();
+    let observed = [39u32, 5, 2, 4, 4, 3, 4, 3]; // Noa L2->L3 record-stat deltas
+    for (s, &obs) in observed.iter().enumerate() {
+        let p = &noa.stats[s];
+        let core = g.level_gain_core(p, 2).expect("gain core at L2");
+        let lo = core.saturating_sub(p.jitter as u32).max(1);
+        let hi = core + p.jitter as u32;
+        assert!(
+            (lo..=hi).contains(&obs),
+            "Noa stat {s} L2->L3: observed +{obs} outside core band [{lo},{hi}] (core {core}, jitter {})",
+            p.jitter
+        );
+    }
 }

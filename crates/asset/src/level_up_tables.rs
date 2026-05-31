@@ -25,11 +25,13 @@
 //! on HP/MP/AGL. `max` is the level-99 ceiling and `row` selects one of the
 //! [`GROWTH_ROW_COUNT`] progression curves.
 //!
-//! The applier's exact per-level gain arithmetic is decoded
-//! ([`GrowthTables::level_gain_core`]) but does **not yet reconcile** with the
-//! captured multi-level deltas (overshoots ~4.3..4.8x); the engine therefore
-//! does not drive level-up from it yet — see `docs/subsystems/level-up.md`
-//! § Stat gains.
+//! The applier's exact per-level gain arithmetic is decoded + **validated**
+//! ([`GrowthTables::level_gain_core`]): each curve sums to `0x24C0`, so the
+//! divisor normalizes the per-level term to reach `max` at level 99, and the
+//! core matches a single-level capture (Noa L2→L3) within the jitter band on
+//! all 8 stats. The engine does not yet drive level-up from it (wiring the
+//! retail `rand()` jitter needs the RNG stream for determinism) — see
+//! `docs/subsystems/level-up.md` § Stat gains.
 //!
 //! No `SCUS_942.54` bytes are committed; callers pass an image read from the
 //! user's disc at runtime.
@@ -232,14 +234,18 @@ impl GrowthTables {
     /// `0x801E97B0..0x801E97F8`: `(max-start) × byte`, the `0x6F74AE27` magic
     /// divide by `0x24C0`, then `+ jitter - jitter_half` floored at 1).
     ///
-    /// **Caveat — not yet reconciled.** Summed across the captured multi-level
-    /// jumps this OVERSHOOTS the observed per-stat deltas by a *non-constant*
-    /// ~4.3..4.8x (Gala HP +44 observed vs core-sum ~188 = 4.27x; Noa HP +32 vs
-    /// ~154 = 4.81x), so a factor in the model is still unresolved — the
-    /// multi-level captures conflate too much, and the reconciliation needs a
-    /// single-level RNG-pinned save pair. Exposed for that investigation; the
-    /// engine does **not** drive level-up from it. See
-    /// `docs/subsystems/level-up.md` § Stat gains.
+    /// **Validated.** Every one of the [`GROWTH_ROW_COUNT`] curves sums to
+    /// exactly `0x24C0`, so the divide is a *normalizer*: the per-level term
+    /// `(max-start)×byte/Σcurve` accumulates to exactly `(max-start)` over all
+    /// 98 levels, landing each stat at its `max` at level 99. Checked
+    /// byte-exact against a single-level capture (Noa L2→L3, growth slot 1): all
+    /// 8 record-stat deltas fall within `[core-jitter, core+jitter]` of this
+    /// core (e.g. HP core 37, observed +39, jitter half-range 4). The earlier
+    /// "overshoots ~4.8x" reading was an artifact of the unreliable multi-level
+    /// corpus observations, not this formula. See `docs/subsystems/level-up.md`
+    /// § Stat gains. (Retail adds the `rand() % (2×jitter+1) − jitter` spread on
+    /// top; the engine does not yet drive level-up from this — wiring needs the
+    /// jitter RNG stream for replay determinism.)
     pub fn level_gain_core(&self, p: &StatGrowthParam, level: usize) -> Option<u32> {
         if !(1..MAX_LEVEL).contains(&level) {
             return None;
