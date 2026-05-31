@@ -737,3 +737,50 @@ backup_fingerprint = "def8234c3edec96f769a3a6e3cde0e5b93f7b68296f236ea01aba56a0f
 phase = "battle"
 description = "Rim Elm (town01) Gimard Tail Fire summon mid-cast, flame-animation frame B. Pair with battle_gimard_tail_fire_a (see its note) for the flame-flicker thread."
 topics = ["battle", "effect", "summon", "Tail Fire", "Gimard", "CLUT cycling", "PROT 905"]
+
+# ----------------------------------------------------------------------
+# Single-level-up capture set: a 3-party (Vahn/Noa/Gala) battle in which
+# Noa levels up exactly once, from L2 to L3. Four ordered frames isolate
+# one application of the level-up stat-growth applier FUN_801E9504 (one
+# curve byte -> one stat delta), which the multi-level corpus triplets
+# cannot do - they're the reconciliation set for the open gain-arithmetic
+# discrepancy in docs/subsystems/level-up.md (the literal
+# (max-start)*curve[row][level-1]/0x24C0 term overshoots the captured
+# 4-level deltas ~4.3..4.8x). Noa is growth slot 1; L2->L3 reads
+# curve[row][1]. All four are immutable library backups (slot 255).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "noa_levelup_field_pre"
+ram_fingerprint_sha256 = "d69feeebb9fc8c74fcdc224c5aa249a5b593292d3b03e06a3e29056133b4299c"
+backup_fingerprint = "9c09d402c52351514ab8051d82ba4ba2992a6e5f782f61c1114be02eca247ed3"
+phase = "field"
+description = "Field, just before the 3-party (Vahn/Noa/Gala) battle that levels Noa from L2 to L3. The pre-battle persistent character record (Noa's L2 stats at record +0x11C..+0x12D) - the baseline for the single-level stat-growth diff."
+topics = ["level-up", "stat growth", "Noa", "FUN_801E9504", "field", "pre-level"]
+
+[[scenarios]]
+slot = 255
+label = "noa_levelup_fight_pre"
+ram_fingerprint_sha256 = "1f9999982383f15985d97f171d3c2c3e8561a30e7fb090c953e2baff6c4a253c"
+backup_fingerprint = "ceced9566e2068009cc5b75bf0ff3689045fd75f962b9076f3295ba23967447e"
+phase = "battle"
+description = "Mid-battle (Vahn/Noa/Gala active party), before the level-up resolves. Noa still at L2. Pairs with noa_levelup_banner / noa_levelup_field_post for the single-level (L2->L3) stat-growth reconciliation."
+topics = ["level-up", "stat growth", "Noa", "FUN_801E9504", "battle", "pre-level"]
+
+[[scenarios]]
+slot = 255
+label = "noa_levelup_banner"
+ram_fingerprint_sha256 = "6652dcb2b96f1b21d88eb7e8cef8d21703d32c8c7cc8e9279585e6174984e434"
+backup_fingerprint = "f783d727ccfbe8f7341740a2a6ee5a46866adedda03d273403b06ceb2a87c625"
+phase = "battle"
+description = "End-of-battle level-up banner visible: Noa leveling from L2 to L3. The frame where FUN_801E9504 has applied the growth and the banner displays the gains."
+topics = ["level-up", "stat growth", "Noa", "FUN_801E9504", "battle", "level-up banner"]
+
+[[scenarios]]
+slot = 255
+label = "noa_levelup_field_post"
+ram_fingerprint_sha256 = "05aad8d4ebde0d35f392e4d5ea498482bfd272b28c803ce292c222f903c77132"
+backup_fingerprint = "de476a2791fba517ffddd4c23c92ce89cd03d52c69b47e602f85a3b7237e5296"
+phase = "field"
+description = "Field, after the battle and the L2->L3 level-up have settled. Noa's L3 persistent character record (+0x11C..+0x12D). Diff against noa_levelup_field_pre for the byte-exact single-level stat deltas that reconcile the FUN_801E9504 gain arithmetic."
+topics = ["level-up", "stat growth", "Noa", "FUN_801E9504", "field", "post-level"]

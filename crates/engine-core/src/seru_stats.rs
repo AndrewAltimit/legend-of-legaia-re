@@ -112,10 +112,7 @@ impl SeruStatGrant {
     /// Project onto the legacy [`StatGain`] (HP / MP only). Engines that
     /// haven't migrated to the wider grant payload still see a useful value.
     pub const fn to_stat_gain(self) -> StatGain {
-        StatGain {
-            hp: self.hp,
-            mp: self.mp,
-        }
+        StatGain::hp_mp(self.hp, self.mp)
     }
 }
 

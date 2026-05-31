@@ -57,23 +57,98 @@ at `0x8004F34C` (`ghidra/scripts/funcs/8004e568.txt`).
 Per-character stat growth is **also `FUN_801E9504`'s job, sourced from static
 `SCUS_942.54` tables** — the writer the earlier capture work could not find is
 `FUN_801E9504` itself (a victory-path overlay function, not the
-`overlay_magic_level_up` display code that was searched). Each level-up
-iteration writes the record stat window (`+0x11C..+0x12C`) from:
+`overlay_magic_level_up` display code that was searched). It takes the 0-based
+party slot (`a0 = active-slot − 1`; slot 3 returns immediately), indexes the
+character record at `0x80084140 + slot×0x414`, and runs a `do { … } while
+(threshold ≤ record_xp)` multi-level loop, so one large XP award advances several
+levels in a single call. Each iteration grows **eight stats** at record
+`+0x6E4..+0x6F4` (HP `+0x6E4`, MP `+0x6E6`, then six battle stats at
+`+0x6EA..+0x6F4`, skipping the `+0x6E8` 100-cap slot), then increments the level
+byte at `+0x6F8`.
 
-- **Per-stat growth curves at `DAT_800769CC`** (built `lui v0,0x8007;
-  addiu s4,v0,0x69CC`), stride `0x62` (= 98 = `MAX_LEVEL − 1`), indexed by the
-  character level — the `if (0x62 < level)` clamp bounds the index, so each
-  grown stat has a 98-entry per-level curve.
-- **A per-stat parameter block at `DAT_80076918`** (built `lui a0,0x8007;
-  addiu a0,a0,0x6918`) whose bytes select which growth-curve row each stat
-  reads; the per-character variation is keyed off the slot argument here. The
-  documented record caps apply on write (HP ≤ 9999, MP ≤ 999, SP ≤ 0x118).
+### Tables
 
-So per-character growth is **static SCUS data**, not an uncaptured overlay. The
-engine can extract `DAT_800769CC` / `DAT_80076918` from the user's `SCUS_942.54`
-at runtime and replace the placeholder flat rates via `with_seru_roster` /
-`SeruStatTable`. Provenance:
-`ghidra/scripts/funcs/overlay_battle_action_801e9504.txt`.
+- **Per-stat growth curves at `DAT_800769CC`** (`lui v0,0x8007; addiu
+  s4,v0,0x69CC`): [`GROWTH_ROW_COUNT`] = 3 rows, stride `0x62` (= 98 =
+  `MAX_LEVEL − 1`), each a monotonic ramp (row 0 = `0x50, 0x52, 0x54, …`) settling
+  to a `0x40` plateau byte at high levels.
+- **A per-character parameter block at `DAT_80076918`** (`lui a0,0x8007; addiu
+  a0,a0,0x6918`): stride `0x3C`, one record per Vahn / Noa / Gala (the 4th slot
+  is never grown). Each record is **8 contiguous 6-byte sub-records**
+  `{u16 start, u16 max, u8 jitter, u8 row}`. `start` is the stat's base
+  (level-1) value — **validated against the new-game starting template**
+  (`legaia_asset::new_game`): **Gala's record matches the template on all 8
+  stats**, Vahn/Noa on HP/MP/AGL (their late-join templates are lightly
+  retuned). `max` is the level-99 ceiling, `row` selects a curve, `jitter` the
+  spread. (The leading `0x00B4` of the block is Vahn's HP `start` = 180, **not**
+  a length word — an earlier note mislabeled it.)
+
+### Per-level gain arithmetic (decoded + validated)
+
+Per stat per level (disassembly `0x801E9758..0x801E97F8` in
+`overlay_magic_level_up_801e9504.txt`):
+
+```
+jitter_val = rand() % (2*jitter + 1)                  ; BIOS A(0x2F) rand, 0..2*jitter
+byte       = curve[row][level - 1]                    ; 0x62-stride row index
+gain       = (max - start) * byte / 0x24C0            ; the 0x6F74AE27 >> (32+12) magic divide
+gain       = gain + jitter_val - jitter               ; recenter jitter to [-jitter, +jitter]
+gain       = max(1, gain)                             ; +1 floor
+record[stat] += gain                                  ; then caps: HP ≤ 9999, MP ≤ 999, SP ≤ 0x118, others ≤ 999
+```
+
+Slots 1/2 also apply a per-character XP-threshold correction before the loop
+(`±(threshold×0x14)/scalar`; Noa subtracts, Gala adds) read from a runtime
+struct at `_DAT_8007B81C` — left out of the engine until pinned.
+
+**The divisor `0x24C0` is the curve normalizer.** Each of the three growth
+curves sums to *exactly* `0x24C0` (= 9408), so the per-level term
+`(max−start)×byte/Σcurve` accumulates to exactly `(max−start)` across all 98
+levels — every stat lands precisely on its `max` at level 99. The record-write
+offsets are confirmed too: the applier's `+0x6E4` block is the same RAM as the
+`+0x11C..+0x12D` record stat window (the two bases differ by a constant `0x5C8`
+at the same `0x414` stride).
+
+**VALIDATED against a single-level capture.** The `noa_levelup_field_pre` /
+`noa_levelup_field_post` library saves (Noa, growth slot 1, **L2 → L3**, the
+`noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact
+single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3
+/ +4 / +3. Leveling **from** L2 reads `curve[row][1]`; every one of the 8 deltas
+lands within `[core − jitter, core + jitter]` of the formula above (e.g. HP
+core `(4500−150)×82/9408 = 37`, observed +39, jitter half-range 4). So the
+arithmetic is correct as written — the earlier "~4.3..4.8x overshoot" reading
+was an artifact of the *multi-level* corpus observations
+(`noa_4_level_jump` / `gala_4_level_jump`), whose stated HP deltas (≈+32 over a
+claimed 4 levels) are impossible under the validated ≈+38/level rate; those
+captures are unreliable for per-level growth (they still pin the write
+*footprint* + phase split, below). Provenance:
+`ghidra/scripts/funcs/overlay_magic_level_up_801e9504.txt` (+ identical
+`overlay_battle_action_801e9504.txt` / `overlay_muscle_dome_801e9504.txt`
+aliases); decoded + checked in `legaia_asset::level_up_tables`
+(`GrowthTables::char_params` / `level_gain_core`) by the disc-gated
+`crates/asset/tests/level_up_tables_real.rs`.
+
+**Engine wiring (deterministic core — done, all 8 stats).** `StatGain` carries
+the full eight-stat gain (HP, MP, AGL, ATK, UDF, LDF, SPD, INT).
+`LevelUpTracker::with_growth_tables` builds a per-character
+`StatGrowthCurve::PerLevel` from the parsed SCUS tables (the jitter-free
+`level_gain_core` for each of the 8 stats), and `BootSession` installs it from
+the user's `SCUS_942.54` at boot (alongside the XP curve), replacing the flat
+10 HP / 5 MP placeholder for Vahn/Noa/Gala. `apply_to_record` bumps HP/MP maxima
+(restoring cur to max) and grows the six battle stats in the record-side window
+(`+0x11C..+0x12D`), then **mirrors** them into the live window
+(`+0x110..+0x11B`) — matching the applier's write-then-mirror. Disc-gated
+`boot_installs_the_real_per_character_growth_curves_from_disc` checks Noa's curve
+produces the validated L2→L3 core (HP 37, MP 6).
+
+**Remaining (not modeled):**
+- The per-level `rand() % (2×jitter+1) − jitter` spread — a *bit-exact* level-up
+  must consume the same retail `rand()` stream in order to stay
+  replay-deterministic, so the engine applies only the deterministic core (the
+  jitter mean is 0, so totals are unbiased, just not byte-identical to a
+  specific retail roll).
+- The slots-1/2 XP-threshold ± correction (`_DAT_8007B81C`) is still
+  runtime-sourced.
 
 **FALSIFIED (still): the "Seru struct `+0x74`" growth hypothesis.** An earlier
 reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"

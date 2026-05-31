@@ -135,9 +135,9 @@ fn deterministic_level_up_tracker() -> legaia_engine_core::levelup::LevelUpTrack
         // a single 50-XP reward will always cross at least one threshold.
         .with_xp_table((1u32..=10).map(|n| n * 10).collect::<Vec<u32>>())
         .with_stat_curves([
-            StatGrowthCurve::Flat(StatGain { hp: 8, mp: 2 }),
-            StatGrowthCurve::Flat(StatGain { hp: 6, mp: 5 }),
-            StatGrowthCurve::Flat(StatGain { hp: 12, mp: 1 }),
+            StatGrowthCurve::Flat(StatGain::hp_mp(8, 2)),
+            StatGrowthCurve::Flat(StatGain::hp_mp(6, 5)),
+            StatGrowthCurve::Flat(StatGain::hp_mp(12, 1)),
             StatGrowthCurve::Flat(StatGain::default()),
         ])
 }
