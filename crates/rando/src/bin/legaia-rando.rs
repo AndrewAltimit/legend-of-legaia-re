@@ -43,6 +43,20 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
+    /// (records applied, the result still parses). Use this to check that a
+    /// shared patch + seed match your own disc before playing.
+    Verify {
+        /// Path to the user's retail disc image the patch targets.
+        #[arg(long)]
+        input: PathBuf,
+        /// The PPF 3.0 patch to apply.
+        #[arg(long)]
+        patch: PathBuf,
+        /// Optionally write the patched image here (for local play only).
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Parser)]
@@ -70,6 +84,13 @@ struct RandomizeArgs {
     /// for local play only, never redistribute).
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Write a reproducibility manifest (seed + options + change summary) here.
+    /// Safe to share alongside the PPF — it embeds no game bytes.
+    #[arg(long)]
+    manifest: Option<PathBuf>,
+    /// Plan and report the run but write no files (patch / output / manifest).
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -80,6 +101,14 @@ enum DropArg {
     Random,
     /// Leave untouched.
     None,
+}
+
+/// Lowercase name of a mode for the manifest (valid-TOML string value).
+fn mode_str(mode: DropMode) -> &'static str {
+    match mode {
+        DropMode::Shuffle => "shuffle",
+        DropMode::Random => "random",
+    }
 }
 
 impl DropArg {
@@ -97,6 +126,11 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Drops { input } => cmd_drops(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
+        Cmd::Verify {
+            input,
+            patch,
+            output,
+        } => cmd_verify(&input, &patch, output.as_deref()),
     }
 }
 
@@ -171,6 +205,12 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let enc_mode = args.encounters.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
+    // Manifest lines accumulate the run's options + outcome for reproducibility.
+    let mut manifest = vec![
+        "# legaia-rando run manifest".to_string(),
+        format!("seed = {seed}  # 0x{seed:016X}"),
+        format!("input = {:?}", args.input.display().to_string()),
+    ];
 
     if let Some(mode) = mode {
         // Random mode needs the valid item pool from SCUS; shuffle does not.
@@ -188,15 +228,23 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             plan.len(),
             mode
         );
+        manifest.push(format!("drops = {:?}", mode_str(mode)));
+        manifest.push(format!(
+            "drops_changed = {}  # of {} dropping monsters",
+            report.changed,
+            plan.len()
+        ));
         if !report.skipped.is_empty() {
             println!(
                 "  note: {} slot(s) too full to re-pack, left unchanged: {:?}",
                 report.skipped.len(),
                 report.skipped
             );
+            manifest.push(format!("drops_skipped = {:?}", report.skipped));
         }
     } else {
         println!("drops: untouched");
+        manifest.push("drops = \"none\"".to_string());
     }
 
     if let Some(enc_mode) = enc_mode {
@@ -205,15 +253,23 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             "encounters: {} scenes rewritten, {} ids changed ({:?})",
             report.scenes_changed, report.ids_changed, enc_mode
         );
+        manifest.push(format!("encounters = {:?}", mode_str(enc_mode)));
+        manifest.push(format!(
+            "encounters_scenes_changed = {}",
+            report.scenes_changed
+        ));
+        manifest.push(format!("encounters_ids_changed = {}", report.ids_changed));
         if !report.skipped.is_empty() {
             println!(
                 "  note: {} scene MAN(s) too tight to re-pack, left unchanged: {:?}",
                 report.skipped.len(),
                 report.skipped
             );
+            manifest.push(format!("encounters_skipped = {:?}", report.skipped));
         }
     } else {
         println!("encounters: untouched");
+        manifest.push("encounters = \"none\"".to_string());
     }
 
     // Diff original vs patched -> PPF.
@@ -223,9 +279,24 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
     let runs = ppf::diff_runs(&original, &patched);
     let changed_bytes: usize = runs.iter().map(|r| r.bytes.len()).sum();
+    manifest.push(format!("ppf_records = {}", runs.len()));
+    manifest.push(format!("bytes_changed = {changed_bytes}"));
+
+    if runs.is_empty() {
+        println!("note: no bytes changed (nothing to randomize for these options)");
+    }
+
+    if args.dry_run {
+        println!(
+            "dry run: would write a {}-record PPF ({} bytes changed); no files written",
+            runs.len(),
+            changed_bytes
+        );
+        return Ok(());
+    }
+
     let desc = format!("Legend of Legaia randomizer seed {seed}");
     let ppf_bytes = ppf::write_ppf3(&desc, &runs);
-
     let patch_path = args
         .patch
         .clone()
@@ -247,8 +318,38 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         );
     }
 
-    if runs.is_empty() {
-        println!("note: no bytes changed (nothing to randomize for these options)");
+    if let Some(mpath) = &args.manifest {
+        let mut text = manifest.join("\n");
+        text.push('\n');
+        std::fs::write(mpath, text)
+            .with_context(|| format!("write manifest {}", mpath.display()))?;
+        println!("manifest: {}", mpath.display());
+    }
+
+    Ok(())
+}
+
+/// Apply a PPF to a copy of the disc and confirm the result still parses.
+fn cmd_verify(input: &Path, patch: &Path, output: Option<&Path>) -> Result<()> {
+    let mut image = load_image(input)?;
+    let ppf = std::fs::read(patch).with_context(|| format!("read patch {}", patch.display()))?;
+    let applied =
+        legaia_rando::ppf::apply_ppf3(&mut image, &ppf).context("apply PPF to disc image")?;
+    // Re-parse the patched image end to end as a sanity check.
+    let patcher = DiscPatcher::open(image).context("patched image no longer parses as a disc")?;
+    let drops = apply::current_drops(&patcher)
+        .map(|d| d.iter().filter(|x| x.item != 0).count())
+        .unwrap_or(0);
+    println!(
+        "verify OK: {applied} PPF records applied; disc parses ({} PROT entries, {drops} monster drops)",
+        patcher.entry_count()
+    );
+    if let Some(out) = output {
+        std::fs::write(out, patcher.image()).with_context(|| format!("write {}", out.display()))?;
+        println!(
+            "patched image: {} (contains Sony bytes — do not redistribute)",
+            out.display()
+        );
     }
     Ok(())
 }
@@ -258,4 +359,30 @@ fn with_extension(input: &Path, ext: &str) -> PathBuf {
     let mut p = input.to_path_buf();
     p.set_extension(ext);
     p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seed_resolution_is_stable_and_parses_numbers() {
+        // Numbers are used directly (decimal + hex).
+        assert_eq!(resolve_seed("42"), 42);
+        assert_eq!(resolve_seed("0x1F"), 0x1F);
+        assert_eq!(resolve_seed("0XFF"), 0xFF);
+        // A non-numeric string hashes stably (reproducibility contract) and the
+        // same string always maps to the same seed.
+        let a = resolve_seed("my cool run");
+        assert_eq!(a, resolve_seed("my cool run"));
+        assert_ne!(a, resolve_seed("my other run"));
+        // A string that isn't a bare number doesn't collide with the number path.
+        assert_ne!(resolve_seed("42x"), 42);
+    }
+
+    #[test]
+    fn mode_str_is_lowercase() {
+        assert_eq!(mode_str(DropMode::Shuffle), "shuffle");
+        assert_eq!(mode_str(DropMode::Random), "random");
+    }
 }

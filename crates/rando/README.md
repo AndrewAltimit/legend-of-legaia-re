@@ -38,10 +38,18 @@ legaia-rando drops --input "Legend of Legaia (USA).bin"
 # Shuffle drops from a memorable seed -> a portable patch (default <input>.ppf).
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 
-# Random drops + shuffled encounters + a local patched image to play.
+# Random drops + shuffled encounters + a local patched image + a manifest.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --encounters shuffle --patch run.ppf --output patched.bin
+    --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
+
+# Confirm a shared patch applies cleanly to your own disc before playing.
+legaia-rando verify --input DISC.bin --patch run.ppf
 ```
+
+`--dry-run` plans + reports the run without writing any files. `--manifest`
+writes a small TOML record of the seed + options + change counts (no game
+bytes — safe to share). `verify` applies a PPF to a copy of your disc and
+confirms the result still parses (records applied, PROT entry + drop counts).
 
 `--seed` takes a number (decimal or `0x`-hex) or any string (hashed stably to a
 number); the resolved numeric seed is always printed so a run reproduces

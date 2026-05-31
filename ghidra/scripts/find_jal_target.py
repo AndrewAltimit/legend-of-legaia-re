@@ -12,7 +12,7 @@
 
 import os
 
-TARGET = 0x800326AC
+TARGET = 0x801D71F0
 CONTEXT_BEFORE = 6  # instructions of context to print before each hit
 CONTEXT_AFTER = 1   # delay-slot + 1 follow-up
 

@@ -48,7 +48,8 @@ The top-level binary turns a disc + seed into a portable patch:
 legaia-rando drops     --input DISC.bin                       # read-only listing
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --patch run.ppf --output patched.bin
+    --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
+legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
 `randomize` plans the run, applies it to an in-memory copy of the disc, diffs
@@ -57,6 +58,11 @@ the result against the original, and writes the changes as a **PPF 3.0** patch
 play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
 and PPF. `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
+`--dry-run` reports the plan without writing; `--manifest` writes a small TOML
+record of the seed + options + change counts (no game bytes, safe to share). The
+`verify` subcommand applies a PPF to a copy of the user's disc and confirms the
+result still parses end to end — a recipient's check that a shared patch + seed
+match their own disc.
 
 Because an edit changes bytes *inside* an LZS stream, the whole touched stream
 is re-packed, so the changed-byte count (and the PPF) is dominated by
