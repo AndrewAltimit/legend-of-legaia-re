@@ -4289,6 +4289,53 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
 }
 
 #[test]
+fn battle_magic_cast_applies_mp_half_ability_bit() {
+    use crate::input::PadButton;
+    use crate::spells::SpellCatalog;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.battle_player_driven = true;
+    world.mode = SceneMode::Battle;
+    world.set_spell_catalog(SpellCatalog::vanilla());
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.mp = 50;
+    world.actors[0].battle.liveness = 1;
+    world.set_battle_magic(0, 100);
+    world.actors[1].battle.max_hp = 300;
+    world.actors[1].battle.hp = 300;
+    world.actors[1].battle.liveness = 1;
+    // MP-half accessory bit (0x20) on the caster's character record.
+    world.character_ability_bits[0] = 0x20;
+
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut list = party.members[0].spell_list();
+    list.count = 1;
+    list.ids[0] = 0x20; // Flame, 5 MP
+    party.members[0].set_spell_list(list);
+    world.roster = party;
+
+    world.battle_ctx.active_actor = 0;
+    world.battle_spell_menu = world.build_battle_spell_session(0);
+
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_spell_menu();
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_spell_menu();
+
+    // Flame is 5 MP; the MP-half bit charges 5/2 = 2, so 50 -> 48 (vs 45 flat).
+    assert_eq!(
+        world.actors[0].battle.mp, 48,
+        "MP-half ability bit should halve the live-cast cost"
+    );
+}
+
+#[test]
 fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
     use crate::spells::{BuffStat, SpellOutcome};
 
