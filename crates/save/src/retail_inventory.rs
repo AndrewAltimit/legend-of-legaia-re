@@ -22,6 +22,11 @@
 //!   (0 if absent). Bounded.
 //! - `FUN_80042310` — consume-by-id: find-slot; decrement count; when it hits
 //!   0, compact via `FUN_800423E0`. Bounded.
+//! - `FUN_80043048` — consume-by-slot: decrement the count of a slot addressed
+//!   by **index** (not id). When the count reaches 0 it zeroes the id byte
+//!   **in place** — unlike consume-by-id it does **not** compact, so the freed
+//!   slot is left as a hole. Bounded; no-ops (echoing its third argument) when
+//!   the slot index is out of range or the slot is already empty.
 //! - `FUN_800423E0` — compact/merge: shift slots down to fill a freed gap and
 //!   zero the tail. Stack cap 99.
 //! - `FUN_800421D4` — ADD (the OOB primitive). MERGE pass first (existing id →
@@ -45,6 +50,7 @@
 
 // PORT: FUN_800421D4 (ADD) / FUN_80042EE0 (find-slot) / FUN_80042F4C (find-count)
 // PORT: FUN_80042310 (consume) / FUN_800423E0 (compact)
+// PORT: FUN_80043048 (consume-by-slot)
 // REF: docs/reference/memory-map.md "Retail inventory accessors (SCUS_942.54)"
 
 /// Base address of the consumable-item window (`= SC+0x1818`).
@@ -178,6 +184,34 @@ impl RetailInventory {
             self.compact();
         }
         true
+    }
+
+    /// Consume `amount` from the slot at `slot` (a window **index**, not an
+    /// item id) and return the slot's remaining count. Faithful to retail
+    /// `FUN_80043048`: bounds-checks `slot < window`, acts only on an occupied
+    /// slot (`id != 0`), clamps the new count at 0, and zeroes the id byte
+    /// **in place** when the count reaches 0 — it does **not** compact the
+    /// window (the freed slot stays as a hole, distinguishing it from the
+    /// id-keyed [`consume`](Self::consume), which compacts). On the no-op paths
+    /// (slot out of range, or already empty) retail echoes back its third
+    /// argument unchanged; `echo` models that register.
+    // PORT: FUN_80043048
+    pub fn consume_slot(&mut self, slot: i16, amount: u8, echo: u8) -> u8 {
+        if (slot as i32) >= self.slots.len() as i32 || slot < 0 {
+            return echo;
+        }
+        let i = slot as usize;
+        if self.slots[i].0 == 0 {
+            return echo;
+        }
+        // count - amount, clamped at 0 (retail: `< 1 -> 0`).
+        let remaining = self.slots[i].1.saturating_sub(amount);
+        self.slots[i].1 = remaining;
+        if remaining == 0 {
+            // Zero the id byte in place — NO compaction (the hole remains).
+            self.slots[i].0 = 0;
+        }
+        remaining
     }
 
     /// Compact the window: drop emptied slots (`id == 0` *or* `count == 0`),
@@ -328,5 +362,38 @@ mod tests {
         assert_eq!(inv.find_count(0xA2), 1);
         // Consuming an absent id is a no-op false.
         assert!(!inv.consume(0xFF, 1));
+    }
+
+    #[test]
+    fn consume_by_slot_zeroes_in_place_without_compacting() {
+        let mut inv = default_inv();
+        inv.add(0xB0, 3);
+        inv.add(0xB1, 5);
+        inv.add(0xB2, 2);
+        // Partial slot-consume leaves the stack and order intact.
+        assert_eq!(inv.consume_slot(1, 2, 0), 3);
+        assert_eq!(inv.slots()[1], (0xB1, 3));
+        // Consume slot 1 to zero: the id byte is zeroed IN PLACE — unlike
+        // consume-by-id, the window is NOT compacted, so the hole remains and
+        // the trailing slot keeps its index.
+        assert_eq!(inv.consume_slot(1, 3, 0), 0);
+        assert_eq!(inv.slots()[0], (0xB0, 3));
+        assert_eq!(inv.slots()[1], (0, 0));
+        assert_eq!(inv.slots()[2], (0xB2, 2));
+        // Over-consume clamps the count at 0 (and zeroes the id).
+        assert_eq!(inv.consume_slot(0, 99, 0), 0);
+        assert_eq!(inv.slots()[0], (0, 0));
+    }
+
+    #[test]
+    fn consume_by_slot_noop_paths_echo_third_arg() {
+        let mut inv = default_inv();
+        inv.add(0xC0, 4);
+        // Out-of-range slot index: no mutation, echoes the third argument.
+        assert_eq!(inv.consume_slot(ITEM_WINDOW_SLOTS as i16, 1, 0x7A), 0x7A);
+        assert_eq!(inv.consume_slot(-1, 1, 0x55), 0x55);
+        // Already-empty slot (id == 0): same echo, no mutation.
+        assert_eq!(inv.consume_slot(5, 1, 0x33), 0x33);
+        assert_eq!(inv.find_count(0xC0), 4);
     }
 }

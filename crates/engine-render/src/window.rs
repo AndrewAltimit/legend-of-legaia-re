@@ -419,6 +419,15 @@ pub fn cutscene_camera_mvp(
 /// [`Self::reset`] makes the next [`Self::approach`] snap directly to the
 /// target — call it when a cutscene (re)starts so the opening shot doesn't
 /// sweep in from a stale pose.
+///
+/// REF: FUN_801DB510 (cutscene overlay) — retail's per-frame camera ease, which
+/// lerps the focus globals + shake/offset trio + the typed `0x801F2798` param
+/// table toward their control-block targets with an exponential right-shift step
+/// (`srav` by `_DAT_8007B60B>>4`). This is an approximation of that ease (an
+/// orbit on decoded pitch/yaw rather than retail's world-in-camera GTE model),
+/// not a byte-faithful port. NB the same RAM address in the *dialog* overlay is
+/// an unrelated actor sprite emitter (overlays alias) — see
+/// `docs/reference/functions.md`.
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneCameraInterp {
     look_at: [f32; 3],
