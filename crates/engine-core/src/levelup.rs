@@ -29,10 +29,11 @@
 //! sub-records), read by the same `FUN_801E9504` (not the falsified Seru
 //! `+0x74` path). [`LevelUpTracker::with_growth_tables`] installs the validated
 //! jitter-free per-level core (`(max-start) × curve[row][level-1] / 0x24C0`,
-//! min 1); `BootSession` calls it from the user's `SCUS_942.54`. The flat
-//! 10 HP / 5 MP [`StatGain`] default is only the disc-less fallback. Retail's
-//! per-level `rand()` jitter and the six battle-stat grants are not modeled yet
-//! (see `docs/subsystems/level-up.md` § Stat gains).
+//! min 1) for all eight stats (HP, MP, AGL, ATK, UDF, LDF, SPD, INT);
+//! `BootSession` calls it from the user's `SCUS_942.54`. The flat 10 HP / 5 MP
+//! [`StatGain`] default is only the disc-less fallback. Retail's per-level
+//! `rand()` jitter is the one piece not modeled (it needs the RNG stream for
+//! replay determinism) — see `docs/subsystems/level-up.md` § Stat gains.
 
 use legaia_save::CharacterRecord;
 
@@ -61,21 +62,80 @@ impl LevelUpBanner {
 /// Maximum character level.
 pub const MAX_LEVEL: u8 = 99;
 
-/// HP and MP gained per level-up for one party slot.
+/// Stats gained per level-up for one party slot — the eight `FUN_801E9504`
+/// grows, in template / applier order (HP, MP, then the six battle stats
+/// AGL / ATK / UDF / LDF / SPD / INT).
 ///
-/// The retail game assigns different growth rates to each party member
-/// (Vahn / Noa / Gala). The per-slot values live in the overlay DATA segment
-/// and remain placeholder until a full binary dump is captured.
+/// Per-character growth comes from the static-SCUS tables (installed via
+/// [`LevelUpTracker::with_growth_tables`]); the [`Default`] is the flat
+/// disc-less placeholder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatGain {
     pub hp: u16,
     pub mp: u16,
+    pub agl: u16,
+    pub atk: u16,
+    pub udf: u16,
+    pub ldf: u16,
+    pub spd: u16,
+    pub int: u16,
 }
 
 impl Default for StatGain {
     fn default() -> Self {
-        // Placeholder: 10 HP / 5 MP per level for all slots.
-        Self { hp: 10, mp: 5 }
+        // Placeholder: 10 HP / 5 MP per level, no battle-stat growth.
+        Self::hp_mp(10, 5)
+    }
+}
+
+impl StatGain {
+    /// Construct from HP/MP only, with zero battle-stat growth. The common
+    /// case for the flat placeholder and HP/MP-only callers.
+    pub const fn hp_mp(hp: u16, mp: u16) -> Self {
+        Self {
+            hp,
+            mp,
+            agl: 0,
+            atk: 0,
+            udf: 0,
+            ldf: 0,
+            spd: 0,
+            int: 0,
+        }
+    }
+
+    /// The six battle stats in applier / template order
+    /// `[AGL, ATK, UDF, LDF, SPD, INT]` (= applier stat indices 2..=7).
+    pub const fn battle(&self) -> [u16; 6] {
+        [self.agl, self.atk, self.udf, self.ldf, self.spd, self.int]
+    }
+
+    /// Field-wise saturating sum.
+    pub fn saturating_add(self, o: Self) -> Self {
+        Self {
+            hp: self.hp.saturating_add(o.hp),
+            mp: self.mp.saturating_add(o.mp),
+            agl: self.agl.saturating_add(o.agl),
+            atk: self.atk.saturating_add(o.atk),
+            udf: self.udf.saturating_add(o.udf),
+            ldf: self.ldf.saturating_add(o.ldf),
+            spd: self.spd.saturating_add(o.spd),
+            int: self.int.saturating_add(o.int),
+        }
+    }
+
+    /// Scale every field by `n` (saturating). Used for flat-rate `× levels`.
+    pub fn saturating_mul(self, n: u16) -> Self {
+        Self {
+            hp: self.hp.saturating_mul(n),
+            mp: self.mp.saturating_mul(n),
+            agl: self.agl.saturating_mul(n),
+            atk: self.atk.saturating_mul(n),
+            udf: self.udf.saturating_mul(n),
+            ldf: self.ldf.saturating_mul(n),
+            spd: self.spd.saturating_mul(n),
+            int: self.int.saturating_mul(n),
+        }
     }
 }
 
@@ -119,14 +179,12 @@ impl StatGrowthCurve {
     /// Sum the stat gains for `from_level → to_level` (inclusive of every
     /// level-up between).
     pub fn sum_range(&self, from_level: u8, to_level: u8) -> StatGain {
-        let mut total = StatGain { hp: 0, mp: 0 };
+        let mut total = StatGain::hp_mp(0, 0);
         if to_level <= from_level {
             return total;
         }
         for prev in from_level..to_level {
-            let g = self.gain_for(prev);
-            total.hp = total.hp.saturating_add(g.hp);
-            total.mp = total.mp.saturating_add(g.mp);
+            total = total.saturating_add(self.gain_for(prev));
         }
         total
     }
@@ -263,12 +321,20 @@ impl LevelUpObservation {
     }
 
     /// Per-level [`StatGain`] averaged across the observed range. Used
-    /// internally by [`Self::to_curve`].
+    /// internally by [`Self::to_curve`]. The six battle stats come from the
+    /// `+0x122..+0x12D` slice of the captured stat window.
     pub fn average_per_level(&self) -> StatGain {
         let n = self.levels_gained().max(1);
+        let w = self.record_stats_u16(); // [HP, MP, cap, AGL, ATK, UDF, LDF, SPD, INT]
         StatGain {
             hp: self.hp_gained / n,
             mp: self.mp_gained / n,
+            agl: w[3] / n,
+            atk: w[4] / n,
+            udf: w[5] / n,
+            ldf: w[6] / n,
+            spd: w[7] / n,
+            int: w[8] / n,
         }
     }
 
@@ -445,6 +511,9 @@ pub struct LevelUpResult {
     pub hp_gained: u16,
     /// Total MP max increase (sum across all levels gained).
     pub mp_gained: u16,
+    /// Total increase to the six battle stats, in applier order
+    /// `[AGL, ATK, UDF, LDF, SPD, INT]` (sum across all levels gained).
+    pub battle_gained: [u16; 6],
 }
 
 /// Per-party XP and level state. Owned by [`crate::world::World`].
@@ -583,16 +652,23 @@ impl LevelUpTracker {
             let Some(cp) = tables.char_params(slot) else {
                 continue;
             };
-            let hp = &cp.stats[0];
-            let mp = &cp.stats[1];
             let mut table = Vec::with_capacity((MAX_LEVEL - 1) as usize);
             // table[prev-1] is the gain for the level-up prev → prev+1, matching
             // `gain_for(prev)`. `level_gain_core(_, prev)` reads curve[row][prev-1].
+            // Applier stat order: 0=HP, 1=MP, 2..=7 = AGL/ATK/UDF/LDF/SPD/INT.
             for prev in 1u8..MAX_LEVEL {
                 let lvl = prev as usize;
-                let h = tables.level_gain_core(hp, lvl).unwrap_or(0) as u16;
-                let m = tables.level_gain_core(mp, lvl).unwrap_or(0) as u16;
-                table.push(StatGain { hp: h, mp: m });
+                let g = |i: usize| tables.level_gain_core(&cp.stats[i], lvl).unwrap_or(0) as u16;
+                table.push(StatGain {
+                    hp: g(0),
+                    mp: g(1),
+                    agl: g(2),
+                    atk: g(3),
+                    udf: g(4),
+                    ldf: g(5),
+                    spd: g(6),
+                    int: g(7),
+                });
             }
             self.stat_curves[slot] = StatGrowthCurve::PerLevel(table);
         }
@@ -645,15 +721,11 @@ impl LevelUpTracker {
         // curve, prefer the explicit `stat_gains` (set via
         // `with_stat_gain` / `with_stat_gains`) since it's the more
         // intentional configuration.
-        let (hp_gained, mp_gained) = match &self.stat_curves[slot] {
-            StatGrowthCurve::PerLevel(_) => {
-                let summed = self.stat_curves[slot].sum_range(old_level, new_level);
-                (summed.hp, summed.mp)
-            }
+        let total = match &self.stat_curves[slot] {
+            StatGrowthCurve::PerLevel(_) => self.stat_curves[slot].sum_range(old_level, new_level),
             StatGrowthCurve::Flat(_) => {
                 let levels_gained = (new_level - old_level) as u16;
-                let gain = self.stat_gains[slot];
-                (gain.hp * levels_gained, gain.mp * levels_gained)
+                self.stat_gains[slot].saturating_mul(levels_gained)
             }
         };
 
@@ -662,15 +734,18 @@ impl LevelUpTracker {
             old_level,
             new_level,
             xp_gained: xp,
-            hp_gained,
-            mp_gained,
+            hp_gained: total.hp,
+            mp_gained: total.mp,
+            battle_gained: total.battle(),
         })
     }
 
-    /// Apply a `LevelUpResult` to a `CharacterRecord` - increases `hp_max`
-    /// and `mp_max`, restores `hp_cur` / `mp_cur` to the new maximums
-    /// (Legaia restores HP/MP on level-up), and writes the new level back
-    /// to the record's `+0x100` byte.
+    /// Apply a `LevelUpResult` to a `CharacterRecord` - increases `hp_max` /
+    /// `mp_max`, restores `hp_cur` / `mp_cur` to the new maximums (Legaia
+    /// restores HP/MP on level-up), adds the six battle-stat gains to both the
+    /// record-side window (`+0x11C..+0x12D`) and the live window
+    /// (`+0x110..+0x11B`) - matching `FUN_801E9504`'s write-then-mirror - and
+    /// writes the new level back to the record's `+0x100` byte.
     pub fn apply_to_record(result: &LevelUpResult, record: &mut CharacterRecord) {
         let mut hms = record.hp_mp_sp();
         hms.hp_max = hms.hp_max.saturating_add(result.hp_gained);
@@ -678,6 +753,34 @@ impl LevelUpTracker {
         hms.hp_cur = hms.hp_max;
         hms.mp_cur = hms.mp_max;
         record.set_hp_mp_sp(hms);
+
+        // Six battle stats: AGL / ATK / UDF / LDF / SPD / INT. Retail grows the
+        // record-side window (+0x11C..+0x12D) then MIRRORS it into the live
+        // window (+0x110..+0x11B), so the two stay consistent.
+        let [d_agl, d_atk, d_udf, d_ldf, d_spd, d_int] = result.battle_gained;
+
+        let mut rs = record.record_stats();
+        rs.hp_max = hms.hp_max; // keep the record-side HP/MP copy in sync
+        rs.mp_max = hms.mp_max;
+        rs.agl = rs.agl.saturating_add(d_agl);
+        rs.atk = rs.atk.saturating_add(d_atk);
+        rs.udf = rs.udf.saturating_add(d_udf);
+        rs.ldf = rs.ldf.saturating_add(d_ldf);
+        rs.spd = rs.spd.saturating_add(d_spd);
+        rs.int = rs.int.saturating_add(d_int);
+        record.set_record_stats(rs);
+
+        // Mirror the grown record-side battle stats into the live window the
+        // battle reads each frame.
+        let mut ls = record.live_stats();
+        ls.agl = rs.agl;
+        ls.atk = rs.atk;
+        ls.udf = rs.udf;
+        ls.ldf = rs.ldf;
+        ls.spd = rs.spd;
+        ls.int = rs.int;
+        record.set_live_stats(ls);
+
         record.set_level(result.new_level);
     }
 }
@@ -804,6 +907,25 @@ mod tests {
         hms.mp_max = 50;
         hms.mp_cur = 10;
         rec.set_hp_mp_sp(hms);
+        // Seed the six battle stats in both windows (a real record keeps them
+        // equal) so the level-up grows the record side then mirrors to live.
+        let seed = legaia_save::character::LiveStats {
+            agl: 20,
+            atk: 24,
+            udf: 16,
+            ldf: 12,
+            spd: 19,
+            int: 9,
+        };
+        rec.set_live_stats(seed);
+        let mut rs = rec.record_stats();
+        rs.agl = 20;
+        rs.atk = 24;
+        rs.udf = 16;
+        rs.ldf = 12;
+        rs.spd = 19;
+        rs.int = 9;
+        rec.set_record_stats(rs);
 
         let result = LevelUpResult {
             char_id: 0,
@@ -812,6 +934,7 @@ mod tests {
             xp_gained: 100,
             hp_gained: 10,
             mp_gained: 5,
+            battle_gained: [2, 4, 4, 3, 4, 3], // AGL/ATK/UDF/LDF/SPD/INT
         };
         LevelUpTracker::apply_to_record(&result, &mut rec);
 
@@ -821,6 +944,19 @@ mod tests {
         // HP/MP restored to new max
         assert_eq!(updated.hp_cur, 110);
         assert_eq!(updated.mp_cur, 55);
+
+        // The six battle stats grew in both the live and record-side windows.
+        let ls = rec.live_stats();
+        assert_eq!(
+            [ls.agl, ls.atk, ls.udf, ls.ldf, ls.spd, ls.int],
+            [22, 28, 20, 15, 23, 12]
+        );
+        let rs = rec.record_stats();
+        assert_eq!(
+            [rs.agl, rs.atk, rs.udf, rs.ldf, rs.spd, rs.int],
+            [22, 28, 20, 15, 23, 12]
+        );
+        assert_eq!((rs.hp_max, rs.mp_max), (110, 55));
     }
 
     #[test]
@@ -837,7 +973,7 @@ mod tests {
     fn with_stat_gain_override() {
         let mut t = LevelUpTracker::new()
             .with_xp_table(placeholder_xp_table())
-            .with_stat_gain(StatGain { hp: 20, mp: 15 });
+            .with_stat_gain(StatGain::hp_mp(20, 15));
         let r = t.grant_xp(0, 100).expect("level up");
         assert_eq!(r.hp_gained, 20);
         assert_eq!(r.mp_gained, 15);
@@ -846,8 +982,8 @@ mod tests {
     #[test]
     fn per_slot_stat_gains_independent() {
         let gains = [
-            StatGain { hp: 30, mp: 5 },
-            StatGain { hp: 10, mp: 20 },
+            StatGain::hp_mp(30, 5),
+            StatGain::hp_mp(10, 20),
             StatGain::default(),
             StatGain::default(),
         ];
@@ -866,30 +1002,30 @@ mod tests {
 
     #[test]
     fn stat_growth_curve_flat_matches_legacy_behavior() {
-        let curve = StatGrowthCurve::Flat(StatGain { hp: 7, mp: 3 });
+        let curve = StatGrowthCurve::Flat(StatGain::hp_mp(7, 3));
         // Per-level lookup is the flat value regardless of level.
         for prev in 1u8..10 {
-            assert_eq!(curve.gain_for(prev), StatGain { hp: 7, mp: 3 });
+            assert_eq!(curve.gain_for(prev), StatGain::hp_mp(7, 3));
         }
         // Sum across 5 levels = 5×.
         let total = curve.sum_range(1, 6);
-        assert_eq!(total, StatGain { hp: 35, mp: 15 });
+        assert_eq!(total, StatGain::hp_mp(35, 15));
     }
 
     #[test]
     fn stat_growth_curve_per_level_lookup() {
         let curve = StatGrowthCurve::PerLevel(vec![
-            StatGain { hp: 10, mp: 2 }, // L1→2
-            StatGain { hp: 12, mp: 3 }, // L2→3
-            StatGain { hp: 15, mp: 4 }, // L3→4
-            StatGain { hp: 18, mp: 5 }, // L4→5
+            StatGain::hp_mp(10, 2), // L1→2
+            StatGain::hp_mp(12, 3), // L2→3
+            StatGain::hp_mp(15, 4), // L3→4
+            StatGain::hp_mp(18, 5), // L4→5
         ]);
-        assert_eq!(curve.gain_for(1), StatGain { hp: 10, mp: 2 });
-        assert_eq!(curve.gain_for(4), StatGain { hp: 18, mp: 5 });
+        assert_eq!(curve.gain_for(1), StatGain::hp_mp(10, 2));
+        assert_eq!(curve.gain_for(4), StatGain::hp_mp(18, 5));
         // Past-table indices fall back to default.
         assert_eq!(curve.gain_for(10), StatGain::default());
         // Sum across 1..=4: 10+12+15+18 = 55, 2+3+4+5 = 14.
-        assert_eq!(curve.sum_range(1, 5), StatGain { hp: 55, mp: 14 });
+        assert_eq!(curve.sum_range(1, 5), StatGain::hp_mp(55, 14));
     }
 
     #[test]
@@ -897,8 +1033,8 @@ mod tests {
         // Multi-level jump (L1 → L3 with 400 XP under placeholder table).
         // Curve gives 7 HP for L1→2 and 13 HP for L2→3 (total 20).
         let curve = StatGrowthCurve::PerLevel(vec![
-            StatGain { hp: 7, mp: 1 },
-            StatGain { hp: 13, mp: 2 },
+            StatGain::hp_mp(7, 1),
+            StatGain::hp_mp(13, 2),
             // … rest unused for this test
         ]);
         let mut t = LevelUpTracker::new()
@@ -927,14 +1063,14 @@ mod tests {
         assert_eq!(avg.mp, 1);
         let curve = obs.to_curve();
         // Inside the observed range each level emits the average.
-        assert_eq!(curve.gain_for(6), StatGain { hp: 2, mp: 1 });
-        assert_eq!(curve.gain_for(9), StatGain { hp: 2, mp: 1 });
+        assert_eq!(curve.gain_for(6), StatGain::hp_mp(2, 1));
+        assert_eq!(curve.gain_for(9), StatGain::hp_mp(2, 1));
         // Outside the range falls back to default.
         assert_eq!(curve.gain_for(1), StatGain::default());
         assert_eq!(curve.gain_for(50), StatGain::default());
         // Sum across the observed range == hp_gained / mp_gained.
         let total = curve.sum_range(6, 10);
-        assert_eq!(total, StatGain { hp: 8, mp: 4 });
+        assert_eq!(total, StatGain::hp_mp(8, 4));
     }
 
     #[test]
@@ -949,7 +1085,7 @@ mod tests {
             stat_deltas: [0; 18],
         };
         assert_eq!(obs.levels_gained(), 0);
-        assert_eq!(obs.average_per_level(), StatGain { hp: 0, mp: 0 });
+        assert_eq!(obs.average_per_level(), StatGain::hp_mp(0, 0));
     }
 
     #[test]
@@ -1067,7 +1203,7 @@ mod tests {
         // `with_stat_gain` path should still drive the result.
         let mut t = LevelUpTracker::new()
             .with_xp_table(placeholder_xp_table())
-            .with_stat_gain(StatGain { hp: 25, mp: 11 });
+            .with_stat_gain(StatGain::hp_mp(25, 11));
         let r = t.grant_xp(0, 400).expect("multi-level");
         assert_eq!(r.new_level, 3);
         assert_eq!(r.hp_gained, 50); // 2 levels × 25
