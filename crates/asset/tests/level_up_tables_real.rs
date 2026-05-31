@@ -4,9 +4,10 @@
 //! doesn't need Sony bytes.
 
 use legaia_asset::level_up_tables::{
-    GROWTH_PARAM_LEN, GROWTH_ROW_COUNT, GROWTH_ROW_STRIDE, MAX_LEVEL, growth_tables_from_scus,
-    xp_thresholds_from_scus,
+    GROWTH_CHAR_COUNT, GROWTH_PARAM_LEN, GROWTH_ROW_COUNT, GROWTH_ROW_STRIDE, GROWTH_STAT_COUNT,
+    MAX_LEVEL, growth_tables_from_scus, xp_thresholds_from_scus,
 };
+use legaia_asset::new_game::{StartingChar, StartingParty};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -62,10 +63,59 @@ fn decodes_the_growth_tables_or_skips() {
     assert_eq!(g.param.len(), GROWTH_PARAM_LEN, "0xB4 param block");
 
     // Pin a couple of known bytes from the disc (row0 ramps 0x50, 0x52, ...; the
-    // high-level tail is the 0x40 sentinel; the param block opens with its own
-    // 0x00B4 length word).
+    // high-level tail is the 0x40 plateau byte).
     assert_eq!(g.curves[0][0], 0x50);
     assert_eq!(g.curves[0][1], 0x52);
     assert_eq!(*g.curves[0].last().unwrap(), 0x40);
-    assert_eq!(u16::from_le_bytes([g.param[0], g.param[1]]), 0x00B4);
+
+    // The param block is a per-character record (stride 0x3C) of 8 contiguous
+    // 6-byte {start, max, jitter, row} sub-records — NOT a length-prefixed blob
+    // (the leading 0x00B4 is Vahn's HP `start` = 180, not a length word). `start`
+    // is the base stat: validate it against the new-game starting template.
+    let party = StartingParty::from_scus(&scus).expect("starting party");
+    let tmpl = |c: &StartingChar| {
+        [
+            c.hp_max, c.mp_max, c.agl, c.atk, c.udf, c.ldf, c.spd, c.intel,
+        ]
+    };
+
+    for slot in 0..GROWTH_CHAR_COUNT {
+        let cp = g.char_params(slot).expect("char growth params");
+        for (s, st) in cp.stats.iter().enumerate() {
+            assert!(st.start <= st.max, "slot {slot} stat {s}: start > max");
+            assert!(
+                (st.row as usize) < GROWTH_ROW_COUNT,
+                "slot {slot} stat {s}: row {} out of range",
+                st.row
+            );
+        }
+        // HP / MP / AGL `start` match the template for every character.
+        let t = tmpl(party.member(slot).expect("template member"));
+        assert_eq!(cp.stats[0].start, t[0], "slot {slot} HP start == template");
+        assert_eq!(cp.stats[1].start, t[1], "slot {slot} MP start == template");
+        assert_eq!(cp.stats[2].start, t[2], "slot {slot} AGL start == template");
+    }
+
+    // Gala (slot 2) matches the template on ALL 8 stats — the decisive pin that
+    // `start` is the base stat and the sub-records are contiguous 6-byte.
+    let gala = g.char_params(2).unwrap();
+    let gt = tmpl(party.member(2).unwrap());
+    assert_eq!(gala.stats.len(), GROWTH_STAT_COUNT);
+    for (s, st) in gala.stats.iter().enumerate() {
+        assert_eq!(st.start, gt[s], "Gala stat {s} start == template");
+    }
+
+    // The decoded gain arithmetic is faithful to the applier but OVERSHOOTS the
+    // captured multi-level deltas (open reconciliation — see
+    // docs/subsystems/level-up.md § Stat gains). Pin the overshoot direction so
+    // the discrepancy stays visible: Noa HP (slot 1, row 0) summed L2->L6 core
+    // gain is well above the observed +32.
+    let noa_hp = g.char_params(1).unwrap().stats[0];
+    let core_sum: u32 = (2..6)
+        .map(|lvl| g.level_gain_core(&noa_hp, lvl).expect("gain core"))
+        .sum();
+    assert!(
+        core_sum > 32,
+        "core-sum {core_sum} overshoots observed +32 (open discrepancy)"
+    );
 }

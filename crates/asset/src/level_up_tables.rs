@@ -13,10 +13,23 @@
 //!   curve each stat reads.
 //!
 //! The XP threshold derivation is ported and validated ([`xp_thresholds_from_scus`]
-//! reproduces the captured retail thresholds, e.g. L2 = 365, L3 = 730). The
-//! growth curves + parameter block are parsed as raw bytes ([`growth_tables_from_scus`])
-//! but the exact byte → per-stat-gain mapping is not yet applied — see
-//! `docs/subsystems/level-up.md` § Stat gains.
+//! reproduces the captured retail thresholds, e.g. L2 = 365, L3 = 730).
+//!
+//! The growth tables are parsed both raw ([`growth_tables_from_scus`]) and
+//! structured ([`GrowthTables::char_params`]). The parameter block is a
+//! per-character record (stride [`GROWTH_PARAM_STRIDE`], one per Vahn / Noa /
+//! Gala) of [`GROWTH_STAT_COUNT`] contiguous 6-byte sub-records
+//! `{u16 start, u16 max, u8 jitter, u8 row}` — `start` is the character's base
+//! (level-1) stat, validated against the new-game starting template
+//! ([`crate::new_game`]): **Gala matches the template on all 8 stats**, Vahn/Noa
+//! on HP/MP/AGL. `max` is the level-99 ceiling and `row` selects one of the
+//! [`GROWTH_ROW_COUNT`] progression curves.
+//!
+//! The applier's exact per-level gain arithmetic is decoded
+//! ([`GrowthTables::level_gain_core`]) but does **not yet reconcile** with the
+//! captured multi-level deltas (overshoots ~4.3..4.8x); the engine therefore
+//! does not drive level-up from it yet — see `docs/subsystems/level-up.md`
+//! § Stat gains.
 //!
 //! No `SCUS_942.54` bytes are committed; callers pass an image read from the
 //! user's disc at runtime.
@@ -47,8 +60,21 @@ pub const GROWTH_ROW_STRIDE: usize = 0x62;
 /// Number of distinct growth curves at [`GROWTH_CURVES_VA`].
 pub const GROWTH_ROW_COUNT: usize = 3;
 /// Size (bytes) of the parameter block at [`GROWTH_PARAM_VA`] (gap to the
-/// growth curves).
+/// growth curves) — `GROWTH_CHAR_COUNT × GROWTH_PARAM_STRIDE`.
 pub const GROWTH_PARAM_LEN: usize = 0xB4;
+
+/// Number of party characters with a growth-param record at [`GROWTH_PARAM_VA`]
+/// (Vahn / Noa / Gala). The 4th roster slot is never grown by `FUN_801E9504`.
+pub const GROWTH_CHAR_COUNT: usize = 3;
+/// Per-character growth-param record stride (`0x3C`; `GROWTH_PARAM_LEN = 3 × 0x3C`).
+pub const GROWTH_PARAM_STRIDE: usize = 0x3C;
+/// Stats per character growth-param record (HP, MP, then six battle stats).
+pub const GROWTH_STAT_COUNT: usize = 8;
+/// Size of one per-stat growth-param sub-record (`{u16 start, u16 max, u8 jitter, u8 row}`).
+pub const GROWTH_SUBRECORD_SIZE: usize = 6;
+/// Divisor in `FUN_801E9504`'s per-level gain term: the `0x6F74AE27 >> (32+12)`
+/// signed-magic divide reduces to integer division by `0x24C0` (= 9408).
+pub const GROWTH_GAIN_DIVISOR: u32 = 0x24C0;
 
 /// PSX-EXE `t_addr` -> file-offset resolver. `SCUS_942.54` loads its data
 /// segment at `t_addr` from file offset `0x800`. (Kept local, matching the
@@ -120,9 +146,10 @@ pub fn xp_thresholds_from_scus(scus: &[u8]) -> Option<Vec<u32>> {
 /// Raw per-level stat-growth tables (`DAT_800769CC` curves + `DAT_80076918`
 /// parameter block).
 ///
-/// The byte → per-stat-gain mapping is not yet decoded into engine stat gains;
-/// this exposes the raw data so a future port can apply it. See
-/// `docs/subsystems/level-up.md` § Stat gains.
+/// Use [`Self::char_params`] for the structured per-character view. The exact
+/// byte → gain arithmetic ([`Self::level_gain_core`]) is decoded but not yet
+/// reconciled with captured deltas — see `docs/subsystems/level-up.md` § Stat
+/// gains.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrowthTables {
     /// The [`GROWTH_ROW_COUNT`] growth curves, each [`GROWTH_ROW_STRIDE`] bytes
@@ -147,6 +174,80 @@ pub fn growth_tables_from_scus(scus: &[u8]) -> Option<GrowthTables> {
         .get(param_base..param_base + GROWTH_PARAM_LEN)?
         .to_vec();
     Some(GrowthTables { curves, param })
+}
+
+/// One per-stat growth-param sub-record from `DAT_80076918` (`FUN_801E9504`).
+///
+/// Decoded from the contiguous 6-byte layout `{u16 start, u16 max, u8 jitter,
+/// u8 row}`. `start` is the character's base (level-1) value for the stat —
+/// validated against the new-game starting template ([`crate::new_game`]):
+/// Gala's record matches the template on **all 8** stats, Vahn/Noa on HP/MP/AGL
+/// (their late-join templates are lightly retuned).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatGrowthParam {
+    /// Base (level-1) stat value (matches the new-game template stat).
+    pub start: u16,
+    /// Level-99 ceiling.
+    pub max: u16,
+    /// Jitter half-range: the gain term adds `rand() % (2*jitter + 1) - jitter`.
+    pub jitter: u8,
+    /// Curve-row selector (`0..`[`GROWTH_ROW_COUNT`]) into [`GROWTH_CURVES_VA`].
+    pub row: u8,
+}
+
+/// The [`GROWTH_STAT_COUNT`]-stat growth-param record for one character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharGrowthParams {
+    /// Per-stat sub-records in record order (HP, MP, then the six battle stats).
+    pub stats: [StatGrowthParam; GROWTH_STAT_COUNT],
+}
+
+impl GrowthTables {
+    /// Decode the [`CharGrowthParams`] for party `slot` (0 = Vahn, 1 = Noa,
+    /// 2 = Gala). `None` if `slot >=` [`GROWTH_CHAR_COUNT`] or the block is short.
+    pub fn char_params(&self, slot: usize) -> Option<CharGrowthParams> {
+        if slot >= GROWTH_CHAR_COUNT {
+            return None;
+        }
+        let base = slot * GROWTH_PARAM_STRIDE;
+        let mut stats = [StatGrowthParam::default(); GROWTH_STAT_COUNT];
+        for (s, out) in stats.iter_mut().enumerate() {
+            let o = base + s * GROWTH_SUBRECORD_SIZE;
+            let b = self.param.get(o..o + GROWTH_SUBRECORD_SIZE)?;
+            *out = StatGrowthParam {
+                start: u16::from_le_bytes([b[0], b[1]]),
+                max: u16::from_le_bytes([b[2], b[3]]),
+                jitter: b[4],
+                row: b[5],
+            };
+        }
+        Some(CharGrowthParams { stats })
+    }
+
+    /// The deterministic (jitter-free) per-level gain term `FUN_801E9504`
+    /// computes for one stat leveling up **from** `level` (curve indexed by
+    /// `level - 1`): `max(1, (max - start) × curve[row][level-1] / 0x24C0)`.
+    ///
+    /// This is the literal arithmetic of the applier (disassembly
+    /// `0x801E97B0..0x801E97F8`: `(max-start) × byte`, the `0x6F74AE27` magic
+    /// divide by `0x24C0`, then `+ jitter - jitter_half` floored at 1).
+    ///
+    /// **Caveat — not yet reconciled.** Summed across the captured multi-level
+    /// jumps this OVERSHOOTS the observed per-stat deltas by a *non-constant*
+    /// ~4.3..4.8x (Gala HP +44 observed vs core-sum ~188 = 4.27x; Noa HP +32 vs
+    /// ~154 = 4.81x), so a factor in the model is still unresolved — the
+    /// multi-level captures conflate too much, and the reconciliation needs a
+    /// single-level RNG-pinned save pair. Exposed for that investigation; the
+    /// engine does **not** drive level-up from it. See
+    /// `docs/subsystems/level-up.md` § Stat gains.
+    pub fn level_gain_core(&self, p: &StatGrowthParam, level: usize) -> Option<u32> {
+        if !(1..MAX_LEVEL).contains(&level) {
+            return None;
+        }
+        let byte = *self.curves.get(p.row as usize)?.get(level - 1)? as u32;
+        let span = p.max.saturating_sub(p.start) as u32;
+        Some((span * byte / GROWTH_GAIN_DIVISOR).max(1))
+    }
 }
 
 #[cfg(test)]
@@ -198,5 +299,68 @@ mod tests {
     fn non_scus_returns_none() {
         assert!(xp_thresholds_from_scus(b"not an exe").is_none());
         assert!(growth_tables_from_scus(&[0u8; 16]).is_none());
+    }
+
+    #[test]
+    fn char_params_decode_contiguous_subrecords() {
+        // One char record: 8 stats × 6 bytes {start(u16), max(u16), jitter, row}.
+        let mut param = vec![0u8; GROWTH_PARAM_LEN];
+        // stat 0: start=180, max=5000, jitter=4, row=0 (Vahn HP shape).
+        param[0..6].copy_from_slice(&[0xB4, 0x00, 0x88, 0x13, 0x04, 0x00]);
+        // stat 1: start=20, max=900, jitter=1, row=2.
+        param[6..12].copy_from_slice(&[0x14, 0x00, 0x84, 0x03, 0x01, 0x02]);
+        let g = GrowthTables {
+            curves: vec![vec![0u8; GROWTH_ROW_STRIDE]; GROWTH_ROW_COUNT],
+            param,
+        };
+        let cp = g.char_params(0).unwrap();
+        assert_eq!(
+            cp.stats[0],
+            StatGrowthParam {
+                start: 180,
+                max: 5000,
+                jitter: 4,
+                row: 0
+            }
+        );
+        assert_eq!(
+            cp.stats[1],
+            StatGrowthParam {
+                start: 20,
+                max: 900,
+                jitter: 1,
+                row: 2
+            }
+        );
+        // Out-of-range slot rejected.
+        assert!(g.char_params(GROWTH_CHAR_COUNT).is_none());
+    }
+
+    #[test]
+    fn level_gain_core_matches_disassembled_arithmetic() {
+        let mut curves = vec![vec![0u8; GROWTH_ROW_STRIDE]; GROWTH_ROW_COUNT];
+        curves[0][1] = 82; // curve[row0][level-1] for level 2
+        let g = GrowthTables {
+            curves,
+            param: vec![0u8; GROWTH_PARAM_LEN],
+        };
+        let p = StatGrowthParam {
+            start: 150,
+            max: 4500,
+            jitter: 4,
+            row: 0,
+        };
+        // (4500-150) * 82 / 0x24C0 = 356700 / 9408 = 37.
+        assert_eq!(g.level_gain_core(&p, 2), Some(37));
+        // Floored at 1 when the span × byte term is zero.
+        let z = StatGrowthParam {
+            start: 100,
+            max: 100,
+            jitter: 0,
+            row: 0,
+        };
+        assert_eq!(g.level_gain_core(&z, 2), Some(1));
+        // No growth past the level cap.
+        assert_eq!(g.level_gain_core(&p, MAX_LEVEL), None);
     }
 }
