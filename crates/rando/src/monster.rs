@@ -9,10 +9,10 @@
 //!
 //! The decoded length is unchanged, so the slot size and therefore every other
 //! monster's slot offset stay fixed: a drop edit is a same-size, in-place byte
-//! overwrite with no PROT TOC reshuffle. The original stream was produced by
-//! Sony's packer; our greedy packer is weaker, but monster records compress far
-//! enough that the re-packed stream comfortably fits the slot's slack (the
-//! [`repack_slot`] guard rejects the rare case where it would not).
+//! overwrite with no PROT TOC reshuffle. Our re-packer isn't byte-identical to
+//! Sony's, but it packs tightly (lazy matching) and monster records compress far
+//! enough that the re-packed stream fits the slot's slack (the [`repack_slot`]
+//! guard rejects the rare case where it would not).
 
 use anyhow::{Result, bail};
 use legaia_asset::monster_archive::SLOT_STRIDE;

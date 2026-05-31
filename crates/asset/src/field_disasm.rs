@@ -1,10 +1,15 @@
 //! Field-VM bytecode disassembler.
 //!
 //! Walks a field-VM bytecode buffer (the per-frame opcode stream consumed by
-//! [`crate::field::step`]) and yields one [`Insn`] per source-encoded
-//! instruction. The decoder mirrors the *width* logic of [`crate::field::step`]
+//! the field VM's `step` loop) and yields one [`Insn`] per source-encoded
+//! instruction. The decoder mirrors the *width* logic of the field VM's `step`
 //!   - it only computes how many bytes each instruction occupies plus a
 //!     mnemonic, never executing host calls or mutating ctx state.
+//!
+//! This is a side-effect-free width/format decoder for the script bytecode, so
+//! it lives in the Track-1 asset crate alongside the other format parsers; the
+//! engine's executing field VM (`legaia_engine_vm::field::step`) re-uses the
+//! same width logic and re-exports this module.
 //!
 //! For control-flow instructions (jumps, conditional jumps, BBOX tests),
 //! the decoder always emits the **encoded** byte length, so a linear walk
@@ -13,20 +18,18 @@
 //! follow control flow.
 //!
 //! For sub-dispatched opcodes (`0x4C`, `0x43`, `0x49`, `0x45`, `0x4E`,
-//! `0x34`) where a particular sub-op variant isn't yet ported in
-//! [`crate::field::step`], the decoder returns
-//! [`DisasmError::UnknownSubOp`]. Callers typically print a `.byte` line
-//! for the leading byte and resume one byte later.
+//! `0x34`) where a particular sub-op variant isn't yet ported in the engine's
+//! `field::step`, the decoder returns [`DisasmError::UnknownSubOp`]. Callers
+//! typically print a `.byte` line for the leading byte and resume one byte
+//! later.
 //!
 //! ## Why not call `step` directly?
 //!
-//! [`crate::field::step`] interleaves width computation with side effects on
-//! `ctx` and the `FieldHost` trait, and several opcodes return [`StepResult`]
+//! The engine's `field::step` interleaves width computation with side effects on
+//! `ctx` and the `FieldHost` trait, and several opcodes return `StepResult`
 //! variants (`Halt`, `Yield`) that don't carry the encoded width. A separate
 //! width decoder keeps the disassembler side-effect-free and lets us produce
 //! a stable encoded-width answer for every opcode the VM understands.
-//!
-//! [`StepResult`]: crate::field::StepResult
 //!
 //! ## Cross-context dispatch
 //!
@@ -35,6 +38,40 @@
 //! the `extended` field on [`Insn`] surfaces the target ID for callers.
 
 use std::fmt;
+
+/// Length of one variable-length text/data packet, in bytes.
+///
+/// Ported from `FUN_8003CA38` (see `ghidra/scripts/funcs/8003ca38.txt`). The
+/// in-game text encoding terminates a packet with any byte `<= 0x1E`. Bytes
+/// `>= 0x1F` are normal payload; bytes whose top nibble is `0xC` are 2-byte
+/// escape sequences (the second byte is consumed unconditionally).
+///
+/// The returned count does **not** include the terminator byte itself, so the
+/// input `[0x40, 0x40, 0x00, ...]` yields `2`. On exhaustion it returns the
+/// consumed length (matching the original's walk-off-end behaviour). It is the
+/// dialog/text packet-width helper the disassembler uses for the `0x4C nE`
+/// text-balloon op; the executing field VM re-exports it from here.
+pub fn packet_length(buf: &[u8]) -> usize {
+    let mut count = 0usize;
+    let mut i = 0usize;
+    while i < buf.len() {
+        let b = buf[i];
+        if b <= 0x1E {
+            break;
+        }
+        if (b & 0xF0) == 0xC0 {
+            // Escape pair - consume one extra byte and credit it to the count.
+            i += 1;
+            count += 1;
+            if i >= buf.len() {
+                break;
+            }
+        }
+        count += 1;
+        i += 1;
+    }
+    count
+}
 
 /// A decoded instruction.
 #[derive(Debug, Clone)]
@@ -1426,7 +1463,7 @@ fn decode_menu_ctrl(
                     // Variable-length text balloon: PC += 3 + packet_length.
                     need(1)?;
                     let payload_start = operand + 1;
-                    let length = crate::field_helpers::packet_length(&bytecode[payload_start..]);
+                    let length = packet_length(&bytecode[payload_start..]);
                     let total = 2 + length;
                     need(total)?;
                     mk(
@@ -1581,7 +1618,7 @@ fn decode_menu_nibble4(
     }
 }
 
-/// Walker mirroring [`crate::field::walk_mes_bytecode`] (which is private).
+/// Walker mirroring the field VM's private `walk_mes_bytecode`.
 /// Keeps running until a terminator (`<= 0x1E`) or end-of-buffer.
 fn walk_mes_bytecode(buf: &[u8]) -> usize {
     let mut i = 0;
@@ -1837,6 +1874,65 @@ pub fn find_fmv_triggers(bytecode: &[u8]) -> Vec<(usize, i16)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packet_length_empty_buffer_is_zero() {
+        assert_eq!(packet_length(&[]), 0);
+    }
+
+    #[test]
+    fn packet_length_immediate_terminator_is_zero() {
+        // Any byte <= 0x1E ends the packet without contributing.
+        for b in 0..=0x1Eu8 {
+            assert_eq!(packet_length(&[b]), 0, "terminator byte {b:#x}");
+        }
+    }
+
+    #[test]
+    fn packet_length_pure_printable_run() {
+        let buf = [0x20, 0x40, 0x80, 0xBF, 0x00];
+        assert_eq!(packet_length(&buf), 4);
+    }
+
+    #[test]
+    fn packet_length_escape_sequence_counts_two() {
+        // 0xC1 is an escape lead - the next byte is consumed unconditionally.
+        let buf = [0xC1, 0xAB, 0x00];
+        assert_eq!(packet_length(&buf), 2);
+    }
+
+    #[test]
+    fn packet_length_multiple_escapes_with_runs() {
+        let buf = [0x40, 0xC1, 0xAB, 0x40, 0xCD, 0x05, 0x00];
+        assert_eq!(packet_length(&buf), 6);
+    }
+
+    #[test]
+    fn packet_length_escape_at_buffer_boundary() {
+        // 0xC2 with no following byte: we guard and stop; the lead still counts.
+        assert_eq!(packet_length(&[0xC2]), 1);
+    }
+
+    #[test]
+    fn packet_length_no_terminator_runs_to_end() {
+        assert_eq!(packet_length(&[0x20, 0x21, 0x22, 0x23]), 4);
+    }
+
+    #[test]
+    fn packet_length_high_nibble_matters_for_escape() {
+        assert_eq!(packet_length(&[0xC0, 0xFF, 0x00]), 2);
+        assert_eq!(packet_length(&[0xD0, 0xFF, 0x00]), 2);
+        for lead in 0xC0..=0xCFu8 {
+            assert_eq!(
+                packet_length(&[lead, 0xAB, 0x00]),
+                2,
+                "escape lead {lead:#x}"
+            );
+        }
+        for lead in [0xB0u8, 0xBFu8, 0xD0u8, 0xDFu8] {
+            assert_eq!(packet_length(&[lead, 0x00]), 1, "non-escape lead {lead:#x}");
+        }
+    }
 
     #[test]
     fn nop_decodes() {

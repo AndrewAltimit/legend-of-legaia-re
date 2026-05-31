@@ -1,8 +1,8 @@
 //! Legend of Legaia randomizer / disc patcher — Track-1 tooling.
 //!
 //! Builds patches for a **user-supplied** retail disc: it shuffles gameplay
-//! data (monster item drops, random-encounter formations, and eventually
-//! treasure-chest contents) and produces a patched copy plus a portable patch
+//! data (monster item drops, random-encounter formations, and treasure-chest
+//! contents) and produces a patched copy plus a portable patch
 //! file. It does **not** touch the clean-room engine.
 //!
 //! ## No Sony bytes
@@ -28,11 +28,19 @@
 //! - [`items`] — the valid item-id pool (from the SCUS item-name table).
 //! - [`drops`] — the drop-table planner (shuffle / random).
 //! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
+//! - [`encounter`] — per-scene random-encounter formation-id shuffle.
+//! - [`chest`] — treasure-chest item-give (field-VM op `0x39`) rewrite.
 //! - [`disc`] — apply same-size PROT-entry edits to a real disc image
 //!   (`DiscPatcher`), via the Mode 2/2352 sector write-back in `legaia_iso`.
+//! - [`apply`] — high-level orchestration (`randomize_*`) the CLI drives.
+//! - [`ppf`] — PPF 3.0 patch writer/reader (the portable deliverable).
 
+pub mod apply;
+pub mod chest;
 pub mod disc;
 pub mod drops;
+pub mod encounter;
 pub mod items;
 pub mod monster;
+pub mod ppf;
 pub mod rng;

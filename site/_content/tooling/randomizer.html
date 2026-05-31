@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; randomizer</div>
   <h1>Randomizer / disc patcher</h1>
-  <p class="lede">Track-1-adjacent tooling that edits gameplay data on a <em>user-supplied</em> retail disc image &mdash; monster item drops today, random encounters and treasure contents as that work lands &mdash; and writes the result back into the <code>.bin</code>. It does not touch the clean-room engine. The crate ships only code; every test that needs real data is disc-gated, so CI runs without a disc.</p>
+  <p class="lede">Track-1-adjacent tooling that edits gameplay data on a <em>user-supplied</em> retail disc image &mdash; monster item drops, random-encounter formations, and treasure-chest contents &mdash; and writes the result back into the <code>.bin</code>. The <code>legaia-rando</code> CLI turns a disc + seed into a portable PPF patch (the shareable deliverable) plus an optional patched image for local play. It does not touch the clean-room engine. The crate ships only code; every test that needs real data is disc-gated, so CI runs without a disc.</p>
 </header>
 
 <section class="doc-section" id="why">
@@ -16,7 +16,7 @@
 
 <section class="doc-section" id="model">
   <h2>Editing model: same-size, in place</h2>
-  <p>Every edit overwrites bytes <strong>in place</strong> and never changes a byte count, so no LBA, PROT TOC, or ISO 9660 directory record ever moves. The patch stays a pure byte-overwrite (plus EDC/ECC recompute) with no cascading offset shifts. It works because the targets fit a fixed slot with slack: the monster <code>battle_data</code> archive (PROT entry 867) gives each monster a fixed <code>0x14000</code>-byte slot laid out <code>[u32 decompressed_size][LZS stream]</code>. A drop edit leaves the decoded record length unchanged; the re-packed stream (our greedy packer is weaker than Sony's, but fits comfortably) is re-emitted zero-padded back to <code>0x14000</code>.</p>
+  <p>Every edit overwrites bytes <strong>in place</strong> and never changes a byte count, so no LBA, PROT TOC, or ISO 9660 directory record ever moves. The patch stays a pure byte-overwrite (plus EDC/ECC recompute) with no cascading offset shifts. It works because the targets either fit a fixed slot with slack or re-pack tightly enough to fit their original footprint. The monster <code>battle_data</code> archive (PROT entry 867) gives each monster a fixed <code>0x14000</code>-byte slot laid out <code>[u32 decompressed_size][LZS stream]</code>; a drop edit leaves the decoded record length unchanged and the re-packed stream is re-emitted zero-padded back to <code>0x14000</code>. A scene MAN, by contrast, is packed with <em>no</em> compressed slack &mdash; so the <a href="../formats/lzs.html">LZS re-packer's one-step lazy matching</a> earns its keep: it packs tightly enough that a re-packed MAN fits its exact original span (every scene MAN but one), which is what makes the encounter and chest edits possible. The rare stream that still overflows is skipped (left unchanged) rather than aborting the run.</p>
 </section>
 
 <section class="doc-section" id="chain">
@@ -43,9 +43,32 @@
       <tr><td><code>items</code></td><td>Valid item-id pool from the SCUS item-name table, so a randomized drop is always a real item.</td></tr>
       <tr><td><code>drops</code></td><td>Drop-table planner. <code>Shuffle</code> redistributes the existing drops (preserves the economy); <code>Random</code> draws from the pool. Deterministic in <code>(drops, pool, seed, mode)</code>.</td></tr>
       <tr><td><code>monster</code></td><td>Re-pack a monster slot: decompress &rarr; in-place mutate &rarr; recompress &rarr; zero-pad to <code>0x14000</code>. <code>set_drop</code> is the drop wrapper.</td></tr>
+      <tr><td><code>encounter</code></td><td><code>SceneEncounters</code>: locate a scene bundle's MAN in a PROT entry, shuffle its formation monster ids from the scene's <em>own</em> id pool (every monster stays scene-loaded), recompress.</td></tr>
+      <tr><td><code>chest</code></td><td><code>give_item_sites</code> opcode-aware-walks the MAN interaction scripts for field-VM <code>GIVE_ITEM</code> (op <code>0x39</code>) sites; <code>SceneChests</code> bundles them with the decoded MAN for an inline-id rewrite.</td></tr>
       <tr><td><code>disc</code></td><td><code>DiscPatcher</code>: own a mutable disc, locate PROT.DAT + read its TOC, apply same-size PROT-entry edits via the sector write-back.</td></tr>
+      <tr><td><code>apply</code></td><td>Orchestration the CLI drives: <code>randomize_drops</code> / <code>randomize_encounters</code> / <code>randomize_chests</code>, each returning an apply report (changes + any stream too tight to re-pack).</td></tr>
+      <tr><td><code>ppf</code></td><td>PPF 3.0 patch writer/reader (<code>diff_runs</code> / <code>write_ppf3</code> / <code>apply_ppf3</code>). The portable, shareable deliverable &mdash; it carries only deltas the user already owns.</td></tr>
     </tbody>
   </table>
+</section>
+
+<section class="doc-section" id="cli">
+  <h2>CLI</h2>
+<pre><code>legaia-rando drops     --input DISC.bin                       # read-only listing
+legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle \
+    --encounters shuffle --chests shuffle --patch run.ppf --manifest run.toml
+legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check</code></pre>
+  <p><code>--drops</code> / <code>--encounters</code> / <code>--chests</code> each take <code>shuffle</code> / <code>random</code> / <code>none</code>. The seed resolves from a number or a hashed string and is always printed, so a run reproduces exactly &mdash; the same seed yields a byte-identical patched image and PPF. <code>--dry-run</code> reports the plan without writing; <code>--manifest</code> writes a small TOML record of the seed + options + change counts (no game bytes &mdash; safe to share). <code>verify</code> applies a PPF to a copy of the user's disc and confirms the result still parses end to end &mdash; a recipient's check that a shared patch matches their own disc.</p>
+</section>
+
+<section class="doc-section" id="encounters">
+  <h2>Random encounters</h2>
+  <p>Formations live in the per-scene MAN asset (type <code>0x03</code>, descriptor index 2 of a scene bundle), inside an LZS stream; each formation record is <code>[3 reserved][u8 count 0..4][u8 ids...]</code> (see <a href="../formats/encounter.html">encounter records</a>). <code>randomize_encounters</code> locates the MAN straight from the PROT entry, rewrites the formation monster ids, recompresses, and writes the stream back. The id pool is <strong>per scene</strong> &mdash; only ids the scene already uses &mdash; so every swapped-in monster is one the scene loads; no missing model, no crash. <code>Shuffle</code> redistributes the existing ids (difficulty preserved); <code>Random</code> draws from the pool. On the retail disc this rewrites ~1150 formation ids across 51 scenes.</p>
+</section>
+
+<section class="doc-section" id="chests">
+  <h2>Treasure chests</h2>
+  <p>A chest gives its item via the field-VM <strong><code>GIVE_ITEM</code> opcode <code>0x39</code></strong>, encoded <code>[0x39, item_id]</code> &mdash; the item id is a single inline operand byte in the per-scene field-VM script bytecode, <em>not</em> a per-scene table (pinned in the dispatcher <code>FUN_801DE840</code> case <code>0x39</code>; the standalone <code>FUN_801D71F0</code> add-item copy is dead/uncalled &mdash; see <a href="../subsystems/script-vm.html">script VM</a>). The give sites live in the MAN interaction scripts (a chest is an interactable actor). Finding them safely needs an <strong>opcode-aware walk</strong> &mdash; a naive <code>0x39</code> byte scan would false-hit a literal <code>0x39</code> inside dialogue text. <code>chest::give_item_sites</code> walks each record's script with the Track-1 field-VM disassembler (<code>legaia_asset::field_disasm</code>) and stops at the first decode error (where a linear walk runs into the inline dialogue pool), returning only the operand offsets reached by a clean walk &mdash; a safe lower bound. Chest item ids are global inventory ids, so reassignment is global across every chest (<code>Shuffle</code> / <code>Random</code>). On the retail disc this is 38 give sites across 16 scenes.</p>
 </section>
 
 <section class="doc-section" id="tests">
@@ -53,13 +76,14 @@
   <ul class="bullets">
     <li><span class="tag tag-confirmed">CI</span> <code>crates/lzs</code> round-trips (<code>decompress(compress(x)) == x</code>) across literals, RLE, repeats, pseudorandom, &gt;4 KB-window input, plus a compression-ratio guard; <code>crates/iso</code> <code>write</code> unit tests (encode idempotent, corrupting user data invalidates until re-encoded, ECC address-independent, seam-straddling patch keeps both sectors valid); <code>crates/rando</code> planner determinism, surgical <code>set_drop</code>, and a synthetic-disc patch round-trip through the disc &rarr; ISO &rarr; PROT chain.</li>
     <li><span class="tag tag-confirmed">disc-gated</span> the LZS encoder round-trips + compresses real monster records and container sections; the EDC/ECC encoder reproduces real PROT.DAT sectors bit-for-bit and a one-byte patch+restore round-trips a real sector exactly; a real monster's drop is patched onto a scratch copy of the disc, re-decoding off the patched image with neighbours untouched and sectors valid.</li>
+    <li><span class="tag tag-confirmed">disc-gated</span> a full-archive drop shuffle diffs into a PPF that reproduces the patched image (deterministic per seed); a whole-disc encounter shuffle re-decodes every patched scene MAN and asserts counts + monster-id multiset preserved, ids in-pool, sectors valid; a whole-disc chest shuffle asserts the <code>0x39</code> give-item site offsets are unchanged, the chest-item multiset is preserved, and sectors stay valid &mdash; each byte-deterministic for a fixed seed.</li>
   </ul>
   <p>Disc-gated tests read <code>LEGAIA_DISC_BIN</code>; with it unset they skip and pass.</p>
 </section>
 
 <section class="doc-section" id="hygiene">
   <h2>No-Sony-bytes hygiene</h2>
-  <p>The crate never embeds, commits, or redistributes game bytes. A patched <code>.bin</code> contains Sony data and is never committed; the intended distribution form is a patcher tool + seed (and/or a portable patch file the user applies to their own disc).</p>
+  <p>The crate never embeds, commits, or redistributes game bytes. A patched <code>.bin</code> contains Sony data and is never committed; the intended distribution form is a patcher tool + seed, and/or the <strong>PPF patch</strong> the CLI emits &mdash; a PPF carries only the deltas between the user's original disc and the patched one, so it is meaningless without the original image the user already owns.</p>
 </section>
 
 <section class="doc-section" id="see-also">

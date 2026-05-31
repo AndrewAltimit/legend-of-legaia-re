@@ -181,6 +181,24 @@ pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
     None
 }
 
+/// Read a top-level file's logical bytes out of an **in-memory** Mode 2/2352
+/// disc image by name. Locates the file with [`find_file_in_image`], then
+/// concatenates the 2048-byte user-data payloads of its sectors and truncates
+/// to the directory-record size.
+///
+/// Returns `None` if the file isn't found or a sector runs past the image.
+pub fn read_file_in_image(image: &[u8], name: &str) -> Option<Vec<u8>> {
+    let (lba, size) = find_file_in_image(image, name)?;
+    let sector_count = (size as usize).div_ceil(USER_DATA_SIZE);
+    let mut out = Vec::with_capacity(sector_count * USER_DATA_SIZE);
+    for i in 0..sector_count {
+        let base = (lba as usize + i) * SECTOR_SIZE + USER_DATA_OFFSET;
+        out.extend_from_slice(image.get(base..base + USER_DATA_SIZE)?);
+    }
+    out.truncate(size as usize);
+    Some(out)
+}
+
 pub fn walk_files(
     disc: &mut RawDisc,
     root: &DirectoryRecord,

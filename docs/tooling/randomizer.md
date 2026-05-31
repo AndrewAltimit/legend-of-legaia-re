@@ -1,9 +1,9 @@
 # Randomizer / disc patcher
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
-disc image: it shuffles monster item drops (and, as the work lands, random
-encounters and treasure contents) and writes the result back into the `.bin`.
-It does not touch the clean-room engine.
+disc image: it shuffles monster item drops, random-encounter formations, and
+treasure-chest contents, and writes the result back into the `.bin`. It does not
+touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -39,6 +39,96 @@ shifts. It works because the edit targets fit a fixed slot with slack:
   produced by Sony's packer; our greedy packer is weaker but still fits the slot
   comfortably (`repack_slot` rejects the rare case where it would not). The slot
   is re-emitted zero-padded back to `0x14000`.
+
+## In the browser
+
+The same randomizer is also exposed client-side: `legaia_web_viewer::rom_patcher`
+(`patch_rom`) compiles the crate to WASM, and the static site's
+`tooling/rom-patcher.html` page lets a user supply their own disc, toggle the
+drop / encounter / chest settings, and download a patched image — the disc bytes
+never leave the browser. The CLI below is the scriptable / shareable-PPF path.
+
+## CLI: `legaia-rando`
+
+The top-level binary turns a disc + seed into a portable patch:
+
+```bash
+legaia-rando drops     --input DISC.bin                       # read-only listing
+legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
+legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
+    --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
+legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
+```
+
+`randomize` plans the run, applies it to an in-memory copy of the disc, diffs
+the result against the original, and writes the changes as a **PPF 3.0** patch
+(default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
+play. The seed is resolved from a number or a hashed string and always printed,
+so a run reproduces exactly; the same seed yields a byte-identical patched image
+and PPF. `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
+`--dry-run` reports the plan without writing; `--manifest` writes a small TOML
+record of the seed + options + change counts (no game bytes, safe to share). The
+`verify` subcommand applies a PPF to a copy of the user's disc and confirms the
+result still parses end to end — a recipient's check that a shared patch + seed
+match their own disc.
+
+Because an edit changes bytes *inside* an LZS stream, the whole touched stream
+is re-packed, so the changed-byte count (and the PPF) is dominated by
+re-compression churn, not by the gameplay delta — this is inherent to editing
+compressed data, and every edit stays same-size. `--drops random` reads the SCUS
+item table off the disc for the valid item pool; the other modes need no
+external table.
+
+### Random encounters
+
+Formations live in the per-scene MAN asset (type `0x03`, descriptor index 2 of a
+scene bundle), inside an LZS stream; each formation record is
+`[3 reserved][u8 count 0..4][u8 ids...]` (see
+[encounter records](../formats/encounter.md)). `apply::randomize_encounters`
+walks every PROT entry, and for each scene bundle it locates the MAN
+(`SceneEncounters::locate`, straight from the entry bytes — no engine
+dependency), decompresses it, rewrites the formation monster ids
+(`Shuffle` redistributes the existing ids, `Random` draws from the pool),
+recompresses, and writes the stream back over the original (the LZS decoder
+stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
+safe). The id pool is **per scene** — only ids the scene already uses — so every
+swapped-in monster is one the scene loads; no missing model, no crash.
+
+### Treasure chests
+
+A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
+`[0x39, item_id]` — the item id is a **single inline operand byte** in the
+per-scene field-VM script bytecode, not a per-scene table. (Pinned in the
+dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
+`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The standalone
+`FUN_801D71F0` add-item copy is dead/uncalled. See
+[script-vm.md](../subsystems/script-vm.md).) The give sites live in the MAN
+partition-1 per-actor interaction scripts (a chest is an interactable actor).
+
+`chest::give_item_sites` finds them with an **opcode-aware walk** — it walks each
+partition-1 record's script from its true entry PC with the field-VM
+disassembler ([`legaia_asset::field_disasm`], moved into Track 1 for exactly this
+reuse) and stops at the first decode error (where a linear walk runs into the
+record's inline dialogue pool, which is not bytecode). Only `0x39` ops reached
+**before** any desync are returned, so every rewritten byte is a genuine
+give-item operand — never a naive `0x39` byte scan (which would false-hit a
+literal `0x39` inside text, the same desync that bites the `0x3F` scan). This is
+a safe lower bound: a chest reached only through an unfollowed branch is left
+untouched rather than risk corrupting a non-script byte. Chest item ids are
+global inventory ids, so `apply::randomize_chests` reassigns them **globally**
+across every chest (`Shuffle` redistributes the existing chest-item multiset,
+`Random` draws from the valid item pool), then recompresses each touched MAN like
+the encounter path. On the retail disc this is 38 give sites across 16 scenes.
+
+### Re-pack slack
+
+A scene MAN is packed with **no compressed slack** (the next asset starts right
+after it), so the re-packed stream must be no larger than the original. The
+[LZS re-packer's lazy matching](../formats/lzs.md#encoding-re-packing) makes that
+hold for every scene MAN but one (and for every monster-archive slot). The rare
+stream that still overflows is **skipped** (its scene / slot left unchanged) and
+recorded in the apply report rather than aborting the run; the CLI prints the
+skipped entries.
 
 ## The patch chain
 
@@ -76,8 +166,11 @@ bit-for-bit.
 | `crates/asset` `lzs_compress_roundtrip_real` | disc-gated | the encoder round-trips real monster records + LZS-container sections, and compresses them |
 | `crates/iso` `write` unit tests | CI | encode is idempotent / self-consistent; corrupting user data invalidates until re-encoded; ECC is address-independent; a seam-straddling patch keeps both sectors valid |
 | `crates/iso` `ecc_real` | disc-gated | the encoder reproduces real PROT.DAT sectors' EDC/ECC bit-for-bit; a one-byte patch + restore round-trips a real sector exactly |
-| `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
+| `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
 | `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
+| `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
+| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
+| `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
@@ -85,8 +178,10 @@ Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
 The crate never embeds, commits, or redistributes game bytes. A patched `.bin`
 contains Sony data and is never committed; the intended distribution form is a
-patcher tool + seed (and/or a portable patch file the user applies to their own
-disc).
+patcher tool + seed, and/or the **PPF patch** the CLI emits. A PPF carries only
+the deltas between the user's original disc and the patched one — it is
+meaningless without the original image the user already owns, so it is safe to
+share where a patched `.bin` is not.
 
 ## See also
 

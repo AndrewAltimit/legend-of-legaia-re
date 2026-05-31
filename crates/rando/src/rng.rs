@@ -47,9 +47,40 @@ impl SplitMix64 {
     }
 }
 
+/// Resolve a user seed string to a numeric seed. A plain number (decimal or
+/// `0x`-hex) is used directly; anything else is hashed with FNV-1a-64 so a
+/// memorable string seed is stable across runs, machines, and builds. Shared by
+/// the CLI and the in-browser patcher so a given string reproduces the same run.
+pub fn seed_from_str(seed: &str) -> u64 {
+    let t = seed.trim();
+    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X"))
+        && let Ok(v) = u64::from_str_radix(hex, 16)
+    {
+        return v;
+    }
+    if let Ok(v) = t.parse::<u64>() {
+        return v;
+    }
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in t.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seed_from_str_numbers_and_strings() {
+        assert_eq!(seed_from_str("42"), 42);
+        assert_eq!(seed_from_str("0x1F"), 0x1F);
+        assert_eq!(seed_from_str("myrun"), seed_from_str("myrun"));
+        assert_ne!(seed_from_str("myrun"), seed_from_str("other"));
+        assert_ne!(seed_from_str("42x"), 42);
+    }
 
     #[test]
     fn same_seed_same_stream() {

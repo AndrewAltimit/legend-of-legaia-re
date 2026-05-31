@@ -29,11 +29,13 @@ The algorithm is a sliding-window LZSS variant:
   - also returns input bytes consumed; useful for validating containers.
 - `decompress_container(input) -> Vec<Vec<u8>>` - full `.lzs` container.
 - `compress(input) -> Vec<u8>` - the inverse, for re-packing edited assets
-  (e.g. the disc patcher). The retail game ships only a decoder, so this is a
-  greedy LZSS matcher whose output the retail decoder accepts byte-for-byte,
-  **not** a bit-exact clone of Sony's packer. Its correctness criterion is
-  `decompress(compress(x)) == x`; it does real (not literal-only) compression
-  so re-packed streams fit the slack in fixed-size slots. See the
+  (e.g. the disc patcher). The retail game ships only a decoder, so this is an
+  LZSS matcher (with one-step lazy matching) whose output the retail decoder
+  accepts byte-for-byte, **not** a bit-exact clone of Sony's packer. Its
+  correctness criterion is `decompress(compress(x)) == x`; it packs tightly
+  enough that a re-packed asset fits its original footprint even where that
+  footprint has no compressed slack (e.g. a scene MAN), which is what makes an
+  in-place same-size edit possible. See the
   [randomizer / disc patcher](../../docs/tooling/randomizer.md).
 
 ### Why "decompresses without error" is not a validity signal

@@ -28,6 +28,7 @@ pub mod cutscene_text;
 pub mod data_field_truncated;
 pub mod effect_bundle;
 pub mod field_char_textures;
+pub mod field_disasm;
 pub mod field_objects;
 pub mod field_pack;
 pub mod init_pak;

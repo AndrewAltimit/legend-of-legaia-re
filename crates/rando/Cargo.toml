@@ -8,8 +8,13 @@ license.workspace = true
 name = "legaia_rando"
 path = "src/lib.rs"
 
+[[bin]]
+name = "legaia-rando"
+path = "src/bin/legaia-rando.rs"
+
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 legaia-lzs = { path = "../lzs" }
 legaia-asset = { path = "../asset" }
 legaia-prot = { path = "../prot" }

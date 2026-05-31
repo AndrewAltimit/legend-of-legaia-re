@@ -1,0 +1,85 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ROM patcher</div>
+  <h1>ROM patcher (in browser)</h1>
+  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser. Pick a seed, toggle what to shuffle, and download a patched image. The disc bytes never leave your machine &mdash; the patch runs as WebAssembly locally, nothing is uploaded.</p>
+</header>
+
+<section class="doc-section" id="patch">
+  <h2>Patch a disc</h2>
+  <div class="rom-form">
+    <label class="rom-row">
+      <span class="rom-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
+      <input type="file" id="rom-file" accept=".bin,application/octet-stream">
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Seed</span>
+      <input type="text" id="rom-seed" placeholder="any word or number (blank = random)">
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Monster drops</span>
+      <select id="rom-drops">
+        <option value="shuffle">Shuffle (redistribute existing drops)</option>
+        <option value="random">Random (any valid item)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Random encounters</span>
+      <select id="rom-encounters">
+        <option value="shuffle">Shuffle (within each scene's monsters)</option>
+        <option value="random">Random (within each scene's monsters)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Treasure chests</span>
+      <select id="rom-chests">
+        <option value="shuffle">Shuffle (redistribute existing items)</option>
+        <option value="random">Random (any valid item)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <div class="rom-row">
+      <button id="rom-run" class="rom-button">Patch &amp; download</button>
+    </div>
+    <div id="rom-status" class="rom-status">Choose a disc image and at least one option, then patch.</div>
+    <pre id="rom-summary" class="rom-summary"></pre>
+  </div>
+  <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching holds a couple of copies in memory and the download is the same size &mdash; give it a moment, and use a desktop browser with enough RAM. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong>. (Sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.)</p>
+</section>
+
+<section class="doc-section" id="how">
+  <h2>What it does</h2>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded, <strong>same-size in-place</strong> edit:</p>
+  <ul class="bullets">
+    <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Random</em> draws from the valid item table.</li>
+    <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations, drawn from that scene's <em>own</em> monster set, so every swapped-in monster is one the scene already loads (no missing model).</li>
+    <li><strong>Treasure chests</strong> &mdash; reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest.</li>
+  </ul>
+  <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="randomizer.html">Randomizer / disc patcher</a>
+    <a href="../formats/lzs.html">LZS compression</a>
+    <a href="../subsystems/script-vm.html">Field / event script VM</a>
+  </div>
+</section>
+
+<style>
+  .rom-form { max-width: 46rem; }
+  .rom-row { display: block; margin: 0.6rem 0; }
+  .rom-label { display: block; font-weight: 600; margin-bottom: 0.2rem; }
+  .rom-form input[type=text], .rom-form select { width: 100%; max-width: 32rem; padding: 0.35rem 0.5rem; }
+  .rom-button { padding: 0.5rem 1.1rem; font-weight: 600; cursor: pointer; }
+  .rom-button:disabled { opacity: 0.6; cursor: progress; }
+  .rom-status { margin-top: 0.8rem; font-family: var(--mono, monospace); }
+  .rom-status-ok { color: #2e7d32; }
+  .rom-status-err { color: #c62828; }
+  .rom-summary { white-space: pre-wrap; margin-top: 0.5rem; }
+</style>
+
+<script type="module" src="../js/rom-patcher-app.js"></script>

@@ -12,7 +12,8 @@ listing = prog.getListing()
 
 # Edit this list to point at the function entry points you want callers for.
 TARGETS_HEX = [
-    "80024cfc",
+    "801d71f0",
+    "801d7210",
 ]
 
 for t in TARGETS_HEX:

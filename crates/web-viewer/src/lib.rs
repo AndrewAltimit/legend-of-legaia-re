@@ -9,6 +9,7 @@ pub mod audio;
 pub mod disc;
 pub mod fog_lut;
 pub mod ocean;
+pub mod rom_patcher;
 pub mod runtime;
 pub mod sentinel_placements;
 pub mod tmd3d;
