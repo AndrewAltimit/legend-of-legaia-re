@@ -289,6 +289,14 @@
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
 
+# Intra-function epilogue-merge labels in OTHER large overlay functions (the
+# same Ghidra-promotion pattern as `field_vm_labels`, but inside a different
+# enclosing function). Each is a `j`/`bne` target *within* one function that
+# Ghidra split into a fake `FUN_xxxxxxxx` entry; never reached by `jal`.
+[overlay_epilogue_labels]
+"801dbbfc" = "Epilogue-merge label inside FUN_801dba20 (overlay 0897 field locomotion / NPC-movement processor): multiple `j 0x801dbbfc` / `bne ...,0x801dbbfc` targets within FUN_801dba20 merge at the callee-save restore block (`lw ra,0x28(sp); lw s5..s0; jr ra`). Never a `jal` target anywhere in the corpus; no standalone body to port."
+
+
 # Ghidra phantom leaves: addresses Ghidra promoted to fake `FUN_xxxxxxxx`
 # entries that are NOT real call targets - a disassembler split an instruction
 # off the head/tail of a genuine function. They are dumped + documented (each
