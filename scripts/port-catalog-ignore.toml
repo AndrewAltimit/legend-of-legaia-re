@@ -136,6 +136,7 @@
 # a couple of inline addPrim-shape helpers Sony's build emitted as real
 # functions rather than macros (presumably to save code size given call counts
 # in the 100s).
+"8005c160" = "libcd CdControl issue-with-retry wrapper. Issues a CD command via FUN_8005cf80 up to 3 times (saving/restoring the libcd busy state DAT_800793ac and the per-command word DAT_80079324[cmd] between tries) then polls the completion via FUN_8005ca34; returns success. Pure libcd transport with no game-specific semantic; the clean-room engine reads sectors through the CdDmaHost trait and plays decoded XA through its own mixer, so this is already REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8005c160.txt"
 [libgs]
 "8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
 "80059010" = "SetDrawMode primitive constructor: fills a DR_MODE primitive (GP0 0xE1 texture-page word via 80059510, GP0 0xE2 texture-window word via 80059744). 1:1 PsyQ libgpu shape; engine-render emits its own GP0 draw-mode / tpage state"
@@ -291,6 +292,7 @@
 # `docs/subsystems/script-vm.md#intra-function-label-catalogue`. The engine
 # port models each label's PC delta directly inside its dispatcher (see
 # `crates/engine-vm/src/field.rs`), so there is no separate function to port.
+"8003ee7c" = "libspu SPU common-attr / reverb-depth setter shim used by the CD-XA clip path. Thin two-call wrapper: FUN_800643c4(0, depth, depth) (SpuSetCommonAttr-style master/reverb-depth set from the s16 arg) then FUN_80062a0c(0,0,1) (CD/reverb attribute apply). No game logic; REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8003ee7c.txt"
 [field_vm_labels]
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
