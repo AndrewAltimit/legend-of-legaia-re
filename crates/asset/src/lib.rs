@@ -33,6 +33,7 @@ pub mod field_pack;
 pub mod init_pak;
 pub mod item_names;
 pub mod kingdom_bundle;
+pub mod level_up_tables;
 pub mod man_section;
 pub mod menu_glyph_atlas;
 pub mod mips_overlay;

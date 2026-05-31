@@ -16,9 +16,11 @@
 //! `DAT_80076AF4`, read by the overlay level-up applier `FUN_801E9504` (called
 //! from the reward resolver `FUN_8004E568` at `0x8004F34C`): the running sum to
 //! the current level is scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11`
-//! (else `sum × 0x79`) and compared `≤ record cumulative XP`. To make XP
-//! faithful, extract `DAT_80076AF4` from the user's `SCUS_942.54` at runtime and
-//! install it + the formula via [`LevelUpTracker::with_xp_table`]. See
+//! (else `sum × 0x79`) and compared `≤ record cumulative XP`. That curve is
+//! parsed by `legaia_asset::level_up_tables::xp_thresholds_from_scus` and
+//! **installed at boot** by `legaia_engine_shell::BootSession` (which reads the
+//! user's `SCUS_942.54`) over [`LevelUpTracker::xp_table`]. The placeholder
+//! below is only used when no executable is reachable (disc-less tests). See
 //! `docs/subsystems/level-up.md` § XP table.
 //!
 //! Per-slot [`StatGain`] values remain placeholder flat rates (10 HP / 5 MP).
@@ -154,10 +156,10 @@ impl From<StatGain> for StatGrowthCurve {
 /// `DAT_80076AF4`, read by the overlay level-up applier `FUN_801E9504` (called
 /// from `FUN_8004E568` at `0x8004F34C`): the running sum to the current level is
 /// scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`)
-/// and compared `≤ record cumulative XP`. This placeholder is retained only so
-/// the tracker has a plausible curve shape; replace it by extracting
-/// `DAT_80076AF4` from the user's `SCUS_942.54` at runtime and installing it +
-/// the formula via [`LevelUpTracker::with_xp_table`].
+/// and compared `≤ record cumulative XP`. The engine installs that real curve at
+/// boot (`legaia_asset::level_up_tables::xp_thresholds_from_scus` →
+/// `BootSession`); this placeholder is the fallback when no `SCUS_942.54` is
+/// reachable (disc-less tests), retained only so the tracker has a curve shape.
 ///
 /// [`LevelUpTracker::default`] uses this table. See
 /// [`docs/subsystems/level-up.md`](https://github.com/altimit-mii/legend-of-legaia-re/blob/main/docs/subsystems/level-up.md#xp-table)

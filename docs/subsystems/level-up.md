@@ -41,11 +41,12 @@ mistook a 98-entry slice of the shared 4096-entry sin LUT at `0x80070A2C`
 off-by-`0x800` file/virtual-address confusion (`0x6123C` vs `0x80070A3C`). That
 slice is genuinely sin-LUT data consumed by the GTE rotation builders
 `RotMatrixX/Y/Z` (`0x800461A4` / `0x8004629C` / `0x8004638C`) and the cutscene
-camera (`FUN_8001CF50`), not XP. `engine_core::levelup::retail_xp_table()` still
-embeds that slice as a placeholder — it is **fabricated XP data** and should be
-replaced by `DAT_80076AF4` + the formula above, extracted from the user's
-`SCUS_942.54` at runtime (no Sony bytes committed) via
-`LevelUpTracker::with_xp_table`.
+camera (`FUN_8001CF50`), not XP. The engine now extracts the real curve at boot:
+`legaia_asset::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4` +
+the formula from the user's `SCUS_942.54` (no Sony bytes committed) and
+`legaia_engine_shell::BootSession` installs it over `LevelUpTracker::xp_table`
+(byte-validated: L2 = 365, L3 = 730 against a captured retail level-up). The
+`retail_xp_table()` sin-LUT slice is retained only as the disc-less fallback.
 
 Provenance: `FUN_801E9504` in
 `ghidra/scripts/funcs/overlay_battle_action_801e9504.txt`; caller `FUN_8004E568`
@@ -325,16 +326,14 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
   has not been traced from the stat aggregator.
-- **Real retail XP table source — RESOLVED.** The curve is the static SCUS
-  table `DAT_80076AF4` + the scaling formula, read by `FUN_801E9504` (see
+- **Real retail XP table source — RESOLVED + PORTED.** The curve is the static
+  SCUS table `DAT_80076AF4` + the scaling formula, read by `FUN_801E9504` (see
   *XP table* above). The prior sweeps targeting `0x8007123C` / `0x80070A3C`
-  found nothing because both are wrong addresses (an off-by-`0x800` confusion,
-  then a sin-LUT slice). Remaining work is an **engine port**: extract
-  `DAT_80076AF4` from the user's `SCUS_942.54` at runtime and apply the
-  `(sum × 9_999_999) / 0x140FE` (level<17) / `sum × 0x79` formula via
-  `with_xp_table`, replacing the fabricated sin-LUT slice in
-  `retail_xp_table()`. The stale scanners
-  [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
+  found nothing because both are wrong addresses. The engine now extracts it at
+  boot — parser `legaia_asset::level_up_tables::xp_thresholds_from_scus`
+  (disc-gated `level_up_tables_real`), installed by `BootSession` (disc-gated
+  `new_game_seed::boot_installs_the_real_retail_xp_curve_from_disc`). The stale
+  scanners [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
   / [`scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
   (targeting `0x8007123C`) are superseded.
 - **Overlay display.** The retail level-up overlay shows per-stat increments
