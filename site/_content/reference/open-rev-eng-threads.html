@@ -114,10 +114,10 @@
         <td><code>project_arts_name_table_pinned.md</code></td>
       </tr>
       <tr>
-        <td>Seru growth-rate extraction</td>
-        <td><code>open</code></td>
-        <td>Recover the per-character per-level HP/MP/stat grant source and wire it into <code>apply_battle_loot</code> for level-up stat application. The &ldquo;Seru struct <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> (those reads are a <code>0x80808080</code> battle-state flag &mdash; see <a href="../subsystems/level-up.html#stat-gains">level-up</a>); a static grep also comes up empty, so the next step is an empirical save-pair diff (<code>LevelUpObservation</code>) or a mid-execution overlay capture of the Seru-load path, <strong>not</strong> another static search.</td>
-        <td><code>project_shop_ui_and_levelup.md</code> + <code>project_next_session_backlog.md</code> &sect; H</td>
+        <td>Stat growth-rate source</td>
+        <td><code>resolved (port pending)</code></td>
+        <td>The per-character per-level stat-grant source is <strong>static <code>SCUS_942.54</code> tables read by the level-up applier <code>FUN_801E9504</code></strong>: per-stat 98-entry curves at <code>DAT_800769CC</code> (stride <code>0x62</code>, indexed by level) + a per-stat parameter block at <code>DAT_80076918</code>. The &ldquo;Seru struct <code>+0x74</code>&rdquo; reading stays <strong>falsified</strong> (a <code>0x80808080</code> battle-state flag). Earlier searches scanned the <code>magic_level_up</code> <em>display</em> overlay, not the victory-path applier. Remaining: an engine port extracting the tables at runtime. See <a href="../subsystems/level-up.html#stat-gains">level-up</a>.</td>
+        <td><code>project_shop_ui_and_levelup.md</code></td>
       </tr>
       <tr>
         <td>Monster stat-record archive source</td>
@@ -250,9 +250,9 @@
       </tr>
       <tr>
         <td>XP-table source + reader</td>
-        <td><code>reframed &mdash; table identity falsified</code></td>
-        <td>The original &ldquo;XP increment table at <code>0x8007123C</code>&rdquo; framing was wrong on two counts. <strong>(1)</strong> The address is an off-by-<code>0x800</code> (PSX EXE header size) confusion between file offset <code>0x6123C</code> and virtual <code>0x80070A3C</code>. <strong>(2)</strong> The bytes at either location are not an XP table &mdash; they are a slice of the shared 4096-entry full-circle sin LUT at <code>0x80070A2C</code> that <code>RotMatrixX/Y/Z</code> (<code>0x800461A4 / 0x8004629C / 0x8004638C</code>) and the cutscene-camera composer <code>FUN_8001CF50</code> consume. Every u16 in that 8 KB block matches <code>round(4096 &times; sin(i/4096 &times; 2&pi;))</code> within &plusmn;1 (quadrant breakpoints exact at <code>[0]=0</code>, <code>[0x400]=4096</code>, <code>[0x800]=0</code>, <code>[0xC00]=-4096</code>; <code>cos[i] = sin[i + 0x400]</code>). The 98 numbers <code>engine_core::levelup::retail_xp_table()</code> ships (<code>50, 56, 62, 69, &hellip; 650, 656</code>) are <code>sin[0x408..0x46A]</code>. These may still be the real retail curve (early-quadrant sin is near-linear with mild curvature, a reasonable JRPG XP shape; designers commonly shared static tables in 1998-era PSX games), but no retail reader has been found loading either address as XP (LUI+ADDIU, gp-relative, and LUI+LHU sweeps across SCUS + every captured overlay all return zero hits), and a save-pair diff against an in-game level-up has not been done. The implied L99 cumulative (34&nbsp;663 XP) is conspicuously small for the era. <strong>What would close it:</strong> a retail-side level-up scenario that confirms 50 XP grants L2 from a new-game save, or an overlay capture that surfaces the real reader.</td>
-        <td><code>project_xp_split_static_negative.md</code> + <code>project_xp_table_and_cutscene_overlays.md</code></td>
+        <td><code>resolved (port pending)</code></td>
+        <td>The retail XP curve is the static-SCUS per-level delta table <code>DAT_80076AF4</code> (u16), read by the level-up applier <code>FUN_801E9504</code> (overlay; called from the reward resolver <code>FUN_8004E568</code> at <code>0x8004F34C</code>): the running sum to the current level is scaled <code>(sum &times; 9999999) / 0x140FE</code> for <code>level &lt; 0x11</code> (else <code>sum &times; 0x79</code>) and compared <code>&le; record cumulative XP</code> in a multi-level <code>do&hellip;while</code> loop. The earlier <code>0x8007123C</code> / <code>0x80070A3C</code> framing was doubly wrong (an off-by-<code>0x800</code> file/virtual confusion, then a sin-LUT slice that is genuinely rotation-LUT data); the 98-number <code>retail_xp_table()</code> slice is <strong>fabricated</strong> XP. Prior sweeps found nothing because they targeted the wrong addresses. Remaining: an engine port extracting <code>DAT_80076AF4</code> at runtime and applying the formula via <code>with_xp_table</code>. See <a href="../subsystems/level-up.html#xp-table">level-up</a>.</td>
+        <td><code>project_xp_split_static_negative.md</code></td>
       </tr>
       <tr>
         <td>Opening-prologue tail (<code>opdeene</code>)</td>

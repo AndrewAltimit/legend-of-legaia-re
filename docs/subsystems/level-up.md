@@ -2,70 +2,86 @@
 
 Covers XP distribution after a battle win, the per-level stat-gain table, and
 the banner display. Post-battle level-up logic is driven by
-`engine-core::levelup::LevelUpTracker`. Retail display lives in the level-up
-overlay (partial coverage).
+`engine-core::levelup::LevelUpTracker`. Retail applies XP, stat growth, and the
+level bump in the overlay-resident function `FUN_801E9504`.
 
 ## XP table
 
-**The previously-documented "XP increment table at `0x8007123C`" is FALSIFIED
-by inspection of the SCUS bytes.** The address was an off-by-`0x800` (PSX EXE
-header size) confusion between the file offset `0x6123C` and the virtual
-address `0x80070A3C`; and the bytes at the *correct* virtual address are not
-an XP table at all — they are deep samples (entries `0x408..0x469`) of the
-shared **4096-entry full-circle sin LUT** at `0x80070A2C` that the GTE
-rotation builders `RotMatrixX/Y/Z` (`0x800461A4` / `0x8004629C` / `0x8004638C`,
-documented under [`reference/functions.md`](../reference/functions.md)) and
-the cutscene camera (`FUN_8001CF50`,
-[`subsystems/cutscene.md`](cutscene.md#camera-rotation-build)) consume. Every
-one of the 4096 u16 entries at `0x80070A2C` matches `round(4096 × sin(i/4096
-× 2π))` to within ±1; the quadrant breakpoints land exactly (`[0x000]=0`,
-`[0x400]=4096`, `[0x800]=0`, `[0xC00]=-4096`), `cos[i] = sin[i + 0x400]`.
+The retail XP-to-next-level curve is a **static `SCUS_942.54` table plus a
+scaling formula**, applied by the level-up function `FUN_801E9504`
+(overlay-resident; dumped as `overlay_battle_action_801e9504` and aliased into
+`overlay_magic_level_up` / `overlay_magic_capture` / `overlay_muscle_dome`,
+all the same code). The battle-victory reward resolver `FUN_8004E568` calls it
+at `0x8004F34C` (`jal 0x801E9504`, argument = active-party slot − 1) once it has
+divided the monster XP pool by the alive-party count.
 
-`engine_core::levelup::retail_xp_table()` therefore embeds a 98-entry slice of
-that sin LUT (`sin[0x408..0x46A]` = `50, 56, 62, 69, 75, … 650, 656`) and
-prefix-sums it as cumulative XP thresholds. The data behaves consistently
-under the engine's self-tests (50 XP reaches L2, 106 reaches L3, …) but its
-provenance as retail XP is **unproven**: an in-engine save-pair diff against
-a real retail level-up has not been done, no retail reader has been found
-loading this address as XP, and the L99 cumulative the slice produces
-(34 663 XP) is conspicuously small for a 1998-era JRPG. The two non-exclusive
-possibilities remain open:
+The curve source:
 
-1. **Designed reuse** — Legaia's level designers picked the early sin LUT
-   slice deliberately because `4096 × sin(small angle)` is near-linear with
-   mild curvature (≈ `idx × 6.25 + small_quadratic_term`), which is a
-   reasonable XP curve shape. JRPGs of that era frequently shared static
-   tables across subsystems to save ROM.
-2. **Engine fabrication** — the 50/56/62/… numbers were read from this sin
-   slot by an earlier extraction pass that mistook the address for an XP
-   table, and the real XP curve lives elsewhere (likely an uncaptured
-   overlay; static SCUS + every captured overlay carries no reader for
-   either the wrong address `0x8007123C` or the sin-LUT-slice address
-   `0x80070A3C`, regardless of LUI+ADDIU / gp-rel / LUI+LHU encoding).
+- **Per-level XP-delta table `DAT_80076AF4`** (u16 entries, referenced literally
+  as `&DAT_80076AF4` at `0x801E9588`/`0x801E9594`). It is static `SCUS_942.54`
+  data — below the `0x801C0000` overlay boundary and clear of the sin LUT range
+  (`0x80070A2C..0x80072A2C`). The threshold for the current level is the running
+  sum `sum = Σ DAT_80076AF4[0 .. level]`.
+- **Scaling formula** (`0x801E95D0`–`0x801E9624`): for `level < 0x11` (17),
+  `threshold = (sum × 9_999_999) / 0x140FE` (≈ `sum × 121.69`); for
+  `level ≥ 0x11`, `threshold = sum × 0x79` (121).
+- **Per-character correction** for slots 1 and 2 (Noa subtracts, Gala adds)
+  `(threshold × 0x14) / s`, where `s` is a runtime per-character scalar.
+- **Level-up loop**: a `do … while (threshold ≤ record cumulative XP)` (the
+  `sltu` at `0x801E9714` / `0x801E9F70`) bumps the record level field and applies
+  one round of stat growth per crossed threshold, so a single large XP award can
+  advance several levels at once.
 
-`LevelUpTracker::default()` uses the slice. Override via `with_xp_table(Vec<u32>)`
-when the real source lands. Total XP to reach level N (from the slice):
-L2 = 50, L3 = 106, L5 = 312, L10 = 949, L20 = 3093, L50 = 14 655, L99 = 34 663.
+The only readers of `DAT_80076AF4` anywhere in the corpus are the four alias
+copies of `FUN_801E9504`, confirming it is the canonical XP curve.
+
+**This supersedes the earlier sin-LUT reading.** A prior extraction pass
+mistook a 98-entry slice of the shared 4096-entry sin LUT at `0x80070A2C`
+(`sin[0x408..0x46A]` = `50, 56, 62, …`) for the XP table, after an
+off-by-`0x800` file/virtual-address confusion (`0x6123C` vs `0x80070A3C`). That
+slice is genuinely sin-LUT data consumed by the GTE rotation builders
+`RotMatrixX/Y/Z` (`0x800461A4` / `0x8004629C` / `0x8004638C`) and the cutscene
+camera (`FUN_8001CF50`), not XP. `engine_core::levelup::retail_xp_table()` still
+embeds that slice as a placeholder — it is **fabricated XP data** and should be
+replaced by `DAT_80076AF4` + the formula above, extracted from the user's
+`SCUS_942.54` at runtime (no Sony bytes committed) via
+`LevelUpTracker::with_xp_table`.
+
+Provenance: `FUN_801E9504` in
+`ghidra/scripts/funcs/overlay_battle_action_801e9504.txt`; caller `FUN_8004E568`
+at `0x8004F34C` (`ghidra/scripts/funcs/8004e568.txt`).
 
 ## Stat gains
 
-Retail HP / MP growth does not come from a per-character per-level table in
-the overlay binary — a writer-search across every captured
-`overlay_magic_level_up_*` dump returns no `sb` / `sh` writes targeting the
-record stat window (`+0x10E`, `+0x11C..+0x12C`, `+0x130`, `+0x161`).
+Per-character stat growth is **also `FUN_801E9504`'s job, sourced from static
+`SCUS_942.54` tables** — the writer the earlier capture work could not find is
+`FUN_801E9504` itself (a victory-path overlay function, not the
+`overlay_magic_level_up` display code that was searched). Each level-up
+iteration writes the record stat window (`+0x11C..+0x12C`) from:
 
-**FALSIFIED: the "Seru struct `+0x74`" growth hypothesis.** An earlier reading
-held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant" to the
-battle actor. That is wrong — the only `+0x74` reads in the captured overlay
-surface a 32-bit battle-state flag the SCUS-side handler `FUN_800480D8` stamps
-with the constant `0x80808080`, not a stat-growth value. The real grant table
-likely lives in a still-uncaptured overlay (battle-data init or the Seru-equip
-path) or is encoded inline in a Seru PROT entry the current capture set doesn't
-surface. So per-character growth remains **uncaptured**; `engine-core::levelup`
-ships placeholder flat rates (see below) and exposes
-`LevelUpTracker::with_seru_roster` / `SeruStatTable::insert` for explicit curves
-once the writer is pinned. (Battle actor base: `DAT_801C9370[slot]`, 8 slots —
-party 0..2, monsters 3..7; current HP at `+0x14C`.)
+- **Per-stat growth curves at `DAT_800769CC`** (built `lui v0,0x8007;
+  addiu s4,v0,0x69CC`), stride `0x62` (= 98 = `MAX_LEVEL − 1`), indexed by the
+  character level — the `if (0x62 < level)` clamp bounds the index, so each
+  grown stat has a 98-entry per-level curve.
+- **A per-stat parameter block at `DAT_80076918`** (built `lui a0,0x8007;
+  addiu a0,a0,0x6918`) whose bytes select which growth-curve row each stat
+  reads; the per-character variation is keyed off the slot argument here. The
+  documented record caps apply on write (HP ≤ 9999, MP ≤ 999, SP ≤ 0x118).
+
+So per-character growth is **static SCUS data**, not an uncaptured overlay. The
+engine can extract `DAT_800769CC` / `DAT_80076918` from the user's `SCUS_942.54`
+at runtime and replace the placeholder flat rates via `with_seru_roster` /
+`SeruStatTable`. Provenance:
+`ghidra/scripts/funcs/overlay_battle_action_801e9504.txt`.
+
+**FALSIFIED (still): the "Seru struct `+0x74`" growth hypothesis.** An earlier
+reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"
+to the battle actor. That is wrong, and this finding confirms it from the other
+side: growth comes from the `DAT_800769CC` / `DAT_80076918` static tables, not a
+Seru `+0x74` dereference. (The only `+0x74` reads in the captured overlays
+surface a 32-bit battle-state flag the SCUS handler `FUN_800480D8` stamps with
+`0x80808080`.) Battle actor base for reference: `DAT_801C9370[slot]`, 8 slots —
+party 0..2, monsters 3..7; current HP at `+0x14C`.
 
 The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 `0x801C0000–0x801FFFFF`, full 256 KB) contains:
@@ -78,18 +94,18 @@ The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 | `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner `FUN_80050ED4` |
 | `0x801F6000+` | Live animation state globals (runtime values; zero at rest) |
 
-No static HP/MP/STR/DEF increment table was found in the overlay. The remaining
-capture path is an empirical one: diff a pre-/post-level-up save pair across the
-character-record window (`LevelUpObservation` + the `mednafen-state diff`
-toolkit) to recover the *observed* per-level deltas, since the producing writer
-isn't in the captured overlays. Only one early-game card save exists today, so
-the per-character curves stay unmeasured.
+No increment table lives in this *display* overlay — the growth tables
+(`DAT_800769CC` / `DAT_80076918`) are in static `SCUS_942.54`, read by the
+victory-path applier `FUN_801E9504` (above). The captured per-character triplets
+below (Vahn / Noa / Gala observed deltas) remain useful as an empirical
+cross-check: a future engine port that reads the SCUS curves can validate
+against them.
 
 `StatGain::default()` uses placeholder flat rates: +10 HP / +5 MP per level for
-all characters. Retail almost certainly varies growth per character (Vahn, Noa,
-Gala), but the source of that variation is **not** the falsified `+0x74` path
-above — don't fabricate numbers; populate a measured curve via
-`with_xp_table` / `SeruStatTable` once a capture lands.
+all characters. Retail varies growth per character via the `DAT_80076918`
+parameter block; until the SCUS tables are wired into the engine, don't
+fabricate numbers — populate a measured curve via `with_stat_gains` /
+`SeruStatTable`, or extract the real `DAT_800769CC` curve at runtime.
 
 The tracker supports per-slot overrides via `with_stat_gains([StatGain; 4])`.
 
@@ -167,10 +183,9 @@ ramp-up-peak-ramp-down patterns (`06 06 07 08 09 0A 0B 0C 0D 0E 0F 0F 0F 0E
 The matched stat-shape patterns (Vahn `04 04 02 02 04 04`, Gala `02 04 04
 02 02 02`) sit inside these animation curves as coincidental byte runs.
 
-Net: cross-character u8-pattern search does not surface a stat-grant table.
-The next viable approach is locating the battle-data init overlay slice that
-loads the Seru PROT entries and tracing the stat read at the moment a level-
-up event applies.
+Net: cross-character u8-pattern search does not surface a stat-grant table —
+because the grant table is not in PROT.DAT at all. It is the static-SCUS pair
+`DAT_800769CC` / `DAT_80076918` read by `FUN_801E9504` (see *Stat gains*).
 
 ## Level-up flow
 
@@ -287,34 +302,19 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
 
 ## Open items
 
-- **Per-Seru stat grants.** Vahn / Noa / Gala have distinct HP/MP growth via
-  their Seru rosters. **Status:** writer-search across the captured
-  `magic_level_up` overlay returned **negative** for code-side `sb` / `sh`
-  writes targeting the destination offsets (`+0x10E`, `+0x11C..+0x12C`,
-  `+0x130`, `+0x161`). A follow-up grep for any read at `+0x74(reg)` across
-  the same overlay surfaces five hits - but each one is reading a 32-bit
-  battle-state flag the SCUS-side handler `FUN_800480D8` writes with the
-  constant `0x80808080` (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`),
-  not a stat-grant pointer. The "Seru struct +0x74 pointer dereference"
-  hypothesis is **not supported** by the current capture set. Cross-character
-  delta search across PROT.DAT (using the three pinned per-character triplets
-  for orientation) also fails to surface a stat-grant table — the candidate
-  cluster at PROT.DAT byte offset `0x033E9000` is animation-curve data, not
-  stat grants. A new battle scene-init save pair (mc1 = `map01` field with
-  encounter armed; mc2 = `map01` battle initiated) pins the **post-load
-  residency window** of the battle scene-init pipeline (codified as
-  `engine_core::capture_observations::battle_init_overlay`), but the loader
-  function itself - the helper that reads PROT entry `0x05C4` + sibling
-  Seru blobs and decompresses the per-Seru stat-grant data into RAM - has
-  finished by the time the post-load save is captured. The loader still
-  resides in an overlay slice that requires a mid-execution capture
-  (between the field→battle game-mode flip and the post-load state) which
-  the current Mednafen workflow can't generate without manual
-  frame-stepping. Engine-side scaffold lives at
-  [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` +
-  `SeruStatTable` + `LevelUpTracker::with_seru_roster` install a flat curve
-  summed across the equipped Seru. Replace with `StatGrowthCurve::PerLevel`
-  when the table is pinned.
+- **Per-character stat grants — source RESOLVED.** Vahn / Noa / Gala have
+  distinct HP/MP/stat growth. The growth source is the static SCUS pair
+  `DAT_800769CC` (per-stat 98-entry curves, stride `0x62`, indexed by level) +
+  `DAT_80076918` (per-stat parameter block selecting curve rows), read and
+  applied by `FUN_801E9504` (see *Stat gains* above). The earlier negative
+  results came from searching the wrong code: the `magic_level_up` overlay is
+  the display path, not the writer; the `+0x74` reads are a `0x80808080`
+  battle-state flag (`FUN_800480D8`), not a grant; and the PROT.DAT
+  `0x033E9000` cluster is animation-curve data. Remaining work is an **engine
+  port**: extract the two tables from the user's `SCUS_942.54` at runtime and
+  drive the per-level growth, replacing the placeholder flat curve in
+  [`crates/engine-core/src/seru_stats.rs`] (`SeruStatGrant` / `SeruStatTable` /
+  `LevelUpTracker::with_seru_roster`) with `StatGrowthCurve::PerLevel`.
 - **`+0x120` u16 LE field renaming.** The captured triplets pin
   `record[+0x120]` as a constant 100 across every save / character. The
   existing `legaia_save::character::CharacterRecord::stat_cap` accessor reads
@@ -325,23 +325,18 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
   has not been traced from the stat aggregator.
-- **Find the real retail XP table source.** The current port divides the
-  monster XP pool by `alive_count` (surviving party members) and credits each
-  surviving slot the floored share. The thresholds it grants come from a
-  98-entry slice of the shared sin LUT (see *XP table* above) whose
-  provenance as retail XP is unproven. A LUI+ADDIU / gp-relative / LUI+LHU
-  sweep across `SCUS_942.54` and every captured overlay
-  (`overlay_magic_level_up`, `overlay_battle_action`, …) finds **zero**
-  readers for either the wrong address `0x8007123C` or the sin-LUT-slice
-  address `0x80070A3C` in any encoding, so either the reader lives in an
-  uncaptured overlay slice, or the table is genuinely the sin LUT (read by
-  the cutscene/GTE consumer at `0x800461C4` for unrelated rotation math,
-  with the level-up consumer indexing a different sub-slice through the
-  same base). The scanner
+- **Real retail XP table source — RESOLVED.** The curve is the static SCUS
+  table `DAT_80076AF4` + the scaling formula, read by `FUN_801E9504` (see
+  *XP table* above). The prior sweeps targeting `0x8007123C` / `0x80070A3C`
+  found nothing because both are wrong addresses (an off-by-`0x800` confusion,
+  then a sin-LUT slice). Remaining work is an **engine port**: extract
+  `DAT_80076AF4` from the user's `SCUS_942.54` at runtime and apply the
+  `(sum × 9_999_999) / 0x140FE` (level<17) / `sum × 0x79` formula via
+  `with_xp_table`, replacing the fabricated sin-LUT slice in
+  `retail_xp_table()`. The stale scanners
   [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
-  + [`scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
-  were targeting `0x8007123C` (the wrong address); update or replace them
-  before re-running.
+  / [`scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
+  (targeting `0x8007123C`) are superseded.
 - **Overlay display.** The retail level-up overlay shows per-stat increments
   (STR, INT, VIT, etc.) with an animated counter. Only HP/MP are tracked in the
   current port; other stats are handled by the per-character record's stat

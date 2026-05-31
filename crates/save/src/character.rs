@@ -424,11 +424,12 @@ impl CharacterRecord {
     ///
     /// Pinned by the captured magic-rank-up + character-level-up save
     /// triplet: the level-up event at L9 → L10 grew the value at this
-    /// offset by `+365`, exactly the per-level XP increment for L9→10
-    /// in the retail XP table at
-    /// `SCUS_942.54 0x8007123C`. Returns the cumulative XP value the engine
-    /// can feed into [`crate::level_for_cumulative_xp`] to derive the
-    /// character level.
+    /// offset by `+365` (an empirical per-level XP delta from the real save;
+    /// the actual retail curve is the static-SCUS table `DAT_80076AF4` read by
+    /// `FUN_801E9504` — see `docs/subsystems/level-up.md` § XP table — not the
+    /// falsified `0x8007123C` slice the engine still ships as a placeholder).
+    /// Returns the cumulative XP value the engine can feed into
+    /// [`crate::level_for_cumulative_xp`] to derive the character level.
     pub fn cumulative_xp(&self) -> u16 {
         u16::from_le_bytes([self.raw[0x04], self.raw[0x05]])
     }

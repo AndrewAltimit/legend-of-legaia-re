@@ -66,9 +66,12 @@ pub use retail_inventory::{
     AddOutcome, ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, RetailInventory, STACK_CAP,
 };
 
-/// Cumulative XP thresholds for levels 2..=99 derived from the retail
-/// SCUS_942.54 increment table at `0x8007123C`. Total XP to reach level
-/// `N+2` (from level 1) is `RETAIL_XP_CUMULATIVE[N]`.
+/// Cumulative XP thresholds for levels 2..=99, prefix-summed from a 98-entry
+/// **placeholder** increment table. NOTE: these numbers are a sin-LUT slice an
+/// earlier pass mis-read as XP, not the retail curve — the real source is the
+/// static-SCUS table `DAT_80076AF4` + formula read by `FUN_801E9504` (see
+/// `engine_core::levelup::retail_xp_table` and `docs/subsystems/level-up.md`).
+/// Kept as a plausible-shape fallback until the SCUS curve is wired in.
 ///
 /// Engines that don't already pull this from
 /// `engine_core::levelup::retail_xp_table` can use this constant directly.
@@ -147,8 +150,9 @@ mod xp_tests {
     fn cumulative_table_first_and_last() {
         assert_eq!(RETAIL_XP_CUMULATIVE[0], 50);
         // Last entry is the L99 threshold (sum of the 98 increments).
-        // The documented retail total ≈ 34_663 (per the SCUS_942.54 0x8007123C
-        // increments). Verify the table sums into a sensible range.
+        // The placeholder slice sums to ≈ 34_663 (it is sin-LUT data, not the
+        // retail curve; see RETAIL_XP_CUMULATIVE docs). Verify the table sums
+        // into a sensible range.
         assert!(*RETAIL_XP_CUMULATIVE.last().unwrap() >= 30_000);
         assert!(*RETAIL_XP_CUMULATIVE.last().unwrap() <= 40_000);
     }

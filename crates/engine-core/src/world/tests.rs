@@ -3329,7 +3329,8 @@ fn apply_battle_xp_sets_level_up_banner() {
     };
     // Slot 0 must be alive for the split to credit XP.
     world.actors[0].battle.hp = 100;
-    // Retail table: 50 XP to reach level 2 (SCUS 0x8007123C entry[0]).
+    // Placeholder XP table: 50 XP to reach level 2 (entry[0]; the placeholder
+    // is a sin-LUT slice, not retail - real curve is DAT_80076AF4 via FUN_801E9504).
     world.apply_battle_xp(50);
     let banner = world
         .current_level_up_banner

@@ -142,7 +142,7 @@
     </a>
     <a class="card" href="level-up.html">
       <div class="card-title">Level-up</div>
-      <div class="card-body">Post-battle XP distribution and stat gain. XP table from <code>SCUS_942.54 0x8007123C</code> (98 u16 increments, L1&rarr;2 = 50). <code>LevelUpBanner</code> renders for 180 frames via <code>level_up_draws_for()</code>. Per-character HP/MP growth curves pending level-up overlay capture.</div>
+      <div class="card-body">Post-battle XP distribution and stat gain. XP curve = static-SCUS table <code>DAT_80076AF4</code> + formula, and per-character stat growth = <code>DAT_800769CC</code> / <code>DAT_80076918</code>, both applied by the overlay level-up function <code>FUN_801E9504</code>. <code>LevelUpBanner</code> renders for 180 frames via <code>level_up_draws_for()</code>. The engine still ships a fabricated sin-LUT placeholder pending the runtime SCUS port.</div>
     </a>
     <a class="card" href="cutscene.html">
       <div class="card-title">Cutscene (STR mode)</div>
