@@ -3425,6 +3425,49 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
 }
 
 #[test]
+fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
+    // Count landed strikes over many calls of a seeded attacker (acc) against a
+    // high-evasion, can't-die target.
+    let run = |rng_seed: u32| -> usize {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.rng_state = rng_seed;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.hp = 60_000;
+        world.actors[1].battle.max_hp = 60_000;
+        world.actors[1].battle.liveness = 1;
+        world.battle_attack[0] = 40;
+        world.battle_defense[1] = 10;
+        // Seed an ~even accuracy/evasion matchup so the roll engages.
+        world.battle_accuracy[0] = 50;
+        world.battle_evasion[1] = 50;
+        let mut hits = 0;
+        for _ in 0..200 {
+            world.battle_ctx.active_actor = 0;
+            world.apply_basic_attack();
+            hits += world.drain_battle_hit_fx().len();
+        }
+        hits
+    };
+
+    let hits = run(0x1234_5678);
+    // The roll genuinely engages: some strikes land and some whiff.
+    assert!(
+        hits > 0 && hits < 200,
+        "seeded accuracy should produce a mix of hits and misses, got {hits}/200"
+    );
+    // Deterministic under a fixed RNG seed.
+    assert_eq!(
+        hits,
+        run(0x1234_5678),
+        "accuracy roll must be deterministic"
+    );
+}
+
+#[test]
 fn first_living_opponent_is_chosen_by_attacker_side() {
     let mut world = World {
         party_count: 2,
