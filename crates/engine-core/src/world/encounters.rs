@@ -136,6 +136,12 @@ impl World {
             if let Some(s) = self.battle_attack.get_mut(slot) {
                 *s = stats.atk;
             }
+            if let Some(s) = self.battle_accuracy.get_mut(slot) {
+                *s = stats.acc;
+            }
+            if let Some(s) = self.battle_evasion.get_mut(slot) {
+                *s = stats.eva;
+            }
             self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
         }
     }

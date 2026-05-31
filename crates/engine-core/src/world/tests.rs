@@ -3425,6 +3425,49 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
 }
 
 #[test]
+fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
+    // Count landed strikes over many calls of a seeded attacker (acc) against a
+    // high-evasion, can't-die target.
+    let run = |rng_seed: u32| -> usize {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.rng_state = rng_seed;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.hp = 60_000;
+        world.actors[1].battle.max_hp = 60_000;
+        world.actors[1].battle.liveness = 1;
+        world.battle_attack[0] = 40;
+        world.battle_defense[1] = 10;
+        // Seed an ~even accuracy/evasion matchup so the roll engages.
+        world.battle_accuracy[0] = 50;
+        world.battle_evasion[1] = 50;
+        let mut hits = 0;
+        for _ in 0..200 {
+            world.battle_ctx.active_actor = 0;
+            world.apply_basic_attack();
+            hits += world.drain_battle_hit_fx().len();
+        }
+        hits
+    };
+
+    let hits = run(0x1234_5678);
+    // The roll genuinely engages: some strikes land and some whiff.
+    assert!(
+        hits > 0 && hits < 200,
+        "seeded accuracy should produce a mix of hits and misses, got {hits}/200"
+    );
+    // Deterministic under a fixed RNG seed.
+    assert_eq!(
+        hits,
+        run(0x1234_5678),
+        "accuracy roll must be deterministic"
+    );
+}
+
+#[test]
 fn first_living_opponent_is_chosen_by_attacker_side() {
     let mut world = World {
         party_count: 2,
@@ -4286,6 +4329,53 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     assert_eq!(fx.len(), 1);
     assert!(!fx[0].is_heal, "offensive spell is damage, not heal");
     assert_eq!(fx[0].target_slot, 1);
+}
+
+#[test]
+fn battle_magic_cast_applies_mp_half_ability_bit() {
+    use crate::input::PadButton;
+    use crate::spells::SpellCatalog;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.battle_player_driven = true;
+    world.mode = SceneMode::Battle;
+    world.set_spell_catalog(SpellCatalog::vanilla());
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.mp = 50;
+    world.actors[0].battle.liveness = 1;
+    world.set_battle_magic(0, 100);
+    world.actors[1].battle.max_hp = 300;
+    world.actors[1].battle.hp = 300;
+    world.actors[1].battle.liveness = 1;
+    // MP-half accessory bit (0x20) on the caster's character record.
+    world.character_ability_bits[0] = 0x20;
+
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut list = party.members[0].spell_list();
+    list.count = 1;
+    list.ids[0] = 0x20; // Flame, 5 MP
+    party.members[0].set_spell_list(list);
+    world.roster = party;
+
+    world.battle_ctx.active_actor = 0;
+    world.battle_spell_menu = world.build_battle_spell_session(0);
+
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_spell_menu();
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_spell_menu();
+
+    // Flame is 5 MP; the MP-half bit charges 5/2 = 2, so 50 -> 48 (vs 45 flat).
+    assert_eq!(
+        world.actors[0].battle.mp, 48,
+        "MP-half ability bit should halve the live-cast cost"
+    );
 }
 
 #[test]

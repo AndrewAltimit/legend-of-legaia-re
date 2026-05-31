@@ -10,7 +10,7 @@
   <p>The most common selectors:</p>
   <ul class="bullets">
     <li><strong>Selector 0</strong> - the HP <em>applicator</em>: applies the pending HP delta (<code>actor[+0x14E] - actor[+0x14C]</code> within the target), capped at the per-party-slot ceiling table at <code>DAT_8007655C</code>. The attack-vs-defense hit value is computed earlier (see below) and staged into the actor first.</li>
-    <li><strong>Selector 9</strong> - accuracy / evasion roll. <code>roll = rand() % (caster_acc + target_eva)</code>; hit when <code>target_eva &lt; roll</code>. Standard JRPG-flat-roll model.</li>
+    <li><strong>Selector 9</strong> - accuracy / evasion roll. <code>roll = rand() % (caster_acc + target_eva)</code>; hit when <code>target_eva &lt; roll</code> (hit probability <code>caster_acc / (caster_acc + target_eva)</code>). Standard JRPG-flat-roll model. <strong>Wired into the engine's live battle loop</strong> (arts/spell and basic-attack strike paths) - each actor's accuracy/evasion is its AGL-derived stat; the roll engages only when the attacker's accuracy is seeded, so an unseeded synthetic attacker auto-hits and consumes no RNG.</li>
     <li><strong>Selectors 1..7</strong> - stat-buff ramps, multiplying the actor stat block by <code>6/5</code> with a <code>0xFFFF</code> clamp. Each stat is a working/base <em>pair</em> of halfwords, so a buff touches two halfwords per stat.</li>
   </ul>
 </section>
@@ -76,7 +76,8 @@ else if (character_record.ability_bits &amp; 0x10)   // "MP-quarter"
     cost = base / 4;
 else
     cost = base;</code></pre>
-  <p>The character record's ability bitfield is the 4-byte field at <code>+0xF4</code> (record stride <code>0x414</code>, base <code>0x80084708</code>). The engine port resolves the modifier via <code>battle_formulas::MpCostModifier::from_ability_flags</code>.</p>
+  <p>The character record's ability bitfield is the 4-byte field at <code>+0xF4</code> (record stride <code>0x414</code>, base <code>0x80084708</code>). The engine port resolves the modifier via <code>battle_formulas::MpCostModifier::from_ability_flags</code> and applies it in both the state-machine cast and the live player-driven cast.</p>
+  <p class="note"><strong>Unresolved priority.</strong> The single-bit cases are settled, but the both-bits-set priority disagrees across sources: the pseudo-code above (and the docs) read MP-half before MP-quarter, while the engine's state-machine port and its both-bits test apply MP-quarter first - and no current <code>FUN_801E295C</code> dump contains the verbatim <code>/2</code>&thinsp;/&thinsp;<code>/4</code> block to settle it. The live cast path matches the engine's established quarter-first order pending a ground-truth dump. See <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
 </section>
 
 <section class="doc-section" id="rng">
@@ -95,7 +96,7 @@ else
     <li><code>buff_ramp(value)</code></li>
     <li><code>damage_cap_for_party_slot(caps, slot)</code></li>
   </ul>
-  <p>Unit tests pin the documented formulas as fixtures - a future runtime trace can add comparison cases without touching the formula bodies.</p>
+  <p>Unit tests pin the documented formulas as fixtures - a future runtime trace can add comparison cases without touching the formula bodies. <code>accuracy_roll</code> and <code>mp_cost_after_ability_bits</code> are now also <strong>applied in the live battle loop</strong> (<code>engine-core::world::battle</code>), not just defined - attacks roll to hit and MP-saver accessories reduce cast cost.</p>
 </section>
 
 <section class="doc-section" id="open">

@@ -53,10 +53,18 @@ pub enum MpCostModifier {
 }
 
 impl MpCostModifier {
-    /// Resolve the modifier from a 32-bit ability-flag word. The retail
-    /// engine reads `+0xF4` as a `u32` and tests the same two bits in this
-    /// order - `Quarter` only triggers when `Half` is *not* set, matching
-    /// the `if-else if` chain in `FUN_801E295C`'s state-0x28 body.
+    /// Resolve the modifier from a 32-bit ability-flag word, reading `+0xF4`
+    /// and testing `0x20` (Half) before `0x10` (Quarter).
+    ///
+    /// UNRESOLVED: the both-bits-set priority disagrees across our sources.
+    /// `battle-action.md` / `battle-formulas.md` document Half-first (this
+    /// function), but the engine's state-machine port (`battle_action.rs`
+    /// MagicCastBegin) and its `magic_cast_begin_quarter_takes_priority_over_half`
+    /// test use Quarter-first, and the live cast path matches that. The verbatim
+    /// `/2`/`/4` MP-cost block is not present in any current `FUN_801E295C`
+    /// dump, so neither order is dump-confirmed. Only the single-bit cases
+    /// (`0x20` alone -> Half, `0x10` alone -> Quarter) are settled; a both-bits
+    /// caster is the open case. See `docs/reference/open-rev-eng-threads.md`.
     pub fn from_ability_flags(flags: u32) -> Self {
         if flags & 0x20 != 0 {
             MpCostModifier::Half

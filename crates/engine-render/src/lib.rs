@@ -1,7 +1,7 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
 //! PORT: FUN_80034b78, FUN_8002C69C, FUN_8002C488, FUN_8002B994, FUN_8003C310
-//! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC
+//! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC, FUN_80035EA8
 //! PORT: FUN_8003C1F8 (per-glyph dialog-font sprite emit; the engine renders
 //! in-game proportional dialog glyphs via the legaia-font atlas + textured-quad
 //! overlay instead of the retail GP0 cell-UV push)
@@ -641,6 +641,46 @@ pub struct HudSlotMeta {
     pub ap_max: u8,
 }
 
+/// Retail HP-bar text colour index for a battle slot.
+///
+/// PORT: FUN_800349EC — returns the font-CLUT colour index the retail battle
+/// HUD tints a character's HP readout with, keyed on the cur/max ratio. Index 2
+/// is empty/K.O.; index 9 is danger (`cur <= max/4`); index 6 is caution
+/// (`cur <= max/2`, or any time a status flag is set); index 7 is normal. The
+/// thresholds use the same floored `max >> 2` / `max >> 1` comparisons as retail.
+///
+/// `status_active` models retail's per-character status byte (record `+0x36`,
+/// `*(short *)(char*0x414 - 0x7ff7b7ca)`), which forces the caution tier even
+/// above half HP; the engine approximates it with "any active status icon".
+pub(crate) fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
+    if cur == 0 {
+        return 2;
+    }
+    if (max >> 2) < cur {
+        if status_active || cur <= (max >> 1) {
+            6
+        } else {
+            7
+        }
+    } else {
+        9
+    }
+}
+
+/// Retail MP-bar text colour index for a battle slot.
+///
+/// PORT: FUN_80035EA8 — the MP sibling of [`hp_bar_color_index`]. Same
+/// `cur <= max/4` / `cur <= max/2` ratio tiers (index 9 danger, 6 caution,
+/// 7 normal) but with no K.O. (2) state and no status-flag override — MP has no
+/// "empty = dead" colour, so a depleted bar simply reads as danger.
+pub(crate) fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
+    if (max >> 2) < cur {
+        if cur <= (max >> 1) { 6 } else { 7 }
+    } else {
+        9
+    }
+}
+
 /// Build [`TextDraw`]s for the battle HUD.
 ///
 /// Layout (anchored at `pen`):
@@ -703,22 +743,41 @@ pub fn battle_hud_draws_for(
         let name_layout = font.layout_ascii(slot.name);
         out.extend(text_draws_for(&name_layout, (pen.0, row_y), row_color));
 
+        // Retail tints HP/MP readouts by the cur/max ratio (FUN_800349EC /
+        // FUN_80035EA8). Map the returned colour index to the HUD palette: the
+        // "normal" tier (7) keeps the row's base colour so monster rows stay
+        // tinted; danger -> red, caution -> yellow, K.O. -> dim.
+        let bar_color = |idx: u8| -> [f32; 4] {
+            match idx {
+                9 => red,
+                6 => yellow,
+                2 => dim,
+                _ => row_color,
+            }
+        };
+
         let hp_text = format!("HP {:>3}/{:>3}", slot.hp, slot.hp_max);
         let hp_layout = font.layout_ascii(&hp_text);
         let hp_color = if !slot.alive {
             dim
-        } else if slot.hp_max != 0 && slot.hp * 4 <= slot.hp_max {
-            // ≤25% HP - pulse red.
-            red
         } else {
-            row_color
+            bar_color(hp_bar_color_index(
+                slot.hp,
+                slot.hp_max,
+                !slot.status_letters.is_empty(),
+            ))
         };
         out.extend(text_draws_for(&hp_layout, (pen.0 + 70, row_y), hp_color));
 
         if slot.mp_max > 0 {
             let mp_text = format!("MP {:>3}/{:>3}", slot.mp, slot.mp_max);
             let mp_layout = font.layout_ascii(&mp_text);
-            out.extend(text_draws_for(&mp_layout, (pen.0 + 140, row_y), row_color));
+            let mp_color = if !slot.alive {
+                dim
+            } else {
+                bar_color(mp_bar_color_index(slot.mp, slot.mp_max))
+            };
+            out.extend(text_draws_for(&mp_layout, (pen.0 + 140, row_y), mp_color));
         }
 
         if slot.ap_max > 0 {
@@ -5879,6 +5938,61 @@ mod tests {
         // Find any draw with the dim/red HP coloring - red has more red than green.
         let any_red = draws.iter().any(|d| d.color[0] > d.color[1]);
         assert!(any_red, "low HP should produce a red-tinted glyph");
+    }
+
+    #[test]
+    fn hp_bar_color_index_tiers_match_retail() {
+        // K.O. -> 2 regardless of max.
+        assert_eq!(hp_bar_color_index(0, 100, false), 2);
+        // cur <= max/4 -> 9 (danger). max>>2 = 25, so 25 is still danger.
+        assert_eq!(hp_bar_color_index(25, 100, false), 9);
+        assert_eq!(hp_bar_color_index(1, 100, false), 9);
+        // max/4 < cur <= max/2 -> 6 (caution). 26..=50.
+        assert_eq!(hp_bar_color_index(26, 100, false), 6);
+        assert_eq!(hp_bar_color_index(50, 100, false), 6);
+        // cur > max/2 -> 7 (normal).
+        assert_eq!(hp_bar_color_index(51, 100, false), 7);
+        assert_eq!(hp_bar_color_index(100, 100, false), 7);
+        // The status flag forces caution (6) even at full HP.
+        assert_eq!(hp_bar_color_index(100, 100, true), 6);
+        // ...but never overrides K.O. or danger.
+        assert_eq!(hp_bar_color_index(0, 100, true), 2);
+        assert_eq!(hp_bar_color_index(10, 100, true), 9);
+    }
+
+    #[test]
+    fn mp_bar_color_index_tiers_match_retail() {
+        // No K.O. tier: empty MP reads as danger (9), not 2.
+        assert_eq!(mp_bar_color_index(0, 40), 9);
+        assert_eq!(mp_bar_color_index(10, 40), 9); // cur <= max/4
+        assert_eq!(mp_bar_color_index(11, 40), 6); // max/4 < cur <= max/2
+        assert_eq!(mp_bar_color_index(20, 40), 6);
+        assert_eq!(mp_bar_color_index(21, 40), 7); // cur > max/2
+        assert_eq!(mp_bar_color_index(40, 40), 7);
+    }
+
+    #[test]
+    fn battle_hud_caution_mp_uses_yellow_not_row_color() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Noa",
+            is_party: true,
+            alive: true,
+            hp: 100,
+            hp_max: 100,
+            mp: 15,
+            mp_max: 40, // 15 is in (10, 20] -> caution -> yellow
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        // Yellow = [1.0, 0.95, 0.4]: high R+G, low B. Row color (white) has B==1.
+        let any_yellow = draws.iter().any(|d| d.color[1] > 0.9 && d.color[2] < 0.5);
+        assert!(
+            any_yellow,
+            "caution MP should produce a yellow-tinted glyph"
+        );
     }
 
     #[test]

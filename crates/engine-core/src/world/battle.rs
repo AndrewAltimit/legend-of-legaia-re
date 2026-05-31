@@ -245,6 +245,18 @@ impl World {
             .copied()
             .unwrap_or(0);
         let character = self.caster_character(caster);
+        // Selector-9 accuracy/evasion terms (retail actor `+0x168`): the
+        // attacker's accuracy vs the target's evasion. The roll engages only
+        // when the ATTACKER has a seeded accuracy stat; an unseeded attacker
+        // (`acc == 0`, the synthetic case) auto-hits AND consumes no RNG, so it
+        // can't be made to whiff against a positive-evasion target and battles
+        // without seeded stats keep their bit-identical streams.
+        let attacker_acc = self
+            .battle_accuracy
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
+        let target_eva = self.battle_evasion.get(target).copied().unwrap_or(0);
         let mut total: u32 = 0;
         let mut landed: u8 = 0;
         for (i, pb) in power.iter().enumerate() {
@@ -269,12 +281,27 @@ impl World {
             let defense = self.resolve_battle_defense(target as u8, &info);
             let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
             if let Some(dmg) = outcome.damage {
-                let a = &mut self.actors[target].battle;
-                a.hp = a.hp.saturating_sub(dmg);
-                total = total.saturating_add(dmg as u32);
-                landed = landed.saturating_add(1);
-                if a.hp == 0 {
-                    a.liveness = 0;
+                // Roll the strike against the target's evasion. Only consume
+                // RNG when the roll is meaningful (some stat seeded), so the
+                // unseeded auto-hit path leaves the RNG stream untouched.
+                let hit = if attacker_acc == 0 {
+                    true
+                } else {
+                    let mut seed = self.next_rng();
+                    legaia_engine_vm::battle_formulas::accuracy_roll(
+                        attacker_acc,
+                        target_eva,
+                        &mut seed,
+                    )
+                };
+                if hit {
+                    let a = &mut self.actors[target].battle;
+                    a.hp = a.hp.saturating_sub(dmg);
+                    total = total.saturating_add(dmg as u32);
+                    landed = landed.saturating_add(1);
+                    if a.hp == 0 {
+                        a.liveness = 0;
+                    }
                 }
             }
         }
@@ -452,7 +479,32 @@ impl World {
     ) -> bool {
         use crate::spells::{SpellSnapshot, cast_spell};
 
-        let cost = def.mp_cost as u16;
+        // Apply the caster's MP-cost ability-bit modifier (MP-half 0x20 /
+        // MP-quarter 0x10) so an MP-saver accessory reduces the live cast cost,
+        // matching the state-machine cast path (battle_action.rs MagicCastBegin)
+        // which the prior live path bypassed by always charging the flat cost.
+        // Only party members carry these accessory bits; monster casters
+        // (caster >= party_count) pay full cost. NOTE: the both-bits-set
+        // priority follows the engine's established quarter-first order; the
+        // absolute order vs retail FUN_801E295C is unresolved (the half-first
+        // reading in battle_formulas::MpCostModifier is unverified against the
+        // dump - see docs/reference/open-rev-eng-threads.md).
+        let ability_bits = if (caster as usize) < self.party_count as usize {
+            self.character_ability_bits
+                .get(caster as usize)
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        let base_cost = def.mp_cost as u16;
+        let cost = if ability_bits & 0x10 != 0 {
+            base_cost / 4
+        } else if ability_bits & 0x20 != 0 {
+            base_cost / 2
+        } else {
+            base_cost
+        };
         let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
             Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
             None => return false,
@@ -1124,7 +1176,11 @@ impl World {
     /// defense, 16)` (≈ `attack - defense`, floored at 1) so a party with no
     /// configured weapon attack still chips the monster down - and, for a
     /// monster attacker, a monster with no configured attack still chips the
-    /// party. Always hits (no accuracy roll) to guarantee the loop resolves.
+    /// party. The strike rolls against the target's evasion
+    /// ([`legaia_engine_vm::battle_formulas::accuracy_roll`]); when neither the
+    /// attacker's accuracy nor the target's evasion is seeded the roll auto-hits
+    /// and consumes no RNG, so the unseeded synthetic loop still resolves
+    /// exactly as before.
     ///
     /// The opposing side is chosen by the attacker's slot: party slots
     /// (`< party_count`) strike monsters; monster slots strike the party.
@@ -1136,6 +1192,19 @@ impl World {
         let target = target as usize;
         let attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
         let defense = self.battle_defense.get(target).copied().unwrap_or(0);
+        let acc = self.battle_accuracy.get(attacker).copied().unwrap_or(0);
+        let eva = self.battle_evasion.get(target).copied().unwrap_or(0);
+        // Roll only when the attacker's accuracy is seeded; an unseeded
+        // attacker (`acc == 0`) auto-hits and consumes no RNG.
+        let hit = if acc == 0 {
+            true
+        } else {
+            let mut seed = self.next_rng();
+            vm::battle_formulas::accuracy_roll(acc, eva, &mut seed)
+        };
+        if !hit {
+            return;
+        }
         let dmg = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
         let a = &mut self.actors[target];
         a.battle.hp = a.battle.hp.saturating_sub(dmg);

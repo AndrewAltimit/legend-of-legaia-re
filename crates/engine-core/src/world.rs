@@ -826,6 +826,23 @@ pub struct World {
     /// REF: FUN_801DABA4
     pub battle_speed: [u16; 8],
 
+    /// Per-slot accuracy stat (retail actor `+0x168`, the AGL-derived
+    /// hit/dodge seed). Used as the **attacker's** term in the selector-9
+    /// accuracy roll ([`legaia_engine_vm::battle_formulas::accuracy_roll`]).
+    /// Party slots are seeded from each character's resolved `acc` in
+    /// [`World::seed_party_battle_stats`]; monster slots from
+    /// [`crate::monster_catalog::MonsterDef::accuracy`] at battle setup. When
+    /// the attacker's accuracy is `0` (the disc-free / synthetic case) the
+    /// strike auto-hits and consumes no RNG, so battles that don't seed these
+    /// stats keep their always-land behaviour and bit-identical RNG streams.
+    pub battle_accuracy: [u16; 8],
+    /// Per-slot evasion stat - the **defender's** term in the selector-9
+    /// accuracy roll. Same field as [`Self::battle_accuracy`] in retail
+    /// (`+0x168` serves both rolls); kept separate here so equipment that
+    /// modifies only accuracy or only evasion is representable. Seeded
+    /// alongside accuracy.
+    pub battle_evasion: [u16; 8],
+
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
     pub prev_action_cleared: bool,
@@ -1753,6 +1770,8 @@ impl World {
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
             battle_speed: [0; 8],
+            battle_accuracy: [0; 8],
+            battle_evasion: [0; 8],
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,
@@ -5614,9 +5633,15 @@ impl World {
         // Fold the roster's live stats + equipped-gear bonuses onto the party
         // combatants' attack / defense (no-op for a zeroed roster).
         self.seed_party_battle_stats();
-        // Clear any monster-slot SPD left over from a previous battle so the
-        // initiative gate only sees this formation's speeds.
+        // Clear any monster-slot SPD / accuracy / evasion left over from a
+        // previous battle so this formation's values are the only ones seen.
         for s in self.battle_speed.iter_mut().skip(party_count as usize) {
+            *s = 0;
+        }
+        for s in self.battle_accuracy.iter_mut().skip(party_count as usize) {
+            *s = 0;
+        }
+        for s in self.battle_evasion.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
         for (i, fslot) in formation.slots.iter().take(5).enumerate() {
@@ -5643,6 +5668,12 @@ impl World {
                 }
                 if let Some(s) = self.battle_speed.get_mut(mslot) {
                     *s = speed;
+                }
+                if let Some(s) = self.battle_accuracy.get_mut(mslot) {
+                    *s = def.accuracy as u16;
+                }
+                if let Some(s) = self.battle_evasion.get_mut(mslot) {
+                    *s = def.evasion as u16;
                 }
             }
         }

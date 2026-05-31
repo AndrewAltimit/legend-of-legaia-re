@@ -72,6 +72,12 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
     <tbody>
       <tr>
+        <td>MP-cost ability-bit priority (half vs quarter)</td>
+        <td><code>open (single-bit cases settled)</code></td>
+        <td>The state-<code>0x28</code> MP-cost modifier halves cost on <code>+0xF4 &amp; 0x20</code> (MP-half) and quarters on <code>&amp; 0x10</code> (MP-quarter); both single-bit cases are settled and ported. The <strong>both-bits-set priority is unresolved</strong>: <code>battle-action.md</code> / <code>battle-formulas.md</code> read MP-half first, but the engine's state-machine port and its <code>magic_cast_begin_quarter_takes_priority_over_half</code> test apply MP-quarter first, and the live cast path matches that. No current <code>FUN_801E295C</code> dump contains the verbatim <code>/2</code>&thinsp;/&thinsp;<code>/4</code> block, so neither order is dump-confirmed. Closes when the real cast-begin MP-cost block is dumped (or a both-bits live capture is taken).</td>
+        <td><code>project_re_and_engine_batch_day_branch.md</code></td>
+      </tr>
+      <tr>
         <td>Encounter record carrier</td>
         <td><code>resolved (no array)</code></td>
         <td>Decompile of <code>FUN_801DE840</code> shows install handlers all use <code>pbVar43 = param_1 + param_2</code> (the current opcode pointer in the field-VM script bytecode); each scripted encounter is its own dispatcher-op site (cases <code>0x37</code>/<code>0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>), with monster count/ids inline as the trailing operand bytes. There is no separate encounter-record table on disc. See the <a href="../formats/encounter.html">encounter format</a> writer table.</td>
