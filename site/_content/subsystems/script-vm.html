@@ -136,7 +136,7 @@ switch (*pc & 0x7f) {
     <tbody>
       <tr><td><code>0x37 / 41 / 47</code></td><td>YIELD family</td><td>Save PC, clear timer, set HALT flag. Player ctx propagates the halt to the caller.</td></tr>
       <tr><td><code>0x38</code></td><td>CAM_CFG</td><td>If <code>op1 &amp; 0x7F == 0</code>: copies <code>*(short*)(0x80073F04 + (op0 &amp; 0xF) * 2)</code> into <code>ctx[+0x26]</code>. Else: halt-acquire path - same predicate as <code>0x43</code> sub-0/1/A/B; on success set HALT, save PC, mirror to caller when ctx is the player, yield with <code>resume_pc = pc + 3</code>.</td></tr>
-      <tr><td><code>0x39</code></td><td>PLAY_SFX</td><td>Calls <code>func_0x8004313C()</code> then <code>func_0x800421D4(sfx_id, 1)</code>.</td></tr>
+      <tr><td><code>0x39</code></td><td>GIVE_ITEM</td><td>Adds one of inline item <code>item_id</code> to the inventory: <code>func_0x8004313C()</code> (inventory-window setup) then <code>func_0x800421D4(item_id, 1)</code> (add-item-by-id). PC += 2. This is the <strong>treasure-chest item-give</strong> path &mdash; the id is a single inline operand byte, not a table. (The earlier <code>PLAY_SFX</code> label was wrong: <code>FUN_800421D4</code> is the inventory adder.)</td></tr>
       <tr><td><code>0x3A</code></td><td>ADD_MONEY</td><td>24-bit signed delta, clamped to <code>[0, 9999999]</code>.</td></tr>
       <tr><td><code>0x3B</code></td><td>SET_ITEM_COUNT</td><td>Set inventory entry. Inventory pages of 0x414 bytes.</td></tr>
       <tr><td><code>0x3C / 3D</code></td><td>PARTY_ADD / PARTY_REMOVE</td><td>Caps at 4 members. Updates leader. Refreshes display.</td></tr>

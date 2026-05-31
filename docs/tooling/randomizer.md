@@ -40,6 +40,14 @@ shifts. It works because the edit targets fit a fixed slot with slack:
   comfortably (`repack_slot` rejects the rare case where it would not). The slot
   is re-emitted zero-padded back to `0x14000`.
 
+## In the browser
+
+The same randomizer is also exposed client-side: `legaia_web_viewer::rom_patcher`
+(`patch_rom`) compiles the crate to WASM, and the static site's
+`tooling/rom-patcher.html` page lets a user supply their own disc, toggle the
+drop / encounter / chest settings, and download a patched image — the disc bytes
+never leave the browser. The CLI below is the scriptable / shareable-PPF path.
+
 ## CLI: `legaia-rando`
 
 The top-level binary turns a disc + seed into a portable patch:
