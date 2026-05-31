@@ -1,9 +1,9 @@
 # Randomizer / disc patcher
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
-disc image: it shuffles monster item drops (and, as the work lands, random
-encounters and treasure contents) and writes the result back into the `.bin`.
-It does not touch the clean-room engine.
+disc image: it shuffles monster item drops, random-encounter formations, and
+treasure-chest contents, and writes the result back into the `.bin`. It does not
+touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -86,24 +86,31 @@ stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
 safe). The id pool is **per scene** — only ids the scene already uses — so every
 swapped-in monster is one the scene loads; no missing model, no crash.
 
-### Treasure chests (RE done; patcher pending a field-VM walk)
+### Treasure chests
 
-A chest's item is given by the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
+A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
 `[0x39, item_id]` — the item id is a **single inline operand byte** in the
-per-scene field-VM event-script bytecode, not a per-scene table. (Pinned in the
+per-scene field-VM script bytecode, not a per-scene table. (Pinned in the
 dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
-`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The
-standalone `FUN_801D71F0` add-item copy is dead/uncalled. See
-[script-vm.md](../subsystems/script-vm.md).) This resolves the open RE question
-("inline operand vs table") that gated the chest randomizer.
+`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The standalone
+`FUN_801D71F0` add-item copy is dead/uncalled. See
+[script-vm.md](../subsystems/script-vm.md).) The give sites live in the MAN
+partition-1 per-actor interaction scripts (a chest is an interactable actor).
 
-Randomizing chests is therefore a same-size byte edit (rewrite the id after each
-`0x39`), but it requires an **opcode-aware field-VM walk** to find the `0x39`
-sites — a naive `0x39` byte scan is unsafe (a literal `0x39` inside text or
-another opcode's operand would be a false hit, the same desync that bites the
-`0x3F` scan). That walker is the remaining prerequisite; it is not yet available
-to the Track-1 randomizer crate (the field-VM disassembler currently lives in the
-engine crates), so the chest patcher is deferred behind that infra decision.
+`chest::give_item_sites` finds them with an **opcode-aware walk** — it walks each
+partition-1 record's script from its true entry PC with the field-VM
+disassembler ([`legaia_asset::field_disasm`], moved into Track 1 for exactly this
+reuse) and stops at the first decode error (where a linear walk runs into the
+record's inline dialogue pool, which is not bytecode). Only `0x39` ops reached
+**before** any desync are returned, so every rewritten byte is a genuine
+give-item operand — never a naive `0x39` byte scan (which would false-hit a
+literal `0x39` inside text, the same desync that bites the `0x3F` scan). This is
+a safe lower bound: a chest reached only through an unfollowed branch is left
+untouched rather than risk corrupting a non-script byte. Chest item ids are
+global inventory ids, so `apply::randomize_chests` reassigns them **globally**
+across every chest (`Shuffle` redistributes the existing chest-item multiset,
+`Random` draws from the valid item pool), then recompresses each touched MAN like
+the encounter path. On the retail disc this is 38 give sites across 16 scenes.
 
 ### Re-pack slack
 
@@ -155,6 +162,7 @@ bit-for-bit.
 | `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
+| `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 

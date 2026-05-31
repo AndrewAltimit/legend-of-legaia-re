@@ -1923,7 +1923,11 @@ mod tests {
         assert_eq!(packet_length(&[0xC0, 0xFF, 0x00]), 2);
         assert_eq!(packet_length(&[0xD0, 0xFF, 0x00]), 2);
         for lead in 0xC0..=0xCFu8 {
-            assert_eq!(packet_length(&[lead, 0xAB, 0x00]), 2, "escape lead {lead:#x}");
+            assert_eq!(
+                packet_length(&[lead, 0xAB, 0x00]),
+                2,
+                "escape lead {lead:#x}"
+            );
         }
         for lead in [0xB0u8, 0xBFu8, 0xD0u8, 0xDFu8] {
             assert_eq!(packet_length(&[lead, 0x00]), 1, "non-escape lead {lead:#x}");

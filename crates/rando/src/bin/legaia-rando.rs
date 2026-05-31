@@ -77,6 +77,10 @@ struct RandomizeArgs {
     /// monster pool, so every monster stays scene-loaded).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     encounters: DropArg,
+    /// How treasure-chest contents are reassigned (global; `random` draws from
+    /// the valid item pool, `shuffle` redistributes the existing chest items).
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    chests: DropArg,
     /// Write the portable PPF 3.0 patch here (defaults to `<input>.ppf`).
     #[arg(long)]
     patch: Option<PathBuf>,
@@ -203,6 +207,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     let mode = args.drops.mode();
     let enc_mode = args.encounters.mode();
+    let chest_mode = args.chests.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -212,15 +217,16 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         format!("input = {:?}", args.input.display().to_string()),
     ];
 
+    // The valid item pool (from SCUS) is needed only by the `random` modes.
+    let pool = if mode == Some(DropMode::Random) || chest_mode == Some(DropMode::Random) {
+        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .context("SCUS_942.54 not found in disc image (needed for a `random` mode)")?;
+        valid_item_pool(&scus).context("build valid item pool from SCUS")?
+    } else {
+        Vec::new()
+    };
+
     if let Some(mode) = mode {
-        // Random mode needs the valid item pool from SCUS; shuffle does not.
-        let pool = if mode == DropMode::Random {
-            let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-                .context("SCUS_942.54 not found in disc image (needed for --drops random)")?;
-            valid_item_pool(&scus).context("build valid item pool from SCUS")?
-        } else {
-            Vec::new()
-        };
         let (plan, report) = apply::randomize_drops(&mut patcher, &pool, seed, mode)?;
         println!(
             "drops: {} of {} monsters reassigned ({:?})",
@@ -270,6 +276,28 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("encounters: untouched");
         manifest.push("encounters = \"none\"".to_string());
+    }
+
+    if let Some(chest_mode) = chest_mode {
+        let report = apply::randomize_chests(&mut patcher, &pool, seed, chest_mode)?;
+        println!(
+            "chests: {} of {} sites changed across {} scenes ({:?})",
+            report.items_changed, report.sites_total, report.scenes_changed, chest_mode
+        );
+        manifest.push(format!("chests = {:?}", mode_str(chest_mode)));
+        manifest.push(format!("chests_sites = {}", report.sites_total));
+        manifest.push(format!("chests_items_changed = {}", report.items_changed));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} scene MAN(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("chests_skipped = {:?}", report.skipped));
+        }
+    } else {
+        println!("chests: untouched");
+        manifest.push("chests = \"none\"".to_string());
     }
 
     // Diff original vs patched -> PPF.
