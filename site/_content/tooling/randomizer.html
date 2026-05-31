@@ -1,0 +1,73 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; randomizer</div>
+  <h1>Randomizer / disc patcher</h1>
+  <p class="lede">Track-1-adjacent tooling that edits gameplay data on a <em>user-supplied</em> retail disc image &mdash; monster item drops today, random encounters and treasure contents as that work lands &mdash; and writes the result back into the <code>.bin</code>. It does not touch the clean-room engine. The crate ships only code; every test that needs real data is disc-gated, so CI runs without a disc.</p>
+</header>
+
+<section class="doc-section" id="why">
+  <h2>Why this needs three new capabilities</h2>
+  <p>Most editable values live <em>inside</em> a Legaia LZS stream that the asset dispatcher decompresses at load. Changing one is therefore decompress &rarr; mutate &rarr; recompress &rarr; write-back, which needed three pieces the preservation track never had (it only ever <em>read</em> the disc):</p>
+  <ol class="bullets">
+    <li><strong>An LZS encoder</strong> &mdash; <code>legaia_lzs::compress</code>. The retail game ships only a decoder (<code>FUN_8001A55C</code>); there was no way to produce a stream it accepts. <a href="../formats/lzs.html">LZS compression &rarr;</a></li>
+    <li><strong>Mode 2/2352 sector write-back</strong> &mdash; <code>legaia_iso::write</code>. Overwriting a sector's 2048-byte user payload also requires recomputing its 4-byte EDC and 276-byte P/Q ECC, or the sector reads as corrupt. <a href="../formats/disc.html">PSX disc geometry &rarr;</a></li>
+    <li><strong>A disc bridge</strong> &mdash; <code>legaia_rando::disc::DiscPatcher</code>, which ties the editing primitives to the sector write-back through the PROT.DAT TOC.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="model">
+  <h2>Editing model: same-size, in place</h2>
+  <p>Every edit overwrites bytes <strong>in place</strong> and never changes a byte count, so no LBA, PROT TOC, or ISO 9660 directory record ever moves. The patch stays a pure byte-overwrite (plus EDC/ECC recompute) with no cascading offset shifts. It works because the targets fit a fixed slot with slack: the monster <code>battle_data</code> archive (PROT entry 867) gives each monster a fixed <code>0x14000</code>-byte slot laid out <code>[u32 decompressed_size][LZS stream]</code>. A drop edit leaves the decoded record length unchanged; the re-packed stream (our greedy packer is weaker than Sony's, but fits comfortably) is re-emitted zero-padded back to <code>0x14000</code>.</p>
+</section>
+
+<section class="doc-section" id="chain">
+  <h2>The patch chain</h2>
+  <p>A PROT-entry-relative edit maps to a disc byte range:</p>
+<pre><code>disc image (2352-byte sectors)
+  -&gt; ISO 9660: PROT.DAT lives at disc sector prot_lba
+    -&gt; PROT TOC: entry N starts at start_lba[N] * 2048 bytes into PROT.DAT
+      -&gt; asset: an edit at offset_in_entry bytes into the entry</code></pre>
+  <p>so a PROT-entry-relative offset becomes the PROT.DAT-logical offset <code>start_lba[N] * 2048 + offset_in_entry</code>, which <code>legaia_iso::write::patch_file_logical</code> turns into physical-sector writes plus EDC/ECC re-encode. <code>DiscPatcher::patch_prot_entry</code> is the generic entry point; <code>patch_monster_slot</code> / <code>monster_slot</code> are the <code>battle_data</code> helpers.</p>
+</section>
+
+<section class="doc-section" id="ecc">
+  <h2>EDC/ECC: not game-specific</h2>
+  <p>The error-correction math is the generic CD-ROM scheme from ECMA-130 / the Yellow Book &mdash; the same EDC (CRC, reversed polynomial <code>0xD8018001</code>) and Reed-Solomon P/Q ECC (over GF(2<sup>8</sup>), generator <code>0x11D</code>) every PSX disc and mastering tool uses. The 4-byte header is treated as zero per the Form 1 convention, so parity is independent of the sector's MSF address. It embeds no game bytes. The decisive correctness check is the disc-gated test that re-encodes real PROT.DAT sectors and reproduces their stored EDC/ECC bit-for-bit.</p>
+</section>
+
+<section class="doc-section" id="modules">
+  <h2>Crate modules</h2>
+  <table>
+    <thead><tr><th>Module</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>rng</code></td><td>Version-stable <code>SplitMix64</code>. A published seed always reproduces a run; the first output for seed 0 is pinned by a test.</td></tr>
+      <tr><td><code>items</code></td><td>Valid item-id pool from the SCUS item-name table, so a randomized drop is always a real item.</td></tr>
+      <tr><td><code>drops</code></td><td>Drop-table planner. <code>Shuffle</code> redistributes the existing drops (preserves the economy); <code>Random</code> draws from the pool. Deterministic in <code>(drops, pool, seed, mode)</code>.</td></tr>
+      <tr><td><code>monster</code></td><td>Re-pack a monster slot: decompress &rarr; in-place mutate &rarr; recompress &rarr; zero-pad to <code>0x14000</code>. <code>set_drop</code> is the drop wrapper.</td></tr>
+      <tr><td><code>disc</code></td><td><code>DiscPatcher</code>: own a mutable disc, locate PROT.DAT + read its TOC, apply same-size PROT-entry edits via the sector write-back.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="tests">
+  <h2>Tests</h2>
+  <ul class="bullets">
+    <li><span class="tag tag-confirmed">CI</span> <code>crates/lzs</code> round-trips (<code>decompress(compress(x)) == x</code>) across literals, RLE, repeats, pseudorandom, &gt;4 KB-window input, plus a compression-ratio guard; <code>crates/iso</code> <code>write</code> unit tests (encode idempotent, corrupting user data invalidates until re-encoded, ECC address-independent, seam-straddling patch keeps both sectors valid); <code>crates/rando</code> planner determinism, surgical <code>set_drop</code>, and a synthetic-disc patch round-trip through the disc &rarr; ISO &rarr; PROT chain.</li>
+    <li><span class="tag tag-confirmed">disc-gated</span> the LZS encoder round-trips + compresses real monster records and container sections; the EDC/ECC encoder reproduces real PROT.DAT sectors bit-for-bit and a one-byte patch+restore round-trips a real sector exactly; a real monster's drop is patched onto a scratch copy of the disc, re-decoding off the patched image with neighbours untouched and sectors valid.</li>
+  </ul>
+  <p>Disc-gated tests read <code>LEGAIA_DISC_BIN</code>; with it unset they skip and pass.</p>
+</section>
+
+<section class="doc-section" id="hygiene">
+  <h2>No-Sony-bytes hygiene</h2>
+  <p>The crate never embeds, commits, or redistributes game bytes. A patched <code>.bin</code> contains Sony data and is never committed; the intended distribution form is a patcher tool + seed (and/or a portable patch file the user applies to their own disc).</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/lzs.html">LZS compression</a>
+    <a href="../formats/disc.html">PSX disc geometry</a>
+    <a href="../formats/prot.html">PROT.DAT TOC</a>
+  </div>
+</section>
