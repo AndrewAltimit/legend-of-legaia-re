@@ -3,7 +3,7 @@
 Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
-monster item drops, random-encounter formations, and treasure-chest contents. It is
+drops, random-encounter formations, and treasure-chest contents. It is
 Track-1-adjacent tooling — it does **not** touch the clean-room engine — and it
 ships only code: no game bytes are embedded or committed, and every test that
 needs real data is disc-gated.
