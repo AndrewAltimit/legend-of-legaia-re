@@ -2241,6 +2241,58 @@ export class LegaiaViewer {
     }
 }
 if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.prototype.free;
+
+/**
+ * Patch a user-supplied disc image with the chosen randomizer settings.
+ *
+ * `drops` / `encounters` / `chests` are each `"shuffle"`, `"random"`, or
+ * `"none"`. `seed` is a number or any string (hashed). Returns
+ * `{ data, summary, seed }`.
+ * @param {Uint8Array} image
+ * @param {string} seed
+ * @param {string} drops
+ * @param {string} encounters
+ * @param {string} chests
+ * @returns {any}
+ */
+export function patch_rom(image, seed, drops, encounters, chests) {
+    const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(drops, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(encounters, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passStringToWasm0(chests, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * Resolve a user seed string to the numeric seed, as a decimal string (so the
+ * page can display / persist it without JS `BigInt` precision loss).
+ * @param {string} seed
+ * @returns {string}
+ */
+export function resolve_seed(seed) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.resolve_seed(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -2346,6 +2398,10 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
+        __wbg_length_ba3c032602efe310: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
         __wbg_length_f3b8e74fce8baae2: function(arg0) {
             const ret = arg0.length;
             return ret;
@@ -2357,10 +2413,18 @@ function __wbg_get_imports() {
             const ret = new Error();
             return ret;
         },
+        __wbg_new_2fad8ca02fd00684: function() {
+            const ret = new Object();
+            return ret;
+        },
         __wbg_new_a6b46eaf9085fbeb: function() { return handleError(function () {
             const ret = new lAudioContext();
             return ret;
         }, arguments); },
+        __wbg_new_with_length_9011f5da794bf5d9: function(arg0) {
+            const ret = new Uint8Array(arg0 >>> 0);
+            return ret;
+        },
         __wbg_new_with_u8_clamped_array_and_sh_a4ac3311668de769: function() { return handleError(function (arg0, arg1, arg2, arg3) {
             const ret = new ImageData(getClampedArrayU8FromWasm0(arg0, arg1), arg2 >>> 0, arg3 >>> 0);
             return ret;
@@ -2383,6 +2447,13 @@ function __wbg_get_imports() {
         __wbg_sampleRate_b7f221c5b3d93248: function(arg0) {
             const ret = arg0.sampleRate;
             return ret;
+        },
+        __wbg_set_5337f8ac82364a3f: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = Reflect.set(arg0, arg1, arg2);
+            return ret;
+        }, arguments); },
+        __wbg_set_b0d9dc239ecdb765: function(arg0, arg1, arg2) {
+            arg0.set(getArrayU8FromWasm0(arg1, arg2));
         },
         __wbg_set_fillStyle_a3656c7c5d4ad803: function(arg0, arg1, arg2) {
             arg0.fillStyle = getStringFromWasm0(arg1, arg2);
@@ -2426,7 +2497,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 557, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 253, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
             return ret;
         },

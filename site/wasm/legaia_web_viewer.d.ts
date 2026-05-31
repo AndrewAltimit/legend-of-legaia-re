@@ -1073,6 +1073,21 @@ export class LegaiaViewer {
     worldmap_menu_json(): string;
 }
 
+/**
+ * Patch a user-supplied disc image with the chosen randomizer settings.
+ *
+ * `drops` / `encounters` / `chests` are each `"shuffle"`, `"random"`, or
+ * `"none"`. `seed` is a number or any string (hashed). Returns
+ * `{ data, summary, seed }`.
+ */
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, chests: string): any;
+
+/**
+ * Resolve a user seed string to the numeric seed, as a decimal string (so the
+ * page can display / persist it without JS `BigInt` precision loss).
+ */
+export function resolve_seed(seed: string): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -1228,6 +1243,8 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

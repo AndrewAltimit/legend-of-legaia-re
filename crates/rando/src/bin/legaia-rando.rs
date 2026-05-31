@@ -138,26 +138,10 @@ fn main() -> Result<()> {
     }
 }
 
-/// Resolve a user seed string to a numeric seed. A plain number is used
-/// directly; anything else is hashed with FNV-1a-64 so a memorable string seed
-/// is stable across runs and platforms.
+/// Resolve a user seed string to a numeric seed (shared with the in-browser
+/// patcher via [`legaia_rando::rng::seed_from_str`]).
 fn resolve_seed(seed: &str) -> u64 {
-    let t = seed.trim();
-    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X"))
-        && let Ok(v) = u64::from_str_radix(hex, 16)
-    {
-        return v;
-    }
-    if let Ok(v) = t.parse::<u64>() {
-        return v;
-    }
-    // FNV-1a-64 of the raw string.
-    let mut h: u64 = 0xcbf29ce484222325;
-    for b in t.as_bytes() {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x100000001b3);
-    }
-    h
+    legaia_rando::rng::seed_from_str(seed)
 }
 
 fn clock_seed() -> u64 {

@@ -16,6 +16,19 @@ instead of every raw entry.
 - `legaia-asset` - categorize + tim_scan + `monster_archive`.
 - `legaia-lzs` - LZS decoder.
 - `legaia-tmd` - mesh parser.
+- `legaia-rando` + `legaia-iso` - the randomizer / disc patcher (see `rom_patcher` below).
+
+## In-browser ROM patcher (`rom_patcher`)
+
+`rom_patcher::patch_rom(image, seed, drops, encounters, chests)` runs the
+Track-1 [`legaia-rando`](../rando/README.md) randomizer entirely client-side and
+returns `{ data, summary, seed }` - the patched disc bytes for download, a
+human-readable change report, and the resolved numeric seed. `resolve_seed`
+exposes the seed-string hash so the page can display it. It drives the static
+site's `tooling/rom-patcher.html` page: the user supplies their own disc, toggles
+the drop / encounter / chest settings, and downloads a patched image. The disc
+bytes never leave the browser and nothing is uploaded - the same "user supplies
+the disc" model as the CLI, so the site ships only code.
 
 `LegaiaViewer::monster_archive_json` decodes the global monster stat
 archive (PROT entry 867, extended footprint) into a JSON array of every
