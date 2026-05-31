@@ -117,6 +117,26 @@ fn read_starting_party(source: &SceneSource<'_>) -> Option<legaia_asset::new_gam
     legaia_asset::new_game::StartingParty::from_scus(&scus)
 }
 
+/// Read + parse the retail XP-to-next-level curve from a boot source's
+/// `SCUS_942.54` (the static `DAT_80076AF4` table + `FUN_801E9504`'s formula).
+/// Returns `None` (not an error) when the executable isn't reachable, so the
+/// tracker keeps its placeholder curve rather than failing the boot.
+fn read_retail_xp_curve(source: &SceneSource<'_>) -> Option<Vec<u32>> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -147,6 +167,15 @@ impl BootSession {
         // Wire the CDNAME-derived map-id resolver so field-VM scene
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+
+        // Install the real retail XP curve (static SCUS table + FUN_801E9504
+        // formula) over the tracker's fabricated sin-LUT placeholder, when the
+        // executable is reachable. Set once at boot; begin_new_game doesn't
+        // reset the tracker, so it persists across New Game.
+        if let Some(curve) = read_retail_xp_curve(&source) {
+            host.world.level_up_tracker.xp_table = curve;
+        }
+
         host.load_scene(&cfg.scene)
             .with_context(|| format!("load scene '{}'", cfg.scene))?;
 

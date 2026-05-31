@@ -7,15 +7,28 @@
 //!
 //! ## XP table provenance
 //!
-//! [`retail_xp_table`] contains the 98-entry cumulative XP thresholds extracted
-//! from `SCUS_942.54` at address `0x8007123C`. Each entry is a u16 LE per-level
-//! increment (50 for L1→2, 56 for L2→3, …, 656 for L98→99). The cumulative
-//! totals used here are derived by prefix-summing those increments.
+//! [`retail_xp_table`] ships a 98-entry placeholder slice (`50, 56, 62, …`) that
+//! an earlier pass mis-extracted from `0x8007123C` — that address is doubly
+//! wrong (an off-by-`0x800` file/virtual confusion, then a slice of the GTE sin
+//! LUT at `0x80070A2C`), so these numbers are **fabricated XP**, not retail.
+//!
+//! The real retail curve is the static-SCUS per-level u16 delta table
+//! `DAT_80076AF4`, read by the overlay level-up applier `FUN_801E9504` (called
+//! from the reward resolver `FUN_8004E568` at `0x8004F34C`): the running sum to
+//! the current level is scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11`
+//! (else `sum × 0x79`) and compared `≤ record cumulative XP`. That curve is
+//! parsed by `legaia_asset::level_up_tables::xp_thresholds_from_scus` and
+//! **installed at boot** by `legaia_engine_shell::BootSession` (which reads the
+//! user's `SCUS_942.54`) over [`LevelUpTracker::xp_table`]. The placeholder
+//! below is only used when no executable is reachable (disc-less tests). See
+//! `docs/subsystems/level-up.md` § XP table.
 //!
 //! Per-slot [`StatGain`] values remain placeholder flat rates (10 HP / 5 MP).
-//! Different characters (Vahn / Noa / Gala) have distinct HP / MP growth curves
-//! in the retail game; locating those tables requires further overlay binary
-//! analysis.
+//! The retail per-character growth source is also pinned: static-SCUS per-stat
+//! 98-entry curves at `DAT_800769CC` (stride `0x62`, indexed by level) + a
+//! per-stat parameter block at `DAT_80076918`, read by the same `FUN_801E9504`
+//! (not the falsified Seru `+0x74` path). Wiring those from disc is the pending
+//! engine port.
 
 use legaia_save::CharacterRecord;
 
@@ -132,35 +145,29 @@ impl From<StatGain> for StatGrowthCurve {
 /// `table[i]` = total XP required to reach level `i + 2` (from level 1).
 /// Prefix-summed from the 98 u16 values below.
 ///
-/// **Provenance is unproven.** The values were originally documented as
-/// extracted from `SCUS_942.54` virtual address `0x8007123C` — that
-/// address is an off-by-`0x800` (PSX EXE header size) confusion between
-/// file offset `0x6123C` and virtual `0x80070A3C`, and the bytes at either
-/// location are not an XP table: they are a slice of the shared 4096-entry
-/// full-circle sin LUT at `0x80070A2C` that the GTE rotation builders
-/// `RotMatrixX/Y/Z` (`0x800461A4 / 0x8004629C / 0x8004638C`) and the
-/// cutscene-camera composer `FUN_8001CF50` consume. Every u16 in that
-/// 8 KB block matches `round(4096 × sin(i/4096 × 2π))` to within ±1; the
-/// 98 numbers below are `sin[0x408..0x46A]`.
+/// **These values are FABRICATED, not retail XP.** They are a 98-entry slice
+/// of the GTE sin LUT (`sin[0x408..0x46A]`) that an earlier pass mis-read as an
+/// XP table after an off-by-`0x800` confusion (file `0x6123C` vs virtual
+/// `0x80070A3C`); the bytes are rotation-LUT data the `RotMatrixX/Y/Z`
+/// (`0x800461A4 / 0x8004629C / 0x8004638C`) and cutscene-camera (`FUN_8001CF50`)
+/// builders consume, not levelling data.
 ///
-/// Two non-exclusive possibilities remain open: (a) the retail designers
-/// reused the sin slice deliberately (early-quadrant sin samples form a
-/// near-linear ramp with mild curvature, a reasonable JRPG XP curve shape;
-/// 1998-era PSX games frequently shared static tables across subsystems),
-/// or (b) the real XP table lives in an uncaptured overlay and this
-/// engine-side data is unverified. No retail reader for either address has
-/// been found across SCUS + every captured overlay (LUI+ADDIU /
-/// gp-relative / LUI+LHU encodings all return zero hits), and a save-pair
-/// diff against an in-game level-up has not been performed. The implied
-/// L99 cumulative (34 663 XP) is conspicuously small for the era.
+/// The real retail curve is the static-SCUS per-level u16 delta table
+/// `DAT_80076AF4`, read by the overlay level-up applier `FUN_801E9504` (called
+/// from `FUN_8004E568` at `0x8004F34C`): the running sum to the current level is
+/// scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`)
+/// and compared `≤ record cumulative XP`. The engine installs that real curve at
+/// boot (`legaia_asset::level_up_tables::xp_thresholds_from_scus` →
+/// `BootSession`); this placeholder is the fallback when no `SCUS_942.54` is
+/// reachable (disc-less tests), retained only so the tracker has a curve shape.
 ///
-/// [`LevelUpTracker::default`] uses this table; override via
-/// [`LevelUpTracker::with_xp_table`] when a verified curve lands. See
+/// [`LevelUpTracker::default`] uses this table. See
 /// [`docs/subsystems/level-up.md`](https://github.com/altimit-mii/legend-of-legaia-re/blob/main/docs/subsystems/level-up.md#xp-table)
 /// for the full write-up.
 pub fn retail_xp_table() -> Vec<u32> {
-    // 98 u16 values from SCUS_942.54 file offset 0x61A3C (virtual 0x80070A3C,
-    // = sin LUT base 0x80070A2C + 0x10). See docstring above for provenance.
+    // 98 u16 values that are a sin-LUT slice (SCUS file offset 0x61A3C / virtual
+    // 0x80070A3C = sin LUT base 0x80070A2C + 0x10), NOT retail XP. Placeholder
+    // only - the real curve is DAT_80076AF4 + formula (see docstring).
     const INCREMENTS: [u16; 98] = [
         50, 56, 62, 69, 75, 81, 87, 94, 100, 106, 113, 119, 125, 131, 138, 144, 150, 157, 163, 169,
         175, 182, 188, 194, 200, 207, 213, 219, 226, 232, 238, 244, 251, 257, 263, 269, 276, 282,

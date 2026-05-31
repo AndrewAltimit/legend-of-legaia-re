@@ -269,7 +269,7 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 </tr>
 <tr>
 <td><code>find_xp_table_readers.py</code></td>
-<td>LUI+ADDIU resolver narrowed to the retail XP table at <code>0x8007123C..0x80071300</code>. Single-program variant.</td>
+<td>LUI+ADDIU resolver originally aimed at <code>0x8007123C</code>. <strong>Superseded:</strong> the real XP curve is <code>DAT_80076AF4</code>, read by the overlay applier <code>FUN_801E9504</code> (the old target is an off-by-<code>0x800</code> artefact over a sin-LUT slice). Kept for the generic resolver pattern.</td>
 </tr>
 <tr>
 <td><code>find_xp_table_all_overlays.py</code></td>

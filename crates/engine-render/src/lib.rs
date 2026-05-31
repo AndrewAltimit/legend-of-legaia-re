@@ -2,6 +2,9 @@
 //!
 //! PORT: FUN_80034b78, FUN_8002C69C, FUN_8002C488, FUN_8002B994, FUN_8003C310
 //! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC
+//! PORT: FUN_8003C1F8 (per-glyph dialog-font sprite emit; the engine renders
+//! in-game proportional dialog glyphs via the legaia-font atlas + textured-quad
+//! overlay instead of the retail GP0 cell-UV push)
 //!
 //! Owns a wgpu device + surface, plus two render pipelines:
 //!

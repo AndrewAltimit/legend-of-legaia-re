@@ -54,6 +54,7 @@
 "8006ee34" = "B-vector thunk (li t2,0xB0; jr t2) - menu/text helper cluster"
 "8006ee6c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4E)"
 "8006ee7c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x50)"
+"8006ef68" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4C). One of the SPU-voice-init B0 thunks called in sequence by 8006ef18 (libspu init)"
 
 
 # libc / PsyQ runtime glue. Each maps to a Rust stdlib equivalent.
@@ -94,6 +95,12 @@
 "8005b3a8" = "RotMatrix-family matrix-vector product: loads rotation matrix into COP2 control regs 0x0000-0x2000, runs three cop2 0x486012 ops feeding IR data regs, reads MAC1/2/3, repacks into the MATRIX. Sibling cited in the 800172c0 geometry chain; engine emits via glam Mat3/Mat4"
 "8005b6a8" = "SetTransMatrix translation-vector loader: three ctc2 of param+0x14/0x18/0x1c into COP2 control regs 0x2800/0x3000/0x3800 (TRX/TRY/TRZ). Parallels 8005b7cc SetTransMatrix; engine emits translation via glam"
 "8005b308" = "PopMatrix (GTE matrix-stack pop): decrements 0x20-stride SP global DAT_80079010 (underflow -> printf), reloads rotation matrix (ctc2 ctrl 0x0000-0x2000) + translation vector (0x2800/0x3000/0x3800) from the popped frame. libgte stack bookkeeping; engine uses a glam transform stack"
+"8003d1a4" = "GTE control-word restore: 8x ctc2 of an 8-word array into COP2 control regs 0x0000..0x3800 (rotation/light matrix region). The restore counterpart explicitly named by the 8003d20c (save) entry above; brackets the billboard projector 800195a8. Engine emits GTE-equivalent matrices via glam/wgpu"
+"8003d254" = "SetGeomScreen (GTE H / projection-plane-distance write): single `ctc2 a0, 0xD000; jr ra`. Engine carries the focal length as Camera::h (crates/engine-render::gte) and projects through the wgpu pipeline; no GTE COP2 path"
+"8003d178" = "GTE rotation-matrix identity reset: ctc2 0x1000 (=1.0) into COP2 control regs 0x0000/0x1000/0x2000 (R11/R22/R33) and 0 into 0x0800/0x1800 (off-diagonals). The identity-reset third of the save (8003d20c) / restore (8003d1a4) GTE control-word trio; engine uses glam::Mat3::IDENTITY"
+"8005b818" = "SetGeomScreen (libgte): `ctc2 a0, 0xD000; jr ra` writes the GTE H/projection-plane-distance control reg. The PsyQ-library copy of the same one-liner the game-side 8003d254 inlines; engine carries focal length as Camera::h"
+"8005b7f8" = "SetGeomOffset (libgte): writes OFX/OFY (a0<<16 -> cop2 ctrl 0xC000, a1<<16 -> 0xC800). Engine applies the screen-space offset via the wgpu viewport / Camera projection"
+"8005b0b8" = "GTE leading-zero-count bit converter (texture/color bit packing): setCopReg(2,0xF000) / getCopReg(2,0xF800) = GTE LZCS/LZCR normalise-shift. Sibling of the already-listed 8005ba1c GTE sqrt/normalise; engine does bit packing in plain Rust"
 
 
 # libcd primitives and the ISO9660 / streaming-read stack above them.
@@ -119,6 +126,7 @@
 "8005e574" = "CD sector-reader state machine / streaming-read per-IRQ callback"
 "8005e788" = "Streaming-read starter (registers 8005e574 as IRQ callback)"
 "8005e9a4" = "Public streaming-read API (sector_count, dest_buffer, mode_flags)"
+"8005becc" = "libcd completion-callback swap-setter: loads the callback pointer at DAT_800793AC, stores the new a0, returns the previous (the CdReadSyncCallback-family slot; sibling of the already-listed 8005bee4 setter for DAT_800793B0). Engine reads PROT.DAT through legaia-iso/legaia-prot, no libcd callback slots"
 
 
 # libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
@@ -148,6 +156,21 @@
 "80059bd4" = "LoadImage2 / MoveImage internal (DMA over GPU MMIO ports DAT_80078e24/E28)"
 "80059c00" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
 "80059de4" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
+
+
+# SCUS-resident PSX GPU/GTE render-pipeline scaffolding. Unlike the [libgs] /
+# [libgte] entries above (which are PsyQ library entry points), these are
+# game-side functions that build and drive the PSX ordering-table / packet-pool
+# / display-env / software-clip machinery. The clean-room renderer in
+# `crates/engine-render` emits a wgpu pipeline with no OT, no packet pool, no
+# DISPENV/DRAWENV, and hardware clipping/rasterisation - so the entire concept
+# these encode is replaced rather than line-ported. (Each is documented in
+# `docs/reference/functions.md`.)
+[render_pipeline]
+"8001e3b8" = "Primitive-packet buffer + ordering-table allocator (OT = 1<<depth entries, double-buffered packet pool into DISPENV @ 0x8007BF30; malloc via 80017888). engine-render uses a wgpu pipeline with no OT/packet-pool"
+"8001daf8" = "Display-environment + GTE screen setup: builds the double-buffered DISPENV/DRAWENV pair (libgpu 8005731c/8005724c), selects 320x240 / 640x480, primes GTE SetGeomScreen/Offset. Engine sets the viewport via the winit surface + Camera::for_viewport"
+"80044798" = "Cluster-A primitive off-screen reject test: reads GTE FIFO SXY0/1/2 and rejects a 4-vertex prim when any corner leaves [0,0xF0)x[0,0x140). Engine relies on wgpu viewport/scissor + NDC clipping; no software reject"
+"800195a8" = "Billboard / screen-space textured-quad projector: GTE-projects a center point, builds four +/-half_w/half_h corner SXY (optional Z-rotate via 8004638c), brackets the GTE save/restore pair 8003d20c/8003d1a4. Engine emits billboard quads through the EffectSprite -> wgpu path"
 
 
 # libetc / libcomb (VSync, frame-pacing) plus SCUS-resident dev-instrumentation
@@ -266,6 +289,37 @@
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
 
+# Intra-function epilogue-merge labels in OTHER large overlay functions (the
+# same Ghidra-promotion pattern as `field_vm_labels`, but inside a different
+# enclosing function). Each is a `j`/`bne` target *within* one function that
+# Ghidra split into a fake `FUN_xxxxxxxx` entry; never reached by `jal`.
+[overlay_epilogue_labels]
+"801dbbfc" = "Epilogue-merge label inside FUN_801dba20 (overlay 0897 field locomotion / NPC-movement processor): multiple `j 0x801dbbfc` / `bne ...,0x801dbbfc` targets within FUN_801dba20 merge at the callee-save restore block (`lw ra,0x28(sp); lw s5..s0; jr ra`). Never a `jal` target anywhere in the corpus; no standalone body to port."
+
+
+# Ghidra phantom leaves: addresses Ghidra promoted to fake `FUN_xxxxxxxx`
+# entries that are NOT real call targets - a disassembler split an instruction
+# off the head/tail of a genuine function. They are dumped + documented (each
+# has a row in `docs/reference/functions.md` recording the mis-attribution) but
+# there is nothing to port: the real work lives in the enclosing function. They
+# inflate the worklist with phantom citation counts, so they are scoped out
+# here. (Distinct from `field_vm_labels`, which are real dispatcher PC-delta
+# exit targets - these are not even that.)
+[ghidra_phantoms]
+"80034b6c" = "One-instruction tail fragment before FUN_80034B78: Ghidra split a `sw param_1, gp[+0x14c]` store (text-row state byte the text-actor tick FUN_80031D00 writes) into a phantom leaf. Not a real call target; an earlier engine REF mis-guessed it a GPU-packet allocator. See docs/reference/functions.md row `80034B6C`."
+"8005da40" = "`lui v1, 0x8008` instruction inside FUN_8005D9A0 (the CD-DMA-channel-3 read primitive, itself ignore-listed under [libcd]); Ghidra promotes the intra-function label to a fake FUN_8005DA40. No real function, no `_DAT_800795B4` table. See docs/reference/functions.md row `FUN_8005DA40`."
+
+
+# Constant-address / global-buffer accessors: two- or three-instruction
+# functions whose entire body is `lui v0, HI; (jr ra;) addiu v0, v0, LO` -
+# they return the address of a fixed PSX-RAM global and nothing else. The
+# clean-room engine replaces raw global pointers with typed Rust fields, so
+# there is no function body to port (the callers' intent - e.g. walking the
+# returned buffer as a CDNAME char* - is modelled where the caller is ported).
+[global_accessors]
+"80019788" = "Global-buffer base getter: `lui v0, 0x8009; jr ra; ...` returns the fixed RAM pointer 0x80088758 (callers scan it as a char* for '_'-separator CDNAME names). Engine carries scene/name state as typed Rust fields (active_scene_label etc.); no body to port. See docs/reference/functions.md row 80019788."
+
+
 # Identity / no-op thunks at addresses outside the PsyQ region. These are
 # `jr ra; move v0, a0` two-instruction wrappers that return their input
 # verbatim - probably leftover dev scaffolding or placeholder slots in a
@@ -273,3 +327,17 @@
 # passthrough; there is nothing to model.
 [identity_thunks]
 "801e38d0" = "Overlay identity thunk (`jr ra; move v0, a0`). Called by FUN_801DD35C menu dispatcher (`a0 = state[+0x204]`) and the title-overlay tick at `801dd6b0`; the menu / title state code reads the input value back unmodified. See `docs/subsystems/boot.md` lines 216, 228."
+
+
+# Empty-bodied stubs: functions whose entire body is a prologue/epilogue with no
+# side effects (`jr ra; nop`, or `addiu sp,-N; addiu sp,+N; jr ra`). These are
+# retail-stripped leaves - dev/debug or alternate-build code paths the linker
+# emptied out, leaving an inert entry point that does nothing. There is no
+# behavior to port. (The 8002b9xx cluster is the stripped per-tile sprite-emit
+# leaf family; cf. FUN_8002B96C, also `jr ra; nop`.)
+[noop_stubs]
+"8002b93c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8002b944" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8002b94c" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8002b954" = "Empty stub (`jr ra; nop`). Stripped tile-sprite-emit leaf (8002b9xx family)."
+"8003e7f0" = "Empty-bodied stub: `addiu sp,sp,-0x90; addiu sp,sp,0x90; jr ra` - sets up and tears down a stack frame with no body (retail-stripped, near the dev host-FS reader 8003e6bc). Does nothing."

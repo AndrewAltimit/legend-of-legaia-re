@@ -2420,6 +2420,8 @@ impl World {
     /// no inline dialogue is running.
     // PORT: FUN_80039B7C
     // REF: FUN_80038050 (the option-jump apply is delegated to OwnedDialogPanel::confirm_menu)
+    // REF: FUN_8003CF7C (the inline fast-forward loop below subsumes retail's
+    //      run-to-next-text helper: tick the field VM until `byte & 0x7F < 0x20`)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
         use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
         let Some(mut id) = self.inline_dialogue.take() else {

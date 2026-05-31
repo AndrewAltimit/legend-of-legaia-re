@@ -211,6 +211,9 @@ pub fn world_z(row: u8, z_off: i16) -> i32 {
 /// Walk the `128 x 128` object-index grid of a field map file and return one
 /// [`Placement`] per placed tile, mirroring `FUN_8003A55C`'s sweep.
 ///
+/// PORT: FUN_8003A55C (the grid sweep + placed-flag gate + world-XZ formula;
+/// the actor allocation the retail sweep also does is the engine host's job)
+///
 /// `field_map` is the **extended** field map file footprint (the object-index
 /// grid at `+0x8000` lives past the TOC-indexed `0x4000`-byte payload). Tiles
 /// whose object record is absent, unplaced, or whose footprint anchor lands
