@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 
-use crate::raw::{RawDisc, USER_DATA_SIZE};
+use crate::raw::{RawDisc, SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 
 #[derive(Debug, Clone)]
 pub struct DirectoryRecord {
@@ -116,6 +116,69 @@ pub fn list_directory(disc: &mut RawDisc, dir: &DirectoryRecord) -> Result<Vec<D
         offset += len;
     }
     Ok(entries)
+}
+
+/// Locate a top-level file in an **in-memory** Mode 2/2352 disc image by name,
+/// returning its `(lba, size_bytes)`. Unlike [`walk_files`] (which streams from
+/// a [`RawDisc`] file handle), this works on a byte slice — what an in-memory
+/// patcher holds. Only the root directory is searched, which is where the disc's
+/// data files (`PROT.DAT`, `SCUS_942.54`, …) live.
+///
+/// Returns `None` if the image isn't ISO 9660, the root directory can't be read,
+/// or no root entry matches `name` (case-sensitive, version suffix stripped).
+pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
+    let user = |lba: usize| -> Option<&[u8]> {
+        let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
+        image.get(base..base + USER_DATA_SIZE)
+    };
+
+    // Primary Volume Descriptor at LBA 16.
+    let pvd = user(16)?;
+    if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
+        return None;
+    }
+    let root = parse_record(&pvd[156..156 + 34]).ok()?;
+    if !root.is_dir || root.size > MAX_DIRECTORY_BYTES {
+        return None;
+    }
+
+    // Read the root directory extent into a contiguous buffer.
+    let sector_count = root.size.div_ceil(USER_DATA_SIZE as u32) as usize;
+    let mut buf = Vec::with_capacity(sector_count * USER_DATA_SIZE);
+    for i in 0..sector_count {
+        buf.extend_from_slice(user(root.lba as usize + i)?);
+    }
+    buf.truncate(root.size as usize);
+
+    // Walk records (same boundary rules as `list_directory`).
+    let mut offset = 0usize;
+    while offset < buf.len() {
+        let len = buf[offset] as usize;
+        if len == 0 {
+            let next = offset.div_ceil(USER_DATA_SIZE) * USER_DATA_SIZE;
+            let next = if next == offset {
+                offset + USER_DATA_SIZE
+            } else {
+                next
+            };
+            if next >= buf.len() {
+                break;
+            }
+            offset = next;
+            continue;
+        }
+        if offset + len > buf.len() {
+            break;
+        }
+        if let Ok(rec) = parse_record(&buf[offset..offset + len])
+            && !rec.is_dir
+            && rec.name == name
+        {
+            return Some((rec.lba, rec.size));
+        }
+        offset += len;
+    }
+    None
 }
 
 pub fn walk_files(
