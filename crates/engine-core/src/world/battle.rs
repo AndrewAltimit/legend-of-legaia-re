@@ -640,12 +640,23 @@ impl World {
     /// straight into the matching per-slot battle scalar so it changes damage
     /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
     /// [`Self::battle_attack`] / [`Self::battle_magic`] / [`Self::battle_defense`]
-    /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy). The
-    /// scalar is `u16`, so a negative magnitude saturates at zero and the
-    /// recorded `applied_delta` is the exact change (for precise undo on
-    /// expiry). Accuracy / Evasion / Speed have no live-loop scalar; the buff
-    /// is tracked with a zero delta so the turn timer still runs. Re-casting
-    /// the same `(slot, stat)` refreshes: the old delta is reverted first.
+    /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy).
+    ///
+    /// **Stat-up buffs (`magnitude > 0`) use the retail multiplicative ramp.**
+    /// Retail's stat-up selectors (1..7) raise the live stat by ×6/5 (clamped to
+    /// `0xFFFF`) — [`vm::battle_formulas::buff_ramp`], pinned from the SM dump —
+    /// not by a flat additive delta. So a positive buff ramps the scalar by +20%
+    /// of its *current* value (the per-spell `magnitude` value is now only a
+    /// sign hint for the pinned scalar stats). **Debuffs (`magnitude <= 0`) stay
+    /// additive**: retail's debuff scaling is not yet pinned, so the engine keeps
+    /// the saturating additive model rather than fabricate a factor.
+    ///
+    /// The recorded `applied_delta` is the exact `u16` change either way (for
+    /// precise undo on expiry). Accuracy / Evasion / Speed have no live-loop
+    /// scalar; the buff is tracked with a zero delta so the turn timer still
+    /// runs. Re-casting the same `(slot, stat)` refreshes: the old delta is
+    /// reverted first (so the ramp re-applies from the base, no compounding on
+    /// refresh).
     fn apply_battle_buff(
         &mut self,
         slot: u8,
@@ -665,13 +676,39 @@ impl World {
         if turns == 0 {
             return;
         }
-        let applied_delta = self.add_to_buff_scalar(slot, stat, magnitude);
+        let applied_delta = if magnitude > 0 {
+            // Retail stat-up: ×6/5 ramp of the current scalar (pinned).
+            self.ramp_buff_scalar(slot, stat)
+        } else {
+            // Debuff: additive (retail factor unpinned), saturating at 0.
+            self.add_to_buff_scalar(slot, stat, magnitude)
+        };
         self.battle_buffs.push(BattleBuff {
             slot,
             stat,
             applied_delta,
             turns,
         });
+    }
+
+    /// Apply the retail `×6/5` stat-up ramp ([`vm::battle_formulas::buff_ramp`])
+    /// to the per-slot scalar backing `stat`, returning the exact `u16` change.
+    /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) return `0`.
+    fn ramp_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat) -> i16 {
+        use crate::spells::BuffStat;
+        let scalar = match stat {
+            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Defense | BuffStat::MagicDefense => {
+                self.battle_defense.get_mut(slot as usize)
+            }
+            BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
+        };
+        let Some(scalar) = scalar else { return 0 };
+        let before = *scalar;
+        let after = vm::battle_formulas::buff_ramp(before);
+        *scalar = after;
+        (after as i32 - before as i32) as i16
     }
 
     /// Add `delta` to the per-slot scalar backing `stat` and return the exact

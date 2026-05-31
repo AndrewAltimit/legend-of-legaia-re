@@ -523,7 +523,7 @@ cafbc8b8029bf3e0	publisher logo	SCEA
 3243d14a9f839cf7	environment	
 3244933545681061	environment	
 325f75cec6f87075	effect	
-325fa1f55399f4bd	other	
+325fa1f55399f4bd	environment	horizontal wood-plank wall/floor
 3282f4c709fb8b9b	character	
 32de582626d54cf5	other	
 332542f2981a0c1a	character	
@@ -534,7 +534,7 @@ cafbc8b8029bf3e0	publisher logo	SCEA
 33da72d68f89a0ed	terrain	
 33df75aa041bfbb3	effect	
 33e75b3a5bb72486	ui-text	
-34015fee20ccecff	other	
+34015fee20ccecff	environment	stone-block / brick / checkered-floor atlas
 34081660750743b5	environment	
 341a212cd4efef92	foliage	
 341ae7f53fed59c8	environment	
@@ -742,7 +742,7 @@ cafbc8b8029bf3e0	publisher logo	SCEA
 4a1b406284c3e018	environment	
 4a3310c30bdc8b26	terrain	
 4a39989db146ddfb	other	
-4a46ec4f6e60498c	other	
+4a46ec4f6e60498c	foliage	bare branching tree silhouette
 4a5259e6803f8289	other	
 4a6d35b36a9d398d	environment	
 4a9ad9721236e2aa	character	
@@ -1141,7 +1141,7 @@ cafbc8b8029bf3e0	publisher logo	SCEA
 721c61656223342e	environment	
 723d4427536034d8	other	
 72a2da5a4aee71d1	foliage	
-72d10f74276d0226	other	
+72d10f74276d0226	environment	fence / railing baluster row
 72db98d404ba62dc	effect	
 72faff53025bda06	foliage	
 731c2e6aa34cb5d8	character	
@@ -1866,7 +1866,7 @@ bf95dab2c2fb3b38	ui-text
 bfd75499533b7c52	environment	
 bfe242a24aa17068	environment	
 c03ecc2ac6bf154b	environment	
-c04d714bb0b5c1f7	other	
+c04d714bb0b5c1f7	ui-text	credits text (CG movie creation staff)
 c06c627036dbd6c8	character	
 c07366b33beac17e	environment	
 c09cde14f091ac06	character	
@@ -1990,7 +1990,7 @@ ce29c6c15876c68a	environment
 ce332d1780ef2572	character	
 ce59fb87419e5f64	character	
 ce7bea554781cc26	environment	
-cf07a6952169ad39	other	
+cf07a6952169ad39	environment	horizontal wood-plank wall
 cf54921b3ccd8e69	terrain	
 cf54f95d04cc87e5	environment	
 cf622f5b488ca2a5	environment	
@@ -2008,7 +2008,7 @@ d04d0d7aa722f120	environment
 d085e0636dce1f47	environment	
 d0bcfcf2a0c94232	terrain	
 d0c31061729d8797	character	
-d0c6dc793300e2bd	other	
+d0c6dc793300e2bd	foliage	green leafy canopy / bush
 d125f575c552af53	other	
 d12cdfcfb78dfd4b	environment	
 d147eec749d7979a	terrain	
@@ -2099,7 +2099,7 @@ d9639b71b1641433	character
 d96f88acb66472fd	environment	
 d975eff4c5239084	environment	
 d98c7d392754cd46	character	
-d990c3a77211ff3d	other	
+d990c3a77211ff3d	environment	building-interior atlas: windows / brick / doorway
 d99272fe0a47699a	terrain	
 d99d60555cbe0029	terrain	
 d9a0b562619a3866	terrain	
@@ -2138,7 +2138,7 @@ dd03264e576b91e2	terrain
 dd119446b8896662	character	
 dd5de8f4610600b6	environment	
 dd69ed757bba17df	environment	
-dd9096b24c9ed897	other	
+dd9096b24c9ed897	ui-text	credits text (analysts name list)
 ddc01d358710e3b7	effect	
 ddd5feab74f06b4a	terrain	
 de0f3bac26da51f7	foliage	

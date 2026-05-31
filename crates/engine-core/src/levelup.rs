@@ -32,8 +32,10 @@
 //! min 1) for all eight stats (HP, MP, AGL, ATK, UDF, LDF, SPD, INT);
 //! `BootSession` calls it from the user's `SCUS_942.54`. The flat 10 HP / 5 MP
 //! [`StatGain`] default is only the disc-less fallback. Retail's per-level
-//! `rand()` jitter is the one piece not modeled (it needs the RNG stream for
-//! replay determinism) — see `docs/subsystems/level-up.md` § Stat gains.
+//! `rand()` jitter is modeled as an **opt-in** layer
+//! ([`LevelUpTracker::with_level_up_jitter`] + the [`BiosRand`] LCG); it is off
+//! by default so it draws no `rand()` and replays stay bit-identical — see
+//! `docs/subsystems/level-up.md` § Stat gains.
 
 use legaia_save::CharacterRecord;
 
@@ -146,10 +148,14 @@ impl StatGain {
 /// hold both the captured-from-retail level-indexed arrays and the simple
 /// flat-rate fallback the engine ships with today.
 ///
-/// Once a watchpoint trace pins down the source of the per-level increments
-/// (suspected to live at the `Seru struct +0x74` slot per the level_up
-/// overlay analysis), engines populate one of these per character slot via
-/// [`LevelUpTracker::with_stat_curves`].
+/// The retail per-character source is now pinned: the static-SCUS curves at
+/// `DAT_800769CC` + parameter block at `DAT_80076918`, read by `FUN_801E9504`
+/// (the falsified "Seru struct `+0x74`" hypothesis is dead). Engines install
+/// the [`PerLevel`](Self::PerLevel) form via
+/// [`LevelUpTracker::with_growth_tables`]; [`with_stat_curves`] remains for
+/// callers supplying their own curves.
+///
+/// [`with_stat_curves`]: LevelUpTracker::with_stat_curves
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatGrowthCurve {
     /// Constant growth - same HP/MP gain for every level. Default.
@@ -199,6 +205,34 @@ impl Default for StatGrowthCurve {
 impl From<StatGain> for StatGrowthCurve {
     fn from(g: StatGain) -> Self {
         StatGrowthCurve::Flat(g)
+    }
+}
+
+/// Faithful PSX BIOS `rand()` (BIOS call `A(0x2F)`) — a 32-bit LCG.
+///
+/// `seed = seed × 0x41C6_4E6D + 0x3039; return (seed >> 16) & 0x7FFF`. This is
+/// the generator the retail level-up applier `FUN_801E9504` draws from for the
+/// per-level stat-growth jitter (`rand() % (2×jitter+1) − jitter`). The
+/// *algorithm* is faithful; the seed at level-up time is runtime BIOS state the
+/// engine can't recover from disc, so a bit-exact roll requires seeding from a
+/// capture. Installed (opt-in) via [`LevelUpTracker::with_level_up_jitter`].
+///
+/// PORT: BIOS `rand`/`srand` (A-table 0x2F/0x30); consumed by FUN_801E9504.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BiosRand {
+    seed: u32,
+}
+
+impl BiosRand {
+    /// Seed the generator. Mirrors BIOS `srand(seed)`.
+    pub fn new(seed: u32) -> Self {
+        Self { seed }
+    }
+
+    /// Advance and return the next 15-bit value (`0..=0x7FFF`), as BIOS `rand()`.
+    pub fn next_u15(&mut self) -> u16 {
+        self.seed = self.seed.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        ((self.seed >> 16) & 0x7FFF) as u16
     }
 }
 
@@ -267,20 +301,16 @@ pub fn placeholder_xp_table() -> Vec<u32> {
 /// mp_total / levels_gained)`. Outside the observed range the curve
 /// falls back to [`StatGain::default`].
 ///
-/// The retail per-character per-level table is not surfaced by the
-/// captured `overlay_magic_level_up_*` dumps: a writer-search across
-/// every dump returns no `sb` / `sh` writes targeting `+0x10E`,
-/// `+0x11C..+0x12C`, `+0x130`, or `+0x161`. The "Seru struct +0x74"
-/// pointer-dereference path is also a dead end - the only `+0x74`
-/// reads in the captured overlay surface a 32-bit battle-state flag
-/// the SCUS-side handler `FUN_800480D8` writes with the constant
-/// `0x80808080`. The grant table likely lives in a still-uncaptured
-/// overlay (battle-data init or the Seru-equip path) or is encoded
-/// inline in a Seru PROT entry the current capture set doesn't
-/// surface. Engines that want a true [`StatGrowthCurve::PerLevel`]
-/// today should populate one explicitly via
-/// [`crate::seru_stats::SeruStatTable::insert`] until the writer is
-/// pinned.
+/// This capture-derived observation predates pinning the retail source.
+/// The real per-character per-level growth is the static-SCUS tables
+/// `DAT_800769CC` (curves) + `DAT_80076918` (param block), read by the
+/// victory-path applier `FUN_801E9504` — installed directly via
+/// [`LevelUpTracker::with_growth_tables`]. (The earlier "Seru struct
+/// +0x74" pointer-dereference path was falsified: the only `+0x74` reads
+/// in the captured overlay surface a 32-bit battle-state flag the
+/// SCUS-side handler `FUN_800480D8` writes with the constant `0x80808080`.)
+/// This observation type stays useful as a flat-curve fallback when a
+/// `SCUS_942.54` isn't reachable.
 ///
 /// `stat_deltas` covers the persistent record stat window at
 /// `+0x11C..+0x12D` (18 bytes = 9 u16 LE values). The first two values
@@ -540,6 +570,17 @@ pub struct LevelUpTracker {
     /// is `[StatGrowthCurve::default(); MAX_PARTY]` - flat rate equal to
     /// `StatGain::default()`.
     pub stat_curves: [StatGrowthCurve; MAX_PARTY],
+    /// The parsed static-SCUS growth tables, retained by
+    /// [`with_growth_tables`](Self::with_growth_tables). Needed (alongside
+    /// [`jitter_rng`](Self::jitter_rng)) to apply the per-level jitter spread to
+    /// the *unfloored* core in the exact applier order. `None` until installed.
+    pub growth_tables: Option<legaia_asset::level_up_tables::GrowthTables>,
+    /// Opt-in PSX BIOS-rand stream for the per-level stat-growth jitter. `None`
+    /// (the default) means **no jitter**: the tracker applies only the
+    /// deterministic core and draws zero `rand()`, so every replay/determinism
+    /// oracle stays bit-identical. Enable via
+    /// [`with_level_up_jitter`](Self::with_level_up_jitter).
+    pub jitter_rng: Option<BiosRand>,
 }
 
 impl Default for LevelUpTracker {
@@ -550,6 +591,8 @@ impl Default for LevelUpTracker {
             xp_table: retail_xp_table(),
             stat_gains: [StatGain::default(); MAX_PARTY],
             stat_curves: std::array::from_fn(|_| StatGrowthCurve::default()),
+            growth_tables: None,
+            jitter_rng: None,
         }
     }
 }
@@ -610,9 +653,11 @@ impl LevelUpTracker {
     /// [`crate::seru_stats::SeruStatTable::to_flat_curve`] that targets a
     /// specific party slot.
     ///
-    /// Once true per-Seru-level grants are captured (currently blocked on a
-    /// runtime watchpoint trace through `Seru struct +0x74`) engines should
-    /// migrate to a captured per-level vector rather than this flat curve.
+    /// For the three playable characters, prefer
+    /// [`with_growth_tables`](Self::with_growth_tables): the retail per-level
+    /// growth is the static-SCUS `DAT_800769CC` / `DAT_80076918` tables (the
+    /// "Seru struct `+0x74`" grant path was falsified). This Seru-roster curve
+    /// remains for engines modelling Seru-sourced gains directly.
     pub fn with_seru_roster(
         mut self,
         char_slot: u8,
@@ -639,15 +684,19 @@ impl LevelUpTracker {
     /// curve.
     ///
     /// Retail additionally adds a per-level `rand() % (2×jitter+1) − jitter`
-    /// spread on top of this core; that jitter is **not** modeled here (it needs
-    /// the retail RNG stream to stay replay-deterministic). The six battle stats
-    /// (`+0x122..+0x12D`) are likewise grown by `FUN_801E9504` but aren't part of
-    /// this tracker's HP/MP-only [`StatGain`] yet.
+    /// spread on top of this core. That jitter is applied only when a caller
+    /// opts in via [`with_level_up_jitter`](Self::with_level_up_jitter) (it draws
+    /// `rand()` and so is off by default to keep replays bit-identical); without
+    /// it the tracker uses the jitter-free core (the jitter mean is 0, so totals
+    /// are unbiased). All six battle stats are grown alongside HP/MP.
     pub fn with_growth_tables(
         mut self,
         tables: &legaia_asset::level_up_tables::GrowthTables,
     ) -> Self {
         use legaia_asset::level_up_tables::GROWTH_CHAR_COUNT;
+        // Retain the raw tables so an opt-in jitter pass can apply the spread to
+        // the unfloored core in applier order (see `with_level_up_jitter`).
+        self.growth_tables = Some(tables.clone());
         for slot in 0..GROWTH_CHAR_COUNT.min(MAX_PARTY) {
             let Some(cp) = tables.char_params(slot) else {
                 continue;
@@ -673,6 +722,79 @@ impl LevelUpTracker {
             self.stat_curves[slot] = StatGrowthCurve::PerLevel(table);
         }
         self
+    }
+
+    /// Enable the retail per-level stat-growth **jitter** spread, seeding the
+    /// PSX BIOS-rand stream ([`BiosRand`]) with `seed`.
+    ///
+    /// **Off by default.** With no jitter RNG installed the tracker applies only
+    /// the deterministic jitter-free core and draws **zero** `rand()`, so every
+    /// existing replay/determinism oracle stays bit-identical. Once enabled (and
+    /// once growth tables are installed via
+    /// [`with_growth_tables`](Self::with_growth_tables)), each level-up adds
+    /// `rand() % (2×jitter+1) − jitter` to each stat's **unfloored** core before
+    /// the `max(1, …)` floor, in the applier's stat order (HP, MP, AGL, ATK, UDF,
+    /// LDF, SPD, INT), drawing **one** `rand()` per stat per level — exactly as
+    /// `FUN_801E9504` does, including the draw when `jitter == 0` (`rand() % 1 ==
+    /// 0`). Faithful in algorithm; a bit-exact reproduction of a *specific*
+    /// retail level-up additionally requires seeding from the BIOS-rand state at
+    /// that moment (runtime, not recoverable from disc).
+    ///
+    /// Order matters: install the growth tables first, then enable jitter.
+    pub fn with_level_up_jitter(mut self, seed: u32) -> Self {
+        self.jitter_rng = Some(BiosRand::new(seed));
+        self
+    }
+
+    /// Accumulate the stat growth for `old_level → new_level`.
+    ///
+    /// When a jitter RNG is installed *and* this slot has parsed growth params
+    /// (the three playable characters), this applies the full retail jitter pass
+    /// — one `rand()` per stat per level on the unfloored core, then `max(1, …)`,
+    /// summed across the levels crossed (the `FUN_801E9504` order). Otherwise it
+    /// falls back to the deterministic per-level curve / flat rate, consuming no
+    /// `rand()`.
+    fn accumulate_growth(&mut self, slot: usize, old_level: u8, new_level: u8) -> StatGain {
+        // Disjoint-field borrow (`growth_tables` shared + `jitter_rng` mut) plus
+        // a growth record for this slot (the three playable chars).
+        if let (Some(tables), Some(rng)) = (self.growth_tables.as_ref(), self.jitter_rng.as_mut())
+            && let Some(cp) = tables.char_params(slot)
+        {
+            // Zero accumulator — `StatGain::default()` is the flat 10/5
+            // placeholder, not zero, so must not seed it here.
+            let mut acc = StatGain::hp_mp(0, 0);
+            for prev in old_level..new_level {
+                let lvl = prev as usize;
+                let mut g = [0u16; 8];
+                for (i, p) in cp.stats.iter().enumerate() {
+                    let raw = tables.level_gain_core_raw(p, lvl).unwrap_or(0) as i32;
+                    // Always draw — retail does too, even for jitter == 0.
+                    let roll = i32::from(rng.next_u15());
+                    let span = 2 * i32::from(p.jitter) + 1;
+                    let jit = roll % span - i32::from(p.jitter);
+                    g[i] = (raw + jit).max(1) as u16;
+                }
+                acc = acc.saturating_add(StatGain {
+                    hp: g[0],
+                    mp: g[1],
+                    agl: g[2],
+                    atk: g[3],
+                    udf: g[4],
+                    ldf: g[5],
+                    spd: g[6],
+                    int: g[7],
+                });
+            }
+            return acc;
+        }
+        // Deterministic fallback (no rand draws).
+        match &self.stat_curves[slot] {
+            StatGrowthCurve::PerLevel(_) => self.stat_curves[slot].sum_range(old_level, new_level),
+            StatGrowthCurve::Flat(_) => {
+                let levels_gained = (new_level - old_level) as u16;
+                self.stat_gains[slot].saturating_mul(levels_gained)
+            }
+        }
     }
 
     /// Grant `xp` to party slot `char_id`. If the accumulated XP crosses one
@@ -721,13 +843,7 @@ impl LevelUpTracker {
         // curve, prefer the explicit `stat_gains` (set via
         // `with_stat_gain` / `with_stat_gains`) since it's the more
         // intentional configuration.
-        let total = match &self.stat_curves[slot] {
-            StatGrowthCurve::PerLevel(_) => self.stat_curves[slot].sum_range(old_level, new_level),
-            StatGrowthCurve::Flat(_) => {
-                let levels_gained = (new_level - old_level) as u16;
-                self.stat_gains[slot].saturating_mul(levels_gained)
-            }
-        };
+        let total = self.accumulate_growth(slot, old_level, new_level);
 
         Some(LevelUpResult {
             char_id,
@@ -849,6 +965,120 @@ mod tests {
         assert_eq!(r.mp_gained, 9);
         // Slot 3 (no growth record) keeps the flat default.
         assert!(matches!(t.stat_curves[3], StatGrowthCurve::Flat(_)));
+    }
+
+    /// Build a synthetic `GrowthTables` whose every curve is the flat `0x60`
+    /// ramp (sums to `0x24C0`, so the divide is exact), with slot-0 HP/MP params
+    /// `start/max/jitter` configurable. HP is stat 0, MP stat 1.
+    fn synth_growth(hp_jitter: u8, mp_jitter: u8) -> legaia_asset::level_up_tables::GrowthTables {
+        use legaia_asset::level_up_tables::{
+            GROWTH_PARAM_LEN, GROWTH_ROW_COUNT, GROWTH_ROW_STRIDE, GrowthTables,
+        };
+        let curves = vec![vec![0x60u8; GROWTH_ROW_STRIDE]; GROWTH_ROW_COUNT];
+        let mut param = vec![0u8; GROWTH_PARAM_LEN];
+        // HP: start=100, max=4900 → raw core 48 every level.
+        param[0..6].copy_from_slice(&[100, 0, 0x24, 0x13, hp_jitter, 0]);
+        // MP: start=10, max=970 → raw core 9 every level.
+        param[6..12].copy_from_slice(&[10, 0, 0xCA, 0x03, mp_jitter, 0]);
+        GrowthTables { curves, param }
+    }
+
+    #[test]
+    fn bios_rand_is_the_psx_lcg() {
+        // seed=1: 1×0x41C64E6D + 0x3039 = 0x41C67EA6; (>>16)&0x7FFF = 0x41C6.
+        let mut r = BiosRand::new(1);
+        assert_eq!(r.next_u15(), 0x41C6);
+        // Deterministic for a given seed.
+        let mut a = BiosRand::new(0xDEAD_BEEF);
+        let mut b = BiosRand::new(0xDEAD_BEEF);
+        for _ in 0..256 {
+            assert_eq!(a.next_u15(), b.next_u15());
+        }
+        // 15-bit range.
+        let mut c = BiosRand::new(7);
+        for _ in 0..10_000 {
+            assert!(c.next_u15() <= 0x7FFF);
+        }
+    }
+
+    #[test]
+    fn level_up_jitter_off_draws_nothing_and_equals_core() {
+        let g = synth_growth(4, 2);
+        let mut t = LevelUpTracker::new()
+            .with_xp_table(placeholder_xp_table())
+            .with_growth_tables(&g);
+        // No jitter RNG installed → deterministic core, no rand consumed.
+        assert!(t.jitter_rng.is_none());
+        let r = t.grant_xp(0, 100).expect("level up");
+        assert_eq!((r.hp_gained, r.mp_gained), (48, 9));
+        assert!(t.jitter_rng.is_none()); // still none — nothing was drawn
+    }
+
+    #[test]
+    fn level_up_jitter_stays_in_band_and_is_seed_deterministic() {
+        let g = synth_growth(4, 0); // HP jitters ±4, MP has zero jitter
+        let build = |seed| {
+            LevelUpTracker::new()
+                .with_xp_table(placeholder_xp_table())
+                .with_growth_tables(&g)
+                .with_level_up_jitter(seed)
+        };
+        // Same seed → identical roll.
+        let mut t1 = build(0x1234_5678);
+        let mut t2 = build(0x1234_5678);
+        let r1 = t1.grant_xp(0, 100).unwrap();
+        let r2 = t2.grant_xp(0, 100).unwrap();
+        assert_eq!((r1.hp_gained, r1.mp_gained), (r2.hp_gained, r2.mp_gained));
+
+        // Across seeds: HP lands in [44, 52] (raw 48 ± 4, floored at 1); MP is
+        // exactly 9 every time (jitter 0 ⇒ spread 0, even though a draw is made).
+        let mut saw_low = false;
+        let mut saw_high = false;
+        for seed in 1u32..400 {
+            let mut t = build(seed);
+            let r = t.grant_xp(0, 100).unwrap();
+            assert!(
+                (44..=52).contains(&r.hp_gained),
+                "hp {} out of band",
+                r.hp_gained
+            );
+            assert_eq!(r.mp_gained, 9, "mp must be unaffected by jitter==0");
+            saw_low |= r.hp_gained < 48;
+            saw_high |= r.hp_gained > 48;
+        }
+        // The spread actually moves the value both ways (not a stuck constant).
+        assert!(
+            saw_low && saw_high,
+            "jitter should vary above and below the core"
+        );
+    }
+
+    #[test]
+    fn level_up_jitter_multilevel_matches_per_level_draw_order() {
+        // A 2-level jump must draw rand per stat per level (HP then MP, level
+        // L1→L2 then L2→L3) — so the total equals the sum of two independently
+        // jittered single levels off the same stream.
+        let g = synth_growth(4, 0);
+        let seed = 0xABCD_1234;
+        // One tracker that jumps two levels at once.
+        let mut jump = LevelUpTracker::new()
+            .with_xp_table(placeholder_xp_table())
+            .with_growth_tables(&g)
+            .with_level_up_jitter(seed);
+        let rj = jump.grant_xp(0, 400).expect("two-level jump"); // placeholder L3 = 400
+        assert_eq!(rj.new_level, 3);
+
+        // A tracker that levels one at a time off the same seed stream.
+        let mut step = LevelUpTracker::new()
+            .with_xp_table(placeholder_xp_table())
+            .with_growth_tables(&g)
+            .with_level_up_jitter(seed);
+        let s1 = step.grant_xp(0, 100).unwrap();
+        let s2 = step.grant_xp(0, 300).unwrap(); // cumulative 400 → L3
+        assert_eq!(
+            (rj.hp_gained, rj.mp_gained),
+            (s1.hp_gained + s2.hp_gained, s1.mp_gained + s2.mp_gained)
+        );
     }
 
     #[test]

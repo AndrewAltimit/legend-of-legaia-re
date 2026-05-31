@@ -149,9 +149,9 @@ pub fn xp_thresholds_from_scus(scus: &[u8]) -> Option<Vec<u32>> {
 /// parameter block).
 ///
 /// Use [`Self::char_params`] for the structured per-character view. The exact
-/// byte → gain arithmetic ([`Self::level_gain_core`]) is decoded but not yet
-/// reconciled with captured deltas — see `docs/subsystems/level-up.md` § Stat
-/// gains.
+/// byte → gain arithmetic ([`Self::level_gain_core`]) is decoded and validated
+/// byte-exact against a single-level capture (Noa L2→L3) — see
+/// `docs/subsystems/level-up.md` § Stat gains.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrowthTables {
     /// The [`GROWTH_ROW_COUNT`] growth curves, each [`GROWTH_ROW_STRIDE`] bytes
@@ -247,12 +247,26 @@ impl GrowthTables {
     /// top; the engine does not yet drive level-up from this — wiring needs the
     /// jitter RNG stream for replay determinism.)
     pub fn level_gain_core(&self, p: &StatGrowthParam, level: usize) -> Option<u32> {
+        Some(self.level_gain_core_raw(p, level)?.max(1))
+    }
+
+    /// The **unfloored** deterministic gain term `(max - start) × curve[row][level-1]
+    /// / 0x24C0`, i.e. [`Self::level_gain_core`] *before* the `max(1, …)` floor.
+    ///
+    /// Retail (`FUN_801E9504`) applies the jitter spread to this raw value and
+    /// only then floors at 1: `gain = max(1, raw + rand() % (2×jitter+1) −
+    /// jitter)`. Callers modelling the jitter (e.g.
+    /// `engine_core::levelup::LevelUpTracker` with a seeded BIOS-rand stream)
+    /// need the raw term so the floor lands after the spread, matching the
+    /// applier order exactly; the jitter-free [`Self::level_gain_core`] floors
+    /// first, which is equivalent only because the jitter mean is 0.
+    pub fn level_gain_core_raw(&self, p: &StatGrowthParam, level: usize) -> Option<u32> {
         if !(1..MAX_LEVEL).contains(&level) {
             return None;
         }
         let byte = *self.curves.get(p.row as usize)?.get(level - 1)? as u32;
         let span = p.max.saturating_sub(p.start) as u32;
-        Some((span * byte / GROWTH_GAIN_DIVISOR).max(1))
+        Some(span * byte / GROWTH_GAIN_DIVISOR)
     }
 }
 

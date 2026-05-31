@@ -141,12 +141,22 @@ the user's `SCUS_942.54` at boot (alongside the XP curve), replacing the flat
 `boot_installs_the_real_per_character_growth_curves_from_disc` checks Noa's curve
 produces the validated L2→L3 core (HP 37, MP 6).
 
+**Jitter (modeled, opt-in).** The per-level `rand() % (2×jitter+1) − jitter`
+spread is implemented as an **opt-in** layer:
+`LevelUpTracker::with_level_up_jitter(seed)` seeds a faithful PSX BIOS-rand LCG
+(`BiosRand`: `seed = seed×0x41C6_4E6D + 0x3039; (seed>>16)&0x7FFF`) and the
+level-up pass then draws **one** `rand()` per stat per level — in the applier's
+stat order (HP, MP, AGL, ATK, UDF, LDF, SPD, INT), *including* the draw when
+`jitter == 0` (`rand() % 1 == 0`) — applying the spread to the **unfloored**
+core (`level_gain_core_raw`) before the `max(1, …)` floor, exactly as
+`FUN_801E9504` does. It is **off by default**: with no jitter RNG installed the
+tracker applies only the deterministic core and draws zero `rand()`, so every
+replay/determinism oracle stays bit-identical. The *algorithm* is faithful; a
+bit-exact reproduction of a *specific* retail level-up additionally needs the
+BIOS-rand state at that moment (runtime, not recoverable from disc), so the
+default engine path stays jitter-free (the jitter mean is 0 ⇒ unbiased totals).
+
 **Remaining (not modeled):**
-- The per-level `rand() % (2×jitter+1) − jitter` spread — a *bit-exact* level-up
-  must consume the same retail `rand()` stream in order to stay
-  replay-deterministic, so the engine applies only the deterministic core (the
-  jitter mean is 0, so totals are unbiased, just not byte-identical to a
-  specific retail roll).
 - The slots-1/2 XP-threshold ± correction (`_DAT_8007B81C`) is still
   runtime-sourced.
 

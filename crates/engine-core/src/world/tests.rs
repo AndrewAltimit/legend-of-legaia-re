@@ -4385,35 +4385,76 @@ fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
     let mut world = World::default();
     world.set_battle_attack(0, 50);
 
-    // Power Up: +20 Attack for 2 turns.
+    // Power Up: retail stat-up is the x6/5 ramp (50 -> 60), not a flat +20.
     world.fold_spell_outcome(SpellOutcome::Buff {
         target: 0,
         stat: BuffStat::Attack,
         magnitude: 20,
         turns: 2,
     });
-    assert_eq!(world.battle_attack[0], 70, "buff adds to the scalar");
+    assert_eq!(
+        world.battle_attack[0], 60,
+        "stat-up ramps the scalar by x6/5"
+    );
     assert_eq!(world.battle_buffs.len(), 1);
 
-    // Re-casting refreshes (reverts the old delta first, no stacking).
+    // Re-casting refreshes (reverts the old delta first, so the ramp re-applies
+    // from the base 50 -> 60, no compounding).
     world.fold_spell_outcome(SpellOutcome::Buff {
         target: 0,
         stat: BuffStat::Attack,
         magnitude: 20,
         turns: 2,
     });
-    assert_eq!(world.battle_attack[0], 70, "refresh does not stack");
+    assert_eq!(
+        world.battle_attack[0], 60,
+        "refresh does not compound the ramp"
+    );
     assert_eq!(world.battle_buffs.len(), 1);
 
     // Ages one turn per the buffed actor's turn; expires on the 2nd.
     world.tick_battle_buffs_on_turn(0);
-    assert_eq!(world.battle_attack[0], 70);
+    assert_eq!(world.battle_attack[0], 60);
     world.tick_battle_buffs_on_turn(0);
     assert_eq!(
         world.battle_attack[0], 50,
-        "expiry reverts the delta exactly"
+        "expiry reverts the ramp delta exactly"
     );
     assert!(world.battle_buffs.is_empty());
+}
+
+#[test]
+fn battle_magic_buff_ramp_is_multiplicative_not_additive() {
+    use crate::spells::{BuffStat, SpellOutcome};
+
+    let mut world = World::default();
+    // At a 200 scalar the retail x6/5 ramp (->240) diverges from a flat +20
+    // (->220): proves the live buff is multiplicative, not additive.
+    world.set_battle_magic(1, 200);
+    world.fold_spell_outcome(SpellOutcome::Buff {
+        target: 1,
+        stat: BuffStat::MagicAttack,
+        magnitude: 20,
+        turns: 1,
+    });
+    assert_eq!(world.battle_magic[1], 240, "x6/5 ramp, not flat +20");
+    world.tick_battle_buffs_on_turn(1);
+    assert_eq!(world.battle_magic[1], 200, "ramp delta reverts exactly");
+
+    // The ramp clamps at 0xFFFF (buff_ramp ceiling) without overflow.
+    world.set_battle_attack(2, 60_000);
+    world.fold_spell_outcome(SpellOutcome::Buff {
+        target: 2,
+        stat: BuffStat::Attack,
+        magnitude: 20,
+        turns: 1,
+    });
+    assert_eq!(world.battle_attack[2], 0xFFFF, "ramp clamps at u16 max");
+    world.tick_battle_buffs_on_turn(2);
+    assert_eq!(
+        world.battle_attack[2], 60_000,
+        "clamped delta still reverts"
+    );
 }
 
 #[test]

@@ -10,11 +10,20 @@ section of `crates/asset/src/data/tim_categories.tsv`:
                                                a later category pass reclaims it)
   - everything else                         -> unchanged
 
+The demote step only runs with --allow-demotions. By DEFAULT this script is
+promote-only and never demotes, so a partial / hand-built selection can't
+silently wipe a category's existing labels. The full-category review workflow
+(build_tim_review.py pre-selects every current member of the category, so the
+downloaded selection IS the whole category) is the case where demotion is
+intended -- pass --allow-demotions there to let deselected cells fall back to
+"other".
+
 The byte-exact reverse-engineered pins (labels outside the coarse vocabulary)
 are never touched. Regenerate the catalog reference TSVs afterwards.
 
 Usage:
     python3 scripts/apply_tim_review.py <selection.txt> [--table PATH] [--category CAT]
+                                        [--allow-demotions]
 """
 import argparse
 import sys
@@ -28,6 +37,13 @@ def main():
     ap.add_argument("selection")
     ap.add_argument("--table", default="crates/asset/src/data/tim_categories.tsv")
     ap.add_argument("--category", default=None, help="override category (else read from file header)")
+    ap.add_argument(
+        "--allow-demotions",
+        action="store_true",
+        help="demote existing category members NOT in the selection back to "
+        "'other' (the full-category re-review workflow). Off by default so a "
+        "partial selection is promote-only and can't wipe existing labels.",
+    )
     args = ap.parse_args()
 
     # Parse selection.
@@ -87,10 +103,18 @@ def main():
             if cur[0] != cat:
                 promoted += 1
             cur[0] = cat
-    for fnv, rec in coarse.items():
-        if rec[0] == cat and fnv not in sel:
-            rec[0] = "other"
+    would_demote = [fnv for fnv, rec in coarse.items() if rec[0] == cat and fnv not in sel]
+    if args.allow_demotions:
+        for fnv in would_demote:
+            coarse[fnv][0] = "other"
             demoted += 1
+    elif would_demote:
+        print(
+            f"note: {len(would_demote)} existing '{cat}' row(s) are not in the "
+            f"selection; kept as-is (promote-only). Pass --allow-demotions to "
+            f"demote them to 'other' (full-category re-review only).",
+            file=sys.stderr,
+        )
 
     out = list(prefix)
     for fnv in sorted(coarse):

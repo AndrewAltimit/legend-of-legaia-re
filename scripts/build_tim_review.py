@@ -7,7 +7,10 @@ self-contained `review.html` into the render dir: a thumbnail grid where every
 distinct texture currently labeled the TARGET category is pre-selected. Click a
 cell to toggle; filter to scan quickly; "Download selection" saves the chosen
 fingerprints. Feed that file to `scripts/apply_tim_review.py` to write the
-labels back.
+labels back. Because this grid pre-selects every current member of the
+category, the downloaded selection is the WHOLE category — so pass
+`--allow-demotions` to apply_tim_review for this full-review workflow if you
+want deselected cells to fall back to "other".
 
 The PNGs are decoded pixel data and stay local; only the resulting
 fingerprint->label table is committed. review.html lives beside them (local).
