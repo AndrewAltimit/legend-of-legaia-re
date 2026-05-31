@@ -1,5 +1,5 @@
 //! Disc-gated regression test: every kingdom bundle's slot 4 parses as a
-//! world-map overlay outline (the dev-menu top-view wireframe).
+//! world-map slot-4 container parse.
 //!
 //! Asserts the invariants we rely on for the world-overview page
 //! visualization:
@@ -68,7 +68,7 @@ fn slot4_parses_for_every_kingdom() {
         let slot4 = &bundle.slots[4];
         assert_eq!(
             slot4.type_byte, 0x05,
-            "{label}: slot 4 type byte should be 0x05 (MOVE/wireframe)"
+            "{label}: slot 4 type byte should be 0x05 (MOVE)"
         );
         let decoded = slot4
             .decoded
@@ -113,17 +113,17 @@ fn slot4_parses_for_every_kingdom() {
             lines.len()
         );
 
-        // Sanity-bound the X-Z extent. Drake reaches ±32K (the world
-        // boundary frame); Sebucus / Karisto have similar extents (slot 4
-        // includes the global boundary marker in every kingdom).
+        // Sanity-bound the X-Z extent. Drake reaches ±32K via its
+        // full-extent kind-4 body; Sebucus / Karisto have similar extents
+        // (every kingdom carries at least one such full-span body).
         let (xmin, zmin, xmax, zmax) =
             world_map_overlay::xz_bounds(&parsed).expect("xz_bounds present");
         assert!(xmin < xmax, "{label}: degenerate X bounds");
         assert!(zmin < zmax, "{label}: degenerate Z bounds");
         let dx = i32::from(xmax) - i32::from(xmin);
         let dz = i32::from(zmax) - i32::from(zmin);
-        // Each kingdom's slot 4 always includes the world-boundary frame
-        // body (kind=4) which spans the full 16K x-extent; the smallest
+        // Each kingdom's slot 4 always includes at least one full-extent
+        // kind-4 body which spans the full 16K x-extent; the smallest
         // observed kingdom (Sebucus) covers the half-world with
         // -28160..-3046 X (dx >= 25000) and the full -32K..+32K Z.
         assert!(

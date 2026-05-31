@@ -502,7 +502,7 @@ enum Cmd {
     ///
     /// Optional `--placements <world-overview.json>` overlays the kingdom's
     /// MAN-asset placements as dots so you can verify landmarks sit inside
-    /// the expected coastline curves.
+    /// the (falsified) coastline-curve reading.
     Slot4Png {
         /// Kingdom PROT entry to decode. Mutually exclusive with `--from-raw`.
         #[arg(long)]
@@ -533,12 +533,12 @@ enum Cmd {
         #[arg(long, default_value_t = 16)]
         margin: u32,
         /// Render only this body index (0..N-1). Useful for isolating
-        /// the continent coastline (body 12 in Drake) from the noisy
+        /// body 12 in Drake from the noisy
         /// inner contours.
         #[arg(long)]
         only_body: Option<usize>,
         /// Frame the camera on a single body's bbox instead of the full
-        /// slot-4 extent. When set, body 13's ±32K boundary frame is
+        /// slot-4 extent. When set, body 13's full-extent (kind-4) records are
         /// skipped from the camera fit, so the inner contours fill
         /// the canvas instead of compressing into a corner.
         #[arg(long)]
@@ -1402,7 +1402,7 @@ fn slot4_png_cmd(
                 // We map placements into the current camera's bbox so a dot's
                 // RELATIVE position within the kingdom carries over - imperfect
                 // but enough for "does landmark N sit roughly inside the
-                // coastline?" eyeballing.
+                // is-this-anything?" eyeballing.
                 let (xmin, zmin, xmax, zmax) = raster.world_bounds;
                 let mut pmin_x = i32::MAX;
                 let mut pmin_z = i32::MAX;
@@ -1535,7 +1535,7 @@ fn kingdom_slot_cmd(
         match world_map_overlay::parse(&bytes) {
             Ok(parsed) => {
                 println!();
-                println!("World-map overlay outlines: {} bodies", parsed.bodies.len());
+                println!("World-map slot-4 container: {} bodies", parsed.bodies.len());
                 println!(
                     "{:<6}  {:>6}  {:>6}  {:>5}  {:>4}  {:>6}  {:>9}",
                     "Body", "ca", "cb", "kind", "flag", "recs", "non-zero"
