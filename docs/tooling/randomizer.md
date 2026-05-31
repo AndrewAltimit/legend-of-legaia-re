@@ -40,6 +40,38 @@ shifts. It works because the edit targets fit a fixed slot with slack:
   comfortably (`repack_slot` rejects the rare case where it would not). The slot
   is re-emitted zero-padded back to `0x14000`.
 
+## CLI: `legaia-rando`
+
+The top-level binary turns a disc + seed into a portable patch:
+
+```bash
+legaia-rando drops     --input DISC.bin                       # read-only listing
+legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
+legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
+    --patch run.ppf --output patched.bin
+```
+
+`randomize` plans the run (`legaia_rando::apply::randomize_drops`), applies it to
+an in-memory copy of the disc, diffs the result against the original, and writes
+the changes as a **PPF 3.0** patch (default `<input>.ppf`). `--output` also
+writes a full patched `.bin` for local play. The seed is resolved from a number
+or a hashed string and always printed, so a run reproduces exactly; the same
+seed yields a byte-identical patched image and PPF.
+
+Because a drop edit changes two bytes *inside* an LZS stream, the whole touched
+slot is re-packed, so the changed-byte count (and the PPF) is dominated by
+re-compression churn, not by the gameplay delta — this is inherent to editing
+compressed data, and every edit stays same-size. `--drops random` reads the SCUS
+item table off the disc for the valid item pool; `shuffle` needs no pool.
+
+### Greedy-packer slack
+
+Our `legaia_lzs::compress` is weaker than Sony's, so a monster record already
+near the `0x14000` slot limit can re-pack a few bytes too large. `apply_drop_plan`
+**skips** such a slot (keeping its original drop) and records it in a
+`DropApplyReport`, rather than aborting the run, so the rest of the patch is still
+produced. The CLI prints any skipped monster ids.
+
 ## The patch chain
 
 A PROT-entry-relative edit maps to a disc byte range like this:
@@ -76,8 +108,9 @@ bit-for-bit.
 | `crates/asset` `lzs_compress_roundtrip_real` | disc-gated | the encoder round-trips real monster records + LZS-container sections, and compresses them |
 | `crates/iso` `write` unit tests | CI | encode is idempotent / self-consistent; corrupting user data invalidates until re-encoded; ECC is address-independent; a seam-straddling patch keeps both sectors valid |
 | `crates/iso` `ecc_real` | disc-gated | the encoder reproduces real PROT.DAT sectors' EDC/ECC bit-for-bit; a one-byte patch + restore round-trips a real sector exactly |
-| `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
+| `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
 | `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
+| `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
@@ -85,8 +118,10 @@ Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
 The crate never embeds, commits, or redistributes game bytes. A patched `.bin`
 contains Sony data and is never committed; the intended distribution form is a
-patcher tool + seed (and/or a portable patch file the user applies to their own
-disc).
+patcher tool + seed, and/or the **PPF patch** the CLI emits. A PPF carries only
+the deltas between the user's original disc and the patched one — it is
+meaningless without the original image the user already owns, so it is safe to
+share where a patched `.bin` is not.
 
 ## See also
 

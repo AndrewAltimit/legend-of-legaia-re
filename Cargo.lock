@@ -1457,6 +1457,7 @@ name = "legaia-rando"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "legaia-asset",
  "legaia-iso",
  "legaia-lzs",

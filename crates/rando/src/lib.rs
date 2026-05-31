@@ -31,8 +31,10 @@
 //! - [`disc`] — apply same-size PROT-entry edits to a real disc image
 //!   (`DiscPatcher`), via the Mode 2/2352 sector write-back in `legaia_iso`.
 
+pub mod apply;
 pub mod disc;
 pub mod drops;
 pub mod items;
 pub mod monster;
+pub mod ppf;
 pub mod rng;

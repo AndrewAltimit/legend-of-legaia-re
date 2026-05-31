@@ -20,6 +20,32 @@ full design.
 | `drops` | The drop-table planner. `plan_drops` reassigns the monsters that currently drop something, in `Shuffle` mode (redistribute the existing drops — preserves the economy) or `Random` mode (draw from the item pool). Deterministic in `(current drops, pool, seed, mode)`. |
 | `monster` | Re-pack a monster slot in the `battle_data` archive (PROT 867). `repack_slot` decompresses the `0x14000`-byte slot, hands the decoded record to an in-place mutator, recompresses with `legaia_lzs::compress`, and zero-pads back to the original slot size so no offset moves. `set_drop` is the drop-id + chance wrapper. |
 | `disc` | `DiscPatcher`: own a mutable disc image, locate PROT.DAT + read its TOC, and apply same-size PROT-entry edits via the Mode 2/2352 sector write-back in `legaia_iso::write`. `patch_monster_slot` / `monster_slot` are the `battle_data` helpers; `patch_prot_entry` is the generic form. |
+| `apply` | High-level orchestration the CLI drives: `current_drops` reads every monster's drop off the archive, `apply_drop_plan` writes a planned drop table back (skipping the rare slot too full for our greedy packer and recording it in a `DropApplyReport`), and `randomize_drops` does plan + apply in one call. |
+| `ppf` | PPF 3.0 patch writer. `diff_runs` reduces original-vs-patched to the changed byte runs, `write_ppf3` serializes them, `apply_ppf3` replays a patch (used by the round-trip test). The PPF is the redistributable deliverable — it ships only deltas the user already owns. |
+
+## CLI (`legaia-rando`)
+
+The top-level binary reads a user-supplied disc, plans a randomization from a
+seed, and emits a portable **PPF 3.0** patch plus (optionally) a full patched
+`.bin` for local play. The shareable artifacts are the patcher and the seed; a
+patched `.bin` contains Sony bytes and must never be redistributed.
+
+```bash
+# Read-only: list every monster's current drop (with item names from the disc).
+legaia-rando drops --input "Legend of Legaia (USA).bin"
+
+# Shuffle drops from a memorable seed -> a portable patch (default <input>.ppf).
+legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
+
+# Random drops + a local patched image to play.
+legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
+    --patch run.ppf --output patched.bin
+```
+
+`--seed` takes a number (decimal or `0x`-hex) or any string (hashed stably to a
+number); the resolved numeric seed is always printed so a run reproduces
+exactly. `--drops random` needs the SCUS item table off the disc to build the
+valid item pool; `shuffle` does not.
 
 ## How an edit reaches the disc
 
@@ -32,11 +58,13 @@ directory record moves.
 ## Tests
 
 - Synthetic (CI): planner determinism + shuffle-preserves-the-multiset, RNG
-  stability, surgical `set_drop`, and a patch round-trip through a hand-built
-  Mode 2 disc with a real-format PROT TOC.
+  stability, surgical `set_drop`, PPF diff/write/apply round-trip, and a patch
+  round-trip through a hand-built Mode 2 disc with a real-format PROT TOC.
 - Disc-gated: edit real monster drops and a real monster slot on a scratch copy
   of the disc, asserting the edit is surgical (drop applied; everything else
-  byte-identical) and the patched sectors stay EDC/ECC-valid.
+  byte-identical) and the patched sectors stay EDC/ECC-valid; plus a full-archive
+  shuffle that plans, applies, diffs into a PPF, and confirms the PPF reproduces
+  the patched image (and is deterministic for a fixed seed).
 
 ```bash
 cargo test -p legaia-rando                                   # synthetic only
