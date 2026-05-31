@@ -2,6 +2,11 @@
 //! engine allocates at `DAT_8007B7C8` (see [Ghidra dump of `FUN_8001F05C`
 //! case 6](../../../ghidra/scripts/funcs/8001f05c.txt)).
 //!
+//! REF: FUN_8001B964 - the runtime per-actor animated-mesh renderer that
+//! consumes this layout. The clean-room engine reproduces it via wgpu plus
+//! the ported [`BoneTransform::decode`] (`FUN_8001BE80`), so the GTE/OT draw
+//! loop of `FUN_8001B964` itself is not ported; this file owns the data side.
+//!
 //! Each town scene's first PROT slot ships a multi-section
 //! [`parse_player_lzs`](crate::parse_player_lzs)-shaped container; one of
 //! the sections (typically section 2) is tagged with asset type byte

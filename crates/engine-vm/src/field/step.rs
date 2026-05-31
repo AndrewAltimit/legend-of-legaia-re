@@ -984,7 +984,7 @@ pub fn step<H: FieldHost>(
                         } else {
                             ctx.flags &= !0x0100_0000;
                         }
-                        host.op4c_n5_sub0_sound_directional(ctx, value, high);
+                        host.op4c_n5_sub0_set_actor_model(ctx, value, high);
                         StepResult::Advance {
                             next_pc: pc + header_size + 3,
                         }
