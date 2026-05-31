@@ -128,13 +128,25 @@ aliases); decoded + checked in `legaia_asset::level_up_tables`
 (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated
 `crates/asset/tests/level_up_tables_real.rs`.
 
-**Remaining (engine wiring only):** retail adds the `rand() % (2×jitter+1) −
-jitter` spread per stat per level, so a faithful port must consume the same
-`rand()` stream in the same order to stay replay-deterministic; the per-character
-XP-threshold correction (slots 1/2) is also still runtime-sourced. The
-deterministic core is now trustworthy to wire (e.g. as a
-`StatGrowthCurve::PerLevel` built from the SCUS tables); the jitter RNG is the
-only piece holding back a bit-exact level-up.
+**Engine wiring (deterministic core — done).** `LevelUpTracker::with_growth_tables`
+builds a per-character `StatGrowthCurve::PerLevel` for the HP/MP growth from the
+parsed SCUS tables (the jitter-free `level_gain_core`), and `BootSession`
+installs it from the user's `SCUS_942.54` at boot (alongside the XP curve),
+replacing the flat 10 HP / 5 MP placeholder for Vahn/Noa/Gala. Disc-gated
+`boot_installs_the_real_per_character_growth_curves_from_disc` checks Noa's
+curve produces the validated L2→L3 core (HP 37, MP 6).
+
+**Remaining (still placeholder / not modeled):**
+- The per-level `rand() % (2×jitter+1) − jitter` spread — a *bit-exact* level-up
+  must consume the same retail `rand()` stream in order to stay
+  replay-deterministic, so the engine applies only the deterministic core (the
+  jitter mean is 0, so totals are unbiased, just not byte-identical to a
+  specific retail roll).
+- The six battle stats at `+0x122..+0x12D` are grown by the same applier but
+  aren't part of the tracker's HP/MP-only [`StatGain`] yet (widening it +
+  extending `apply_to_record` to the record stat window is the next step).
+- The slots-1/2 XP-threshold ± correction (`_DAT_8007B81C`) is still
+  runtime-sourced.
 
 **FALSIFIED (still): the "Seru struct `+0x74`" growth hypothesis.** An earlier
 reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"

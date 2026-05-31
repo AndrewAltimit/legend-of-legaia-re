@@ -91,6 +91,41 @@ fn boot_installs_the_real_retail_xp_curve_from_disc() {
 }
 
 #[test]
+fn boot_installs_the_real_per_character_growth_curves_from_disc() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ (with SCUS_942.54) missing — run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+
+    use legaia_engine_core::levelup::StatGrowthCurve;
+    let curves = &session.host.world.level_up_tracker.stat_curves;
+
+    // Vahn/Noa/Gala get real per-level curves; the placeholder flat rate is gone.
+    for (slot, curve) in curves.iter().take(3).enumerate() {
+        assert!(
+            matches!(curve, StatGrowthCurve::PerLevel(_)),
+            "slot {slot} should carry the SCUS-derived per-level curve"
+        );
+    }
+
+    // Noa (slot 1) leveling FROM L2 → L3 reads curve[row][1]; the deterministic
+    // core is byte-validated against the noa_levelup_field_pre/_post capture:
+    // HP +37 core (observed +39 with jitter), MP +6 core (observed +5).
+    let noa_l2 = curves[1].gain_for(2);
+    assert_eq!(noa_l2.hp, 37, "Noa L2→L3 HP growth core");
+    assert_eq!(noa_l2.mp, 6, "Noa L2→L3 MP growth core");
+
+    // Not the 10/5 flat placeholder.
+    assert_ne!((noa_l2.hp, noa_l2.mp), (10, 5));
+}
+
+#[test]
 fn new_game_seeds_vahn_straight_from_disc_image() {
     // Same as above but through the `--disc` boot source the binary uses, so
     // the SCUS read via `DiscVfs` (ISO9660 walk) is exercised end-to-end.

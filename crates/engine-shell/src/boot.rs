@@ -137,6 +137,28 @@ fn read_retail_xp_curve(source: &SceneSource<'_>) -> Option<Vec<u32>> {
     legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)
 }
 
+/// Read + parse the static-SCUS per-character stat-growth tables (`DAT_800769CC`
+/// curves + `DAT_80076918` parameter block) read by `FUN_801E9504`. Returns
+/// `None` (not an error) when the executable isn't reachable, so the tracker
+/// keeps its flat-rate placeholder growth rather than failing the boot.
+fn read_retail_growth_tables(
+    source: &SceneSource<'_>,
+) -> Option<legaia_asset::level_up_tables::GrowthTables> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_asset::level_up_tables::growth_tables_from_scus(&scus)
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -174,6 +196,15 @@ impl BootSession {
         // reset the tracker, so it persists across New Game.
         if let Some(curve) = read_retail_xp_curve(&source) {
             host.world.level_up_tracker.xp_table = curve;
+        }
+
+        // Install the real per-character HP/MP growth curves (static SCUS
+        // DAT_800769CC / DAT_80076918 via FUN_801E9504's validated jitter-free
+        // core) over the flat 10/5 placeholder, when the executable is
+        // reachable. Persists across New Game like the XP curve.
+        if let Some(tables) = read_retail_growth_tables(&source) {
+            let tracker = std::mem::take(&mut host.world.level_up_tracker);
+            host.world.level_up_tracker = tracker.with_growth_tables(&tables);
         }
 
         host.load_scene(&cfg.scene)

@@ -23,12 +23,16 @@
 //! below is only used when no executable is reachable (disc-less tests). See
 //! `docs/subsystems/level-up.md` § XP table.
 //!
-//! Per-slot [`StatGain`] values remain placeholder flat rates (10 HP / 5 MP).
-//! The retail per-character growth source is also pinned: static-SCUS per-stat
-//! 98-entry curves at `DAT_800769CC` (stride `0x62`, indexed by level) + a
-//! per-stat parameter block at `DAT_80076918`, read by the same `FUN_801E9504`
-//! (not the falsified Seru `+0x74` path). Wiring those from disc is the pending
-//! engine port.
+//! Per-character HP/MP growth is wired from the same static-SCUS tables:
+//! per-stat curves at `DAT_800769CC` (stride `0x62`) + the per-character
+//! parameter block at `DAT_80076918` (`{u16 start, u16 max, u8 jitter, u8 row}`
+//! sub-records), read by the same `FUN_801E9504` (not the falsified Seru
+//! `+0x74` path). [`LevelUpTracker::with_growth_tables`] installs the validated
+//! jitter-free per-level core (`(max-start) × curve[row][level-1] / 0x24C0`,
+//! min 1); `BootSession` calls it from the user's `SCUS_942.54`. The flat
+//! 10 HP / 5 MP [`StatGain`] default is only the disc-less fallback. Retail's
+//! per-level `rand()` jitter and the six battle-stat grants are not modeled yet
+//! (see `docs/subsystems/level-up.md` § Stat gains).
 
 use legaia_save::CharacterRecord;
 
@@ -553,6 +557,48 @@ impl LevelUpTracker {
         self
     }
 
+    /// Install per-character deterministic HP/MP growth curves from the parsed
+    /// static-SCUS growth tables (`legaia_asset::level_up_tables`).
+    ///
+    /// Uses the **jitter-free core** of the retail applier `FUN_801E9504`
+    /// ([`legaia_asset::level_up_tables::GrowthTables::level_gain_core`]) for the
+    /// HP (stat 0) and MP (stat 1) growth records: per level `prev → prev+1`,
+    /// `gain = max(1, (max-start) × curve[row][prev-1] / 0x24C0)`. This is the
+    /// validated retail per-character growth (checked byte-exact against the Noa
+    /// L2→L3 capture); it replaces the flat 10 HP / 5 MP placeholder for the
+    /// three playable slots (Vahn / Noa / Gala). The 4th slot keeps its existing
+    /// curve.
+    ///
+    /// Retail additionally adds a per-level `rand() % (2×jitter+1) − jitter`
+    /// spread on top of this core; that jitter is **not** modeled here (it needs
+    /// the retail RNG stream to stay replay-deterministic). The six battle stats
+    /// (`+0x122..+0x12D`) are likewise grown by `FUN_801E9504` but aren't part of
+    /// this tracker's HP/MP-only [`StatGain`] yet.
+    pub fn with_growth_tables(
+        mut self,
+        tables: &legaia_asset::level_up_tables::GrowthTables,
+    ) -> Self {
+        use legaia_asset::level_up_tables::GROWTH_CHAR_COUNT;
+        for slot in 0..GROWTH_CHAR_COUNT.min(MAX_PARTY) {
+            let Some(cp) = tables.char_params(slot) else {
+                continue;
+            };
+            let hp = &cp.stats[0];
+            let mp = &cp.stats[1];
+            let mut table = Vec::with_capacity((MAX_LEVEL - 1) as usize);
+            // table[prev-1] is the gain for the level-up prev → prev+1, matching
+            // `gain_for(prev)`. `level_gain_core(_, prev)` reads curve[row][prev-1].
+            for prev in 1u8..MAX_LEVEL {
+                let lvl = prev as usize;
+                let h = tables.level_gain_core(hp, lvl).unwrap_or(0) as u16;
+                let m = tables.level_gain_core(mp, lvl).unwrap_or(0) as u16;
+                table.push(StatGain { hp: h, mp: m });
+            }
+            self.stat_curves[slot] = StatGrowthCurve::PerLevel(table);
+        }
+        self
+    }
+
     /// Grant `xp` to party slot `char_id`. If the accumulated XP crosses one
     /// or more level thresholds the highest level reached is returned.
     /// Multi-level jumps collapse into a single result with the total stat
@@ -670,6 +716,36 @@ mod tests {
         assert_eq!(r.new_level, 3);
         assert_eq!(r.hp_gained, 20); // 2 × 10
         assert_eq!(r.mp_gained, 10); // 2 × 5
+    }
+
+    #[test]
+    fn growth_tables_drive_deterministic_per_level_hp_mp() {
+        use legaia_asset::level_up_tables::{
+            GROWTH_PARAM_LEN, GROWTH_ROW_COUNT, GROWTH_ROW_STRIDE, GrowthTables,
+        };
+        // A curve of all 0x60 sums to 98 × 96 = 9408 = 0x24C0, so the divide is
+        // exact and gain = (max-start) × 0x60 / 0x24C0 every level.
+        let curves = vec![vec![0x60u8; GROWTH_ROW_STRIDE]; GROWTH_ROW_COUNT];
+        let mut param = vec![0u8; GROWTH_PARAM_LEN];
+        // slot 0 HP: start=100, max=4900 → (4800 × 96) / 9408 = 48; jitter 0, row 0.
+        param[0..6].copy_from_slice(&[100, 0, 0x24, 0x13, 0, 0]); // 0x1324 = 4900
+        // slot 0 MP: start=10, max=970 → (960 × 96) / 9408 = 9.
+        param[6..12].copy_from_slice(&[10, 0, 0xCA, 0x03, 0, 0]); // 0x03CA = 970
+        let g = GrowthTables { curves, param };
+
+        let mut t = LevelUpTracker::new()
+            .with_xp_table(placeholder_xp_table())
+            .with_growth_tables(&g);
+
+        // Curve replaced the flat placeholder for slot 0.
+        assert!(matches!(t.stat_curves[0], StatGrowthCurve::PerLevel(_)));
+        // L1 → L2: deterministic core, not the 10/5 flat rate.
+        let r = t.grant_xp(0, 100).expect("level up");
+        assert_eq!(r.new_level, 2);
+        assert_eq!(r.hp_gained, 48);
+        assert_eq!(r.mp_gained, 9);
+        // Slot 3 (no growth record) keeps the flat default.
+        assert!(matches!(t.stat_curves[3], StatGrowthCurve::Flat(_)));
     }
 
     #[test]
