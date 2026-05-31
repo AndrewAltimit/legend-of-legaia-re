@@ -26,47 +26,10 @@
 //! their decompilation.
 //! REF: FUN_801DE840
 
-/// Length of one variable-length text/data packet, in bytes.
-///
-/// Ported from `FUN_8003CA38` (see `ghidra/scripts/funcs/8003ca38.txt`). The
-/// in-game text encoding terminates a packet with any byte `<= 0x1E`. Bytes
-/// `>= 0x1F` are normal payload; bytes whose top nibble is `0xC` are 2-byte
-/// escape sequences (the second byte is consumed unconditionally).
-///
-/// The returned count does **not** include the terminator byte itself. So if
-/// the input is `[0x40, 0x40, 0x00, ...]`, the result is `2`. The dispatcher
-/// adds the terminator and the opcode prefix bytes separately when computing
-/// PC delta - see `0x4C nE sub-1`.
-///
-/// `buf` is read until either:
-/// - a terminator byte (`<= 0x1E`) is seen, or
-/// - the slice is exhausted.
-///
-/// On exhaustion the function returns the consumed length, matching the
-/// original's address-walks-off-end behaviour (which would read uninitialised
-/// memory in retail). Callers that need bounded scanning should pre-validate
-/// the buffer.
-pub fn packet_length(buf: &[u8]) -> usize {
-    let mut count = 0usize;
-    let mut i = 0usize;
-    while i < buf.len() {
-        let b = buf[i];
-        if b <= 0x1E {
-            break;
-        }
-        if (b & 0xF0) == 0xC0 {
-            // Escape pair - consume one extra byte and credit it to the count.
-            i += 1;
-            count += 1;
-            if i >= buf.len() {
-                break;
-            }
-        }
-        count += 1;
-        i += 1;
-    }
-    count
-}
+/// The variable-length text/data packet-width helper (`FUN_8003CA38`) now lives
+/// in the Track-1 `asset` crate next to the field-VM disassembler that also uses
+/// it; re-exported so `crate::field_helpers::packet_length` keeps resolving.
+pub use legaia_asset::field_disasm::packet_length;
 
 /// Test whether the `idx`-th bit of a packed bit array is set.
 ///
@@ -231,76 +194,9 @@ pub fn tile_center(b: u8) -> i16 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn packet_length_empty_buffer_is_zero() {
-        assert_eq!(packet_length(&[]), 0);
-    }
-
-    #[test]
-    fn packet_length_immediate_terminator_is_zero() {
-        // Any byte <= 0x1E ends the packet without contributing.
-        for b in 0..=0x1Eu8 {
-            assert_eq!(packet_length(&[b]), 0, "terminator byte {b:#x}");
-        }
-    }
-
-    #[test]
-    fn packet_length_pure_printable_run() {
-        // Bytes 0x1F..=0xBF (excluding the 0xC0 escape range) are 1-byte each.
-        let buf = [0x20, 0x40, 0x80, 0xBF, 0x00];
-        assert_eq!(packet_length(&buf), 4);
-    }
-
-    #[test]
-    fn packet_length_escape_sequence_counts_two() {
-        // 0xC1 is an escape lead - the next byte is consumed unconditionally,
-        // and BOTH count toward the length.
-        let buf = [0xC1, 0xAB, 0x00];
-        assert_eq!(packet_length(&buf), 2);
-    }
-
-    #[test]
-    fn packet_length_multiple_escapes_with_runs() {
-        // 0x40 (1) + 0xC1 0xAB (2) + 0x40 (1) + 0xCD 0x05 (2) + terminator.
-        // Note: the 0x05 inside the escape pair is consumed unconditionally
-        // even though it's <= 0x1E - it's already past the terminator check
-        // when the lead byte's escape semantics fire.
-        let buf = [0x40, 0xC1, 0xAB, 0x40, 0xCD, 0x05, 0x00];
-        assert_eq!(packet_length(&buf), 6);
-    }
-
-    #[test]
-    fn packet_length_escape_at_buffer_boundary() {
-        // 0xC2 with no following byte. The original loops would read off
-        // the end; we guard and stop. The lead byte still counts.
-        let buf = [0xC2];
-        assert_eq!(packet_length(&buf), 1);
-    }
-
-    #[test]
-    fn packet_length_no_terminator_runs_to_end() {
-        let buf = [0x20, 0x21, 0x22, 0x23];
-        assert_eq!(packet_length(&buf), 4);
-    }
-
-    #[test]
-    fn packet_length_high_nibble_matters_for_escape() {
-        // 0xCx is escape; 0xDx is plain.
-        assert_eq!(packet_length(&[0xC0, 0xFF, 0x00]), 2);
-        assert_eq!(packet_length(&[0xD0, 0xFF, 0x00]), 2);
-        // 0xC0..=0xCF all consume the next byte:
-        for lead in 0xC0..=0xCFu8 {
-            assert_eq!(
-                packet_length(&[lead, 0xAB, 0x00]),
-                2,
-                "escape lead {lead:#x}"
-            );
-        }
-        // 0xB0..=0xBF and 0xD0..=0xDF do NOT (only 0xC range escapes):
-        for lead in [0xB0u8, 0xBFu8, 0xD0u8, 0xDFu8] {
-            assert_eq!(packet_length(&[lead, 0x00]), 1, "non-escape lead {lead:#x}");
-        }
-    }
+    // `packet_length` moved to `legaia_asset::field_disasm`; its tests live
+    // there now. It is re-exported above so the rest of the engine VM can call
+    // `field_helpers::packet_length` unchanged.
 
     #[test]
     fn party_flag_test_returns_ff_when_bit_set() {

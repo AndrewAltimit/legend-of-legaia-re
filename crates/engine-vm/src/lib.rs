@@ -76,7 +76,11 @@ pub mod battle_formulas;
 pub mod cutscene_trigger;
 pub mod effect_vm;
 pub mod field;
-pub mod field_disasm;
+/// The field-VM bytecode disassembler now lives in the Track-1 `asset` crate
+/// (it is a side-effect-free width/format decoder); re-exported here so the
+/// engine's existing `legaia_engine_vm::field_disasm` / `crate::field_disasm`
+/// paths keep working.
+pub use legaia_asset::field_disasm;
 pub mod field_helpers;
 pub mod menu;
 pub mod motion_vm;
