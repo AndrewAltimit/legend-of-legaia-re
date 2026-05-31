@@ -110,6 +110,7 @@ How the runtime engine works.
 | [`pcsx-redux-automation.md`](docs/tooling/pcsx-redux-automation.md) | Closed-loop Lua probes layered on PCSX-Redux's breakpoint debugger. Save-state load → arm probes → capture N VSyncs → CSV / snapshot. Catalogue + authoring pattern. |
 | [`port-catalog.md`](docs/tooling/port-catalog.md) | Per-function status catalog: `dumped` (Ghidra) × `documented` (`docs/`) × `ported` (`// PORT: FUN_<addr>` tag in `crates/`) × `ignored` (PsyQ infra in `scripts/port-catalog-ignore.toml`). BFS-from-roots feature views in `scripts/features.toml`. `// REF:` sibling tag for cross-references. `--dashboard` mode emits a single regenerable open-work page. Drift checker `scripts/check-port-tags.py` (warn-only in pre-commit). |
 | [`determinism-replay.md`](docs/tooling/determinism-replay.md) | `j-replay-v1` TOML record/replay format + `legaia-engine record` / `replay` subcommands + disc-free determinism cargo-test. Same input file run twice → bit-identical state-trace bytes; pad transitions captured from `play-window` keyboard handler. |
+| [`randomizer.md`](docs/tooling/randomizer.md) | Disc patcher for a user-supplied `.bin` (monster drops; encounters/treasure as they land). Built on three new capabilities: `legaia_lzs::compress` (LZS *encoder*; greedy LZSS, `decompress(compress(x))==x`), `legaia_iso::write` (Mode 2/2352 EDC/ECC re-encode + `patch_file_logical`), and `legaia_rando::disc::DiscPatcher` (PROT-entry → LBA same-size in-place edit). No Sony bytes committed; disc-gated tests. |
 
 ### Reference - [`docs/reference/`](docs/reference/)
 
@@ -130,9 +131,9 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/iso`](crates/iso/README.md) | `disc-extract` | PSX Mode2/2352 disc reader, ISO9660 walker. |
+| [`crates/iso`](crates/iso/README.md) | `disc-extract` | PSX Mode2/2352 disc reader, ISO9660 walker, **sector write-back** (`write` module: EDC/ECC re-encode + `patch_file_logical`; `iso9660::find_file_in_image`). |
 | [`crates/prot`](crates/prot/README.md) | `prot-extract` | PROT.DAT / DMY.DAT TOC, CDNAME map, standalone TIM-pack. |
-| [`crates/lzs`](crates/lzs/README.md) | `lzs-decode` | Legaia LZS decoder (reversed from `FUN_8001a55c`). |
+| [`crates/lzs`](crates/lzs/README.md) | `lzs-decode` | Legaia LZS decoder (reversed from `FUN_8001a55c`) + `compress` re-packer (greedy LZSS the retail decoder accepts; for editing assets). |
 | [`crates/asset`](crates/asset/README.md) | `asset` | Dispatcher, DATA_FIELD streaming, pack format, scene-bundle + effect-bundle + multi-bank-VAB detectors; `categorize` module classifies every PROT entry by format class (disc-gated `categorize_coverage` test asserts ≥99% of corpus bytes are covered). |
 | [`crates/tmd`](crates/tmd/README.md) | `tmd` | Legaia TMD parser + primitive walker + OBJ-with-faces export. |
 | [`crates/tim`](crates/tim/README.md) | `tim` | PSX TIM parser + PNG exporter. |
@@ -150,6 +151,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/mednafen`](crates/mednafen/README.md) | `mednafen-state` | Mednafen save-state parser (`MDFNSVST` gzip + targeted-scan section indexer) + watchpoint-equivalent automation toolkit: pairwise main-RAM diff with PSX-virtual-address regions, sequence bisection for write-transition detection, declarative scenario manifest at [`scripts/scenarios.toml`](scripts/scenarios.toml). `gpu` module + `vram-dump` subcommand decode the GPU section's 1 MiB VRAM blob as a 1024x512 PNG plus optional raw BGR555 bin, useful as a ground-truth oracle for engine-side VRAM state. `spu` module exposes `PsxSpu` over the SPU section: 24 per-voice snapshots (start_addr, loop_addr, pitch, ADSR phase, sweep volumes), key-on/-off masks, reverb mode, 512 KiB SPU RAM — the retail side of the audio-trace parity oracle in `engine-shell`. |
 | [`crates/gamedata`](crates/gamedata/README.md) | `gamedata-tool` | Curated game-data tables (arts with command sequences + AP costs, magic, items, weapons, armor, accessories, enemies with drop / steal table, shops, casino, fishing) mined from public walkthroughs. Cross-validates against `legaia-art::tables`. Acts as ground-truth labels for the binary records being reverse-engineered. See [`docs/reference/gamedata.md`](docs/reference/gamedata.md). |
 | [`crates/cheats`](crates/cheats/README.md) | `cheat-tool` | Parser + classifier for third-party GameShark / Pro-Action-Replay cheat databases (GameShark text dump + Mednafen `.cht`). Classifies codes by the RAM region they target; the pinned offsets (character record, inventory, battle actor, story flags) ground-truth the binary records. See [`docs/reference/cheats.md`](docs/reference/cheats.md). |
+| [`crates/rando`](crates/rando/README.md) | - | Randomizer / disc patcher for a user-supplied `.bin`. `monster::set_drop`/`repack_slot` (LZS decompress → mutate → recompress a `0x14000` battle_data slot), `drops::plan_drops` (seeded shuffle/random), `items::valid_item_pool`, version-stable `rng::SplitMix64`, and `disc::DiscPatcher` (same-size in-place PROT-entry edit → `legaia_iso::write` sector write-back). Ships only code; no Sony bytes. See [`docs/tooling/randomizer.md`](docs/tooling/randomizer.md). |
 
 **Track 2 - engine reimplementation (clean-room Rust)**
 
@@ -191,6 +193,9 @@ Top-level pipeline (recommended for end-to-end runs):
 Several integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` points at a valid `.bin`:
 
 - `crates/iso/tests/disc_pipeline.rs` - disc walk, file count, key file SHA-256s.
+- `crates/iso/tests/ecc_real.rs` - the Mode 2/2352 EDC/ECC encoder reproduces real PROT.DAT sectors' parity bit-for-bit; a one-byte patch + restore round-trips a real sector exactly.
+- `crates/asset/tests/lzs_compress_roundtrip_real.rs` - `legaia_lzs::compress` round-trips + compresses real monster records (PROT 867) and LZS-container sections.
+- `crates/rando/tests/disc_patch_real.rs` - patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image (drop applied, neighbours untouched, sectors EDC/ECC-valid) through disc → ISO → PROT → LZS.
 - `crates/extract/tests/validation_suite.rs` - full pipeline, PROT entry count, sub-asset totals, TIM round-trip.
 - `crates/engine-core/tests/scene_chain_e2e.rs` - every CDNAME scene's MES + SEQ + TMD assets resolve through `SceneHost`; validates `bgm_seq_bytes` slices through the chunk-header wrapper for `scene_vab_stream` entries.
 - `crates/engine-core/tests/battle_real_data_chain.rs` - locate the retail effect bundle and drive the battle SM against it.

@@ -35,6 +35,10 @@
       <div class="card-title">Determinism + replay</div>
       <div class="card-body"><code>j-replay-v1</code> TOML format + <code>legaia-engine record</code> / <code>replay</code> subcommands + disc-free determinism cargo-test. Same input file run twice &rarr; bit-identical state-trace bytes; pad transitions captured from <code>play-window</code>'s keyboard handler.</div>
     </a>
+    <a class="card" href="randomizer.html">
+      <div class="card-title">Randomizer / disc patcher</div>
+      <div class="card-body">Edits gameplay data on a user-supplied <code>.bin</code> (monster drops today) via three new capabilities: an LZS <em>encoder</em>, Mode 2/2352 sector write-back (EDC/ECC re-encode), and a PROT-entry disc bridge. Same-size in-place edits; no Sony bytes committed.</div>
+    </a>
   </div>
 </section>
 

@@ -1,0 +1,38 @@
+//! Legend of Legaia randomizer / disc patcher — Track-1 tooling.
+//!
+//! Builds patches for a **user-supplied** retail disc: it shuffles gameplay
+//! data (monster item drops, random-encounter formations, and eventually
+//! treasure-chest contents) and produces a patched copy plus a portable patch
+//! file. It does **not** touch the clean-room engine.
+//!
+//! ## No Sony bytes
+//!
+//! This crate ships only *code*. It never embeds, commits, or redistributes any
+//! game bytes: the user provides their own disc, the tool reads it, and the
+//! output (patched image / patch file) stays on the user's machine. Every test
+//! that needs real game data is disc-gated and skips when the data is absent.
+//!
+//! ## How edits are applied
+//!
+//! Most editable values live *inside* a Legaia LZS stream (the asset
+//! dispatcher decompresses them at load), so an edit is
+//! decompress → mutate → recompress, using [`legaia_lzs::compress`] to produce
+//! a stream the retail decoder accepts. Where the data sits in a fixed-size
+//! slot (the monster archive's `0x14000`-byte records), the re-packed stream is
+//! padded back to the original slot size so no offset downstream moves — see
+//! [`monster`].
+//!
+//! ## Modules
+//!
+//! - [`rng`] — a version-stable seeded PRNG so a seed always reproduces a run.
+//! - [`items`] — the valid item-id pool (from the SCUS item-name table).
+//! - [`drops`] — the drop-table planner (shuffle / random).
+//! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
+//! - [`disc`] — apply same-size PROT-entry edits to a real disc image
+//!   (`DiscPatcher`), via the Mode 2/2352 sector write-back in `legaia_iso`.
+
+pub mod disc;
+pub mod drops;
+pub mod items;
+pub mod monster;
+pub mod rng;

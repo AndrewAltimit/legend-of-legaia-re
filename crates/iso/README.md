@@ -15,8 +15,15 @@ strips that wrapper and exposes a clean ISO9660 view.
   `(name, lba, size)` tuples for every file on the disc.
 - `region` - TCRF-derived heuristics for identifying which retail build
   (USA / JP / EU / debug) you're holding.
+- `write` - the write side: `encode_mode2_form1_sector` recomputes a sector's
+  EDC + P/Q ECC (the generic ECMA-130 / Yellow Book math; not game-specific),
+  `patch_file_logical` overwrites bytes in an ISO file's logical payload and
+  re-encodes every touched sector, and `iso9660::find_file_in_image` locates a
+  top-level file in an in-memory image. Used by the
+  [randomizer / disc patcher](../../docs/tooling/randomizer.md) to write edited
+  assets back into a `.bin`.
 
-The single binary, `disc-extract`, drives all of the above.
+The single binary, `disc-extract`, drives the read path above.
 
 ## CLI
 
@@ -33,8 +40,11 @@ cross-reference [Redump](http://redump.org/disc/425/) for per-track hashes.
 
 `tests/disc_pipeline.rs` is a disc-gated integration test: it asserts file
 count, key file SHA-256s, and that the ISO9660 walk reaches every entry.
-The test reads `LEGAIA_DISC_BIN`; with the env var unset it skips (and
-passes) so CI runs without redistributing Sony data.
+`tests/ecc_real.rs` is the write-side disc-gated test: it confirms the EDC/ECC
+encoder reproduces real PROT.DAT sectors' parity bit-for-bit and that a one-byte
+patch + restore round-trips a real sector exactly. Both read `LEGAIA_DISC_BIN`;
+with the env var unset they skip (and pass) so CI runs without redistributing
+Sony data.
 
 ```bash
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test -p legaia-iso

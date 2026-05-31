@@ -1,0 +1,16 @@
+[package]
+name = "legaia-rando"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_rando"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-lzs = { path = "../lzs" }
+legaia-asset = { path = "../asset" }
+legaia-prot = { path = "../prot" }
+legaia-iso = { path = "../iso" }

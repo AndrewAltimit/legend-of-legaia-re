@@ -49,6 +49,12 @@ The `0xFF00` mask above is the trick that lets the control register tell the dec
 
 `crates/lzs::parse_container` handles the multi-section `player.lzs`-style wrapper used by some PROT entries - a length-prefixed array of independently-compressed sections concatenated together.
 
+## Encoding (re-packing)
+
+The retail game ships only the *decoder*; there is no Sony encoder to reverse. `crates/lzs::compress` is an encoder for re-packing edited assets (the [randomizer / disc patcher](../tooling/randomizer.md) uses it): a greedy LZSS matcher whose output the retail decoder accepts byte-for-byte, **not** a bit-exact clone of Sony's packer. Its correctness criterion is `decompress(compress(x)) == x`, validated by a disc-gated round-trip over the real PROT corpus.
+
+A linear-history match at distance `d` maps onto the ring-buffer back-reference base `(0xFEE + i - d) & 0xFFF`; capping the emitted distance at `4096 - MAX_MATCH` keeps every in-copy read (including the self-overlapping RLE case where `d < len`) unambiguous, so a plain linear match decodes byte-for-byte. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's `0x14000`-byte records.
+
 ## "Decompresses without error" is not a validity signal
 
 The 4096-byte ring buffer initialises to zeros, so most random inputs decode without error to a zero-padded output of plausible length. Always magic-check the *decoded* output before treating an LZS-decode result as a hit. The decoder offers a `tracked` mode that returns end-of-stream offsets and overrun bits so callers can apply strict gates.
