@@ -137,3 +137,72 @@ fn shuffle_chests_round_trips_on_disc() {
         report.skipped.len()
     );
 }
+
+/// A chest's announcement text ("There is a {item}…" / "{name} now has the
+/// {item}!") renders the item name from a separate `0xC2 <id>` dialogue token,
+/// distinct from the `0x39` give operand. The randomizer must rewrite both so the
+/// flavor text names the item it actually grants — otherwise a patched chest
+/// gives the new item but still *reads* as the old one. Pinned on keikoku's
+/// Phoenix chest: change it and re-decode off the patched image; the give operand
+/// and every item-name token in that record must both carry the new id.
+#[test]
+fn chest_display_tokens_track_the_give_item() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // keikoku (entry 112) Phoenix (0x80) chest -> a distinct, named item.
+    const PHOENIX: u8 = 0x80;
+    const NEW_ID: u8 = 0x8e; // Wonder Elixir
+
+    let mut patcher = DiscPatcher::open(original).unwrap();
+    let mut sc = SceneChests::locate(&patcher.read_entry(112).unwrap(), 112).unwrap();
+    let k = sc
+        .current_items()
+        .iter()
+        .position(|&b| b == PHOENIX)
+        .expect("keikoku has the Phoenix chest");
+    // The Phoenix chest names its item in dialogue (announcement + "now has").
+    assert!(
+        !sc.display_tokens[k].is_empty(),
+        "the Phoenix chest record carries item-name display tokens"
+    );
+    let token_count = sc.display_tokens[k].len();
+
+    sc.set_site(k, NEW_ID);
+    // In-memory: operand + every display token updated together.
+    assert_eq!(sc.decoded[sc.sites[k]], NEW_ID, "give operand updated");
+    for &t in &sc.display_tokens[k] {
+        assert_eq!(
+            sc.decoded[t], NEW_ID,
+            "item-name display token must match the give"
+        );
+    }
+
+    let stream = sc.repack().expect("keikoku MAN re-packs");
+    patcher
+        .patch_prot_entry(112, sc.man_offset as u64, &stream)
+        .unwrap();
+
+    // Re-decode off the patched image: text == grant on disc, not just in memory.
+    let after = SceneChests::locate(&patcher.read_entry(112).unwrap(), 112).unwrap();
+    let ak = after
+        .current_items()
+        .iter()
+        .position(|&b| b == NEW_ID)
+        .expect("patched chest grants the new id");
+    assert_eq!(
+        after.display_tokens[ak].len(),
+        token_count,
+        "the same item-name tokens are recovered after patching"
+    );
+    for &t in &after.display_tokens[ak] {
+        assert_eq!(
+            after.decoded[t], NEW_ID,
+            "on-disc announcement token names the granted item"
+        );
+    }
+    // No stray Phoenix id left in this chest's operand or its display tokens.
+    assert_ne!(after.decoded[after.sites[ak]], PHOENIX);
+    eprintln!("keikoku Phoenix chest: give + {token_count} display token(s) all -> 0x{NEW_ID:02x}");
+}

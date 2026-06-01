@@ -127,6 +127,24 @@ with dialogue, such as `keikoku`.) Multi-`0x39` runs are genuine multi-item
 gifts (a 10× consumable chest, the fishing starter kit of a rod + several lures,
 the Genesis-Tree Ra-Seru equipment sets), each `0x39 <id>` its own op.
 
+**Display vs grant — the announcement names the item from a different byte.** A
+chest's flavor text ("There is a {item} in the treasure chest!" / "{name} now has
+the {item}!") renders the item *name* from a dialogue **item-name token** `0xC2
+<id>`, which is a **separate byte** from the `0x39` give operand that actually
+adds the item to the bag. Patching only the give operand grants the new item but
+leaves the message reading the old one — verified in-game: the inventory receives
+the new item while the chest still *says* the original (an `0xC2 <old_id>` token
+sits resident in the loaded MAN right beside the patched `0x39 <new_id>`). Pinned
+across the corpus: of every `0xC?` 2-byte dialogue escape in chest records, only
+`0xC2`'s argument matches the give operand (the other escapes are character-name /
+glyph controls), and 241 of 275 sites carry one (announcement + "now has"). So
+`give_sites_and_display_tokens` recovers, per give site, the `0xC2` token offsets
+in the same record whose id equals that site's give operand (routed to the
+*nearest* give so multi-item-gift records map each token correctly), and
+`SceneChests::set_site` rewrites the operand **and** those tokens together — flavor
+text stays in sync with the grant. Sites whose dialogue doesn't name the item
+(~34) simply have no token to sync.
+
 Chest item ids are global inventory ids, so `apply::randomize_chests` reassigns
 them **globally** across every site (`Shuffle` redistributes the existing
 multiset, `Random` draws from the valid item pool), then recompresses each

@@ -35,8 +35,19 @@
 //! their announcement text — including every chest in scenes whose first
 //! interactable record opens with dialogue.
 //!
-//! Edits are same-size (rewrite the id byte), then the MAN is recompressed and
-//! written back exactly like the [encounter](crate::encounter) path.
+//! **Display vs grant.** A chest's announcement renders the item *name* from a
+//! separate dialogue token ([`ITEM_NAME_ESCAPE`] `<id>` — "There is a {item} in
+//! the treasure chest!" / "{name} now has the {item}!"), which is a **different
+//! byte** from the `0x39` give operand that actually adds the item to the bag.
+//! Patching only the give operand grants the new item but leaves the text naming
+//! the old one (verified in-game: the bag receives the new item while the message
+//! still reads the original). So [`SceneChests::set_site`] rewrites the operand
+//! **and** its item-name tokens together, keeping flavor text == grant. The
+//! tokens are recovered per site by [`give_sites_and_display_tokens`].
+//!
+//! Edits are same-size (rewrite the id byte + its display tokens), then the MAN
+//! is recompressed and written back exactly like the [encounter](crate::encounter)
+//! path.
 
 use legaia_asset::field_disasm;
 use legaia_asset::{man_section, scene_asset_table};
@@ -54,6 +65,14 @@ pub struct SceneChests {
     pub decoded: Vec<u8>,
     /// Absolute offsets within `decoded` of each `GIVE_ITEM` operand (id) byte.
     pub sites: Vec<usize>,
+    /// Per-site (parallel to [`Self::sites`]) absolute offsets of the **item-name
+    /// display-token** argument bytes (`0xC2 <id>`) in the same chest record whose
+    /// id equals that site's original give operand — the "There is a {item}…" /
+    /// "{name} now has the {item}!" flavor text the game renders. Keeping these in
+    /// sync with the give operand (via [`Self::set_site`]) makes the chest's
+    /// announcement match the item it actually grants. Empty for sites whose
+    /// dialogue doesn't name the item (e.g. multi-item gift chests).
+    pub display_tokens: Vec<Vec<usize>>,
 }
 
 impl SceneChests {
@@ -75,7 +94,7 @@ impl SceneChests {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let sites = give_item_sites(&decoded);
+        let (sites, display_tokens) = give_sites_and_display_tokens(&decoded);
         if sites.is_empty() {
             return None;
         }
@@ -85,12 +104,31 @@ impl SceneChests {
             compressed_budget: consumed,
             decoded,
             sites,
+            display_tokens,
         })
     }
 
     /// The current item id at each chest site, in `sites` order.
     pub fn current_items(&self) -> Vec<u8> {
         self.sites.iter().map(|&o| self.decoded[o]).collect()
+    }
+
+    /// Set chest site `k`'s granted item to `new_id`, rewriting both the
+    /// `GIVE_ITEM` operand **and** its associated item-name display tokens so the
+    /// chest's flavor text names the item it now grants. Out-of-range `k` is a
+    /// no-op.
+    pub fn set_site(&mut self, k: usize, new_id: u8) {
+        let Some(&off) = self.sites.get(k) else {
+            return;
+        };
+        if let Some(b) = self.decoded.get_mut(off) {
+            *b = new_id;
+        }
+        for &t in &self.display_tokens[k] {
+            if let Some(b) = self.decoded.get_mut(t) {
+                *b = new_id;
+            }
+        }
     }
 
     /// Recompress the (mutated) MAN; `None` if it would overflow the footprint.
@@ -100,14 +138,38 @@ impl SceneChests {
     }
 }
 
+/// The dialogue escape byte that renders an item's name (`0xC2 <item_id>`). The
+/// announcement ("There is a {item}…") and the result ("{name} now has the
+/// {item}!") both use it. Pinned across the chest corpus: of every `0xC?` 2-byte
+/// dialogue escape inside chest records, only `0xC2`'s argument matches the
+/// record's `GIVE_ITEM` operand (the other escapes are character-name / glyph
+/// controls and never coincide with the give id).
+const ITEM_NAME_ESCAPE: u8 = 0xC2;
+
 /// Walk a decompressed MAN's partition-1 record scripts and return the absolute
 /// offsets (within `man`) of every `GIVE_ITEM` (op `0x39`) operand byte reached
 /// by a dialogue-skipping opcode-aware walk from each record's entry PC. Sites
 /// are sorted and de-duplicated.
 pub fn give_item_sites(man: &[u8]) -> Vec<usize> {
-    let mut sites = Vec::new();
+    give_sites_and_display_tokens(man).0
+}
+
+/// Like [`give_item_sites`], but also returns, per site (parallel to the sites
+/// vec), the absolute offsets of the item-name display-token argument bytes
+/// ([`ITEM_NAME_ESCAPE`] `<id>`) in the same chest record whose id equals that
+/// site's give operand. Patching the give operand and these tokens together
+/// keeps a chest's announcement text in sync with the item it grants.
+///
+/// Each display token is associated with the **nearest** give site in its record
+/// (so a multi-item-gift record routes each `0xC2` to the right give), and only
+/// when the token's id already equals that give's operand — so tokens that name a
+/// *different* item the dialogue happens to mention are left untouched.
+pub fn give_sites_and_display_tokens(man: &[u8]) -> (Vec<usize>, Vec<Vec<usize>>) {
+    use std::collections::BTreeMap;
+
+    let mut site_tokens: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     let Ok(mf) = man_section::parse(man) else {
-        return sites;
+        return (Vec::new(), Vec::new());
     };
     // All record offsets across every partition, sorted, to bound each record's
     // walk to its own extent (the next record's start).
@@ -139,65 +201,114 @@ pub fn give_item_sites(man: &[u8]) -> Vec<usize> {
             .copied()
             .find(|&o| o > rec)
             .unwrap_or(man.len());
-        walk_record_gives(man, rec, pc0, end, &mut sites);
-    }
-    sites.sort_unstable();
-    sites.dedup();
-    sites
-}
 
-/// Skip one inline-dialogue `0x1F` segment beginning at `pc` (a `0x1F` byte),
-/// returning the offset just past its terminating `0x00`. `0xC?` top-nibble
-/// bytes are 2-byte escapes (the box-pack control codes), so a `0x00` inside an
-/// escape's argument does not terminate the segment.
-fn skip_dialogue_segment(script: &[u8], mut pc: usize) -> usize {
-    pc += 1; // past the 0x1F lead.
-    while pc < script.len() {
-        let b = script[pc];
-        if b == 0x00 {
-            return pc + 1;
+        let (gives, tokens) = walk_record(man, rec, pc0, end);
+        for &g in &gives {
+            site_tokens.entry(g).or_default();
         }
-        pc += if b & 0xF0 == 0xC0 { 2 } else { 1 };
+        // Route each item-name token to its nearest give whose operand it names.
+        for (t_off, t_id) in tokens {
+            if let Some(&g) = gives
+                .iter()
+                .min_by_key(|&&g| (g as isize - t_off as isize).unsigned_abs())
+                && man.get(g).copied() == Some(t_id)
+            {
+                site_tokens.entry(g).or_default().push(t_off);
+            }
+        }
     }
-    pc
+
+    let sites: Vec<usize> = site_tokens.keys().copied().collect();
+    let display_tokens: Vec<Vec<usize>> = sites
+        .iter()
+        .map(|s| {
+            let mut v = site_tokens[s].clone();
+            v.sort_unstable();
+            v.dedup();
+            v
+        })
+        .collect();
+    (sites, display_tokens)
 }
 
 /// Walk one record's interaction script from `pc0` to `end` (both relative to
-/// `rec`), pushing the absolute offset of each `0x39` give-item operand byte. A
-/// decode error at a `0x1F` byte skips the inline dialogue segment and continues;
-/// any other error stops the walk.
-fn walk_record_gives(man: &[u8], rec: usize, pc0: usize, end: usize, out: &mut Vec<usize>) {
+/// `rec`), returning the absolute offsets of each `0x39` give-item operand byte
+/// and the `(offset, id)` of each item-name display token ([`ITEM_NAME_ESCAPE`])
+/// seen inside the record's inline-dialogue segments. A decode error at a `0x1F`
+/// byte scans that dialogue segment (collecting its tokens) and continues; any
+/// other error stops the walk.
+fn walk_record(man: &[u8], rec: usize, pc0: usize, end: usize) -> (Vec<usize>, Vec<(usize, u8)>) {
     let script = &man[rec..end.min(man.len())];
+    let mut gives = Vec::new();
+    let mut tokens = Vec::new();
     let mut pc = pc0;
     let mut guard = 0usize;
     loop {
         guard += 1;
         if guard > 100_000 || pc >= script.len() {
-            return;
+            break;
         }
         match field_disasm::decode(script, pc) {
             Ok(insn) => {
                 if insn.size == 0 {
-                    return;
+                    break;
                 }
                 // GIVE_ITEM is [0x39, item_id]; the id is the operand byte after
                 // the opcode. Skip the cross-context (extended) form.
                 if insn.opcode == 0x39 && insn.extended.is_none() {
                     let id_off = rec + pc + 1;
                     if id_off < man.len() {
-                        out.push(id_off);
+                        gives.push(id_off);
                     }
                 }
                 pc += insn.size;
             }
             // A decode error AT a 0x1F byte is the start of an inline dialogue
-            // segment (glyph text, not bytecode) — skip it and resume decoding.
+            // segment (glyph text, not bytecode) — scan it for item-name tokens
+            // and resume decoding past it.
             Err(_) if script.get(pc) == Some(&0x1F) => {
-                pc = skip_dialogue_segment(script, pc);
+                pc = scan_dialogue_segment(script, pc, rec, &mut tokens);
             }
-            Err(_) => return,
+            Err(_) => break,
         }
     }
+    (gives, tokens)
+}
+
+/// Scan one inline-dialogue `0x1F` segment beginning at `pc` (a `0x1F` byte),
+/// pushing `(absolute_offset, id)` for each item-name display token
+/// ([`ITEM_NAME_ESCAPE`] `<id>`), and returning the offset just past the
+/// segment's terminating `0x00`. `0xC?` top-nibble bytes are 2-byte escapes (the
+/// box-pack control codes), so a `0x00` inside an escape's argument does not
+/// terminate the segment.
+fn scan_dialogue_segment(
+    script: &[u8],
+    mut pc: usize,
+    rec: usize,
+    tokens: &mut Vec<(usize, u8)>,
+) -> usize {
+    pc += 1; // past the 0x1F lead.
+    while pc < script.len() {
+        let b = script[pc];
+        if b == 0x00 {
+            return pc + 1;
+        }
+        if b & 0xF0 == 0xC0 {
+            if b == ITEM_NAME_ESCAPE && pc + 1 < script.len() {
+                tokens.push((rec + pc + 1, script[pc + 1]));
+            }
+            pc += 2;
+        } else {
+            pc += 1;
+        }
+    }
+    pc
+}
+
+/// Test-only thin wrapper retaining the original give-only walk signature.
+#[cfg(test)]
+fn walk_record_gives(man: &[u8], rec: usize, pc0: usize, end: usize, out: &mut Vec<usize>) {
+    out.extend(walk_record(man, rec, pc0, end).0);
 }
 
 #[cfg(test)]

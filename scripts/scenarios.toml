@@ -854,3 +854,20 @@ phase = "field"
 expected_active_scene = "map01"
 description = "Kingdom overworld (map01), standing just outside the keikoku (Ravine) entrance. Walking up ~1s crosses the portal and streams the keikoku scene bundle fresh from disc — the pre-scene-load state for validating a patched-disc chest in an emulator without the savestate RAM-cache trap."
 topics = ["chest", "randomizer", "keikoku", "scene-load", "preload", "map01"]
+
+# ----------------------------------------------------------------
+# PCSX-Redux trace state: standing directly in front of an early
+# treasure chest (normally a Healing Leaf). Used to trace the field-VM
+# GIVE_ITEM (op 0x39) path at runtime — capturing the RAM address the
+# game reads the item-id operand from (s6 at 0x801E0450) and the granted
+# id (FUN_800421D4 a0) — to verify whether a randomizer chest patch
+# reaches the running game. Probe: autorun_chest_give_trace.lua.
+# ----------------------------------------------------------------
+
+[[scenarios]]
+label = "chest_open_trace_pcsx"
+backup_fingerprint = "083275b4ab53021546759c3a0d36534d43ffcce40c6dd7b1c0629414d84a07f4"
+phase = "field"
+pcsx_redux_sstate = "~/Tools/pcsx-redux/SCUS94254.sstate1"
+description = "PCSX-Redux: standing in front of an early treasure chest (normally a Healing Leaf), for the field-VM GIVE_ITEM (0x39) runtime trace — operand RAM address + granted item id."
+topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "trace", "pcsx-redux"]
