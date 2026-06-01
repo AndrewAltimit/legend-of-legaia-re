@@ -70,14 +70,14 @@
 <section class="doc-section" id="mp-cost">
   <h2>MP cost &amp; ability-bit modifiers</h2>
   <pre><code>base_mp_cost = spell_table[spell_id].mp_cost;
-if (character_record.ability_bits &amp; 0x20)        // "MP-half"
-    cost = base / 2;
-else if (character_record.ability_bits &amp; 0x10)   // "MP-quarter"
-    cost = base / 4;
+if (character_record.ability_bits &amp; 0x20)        // "MP-half": shave 50%
+    cost = base - (base &gt;&gt; 1);
+else if (character_record.ability_bits &amp; 0x10)   // "MP-quarter": shave 25%
+    cost = base - (base &gt;&gt; 2);
 else
     cost = base;</code></pre>
-  <p>The character record's ability bitfield is the 4-byte field at <code>+0xF4</code> (record stride <code>0x414</code>, base <code>0x80084708</code>). The engine port resolves the modifier via <code>battle_formulas::MpCostModifier::from_ability_flags</code> and applies it in both the state-machine cast and the live player-driven cast.</p>
-  <p class="note"><strong>Unresolved priority.</strong> The single-bit cases are settled, but the both-bits-set priority disagrees across sources: the pseudo-code above (and the docs) read MP-half before MP-quarter, while the engine's state-machine port and its both-bits test apply MP-quarter first - and no current <code>FUN_801E295C</code> dump contains the verbatim <code>/2</code>&thinsp;/&thinsp;<code>/4</code> block to settle it. The live cast path matches the engine's established quarter-first order pending a ground-truth dump. See <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
+  <p>The character record's ability bitfield is the 4-byte field at <code>+0xF4</code> (record stride <code>0x414</code>, base <code>0x80084708</code>). The engine port resolves the modifier via <code>battle_formulas::MpCostModifier::from_ability_flags</code> and applies it through one shared helper in both the state-machine cast and the live player-driven cast.</p>
+  <p class="note"><strong>Dump-confirmed.</strong> The modifier <strong>subtracts a right-shifted copy</strong> of the cost - it is not a floor-divide. So MP-half rounds <em>up</em> on odd costs (a 5-MP spell costs 3, not 2), and "MP-quarter" shaves only a quarter <em>off</em> (pay 3/4: <code>40&rarr;30</code>), it does not make the cost a quarter. When both bits are set, <strong>MP-half (<code>0x20</code>) wins</strong> - the <code>andi 0x20; bne</code> test short-circuits before <code>0x10</code> is reached. Verified at the state-<code>0x28</code> block of <code>FUN_801E295C</code> (<code>0x801E3D0C</code>; the same block recurs in state <code>0x3C</code> at <code>0x801E4568</code>). See <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
 </section>
 
 <section class="doc-section" id="rng">
