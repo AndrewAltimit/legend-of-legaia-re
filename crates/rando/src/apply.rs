@@ -209,8 +209,8 @@ pub fn randomize_chests(
             loop {
                 // Restore every site to its original, then assign the shuffle.
                 for (i, sc) in scenes.iter_mut().enumerate() {
-                    for (k, &off) in sc.sites.iter().enumerate() {
-                        sc.decoded[off] = originals[i][k];
+                    for (k, &orig) in originals[i].iter().enumerate() {
+                        sc.set_site(k, orig);
                     }
                 }
                 let mut pool: Vec<u8> = (0..scenes.len())
@@ -224,8 +224,8 @@ pub fn randomize_chests(
                     if skipped.contains(&i) {
                         continue;
                     }
-                    for &off in &sc.sites {
-                        sc.decoded[off] = pool[cur];
+                    for k in 0..sc.sites.len() {
+                        sc.set_site(k, pool[cur]);
                         cur += 1;
                     }
                 }
@@ -279,10 +279,10 @@ pub fn randomize_chests(
             let mut rng = SplitMix64::new(seed);
             for (i, sc) in scenes.iter_mut().enumerate() {
                 let mut changed = 0;
-                for &off in &sc.sites {
+                for k in 0..sc.sites.len() {
                     let v = item_pool[rng.below(item_pool.len())];
-                    if sc.decoded[off] != v {
-                        sc.decoded[off] = v;
+                    if sc.decoded[sc.sites[k]] != v {
+                        sc.set_site(k, v);
                         changed += 1;
                     }
                 }

@@ -57,7 +57,7 @@
 # `_DAT_8007BA78` value (`fmv_id ∈ 0..=8`). Slot mapping (debug-menu
 # driven, all from active scene `map01`):
 #
-#   mc2 → STR 0 (fmv_id 0)    mc3 → STR 1 (fmv_id 1)
+#   mc2 → STR 0 (fmv_id 0)    mc3 → ROTATED (keikoku_chest_preload; was STR 1 / fmv_id 1)
 #   mc4 → STR 2 (fmv_id 2)    mc5 → ROTATED (title_screen_new_game)
 #   mc6 → ROTATED (v0.1 slice C+, dialogue-accept; was STR 4 / fmv_id 4)
 #   mc7 → ROTATED (v0.1 slice C; was fmv_id 5)
@@ -185,32 +185,13 @@ end = 0x8007B8D4
 hint = "_DAT_8007B8D0 = 0x8014BD30 (= 0x80139530 + 0x12800). map01's field-pack base; constant: `cutscene_trigger_corpus::MAP01_FIELD_PACK_BASE`."
 
 # ----------------------------------------------------------------------
-# mc3 - fmv_id=1. Plays \MOV\MV3.STR;1 first segment (start sector 1,
-# ~225 frames). NOTE: skips MV2.STR (which is on the disc but never
-# referenced by any FMV-state slot).
+# mc3 - ROTATED to the chest-randomizer pre-scene-load capture
+# `keikoku_chest_preload` (kingdom overworld map01, just outside the
+# keikoku entrance). Its [[scenarios]] block lives with the keikoku chest
+# captures further below. The slot previously held the FMV-trigger corpus
+# capture `fmv_trigger_str_1` (fmv_id=1 -> MV3.STR first segment); no test
+# references that label, so the block is superseded rather than kept.
 # ----------------------------------------------------------------------
-[[scenarios]]
-slot = 3
-label = "fmv_trigger_str_1"
-description = "Per-STR FMV trigger captured for fmv_id=1 → MV3.STR (first segment)"
-topics = ["FMV trigger", "fmv_id 1", "MV3.STR segment 1", "skips MV2"]
-diff_against = [4]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `01 00` (fmv_id = 1)."
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: `map01` (debug-menu trigger from the same field scene as the rest of the corpus)."
 
 # ----------------------------------------------------------------------
 # v0.1 playthrough oracle anchor C: clean pre-battle field state.
@@ -845,3 +826,49 @@ phase = "field"
 expected_active_scene = "keikoku"
 description = "Field, the open-chest action just starting (chest-open SFX 0x2d queued, item not yet added). Diff against keikoku_chest_pre: the Phoenix (0x80) chest actor advances its open-animation state; pins which give-item site the live game runs."
 topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "keikoku"]
+
+# ----------------------------------------------------------------
+# Pre-scene-load capture for the keikoku chest room: standing on the
+# kingdom overworld (map01), directly outside the keikoku (Ravine)
+# entrance. Walking "up" for ~1s crosses the entrance portal, which
+# streams the keikoku scene bundle (PROT entry 112) FRESH off the disc.
+#
+# This is the state an emulator-based randomizer check needs. A mednafen
+# savestate captured INSIDE keikoku already has each chest's GIVE_ITEM
+# (0x39) bytecode resident in RAM (keikoku_chest_pre's MAN sits at
+# 0x8012f4c8), so loading it on a patched disc still grants the ORIGINAL
+# item — the chest id is read from the resident RAM copy, never re-fetched
+# from the patched disc. Captured on the overworld BEFORE the load, the
+# patched MAN is read on scene entry, so a patched chest is actually
+# observed. Companion to the deterministic engine oracle in
+# crates/engine-core/tests/chest_randomizer_runtime_e2e.rs (which proves
+# the same thing disc-free, by driving the patched MAN through the field VM).
+# ----------------------------------------------------------------
+
+[[scenarios]]
+slot = 3
+label = "keikoku_chest_preload"
+ram_fingerprint_sha256 = "f697ac277c14720a179e542c24d4c50a249a226b3586ef38926a3dcf4e5abab4"
+backup_fingerprint = "903185b20b9ada6fb6f18cc5abe5814caa090b7d8430635afdc92301d9dc8149"
+phase = "field"
+expected_active_scene = "map01"
+description = "Kingdom overworld (map01), standing just outside the keikoku (Ravine) entrance. Walking up ~1s crosses the portal and streams the keikoku scene bundle fresh from disc — the pre-scene-load state for validating a patched-disc chest in an emulator without the savestate RAM-cache trap."
+topics = ["chest", "randomizer", "keikoku", "scene-load", "preload", "map01"]
+
+# ----------------------------------------------------------------
+# PCSX-Redux trace state: standing directly in front of an early
+# treasure chest (normally a Healing Leaf). Used to trace the field-VM
+# GIVE_ITEM (op 0x39) path at runtime — capturing the RAM address the
+# game reads the item-id operand from (s6 at 0x801E0450) and the granted
+# id (FUN_800421D4 a0) — to verify whether a randomizer chest patch
+# reaches the running game. Probe: autorun_chest_give_trace.lua.
+# ----------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "chest_open_trace_pcsx"
+backup_fingerprint = "083275b4ab53021546759c3a0d36534d43ffcce40c6dd7b1c0629414d84a07f4"
+phase = "field"
+pcsx_redux_sstate = "~/Tools/pcsx-redux/SCUS94254.sstate1"
+description = "PCSX-Redux: standing in front of an early treasure chest (normally a Healing Leaf), for the field-VM GIVE_ITEM (0x39) runtime trace — operand RAM address + granted item id."
+topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "trace", "pcsx-redux"]
