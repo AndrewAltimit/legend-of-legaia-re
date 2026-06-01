@@ -92,6 +92,7 @@
 "8005b7d8" = "SetColorMatrix-family GTE control-word loader (three ctc2 writes: a0<<4 -> 0xA800, a1<<4 -> 0xB000, a2<<4 -> 0xB800 = cop2 control regs 21/22/23, the color/light matrix region); sibling of 8005b7c0 SetRotMatrix / 8005b7cc SetTransMatrix"
 "8003d20c" = "GTE control-word save: 8x cfc2 of COP2 control regs 0x0000..0x3800 (rotation/light matrix region) into param_1[0..7]. Save counterpart of 8003d1a4 (restore) / 8003d178 (identity reset); brackets the billboard projector 800195a8. Engine emits GTE-equivalent matrices via glam/wgpu"
 "8003d368" = "GTE DPCS (cop2 0x180001) depth-cue-color-single wrapper: loads RGB from param_1, reads back reg 0x0F + ORGB (reg 0x16) into param_2. Sibling of 8003d344 NCLIP / 800460ac NCDS; engine emits depth-cue/lighting via wgpu fragment shader"
+"8005bac8" = "GTE NCDS + DPCS combined color/depth-cue helper: runs cop2 0x280030 (NCDS) then cop2 0x180001 (DPCS), reads MAC1-3 + the leading-zero reg, writes RGB/depth into the out-pointers, returns OTZ>>2. Pure COP2 plumbing - the fused pair of the already-listed 800460ac NCDS / 8003d368 DPCS; engine reproduces both in engine-render gte.rs (ncds/dpcs) + wgpu fragment shader"
 "8005b3a8" = "RotMatrix-family matrix-vector product: loads rotation matrix into COP2 control regs 0x0000-0x2000, runs three cop2 0x486012 ops feeding IR data regs, reads MAC1/2/3, repacks into the MATRIX. Sibling cited in the 800172c0 geometry chain; engine emits via glam Mat3/Mat4"
 "8005b6a8" = "SetTransMatrix translation-vector loader: three ctc2 of param+0x14/0x18/0x1c into COP2 control regs 0x2800/0x3000/0x3800 (TRX/TRY/TRZ). Parallels 8005b7cc SetTransMatrix; engine emits translation via glam"
 "8005b308" = "PopMatrix (GTE matrix-stack pop): decrements 0x20-stride SP global DAT_80079010 (underflow -> printf), reloads rotation matrix (ctc2 ctrl 0x0000-0x2000) + translation vector (0x2800/0x3000/0x3800) from the popped frame. libgte stack bookkeeping; engine uses a glam transform stack"
@@ -130,6 +131,7 @@
 "8005be8c" = "CdSync wrapper: 8-instruction tail-call to 8005ca34 (the CdSync/CdReady drive-status poll - s_CD_sync / s_CD_timeout / CdlSync diagnostics, drains the CD result registers). Engine reads PROT.DAT through legaia-iso/legaia-prot, no CD-drive transport"
 "8003d53c" = "CD-XA streaming-clip start: arms a streamed XA-ADPCM read off the clip MSF table (0x801C6ED8) through the libcd transport (8005c42c msf_to_lba, 8005be8c CdSync, 8005becc callback-swap, 8005c034 CdControl). The CD-drive half is out of clean-room scope - the engine decodes XA buffers (legaia-xa) and plays them through its own mixer, not a CD transport. see ghidra/scripts/funcs/8003d53c.txt"
 "8003ed04" = "CD-XA streaming-clip stop: teardown counterpart of 8003d53c. Clears the libcd completion callback (8005becc) and issues the drive Pause/Stop commands (8005c160 / 8005c034) by mode. CD transport only, no game logic; sibling of the already-listed clip-path shim 8003ee7c. see ghidra/scripts/funcs/8003ed04.txt"
+"8003eae4" = "CD-XA streaming-clip start by table index (simpler sibling of 8003d53c): when no clip is armed, stops the in-flight read (8003ed04 / 8003ee7c), looks up the 8-byte clip entry in the MSF table 0x801C6ED8, sets the drive read location via 8005c160, and issues CdControl 0x15 (8005c034). CD transport only; the engine decodes XA buffers (legaia-xa) through its own mixer. see ghidra/scripts/funcs/8003eae4.txt"
 
 
 # libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
@@ -223,6 +225,7 @@
 "800628f0" = "_SsSeqCtrl (Stop / Pause / Resume state core)"
 "80062aa0" = "SsSetMVol ([cmd=3, x*0x81, y*0x81] -> SPU cmd dispatcher)"
 "800641ec" = "SsSeqRewind / SsSeqReplay"
+"80064370" = "SsSeqRewind wrapper: sign-extends its s16 arg and tail-calls 800641ec (SsSeqRewind/SsSeqReplay) with mode 0. Pure SsAPI thunk; replaced by the engine-audio Sequencer"
 "80065034" = "SsAPI key-on (called by actor-VM positional SFX emitter)"
 "800653c8" = "SsVabClose helper (validates VAB id, calls FUN_80067480)"
 "80065440" = "Single-shot SPU command ([cmd=6, p1*0x81, p2*0x81])"

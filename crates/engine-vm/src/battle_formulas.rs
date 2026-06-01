@@ -46,9 +46,11 @@ pub fn spirit_damage(target_hp: u16, cap: u16) -> u16 {
 pub enum MpCostModifier {
     /// No ability-bit modifier - pay full cost.
     Full,
-    /// `+0xF4 & 0x20` set - cost is halved.
+    /// `+0xF4 & 0x20` set - cost reduced *by* half: `cost - (cost >> 1)`.
     Half,
-    /// `+0xF4 & 0x10` set - cost is quartered.
+    /// `+0xF4 & 0x10` set - cost reduced *by* a quarter (pay 3/4):
+    /// `cost - (cost >> 2)`. NOT "cost becomes a quarter" - the bit shaves
+    /// 25% off, where `0x20` (Half) shaves 50% off.
     Quarter,
 }
 
@@ -56,15 +58,13 @@ impl MpCostModifier {
     /// Resolve the modifier from a 32-bit ability-flag word, reading `+0xF4`
     /// and testing `0x20` (Half) before `0x10` (Quarter).
     ///
-    /// UNRESOLVED: the both-bits-set priority disagrees across our sources.
-    /// `battle-action.md` / `battle-formulas.md` document Half-first (this
-    /// function), but the engine's state-machine port (`battle_action.rs`
-    /// MagicCastBegin) and its `magic_cast_begin_quarter_takes_priority_over_half`
-    /// test use Quarter-first, and the live cast path matches that. The verbatim
-    /// `/2`/`/4` MP-cost block is not present in any current `FUN_801E295C`
-    /// dump, so neither order is dump-confirmed. Only the single-bit cases
-    /// (`0x20` alone -> Half, `0x10` alone -> Quarter) are settled; a both-bits
-    /// caster is the open case. See `docs/reference/open-rev-eng-threads.md`.
+    /// PRIORITY (dump-confirmed): when both bits are set, **Half (`0x20`) wins**.
+    /// The retail state-`0x28` block (`FUN_801E295C` at `0x801E3D0C`) is
+    /// `andi 0x20; bne <half>` then `andi 0x10; beq <none>` - i.e.
+    /// `if (bits & 0x20) { half } else if (bits & 0x10) { quarter }`, with Half
+    /// short-circuiting the `0x10` test. This `Half`-first order matches the
+    /// docs; the earlier engine SM port / live cast path that applied Quarter
+    /// first were a guess and are now corrected.
     pub fn from_ability_flags(flags: u32) -> Self {
         if flags & 0x20 != 0 {
             MpCostModifier::Half
@@ -77,12 +77,15 @@ impl MpCostModifier {
 }
 
 /// Apply the [`MpCostModifier`] to a base spell MP cost. Mirrors the
-/// state-0x28 body of `FUN_801E295C`.
+/// state-`0x28` body of `FUN_801E295C` (`0x801E3D0C`): the modifier subtracts a
+/// right-shifted copy of the cost (`cost -= cost >> 1` for Half, `cost -= cost
+/// >> 2` for Quarter), NOT a floor-divide - so Half rounds *up* on odd costs
+/// (`7 -> 4`, not `3`) and Quarter shaves only 25% off (`40 -> 30`, not `10`).
 pub fn mp_cost_after_ability_bits(base_cost: u16, modifier: MpCostModifier) -> u16 {
     match modifier {
         MpCostModifier::Full => base_cost,
-        MpCostModifier::Half => base_cost / 2,
-        MpCostModifier::Quarter => base_cost / 4,
+        MpCostModifier::Half => base_cost - (base_cost >> 1),
+        MpCostModifier::Quarter => base_cost - (base_cost >> 2),
     }
 }
 
@@ -216,10 +219,12 @@ mod tests {
     #[test]
     fn mp_cost_arithmetic() {
         assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Full), 40);
+        // Half = cost - cost>>1; Quarter = cost - cost>>2 (shave 25%, not "/4").
         assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Half), 20);
-        assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Quarter), 10);
-        // Floor division - odd costs round down on Half.
-        assert_eq!(mp_cost_after_ability_bits(7, MpCostModifier::Half), 3);
+        assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Quarter), 30);
+        // Odd cost: Half rounds UP (7 - 7>>1 = 7 - 3 = 4); Quarter 7 - 1 = 6.
+        assert_eq!(mp_cost_after_ability_bits(7, MpCostModifier::Half), 4);
+        assert_eq!(mp_cost_after_ability_bits(7, MpCostModifier::Quarter), 6);
     }
 
     #[test]

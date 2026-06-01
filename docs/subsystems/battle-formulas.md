@@ -178,15 +178,24 @@ From battle-action.md state `0x28` (Magic / Item - cast begin):
 
 ```text
 base_mp_cost = spell_table[spell_id].mp_cost;       // entry +3 from spell record
-if (character_record.ability_bits & 0x20) {         // "MP-half"
-    mp_cost = base_mp_cost / 2;
-} else if (character_record.ability_bits & 0x10) {  // "MP-quarter"
-    mp_cost = base_mp_cost / 4;
+if (character_record.ability_bits & 0x20) {         // "MP-half": shave 50%
+    mp_cost = base_mp_cost - (base_mp_cost >> 1);
+} else if (character_record.ability_bits & 0x10) {  // "MP-quarter": shave 25%
+    mp_cost = base_mp_cost - (base_mp_cost >> 2);
 } else {
     mp_cost = base_mp_cost;
 }
 actor.mp -= mp_cost;
 ```
+
+The modifier **subtracts a right-shifted copy** of the cost; it is not a
+floor-divide. Two consequences: Half rounds *up* on odd costs (`7 → 4`), and
+"MP-quarter" (`0x10`) shaves only a **quarter off** (pay 3/4: `40 → 30`), it
+does not make the cost a quarter. When both bits are set, **`0x20` (Half) wins**
+— the `0x20` test (`andi 0x20; bne`) short-circuits before the `0x10` test is
+reached. Dump-confirmed at `FUN_801E295C` `0x801E3D0C` (state `0x28`); the same
+block recurs in state `0x3C` at `0x801E4568`. Ported verbatim in
+`battle_formulas::mp_cost_after_ability_bits` + `MpCostModifier::from_ability_flags`.
 
 `spell_table` is the static `SCUS_942.54` table at `DAT_800754C8` (stats) / `DAT_800754D0` (name pointers) — 12-byte stride, `+3` = MP cost. See [spell-table.md](../formats/spell-table.md) for the full record layout + the pinned player Seru-magic block (`0x81..=0x8b`).
 

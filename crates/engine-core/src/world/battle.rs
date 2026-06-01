@@ -479,16 +479,14 @@ impl World {
     ) -> bool {
         use crate::spells::{SpellSnapshot, cast_spell};
 
-        // Apply the caster's MP-cost ability-bit modifier (MP-half 0x20 /
-        // MP-quarter 0x10) so an MP-saver accessory reduces the live cast cost,
-        // matching the state-machine cast path (battle_action.rs MagicCastBegin)
-        // which the prior live path bypassed by always charging the flat cost.
+        // Apply the caster's MP-cost ability-bit modifier (Half 0x20 /
+        // Quarter 0x10) so an MP-saver accessory reduces the live cast cost,
+        // matching the state-machine cast path (battle_action.rs MagicCastBegin).
         // Only party members carry these accessory bits; monster casters
-        // (caster >= party_count) pay full cost. NOTE: the both-bits-set
-        // priority follows the engine's established quarter-first order; the
-        // absolute order vs retail FUN_801E295C is unresolved (the half-first
-        // reading in battle_formulas::MpCostModifier is unverified against the
-        // dump - see docs/reference/open-rev-eng-threads.md).
+        // (caster >= party_count) pay full cost. Half takes priority over
+        // Quarter when both bits are set, dump-confirmed against the retail
+        // state-0x28 block (FUN_801E295C 0x801E3D0C) - routed through the shared
+        // battle_formulas helper so all three cast paths agree.
         let ability_bits = if (caster as usize) < self.party_count as usize {
             self.character_ability_bits
                 .get(caster as usize)
@@ -498,13 +496,8 @@ impl World {
             0
         };
         let base_cost = def.mp_cost as u16;
-        let cost = if ability_bits & 0x10 != 0 {
-            base_cost / 4
-        } else if ability_bits & 0x20 != 0 {
-            base_cost / 2
-        } else {
-            base_cost
-        };
+        let modifier = vm::battle_formulas::MpCostModifier::from_ability_flags(ability_bits);
+        let cost = vm::battle_formulas::mp_cost_after_ability_bits(base_cost, modifier);
         let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
             Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
             None => return false,

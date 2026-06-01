@@ -544,7 +544,7 @@ impl FieldHost for TestHost {
     fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
         self.n4_sub9_delta_calls.push((target, ticks));
     }
-    fn op4c_n5_sub0_sound_directional(&mut self, _ctx: &mut FieldCtx, value: i16, high: bool) {
+    fn op4c_n5_sub0_set_actor_model(&mut self, _ctx: &mut FieldCtx, value: i16, high: bool) {
         self.n5_sub0_calls.push((value, high));
     }
     fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {

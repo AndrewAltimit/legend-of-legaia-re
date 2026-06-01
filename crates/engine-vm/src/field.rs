@@ -1281,17 +1281,23 @@ pub trait FieldHost {
         let _ = (target, ticks);
     }
 
-    /// Op 0x4C outer-nibble-5 sub-0 - directional sound emitter.
+    /// Op 0x4C outer-nibble-5 sub-0 - set actor model (pool-select).
     ///
     /// 4-byte instruction `[4C, 0x50, lo, hi]`. Reads a signed-16-bit value
-    /// from `operand+1..3`, splits it into a low (`< 0xF0`) and high (`>= 0xF0`)
-    /// half via the `_DAT_8007B6F8` / `_DAT_8007B824 + 0xFF10` index bases, and
-    /// calls `func_0x80024E08(ctx, idx)`. The high half also sets bit
-    /// `0x01000000` in `ctx.flags`; the low half clears it.
+    /// from `operand+1..3` and resolves it to a model index against one of two
+    /// model-pool bases: the low half (`< 0xF0`) indexes from `_DAT_8007B6F8`,
+    /// the high half (`>= 0xF0`) from `_DAT_8007B824 + 0xFF10`. The resolved
+    /// index is installed via `func_0x80024E08(actor, model_idx)` - the
+    /// set-model primitive (writes `actor+0x64`, clears draw-flag bit `0x1000`,
+    /// re-stages via `FUN_80020F88`; see `docs/reference/functions.md`). The
+    /// high half also sets bit `0x01000000` in `ctx.flags` (recording which
+    /// pool base was used); the low half clears it.
     ///
     /// The VM applies the flag-bit toggle itself (`ctx.flags |=` / `&= !`)
     /// and hands the host the raw value + the high/low selection. PC += 4.
-    fn op4c_n5_sub0_sound_directional(&mut self, ctx: &mut FieldCtx, value: i16, high: bool) {
+    /// (Earlier mislabelled as a "directional sound emitter" - `FUN_80024E08`
+    /// is a model-set, not an audio call.)
+    fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, high: bool) {
         let _ = (ctx, value, high);
     }
 

@@ -18,13 +18,22 @@ from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
 TARGETS = [
-    # FUN_801D77F4 - field-VM actor allocator referenced by op 0x4C 0xD8
-    # (4-arg synchronous spawn) and op 0x4C 0x80 (halt-acquire prelude;
-    # records queued via FieldEvent::ActorAllocate, materialized by
-    # World::materialize_actor_spawns). Pinning the (vdf_idx, tmd_idx,
-    # kind_u16, variant_u16) packing here is the prerequisite for
-    # populating Actor::kind / Actor::variant on the materialized slot.
-    "801d77f4",
+    # Inventory item-give caller functions surfaced by find_refs_allprogs
+    # (refs_to_giveitem.txt) but not yet dumped on their own. Each is a real
+    # function entry in a captured overlay that calls the add-item trio
+    # (80042ee0 capacity-check / 80043048 reserve / 800421d4 add-by-id). Run
+    # against each overlay program; the in_program() guard picks the owning
+    # subset. Closes the cited-but-not-dumped worklist for these.
+    #   overlay_0899_xxx_dat:
+    "801c0f48", "801c6268", "801c6cf8",
+    #   overlay_0977_other_game:
+    "801c2748",
+    #   overlay_0971 / overlay_0971_xxx_dat:
+    "801c36b0",
+    #   overlay_0897_xxx_dat (extended footprint):
+    "801d7d4c", "801f138c", "8020a178", "8020e748",
+    #   overlay_0896_bat_back_dat:
+    "801dd690", "801e01f0", "801e0be8", "801fa38c", "801ffba4",
 ]
 
 OUT_DIR = "/scripts/funcs"

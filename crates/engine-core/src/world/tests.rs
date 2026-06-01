@@ -4371,10 +4371,11 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
 
-    // Flame is 5 MP; the MP-half bit charges 5/2 = 2, so 50 -> 48 (vs 45 flat).
+    // Flame is 5 MP; the MP-half bit charges `5 - (5>>1) = 3` (retail rounds
+    // up on odd costs, not floor 5/2 = 2), so 50 -> 47 (vs 45 flat).
     assert_eq!(
-        world.actors[0].battle.mp, 48,
-        "MP-half ability bit should halve the live-cast cost"
+        world.actors[0].battle.mp, 47,
+        "MP-half ability bit should reduce the live-cast cost by half (round up)"
     );
 }
 

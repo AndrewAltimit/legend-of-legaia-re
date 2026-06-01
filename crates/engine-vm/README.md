@@ -118,8 +118,9 @@ pipeline, and bridges from art-record `EnemyEffect` bytes through
 Damage / MP-cost / accuracy / RNG arithmetic kernels.
 `art_strike_damage(attack, defense, multiplier, divisor, floor)`
 applies the per-strike Tactical Art damage formula; `accuracy_roll`
-and `mp_cost_after_ability_bits` mirror the retail bit-test selectors
-in `FUN_800402F4`.
+mirrors selector 9 of `FUN_800402F4`; `mp_cost_after_ability_bits`
+mirrors the MP-half/quarter shift-subtract in `FUN_801E295C` state
+`0x28` (MP-half `0x20` wins over MP-quarter `0x10`).
 
 ## `action_validator`
 
