@@ -865,6 +865,7 @@ topics = ["chest", "randomizer", "keikoku", "scene-load", "preload", "map01"]
 # ----------------------------------------------------------------
 
 [[scenarios]]
+slot = 255
 label = "chest_open_trace_pcsx"
 backup_fingerprint = "083275b4ab53021546759c3a0d36534d43ffcce40c6dd7b1c0629414d84a07f4"
 phase = "field"
