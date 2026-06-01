@@ -32,3 +32,7 @@ legaia-cheats = { path = "../cheats" }
 
 [dev-dependencies]
 tempfile = "3"
+# Disc-gated runtime oracle for the chest randomizer: patch a real disc's MAN in
+# memory, then drive the patched bytes through the field VM. rando depends only
+# on asset/lzs/prot/iso (never engine-core), so this dev-only edge is acyclic.
+legaia-rando = { path = "../rando" }
