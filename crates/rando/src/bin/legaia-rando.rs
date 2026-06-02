@@ -58,6 +58,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every scene-transition door/exit the randomizer can
+    /// touch, grouped by the scene it lives in, with the destination each
+    /// currently leads to.
+    Doors {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -158,6 +166,7 @@ fn main() -> Result<()> {
         Cmd::Drops { input } => cmd_drops(&input),
         Cmd::Chests { input } => cmd_chests(&input),
         Cmd::Steals { input } => cmd_steals(&input),
+        Cmd::Doors { input } => cmd_doors(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -218,6 +227,27 @@ fn cmd_drops(input: &Path) -> Result<()> {
         n += 1;
     }
     println!("{n} monsters have a drop (of {} slots)", drops.len());
+    Ok(())
+}
+
+fn cmd_doors(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let doors = apply::current_doors(&patcher)?;
+    let mut cur = String::new();
+    let mut scenes = 0usize;
+    for d in &doors {
+        if d.home_scene != cur || cur.is_empty() {
+            cur = d.home_scene.clone();
+            scenes += 1;
+            println!("[{:>4}] {}", d.entry_idx, d.home_scene);
+        }
+        println!(
+            "    -> {:<10} (index {:>4})  entry=({:#04x},{:#04x}) dir={:#04x}  @0x{:x}",
+            d.dest_scene, d.index, d.entry_x, d.entry_z, d.dir, d.op_pc
+        );
+    }
+    println!("\n{} doors across {scenes} scenes", doors.len());
     Ok(())
 }
 

@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 
 use crate::chest::SceneChests;
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use crate::door::SceneDoors;
 use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 use crate::encounter::SceneEncounters;
 use crate::rng::SplitMix64;
@@ -377,6 +378,75 @@ pub fn randomize_chests(
 
     report.skipped = skipped.into_iter().map(|i| entry_indices[i]).collect();
     Ok(report)
+}
+
+/// The CDNAME scene label for a PROT entry, read from the disc's `CDNAME.TXT`
+/// (or `"?"` when the map is unavailable). Returns the parsed map so callers can
+/// label many entries without re-reading.
+pub fn cdname_map(patcher: &DiscPatcher) -> std::collections::BTreeMap<u32, String> {
+    patcher
+        .read_named_file("CDNAME.TXT")
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|t| legaia_prot::cdname::parse_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// One scene-transition ("door / exit") site: where it lives and where it goes.
+/// This is the audit surface the door randomizer reassigns. `home_scene` is the
+/// CDNAME label of the scene the door is in; `dest_scene` is the inline
+/// destination name the `0x3F` op carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoorSite {
+    /// PROT entry index of the scene bundle holding this door.
+    pub entry_idx: usize,
+    /// CDNAME label of the scene the door lives in (e.g. `"town01"`).
+    pub home_scene: String,
+    /// Byte offset of the `0x3F` op within the scene's decompressed MAN.
+    pub op_pc: usize,
+    /// Partition of the carrying record (almost always 2).
+    pub partition: usize,
+    /// Destination-scene `i16` index the op carries.
+    pub index: i16,
+    /// Destination CDNAME scene label (e.g. `"map01"`).
+    pub dest_scene: String,
+    /// Destination entry-tile X / Z bytes.
+    pub entry_x: u8,
+    pub entry_z: u8,
+    /// Facing/depth selector byte.
+    pub dir: u8,
+}
+
+/// Read every scene-transition door on the disc (the randomizable population),
+/// in PROT-entry then op-offset order. Purely read-only; decodes each scene MAN
+/// once via [`SceneDoors::locate`] and labels the home scene from `CDNAME.TXT`.
+pub fn current_doors(patcher: &DiscPatcher) -> Result<Vec<DoorSite>> {
+    let cd = cdname_map(patcher);
+    let mut out = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(doors) = SceneDoors::locate(&entry, idx) else {
+            continue;
+        };
+        let home = legaia_prot::cdname::block_for(&cd, idx as u32)
+            .unwrap_or("?")
+            .to_string();
+        for s in &doors.sites {
+            out.push(DoorSite {
+                entry_idx: idx,
+                home_scene: home.clone(),
+                op_pc: s.op_pc,
+                partition: s.partition,
+                index: s.index,
+                dest_scene: s.name.clone(),
+                entry_x: s.entry_x,
+                entry_z: s.entry_z,
+                dir: s.dir,
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// One monster's current steal: monster id, item id, and steal chance percent.

@@ -38,6 +38,7 @@
 pub mod apply;
 pub mod chest;
 pub mod disc;
+pub mod door;
 pub mod drops;
 pub mod encounter;
 pub mod items;

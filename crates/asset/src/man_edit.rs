@@ -253,6 +253,98 @@ fn scan_record_refs(
     Ok(jumps)
 }
 
+/// One `0x3F` named-scene-change ("door") site located in a decompressed MAN by
+/// the clean partition walk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneChangeSite {
+    /// Absolute offset of the `0x3F` opcode in the decompressed MAN.
+    pub op_pc: usize,
+    /// Partition (0/1/2) of the record carrying it (almost always 2).
+    pub partition: usize,
+    /// Destination-scene `i16` index (the id passed to the warp packet).
+    pub index: i16,
+    /// Destination CDNAME scene label (clean-gated; e.g. `"map01"`).
+    pub name: String,
+    /// Destination entry-tile X byte.
+    pub entry_x: u8,
+    /// Destination entry-tile Z byte.
+    pub entry_z: u8,
+    /// Facing/depth selector byte.
+    pub dir: u8,
+}
+
+/// Enumerate every `0x3F` named-scene-change site in a decompressed MAN by
+/// walking each partition record from its true `pc0` with a **clean
+/// fall-through** decode (stop at the first desync — the rest is data). This is
+/// the correct door enumeration: the destinations are partition-2 records, so a
+/// partition-1 recovering walk mis-attributes them. Only ops whose inline name
+/// passes the clean-CDNAME-label gate are returned; sites are unique by `op_pc`.
+pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
+    let Ok(mf) = man_section::parse(man) else {
+        return Vec::new();
+    };
+    let starts = record_starts(&mf);
+    let dro = mf.data_region_offset;
+    let mut out: Vec<SceneChangeSite> = Vec::new();
+    for (p, part) in mf.partitions.iter().enumerate() {
+        for &off in part {
+            let start = dro + off as usize;
+            if start >= man.len() {
+                continue;
+            }
+            let pc0 = if p == 2 {
+                match p2_pc0(man, start) {
+                    Some(v) => v,
+                    None => continue,
+                }
+            } else {
+                let locals = *man.get(start).unwrap_or(&0) as usize;
+                1 + locals * 2 + 4
+            };
+            let end = starts
+                .iter()
+                .copied()
+                .find(|&s| s > start)
+                .unwrap_or(man.len());
+            if start + pc0 >= end {
+                continue;
+            }
+            let mut pc = start + pc0;
+            while pc < end {
+                let Ok(insn) = field_disasm::decode(man, pc) else {
+                    break;
+                };
+                if insn.size == 0 || insn.pc >= end {
+                    break;
+                }
+                if let InsnInfo::SceneChange {
+                    index,
+                    entry_x,
+                    entry_z,
+                    dir,
+                    ..
+                } = insn.info
+                    && let Some(name) = field_disasm::scene_change_name(man, &insn)
+                    && !out.iter().any(|s| s.op_pc == insn.pc)
+                {
+                    out.push(SceneChangeSite {
+                        op_pc: insn.pc,
+                        partition: p,
+                        index,
+                        name,
+                        entry_x,
+                        entry_z,
+                        dir,
+                    });
+                }
+                pc += insn.size;
+            }
+        }
+    }
+    out.sort_by_key(|s| s.op_pc);
+    out
+}
+
 /// Internal: one resolved edit in old-buffer coordinates.
 struct Splice {
     /// Start of the operand block being replaced (`op_pc + header_size`).
