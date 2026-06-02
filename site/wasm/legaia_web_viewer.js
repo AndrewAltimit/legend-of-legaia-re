@@ -2247,9 +2247,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
 /**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
- * `drops` / `encounters` / `chests` / `steals` / `doors` are each `"shuffle"`,
- * `"random"`, or `"none"`. `door_coupling` is `"coupled"` (bidirectional) or
- * `"decoupled"` (one-way). `seed` is a number or any string (hashed). Returns
+ * `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
+ * each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
+ * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
+ * `"shuffle"`. `seed` is a number or any string (hashed). Returns
  * `{ data, summary, seed }`.
  * @param {Uint8Array} image
  * @param {string} seed
@@ -2259,9 +2260,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {string} steals
  * @param {string} doors
  * @param {string} door_coupling
+ * @param {string} house_doors
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, chests, steals, doors, door_coupling) {
+export function patch_rom(image, seed, drops, encounters, chests, steals, doors, door_coupling, house_doors) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2278,7 +2280,9 @@ export function patch_rom(image, seed, drops, encounters, chests, steals, doors,
     const len6 = WASM_VECTOR_LEN;
     const ptr7 = passStringToWasm0(door_coupling, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len7 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7);
+    const ptr8 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len8 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

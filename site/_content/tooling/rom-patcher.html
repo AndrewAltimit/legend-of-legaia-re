@@ -62,6 +62,13 @@
         <option value="decoupled">One-way (going back leads elsewhere)</option>
       </select>
     </label>
+    <label class="rom-row">
+      <span class="rom-label">House doors (experimental)</span>
+      <select id="rom-house-doors">
+        <option value="shuffle">Shuffle (intra-town MOVE_TO targets)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
     <div class="rom-row">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
@@ -81,6 +88,7 @@
     <li><strong>Treasure chests</strong> &mdash; reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest. A curated set of quest / key items (Mary's Diary, Dark Stone, the Genesis-Tree garden tools, Silver Compass, Old Rod) is kept static so progression items stay where the player expects them.</li>
     <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Bidirectional</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
+    <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving, so every target stays a valid tile), so house/interior doors lead to different rooms. The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>

@@ -2,9 +2,9 @@
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
 disc image: it shuffles monster item drops, random-encounter formations,
-treasure-chest contents, per-monster steal items, and scene-transition
-doors/exits, and writes the result back into the `.bin`. It does not touch the
-clean-room engine.
+treasure-chest contents, per-monster steal items, scene-transition doors/exits,
+and intra-town (house / interior) doors, and writes the result back into the
+`.bin`. It does not touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -29,9 +29,10 @@ preservation track never had (it only ever *read* the disc):
 
 ## Editing model: same-size in place, except doors
 
-Drops / encounters / chests / steals overwrite bytes **in place** and never
-change a byte count, so no LBA, PROT TOC, or ISO 9660 directory record ever
-moves. **Doors are the exception**: a scene-transition destination carries its
+Drops / encounters / chests / steals / **house doors** (the `0x23 MOVE_TO` tile
+shuffle) overwrite bytes **in place** and never change a byte count, so no LBA,
+PROT TOC, or ISO 9660 directory record ever moves. **Scene-transition doors are
+the one exception**: a scene-transition destination carries its
 target scene's name inline, so re-pointing a door at a differently-named scene
 changes the record's byte length. That is made safe by the
 [MAN relocation engine](../formats/man-relocation.md), which rebuilds the
@@ -68,6 +69,7 @@ legaia-rando drops     --input DISC.bin                       # read-only: monst
 legaia-rando chests    --input DISC.bin                       # read-only: chest contents
 legaia-rando steals    --input DISC.bin                       # read-only: steal items
 legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
+legaia-rando house-doors --input DISC.bin                     # read-only: intra-town MOVE_TO targets
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --doors shuffle --door-coupling coupled \
@@ -244,6 +246,28 @@ A scene whose rebuilt MAN can't grow within its on-disc footprint (the big
 overworld hubs, whose next asset sits flush after the MAN) is **skipped** — it
 keeps its original doors — and reported, rather than relocating the whole bundle.
 
+### House doors (intra-town)
+
+Entering a house/interior within a town is **not** a scene change — it's an
+**intra-scene reposition**: the field VM runs a **`0x23 MOVE_TO`** op that
+teleports the player to an interior sub-area tile in the *same* scene (pinned at
+the instruction level by `probe.step.find_writer`; the writer is `FUN_801de840`
+`case 0x23` — see [pcsx-redux-automation.md](pcsx-redux-automation.md)). So the
+door "record" is the op's two operand bytes `[0x23][xb][zb]` (`tile = byte &
+0x7F`). `legaia_rando::house_door::SceneHouseDoors` enumerates a scene's
+non-sentinel MOVE_TO sites and `--house-doors shuffle` does a **per-scene,
+multiset-preserving shuffle** of their target tiles — every target stays a tile
+the scene already uses (no off-map placement), a same-size 2-byte operand edit
+recompressed in place (no relocation). On retail: 220 shuffleable targets across
+28 scenes.
+
+**Experimental — the op is shared.** `0x23 MOVE_TO` is also how NPC / cutscene
+scripts move actors, and there's no clean structural marker separating door
+warps from those, so the shuffle also scrambles some actor positions within each
+town. It is opt-in, `shuffle`-only (a `random` draw would place actors off-map),
+and excludes the `(0x7F, 0x7F)` "here" sentinel. The read-only `house-doors`
+listing shows the touched population per scene.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right
@@ -299,6 +323,7 @@ bit-for-bit.
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
 | `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene `0x23 MOVE_TO` target-tile multiset preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |

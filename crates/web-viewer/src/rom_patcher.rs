@@ -41,9 +41,10 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
-/// `drops` / `encounters` / `chests` / `steals` / `doors` are each `"shuffle"`,
-/// `"random"`, or `"none"`. `door_coupling` is `"coupled"` (bidirectional) or
-/// `"decoupled"` (one-way). `seed` is a number or any string (hashed). Returns
+/// `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
+/// each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
+/// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
+/// `"shuffle"`. `seed` is a number or any string (hashed). Returns
 /// `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
@@ -56,6 +57,7 @@ pub fn patch_rom(
     steals: &str,
     doors: &str,
     door_coupling: &str,
+    house_doors: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -63,6 +65,7 @@ pub fn patch_rom(
     let chest_mode = parse_mode(chests);
     let steal_mode = parse_mode(steals);
     let door_mode = parse_mode(doors);
+    let house_door_mode = parse_mode(house_doors);
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
@@ -169,6 +172,23 @@ pub fn patch_rom(
             }
         }
         None => summary.push_str("doors: untouched\n"),
+    }
+
+    match house_door_mode {
+        Some(legaia_rando::drops::DropMode::Shuffle) => {
+            let rep = apply::randomize_house_doors(
+                &mut patcher,
+                seed_n,
+                legaia_rando::drops::DropMode::Shuffle,
+            )
+            .map_err(|e| err(format!("house-doors: {e}")))?;
+            summary.push_str(&format!(
+                "house-doors: {} of {} MOVE_TO targets shuffled across {} scenes\n",
+                rep.sites_changed, rep.sites_total, rep.scenes_changed
+            ));
+        }
+        Some(_) => summary.push_str("house-doors: only `shuffle` supported; untouched\n"),
+        None => summary.push_str("house-doors: untouched\n"),
     }
 
     let patched = patcher.into_image();
