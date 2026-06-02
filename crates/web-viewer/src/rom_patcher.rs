@@ -104,11 +104,22 @@ pub fn patch_rom(
 
     match chest_mode {
         Some(m) => {
-            let rep = apply::randomize_chests(&mut patcher, &pool, seed_n, m)
+            // Protect the curated quest / key-item chests by default (same set as
+            // the CLI's default), so the in-browser patcher behaves identically.
+            let keep_static: std::collections::BTreeSet<u8> =
+                legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
+                    .iter()
+                    .copied()
+                    .collect();
+            let rep = apply::randomize_chests(&mut patcher, &pool, seed_n, m, &keep_static)
                 .map_err(|e| err(format!("chests: {e}")))?;
             summary.push_str(&format!(
-                "chests: {} of {} sites changed across {} scenes ({})\n",
-                rep.items_changed, rep.sites_total, rep.scenes_changed, chests
+                "chests: {} of {} sites changed across {} scenes ({}); {} kept static\n",
+                rep.items_changed,
+                rep.sites_total,
+                rep.scenes_changed,
+                chests,
+                keep_static.len()
             ));
         }
         None => summary.push_str("chests: untouched\n"),

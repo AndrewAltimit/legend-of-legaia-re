@@ -33,6 +33,46 @@ pub fn current_drops(patcher: &DiscPatcher) -> Result<Vec<CurrentDrop>> {
         .collect())
 }
 
+/// One treasure-chest give-item site: which scene bundle it lives in, the byte
+/// offset of its `GIVE_ITEM` (`0x39`) operand inside the decoded MAN, and the
+/// item id it currently grants. This is the population the chest randomizer
+/// reassigns; listing it lets a user audit which items would change (e.g. to
+/// keep quest items static).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChestSite {
+    /// PROT entry index of the scene bundle holding this chest.
+    pub entry_idx: usize,
+    /// Byte offset of the give operand within the scene's decoded MAN. Stable
+    /// per disc; identifies the site independent of item id.
+    pub man_offset: usize,
+    /// The item id the chest currently gives.
+    pub item: u8,
+}
+
+/// Read every treasure-chest give-item site on the disc (the randomizable
+/// population), in PROT-entry order. Mirrors [`current_drops`] for chests:
+/// purely read-only, decodes each scene MAN once via [`SceneChests::locate`].
+pub fn current_chests(patcher: &DiscPatcher) -> Result<Vec<ChestSite>> {
+    let mut out = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(sc) = SceneChests::locate(&entry, idx) else {
+            continue;
+        };
+        let items = sc.current_items();
+        for (k, &off) in sc.sites.iter().enumerate() {
+            out.push(ChestSite {
+                entry_idx: idx,
+                man_offset: off,
+                item: items[k],
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// Outcome of applying a drop plan.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DropApplyReport {
@@ -160,11 +200,20 @@ pub struct ChestApplyReport {
 /// redistributes the existing chest-item multiset, `Random` draws each from
 /// `item_pool`. Only sites reachable by a clean field-VM walk are touched (see
 /// [`crate::chest`]). Scenes whose recompressed MAN overflows are skipped.
+///
+/// `keep_static` is a set of item ids to leave untouched: any chest whose
+/// **original** item is in the set keeps that item (it is excluded from the
+/// shuffle multiset entirely, so it never moves and no other chest receives it),
+/// and the id is dropped from the `Random` fill pool so it can't be duplicated
+/// into another chest. This is how quest / key items stay where the player
+/// expects them (see [`crate::items::DEFAULT_STATIC_CHEST_ITEMS`]). Pass an empty
+/// set to randomize everything.
 pub fn randomize_chests(
     patcher: &mut DiscPatcher,
     item_pool: &[u8],
     seed: u64,
     mode: DropMode,
+    keep_static: &std::collections::BTreeSet<u8>,
 ) -> Result<ChestApplyReport> {
     // Pass 1: collect every scene's chest sites + current items (decoded MAN
     // held for pass 2 so we don't decode twice).
@@ -213,9 +262,14 @@ pub fn randomize_chests(
                         sc.set_site(k, orig);
                     }
                 }
+                // The shuffle pool is the originals of non-skipped, non-static
+                // sites only; static items stay put (already restored above) and
+                // never enter the pool, so the multiset over the shuffled sites
+                // is preserved and a static item can't land in another chest.
                 let mut pool: Vec<u8> = (0..scenes.len())
                     .filter(|i| !skipped.contains(i))
                     .flat_map(|i| originals[i].iter().copied())
+                    .filter(|item| !keep_static.contains(item))
                     .collect();
                 let mut rng = SplitMix64::new(seed);
                 rng.shuffle(&mut pool);
@@ -224,7 +278,10 @@ pub fn randomize_chests(
                     if skipped.contains(&i) {
                         continue;
                     }
-                    for k in 0..sc.sites.len() {
+                    for (k, &orig) in originals[i].iter().enumerate() {
+                        if keep_static.contains(&orig) {
+                            continue; // static site keeps its restored original
+                        }
                         sc.set_site(k, pool[cur]);
                         cur += 1;
                     }
@@ -271,7 +328,14 @@ pub fn randomize_chests(
             }
         }
         DropMode::Random => {
-            if item_pool.is_empty() {
+            // Static items are dropped from the fill pool so a random chest can't
+            // duplicate a quest / key item elsewhere.
+            let fill_pool: Vec<u8> = item_pool
+                .iter()
+                .copied()
+                .filter(|item| !keep_static.contains(item))
+                .collect();
+            if fill_pool.is_empty() {
                 return Ok(report);
             }
             // Each site is independent, so an overflowing scene just reverts
@@ -280,7 +344,13 @@ pub fn randomize_chests(
             for (i, sc) in scenes.iter_mut().enumerate() {
                 let mut changed = 0;
                 for k in 0..sc.sites.len() {
-                    let v = item_pool[rng.below(item_pool.len())];
+                    // A chest whose original item is static keeps it (and consumes
+                    // no rng draw, so the stream past it is unaffected by which
+                    // sites are static — only the pool composition is).
+                    if keep_static.contains(&sc.decoded[sc.sites[k]]) {
+                        continue;
+                    }
+                    let v = fill_pool[rng.below(fill_pool.len())];
                     if sc.decoded[sc.sites[k]] != v {
                         sc.set_site(k, v);
                         changed += 1;

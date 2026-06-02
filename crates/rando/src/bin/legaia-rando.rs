@@ -43,6 +43,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every treasure chest the randomizer would touch, grouped
+    /// by scene, with the item each currently gives. Use this to audit which
+    /// items would change (e.g. to spot quest items that should stay static).
+    Chests {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -81,6 +89,13 @@ struct RandomizeArgs {
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     chests: DropArg,
+    /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
+    /// chests, never randomized — and dropped from the random-fill pool so they
+    /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
+    /// (`legaia-rando chests` lists current contents to audit). Pass an empty
+    /// value (`--keep-static-items ""`) to randomize everything.
+    #[arg(long, value_delimiter = ',')]
+    keep_static_items: Option<Vec<String>>,
     /// Write the portable PPF 3.0 patch here (defaults to `<input>.ppf`).
     #[arg(long)]
     patch: Option<PathBuf>,
@@ -129,6 +144,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Drops { input } => cmd_drops(&input),
+        Cmd::Chests { input } => cmd_chests(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -142,6 +158,17 @@ fn main() -> Result<()> {
 /// patcher via [`legaia_rando::rng::seed_from_str`]).
 fn resolve_seed(seed: &str) -> u64 {
     legaia_rando::rng::seed_from_str(seed)
+}
+
+/// Parse an item id from a decimal or `0x`-hex string (e.g. `154` or `0x9a`).
+fn parse_item_id(s: &str) -> Result<u8> {
+    let s = s.trim();
+    let parsed = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u8::from_str_radix(hex, 16)
+    } else {
+        s.parse::<u8>()
+    };
+    parsed.with_context(|| format!("invalid item id {s:?} (expected 0..=255, decimal or 0xHH)"))
 }
 
 fn clock_seed() -> u64 {
@@ -178,6 +205,73 @@ fn cmd_drops(input: &Path) -> Result<()> {
         n += 1;
     }
     println!("{n} monsters have a drop (of {} slots)", drops.len());
+    Ok(())
+}
+
+fn cmd_chests(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let chests = apply::current_chests(&patcher)?;
+
+    // Resolve item ids -> names (SCUS table) and PROT-entry -> scene name
+    // (CDNAME.TXT), both off the user's own disc. Purely for legibility.
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let name_of = |id: u8| -> String {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id))
+            .unwrap_or("?")
+            .to_string()
+    };
+    let cdname = legaia_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|s| legaia_prot::cdname::parse_str(&s).ok());
+    let scene_of = |entry_idx: usize| -> String {
+        cdname
+            .as_ref()
+            .and_then(|m| legaia_prot::cdname::block_for(m, entry_idx as u32))
+            .unwrap_or("?")
+            .to_string()
+    };
+
+    // Group consecutive chests by scene for a readable table.
+    let mut last_entry: Option<usize> = None;
+    let mut per_item: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
+    for c in &chests {
+        if last_entry != Some(c.entry_idx) {
+            println!("\n[entry {:>4}  {}]", c.entry_idx, scene_of(c.entry_idx));
+            last_entry = Some(c.entry_idx);
+        }
+        println!(
+            "  item {:>3} (0x{:02x})  {}",
+            c.item,
+            c.item,
+            name_of(c.item)
+        );
+        *per_item.entry(c.item).or_default() += 1;
+    }
+
+    println!(
+        "\n{} chest give-item sites across {} scenes, {} distinct items.",
+        chests.len(),
+        chests
+            .iter()
+            .map(|c| c.entry_idx)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        per_item.len(),
+    );
+    println!("\nItem multiset (id  count  name):");
+    for (id, count) in &per_item {
+        println!(
+            "  {:>3} (0x{:02x})  x{:<3}  {}",
+            id,
+            id,
+            count,
+            name_of(*id)
+        );
+    }
     Ok(())
 }
 
@@ -263,12 +357,36 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(chest_mode) = chest_mode {
-        let report = apply::randomize_chests(&mut patcher, &pool, seed, chest_mode)?;
+        // Resolve the keep-static set: the curated default, or the user's
+        // explicit (possibly empty) override.
+        let keep_static: std::collections::BTreeSet<u8> = match &args.keep_static_items {
+            None => legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
+                .iter()
+                .copied()
+                .collect(),
+            Some(list) => list
+                .iter()
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| parse_item_id(s))
+                .collect::<Result<_>>()?,
+        };
+        let report = apply::randomize_chests(&mut patcher, &pool, seed, chest_mode, &keep_static)?;
         println!(
-            "chests: {} of {} sites changed across {} scenes ({:?})",
-            report.items_changed, report.sites_total, report.scenes_changed, chest_mode
+            "chests: {} of {} sites changed across {} scenes ({:?}); {} item id(s) kept static",
+            report.items_changed,
+            report.sites_total,
+            report.scenes_changed,
+            chest_mode,
+            keep_static.len()
         );
         manifest.push(format!("chests = {:?}", mode_str(chest_mode)));
+        manifest.push(format!(
+            "chests_keep_static = {:?}",
+            keep_static
+                .iter()
+                .map(|id| format!("0x{id:02x}"))
+                .collect::<Vec<_>>()
+        ));
         manifest.push(format!("chests_sites = {}", report.sites_total));
         manifest.push(format!("chests_items_changed = {}", report.items_changed));
         if !report.skipped.is_empty() {

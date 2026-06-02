@@ -53,7 +53,8 @@ never leave the browser. The CLI below is the scriptable / shareable-PPF path.
 The top-level binary turns a disc + seed into a portable patch:
 
 ```bash
-legaia-rando drops     --input DISC.bin                       # read-only listing
+legaia-rando drops     --input DISC.bin                       # read-only: monster drops
+legaia-rando chests    --input DISC.bin                       # read-only: chest contents
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
@@ -71,6 +72,26 @@ record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
 result still parses end to end — a recipient's check that a shared patch + seed
 match their own disc.
+
+The read-only `drops` and `chests` subcommands write nothing — they decode the
+randomizable populations off the user's disc and print them (item ids + names
+resolved from the disc's own SCUS table; chests grouped by scene via CDNAME and
+followed by an item-multiset summary). `chests` lists the exact 275-site
+treasure population the chest randomizer reassigns, which is the natural place to
+audit for quest / key items a run might want to keep static.
+
+### Keep-static items
+
+A few chest items are progression / quest / key items the player needs in a
+predictable place. The chest randomizer keeps a **curated default set** static
+(`legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS`): Mary's Diary, Dark Stone,
+Fertilizer, Weed Hammer, Spring Salts, Silver Compass, and the Old Rod. A chest
+whose original item is in this set keeps that item, the id is excluded from the
+shuffle multiset (so it can never move to another chest), and it is dropped from
+the `random` fill pool (so it can't be duplicated into an unrelated chest).
+Override with `--keep-static-items 0x9a,0x71,…` (decimal or `0xHH`), or pass an
+empty value (`--keep-static-items ""`) to randomize every chest. The resolved set
+is recorded in the run manifest.
 
 Because an edit changes bytes *inside* an LZS stream, the whole touched stream
 is re-packed, so the changed-byte count (and the PPF) is dominated by
@@ -205,8 +226,20 @@ bit-for-bit.
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
+| `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
+| `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
+
+The two `engine-core` runtime oracles answer a question the `crates/rando`
+patch tests don't: not just that the patched byte is *written* faithfully, but
+that a runtime actually *reads it and grants the new item*. A savestate can't
+prove this — the scene MAN / `battle_data` archive is resident in RAM the moment
+you're in the room / battle, so a state captured on a patched disc still serves
+the original from the cached RAM copy; the patched value is only seen after a
+fresh scene/battle load re-streams it off disc. The clean-room engine sidesteps
+that cache by decoding straight from disc bytes and running the actual grant
+path, so it observes the patch a savestate would mask.
 
 ## No-Sony-bytes hygiene
 

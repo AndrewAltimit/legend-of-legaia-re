@@ -9,6 +9,25 @@
 use anyhow::{Context, Result};
 use legaia_asset::item_names::ItemNameTable;
 
+/// Curated set of chest item ids that should **never** be randomized — quest /
+/// key items whose chest location the player needs predictable (and which would
+/// be nonsensical as random fill elsewhere). The chest randomizer keeps every
+/// chest whose original item is in this set at its original item, and drops
+/// these ids from the random-fill pool so they can't be duplicated into other
+/// chests. Override at the CLI with `--keep-static-items` (pass an empty value
+/// to randomize everything).
+///
+/// | id | item | why |
+/// |----|------|-----|
+/// | `0x9a` | Mary's Diary | story / quest item |
+/// | `0x71` | Dark Stone | quest item |
+/// | `0xa9` | Fertilizer | Genesis-tree garden quest tool |
+/// | `0xaa` | Weed Hammer | Genesis-tree garden quest tool |
+/// | `0xb0` | Spring Salts | Genesis-tree garden quest tool |
+/// | `0xf3` | Silver Compass | navigation enabler |
+/// | `0xa0` | Old Rod | fishing enabler |
+pub const DEFAULT_STATIC_CHEST_ITEMS: &[u8] = &[0x9a, 0x71, 0xa9, 0xaa, 0xb0, 0xf3, 0xa0];
+
 /// The set of item ids that name a real (non-empty) item.
 ///
 /// `id == 0` is the game's "no item" sentinel and is always excluded, so every
