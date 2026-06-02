@@ -611,20 +611,50 @@ topics = ["field", "scene transition", "door randomizer", "0x3F", "town01", "map
 expected_active_scene = "town01"
 
 # ----------------------------------------------------------------------
-# Rim Elm (town01) standing directly beneath an open house door; a ~1s Up
-# press enters Mei's house. This is an INTRA-TOWN door, a different
-# mechanism from the 0x3F named-scene-change the door randomizer touches
-# (town01's MAN has only one 0x3F, to map01) -- the capture for RE'ing how
-# house / interior doors warp so they can be randomized too.
+# Rim Elm Mei's-house door RE set. Entering a house here is an INTRA-SCENE
+# REPOSITION, not a scene change: the active scene-name buffers
+# (0x8007050C / 0x80084548) stay "town0c" across the transition, while the
+# player struct (0x80083794) position jumps to the interior sub-area. So
+# this is a different mechanism from the 0x3F named-scene-change the door
+# randomizer handles (town0c's MAN has no 0x3E warp and one 0x3F, to map01).
+#   door_warp_rim_elm_to_mei_house  mednafen slot 0  outside (pre), town0c
+#   mei_house_inside                mednafen slot 1  inside (post), town0c
+#   mei_house_door_pcsx             pcsx sstate1     outside, earlier town01 variant (trace input)
+#   mei_house_inside_pcsx           pcsx sstate2     inside,  earlier town01 variant
+# (The PCSX pair is an earlier game stage / Rim Elm variant than the
+# mednafen pair, so positions differ; the door MECHANISM is the same.)
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 0
 label = "door_warp_rim_elm_to_mei_house"
 backup_fingerprint = "a6e3ca59ca5849561325cb94cc660b991b75259e7495fe740e873f4a9b0a6387"
-description = "Rim Elm (town01) field, standing directly beneath an open house door; a ~1s Up press enters Mei's house. Pre-transition save for RE'ing the intra-town (house / interior) door-warp mechanism -- distinct from the 0x3F named-scene-change the door randomizer currently handles."
+description = "Rim Elm (town0c) field, standing directly beneath an open house door; a ~1s Up press enters Mei's house. Pre-transition save for RE'ing the intra-town (house / interior) door-warp mechanism -- an intra-scene reposition (scene stays town0c), distinct from the 0x3F named-scene-change the door randomizer handles."
 phase = "field"
-topics = ["field", "intra-town door", "house warp", "door randomizer", "town01"]
-expected_active_scene = "town01"
+topics = ["field", "intra-town door", "house warp", "door randomizer", "town0c"]
+expected_active_scene = "town0c"
+
+[[scenarios]]
+slot = 1
+label = "mei_house_inside"
+backup_fingerprint = "8d5239ec0434644fa25e0660941dc0096b8e3857d4f9826abfdfd8ac2706d64d"
+description = "Rim Elm Mei's-house INTERIOR (mednafen), one step after entering from door_warp_rim_elm_to_mei_house. Scene is still town0c; only the player position changed -- confirms the house door is an intra-scene reposition, not a scene change."
+phase = "field"
+topics = ["field", "intra-town door", "house interior", "town0c"]
+expected_active_scene = "town0c"
+
+[[scenarios]]
+slot = 255
+label = "mei_house_door_pcsx"
+backup_fingerprint = "3c118f4a26bf0be04ab18f08b15703caa97e77c47be3ac94b8730215dc91d3f7"
+description = "Rim Elm standing beneath a house door, PCSX-Redux (earlier game stage / town01 variant than the mednafen pair). Trace input for the intra-town door mechanism: hold Up to enter and watch the field VM."
+phase = "field"
+
+[[scenarios]]
+slot = 255
+label = "mei_house_inside_pcsx"
+backup_fingerprint = "df2723f6f9ebd46f6b13e9711f636e4c47bd4fd7a96fa71de9272d53a30f56ec"
+description = "Rim Elm house interior, PCSX-Redux (earlier game stage / town01 variant), one step after entering. Pair with mei_house_door_pcsx."
+phase = "field"
 
 # ----------------------------------------------------------------------
 # Pre-transition save: player stands on a walkable area; a brief Down
