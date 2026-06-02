@@ -872,3 +872,42 @@ phase = "field"
 pcsx_redux_sstate = "~/Tools/pcsx-redux/SCUS94254.sstate1"
 description = "PCSX-Redux: standing in front of an early treasure chest (normally a Healing Leaf), for the field-VM GIVE_ITEM (0x39) runtime trace — operand RAM address + granted item id."
 topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "trace", "pcsx-redux"]
+
+# ----------------------------------------------------------------
+# Player-steal RAM capture (Evil God Icon equipped). The per-monster
+# steal item is NOT a raw id in the PROT 867 monster record (exhaustive
+# offset scan, docs/reference/open-rev-eng-threads.md), so closing where
+# the steal item is read needs a live capture. Pair: Vahn attacks a
+# skeleton and steals an "Incense"; `_pre` is the frame before the
+# attack resolves, `_banner` is the "Stole the 'Incense'." message frame.
+# Diff the pair to localize the RAM address carrying the stolen item id,
+# then trace its source (a separate table/asset or a non-raw index).
+# ----------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "player_steal_skeleton_pre"
+ram_fingerprint_sha256 = "aca366d22fd9fca9127b1ce3a452e043c7a319dfea3b4d2de33668e9a4124dfc"
+backup_fingerprint = "4dda3e8b2b9099024785896db03425a53c98bb9204ee910400802d4063612b8d"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Player-steal capture (Evil God Icon equipped): in battle, at the start of Vahn's attack that kills a skeleton and steals an 'Incense' — the frame before the steal resolves. Pairs with player_steal_skeleton_banner."
+topics = ["steal", "Evil God Icon", "battle", "skeleton", "incense", "randomizer", "RE"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 255
+label = "player_steal_skeleton_banner"
+ram_fingerprint_sha256 = "f3225f2b7c9120e433f80a3a7852f56e00890983aa5ca587cba3515b9e656651"
+backup_fingerprint = "1acdd38d71671c6d3eaa5e68999dd558d8d58ce61e8876526f010aeed6e7ed00"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Player-steal capture (Evil God Icon equipped): the 'Stole the `Incense`.' banner frame, after the steal from the skeleton resolved. Diff vs player_steal_skeleton_pre to localize the stolen-item-id RAM address."
+topics = ["steal", "Evil God Icon", "battle", "skeleton", "incense", "randomizer", "RE"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000

@@ -52,6 +52,7 @@ pub mod scene_v12_table;
 pub mod scene_vab_stream;
 pub mod spell_names;
 pub mod stage_geom;
+pub mod steal_table;
 pub mod str_fmv_table;
 pub mod summon_overlay;
 pub mod tim_catalog;
