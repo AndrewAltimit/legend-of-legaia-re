@@ -46,4 +46,5 @@ pub mod items;
 pub mod monster;
 pub mod ppf;
 pub mod rng;
+pub mod starting_items;
 pub mod steal;

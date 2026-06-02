@@ -122,6 +122,13 @@ impl ExeMap {
     }
 }
 
+/// File offset of the starting-inventory seed region ([`STARTING_INV_SEED_VA`])
+/// within a `SCUS_942.54` image, or `None` if the image isn't a PSX-EXE or the
+/// address is out of range. The disc patcher writes the seed patch here.
+pub fn starting_inv_seed_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(STARTING_INV_SEED_VA)
+}
+
 /// One roster member's opening stats + name, decoded from the template.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StartingChar {

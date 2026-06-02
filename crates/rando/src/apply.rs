@@ -1011,6 +1011,53 @@ pub fn randomize_steals(
     Ok((plan, report))
 }
 
+/// Read the new game's current starting inventory (`(item_id, count)` slots) by
+/// decoding the seed code region in `SCUS_942.54`. Vanilla retail is a single
+/// slot — Healing Leaf (`0x77`) ×5. Purely read-only.
+pub fn current_starting_items(patcher: &DiscPatcher) -> Result<Vec<(u8, u8)>> {
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    let inv = legaia_asset::new_game::StartingInventory::from_scus(&scus)
+        .context("decode starting-inventory seed")?;
+    Ok(inv.items().to_vec())
+}
+
+/// Outcome of randomizing the new game's starting inventory.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct StartingItemsApplyReport {
+    /// Number of starting-item slots written (`0..=MAX_STARTING_ITEMS`).
+    pub items_set: usize,
+    /// The seeded `(item_id, count)` slots, for the manifest / CLI summary.
+    pub items: Vec<(u8, u8)>,
+}
+
+/// Replace the new game's fixed Healing Leaf with `n` random consumables
+/// (`n` clamped to `0..=MAX_STARTING_ITEMS`). Rewrites the seed code region in
+/// `SCUS_942.54` with a same-size packed-halfword-store patch (no executable
+/// growth). `n == 0` restores the region to all-`nop` (an empty starting
+/// inventory). Deterministic in `(seed, n)`.
+pub fn randomize_starting_items(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    n: usize,
+) -> Result<StartingItemsApplyReport> {
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    let off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
+        .context("locate starting-inventory seed region in SCUS_942.54")? as u64;
+    let items = crate::starting_items::plan_starting_items(seed, n);
+    let patch = crate::starting_items::build_seed_patch(&items);
+    patcher
+        .patch_named_file(crate::steal::SCUS_NAME, off, &patch)
+        .with_context(|| format!("write starting-item seed at SCUS offset {off:#x}"))?;
+    Ok(StartingItemsApplyReport {
+        items_set: items.len(),
+        items,
+    })
+}
+
 #[cfg(test)]
 mod door_plan_tests {
     use super::*;

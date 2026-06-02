@@ -74,6 +74,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: show the new game's current starting inventory (the
+    /// `(item, count)` slots a New Game begins with — vanilla is Healing Leaf
+    /// ×5).
+    StartingItems {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -136,6 +144,12 @@ struct RandomizeArgs {
     /// the shuffled set includes some NPC / cutscene movement, not only doors.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     house_doors: DropArg,
+    /// Number of random starting items the new game begins with (`0` = leave the
+    /// vanilla Healing Leaf ×5 untouched). Each is a distinct random consumable
+    /// with a small random count; capped at the seed region's capacity (5).
+    /// `legaia-rando starting-items` shows the current contents.
+    #[arg(long, default_value_t = 0)]
+    starting_items: usize,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
     /// chests, never randomized — and dropped from the random-fill pool so they
     /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
@@ -212,6 +226,7 @@ fn main() -> Result<()> {
         Cmd::Steals { input } => cmd_steals(&input),
         Cmd::Doors { input } => cmd_doors(&input),
         Cmd::HouseDoors { input } => cmd_house_doors(&input),
+        Cmd::StartingItems { input } => cmd_starting_items(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -424,6 +439,41 @@ fn cmd_steals(input: &Path) -> Result<()> {
         "\n{} monsters are stealable, {} distinct steal items.",
         steals.len(),
         per_item.len()
+    );
+    Ok(())
+}
+
+fn cmd_starting_items(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let items = apply::current_starting_items(&patcher)?;
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let name_of = |id: u8| -> String {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id))
+            .unwrap_or("?")
+            .to_string()
+    };
+    if items.is_empty() {
+        println!("The new game starts with an empty inventory.");
+        return Ok(());
+    }
+    println!("New game starting inventory:");
+    for (id, count) in &items {
+        println!(
+            "  {:>3} x item {:>3} (0x{:02x}, {})",
+            count,
+            id,
+            id,
+            name_of(*id)
+        );
+    }
+    println!(
+        "\n{} slot(s) seeded (the randomizer can set up to {}).",
+        items.len(),
+        legaia_rando::starting_items::MAX_STARTING_ITEMS
     );
     Ok(())
 }
@@ -647,6 +697,30 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("house-doors: untouched");
         manifest.push("house_doors = \"none\"".to_string());
+    }
+
+    if args.starting_items > 0 {
+        let report = apply::randomize_starting_items(&mut patcher, seed, args.starting_items)?;
+        let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        let summary: Vec<String> = report
+            .items
+            .iter()
+            .map(|(id, count)| {
+                let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
+                format!("{count}x {nm}")
+            })
+            .collect();
+        println!(
+            "starting-items: new game now begins with {} random item(s): {}",
+            report.items_set,
+            summary.join(", ")
+        );
+        manifest.push(format!("starting_items = {}", report.items_set));
+        manifest.push(format!("starting_items_set = {:?}", report.items));
+    } else {
+        println!("starting-items: untouched (vanilla Healing Leaf x5)");
+        manifest.push("starting_items = 0".to_string());
     }
 
     // Diff original vs patched -> PPF.
