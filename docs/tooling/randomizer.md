@@ -3,8 +3,8 @@
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
 disc image: it shuffles monster item drops, random-encounter formations,
 treasure-chest contents, per-monster steal items, scene-transition doors/exits,
-and intra-town (house / interior) doors, and writes the result back into the
-`.bin`. It does not touch the clean-room engine.
+intra-town (house / interior) doors, and the new game's starting items, and
+writes the result back into the `.bin`. It does not touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -70,10 +70,11 @@ legaia-rando chests    --input DISC.bin                       # read-only: chest
 legaia-rando steals    --input DISC.bin                       # read-only: steal items
 legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
 legaia-rando house-doors --input DISC.bin                     # read-only: intra-town MOVE_TO targets
+legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --doors shuffle --door-coupling coupled \
-    --patch run.ppf --output patched.bin --manifest run.toml
+    --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
@@ -84,14 +85,15 @@ play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
 and PPF. `--drops`, `--encounters`, `--chests`, `--steals`, and `--doors` each
 take `shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
-bidirectional) or `decoupled` (one-way).
+bidirectional) or `decoupled` (one-way); `--starting-items N` seeds the new
+game with `N` random consumables (0 = vanilla; capped at 5).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
 result still parses end to end — a recipient's check that a shared patch + seed
 match their own disc.
 
-The read-only `drops`, `chests`, `steals`, and `doors` subcommands write nothing
+The read-only `drops`, `chests`, `steals`, `doors`, and `starting-items` subcommands write nothing
 — they decode the randomizable populations off the user's disc and print them
 (item ids + names resolved from the disc's own SCUS table; chests + doors grouped
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
@@ -290,6 +292,31 @@ that gap needs a more aggressive walk-past-desync enumeration (with a way to
 reject data false positives) or a per-town runtime trace of the entry op; both
 remain open, which is why the feature is experimental.
 
+### Starting items
+
+A vanilla New Game begins with one inventory slot — Healing Leaf (item `0x77`)
+×5 — and there is **no static starting-inventory table** to edit: the new-game
+data-init `FUN_80034A6C` builds it in code, writing `inventory[0] = (0x77, 5)`
+into the live consumable bag at `0x80085958` (`SC + 0x1818`) with an
+`addiu`/`sb` pair (see [new-game-table.md](../formats/new-game-table.md)). So
+this randomizer rewrites the **seed code** itself. The 40-byte region at
+`0x80034b04` is reclaimable: it holds that seed plus a 6-instruction loop that
+zeroes the 512 bytes *below* the inventory — redundant, because **both** callers
+of `FUN_80034A6C` `memset` the whole `SC[0..0x1a18)` block (which contains the
+inventory) right before the call.
+
+`apply::randomize_starting_items` plans `n` distinct random consumables (each a
+small random count) and writes one **packed halfword store** per item into that
+region — an inventory slot is two contiguous bytes `[id][count]`, so
+`addiu $v0, (count<<8)|id; sh $v0, (0x1818 + 2k)($s0)` seeds a slot in two
+instructions. Ten instructions / two per item caps it at **five** starting
+items. The patch is the same size as the original code (no executable growth or
+relocation), applied like the steal table via `patch_named_file`. Because the
+write lands directly in the consumable page (bypassing the engine's id-routing
+add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
+(Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
+read-only `starting-items` listing shows the current bag.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right
@@ -346,15 +373,17 @@ bit-for-bit.
 | `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene `0x23 MOVE_TO` target-tile multiset preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
 | `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
 | `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
+| `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The five `engine-core` runtime oracles answer a question the `crates/rando`
+The six `engine-core` runtime oracles answer a question the `crates/rando`
 patch tests don't: not just that the patched byte is *written* faithfully, but
 that a runtime actually *reads it and acts on it* — grants the new item, spawns
 the new monster, or warps to the new scene. A savestate can't prove this — the
