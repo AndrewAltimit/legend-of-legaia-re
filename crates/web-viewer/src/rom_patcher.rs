@@ -44,7 +44,9 @@ pub fn resolve_seed(seed: &str) -> String {
 /// `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
 /// each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
-/// `"shuffle"`. `seed` is a number or any string (hashed). Returns
+/// `"shuffle"`. `starting_items` is the number of random starting consumables
+/// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
+/// 5). `seed` is a number or any string (hashed). Returns
 /// `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
@@ -58,6 +60,7 @@ pub fn patch_rom(
     doors: &str,
     door_coupling: &str,
     house_doors: &str,
+    starting_items: usize,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -189,6 +192,28 @@ pub fn patch_rom(
         }
         Some(_) => summary.push_str("house-doors: only `shuffle` supported; untouched\n"),
         None => summary.push_str("house-doors: untouched\n"),
+    }
+
+    if starting_items > 0 {
+        let rep = apply::randomize_starting_items(&mut patcher, seed_n, starting_items)
+            .map_err(|e| err(format!("starting-items: {e}")))?;
+        let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        let list: Vec<String> = rep
+            .items
+            .iter()
+            .map(|(id, count)| {
+                let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
+                format!("{count}x {nm}")
+            })
+            .collect();
+        summary.push_str(&format!(
+            "starting-items: new game begins with {} random item(s): {}\n",
+            rep.items_set,
+            list.join(", ")
+        ));
+    } else {
+        summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
     }
 
     let patched = patcher.into_image();

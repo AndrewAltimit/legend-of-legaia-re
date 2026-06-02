@@ -3,7 +3,8 @@
  * image. Nothing is uploaded; the disc bytes never leave the browser.
  *
  * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, drops,
- * encounters, chests, steals, doors, door_coupling, house_doors) -> { data, summary, seed }`
+ * encounters, chests, steals, doors, door_coupling, house_doors, starting_items)
+ * -> { data, summary, seed }`
  * and `resolve_seed(str)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`.
@@ -59,6 +60,7 @@ function init() {
   const doorSel = $('rom-doors');
   const doorCouplingSel = $('rom-door-coupling');
   const houseDoorSel = $('rom-house-doors');
+  const startingItemsSel = $('rom-starting-items');
   const runBtn = $('rom-run');
   const statusEl = $('rom-status');
   const summaryEl = $('rom-summary');
@@ -82,13 +84,15 @@ function init() {
     const doors = doorSel ? doorSel.value : 'none';
     const doorCoupling = doorCouplingSel ? doorCouplingSel.value : 'coupled';
     const houseDoors = houseDoorSel ? houseDoorSel.value : 'none';
+    const startingItems = startingItemsSel ? parseInt(startingItemsSel.value, 10) || 0 : 0;
     if (
       drops === 'none' &&
       encounters === 'none' &&
       chests === 'none' &&
       steals === 'none' &&
       doors === 'none' &&
-      houseDoors === 'none'
+      houseDoors === 'none' &&
+      startingItems === 0
     ) {
       setStatus('Enable at least one option.', 'err');
       return;
@@ -104,7 +108,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, chests, steals, doors, doorCoupling, houseDoors);
+      const result = mod.patch_rom(buf, seed, drops, encounters, chests, steals, doors, doorCoupling, houseDoors, startingItems);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

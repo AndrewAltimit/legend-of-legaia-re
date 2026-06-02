@@ -69,6 +69,17 @@
         <option value="none" selected>Leave alone</option>
       </select>
     </label>
+    <label class="rom-row">
+      <span class="rom-label">Starting items</span>
+      <select id="rom-starting-items">
+        <option value="0" selected>Leave alone (Healing Leaf &times;5)</option>
+        <option value="1">1 random item</option>
+        <option value="2">2 random items</option>
+        <option value="3">3 random items</option>
+        <option value="4">4 random items</option>
+        <option value="5">5 random items</option>
+      </select>
+    </label>
     <div class="rom-row">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
@@ -89,6 +100,7 @@
     <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Bidirectional</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving, so every target stays a valid tile), so house/interior doors lead to different rooms. The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
+    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count). There is no static starting-inventory table, so this rewrites the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place &mdash; a same-size patch using a packed halfword store per item, drawing from the consumable item block (Healing Leaf &hellip; Wonder Elixir) so each item belongs on the bag's consumable page.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>
