@@ -150,6 +150,27 @@ impl SceneAssetTable {
     pub fn used(&self) -> &[DescriptorRecord] {
         &self.descriptors[..self.count]
     }
+
+    /// Byte offset, within the bundle entry, of descriptor `index`'s
+    /// `(type<<24)|size` word. The descriptor table is `[8-byte header]` then
+    /// `count` 8-byte `(type_size, data_offset)` pairs, so descriptor `index`'s
+    /// type/size word sits at `8 + index*8`. Used by the variable-length MAN
+    /// editor to rewrite the *decompressed* size field after resizing an asset.
+    pub fn size_word_offset(index: usize) -> usize {
+        8 + index * 8
+    }
+
+    /// Index of the first descriptor whose `type_byte == ty`, or `None`.
+    pub fn descriptor_index(&self, ty: u8) -> Option<usize> {
+        self.used().iter().position(|d| d.type_byte == ty)
+    }
+}
+
+/// Encode a descriptor `(type<<24)|size` word from its parts. Companion to the
+/// decode in [`detect`]; used to rewrite a descriptor's decompressed size after
+/// a variable-length asset edit (`size` is masked to 24 bits).
+pub fn encode_size_word(type_byte: u8, size: u32) -> u32 {
+    ((type_byte as u32) << 24) | (size & 0x00FF_FFFF)
 }
 
 /// One descriptor pair from the table.
