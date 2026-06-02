@@ -249,19 +249,21 @@ bit-for-bit.
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
+| `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The three `engine-core` runtime oracles answer a question the `crates/rando`
+The four `engine-core` runtime oracles answer a question the `crates/rando`
 patch tests don't: not just that the patched byte is *written* faithfully, but
 that a runtime actually *reads it and grants the new item* — or, for encounters,
 *spawns the new monster*. A savestate can't prove this — the scene MAN /
-`battle_data` archive is resident in RAM the moment you're in the room / battle,
-so a state captured on a patched disc still serves the original from the cached
-RAM copy; the patched value is only seen after a fresh scene/battle load
-re-streams it off disc. The clean-room engine sidesteps that cache by decoding
-straight from disc bytes and running the actual grant / spawn path, so it
-observes the patch a savestate would mask.
+`battle_data` archive / steal table is resident in RAM the moment you're in the
+room / battle (or as soon as the executable loads), so a state captured on a
+patched disc still serves the original from the cached RAM copy; the patched
+value is only seen after a fresh scene / battle / executable load re-streams it
+off disc. The clean-room engine sidesteps that cache by decoding straight from
+disc bytes and running the actual grant / spawn path, so it observes the patch a
+savestate would mask.
 
 ## No-Sony-bytes hygiene
 
