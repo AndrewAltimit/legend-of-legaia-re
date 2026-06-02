@@ -345,6 +345,94 @@ pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
     out
 }
 
+/// One field-VM `0x23 MOVE_TO` ("teleport to grid tile") op located in a
+/// decompressed MAN. Intra-town doors are these: a script repositions the
+/// player to an interior sub-area tile. Distinguishing door warps from NPC /
+/// cutscene movement is the caller's job (see `crate::house_door` in
+/// `legaia-rando`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveToSite {
+    /// Absolute offset of the `0x23` opcode in the decompressed MAN.
+    pub op_pc: usize,
+    /// Partition (0/1/2) of the carrying record.
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// First operand byte (X tile encoding: `tile = b & 0x7F`,
+    /// `+half = b & 0x80`).
+    pub xb: u8,
+    /// Second operand byte (Z tile encoding, same shape as `xb`).
+    pub zb: u8,
+}
+
+impl MoveToSite {
+    /// Decoded destination tile `(x, z)` (the `& 0x7F` of each operand).
+    pub fn tile(&self) -> (u8, u8) {
+        (self.xb & 0x7F, self.zb & 0x7F)
+    }
+}
+
+/// Enumerate every `0x23 MOVE_TO` site in a decompressed MAN via the same clean
+/// partition-walk as [`scene_change_sites`]. Sites are unique by `op_pc`,
+/// sorted. (The `(0x7F, 0x7F)` sentinel "here" target appears throughout and is
+/// not a door — callers filter it.)
+pub fn move_to_sites(man: &[u8]) -> Vec<MoveToSite> {
+    let Ok(mf) = man_section::parse(man) else {
+        return Vec::new();
+    };
+    let starts = record_starts(&mf);
+    let dro = mf.data_region_offset;
+    let mut out: Vec<MoveToSite> = Vec::new();
+    for (p, part) in mf.partitions.iter().enumerate() {
+        for (ri, &off) in part.iter().enumerate() {
+            let start = dro + off as usize;
+            if start >= man.len() {
+                continue;
+            }
+            let pc0 = if p == 2 {
+                match p2_pc0(man, start) {
+                    Some(v) => v,
+                    None => continue,
+                }
+            } else {
+                let locals = *man.get(start).unwrap_or(&0) as usize;
+                1 + locals * 2 + 4
+            };
+            let end = starts
+                .iter()
+                .copied()
+                .find(|&s| s > start)
+                .unwrap_or(man.len());
+            if start + pc0 >= end {
+                continue;
+            }
+            let mut pc = start + pc0;
+            while pc < end {
+                let Ok(insn) = field_disasm::decode(man, pc) else {
+                    break;
+                };
+                if insn.size == 0 || insn.pc >= end {
+                    break;
+                }
+                if let InsnInfo::MoveTo { xb, zb } = insn.info
+                    && !out.iter().any(|s| s.op_pc == insn.pc)
+                {
+                    out.push(MoveToSite {
+                        op_pc: insn.pc,
+                        partition: p,
+                        record: ri,
+                        xb,
+                        zb,
+                    });
+                }
+                pc += insn.size;
+            }
+        }
+    }
+    out.sort_by_key(|s| s.op_pc);
+    out
+}
+
 /// Internal: one resolved edit in old-buffer coordinates.
 struct Splice {
     /// Start of the operand block being replaced (`op_pc + header_size`).

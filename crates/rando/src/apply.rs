@@ -13,6 +13,7 @@ use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use crate::door::SceneDoors;
 use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 use crate::encounter::SceneEncounters;
+use crate::house_door::SceneHouseDoors;
 use crate::rng::SplitMix64;
 
 /// Read every monster's current drop (item id + chance) out of the
@@ -705,6 +706,80 @@ pub fn randomize_doors(
                 report.sites_changed += edits.len();
             }
             None => report.skipped.push(scene.entry_idx),
+        }
+    }
+    Ok(report)
+}
+
+/// Outcome of randomizing intra-town (house / interior) doors.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HouseDoorApplyReport {
+    /// Scene bundles whose MAN was rewritten + written back.
+    pub scenes_changed: usize,
+    /// Total MOVE_TO target tiles whose operand changed.
+    pub sites_changed: usize,
+    /// Total shuffleable (non-sentinel) MOVE_TO sites found.
+    pub sites_total: usize,
+    /// Scene PROT-entry indices whose recompressed MAN overflowed (kept original).
+    pub skipped: Vec<usize>,
+}
+
+/// Read every shuffleable intra-town MOVE_TO site on the disc (the house-door
+/// population), in PROT-entry order. Purely read-only audit surface; see
+/// [`crate::house_door`] for the caveat that this set includes some NPC /
+/// cutscene movement, not only house-door warps.
+pub fn current_house_doors(patcher: &DiscPatcher) -> Result<Vec<(usize, u8, u8)>> {
+    let mut out = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(sd) = SceneHouseDoors::locate(&entry, idx) else {
+            continue;
+        };
+        for (xb, zb) in sd.current_targets() {
+            out.push((idx, xb & 0x7F, zb & 0x7F));
+        }
+    }
+    Ok(out)
+}
+
+/// Randomize intra-town (house / interior) doors by a **per-scene,
+/// multiset-preserving shuffle** of the `0x23 MOVE_TO` target tiles (see
+/// [`crate::house_door`]). Each scene's MAN is recompressed (same-size operand
+/// edits) and written back when it fits; a scene that overflows keeps its
+/// original tiles. Only [`DropMode::Shuffle`] is meaningful (a random draw would
+/// place actors off-map), so a non-shuffle mode is a no-op.
+pub fn randomize_house_doors(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<HouseDoorApplyReport> {
+    let mut report = HouseDoorApplyReport::default();
+    if !crate::house_door::supported_mode(mode) {
+        return Ok(report);
+    }
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(mut scene) = SceneHouseDoors::locate(&entry, idx) else {
+            continue;
+        };
+        report.sites_total += scene.sites.len();
+        let changed = scene.shuffle(seed);
+        if changed == 0 {
+            continue;
+        }
+        match scene.repack() {
+            Some(stream) => {
+                patcher
+                    .patch_prot_entry(idx, scene.man_offset as u64, &stream)
+                    .with_context(|| format!("write scene {idx} MAN"))?;
+                report.scenes_changed += 1;
+                report.sites_changed += changed;
+            }
+            None => report.skipped.push(idx),
         }
     }
     Ok(report)

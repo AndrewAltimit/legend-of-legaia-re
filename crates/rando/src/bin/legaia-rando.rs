@@ -66,6 +66,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list the intra-town (house / interior) MOVE_TO target tiles
+    /// the house-door shuffle would touch, grouped by scene. NOTE: this set
+    /// includes some NPC / cutscene movement, not only house-door warps.
+    HouseDoors {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -122,6 +130,12 @@ struct RandomizeArgs {
     /// when `--doors` is not `none`.
     #[arg(long, value_enum, default_value_t = CouplingArg::Coupled)]
     door_coupling: CouplingArg,
+    /// How intra-town (house / interior) doors are reassigned. Only `shuffle`
+    /// is meaningful (a per-scene, multiset-preserving shuffle of the `0x23`
+    /// MOVE_TO target tiles); `random` is treated as `none`. Experimental:
+    /// the shuffled set includes some NPC / cutscene movement, not only doors.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    house_doors: DropArg,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
     /// chests, never randomized — and dropped from the random-fill pool so they
     /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
@@ -197,6 +211,7 @@ fn main() -> Result<()> {
         Cmd::Chests { input } => cmd_chests(&input),
         Cmd::Steals { input } => cmd_steals(&input),
         Cmd::Doors { input } => cmd_doors(&input),
+        Cmd::HouseDoors { input } => cmd_house_doors(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -278,6 +293,38 @@ fn cmd_doors(input: &Path) -> Result<()> {
         );
     }
     println!("\n{} doors across {scenes} scenes", doors.len());
+    Ok(())
+}
+
+fn cmd_house_doors(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let sites = apply::current_house_doors(&patcher)?;
+    let cdname = legaia_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|s| legaia_prot::cdname::parse_str(&s).ok());
+    let scene_of = |idx: usize| -> String {
+        cdname
+            .as_ref()
+            .and_then(|m| legaia_prot::cdname::block_for(m, idx as u32))
+            .unwrap_or("?")
+            .to_string()
+    };
+    let mut cur_entry = usize::MAX;
+    let mut scenes = 0usize;
+    for (idx, tx, tz) in &sites {
+        if *idx != cur_entry {
+            cur_entry = *idx;
+            scenes += 1;
+            println!("[{idx:>4}] {}", scene_of(*idx));
+        }
+        println!("    MOVE_TO tile ({tx:>3}, {tz:>3})");
+    }
+    println!(
+        "\n{} intra-town MOVE_TO targets across {scenes} scenes \
+         (includes some NPC / cutscene movement, not only house doors)",
+        sites.len()
+    );
     Ok(())
 }
 
@@ -560,6 +607,35 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("doors: untouched");
         manifest.push("doors = \"none\"".to_string());
+    }
+
+    if let Some(hd_mode) = args.house_doors.mode() {
+        let report = apply::randomize_house_doors(&mut patcher, seed, hd_mode)?;
+        if hd_mode == DropMode::Shuffle {
+            println!(
+                "house-doors: {} of {} MOVE_TO targets shuffled across {} scenes",
+                report.sites_changed, report.sites_total, report.scenes_changed
+            );
+            manifest.push("house_doors = \"shuffle\"".to_string());
+            manifest.push(format!("house_doors_sites = {}", report.sites_total));
+            manifest.push(format!("house_doors_changed = {}", report.sites_changed));
+            if !report.skipped.is_empty() {
+                println!(
+                    "  note: {} scene MAN(s) too tight to re-pack, left unchanged: {:?}",
+                    report.skipped.len(),
+                    report.skipped
+                );
+                manifest.push(format!("house_doors_skipped = {:?}", report.skipped));
+            }
+        } else {
+            println!(
+                "house-doors: only `shuffle` is supported (random would place actors off-map); untouched"
+            );
+            manifest.push("house_doors = \"none\"".to_string());
+        }
+    } else {
+        println!("house-doors: untouched");
+        manifest.push("house_doors = \"none\"".to_string());
     }
 
     // Diff original vs patched -> PPF.
