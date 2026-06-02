@@ -80,6 +80,19 @@ followed by an item-multiset summary). `chests` lists the exact 275-site
 treasure population the chest randomizer reassigns, which is the natural place to
 audit for quest / key items a run might want to keep static.
 
+### Keep-static items
+
+A few chest items are progression / quest / key items the player needs in a
+predictable place. The chest randomizer keeps a **curated default set** static
+(`legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS`): Mary's Diary, Dark Stone,
+Fertilizer, Weed Hammer, Spring Salts, Silver Compass, and the Old Rod. A chest
+whose original item is in this set keeps that item, the id is excluded from the
+shuffle multiset (so it can never move to another chest), and it is dropped from
+the `random` fill pool (so it can't be duplicated into an unrelated chest).
+Override with `--keep-static-items 0x9a,0x71,…` (decimal or `0xHH`), or pass an
+empty value (`--keep-static-items ""`) to randomize every chest. The resolved set
+is recorded in the run manifest.
+
 Because an edit changes bytes *inside* an LZS stream, the whole touched stream
 is re-packed, so the changed-byte count (and the PPF) is dominated by
 re-compression churn, not by the gameplay delta — this is inherent to editing

@@ -44,6 +44,10 @@ legaia-rando chests --input "Legend of Legaia (USA).bin"
 # Shuffle drops from a memorable seed -> a portable patch (default <input>.ppf).
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 
+# Shuffle chests but keep quest / key items static (the default protected set).
+# Override with --keep-static-items 0x9a,0x71,...  (or "" to randomize all).
+legaia-rando randomize --input DISC.bin --seed myrun --chests shuffle
+
 # Random drops + shuffled encounters + shuffled chests + image + manifest.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --chests shuffle --patch run.ppf --output patched.bin \

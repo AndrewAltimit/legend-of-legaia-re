@@ -89,6 +89,13 @@ struct RandomizeArgs {
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     chests: DropArg,
+    /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
+    /// chests, never randomized — and dropped from the random-fill pool so they
+    /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
+    /// (`legaia-rando chests` lists current contents to audit). Pass an empty
+    /// value (`--keep-static-items ""`) to randomize everything.
+    #[arg(long, value_delimiter = ',')]
+    keep_static_items: Option<Vec<String>>,
     /// Write the portable PPF 3.0 patch here (defaults to `<input>.ppf`).
     #[arg(long)]
     patch: Option<PathBuf>,
@@ -151,6 +158,17 @@ fn main() -> Result<()> {
 /// patcher via [`legaia_rando::rng::seed_from_str`]).
 fn resolve_seed(seed: &str) -> u64 {
     legaia_rando::rng::seed_from_str(seed)
+}
+
+/// Parse an item id from a decimal or `0x`-hex string (e.g. `154` or `0x9a`).
+fn parse_item_id(s: &str) -> Result<u8> {
+    let s = s.trim();
+    let parsed = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u8::from_str_radix(hex, 16)
+    } else {
+        s.parse::<u8>()
+    };
+    parsed.with_context(|| format!("invalid item id {s:?} (expected 0..=255, decimal or 0xHH)"))
 }
 
 fn clock_seed() -> u64 {
@@ -339,12 +357,36 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(chest_mode) = chest_mode {
-        let report = apply::randomize_chests(&mut patcher, &pool, seed, chest_mode)?;
+        // Resolve the keep-static set: the curated default, or the user's
+        // explicit (possibly empty) override.
+        let keep_static: std::collections::BTreeSet<u8> = match &args.keep_static_items {
+            None => legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
+                .iter()
+                .copied()
+                .collect(),
+            Some(list) => list
+                .iter()
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| parse_item_id(s))
+                .collect::<Result<_>>()?,
+        };
+        let report = apply::randomize_chests(&mut patcher, &pool, seed, chest_mode, &keep_static)?;
         println!(
-            "chests: {} of {} sites changed across {} scenes ({:?})",
-            report.items_changed, report.sites_total, report.scenes_changed, chest_mode
+            "chests: {} of {} sites changed across {} scenes ({:?}); {} item id(s) kept static",
+            report.items_changed,
+            report.sites_total,
+            report.scenes_changed,
+            chest_mode,
+            keep_static.len()
         );
         manifest.push(format!("chests = {:?}", mode_str(chest_mode)));
+        manifest.push(format!(
+            "chests_keep_static = {:?}",
+            keep_static
+                .iter()
+                .map(|id| format!("0x{id:02x}"))
+                .collect::<Vec<_>>()
+        ));
         manifest.push(format!("chests_sites = {}", report.sites_total));
         manifest.push(format!("chests_items_changed = {}", report.items_changed));
         if !report.skipped.is_empty() {
