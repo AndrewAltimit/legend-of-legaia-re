@@ -68,12 +68,13 @@
     <div id="rom-status" class="rom-status">Choose a disc image and at least one option, then patch.</div>
     <pre id="rom-summary" class="rom-summary"></pre>
   </div>
+  <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code> (same base name). Keep them together and point your emulator at the <code>.cue</code> &mdash; it references the <code>.bin</code> by name. Legend of Legaia is a single-track <code>MODE2/2352</code> disc, so the cue is just a track header. If you'd rather reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
   <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching holds a couple of copies in memory and the download is the same size &mdash; give it a moment, and use a desktop browser with enough RAM. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong>. (Sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.)</p>
 </section>
 
 <section class="doc-section" id="how">
   <h2>What it does</h2>
-  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded, <strong>same-size in-place</strong> edit:</p>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit &mdash; same-size in place for drops / encounters / chests / steals, and a variable-length <a href="../formats/man-relocation.html">MAN rebuild</a> for doors (the disc's total size never changes either way):</p>
   <ul class="bullets">
     <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Random</em> draws from the valid item table.</li>
     <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations, drawn from that scene's <em>own</em> monster set, so every swapped-in monster is one the scene already loads (no missing model).</li>

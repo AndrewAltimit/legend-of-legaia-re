@@ -41,6 +41,14 @@ function patchedName(original, seed) {
   return `${base}.legaia-rando-${seed}.bin`;
 }
 
+// A .cue for the patched .bin. Legend of Legaia (USA) is a single-track
+// MODE2/2352 disc, so the cue is fixed except for the FILE line, which must
+// reference the patched .bin's name. Emulators (mednafen et al.) load the .cue
+// and error if it points at a missing file, so we ship a matching one.
+function cueFor(binName) {
+  return `FILE "${binName}" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+}
+
 function init() {
   const fileInput = $('rom-file');
   const seedInput = $('rom-seed');
@@ -98,9 +106,16 @@ function init() {
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);
       triggerDownload(data, name);
-      setStatus('Done. Downloaded ' + name, 'ok');
+      // Also emit a matching .cue (same base name) so the patched .bin loads in
+      // emulators that expect a cue sheet. Sequenced after a tick because some
+      // browsers throttle back-to-back programmatic downloads.
+      const cueName = name.replace(/\.bin$/i, '.cue');
+      const cueBytes = new TextEncoder().encode(cueFor(name));
+      setTimeout(() => triggerDownload(cueBytes, cueName), 500);
+      setStatus('Done. Downloaded ' + name + ' + ' + cueName, 'ok');
       summaryEl.textContent =
-        'seed: ' + usedSeed + '\n' + (result.summary || '');
+        'seed: ' + usedSeed + '\n' + (result.summary || '') +
+        '\nLoad the .cue in your emulator (it points at the .bin); keep both files together.';
     } catch (e) {
       setStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     } finally {
