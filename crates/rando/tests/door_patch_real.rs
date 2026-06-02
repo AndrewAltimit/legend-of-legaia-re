@@ -173,11 +173,39 @@ fn coupled_doors_round_trip_on_disc() {
         );
     }
 
-    // The bidirectional (involution) property of the planner is proven by the
-    // `door_plan_tests` unit tests, where no scene is skipped; here a skipped
-    // hub scene (e.g. map01) keeps its original doors, so a whole-graph
-    // symmetry assertion would be confounded. This test confirms the coupled
-    // edits apply cleanly + are valid + deterministic.
+    // Bidirectionality at the whole-graph level: coupled mode uses only
+    // length-preserving swaps, so no scene overflows and nothing is skipped —
+    // which means coupling must not introduce a single NEW one-way connection.
+    // Concretely, the set of scene-level edges (home -> dest) that lack a reverse
+    // (dest -> home) in the patched graph must be a SUBSET of that set in the
+    // original graph (the inherent dead-end / one-way story warps). This is the
+    // exact regression for the "marked bidirectional but the return trip warped
+    // somewhere else" bug.
+    assert!(
+        report.skipped.is_empty(),
+        "coupled swaps are same-size, nothing should overflow: {:?}",
+        report.skipped
+    );
+    let asym = |doors: &[apply::DoorSite]| -> std::collections::BTreeSet<(String, String)> {
+        let edges: Vec<(String, String)> = doors
+            .iter()
+            .map(|d| (d.home_scene.clone(), d.dest_scene.clone()))
+            .collect();
+        edges
+            .iter()
+            .filter(|(a, b)| !edges.iter().any(|(x, y)| x == b && y == a))
+            .cloned()
+            .collect()
+    };
+    let before_asym = asym(&apply::current_doors(&base).expect("doors"));
+    let after_asym = asym(&apply::current_doors(&p2).expect("doors"));
+    let introduced: Vec<_> = after_asym.difference(&before_asym).collect();
+    assert!(
+        introduced.is_empty(),
+        "coupled mode introduced {} new one-way edge(s): {:?}",
+        introduced.len(),
+        introduced
+    );
 
     // Determinism.
     let mut again = DiscPatcher::open(original.clone()).expect("open");

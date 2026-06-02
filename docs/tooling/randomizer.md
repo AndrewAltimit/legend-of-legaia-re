@@ -234,17 +234,29 @@ facing) moves as one unit, so a re-pointed door always lands you somewhere valid
 - **`coupled` (bidirectional, default)** re-pairs doors into two-way connections
   via a random involution over the sites — for matched doors `A` and `B`, `A` is
   sent to where `B` is reached from and vice versa, so walking through a door and
-  turning around returns you the way you came. Doors with no reverse partner
-  (dead-end / one-way story warps) fall back to the one-way assignment and are
-  reported as `unpaired`.
+  turning around returns you the way you came. To guarantee that this never
+  half-applies, coupled mode restricts itself to **length-preserving** swaps: it
+  re-pairs only *balanced* connections (equal door counts in each direction)
+  whose destination names match in length, so the decompressed MAN size is
+  unchanged and **no scene — including the un-growable overworld hubs — can
+  overflow**. The result introduces zero new one-way edges (a whole-graph
+  symmetry invariant, asserted by `door_patch_real`). Doors with no
+  length-compatible reverse partner (dead-end / one-way story warps, or doors
+  orphaned by an unequal-direction connection) are left at their original
+  destination — never given a one-way reassignment — and reported as `unpaired`.
 - **`decoupled` (one-way)** reassigns every door's destination independently
   (`shuffle` permutes the existing destinations, `random` draws from the global
   pool), so going back through the destination's own doors is not guaranteed to
-  return you.
+  return you. This is the variable-length path: a destination of any name length
+  can land in any door.
 
-A scene whose rebuilt MAN can't grow within its on-disc footprint (the big
-overworld hubs, whose next asset sits flush after the MAN) is **skipped** — it
-keeps its original doors — and reported, rather than relocating the whole bundle.
+In **decoupled** mode a scene whose rebuilt MAN can't grow within its on-disc
+footprint (the big overworld hubs, whose next asset sits flush after the MAN) is
+**skipped** — it keeps its original doors — and reported, rather than relocating
+the whole bundle. (Coupled mode is same-size, so this doesn't arise; should a
+recompress ever overflow anyway, the revert is a transitive closure over both
+the new and original pairings, so a whole connection cycle reverts together
+rather than half-applying.)
 
 ### House doors (intra-town)
 
@@ -261,12 +273,22 @@ the scene already uses (no off-map placement), a same-size 2-byte operand edit
 recompressed in place (no relocation). On retail: 220 shuffleable targets across
 28 scenes.
 
-**Experimental — the op is shared.** `0x23 MOVE_TO` is also how NPC / cutscene
-scripts move actors, and there's no clean structural marker separating door
-warps from those, so the shuffle also scrambles some actor positions within each
-town. It is opt-in, `shuffle`-only (a `random` draw would place actors off-map),
-and excludes the `(0x7F, 0x7F)` "here" sentinel. The read-only `house-doors`
-listing shows the touched population per scene.
+**Experimental — the op is shared, and enumeration is partial.** `0x23 MOVE_TO`
+is also how NPC / cutscene scripts move actors, and there's no clean structural
+marker separating door warps from those, so the shuffle also scrambles some actor
+positions within each town. It is opt-in, `shuffle`-only (a `random` draw would
+place actors off-map), and excludes the `(0x7F, 0x7F)` "here" sentinel. The
+read-only `house-doors` listing shows the touched population per scene.
+
+Enumeration finds only the `MOVE_TO` ops a **clean** field-VM walk reaches (it
+stops at the first byte that doesn't decode as a valid op, so it never mistakes
+arbitrary data for a `0x23`). In some towns the interior-*entry* warps target
+high interior tiles and sit past such a desync, so the sites found there are the
+lower-coordinate doorstep / NPC repositions rather than the "enter the house"
+warps — meaning a small town's house entries may not actually change. Closing
+that gap needs a more aggressive walk-past-desync enumeration (with a way to
+reject data false positives) or a per-town runtime trace of the entry op; both
+remain open, which is why the feature is experimental.
 
 ### Re-pack slack
 

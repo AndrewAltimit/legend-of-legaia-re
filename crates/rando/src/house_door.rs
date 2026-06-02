@@ -9,16 +9,27 @@
 //! `docs/tooling/pcsx-redux-automation.md`). The destination tile is the op's
 //! two operand bytes `[0x23][xb][zb]` (`tile = byte & 0x7F`).
 //!
-//! **Caveat — the op is shared.** `0x23 MOVE_TO` is *also* how NPC / cutscene
-//! scripts move actors, and there is no clean structural marker separating door
-//! warps from those. So this does the bounded-risk thing: a **per-scene,
-//! multiset-preserving shuffle** of the non-sentinel `MOVE_TO` target tiles.
-//! Every target stays a tile the scene already uses (no off-map placement), and
-//! the edit is a same-size 2-byte operand swap (no MAN relocation — recompress
-//! in place like [`crate::encounter`]). The effect is "intra-scene warps +
-//! some actor positions scrambled within each town" — house doors lead to
-//! different interiors, NPCs/cutscene actors may stand in swapped spots. It is
-//! opt-in and experimental. The `(0x7F, 0x7F)` "here" sentinel is excluded.
+//! **Caveat — the op is shared, and enumeration is partial.** `0x23 MOVE_TO` is
+//! *also* how NPC / cutscene scripts move actors, and there is no clean
+//! structural marker separating door warps from those. So this does the
+//! bounded-risk thing: a **per-scene, multiset-preserving shuffle** of the
+//! non-sentinel `MOVE_TO` target tiles. Every target stays a tile the scene
+//! already uses (no off-map placement), and the edit is a same-size 2-byte
+//! operand swap (no MAN relocation — recompress in place like
+//! [`crate::encounter`]). The effect is "intra-scene warps + some actor positions
+//! scrambled within each town". It is opt-in and experimental. The `(0x7F, 0x7F)`
+//! "here" sentinel is excluded.
+//!
+//! [`man_edit::move_to_sites`] enumerates only the `MOVE_TO` ops a **clean**
+//! field-VM walk reaches (it stops at the first byte that doesn't decode as a
+//! valid op, to avoid mistaking arbitrary data for a `0x23`). In some towns the
+//! interior-*entry* warps (which target high interior tiles) sit past such a
+//! desync, so the sites this finds there are the lower-coordinate
+//! doorstep / NPC repositions rather than the actual "enter the house" warps —
+//! meaning a small town's house entries may not change. Closing that gap needs
+//! either a more aggressive walk-past-desync enumeration (with a way to reject
+//! data false positives) or a per-town runtime trace of the entry op; both are
+//! open. This is why the feature is experimental.
 
 use legaia_asset::man_edit::{self, MoveToSite};
 use legaia_asset::scene_asset_table;
@@ -106,10 +117,21 @@ impl SceneHouseDoors {
     /// used, so no off-map tile is introduced. Returns the number of sites whose
     /// target actually changed. Deterministic from `(seed, entry_idx)`.
     pub fn shuffle(&mut self, seed: u64) -> usize {
-        let mut pairs = self.current_targets();
+        let orig = self.current_targets();
+        let mut pairs = orig.clone();
         let mut rng =
             SplitMix64::new(seed ^ (self.entry_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
         rng.shuffle(&mut pairs);
+        // Avoid a no-op permutation. With a small number of sites the random
+        // shuffle lands on the identity often (1/2 of the time for two sites),
+        // which would leave the scene's doors unchanged. Whenever the scene has
+        // at least two *distinct* targets, a single rotation guarantees at least
+        // two positions move (a rotation has no fixed arrangement unless every
+        // target is identical), so the shuffle always does something.
+        let distinct: std::collections::HashSet<(u8, u8)> = orig.iter().copied().collect();
+        if pairs == orig && distinct.len() > 1 {
+            pairs.rotate_left(1);
+        }
         let mut changed = 0;
         for (s, (xb, zb)) in self.sites.iter().zip(pairs) {
             if self.decoded[s.xb_off] != xb || self.decoded[s.zb_off] != zb {
@@ -195,5 +217,47 @@ mod tests {
         a.sort();
         b.sort();
         assert_eq!(a, b, "shuffle preserves the per-scene target multiset");
+    }
+
+    #[test]
+    fn two_distinct_sites_never_shuffle_to_identity() {
+        // With two distinct targets a random permutation is the identity half the
+        // time; the rotation guard must make every seed change both sites so a
+        // small town's doors actually move.
+        let make = || SceneHouseDoors {
+            entry_idx: 22,
+            man_offset: 0,
+            compressed_budget: 9999,
+            decoded: {
+                let mut d = vec![0u8; 16];
+                d[4] = 0x23;
+                d[5] = 0x21;
+                d[6] = 0x2e; // (33,46)
+                d[8] = 0x23;
+                d[9] = 0x21;
+                d[10] = 0x1f; // (33,31)
+                d
+            },
+            sites: vec![
+                HouseDoorSite {
+                    op_pc: 4,
+                    xb_off: 5,
+                    zb_off: 6,
+                },
+                HouseDoorSite {
+                    op_pc: 8,
+                    xb_off: 9,
+                    zb_off: 10,
+                },
+            ],
+        };
+        for seed in 0u64..64 {
+            let mut sd = make();
+            let changed = sd.shuffle(seed);
+            assert_eq!(
+                changed, 2,
+                "seed {seed}: both distinct targets must move (no identity)"
+            );
+        }
     }
 }

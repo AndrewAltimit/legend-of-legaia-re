@@ -485,9 +485,15 @@ pub struct DoorApplyReport {
     pub sites_changed: usize,
     /// Total door sites found (the randomizable population).
     pub sites_total: usize,
-    /// Coupled mode only: door sites with no reverse partner, assigned the
-    /// decoupled fallback (their return is not guaranteed).
+    /// Coupled mode only: door sites with no reverse partner (dead-end / one-way
+    /// story warps, or doors orphaned by an unequal-direction connection), left
+    /// at their original destination because they can't be made two-way.
     pub unpaired: usize,
+    /// Coupled mode only: matched connections left at their original
+    /// destination because one endpoint's scene couldn't be rebuilt (e.g. an
+    /// overflowing overworld hub). Both ends are reverted so the connection
+    /// stays genuinely two-way rather than half-applied (a one-way warp).
+    pub coupled_kept_original: usize,
     /// Scene PROT-entry indices whose rebuilt MAN overflowed the compressed
     /// footprint or failed validation, so the scene kept its original doors.
     pub skipped: Vec<usize>,
@@ -499,13 +505,24 @@ pub struct DoorApplyReport {
 /// vice versa, so walking `A → B`'s doorstep lands you on `B`, whose new
 /// destination is `A`'s doorstep. `partner_orig(X)` is the reverse door (same
 /// scene-pair, opposite direction); sites without one — or the odd site left
-/// over by an odd matching — get a decoupled shuffle and are returned as the
-/// `unpaired` count. `homes[i]` is the CDNAME label of site `i`'s home scene.
-fn plan_doors_coupled(
-    origs: &[Dest],
-    homes: &[String],
-    rng: &mut SplitMix64,
-) -> (Vec<Dest>, usize) {
+/// over by an odd matching — are **left at their original destination**
+/// (untouched) and returned as the `unpaired` count: a door with no clean reverse
+/// can't be made two-way, so coupled mode leaves it vanilla rather than giving it
+/// a one-way reassignment. `homes[i]` is the CDNAME label of site `i`'s home
+/// scene.
+///
+/// `plan_doors_coupled`'s return: `(dest_new, unpaired_count, matched_pairs,
+/// original_partner)`. See its doc for what each element means.
+type CoupledPlan = (Vec<Dest>, usize, Vec<(usize, usize)>, Vec<Option<usize>>);
+
+/// Also returns the matched `(a, b)` pairs (the new involution) and the original
+/// `partner` array (each site's reverse door, if any). [`randomize_doors`] needs
+/// both: a connection is only truly bidirectional if every site it touches gets
+/// written, and a site's edit depends on **both** its matched partner and its
+/// original reverse. When a scene can't be rebuilt (e.g. an overflowing overworld
+/// hub), the revert must propagate transitively along both involutions, or a
+/// one-way warp masquerading as coupled survives.
+fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) -> CoupledPlan {
     use std::collections::HashMap;
     let n = origs.len();
     let name_of = |d: &Dest| String::from_utf8_lossy(&d.name).into_owned();
@@ -542,37 +559,88 @@ fn plan_doors_coupled(
         done.insert(key.clone());
         done.insert(rev.clone());
         if let (Some(g1), Some(g2)) = (groups.get(&key), groups.get(&rev)) {
-            for i in 0..g1.len().min(g2.len()) {
-                partner[g1[i]] = Some(g2[i]);
-                partner[g2[i]] = Some(g1[i]);
+            // Only couple a connection whose two directions have the SAME number
+            // of doors. If they differ, pairing `min(len)` of them would leave
+            // the majority direction's excess doors at their original
+            // destination while their lone reverse gets matched away — producing
+            // a dangling one-way edge (`HA→HB` survives, `HB→HA` vanishes). The
+            // safe choice is to leave the whole unbalanced connection static so
+            // both directions stay intact (it's reported in `unpaired`).
+            if g1.len() == g2.len() {
+                for i in 0..g1.len() {
+                    partner[g1[i]] = Some(g2[i]);
+                    partner[g2[i]] = Some(g1[i]);
+                }
             }
         }
     }
 
     let mut dest_new = origs.to_vec();
-    // Random matching over the sites that have a reverse partner.
-    let mut paired: Vec<usize> = (0..n).filter(|&i| partner[i].is_some()).collect();
-    rng.shuffle(&mut paired);
-    let mut i = 0;
-    while i + 1 < paired.len() {
-        let a = paired[i];
-        let b = paired[i + 1];
+
+    // Match partnered doors into the new involution, constrained to
+    // **length-preserving** swaps. When `a` matches `b`, `a` receives the
+    // descriptor `origs[partner[b]]` (its name is `b`'s home-scene label) and
+    // vice versa. The rewrite keeps the MAN's decompressed size unchanged — so no
+    // scene grows and none can overflow on recompress — exactly when the name
+    // lengths line up: `len(home[b]) == len(dest[a])` and `len(home[a]) ==
+    // len(dest[b])`. Bucketing each door by `key = (len(home), len(dest))` and
+    // matching a `(p, q)` bucket against the mirror `(q, p)` bucket guarantees
+    // both. This is what lets coupled mode randomize the overworld hubs (which
+    // can't be grown in place) while staying two-way; the variable-length
+    // relocation path is reserved for decoupled mode.
+    let key = |i: usize| (homes[i].len(), origs[i].name.len());
+    let mut buckets: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+    for (i, p) in partner.iter().enumerate() {
+        if p.is_some() {
+            buckets.entry(key(i)).or_default().push(i);
+        }
+    }
+    let mut matched_pairs: Vec<(usize, usize)> = Vec::new();
+    let mut handled: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+    let mut bkeys: Vec<(usize, usize)> = buckets.keys().copied().collect();
+    bkeys.sort_unstable(); // deterministic iteration order
+    for k in bkeys {
+        if handled.contains(&k) {
+            continue;
+        }
+        let (p, q) = k;
+        if p == q {
+            handled.insert(k);
+            let mut g = buckets[&k].clone();
+            rng.shuffle(&mut g);
+            let mut i = 0;
+            while i + 1 < g.len() {
+                matched_pairs.push((g[i], g[i + 1]));
+                i += 2;
+            }
+        } else {
+            let rk = (q, p);
+            handled.insert(k);
+            handled.insert(rk);
+            let mut ga = buckets.get(&k).cloned().unwrap_or_default();
+            let mut gb = buckets.get(&rk).cloned().unwrap_or_default();
+            rng.shuffle(&mut ga);
+            rng.shuffle(&mut gb);
+            for i in 0..ga.len().min(gb.len()) {
+                matched_pairs.push((ga[i], gb[i]));
+            }
+        }
+    }
+    for &(a, b) in &matched_pairs {
         dest_new[a] = origs[partner[b].unwrap()].clone();
         dest_new[b] = origs[partner[a].unwrap()].clone();
-        i += 2;
     }
 
-    // Unpaired: no reverse partner, plus the odd leftover of the matching.
-    let mut unpaired: Vec<usize> = (0..n).filter(|&i| partner[i].is_none()).collect();
-    if paired.len() % 2 == 1 {
-        unpaired.push(paired[paired.len() - 1]);
-    }
-    let mut pool: Vec<Dest> = unpaired.iter().map(|&i| origs[i].clone()).collect();
-    rng.shuffle(&mut pool);
-    for (slot, &i) in unpaired.iter().enumerate() {
-        dest_new[i] = pool[slot].clone();
-    }
-    (dest_new, unpaired.len())
+    // Unpaired: every door not placed in a matched pair — no reverse partner
+    // (dead-end / one-way story warp, or a door orphaned by an unequal-direction
+    // connection) or no length-compatible partner to swap with. These keep their
+    // ORIGINAL destination (coupled mode never gives a door a one-way
+    // reassignment), so `dest_new` already holds the right bytes — only the count
+    // is reported.
+    let matched: std::collections::HashSet<usize> =
+        matched_pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
+    let unpaired = (0..n).filter(|i| !matched.contains(i)).count();
+    (dest_new, unpaired, matched_pairs, partner)
 }
 
 /// Randomize scene-transition doors, one-way ([`DoorCoupling::Decoupled`]) or
@@ -641,12 +709,21 @@ pub fn randomize_doors(
         return Ok(report);
     }
 
-    // Plan the new destination for each global site index.
+    // Plan the new destination for each global site index. `match_of` is the new
+    // (coupled) involution; `partner_of` is each site's original reverse door.
+    let n = origs.len();
     let mut rng = SplitMix64::new(seed);
+    let mut match_of: Vec<Option<usize>> = vec![None; n];
+    let mut partner_of: Vec<Option<usize>> = vec![None; n];
     let new_descs: Vec<Dest> = match coupling {
         DoorCoupling::Coupled => {
-            let (descs, unpaired) = plan_doors_coupled(&origs, &homes, &mut rng);
+            let (descs, unpaired, pairs, partner) = plan_doors_coupled(&origs, &homes, &mut rng);
             report.unpaired = unpaired;
+            for (a, b) in pairs {
+                match_of[a] = Some(b);
+                match_of[b] = Some(a);
+            }
+            partner_of = partner;
             descs
         }
         DoorCoupling::Decoupled => match mode {
@@ -661,53 +738,136 @@ pub fn randomize_doors(
         },
     };
 
-    // Pass 2: per scene, build the edits for changed sites, rebuild, write back.
-    let mut g = 0usize; // running global site index
-    for scene in &scenes {
-        let base = g;
-        g += scene.sites.len();
-        let mut edits: Vec<DestEdit> = Vec::new();
-        for (k, site) in scene.sites.iter().enumerate() {
-            let d = &new_descs[base + k];
-            let unchanged = d.index == site.index
-                && d.name == site.name.as_bytes()
-                && d.entry_x == site.entry_x
-                && d.entry_z == site.entry_z
-                && d.dir == site.dir;
-            if unchanged {
-                continue;
+    // Map each global site index to its scene (for the coupled revert pass).
+    let mut site_scene = vec![0usize; origs.len()];
+    {
+        let mut g = 0usize;
+        for (si, s) in scenes.iter().enumerate() {
+            for _ in 0..s.sites.len() {
+                site_scene[g] = si;
+                g += 1;
             }
-            edits.push(DestEdit {
-                op_pc: site.op_pc,
-                index: d.index,
-                name: d.name.clone(),
-                entry_x: d.entry_x,
-                entry_z: d.entry_z,
-                dir: d.dir,
-            });
-        }
-        if edits.is_empty() {
-            continue;
-        }
-        match scene.rebuild(&edits) {
-            Some((stream, new_size)) => {
-                // Rewrite the descriptor's decompressed-size word, then the MAN.
-                patcher
-                    .patch_prot_entry(
-                        scene.entry_idx,
-                        scene.man_descriptor_off as u64,
-                        &encode_size_word(0x03, new_size).to_le_bytes(),
-                    )
-                    .with_context(|| format!("write scene {} MAN size word", scene.entry_idx))?;
-                patcher
-                    .patch_prot_entry(scene.entry_idx, scene.man_offset as u64, &stream)
-                    .with_context(|| format!("write scene {} MAN", scene.entry_idx))?;
-                report.scenes_changed += 1;
-                report.sites_changed += edits.len();
-            }
-            None => report.skipped.push(scene.entry_idx),
         }
     }
+
+    // Pass 2: rebuild each scene from the planned destinations and collect the
+    // streams to write. `forced` is the set of global site indices pinned to
+    // their ORIGINAL destination (a forced site contributes no edit).
+    //
+    // The coupled revert is a transitive closure. If a site can't be written —
+    // its scene overflows — it keeps its original destination, which only stays a
+    // valid two-way connection if its matched partner *and* its original reverse
+    // also keep theirs. So a forced site forces both `match_of[X]` (the new
+    // partner, which was sending players to X) and `partner_of[X]` (the original
+    // reverse, which X's now-reverted destination points back at). Propagating
+    // along both involutions reverts whole alternating cycles, never leaving a
+    // dangling one-way edge. Forcing only removes edits (shrinks scenes), so the
+    // skipped set only shrinks and the loop converges (decoupled mode has empty
+    // involutions, so it runs once and reverts nothing).
+    let mut forced: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    // Per scene: (scene index, rebuilt stream, new decompressed size, edit count).
+    let mut streams: Vec<(usize, Vec<u8>, u32, usize)> = Vec::new();
+    let mut skipped_scenes: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    loop {
+        streams.clear();
+        skipped_scenes.clear();
+        let mut g = 0usize;
+        for (si, scene) in scenes.iter().enumerate() {
+            let base = g;
+            g += scene.sites.len();
+            let mut edits: Vec<DestEdit> = Vec::new();
+            for (k, site) in scene.sites.iter().enumerate() {
+                if forced.contains(&(base + k)) {
+                    continue; // pinned to original — no edit
+                }
+                let d = &new_descs[base + k];
+                let unchanged = d.index == site.index
+                    && d.name == site.name.as_bytes()
+                    && d.entry_x == site.entry_x
+                    && d.entry_z == site.entry_z
+                    && d.dir == site.dir;
+                if unchanged {
+                    continue;
+                }
+                edits.push(DestEdit {
+                    op_pc: site.op_pc,
+                    index: d.index,
+                    name: d.name.clone(),
+                    entry_x: d.entry_x,
+                    entry_z: d.entry_z,
+                    dir: d.dir,
+                });
+            }
+            if edits.is_empty() {
+                continue;
+            }
+            match scene.rebuild(&edits) {
+                Some((stream, new_size)) => streams.push((si, stream, new_size, edits.len())),
+                None => {
+                    skipped_scenes.insert(si);
+                }
+            }
+        }
+
+        // Seed the closure with every coupled site in an overflowing scene, then
+        // propagate along both involutions until no new site is forced.
+        let mut stack: Vec<usize> = (0..n)
+            .filter(|&i| {
+                !forced.contains(&i)
+                    && (match_of[i].is_some() || partner_of[i].is_some())
+                    && skipped_scenes.contains(&site_scene[i])
+            })
+            .collect();
+        let mut new_force = false;
+        while let Some(x) = stack.pop() {
+            if !forced.insert(x) {
+                continue;
+            }
+            new_force = true;
+            if let Some(y) = match_of[x]
+                && !forced.contains(&y)
+            {
+                stack.push(y);
+            }
+            if let Some(p) = partner_of[x]
+                && !forced.contains(&p)
+            {
+                stack.push(p);
+            }
+        }
+        if !new_force {
+            break;
+        }
+    }
+
+    // Coupled sites reverted to original (their cycle touched an un-writable
+    // scene), reported so the user knows what stayed vanilla to keep returns
+    // honest.
+    report.coupled_kept_original = (0..n)
+        .filter(|i| forced.contains(i) && (match_of[*i].is_some() || partner_of[*i].is_some()))
+        .count();
+
+    // Write the converged set.
+    for (si, stream, new_size, n_edits) in &streams {
+        let scene = &scenes[*si];
+        patcher
+            .patch_prot_entry(
+                scene.entry_idx,
+                scene.man_descriptor_off as u64,
+                &encode_size_word(0x03, *new_size).to_le_bytes(),
+            )
+            .with_context(|| format!("write scene {} MAN size word", scene.entry_idx))?;
+        patcher
+            .patch_prot_entry(scene.entry_idx, scene.man_offset as u64, stream)
+            .with_context(|| format!("write scene {} MAN", scene.entry_idx))?;
+        report.scenes_changed += 1;
+        report.sites_changed += n_edits;
+    }
+    report.skipped = skipped_scenes
+        .iter()
+        .map(|&si| scenes[si].entry_idx)
+        .collect();
+    report.skipped.sort_unstable();
     Ok(report)
 }
 
@@ -893,13 +1053,13 @@ mod door_plan_tests {
             "map".to_string(),
         ];
         let mut rng = SplitMix64::new(0xC0FFEE);
-        let (out, unpaired) = plan_doors_coupled(&origs, &homes, &mut rng);
+        let (out, unpaired, _pairs, _partner) = plan_doors_coupled(&origs, &homes, &mut rng);
         assert_eq!(unpaired, 0, "all four sites have a reverse partner");
         // Coupling only moves existing descriptors -> multiset preserved.
         assert_eq!(multiset(&out), multiset(&origs));
         // Deterministic for a fixed seed.
         let mut rng2 = SplitMix64::new(0xC0FFEE);
-        let (out2, _) = plan_doors_coupled(&origs, &homes, &mut rng2);
+        let (out2, _, _, _) = plan_doors_coupled(&origs, &homes, &mut rng2);
         assert_eq!(out, out2);
         // Scene-level edge multiset stays symmetric: for the new graph, every
         // (home -> dest) edge has a matching (dest -> home) edge.
@@ -924,7 +1084,7 @@ mod door_plan_tests {
         let origs = vec![dest("b", 1), dest("y", 2), dest("x", 3)];
         let homes = vec!["a".to_string(), "x".to_string(), "y".to_string()];
         let mut rng = SplitMix64::new(7);
-        let (_out, unpaired) = plan_doors_coupled(&origs, &homes, &mut rng);
+        let (_out, unpaired, _pairs, _partner) = plan_doors_coupled(&origs, &homes, &mut rng);
         // site 0 (a->b) has no reverse; sites 1 (x->y) and 2 (y->x) pair.
         assert_eq!(unpaired, 1);
     }

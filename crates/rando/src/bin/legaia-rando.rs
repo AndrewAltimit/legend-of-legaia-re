@@ -596,6 +596,17 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         if report.unpaired > 0 {
             manifest.push(format!("doors_unpaired = {}", report.unpaired));
         }
+        if report.coupled_kept_original > 0 {
+            println!(
+                "  note: {} door(s) kept their original destination because a scene on \
+                 their connection couldn't be grown in place (so the return trip stays correct)",
+                report.coupled_kept_original
+            );
+            manifest.push(format!(
+                "doors_coupled_kept_original = {}",
+                report.coupled_kept_original
+            ));
+        }
         if !report.skipped.is_empty() {
             println!(
                 "  note: {} scene MAN(s) overflowed on rebuild, left unchanged: {:?}",
