@@ -3,7 +3,8 @@
  * image. Nothing is uploaded; the disc bytes never leave the browser.
  *
  * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, drops,
- * encounters, chests) -> { data, summary, seed }` and `resolve_seed(str)`.
+ * encounters, chests, steals, doors, door_coupling) -> { data, summary, seed }`
+ * and `resolve_seed(str)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`.
  */
@@ -46,6 +47,9 @@ function init() {
   const dropsSel = $('rom-drops');
   const encSel = $('rom-encounters');
   const chestSel = $('rom-chests');
+  const stealSel = $('rom-steals');
+  const doorSel = $('rom-doors');
+  const doorCouplingSel = $('rom-door-coupling');
   const runBtn = $('rom-run');
   const statusEl = $('rom-status');
   const summaryEl = $('rom-summary');
@@ -65,8 +69,17 @@ function init() {
     const drops = dropsSel.value;
     const encounters = encSel.value;
     const chests = chestSel.value;
-    if (drops === 'none' && encounters === 'none' && chests === 'none') {
-      setStatus('Enable at least one of drops / encounters / chests.', 'err');
+    const steals = stealSel ? stealSel.value : 'none';
+    const doors = doorSel ? doorSel.value : 'none';
+    const doorCoupling = doorCouplingSel ? doorCouplingSel.value : 'coupled';
+    if (
+      drops === 'none' &&
+      encounters === 'none' &&
+      chests === 'none' &&
+      steals === 'none' &&
+      doors === 'none'
+    ) {
+      setStatus('Enable at least one of drops / encounters / chests / steals / doors.', 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());
@@ -80,7 +93,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, chests);
+      const result = mod.patch_rom(buf, seed, drops, encounters, chests, steals, doors, doorCoupling);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

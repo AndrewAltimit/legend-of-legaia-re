@@ -1300,6 +1300,8 @@ export class LegaiaViewer {
      * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
      *                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
      *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
+     *                  "steal_item": u8, "steal_item_name": "Incense"|null,
+     *                  "steal_chance_pct": u8,
      *                  "spells": [ { "id": u8, "sp_cost": u8,
      *                               "castable": bool } ] }, ... ] }
      * ```
@@ -2245,17 +2247,21 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
 /**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
- * `drops` / `encounters` / `chests` are each `"shuffle"`, `"random"`, or
- * `"none"`. `seed` is a number or any string (hashed). Returns
+ * `drops` / `encounters` / `chests` / `steals` / `doors` are each `"shuffle"`,
+ * `"random"`, or `"none"`. `door_coupling` is `"coupled"` (bidirectional) or
+ * `"decoupled"` (one-way). `seed` is a number or any string (hashed). Returns
  * `{ data, summary, seed }`.
  * @param {Uint8Array} image
  * @param {string} seed
  * @param {string} drops
  * @param {string} encounters
  * @param {string} chests
+ * @param {string} steals
+ * @param {string} doors
+ * @param {string} door_coupling
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, chests) {
+export function patch_rom(image, seed, drops, encounters, chests, steals, doors, door_coupling) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2266,7 +2272,13 @@ export function patch_rom(image, seed, drops, encounters, chests) {
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passStringToWasm0(chests, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len4 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+    const ptr5 = passStringToWasm0(steals, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ptr6 = passStringToWasm0(doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len6 = WASM_VECTOR_LEN;
+    const ptr7 = passStringToWasm0(door_coupling, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len7 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

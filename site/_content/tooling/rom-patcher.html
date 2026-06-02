@@ -39,6 +39,29 @@
         <option value="none" selected>Leave alone</option>
       </select>
     </label>
+    <label class="rom-row">
+      <span class="rom-label">Steal items</span>
+      <select id="rom-steals">
+        <option value="shuffle">Shuffle (redistribute existing steals)</option>
+        <option value="random">Random (any valid item)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Doors / exits</span>
+      <select id="rom-doors">
+        <option value="shuffle">Shuffle (redistribute destinations)</option>
+        <option value="random">Random (any destination)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Door connectivity</span>
+      <select id="rom-door-coupling">
+        <option value="coupled" selected>Bidirectional (return the way you came)</option>
+        <option value="decoupled">One-way (going back leads elsewhere)</option>
+      </select>
+    </label>
     <div class="rom-row">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
@@ -55,6 +78,8 @@
     <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Random</em> draws from the valid item table.</li>
     <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations, drawn from that scene's <em>own</em> monster set, so every swapped-in monster is one the scene already loads (no missing model).</li>
     <li><strong>Treasure chests</strong> &mdash; reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest. A curated set of quest / key items (Mary's Diary, Dark Stone, the Genesis-Tree garden tools, Silver Compass, Old Rod) is kept static so progression items stay where the player expects them.</li>
+    <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
+    <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Bidirectional</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>

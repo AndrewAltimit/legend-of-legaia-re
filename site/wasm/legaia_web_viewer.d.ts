@@ -599,6 +599,8 @@ export class LegaiaViewer {
      * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
      *                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
      *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
+     *                  "steal_item": u8, "steal_item_name": "Incense"|null,
+     *                  "steal_chance_pct": u8,
      *                  "spells": [ { "id": u8, "sp_cost": u8,
      *                               "castable": bool } ] }, ... ] }
      * ```
@@ -1076,11 +1078,12 @@ export class LegaiaViewer {
 /**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
- * `drops` / `encounters` / `chests` are each `"shuffle"`, `"random"`, or
- * `"none"`. `seed` is a number or any string (hashed). Returns
+ * `drops` / `encounters` / `chests` / `steals` / `doors` are each `"shuffle"`,
+ * `"random"`, or `"none"`. `door_coupling` is `"coupled"` (bidirectional) or
+ * `"decoupled"` (one-way). `seed` is a number or any string (hashed). Returns
  * `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, chests: string): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, chests: string, steals: string, doors: string, door_coupling: string): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1243,7 +1246,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

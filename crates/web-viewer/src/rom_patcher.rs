@@ -41,26 +41,36 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
-/// `drops` / `encounters` / `chests` are each `"shuffle"`, `"random"`, or
-/// `"none"`. `seed` is a number or any string (hashed). Returns
+/// `drops` / `encounters` / `chests` / `steals` / `doors` are each `"shuffle"`,
+/// `"random"`, or `"none"`. `door_coupling` is `"coupled"` (bidirectional) or
+/// `"decoupled"` (one-way). `seed` is a number or any string (hashed). Returns
 /// `{ data, summary, seed }`.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn patch_rom(
     image: Vec<u8>,
     seed: &str,
     drops: &str,
     encounters: &str,
     chests: &str,
+    steals: &str,
+    doors: &str,
+    door_coupling: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
     let enc_mode = parse_mode(encounters);
     let chest_mode = parse_mode(chests);
+    let steal_mode = parse_mode(steals);
+    let door_mode = parse_mode(doors);
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
-    let pool = if drops_mode == Some(DropMode::Random) || chest_mode == Some(DropMode::Random) {
+    let pool = if drops_mode == Some(DropMode::Random)
+        || chest_mode == Some(DropMode::Random)
+        || steal_mode == Some(DropMode::Random)
+    {
         let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .ok_or_else(|| err("SCUS_942.54 not found in disc image (needed for a random mode)"))?;
         valid_item_pool(&scus).map_err(|e| err(format!("item pool: {e}")))?
@@ -123,6 +133,42 @@ pub fn patch_rom(
             ));
         }
         None => summary.push_str("chests: untouched\n"),
+    }
+
+    match steal_mode {
+        Some(m) => {
+            let (plan, rep) = apply::randomize_steals(&mut patcher, &pool, seed_n, m)
+                .map_err(|e| err(format!("steals: {e}")))?;
+            summary.push_str(&format!(
+                "steals: {} of {} stealable monsters reassigned ({})\n",
+                rep.items_changed,
+                plan.len(),
+                steals
+            ));
+        }
+        None => summary.push_str("steals: untouched\n"),
+    }
+
+    match door_mode {
+        Some(m) => {
+            let coupling = match door_coupling {
+                "decoupled" => apply::DoorCoupling::Decoupled,
+                _ => apply::DoorCoupling::Coupled,
+            };
+            let rep = apply::randomize_doors(&mut patcher, seed_n, m, coupling)
+                .map_err(|e| err(format!("doors: {e}")))?;
+            summary.push_str(&format!(
+                "doors: {} of {} sites changed across {} scenes ({}, {})\n",
+                rep.sites_changed, rep.sites_total, rep.scenes_changed, doors, door_coupling
+            ));
+            if !rep.skipped.is_empty() {
+                summary.push_str(&format!(
+                    "  {} hub scene(s) too big to grow in place, kept original doors\n",
+                    rep.skipped.len()
+                ));
+            }
+        }
+        None => summary.push_str("doors: untouched\n"),
     }
 
     let patched = patcher.into_image();
