@@ -449,6 +449,151 @@ pub fn current_doors(patcher: &DiscPatcher) -> Result<Vec<DoorSite>> {
     Ok(out)
 }
 
+/// A complete scene-transition destination descriptor (everything a `0x3F` op
+/// carries). The atomic unit the door randomizer moves between sites: moving the
+/// whole descriptor keeps the destination scene, its entry tile, and facing
+/// internally consistent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Dest {
+    index: i16,
+    name: Vec<u8>,
+    entry_x: u8,
+    entry_z: u8,
+    dir: u8,
+}
+
+/// Outcome of randomizing scene-transition doors.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct DoorApplyReport {
+    /// Scene bundles whose MAN was rewritten + written back.
+    pub scenes_changed: usize,
+    /// Total door sites whose destination changed.
+    pub sites_changed: usize,
+    /// Total door sites found (the randomizable population).
+    pub sites_total: usize,
+    /// Scene PROT-entry indices whose rebuilt MAN overflowed the compressed
+    /// footprint or failed validation, so the scene kept its original doors.
+    pub skipped: Vec<usize>,
+}
+
+/// Randomize scene-transition doors **one-way (decoupled)**: each door's
+/// destination descriptor (scene + entry tile + facing) is reassigned globally,
+/// so walking through a door takes you somewhere new, and the doors in that
+/// destination are independently reassigned — returning is not guaranteed to
+/// bring you back. `Shuffle` permutes the existing destinations across all
+/// doors (every scene stays reachable as some door's target); `Random` draws
+/// each door's destination from the global pool.
+///
+/// Because the destination name is variable length, this uses the
+/// [`crate::door::SceneDoors::rebuild`] relocation path (decompress → resize the
+/// `0x3F` ops → fix the partition tables / section offset / intra-record jumps →
+/// recompress → rewrite the descriptor size word). A scene whose rebuilt MAN
+/// overflows its compressed footprint or fails validation keeps its original
+/// doors and is recorded in `skipped`.
+pub fn randomize_doors(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<DoorApplyReport> {
+    use legaia_asset::man_edit::DestEdit;
+    use legaia_asset::scene_asset_table::encode_size_word;
+
+    // Pass 1: collect every scene's doors (decoded MAN held for pass 2).
+    let mut scenes: Vec<SceneDoors> = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        if let Some(d) = SceneDoors::locate(&entry, idx) {
+            scenes.push(d);
+        }
+    }
+
+    // Flatten to a global ordered list of original destinations.
+    let origs: Vec<Dest> = scenes
+        .iter()
+        .flat_map(|s| {
+            s.sites.iter().map(|site| Dest {
+                index: site.index,
+                name: site.name.clone().into_bytes(),
+                entry_x: site.entry_x,
+                entry_z: site.entry_z,
+                dir: site.dir,
+            })
+        })
+        .collect();
+
+    let mut report = DoorApplyReport {
+        sites_total: origs.len(),
+        ..Default::default()
+    };
+    if origs.is_empty() {
+        return Ok(report);
+    }
+
+    // Plan the new destination for each global site index.
+    let mut rng = SplitMix64::new(seed);
+    let new_descs: Vec<Dest> = match mode {
+        DropMode::Shuffle => {
+            let mut v = origs.clone();
+            rng.shuffle(&mut v);
+            v
+        }
+        DropMode::Random => (0..origs.len())
+            .map(|_| origs[rng.below(origs.len())].clone())
+            .collect(),
+    };
+
+    // Pass 2: per scene, build the edits for changed sites, rebuild, write back.
+    let mut g = 0usize; // running global site index
+    for scene in &scenes {
+        let base = g;
+        g += scene.sites.len();
+        let mut edits: Vec<DestEdit> = Vec::new();
+        for (k, site) in scene.sites.iter().enumerate() {
+            let d = &new_descs[base + k];
+            let unchanged = d.index == site.index
+                && d.name == site.name.as_bytes()
+                && d.entry_x == site.entry_x
+                && d.entry_z == site.entry_z
+                && d.dir == site.dir;
+            if unchanged {
+                continue;
+            }
+            edits.push(DestEdit {
+                op_pc: site.op_pc,
+                index: d.index,
+                name: d.name.clone(),
+                entry_x: d.entry_x,
+                entry_z: d.entry_z,
+                dir: d.dir,
+            });
+        }
+        if edits.is_empty() {
+            continue;
+        }
+        match scene.rebuild(&edits) {
+            Some((stream, new_size)) => {
+                // Rewrite the descriptor's decompressed-size word, then the MAN.
+                patcher
+                    .patch_prot_entry(
+                        scene.entry_idx,
+                        scene.man_descriptor_off as u64,
+                        &encode_size_word(0x03, new_size).to_le_bytes(),
+                    )
+                    .with_context(|| format!("write scene {} MAN size word", scene.entry_idx))?;
+                patcher
+                    .patch_prot_entry(scene.entry_idx, scene.man_offset as u64, &stream)
+                    .with_context(|| format!("write scene {} MAN", scene.entry_idx))?;
+                report.scenes_changed += 1;
+                report.sites_changed += edits.len();
+            }
+            None => report.skipped.push(scene.entry_idx),
+        }
+    }
+    Ok(report)
+}
+
 /// One monster's current steal: monster id, item id, and steal chance percent.
 /// Mirrors [`CurrentDrop`] for the steal table (see [`crate::steal`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

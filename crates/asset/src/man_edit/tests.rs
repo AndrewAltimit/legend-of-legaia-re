@@ -85,7 +85,10 @@ fn grow_name_relocates_section_and_validates() {
     // validate: op now names "abcd".
     assert!(validate(&out, &[(op_pc, b"abcd")]));
     let insn = field_disasm::decode(&out, op_pc).unwrap();
-    assert_eq!(field_disasm::scene_change_name(&out, &insn).as_deref(), Some("abcd"));
+    assert_eq!(
+        field_disasm::scene_change_name(&out, &insn).as_deref(),
+        Some("abcd")
+    );
 }
 
 #[test]
@@ -144,7 +147,10 @@ fn later_record_offset_is_bumped() {
     assert!(validate(&out, &[(op0, b"abcdef")]));
     let op1_new = mf2.data_region_offset + mf2.partitions[2][1] as usize + 6;
     let insn = field_disasm::decode(&out, op1_new).unwrap();
-    assert_eq!(field_disasm::scene_change_name(&out, &insn).as_deref(), Some("cd"));
+    assert_eq!(
+        field_disasm::scene_change_name(&out, &insn).as_deref(),
+        Some("cd")
+    );
 }
 
 #[test]

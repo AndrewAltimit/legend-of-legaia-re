@@ -26,7 +26,11 @@ fn doors_enumerate_across_the_disc() {
     assert!(doors.len() >= 120, "found only {} doors", doors.len());
     let scenes: std::collections::BTreeSet<&str> =
         doors.iter().map(|d| d.home_scene.as_str()).collect();
-    assert!(scenes.len() >= 30, "doors span only {} scenes", scenes.len());
+    assert!(
+        scenes.len() >= 30,
+        "doors span only {} scenes",
+        scenes.len()
+    );
 
     // Every destination name is a clean CDNAME-shaped label (lowercase + digits,
     // 3..=12 chars) — the clean walk's gate; no text-desync phantoms.

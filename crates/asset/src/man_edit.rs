@@ -373,10 +373,8 @@ pub fn apply_dest_edits(man: &[u8], edits: &[DestEdit]) -> Result<Vec<u8>, ManEd
         if e.name.is_empty() || e.name.len() > u8::MAX as usize {
             return Err(ManEditError::BadName { len: e.name.len() });
         }
-        let insn =
-            field_disasm::decode(man, e.op_pc).map_err(|_| ManEditError::NotSceneChange {
-                op_pc: e.op_pc,
-            })?;
+        let insn = field_disasm::decode(man, e.op_pc)
+            .map_err(|_| ManEditError::NotSceneChange { op_pc: e.op_pc })?;
         let InsnInfo::SceneChange { name_len, .. } = insn.info else {
             return Err(ManEditError::NotSceneChange { op_pc: e.op_pc });
         };

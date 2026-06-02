@@ -109,6 +109,13 @@ struct RandomizeArgs {
     /// valid item pool — the steal *chance* is always preserved).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     steals: DropArg,
+    /// How scene-transition doors/exits are reassigned (one-way / decoupled:
+    /// each door's whole destination — scene + entry tile + facing — is
+    /// reassigned globally; `shuffle` permutes the existing destinations across
+    /// all doors, `random` draws each from the global pool). Going back through
+    /// the destination's own doors is not guaranteed to return you.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    doors: DropArg,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
     /// chests, never randomized — and dropped from the random-fill pool so they
     /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
@@ -363,6 +370,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let enc_mode = args.encounters.mode();
     let chest_mode = args.chests.mode();
     let steal_mode = args.steals.mode();
+    let door_mode = args.doors.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -498,6 +506,28 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("steals: untouched");
         manifest.push("steals = \"none\"".to_string());
+    }
+
+    if let Some(door_mode) = door_mode {
+        let report = apply::randomize_doors(&mut patcher, seed, door_mode)?;
+        println!(
+            "doors: {} of {} sites changed across {} scenes ({:?})",
+            report.sites_changed, report.sites_total, report.scenes_changed, door_mode
+        );
+        manifest.push(format!("doors = {:?}", mode_str(door_mode)));
+        manifest.push(format!("doors_sites = {}", report.sites_total));
+        manifest.push(format!("doors_sites_changed = {}", report.sites_changed));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} scene MAN(s) overflowed on rebuild, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("doors_skipped = {:?}", report.skipped));
+        }
+    } else {
+        println!("doors: untouched");
+        manifest.push("doors = \"none\"".to_string());
     }
 
     // Diff original vs patched -> PPF.
