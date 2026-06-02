@@ -23,7 +23,8 @@ full design.
 | `encounter` | Random-encounter randomizer. `SceneEncounters::locate` finds a scene bundle's MAN inside a PROT entry and decompresses it; `randomize` rewrites the formation monster ids from the scene's own id pool (so every monster stays scene-loaded) in `Shuffle` (redistribute) or `Random` (draw from pool) mode; `repack` recompresses and reports whether it fits the original footprint. |
 | `chest` | Treasure-chest / scripted item-gift randomizer. Gives go through field-VM op `0x39` (`[0x39, item_id]`, inline operand) in the MAN partition-1 interaction scripts, usually **after** the inline dialogue that announces the item. `give_item_sites` walks each record's script with the Track-1 field-VM disassembler, **skipping `0x1F` dialogue segments** so it reaches the post-announcement give, and bounds each walk to the record's extent so it never mis-reads a `0x39` data byte; `SceneChests::locate` bundles the sites with the decoded MAN for rewriting (275 sites / 50 scenes on the retail disc). A chest also names its item in a **separate** dialogue token `0xC2 <id>` (the "There is a {item}…" announcement) distinct from the `0x39` grant, so `give_sites_and_display_tokens` recovers each site's `0xC2` tokens and `SceneChests::set_site` rewrites the operand **and** those tokens together — the flavor text tracks what the chest actually grants. |
 | `steal` | Steal-item randomizer (the Evil God Icon). `StealEdits::locate` reads the static `SCUS_942.54` steal table (`DAT_80077828`, per-monster `[chance, item]`, see [`steal-table.md`](../../docs/formats/steal-table.md)); `plan` reuses the drop planner to reassign the item for every stealable monster (`Shuffle` redistributes the existing steal-item multiset, `Random` draws from the item pool), and `item_patches` emits same-size single-byte SCUS edits that touch the **item** only — the steal chance is preserved. No LZS re-pack, so nothing is ever skipped. |
-| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), `randomize_encounters` for per-scene formations (`EncounterApplyReport`), `randomize_chests` for treasure (global shuffle/random of chest item ids → `ChestApplyReport`), and `current_steals` / `randomize_steals` for the steal table (`StealApplyReport`). |
+| `door` | Scene-transition ("door / exit") randomizer. Doors are the field-VM `0x3F` named-scene-change ops — **partition-2 MAN records** reached via the partition-2 record-offset table (see [`man-relocation.md`](../../docs/formats/man-relocation.md)). `SceneDoors::locate` enumerates a scene's door sites (`legaia_asset::man_edit::scene_change_sites`); `rebuild` applies destination rewrites through the **variable-length** `man_edit` relocation engine, recompresses, validates, and reports whether it fits the footprint. The only randomizer that resizes an asset. |
+| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), `randomize_encounters` for per-scene formations (`EncounterApplyReport`), `randomize_chests` for treasure (global shuffle/random of chest item ids → `ChestApplyReport`), `current_steals` / `randomize_steals` for the steal table (`StealApplyReport`), and `current_doors` / `randomize_doors` for scene transitions (`DoorApplyReport`; `DoorCoupling::Coupled` re-pairs doors into bidirectional connections, `Decoupled` reassigns each independently). |
 | `ppf` | PPF 3.0 patch writer. `diff_runs` reduces original-vs-patched to the changed byte runs, `write_ppf3` serializes them, `apply_ppf3` replays a patch (used by the round-trip test). The PPF is the redistributable deliverable — it ships only deltas the user already owns. |
 
 ## CLI (`legaia-rando`)
@@ -57,12 +58,19 @@ legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
 # Read-only: audit what the Evil God Icon steals from each monster.
 legaia-rando steals --input DISC.bin
 
+# Read-only: list every scene-transition door/exit (home scene -> destination).
+legaia-rando doors --input DISC.bin
+
+# Bidirectional door shuffle (walk back the way you came).
+legaia-rando randomize --input DISC.bin --seed myrun --doors shuffle --door-coupling coupled
+
 # Confirm a shared patch applies cleanly to your own disc before playing.
 legaia-rando verify --input DISC.bin --patch run.ppf
 ```
 
-`--drops` / `--encounters` / `--chests` / `--steals` each take `shuffle` /
-`random` / `none`.
+`--drops` / `--encounters` / `--chests` / `--steals` / `--doors` each take
+`shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
+bidirectional) or `decoupled` (one-way).
 `--dry-run` plans + reports the run without writing any files. `--manifest`
 writes a small TOML record of the seed + options + change counts (no game
 bytes — safe to share). `verify` applies a PPF to a copy of your disc and
