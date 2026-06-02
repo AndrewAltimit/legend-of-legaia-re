@@ -33,6 +33,46 @@ pub fn current_drops(patcher: &DiscPatcher) -> Result<Vec<CurrentDrop>> {
         .collect())
 }
 
+/// One treasure-chest give-item site: which scene bundle it lives in, the byte
+/// offset of its `GIVE_ITEM` (`0x39`) operand inside the decoded MAN, and the
+/// item id it currently grants. This is the population the chest randomizer
+/// reassigns; listing it lets a user audit which items would change (e.g. to
+/// keep quest items static).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChestSite {
+    /// PROT entry index of the scene bundle holding this chest.
+    pub entry_idx: usize,
+    /// Byte offset of the give operand within the scene's decoded MAN. Stable
+    /// per disc; identifies the site independent of item id.
+    pub man_offset: usize,
+    /// The item id the chest currently gives.
+    pub item: u8,
+}
+
+/// Read every treasure-chest give-item site on the disc (the randomizable
+/// population), in PROT-entry order. Mirrors [`current_drops`] for chests:
+/// purely read-only, decodes each scene MAN once via [`SceneChests::locate`].
+pub fn current_chests(patcher: &DiscPatcher) -> Result<Vec<ChestSite>> {
+    let mut out = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(sc) = SceneChests::locate(&entry, idx) else {
+            continue;
+        };
+        let items = sc.current_items();
+        for (k, &off) in sc.sites.iter().enumerate() {
+            out.push(ChestSite {
+                entry_idx: idx,
+                man_offset: off,
+                item: items[k],
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// Outcome of applying a drop plan.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DropApplyReport {

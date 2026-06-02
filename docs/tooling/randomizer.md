@@ -53,7 +53,8 @@ never leave the browser. The CLI below is the scriptable / shareable-PPF path.
 The top-level binary turns a disc + seed into a portable patch:
 
 ```bash
-legaia-rando drops     --input DISC.bin                       # read-only listing
+legaia-rando drops     --input DISC.bin                       # read-only: monster drops
+legaia-rando chests    --input DISC.bin                       # read-only: chest contents
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
@@ -71,6 +72,13 @@ record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
 result still parses end to end — a recipient's check that a shared patch + seed
 match their own disc.
+
+The read-only `drops` and `chests` subcommands write nothing — they decode the
+randomizable populations off the user's disc and print them (item ids + names
+resolved from the disc's own SCUS table; chests grouped by scene via CDNAME and
+followed by an item-multiset summary). `chests` lists the exact 275-site
+treasure population the chest randomizer reassigns, which is the natural place to
+audit for quest / key items a run might want to keep static.
 
 Because an edit changes bytes *inside* an LZS stream, the whole touched stream
 is re-packed, so the changed-byte count (and the PPF) is dominated by

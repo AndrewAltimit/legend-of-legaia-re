@@ -36,6 +36,11 @@ patched `.bin` contains Sony bytes and must never be redistributed.
 # Read-only: list every monster's current drop (with item names from the disc).
 legaia-rando drops --input "Legend of Legaia (USA).bin"
 
+# Read-only: list every treasure chest the randomizer would touch, grouped by
+# scene, plus the item-multiset summary -- audit which items would change before
+# committing (e.g. to spot quest items that should stay static).
+legaia-rando chests --input "Legend of Legaia (USA).bin"
+
 # Shuffle drops from a memorable seed -> a portable patch (default <input>.ppf).
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 

@@ -43,6 +43,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every treasure chest the randomizer would touch, grouped
+    /// by scene, with the item each currently gives. Use this to audit which
+    /// items would change (e.g. to spot quest items that should stay static).
+    Chests {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -129,6 +137,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Drops { input } => cmd_drops(&input),
+        Cmd::Chests { input } => cmd_chests(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -178,6 +187,73 @@ fn cmd_drops(input: &Path) -> Result<()> {
         n += 1;
     }
     println!("{n} monsters have a drop (of {} slots)", drops.len());
+    Ok(())
+}
+
+fn cmd_chests(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let chests = apply::current_chests(&patcher)?;
+
+    // Resolve item ids -> names (SCUS table) and PROT-entry -> scene name
+    // (CDNAME.TXT), both off the user's own disc. Purely for legibility.
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let name_of = |id: u8| -> String {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id))
+            .unwrap_or("?")
+            .to_string()
+    };
+    let cdname = legaia_iso::iso9660::read_file_in_image(patcher.image(), "CDNAME.TXT")
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|s| legaia_prot::cdname::parse_str(&s).ok());
+    let scene_of = |entry_idx: usize| -> String {
+        cdname
+            .as_ref()
+            .and_then(|m| legaia_prot::cdname::block_for(m, entry_idx as u32))
+            .unwrap_or("?")
+            .to_string()
+    };
+
+    // Group consecutive chests by scene for a readable table.
+    let mut last_entry: Option<usize> = None;
+    let mut per_item: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
+    for c in &chests {
+        if last_entry != Some(c.entry_idx) {
+            println!("\n[entry {:>4}  {}]", c.entry_idx, scene_of(c.entry_idx));
+            last_entry = Some(c.entry_idx);
+        }
+        println!(
+            "  item {:>3} (0x{:02x})  {}",
+            c.item,
+            c.item,
+            name_of(c.item)
+        );
+        *per_item.entry(c.item).or_default() += 1;
+    }
+
+    println!(
+        "\n{} chest give-item sites across {} scenes, {} distinct items.",
+        chests.len(),
+        chests
+            .iter()
+            .map(|c| c.entry_idx)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        per_item.len(),
+    );
+    println!("\nItem multiset (id  count  name):");
+    for (id, count) in &per_item {
+        println!(
+            "  {:>3} (0x{:02x})  x{:<3}  {}",
+            id,
+            id,
+            count,
+            name_of(*id)
+        );
+    }
     Ok(())
 }
 
