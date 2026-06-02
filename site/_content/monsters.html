@@ -112,6 +112,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th data-key="exp" title="Base EXP reward — the game scales it and splits it among the party">EXP</th>
             <th data-key="gold" title="Base gold reward — scaled at the end of a fight">Gold</th>
             <th data-key="drop_chance" title="Item the enemy can drop, and the chance. Name resolves from a full disc image; a raw PROT.DAT shows the raw id.">Drop</th>
+            <th data-key="steal_chance" title="Item the player steals with the Evil God Icon, and the chance. From the static SCUS_942.54 steal table; name resolves from a full disc image.">Steal</th>
             <th class="col-mesh" title="Click a row to view the enemy's 3D battle model">3D</th>
           </tr>
         </thead>
@@ -120,7 +121,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </div>
   </div>
 
-  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>EXP / Gold / Drop</strong> are the victory spoils — base values the game scales and splits at the end of a fight. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells and drops resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead.</p>
+  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>EXP / Gold / Drop</strong> are the victory spoils — base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) — a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/battle-formulas.html">Battle formulas</a>
@@ -206,6 +207,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       // Resolved from the SCUS item-name table when a full disc image is
       // loaded; null on raw PROT.DAT loads (then we show the raw id).
       drop_item_name: r.drop_item_name ?? null,
+      // Steal item + chance from the static SCUS_942.54 steal table
+      // (DAT_80077828). steal_item 0 / chance 0 = not stealable.
+      steal_item: r.steal_item ?? 0, steal_chance: r.steal_chance_pct ?? 0,
+      steal_item_name: r.steal_item_name ?? null,
     };
   }
 
@@ -214,6 +219,13 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     if (!r.drop_item) return '—';
     const label = r.drop_item_name || ('#' + r.drop_item);
     return label + ' @ ' + r.drop_chance + '%';
+  }
+
+  // Steal cell text: same shape as the drop cell, from the steal table.
+  function fmtSteal(r) {
+    if (!r.steal_item) return '—';
+    const label = r.steal_item_name || ('#' + r.steal_item);
+    return label + ' @ ' + r.steal_chance + '%';
   }
 
   // Named magic attacks: resolved spell name (+ MP cost) from the SCUS spell
@@ -262,6 +274,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         <td>${r.exp}</td>
         <td>${r.gold}</td>
         <td class="col-name ${r.drop_item ? '' : 'dim'}">${escapeHtml(fmtDrop(r))}</td>
+        <td class="col-name ${r.steal_item ? '' : 'dim'}">${escapeHtml(fmtSteal(r))}</td>
         <td class="col-mesh" title="View 3D model">${r.id === selectedId ? '▾' : '▸'}</td>
       </tr>`).join('');
 

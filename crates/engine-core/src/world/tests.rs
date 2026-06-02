@@ -6166,3 +6166,49 @@ fn world_tick_runs_physics_pass_in_order() {
     world.tick();
     assert_eq!(world.actors[0].move_buffer.cursor_active, 1);
 }
+
+#[test]
+fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
+    use legaia_asset::steal_table::{StealEntry, StealTable};
+    // ids: 0 sentinel, 1 = 30%/0x7e, 2 = 0% (no steal), 3 = 100%/0x8a.
+    let table = StealTable::from_entries(vec![
+        StealEntry {
+            chance_pct: 0,
+            item_id: 0xff,
+        },
+        StealEntry {
+            chance_pct: 30,
+            item_id: 0x7e,
+        },
+        StealEntry {
+            chance_pct: 0,
+            item_id: 0,
+        },
+        StealEntry {
+            chance_pct: 100,
+            item_id: 0x8a,
+        },
+    ]);
+
+    // Seed so the first roll is 0 (lands for any chance >= 1).
+    let mut world = World {
+        rng_state: 32937,
+        ..World::default()
+    };
+    let got = world.apply_steal(3, &table);
+    assert_eq!(got, Some(0x8a), "100% steal lands and grants the item");
+    assert_eq!(world.inventory.get(&0x8a).copied(), Some(1));
+
+    // A non-stealable monster (0% chance) never grants and consumes no roll.
+    let mut world = World::default();
+    let rng_before = world.rng_state;
+    assert_eq!(world.apply_steal(2, &table), None);
+    assert!(world.inventory.is_empty());
+    assert_eq!(
+        world.rng_state, rng_before,
+        "no roll for a non-stealable monster"
+    );
+
+    // An out-of-range / unknown monster id is also None.
+    assert_eq!(World::default().apply_steal(999, &table), None);
+}

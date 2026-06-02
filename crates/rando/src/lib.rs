@@ -38,9 +38,13 @@
 pub mod apply;
 pub mod chest;
 pub mod disc;
+pub mod door;
 pub mod drops;
 pub mod encounter;
+pub mod house_door;
 pub mod items;
 pub mod monster;
 pub mod ppf;
 pub mod rng;
+pub mod starting_items;
+pub mod steal;

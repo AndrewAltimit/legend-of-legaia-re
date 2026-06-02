@@ -38,6 +38,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [MDT move table](mdt.md) | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
 | [Art data](art-data.md) | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
 | [Spell table](spell-table.md) | Static `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 12-byte stride). MP cost + target + name per id; player Seru-magic block `0x81..=0x8b` pinned. |
+| [Steal table](steal-table.md) | Static `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`). What the Evil God Icon steals; NOT in the PROT 867 record. |
 | [Per-character save record](save-record.md) | Runtime `0x414`-byte record at `0x80084708 + slot * 0x414`. Cheat-database-pinned offset table for stats / level / magic rank / spells / summons / equipment. |
 
 ## Streaming + scene containers
@@ -53,6 +54,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Row-479 NPC CLUTs](npc-palette.md) | Plain PSX TIMs in scene PROT entries with CLUT block at `(fb_x=0, fb_y=479, w=256, h=1)`. Engine uploads via the targeted-upload CLUT pass with merge-zeros semantics — multiple scene-pack TIMs targeting the same row coexist (full slots 0..14 + partial slots 0..7). |
 | [Per-scene primitive scratch buffer](navmesh.md) | Documented negative finding — `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 | [Encounter record](encounter.md) | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Pointer installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
+| [MAN relocation](man-relocation.md) | Variable-length editing of a decompressed MAN. Scene-transition (`0x3F` door) destinations are partition-2 records reached via the partition-2 record-offset table; resizing a destination name fixes the partition tables + section-0 offset + intra-record jump deltas + the external descriptor size. Powers the door randomizer. |
 | [STR FMV table](str-fmv-table.md) | In-RAM compact table the cutscene / MDEC overlay uses to look up `MV*.STR` files. Six 24-byte entries at `0x801CAE40`: filename + libcd BCD MSF + size. |
 | [World-map slot-4 records](world-map-overlay.md) | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`). Outer pack of 15 sub-bodies each holding a `count_a × count_b` grid of 8-byte records, byte-verified against live RAM at `0x8011A624`. Record interpretation is **open** — the "world-map outlines / wireframe" reading was falsified. Most likely a runtime library of small object-local 3D meshes; consumer not yet pinned in Ghidra (steady-state Read-breakpoint capture across the slot returned zero hits). Slot 4 is **not** the bulk continent terrain source — that mechanism is pinned at [world-map § bulk continent terrain emit](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers). |
 

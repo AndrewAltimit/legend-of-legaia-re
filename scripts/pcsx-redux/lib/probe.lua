@@ -27,6 +27,7 @@
 --   probe.snapshot  lib/probe/snapshot.lua  write, capture_call_context, append_call_context
 --   probe.sm        lib/probe/sm.lua        run (the WAIT_BOOT -> ARMED -> DONE driver)
 --   probe.symbols   lib/probe/symbols.lua   FUN_*/DAT_* lookup with fail-closed guard
+--   probe.step      lib/probe/step.lua      trace (instruction tracer) + find_writer (range write attribution)
 
 local env      = require("probe.env")
 local mem      = require("probe.mem")
@@ -37,6 +38,7 @@ local csv      = require("probe.csv")
 local snapshot = require("probe.snapshot")
 local sm       = require("probe.sm")
 local watch    = require("probe.watch")
+local step     = require("probe.step")
 -- Lazy-require for symbols: it does a filesystem lookup on first access,
 -- so don't pay that cost just because a probe required the umbrella.
 local _symbols_cached = nil
@@ -59,6 +61,7 @@ M.csv      = csv
 M.snapshot = snapshot
 M.sm       = sm
 M.watch    = watch
+M.step     = step
 setmetatable(M, { __index = function(t, k)
     if k == "symbols" then return get_symbols() end
     return nil

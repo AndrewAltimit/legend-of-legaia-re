@@ -50,6 +50,42 @@ against an early `town01` save state, Vahn's `+4` (`100`) lands in the live reco
 as `agl`, `cap_constant`, and the initial spirit-gauge value all at once; the
 per-character archetypes (`Noa = 120`, `Gala = 80`) read as agility.
 
+## Starting inventory (code-built, not a table)
+
+The opening inventory is **not** a static table like the party stats — the
+new-game data-init `FUN_80034A6C` (`docs/subsystems/boot.md`) builds it in code,
+writing a single slot into the live consumable inventory at `0x80085958`
+(= `SC` base `0x80084140` + `0x1818`; 2 bytes/slot `[id: u8][count: u8]`,
+id-`0` terminator):
+
+```
+0x80034b0c  addiu $v0, $zero, 0x77    ; item id  = Healing Leaf
+0x80034b10  sb    $v0, 0x1818($s0)    ; inventory[0].id   ($s0 = SC base)
+0x80034b14  addiu $v0, $zero, 5       ; count    = 5
+0x80034b18  sb    $v0, 0x1819($s0)    ; inventory[0].count
+```
+
+So a vanilla New Game starts with **Healing Leaf ×5** and nothing else. A
+6-instruction loop right after (`0x80034b04..`, `0x80034b1c..0x80034b2b`) zeroes
+the 512 bytes *below* the inventory — but **both** callers of `FUN_80034A6C`
+(`FUN_8001DCF8`'s new-game branch, guarded by the new-game flag at
+`0x8007b7ac`, and `FUN_8001FFA4`) `memset` the whole `SC[0..0x1a18)` region —
+which contains the entire 72-slot inventory — immediately before the call, so
+that inline zero-loop is redundant. The reclaimable seed region is therefore
+the **10 instructions at [`STARTING_INV_SEED_VA`] (`0x80034b04`, 40 bytes)**.
+
+`legaia_asset::new_game::StartingInventory` decodes this region by replaying its
+`$v0`-source byte/halfword stores into an `SC`-offset → byte map and reading
+`(id, count)` slots from `0x1818`, so it reads back either the vanilla `sb` pair
+or the randomizer's packed `sh` halfword store (slot = `id | (count << 8)` in one
+instruction). The relevant LE-instruction-word top-16 signatures are:
+
+| Op | Top 16 bits | Meaning |
+|---|---|---|
+| `addiu $v0, $zero, imm` | `0x2402` | load constant into the source reg |
+| `sb $v0, off($s0)` | `0xA202` | byte store at `SC + off` |
+| `sh $v0, off($s0)` | `0xA602` | halfword store at `SC + off` |
+
 ## Provenance + parser
 
 The table base + stride are pinned by byte-search of `SCUS_942.54` for Vahn's

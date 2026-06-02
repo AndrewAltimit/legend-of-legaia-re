@@ -1,9 +1,10 @@
 # Randomizer / disc patcher
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
-disc image: it shuffles monster item drops, random-encounter formations, and
-treasure-chest contents, and writes the result back into the `.bin`. It does not
-touch the clean-room engine.
+disc image: it shuffles monster item drops, random-encounter formations,
+treasure-chest contents, per-monster steal items, scene-transition doors/exits,
+intra-town (house / interior) doors, and the new game's starting items, and
+writes the result back into the `.bin`. It does not touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -26,10 +27,21 @@ preservation track never had (it only ever *read* the disc):
 3. **A disc bridge** — `legaia_rando::disc::DiscPatcher`, which ties the editing
    primitives to the sector write-back through the PROT.DAT TOC.
 
-## Editing model: same-size, in place
+## Editing model: same-size in place, except doors
 
-Every edit overwrites bytes **in place** and never changes a byte count, so no
-LBA, PROT TOC, or ISO 9660 directory record ever moves. That keeps the patch a
+Drops / encounters / chests / steals / **house doors** (the `0x23 MOVE_TO` tile
+shuffle) overwrite bytes **in place** and never change a byte count, so no LBA,
+PROT TOC, or ISO 9660 directory record ever moves. **Scene-transition doors are
+the one exception**: a scene-transition destination carries its
+target scene's name inline, so re-pointing a door at a differently-named scene
+changes the record's byte length. That is made safe by the
+[MAN relocation engine](../formats/man-relocation.md), which rebuilds the
+decompressed MAN, fixes every internal offset the resize disturbs, and keeps the
+*recompressed* stream within the asset's on-disc footprint (or skips the scene).
+The disc image's total size never changes either way. For the same-size edits:
+
+Every same-size edit overwrites bytes **in place** and never changes a byte
+count, so no LBA, PROT TOC, or ISO 9660 directory record ever moves. That keeps the patch a
 pure byte-overwrite (plus EDC/ECC recompute) with no risk of cascading offset
 shifts. It works because the edit targets fit a fixed slot with slack:
 
@@ -55,9 +67,14 @@ The top-level binary turns a disc + seed into a portable patch:
 ```bash
 legaia-rando drops     --input DISC.bin                       # read-only: monster drops
 legaia-rando chests    --input DISC.bin                       # read-only: chest contents
+legaia-rando steals    --input DISC.bin                       # read-only: steal items
+legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
+legaia-rando house-doors --input DISC.bin                     # read-only: intra-town MOVE_TO targets
+legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
+    --encounters shuffle --steals shuffle --doors shuffle --door-coupling coupled \
+    --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
@@ -66,19 +83,23 @@ the result against the original, and writes the changes as a **PPF 3.0** patch
 (default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
 play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
-and PPF. `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
+and PPF. `--drops`, `--encounters`, `--chests`, `--steals`, and `--doors` each
+take `shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
+bidirectional) or `decoupled` (one-way); `--starting-items N` seeds the new
+game with `N` random consumables (0 = vanilla; capped at 5).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
 result still parses end to end — a recipient's check that a shared patch + seed
 match their own disc.
 
-The read-only `drops` and `chests` subcommands write nothing — they decode the
-randomizable populations off the user's disc and print them (item ids + names
-resolved from the disc's own SCUS table; chests grouped by scene via CDNAME and
-followed by an item-multiset summary). `chests` lists the exact 275-site
-treasure population the chest randomizer reassigns, which is the natural place to
-audit for quest / key items a run might want to keep static.
+The read-only `drops`, `chests`, `steals`, `doors`, and `starting-items` subcommands write nothing
+— they decode the randomizable populations off the user's disc and print them
+(item ids + names resolved from the disc's own SCUS table; chests + doors grouped
+by scene via CDNAME). `chests` lists the exact 275-site treasure population the
+chest randomizer reassigns, which is the natural place to audit for quest / key
+items a run might want to keep static. `doors` lists every scene-transition exit
+(home scene → destination + entry tile) — the 160-site door population.
 
 ### Keep-static items
 
@@ -175,6 +196,127 @@ neither leave nor enter circulation and `Shuffle` preserves the global multiset
 exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
 too tight to re-pack, is skipped).
 
+### Steal items (Evil God Icon)
+
+What the player steals from a monster (Evil God Icon equipped) is a per-monster
+entry in a **static `SCUS_942.54` table** at `DAT_80077828` — `[steal_chance_pct,
+steal_item_id]` per 1-based monster id, item at `+id*2+1` (see
+[steal-table.md](../formats/steal-table.md)). It is **not** in the PROT 867
+record. Because it's a plain executable table, an edit is the simplest of the
+four: a single same-size byte overwrite of the item, applied straight to the
+SCUS file via `DiscPatcher::patch_named_file` (the non-PROT sibling of
+`patch_prot_entry`, built on `legaia_iso::write::patch_file_logical`). No LZS
+re-pack, no overflow, so nothing is ever skipped. `apply::randomize_steals`
+reassigns the item for every stealable monster (`Shuffle` redistributes the
+existing steal-item multiset, `Random` draws from the valid item pool) and
+**preserves each monster's steal chance** — the item changes, the rate doesn't.
+On the retail disc 189 monsters are stealable. `legaia-rando steals` lists the
+current table (the audit surface).
+
+### Doors (scene transitions)
+
+A field scene reaches another scene through the field-VM **`0x3F`
+named-scene-change op**, which carries its destination inline: `[i16 index]
+[u8 name_len][name][entry_x][entry_z][dir]`. These ops are **partition-2 MAN
+records**, addressed at runtime through the partition-2 record-offset table (the
+controller sets the VM bytecode base to `man_base + data_region +
+partition2[slot]` and runs the record — pinned by a PCSX-Redux dispatch trace;
+see [MAN relocation](../formats/man-relocation.md)). On the retail disc there are
+160 doors across 48 scenes; the overworld scenes (`map01`/`map02`/`map03`) are
+the hubs.
+
+Because the destination name is variable length, `apply::randomize_doors` is the
+only randomizer that **resizes** an asset: it rewrites the `0x3F` op through the
+relocation engine, recompresses the MAN, and rewrites the descriptor's
+decompressed-size word. The whole destination descriptor (scene + entry tile +
+facing) moves as one unit, so a re-pointed door always lands you somewhere valid.
+
+`--door-coupling` picks the connectivity:
+
+- **`coupled` (bidirectional, default)** re-pairs doors into two-way connections
+  via a random involution over the sites — for matched doors `A` and `B`, `A` is
+  sent to where `B` is reached from and vice versa, so walking through a door and
+  turning around returns you the way you came. To guarantee that this never
+  half-applies, coupled mode restricts itself to **length-preserving** swaps: it
+  re-pairs only *balanced* connections (equal door counts in each direction)
+  whose destination names match in length, so the decompressed MAN size is
+  unchanged and **no scene — including the un-growable overworld hubs — can
+  overflow**. The result introduces zero new one-way edges (a whole-graph
+  symmetry invariant, asserted by `door_patch_real`). Doors with no
+  length-compatible reverse partner (dead-end / one-way story warps, or doors
+  orphaned by an unequal-direction connection) are left at their original
+  destination — never given a one-way reassignment — and reported as `unpaired`.
+- **`decoupled` (one-way)** reassigns every door's destination independently
+  (`shuffle` permutes the existing destinations, `random` draws from the global
+  pool), so going back through the destination's own doors is not guaranteed to
+  return you. This is the variable-length path: a destination of any name length
+  can land in any door.
+
+In **decoupled** mode a scene whose rebuilt MAN can't grow within its on-disc
+footprint (the big overworld hubs, whose next asset sits flush after the MAN) is
+**skipped** — it keeps its original doors — and reported, rather than relocating
+the whole bundle. (Coupled mode is same-size, so this doesn't arise; should a
+recompress ever overflow anyway, the revert is a transitive closure over both
+the new and original pairings, so a whole connection cycle reverts together
+rather than half-applying.)
+
+### House doors (intra-town)
+
+Entering a house/interior within a town is **not** a scene change — it's an
+**intra-scene reposition**: the field VM runs a **`0x23 MOVE_TO`** op that
+teleports the player to an interior sub-area tile in the *same* scene (pinned at
+the instruction level by `probe.step.find_writer`; the writer is `FUN_801de840`
+`case 0x23` — see [pcsx-redux-automation.md](pcsx-redux-automation.md)). So the
+door "record" is the op's two operand bytes `[0x23][xb][zb]` (`tile = byte &
+0x7F`). `legaia_rando::house_door::SceneHouseDoors` enumerates a scene's
+non-sentinel MOVE_TO sites and `--house-doors shuffle` does a **per-scene,
+multiset-preserving shuffle** of their target tiles — every target stays a tile
+the scene already uses (no off-map placement), a same-size 2-byte operand edit
+recompressed in place (no relocation). On retail: 220 shuffleable targets across
+28 scenes.
+
+**Experimental — the op is shared, and enumeration is partial.** `0x23 MOVE_TO`
+is also how NPC / cutscene scripts move actors, and there's no clean structural
+marker separating door warps from those, so the shuffle also scrambles some actor
+positions within each town. It is opt-in, `shuffle`-only (a `random` draw would
+place actors off-map), and excludes the `(0x7F, 0x7F)` "here" sentinel. The
+read-only `house-doors` listing shows the touched population per scene.
+
+Enumeration finds only the `MOVE_TO` ops a **clean** field-VM walk reaches (it
+stops at the first byte that doesn't decode as a valid op, so it never mistakes
+arbitrary data for a `0x23`). In some towns the interior-*entry* warps target
+high interior tiles and sit past such a desync, so the sites found there are the
+lower-coordinate doorstep / NPC repositions rather than the "enter the house"
+warps — meaning a small town's house entries may not actually change. Closing
+that gap needs a more aggressive walk-past-desync enumeration (with a way to
+reject data false positives) or a per-town runtime trace of the entry op; both
+remain open, which is why the feature is experimental.
+
+### Starting items
+
+A vanilla New Game begins with one inventory slot — Healing Leaf (item `0x77`)
+×5 — and there is **no static starting-inventory table** to edit: the new-game
+data-init `FUN_80034A6C` builds it in code, writing `inventory[0] = (0x77, 5)`
+into the live consumable bag at `0x80085958` (`SC + 0x1818`) with an
+`addiu`/`sb` pair (see [new-game-table.md](../formats/new-game-table.md)). So
+this randomizer rewrites the **seed code** itself. The 40-byte region at
+`0x80034b04` is reclaimable: it holds that seed plus a 6-instruction loop that
+zeroes the 512 bytes *below* the inventory — redundant, because **both** callers
+of `FUN_80034A6C` `memset` the whole `SC[0..0x1a18)` block (which contains the
+inventory) right before the call.
+
+`apply::randomize_starting_items` plans `n` distinct random consumables (each a
+small random count) and writes one **packed halfword store** per item into that
+region — an inventory slot is two contiguous bytes `[id][count]`, so
+`addiu $v0, (count<<8)|id; sh $v0, (0x1818 + 2k)($s0)` seeds a slot in two
+instructions. Ten instructions / two per item caps it at **five** starting
+items. The patch is the same size as the original code (no executable growth or
+relocation), applied like the steal table via `patch_named_file`. Because the
+write lands directly in the consumable page (bypassing the engine's id-routing
+add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
+(Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
+read-only `starting-items` listing shows the current bag.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right
@@ -226,20 +368,32 @@ bit-for-bit.
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
+| `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
+| `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
+| `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
+| `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene `0x23 MOVE_TO` target-tile multiset preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
+| `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
+| `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
+| `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
+| `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The two `engine-core` runtime oracles answer a question the `crates/rando`
+The six `engine-core` runtime oracles answer a question the `crates/rando`
 patch tests don't: not just that the patched byte is *written* faithfully, but
-that a runtime actually *reads it and grants the new item*. A savestate can't
-prove this — the scene MAN / `battle_data` archive is resident in RAM the moment
-you're in the room / battle, so a state captured on a patched disc still serves
-the original from the cached RAM copy; the patched value is only seen after a
-fresh scene/battle load re-streams it off disc. The clean-room engine sidesteps
-that cache by decoding straight from disc bytes and running the actual grant
-path, so it observes the patch a savestate would mask.
+that a runtime actually *reads it and acts on it* — grants the new item, spawns
+the new monster, or warps to the new scene. A savestate can't prove this — the
+scene MAN / `battle_data` archive / steal table is resident in RAM the moment
+you're in the room / battle (or as soon as the executable loads), so a state
+captured on a patched disc still serves the original from the cached RAM copy;
+the patched value is only seen after a fresh scene / battle / executable load
+re-streams it off disc. The clean-room engine sidesteps that cache by decoding
+straight from disc bytes and running the actual grant / spawn / warp path, so it
+observes the patch a savestate would mask.
 
 ## No-Sony-bytes hygiene
 

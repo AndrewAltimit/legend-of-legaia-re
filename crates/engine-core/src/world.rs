@@ -3320,6 +3320,35 @@ impl World {
         }
     }
 
+    /// Resolve a **steal** attempt against `monster_id` using the per-monster
+    /// steal table (the Evil God Icon mechanic). Rolls the monster's steal
+    /// chance against the deterministic world RNG; on success the stolen item is
+    /// added to [`Self::inventory`] and its id returned. Returns `None` when the
+    /// monster has no steal (item `0` / chance `0`) or the roll misses.
+    ///
+    /// The steal item + chance live in a static `SCUS_942.54` table
+    /// (`DAT_80077828`), **not** the monster record, so the caller passes the
+    /// parsed [`legaia_asset::steal_table::StealTable`] (the engine reads the
+    /// disc-resident data the randomizer edits). This is the steal counterpart
+    /// to the drop grant in [`Self::apply_battle_loot`]: a percent roll
+    /// (`rand % 100 < chance`) then the same `inventory` add. See
+    /// `docs/formats/steal-table.md`.
+    pub fn apply_steal(
+        &mut self,
+        monster_id: u16,
+        steal_table: &legaia_asset::steal_table::StealTable,
+    ) -> Option<u8> {
+        let entry = steal_table.entry(monster_id).filter(|e| e.is_stealable())?;
+        let roll = (self.next_rng() % 100) as u8;
+        if roll < entry.chance_pct {
+            let slot = self.inventory.entry(entry.item_id).or_insert(0);
+            *slot = slot.saturating_add(1);
+            Some(entry.item_id)
+        } else {
+            None
+        }
+    }
+
     /// Record one use of `art_id` by `char_id` (roster index).
     ///
     /// Delegates to [`TacticalArtsTracker::notify_art_used`]. When the use

@@ -154,6 +154,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/overlay-ptr-table.html","Overlay pointer-table code", "formats/overlay-ptr-table",  "formats/overlay-ptr-table.html"),
     ("formats/navmesh.html",       "Per-scene primitive scratch buffer", "formats/navmesh",       "formats/navmesh.html"),
     ("formats/encounter.html",     "Encounter record",              "formats/encounter",          "formats/encounter.html"),
+    ("formats/man-relocation.html", "MAN relocation",               "formats/man-relocation",     "formats/man-relocation.html"),
     ("formats/str-fmv-table.html", "STR FMV table",                 "formats/str-fmv-table",      "formats/str-fmv-table.html"),
     ("formats/save-record.html",   "Per-character save record",     "formats/save-record",        "formats/save-record.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
@@ -539,6 +540,7 @@ def build_gamedata_json() -> tuple[dict, dict]:
                 "element": e.get("element"),
                 "drop":    e.get("drop"),
                 "steal":   e.get("steal"),
+                "steal_chance": e.get("steal_chance"),
             }
         def short_boss(b: dict) -> dict:
             return {

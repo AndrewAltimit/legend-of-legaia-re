@@ -3,7 +3,7 @@
 //! isn't on disk - same gating pattern as the other disc-dependent tests so CI
 //! doesn't need Sony bytes.
 
-use legaia_asset::new_game::{PARTY_RECORDS, StartingParty};
+use legaia_asset::new_game::{PARTY_RECORDS, StartingInventory, StartingParty};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -42,4 +42,22 @@ fn decodes_the_starting_party_template_or_skips() {
     assert_eq!(party.member(1).map(|m| m.name.as_str()), Some("Noa"));
     assert_eq!(party.member(2).map(|m| m.name.as_str()), Some("Gala"));
     assert_eq!(party.member(3).map(|m| m.name.as_str()), Some("Terra"));
+}
+
+#[test]
+fn decodes_the_starting_inventory_seed_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let inv = StartingInventory::from_scus(&bytes).expect("decode starting-inventory seed");
+
+    // Vanilla retail seeds exactly one slot: Healing Leaf (item id 0x77) ×5,
+    // written by `FUN_80034A6C` into the live consumable inventory at New Game.
+    assert_eq!(
+        inv.items(),
+        &[(0x77, 5)],
+        "retail new game starts with Healing Leaf x5"
+    );
 }

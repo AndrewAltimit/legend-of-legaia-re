@@ -124,8 +124,8 @@ This pattern is factored out as a shared library at
 [`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua),
 which is an umbrella that re-exports the per-concern submodules under
 [`scripts/pcsx-redux/lib/probe/`](../../scripts/pcsx-redux/lib/probe/) -
-`env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, `watch`, and
-`symbols`. A new probe doesn't reimplement the state machine, the
+`env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, `watch`, `step`,
+and `symbols`. A new probe doesn't reimplement the state machine, the
 memory readers, the save-state loader, the pad-override helpers, the
 CSV writer, or the live-snapshot writer - it imports them:
 
@@ -203,6 +203,40 @@ local w = probe.watch.new{
 w:arm(player_ptr + 0x14, 2, "playerX")  -- width 1/2/4; kind defaults "Write"
 -- ... at end: print("total writes:", w:total())
 ```
+
+### Instruction tracing + write attribution (`probe.step`)
+
+PCSX-Redux's Lua FFI exposes **no native single-step** (only `pauseEmulator` /
+`resumeEmulator` and non-pausing breakpoints — the internal `m_debug->stepIn()`
+is not bound). `probe.step` reconstructs the two things single-stepping is used
+for, on top of breakpoints, so fine-grained RE stays scriptable instead of
+needing the GUI debugger:
+
+```lua
+-- Observational single-step over a code region: an Exec BP on every 4-byte
+-- instruction in [lo, hi); each fires in execution order with LIVE
+-- pre-execution registers. opts.gate() restricts recording to a window.
+local tr = probe.step.trace(0x801de840, 0x801df000, { gate = on_door_frame })
+
+-- Width-correct range write-finder: arms width-`unit` (default 2) Write BPs
+-- across [addr, addr+len) so a store of unknown width/alignment to a struct
+-- is caught with the correct faulting PC + live registers + post-store bytes.
+local fw = probe.step.find_writer(player + 0x10, 0x10, { on_write = log })
+-- ... fw:count() / fw:records() / fw:dump(path)
+```
+
+Two gotchas these encode:
+
+- **Watch *width* matters as much as address.** A `Write` BP only matches
+  accesses overlapping `[addr, addr+width)`, and PCSX supports width 1/2/4 only
+  — a width-2 watch at exactly `+0x14` **misses** a wider/offset store into the
+  same struct. `find_writer` covers a range by arming a unit BP per slot. (This
+  is what hid the Mei's-house door reposition behind a 2-byte no-op re-store;
+  the range watch found the real writer — a field-VM `0x23 MOVE_TO` — in one run.)
+- **A Write BP fires *at* the store with live registers** (not after the
+  function returns); read `getRegisters()` directly. The earlier "stale
+  registers" symptom was a misread — the store instruction simply didn't use the
+  register in question.
 
 ### Early-quit signal
 
@@ -326,6 +360,7 @@ is the high-level index.
 | `autorun_boot_walk_snapshots.lua` | Multi-snapshot RAM-and-register probe; dumps at each emulator vsync in `LEGAIA_TARGETS` (comma-separated) with chunked reads spread across vsync callbacks | Walks a save state through several timeline points in one emulator launch. **Known limitation**: the chunked-read workaround works for ~2-4 close-together snapshots but degrades past ~10 chunks; for high-vsync targets prefer chained single-shots of `autorun_dump_full_ram.lua`. |
 | `autorun_countdown_trigger.lua` | Memory write-watchpoint at `LEGAIA_WATCH_ADDR` (default `0x801EF16C`, the title-attract countdown); width-2 `Write` BP. Optional screenshot via `PCSX.GPU.takeScreenShot()` taken inside the BP callback before the deferred RAM dump. | **Watchpoint-driven RAM + screenshot snapshot**: fires the dump at the exact moment the game writes the watched register. `LEGAIA_HIT_SKIP` ignores the first N hits before snapshotting (default `1` to skip the boot-time DMA write). `LEGAIA_DUMP_BASE` / `LEGAIA_DUMP_LEN` restrict the dump window (default `0x801C0000` / `0x40000` = overlay window). Decode the screen to PNG via [`scripts/pcsx-redux/decode_pcsx_screen.py`](../../scripts/pcsx-redux/decode_pcsx_screen.py). Pinned `FUN_801DD35C` as the title-overlay tick — see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function). |
 | `autorun_player_pos_watch.lua` | Write-watchpoint on the player actor world-position fields (`*(0x8007C364) + 0x14` X / `+0x18` Z), armed lazily in `on_capture` after the save loads (the target is a runtime pointer deref). Cycles the four d-pad directions (camera facing unknown) so at least one produces a position write. | **Pinned the town/field free-movement integrator**: hits land in `FUN_801d01b0` (overlay 0897) at the four `sh player[+0x14/0x18]` stores `0x801D0684/06E4/0744/07B4`, with collision via `FUN_801cfe4c`. CSV columns `tick, axis, write_addr, pc, ra, new_val` + a `.detail.txt` call-context sidecar. Run against a save parked in a walkable field/town. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
+| `autorun_house_door_writer.lua` | `probe.step.find_writer` over the player position block `*(0x8007C364)+0x10..+0x20` (range write-watch, robust to store width/alignment), holding Up to enter a Rim Elm house. Writes each store **incrementally** (so a manually-closed window keeps the data). | **Cracked the intra-town (house/interior) door mechanism**: entering a house is a field-VM `0x23 MOVE_TO` to the interior tile (the writer lands in `FUN_801de840` `case 0x23` at `0x801debc4`), not a scene change — same op class as the `0x3F` scene-change the door randomizer handles. Earlier write-watchpoints missed it (width-2 watch caught only a 2-byte no-op re-store); the range watch found the real writer in one run. See [`autorun_house_door_trace.lua`](../../scripts/pcsx-redux/autorun_house_door_trace.lua) (companion). |
 | `autorun_man_source.lua` | Exec breakpoint at the asset-type dispatcher `FUN_8001F05C`, filtered to the MAN dispatch (`a1 >> 24 == 3`). On hit logs `a0` (source pointer), size, `a2`/`a3` flags, caller RA, and the resulting `_DAT_8007b898` buffer, captures call context, and dumps the source bytes; also dumps the resident MAN at capture start. Drive a transition with `LEGAIA_HOLD_BUTTON` / `LEGAIA_HOLD`. | **Pinned a field scene's runtime MAN source** (`_DAT_8007b898`). Caller is `FUN_80020224`, the `scene_asset_table` walker that reads the table base from `_DAT_8007b85c` and feeds the dispatcher `source = table_base + descriptor.data_offset`. Captured a standalone-town load: the MAN's LZS stream byte-matches a [`count=6 scene_asset_table`](../formats/scene-bundles.md) descriptor in the town's own PROT block - the variant a strict count-7 detector skipped. Run against the `overworld_into_town_man_load` scenario (Down ~0.75s into a town entrance). |
 | `autorun_title_overlay_writer_hunt.lua` | Write bps at 8 anchor addresses across the title-overlay code region (`0x801CC000..0x801EF018`) | Pins the SCUS-side title-overlay loader: any write into the overlay window fires a BP whose `pc` + `ra` + call-context dump identify the writer function. Run cold-boot (`LEGAIA_NO_SSTATE=1`) since in-game saves are past the load point. |
 | `autorun_monster_record_source.lua` | Exec bps at the monster init `FUN_80054CB0` (logs the live record: name / HP / MP / stats), the battle archive loader `FUN_800542C8`, the relative disc-seek `FUN_8003E964` (`a0 = (id-1)*40` sectors → monster id), the generic disc read `FUN_8003E800` (logs the CdlLOC → disc LBA → PROT.DAT offset for 40-sector reads), and the retail host-trap open `FUN_800608F0`. | **Pinned the monster stat archive** to PROT entry `0867_battle_data` (extended footprint): per-id `0x14000` LZS slot at `(id-1)*0x14000`. Run against a battle save (Rim Elm scripted fights). Three decoded records match the live actor stats byte-for-byte. The `monster_data` label (PROT 869) is a stub. See [`subsystems/battle.md` § Monster archive](../subsystems/battle.md#monster-archive-prot-entry-867). |

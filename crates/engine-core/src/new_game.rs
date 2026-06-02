@@ -14,7 +14,7 @@
 //! each character is later introduced, so [`World::seed_starting_party`] seeds
 //! Vahn alone.
 
-use legaia_asset::new_game::{StartingChar, StartingParty};
+use legaia_asset::new_game::{StartingChar, StartingInventory, StartingParty};
 use legaia_save::character::{LiveStats, RECORD_CAP_CONSTANT, RecordStats};
 use legaia_save::{CharacterRecord, HpMpSp, Party};
 
@@ -80,6 +80,23 @@ impl World {
         // overwrites slot 0 when the player names the lead character.
         self.party_names = vec![vahn.name.clone()];
         self.seed_party_battle_stats();
+    }
+
+    /// Seed the New Game starting inventory from the SCUS seed
+    /// ([`StartingInventory`], `FUN_80034A6C`). Vanilla retail is the single
+    /// slot Healing Leaf (`0x77`) ×5; the starting-item randomizer rewrites the
+    /// seed so this reflects whatever the patched disc grants. Runs right after
+    /// [`World::begin_new_game`] (which clears the bag), so the engine begins a
+    /// New Game with the same items the real game would. Counts are merged into
+    /// any existing slot of the same id (stack), matching the bag's semantics.
+    pub fn seed_starting_inventory(&mut self, inv: &StartingInventory) {
+        for &(id, count) in inv.items() {
+            if id == 0 || count == 0 {
+                continue;
+            }
+            let slot = self.inventory.entry(id).or_insert(0);
+            *slot = slot.saturating_add(count);
+        }
     }
 }
 
@@ -218,6 +235,32 @@ mod tests {
         assert!(committed, "Yes-confirm commits + closes the overlay");
         assert!(!world.name_entry_active());
         assert_eq!(world.party_name(0), "Noa");
+    }
+
+    #[test]
+    fn seed_starting_inventory_fills_the_bag() {
+        let mut world = World::new();
+        world.begin_new_game();
+        assert!(world.inventory.is_empty(), "new game clears the bag");
+        // Vanilla-shaped single slot.
+        world.seed_starting_inventory(&StartingInventory::from_items(vec![(0x77, 5)]));
+        assert_eq!(world.inventory.get(&0x77).copied(), Some(5));
+        assert_eq!(world.inventory.len(), 1);
+    }
+
+    #[test]
+    fn seed_starting_inventory_multi_slot_and_skips_empties() {
+        let mut world = World::new();
+        world.begin_new_game();
+        world.seed_starting_inventory(&StartingInventory::from_items(vec![
+            (0x80, 2),
+            (0x00, 9), // id 0 skipped
+            (0x8a, 1),
+            (0x7e, 0), // count 0 skipped
+        ]));
+        let mut got: Vec<(u8, u8)> = world.inventory.iter().map(|(k, v)| (*k, *v)).collect();
+        got.sort_unstable();
+        assert_eq!(got, vec![(0x80, 2), (0x8a, 1)]);
     }
 
     #[test]

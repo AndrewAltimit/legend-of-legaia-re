@@ -95,6 +95,11 @@ pub struct BootSession {
     /// read (e.g. a raw PROT.DAT-only source), in which case New Game keeps the
     /// world's default scaffold party.
     pub starting_party: Option<legaia_asset::new_game::StartingParty>,
+    /// New-game starting inventory decoded from the boot source's `SCUS_942.54`
+    /// seed code (`FUN_80034A6C`), if present. Vanilla retail is Healing Leaf
+    /// ×5; the starting-item randomizer rewrites it. Used by
+    /// [`BootSession::begin_new_game`] to seed the opening bag faithfully.
+    pub starting_inventory: Option<legaia_asset::new_game::StartingInventory>,
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -115,6 +120,27 @@ fn read_starting_party(source: &SceneSource<'_>) -> Option<legaia_asset::new_gam
             .ok()?,
     };
     legaia_asset::new_game::StartingParty::from_scus(&scus)
+}
+
+/// Read + decode the new-game starting-inventory seed from a boot source's
+/// `SCUS_942.54` (`FUN_80034A6C`). Returns `None` when the executable isn't
+/// reachable or doesn't decode, so a boot never fails on missing seed data.
+fn read_starting_inventory(
+    source: &SceneSource<'_>,
+) -> Option<legaia_asset::new_game::StartingInventory> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_asset::new_game::StartingInventory::from_scus(&scus)
 }
 
 /// Read + parse the retail XP-to-next-level curve from a boot source's
@@ -179,6 +205,7 @@ impl BootSession {
         // Parse the new-game starting-party template from the same source
         // (best-effort; never fails the boot).
         let starting_party = read_starting_party(&source);
+        let starting_inventory = read_starting_inventory(&source);
         let mut host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
@@ -242,6 +269,7 @@ impl BootSession {
             bgm,
             frames: 0,
             starting_party,
+            starting_inventory,
         })
     }
 
@@ -260,6 +288,9 @@ impl BootSession {
         self.host.world.begin_new_game();
         if let Some(starting) = &self.starting_party {
             self.host.world.seed_starting_party(starting);
+        }
+        if let Some(inv) = &self.starting_inventory {
+            self.host.world.seed_starting_inventory(inv);
         }
     }
 

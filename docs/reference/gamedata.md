@@ -43,7 +43,9 @@ data/gamedata/
   weapons.toml        - 27 weapons
   armor.toml          - 49 armor / helmet / shoes entries
   accessories.toml    - 70+ accessories with structured effect classes
-  enemies.toml        - 177 enemies with location + drop / steal + full
+  enemies.toml        - 177 enemies with location + drop / steal (and
+                        `steal_chance`, the steal % sourced byte-exact from
+                        the SCUS_942.54 steal table DAT_80077828) + full
                         per-enemy stat columns (HP / MP / EXP / Gold /
                         ATK / SPD / UDF / LDF / INT / AGL / element)
   bosses.toml         - 18 main-story B-code bosses + Lapis + 7 Muscle

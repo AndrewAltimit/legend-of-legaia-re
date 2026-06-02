@@ -39,22 +39,68 @@
         <option value="none" selected>Leave alone</option>
       </select>
     </label>
+    <label class="rom-row">
+      <span class="rom-label">Steal items</span>
+      <select id="rom-steals">
+        <option value="shuffle">Shuffle (redistribute existing steals)</option>
+        <option value="random">Random (any valid item)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Doors / exits</span>
+      <select id="rom-doors">
+        <option value="shuffle">Shuffle (redistribute destinations)</option>
+        <option value="random">Random (any destination)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Door connectivity</span>
+      <select id="rom-door-coupling">
+        <option value="coupled" selected>Bidirectional (return the way you came)</option>
+        <option value="decoupled">One-way (going back leads elsewhere)</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">House doors (experimental)</span>
+      <select id="rom-house-doors">
+        <option value="shuffle">Shuffle (intra-town MOVE_TO targets)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Starting items</span>
+      <select id="rom-starting-items">
+        <option value="0" selected>Leave alone (Healing Leaf &times;5)</option>
+        <option value="1">1 random item</option>
+        <option value="2">2 random items</option>
+        <option value="3">3 random items</option>
+        <option value="4">4 random items</option>
+        <option value="5">5 random items</option>
+      </select>
+    </label>
     <div class="rom-row">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
     <div id="rom-status" class="rom-status">Choose a disc image and at least one option, then patch.</div>
     <pre id="rom-summary" class="rom-summary"></pre>
   </div>
+  <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code> (same base name). Keep them together and point your emulator at the <code>.cue</code> &mdash; it references the <code>.bin</code> by name. Legend of Legaia is a single-track <code>MODE2/2352</code> disc, so the cue is just a track header. If you'd rather reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
   <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching holds a couple of copies in memory and the download is the same size &mdash; give it a moment, and use a desktop browser with enough RAM. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong>. (Sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.)</p>
 </section>
 
 <section class="doc-section" id="how">
   <h2>What it does</h2>
-  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded, <strong>same-size in-place</strong> edit:</p>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit &mdash; same-size in place for drops / encounters / chests / steals, and a variable-length <a href="../formats/man-relocation.html">MAN rebuild</a> for doors (the disc's total size never changes either way):</p>
   <ul class="bullets">
     <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Random</em> draws from the valid item table.</li>
     <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations, drawn from that scene's <em>own</em> monster set, so every swapped-in monster is one the scene already loads (no missing model).</li>
     <li><strong>Treasure chests</strong> &mdash; reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest. A curated set of quest / key items (Mary's Diary, Dark Stone, the Genesis-Tree garden tools, Silver Compass, Old Rod) is kept static so progression items stay where the player expects them.</li>
+    <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
+    <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Bidirectional</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
+    <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving, so every target stays a valid tile), so house/interior doors lead to different rooms. The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
+    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count). There is no static starting-inventory table, so this rewrites the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place &mdash; a same-size patch using a packed halfword store per item, drawing from the consumable item block (Healing Leaf &hellip; Wonder Elixir) so each item belongs on the bag's consumable page.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>

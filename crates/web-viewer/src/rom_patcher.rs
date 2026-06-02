@@ -41,26 +41,42 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
-/// `drops` / `encounters` / `chests` are each `"shuffle"`, `"random"`, or
-/// `"none"`. `seed` is a number or any string (hashed). Returns
+/// `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
+/// each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
+/// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
+/// `"shuffle"`. `starting_items` is the number of random starting consumables
+/// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
+/// 5). `seed` is a number or any string (hashed). Returns
 /// `{ data, summary, seed }`.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn patch_rom(
     image: Vec<u8>,
     seed: &str,
     drops: &str,
     encounters: &str,
     chests: &str,
+    steals: &str,
+    doors: &str,
+    door_coupling: &str,
+    house_doors: &str,
+    starting_items: usize,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
     let enc_mode = parse_mode(encounters);
     let chest_mode = parse_mode(chests);
+    let steal_mode = parse_mode(steals);
+    let door_mode = parse_mode(doors);
+    let house_door_mode = parse_mode(house_doors);
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
-    let pool = if drops_mode == Some(DropMode::Random) || chest_mode == Some(DropMode::Random) {
+    let pool = if drops_mode == Some(DropMode::Random)
+        || chest_mode == Some(DropMode::Random)
+        || steal_mode == Some(DropMode::Random)
+    {
         let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .ok_or_else(|| err("SCUS_942.54 not found in disc image (needed for a random mode)"))?;
         valid_item_pool(&scus).map_err(|e| err(format!("item pool: {e}")))?
@@ -123,6 +139,81 @@ pub fn patch_rom(
             ));
         }
         None => summary.push_str("chests: untouched\n"),
+    }
+
+    match steal_mode {
+        Some(m) => {
+            let (plan, rep) = apply::randomize_steals(&mut patcher, &pool, seed_n, m)
+                .map_err(|e| err(format!("steals: {e}")))?;
+            summary.push_str(&format!(
+                "steals: {} of {} stealable monsters reassigned ({})\n",
+                rep.items_changed,
+                plan.len(),
+                steals
+            ));
+        }
+        None => summary.push_str("steals: untouched\n"),
+    }
+
+    match door_mode {
+        Some(m) => {
+            let coupling = match door_coupling {
+                "decoupled" => apply::DoorCoupling::Decoupled,
+                _ => apply::DoorCoupling::Coupled,
+            };
+            let rep = apply::randomize_doors(&mut patcher, seed_n, m, coupling)
+                .map_err(|e| err(format!("doors: {e}")))?;
+            summary.push_str(&format!(
+                "doors: {} of {} sites changed across {} scenes ({}, {})\n",
+                rep.sites_changed, rep.sites_total, rep.scenes_changed, doors, door_coupling
+            ));
+            if !rep.skipped.is_empty() {
+                summary.push_str(&format!(
+                    "  {} hub scene(s) too big to grow in place, kept original doors\n",
+                    rep.skipped.len()
+                ));
+            }
+        }
+        None => summary.push_str("doors: untouched\n"),
+    }
+
+    match house_door_mode {
+        Some(legaia_rando::drops::DropMode::Shuffle) => {
+            let rep = apply::randomize_house_doors(
+                &mut patcher,
+                seed_n,
+                legaia_rando::drops::DropMode::Shuffle,
+            )
+            .map_err(|e| err(format!("house-doors: {e}")))?;
+            summary.push_str(&format!(
+                "house-doors: {} of {} MOVE_TO targets shuffled across {} scenes\n",
+                rep.sites_changed, rep.sites_total, rep.scenes_changed
+            ));
+        }
+        Some(_) => summary.push_str("house-doors: only `shuffle` supported; untouched\n"),
+        None => summary.push_str("house-doors: untouched\n"),
+    }
+
+    if starting_items > 0 {
+        let rep = apply::randomize_starting_items(&mut patcher, seed_n, starting_items)
+            .map_err(|e| err(format!("starting-items: {e}")))?;
+        let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        let list: Vec<String> = rep
+            .items
+            .iter()
+            .map(|(id, count)| {
+                let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
+                format!("{count}x {nm}")
+            })
+            .collect();
+        summary.push_str(&format!(
+            "starting-items: new game begins with {} random item(s): {}\n",
+            rep.items_set,
+            list.join(", ")
+        ));
+    } else {
+        summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
     }
 
     let patched = patcher.into_image();

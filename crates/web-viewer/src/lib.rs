@@ -183,6 +183,10 @@ pub struct LegaiaViewer {
     /// magic-attack ids into the on-screen spell names (`0x27` -> `Tail Fire`).
     /// `None` on raw PROT.DAT loads.
     spell_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// Per-monster steal table (`DAT_80077828`) decoded from `SCUS_942.54` at
+    /// load time. Resolves what the Evil God Icon steals from each monster (item
+    /// + chance) for the enemy table. `None` on raw PROT.DAT loads (no SCUS).
+    steal_table: Option<legaia_asset::steal_table::StealTable>,
     /// Flat catalog of every standard PSX TIM in the loaded PROT.DAT image,
     /// built at load time from the TOC (see [`tim_catalog`]). Drives the
     /// "TIM Catalog" browse mode: page through every TIM by id with its CLUT
@@ -237,6 +241,7 @@ impl LegaiaViewer {
             fog_lut: None,
             item_names: None,
             spell_names: None,
+            steal_table: None,
             tim_catalog: Vec::new(),
             tim_deep_catalog: Vec::new(),
             deep_section_cache: std::cell::RefCell::new(None),
@@ -256,6 +261,7 @@ impl LegaiaViewer {
         self.fog_lut = None;
         self.item_names = None;
         self.spell_names = None;
+        self.steal_table = None;
         self.tim_catalog = Vec::new();
         self.tim_deep_catalog = Vec::new();
         *self.deep_section_cache.borrow_mut() = None;
@@ -315,6 +321,13 @@ impl LegaiaViewer {
                     self.spell_names = Some(table);
                 } else {
                     console_log("spell_names::from_scus skipped: table not found in SCUS");
+                }
+                // Decode the per-monster steal table so the enemy table can show
+                // what the Evil God Icon steals from each monster (item + chance).
+                if let Some(table) = legaia_asset::steal_table::StealTable::from_scus(&scus) {
+                    self.steal_table = Some(table);
+                } else {
+                    console_log("steal_table::from_scus skipped: table not found in SCUS");
                 }
             }
             extracted
@@ -1444,6 +1457,8 @@ impl LegaiaViewer {
     /// { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
     ///                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
     ///                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
+    ///                  "steal_item": u8, "steal_item_name": "Incense"|null,
+    ///                  "steal_chance_pct": u8,
     ///                  "spells": [ { "id": u8, "sp_cost": u8,
     ///                               "castable": bool } ] }, ... ] }
     /// ```
@@ -1475,6 +1490,15 @@ impl LegaiaViewer {
                 .then(|| self.item_names.as_ref().and_then(|t| t.name(id)))
                 .flatten()
         };
+        // Resolve a monster's steal entry from the SCUS steal table (Evil God
+        // Icon). Returns `(item_id, item_name, chance_pct)` only when the monster
+        // is stealable (item != 0 && chance != 0); `(0, None, 0)` otherwise.
+        let steal_of = |id: u16| -> (u8, Option<&str>, u8) {
+            match self.steal_table.as_ref().and_then(|t| t.entry(id)) {
+                Some(e) if e.is_stealable() => (e.item_id, drop_name(e.item_id), e.chance_pct),
+                _ => (0, None, 0),
+            }
+        };
         // Resolve a monster's global magic-attack ids into named spells via the
         // SCUS spell table. Each entry carries the name + MP cost; `null` name
         // falls the JS back to the raw id.
@@ -1492,6 +1516,7 @@ impl LegaiaViewer {
         let arr: Vec<serde_json::Value> = records
             .into_iter()
             .map(|r| {
+                let (steal_item, steal_item_name, steal_chance) = steal_of(r.id);
                 serde_json::json!({
                     "id": r.id,
                     "name": r.name,
@@ -1504,6 +1529,9 @@ impl LegaiaViewer {
                     "drop_item": r.drop_item,
                     "drop_item_name": drop_name(r.drop_item),
                     "drop_chance_pct": r.drop_chance_pct,
+                    "steal_item": steal_item,
+                    "steal_item_name": steal_item_name,
+                    "steal_chance_pct": steal_chance,
                     "spells": r.spells.iter().map(|s| serde_json::json!({
                         "id": s.id,
                         "sp_cost": s.sp_cost,

@@ -22,7 +22,13 @@ full design.
 | `disc` | `DiscPatcher`: own a mutable disc image, locate PROT.DAT + read its TOC, and apply same-size PROT-entry edits via the Mode 2/2352 sector write-back in `legaia_iso::write`. `patch_monster_slot` / `monster_slot` are the `battle_data` helpers; `patch_prot_entry` is the generic form. |
 | `encounter` | Random-encounter randomizer. `SceneEncounters::locate` finds a scene bundle's MAN inside a PROT entry and decompresses it; `randomize` rewrites the formation monster ids from the scene's own id pool (so every monster stays scene-loaded) in `Shuffle` (redistribute) or `Random` (draw from pool) mode; `repack` recompresses and reports whether it fits the original footprint. |
 | `chest` | Treasure-chest / scripted item-gift randomizer. Gives go through field-VM op `0x39` (`[0x39, item_id]`, inline operand) in the MAN partition-1 interaction scripts, usually **after** the inline dialogue that announces the item. `give_item_sites` walks each record's script with the Track-1 field-VM disassembler, **skipping `0x1F` dialogue segments** so it reaches the post-announcement give, and bounds each walk to the record's extent so it never mis-reads a `0x39` data byte; `SceneChests::locate` bundles the sites with the decoded MAN for rewriting (275 sites / 50 scenes on the retail disc). A chest also names its item in a **separate** dialogue token `0xC2 <id>` (the "There is a {item}…" announcement) distinct from the `0x39` grant, so `give_sites_and_display_tokens` recovers each site's `0xC2` tokens and `SceneChests::set_site` rewrites the operand **and** those tokens together — the flavor text tracks what the chest actually grants. |
-| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), `randomize_encounters` for per-scene formations (`EncounterApplyReport`), and `randomize_chests` for treasure (global shuffle/random of chest item ids → `ChestApplyReport`). |
+| `steal` | Steal-item randomizer (the Evil God Icon). `StealEdits::locate` reads the static `SCUS_942.54` steal table (`DAT_80077828`, per-monster `[chance, item]`, see [`steal-table.md`](../../docs/formats/steal-table.md)); `plan` reuses the drop planner to reassign the item for every stealable monster (`Shuffle` redistributes the existing steal-item multiset, `Random` draws from the item pool), and `item_patches` emits same-size single-byte SCUS edits that touch the **item** only — the steal chance is preserved. No LZS re-pack, so nothing is ever skipped. |
+| `door` | Scene-transition ("door / exit") randomizer. Doors are the field-VM `0x3F` named-scene-change ops — **partition-2 MAN records** reached via the partition-2 record-offset table (see [`man-relocation.md`](../../docs/formats/man-relocation.md)). `SceneDoors::locate` enumerates a scene's door sites (`legaia_asset::man_edit::scene_change_sites`); `rebuild` applies destination rewrites through the **variable-length** `man_edit` relocation engine, recompresses, validates, and reports whether it fits the footprint. The only randomizer that resizes an asset. |
+| `house_door` | Intra-town ("house / interior") door randomizer. Entering a house is a field-VM `0x23 MOVE_TO` to an interior tile within the **same** scene (intra-scene reposition, pinned via `probe.step.find_writer`; writer in `FUN_801de840` `case 0x23`). `SceneHouseDoors::locate` enumerates a scene's non-sentinel MOVE_TO sites (`legaia_asset::man_edit::move_to_sites`); `shuffle` does a per-scene, multiset-preserving shuffle of the target tiles (same-size 2-byte operand edit). Shuffle-only + experimental (the op is shared with NPC/cutscene movement). |
+| `starting_items` | New-game starting-inventory randomizer. There is no static starting-inventory table — the new-game data-init `FUN_80034A6C` code-builds the bag, writing one slot (Healing Leaf `0x77` ×5) into the live consumable inventory (see [`legaia_asset::new_game::StartingInventory`]). So this rewrites the **seed code**: the reclaimable 40-byte region at `0x80034b04` (the original seed + a redundant inline zero-loop both callers already cover with their `SC`-block `memset`). `plan_starting_items` picks `n` distinct random consumables from `STARTING_ITEM_POOL` (`0x77..=0x8e`) with small random counts; `build_seed_patch` encodes them as one packed halfword store per slot (`addiu $v0,(count<<8)\|id; sh $v0,off($s0)`), capping at `MAX_STARTING_ITEMS` = 5. Same-size code patch (no executable growth), applied via `patch_named_file`. |
+| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), `randomize_encounters` for per-scene formations (`EncounterApplyReport`), `randomize_chests` for treasure (global shuffle/random of chest item ids → `ChestApplyReport`), `current_steals` / `randomize_steals` for the steal table (`StealApplyReport`), `current_doors` / `randomize_doors` for scene transitions (`DoorApplyReport`; `DoorCoupling::Coupled` re-pairs doors into genuinely two-way connections, `Decoupled` reassigns each independently), `current_house_doors` / `randomize_house_doors` for intra-town house doors (`HouseDoorApplyReport`; per-scene MOVE_TO tile shuffle), and `current_starting_items` / `randomize_starting_items` for the new game's starting inventory (`StartingItemsApplyReport`; rewrites the SCUS seed code with `n` random consumables).
+
+**Coupling.** `Decoupled` uses the full variable-length relocation, so any destination can land in any door (a scene that overflows on rebuild is skipped). `Coupled` instead restricts itself to **length-preserving** swaps — it re-pairs only balanced connections (equal door counts each direction) whose names match in length, so the decompressed MAN size never changes and no scene (including the un-growable overworld hubs) can overflow. That keeps every reconnection genuinely two-way (walk through a door, turn around, return the way you came) and introduces **zero** new one-way edges; doors with no length-compatible reverse partner are left at their original destination and reported as `unpaired`. |
 | `ppf` | PPF 3.0 patch writer. `diff_runs` reduces original-vs-patched to the changed byte runs, `write_ppf3` serializes them, `apply_ppf3` replays a patch (used by the round-trip test). The PPF is the redistributable deliverable — it ships only deltas the user already owns. |
 
 ## CLI (`legaia-rando`)
@@ -48,16 +54,40 @@ legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 # Override with --keep-static-items 0x9a,0x71,...  (or "" to randomize all).
 legaia-rando randomize --input DISC.bin --seed myrun --chests shuffle
 
-# Random drops + shuffled encounters + shuffled chests + image + manifest.
+# Random drops + shuffled encounters + shuffled chests + shuffled steals + image.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --encounters shuffle --chests shuffle --patch run.ppf --output patched.bin \
-    --manifest run.toml
+    --encounters shuffle --chests shuffle --steals shuffle --patch run.ppf \
+    --output patched.bin --manifest run.toml
+
+# Read-only: audit what the Evil God Icon steals from each monster.
+legaia-rando steals --input DISC.bin
+
+# Read-only: list every scene-transition door/exit (home scene -> destination).
+legaia-rando doors --input DISC.bin
+
+# Read-only: list the intra-town (house) MOVE_TO target tiles per scene.
+legaia-rando house-doors --input DISC.bin
+
+# Experimental: shuffle intra-town house doors (per-scene MOVE_TO tile shuffle).
+legaia-rando randomize --input DISC.bin --seed myrun --house-doors shuffle
+
+# Bidirectional door shuffle (walk back the way you came).
+legaia-rando randomize --input DISC.bin --seed myrun --doors shuffle --door-coupling coupled
+
+# Start the new game with 3 random items instead of the fixed Healing Leaf x5.
+legaia-rando randomize --input DISC.bin --seed myrun --starting-items 3
+
+# Read-only: show the new game's current starting bag.
+legaia-rando starting-items --input DISC.bin
 
 # Confirm a shared patch applies cleanly to your own disc before playing.
 legaia-rando verify --input DISC.bin --patch run.ppf
 ```
 
-`--drops` / `--encounters` / `--chests` each take `shuffle` / `random` / `none`.
+`--drops` / `--encounters` / `--chests` / `--steals` / `--doors` each take
+`shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
+bidirectional) or `decoupled` (one-way); `--starting-items N` seeds the new
+game with `N` random consumables (`0` = vanilla Healing Leaf ×5; capped at 5).
 `--dry-run` plans + reports the run without writing any files. `--manifest`
 writes a small TOML record of the seed + options + change counts (no game
 bytes — safe to share). `verify` applies a PPF to a copy of your disc and
