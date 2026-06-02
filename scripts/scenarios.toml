@@ -611,6 +611,22 @@ topics = ["field", "scene transition", "door randomizer", "0x3F", "town01", "map
 expected_active_scene = "town01"
 
 # ----------------------------------------------------------------------
+# Rim Elm (town01) standing directly beneath an open house door; a ~1s Up
+# press enters Mei's house. This is an INTRA-TOWN door, a different
+# mechanism from the 0x3F named-scene-change the door randomizer touches
+# (town01's MAN has only one 0x3F, to map01) -- the capture for RE'ing how
+# house / interior doors warp so they can be randomized too.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 0
+label = "door_warp_rim_elm_to_mei_house"
+backup_fingerprint = "a6e3ca59ca5849561325cb94cc660b991b75259e7495fe740e873f4a9b0a6387"
+description = "Rim Elm (town01) field, standing directly beneath an open house door; a ~1s Up press enters Mei's house. Pre-transition save for RE'ing the intra-town (house / interior) door-warp mechanism -- distinct from the 0x3F named-scene-change the door randomizer currently handles."
+phase = "field"
+topics = ["field", "intra-town door", "house warp", "door randomizer", "town01"]
+expected_active_scene = "town01"
+
+# ----------------------------------------------------------------------
 # Pre-transition save: player stands on a walkable area; a brief Down
 # press walks into a town entrance that loads a standalone town scene.
 # Use this to capture a town scene's MAN load: replay it driving Down so
