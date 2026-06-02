@@ -15,7 +15,7 @@ and surfaces them through a stable API.
 | `weapons` | Weapons with attack stat, primary user, alternate users. |
 | `armor` | Armor / helmets / shoes with UDF / LDF and equip restrictions. |
 | `accessories` | Accessories with structured `effect_class` taxonomy where pinned. |
-| `enemies` | Enemies with location and item drop / steal table. |
+| `enemies` | Enemies with location, item drop, and steal item + `steal_chance` (the steal %, byte-exact from the `SCUS_942.54` steal table `DAT_80077828`). |
 | `bosses` | Boss HP estimates from walkthrough commentary (sanity-check data, not retail). |
 | `shops` | Per-town shop inventories (item key references the four item tables). |
 | `casino` | Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter button patterns. |

@@ -539,6 +539,7 @@ def build_gamedata_json() -> tuple[dict, dict]:
                 "element": e.get("element"),
                 "drop":    e.get("drop"),
                 "steal":   e.get("steal"),
+                "steal_chance": e.get("steal_chance"),
             }
         def short_boss(b: dict) -> dict:
             return {

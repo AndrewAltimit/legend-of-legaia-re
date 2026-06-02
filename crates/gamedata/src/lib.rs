@@ -365,6 +365,12 @@ pub struct Enemy {
     /// Item key stolen with Evil God Icon.
     #[serde(default)]
     pub steal: Option<String>,
+    /// Steal success chance, percent. Sourced from the static `SCUS_942.54`
+    /// steal table (`DAT_80077828`) — byte-verified against the published steal
+    /// table — so it is authoritative, not walkthrough-estimated. `None` for the
+    /// few boss-name variants whose monster id couldn't be matched unambiguously.
+    #[serde(default)]
+    pub steal_chance: Option<u32>,
     /// Hit Points.
     #[serde(default)]
     pub hp: Option<u32>,
