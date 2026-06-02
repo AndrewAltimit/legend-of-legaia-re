@@ -27,6 +27,12 @@ local OFF_X = 0x14
 local OFF_Z = 0x18
 -- A walking step is 2 units; a reposition jumps far. Flag deltas over this.
 local BIG_DELTA = 0x40
+-- The known interior target (town01 PCSX variant): X=12480, Z=6976. Snapshot
+-- the writer the moment the position LANDS on the interior (ignores the
+-- ledge-hop/look-ahead scratch writes that confused the big-delta heuristic).
+-- Override via env if a different variant lands elsewhere.
+local TARGET_X = probe.getenv_num("LEGAIA_TARGET_X", 12480)
+local TARGET_Z = probe.getenv_num("LEGAIA_TARGET_Z", 6976)
 
 local csv = probe.csv_open(probe.out_path("house_door_trace.csv"),
     "tick,axis,pc,ra,old,new,delta,scene")
@@ -85,23 +91,48 @@ local function arm_watch(ctx)
             local scene = read_scene_name()
             csv:row("%d,%s,0x%08X,0x%08X,%d,%d,%d,%s",
                 g_elapsed, axis, pc, ra, old, new, delta, scene)
-            if math.abs(delta) >= BIG_DELTA then
+            local on_target = (axis == "X" and new == TARGET_X) or (axis == "Z" and new == TARGET_Z)
+            if on_target or math.abs(delta) >= BIG_DELTA then
                 big_hits = big_hits + 1
                 PCSX.log(string.format(
-                    "[house] BIG %s jump @elapsed=%d pc=0x%08X ra=0x%08X %d -> %d (delta %d) scene=%s",
-                    axis, g_elapsed, pc, ra, old, new, delta, scene))
-                if big_hits <= 8 then
+                    "[house] %s%s @elapsed=%d pc=0x%08X ra=0x%08X %d -> %d (delta %d) scene=%s",
+                    on_target and "TARGET-LAND " or "BIG ", axis, g_elapsed, pc, ra, old, new, delta, scene))
+                -- Prioritise target-landing snapshots (the true reposition writer).
+                if on_target or big_hits <= 8 then
                     probe.append_call_context(detail_path,
                         probe.capture_call_context(string.format(
-                            "BIG %s reposition #%d @elapsed=%d pc=0x%08X %d->%d scene=%s",
-                            axis, big_hits, g_elapsed, pc, old, new, scene)))
+                            "%s%s reposition #%d @elapsed=%d pc=0x%08X %d->%d scene=%s",
+                            on_target and "TARGET-LAND " or "BIG ", axis, big_hits, g_elapsed, pc, old, new, scene)))
                 end
             end
         end
     end
     probe.arm_breakpoint(player_ptr + OFF_X, "Write", 2, "playerX", make_cb("X", OFF_X))
     probe.arm_breakpoint(player_ptr + OFF_Z, "Write", 2, "playerZ", make_cb("Z", OFF_Z))
-    PCSX.log("[house] armed Write watch on player X/Z; holding UP")
+
+    -- The door trigger sets the global move-delta vector _DAT_8007bde0 (X) /
+    -- _DAT_8007bde4 (Z) to the FULL displacement-to-interior (normally +-8).
+    -- Catch the writer of a large value -- that's the door record consumer.
+    local DELTA_DIR = { 0x8007bde0, 0x8007bde4 }
+    local dbg = 0
+    for _, daddr in ipairs(DELTA_DIR) do
+        probe.arm_breakpoint(daddr, "Write", 2, "delta", function()
+            local v = rd(daddr)
+            if math.abs(v) > 0x40 then
+                dbg = dbg + 1
+                local r = PCSX.getRegisters()
+                local pc = bit.band(tonumber(r.pc), 0xFFFFFFFF)
+                PCSX.log(string.format("[house] BIG DELTA write @elapsed=%d addr=0x%08X pc=0x%08X val=%d",
+                    g_elapsed, daddr, pc, v))
+                if dbg <= 6 then
+                    probe.append_call_context(detail_path,
+                        probe.capture_call_context(string.format(
+                            "DELTA write #%d addr=0x%08X val=%d @elapsed=%d", dbg, daddr, v, g_elapsed)))
+                end
+            end
+        end)
+    end
+    PCSX.log("[house] armed Write watch on player X/Z + delta vector; holding UP")
     armed = true
 end
 
