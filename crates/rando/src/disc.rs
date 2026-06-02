@@ -160,6 +160,31 @@ impl DiscPatcher {
         Ok(entry[start..end].to_vec())
     }
 
+    /// Read an arbitrary ISO 9660 file by name from the current (possibly
+    /// patched) image. Used for static tables that live outside `PROT.DAT` —
+    /// e.g. the steal table in `SCUS_942.54`.
+    pub fn read_named_file(&self, name: &str) -> Option<Vec<u8>> {
+        legaia_iso::iso9660::read_file_in_image(&self.image, name)
+    }
+
+    /// Overwrite `bytes` at `logical_off` bytes into an arbitrary ISO 9660 file
+    /// (by name), re-encoding every touched sector's EDC/ECC. Same-size,
+    /// in-place; never grows the image or moves an LBA. This is the non-PROT
+    /// sibling of [`Self::patch_prot_entry`] — the steal randomizer uses it to
+    /// edit the `SCUS_942.54` steal table.
+    pub fn patch_named_file(&mut self, name: &str, logical_off: u64, bytes: &[u8]) -> Result<()> {
+        let (lba, size) = find_file_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        let end = logical_off + bytes.len() as u64;
+        if end > size as u64 {
+            bail!(
+                "patch [{logical_off}, +{}] exceeds {name} ({size} bytes)",
+                bytes.len()
+            );
+        }
+        legaia_iso::write::patch_file_logical(&mut self.image, lba, logical_off, bytes)
+    }
+
     /// Borrow the current (possibly patched) disc image.
     pub fn image(&self) -> &[u8] {
         &self.image

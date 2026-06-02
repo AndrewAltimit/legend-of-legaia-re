@@ -67,6 +67,17 @@ impl ExeMap {
     }
 }
 
+/// File offset within a `SCUS_942.54` image of the steal table's entry 0 — the
+/// byte the `+id*2` indexing is relative to. Monster `M`'s chance byte is at
+/// `base + M*2`, its item byte at `base + M*2 + 1`. Returns `None` if `scus`
+/// isn't a PSX-EXE or the table address is outside its data segment.
+///
+/// The randomizer ([`legaia_rando::steal`](../../../crates/rando/src/steal.rs))
+/// uses this to turn a monster id into a patch offset for the SCUS file.
+pub fn table_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(TABLE_VA)
+}
+
 /// One monster's steal entry: the item it yields and the success chance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StealEntry {

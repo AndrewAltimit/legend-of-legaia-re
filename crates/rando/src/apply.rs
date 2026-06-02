@@ -378,3 +378,69 @@ pub fn randomize_chests(
     report.skipped = skipped.into_iter().map(|i| entry_indices[i]).collect();
     Ok(report)
 }
+
+/// One monster's current steal: monster id, item id, and steal chance percent.
+/// Mirrors [`CurrentDrop`] for the steal table (see [`crate::steal`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StealSite {
+    pub monster_id: u16,
+    pub item: u8,
+    pub chance: u8,
+}
+
+/// Read every stealable monster's current steal (item + chance) out of the
+/// static `SCUS_942.54` steal table (`DAT_80077828`). Non-stealable monsters
+/// (`item == 0` or `chance == 0`) are omitted. Purely read-only — the audit
+/// surface for deciding what a steal randomization would change.
+pub fn current_steals(patcher: &DiscPatcher) -> Result<Vec<StealSite>> {
+    let edits = crate::steal::StealEdits::locate(patcher.image())
+        .context("locate SCUS_942.54 steal table")?;
+    Ok(edits
+        .current()
+        .into_iter()
+        .map(|c| StealSite {
+            monster_id: c.monster_id,
+            item: c.item,
+            chance: c.chance,
+        })
+        .collect())
+}
+
+/// Outcome of randomizing per-monster steal items.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct StealApplyReport {
+    /// Steal-item bytes actually written (no-op reassignments are skipped).
+    pub items_changed: usize,
+    /// Stealable monsters considered for reassignment.
+    pub monsters: usize,
+}
+
+/// Randomize the per-monster steal items in place. The steal table is a static
+/// `SCUS_942.54` table, so each edit is a single same-size byte overwrite of the
+/// item (the steal *chance* is preserved) — no re-pack, nothing skipped.
+/// `Shuffle` redistributes the existing steal-item multiset among the stealable
+/// monsters; `Random` draws each item from `item_pool`. Returns the plan plus
+/// the apply report.
+pub fn randomize_steals(
+    patcher: &mut DiscPatcher,
+    item_pool: &[u8],
+    seed: u64,
+    mode: DropMode,
+) -> Result<(Vec<DropAssignment>, StealApplyReport)> {
+    let edits = crate::steal::StealEdits::locate(patcher.image())
+        .context("locate SCUS_942.54 steal table")?;
+    let plan = edits.plan(item_pool, seed, mode);
+    let monsters = plan.len();
+    let patches = edits.item_patches(&plan);
+    let mut report = StealApplyReport {
+        items_changed: 0,
+        monsters,
+    };
+    for (off, item) in patches {
+        patcher
+            .patch_named_file(crate::steal::SCUS_NAME, off, &[item])
+            .with_context(|| format!("write steal item at SCUS offset {off:#x}"))?;
+        report.items_changed += 1;
+    }
+    Ok((plan, report))
+}

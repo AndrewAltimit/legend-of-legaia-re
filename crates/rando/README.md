@@ -22,7 +22,8 @@ full design.
 | `disc` | `DiscPatcher`: own a mutable disc image, locate PROT.DAT + read its TOC, and apply same-size PROT-entry edits via the Mode 2/2352 sector write-back in `legaia_iso::write`. `patch_monster_slot` / `monster_slot` are the `battle_data` helpers; `patch_prot_entry` is the generic form. |
 | `encounter` | Random-encounter randomizer. `SceneEncounters::locate` finds a scene bundle's MAN inside a PROT entry and decompresses it; `randomize` rewrites the formation monster ids from the scene's own id pool (so every monster stays scene-loaded) in `Shuffle` (redistribute) or `Random` (draw from pool) mode; `repack` recompresses and reports whether it fits the original footprint. |
 | `chest` | Treasure-chest / scripted item-gift randomizer. Gives go through field-VM op `0x39` (`[0x39, item_id]`, inline operand) in the MAN partition-1 interaction scripts, usually **after** the inline dialogue that announces the item. `give_item_sites` walks each record's script with the Track-1 field-VM disassembler, **skipping `0x1F` dialogue segments** so it reaches the post-announcement give, and bounds each walk to the record's extent so it never mis-reads a `0x39` data byte; `SceneChests::locate` bundles the sites with the decoded MAN for rewriting (275 sites / 50 scenes on the retail disc). A chest also names its item in a **separate** dialogue token `0xC2 <id>` (the "There is a {item}…" announcement) distinct from the `0x39` grant, so `give_sites_and_display_tokens` recovers each site's `0xC2` tokens and `SceneChests::set_site` rewrites the operand **and** those tokens together — the flavor text tracks what the chest actually grants. |
-| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), `randomize_encounters` for per-scene formations (`EncounterApplyReport`), and `randomize_chests` for treasure (global shuffle/random of chest item ids → `ChestApplyReport`). |
+| `steal` | Steal-item randomizer (the Evil God Icon). `StealEdits::locate` reads the static `SCUS_942.54` steal table (`DAT_80077828`, per-monster `[chance, item]`, see [`steal-table.md`](../../docs/formats/steal-table.md)); `plan` reuses the drop planner to reassign the item for every stealable monster (`Shuffle` redistributes the existing steal-item multiset, `Random` draws from the item pool), and `item_patches` emits same-size single-byte SCUS edits that touch the **item** only — the steal chance is preserved. No LZS re-pack, so nothing is ever skipped. |
+| `apply` | High-level orchestration the CLI drives: `current_drops` / `apply_drop_plan` / `randomize_drops` for drops (a `DropApplyReport` records any slot too tight to re-pack), `randomize_encounters` for per-scene formations (`EncounterApplyReport`), `randomize_chests` for treasure (global shuffle/random of chest item ids → `ChestApplyReport`), and `current_steals` / `randomize_steals` for the steal table (`StealApplyReport`). |
 | `ppf` | PPF 3.0 patch writer. `diff_runs` reduces original-vs-patched to the changed byte runs, `write_ppf3` serializes them, `apply_ppf3` replays a patch (used by the round-trip test). The PPF is the redistributable deliverable — it ships only deltas the user already owns. |
 
 ## CLI (`legaia-rando`)
@@ -48,16 +49,20 @@ legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 # Override with --keep-static-items 0x9a,0x71,...  (or "" to randomize all).
 legaia-rando randomize --input DISC.bin --seed myrun --chests shuffle
 
-# Random drops + shuffled encounters + shuffled chests + image + manifest.
+# Random drops + shuffled encounters + shuffled chests + shuffled steals + image.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --encounters shuffle --chests shuffle --patch run.ppf --output patched.bin \
-    --manifest run.toml
+    --encounters shuffle --chests shuffle --steals shuffle --patch run.ppf \
+    --output patched.bin --manifest run.toml
+
+# Read-only: audit what the Evil God Icon steals from each monster.
+legaia-rando steals --input DISC.bin
 
 # Confirm a shared patch applies cleanly to your own disc before playing.
 legaia-rando verify --input DISC.bin --patch run.ppf
 ```
 
-`--drops` / `--encounters` / `--chests` each take `shuffle` / `random` / `none`.
+`--drops` / `--encounters` / `--chests` / `--steals` each take `shuffle` /
+`random` / `none`.
 `--dry-run` plans + reports the run without writing any files. `--manifest`
 writes a small TOML record of the seed + options + change counts (no game
 bytes — safe to share). `verify` applies a PPF to a copy of your disc and

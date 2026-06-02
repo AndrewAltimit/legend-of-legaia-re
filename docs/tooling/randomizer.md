@@ -55,9 +55,10 @@ The top-level binary turns a disc + seed into a portable patch:
 ```bash
 legaia-rando drops     --input DISC.bin                       # read-only: monster drops
 legaia-rando chests    --input DISC.bin                       # read-only: chest contents
+legaia-rando steals    --input DISC.bin                       # read-only: steal items
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
-    --encounters shuffle --patch run.ppf --output patched.bin --manifest run.toml
+    --encounters shuffle --steals shuffle --patch run.ppf --output patched.bin --manifest run.toml
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
@@ -66,7 +67,8 @@ the result against the original, and writes the changes as a **PPF 3.0** patch
 (default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
 play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
-and PPF. `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
+and PPF. `--drops`, `--encounters`, `--chests`, and `--steals` each take
+`shuffle` / `random` / `none`.
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
@@ -175,6 +177,23 @@ neither leave nor enter circulation and `Shuffle` preserves the global multiset
 exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
 too tight to re-pack, is skipped).
 
+### Steal items (Evil God Icon)
+
+What the player steals from a monster (Evil God Icon equipped) is a per-monster
+entry in a **static `SCUS_942.54` table** at `DAT_80077828` — `[steal_chance_pct,
+steal_item_id]` per 1-based monster id, item at `+id*2+1` (see
+[steal-table.md](../formats/steal-table.md)). It is **not** in the PROT 867
+record. Because it's a plain executable table, an edit is the simplest of the
+four: a single same-size byte overwrite of the item, applied straight to the
+SCUS file via `DiscPatcher::patch_named_file` (the non-PROT sibling of
+`patch_prot_entry`, built on `legaia_iso::write::patch_file_logical`). No LZS
+re-pack, no overflow, so nothing is ever skipped. `apply::randomize_steals`
+reassigns the item for every stealable monster (`Shuffle` redistributes the
+existing steal-item multiset, `Random` draws from the valid item pool) and
+**preserves each monster's steal chance** — the item changes, the rate doesn't.
+On the retail disc 189 monsters are stealable. `legaia-rando steals` lists the
+current table (the audit surface).
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right
@@ -226,6 +245,7 @@ bit-for-bit.
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
+| `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
