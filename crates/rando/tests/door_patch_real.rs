@@ -50,7 +50,13 @@ fn shuffle_doors_round_trips_on_disc() {
 
     // Patch a scratch copy.
     let mut patcher = DiscPatcher::open(original.clone()).expect("open scratch");
-    let report = apply::randomize_doors(&mut patcher, seed, DropMode::Shuffle).expect("shuffle");
+    let report = apply::randomize_doors(
+        &mut patcher,
+        seed,
+        DropMode::Shuffle,
+        apply::DoorCoupling::Decoupled,
+    )
+    .expect("shuffle");
     assert!(
         report.sites_changed > 50,
         "shuffle changed too few sites: {}",
@@ -110,10 +116,81 @@ fn shuffle_doors_round_trips_on_disc() {
 
     // Determinism: same seed reproduces the same image byte-for-byte.
     let mut again = DiscPatcher::open(original.clone()).expect("open");
-    apply::randomize_doors(&mut again, seed, DropMode::Shuffle).expect("shuffle again");
+    apply::randomize_doors(
+        &mut again,
+        seed,
+        DropMode::Shuffle,
+        apply::DoorCoupling::Decoupled,
+    )
+    .expect("shuffle again");
     assert_eq!(
         again.into_image(),
         patched,
         "a fixed seed is byte-deterministic"
+    );
+}
+
+#[test]
+fn coupled_doors_round_trip_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let seed = 0xBEEF_CAFE_0102_0304;
+
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    let before = dest_multiset(&base);
+
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open scratch");
+    let report = apply::randomize_doors(
+        &mut patcher,
+        seed,
+        DropMode::Shuffle,
+        apply::DoorCoupling::Coupled,
+    )
+    .expect("coupled");
+    assert!(
+        report.sites_changed > 40,
+        "changed {}",
+        report.sites_changed
+    );
+    let patched = patcher.into_image();
+    assert_eq!(patched.len(), original.len(), "image size unchanged");
+
+    // Re-decode the patched disc and check correctness.
+    let p2 = DiscPatcher::open(patched.clone()).expect("re-open patched");
+    let after = dest_multiset(&p2);
+    assert_eq!(before.len(), after.len(), "door count preserved");
+    // Every patched destination names a real (original) scene (coupling only
+    // moves existing descriptors).
+    let orig_names: std::collections::BTreeSet<&str> =
+        before.iter().map(|d| d.1.as_str()).collect();
+    for d in &after {
+        assert!(
+            orig_names.contains(d.1.as_str()),
+            "patched door names a non-existent scene {:?}",
+            d.1
+        );
+    }
+
+    // The bidirectional (involution) property of the planner is proven by the
+    // `door_plan_tests` unit tests, where no scene is skipped; here a skipped
+    // hub scene (e.g. map01) keeps its original doors, so a whole-graph
+    // symmetry assertion would be confounded. This test confirms the coupled
+    // edits apply cleanly + are valid + deterministic.
+
+    // Determinism.
+    let mut again = DiscPatcher::open(original.clone()).expect("open");
+    apply::randomize_doors(
+        &mut again,
+        seed,
+        DropMode::Shuffle,
+        apply::DoorCoupling::Coupled,
+    )
+    .expect("coupled again");
+    assert_eq!(
+        again.into_image(),
+        patched,
+        "fixed seed is byte-deterministic"
     );
 }

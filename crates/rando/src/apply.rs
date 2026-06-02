@@ -462,6 +462,19 @@ struct Dest {
     dir: u8,
 }
 
+/// How scene-transition doors are reconnected.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DoorCoupling {
+    /// Bidirectional: re-pair doors into two-way connections so walking through
+    /// a door and turning around returns you the way you came. Doors that have
+    /// no reverse partner (dead-end / one-way story warps) fall back to the
+    /// decoupled assignment and are counted in [`DoorApplyReport::unpaired`].
+    Coupled,
+    /// One-way: every door's destination is reassigned independently, so going
+    /// back through the destination's own doors is not guaranteed to return you.
+    Decoupled,
+}
+
 /// Outcome of randomizing scene-transition doors.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DoorApplyReport {
@@ -471,18 +484,106 @@ pub struct DoorApplyReport {
     pub sites_changed: usize,
     /// Total door sites found (the randomizable population).
     pub sites_total: usize,
+    /// Coupled mode only: door sites with no reverse partner, assigned the
+    /// decoupled fallback (their return is not guaranteed).
+    pub unpaired: usize,
     /// Scene PROT-entry indices whose rebuilt MAN overflowed the compressed
     /// footprint or failed validation, so the scene kept its original doors.
     pub skipped: Vec<usize>,
 }
 
-/// Randomize scene-transition doors **one-way (decoupled)**: each door's
-/// destination descriptor (scene + entry tile + facing) is reassigned globally,
-/// so walking through a door takes you somewhere new, and the doors in that
-/// destination are independently reassigned — returning is not guaranteed to
-/// bring you back. `Shuffle` permutes the existing destinations across all
-/// doors (every scene stays reachable as some door's target); `Random` draws
-/// each door's destination from the global pool.
+/// Build a random involution over the door sites and assign each its new
+/// destination so the connection is **bidirectional**: for matched sites `A` and
+/// `B`, `A` is sent to where `B` is reached from (`dest(partner_orig(B))`) and
+/// vice versa, so walking `A → B`'s doorstep lands you on `B`, whose new
+/// destination is `A`'s doorstep. `partner_orig(X)` is the reverse door (same
+/// scene-pair, opposite direction); sites without one — or the odd site left
+/// over by an odd matching — get a decoupled shuffle and are returned as the
+/// `unpaired` count. `homes[i]` is the CDNAME label of site `i`'s home scene.
+fn plan_doors_coupled(
+    origs: &[Dest],
+    homes: &[String],
+    rng: &mut SplitMix64,
+) -> (Vec<Dest>, usize) {
+    use std::collections::HashMap;
+    let n = origs.len();
+    let name_of = |d: &Dest| String::from_utf8_lossy(&d.name).into_owned();
+
+    // Group site indices by (home_scene, dest_scene) — both directions of a
+    // connection live in mirror groups (a,b) / (b,a).
+    let mut groups: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    for (i, d) in origs.iter().enumerate() {
+        groups
+            .entry((homes[i].clone(), name_of(d)))
+            .or_default()
+            .push(i);
+    }
+    let mut partner = vec![None; n];
+    let mut done: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let keys: Vec<(String, String)> = groups.keys().cloned().collect();
+    for key in keys {
+        if done.contains(&key) {
+            continue;
+        }
+        let (h, d) = key.clone();
+        if h == d {
+            // Self-scene connection: pair consecutive sites within the group.
+            let g = &groups[&key];
+            let mut it = g.iter();
+            while let (Some(&a), Some(&b)) = (it.next(), it.next()) {
+                partner[a] = Some(b);
+                partner[b] = Some(a);
+            }
+            done.insert(key);
+            continue;
+        }
+        let rev = (d.clone(), h.clone());
+        done.insert(key.clone());
+        done.insert(rev.clone());
+        if let (Some(g1), Some(g2)) = (groups.get(&key), groups.get(&rev)) {
+            for i in 0..g1.len().min(g2.len()) {
+                partner[g1[i]] = Some(g2[i]);
+                partner[g2[i]] = Some(g1[i]);
+            }
+        }
+    }
+
+    let mut dest_new = origs.to_vec();
+    // Random matching over the sites that have a reverse partner.
+    let mut paired: Vec<usize> = (0..n).filter(|&i| partner[i].is_some()).collect();
+    rng.shuffle(&mut paired);
+    let mut i = 0;
+    while i + 1 < paired.len() {
+        let a = paired[i];
+        let b = paired[i + 1];
+        dest_new[a] = origs[partner[b].unwrap()].clone();
+        dest_new[b] = origs[partner[a].unwrap()].clone();
+        i += 2;
+    }
+
+    // Unpaired: no reverse partner, plus the odd leftover of the matching.
+    let mut unpaired: Vec<usize> = (0..n).filter(|&i| partner[i].is_none()).collect();
+    if paired.len() % 2 == 1 {
+        unpaired.push(paired[paired.len() - 1]);
+    }
+    let mut pool: Vec<Dest> = unpaired.iter().map(|&i| origs[i].clone()).collect();
+    rng.shuffle(&mut pool);
+    for (slot, &i) in unpaired.iter().enumerate() {
+        dest_new[i] = pool[slot].clone();
+    }
+    (dest_new, unpaired.len())
+}
+
+/// Randomize scene-transition doors, one-way ([`DoorCoupling::Decoupled`]) or
+/// bidirectional ([`DoorCoupling::Coupled`]). Each door's destination descriptor
+/// (scene + entry tile + facing) is the atomic unit moved between sites.
+///
+/// - **Decoupled**: `Shuffle` permutes the existing destinations across all
+///   doors (every scene stays reachable as some door's target); `Random` draws
+///   each door's destination from the global pool.
+/// - **Coupled**: re-pairs doors into two-way connections (the `mode` is treated
+///   as the matching's randomness; doors with no reverse partner get the
+///   decoupled fallback — see [`plan_doors_coupled`]).
 ///
 /// Because the destination name is variable length, this uses the
 /// [`crate::door::SceneDoors::rebuild`] relocation path (decompress → resize the
@@ -494,9 +595,12 @@ pub fn randomize_doors(
     patcher: &mut DiscPatcher,
     seed: u64,
     mode: DropMode,
+    coupling: DoorCoupling,
 ) -> Result<DoorApplyReport> {
     use legaia_asset::man_edit::DestEdit;
     use legaia_asset::scene_asset_table::encode_size_word;
+
+    let cd = cdname_map(patcher);
 
     // Pass 1: collect every scene's doors (decoded MAN held for pass 2).
     let mut scenes: Vec<SceneDoors> = Vec::new();
@@ -509,19 +613,24 @@ pub fn randomize_doors(
         }
     }
 
-    // Flatten to a global ordered list of original destinations.
-    let origs: Vec<Dest> = scenes
-        .iter()
-        .flat_map(|s| {
-            s.sites.iter().map(|site| Dest {
+    // Flatten to a global ordered list of original destinations + home labels.
+    let mut origs: Vec<Dest> = Vec::new();
+    let mut homes: Vec<String> = Vec::new();
+    for s in &scenes {
+        let home = legaia_prot::cdname::block_for(&cd, s.entry_idx as u32)
+            .unwrap_or("?")
+            .to_string();
+        for site in &s.sites {
+            origs.push(Dest {
                 index: site.index,
                 name: site.name.clone().into_bytes(),
                 entry_x: site.entry_x,
                 entry_z: site.entry_z,
                 dir: site.dir,
-            })
-        })
-        .collect();
+            });
+            homes.push(home.clone());
+        }
+    }
 
     let mut report = DoorApplyReport {
         sites_total: origs.len(),
@@ -533,15 +642,22 @@ pub fn randomize_doors(
 
     // Plan the new destination for each global site index.
     let mut rng = SplitMix64::new(seed);
-    let new_descs: Vec<Dest> = match mode {
-        DropMode::Shuffle => {
-            let mut v = origs.clone();
-            rng.shuffle(&mut v);
-            v
+    let new_descs: Vec<Dest> = match coupling {
+        DoorCoupling::Coupled => {
+            let (descs, unpaired) = plan_doors_coupled(&origs, &homes, &mut rng);
+            report.unpaired = unpaired;
+            descs
         }
-        DropMode::Random => (0..origs.len())
-            .map(|_| origs[rng.below(origs.len())].clone())
-            .collect(),
+        DoorCoupling::Decoupled => match mode {
+            DropMode::Shuffle => {
+                let mut v = origs.clone();
+                rng.shuffle(&mut v);
+                v
+            }
+            DropMode::Random => (0..origs.len())
+                .map(|_| origs[rng.below(origs.len())].clone())
+                .collect(),
+        },
     };
 
     // Pass 2: per scene, build the edits for changed sites, rebuild, write back.
@@ -658,4 +774,83 @@ pub fn randomize_steals(
         report.items_changed += 1;
     }
     Ok((plan, report))
+}
+
+#[cfg(test)]
+mod door_plan_tests {
+    use super::*;
+
+    fn dest(name: &str, ex: u8) -> Dest {
+        Dest {
+            index: 0,
+            name: name.as_bytes().to_vec(),
+            entry_x: ex,
+            entry_z: 0,
+            dir: 0,
+        }
+    }
+
+    /// Sorted multiset of (name, entry_x) — the descriptor identity for the
+    /// permutation check.
+    fn multiset(v: &[Dest]) -> Vec<(Vec<u8>, u8)> {
+        let mut m: Vec<_> = v.iter().map(|d| (d.name.clone(), d.entry_x)).collect();
+        m.sort();
+        m
+    }
+
+    #[test]
+    fn coupled_preserves_multiset_and_is_deterministic_when_all_paired() {
+        // Two clean connections: town<->map and cave<->map.
+        //   site 0: home town -> dest map (entry 0x10)   [A]
+        //   site 1: home map  -> dest town (entry 0x20)  [B = reverse of A]
+        //   site 2: home cave -> dest map (entry 0x30)   [C]
+        //   site 3: home map  -> dest cave (entry 0x40)  [D = reverse of C]
+        let origs = vec![
+            dest("map", 0x10),
+            dest("town", 0x20),
+            dest("map", 0x30),
+            dest("cave", 0x40),
+        ];
+        let homes = vec![
+            "town".to_string(),
+            "map".to_string(),
+            "cave".to_string(),
+            "map".to_string(),
+        ];
+        let mut rng = SplitMix64::new(0xC0FFEE);
+        let (out, unpaired) = plan_doors_coupled(&origs, &homes, &mut rng);
+        assert_eq!(unpaired, 0, "all four sites have a reverse partner");
+        // Coupling only moves existing descriptors -> multiset preserved.
+        assert_eq!(multiset(&out), multiset(&origs));
+        // Deterministic for a fixed seed.
+        let mut rng2 = SplitMix64::new(0xC0FFEE);
+        let (out2, _) = plan_doors_coupled(&origs, &homes, &mut rng2);
+        assert_eq!(out, out2);
+        // Scene-level edge multiset stays symmetric: for the new graph, every
+        // (home -> dest) edge has a matching (dest -> home) edge.
+        let mut edges: Vec<(String, String)> = out
+            .iter()
+            .zip(&homes)
+            .map(|(d, h)| (h.clone(), String::from_utf8_lossy(&d.name).into_owned()))
+            .collect();
+        edges.sort();
+        for (a, b) in &edges {
+            assert!(
+                edges.iter().any(|(x, y)| x == b && y == a),
+                "edge {a}->{b} has no reverse"
+            );
+        }
+    }
+
+    #[test]
+    fn coupled_counts_a_dead_end_site_as_unpaired() {
+        // A one-way story warp: site 0 home A -> dest B, but no B -> A door.
+        // Plus a clean pair (1<->2) so something is matchable.
+        let origs = vec![dest("b", 1), dest("y", 2), dest("x", 3)];
+        let homes = vec!["a".to_string(), "x".to_string(), "y".to_string()];
+        let mut rng = SplitMix64::new(7);
+        let (_out, unpaired) = plan_doors_coupled(&origs, &homes, &mut rng);
+        // site 0 (a->b) has no reverse; sites 1 (x->y) and 2 (y->x) pair.
+        assert_eq!(unpaired, 1);
+    }
 }

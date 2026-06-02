@@ -70,10 +70,24 @@ impl SceneDoors {
         if sites.is_empty() {
             return None;
         }
+        // Compressed footprint the recompressed MAN may grow into: the gap from
+        // the MAN stream to the next asset descriptor's data (the bytes between
+        // the original compressed stream and the next asset are slack/padding,
+        // safe to write into). Falls back to the original `consumed` length.
+        let next_off = table
+            .used()
+            .iter()
+            .map(|d| d.data_offset as usize)
+            .filter(|&o| o > man_offset)
+            .min();
+        let compressed_budget = match next_off {
+            Some(end) if end <= entry.len() => (end - man_offset).max(consumed),
+            _ => consumed,
+        };
         Some(Self {
             entry_idx,
             man_offset,
-            compressed_budget: consumed,
+            compressed_budget,
             man_descriptor_off: scene_asset_table::SceneAssetTable::size_word_offset(man_idx),
             decoded,
             sites,

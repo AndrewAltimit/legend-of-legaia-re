@@ -116,6 +116,12 @@ struct RandomizeArgs {
     /// the destination's own doors is not guaranteed to return you.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     doors: DropArg,
+    /// Whether door randomization is bidirectional (`coupled`: re-pair doors so
+    /// you can return the way you came) or one-way (`decoupled`: each door's
+    /// destination is independent, so going back leads elsewhere). Only applies
+    /// when `--doors` is not `none`.
+    #[arg(long, value_enum, default_value_t = CouplingArg::Coupled)]
+    door_coupling: CouplingArg,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
     /// chests, never randomized — and dropped from the random-fill pool so they
     /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
@@ -137,6 +143,23 @@ struct RandomizeArgs {
     /// Plan and report the run but write no files (patch / output / manifest).
     #[arg(long, default_value_t = false)]
     dry_run: bool,
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+enum CouplingArg {
+    /// Bidirectional — you can return the way you came.
+    Coupled,
+    /// One-way — going back leads somewhere else.
+    Decoupled,
+}
+
+impl CouplingArg {
+    fn coupling(self) -> apply::DoorCoupling {
+        match self {
+            CouplingArg::Coupled => apply::DoorCoupling::Coupled,
+            CouplingArg::Decoupled => apply::DoorCoupling::Decoupled,
+        }
+    }
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -509,14 +532,23 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(door_mode) = door_mode {
-        let report = apply::randomize_doors(&mut patcher, seed, door_mode)?;
+        let coupling = args.door_coupling.coupling();
+        let report = apply::randomize_doors(&mut patcher, seed, door_mode, coupling)?;
+        let coupling_str = match coupling {
+            apply::DoorCoupling::Coupled => "coupled",
+            apply::DoorCoupling::Decoupled => "decoupled",
+        };
         println!(
-            "doors: {} of {} sites changed across {} scenes ({:?})",
+            "doors: {} of {} sites changed across {} scenes ({:?}, {coupling_str})",
             report.sites_changed, report.sites_total, report.scenes_changed, door_mode
         );
         manifest.push(format!("doors = {:?}", mode_str(door_mode)));
+        manifest.push(format!("door_coupling = {coupling_str:?}"));
         manifest.push(format!("doors_sites = {}", report.sites_total));
         manifest.push(format!("doors_sites_changed = {}", report.sites_changed));
+        if report.unpaired > 0 {
+            manifest.push(format!("doors_unpaired = {}", report.unpaired));
+        }
         if !report.skipped.is_empty() {
             println!(
                 "  note: {} scene MAN(s) overflowed on rebuild, left unchanged: {:?}",
