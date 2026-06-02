@@ -63,6 +63,27 @@ pub const NAME_LEN: usize = 10;
 /// Number of roster records the template carries (Vahn, Noa, Gala, Terra).
 pub const PARTY_RECORDS: usize = 4;
 
+/// RAM address of the new-game inventory-seed code block inside
+/// `FUN_80034A6C`. The retail routine writes the single starting item here
+/// (`DAT_80085958 = 0x77` / `DAT_80085959 = 5` = Healing Leaf ×5) with a
+/// `li`/`sb` pair, immediately followed by an inline loop that zeroes the 512
+/// bytes *below* the inventory. Both callers (`FUN_8001DCF8`'s new-game branch
+/// and `FUN_8001FFA4`) memset `SC[0..0x1a18)` — which includes the whole
+/// inventory — right before calling, so that inline zero-loop is redundant.
+/// The 10 instructions from here on (`0x80034b04..0x80034b2b`, 40 bytes) are
+/// therefore reclaimable as the starting-item seed region.
+pub const STARTING_INV_SEED_VA: u32 = 0x8003_4B04;
+
+/// Byte length of the reclaimable starting-item seed region (10 MIPS
+/// instructions = 4 original seed + 6 redundant zero-loop).
+pub const STARTING_INV_SEED_LEN: usize = 40;
+
+/// Byte offset of the consumable inventory base relative to the save-context
+/// (`SC`) base (`0x80084140`); the live inventory is `SC + 0x1818`
+/// (`0x80085958`). The seed code's `sb`/`sh` stores use `$s0` (= `SC` base)
+/// with these offsets, so the decoder reads slots from here.
+pub const INVENTORY_SC_OFFSET: u32 = 0x1818;
+
 /// CDNAME label of the prologue cutscene a New Game enters first (the
 /// in-engine "It was the Seru." Genesis-tree narration). Written as the
 /// opening scene id by the front-end launcher (`init_game`), verified live in
@@ -188,6 +209,106 @@ impl StartingParty {
     }
 }
 
+/// The decoded new-game starting inventory: the `(item_id, count)` slots the
+/// seed routine ([`STARTING_INV_SEED_VA`]) writes into the live consumable
+/// inventory at New Game, in slot order. Vanilla retail is a single slot
+/// `(0x77, 5)` (Healing Leaf ×5); the starting-item randomizer rewrites this
+/// region to seed up to five slots.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StartingInventory {
+    items: Vec<(u8, u8)>,
+}
+
+impl StartingInventory {
+    /// Decode the starting inventory by interpreting the seed code region.
+    ///
+    /// The region writes inventory bytes with one of two idioms, both of which
+    /// load a constant into `$v0` then store it relative to `$s0` (= `SC`
+    /// base): the vanilla `sb` byte-store pair (`addiu $v0,id; sb …; addiu
+    /// $v0,count; sb …`) or the randomizer's packed `sh` halfword-store
+    /// (`addiu $v0,(count<<8)|id; sh …`). This walks the 40 bytes, replays
+    /// every `sb $v0`/`sh $v0` store into a sparse `SC`-offset → byte map, then
+    /// reads `(id, count)` slots from [`INVENTORY_SC_OFFSET`] until the
+    /// id-`0` terminator — so it handles either encoding (and any future one)
+    /// without special-casing instruction order. Returns `None` if the image
+    /// isn't a PSX-EXE or the region is out of range.
+    pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        let map = ExeMap::parse(scus)?;
+        let off = map.off(STARTING_INV_SEED_VA)?;
+        let region = scus.get(off..off + STARTING_INV_SEED_LEN)?;
+        Some(Self::decode_region(region))
+    }
+
+    /// Decode a 40-byte seed region (exposed for callers that already hold the
+    /// raw bytes, e.g. a patcher reading back its own edit).
+    pub fn decode_region(region: &[u8]) -> Self {
+        use std::collections::BTreeMap;
+        // Top 16 bits of the LE instruction word identify the op + fixed
+        // registers ($v0 = rt 2, $s0 = base 16); see the encodings in
+        // `docs/formats/new-game-table.md`.
+        const ADDIU_V0: u16 = 0x2402; // addiu $v0, $zero, imm16
+        const SB_V0_S0: u16 = 0xA202; // sb    $v0, off($s0)
+        const SH_V0_S0: u16 = 0xA602; // sh    $v0, off($s0)
+
+        let mut bytes: BTreeMap<u32, u8> = BTreeMap::new();
+        let mut v0: u32 = 0;
+        for chunk in region.chunks_exact(4) {
+            let word = u32::from_le_bytes(chunk.try_into().unwrap());
+            let top = (word >> 16) as u16;
+            let imm = word & 0xFFFF;
+            match top {
+                ADDIU_V0 => v0 = imm,
+                SB_V0_S0 => {
+                    bytes.insert(imm, (v0 & 0xFF) as u8);
+                }
+                SH_V0_S0 => {
+                    bytes.insert(imm, (v0 & 0xFF) as u8);
+                    bytes.insert(imm + 1, ((v0 >> 8) & 0xFF) as u8);
+                }
+                _ => {}
+            }
+        }
+        let mut items = Vec::new();
+        let mut slot = 0u32;
+        loop {
+            let id = bytes
+                .get(&(INVENTORY_SC_OFFSET + slot * 2))
+                .copied()
+                .unwrap_or(0);
+            if id == 0 {
+                break;
+            }
+            let count = bytes
+                .get(&(INVENTORY_SC_OFFSET + slot * 2 + 1))
+                .copied()
+                .unwrap_or(0);
+            items.push((id, count));
+            slot += 1;
+        }
+        Self { items }
+    }
+
+    /// Build directly from `(id, count)` slots (tests / non-SCUS callers).
+    pub fn from_items(items: Vec<(u8, u8)>) -> Self {
+        Self { items }
+    }
+
+    /// The decoded `(item_id, count)` slots in slot order.
+    pub fn items(&self) -> &[(u8, u8)] {
+        &self.items
+    }
+
+    /// Number of seeded slots.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// `true` when the new game seeds no starting items.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,5 +389,73 @@ mod tests {
         let p = StartingParty::from_members(vec![vahn()]);
         assert_eq!(p.member(0).unwrap().name, "Vahn");
         assert!(!p.is_empty());
+    }
+
+    /// Assemble a 40-byte seed region from MIPS instruction words (LE).
+    fn region(words: &[u32]) -> Vec<u8> {
+        let mut buf = vec![0u8; STARTING_INV_SEED_LEN];
+        for (i, w) in words.iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        buf
+    }
+
+    #[test]
+    fn decodes_vanilla_sb_seed() {
+        // The exact retail instruction stream at 0x80034b04: the `addiu`/`sb`
+        // pair seeding Healing Leaf (0x77) ×5, then the redundant zero-loop
+        // (which stores via `$zero`/`$v1`, so the decoder ignores it).
+        let r = region(&[
+            0x240401ff, // addiu $a0, $zero, 0x1ff
+            0x02041821, // addu  $v1, $s0, $a0
+            0x24020077, // addiu $v0, $zero, 0x77
+            0xa2021818, // sb    $v0, 0x1818($s0)   id
+            0x24020005, // addiu $v0, $zero, 5
+            0xa2021819, // sb    $v0, 0x1819($s0)   count
+            0xa0601618, // sb    $zero, 0x1618($v1) (zero-loop body, ignored)
+            0x2484ffff, // addiu $a0, $a0, -1
+            0x0481fffd, // bgez  $a0, ...
+            0x2463ffff, // addiu $v1, $v1, -1
+        ]);
+        let inv = StartingInventory::decode_region(&r);
+        assert_eq!(inv.items(), &[(0x77, 5)]);
+    }
+
+    #[test]
+    fn decodes_packed_sh_seed() {
+        // The randomizer's packed halfword form: `addiu $v0,(count<<8)|id; sh`.
+        let r = region(&[
+            0x24020280, // addiu $v0, $zero, 0x0280  -> id 0x80, count 2
+            0xa6021818, // sh    $v0, 0x1818($s0)
+            0x2402017e, // addiu $v0, $zero, 0x017e  -> id 0x7e, count 1
+            0xa602181a, // sh    $v0, 0x181a($s0)
+            0x24020388, // addiu $v0, $zero, 0x0388  -> id 0x88, count 3
+            0xa602181c, // sh    $v0, 0x181c($s0)
+            0, 0, 0, 0, // nop padding
+        ]);
+        let inv = StartingInventory::decode_region(&r);
+        assert_eq!(inv.items(), &[(0x80, 2), (0x7e, 1), (0x88, 3)]);
+    }
+
+    #[test]
+    fn decode_stops_at_id_zero_terminator() {
+        // A `sh` that writes id 0 terminates the list even if later slots hold
+        // data (matches the game's id-0 sentinel scan).
+        let r = region(&[
+            0x24020105, // id 5, count 1
+            0xa6021818, // sh slot 0
+            0x24020000, // id 0 (terminator)
+            0xa602181a, // sh slot 1
+            0x24020207, // id 7, count 2 (orphaned past the terminator)
+            0xa602181c, // sh slot 2
+            0, 0, 0, 0,
+        ]);
+        let inv = StartingInventory::decode_region(&r);
+        assert_eq!(inv.items(), &[(5, 1)], "scan stops at the id-0 slot");
+    }
+
+    #[test]
+    fn empty_region_decodes_to_no_items() {
+        assert!(StartingInventory::decode_region(&[0u8; STARTING_INV_SEED_LEN]).is_empty());
     }
 }
