@@ -98,6 +98,37 @@ impl SceneEncounters {
         (rec + 4, self.count(i))
     }
 
+    /// Number of formation rows this scene declares. Each row index is also the
+    /// `formation_id` the engine registers it under (the MAN row index is the
+    /// encounter table's formation index, per `docs/formats/encounter.md`), so a
+    /// caller can patch row `i` here and force the same row at runtime.
+    pub fn formation_count(&self) -> usize {
+        self.formation_count
+    }
+
+    /// The monster ids of formation row `i` (its `count` ids, `0..4`), read live
+    /// from [`Self::decoded`]. Empty when `i` is out of range. Useful for a
+    /// surgical inspection of one row without re-parsing the MAN.
+    pub fn formation_ids(&self, i: usize) -> Vec<u8> {
+        if i >= self.formation_count {
+            return Vec::new();
+        }
+        let (off, len) = self.id_span(i);
+        self.decoded[off..off + len].to_vec()
+    }
+
+    /// Absolute offset within [`Self::decoded`] of formation row `i`'s monster-id
+    /// slot `slot`, so a caller can rewrite a single id in place (the counterpart
+    /// to [`Self::randomize`]'s whole-array rewrite). `None` when `i` or `slot`
+    /// is out of range.
+    pub fn formation_id_offset(&self, i: usize, slot: usize) -> Option<usize> {
+        if i >= self.formation_count {
+            return None;
+        }
+        let (off, len) = self.id_span(i);
+        (slot < len).then_some(off + slot)
+    }
+
     /// The distinct monster ids this scene uses across all its formations — the
     /// safe pool to draw from (every id is already scene-loaded).
     pub fn monster_pool(&self) -> Vec<u8> {
@@ -219,6 +250,39 @@ mod tests {
         b.sort_unstable();
         after.sort_unstable();
         assert_eq!(b, after, "shuffle keeps the same multiset of monster ids");
+    }
+
+    #[test]
+    fn formation_accessors_read_and_locate_single_ids() {
+        let mut decoded = vec![0u8; 24];
+        // formation 0: count 2, ids [10, 20]
+        decoded[3] = 2;
+        decoded[4] = 10;
+        decoded[5] = 20;
+        // formation 1: count 1, id [30]
+        decoded[8 + 3] = 1;
+        decoded[8 + 4] = 30;
+        // formation 2: count 0
+        let se = SceneEncounters {
+            entry_idx: 7,
+            man_offset: 0,
+            compressed_budget: 9999,
+            decoded,
+            formation_array_off: 0,
+            formation_stride: 8,
+            formation_count: 3,
+        };
+        assert_eq!(se.formation_count(), 3);
+        assert_eq!(se.formation_ids(0), vec![10, 20]);
+        assert_eq!(se.formation_ids(1), vec![30]);
+        assert!(se.formation_ids(2).is_empty(), "zero-count row has no ids");
+        assert!(se.formation_ids(3).is_empty(), "out-of-range row is empty");
+        // The slot offset points at exactly the id byte.
+        let off = se.formation_id_offset(0, 1).expect("row 0 slot 1");
+        assert_eq!(se.decoded[off], 20);
+        assert_eq!(se.formation_id_offset(1, 0), Some(8 + 4));
+        assert!(se.formation_id_offset(1, 1).is_none(), "row 1 has one slot");
+        assert!(se.formation_id_offset(2, 0).is_none(), "row 2 is empty");
     }
 
     #[test]
