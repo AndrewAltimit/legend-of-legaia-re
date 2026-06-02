@@ -593,6 +593,24 @@ phase = "field"
 topics = ["field", "scene transition", "world map", "Drake", "scene-load", "nibble-7 paint"]
 
 # ----------------------------------------------------------------------
+# Rim Elm (town01) pre-transition save: a ~1s Up press walks into the
+# south exit and warps to the Drake Kingdom overworld (map01). Ground-
+# truth for the door (scene-transition) randomizer: town01's single exit
+# is the field-VM 0x3F named-scene-change at MAN op 0x6f95 (-> map01,
+# index 85). The randomizer's runtime oracle
+# (door_randomizer_runtime_e2e) patches this exit to a different scene
+# and confirms the engine warps to the patched destination.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 9
+label = "door_warp_town01_to_map01"
+backup_fingerprint = "7ada4ac83d183d7cd5ed55f6c8aae96e6cae00b9016a3194a92b066f34402206"
+description = "Rim Elm (town01) field; a ~1s Up press walks into the south exit and warps to the Drake Kingdom overworld (map01). Pre-transition save pinning town01's single exit = the 0x3F named-scene-change at MAN op 0x6f95 (-> map01, index 85). Ground-truth for the door randomizer + its runtime oracle."
+phase = "field"
+topics = ["field", "scene transition", "door randomizer", "0x3F", "town01", "map01"]
+expected_active_scene = "town01"
+
+# ----------------------------------------------------------------------
 # Pre-transition save: player stands on a walkable area; a brief Down
 # press walks into a town entrance that loads a standalone town scene.
 # Use this to capture a town scene's MAN load: replay it driving Down so
