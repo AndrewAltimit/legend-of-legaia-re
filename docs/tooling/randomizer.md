@@ -205,8 +205,20 @@ bit-for-bit.
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
+| `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
+| `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
+
+The two `engine-core` runtime oracles answer a question the `crates/rando`
+patch tests don't: not just that the patched byte is *written* faithfully, but
+that a runtime actually *reads it and grants the new item*. A savestate can't
+prove this — the scene MAN / `battle_data` archive is resident in RAM the moment
+you're in the room / battle, so a state captured on a patched disc still serves
+the original from the cached RAM copy; the patched value is only seen after a
+fresh scene/battle load re-streams it off disc. The clean-room engine sidesteps
+that cache by decoding straight from disc bytes and running the actual grant
+path, so it observes the patch a savestate would mask.
 
 ## No-Sony-bytes hygiene
 
