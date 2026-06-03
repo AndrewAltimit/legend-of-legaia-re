@@ -75,7 +75,7 @@ fn shuffle_encounters_round_trips_on_disc() {
     // Apply the shuffle to a scratch copy.
     let mut patcher = DiscPatcher::open(original.clone()).expect("open");
     let report =
-        apply::randomize_encounters(&mut patcher, seed, DropMode::Shuffle).expect("randomize");
+        apply::randomize_encounters(&mut patcher, seed, DropMode::Shuffle, &[]).expect("randomize");
     assert!(
         report.scenes_changed > 0,
         "should rewrite at least one scene"
@@ -137,8 +137,8 @@ fn shuffle_encounters_round_trips_on_disc() {
 
     // Determinism: same seed -> byte-identical patched image.
     let mut patcher2 = DiscPatcher::open(original.clone()).expect("open");
-    let report2 =
-        apply::randomize_encounters(&mut patcher2, seed, DropMode::Shuffle).expect("randomize");
+    let report2 = apply::randomize_encounters(&mut patcher2, seed, DropMode::Shuffle, &[])
+        .expect("randomize");
     assert_eq!(report2.skipped, report.skipped);
     assert!(
         patcher2.image() == patcher.image(),

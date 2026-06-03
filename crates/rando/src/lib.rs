@@ -26,6 +26,8 @@
 //!
 //! - [`rng`] — a version-stable seeded PRNG so a seed always reproduces a run.
 //! - [`items`] — the valid item-id pool (from the SCUS item-name table).
+//! - [`unused`] — curated "unused content" sets (Evil Bat enemy ids, the
+//!   Something Good / unnamed-accessory items) the opt-in toggles re-introduce.
 //! - [`drops`] — the drop-table planner (shuffle / random).
 //! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
 //! - [`encounter`] — per-scene random-encounter formation-id shuffle.
@@ -42,9 +44,11 @@ pub mod door;
 pub mod drops;
 pub mod encounter;
 pub mod house_door;
+pub mod item_name;
 pub mod items;
 pub mod monster;
 pub mod ppf;
 pub mod rng;
 pub mod starting_items;
 pub mod steal;
+pub mod unused;

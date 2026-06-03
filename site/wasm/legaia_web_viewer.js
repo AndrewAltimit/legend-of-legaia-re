@@ -2252,8 +2252,11 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
- * 5). `seed` is a number or any string (hashed). Returns
- * `{ data, summary, seed }`.
+ * 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
+ * pool (only with `encounters = "random"`); `unused_items` adds the unused
+ * "Something Good" / unnamed-accessory items to the random-fill pool (only the
+ * `random` drop / chest / steal modes use it). `seed` is a number or any string
+ * (hashed). Returns `{ data, summary, seed }`.
  * @param {Uint8Array} image
  * @param {string} seed
  * @param {string} drops
@@ -2264,9 +2267,11 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {string} door_coupling
  * @param {string} house_doors
  * @param {number} starting_items
+ * @param {boolean} unused_enemies
+ * @param {boolean} unused_items
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, chests, steals, doors, door_coupling, house_doors, starting_items) {
+export function patch_rom(image, seed, drops, encounters, chests, steals, doors, door_coupling, house_doors, starting_items, unused_enemies, unused_items) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2285,7 +2290,7 @@ export function patch_rom(image, seed, drops, encounters, chests, steals, doors,
     const len7 = WASM_VECTOR_LEN;
     const ptr8 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len8 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, starting_items);
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, starting_items, unused_enemies, unused_items);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
