@@ -142,20 +142,36 @@ pub struct EncounterApplyReport {
     pub scenes_changed: usize,
     /// Total formation id bytes changed across all scenes.
     pub ids_changed: usize,
+    /// Formation id slots (in written-back scenes) that ended up holding one of
+    /// the `unused_enemies` ids — i.e. how many unused enemies the run actually
+    /// placed. Always `0` unless `unused_enemies` was non-empty and the mode was
+    /// [`DropMode::Random`].
+    pub unused_placed: usize,
     /// Scene PROT-entry indices whose recompressed MAN would not fit the
     /// original footprint, so the scene was left untouched.
     pub skipped: Vec<usize>,
 }
 
 /// Randomize every scene's random-encounter formations in place. For each scene
-/// bundle the monster ids are reassigned from the scene's own id pool (so every
-/// monster stays scene-loaded), the MAN is recompressed, and — when it fits the
-/// original compressed footprint — written back. Scenes whose re-pack overflows
-/// are recorded in `skipped` and left unchanged.
+/// bundle the monster ids are reassigned from the scene's own id pool, the MAN
+/// is recompressed, and — when it fits the original compressed footprint —
+/// written back. Scenes whose re-pack overflows are recorded in `skipped` and
+/// left unchanged.
+///
+/// `unused_enemies` is the curated set of monster ids no formation normally
+/// references (see [`crate::unused::UNUSED_ENEMY_IDS`]). When non-empty *and*
+/// `mode` is [`DropMode::Random`], those ids join each scene's candidate pool so
+/// the run can spawn them — the battle loader streams a monster's archive slot
+/// on demand by id, so an id outside the scene's own set still loads. Under
+/// [`DropMode::Shuffle`] it has no effect (a multiset-preserving permutation
+/// can't introduce a new id). Pass an empty slice to keep the prior behaviour;
+/// the RNG stream is unchanged when it is empty, so existing results stay
+/// byte-identical.
 pub fn randomize_encounters(
     patcher: &mut DiscPatcher,
     seed: u64,
     mode: DropMode,
+    unused_enemies: &[u8],
 ) -> Result<EncounterApplyReport> {
     let mut report = EncounterApplyReport::default();
     for idx in 0..patcher.entry_count() {
@@ -165,7 +181,7 @@ pub fn randomize_encounters(
         let Some(mut scene) = SceneEncounters::locate(&entry, idx) else {
             continue;
         };
-        let changed = scene.randomize(seed, mode);
+        let changed = scene.randomize_with_extra(seed, mode, unused_enemies);
         if changed == 0 {
             continue;
         }
@@ -176,6 +192,9 @@ pub fn randomize_encounters(
                     .with_context(|| format!("write scene {idx} MAN"))?;
                 report.scenes_changed += 1;
                 report.ids_changed += changed;
+                if !unused_enemies.is_empty() {
+                    report.unused_placed += scene.count_ids_in(unused_enemies);
+                }
             }
             None => report.skipped.push(idx),
         }

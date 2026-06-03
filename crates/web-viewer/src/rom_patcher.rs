@@ -46,8 +46,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
 /// `"shuffle"`. `starting_items` is the number of random starting consumables
 /// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
-/// 5). `seed` is a number or any string (hashed). Returns
-/// `{ data, summary, seed }`.
+/// 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
+/// pool (only with `encounters = "random"`); `unused_items` adds the unused
+/// "Something Good" / unnamed-accessory items to the random-fill pool (only the
+/// `random` drop / chest / steal modes use it). `seed` is a number or any string
+/// (hashed). Returns `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn patch_rom(
@@ -61,6 +64,8 @@ pub fn patch_rom(
     door_coupling: &str,
     house_doors: &str,
     starting_items: usize,
+    unused_enemies: bool,
+    unused_items: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -73,15 +78,26 @@ pub fn patch_rom(
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
-    let pool = if drops_mode == Some(DropMode::Random)
+    let needs_pool = drops_mode == Some(DropMode::Random)
         || chest_mode == Some(DropMode::Random)
-        || steal_mode == Some(DropMode::Random)
-    {
+        || steal_mode == Some(DropMode::Random);
+    let mut pool = if needs_pool {
         let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .ok_or_else(|| err("SCUS_942.54 not found in disc image (needed for a random mode)"))?;
         valid_item_pool(&scus).map_err(|e| err(format!("item pool: {e}")))?
     } else {
         Vec::new()
+    };
+    // `--unused-items`: widen the random-fill pool with the curated unused items
+    // (the unnamed accessory in particular is otherwise excluded — no name).
+    if unused_items && needs_pool {
+        legaia_rando::unused::extend_pool(&mut pool, legaia_rando::unused::UNUSED_ITEM_IDS);
+    }
+    // The unused-enemy id set passed to the encounter randomizer (empty unless on).
+    let unused_enemy_ids: &[u8] = if unused_enemies {
+        legaia_rando::unused::UNUSED_ENEMY_IDS
+    } else {
+        &[]
     };
 
     let mut summary = String::new();
@@ -108,12 +124,18 @@ pub fn patch_rom(
 
     match enc_mode {
         Some(m) => {
-            let rep = apply::randomize_encounters(&mut patcher, seed_n, m)
+            let rep = apply::randomize_encounters(&mut patcher, seed_n, m, unused_enemy_ids)
                 .map_err(|e| err(format!("encounters: {e}")))?;
             summary.push_str(&format!(
                 "encounters: {} scenes, {} ids changed ({})\n",
                 rep.scenes_changed, rep.ids_changed, encounters
             ));
+            if rep.unused_placed > 0 {
+                summary.push_str(&format!(
+                    "  including {} unused-enemy spawn(s) injected\n",
+                    rep.unused_placed
+                ));
+            }
         }
         None => summary.push_str("encounters: untouched\n"),
     }

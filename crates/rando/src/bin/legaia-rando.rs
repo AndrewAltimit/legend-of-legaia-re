@@ -150,6 +150,16 @@ struct RandomizeArgs {
     /// `legaia-rando starting-items` shows the current contents.
     #[arg(long, default_value_t = 0)]
     starting_items: usize,
+    /// Re-introduce unused enemies (the Evil Bat duplicates that no formation
+    /// references) into the random-encounter pool. Only takes effect with
+    /// `--encounters random` (a `shuffle` can't introduce a new monster).
+    #[arg(long, default_value_t = false)]
+    unused_enemies: bool,
+    /// Re-introduce unused items (the "Something Good" sell item and the unnamed
+    /// Seru accessory) into the valid item pool, so a `random` drop / chest /
+    /// steal fill can hand them out. Only affects the `random` modes.
+    #[arg(long, default_value_t = false)]
+    unused_items: bool,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
     /// chests, never randomized — and dropped from the random-fill pool so they
     /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
@@ -501,15 +511,38 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     ];
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
-    let pool = if mode == Some(DropMode::Random)
+    let needs_pool = mode == Some(DropMode::Random)
         || chest_mode == Some(DropMode::Random)
-        || steal_mode == Some(DropMode::Random)
-    {
+        || steal_mode == Some(DropMode::Random);
+    let mut pool = if needs_pool {
         let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .context("SCUS_942.54 not found in disc image (needed for a `random` mode)")?;
         valid_item_pool(&scus).context("build valid item pool from SCUS")?
     } else {
         Vec::new()
+    };
+    // `--unused-items` widens the random-fill pool with the curated unused items
+    // (the unnamed accessory in particular is otherwise excluded — it has no
+    // name). It only matters for the `random` modes, which are the pool's only
+    // consumers; warn if it can't take effect.
+    if args.unused_items {
+        if needs_pool {
+            legaia_rando::unused::extend_pool(&mut pool, legaia_rando::unused::UNUSED_ITEM_IDS);
+        } else {
+            println!("note: --unused-items has no effect without a `random` drop/chest/steal mode");
+        }
+        manifest.push(format!("unused_items = {}", args.unused_items));
+    }
+    // The unused-enemy id set (empty unless the toggle is on) is passed to the
+    // encounter randomizer below.
+    let unused_enemies: &[u8] = if args.unused_enemies {
+        if args.encounters.mode() != Some(DropMode::Random) {
+            println!("note: --unused-enemies only takes effect with `--encounters random`");
+        }
+        manifest.push(format!("unused_enemies = {}", args.unused_enemies));
+        legaia_rando::unused::UNUSED_ENEMY_IDS
+    } else {
+        &[]
     };
 
     if let Some(mode) = mode {
@@ -540,11 +573,21 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(enc_mode) = enc_mode {
-        let report = apply::randomize_encounters(&mut patcher, seed, enc_mode)?;
+        let report = apply::randomize_encounters(&mut patcher, seed, enc_mode, unused_enemies)?;
         println!(
             "encounters: {} scenes rewritten, {} ids changed ({:?})",
             report.scenes_changed, report.ids_changed, enc_mode
         );
+        if report.unused_placed > 0 {
+            println!(
+                "  including {} unused-enemy spawn(s) injected",
+                report.unused_placed
+            );
+            manifest.push(format!(
+                "encounters_unused_placed = {}",
+                report.unused_placed
+            ));
+        }
         manifest.push(format!("encounters = {:?}", mode_str(enc_mode)));
         manifest.push(format!(
             "encounters_scenes_changed = {}",

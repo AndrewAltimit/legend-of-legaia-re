@@ -151,12 +151,49 @@ impl SceneEncounters {
         (0..self.formation_count).map(|i| self.count(i)).sum()
     }
 
+    /// Count formation id slots whose current id is in `set` (live from
+    /// [`Self::decoded`]). Used to report how many unused enemies a run actually
+    /// placed.
+    pub fn count_ids_in(&self, set: &[u8]) -> usize {
+        let mut n = 0;
+        for i in 0..self.formation_count {
+            let (off, len) = self.id_span(i);
+            for &id in &self.decoded[off..off + len] {
+                if set.contains(&id) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
     /// Rewrite the formation ids in place from `seed`. Returns the number of id
     /// bytes that actually changed. The per-scene RNG is derived from
     /// `(seed, entry_idx)` so the result is independent of iteration order and
     /// reproducible.
     pub fn randomize(&mut self, seed: u64, mode: DropMode) -> usize {
-        let pool = self.monster_pool();
+        self.randomize_with_extra(seed, mode, &[])
+    }
+
+    /// Like [`Self::randomize`], but for [`DropMode::Random`] the candidate pool
+    /// is the scene's own monster ids **plus** `extra` (deduped). This is how the
+    /// `--unused-enemies` toggle re-introduces monsters no formation references:
+    /// the battle loader streams a monster's archive slot on demand by id, so an
+    /// id outside the scene's own set still loads and renders. `extra` has no
+    /// effect under [`DropMode::Shuffle`] — a multiset-preserving permutation
+    /// can't introduce a new id, by construction — so passing it there is a
+    /// no-op (a `Shuffle` run never spawns an unused enemy; document that at the
+    /// CLI). The base RNG sequence is unchanged when `extra` is empty, so the
+    /// existing (no-unused) results stay byte-identical.
+    pub fn randomize_with_extra(&mut self, seed: u64, mode: DropMode, extra: &[u8]) -> usize {
+        let mut pool = self.monster_pool();
+        if mode == DropMode::Random {
+            for &id in extra {
+                if !pool.contains(&id) {
+                    pool.push(id);
+                }
+            }
+        }
         if pool.is_empty() {
             return 0;
         }
