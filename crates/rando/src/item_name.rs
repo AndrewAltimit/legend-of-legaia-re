@@ -18,13 +18,20 @@
 //! counters). The string must instead land in a region that is **constant at
 //! runtime**.
 //!
-//! [`SERU_BELL_STRING_VA`] is such a region — pinned for the US retail build by
-//! intersecting the all-zero runs across seventeen diverse savestates (battle /
-//! field / menu / world-map / title): a 3376-byte block at `0x80079840` is zero
-//! in the file *and* in every captured state, so it is reserved space the game
-//! never writes, not transient scratch. The injection lands the string well
-//! inside that block and guards on the file bytes there being zero, so a
-//! differently-laid-out image is skipped rather than corrupted.
+//! [`SERU_BELL_STRING_VA`] is such a region. The subtlety: a region that is zero
+//! in the file *and* zero in every runtime state is **not** automatically safe —
+//! it could be boot-cleared `.bss`/scratch (the loader / startup memsets it), in
+//! which case a string written to the file is wiped to zero at runtime (the name
+//! then renders empty). The first attempt fell into exactly this trap. The
+//! reliable discriminator is the *flanking* bytes: a zero gap immediately
+//! preceded and followed by bytes that are **non-zero in the file and identical
+//! in RAM** (i.e. demonstrably loaded-and-preserved rodata) is genuine alignment
+//! padding inside the read-only section, which the loader keeps. The pinned VA
+//! sits inside a 1028-byte zero gap at `0x8007AB38` whose preceding rodata
+//! constants (`… 00 C0 00 C0`) are preserved byte-for-byte across seventeen
+//! diverse savestates, so the gap is preserved too. The injection guards on the
+//! target file bytes being zero, so a differently-laid-out image is skipped
+//! rather than corrupted.
 //!
 //! No game bytes are committed: the string is the randomizer's own, and the
 //! write is validated against the user's disc at runtime.
@@ -38,12 +45,12 @@ pub const SERU_BELL_ID: u8 = 0xFD;
 /// optional, so this plain name renders cleanly without one).
 pub const SERU_BELL_NAME: &str = "Seru Bell";
 
-/// Virtual address the injected name string is written to — a reserved,
-/// runtime-constant region of the US-build data segment (see the module docs:
-/// inside the 3376-byte block at `0x80079840` that is zero across the file and
-/// every sampled runtime state). Sixteen-byte aligned, deep inside the block so
-/// it is clear of the used region that begins just below `0x80079840`.
-pub const SERU_BELL_STRING_VA: u32 = 0x8007_9900;
+/// Virtual address the injected name string is written to — preserved rodata
+/// padding in the US-build data segment (see the module docs: inside the
+/// 1028-byte zero gap at `0x8007AB38`, flanked by rodata constants proven
+/// loaded-and-preserved across the file + every sampled runtime state). Sixteen
+/// bytes into the gap, leaving ample room and clear of the flanking data.
+pub const SERU_BELL_STRING_VA: u32 = 0x8007_AB40;
 
 /// A planned name injection: two same-size writes to `SCUS_942.54`.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -355,11 +355,14 @@ drop / chest / steal modes:
   blank). Picking the target is the subtle part: the data segment's *trailing*
   zero-fill is **not** usable — it is zero in the file but is `.sbss`/`.bss`-class
   scratch the game overwrites with variables at runtime (a string there renders
-  as a glyph that changes every frame). The string instead goes to
-  `item_name::SERU_BELL_STRING_VA` (`0x80079900`), pinned for the US build inside
-  a 3376-byte block at `0x80079840` that is zero in the file *and* across diverse
-  runtime states (battle / field / menu / world-map / title) — reserved space the
-  game never writes. The injection guards on the target bytes being zero, so a
+  as a glyph that changes every frame). Worse, a region that is zero in the file
+  *and* zero at runtime is still not automatically safe — it can be boot-cleared
+  scratch, which wipes the written string to zero (the name then renders empty).
+  The reliable test is the *flanking* bytes: the string goes to
+  `item_name::SERU_BELL_STRING_VA` (`0x8007AB40`), inside a 1028-byte zero gap at
+  `0x8007AB38` whose adjacent rodata constants are preserved byte-for-byte across
+  the file + diverse runtime states — proving it is read-only padding the loader
+  keeps, not scratch. The injection guards on the target bytes being zero, so a
   differently-laid-out image is skipped rather than corrupted.
 
   The accessory's documented effect is to make only Seru-class enemies appear in
