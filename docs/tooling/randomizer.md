@@ -348,12 +348,19 @@ drop / chest / steal modes:
 - **the unnamed accessory (`0xFD`)** — an accessory-class slot whose name string
   is *empty*, so the valid pool excludes it. The toggle is what makes it
   obtainable. Because a blank name would read as an empty line in chests / menus,
-  the toggle also **names it "Seru Bell"**: it writes the string into
-  reclaimable `SCUS_942.54` data-segment zero-fill padding and repoints *only*
-  `0xFD`'s name pointer at it (a same-size patch, like the starting-item seed;
-  the other ids that share the empty-string slot — `0x12`/`0x1A`/`0x52`/`0xB9` —
-  are left blank). The write target is derived from the disc at runtime
-  (`item_names::name_ptr_slot` + `data_segment_free_tail`), not hardcoded.
+  the toggle also **names it "Seru Bell"**: it writes the string into a reserved,
+  runtime-**constant** region of `SCUS_942.54` and repoints *only* `0xFD`'s name
+  pointer at it (a same-size patch, like the starting-item seed; the other ids
+  that share the empty-string slot — `0x12`/`0x1A`/`0x52`/`0xB9` — are left
+  blank). Picking the target is the subtle part: the data segment's *trailing*
+  zero-fill is **not** usable — it is zero in the file but is `.sbss`/`.bss`-class
+  scratch the game overwrites with variables at runtime (a string there renders
+  as a glyph that changes every frame). The string instead goes to
+  `item_name::SERU_BELL_STRING_VA` (`0x80079900`), pinned for the US build inside
+  a 3376-byte block at `0x80079840` that is zero in the file *and* across diverse
+  runtime states (battle / field / menu / world-map / title) — reserved space the
+  game never writes. The injection guards on the target bytes being zero, so a
+  differently-laid-out image is skipped rather than corrupted.
 
   The accessory's documented effect is to make only Seru-class enemies appear in
   random encounters. Because it is unobtainable in retail that effect is never

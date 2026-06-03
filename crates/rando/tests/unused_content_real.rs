@@ -238,7 +238,11 @@ fn seru_bell_name_injection_names_only_the_accessory() {
     let img = patcher.image();
     let (scus_lba, _) = find_file_in_image(img, "SCUS_942.54").unwrap();
     let (ptr_off, _) = legaia_asset::item_names::name_ptr_slot(&scus, SERU_BELL_ID).unwrap();
-    let (str_off, _) = legaia_asset::item_names::data_segment_free_tail(&base_scus, 10).unwrap();
+    let str_off = legaia_asset::item_names::file_offset_for_va(
+        &base_scus,
+        legaia_rando::item_name::SERU_BELL_STRING_VA,
+    )
+    .unwrap();
     for byte_off in [ptr_off, str_off] {
         let sector = scus_lba as usize + byte_off / USER_DATA_SIZE;
         let sb = sector * SECTOR_SIZE;

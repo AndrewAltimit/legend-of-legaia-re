@@ -110,40 +110,18 @@ pub fn name_ptr_slot(scus: &[u8], id: u8) -> Option<(usize, u32)> {
     Some((rec, val))
 }
 
-/// Find a run of at least `need` zero bytes at the tail of the executable's data
-/// segment — the alignment / zero-fill padding after the string pool — and
-/// return a 16-byte-aligned `(file_offset, va)` with room for `need` bytes
-/// before the segment end. This is dead space a short injected string can be
-/// stashed in without growing the image (nothing references it; it loads as
-/// zeros). `None` if the layout can't be resolved or no such run exists.
-pub fn data_segment_free_tail(scus: &[u8], need: usize) -> Option<(usize, u32)> {
-    let map = ExeMap::parse(scus)?;
-    let seg_start = 0x800usize;
-    let seg_end = seg_start.checked_add(map.t_size as usize)?.min(scus.len());
-    if seg_end <= seg_start {
-        return None;
-    }
-    // First free file offset = one past the last non-zero byte in the segment.
-    let first_free = (seg_start..seg_end)
-        .rev()
-        .find(|&i| scus[i] != 0)
-        .map(|i| i + 1)
-        .unwrap_or(seg_start);
-    // Align the target on the load VA (so the stored pointer is tidy).
-    let first_free_va = map.t_addr + (first_free - seg_start) as u32;
-    let aligned_va = (first_free_va + 0xF) & !0xF;
-    let aligned_off = map.off(aligned_va)?;
-    if aligned_off + need > seg_end {
-        return None;
-    }
-    // Must be genuine dead space (all zero) — never overwrite live data.
-    if scus[aligned_off..aligned_off + need]
-        .iter()
-        .any(|&b| b != 0)
-    {
-        return None;
-    }
-    Some((aligned_off, aligned_va))
+/// File offset for a virtual address within the loaded data segment, or `None`
+/// if `scus` isn't a PS-X EXE or `va` falls outside the segment. The inverse of
+/// the table's pointer math, exposed so a name-injection patch can resolve where
+/// to write a string it stashes at a known-constant VA.
+///
+/// NB: do **not** stash a string in the *trailing* zero-fill of the data
+/// segment — that span is zero in the file but is `.sbss`/`.bss`-class scratch
+/// the game overwrites with variables at runtime (a string put there renders as
+/// changing garbage). A safe target is a region verified constant across diverse
+/// runtime states; see `legaia_rando::item_name`.
+pub fn file_offset_for_va(scus: &[u8], va: u32) -> Option<usize> {
+    ExeMap::parse(scus)?.off(va)
 }
 
 /// The decoded item-name table: one entry per item id (`0x00..=0xFF`). Empty /
@@ -291,19 +269,14 @@ mod tests {
     }
 
     #[test]
-    fn free_tail_finds_aligned_dead_space_after_the_pool() {
+    fn file_offset_for_va_inverts_the_load_map() {
         let scus = synth_scus(&["", "Sword"]);
-        let (off, va) = data_segment_free_tail(&scus, 10).expect("free tail");
-        // 16-byte aligned VA, all-zero target, room before segment end.
-        assert_eq!(va & 0xF, 0, "target VA is 16-aligned");
-        assert!(scus[off..off + 10].iter().all(|&b| b == 0));
-        let map = ExeMap::parse(&scus).unwrap();
-        assert_eq!(map.off(va), Some(off), "va and file offset agree");
-        // The target sits past the last live (non-zero) byte.
-        let seg_end = 0x800 + map.t_size as usize;
-        let last_live = (0x800..seg_end).rev().find(|&i| scus[i] != 0).unwrap();
-        assert!(off > last_live, "target is past the string pool");
-        // An impossible request (bigger than the whole segment) fails cleanly.
-        assert!(data_segment_free_tail(&scus, usize::MAX / 2).is_none());
+        // The table VA maps back to its file offset (table_off).
+        let table_off = (TABLE_VA - 0x8001_0000) as usize + 0x800;
+        assert_eq!(file_offset_for_va(&scus, TABLE_VA), Some(table_off));
+        // A VA below the load address / past the segment is rejected.
+        assert!(file_offset_for_va(&scus, 0x8000_0000).is_none());
+        assert!(file_offset_for_va(&scus, 0x8FFF_FFFF).is_none());
+        assert!(file_offset_for_va(b"nope", TABLE_VA).is_none());
     }
 }
