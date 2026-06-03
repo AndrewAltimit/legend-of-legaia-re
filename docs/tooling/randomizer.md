@@ -75,6 +75,8 @@ legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --doors shuffle --door-coupling coupled \
     --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
+legaia-rando randomize --input DISC.bin --seed wild --encounters random \
+    --unused-enemies --chests random --unused-items                  # bring back unused content
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
@@ -86,7 +88,9 @@ so a run reproduces exactly; the same seed yields a byte-identical patched image
 and PPF. `--drops`, `--encounters`, `--chests`, `--steals`, and `--doors` each
 take `shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
 bidirectional) or `decoupled` (one-way); `--starting-items N` seeds the new
-game with `N` random consumables (0 = vanilla; capped at 5).
+game with `N` random consumables (0 = vanilla; capped at 5). `--unused-enemies`
+and `--unused-items` re-introduce content the game ships but never surfaces (see
+[Unused content](#unused-content) below).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
@@ -317,6 +321,44 @@ add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
 (Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
 read-only `starting-items` listing shows the current bag.
 
+### Unused content
+
+The game ships fully-formed content it never surfaces in normal play; two opt-in
+toggles bring it back. They are *additive* — a normal run never places them, so
+the disc stays vanilla unless you ask. Both are pinned by the disc-gated
+`unused_content_real` test.
+
+**`--unused-enemies`** re-introduces the **Evil Bat**, an enemy whose record
+lives in the `battle_data` archive (monster ids 176/177/178 are byte-identical
+clones of each other and of the in-use Evil Bat at id 140) but which no scene's
+encounter formation references. The battle loader streams a monster's
+`0x14000` archive slot on demand keyed by its id — there is **no per-scene
+monster preload list** — so injecting one of these ids into a formation byte is
+sufficient to make it spawn and render; nothing else needs patching. The toggle
+adds the curated ids ([`unused::UNUSED_ENEMY_IDS`]) to each scene's encounter
+candidate pool. It only takes effect with `--encounters random`: a
+multiset-preserving `shuffle` can't introduce a new monster, by construction.
+
+**`--unused-items`** adds two items to the random-fill pool used by the `random`
+drop / chest / steal modes:
+
+- **"Something Good" (`0x6B`)** — a 50,000 G sell item the shipped game never
+  hands out. It is *named* in the item table, so the valid pool already accepts
+  it; the toggle includes it explicitly for clarity.
+- **the unnamed accessory (`0xFD`)** — an accessory-class slot whose name string
+  is *empty*, so the valid pool excludes it. The toggle is what makes it
+  obtainable. Because a blank name would read as an empty line in chests / menus,
+  the toggle also **names it "Seru Bell"**: it writes the string into
+  reclaimable `SCUS_942.54` data-segment zero-fill padding and repoints *only*
+  `0xFD`'s name pointer at it (a same-size patch, like the starting-item seed;
+  the other ids that share the empty-string slot — `0x12`/`0x1A`/`0x52`/`0xB9` —
+  are left blank). The write target is derived from the disc at runtime
+  (`item_names::name_ptr_slot` + `data_segment_free_tail`), not hardcoded.
+
+  The accessory's documented effect is to make only Seru-class enemies appear in
+  random encounters. Because it is unobtainable in retail that effect is never
+  exercised by the shipped game, so treat it as experimental.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right
@@ -374,16 +416,19 @@ bit-for-bit.
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene `0x23 MOVE_TO` target-tile multiset preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
+| `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140; item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
 | `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
 | `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
 | `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
+| `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
+| `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The six `engine-core` runtime oracles answer a question the `crates/rando`
+The eight `engine-core` runtime oracles answer a question the `crates/rando`
 patch tests don't: not just that the patched byte is *written* faithfully, but
 that a runtime actually *reads it and acts on it* — grants the new item, spawns
 the new monster, or warps to the new scene. A savestate can't prove this — the
