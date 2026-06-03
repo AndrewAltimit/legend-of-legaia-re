@@ -89,9 +89,11 @@ pub fn patch_rom(
         Vec::new()
     };
     // `--unused-items`: widen the random-fill pool with the curated unused items
-    // (the unnamed accessory in particular is otherwise excluded — no name).
+    // (the unnamed accessory in particular is otherwise excluded — no name), and
+    // give that accessory the name "Seru Bell" so it doesn't show as a blank.
     if unused_items && needs_pool {
         legaia_rando::unused::extend_pool(&mut pool, legaia_rando::unused::UNUSED_ITEM_IDS);
+        apply::inject_seru_bell_name(&mut patcher).map_err(|e| err(format!("name inject: {e}")))?;
     }
     // The unused-enemy id set passed to the encounter randomizer (empty unless on).
     let unused_enemy_ids: &[u8] = if unused_enemies {

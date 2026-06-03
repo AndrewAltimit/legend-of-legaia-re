@@ -15,10 +15,13 @@
 
 use legaia_asset::item_names::ItemNameTable;
 use legaia_asset::monster_archive::SLOT_STRIDE;
+use legaia_iso::iso9660::find_file_in_image;
+use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_rando::apply;
 use legaia_rando::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_rando::drops::DropMode;
 use legaia_rando::encounter::SceneEncounters;
+use legaia_rando::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 use legaia_rando::items::valid_item_pool;
 use legaia_rando::unused::{self, UNUSED_ENEMY_IDS, UNUSED_ITEM_IDS};
 
@@ -181,5 +184,75 @@ fn unused_enemy_toggle_injects_only_when_enabled() {
     assert_eq!(
         report.unused_placed, report2.unused_placed,
         "same seed must reproduce the injection count"
+    );
+}
+
+#[test]
+fn seru_bell_name_injection_names_only_the_accessory() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let original_len = disc.len();
+
+    // Baseline: the accessory is unnamed; the other ids share the empty slot.
+    let base = DiscPatcher::open(disc.clone()).expect("open disc");
+    let base_scus = base.read_named_file("SCUS_942.54").expect("read SCUS");
+    let base_table = ItemNameTable::from_scus(&base_scus).expect("parse table");
+    assert!(
+        base_table.name(SERU_BELL_ID).is_none(),
+        "0xFD starts unnamed"
+    );
+    let shared_unnamed = [0x12u8, 0x1A, 0x52, 0xB9];
+    for &id in &shared_unnamed {
+        assert!(base_table.name(id).is_none(), "id {id:#x} starts unnamed");
+    }
+
+    // Inject the name on a scratch copy.
+    let mut patcher = DiscPatcher::open(disc).expect("open disc");
+    let set = apply::inject_seru_bell_name(&mut patcher)
+        .expect("inject")
+        .expect("a fresh disc must get the name set");
+    assert_eq!(set, SERU_BELL_NAME);
+
+    // Re-read the table off the PATCHED image.
+    let scus = patcher
+        .read_named_file("SCUS_942.54")
+        .expect("read patched SCUS");
+    let table = ItemNameTable::from_scus(&scus).expect("parse patched table");
+    assert_eq!(
+        table.name(SERU_BELL_ID),
+        Some(SERU_BELL_NAME),
+        "the accessory now resolves to its injected name"
+    );
+    // The other ids that shared the empty-string slot are untouched.
+    for &id in &shared_unnamed {
+        assert!(
+            table.name(id).is_none(),
+            "id {id:#x} must stay unnamed (only 0xFD's pointer was repointed)"
+        );
+    }
+
+    // Same-size patch + the touched SCUS sectors stay EDC/ECC-valid.
+    assert_eq!(patcher.image().len(), original_len, "image size unchanged");
+    let img = patcher.image();
+    let (scus_lba, _) = find_file_in_image(img, "SCUS_942.54").unwrap();
+    let (ptr_off, _) = legaia_asset::item_names::name_ptr_slot(&scus, SERU_BELL_ID).unwrap();
+    let (str_off, _) = legaia_asset::item_names::data_segment_free_tail(&base_scus, 10).unwrap();
+    for byte_off in [ptr_off, str_off] {
+        let sector = scus_lba as usize + byte_off / USER_DATA_SIZE;
+        let sb = sector * SECTOR_SIZE;
+        assert!(
+            legaia_iso::write::mode2_form1_sector_is_valid(&img[sb..sb + SECTOR_SIZE]),
+            "patched SCUS sector at byte {byte_off:#x} must be EDC/ECC-valid"
+        );
+    }
+
+    // Idempotent: re-running on the patched image makes no further change.
+    assert!(
+        apply::inject_seru_bell_name(&mut patcher)
+            .expect("re-inject")
+            .is_none(),
+        "already-named accessory must not be re-injected"
     );
 }

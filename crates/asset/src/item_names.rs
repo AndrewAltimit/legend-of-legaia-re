@@ -94,6 +94,58 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
+/// File offset of the `name_ptr` word for item `id` within a `SCUS_942.54`
+/// image, plus its current value. `None` if `scus` isn't a PS-X EXE or the slot
+/// falls outside the loaded data segment.
+///
+/// This is the word a *name-injection* patch repoints: the unnamed accessory
+/// (`0xFD`) ships pointing at the shared empty-string slot, so repointing only
+/// its word gives it a name without touching the other ids that share that
+/// slot. The string itself goes in reclaimable space found by
+/// [`data_segment_free_tail`].
+pub fn name_ptr_slot(scus: &[u8], id: u8) -> Option<(usize, u32)> {
+    let map = ExeMap::parse(scus)?;
+    let rec = map.off(TABLE_VA + (id as u32) * RECORD_STRIDE as u32)?;
+    let val = u32::from_le_bytes(scus.get(rec..rec + 4)?.try_into().ok()?);
+    Some((rec, val))
+}
+
+/// Find a run of at least `need` zero bytes at the tail of the executable's data
+/// segment — the alignment / zero-fill padding after the string pool — and
+/// return a 16-byte-aligned `(file_offset, va)` with room for `need` bytes
+/// before the segment end. This is dead space a short injected string can be
+/// stashed in without growing the image (nothing references it; it loads as
+/// zeros). `None` if the layout can't be resolved or no such run exists.
+pub fn data_segment_free_tail(scus: &[u8], need: usize) -> Option<(usize, u32)> {
+    let map = ExeMap::parse(scus)?;
+    let seg_start = 0x800usize;
+    let seg_end = seg_start.checked_add(map.t_size as usize)?.min(scus.len());
+    if seg_end <= seg_start {
+        return None;
+    }
+    // First free file offset = one past the last non-zero byte in the segment.
+    let first_free = (seg_start..seg_end)
+        .rev()
+        .find(|&i| scus[i] != 0)
+        .map(|i| i + 1)
+        .unwrap_or(seg_start);
+    // Align the target on the load VA (so the stored pointer is tidy).
+    let first_free_va = map.t_addr + (first_free - seg_start) as u32;
+    let aligned_va = (first_free_va + 0xF) & !0xF;
+    let aligned_off = map.off(aligned_va)?;
+    if aligned_off + need > seg_end {
+        return None;
+    }
+    // Must be genuine dead space (all zero) — never overwrite live data.
+    if scus[aligned_off..aligned_off + need]
+        .iter()
+        .any(|&b| b != 0)
+    {
+        return None;
+    }
+    Some((aligned_off, aligned_va))
+}
+
 /// The decoded item-name table: one entry per item id (`0x00..=0xFF`). Empty /
 /// reserved slots are `None`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -166,7 +218,9 @@ mod tests {
             pool.push(0);
         }
 
-        let total = pool_off + pool.len() + 0x10;
+        // Trailing zero padding stands in for the real executable's
+        // data-segment zero-fill tail (where a name injection is stashed).
+        let total = pool_off + pool.len() + 0x40;
         let mut buf = vec![0u8; total];
         buf[0..8].copy_from_slice(b"PS-X EXE");
         buf[0x18..0x1C].copy_from_slice(&T_ADDR.to_le_bytes());
@@ -217,5 +271,39 @@ mod tests {
         assert_eq!(t.name(0), None);
         assert_eq!(t.name(1), Some("X"));
         assert_eq!(t.name(2), None);
+    }
+
+    #[test]
+    fn name_ptr_slot_locates_the_word_and_reads_its_value() {
+        // id 1 points at a string; id 3 is empty (name_ptr == 0 in the synth).
+        let scus = synth_scus(&["", "Healing Berry", "", ""]);
+        let (off1, ptr1) = name_ptr_slot(&scus, 1).expect("slot 1");
+        // The slot offset is table_off + id*stride and holds the string VA.
+        let table_off = (TABLE_VA - 0x8001_0000) as usize + 0x800;
+        assert_eq!(off1, table_off + RECORD_STRIDE);
+        // Reading the name at that pointer reproduces the table value.
+        assert_eq!(
+            read_name(&scus, &ExeMap::parse(&scus).unwrap(), ptr1).as_deref(),
+            Some("Healing Berry")
+        );
+        // A non-EXE input yields None.
+        assert!(name_ptr_slot(b"nope", 1).is_none());
+    }
+
+    #[test]
+    fn free_tail_finds_aligned_dead_space_after_the_pool() {
+        let scus = synth_scus(&["", "Sword"]);
+        let (off, va) = data_segment_free_tail(&scus, 10).expect("free tail");
+        // 16-byte aligned VA, all-zero target, room before segment end.
+        assert_eq!(va & 0xF, 0, "target VA is 16-aligned");
+        assert!(scus[off..off + 10].iter().all(|&b| b == 0));
+        let map = ExeMap::parse(&scus).unwrap();
+        assert_eq!(map.off(va), Some(off), "va and file offset agree");
+        // The target sits past the last live (non-zero) byte.
+        let seg_end = 0x800 + map.t_size as usize;
+        let last_live = (0x800..seg_end).rev().find(|&i| scus[i] != 0).unwrap();
+        assert!(off > last_live, "target is past the string pool");
+        // An impossible request (bigger than the whole segment) fails cleanly.
+        assert!(data_segment_free_tail(&scus, usize::MAX / 2).is_none());
     }
 }

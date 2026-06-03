@@ -1030,6 +1030,46 @@ pub fn randomize_steals(
     Ok((plan, report))
 }
 
+/// Give the unnamed accessory (item `0xFD`) the display name **"Seru Bell"** so
+/// the `--unused-items` toggle hands out a presentable item instead of a blank.
+/// Writes the name into reclaimable `SCUS_942.54` tail space and repoints only
+/// `0xFD`'s name pointer (the other ids sharing the empty-string slot keep it).
+///
+/// Idempotent: if `0xFD` already resolves to a name (e.g. on an
+/// already-patched image) it does nothing. Returns the name that was set, or
+/// `None` if it was already named or the SCUS layout couldn't be resolved.
+pub fn inject_seru_bell_name(patcher: &mut DiscPatcher) -> Result<Option<String>> {
+    use crate::item_name::{NameInjection, SERU_BELL_ID, SERU_BELL_NAME};
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    // Skip if it already has a name (don't stack injections on re-runs).
+    if let Some(table) = legaia_asset::item_names::ItemNameTable::from_scus(&scus)
+        && table.name(SERU_BELL_ID).is_some()
+    {
+        return Ok(None);
+    }
+    let Some(plan) = NameInjection::plan(&scus, SERU_BELL_ID, SERU_BELL_NAME) else {
+        return Ok(None);
+    };
+    // Two same-size writes: the string bytes, then the repointed pointer word.
+    patcher
+        .patch_named_file(
+            crate::steal::SCUS_NAME,
+            plan.string_file_off as u64,
+            &plan.name_bytes,
+        )
+        .context("write Seru Bell name string")?;
+    patcher
+        .patch_named_file(
+            crate::steal::SCUS_NAME,
+            plan.ptr_file_off as u64,
+            &plan.string_va.to_le_bytes(),
+        )
+        .context("repoint accessory 0xFD name pointer")?;
+    Ok(Some(SERU_BELL_NAME.to_string()))
+}
+
 /// Read the new game's current starting inventory (`(item_id, count)` slots) by
 /// decoding the seed code region in `SCUS_942.54`. Vanilla retail is a single
 /// slot — Healing Leaf (`0x77`) ×5. Purely read-only.

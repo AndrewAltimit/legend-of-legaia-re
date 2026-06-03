@@ -528,6 +528,12 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     if args.unused_items {
         if needs_pool {
             legaia_rando::unused::extend_pool(&mut pool, legaia_rando::unused::UNUSED_ITEM_IDS);
+            // Name the otherwise-blank accessory so it shows as "Seru Bell"
+            // wherever it lands.
+            if let Some(name) = apply::inject_seru_bell_name(&mut patcher)? {
+                println!("unused-items: named the unnamed accessory (0xFD) \"{name}\"");
+                manifest.push(format!("unused_item_name = {name:?}"));
+            }
         } else {
             println!("note: --unused-items has no effect without a `random` drop/chest/steal mode");
         }
