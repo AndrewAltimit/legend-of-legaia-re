@@ -24,15 +24,21 @@
 //!
 //! ## Locating sites safely
 //!
-//! A raw `0x49` byte-scan would hit operand / dialogue bytes, so sites are found
-//! by an **opcode-aware walk** of each MAN record's interaction script with the
-//! Track-1 field-VM disassembler ([`legaia_asset::field_disasm`]) — identical to
-//! the chest walk, including skipping `0x1F` dialogue segments (a shop's
-//! "Welcome!" text precedes its `0x49`). Reaching op `0x49` *in real script
-//! flow* is what distinguishes a shop record from coincidental bytes; the record
-//! is then validated structurally (a small item count, every id non-zero, a
-//! printable name terminated by `0x00`) so non-shop `0x49` sub-0 uses (inn /
-//! save prompts, whose payload isn't an item list) are rejected.
+//! Sites are found by **scanning** the decompressed MAN for the op-`0x49`
+//! sub-op-`0` shop signature, *not* by an opcode walk. A shop's `0x49` is often
+//! gated behind a dialogue confirm-picker ("Buy them?") whose option-jump table
+//! desyncs a linear disassembler before it reaches the op (Biron Monastery's
+//! Corey vendor is the case that exposed this — its op is reached only past a
+//! Yes/No picker), so a walk silently misses those shops. The scan doesn't care
+//! how the script reaches the op. False positives are ruled out by a strict
+//! record validation ([`parse_shop_record`]): the byte after the opcode must be
+//! `0x00` (sub-op 0 — this alone rejects almost every stray `0x49`, since ids,
+//! operands and `0x49`-lead names like "Items Shop" are followed by non-zero),
+//! the count is small and non-zero, every id is non-zero (and, with the SCUS
+//! mask the apply layer supplies, names a real item), and the trailing shop name
+//! is a printable, letter-initial, `0x00`-terminated string. Non-shop `0x49`
+//! sub-0 uses (inn / save prompts, whose payload is MES text not an item list)
+//! fail those checks.
 //!
 //! ## Randomization
 //!
@@ -42,8 +48,7 @@
 //! exactly like the [encounter](crate::encounter) / [chest](crate::chest) paths.
 //! Global shuffle / random across all towns is orchestrated in [`crate::apply`].
 
-use legaia_asset::field_disasm;
-use legaia_asset::{man_section, scene_asset_table};
+use legaia_asset::scene_asset_table;
 
 const MAN_TYPE: u8 = 0x03;
 /// Field-VM opcode that opens a shop (`STATE_RESUME`).
@@ -80,8 +85,22 @@ pub struct SceneShops {
 
 impl SceneShops {
     /// Locate a scene bundle's MAN and its town-shop sites, or `None` if the
-    /// entry isn't a scene bundle, has no MAN, or has no shop.
+    /// entry isn't a scene bundle, has no MAN, or has no shop. Structural-only
+    /// validation (no item-name check); prefer [`Self::locate_with_items`] from a
+    /// caller that has the SCUS item table.
     pub fn locate(entry: &[u8], entry_idx: usize) -> Option<Self> {
+        Self::locate_inner(entry, entry_idx, None)
+    }
+
+    /// Like [`Self::locate`], but `valid` restricts shop ids to **named items**
+    /// (a `256`-entry "id names a real item" mask from the SCUS item table), so a
+    /// stray `0x49`-prefixed byte run can't be mistaken for a shop. The apply
+    /// layer always uses this form.
+    pub fn locate_with_items(entry: &[u8], entry_idx: usize, valid: &[bool; 256]) -> Option<Self> {
+        Self::locate_inner(entry, entry_idx, Some(valid))
+    }
+
+    fn locate_inner(entry: &[u8], entry_idx: usize, valid: Option<&[bool; 256]>) -> Option<Self> {
         let table = scene_asset_table::detect(entry)?;
         let man = table
             .used()
@@ -97,7 +116,7 @@ impl SceneShops {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let shops = shop_sites(&decoded);
+        let shops = shop_sites(&decoded, valid);
         if shops.is_empty() {
             return None;
         }
@@ -138,96 +157,48 @@ impl SceneShops {
     }
 }
 
-/// Walk a decompressed MAN's record scripts and return every town-shop site
-/// (op `0x49` sub-op `0` whose inline payload validates as `[count][ids][name]`).
-pub fn shop_sites(man: &[u8]) -> Vec<ShopSite> {
-    let Ok(mf) = man_section::parse(man) else {
-        return Vec::new();
-    };
-    // Record-start bounds across all partitions, to bound each walk to its own
-    // record (mirrors the chest walk).
-    let mut bounds: Vec<usize> = Vec::new();
-    for part in &mf.partitions {
-        for ri in 0..part.len() {
-            if let Some(o) = mf.actor_placement_record_offset(ri, man.len()) {
-                bounds.push(o);
-            }
-        }
-    }
-    bounds.sort_unstable();
-    bounds.dedup();
-
+/// Scan a decompressed MAN for every town-shop site: op `0x49` sub-op `0` whose
+/// inline payload validates as a `[count][ids][name]` shop record.
+///
+/// This is a **byte scan**, not an opcode walk: a shop's op `0x49` is often
+/// gated behind a dialogue confirm-picker ("Buy them?") whose option-jump table
+/// desyncs a linear disassembler before it reaches the shop op (Biron's Corey
+/// vendor is the canonical case the walk missed). The scan finds the record
+/// regardless of how the script reaches it. The op-`0x49` + sub-op-`0` prefix
+/// (the byte after the opcode must be `0x00`) already filters out almost every
+/// stray `0x49` byte — those inside item-id lists, operands, or `0x49`-lead
+/// names like "Items Shop" are followed by a non-zero byte — and the record
+/// validation ([`parse_shop_record`]) does the rest.
+///
+/// `valid` optionally restricts shop ids to **named items** (the SCUS item
+/// table): when supplied, every item id in the record must name a real item.
+/// This is the strongest guard against a false positive corrupting non-shop
+/// bytes; the apply layer always supplies it. `None` validates structurally
+/// only (used by tests).
+pub fn shop_sites(man: &[u8], valid: Option<&[bool; 256]>) -> Vec<ShopSite> {
     let mut out: Vec<ShopSite> = Vec::new();
-    let mut seen_count_off: Vec<usize> = Vec::new();
-    for part in &mf.partitions {
-        for ri in 0..part.len() {
-            let Some(rec) = mf.actor_placement_record_offset(ri, man.len()) else {
-                continue;
-            };
-            let Some(&n) = man.get(rec) else { continue };
-            let pc0 = 1 + n as usize * 2 + 4;
-            if rec + pc0 >= man.len() {
-                continue;
-            }
-            let end = bounds
-                .iter()
-                .copied()
-                .find(|&o| o > rec)
-                .unwrap_or(man.len());
-            for site in walk_record_shops(man, rec, pc0, end) {
-                // Dedup by count offset (a record reachable from two partitions).
-                if !seen_count_off.contains(&site.count_off) {
-                    seen_count_off.push(site.count_off);
-                    out.push(site);
-                }
-            }
+    let mut seen: Vec<usize> = Vec::new();
+    for op in 0..man.len() {
+        if man[op] != SHOP_OPCODE {
+            continue;
+        }
+        if let Some(site) = parse_shop_record(man, op, valid)
+            && !seen.contains(&site.count_off)
+        {
+            seen.push(site.count_off);
+            out.push(site);
         }
     }
     out.sort_by_key(|s| s.count_off);
     out
 }
 
-/// Walk one record's script from `pc0` to `end` (relative to `rec`), returning
-/// the shop sites reached. Skips `0x1F` dialogue like the chest walk; any other
-/// decode error stops the walk.
-fn walk_record_shops(man: &[u8], rec: usize, pc0: usize, end: usize) -> Vec<ShopSite> {
-    let script = &man[rec..end.min(man.len())];
-    let mut found = Vec::new();
-    let mut pc = pc0;
-    let mut guard = 0usize;
-    loop {
-        guard += 1;
-        if guard > 100_000 || pc >= script.len() {
-            break;
-        }
-        match field_disasm::decode(script, pc) {
-            Ok(insn) => {
-                if insn.size == 0 {
-                    break;
-                }
-                if insn.opcode == SHOP_OPCODE
-                    && insn.extended.is_none()
-                    && let Some(site) = parse_shop_record(man, rec + pc)
-                {
-                    found.push(site);
-                }
-                pc += insn.size;
-            }
-            Err(_) if script.get(pc) == Some(&0x1F) => {
-                pc = skip_dialogue_segment(script, pc);
-            }
-            Err(_) => break,
-        }
-    }
-    found
-}
-
 /// Parse + validate a shop record at the op-`0x49` byte `op_abs` (absolute in
 /// `man`). The sub-op-`0` layout is `0x49 0x00 <length> <length args> [count]
-/// [ids] [name\0]`; returns `None` unless the payload validates as a shop
-/// (small non-zero count, all ids non-zero, a printable name terminated by
-/// `0x00`).
-fn parse_shop_record(man: &[u8], op_abs: usize) -> Option<ShopSite> {
+/// [ids] [name\0]`; returns `None` unless the payload validates as a shop: a
+/// small non-zero count, all ids non-zero (and, when `valid` is supplied, all
+/// naming a real item), and a printable name terminated by `0x00`.
+fn parse_shop_record(man: &[u8], op_abs: usize, valid: Option<&[bool; 256]>) -> Option<ShopSite> {
     // sub_op at +1; only sub-op 0 carries the inline MES-shape payload.
     if *man.get(op_abs + 1)? != 0 {
         return None;
@@ -242,6 +213,12 @@ fn parse_shop_record(man: &[u8], op_abs: usize) -> Option<ShopSite> {
     let ids_end = ids_start + count;
     let ids = man.get(ids_start..ids_end)?;
     if ids.contains(&0) {
+        return None;
+    }
+    if let Some(v) = valid
+        && !ids.iter().all(|&id| v[id as usize])
+    {
+        // An id that names no real item ⇒ not a (sellable) shop record.
         return None;
     }
     // Name: a printable ASCII run terminated by 0x00, first char a letter.
@@ -277,24 +254,6 @@ fn read_shop_name(man: &[u8], start: usize) -> Option<String> {
     (s.len() >= 2 && first_alpha).then_some(s)
 }
 
-/// Skip a `0x1F` inline-dialogue segment beginning at `pc`, returning the offset
-/// just past its terminating `0x00` (`0xC?` bytes are 2-byte escapes).
-fn skip_dialogue_segment(script: &[u8], mut pc: usize) -> usize {
-    pc += 1;
-    while pc < script.len() {
-        let b = script[pc];
-        if b == 0 {
-            return pc + 1;
-        }
-        if b & 0xF0 == 0xC0 {
-            pc += 2;
-        } else {
-            pc += 1;
-        }
-    }
-    pc
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,7 +265,7 @@ mod tests {
         let mut man = vec![0u8; 4];
         man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x59]);
         man.extend_from_slice(b"Shop\0");
-        let site = parse_shop_record(&man, 4).expect("valid shop record");
+        let site = parse_shop_record(&man, 4, None).expect("valid shop record");
         assert_eq!(site.name, "Shop");
         assert_eq!(site.id_offsets, vec![4 + 4, 4 + 5, 4 + 6]);
         assert_eq!(
@@ -320,25 +279,25 @@ mod tests {
         // sub-op != 0 -> not the inline form.
         let mut m = vec![0x49, 0x01, 0x00, 0x03, 0x22, 0x34, 0x59];
         m.extend_from_slice(b"Shop\0");
-        assert!(parse_shop_record(&m, 0).is_none());
+        assert!(parse_shop_record(&m, 0, None).is_none());
 
         // count 0 -> rejected.
         let m = vec![0x49, 0x00, 0x00, 0x00, b'X', b'Y', 0x00];
-        assert!(parse_shop_record(&m, 0).is_none());
+        assert!(parse_shop_record(&m, 0, None).is_none());
 
         // An id byte is 0 -> rejected.
         let mut m = vec![0x49, 0x00, 0x00, 0x02, 0x22, 0x00];
         m.extend_from_slice(b"Shop\0");
-        assert!(parse_shop_record(&m, 0).is_none());
+        assert!(parse_shop_record(&m, 0, None).is_none());
 
         // Name not name-shaped (starts with a digit) -> rejected.
         let mut m = vec![0x49, 0x00, 0x00, 0x01, 0x22];
         m.extend_from_slice(b"3X\0");
-        assert!(parse_shop_record(&m, 0).is_none());
+        assert!(parse_shop_record(&m, 0, None).is_none());
 
         // Name not terminated / not printable -> rejected.
         let m = vec![0x49, 0x00, 0x00, 0x01, 0x22, 0x1F, 0x40];
-        assert!(parse_shop_record(&m, 0).is_none());
+        assert!(parse_shop_record(&m, 0, None).is_none());
     }
 
     #[test]
@@ -346,8 +305,38 @@ mod tests {
         // length=2 shifts the record start by 2 (op+3+2 = op+5).
         let mut man = vec![0x49, 0x00, 0x02, 0xAA, 0xBB, 0x02, 0x77, 0x7e];
         man.extend_from_slice(b"Item\0");
-        let site = parse_shop_record(&man, 0).expect("length-shifted record");
+        let site = parse_shop_record(&man, 0, None).expect("length-shifted record");
         assert_eq!(site.id_offsets, vec![6, 7]);
         assert_eq!(site.name, "Item");
+    }
+
+    #[test]
+    fn scan_finds_a_record_past_arbitrary_bytes() {
+        // The scan must find a shop op-0x49 even when it isn't reachable by a
+        // clean linear opcode walk (the Corey-behind-a-picker case). Embed the
+        // record after some arbitrary "script" bytes that a walk would desync on.
+        let mut man = vec![0x2A, 0x0E, 0x00, 0x46, 0xFF, 0x1F, b'Y', 0x00];
+        let rec_at = man.len();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x77, 0x7e]); // shop: 2 ids
+        man.extend_from_slice(b"Corey\0");
+        let sites = shop_sites(&man, None);
+        assert_eq!(sites.len(), 1, "scan finds the embedded shop");
+        assert_eq!(sites[0].name, "Corey");
+        assert_eq!(sites[0].count_off, rec_at + 3);
+    }
+
+    #[test]
+    fn valid_mask_rejects_unnamed_ids() {
+        // id 0x77 named, 0xFE not named -> with the mask, the record is rejected.
+        let mut man = vec![0x49, 0x00, 0x00, 0x02, 0x77, 0xFE];
+        man.extend_from_slice(b"Shop\0");
+        let mut mask = [true; 256];
+        mask[0xFE] = false;
+        assert!(
+            parse_shop_record(&man, 0, Some(&mask)).is_none(),
+            "an unnamed id fails the SCUS mask check"
+        );
+        // Without the mask (structural only) it parses.
+        assert!(parse_shop_record(&man, 0, None).is_some());
     }
 }

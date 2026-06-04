@@ -173,6 +173,29 @@ pub fn randomize_equipment_drops(
     Ok((plan, report))
 }
 
+/// Build the `256`-entry "id names a real item" mask from the disc's SCUS item
+/// table, used to validate town-shop records (so a stray `0x49`-prefixed byte
+/// run can't be mistaken for a shop). `None` if SCUS / its item table is absent
+/// (the shop locator then falls back to structural-only validation).
+fn named_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
+    let scus = patcher.read_named_file("SCUS_942.54")?;
+    let table = legaia_asset::item_names::ItemNameTable::from_scus(&scus)?;
+    let mut mask = [false; 256];
+    for (id, slot) in mask.iter_mut().enumerate() {
+        *slot = table.name(id as u8).is_some();
+    }
+    Some(mask)
+}
+
+/// Locate a scene's shops, using the SCUS item-name mask when available
+/// (strict) and structural-only validation otherwise.
+fn locate_shops(entry: &[u8], idx: usize, mask: Option<&[bool; 256]>) -> Option<SceneShops> {
+    match mask {
+        Some(m) => SceneShops::locate_with_items(entry, idx, m),
+        None => SceneShops::locate(entry, idx),
+    }
+}
+
 /// One town shop's current stock, for the read-only listing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShopListing {
@@ -188,12 +211,13 @@ pub struct ShopListing {
 /// PROT-entry then in-scene order. Mirrors [`current_chests`]: read-only, decodes
 /// each scene MAN once via [`SceneShops::locate`].
 pub fn current_shops(patcher: &DiscPatcher) -> Result<Vec<ShopListing>> {
+    let mask = named_item_mask(patcher);
     let mut out = Vec::new();
     for idx in 0..patcher.entry_count() {
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
-        let Some(sc) = SceneShops::locate(&entry, idx) else {
+        let Some(sc) = locate_shops(&entry, idx, mask.as_ref()) else {
             continue;
         };
         for shop in &sc.shops {
@@ -233,12 +257,13 @@ pub fn randomize_shops(
     mode: DropMode,
 ) -> Result<ShopApplyReport> {
     // Pass 1: collect every scene's shops (decoded MAN held for pass 2).
+    let mask = named_item_mask(patcher);
     let mut scenes: Vec<SceneShops> = Vec::new();
     for idx in 0..patcher.entry_count() {
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
-        if let Some(sc) = SceneShops::locate(&entry, idx) {
+        if let Some(sc) = locate_shops(&entry, idx, mask.as_ref()) {
             scenes.push(sc);
         }
     }
