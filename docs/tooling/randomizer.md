@@ -2,10 +2,11 @@
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
 disc image: it shuffles monster item drops (optionally turning them into rare
-equipment), random-encounter formations, treasure-chest contents, per-monster
-steal items, scene-transition doors/exits, intra-town (house / interior) doors,
-and the new game's starting items, and writes the result back into the `.bin`.
-It does not touch the clean-room engine.
+equipment), random-encounter formations, treasure-chest contents, what town
+stores sell (and the casino prize exchange), per-monster steal items,
+scene-transition doors/exits, intra-town (house / interior) doors, and the new
+game's starting items, and writes the result back into the `.bin`. It does not
+touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -72,7 +73,11 @@ legaia-rando steals    --input DISC.bin                       # read-only: steal
 legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
 legaia-rando house-doors --input DISC.bin                     # read-only: intra-town MOVE_TO targets
 legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
+legaia-rando shops     --input DISC.bin                       # read-only: what town stores sell
+legaia-rando casino    --input DISC.bin                       # read-only: casino prize exchange
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
+legaia-rando randomize --input DISC.bin --seed gear --equipment-drops      # monsters drop rare equipment
+legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --doors shuffle --door-coupling coupled \
     --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
@@ -86,11 +91,14 @@ the result against the original, and writes the changes as a **PPF 3.0** patch
 (default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
 play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
-and PPF. `--drops`, `--encounters`, `--chests`, `--steals`, and `--doors` each
-take `shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
-bidirectional) or `decoupled` (one-way); `--starting-items N` seeds the new
-game with `N` random consumables (0 = vanilla; capped at 5). `--unused-enemies`
-and `--unused-items` re-introduce content the game ships but never surfaces (see
+and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
+`--steals`, and `--doors` each take `shuffle` / `random` / `none`;
+`--equipment-drops` instead turns every monster's drop into rare tiered
+equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
+`--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
+(one-way); `--starting-items N` seeds the new game with `N` random consumables
+(0 = vanilla; capped at 5). `--unused-enemies` and `--unused-items` re-introduce
+content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
@@ -98,7 +106,7 @@ record of the seed + options + change counts (no game bytes, safe to share). The
 result still parses end to end — a recipient's check that a shared patch + seed
 match their own disc.
 
-The read-only `drops`, `chests`, `steals`, `doors`, and `starting-items` subcommands write nothing
+The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `doors`, and `starting-items` subcommands write nothing
 — they decode the randomizable populations off the user's disc and print them
 (item ids + names resolved from the disc's own SCUS table; chests + doors grouped
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
@@ -230,6 +238,43 @@ excluded from the shuffle pool entirely (determined iteratively), so its items
 neither leave nor enter circulation and `Shuffle` preserves the global multiset
 exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
 too tight to re-pack, is skipped).
+
+### Town shops (what stores sell)
+
+A gold merchant's stock is **inline in the scene's field-VM script** (the MAN),
+the same place chests and doors live — *not* a global table. Opening a shop is
+field-VM **op `0x49` (`STATE_RESUME`)**, the multi-frame state machine that
+drives the menu-request register `_DAT_8007B450`. Its sub-op-`0` inline payload,
+for a shop, is `[u8 count][count× u8 item_id][ASCII name\0]` followed by the
+shop's `0x1F` dialogue ("Welcome!", "Thank you!"). This was pinned from a live
+PCSX-Redux capture standing in the Rim Elm Variety Store — its 10 item ids match
+the curated [shop table](../reference/gamedata.md).
+
+`shop::SceneShops::locate` finds sites by an **opcode-aware walk** of each MAN
+record's script (identical to the chest walk, skipping `0x1F` dialogue): reaching
+op `0x49` *in real script flow* is what distinguishes a shop from coincidental
+bytes, and the inline record is then validated (small item count, every id
+non-zero, a printable name terminated by `0x00`) so non-shop `0x49` uses (inn /
+save prompts) are rejected. `apply::randomize_shops` reassigns the item-id bytes
+**globally** across every town shop (`Shuffle` redistributes the existing
+shop-item multiset, `Random` draws from the valid item pool), same-size, then
+recompresses each touched MAN like the chest path. On the retail disc this is 17
+shops (some in duplicate scene clusters). `--shops shuffle|random`; read-only
+`legaia-rando shops` lists every shop's stock.
+
+### Casino prize exchange
+
+The **casino** prize list (redeem coins for prizes) is a different mechanism from
+the gold town shops: it is a **static table** in the menu overlay's data segment
+(`DAT_801e4518`), and it debits the casino **coin** bank (`_DAT_800845A4`), not
+gold — which is how it's told apart from a gold merchant. It lives in **PROT
+entry 899** (`0899_xxx_dat`, stored raw), file offset `0x15D00` (VA `0x801E4518`
+under the overlay data-segment load base `0x801CE818`), as four `0x60`-byte
+blocks of 8-byte `[u16 item_id][u16 story-gate][u32 coin-price]` records (the
+high-value prizes carry a non-zero gate that locks them behind casino
+progression). `casino::CasinoExchange` shuffles / randoms the whole records (so a
+prize keeps its coin price and progression gate wherever it lands), a same-size
+raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-rando casino`.
 
 ### Steal items (Evil God Icon)
 
