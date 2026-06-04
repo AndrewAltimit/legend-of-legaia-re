@@ -13,6 +13,7 @@ use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use crate::door::SceneDoors;
 use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 use crate::encounter::SceneEncounters;
+use crate::equipment::{EquipmentItem, MonsterExp, plan_equipment_drops};
 use crate::house_door::SceneHouseDoors;
 use crate::rng::SplitMix64;
 
@@ -131,6 +132,41 @@ pub fn randomize_drops(
 ) -> Result<(Vec<DropAssignment>, DropApplyReport)> {
     let current = current_drops(patcher)?;
     let plan = plan_drops(&current, item_pool, seed, mode);
+    let report = apply_drop_plan(patcher, &plan)?;
+    Ok((plan, report))
+}
+
+/// Read every populated monster's id + base EXP reward out of the `battle_data`
+/// archive — the per-enemy input the equipment-drop planner tiers on. Mirrors
+/// [`current_drops`] but exposes EXP (`+0x46`) instead of the drop fields.
+pub fn current_monster_exp(patcher: &DiscPatcher) -> Result<Vec<MonsterExp>> {
+    let entry = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive")?;
+    let records =
+        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    Ok(records
+        .iter()
+        .map(|r| MonsterExp {
+            monster_id: r.id,
+            exp: r.exp,
+        })
+        .collect())
+}
+
+/// Plan and apply the equipment-drop randomization: turn **every** monster's
+/// drop slot into a rare random weapon / armor / accessory, with a chance tiered
+/// by the gear's price and the enemy's EXP (see [`crate::equipment`]). `pool` is
+/// the equipment pool from [`crate::equipment::equipment_pool`]. Reuses
+/// [`apply_drop_plan`], so a slot too tight to re-pack is skipped (recorded in
+/// the report) rather than aborting the run.
+pub fn randomize_equipment_drops(
+    patcher: &mut DiscPatcher,
+    pool: &[EquipmentItem],
+    seed: u64,
+) -> Result<(Vec<DropAssignment>, DropApplyReport)> {
+    let monsters = current_monster_exp(patcher)?;
+    let plan = plan_equipment_drops(&monsters, pool, seed);
     let report = apply_drop_plan(patcher, &plan)?;
     Ok((plan, report))
 }

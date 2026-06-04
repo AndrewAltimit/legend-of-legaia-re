@@ -109,9 +109,18 @@ struct RandomizeArgs {
     /// from the system clock.
     #[arg(long)]
     seed: Option<String>,
-    /// How monster item drops are reassigned.
+    /// How monster item drops are reassigned. Ignored when `--equipment-drops`
+    /// is set (that pass owns the drop slot).
     #[arg(long, value_enum, default_value_t = DropArg::Shuffle)]
     drops: DropArg,
+    /// Turn every monster's drop into a *rare* random piece of equipment
+    /// (weapon / armor / accessory) instead of the normal drop. The chance is
+    /// tiered by the gear's value and the enemy's strength (the rarer of the
+    /// two wins): early-game ~3 %, late-game ~1 % (the engine's integer
+    /// `rand() % 100` roll can't express the requested sub-percent 0.5 %).
+    /// Takes precedence over `--drops`.
+    #[arg(long, default_value_t = false)]
+    equipment_drops: bool,
     /// How random-encounter formations are reassigned (within each scene's own
     /// monster pool, so every monster stays scene-loaded).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -551,7 +560,39 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         &[]
     };
 
-    if let Some(mode) = mode {
+    if args.equipment_drops {
+        // Equipment drops own the single drop slot, so this replaces (not
+        // augments) the normal `--drops` pass.
+        if mode.is_some() {
+            println!("note: --equipment-drops overrides --drops (both write the one drop slot)");
+        }
+        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .context("SCUS_942.54 not found in disc image (needed for --equipment-drops)")?;
+        let equip_pool =
+            legaia_rando::equipment::equipment_pool(&scus).context("build equipment pool")?;
+        let (plan, report) = apply::randomize_equipment_drops(&mut patcher, &equip_pool, seed)?;
+        println!(
+            "equipment-drops: {} of {} monsters now drop rare equipment ({} gear ids in pool)",
+            report.changed,
+            plan.len(),
+            equip_pool.len()
+        );
+        manifest.push("drops = \"equipment\"".to_string());
+        manifest.push(format!("equipment_pool = {}", equip_pool.len()));
+        manifest.push(format!(
+            "equipment_drops_changed = {}  # of {} monsters",
+            report.changed,
+            plan.len()
+        ));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} slot(s) too full to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("drops_skipped = {:?}", report.skipped));
+        }
+    } else if let Some(mode) = mode {
         let (plan, report) = apply::randomize_drops(&mut patcher, &pool, seed, mode)?;
         println!(
             "drops: {} of {} monsters reassigned ({:?})",

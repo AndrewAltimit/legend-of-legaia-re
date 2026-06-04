@@ -1460,6 +1460,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-asset",
+ "legaia-gamedata",
  "legaia-iso",
  "legaia-lzs",
  "legaia-prot",

@@ -1,10 +1,11 @@
 # Randomizer / disc patcher
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
-disc image: it shuffles monster item drops, random-encounter formations,
-treasure-chest contents, per-monster steal items, scene-transition doors/exits,
-intra-town (house / interior) doors, and the new game's starting items, and
-writes the result back into the `.bin`. It does not touch the clean-room engine.
+disc image: it shuffles monster item drops (optionally turning them into rare
+equipment), random-encounter formations, treasure-chest contents, per-monster
+steal items, scene-transition doors/exits, intra-town (house / interior) doors,
+and the new game's starting items, and writes the result back into the `.bin`.
+It does not touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -124,6 +125,36 @@ re-compression churn, not by the gameplay delta — this is inherent to editing
 compressed data, and every edit stays same-size. `--drops random` reads the SCUS
 item table off the disc for the valid item pool; the other modes need no
 external table.
+
+### Equipment drops
+
+`--equipment-drops` is an alternative drop mode: instead of a consumable, it
+turns **every** monster's single drop slot into a *rare* random piece of
+equipment — a weapon, armor, or accessory. It takes precedence over `--drops`
+(both write the same `+0x48`/`+0x49` slot).
+
+The retail item id space is one flat table shared by consumables, key items, and
+equipment, with nothing that flags "this id is a weapon" in a single byte, so
+the equipment ids are recovered by **name**: every weapon / armor / accessory in
+the curated public [gamedata tables](../reference/gamedata.md) is matched
+case-insensitively against the disc's own item-name table to find its id
+(`legaia_rando::equipment::equipment_pool`). The names ship in the repo; the ids
+come from the user's disc — no Sony bytes are embedded, and the join doubles as a
+cross-check of the curated tables against the real executable. About 150 of the
+~155 curated equipment names resolve (a few character-default weapons and quest
+items don't match by name, which is harmless for a drop pool); the stray
+in-range consumable *Honey* is correctly excluded.
+
+The drop **rate** is tiered, "both combined": each equipment piece is bucketed
+by its gamedata gold price (early ≤ 3 700 G, mid ≤ 17 000 G, late above — or
+unpriced quest gear) and each monster by its base EXP reward (early ≤ 600, mid ≤
+3 000, late above), and the rate is the *lower* of the two tiers' rates — a
+powerful weapon is rare even on a weak early enemy, and an early trinket is rare
+on a late boss. Tier rates are early 3 %, mid 2 %, late 1 %.
+
+> The requested late-game 0.5 % is **floored to 1 %**: the retail drop roll is
+> integer `rand() % 100 < chance` (pinned in `FUN_8004E568`), so a sub-percent
+> chance is unrepresentable. 1 % is the rarest the engine can express.
 
 ### Random encounters
 

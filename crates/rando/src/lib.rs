@@ -29,6 +29,8 @@
 //! - [`unused`] — curated "unused content" sets (Evil Bat enemy ids, the
 //!   Something Good / unnamed-accessory items) the opt-in toggles re-introduce.
 //! - [`drops`] — the drop-table planner (shuffle / random).
+//! - [`equipment`] — classify equipment ids + tier them, turning each monster's
+//!   drop slot into a rare random weapon / armor / accessory drop.
 //! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
 //! - [`encounter`] — per-scene random-encounter formation-id shuffle.
 //! - [`chest`] — treasure-chest item-give (field-VM op `0x39`) rewrite.
@@ -43,6 +45,7 @@ pub mod disc;
 pub mod door;
 pub mod drops;
 pub mod encounter;
+pub mod equipment;
 pub mod house_door;
 pub mod item_name;
 pub mod items;
