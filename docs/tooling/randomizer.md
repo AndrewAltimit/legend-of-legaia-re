@@ -278,8 +278,20 @@ letter-initial, `0x00`-terminated string. The apply layer additionally passes a
 SCUS "id names a real item" mask (`locate_with_items`), so an id that names
 nothing can't anchor a false shop. `apply::randomize_shops` then reassigns the
 item-id bytes **globally** across every town shop (`Shuffle` redistributes the
-existing shop-item multiset, `Random` draws from the valid item pool), same-size,
-and recompresses each touched MAN like the chest path. On the retail disc this is
+existing shop-item multiset, `Random` draws from the **sellable pool**),
+same-size, and recompresses each touched MAN like the chest path.
+
+**No quest items; chest gear gets a price.** The sellable pool is "items the game
+prices `> 0`" (`item_price::sellable_pool`, read from the item table's per-record
+price — `u16` at record `+2`, base `0x80074368`; see
+[item-table.md](../formats/item-table.md)). Quest / key / story items all ship at
+price `0`, so this automatically keeps them out of shops — no hand-maintained
+exclusion list. The flip side is that a handful of genuinely-equippable items are
+normally *only found in chests* and so also ship at price `0` (the Ra-Seru
+weapon/armor/shoe set + Astral Sword); `randomize_shops` first prices those
+(`item_price::CHEST_EQUIPMENT_PRICES`, ~28800–55000 gold, approximated from the
+nearest priced gear of the same type) with a same-size SCUS edit, so they're
+non-free and part of the sellable pool. On the retail disc this is
 34 shops (the picker-gated vendors a walk used to miss, plus duplicate scene
 clusters and per-story-phase shop records). `--shops shuffle|random`; read-only
 `legaia-rando shops` lists every shop's stock.
@@ -536,6 +548,7 @@ bit-for-bit.
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equipment_drops_real` | disc-gated | build the equipment pool from `SCUS_942.54`, plan an every-monster equipment drop, re-decode every monster's drop off the patched `battle_data`, assert each is a pool equipment id at a tiered 1..=3% chance; deterministic |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
+| `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140; item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |

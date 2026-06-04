@@ -15,16 +15,27 @@ becomes a readable name (`0x79` → `Healing Berry`).
 
 | | |
 |---|---|
-| Base pointer | `PTR_DAT_8007436C` |
-| Index form | `PTR_DAT_8007436C[id*3]` (three `u32` words per id) |
+| Record base | `DAT_80074368` |
 | Stride | `0xC` bytes |
 | Id range | `0x00..=0xFF` (256 ids) |
 
+The MES `0xC2`/`0xC4` substitution indexes the table by the **name pointer** at
+record `+4` (`PTR_DAT_8007436C = DAT_80074368 + 4`), which is why the name table
+reads as `PTR_DAT_8007436C[id*3]` (three `u32` words: name, type-ptr, …) — but
+the record proper starts 4 bytes earlier, at `DAT_80074368`:
+
 | Offset | Type | Field |
 |---|---|---|
-| `+0` | u32 | `name_ptr` — pointer to the NUL-terminated display name |
-| `+4` | u32 | secondary pointer (a shared "type" string for some classes) |
-| `+8` | u32 | packed price / id / type metadata |
+| `+0` | u8 | kind (`1` = equipment, `2` = item/consumable/key) |
+| `+1` | u8 | (per-kind flags) |
+| `+2` | u16 | **shop price** in gold — what the buy/sell UI charges; `0` = quest / found-only item the shop never prices |
+| `+4` | u32 | `name_ptr` — pointer to the NUL-terminated display name |
+| `+8` | u32 | secondary pointer (a shared "type" / description string for some classes) |
+
+The shop price at `+2` is decisive (verified live: War God Band = 21000, Healing
+Leaf = 100, the Ra-Seru / quest items = 0). The shop randomizer reads it to drop
+quest items from the for-sale pool and to give the chest-found equipment a value
+(`legaia_asset::item_names::price_slot` / `legaia_rando::item_price`).
 
 The table's extent is found by reading until the `name_ptr` words leave the
 PSX-EXE data segment (the words past `id 0xFF` are no longer valid pointers).
