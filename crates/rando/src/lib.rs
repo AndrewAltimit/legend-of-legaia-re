@@ -31,8 +31,10 @@
 //! - [`drops`] — the drop-table planner (shuffle / random).
 //! - [`equipment`] — classify equipment ids + tier them, turning each monster's
 //!   drop slot into a rare random weapon / armor / accessory drop.
-//! - [`shop`] — reassign what town stores sell (shuffle / random over the
-//!   field/menu-overlay shop-inventory table).
+//! - [`shop`] — reassign what town stores sell (the gold-merchant stock is
+//!   inline in each scene's field-VM script, op `0x49`).
+//! - [`casino`] — reassign the casino prize-exchange table (a static overlay
+//!   table that spends casino coins).
 //! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
 //! - [`encounter`] — per-scene random-encounter formation-id shuffle.
 //! - [`chest`] — treasure-chest item-give (field-VM op `0x39`) rewrite.
@@ -42,6 +44,7 @@
 //! - [`ppf`] — PPF 3.0 patch writer/reader (the portable deliverable).
 
 pub mod apply;
+pub mod casino;
 pub mod chest;
 pub mod disc;
 pub mod door;

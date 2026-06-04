@@ -8,6 +8,7 @@
 
 use anyhow::{Context, Result};
 
+use crate::casino::{self, CasinoExchange};
 use crate::chest::SceneChests;
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use crate::door::SceneDoors;
@@ -16,6 +17,7 @@ use crate::encounter::SceneEncounters;
 use crate::equipment::{EquipmentItem, MonsterExp, plan_equipment_drops};
 use crate::house_door::SceneHouseDoors;
 use crate::rng::SplitMix64;
+use crate::shop::SceneShops;
 
 /// Read every monster's current drop (item id + chance) out of the
 /// `battle_data` archive (PROT entry 867). Monsters with no drop are included
@@ -169,6 +171,232 @@ pub fn randomize_equipment_drops(
     let plan = plan_equipment_drops(&monsters, pool, seed);
     let report = apply_drop_plan(patcher, &plan)?;
     Ok((plan, report))
+}
+
+/// One town shop's current stock, for the read-only listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShopListing {
+    /// PROT entry index of the scene bundle holding this shop.
+    pub entry_idx: usize,
+    /// On-screen shop name (e.g. "Variety Store").
+    pub name: String,
+    /// Item ids the shop currently sells, in display order.
+    pub items: Vec<u8>,
+}
+
+/// Read every town-merchant shop on the disc (the randomizable population), in
+/// PROT-entry then in-scene order. Mirrors [`current_chests`]: read-only, decodes
+/// each scene MAN once via [`SceneShops::locate`].
+pub fn current_shops(patcher: &DiscPatcher) -> Result<Vec<ShopListing>> {
+    let mut out = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(sc) = SceneShops::locate(&entry, idx) else {
+            continue;
+        };
+        for shop in &sc.shops {
+            out.push(ShopListing {
+                entry_idx: idx,
+                name: shop.name.clone(),
+                items: shop.id_offsets.iter().map(|&o| sc.decoded[o]).collect(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Outcome of randomizing town shops.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ShopApplyReport {
+    /// Scene bundles whose MAN was rewritten + written back.
+    pub scenes_changed: usize,
+    /// Total shop item-id bytes changed.
+    pub items_changed: usize,
+    /// Total shop item slots found (the randomizable population).
+    pub slots_total: usize,
+    /// Scene PROT-entry indices whose recompressed MAN would not fit, skipped.
+    pub skipped: Vec<usize>,
+}
+
+/// Randomize town-merchant stock (field-VM shop op `0x49`; see [`crate::shop`]).
+/// Shop item ids are global inventory ids, so this is a **global** reassignment
+/// across every town shop on the disc: `Shuffle` redistributes the existing
+/// shop-item multiset, `Random` draws each slot from `item_pool`. Only the
+/// item-id bytes are rewritten (count + name + price logic untouched), then each
+/// touched scene MAN is recompressed; a scene whose MAN overflows is skipped.
+pub fn randomize_shops(
+    patcher: &mut DiscPatcher,
+    item_pool: &[u8],
+    seed: u64,
+    mode: DropMode,
+) -> Result<ShopApplyReport> {
+    // Pass 1: collect every scene's shops (decoded MAN held for pass 2).
+    let mut scenes: Vec<SceneShops> = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        if let Some(sc) = SceneShops::locate(&entry, idx) {
+            scenes.push(sc);
+        }
+    }
+
+    // Per-scene ordered item-id slot offsets + originals.
+    let offsets: Vec<Vec<usize>> = scenes.iter().map(|s| s.id_offsets()).collect();
+    let originals: Vec<Vec<u8>> = scenes
+        .iter()
+        .zip(&offsets)
+        .map(|(s, offs)| offs.iter().map(|&o| s.decoded[o]).collect())
+        .collect();
+
+    let mut report = ShopApplyReport {
+        slots_total: offsets.iter().map(|o| o.len()).sum(),
+        ..Default::default()
+    };
+    if report.slots_total == 0 {
+        return Ok(report);
+    }
+
+    let mut skipped: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    let mut streams: Vec<(usize, u64, Vec<u8>)> = Vec::new();
+
+    match mode {
+        DropMode::Shuffle => {
+            // Iteratively converge on a writable set: shuffle the originals of
+            // the not-yet-skipped scenes among those same slots, repack, and fold
+            // any fresh overflow into `skipped` (which only shrinks the pool, so
+            // it converges and the multiset over written slots stays preserved).
+            loop {
+                for (i, sc) in scenes.iter_mut().enumerate() {
+                    for (k, &o) in offsets[i].iter().enumerate() {
+                        sc.set_id(o, originals[i][k]);
+                    }
+                }
+                let mut pool: Vec<u8> = (0..scenes.len())
+                    .filter(|i| !skipped.contains(i))
+                    .flat_map(|i| originals[i].iter().copied())
+                    .collect();
+                let mut rng = SplitMix64::new(seed);
+                rng.shuffle(&mut pool);
+                let mut cur = 0usize;
+                for (i, sc) in scenes.iter_mut().enumerate() {
+                    if skipped.contains(&i) {
+                        continue;
+                    }
+                    for &o in &offsets[i] {
+                        sc.set_id(o, pool[cur]);
+                        cur += 1;
+                    }
+                }
+                streams.clear();
+                let mut fresh_overflow = false;
+                for (i, sc) in scenes.iter().enumerate() {
+                    if skipped.contains(&i) {
+                        continue;
+                    }
+                    match sc.repack() {
+                        Some(stream) => streams.push((sc.entry_idx, sc.man_offset as u64, stream)),
+                        None => {
+                            skipped.insert(i);
+                            fresh_overflow = true;
+                        }
+                    }
+                }
+                if !fresh_overflow {
+                    break;
+                }
+            }
+        }
+        DropMode::Random => {
+            if item_pool.is_empty() {
+                return Ok(report);
+            }
+            let mut rng = SplitMix64::new(seed);
+            for (i, sc) in scenes.iter_mut().enumerate() {
+                for &o in &offsets[i] {
+                    let v = item_pool[rng.below(item_pool.len())];
+                    sc.set_id(o, v);
+                }
+                match sc.repack() {
+                    Some(stream) => streams.push((sc.entry_idx, sc.man_offset as u64, stream)),
+                    None => {
+                        skipped.insert(i);
+                    }
+                }
+            }
+        }
+    }
+
+    // Tally changes (over non-skipped scenes) and write the streams back.
+    for (i, sc) in scenes.iter().enumerate() {
+        if skipped.contains(&i) {
+            continue;
+        }
+        let changed = offsets[i]
+            .iter()
+            .enumerate()
+            .filter(|&(k, &o)| sc.decoded[o] != originals[i][k])
+            .count();
+        if changed > 0 {
+            report.scenes_changed += 1;
+            report.items_changed += changed;
+        }
+    }
+    for (entry_idx, man_offset, stream) in streams {
+        patcher
+            .patch_prot_entry(entry_idx, man_offset, &stream)
+            .with_context(|| format!("write scene {entry_idx} shop MAN"))?;
+    }
+    report.skipped = skipped.into_iter().map(|i| scenes[i].entry_idx).collect();
+    Ok(report)
+}
+
+/// Read the casino prize-exchange table (PROT 0899), for the read-only listing.
+/// Returns `None` if the entry / table can't be parsed.
+pub fn current_casino(patcher: &DiscPatcher) -> Result<Option<CasinoExchange>> {
+    let entry = patcher
+        .read_entry(casino::CASINO_ENTRY)
+        .context("read casino overlay entry 0899")?;
+    Ok(CasinoExchange::parse(
+        &entry,
+        casino::CASINO_TABLE_OFFSET,
+        casino::CASINO_BLOCK_COUNT,
+    ))
+}
+
+/// Randomize the casino prize-exchange table (see [`crate::casino`]). A
+/// same-size raw edit of PROT entry 0899 (no LZS), so it never overflows.
+/// Returns the number of prize slots that changed.
+pub fn randomize_casino(patcher: &mut DiscPatcher, seed: u64, mode: DropMode) -> Result<usize> {
+    let mut entry = patcher
+        .read_entry(casino::CASINO_ENTRY)
+        .context("read casino overlay entry 0899")?;
+    let Some(mut ex) = CasinoExchange::parse(
+        &entry,
+        casino::CASINO_TABLE_OFFSET,
+        casino::CASINO_BLOCK_COUNT,
+    ) else {
+        return Ok(0);
+    };
+    let base = casino::CASINO_TABLE_OFFSET;
+    let span = casino::CASINO_BLOCK_COUNT * casino::BLOCK_SIZE;
+    let before = entry[base..base + span].to_vec();
+    ex.randomize(seed, mode);
+    ex.write_back(&mut entry);
+    let after = &entry[base..base + span];
+    let changed = before
+        .chunks(casino::RECORD_SIZE)
+        .zip(after.chunks(casino::RECORD_SIZE))
+        .filter(|(a, b)| a != b)
+        .count();
+    if after != before.as_slice() {
+        patcher
+            .patch_prot_entry(casino::CASINO_ENTRY, base as u64, after)
+            .context("write casino prize table")?;
+    }
+    Ok(changed)
 }
 
 /// Outcome of randomizing scene encounters.
