@@ -483,6 +483,28 @@ region rows.
   formation record" needs a fresh save-state capture taken in the
   one-frame window between roll and `FUN_801DA51C` consumption.
 
+## Random vs scripted formations (the MAN encounter section)
+
+Separate from the per-actor scripted record above, section 0 of a scene's MAN
+holds the scene's **formation table** + **region table** that drive *random*
+encounters (`FUN_8003A110` carve; layout in
+[`legaia_asset::man_section`](../../crates/asset/src/man_section.rs) and the
+`EncounterSection` parser). Each region record is an AABB + a `rate_increment` +
+a `[formation_range_base, +formation_range_count)` slice; the position-aware roll
+`FUN_801D9E1C` adds `rate_increment` to an encounter counter while the player is
+inside the AABB and, on overflow, picks a formation from that region's slice.
+
+A region with **`rate_increment == 0`** never advances the counter, so it never
+triggers — it can list formations without ever rolling them. The scene's
+**scripted/boss** formations (the Rim Elm Tetsu fight, etc.) live in this same
+formation array but are engaged by explicit index from the field VM; they are
+reached only by rate-0 regions (or by no region at all), never by a rate>0 one.
+So a formation is a *random* encounter **iff some `rate_increment > 0` region
+reaches it**. Worked example — town01 (Rim Elm): rate-0 regions cover formations
+2..=4, but the only rate>0 regions reach 0..=2, so the Tetsu formation at index 4
+is scripted-only. The encounter randomizer relies on this to leave boss fights
+untouched (`legaia_rando::encounter::random_formation_mask`).
+
 ## Files referencing this format
 
 - [`crates/engine-vm`](../../crates/engine-vm/) — the field VM dispatcher port reads the operand and writes the actor pointer slot.

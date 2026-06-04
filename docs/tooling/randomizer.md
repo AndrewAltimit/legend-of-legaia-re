@@ -179,6 +179,21 @@ stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
 safe). The id pool is **per scene** — only ids the scene already uses — so every
 swapped-in monster is one the scene loads; no missing model, no crash.
 
+**Bosses are protected.** A scene's formation array mixes random encounters with
+*scripted* fights the field VM engages by explicit index — boss battles (the Rim
+Elm Tetsu tutorial, Cort, Songi, …) and story encounters. Only the genuinely
+random formations are touched: the encounter section's region records each name
+a `[formation_range_base, +count)` slice **and** a `rate_increment` (the per-step
+amount added to the encounter counter inside that region's AABB), and a region
+with `rate_increment == 0` never triggers an encounter, so it can reference a
+formation without ever rolling it. `SceneEncounters` marks a formation random iff
+some **`rate_increment > 0`** region reaches it (the retail position-aware roll
+`FUN_801D9E1C`); formations reached only by rate-0 regions (or no region) are
+left byte-identical. town01 is the canonical case — its rate-0 regions cover
+formations 2..=4, but the only rate>0 regions reach 0..=2, so Tetsu at index 4 is
+correctly left alone. The candidate pool for `Random` is likewise the random
+formations' ids only, so a roll never drops a boss into an ordinary encounter.
+
 ### Treasure chests
 
 A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
@@ -494,7 +509,7 @@ bit-for-bit.
 | `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
 | `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
-| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
+| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
 | `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
