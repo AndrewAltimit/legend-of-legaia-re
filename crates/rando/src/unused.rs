@@ -22,6 +22,11 @@
 /// Unused enemy monster ids the `--unused-enemies` toggle can inject into random
 /// encounters.
 ///
+/// **"Comm" — id 78.** A complete, standalone monster record (HP 2520, AGL/etc.
+/// stats, casts magic `0x23`, exp 945, no drop) that **no** scene formation
+/// references — a genuine cut/unused enemy, not a duplicate. Spawnable like any
+/// other (the loader streams its slot by id).
+///
 /// **Evil Bat duplicates — ids 176, 177, 178.** The monster archive holds 186
 /// populated 1-based records (`slot = (id - 1) * 0x14000`; the id is the global
 /// battle-loader index, derived from the slot, not stored). Ids 176, 177, 178
@@ -34,7 +39,7 @@
 /// in the formation cell — there is no per-scene monster preload array in the
 /// MAN), injecting one of these ids into a formation id byte is sufficient to
 /// make it appear; nothing else needs patching.
-pub const UNUSED_ENEMY_IDS: &[u8] = &[176, 177, 178];
+pub const UNUSED_ENEMY_IDS: &[u8] = &[78, 176, 177, 178];
 
 /// Unused item ids the `--unused-items` toggle adds to the valid item pool (so
 /// the `random` drop / chest / steal fills can hand them out).
@@ -70,8 +75,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn evil_bat_ids_are_the_three_unused_clones() {
-        assert_eq!(UNUSED_ENEMY_IDS, &[176, 177, 178]);
+    fn unused_enemy_ids_are_comm_and_the_three_evil_bat_clones() {
+        assert_eq!(UNUSED_ENEMY_IDS, &[78, 176, 177, 178]);
     }
 
     #[test]

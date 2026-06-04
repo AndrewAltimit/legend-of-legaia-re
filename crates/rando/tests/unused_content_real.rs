@@ -30,11 +30,15 @@ fn load_disc() -> Option<Vec<u8>> {
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
 }
 
-/// The in-use Evil Bat id every unused clone duplicates (1-based archive index).
+/// The in-use Evil Bat id the unused clones duplicate (1-based archive index).
 const EVIL_BAT_INUSE_ID: u16 = 140;
+/// The unused Evil Bat clones (a subset of [`UNUSED_ENEMY_IDS`]).
+const EVIL_BAT_CLONE_IDS: &[u8] = &[176, 177, 178];
+/// "Comm" — a standalone unused enemy (not a clone).
+const COMM_ID: u16 = 78;
 
 #[test]
-fn unused_evil_bat_ids_are_byte_identical_clones() {
+fn unused_enemy_ids_are_valid_unused_records() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -48,17 +52,17 @@ fn unused_evil_bat_ids_are_byte_identical_clones() {
         let start = (id as usize - 1) * SLOT_STRIDE;
         &archive[start..start + SLOT_STRIDE]
     };
+
+    // The Evil Bat clones (176/177/178) are byte-identical to the in-use id 140.
     let reference = slot(EVIL_BAT_INUSE_ID);
-    for &id in UNUSED_ENEMY_IDS {
+    for &id in EVIL_BAT_CLONE_IDS {
+        assert!(UNUSED_ENEMY_IDS.contains(&id));
         assert_eq!(
             slot(id as u16),
             reference,
-            "unused enemy id {id} must be a byte-identical clone of the in-use Evil Bat (id {EVIL_BAT_INUSE_ID})"
+            "Evil Bat clone id {id} must be byte-identical to the in-use Evil Bat (id {EVIL_BAT_INUSE_ID})"
         );
     }
-
-    // The reference really is the Evil Bat (name lives at a block-relative
-    // pointer; the parser resolves it).
     let rec = legaia_asset::monster_archive::record(&archive, EVIL_BAT_INUSE_ID)
         .expect("decode record")
         .expect("record present");
@@ -66,6 +70,18 @@ fn unused_evil_bat_ids_are_byte_identical_clones() {
         rec.name.contains("Evil Bat"),
         "id {EVIL_BAT_INUSE_ID} name is {:?}, expected to contain \"Evil Bat\"",
         rec.name
+    );
+
+    // "Comm" (78) is a complete, *distinct* record (not a clone of the Evil Bat).
+    assert!(UNUSED_ENEMY_IDS.contains(&(COMM_ID as u8)));
+    let comm = legaia_asset::monster_archive::record(&archive, COMM_ID)
+        .expect("decode Comm record")
+        .expect("Comm record present");
+    assert!(comm.hp > 0, "Comm is a populated record (HP {})", comm.hp);
+    assert_ne!(
+        slot(COMM_ID),
+        reference,
+        "Comm (id {COMM_ID}) is its own enemy, not an Evil Bat clone"
     );
 }
 
