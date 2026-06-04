@@ -102,7 +102,7 @@
     </label>
     <label class="rom-row">
       <span class="rom-label">Unused enemies</span>
-      <span class="rom-check"><input type="checkbox" id="rom-unused-enemies"> Add the unused Evil Bat to random encounters (needs Random encounters)</span>
+      <span class="rom-check"><input type="checkbox" id="rom-unused-enemies"> Add the unused &ldquo;Comm&rdquo; + Evil Bat enemies to random encounters (needs Random encounters)</span>
     </label>
     <label class="rom-row">
       <span class="rom-label">Unused items</span>
@@ -129,7 +129,7 @@
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Bidirectional</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving, so every target stays a valid tile), so house/interior doors lead to different rooms. The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
     <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count). There is no static starting-inventory table, so this rewrites the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place &mdash; a same-size patch using a packed halfword store per item, drawing from the consumable item block (Healing Leaf &hellip; Wonder Elixir) so each item belongs on the bag's consumable page.</li>
-    <li><strong>Unused enemies</strong> &mdash; brings back the Evil Bat, a fully-formed monster the shipped game has in its data but never places in any encounter. The battle loader streams a monster's graphics on demand by id, so adding its id to the encounter pool is enough to make it spawn. Only takes effect with <em>Random</em> encounters (a multiset-preserving shuffle can't introduce a new monster).</li>
+    <li><strong>Unused enemies</strong> &mdash; brings back two fully-formed monsters the shipped game has in its data but never places in any encounter: <strong>"Comm"</strong> (a tough standalone enemy) and the <strong>Evil Bat</strong>. The battle loader streams a monster's graphics on demand by id, so adding its id to the encounter pool is enough to make it spawn. Only takes effect with <em>Random</em> encounters (a multiset-preserving shuffle can't introduce a new monster).</li>
     <li><strong>Unused items</strong> &mdash; adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a 50,000&nbsp;G sell item) and an accessory that has no name in the data &mdash; the randomizer names it <strong>&ldquo;Seru Bell&rdquo;</strong> (a same-size <code>SCUS_942.54</code> patch that repoints just that item's name pointer) so it shows a real name when it lands. Only affects the <em>Random</em> drop / chest / steal fills.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
