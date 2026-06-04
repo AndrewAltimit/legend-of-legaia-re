@@ -1,10 +1,12 @@
 # Randomizer / disc patcher
 
 Track-1-adjacent tooling that edits gameplay data on a **user-supplied** retail
-disc image: it shuffles monster item drops, random-encounter formations,
-treasure-chest contents, per-monster steal items, scene-transition doors/exits,
-intra-town (house / interior) doors, and the new game's starting items, and
-writes the result back into the `.bin`. It does not touch the clean-room engine.
+disc image: it shuffles monster item drops (optionally turning them into rare
+equipment), random-encounter formations, treasure-chest contents, what town
+stores sell (and the casino prize exchange), per-monster steal items,
+scene-transition doors/exits, intra-town (house / interior) doors, and the new
+game's starting items, and writes the result back into the `.bin`. It does not
+touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -56,9 +58,11 @@ shifts. It works because the edit targets fit a fixed slot with slack:
 
 The same randomizer is also exposed client-side: `legaia_web_viewer::rom_patcher`
 (`patch_rom`) compiles the crate to WASM, and the static site's
-`tooling/rom-patcher.html` page lets a user supply their own disc, toggle the
-drop / encounter / chest settings, and download a patched image — the disc bytes
-never leave the browser. The CLI below is the scriptable / shareable-PPF path.
+`tooling/rom-patcher.html` page lets a user supply their own disc, toggle every
+setting (drops / equipment-drops / encounters / chests / town shops / casino /
+steals / doors / house doors / starting items / unused content), and download a
+patched image — the disc bytes never leave the browser. The CLI below is the
+scriptable / shareable-PPF path.
 
 ## CLI: `legaia-rando`
 
@@ -71,7 +75,11 @@ legaia-rando steals    --input DISC.bin                       # read-only: steal
 legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
 legaia-rando house-doors --input DISC.bin                     # read-only: intra-town MOVE_TO targets
 legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
+legaia-rando shops     --input DISC.bin                       # read-only: what town stores sell
+legaia-rando casino    --input DISC.bin                       # read-only: casino prize exchange
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
+legaia-rando randomize --input DISC.bin --seed gear --equipment-drops      # monsters drop rare equipment
+legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --doors shuffle --door-coupling coupled \
     --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
@@ -85,11 +93,14 @@ the result against the original, and writes the changes as a **PPF 3.0** patch
 (default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
 play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
-and PPF. `--drops`, `--encounters`, `--chests`, `--steals`, and `--doors` each
-take `shuffle` / `random` / `none`; `--door-coupling` is `coupled` (default,
-bidirectional) or `decoupled` (one-way); `--starting-items N` seeds the new
-game with `N` random consumables (0 = vanilla; capped at 5). `--unused-enemies`
-and `--unused-items` re-introduce content the game ships but never surfaces (see
+and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
+`--steals`, and `--doors` each take `shuffle` / `random` / `none`;
+`--equipment-drops` instead turns every monster's drop into rare tiered
+equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
+`--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
+(one-way); `--starting-items N` seeds the new game with `N` random consumables
+(0 = vanilla; capped at 5). `--unused-enemies` and `--unused-items` re-introduce
+content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
@@ -97,7 +108,7 @@ record of the seed + options + change counts (no game bytes, safe to share). The
 result still parses end to end — a recipient's check that a shared patch + seed
 match their own disc.
 
-The read-only `drops`, `chests`, `steals`, `doors`, and `starting-items` subcommands write nothing
+The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `doors`, and `starting-items` subcommands write nothing
 — they decode the randomizable populations off the user's disc and print them
 (item ids + names resolved from the disc's own SCUS table; chests + doors grouped
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
@@ -125,6 +136,36 @@ compressed data, and every edit stays same-size. `--drops random` reads the SCUS
 item table off the disc for the valid item pool; the other modes need no
 external table.
 
+### Equipment drops
+
+`--equipment-drops` is an alternative drop mode: instead of a consumable, it
+turns **every** monster's single drop slot into a *rare* random piece of
+equipment — a weapon, armor, or accessory. It takes precedence over `--drops`
+(both write the same `+0x48`/`+0x49` slot).
+
+The retail item id space is one flat table shared by consumables, key items, and
+equipment, with nothing that flags "this id is a weapon" in a single byte, so
+the equipment ids are recovered by **name**: every weapon / armor / accessory in
+the curated public [gamedata tables](../reference/gamedata.md) is matched
+case-insensitively against the disc's own item-name table to find its id
+(`legaia_rando::equipment::equipment_pool`). The names ship in the repo; the ids
+come from the user's disc — no Sony bytes are embedded, and the join doubles as a
+cross-check of the curated tables against the real executable. About 150 of the
+~155 curated equipment names resolve (a few character-default weapons and quest
+items don't match by name, which is harmless for a drop pool); the stray
+in-range consumable *Honey* is correctly excluded.
+
+The drop **rate** is tiered, "both combined": each equipment piece is bucketed
+by its gamedata gold price (early ≤ 3 700 G, mid ≤ 17 000 G, late above — or
+unpriced quest gear) and each monster by its base EXP reward (early ≤ 600, mid ≤
+3 000, late above), and the rate is the *lower* of the two tiers' rates — a
+powerful weapon is rare even on a weak early enemy, and an early trinket is rare
+on a late boss. Tier rates are early 3 %, mid 2 %, late 1 %.
+
+> The requested late-game 0.5 % is **floored to 1 %**: the retail drop roll is
+> integer `rand() % 100 < chance` (pinned in `FUN_8004E568`), so a sub-percent
+> chance is unrepresentable. 1 % is the rarest the engine can express.
+
 ### Random encounters
 
 Formations live in the per-scene MAN asset (type `0x03`, descriptor index 2 of a
@@ -139,6 +180,21 @@ recompresses, and writes the stream back over the original (the LZS decoder
 stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
 safe). The id pool is **per scene** — only ids the scene already uses — so every
 swapped-in monster is one the scene loads; no missing model, no crash.
+
+**Bosses are protected.** A scene's formation array mixes random encounters with
+*scripted* fights the field VM engages by explicit index — boss battles (the Rim
+Elm Tetsu tutorial, Cort, Songi, …) and story encounters. Only the genuinely
+random formations are touched: the encounter section's region records each name
+a `[formation_range_base, +count)` slice **and** a `rate_increment` (the per-step
+amount added to the encounter counter inside that region's AABB), and a region
+with `rate_increment == 0` never triggers an encounter, so it can reference a
+formation without ever rolling it. `SceneEncounters` marks a formation random iff
+some **`rate_increment > 0`** region reaches it (the retail position-aware roll
+`FUN_801D9E1C`); formations reached only by rate-0 regions (or no region) are
+left byte-identical. town01 is the canonical case — its rate-0 regions cover
+formations 2..=4, but the only rate>0 regions reach 0..=2, so Tetsu at index 4 is
+correctly left alone. The candidate pool for `Random` is likewise the random
+formations' ids only, so a roll never drops a boss into an ordinary encounter.
 
 ### Treasure chests
 
@@ -199,6 +255,62 @@ excluded from the shuffle pool entirely (determined iteratively), so its items
 neither leave nor enter circulation and `Shuffle` preserves the global multiset
 exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
 too tight to re-pack, is skipped).
+
+### Town shops (what stores sell)
+
+A gold merchant's stock is **inline in the scene's field-VM script** (the MAN),
+the same place chests and doors live — *not* a global table. Opening a shop is
+field-VM **op `0x49` (`STATE_RESUME`)**, the multi-frame state machine that
+drives the menu-request register `_DAT_8007B450`. Its sub-op-`0` inline payload,
+for a shop, is `[u8 count][count× u8 item_id][ASCII name\0]` followed by the
+shop's `0x1F` dialogue ("Welcome!", "Thank you!"). This was pinned from a live
+PCSX-Redux capture standing in the Rim Elm Variety Store — its 10 item ids match
+the curated [shop table](../reference/gamedata.md).
+
+`shop::SceneShops` finds sites by **scanning** the decompressed MAN for the
+op-`0x49` sub-op-`0` shop signature — *not* by an opcode walk. A shop's `0x49` is
+often gated behind a dialogue confirm-picker ("Buy them?") whose option-jump
+table desyncs a linear disassembler before it reaches the op (Biron Monastery's
+Corey vendor is the case that exposed this), so a walk silently misses those
+shops. The scan doesn't care how the script reaches the op; false positives are
+ruled out by strict record validation: the byte after the opcode must be `0x00`
+(sub-op 0 — this alone rejects almost every stray `0x49`), the count is small and
+non-zero, every id is non-zero, and the trailing shop name is a printable,
+letter-initial, `0x00`-terminated string. The apply layer additionally passes a
+SCUS "id names a real item" mask (`locate_with_items`), so an id that names
+nothing can't anchor a false shop. `apply::randomize_shops` then reassigns the
+item-id bytes **globally** across every town shop (`Shuffle` redistributes the
+existing shop-item multiset, `Random` draws from the **sellable pool**),
+same-size, and recompresses each touched MAN like the chest path.
+
+**No quest items; chest gear gets a price.** The sellable pool is "items the game
+prices `> 0`" (`item_price::sellable_pool`, read from the item table's per-record
+price — `u16` at record `+2`, base `0x80074368`; see
+[item-table.md](../formats/item-table.md)). Quest / key / story items all ship at
+price `0`, so this automatically keeps them out of shops — no hand-maintained
+exclusion list. The flip side is that a handful of genuinely-equippable items are
+normally *only found in chests* and so also ship at price `0` (the Ra-Seru
+weapon/armor/shoe set + Astral Sword); `randomize_shops` first prices those
+(`item_price::CHEST_EQUIPMENT_PRICES`, ~28800–55000 gold, approximated from the
+nearest priced gear of the same type) with a same-size SCUS edit, so they're
+non-free and part of the sellable pool. On the retail disc this is
+34 shops (the picker-gated vendors a walk used to miss, plus duplicate scene
+clusters and per-story-phase shop records). `--shops shuffle|random`; read-only
+`legaia-rando shops` lists every shop's stock.
+
+### Casino prize exchange
+
+The **casino** prize list (redeem coins for prizes) is a different mechanism from
+the gold town shops: it is a **static table** in the menu overlay's data segment
+(`DAT_801e4518`), and it debits the casino **coin** bank (`_DAT_800845A4`), not
+gold — which is how it's told apart from a gold merchant. It lives in **PROT
+entry 899** (`0899_xxx_dat`, stored raw), file offset `0x15D00` (VA `0x801E4518`
+under the overlay data-segment load base `0x801CE818`), as four `0x60`-byte
+blocks of 8-byte `[u16 item_id][u16 story-gate][u32 coin-price]` records (the
+high-value prizes carry a non-zero gate that locks them behind casino
+progression). `casino::CasinoExchange` shuffles / randoms the whole records (so a
+prize keeps its coin price and progression gate wherever it lands), a same-size
+raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-rando casino`.
 
 ### Steal items (Evil God Icon)
 
@@ -328,10 +440,11 @@ toggles bring it back. They are *additive* — a normal run never places them, s
 the disc stays vanilla unless you ask. Both are pinned by the disc-gated
 `unused_content_real` test.
 
-**`--unused-enemies`** re-introduces the **Evil Bat**, an enemy whose record
-lives in the `battle_data` archive (monster ids 176/177/178 are byte-identical
-clones of each other and of the in-use Evil Bat at id 140) but which no scene's
-encounter formation references. The battle loader streams a monster's
+**`--unused-enemies`** re-introduces two cut enemies that no scene's encounter
+formation references: **"Comm"** (id 78, a complete standalone record — HP 2520,
+casts magic, exp 945) and the **Evil Bat** (monster ids 176/177/178, byte-identical
+clones of each other and of the in-use Evil Bat at id 140). The battle loader
+streams a monster's
 `0x14000` archive slot on demand keyed by its id — there is **no per-scene
 monster preload list** — so injecting one of these ids into a formation byte is
 sufficient to make it spawn and render; nothing else needs patching. The toggle
@@ -379,6 +492,16 @@ stream that still overflows is **skipped** (its scene / slot left unchanged) and
 recorded in the apply report rather than aborting the run; the CLI prints the
 skipped entries.
 
+The "no larger than the original" budget is measured from the scene asset-table
+**boundary** (the MAN's allotted span up to the next descriptor's offset), *not*
+from the current compressed length. That matters when several passes (encounter,
+chest, shop) edit the same scene MAN in one run: our re-packer is often a touch
+tighter than Sony's, so reading the budget back from the just-written shorter
+stream would shrink it on every pass and make a later pass needlessly overflow
+and skip a scene — which is what left some shops (e.g. Biron Monastery's) vanilla
+when run alongside encounters/chests. The boundary is fixed (all edits are
+same-size in place), so every pass gets the same full budget.
+
 ## The patch chain
 
 A PROT-entry-relative edit maps to a disc byte range like this:
@@ -418,7 +541,7 @@ bit-for-bit.
 | `crates/rando` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
 | `crates/rando` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
 | `crates/rando` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
-| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic |
+| `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
 | `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
@@ -426,7 +549,10 @@ bit-for-bit.
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene `0x23 MOVE_TO` target-tile multiset preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
-| `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140; item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
+| `crates/rando` `equipment_drops_real` | disc-gated | build the equipment pool from `SCUS_942.54`, plan an every-monster equipment drop, re-decode every monster's drop off the patched `battle_data`, assert each is a pool equipment id at a tiered 1..=3% chance; deterministic |
+| `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
+| `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
+| `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
@@ -435,10 +561,12 @@ bit-for-bit.
 | `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
 | `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
 | `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
+| `crates/engine-core` `shop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch a town-shop slot (scene MAN op `0x49`) and a casino prize (PROT 899 table), re-decode the patched stock, drive `World::buy_from_shop` (shared with the menu `ShopConfirm` commit), assert the runtime sells/grants the patched id (not the original) |
+| `crates/engine-core` `equipment_drops_runtime_e2e` | disc-gated | runtime oracle: run `randomize_equipment_drops`, re-decode a planned monster's record off the patched archive, drive `apply_battle_loot` (roll seeded to land the tiered 1..=3% chance), assert the runtime grants the planned equipment id from the pool (baseline grants the original consumable) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The eight `engine-core` runtime oracles answer a question the `crates/rando`
+The `engine-core` runtime oracles answer a question the `crates/rando`
 patch tests don't: not just that the patched byte is *written* faithfully, but
 that a runtime actually *reads it and acts on it* — grants the new item, spawns
 the new monster, or warps to the new scene. A savestate can't prove this — the

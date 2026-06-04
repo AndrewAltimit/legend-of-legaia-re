@@ -41,16 +41,19 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
-/// `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
-/// each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
+/// `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `doors`
+/// / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`. `shops`
+/// randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
 /// `"shuffle"`. `starting_items` is the number of random starting consumables
 /// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
 /// 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
 /// pool (only with `encounters = "random"`); `unused_items` adds the unused
 /// "Something Good" / unnamed-accessory items to the random-fill pool (only the
-/// `random` drop / chest / steal modes use it). `seed` is a number or any string
-/// (hashed). Returns `{ data, summary, seed }`.
+/// `random` drop / chest / steal modes use it). `equipment_drops` turns every
+/// monster's drop into a rare random weapon / armor / accessory at a tiered
+/// chance (overrides `drops`). `seed` is a number or any string (hashed).
+/// Returns `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn patch_rom(
@@ -59,6 +62,8 @@ pub fn patch_rom(
     drops: &str,
     encounters: &str,
     chests: &str,
+    shops: &str,
+    casino: &str,
     steals: &str,
     doors: &str,
     door_coupling: &str,
@@ -66,11 +71,14 @@ pub fn patch_rom(
     starting_items: usize,
     unused_enemies: bool,
     unused_items: bool,
+    equipment_drops: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
     let enc_mode = parse_mode(encounters);
     let chest_mode = parse_mode(chests);
+    let shop_mode = parse_mode(shops);
+    let casino_mode = parse_mode(casino);
     let steal_mode = parse_mode(steals);
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
@@ -78,6 +86,8 @@ pub fn patch_rom(
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
+    // Shops build their own sellable pool internally, so they don't need the
+    // general valid-item pool.
     let needs_pool = drops_mode == Some(DropMode::Random)
         || chest_mode == Some(DropMode::Random)
         || steal_mode == Some(DropMode::Random);
@@ -104,24 +114,47 @@ pub fn patch_rom(
 
     let mut summary = String::new();
 
-    match drops_mode {
-        Some(m) => {
-            let (plan, rep) = apply::randomize_drops(&mut patcher, &pool, seed_n, m)
-                .map_err(|e| err(format!("drops: {e}")))?;
+    if equipment_drops {
+        // Equipment drops own the single drop slot, so they replace the normal
+        // drops pass (same as the CLI's `--equipment-drops`).
+        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .ok_or_else(|| err("SCUS_942.54 not found (needed for equipment drops)"))?;
+        let equip_pool = legaia_rando::equipment::equipment_pool(&scus)
+            .map_err(|e| err(format!("equipment: {e}")))?;
+        let (plan, rep) = apply::randomize_equipment_drops(&mut patcher, &equip_pool, seed_n)
+            .map_err(|e| err(format!("equipment drops: {e}")))?;
+        summary.push_str(&format!(
+            "equipment-drops: {} of {} monsters drop rare gear ({} ids in pool)\n",
+            rep.changed,
+            plan.len(),
+            equip_pool.len()
+        ));
+        if !rep.skipped.is_empty() {
             summary.push_str(&format!(
-                "drops: {} of {} reassigned ({})\n",
-                rep.changed,
-                plan.len(),
-                drops
+                "  {} slot(s) too full to re-pack\n",
+                rep.skipped.len()
             ));
-            if !rep.skipped.is_empty() {
-                summary.push_str(&format!(
-                    "  {} slot(s) too full to re-pack\n",
-                    rep.skipped.len()
-                ));
-            }
         }
-        None => summary.push_str("drops: untouched\n"),
+    } else {
+        match drops_mode {
+            Some(m) => {
+                let (plan, rep) = apply::randomize_drops(&mut patcher, &pool, seed_n, m)
+                    .map_err(|e| err(format!("drops: {e}")))?;
+                summary.push_str(&format!(
+                    "drops: {} of {} reassigned ({})\n",
+                    rep.changed,
+                    plan.len(),
+                    drops
+                ));
+                if !rep.skipped.is_empty() {
+                    summary.push_str(&format!(
+                        "  {} slot(s) too full to re-pack\n",
+                        rep.skipped.len()
+                    ));
+                }
+            }
+            None => summary.push_str("drops: untouched\n"),
+        }
     }
 
     match enc_mode {
@@ -163,6 +196,29 @@ pub fn patch_rom(
             ));
         }
         None => summary.push_str("chests: untouched\n"),
+    }
+
+    match shop_mode {
+        Some(m) => {
+            let rep = apply::randomize_shops(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("shops: {e}")))?;
+            summary.push_str(&format!(
+                "shops: {} of {} town-shop slots changed across {} scenes ({})\n",
+                rep.items_changed, rep.slots_total, rep.scenes_changed, shops
+            ));
+        }
+        None => summary.push_str("shops: untouched\n"),
+    }
+
+    match casino_mode {
+        Some(m) => {
+            let changed = apply::randomize_casino(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("casino: {e}")))?;
+            summary.push_str(&format!(
+                "casino: {changed} prize slot(s) changed ({casino})\n"
+            ));
+        }
+        None => summary.push_str("casino: untouched\n"),
     }
 
     match steal_mode {

@@ -82,6 +82,20 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every town-merchant shop and what it sells, grouped by
+    /// scene, with item names.
+    Shops {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list the casino prize-exchange prizes (item, coin price,
+    /// progression gate).
+    Casino {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -109,9 +123,18 @@ struct RandomizeArgs {
     /// from the system clock.
     #[arg(long)]
     seed: Option<String>,
-    /// How monster item drops are reassigned.
+    /// How monster item drops are reassigned. Ignored when `--equipment-drops`
+    /// is set (that pass owns the drop slot).
     #[arg(long, value_enum, default_value_t = DropArg::Shuffle)]
     drops: DropArg,
+    /// Turn every monster's drop into a *rare* random piece of equipment
+    /// (weapon / armor / accessory) instead of the normal drop. The chance is
+    /// tiered by the gear's value and the enemy's strength (the rarer of the
+    /// two wins): early-game ~3 %, late-game ~1 % (the engine's integer
+    /// `rand() % 100` roll can't express the requested sub-percent 0.5 %).
+    /// Takes precedence over `--drops`.
+    #[arg(long, default_value_t = false)]
+    equipment_drops: bool,
     /// How random-encounter formations are reassigned (within each scene's own
     /// monster pool, so every monster stays scene-loaded).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -120,6 +143,18 @@ struct RandomizeArgs {
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     chests: DropArg,
+    /// How town-merchant shops are reassigned — what stores sell (global;
+    /// `shuffle` redistributes the existing shop-item multiset across all towns,
+    /// `random` draws each slot from the valid item pool). The town shop stock is
+    /// inline in each scene's field-VM script (op `0x49`).
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    shops: DropArg,
+    /// How the casino prize-exchange is reassigned (`shuffle` redistributes the
+    /// existing prizes, `random` draws from the existing prize pool; each prize
+    /// keeps its coin price + progression gate). Distinct from `--shops`: the
+    /// casino spends coins, not gold.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    casino: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -237,6 +272,8 @@ fn main() -> Result<()> {
         Cmd::Doors { input } => cmd_doors(&input),
         Cmd::HouseDoors { input } => cmd_house_doors(&input),
         Cmd::StartingItems { input } => cmd_starting_items(&input),
+        Cmd::Shops { input } => cmd_shops(&input),
+        Cmd::Casino { input } => cmd_casino(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -273,6 +310,65 @@ fn clock_seed() -> u64 {
 
 fn load_image(path: &Path) -> Result<Vec<u8>> {
     std::fs::read(path).with_context(|| format!("read disc image {}", path.display()))
+}
+
+fn cmd_shops(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let shops = apply::current_shops(&patcher)?;
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let nm = |id: u8| {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id))
+            .unwrap_or("?")
+            .to_string()
+    };
+    for s in &shops {
+        println!(
+            "[entry {:>4}] {} ({} items):",
+            s.entry_idx,
+            s.name,
+            s.items.len()
+        );
+        for &id in &s.items {
+            println!("    {:>3} (0x{id:02x})  {}", id, nm(id));
+        }
+    }
+    println!("{} town shop(s) on the disc", shops.len());
+    Ok(())
+}
+
+fn cmd_casino(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let nm = |id: u16| {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id as u8))
+            .unwrap_or("?")
+            .to_string()
+    };
+    match apply::current_casino(&patcher)? {
+        Some(ex) => {
+            for (b, block) in ex.blocks.iter().enumerate() {
+                println!("block {b}:");
+                for r in block {
+                    let gate = if r.gate == 0 {
+                        String::new()
+                    } else {
+                        format!("  [gated 0x{:02x}]", r.gate)
+                    };
+                    println!("    {:<16} {:>6} coins{gate}", nm(r.item_id), r.price);
+                }
+            }
+        }
+        None => println!("casino prize table not found"),
+    }
+    Ok(())
 }
 
 fn cmd_drops(input: &Path) -> Result<()> {
@@ -501,6 +597,8 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let chest_mode = args.chests.mode();
     let steal_mode = args.steals.mode();
     let door_mode = args.doors.mode();
+    let shop_mode = args.shops.mode();
+    let casino_mode = args.casino.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -511,6 +609,8 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     ];
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
+    // Shops build their own sellable pool internally (priced items), so they
+    // don't need the general valid-item pool.
     let needs_pool = mode == Some(DropMode::Random)
         || chest_mode == Some(DropMode::Random)
         || steal_mode == Some(DropMode::Random);
@@ -551,7 +651,39 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         &[]
     };
 
-    if let Some(mode) = mode {
+    if args.equipment_drops {
+        // Equipment drops own the single drop slot, so this replaces (not
+        // augments) the normal `--drops` pass.
+        if mode.is_some() {
+            println!("note: --equipment-drops overrides --drops (both write the one drop slot)");
+        }
+        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .context("SCUS_942.54 not found in disc image (needed for --equipment-drops)")?;
+        let equip_pool =
+            legaia_rando::equipment::equipment_pool(&scus).context("build equipment pool")?;
+        let (plan, report) = apply::randomize_equipment_drops(&mut patcher, &equip_pool, seed)?;
+        println!(
+            "equipment-drops: {} of {} monsters now drop rare equipment ({} gear ids in pool)",
+            report.changed,
+            plan.len(),
+            equip_pool.len()
+        );
+        manifest.push("drops = \"equipment\"".to_string());
+        manifest.push(format!("equipment_pool = {}", equip_pool.len()));
+        manifest.push(format!(
+            "equipment_drops_changed = {}  # of {} monsters",
+            report.changed,
+            plan.len()
+        ));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} slot(s) too full to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("drops_skipped = {:?}", report.skipped));
+        }
+    } else if let Some(mode) = mode {
         let (plan, report) = apply::randomize_drops(&mut patcher, &pool, seed, mode)?;
         println!(
             "drops: {} of {} monsters reassigned ({:?})",
@@ -657,6 +789,38 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("chests: untouched");
         manifest.push("chests = \"none\"".to_string());
+    }
+
+    if let Some(shop_mode) = shop_mode {
+        let report = apply::randomize_shops(&mut patcher, seed, shop_mode)?;
+        println!(
+            "shops: {} of {} town-shop item slots changed across {} scenes ({:?})",
+            report.items_changed, report.slots_total, report.scenes_changed, shop_mode
+        );
+        manifest.push(format!("shops = {:?}", mode_str(shop_mode)));
+        manifest.push(format!("shops_slots = {}", report.slots_total));
+        manifest.push(format!("shops_items_changed = {}", report.items_changed));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} scene MAN(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("shops_skipped = {:?}", report.skipped));
+        }
+    } else {
+        println!("shops: untouched");
+        manifest.push("shops = \"none\"".to_string());
+    }
+
+    if let Some(casino_mode) = casino_mode {
+        let changed = apply::randomize_casino(&mut patcher, seed, casino_mode)?;
+        println!("casino: {changed} prize slot(s) changed ({casino_mode:?})");
+        manifest.push(format!("casino = {:?}", mode_str(casino_mode)));
+        manifest.push(format!("casino_changed = {changed}"));
+    } else {
+        println!("casino: untouched");
+        manifest.push("casino = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {

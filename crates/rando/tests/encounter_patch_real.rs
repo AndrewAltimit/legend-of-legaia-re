@@ -20,8 +20,8 @@ fn load_disc() -> Option<Vec<u8>> {
 /// Per-scene snapshot: sorted id multiset + per-formation counts + pool.
 fn snapshot(patcher: &DiscPatcher, idx: usize) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     let entry = patcher.read_entry(idx).ok()?;
-    let scene = SceneEncounters::locate(&entry, idx)?;
-    let pool = scene.monster_pool();
+    // Presence guard (a scene with no decodable encounter section is skipped).
+    SceneEncounters::locate(&entry, idx)?;
     // Re-derive counts + ids without exposing internals: parse again here.
     let table = legaia_asset::scene_asset_table::detect(&entry)?;
     let man = table.used().iter().find(|d| d.type_byte == 0x03).copied()?;
@@ -41,6 +41,12 @@ fn snapshot(patcher: &DiscPatcher, idx: usize) -> Option<(Vec<u8>, Vec<u8>, Vec<
         ids.extend_from_slice(&decoded[rec + 4..rec + 4 + c]);
     }
     ids.sort_unstable();
+    // The "pool" the membership check uses is the full set of ids the scene
+    // loads (every formation, random + scripted) — a shuffled id must be one of
+    // them. (`SceneEncounters::monster_pool` is now the narrower random-only
+    // pool, so it isn't the right set for an all-formation membership check.)
+    let mut pool = ids.clone();
+    pool.dedup();
     Some((ids, counts, pool))
 }
 
@@ -152,4 +158,66 @@ fn shuffle_encounters_round_trips_on_disc() {
         verified,
         report.skipped.len()
     );
+}
+
+/// Scripted / boss formations (the ones no region range reaches) must be left
+/// **byte-identical** by an encounter shuffle — randomizing them would replace a
+/// boss (Tetsu, Cort, Songi, …). This compares every non-random formation's ids
+/// before vs after a whole-disc shuffle, on real data, and confirms the
+/// population of scripted formations is non-trivial (so it isn't vacuous) and
+/// includes the Rim Elm Tetsu fight (formation id `0x4F`).
+#[test]
+fn scripted_formations_survive_the_shuffle() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let seed = 0x0BAD_F00D_DEAD_BEEF;
+
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+    apply::randomize_encounters(&mut patcher, seed, DropMode::Shuffle, &[]).expect("randomize");
+
+    let mut scripted_checked = 0usize;
+    let mut saw_tetsu = false;
+    for idx in 0..base.entry_count() {
+        let Some(orig) = base
+            .read_entry(idx)
+            .ok()
+            .and_then(|e| SceneEncounters::locate(&e, idx))
+        else {
+            continue;
+        };
+        let Some(after) = patcher
+            .read_entry(idx)
+            .ok()
+            .and_then(|e| SceneEncounters::locate(&e, idx))
+        else {
+            continue;
+        };
+        for i in 0..orig.formation_count() {
+            if orig.is_random_formation(i) {
+                continue;
+            }
+            let before_ids = orig.formation_ids(i);
+            assert_eq!(
+                after.formation_ids(i),
+                before_ids,
+                "scene {idx} scripted formation {i} must be untouched by the shuffle"
+            );
+            scripted_checked += 1;
+            if before_ids.contains(&0x4F) {
+                saw_tetsu = true;
+            }
+        }
+    }
+    assert!(
+        scripted_checked > 10,
+        "expected many scripted formations across the corpus, saw {scripted_checked}"
+    );
+    assert!(
+        saw_tetsu,
+        "the Rim Elm Tetsu fight (formation id 0x4F) should be among the protected scripted formations"
+    );
+    eprintln!("scripted-formation protection: {scripted_checked} scripted formations unchanged");
 }
