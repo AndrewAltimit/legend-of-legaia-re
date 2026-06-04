@@ -61,3 +61,33 @@ pub mod shop;
 pub mod starting_items;
 pub mod steal;
 pub mod unused;
+
+/// Compressed-stream budget for a scene bundle's MAN: the space its LZS stream
+/// may occupy without overflowing into the next asset, i.e. the distance from
+/// the MAN's `data_offset` to the **next descriptor's** `data_offset` (or the
+/// entry end if the MAN is last).
+///
+/// This is the *original, stable* footprint — it does not depend on the current
+/// stream length. That matters when several passes (encounter / chest / shop)
+/// each decompress → edit → recompress the **same** MAN: our LZS re-packer is
+/// often a touch tighter than Sony's, so reading the budget back from the
+/// just-written (shorter) stream would shrink it on every pass and make a later
+/// pass overflow + skip a scene it should have edited (the bug where Biron
+/// Monastery's shop stayed vanilla after encounters/chests ran first). Reading
+/// the budget from the descriptor boundary keeps every pass on the same, full
+/// budget. The descriptors' `data_offset`s never move (all edits are same-size
+/// in place), so the boundary is constant across passes.
+pub(crate) fn man_compressed_budget(
+    table: &legaia_asset::scene_asset_table::SceneAssetTable,
+    man_data_offset: usize,
+    entry_len: usize,
+) -> usize {
+    table
+        .used()
+        .iter()
+        .map(|d| d.data_offset as usize)
+        .filter(|&o| o > man_data_offset)
+        .min()
+        .unwrap_or(entry_len)
+        .saturating_sub(man_data_offset)
+}

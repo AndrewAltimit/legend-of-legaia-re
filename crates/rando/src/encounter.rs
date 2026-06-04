@@ -116,10 +116,11 @@ impl SceneEncounters {
         // descriptor offset is entry-relative.
         let man_offset = man.data_offset as usize;
         let body = entry.get(man_offset..)?;
-        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }
+        let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
         let manfile = man_section::parse(&decoded).ok()?;
         let sec_body = manfile.encounter_section_body(&decoded)?;
         let sec: EncounterSection = man_section::parse_encounter_section(sec_body).ok()?;
@@ -134,7 +135,7 @@ impl SceneEncounters {
         Some(Self {
             entry_idx,
             man_offset,
-            compressed_budget: consumed,
+            compressed_budget,
             decoded,
             formation_array_off,
             formation_stride: sec.formation_stride as usize,

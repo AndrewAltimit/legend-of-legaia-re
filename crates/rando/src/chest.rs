@@ -90,7 +90,7 @@ impl SceneChests {
         }
         let man_offset = man.data_offset as usize;
         let body = entry.get(man_offset..)?;
-        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }
@@ -101,7 +101,7 @@ impl SceneChests {
         Some(Self {
             entry_idx,
             man_offset,
-            compressed_budget: consumed,
+            compressed_budget: crate::man_compressed_budget(&table, man_offset, entry.len()),
             decoded,
             sites,
             display_tokens,
