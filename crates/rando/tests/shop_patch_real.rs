@@ -82,7 +82,7 @@ fn shop_shuffle_preserves_multiset_and_round_trips() {
 
     let seed = 0x5409u64;
     let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
-    let report = apply::randomize_shops(&mut patcher, &[], seed, DropMode::Shuffle).unwrap();
+    let report = apply::randomize_shops(&mut patcher, seed, DropMode::Shuffle).unwrap();
     assert!(report.slots_total > 0);
     assert_eq!(patcher.image().len(), disc.len(), "image size unchanged");
 
@@ -104,7 +104,7 @@ fn shop_shuffle_preserves_multiset_and_round_trips() {
 
     // Deterministic for a fixed seed.
     let mut p2 = DiscPatcher::open(disc).expect("reopen");
-    apply::randomize_shops(&mut p2, &[], seed, DropMode::Shuffle).unwrap();
+    apply::randomize_shops(&mut p2, seed, DropMode::Shuffle).unwrap();
     assert_eq!(
         p2.image(),
         patcher.image(),

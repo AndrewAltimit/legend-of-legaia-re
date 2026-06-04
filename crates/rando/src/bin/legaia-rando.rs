@@ -609,10 +609,11 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     ];
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
+    // Shops build their own sellable pool internally (priced items), so they
+    // don't need the general valid-item pool.
     let needs_pool = mode == Some(DropMode::Random)
         || chest_mode == Some(DropMode::Random)
-        || steal_mode == Some(DropMode::Random)
-        || shop_mode == Some(DropMode::Random);
+        || steal_mode == Some(DropMode::Random);
     let mut pool = if needs_pool {
         let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .context("SCUS_942.54 not found in disc image (needed for a `random` mode)")?;
@@ -791,7 +792,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(shop_mode) = shop_mode {
-        let report = apply::randomize_shops(&mut patcher, &pool, seed, shop_mode)?;
+        let report = apply::randomize_shops(&mut patcher, seed, shop_mode)?;
         println!(
             "shops: {} of {} town-shop item slots changed across {} scenes ({:?})",
             report.items_changed, report.slots_total, report.scenes_changed, shop_mode

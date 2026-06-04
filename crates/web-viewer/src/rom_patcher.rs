@@ -86,9 +86,10 @@ pub fn patch_rom(
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
+    // Shops build their own sellable pool internally, so they don't need the
+    // general valid-item pool.
     let needs_pool = drops_mode == Some(DropMode::Random)
         || chest_mode == Some(DropMode::Random)
-        || shop_mode == Some(DropMode::Random)
         || steal_mode == Some(DropMode::Random);
     let mut pool = if needs_pool {
         let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
@@ -199,7 +200,7 @@ pub fn patch_rom(
 
     match shop_mode {
         Some(m) => {
-            let rep = apply::randomize_shops(&mut patcher, &pool, seed_n, m)
+            let rep = apply::randomize_shops(&mut patcher, seed_n, m)
                 .map_err(|e| err(format!("shops: {e}")))?;
             summary.push_str(&format!(
                 "shops: {} of {} town-shop slots changed across {} scenes ({})\n",

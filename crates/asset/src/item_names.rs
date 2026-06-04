@@ -110,6 +110,32 @@ pub fn name_ptr_slot(scus: &[u8], id: u8) -> Option<(usize, u32)> {
     Some((rec, val))
 }
 
+/// Real base of the item record table. [`TABLE_VA`] is the *name pointer* field,
+/// which sits at `+4` of each record; the record itself starts 4 bytes earlier.
+/// The record layout is `[+0 u8 kind][+1 u8][+2 u16 shop_price][+4 u32 name_ptr]
+/// [+8 u32 type_ptr]`. The shop buy/sell UI reads the **u16 at `+2`** as the
+/// price (verified against a live shop: e.g. War God Band = 21000), and a price
+/// of `0` marks a quest / found-only item the shop never prices.
+pub const TABLE_BASE_VA: u32 = TABLE_VA - 4;
+
+/// File offset of the `u16` shop-price field for item `id`, plus its current
+/// value (`price` at record `+2`, i.e. VA `TABLE_BASE_VA + id*0xC + 2`). `None`
+/// if `scus` isn't a PS-X EXE or the slot is out of range. This is the field a
+/// price patch rewrites to give a normally-free (chest-found) equipment a shop
+/// value; see `legaia_rando::item_price`.
+pub fn price_slot(scus: &[u8], id: u8) -> Option<(usize, u16)> {
+    let map = ExeMap::parse(scus)?;
+    let va = TABLE_BASE_VA + (id as u32) * RECORD_STRIDE as u32 + 2;
+    let o = map.off(va)?;
+    let val = u16::from_le_bytes(scus.get(o..o + 2)?.try_into().ok()?);
+    Some((o, val))
+}
+
+/// The `u16` shop price for item `id` (`0` = quest / found-only / not priced).
+pub fn item_price(scus: &[u8], id: u8) -> Option<u16> {
+    price_slot(scus, id).map(|(_, v)| v)
+}
+
 /// File offset for a virtual address within the loaded data segment, or `None`
 /// if `scus` isn't a PS-X EXE or `va` falls outside the segment. The inverse of
 /// the table's pointer math, exposed so a name-injection patch can resolve where

@@ -244,18 +244,54 @@ pub struct ShopApplyReport {
     pub skipped: Vec<usize>,
 }
 
+/// Install the chest-found-equipment shop prices (see [`crate::item_price`]) by
+/// patching the `SCUS_942.54` item table in place. Returns the number of price
+/// fields changed. Idempotent (re-applying writes nothing). Safe no-op if SCUS
+/// or the item table is absent.
+pub fn apply_item_price_edits(patcher: &mut DiscPatcher) -> Result<usize> {
+    let Some(scus) = patcher.read_named_file(crate::steal::SCUS_NAME) else {
+        return Ok(0);
+    };
+    let patches = crate::item_price::price_patches(&scus)?;
+    for (off, bytes) in &patches {
+        patcher
+            .patch_named_file(crate::steal::SCUS_NAME, *off as u64, bytes)
+            .with_context(|| format!("write item price at SCUS offset {off}"))?;
+    }
+    Ok(patches.len())
+}
+
 /// Randomize town-merchant stock (field-VM shop op `0x49`; see [`crate::shop`]).
 /// Shop item ids are global inventory ids, so this is a **global** reassignment
 /// across every town shop on the disc: `Shuffle` redistributes the existing
-/// shop-item multiset, `Random` draws each slot from `item_pool`. Only the
-/// item-id bytes are rewritten (count + name + price logic untouched), then each
-/// touched scene MAN is recompressed; a scene whose MAN overflows is skipped.
+/// shop-item multiset, `Random` draws each slot from the **sellable pool** —
+/// items the game prices `> 0` (see [`crate::item_price::sellable_pool`]), which
+/// excludes every quest / key / story item (all price `0`) so a shop can never
+/// stock one. As a prerequisite this first prices the chest-found equipment
+/// ([`apply_item_price_edits`]) so that gear is non-free and joins the sellable
+/// pool. Only the item-id bytes are rewritten; each touched scene MAN is
+/// recompressed and a scene whose MAN overflows is skipped.
 pub fn randomize_shops(
     patcher: &mut DiscPatcher,
-    item_pool: &[u8],
     seed: u64,
     mode: DropMode,
 ) -> Result<ShopApplyReport> {
+    // Price the chest-found equipment so it is sellable (and not free) before we
+    // read the sellable pool / stock it.
+    apply_item_price_edits(patcher)?;
+
+    // `Random` fill draws from the sellable pool (priced items only); `Shuffle`
+    // redistributes the existing shop entries and ignores the pool.
+    let item_pool: Vec<u8> = if mode == DropMode::Random {
+        match patcher.read_named_file(crate::steal::SCUS_NAME) {
+            Some(scus) => crate::item_price::sellable_pool(&scus)?,
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+    let item_pool = item_pool.as_slice();
+
     // Pass 1: collect every scene's shops (decoded MAN held for pass 2).
     let mask = named_item_mask(patcher);
     let mut scenes: Vec<SceneShops> = Vec::new();

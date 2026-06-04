@@ -53,6 +53,7 @@ pub mod encounter;
 pub mod equipment;
 pub mod house_door;
 pub mod item_name;
+pub mod item_price;
 pub mod items;
 pub mod monster;
 pub mod ppf;
