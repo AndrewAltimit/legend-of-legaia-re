@@ -2247,21 +2247,26 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
 /**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
- * `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
- * each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
+ * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `doors`
+ * / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`. `shops`
+ * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
  * 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
  * "Something Good" / unnamed-accessory items to the random-fill pool (only the
- * `random` drop / chest / steal modes use it). `seed` is a number or any string
- * (hashed). Returns `{ data, summary, seed }`.
+ * `random` drop / chest / steal modes use it). `equipment_drops` turns every
+ * monster's drop into a rare random weapon / armor / accessory at a tiered
+ * chance (overrides `drops`). `seed` is a number or any string (hashed).
+ * Returns `{ data, summary, seed }`.
  * @param {Uint8Array} image
  * @param {string} seed
  * @param {string} drops
  * @param {string} encounters
  * @param {string} chests
+ * @param {string} shops
+ * @param {string} casino
  * @param {string} steals
  * @param {string} doors
  * @param {string} door_coupling
@@ -2269,9 +2274,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {number} starting_items
  * @param {boolean} unused_enemies
  * @param {boolean} unused_items
+ * @param {boolean} equipment_drops
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, chests, steals, doors, door_coupling, house_doors, starting_items, unused_enemies, unused_items) {
+export function patch_rom(image, seed, drops, encounters, chests, shops, casino, steals, doors, door_coupling, house_doors, starting_items, unused_enemies, unused_items, equipment_drops) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2282,15 +2288,19 @@ export function patch_rom(image, seed, drops, encounters, chests, steals, doors,
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passStringToWasm0(chests, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len4 = WASM_VECTOR_LEN;
-    const ptr5 = passStringToWasm0(steals, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr5 = passStringToWasm0(shops, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len5 = WASM_VECTOR_LEN;
-    const ptr6 = passStringToWasm0(doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr6 = passStringToWasm0(casino, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len6 = WASM_VECTOR_LEN;
-    const ptr7 = passStringToWasm0(door_coupling, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr7 = passStringToWasm0(steals, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len7 = WASM_VECTOR_LEN;
-    const ptr8 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr8 = passStringToWasm0(doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len8 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, starting_items, unused_enemies, unused_items);
+    const ptr9 = passStringToWasm0(door_coupling, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len9 = WASM_VECTOR_LEN;
+    const ptr10 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len10 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, starting_items, unused_enemies, unused_items, equipment_drops);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

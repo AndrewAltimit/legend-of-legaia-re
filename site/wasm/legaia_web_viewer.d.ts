@@ -1078,18 +1078,21 @@ export class LegaiaViewer {
 /**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
- * `drops` / `encounters` / `chests` / `steals` / `doors` / `house_doors` are
- * each `"shuffle"`, `"random"`, or `"none"`. `door_coupling` is `"coupled"`
+ * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `doors`
+ * / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`. `shops`
+ * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
  * 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
  * "Something Good" / unnamed-accessory items to the random-fill pool (only the
- * `random` drop / chest / steal modes use it). `seed` is a number or any string
- * (hashed). Returns `{ data, summary, seed }`.
+ * `random` drop / chest / steal modes use it). `equipment_drops` turns every
+ * monster's drop into a rare random weapon / armor / accessory at a tiered
+ * chance (overrides `drops`). `seed` is a number or any string (hashed).
+ * Returns `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, chests: string, steals: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, unused_enemies: boolean, unused_items: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, chests: string, shops: string, casino: string, steals: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1252,7 +1255,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
