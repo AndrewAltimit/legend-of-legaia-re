@@ -31,6 +31,8 @@
 //! - [`drops`] — the drop-table planner (shuffle / random).
 //! - [`equipment`] — classify equipment ids + tier them, turning each monster's
 //!   drop slot into a rare random weapon / armor / accessory drop.
+//! - [`shop`] — reassign what town stores sell (shuffle / random over the
+//!   field/menu-overlay shop-inventory table).
 //! - [`monster`] — re-pack a monster slot in the `battle_data` archive.
 //! - [`encounter`] — per-scene random-encounter formation-id shuffle.
 //! - [`chest`] — treasure-chest item-give (field-VM op `0x39`) rewrite.
@@ -52,6 +54,7 @@ pub mod items;
 pub mod monster;
 pub mod ppf;
 pub mod rng;
+pub mod shop;
 pub mod starting_items;
 pub mod steal;
 pub mod unused;
