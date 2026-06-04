@@ -438,10 +438,11 @@ toggles bring it back. They are *additive* — a normal run never places them, s
 the disc stays vanilla unless you ask. Both are pinned by the disc-gated
 `unused_content_real` test.
 
-**`--unused-enemies`** re-introduces the **Evil Bat**, an enemy whose record
-lives in the `battle_data` archive (monster ids 176/177/178 are byte-identical
-clones of each other and of the in-use Evil Bat at id 140) but which no scene's
-encounter formation references. The battle loader streams a monster's
+**`--unused-enemies`** re-introduces two cut enemies that no scene's encounter
+formation references: **"Comm"** (id 78, a complete standalone record — HP 2520,
+casts magic, exp 945) and the **Evil Bat** (monster ids 176/177/178, byte-identical
+clones of each other and of the in-use Evil Bat at id 140). The battle loader
+streams a monster's
 `0x14000` archive slot on demand keyed by its id — there is **no per-scene
 monster preload list** — so injecting one of these ids into a formation byte is
 sufficient to make it spawn and render; nothing else needs patching. The toggle
@@ -549,7 +550,7 @@ bit-for-bit.
 | `crates/rando` `equipment_drops_real` | disc-gated | build the equipment pool from `SCUS_942.54`, plan an every-monster equipment drop, re-decode every monster's drop off the patched `battle_data`, assert each is a pool equipment id at a tiered 1..=3% chance; deterministic |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
-| `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140; item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
+| `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
