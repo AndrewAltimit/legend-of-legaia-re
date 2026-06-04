@@ -477,6 +477,16 @@ stream that still overflows is **skipped** (its scene / slot left unchanged) and
 recorded in the apply report rather than aborting the run; the CLI prints the
 skipped entries.
 
+The "no larger than the original" budget is measured from the scene asset-table
+**boundary** (the MAN's allotted span up to the next descriptor's offset), *not*
+from the current compressed length. That matters when several passes (encounter,
+chest, shop) edit the same scene MAN in one run: our re-packer is often a touch
+tighter than Sony's, so reading the budget back from the just-written shorter
+stream would shrink it on every pass and make a later pass needlessly overflow
+and skip a scene — which is what left some shops (e.g. Biron Monastery's) vanilla
+when run alongside encounters/chests. The boundary is fixed (all edits are
+same-size in place), so every pass gets the same full budget.
+
 ## The patch chain
 
 A PROT-entry-relative edit maps to a disc byte range like this:
