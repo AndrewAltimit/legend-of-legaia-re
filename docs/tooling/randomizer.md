@@ -58,9 +58,11 @@ shifts. It works because the edit targets fit a fixed slot with slack:
 
 The same randomizer is also exposed client-side: `legaia_web_viewer::rom_patcher`
 (`patch_rom`) compiles the crate to WASM, and the static site's
-`tooling/rom-patcher.html` page lets a user supply their own disc, toggle the
-drop / encounter / chest settings, and download a patched image — the disc bytes
-never leave the browser. The CLI below is the scriptable / shareable-PPF path.
+`tooling/rom-patcher.html` page lets a user supply their own disc, toggle every
+setting (drops / equipment-drops / encounters / chests / town shops / casino /
+steals / doors / house doors / starting items / unused content), and download a
+patched image — the disc bytes never leave the browser. The CLI below is the
+scriptable / shareable-PPF path.
 
 ## CLI: `legaia-rando`
 
