@@ -40,6 +40,22 @@
       </select>
     </label>
     <label class="rom-row">
+      <span class="rom-label">Town shops</span>
+      <select id="rom-shops">
+        <option value="shuffle">Shuffle (redistribute what stores sell)</option>
+        <option value="random">Random (any valid item)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Casino prizes</span>
+      <select id="rom-casino">
+        <option value="shuffle">Shuffle (redistribute prizes)</option>
+        <option value="random">Random (any existing prize)</option>
+        <option value="none" selected>Leave alone</option>
+      </select>
+    </label>
+    <label class="rom-row">
       <span class="rom-label">Steal items</span>
       <select id="rom-steals">
         <option value="shuffle">Shuffle (redistribute existing steals)</option>
@@ -79,6 +95,10 @@
         <option value="4">4 random items</option>
         <option value="5">5 random items</option>
       </select>
+    </label>
+    <label class="rom-row">
+      <span class="rom-label">Equipment drops</span>
+      <span class="rom-check"><input type="checkbox" id="rom-equipment-drops"> Every monster drops rare equipment (weapon / armor / accessory) instead of its normal drop &mdash; overrides Monster drops</span>
     </label>
     <label class="rom-row">
       <span class="rom-label">Unused enemies</span>
