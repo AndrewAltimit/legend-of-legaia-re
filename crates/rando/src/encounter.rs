@@ -15,6 +15,14 @@
 //! / crash. `Shuffle` redistributes the existing ids (same monsters, new
 //! formations — difficulty preserved); `Random` draws each id uniformly from
 //! the scene's distinct-id set.
+//!
+//! **Bosses are protected.** A scene's formation array holds both random
+//! encounters *and* scripted/boss fights (Tetsu, Cort, Songi, …) that the field
+//! VM engages by explicit index. Only the random ones — the formations reached
+//! by a region whose `rate_increment > 0` (a region that can actually trigger an
+//! encounter) — are randomized; scripted formations are left exactly as
+//! authored, so a randomized run never replaces a boss (see
+//! [`random_formation_mask`] / [`SceneEncounters::is_random_formation`]).
 
 use legaia_asset::man_section::{self, EncounterSection};
 use legaia_asset::scene_asset_table;
@@ -24,6 +32,48 @@ use crate::rng::SplitMix64;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
+
+/// Which formation indices a scene's **random-encounter** roll can produce.
+///
+/// The encounter section holds a single formation array, but only some of those
+/// formations are random encounters. Each region record (a per-area AABB) names
+/// a contiguous `[formation_range_base, +formation_range_count)` slice it rolls
+/// into **and** a `rate_increment`: the per-step amount it adds to the encounter
+/// counter while the player stands in the AABB. A region with
+/// `rate_increment == 0` never advances the counter, so it never triggers a
+/// random encounter — it can reference formations without ever rolling them
+/// (the retail position-aware roll `FUN_801D9E1C`; mirrored in
+/// `engine_core::region_encounter`).
+///
+/// So a formation is a random encounter iff some region with **`rate_increment >
+/// 0`** reaches it. Formations reached only by rate-0 regions (or by no region)
+/// are *scripted* fights the field VM engages by explicit index — boss battles
+/// (Tetsu, Cort, Songi, …) and story encounters. Randomizing those would replace
+/// a boss, so the randomizer must leave them alone.
+///
+/// Returns a `bool` per formation index. Verified against the corpus: town01
+/// (Rim Elm) has rate-0 regions covering formations 2..=4 but its only rate>0
+/// regions reach 0..=2, so the Tetsu fight at index 4 is correctly scripted;
+/// cave01's rate>0 regions reach 0..=9, leaving the scripted ids 19/20 at
+/// indices 10/11 untouched.
+fn random_formation_mask(body: &[u8], sec: &EncounterSection) -> Vec<bool> {
+    let mut mask = vec![false; sec.formation_count as usize];
+    for r in man_section::region_records(body, sec).flatten() {
+        // A zero-rate region never triggers an encounter, so the formations it
+        // references are not (by themselves) random — only rate>0 regions do.
+        if r.rate_increment == 0 {
+            continue;
+        }
+        let base = r.formation_range_base as usize;
+        let count = r.formation_range_count as usize;
+        for i in base..base.saturating_add(count) {
+            if let Some(slot) = mask.get_mut(i) {
+                *slot = true;
+            }
+        }
+    }
+    mask
+}
 
 /// A scene's encounter data, located inside one PROT scene-bundle entry and
 /// decompressed so its formation ids can be rewritten.
@@ -41,6 +91,11 @@ pub struct SceneEncounters {
     formation_array_off: usize,
     formation_stride: usize,
     formation_count: usize,
+    /// Per-formation flag: `true` when the formation is reachable by some region
+    /// (a **random** encounter), `false` when it's a scripted/boss fight the
+    /// field VM engages by index. Only random formations are randomized — see
+    /// [`random_formation_mask`].
+    random_mask: Vec<bool>,
 }
 
 impl SceneEncounters {
@@ -75,6 +130,7 @@ impl SceneEncounters {
         if arr_end > decoded.len() {
             return None;
         }
+        let random_mask = random_formation_mask(sec_body, &sec);
         Some(Self {
             entry_idx,
             man_offset,
@@ -83,7 +139,23 @@ impl SceneEncounters {
             formation_array_off,
             formation_stride: sec.formation_stride as usize,
             formation_count: sec.formation_count as usize,
+            random_mask,
         })
+    }
+
+    /// Whether formation `i` is a **random** encounter (reachable by a region),
+    /// as opposed to a scripted/boss fight the field VM engages by index. Only
+    /// random formations are touched by [`Self::randomize`] /
+    /// [`Self::randomize_with_extra`], so a boss is never replaced. Out-of-range
+    /// `i` (and any formation no region references) is `false`.
+    pub fn is_random_formation(&self, i: usize) -> bool {
+        self.random_mask.get(i).copied().unwrap_or(false)
+    }
+
+    /// Count of formations that are random encounters (the population the
+    /// randomizer actually touches).
+    pub fn random_formation_count(&self) -> usize {
+        self.random_mask.iter().filter(|&&b| b).count()
     }
 
     /// Monster count of formation `i` (`0..4`), clamped defensively.
@@ -129,11 +201,17 @@ impl SceneEncounters {
         (slot < len).then_some(off + slot)
     }
 
-    /// The distinct monster ids this scene uses across all its formations — the
-    /// safe pool to draw from (every id is already scene-loaded).
+    /// The distinct monster ids this scene uses across its **random** formations
+    /// — the safe pool to draw from (every id is already scene-loaded, and
+    /// scripted/boss ids are excluded so a `Random` roll never drops a boss into
+    /// an ordinary encounter). Scripted formations are skipped (see
+    /// [`Self::is_random_formation`]).
     pub fn monster_pool(&self) -> Vec<u8> {
         let mut pool = Vec::new();
         for i in 0..self.formation_count {
+            if !self.is_random_formation(i) {
+                continue;
+            }
             let (off, len) = self.id_span(i);
             for &id in &self.decoded[off..off + len] {
                 if !pool.contains(&id) {
@@ -200,9 +278,15 @@ impl SceneEncounters {
         let mut rng =
             SplitMix64::new(seed ^ (self.entry_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
 
-        // Collect every id slot's (offset, original value) in a stable order.
+        // Collect every **random** formation's id slots (offset) in a stable
+        // order. Scripted/boss formations (no region references them) are left
+        // untouched, so a randomized run never replaces a Tetsu / Cort / Songi
+        // fight — only the ordinary random encounters are shuffled/redrawn.
         let mut slots: Vec<usize> = Vec::new();
         for i in 0..self.formation_count {
+            if !self.is_random_formation(i) {
+                continue;
+            }
             let (off, len) = self.id_span(i);
             for s in 0..len {
                 slots.push(off + s);
@@ -264,6 +348,7 @@ mod tests {
             formation_array_off: 0,
             formation_stride: 8,
             formation_count: 3,
+            random_mask: vec![true; 3],
         };
         let before: Vec<u8> = (0..3)
             .flat_map(|i| {
@@ -308,6 +393,7 @@ mod tests {
             formation_array_off: 0,
             formation_stride: 8,
             formation_count: 3,
+            random_mask: vec![true; 3],
         };
         assert_eq!(se.formation_count(), 3);
         assert_eq!(se.formation_ids(0), vec![10, 20]);
@@ -339,6 +425,7 @@ mod tests {
             formation_array_off: 0,
             formation_stride: 8,
             formation_count: 2,
+            random_mask: vec![true; 2],
         };
         let pool = make().monster_pool();
         assert_eq!(pool, vec![5, 9]);
@@ -351,6 +438,53 @@ mod tests {
             let (o, l) = a.id_span(i);
             for &id in &a.decoded[o..o + l] {
                 assert!(pool.contains(&id), "id {id} not in scene pool");
+            }
+        }
+    }
+
+    #[test]
+    fn scripted_formations_are_never_randomized() {
+        // 3 formations; the middle one (index 1) is a scripted boss no region
+        // references, so it must be left untouched while 0 and 2 are randomized.
+        let mut decoded = vec![0u8; 24];
+        decoded[3] = 1;
+        decoded[4] = 10; // formation 0: id 10 (random)
+        decoded[8 + 3] = 1;
+        decoded[8 + 4] = 0x4F; // formation 1: id 0x4F "Tetsu" (scripted boss)
+        decoded[16 + 3] = 1;
+        decoded[16 + 4] = 20; // formation 2: id 20 (random)
+        let make = || SceneEncounters {
+            entry_idx: 1,
+            man_offset: 0,
+            compressed_budget: 9999,
+            decoded: decoded.clone(),
+            formation_array_off: 0,
+            formation_stride: 8,
+            formation_count: 3,
+            random_mask: vec![true, false, true],
+        };
+        // The boss id is excluded from the candidate pool entirely.
+        assert_eq!(
+            make().monster_pool(),
+            vec![10, 20],
+            "boss id 0x4F not in pool"
+        );
+        assert_eq!(make().random_formation_count(), 2);
+
+        for mode in [DropMode::Shuffle, DropMode::Random] {
+            let mut se = make();
+            se.randomize(7, mode);
+            let (off, _) = se.id_span(1);
+            assert_eq!(
+                se.decoded[off], 0x4F,
+                "scripted boss formation (index 1) must be untouched ({mode:?})"
+            );
+            // The boss id never leaked into a random formation either.
+            for i in [0usize, 2] {
+                let (o, l) = se.id_span(i);
+                for &id in &se.decoded[o..o + l] {
+                    assert_ne!(id, 0x4F, "boss id must not appear in a random formation");
+                }
             }
         }
     }
