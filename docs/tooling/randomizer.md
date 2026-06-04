@@ -265,16 +265,23 @@ shop's `0x1F` dialogue ("Welcome!", "Thank you!"). This was pinned from a live
 PCSX-Redux capture standing in the Rim Elm Variety Store — its 10 item ids match
 the curated [shop table](../reference/gamedata.md).
 
-`shop::SceneShops::locate` finds sites by an **opcode-aware walk** of each MAN
-record's script (identical to the chest walk, skipping `0x1F` dialogue): reaching
-op `0x49` *in real script flow* is what distinguishes a shop from coincidental
-bytes, and the inline record is then validated (small item count, every id
-non-zero, a printable name terminated by `0x00`) so non-shop `0x49` uses (inn /
-save prompts) are rejected. `apply::randomize_shops` reassigns the item-id bytes
-**globally** across every town shop (`Shuffle` redistributes the existing
-shop-item multiset, `Random` draws from the valid item pool), same-size, then
-recompresses each touched MAN like the chest path. On the retail disc this is 17
-shops (some in duplicate scene clusters). `--shops shuffle|random`; read-only
+`shop::SceneShops` finds sites by **scanning** the decompressed MAN for the
+op-`0x49` sub-op-`0` shop signature — *not* by an opcode walk. A shop's `0x49` is
+often gated behind a dialogue confirm-picker ("Buy them?") whose option-jump
+table desyncs a linear disassembler before it reaches the op (Biron Monastery's
+Corey vendor is the case that exposed this), so a walk silently misses those
+shops. The scan doesn't care how the script reaches the op; false positives are
+ruled out by strict record validation: the byte after the opcode must be `0x00`
+(sub-op 0 — this alone rejects almost every stray `0x49`), the count is small and
+non-zero, every id is non-zero, and the trailing shop name is a printable,
+letter-initial, `0x00`-terminated string. The apply layer additionally passes a
+SCUS "id names a real item" mask (`locate_with_items`), so an id that names
+nothing can't anchor a false shop. `apply::randomize_shops` then reassigns the
+item-id bytes **globally** across every town shop (`Shuffle` redistributes the
+existing shop-item multiset, `Random` draws from the valid item pool), same-size,
+and recompresses each touched MAN like the chest path. On the retail disc this is
+34 shops (the picker-gated vendors a walk used to miss, plus duplicate scene
+clusters and per-story-phase shop records). `--shops shuffle|random`; read-only
 `legaia-rando shops` lists every shop's stock.
 
 ### Casino prize exchange
