@@ -3349,6 +3349,27 @@ impl World {
         }
     }
 
+    /// Commit a shop **buy** transaction for the session's pending item: if the
+    /// player can afford it, deduct the gold and add the item(s) to
+    /// [`Self::inventory`], returning `(item_id, qty, gold_delta)` (the delta is
+    /// negative). Returns `None` when the buy isn't valid (unaffordable, sell
+    /// mode, no pending item — see [`crate::shop::ShopSession::try_buy`]).
+    ///
+    /// This is the engine's shop-purchase grant kernel, shared by the menu
+    /// runtime's `ShopConfirm` commit and exercised directly by the shop /
+    /// casino randomizer runtime oracles — the buy counterpart to
+    /// [`Self::apply_steal`] / [`Self::apply_battle_loot`]. The item id sold is
+    /// whatever the shop's stock holds, which for a town merchant is decoded
+    /// straight from the scene's field-VM script (op `0x49`) the randomizer
+    /// edits, so a patched shop id flows through here into the bag.
+    pub fn buy_from_shop(&mut self, session: &crate::shop::ShopSession) -> Option<(u8, u8, i32)> {
+        let (item_id, qty, delta) = session.try_buy(self.money)?;
+        self.money = (self.money + delta).clamp(0, 9_999_999);
+        let count = self.inventory.entry(item_id).or_insert(0);
+        *count = count.saturating_add(qty);
+        Some((item_id, qty, delta))
+    }
+
     /// Record one use of `art_id` by `char_id` (roster index).
     ///
     /// Delegates to [`TacticalArtsTracker::notify_art_used`]. When the use

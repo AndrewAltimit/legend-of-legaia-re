@@ -411,11 +411,9 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             MenuState::ShopConfirm if slot == 0 => {
                 if let Some(session) = self.shop_session.as_ref() {
                     if session.pending_is_buying {
-                        if let Some((item_id, qty, delta)) = session.try_buy(self.world.money) {
-                            self.world.money = (self.world.money + delta).clamp(0, 9_999_999);
-                            let count = self.world.inventory.entry(item_id).or_insert(0);
-                            *count = count.saturating_add(qty);
-                        }
+                        // Shared grant kernel (also driven by the shop / casino
+                        // randomizer runtime oracles).
+                        self.world.buy_from_shop(session);
                     } else if let Some(item_id) = session.pending_item_id {
                         let held = self.world.inventory.get(&item_id).copied().unwrap_or(0);
                         if let Some((item_id, qty, delta)) = session.try_sell(held) {
