@@ -176,6 +176,9 @@ impl EngineWindow {
 ///
 /// Frames the given AABB, orbits it at `orbit_speed` radians/second, and
 /// uses the standard PSX convention (60° FOV, Y-up camera, Y-down geometry).
+/// Because callers draw their geometry Y-flipped (`scale(1,-1,1)`), this frames
+/// the *flipped* centre (`-(lo.y+hi.y)/2`) with the eye above it — otherwise an
+/// off-centre scene renders from underneath ("ground on the ceiling").
 ///
 /// # Parameters
 /// - `aabb_lo`, `aabb_hi` - world-space bounding box of the scene.
@@ -194,14 +197,28 @@ pub fn orbit_camera_mvp(
 ) -> Mat4 {
     let lo = Vec3::from(aabb_lo);
     let hi = Vec3::from(aabb_hi);
-    let center = (lo + hi) * 0.5;
+    // Meshes are drawn Y-flipped (`scale(1,-1,1)`) to convert PSX Y-down to the
+    // renderer's Y-up, so the drawn geometry's Y-range is `[-hi.y, -lo.y]`.
+    // Frame *that* flipped centre. Framing the raw, un-flipped AABB (as before)
+    // put the look target on the opposite Y side from the geometry whenever the
+    // model isn't centred on Y=0 — large off-centre field/battle scenes then
+    // rendered from underneath ("ground on the ceiling"). Centred single models
+    // (the asset-viewer's TMD previews) have `lo.y ≈ -hi.y`, so this is a no-op
+    // for them. Same correction the world-map camera already carries.
+    let center = Vec3::new(
+        (lo.x + hi.x) * 0.5,
+        -(lo.y + hi.y) * 0.5,
+        (lo.z + hi.z) * 0.5,
+    );
     let radius = ((hi - lo).length() * 0.5).max(1.0);
     let distance = radius / 30f32.to_radians().tan() * 1.6;
     let angle = elapsed_secs * orbit_speed;
+    // +Y is up after the flip, so the eye sits *above* the centre and looks down
+    // at the model (a natural 3/4 vantage), matching `world_map_camera_mvp`.
     let eye = center
         + Vec3::new(
             distance * angle.cos(),
-            -distance * eye_height,
+            distance * eye_height,
             distance * angle.sin(),
         );
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
