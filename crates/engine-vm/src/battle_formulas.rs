@@ -11,7 +11,14 @@
 //! the individual `pub fn` docs below).
 //! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
 //! module ports the arithmetic kernel the dispatch feeds into).
-//! REF: FUN_801E295C, FUN_801EED1C
+//! PORT: FUN_801DD0AC (summon-magic damage roll — `summon_attacker_roll` /
+//! `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage`. The
+//! arts/physical `0x801F4F5C`-table branch and the live `FUN_801DD864` /
+//! `FUN_801DD0AC` mitigation glue are not reproduced here.)
+//! PORT: FUN_801DD864 (summon-roll scale stage — `apply_element_affinity` /
+//! `apply_status_weaken` / `apply_magic_power`).
+//! REF: FUN_801E295C, FUN_801EED1C, FUN_801DDB30 (the post-roll finisher;
+//! deeply coupled to live battle globals, intentionally not a pure kernel).
 
 #![allow(clippy::too_many_arguments)]
 
@@ -178,6 +185,183 @@ pub fn buff_ramp(value: u16) -> u16 {
     if next >= 0xFFFF { 0xFFFF } else { next as u16 }
 }
 
+// ---------------------------------------------------------------------------
+// Summon-magic damage roll (FUN_801dd0ac summon branch + FUN_801dd864 modifiers)
+// ---------------------------------------------------------------------------
+//
+// A player Seru-magic *damage* summon (PROT 0904 / 0912 / 0914) applies its HP
+// delta through the shared battle kernel `FUN_801dd0ac`
+// (`overlay_battle_action_801dd0ac.txt`) with `attacker_slot == 7` (the summon
+// body's actor slot). There is **no static per-spell power scalar** for summons
+// (see [`crate::battle_action`] / `docs/formats/spell-table.md`); the magnitude
+// is built from live battle stats in three stages:
+//
+//   1. **Roll** (`FUN_801dd0ac`): an attacker roll and a defender roll, each a
+//      `rand % stat_term + stat_terms` sum ([`summon_attacker_roll`],
+//      [`summon_defender_roll`]).
+//   2. **Scale** (`FUN_801dd864`): the attacker roll is scaled by the
+//      element-affinity percent, the attacker/defender status-weaken bits, and
+//      (summon only) the caster's per-character magic-power byte
+//      ([`apply_element_affinity`], [`apply_status_weaken`], [`apply_magic_power`]).
+//      A conditional re-roll bonus then fires back in `FUN_801dd0ac`
+//      ([`summon_bonus_roll`]).
+//   3. **Finish** (`FUN_801ddb30`): elemental-resistance bits, the crit term,
+//      the 9999 cap, the spirit-gauge fill, the damage-popup accumulator, MP
+//      drain, and per-element stat-debuff application. That stage reads ~20
+//      battle globals + both actors' full records and mutates live battle state,
+//      so it is the deeply-coupled tail of the live battle context, **not** a
+//      pure kernel — it is intentionally not reproduced here. The pieces below
+//      are the bounded, state-free arithmetic the roll and scale stages are made
+//      of; the engine supplies the live stats / RNG / affinity / power-byte.
+//
+// Returned damage is `attacker_roll - defender_roll` after all three stages.
+// [`summon_predamage`] composes stages 1 + 2 (everything that is closed-form
+// given its inputs); the finisher is applied by the caller's battle context.
+
+/// One battle actor's stats as read by the summon-damage roll. Field offsets
+/// cite the [battle-actor record](../subsystems/battle.md): `hp` = `+0x14c`,
+/// `agl` = `+0x168`, `stat_a`/`stat_b` = `+0x15c`/`+0x160` (defender-only
+/// defense terms), `status` = the `+0x16e` status bitfield, `guard` = the
+/// `+0x1de` guard byte.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SummonRollActor {
+    /// Current HP (`+0x14c`).
+    pub hp: u16,
+    /// Agility (`+0x168`).
+    pub agl: u16,
+    /// Defense term A (`+0x15c`); only the defender's is read.
+    pub stat_a: u16,
+    /// Defense term B (`+0x160`); only the defender's is read.
+    pub stat_b: u16,
+    /// Status bitfield (`+0x16e`): bit `0x1` weakens the roll to 9/10, bit
+    /// `0x2` to 7/10 (applied in that order).
+    pub status: u16,
+    /// Guard byte (`+0x1de`); `== 4` doubles the defender roll.
+    pub guard: u8,
+}
+
+/// Attacker (summon-body) roll, `FUN_801dd0ac` summon branch (`attacker_slot ==
+/// 7`): `rand % (summon_agl + 1) + summon_hp + caster_agl * 2`.
+///
+/// `rand` is one `rand()` draw (`0..=0x7FFF`); the summon body's AGL/HP are the
+/// slot-7 actor's, `caster_agl` is the *party caster's* AGL (`DAT_801C9370[ctx
+/// + 0x13]`), which contributes doubled.
+pub fn summon_attacker_roll(summon_hp: u16, summon_agl: u16, caster_agl: u16, rand: u16) -> u32 {
+    let modulus = summon_agl as u32 + 1; // u16 + 1 is never zero
+    (rand as u32) % modulus + summon_hp as u32 + caster_agl as u32 * 2
+}
+
+/// Defender roll, `FUN_801dd0ac` (always computed): `rand % ((agl >> 1) + 1) +
+/// (hp >> 8) + (stat_a >> 4) + (stat_b >> 4) + agl * 2`.
+pub fn summon_defender_roll(defender: &SummonRollActor, rand: u16) -> u32 {
+    let modulus = (defender.agl as u32 >> 1) + 1; // never zero
+    (rand as u32) % modulus
+        + (defender.hp as u32 >> 8)
+        + (defender.stat_a as u32 >> 4)
+        + (defender.stat_b as u32 >> 4)
+        + defender.agl as u32 * 2
+}
+
+/// Element-affinity scale, `FUN_801dd864`: `roll * affinity_pct / 100`. The
+/// percent is one byte from the 8x8 element-affinity matrix at `0x801F53E8`
+/// (rows = defender element, columns = attacker element), so e.g. 100 = neutral,
+/// 200 = double (weakness), 50 = resist, 0 = immune.
+pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
+    roll.saturating_mul(affinity_pct as u32) / 100
+}
+
+/// Status-weaken bits, `FUN_801dd864`: bit `0x1` of the status field scales the
+/// roll to `9/10`, then bit `0x2` scales (the result) to `7/10`. Both can apply
+/// (bit `0x1` first). Used for both the attacker and defender rolls.
+pub fn apply_status_weaken(roll: u32, status: u16) -> u32 {
+    let mut r = roll;
+    if status & 0x1 != 0 {
+        r = r.saturating_mul(9) / 10;
+    }
+    if status & 0x2 != 0 {
+        r = r.saturating_mul(7) / 10;
+    }
+    r
+}
+
+/// Per-character magic-power scale, `FUN_801dd864` summon arm: `roll + roll *
+/// (power_byte - 1) >> 3` (i.e. `roll * (7 + power_byte) / 8`). `power_byte` is
+/// the caster's recovery/magic-power stat from the SC-block table at
+/// `0x80084140 + 0x729`, matched against the cast spell-id at `+0x705`. A
+/// `power_byte` of 0 or 1 leaves the roll unchanged.
+pub fn apply_magic_power(roll: u32, power_byte: u8) -> u32 {
+    let extra = roll.saturating_mul(power_byte.saturating_sub(1) as u32) >> 3;
+    roll + extra
+}
+
+/// Conditional re-roll bonus, `FUN_801dd0ac` summon branch second arm. After
+/// the scale stage, when `defender_roll + summon_hp > attacker_roll` (the
+/// attacker has not already overwhelmed the defender), the attacker roll is
+/// rebuilt as `defender_roll + rand % ((summon_agl >> 1) + 1) + summon_hp`.
+pub fn summon_bonus_roll(defender_roll: u32, summon_hp: u16, summon_agl: u16, rand: u16) -> u32 {
+    let modulus = (summon_agl as u32 >> 1) + 1; // never zero
+    defender_roll + (rand as u32) % modulus + summon_hp as u32
+}
+
+/// All inputs to [`summon_predamage`] (stages 1 + 2 of the summon-damage roll).
+#[derive(Debug, Clone, Copy)]
+pub struct SummonPredamage {
+    /// Summon-body (attacker slot 7) stats.
+    pub summon: SummonRollActor,
+    /// The party caster's AGL (`DAT_801C9370[ctx + 0x13]`), doubled into the roll.
+    pub caster_agl: u16,
+    /// The target (defender) stats.
+    pub target: SummonRollActor,
+    /// Element-affinity percent (`0x801F53E8[def_elem][atk_elem]`).
+    pub element_affinity_pct: u8,
+    /// Caster magic-power byte (`SC + 0x729`).
+    pub magic_power_byte: u8,
+    /// Three `rand()` draws, in call order: attacker roll, defender roll, bonus.
+    pub rng: [u16; 3],
+}
+
+/// Compose the closed-form stages of the summon-damage roll: the attacker +
+/// defender rolls ([`summon_attacker_roll`] / [`summon_defender_roll`]), the
+/// `FUN_801dd864` scale stage (affinity → status → magic-power on the attacker,
+/// guard-double → status on the defender), and the conditional bonus re-roll.
+///
+/// Returns `(attacker_roll, defender_roll)` *before* the `FUN_801ddb30`
+/// finisher. The pre-finisher damage is `attacker_roll.saturating_sub(
+/// defender_roll)`; the engine's live battle context then applies the finisher
+/// (resistance bits / crit / 9999 cap / spirit-gauge / popup / MP drain).
+pub fn summon_predamage(i: &SummonPredamage) -> (u32, u32) {
+    // Stage 1: rolls.
+    let mut attacker = summon_attacker_roll(i.summon.hp, i.summon.agl, i.caster_agl, i.rng[0]);
+    let mut defender = summon_defender_roll(&i.target, i.rng[1]);
+
+    // Stage 2a: FUN_801dd864 scales the attacker roll.
+    attacker = apply_element_affinity(attacker, i.element_affinity_pct);
+    attacker = apply_status_weaken(attacker, i.summon.status);
+    attacker = apply_magic_power(attacker, i.magic_power_byte);
+
+    // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
+    if i.target.guard == 4 {
+        defender = defender.saturating_mul(2);
+    }
+    defender = apply_status_weaken(defender, i.target.status);
+
+    // Stage 2c: conditional bonus re-roll (FUN_801dd0ac second arm).
+    if defender + i.summon.hp as u32 > attacker {
+        attacker = summon_bonus_roll(defender, i.summon.hp, i.summon.agl, i.rng[2]);
+    }
+
+    (attacker, defender)
+}
+
+/// Recovery-summon healing amount, applied inline by the heal stagers (PROT
+/// 0903 / 0905 / 0910 / 0911 / 0913): `(power_byte << 5) + 0xE0` = `power_byte *
+/// 32 + 224`, clamped by the caller to `maxHP - curHP`. `power_byte` is the
+/// caster's magic-power stat (`SC + 0x729`, the same byte [`apply_magic_power`]
+/// reads). There is no roll and no RNG on the heal path.
+pub fn heal_summon_amount(power_byte: u8) -> u16 {
+    ((power_byte as u32) << 5) as u16 + 0xE0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,5 +513,139 @@ mod tests {
         assert_eq!(damage_cap_for_party_slot(&caps, 2), 300);
         // Out-of-range falls back to the last entry.
         assert_eq!(damage_cap_for_party_slot(&caps, 10), 999);
+    }
+
+    #[test]
+    fn summon_attacker_roll_matches_disasm() {
+        // rand % (agl+1) + hp + caster_agl*2.
+        // 5 % 21 = 5; + 200 + 16*2(=32) = 237.
+        assert_eq!(summon_attacker_roll(200, 20, 16, 5), 237);
+        // 25 % 21 = 4; + 200 + 32 = 236.
+        assert_eq!(summon_attacker_roll(200, 20, 16, 25), 236);
+        // agl = 0 -> modulus 1, rand contributes nothing (no div-by-zero).
+        assert_eq!(summon_attacker_roll(50, 0, 0, 12345), 50);
+    }
+
+    #[test]
+    fn summon_defender_roll_matches_disasm() {
+        let d = SummonRollActor {
+            hp: 1000,
+            agl: 18,
+            stat_a: 64,
+            stat_b: 48,
+            ..Default::default()
+        };
+        // modulus = (18>>1)+1 = 10; 7 % 10 = 7.
+        // (1000>>8)=3 + (64>>4)=4 + (48>>4)=3 + 18*2=36 = 53.
+        assert_eq!(summon_defender_roll(&d, 7), 53);
+    }
+
+    #[test]
+    fn element_affinity_scales_by_percent() {
+        assert_eq!(apply_element_affinity(100, 100), 100); // neutral
+        assert_eq!(apply_element_affinity(100, 200), 200); // weakness (double)
+        assert_eq!(apply_element_affinity(100, 50), 50); // resist
+        assert_eq!(apply_element_affinity(100, 0), 0); // immune
+    }
+
+    #[test]
+    fn status_weaken_applies_bits_in_order() {
+        assert_eq!(apply_status_weaken(100, 0), 100); // no bits
+        assert_eq!(apply_status_weaken(100, 0x1), 90); // 9/10
+        assert_eq!(apply_status_weaken(100, 0x2), 70); // 7/10
+        // Both: 9/10 first (90), then 7/10 (63).
+        assert_eq!(apply_status_weaken(100, 0x3), 63);
+    }
+
+    #[test]
+    fn magic_power_scales_roll() {
+        assert_eq!(apply_magic_power(80, 1), 80); // power 1 = no change
+        assert_eq!(apply_magic_power(80, 0), 80); // power 0 guarded to no change
+        // power 9: 80 + (80*8 >> 3) = 80 + 80 = 160.
+        assert_eq!(apply_magic_power(80, 9), 160);
+    }
+
+    #[test]
+    fn heal_summon_amount_matches_disasm() {
+        // (power<<5) + 0xE0.
+        assert_eq!(heal_summon_amount(0), 0xE0); // 224 floor
+        assert_eq!(heal_summon_amount(10), 544); // 320 + 224
+        assert_eq!(heal_summon_amount(255), 8384); // 8160 + 224
+    }
+
+    #[test]
+    fn summon_predamage_takes_bonus_when_attacker_is_weak() {
+        let i = SummonPredamage {
+            summon: SummonRollActor {
+                hp: 200,
+                agl: 20,
+                ..Default::default()
+            },
+            caster_agl: 16,
+            target: SummonRollActor {
+                hp: 1000,
+                agl: 18,
+                stat_a: 64,
+                stat_b: 48,
+                ..Default::default()
+            },
+            element_affinity_pct: 100,
+            magic_power_byte: 1,
+            rng: [5, 7, 5],
+        };
+        // attacker initial 237, neutral affinity/status/power -> 237.
+        // defender 53. 53 + 200 = 253 > 237 -> bonus re-roll:
+        // 53 + (5 % 11 = 5) + 200 = 258.
+        assert_eq!(summon_predamage(&i), (258, 53));
+    }
+
+    #[test]
+    fn summon_predamage_skips_bonus_on_elemental_weakness() {
+        let i = SummonPredamage {
+            summon: SummonRollActor {
+                hp: 200,
+                agl: 20,
+                ..Default::default()
+            },
+            caster_agl: 16,
+            target: SummonRollActor {
+                hp: 1000,
+                agl: 18,
+                stat_a: 64,
+                stat_b: 48,
+                ..Default::default()
+            },
+            element_affinity_pct: 200, // double damage -> attacker dominates
+            magic_power_byte: 1,
+            rng: [5, 7, 5],
+        };
+        // attacker 237 * 200/100 = 474. defender 53. 53 + 200 = 253 <= 474 -> no bonus.
+        assert_eq!(summon_predamage(&i), (474, 53));
+    }
+
+    #[test]
+    fn summon_predamage_doubles_defender_on_guard() {
+        let i = SummonPredamage {
+            summon: SummonRollActor {
+                hp: 200,
+                agl: 20,
+                ..Default::default()
+            },
+            caster_agl: 16,
+            target: SummonRollActor {
+                hp: 1000,
+                agl: 18,
+                stat_a: 64,
+                stat_b: 48,
+                guard: 4, // doubles defender roll
+                ..Default::default()
+            },
+            element_affinity_pct: 100,
+            magic_power_byte: 1,
+            rng: [5, 7, 5],
+        };
+        // defender 53 * 2 = 106. 106 + 200 = 306 > 237 -> bonus:
+        // 106 + (5 % 11 = 5) + 200 = 311.
+        assert_eq!(summon_predamage(&i), (311, 106));
     }
 }

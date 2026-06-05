@@ -37,6 +37,139 @@ The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 s
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 
+## Battle background
+
+A battle is fought **on the environment where the encounter triggered, kept
+resident and rendered as a full 3D backdrop** — the battle does not load a
+separate flat arena. The battle-action SM only swaps the **camera** (from the
+field/world walk camera to a slow orbit around the party↔enemy midpoint) and
+overlays the actors + HUD; the surrounding terrain keeps drawing through its
+normal renderer.
+
+For an **overworld (world-map) encounter** the backdrop is **two layers** —
+a flat tiled **ground grid** + the map's `scene_tmd_stream` **dome** (sky +
+distant mountains) — pinned from a 4-angle capture set
+(`overworld_battle_bg_angle_a..d`, the same Vahn-vs-Gobu-Gobu battle paused on
+the Begin/Run menu while the camera idly orbits).
+
+### Backdrop ground — a procedural flat grid (`func_0x801d02c0`)
+
+The grass underfoot is **not** geometry from a file; it is a procedural flat
+tiled grid emitted by `func_0x801d02c0` (battle-overlay variant), the **sole
+draw call** the mode-`0x15` render `FUN_80026f50` makes
+(`ghidra/scripts/dump_battle_backdrop_draw.py`). It is a GTE rasteriser, not a
+TMD walk:
+
+- A `_DAT_1f8003f8 × _DAT_1f8003fa` cell grid (cell pitch `0x200`, sub-step
+  `0x100`), centred at the world origin on a **`Y ≈ 0` flat plane**.
+- **Pass 1** — RTPS each grid point and write a per-cell visibility byte
+  (`-1`/`0`/`1`) into the `0x1000`-byte buffer `_DAT_8007b814` (so the grid can
+  be up to ~64×64). **Pass 2** — for each visible cell, RTPT its corners and
+  emit one `POLY_GT4` (GP0 `0x0C000000`) into the ordering table.
+- These tiles are the **619 `POLY_GT4`** in the live pool. Because the grid is a
+  *full* flat plane centred on the actors, it fills the foreground/ground at
+  **every** orbit angle — there is no half-dome gap for the ground.
+  `overlay_0896` (`bat_back`, battle background) shares this grid renderer + the
+  `_DAT_8007b814` buffer.
+
+> **Correction.** An earlier reading called the backdrop the *world-map continent
+> heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
+> positive** (3 degenerate `clut=0` `POLY_FT4` prims stride-1 flooding that
+> window). The ground is this **flat procedural grid**, not a per-tile continent
+> descriptor table read from RAM, and not a 3D heightfield (cell `Y ≈ 0`).
+
+### Backdrop dome — sky + distant mountains (PROT 88 for `map01`)
+
+The sky hemisphere + distant mountain ring come from the map's `scene_tmd_stream`
+dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
+
+- PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-matched
+  across all four saves; leading TMD magic `0x80000002` at file `+4`,
+  uncompressed). Loaded by the type-`0x01` chunk walker `FUN_8001FE70` into
+  `_DAT_8007b864`. It is a 4-object, 968-vertex TMD + two `TimList` texture
+  chunks (obj0 = sky `Y` to `-10522`, obj2 = mountains `Y` to `-2257`,
+  obj3 = flat ground `Y = 0`, obj1 = near detail); PROT 88/89/90 share identical
+  geometry and differ only in texture payload.
+- **The dome is drawn as a background ACTOR.** `FUN_800513F0` does
+  `tmd_register(_DAT_8007b864)` → installs the TMD pointer into the mesh table
+  `DAT_8007C018[idx]` (returning the slot `idx`, stashed at the dome descriptor
+  `0x8007680c + 4` = `DAT_80076810`), then `FUN_80020de0` (`actor_alloc`)
+  allocates a battle actor whose mesh index is that slot and `FUN_80020f88`
+  links it into the actor list. So the dome is rendered by the **normal battle
+  actor path** (`FUN_80048A08`) — same as monsters/party — with no special
+  dome-draw function (which is why `DAT_80076810` has no resolved reader: the
+  actor list is walked pointer-indirect).
+- **No full surround.** The dome geometry is a **front half** (`X ∈ [-12155,
+  12155]`, `Z ∈ [-1260, +12155]` open toward `-Z`, all 4 objects `Z ≥ 0`), drawn
+  **once**, world-fixed. As the orbit camera sweeps, different portions of the
+  front arc come into view and the rest of the horizon is open sky/grass. The
+  retail captures confirm this: mountains cover only **44–81 % of the horizon
+  columns** depending on angle (peak when the camera looks into the arc, trough
+  along its edge) — *not* a ring. The dome's own ground ring (inner radius
+  `2889`) is the far grass behind the flat grid.
+
+**Engine status.** `legaia-engine play-window --scene map01 --live-loop` renders
+the overworld battle as a faithful scene: the exact orbit camera (below), the
+PROT 88 dome at raw coords plus a `Ry(180°)` mirror so the mountain ring + sky
+read as a full circle, a flat tiled grass grid under the actors (the
+`func_0x801d02c0` grid, `0x200` cell pitch, sampling the dome's grass tile), a
+sky-blue clear so the open horizon reads as sky, the real **assembled** battle
+party (see below), and animated monsters. One caveat: the live camera uses a
+*closer* unified depth than the exact `tr.z = 7680` — the battle meshes are small
+(party 134–284 units, monsters 77–368), so at the true depth they are a few
+pixels (retail draws actors off the rotation-only `DAT_8007bf10` + a per-actor
+position, not the backdrop's deep matrix). Cosmetic gaps remain (the ground-mist
+`obj1` is more prominent than retail; the mountain CLUT skews tan vs grey).
+
+### Battle camera (exact)
+
+The orbit camera (game mode `_DAT_8007b83c == 0x15`) is pinned exactly from the
+four saves + Ghidra. Per-frame `FUN_80026ce4` → `FUN_80026f50` builds the view
+matrix via the Euler kernel `FUN_80026988` (cos table `DAT_8007b7f8`, sin table
+`_DAT_8007b81c`), composed with the identity base matrix `DAT_80010b84` and
+stored at `DAT_8007bf10`; the backdrop + actors then draw through
+`func_0x801d02c0`. For a PSX (Y-down) world vertex `v`:
+
+```
+screen = H * (R*v + TR) / Ze          R = Rx(pitch) * Ry(yaw)
+```
+
+with `pitch = _DAT_8007b790 = 32` (12-bit angle, `4096` = 360°, ≈2.8° down-tilt),
+`yaw = _DAT_8007b792` (the orbit azimuth; the battle tick `FUN_801D0748`
+decrements it by `DAT_1f800393 * 2` ≈ 4 units/frame while idle), `roll = 0`,
+`TR = (_DAT_800840b8, _DAT_800840bc, _DAT_800840c0) = (0, 1280, 7680)` (eye-space
+depth 7680 / height 1280), `H = _DAT_8007b6f4 = 256` (written to the GTE
+projection register by `FUN_8003d254`), and the look-at target at the world
+origin. The engine mirrors this in `legaia-engine`'s `retail_battle_mvp` as
+`Proj_H * T(TR) * R * F` (`F` = the renderer's Y-flip), verified to 0.0002 px
+against the hand-rolled projection and against the savestate framebuffer.
+
+These values are **live-confirmed byte-exact** by
+[`scripts/pcsx-redux/autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua):
+run on a real `map01` battle save (reading at the `func_0x801d02c0` grid-render
+breakpoint, since at frame 0 the globals hold stale field state) it reports
+`mode=0x15 pitch=32 roll=0 TR=(0,1280,7680) H=256`, the grid as **28×28** cells,
+the battle actors at scale `+0x72 = 0x1000` (1.0, *not* scaled up — the
+on-screen size comes from the mesh, not a scale), and the dome registered at
+`DAT_8007C018[2]`.
+
+### Battle party meshes (assembled)
+
+The party renders the real **battle-form meshes** (PROT 1204 — Vahn/Noa/Gala),
+installed into `DAT_8007C018[0..=2]`. The battle char TMD is a set of
+object-local pieces (head/torso/limbs), **not** a single pre-assembled mesh, so
+the engine sockets them with the **battle ANM (PROT 1203 `other5`)**: frame 0 of
+each character's idle record is the combat-stance rest pose, applied `R*v + T`
+per object (`tmd_to_vram_mesh_posed_rot`). The 30 records are 3 banks of 10
+(Vahn @ 0 / Noa @ 10 / Gala @ 20). Textures: the pack's 7 atlases upload to VRAM
+and each character's decoded battle palette (Vahn `parse_record` PROT 0861;
+Noa/Gala `collect_palette` 0864/0865 — see
+[`character-mesh.md`](../formats/character-mesh.md)) overlays the CLUT rows its
+mesh samples, so the party reads in its real colours (blue Vahn / pink Noa /
+Gala). A stage battle draws **only active actors** — the scene-init actors are
+bound but inactive and parked at the world origin, so without that gate they
+pile their meshes at `(0,0,0)`.
+
 ## Battle action state machine (`FUN_801E295C`)
 
 16 KB / 4099 instructions / 155 outgoing calls. The action-execution dispatcher: it takes the player's selected action and runs it to completion across multiple frames.

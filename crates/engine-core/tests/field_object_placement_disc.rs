@@ -188,3 +188,131 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
         placements.len()
     );
 }
+
+/// Pin *why* a handful of town01 placements don't render in the field
+/// pass, so the "≈8/46 placements drop" gap stays characterised by cause
+/// (not just counted). The placement render path builds each mesh with the
+/// textured-only VRAM filter; an empty build drops the placement. There are
+/// two distinct causes, and they are NOT the same fix:
+///
+///   * **untextured props** — the mesh is all flat / gouraud (per-vertex RGB,
+///     no UVs), so the textured builder skips every prim. Recovering these
+///     needs a per-vertex-colour render path (engine-render has none yet).
+///   * **missing-CLUT props** — the mesh IS textured, but its prims sample a
+///     CLUT row the field VRAM pre-pass didn't upload, so the coverage filter
+///     correctly drops them (rendering them would show flat `CLUT[0]`).
+///     Recovering these is a VRAM-coverage question, not a shading one.
+///
+/// This corrects the earlier "all ≈8 are fully-untextured props" reading: on
+/// town01 only 2 of the 8 dropped placements are untextured; the other 6 are
+/// textured prims missing their CLUT. Numbers are exact disc invariants.
+#[test]
+fn town01_dropped_placements_split_untextured_vs_missing_clut() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let index = host.index.clone();
+    let scene = Scene::load(&index, "town01").expect("load town01");
+    let placements = scene
+        .field_object_placements(&index)
+        .expect("read placements")
+        .expect("field map");
+    let bundle =
+        legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
+    let bundle_entry = bundle.entry_idx();
+    let mut shared: Vec<Scene> = Vec::new();
+    for name in FIELD_SHARED_BLOCKS {
+        if let Ok(s) = Scene::load(&index, name) {
+            shared.push(s);
+        }
+    }
+    let refs: Vec<&Scene> = shared.iter().collect();
+    let (res, _) = SceneResources::build_targeted_with_options(
+        &scene,
+        &refs,
+        BuildOptions {
+            kind: SceneLoadKind::Field,
+            upload_all_tims: true,
+        },
+    )
+    .expect("build town01 field");
+    let env_tmds: Vec<_> = res
+        .tmds
+        .iter()
+        .filter(|t| t.entry_idx == bundle_entry)
+        .collect();
+
+    let mut placements_drawn = 0usize;
+    let mut placements_dropped = 0usize;
+    let mut dropped_untextured = 0usize;
+    let mut dropped_missing_clut = 0usize;
+    // pack_index -> (obj_idx, is_untextured)
+    let mut dropped_meshes = std::collections::BTreeMap::new();
+    for p in &placements {
+        let Some(pi) = p.pack_index else { continue };
+        let Some(rtmd) = env_tmds.get(pi as usize) else {
+            continue;
+        };
+        let (vmesh, stats) = rtmd.build_filtered_vram_mesh_stats(&res.vram);
+        if !vmesh.indices.is_empty() {
+            placements_drawn += 1;
+            continue;
+        }
+        placements_dropped += 1;
+        let untextured = stats.dropped_by_filter == 0 && stats.skipped_untextured > 0;
+        if untextured {
+            dropped_untextured += 1;
+        } else {
+            dropped_missing_clut += 1;
+        }
+        dropped_meshes.entry(pi).or_insert((p.obj_idx, untextured));
+    }
+    eprintln!(
+        "town01 placement render: {placements_drawn} drawn, {placements_dropped} dropped \
+         ({dropped_untextured} untextured-prop, {dropped_missing_clut} missing-CLUT) \
+         across {} meshes",
+        dropped_meshes.len()
+    );
+
+    // 38 of 46 placements draw; the 8 that don't split 2 untextured + 6
+    // missing-CLUT across exactly three distinct env-pack meshes.
+    assert_eq!(placements_drawn, 38, "town01 placements that draw");
+    assert_eq!(placements_dropped, 8, "town01 placements dropped");
+    assert_eq!(dropped_untextured, 2, "dropped because all-untextured");
+    assert_eq!(dropped_missing_clut, 6, "dropped because CLUT not resident");
+
+    // The three distinct dropped meshes (pack index -> obj id, untextured?).
+    let expect: &[(u16, u16, bool)] = &[
+        (31, 315, true),  // untextured prop
+        (74, 347, false), // textured, CLUT not uploaded
+        (109, 114, true), // untextured prop
+    ];
+    assert_eq!(
+        dropped_meshes.len(),
+        expect.len(),
+        "distinct dropped env-pack meshes"
+    );
+    for &(pi, obj, untextured) in expect {
+        let got = dropped_meshes
+            .get(&pi)
+            .unwrap_or_else(|| panic!("expected dropped mesh pack[{pi}]"));
+        assert_eq!(got.0, obj, "obj id for dropped mesh pack[{pi}]");
+        assert_eq!(got.1, untextured, "untextured? for dropped mesh pack[{pi}]");
+    }
+
+    // The textured-but-dropped mesh (pack[74], obj 347) is dropped purely
+    // because its 4 prims sample an un-uploaded CLUT row - it is NOT an
+    // untextured prop, so a per-vertex-RGB fallback would NOT recover it.
+    let (_m, reasons) = env_tmds[74].build_filtered_vram_mesh_reasoned(&res.vram);
+    assert_eq!(reasons.kept, 0, "pack[74] keeps no prims");
+    assert_eq!(reasons.missing_clut, 4, "pack[74] drops = missing CLUT");
+    assert_eq!(reasons.missing_texture_page, 0);
+    assert_eq!(reasons.clut_depth_mismatch, 0);
+    assert_eq!(reasons.skipped_untextured, 0, "pack[74] IS textured");
+}

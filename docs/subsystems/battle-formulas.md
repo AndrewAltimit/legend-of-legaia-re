@@ -172,6 +172,44 @@ damage = min(damage, 0x120);            // cap 1: 288 hit-points
 
 This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_80076D7E` damage popup is written directly with the result before the state machine calls `func_0x800402F4` in state `0x3F`. The spirit pre-application formula is the one place the engine has to reproduce a non-obvious arithmetic; everything else is selector-dispatch driven.
 
+## Summon-magic damage roll - `FUN_801dd0ac`
+
+A player Seru-magic *damage* summon does **not** go through `FUN_800402F4`'s
+selector dispatch and has no static per-spell power scalar (see
+[spell-table.md](../formats/spell-table.md#per-spell-damage-power-is-not-static-data--it-is-caster-state-derived)).
+Its HP delta is built from live battle stats in three stages — all byte-traced
+from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls:
+
+```c
+// Stage 1 - rolls (FUN_801dd0ac, summon branch attacker_slot == 7)
+atk = rand() % (summon.AGL + 1) + summon.HP + caster.AGL*2;
+def = rand() % ((tgt.AGL >> 1) + 1) + (tgt.HP >> 8)
+    + (tgt.DEFa >> 4) + (tgt.DEFb >> 4) + tgt.AGL*2;
+
+// Stage 2 - scale (FUN_801dd864)
+atk = atk * affinity[atk_elem*8 + def_elem] / 100;   // 8x8 matrix @ 0x801F53E8
+if (summon.status & 1) atk = atk*9/10;  if (summon.status & 2) atk = atk*7/10;
+if (tgt.guard == 4)    def <<= 1;
+if (tgt.status & 1)    def = def*9/10;   if (tgt.status & 2)   def = def*7/10;
+atk += atk * (magic_power_byte - 1) >> 3;             // SC + 0x729, summon only
+// FUN_801dd0ac re-rolls a weak attacker:
+if (def + summon.HP > atk) atk = def + rand() % ((summon.AGL >> 1) + 1) + summon.HP;
+
+// Stage 3 - finish (FUN_801ddb30): resistance bits, rand%9+8 floor, 9999 cap,
+//   spirit-gauge fill, damage popup, MP drain, per-element stat debuffs.
+damage = atk - def;
+```
+
+Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
+clamped to `maxHP - curHP`.
+
+The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels (see the
+mirror table below); stage 3 (`FUN_801ddb30`, 889 instructions) reads ~20 battle
+globals and mutates live battle state, so it stays the coupled tail of the live
+battle context rather than a pure kernel. Dumps:
+`overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
+[`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
+
 ## MP cost & ability-bit modifiers
 
 From battle-action.md state `0x28` (Magic / Item - cast begin):
@@ -229,6 +267,9 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `accuracy_roll` | this doc, selector 9 above |
 | `psyq_rand_step` | `ghidra/scripts/funcs/80056798.txt` |
 | `damage_cap_for_party_slot` | this doc, selector 0 above (`DAT_8007655C` table) |
+| `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac`) |
+| `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
+| `heal_summon_amount` | this doc, recovery-summon closed form |
 
 The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.
 

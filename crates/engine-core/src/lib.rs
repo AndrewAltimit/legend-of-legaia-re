@@ -8,6 +8,7 @@
 pub mod actor_alloc_host;
 pub mod ap_gauge;
 pub mod art_strike;
+pub mod battle_anim;
 pub mod battle_arts;
 pub mod battle_events;
 pub mod battle_hud;

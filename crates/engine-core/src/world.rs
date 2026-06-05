@@ -523,11 +523,26 @@ pub struct Actor {
     /// playing. Set via [`World::set_actor_animation`].
     pub active_animation: Option<AnimPlayer>,
 
-    /// Last per-bone pose produced by `active_animation.tick()`. `None`
-    /// until the first frame after an animation is assigned. Renderers
-    /// consume this via `tmd_to_vram_mesh_posed` to deform the actor's
-    /// mesh each frame.
+    /// Last per-bone pose produced by `active_animation.tick()` (field) or
+    /// `battle_animation.tick()` (battle). `None` until the first frame after
+    /// an animation is assigned. Field renderers consume this via
+    /// `tmd_to_vram_mesh_posed` (translation only); battle renderers use
+    /// `tmd_to_vram_mesh_posed_rot` (full per-object rigid transform).
     pub pose_frame: Option<PoseFrame>,
+
+    /// Battle per-object rigid-transform animation player. Set at battle init
+    /// for monster (and player-summon) actors from their archive idle clip; the
+    /// battle tick advances it into `pose_frame`. Mutually exclusive with
+    /// `active_animation` (field ANM) on a given actor.
+    pub battle_animation: Option<crate::battle_anim::MonsterAnimPlayer>,
+
+    /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
+    /// are nominal defaults the battle loader relocates per slot
+    /// (`FUN_80055468` → `legaia_asset::monster_archive::relocate_cba/relocate_tsb`).
+    /// Renderers that rebuild this actor's mesh from the raw TMD each frame (the
+    /// posed-animation path) must re-apply that relocation, since a fresh build
+    /// carries the nominal addresses again. `None` for non-monster actors.
+    pub battle_tex_slot: Option<u8>,
 
     /// Index into `SceneResources::tmds` for this actor's bound mesh.
     /// `None` means no TMD is bound - the actor has no visible 3D model.
@@ -5009,6 +5024,34 @@ impl World {
             if let Some(player) = &mut actor.active_animation {
                 actor.pose_frame = Some(player.tick());
             }
+        }
+    }
+
+    /// Advance the per-object battle animation of every actor carrying one,
+    /// folding the result into `pose_frame`. The battle render path then
+    /// deforms each actor's mesh through `tmd_to_vram_mesh_posed_rot`. Call once
+    /// per battle frame (the field [`tick_actors`](Self::tick_actors) drives the
+    /// ANM path instead). Unlike `tick_actors` this does not gate on `.active`,
+    /// since battle-init actors keep their `tmd_binding` without the field
+    /// `.active` flag.
+    pub fn tick_battle_animations(&mut self) {
+        for actor in &mut self.actors {
+            if let Some(player) = &mut actor.battle_animation {
+                actor.pose_frame = Some(player.tick());
+            }
+        }
+    }
+
+    /// Bind a battle animation player to actor `slot`, resetting its
+    /// `pose_frame`. No-ops for out-of-range slots.
+    pub fn set_actor_battle_animation(
+        &mut self,
+        slot: usize,
+        player: crate::battle_anim::MonsterAnimPlayer,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_animation = Some(player);
+            actor.pose_frame = None;
         }
     }
 

@@ -79,6 +79,23 @@ loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
 - `FUN_800495c8` / `FUN_8005b038` — GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
 - `FUN_80054cb0` — monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` (`ghidra/scripts/funcs/80054cb0.txt`).
 
+## Engine playback
+
+The clean-room engine plays this stream for battle actors. At battle entry the
+shell decodes each monster's idle clip (`idle_animation`, action 0) into a
+`legaia_engine_core::battle_anim::MonsterAnimPlayer` — an 8.8 fixed-point loop
+cursor whose `tick()` interpolates the keyframes (translation linear, rotation
+shortest-path 12-bit step, matching `FUN_8004998C`) into a
+`legaia_anm::PoseFrame` (one `(translation, rotation)` per object, the same
+shape the field ANM player produces). `World::tick_battle_animations` advances
+every battle actor's player each frame, and the renderer deforms the mesh with
+the rigid `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` builder (`R·v + T`,
+`Rz·Ry·Rx` about each object's local origin — the same composition as the
+glTF export below and the site animator). The disc-gated `battle_anim_real`
+test drives the whole decode → player → deform path on a real monster and
+asserts the posed mesh moves frame-to-frame. The per-tick phase advance is a
+display-rate default, not pinned to retail's exact `actor[+0x68]` delta.
+
 ## Export
 
 `legaia_asset::monster_gltf::export_glb(entry, id)` packs a monster's mesh, its

@@ -36,6 +36,21 @@
 //! `FUN_801ec3e4` is melee/arts-only (gated on an action-queue head in
 //! `0xC..=0x1F`). See `docs/formats/spell-table.md` for the full trace. The
 //! `base_power` figures below are therefore explicit MP-scaled placeholders.
+//!
+//! What the magnitude actually *is* has been traced: a damage summon's HP delta
+//! is the caster/summon-state-derived roll in `FUN_801dd0ac` (`attacker_slot ==
+//! 7`), scaled by element affinity + status bits + the caster's magic-power byte
+//! (`FUN_801dd864`) and finalized by `FUN_801ddb30`. The bounded, state-free
+//! pieces of that chain are ported as pure kernels in
+//! [`legaia_engine_vm::battle_formulas`] (`summon_attacker_roll` /
+//! `summon_defender_roll` / `summon_predamage` / `heal_summon_amount` and the
+//! `apply_*` scale helpers). They are **not yet wired** into a live battle here:
+//! the engine's spell path still uses [`SpellEffect`]'s MP-scaled `base_power`,
+//! and the faithful roll needs a live battle-actor context (both actors' AGL/HP/
+//! defense/status, the affinity matrix, and the caster magic-power byte) plus
+//! the `FUN_801ddb30` finisher, which mutates ~20 battle globals. When a
+//! player-driven summon consumer needs real numbers, feed those stats into the
+//! `battle_formulas` kernels rather than the placeholder below.
 
 use crate::spells::{SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget};
 

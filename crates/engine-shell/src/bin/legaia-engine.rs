@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
@@ -3686,6 +3686,25 @@ struct PlayWindowApp {
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
+    /// The battle VRAM (field base + injected monster textures) stashed by
+    /// `enter_battle_render`, so a mid-battle player-summon spawn can inject its
+    /// own creature texture into a clone and re-upload.
+    battle_vram: Option<legaia_tim::Vram>,
+    /// Number of monster texture slots in use this battle (0..=4). A player
+    /// summon reuses the next free slot for its creature texture.
+    battle_tex_slots_used: u8,
+    /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
+    /// it never collides with the party/monster battle slots), or `None`.
+    summon_actor_slot: Option<usize>,
+    /// Mesh index of the battle-stage backdrop dome (the scene's
+    /// `scene_tmd_stream` half-dome), drawn behind the actors. `None` when the
+    /// scene has no stage or it failed to load.
+    battle_stage_mesh: Option<usize>,
+    /// Mesh index of the flat tiled ground grid drawn under the battle actors
+    /// (retail's `func_0x801d02c0` grass grid). Reuses the stage dome's grass
+    /// texel so it samples real grass from the battle VRAM. `None` outside a
+    /// stage-dome battle or when the dome has no usable ground texel.
+    battle_ground_mesh: Option<usize>,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
@@ -5490,6 +5509,149 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
+    /// Battle camera: frame the **monster** actors (the ones carrying a bound
+    /// mesh + idle animation) rather than the player vicinity. The live-loop
+    /// seats battle actors around the world origin (`enter_battle(.., 600)` —
+    /// party at `x=-600`, monsters at `x=+600`), far from the field player's
+    /// world coords, so `camera_mvp`'s player-centred box leaves the enemies
+    /// entirely off-screen. Framing the enemy cluster (gently orbiting) puts
+    /// the animated monsters centre-frame and at a useful size.
+    fn battle_camera_mvp(&self, aspect: f32) -> Mat4 {
+        let world = &self.session.host.world;
+        let pc = world.party_count as usize;
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        let mut any = false;
+        for (i, a) in world.actors.iter().enumerate() {
+            // Monster slots only (party occupies slots 0..party_count and isn't
+            // mesh-bound in the play-window battle path anyway).
+            if i < pc || a.tmd_binding.is_none() {
+                continue;
+            }
+            let p = [
+                a.move_state.world_x as f32,
+                a.move_state.world_y as f32,
+                a.move_state.world_z as f32,
+            ];
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+            any = true;
+        }
+        if !any {
+            // No bound monsters yet — fall back to the field framing.
+            return self.camera_mvp(aspect);
+        }
+        // The bare position box collapses to a point/line; expand it to enclose
+        // the monster mesh bodies (a few hundred units tall/wide).
+        const M: f32 = 450.0;
+        for k in 0..3 {
+            lo[k] -= M;
+            hi[k] += M;
+        }
+        // Gentle orbit (slower than the field's 0.25) so the animated enemies
+        // read in 3D from several angles without spinning fast.
+        orbit_camera_mvp(lo, hi, 0.12, 0.35, self.win.elapsed_secs(), aspect)
+    }
+
+    /// Battle orbit yaw in radians, at the **retail rate**. The battle tick
+    /// (`FUN_801D0748`) decrements the camera yaw `_DAT_8007b792` by
+    /// `DAT_1f800393 * 2` (≈2) per frame while idle: ≈ -4 units/frame, and a
+    /// PSX turn is 4096 units, so the idle orbit is `4*60/4096` turn/s ≈ 0.059
+    /// turn/s. Decreasing yaw = retail's spin sense.
+    fn battle_orbit_yaw_rad(&self) -> f32 {
+        const RETAIL_UNITS_PER_SEC: f32 = 4.0 * 60.0; // -4 u/frame at 60 fps
+        -self.win.elapsed_secs() * RETAIL_UNITS_PER_SEC / 4096.0 * std::f32::consts::TAU
+    }
+
+    /// The **exact** retail overworld-battle camera (game mode `0x15`), pinned
+    /// from the four fingerprinted `overworld_battle_bg_angle_*` saves and
+    /// `FUN_80026988`/`FUN_80026f50`. For a PSX (Y-down) world vertex `v` retail
+    /// computes `screen = H * (R*v + TR) / Ze` with
+    ///   `R  = Rx(pitch=32u) * Ry(yaw)`         (12-bit angles, 4096 = 360°),
+    ///   `TR = (0, 1280, 7680)`                 (eye-space: depth 7680, height 1280),
+    ///   `H  = 256`                             (GTE projection focal length),
+    /// the look-at target is the world origin, and PSX screen `+Y` is **down**
+    /// with screen-centre `(160, 120)` over the 320x240 frame.
+    ///
+    /// The engine draws its meshes Y-flipped (`scale(1,-1,1)` = `F`, PSX Y-down
+    /// -> renderer Y-up), so this builds `cam = Proj_H * T(TR) * R * F`: every
+    /// battle draw is `cam * model` where `model` already carries an `F` (the
+    /// dome's plain flip, the actors' `Translate * F`), and `F*F = I` recovers
+    /// the raw PSX vertex the retail transform expects. Verified by projecting
+    /// PROT 88's dome through this matrix and matching the savestate framebuffer
+    /// (sky / mountain-ring / horizon). See `project_battle_camera_re`.
+    /// The exact retail dome projection (`tr = (0,1280,7680)`), kept as the
+    /// camera-RE reference and the regression-test target. The live battle uses
+    /// the unified [`battle_dome_camera_mvp`] (closer depth) for a coherent
+    /// single-camera scene; this stays as the pinned ground truth.
+    #[allow(dead_code)]
+    fn retail_battle_mvp(yaw_rad: f32, aspect: f32) -> Mat4 {
+        Self::battle_mvp_with_tr(yaw_rad, Vec3::new(0.0, 1280.0, 7680.0), aspect)
+    }
+
+    /// The shared battle projection-times-view for a given eye-space translation
+    /// `tr`. Retail keeps a single rotation `R = Rx(32u)·Ry(yaw)` (stored
+    /// rotation-only in `DAT_8007bf10`) and applies the translation per draw
+    /// class: the backdrop gets `tr = (0, 1280, 7680)` (pushed far), the actors
+    /// get their own (closer) translation off the rotation-only matrix
+    /// ([`FUN_80048A08`] composes each actor's world transform onto `8007bf10`,
+    /// NOT onto the backdrop's `7680`-deep matrix). Sharing `R` keeps the
+    /// foreground and backdrop orbiting in lock-step; the differing `tr.z`
+    /// is what lets the party read large while the dome sits on the horizon.
+    fn battle_mvp_with_tr(yaw_rad: f32, tr: Vec3, aspect: f32) -> Mat4 {
+        const H: f32 = 256.0;
+        const PITCH_UNITS: f32 = 32.0;
+        let pitch = PITCH_UNITS / 4096.0 * std::f32::consts::TAU;
+        let r = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw_rad);
+        let t = Mat4::from_translation(tr);
+        let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+        // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
+        // ndc.y = -H*Ey/(120*Ez) (PSX +Y down -> NDC up), clip.w = Ez, depth
+        // mapped to wgpu [0,1]. Correct X for non-4:3 viewports so the 4:3
+        // retail framing holds at any window size.
+        let (near, far) = (4.0f32, 60000.0f32);
+        let a = far / (far - near);
+        let b = -near * far / (far - near);
+        let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
+        let proj = Mat4::from_cols(
+            Vec4::new(H / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, -H / 120.0, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, a, 1.0),
+            Vec4::new(0.0, 0.0, b, 0.0),
+        );
+        proj * t * r * f
+    }
+
+    /// The single battle camera, used for **everything** in a stage-dome battle
+    /// (dome, ground grid, and actors) so the scene reads as one coherent space
+    /// rather than two overlapping layers. The retail dome projection wants
+    /// `tr.z = 7680`, but that shoves the foreground actors onto the same far
+    /// plane (tiny); driving a *separate* close camera for the actors instead
+    /// split the horizon (the grass grid and the dome no longer met). A single
+    /// middle depth keeps the dome's huge radius reading at the horizon while
+    /// the party/enemies near the origin read at roughly retail scale. `tr.y`
+    /// holds the dome's `1/6` down-shift ratio so the action sits just below
+    /// centre. (The exact `tr.z = 7680` projection is preserved in
+    /// [`retail_battle_mvp`] for the camera-RE reference + regression test.)
+    fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
+        // Unified close depth so the SMALL battle meshes (party + monsters are
+        // only ~130-370 units tall) read at a usable size while the dome's huge
+        // radius still sits on the horizon. The probe-confirmed exact dome
+        // projection is tr.z=7680, but at that true depth these small meshes are
+        // only a few pixels (retail draws the actors off a separate close
+        // matrix, not the backdrop's 7680 plane). Kept as the playable
+        // single-camera compromise; the exact projection lives in
+        // `retail_battle_mvp`.
+        const DEPTH: f32 = 1500.0;
+        Self::battle_mvp_with_tr(
+            self.battle_orbit_yaw_rad(),
+            Vec3::new(0.0, DEPTH / 6.0, DEPTH),
+            aspect,
+        )
+    }
+
     /// Camera parameters for the cutscene shot, decoded from the cutscene
     /// timeline's executed op-`0x45` Camera Configure params (read from
     /// `World::camera_state`, committed by `FUN_801DE084`). Returns
@@ -5607,16 +5769,67 @@ impl PlayWindowApp {
     /// at the loader's per-slot coords, upload the relocated mesh, and bind it
     /// to the enemy actor. Re-uploads the edited VRAM so the injected texture
     /// pages resolve.
+    /// Build the current scene's battle-stage backdrop, if it has one. Returns
+    /// the battle VRAM (scene + stage-dome textures resident) and the stage
+    /// dome's `(Tmd, raw)`. The faithful battle backdrop is the scene's
+    /// `scene_tmd_stream` half-dome (sky + mountain ring + ground); building the
+    /// scene in `SceneLoadKind::Battle` makes that dome TMD + its textures
+    /// resident (the Field build excludes them). `None` when the scene has no
+    /// stage entry.
+    fn build_battle_stage(&self) -> Option<(legaia_tim::Vram, (legaia_tmd::Tmd, Vec<u8>))> {
+        let scene = self.session.host.scene.as_ref()?;
+        let scene_name = scene.name.clone();
+        let stage_entry = *self
+            .session
+            .host
+            .index
+            .battle_stage_entries(&scene_name)
+            .first()?;
+        let mut shared: Vec<Scene> = Vec::new();
+        for name in FIELD_SHARED_BLOCKS {
+            if let Ok(s) = Scene::load(&self.session.host.index, name) {
+                shared.push(s);
+            }
+        }
+        let refs: Vec<&Scene> = shared.iter().collect();
+        let (res, _) = SceneResources::build_targeted_with_options(
+            scene,
+            &refs,
+            BuildOptions {
+                kind: SceneLoadKind::Battle,
+                upload_all_tims: true,
+            },
+        )
+        .ok()?;
+        // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
+        let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
+        log::info!(
+            "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
+             ({} objects)",
+            dome.tmd.objects.len()
+        );
+        Some((res.vram.clone(), (dome.tmd.clone(), dome.raw.clone())))
+    }
+
     fn enter_battle_render(&mut self) {
         let monsters = self.session.host.world.battle_monster_slots();
         if monsters.is_empty() {
             return;
         }
-        let Some(base) = self.cpu_vram_base.clone() else {
+        let Some(field_base) = self.cpu_vram_base.clone() else {
             return;
         };
         let Some(archive) = self.monster_archive_bytes() else {
             return;
+        };
+        // Build the battle-stage backdrop (the scene's scene_tmd_stream
+        // half-dome). Its VRAM (scene + stage-dome textures resident) becomes
+        // the battle base, so the dome renders textured behind the actors;
+        // fall back to the field VRAM when the scene has no stage.
+        let stage = self.build_battle_stage();
+        let base = match &stage {
+            Some((sv, _)) => sv.clone(),
+            None => field_base,
         };
         let Some(r) = self.win.renderer.as_ref() else {
             return;
@@ -5639,6 +5852,45 @@ impl PlayWindowApp {
             log::warn!("play-window: flame-atlas VRAM upload skipped: {e:#}");
         }
         self.battle_mesh_base = self.meshes.len();
+        // Upload the stage dome mesh (drawn as the backdrop). Its textures live
+        // in the stage VRAM, so build it unfiltered (all textured prims are
+        // resident). Appended after `battle_mesh_base`, so battle exit truncates
+        // it away with the monster meshes.
+        self.battle_stage_mesh = None;
+        if let Some((_, (tmd, raw))) = &stage {
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+            if !vmesh.indices.is_empty()
+                && let Ok(m) = r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.indices,
+                )
+            {
+                self.battle_stage_mesh = Some(self.meshes.len());
+                self.meshes.push(m);
+                self.scene_tmd_data.push((tmd.clone(), raw.clone()));
+                // Flat tiled ground grid under the actors (retail's
+                // `func_0x801d02c0` grass grid). Reuse the dome's grass texel so
+                // it samples real grass from the battle VRAM; drawn with the
+                // actor camera so the party stands on it.
+                self.battle_ground_mesh = None;
+                if let Some(grid) = build_battle_ground_grid(&vmesh)
+                    && let Ok(gm) = r.upload_vram_mesh(
+                        &grid.positions,
+                        &grid.uvs,
+                        &grid.cba_tsb,
+                        &grid.normals,
+                        &grid.indices,
+                    )
+                {
+                    self.battle_ground_mesh = Some(self.meshes.len());
+                    self.meshes.push(gm);
+                    self.scene_tmd_data.push((tmd.clone(), raw.clone())); // keep meshes/data aligned
+                }
+            }
+        }
         let mut bound = 0usize;
         for (actor_idx, monster_id, slot) in monsters {
             let mesh = match legaia_asset::monster_archive::mesh(&archive, monster_id) {
@@ -5674,19 +5926,294 @@ impl PlayWindowApp {
                     // Keep `scene_tmd_data` length-parallel with `meshes`.
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
+                    // Record the texture slot so the posed-animation rebuild can
+                    // re-apply the per-slot CBA/TSB relocation (the raw-TMD posed
+                    // mesh otherwise carries the nominal on-disc addresses and
+                    // samples the wrong VRAM page → untextured/white).
+                    self.session.host.world.actors[actor_idx].battle_tex_slot = Some(slot);
+                    // Attach the monster's idle clip so its limbs move in
+                    // battle. The clip's part count should equal the TMD object
+                    // count (one rigid transform per object); MonsterAnimPlayer
+                    // tolerates a mismatch (extra objects stay at rest).
+                    match legaia_asset::monster_archive::idle_animation(&archive, monster_id) {
+                        Ok(Some(idle)) => {
+                            if let Some(player) =
+                                legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
+                            {
+                                self.session
+                                    .host
+                                    .world
+                                    .set_actor_battle_animation(actor_idx, player);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
+                        }
+                    }
                     bound += 1;
                 }
                 Err(e) => log::warn!("play-window: monster {monster_id} mesh upload: {e:#}"),
             }
         }
 
-        if bound > 0 {
+        // Load the REAL battle party meshes (PROT 1204 Vahn/Noa/Gala) and bind
+        // them to the party actor slots, so the party renders its large
+        // battle-form models (live-confirmed: actors run at scale 1.0 and sit at
+        // the exact camera's `tr.z=7680` plane, so they read large only because
+        // the battle MESHES are large - the field/placeholder meshes are why the
+        // party was invisible/tiny). Mirrors the web-viewer's
+        // `battle_char_vram_bytes_battle`: upload the 7 atlases, overlay each
+        // character's decoded battle palette onto the rows its mesh CBA samples,
+        // then build the mesh against that VRAM with its nominal CBA/TSB.
+        let mut party_bound = 0usize;
+        let party_count = self.session.host.world.party_count as usize;
+        if party_count > 0
+            && let Ok(pack_raw) = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
+            && let Ok(pack) = legaia_asset::battle_char_pack::parse(&pack_raw)
+        {
+            // Upload the 7 character atlases (256x256 4bpp + their CLUT rows).
+            for atlas in &pack.atlases {
+                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
+                    vram.upload_tim(&tim);
+                }
+            }
+            // The battle party mesh is a set of object-local TMD pieces (head,
+            // torso, limbs) - NOT pre-assembled. The retail engine sockets them
+            // with the battle ANM (PROT 1203 `other5`): frame 0 of each
+            // character's idle record = the combat-stance rest pose, applied
+            // R*v + T per object. Load that bundle; its 30 records are per-char
+            // banks (Vahn 0-8 / Noa 9-17 / Gala 18-26), idle = each bank's first.
+            let battle_anm = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(1203)
+                .ok()
+                .and_then(|raw| {
+                    [6usize, 3, 5, 7].iter().find_map(|&dc| {
+                        legaia_asset::player_anm::find_in_entry(&raw, dc)
+                            .into_iter()
+                            .next()
+                    })
+                });
+            // Per-character: build the assembled mesh, overlay its battle palette
+            // onto the CLUT rows the mesh samples, upload, bind to the party actor.
+            // char slot 0/1/2 = Vahn/Noa/Gala; palette source PROT 861/864/865.
+            for member in 0..party_count.min(3) {
+                let cslot = member; // actor slot i -> char slot i (Vahn/Noa/Gala)
+                let Some(slot) = pack.slot(cslot) else {
+                    continue;
+                };
+                let Ok(tmd) = legaia_tmd::parse(&slot.tmd_bytes) else {
+                    continue;
+                };
+                // Assemble: frame-0 (T,R) per object from this char's idle record.
+                // PROT 1203 banks (per docs/formats/character-mesh.md): records
+                // 0-8 = Vahn (15-bone), 9-17 = Noa (16), 18-26 = Gala (15); the
+                // FIRST record of each bank is that character's idle rest pose.
+                let bone_offsets: Vec<([i16; 3], [i16; 3])> = match &battle_anm {
+                    Some(b) => {
+                        let rec = [0usize, 9, 18][cslot]; // idle record per bank
+                        (0..tmd.objects.len())
+                            .map(|o| match b.bone_transform(rec, 0, o) {
+                                Some(t) => (
+                                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                                ),
+                                None => ([0; 3], [0; 3]),
+                            })
+                            .collect()
+                    }
+                    None => Vec::new(),
+                };
+                let vmesh = if bone_offsets.is_empty() {
+                    legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &slot.tmd_bytes)
+                } else {
+                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                        &tmd,
+                        &slot.tmd_bytes,
+                        &bone_offsets,
+                    )
+                };
+                if vmesh.indices.is_empty() {
+                    continue;
+                }
+                // Rows the mesh CBA samples, and (for collect) the columns.
+                let mut rows: Vec<u16> =
+                    vmesh.cba_tsb.iter().map(|c| (c[0] >> 6) & 0x1FF).collect();
+                rows.sort_unstable();
+                rows.dedup();
+                let mut cols: Vec<u16> = vmesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
+                cols.sort_unstable();
+                cols.dedup();
+                // Decode + overlay the battle palette. Vahn (861) = byte-exact
+                // parse_record; Noa (864) / Gala (865) = equipment-robust collect.
+                let pal = match cslot {
+                    0 => self
+                        .session
+                        .host
+                        .index
+                        .entry_bytes_extended(861)
+                        .ok()
+                        .and_then(|f| {
+                            let rec0 = legaia_asset::battle_char_palette::find_record0(&f)?;
+                            legaia_asset::battle_char_palette::parse_record(&f, rec0).ok()
+                        }),
+                    1 | 2 => {
+                        let prot = if cslot == 1 { 864 } else { 865 };
+                        self.session
+                            .host
+                            .index
+                            .entry_bytes_extended(prot)
+                            .ok()
+                            .and_then(|f| {
+                                legaia_asset::battle_char_palette::collect_palette(&f, 0, &cols)
+                                    .ok()
+                            })
+                    }
+                    _ => None,
+                };
+                if let Some(pal) = pal {
+                    // STP-set palette bands onto each row the mesh CBA samples.
+                    for &row in &rows {
+                        for band in &pal.bands {
+                            let bytes: Vec<u8> = band
+                                .vram_words()
+                                .iter()
+                                .flat_map(|w| w.to_le_bytes())
+                                .collect();
+                            vram.write_clut_row(band.base, row, &bytes);
+                        }
+                    }
+                }
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        let idx = self.meshes.len();
+                        self.meshes.push(m);
+                        self.scene_tmd_data.push((tmd, slot.tmd_bytes.clone()));
+                        self.session.host.world.actors[member].tmd_binding = Some(idx);
+                        party_bound += 1;
+                    }
+                    Err(e) => log::warn!("play-window: party {cslot} mesh upload: {e:#}"),
+                }
+            }
+        }
+
+        if bound > 0 || party_bound > 0 {
             match r.upload_vram(&vram) {
                 Ok(v) => self.uploaded_vram = Some(v),
                 Err(e) => log::error!("play-window: battle VRAM re-upload: {e:#}"),
             }
-            log::info!("play-window: battle render bound {bound} monster mesh(es)");
+            log::info!(
+                "play-window: battle render bound {bound} monster + {party_bound} party mesh(es)"
+            );
         }
+        // Stash the battle VRAM + the monster-slot count so a mid-battle player
+        // summon can inject its creature texture into the next free slot.
+        self.battle_tex_slots_used = (bound as u8).min(4);
+        self.battle_vram = Some(vram);
+    }
+
+    /// Spawn the player Seru-magic summon as a battle creature, the faithful
+    /// render (the summon reuses its namesake `battle_data` enemy creature -
+    /// see `summon::summon_creature_id`). Loads that creature's mesh + texture
+    /// (`battle_render_mesh`) into a free battle texture slot and binds it to a
+    /// high actor slot with its idle [`MonsterAnimPlayer`], so the existing
+    /// battle render animates + textures it exactly like an enemy. Replaces the
+    /// move-VM `SummonScene` stand-in for the visual. No-op outside battle.
+    fn spawn_summon_creature(&mut self, spell_id: u8) {
+        if self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let Some(archive) = self.monster_archive_bytes() else {
+            return;
+        };
+        let Some(creature) = legaia_engine_core::summon::summon_creature_id(spell_id, &archive)
+        else {
+            return;
+        };
+        let Some(mut vram) = self.battle_vram.clone() else {
+            return;
+        };
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let mesh = match legaia_asset::monster_archive::mesh(&archive, creature) {
+            Ok(Some(m)) => m,
+            _ => return,
+        };
+        let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+            return;
+        };
+        // Inject the creature texture into the next free battle slot.
+        let tex_slot = self.battle_tex_slots_used.min(4);
+        let Some(vmesh) = mesh.battle_render_mesh(tex_slot, &mut vram) else {
+            return;
+        };
+        if vmesh.indices.is_empty() {
+            return;
+        }
+        let uploaded = match r.upload_vram_mesh(
+            &vmesh.positions,
+            &vmesh.uvs,
+            &vmesh.cba_tsb,
+            &vmesh.normals,
+            &vmesh.indices,
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("play-window: summon mesh upload: {e:#}");
+                return;
+            }
+        };
+        let idx = self.meshes.len();
+        self.meshes.push(uploaded);
+        self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
+        match r.upload_vram(&vram) {
+            Ok(v) => self.uploaded_vram = Some(v),
+            Err(e) => log::error!("play-window: summon VRAM re-upload: {e:#}"),
+        }
+
+        // Seat the summon in a free high actor slot (>= 8) so it never collides
+        // with the party/monster battle slots. Place it on the party side
+        // (`enter_battle` seats party at `x = -600`, enemies at `x = +600`), in
+        // front of the party and clearly clear of the enemy cluster, so the
+        // battle camera frames it distinct from the enemies it attacks.
+        let slot = self
+            .summon_actor_slot
+            .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
+        self.summon_actor_slot = Some(slot);
+        if let Some(a) = self.session.host.world.actors.get_mut(slot) {
+            a.active = true;
+            a.tmd_binding = Some(idx);
+            a.battle_tex_slot = Some(tex_slot);
+            a.move_state.world_x = -350;
+            a.move_state.world_y = 0;
+            a.move_state.world_z = 0;
+        }
+        if let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, creature)
+            && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
+        {
+            self.session
+                .host
+                .world
+                .set_actor_battle_animation(slot, player);
+        }
+        log::info!(
+            "play-window: summon spell {spell_id:#04x} -> battle_data creature {creature} \
+             (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})"
+        );
     }
 
     /// Leave battle: restore the clean field VRAM and drop the appended
@@ -5703,6 +6230,20 @@ impl PlayWindowApp {
         self.meshes.truncate(keep);
         self.scene_tmd_data
             .truncate(keep.min(self.scene_tmd_data.len()));
+        // Tear down a spawned player-summon creature.
+        if let Some(slot) = self.summon_actor_slot.take()
+            && let Some(a) = self.session.host.world.actors.get_mut(slot)
+        {
+            a.active = false;
+            a.tmd_binding = None;
+            a.battle_tex_slot = None;
+            a.battle_animation = None;
+            a.pose_frame = None;
+        }
+        self.battle_vram = None;
+        self.battle_tex_slots_used = 0;
+        self.battle_stage_mesh = None;
+        self.battle_ground_mesh = None;
     }
 
     /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
@@ -6993,6 +7534,12 @@ impl ApplicationHandler for PlayWindowApp {
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()
                 {
+                    // In battle, debug-spawn the faithful summon creature
+                    // (Gimard, 0x81) through the battle-creature render path.
+                    if self.session.host.world.mode == SceneMode::Battle {
+                        self.spawn_summon_creature(0x81);
+                        return;
+                    }
                     const PROT_GIMARD_SUMMON_STAGER: u32 = 905;
                     let origin = self
                         .session
@@ -7227,38 +7774,26 @@ impl ApplicationHandler for PlayWindowApp {
                         log::error!("session tick: {e:#}");
                     }
                     // Production cast-band trigger: a player Seru-magic cast
-                    // (spell id 0x81..=0x8b) requests a summon spawn; the host
-                    // resolves the per-summon overlay PROT entry, loads it,
-                    // parses the part records, and seats the scene-graph. The
-                    // engine equivalent of the retail cast band's overlay load.
-                    if let Some((spell_id, origin)) =
+                    // (spell id 0x81..=0x8b) requests a summon spawn. The
+                    // faithful render is the namesake battle_data creature drawn
+                    // through the enemy animation pipeline (the summon reuses
+                    // that creature's mesh + per-object TRS animation), so spawn
+                    // it as a battle creature rather than the move-VM scene-graph
+                    // stand-in (`summon::summon_creature_id`).
+                    if let Some((spell_id, _origin)) =
                         self.session.host.world.take_pending_summon_spawn()
-                        && let Some(entry) =
-                            legaia_engine_core::summon::summon_stager_prot_entry(spell_id)
                     {
-                        match self.session.host.index.entry_bytes(entry) {
-                            Ok(bytes) => {
-                                let overlay = legaia_asset::summon_overlay::parse(
-                                    &bytes,
-                                    legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
-                                );
-                                self.session.host.world.spawn_summon(
-                                    &overlay,
-                                    &bytes,
-                                    legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX,
-                                    origin,
-                                );
-                                log::info!(
-                                    "summon cast: spell {spell_id:#04x} -> PROT {entry}, {} parts",
-                                    overlay.parts.len()
-                                );
-                            }
-                            Err(e) => log::warn!("summon cast: read PROT {entry}: {e:#}"),
-                        }
+                        self.spawn_summon_creature(spell_id);
                     }
                     // Advance an active Seru-magic summon scene-graph (the cast
                     // above, or the `G` debug spawn) through the move VM.
                     self.session.host.world.tick_summon(0x0400);
+                    // In battle, advance each monster actor's per-object idle
+                    // animation into its `pose_frame` (the render pass below
+                    // deforms the mesh via the rigid `posed_rot` builder).
+                    if self.session.host.world.mode == SceneMode::Battle {
+                        self.session.host.world.tick_battle_animations();
+                    }
                     if self.menu_runtime.is_open() {
                         let p = self.pad;
                         let input = MenuInput {
@@ -7414,6 +7949,16 @@ impl ApplicationHandler for PlayWindowApp {
                             self.scene_aabb.1,
                             aspect,
                         )
+                    } else if self.session.host.world.mode == SceneMode::Battle {
+                        if self.battle_stage_mesh.is_some() {
+                            // Stage-dome battle: low front-facing shot into the
+                            // dome (grass foreground, mountains on the horizon).
+                            self.battle_dome_camera_mvp(aspect)
+                        } else {
+                            // No stage: frame the animated enemies (the battle
+                            // actors live at the world origin).
+                            self.battle_camera_mvp(aspect)
+                        }
                     } else {
                         self.camera_mvp(aspect)
                     };
@@ -7479,8 +8024,30 @@ impl ApplicationHandler for PlayWindowApp {
                         let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                             continue;
                         };
-                        let vmesh =
-                            legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs);
+                        // Battle actors carry a per-object rigid-transform clip
+                        // (rotation matters), so use the full `R·v + T` builder;
+                        // field actors keep the translation-only ANM path
+                        // unchanged.
+                        let mut vmesh = if actor.battle_animation.is_some() {
+                            legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            )
+                        } else {
+                            legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs)
+                        };
+                        // The posed mesh is rebuilt from the raw TMD, so its
+                        // CBA/TSB are the nominal on-disc defaults. Re-apply the
+                        // per-slot relocation `battle_render_mesh` did for the
+                        // rest mesh, or the animated monster samples the wrong
+                        // VRAM page and renders white.
+                        if let Some(slot) = actor.battle_tex_slot {
+                            for ct in &mut vmesh.cba_tsb {
+                                ct[0] = legaia_asset::monster_archive::relocate_cba(ct[0], slot);
+                                ct[1] = legaia_asset::monster_archive::relocate_tsb(ct[1], slot);
+                            }
+                        }
                         if vmesh.indices.is_empty() {
                             continue;
                         }
@@ -7562,24 +8129,98 @@ impl ApplicationHandler for PlayWindowApp {
                             }
                         }
                     } else {
-                        // Static environment geometry: draw each placed
-                        // building / terrain mesh at its world transform
-                        // (resolved at scene load in `resolve_field_placement_
-                        // draws`). Without this the field shows only the ~8
-                        // actor-bound meshes and the town's 100+ environment
-                        // meshes never render (or pile at the origin).
-                        for (mesh_idx, model) in &self.field_placement_draws {
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                        let in_battle = self.session.host.world.mode == SceneMode::Battle;
+                        if in_battle {
+                            // Battle backdrop: the scene's `scene_tmd_stream`
+                            // dome (PROT 88 for the overworld map01 battle) —
+                            // sky hemisphere + mountain arc + grass — drawn at its
+                            // **raw world coordinates** under the exact retail
+                            // orbit camera (`retail_battle_mvp`). `model = F`
+                            // (plain Y-flip): the camera bakes in `F`, so
+                            // `cam * F` recovers the raw PSX vertex the retail
+                            // transform expects.
+                            //
+                            // Drawn ONCE, world-fixed — matching retail, which
+                            // sets the dome up as a background **actor**
+                            // (`FUN_800513F0`: `tmd_register` -> `DAT_8007C018[]`
+                            // + `FUN_80020de0` actor_alloc + `FUN_80020f88` link)
+                            // rendered by the normal actor path `FUN_80048A08`.
+                            // The dome is a FRONT half (verts `Z in [-1260,
+                            // +12155]`), so it is NOT a full surround: as the
+                            // camera orbits, different portions of the front arc
+                            // come into view and the rest of the horizon is open
+                            // sky/grass. The retail captures bear this out —
+                            // mountains cover only 44–81% of the horizon columns
+                            // depending on angle (NOT a ring). Earlier engine
+                            // builds added a 180° mirror to "complete" the
+                            // surround; that over-fills what retail leaves as a
+                            // gap, so it is removed. See
+                            // `project_battle_backdrop_is_prot88_dome`.
+                            if let Some(stage_idx) = self.battle_stage_mesh
+                                && let Some(mesh) = self.meshes.get(stage_idx)
+                            {
+                                let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                // Front half-dome at raw world coords.
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp: cam * flip,
+                                });
+                                // The dome geometry is a FRONT half (Z>=0), so a
+                                // single instance leaves the back of the horizon
+                                // open. Draw a 180-deg-Y mirror so the mountain
+                                // ring + sky complete the full circle around the
+                                // actors. (Retail's dome is a front half with
+                                // partial coverage; the mirror reads fuller.)
+                                let back = flip * Mat4::from_rotation_y(std::f32::consts::PI);
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * back,
                                 });
                             }
+                        } else {
+                            // Static environment geometry: draw each placed
+                            // building / terrain mesh at its world transform
+                            // (resolved at scene load in
+                            // `resolve_field_placement_draws`).
+                            for (mesh_idx, model) in &self.field_placement_draws {
+                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                    draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * *model,
+                                    });
+                                }
+                            }
+                        }
+                        // Single battle camera for the actors too (same `cam` as
+                        // the dome + grid) so the whole scene shares one space.
+                        let actor_cam = cam;
+                        // Flat tiled ground grid (retail's func_0x801d02c0 grass)
+                        // under the actors, on the same battle camera so the
+                        // party stands on it and the foreground reads as grass
+                        // instead of the bare clear colour. `cam` bakes in the
+                        // Y-flip, so `* flip` recovers the raw PSX y=0 plane.
+                        if in_battle
+                            && let Some(gi) = self.battle_ground_mesh
+                            && let Some(gmesh) = self.meshes.get(gi)
+                        {
+                            let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                            draws.push(SceneDraw {
+                                mesh: gmesh,
+                                mvp: cam * flip,
+                            });
                         }
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
                             };
+                            // In a stage-dome battle, draw only the ACTIVE battle
+                            // actors (party + monsters). The scene-init actors
+                            // (bound but inactive, parked at the origin) would
+                            // otherwise pile their meshes at world (0,0,0) - the
+                            // "duplicate Vahn" + scattered scene geometry.
+                            if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
+                                continue;
+                            }
                             let mesh = posed_overrides
                                 .get(tmd_idx)
                                 .and_then(|o| o.as_ref())
@@ -7587,7 +8228,7 @@ impl ApplicationHandler for PlayWindowApp {
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * self.actor_model(i),
+                                    mvp: actor_cam * self.actor_model(i),
                                 });
                             }
                         }
@@ -7625,9 +8266,16 @@ impl ApplicationHandler for PlayWindowApp {
 
                     // Force a pure-black background during boot UI so the
                     // logos / title / save-select panels read on PSX-style
-                    // black instead of the default dark-blue clear.
+                    // black instead of the default dark-blue clear. In a
+                    // stage-dome battle clear to a sky blue so the gaps the
+                    // front-half dome leaves open read as sky (like retail)
+                    // rather than the bare grey clear.
                     let scene_clear = if self.boot_ui.is_active() {
                         Some([0.0, 0.0, 0.0, 1.0])
+                    } else if self.session.host.world.mode == SceneMode::Battle
+                        && self.battle_stage_mesh.is_some()
+                    {
+                        Some([0.32, 0.46, 0.66, 1.0])
                     } else {
                         None
                     };
@@ -8612,6 +9260,11 @@ fn cmd_play_window_with_record(
         world_map_terrain_draws: Vec::new(),
         world_map_heightfield: None,
         cpu_vram_base: None,
+        battle_vram: None,
+        battle_tex_slots_used: 0,
+        summon_actor_slot: None,
+        battle_stage_mesh: None,
+        battle_ground_mesh: None,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
@@ -9326,6 +9979,81 @@ fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result<()> {
     Ok(())
 }
 
+/// Build the flat tiled battle ground grid (retail's `func_0x801d02c0` grass
+/// grid): a `(N+1)x(N+1)` vertex grid of quads on the PSX `y=0` plane centred at
+/// the world origin, every vertex sampling the stage dome's **grass texel** so
+/// it reads as real grass from the battle VRAM instead of the bare clear colour.
+/// Returns `None` if the dome has no ground-plane (`|y|` small) textured vertex
+/// to borrow the texel from. Drawn with the actor camera so the party stands on
+/// it; coarse cells are fine because every vertex samples the same texel.
+fn build_battle_ground_grid(
+    dome: &legaia_tmd::mesh::VramMesh,
+) -> Option<legaia_tmd::mesh::VramMesh> {
+    // Borrow the dome's GRASS texture, targeting the exact tile retail's grid
+    // (func_0x801d02c0) uses. `mednafen-state prim-trace` on the real map01
+    // battle shows those ground tiles at uv ~ (132..140, 2..13) with their own
+    // CBA/TSB. PROT 88 is the same TMD, so the dome's grass vertices carry the
+    // same UVs - find the flat ground vertex nearest that tile centre, take its
+    // CBA/TSB, and tile that small window. (Earlier picks - "first textured
+    // vertex", "largest XZ area + bbox centre" - landed on the ground-mist
+    // object or a 2-tone checker region of the texture, hence the checkerboard.)
+    const GU0: u8 = 132;
+    const GU1: u8 = 140;
+    const GV0: u8 = 2;
+    const GV1: u8 = 13;
+    let tcu = ((GU0 as u16 + GU1 as u16) / 2) as i32;
+    let tcv = ((GV0 as u16 + GV1 as u16) / 2) as i32;
+    let best = (0..dome.positions.len())
+        .filter(|&i| dome.positions[i][1].abs() < 5.0 && dome.cba_tsb[i] != [0, 0])
+        .min_by_key(|&i| {
+            let [u, v] = dome.uvs[i];
+            (u as i32 - tcu).pow(2) + (v as i32 - tcv).pow(2)
+        })?;
+    let cba_tsb = dome.cba_tsb[best];
+    let [bu, bv] = dome.uvs[best];
+    log::info!(
+        "battle ground grid: grass tile uv [{GU0}..{GU1}]x[{GV0}..{GV1}] cba_tsb={cba_tsb:?} (nearest dome vert uv=({bu},{bv}))"
+    );
+    let (u0, u1, v0, v1) = (GU0, GU1, GV0, GV1);
+
+    const N: i32 = 28; // cells per side (retail func_0x801d02c0 grid)
+    const P: f32 = 512.0; // retail func_0x801d02c0 cell pitch (0x200) -> ~+/-16384 extent
+    let mut m = legaia_tmd::mesh::VramMesh {
+        positions: Vec::new(),
+        uvs: Vec::new(),
+        cba_tsb: Vec::new(),
+        indices: Vec::new(),
+        normals: Vec::new(),
+    };
+    // Per-cell quads (own 4 vertices each) so EVERY cell maps to the same full
+    // grass UV tile `[u0..u1]x[v0..v1]`. Shared-vertex grids forced a single UV
+    // per vertex, which (alternating box corners by parity) made adjacent cells
+    // sample different texture columns -> green-vs-dirt whole-cell jumps. With
+    // each cell carrying the whole tile, the grass repeats uniformly.
+    let half = N / 2;
+    for iz in 0..N {
+        for ix in 0..N {
+            let (x0, z0) = ((ix - half) as f32 * P, (iz - half) as f32 * P);
+            let (x1, z1) = (x0 + P, z0 + P);
+            let base = m.positions.len() as u32;
+            for (x, z, u, v) in [
+                (x0, z0, u0, v0),
+                (x1, z0, u1, v0),
+                (x0, z1, u0, v1),
+                (x1, z1, u1, v1),
+            ] {
+                m.positions.push([x, 0.0, z]);
+                m.uvs.push([u, v]);
+                m.cba_tsb.push(cba_tsb);
+                m.normals.push([0.0, -1.0, 0.0]); // PSX up = -y (flat ground faces up)
+            }
+            m.indices
+                .extend([base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+        }
+    }
+    Some(m)
+}
+
 fn select_input_for(c: char) -> legaia_engine_core::save_select::SelectInput {
     use legaia_engine_core::save_select::SelectInput;
     let mut i = SelectInput::default();
@@ -9613,4 +10341,65 @@ fn cmd_seru_capture(seru: u16, count: u32, party: &str) -> Result<()> {
         println!("  char {c} learned spells: {:?}", log.learned_spells(*c));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod battle_camera_tests {
+    use super::PlayWindowApp;
+    use glam::Vec4;
+    use std::f32::consts::TAU;
+
+    /// `retail_battle_mvp` must reproduce the exact retail overworld-battle
+    /// projection `screen = H*(Rx(32u)*Ry(yaw)*v + (0,1280,7680))/Ze`, H=256,
+    /// PSX +Y down, screen-centre (160,120) over 320x240 — pinned from the
+    /// `overworld_battle_bg_angle_*` saves + `FUN_80026988`. Disc-free: pure
+    /// math. Guards the glam matrix construction against regression.
+    #[test]
+    fn retail_battle_mvp_matches_psx_projection() {
+        // Hand-rolled retail projection (the savestate-verified reference).
+        fn handrolled(v: [f32; 3], yaw_u: f32) -> Option<(f32, f32)> {
+            let yaw = yaw_u / 4096.0 * TAU;
+            let pitch = 32.0 / 4096.0 * TAU;
+            let (sy, cy) = yaw.sin_cos();
+            let (sp, cp) = pitch.sin_cos();
+            let ry = [cy * v[0] + sy * v[2], v[1], -sy * v[0] + cy * v[2]];
+            let e = [ry[0], cp * ry[1] - sp * ry[2], sp * ry[1] + cp * ry[2]];
+            let ez = e[2] + 7680.0;
+            if ez <= 1.0 {
+                return None;
+            }
+            Some((
+                256.0 * e[0] / ez + 160.0,
+                256.0 * (e[1] + 1280.0) / ez + 120.0,
+            ))
+        }
+        // Sample several world points and orbit angles (4:3 so aspect_fix == 1).
+        let mvp_aspect = 4.0 / 3.0;
+        for &yaw_u in &[0.0f32, 224.0, 1024.0, 2632.0, 3136.0, 3808.0] {
+            let mvp = PlayWindowApp::retail_battle_mvp(yaw_u / 4096.0 * TAU, mvp_aspect);
+            for &v in &[
+                [1000.0f32, -500.0, 3000.0],
+                [-2000.0, 0.0, 6000.0],
+                [0.0, -3000.0, -800.0],
+                [5000.0, 12.0, 5000.0],
+            ] {
+                // Engine draws `cam * model` with `model` carrying the Y-flip F,
+                // so the dome sample is `cam * F * v_psx` == flip v.y first.
+                let clip = mvp * Vec4::new(v[0], -v[1], v[2], 1.0);
+                if clip.w <= 1.0 {
+                    continue;
+                }
+                let ndc = (clip.x / clip.w, clip.y / clip.w);
+                let sx = 160.0 + ndc.0 * 160.0;
+                let sy = 120.0 - ndc.1 * 120.0; // NDC up+ -> PSX screen down+
+                if let Some((hx, hy)) = handrolled(v, yaw_u) {
+                    let d = ((sx - hx).powi(2) + (sy - hy).powi(2)).sqrt();
+                    assert!(
+                        d < 0.05,
+                        "yaw={yaw_u} v={v:?}: {d}px off ({sx},{sy} vs {hx},{hy})"
+                    );
+                }
+            }
+        }
+    }
 }
