@@ -90,6 +90,35 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
         .then(|| 905 + (spell_id - 0x81) as u32)
 }
 
+/// `battle_data` (PROT 867) creature id whose mesh + per-object animation the
+/// player Seru-magic summon `spell_id` reuses, or `None` if not a summon / not
+/// found. **The player summon spawns the namesake creature** (the Gimard spell
+/// summons the Gimard creature, Theeder→Theeder, …), so the faithful render is
+/// the ordinary battle TRS-keyframe path applied to that creature's
+/// monster-archive block (mesh via [`legaia_asset::monster_archive::battle_render_mesh`],
+/// animation via [`legaia_asset::monster_archive::idle_animation`] →
+/// [`crate::battle_anim::MonsterAnimPlayer`] → `tmd_to_vram_mesh_posed_rot`) —
+/// **not** the move-VM scene-graph the [`SummonScene`] stand-in drives.
+///
+/// Resolved by matching the spell's display name ([`crate::retail_magic`]) to a
+/// `battle_data` record name, so the `"$2"`/`"$3"` higher-level enemy variants
+/// (different names) are excluded and the base creature is chosen. Pinned from
+/// the fingerprint-verified `gimard_summon_visible` save: the live summon
+/// actor's 11-part idle byte-matches `battle_data` id 10 ("Gimard"). The
+/// disc-verified map is Gimard `0x81`→10, Theeder `0x82`→25, Vera `0x83`→28,
+/// Gizam `0x84`→55, Nighto `0x85`→49, Zenoir `0x86`→64, Viguro `0x87`→74,
+/// Swordie `0x88`→86, Orb `0x89`→83, Freed `0x8a`→92, Nova `0x8b`→95.
+pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
+    let name = crate::retail_magic::get(spell_id)?.name;
+    let slots = legaia_asset::monster_archive::slot_count(battle_data_entry) as u16;
+    (1..=slots).find(|&id| {
+        legaia_asset::monster_archive::record(battle_data_entry, id)
+            .ok()
+            .flatten()
+            .is_some_and(|r| r.name == name)
+    })
+}
+
 /// Upper bound on a `model_sel` that names a real mesh (`DAT_8007C018[model_sel
 /// + base]`). The model library is small (~30 entries), so a part whose
 /// `model_sel` is `-1` (transform node) or a large sentinel (`0x1000`, `0x4000`,
