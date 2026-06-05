@@ -50,6 +50,25 @@
 //! variable-length move-VM bytecode, not a fixed-stride table, so the call sites
 //! are the authoritative enumeration. The `a2` register is followed with a tiny
 //! `lui`/`addiu` emulator over each call site's preceding window.
+//!
+//! ## Where the effect magnitude lives (per-spell "power")
+//!
+//! This parser recovers the summon's *visual* scene-graph. The summon's combat
+//! **effect** (the HP delta) is applied by the same stager function that spawns
+//! the parts — each stager file carries exactly one `actor+0x14c` (HP) writer,
+//! and the block splits cleanly: **damage** summons (PROT 0904/0912/0914, plus
+//! 0915's second arm) compute the amount via the shared battle kernel
+//! `FUN_801dd0ac` (`a0` = a per-summon move-type constant `0x10..0x12`, `a1 = 7`,
+//! `a2` = target) and store `HP -= amount`; **heal** summons (PROT
+//! 0903/0905/0910/0911/0913, plus 0915's first arm) apply `(power_byte<<5)+0xe0`
+//! inline (`power_byte` from a `0x80084140`-based per-character table searched by
+//! the cast spell-id `actor+0x1df`) and store `HP += amount`. For the summon path
+//! (`FUN_801dd0ac` `attacker_slot == 7`) the roll is built from the attacker's
+//! AGL (`+0x168`) and HP (`+0x14c`) plus the caster's AGL — i.e. **caster/summon
+//! battle-state-derived, not a static per-spell scalar** (which is why no static
+//! magic-power table exists). The render JT at `0x801F69D8` (PROT 0900) is
+//! animation/GPU only and writes no HP. See `docs/formats/spell-table.md` and the
+//! `FUN_801dd0ac` row in `docs/reference/functions.md`.
 
 use std::ops::Range;
 
