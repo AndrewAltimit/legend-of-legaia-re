@@ -12,11 +12,13 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 | Noa art records (RAM)  | `0x80176998` (first record) onwards |
 | Gala art records (RAM) | `0x8018BA54` (first record) onwards |
 | Learned Art Constants (RAM) | Vahn `0x8008488D`, Noa `0x80084CA1`, Gala `0x8008506C` |
-| On-disc source | PROT entry `0x05C4` |
+| On-disc source | PROT entry `0x05C4` (Inferred, see warning) |
 | Miracle Art trigger entries (RAM `801F` segment) | Vahn's Craze `0x64F4`, Noa's Ark `0x6504`, Biron Rage `0x6514` |
 | Miracle Art trigger entries (PROT `0x05C4` area) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
 
-Confidence: **Inferred** - citation chain comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
+Confidence: **Inferred** - the per-record damage / animation / effect schema below comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
+
+> **Where the button combos live (corrected).** The directional **command sequence** is NOT in a "PROT `0x05C4` record at `+0x00`" - that claim is falsified (`0x05C4` = 1476 isn't even a valid PROT index; the archive has 1232 entries), and the RAM bases above (`0x80160EFC` etc.) hold the art *name / animation* records, not the combos. The combo lives in exactly **one** place: the SCUS `DAT_80075EC4` arts-name table's `+8` **command-glyph string** (see [Arts-name table](#arts-name-table-dat_80075ec4) below). An exhaustive search of all 2 MB of a mid-battle save's RAM and of the whole disc finds each art's combo nowhere as a contiguous direction run (in any of the `1=L..4=U`, action-constant `0x0C..0x0F`, or single-byte-glyph encodings) - only as those `+8` glyph strings. Since the game matches combos and there is only one copy, the input matcher necessarily derives from this table, so the `+8` string is **both** the menu display **and** the gameplay trigger. (This is what the arts-combo randomizer edits - see [`docs/tooling/randomizer.md`](../tooling/randomizer.md).)
 
 ## Action Constants
 
@@ -51,6 +53,8 @@ The first 4 directional bytes of a Miracle Art's replacement string are stored o
 ## Art record layout
 
 The layout is **schema-then-walk**: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The researcher captured field positions but did not pin every byte - this page documents the schema; [`crates/art`](../../crates/art) ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.
+
+> The `+0x00` command-sequence field below is the **unverified external schema**, not a byte-pinned record. The authoritative on-disc source for each art's directional combo is the SCUS [arts-name table](#arts-name-table-dat_80075ec4) `+8` glyph string (see the warning at the top of this page); `legaia_art::parse_record` is a best-effort prefix decoder validated *against* that table, not a pin of where the runtime matcher reads.
 
 ### Fixed prefix
 
@@ -213,13 +217,14 @@ for that table's `ap` column + the canonical art display order.
 
 ### Command-glyph string (`+8`)
 
-The `+8` pointer is the **command-input display string** - the arrow sequence
-shown in the arts menu, and an independent on-disc source for each art's
-directional command (the PROT `0x05C4` art-record command bytes are a
-best-effort parse pending a watchpoint). Encoding: `[count u8]` then `count`
-two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence (`0xFF06`
-for regular arts, `0xFF09` for Miracle arts) and is **not** a direction. The
-arrow glyphs map to physical d-pad directions:
+The `+8` pointer is the **command-input string** - the arrow sequence shown in
+the arts menu **and** the single on-disc representation of each art's directional
+combo (so it is also the source the runtime input matcher derives from; see the
+warning at the top of this page). Encoding: `[count u8]` then `count` two-byte
+glyph codes. A one-off `0xFF XX` marker separates the sequence (`0xFF06` for
+regular arts, `0xFF09` for Miracle arts), is **not** a direction, and its
+position within the string varies (it can sit mid-combo). The arrow glyphs map
+to physical d-pad directions:
 
 | Glyph | Direction | dir code |
 |---|---|---|
