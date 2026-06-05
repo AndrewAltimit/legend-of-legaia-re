@@ -100,8 +100,9 @@ and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--starting-items N` seeds the new game with `N` random consumables
-(0 = vanilla; capped at 5, or 3 with `--all-warps`). `--door-of-wind` adds the
-Door of Wind warp consumable to the starting bag and `--all-warps` unlocks every
+(0 = vanilla; capped at 5, or 3 with `--all-warps`). `--door-of-wind [N]` adds
+`N` Door of Wind (the warp consumable; default 10) to the starting bag and
+`--all-warps` unlocks every
 Door-of-Wind destination from the start (see
 [Door of Wind convenience toggles](#door-of-wind-convenience-toggles)).
 `--unused-enemies` and `--unused-items` re-introduce
@@ -474,10 +475,11 @@ items, built for fast-travel testing. Door of Wind (item `0x89`) is the warp
 consumable: using one opens a menu to teleport to any town you have already
 visited.
 
-**`--door-of-wind`** seeds Door of Wind ([`DOOR_OF_WIND_COUNT`]× = 10) into the
-new game's starting bag. It is *additive*: with no `--starting-items` reroll the
-vanilla Healing Leaf ×5 is kept alongside it; with a reroll the random
-consumables replace the Healing Leaf and Door of Wind is forced on top.
+**`--door-of-wind [N]`** seeds Door of Wind into the new game's starting bag —
+`N` of them (1..=99; the default when the flag is given bare is 10). It is
+*additive*: with no `--starting-items` reroll the vanilla Healing Leaf ×5 is kept
+alongside it; with a reroll the random consumables replace the Healing Leaf and
+Door of Wind is forced on top.
 
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`

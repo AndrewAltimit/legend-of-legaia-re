@@ -66,6 +66,7 @@ function init() {
   const houseDoorSel = $('rom-house-doors');
   const startingItemsSel = $('rom-starting-items');
   const doorOfWindChk = $('rom-door-of-wind');
+  const doorOfWindCountInput = $('rom-door-of-wind-count');
   const allWarpsChk = $('rom-all-warps');
   const unusedEnemiesChk = $('rom-unused-enemies');
   const unusedItemsChk = $('rom-unused-items');
@@ -97,7 +98,11 @@ function init() {
     const doorCoupling = doorCouplingSel ? doorCouplingSel.value : 'coupled';
     const houseDoors = houseDoorSel ? houseDoorSel.value : 'none';
     const startingItems = startingItemsSel ? parseInt(startingItemsSel.value, 10) || 0 : 0;
-    const doorOfWind = doorOfWindChk ? doorOfWindChk.checked : false;
+    // Door of Wind: the count (0 = off). The checkbox enables it; the number
+    // input (default 10) sets how many, clamped to 1..99.
+    const doorOfWind = doorOfWindChk && doorOfWindChk.checked
+      ? Math.min(99, Math.max(1, parseInt(doorOfWindCountInput && doorOfWindCountInput.value, 10) || 10))
+      : 0;
     const allWarps = allWarpsChk ? allWarpsChk.checked : false;
     const unusedEnemies = unusedEnemiesChk ? unusedEnemiesChk.checked : false;
     const unusedItems = unusedItemsChk ? unusedItemsChk.checked : false;
@@ -113,7 +118,7 @@ function init() {
       doors === 'none' &&
       houseDoors === 'none' &&
       startingItems === 0 &&
-      !doorOfWind &&
+      doorOfWind === 0 &&
       !allWarps
     ) {
       setStatus('Enable at least one option.', 'err');
