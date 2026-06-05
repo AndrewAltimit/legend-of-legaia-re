@@ -5578,11 +5578,24 @@ impl PlayWindowApp {
     /// PROT 88's dome through this matrix and matching the savestate framebuffer
     /// (sky / mountain-ring / horizon). See `project_battle_camera_re`.
     fn retail_battle_mvp(yaw_rad: f32, aspect: f32) -> Mat4 {
+        Self::battle_mvp_with_tr(yaw_rad, Vec3::new(0.0, 1280.0, 7680.0), aspect)
+    }
+
+    /// The shared battle projection-times-view for a given eye-space translation
+    /// `tr`. Retail keeps a single rotation `R = Rx(32u)·Ry(yaw)` (stored
+    /// rotation-only in `DAT_8007bf10`) and applies the translation per draw
+    /// class: the backdrop gets `tr = (0, 1280, 7680)` (pushed far), the actors
+    /// get their own (closer) translation off the rotation-only matrix
+    /// ([`FUN_80048A08`] composes each actor's world transform onto `8007bf10`,
+    /// NOT onto the backdrop's `7680`-deep matrix). Sharing `R` keeps the
+    /// foreground and backdrop orbiting in lock-step; the differing `tr.z`
+    /// is what lets the party read large while the dome sits on the horizon.
+    fn battle_mvp_with_tr(yaw_rad: f32, tr: Vec3, aspect: f32) -> Mat4 {
         const H: f32 = 256.0;
         const PITCH_UNITS: f32 = 32.0;
         let pitch = PITCH_UNITS / 4096.0 * std::f32::consts::TAU;
         let r = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw_rad);
-        let t = Mat4::from_translation(Vec3::new(0.0, 1280.0, 7680.0));
+        let t = Mat4::from_translation(tr);
         let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
         // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
         // ndc.y = -H*Ey/(120*Ez) (PSX +Y down -> NDC up), clip.w = Ez, depth
@@ -5601,10 +5614,26 @@ impl PlayWindowApp {
         proj * t * r * f
     }
 
-    /// Battle camera for a stage-dome battle: the exact retail orbit
-    /// ([`retail_battle_mvp`]) spun at the retail rate ([`battle_orbit_yaw_rad`]).
+    /// Backdrop (dome) camera: the exact retail orbit pushed to `tr.z = 7680`
+    /// so the dome's mountains sit on the horizon. Spun at the retail rate.
     fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
         Self::retail_battle_mvp(self.battle_orbit_yaw_rad(), aspect)
+    }
+
+    /// Foreground (actor) camera: same rotation/projection as the backdrop, but
+    /// a much closer eye-space depth so the party/enemies read at retail scale
+    /// instead of being shoved to the dome's `7680`-deep plane (which made them
+    /// tiny). `tr.z = 1700` frames a ~1000-unit-tall battle actor at roughly
+    /// retail size; `tr.y` keeps the dome's `1/6` down-shift ratio so the action
+    /// sits just below centre like retail. Mirrors retail drawing actors off the
+    /// rotation-only `DAT_8007bf10` rather than the backdrop's deep matrix.
+    fn battle_actor_camera_mvp(&self, aspect: f32) -> Mat4 {
+        const ACTOR_DEPTH: f32 = 1700.0;
+        Self::battle_mvp_with_tr(
+            self.battle_orbit_yaw_rad(),
+            Vec3::new(0.0, ACTOR_DEPTH / 6.0, ACTOR_DEPTH),
+            aspect,
+        )
     }
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene
@@ -7960,6 +7989,16 @@ impl ApplicationHandler for PlayWindowApp {
                                 }
                             }
                         }
+                        // In a stage-dome battle the actors use the closer
+                        // foreground camera (party/enemies at retail scale)
+                        // while the dome stays on the far backdrop camera; the
+                        // two share the orbit so they rotate together. Every
+                        // other mode keeps the single `cam`.
+                        let actor_cam = if in_battle && self.battle_stage_mesh.is_some() {
+                            self.battle_actor_camera_mvp(aspect)
+                        } else {
+                            cam
+                        };
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
@@ -7971,7 +8010,7 @@ impl ApplicationHandler for PlayWindowApp {
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * self.actor_model(i),
+                                    mvp: actor_cam * self.actor_model(i),
                                 });
                             }
                         }
