@@ -12,11 +12,36 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 | Noa art records (RAM)  | `0x80176998` (first record) onwards |
 | Gala art records (RAM) | `0x8018BA54` (first record) onwards |
 | Learned Art Constants (RAM) | Vahn `0x8008488D`, Noa `0x80084CA1`, Gala `0x8008506C` |
-| On-disc source | PROT entry `0x05C4` |
+| On-disc source | PROT entry `0x05C4` (Inferred, see warning) |
 | Miracle Art trigger entries (RAM `801F` segment) | Vahn's Craze `0x64F4`, Noa's Ark `0x6504`, Biron Rage `0x6514` |
 | Miracle Art trigger entries (PROT `0x05C4` area) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
 
-Confidence: **Inferred** - citation chain comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
+Confidence: **Inferred** - the per-record damage / animation / effect schema below comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
+
+> **Where the button combos live - there are TWO copies (savestate-proven).**
+> The directional command of each art is stored in two different files, and they
+> serve two different consumers:
+>
+> 1. **The matcher** (what actually fires the art) reads the per-character art
+>    records at the RAM bases above (`0x80160EFC` Vahn / `0x80176998` Noa /
+>    `0x8018BA54` Gala), where the combo is the `1=L,2=R,3=D,4=U` byte run
+>    (0-terminated) at record `+0`, on a fixed `0xD0` stride - **exactly the
+>    record layout the [Art record layout](#art-record-layout) section below
+>    describes**. (So that schema was right about the format; only the "PROT
+>    `0x05C4`" label was wrong - `0x05C4` = 1476 isn't a valid PROT index.) These
+>    records are *not* resident until the Arts menu is opened; they load from each
+>    character's player-data file `record0` (Vahn `PROT 0861` / Noa `0864` / Gala
+>    `0865` - the `edstati3`/PLAYERn files), whose decoded `record0` byte-matches
+>    the live RAM.
+> 2. **The display** is the SCUS `DAT_80075EC4` arts-name table `+8` glyph string
+>    (see [Arts-name table](#arts-name-table-dat_80075ec4)) - only the arrows
+>    shown in the menu.
+>
+> Two emulator playtests proved the split: editing the SCUS glyph copy (whether by
+> moving the `+8` pointer or overwriting the glyph bytes) changes the menu arrows
+> but the art still triggers on the old combo, because the matcher reads the
+> player-file record copy. So a faithful edit must change **both** copies. This is
+> what the arts-combo randomizer does - see [`docs/tooling/randomizer.md`](../tooling/randomizer.md).
 
 ## Action Constants
 
@@ -51,6 +76,13 @@ The first 4 directional bytes of a Miracle Art's replacement string are stored o
 ## Art record layout
 
 The layout is **schema-then-walk**: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The researcher captured field positions but did not pin every byte - this page documents the schema; [`crates/art`](../../crates/art) ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.
+
+> The `+0x00` command-sequence field below is the form the **runtime matcher**
+> reads (the `1=L,2=R,3=D,4=U` run at record `+0`, 0-terminated; records are a
+> fixed `0xD0` stride - see the warning at the top of this page). It lives in the
+> per-character player-data `record0` (Vahn `PROT 0861` / Noa `0864` / Gala
+> `0865`), not at PROT `0x05C4`. The SCUS [arts-name table](#arts-name-table-dat_80075ec4)
+> `+8` glyph string is the *display* copy of the same combo.
 
 ### Fixed prefix
 
@@ -213,13 +245,14 @@ for that table's `ap` column + the canonical art display order.
 
 ### Command-glyph string (`+8`)
 
-The `+8` pointer is the **command-input display string** - the arrow sequence
-shown in the arts menu, and an independent on-disc source for each art's
-directional command (the PROT `0x05C4` art-record command bytes are a
-best-effort parse pending a watchpoint). Encoding: `[count u8]` then `count`
-two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence (`0xFF06`
-for regular arts, `0xFF09` for Miracle arts) and is **not** a direction. The
-arrow glyphs map to physical d-pad directions:
+The `+8` pointer is the **command-input string** - the arrow sequence shown in
+the arts menu (the *display* copy of the combo; the matcher reads a separate
+`1-4` copy in the player-file records, see the warning at the top of this page).
+Encoding: `[count u8]` then `count`
+two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence
+(`0xFF06` for regular arts, `0xFF09` for Miracle arts), is **not** a direction,
+and its position within the string varies (it can sit mid-combo). The arrow
+glyphs map to physical d-pad directions:
 
 | Glyph | Direction | dir code |
 |---|---|---|

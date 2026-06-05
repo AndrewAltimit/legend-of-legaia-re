@@ -1459,6 +1459,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-art",
  "legaia-asset",
  "legaia-gamedata",
  "legaia-iso",

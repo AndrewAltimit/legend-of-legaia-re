@@ -41,8 +41,10 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
-/// `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `doors`
-/// / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`. `shops`
+/// `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
+/// `doors` / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`.
+/// `arts` reassigns Tactical-Arts button combos (same-length, unique within
+/// character; Miracle Arts untouched). `shops`
 /// randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
 /// `"shuffle"`. `starting_items` is the number of random starting consumables
@@ -65,6 +67,7 @@ pub fn patch_rom(
     shops: &str,
     casino: &str,
     steals: &str,
+    arts: &str,
     doors: &str,
     door_coupling: &str,
     house_doors: &str,
@@ -80,6 +83,10 @@ pub fn patch_rom(
     let shop_mode = parse_mode(shops);
     let casino_mode = parse_mode(casino);
     let steal_mode = parse_mode(steals);
+    let arts_mode = parse_mode(arts).map(|m| match m {
+        DropMode::Shuffle => legaia_rando::arts::ArtsMode::Shuffle,
+        DropMode::Random => legaia_rando::arts::ArtsMode::Random,
+    });
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
 
@@ -233,6 +240,18 @@ pub fn patch_rom(
             ));
         }
         None => summary.push_str("steals: untouched\n"),
+    }
+
+    match arts_mode {
+        Some(m) => {
+            let (_plan, rep) = apply::randomize_arts(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("arts: {e}")))?;
+            summary.push_str(&format!(
+                "arts: {} of {} arts re-combo'd ({})\n",
+                rep.combos_changed, rep.arts, arts
+            ));
+        }
+        None => summary.push_str("arts: untouched\n"),
     }
 
     match door_mode {

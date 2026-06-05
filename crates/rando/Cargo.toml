@@ -17,6 +17,7 @@ anyhow.workspace = true
 clap.workspace = true
 legaia-lzs = { path = "../lzs" }
 legaia-asset = { path = "../asset" }
+legaia-art = { path = "../art" }
 legaia-prot = { path = "../prot" }
 legaia-iso = { path = "../iso" }
 legaia-gamedata = { path = "../gamedata" }
