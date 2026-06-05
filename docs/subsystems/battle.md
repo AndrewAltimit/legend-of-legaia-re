@@ -46,38 +46,70 @@ field/world walk camera to a slow orbit around the party↔enemy midpoint) and
 overlays the actors + HUD; the surrounding terrain keeps drawing through its
 normal renderer.
 
-For an **overworld (world-map continent) encounter** this is pinned from a
-4-angle capture set (`overworld_battle_bg_angle_a..d`, the same Vahn-vs-Gobu-Gobu
-battle paused on the Begin/Run menu while the camera idly orbits):
+For an **overworld (world-map) encounter** the backdrop is the map's own
+`scene_tmd_stream` **dome** — pinned from a 4-angle capture set
+(`overworld_battle_bg_angle_a..d`, the same Vahn-vs-Gobu-Gobu battle paused on
+the Begin/Run menu while the camera idly orbits).
 
-- The **world-map overlay stays paged in** during the battle — all four saves
-  report `world-map overlay loaded` (the `0x801F7644..0x801F8690` per-prim
-  terrain leaves) via `mednafen-state prim-dispatch-survey`. So the world-map
-  controller's terrain draw is still the background renderer; battle is layered
-  on top.
-- The rendered backdrop is **~738 textured prims** (619 `POLY_GT4` + 116
-  `POLY_GT3`) in the live GPU pool, whose ground tiles match the **world-map
-  continent terrain per-tile descriptor table** (3715 hits in the
-  `0x80190000`-region, `mednafen-state prim-trace`). The framebuffer shows
-  textured grass + distant mountain landmarks + a clouded sky — the continent
-  surface around the encounter point.
-- Across the four orbit angles the **ground and mountain landmarks rotate with
-  the camera** (true 3D continent geometry — the heightfield surface + the
-  `flags & 0x4` placed landmark meshes), while the **sky** stays a fixed
-  backdrop. This is the [world-map render pipeline](world-map.md) (`world_map_heightfield`
-  + `world_map_terrain_draws`), not the field scene-pack.
+### Backdrop geometry — the scene dome (PROT 88 for `map01`)
 
-**Why the engine's battle "looks like half the scene."** `play-window`'s
-live-loop battle currently reuses the *field* draw branch (`field_placement_draws`
-+ actors) for the backdrop, so a battle triggered from a field/town scene shows
-that scene's partial placement geometry, and an overworld battle does not keep
-the continent terrain resident. The faithful fix is to keep the **active
-environment's own renderer running as the battle backdrop** — for an overworld
-encounter, continue drawing `world_map_heightfield` + `world_map_terrain_draws`
-under the orbiting battle camera (which the engine already has via
-`battle_camera_mvp`), rather than switching to the field/cave geometry. The
-per-area battle backdrop (cave / dungeon / town battles) is the same idea with
-that area's own geometry; only the overworld case is capture-pinned here.
+The backdrop is the map's `scene_tmd_stream` dome (PROT `88` for the `map01`
+overworld battle): a sky hemisphere + mountain ring + grass ground, the same
+geometry the asset viewer shows for that entry.
+
+- PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-match
+  against all four saves; the leading TMD magic `0x80000002` sits at file `+4`,
+  uncompressed). Loaded by the battle-init type-`0x01` chunk walker `FUN_8001FE70`
+  into `_DAT_8007b864`, registered as TMD handle `DAT_80076810` by the battle
+  state-handler `FUN_800513F0` (`tmd_register(_DAT_8007b864, 0)`), and drawn by
+  `func_0x801d02c0`.
+- The live GPU pool holds **619 `POLY_GT4` + 116 `POLY_GT3`** (angle-a) gouraud-
+  textured dome prims. (The dome geometry is a single LZS-free TMD: 4 objects,
+  968 verts, 1104 indices, + two `TimList` texture chunks. PROT 88/89/90 share
+  identical geometry and differ only in their texture payload.)
+
+> **Correction.** An earlier reading of this page concluded the backdrop was the
+> *world-map continent heightfield* per a `prim-trace` "3715 hits in the
+> `0x80190000` region". That was a **false positive**: angle-a has only 3
+> `POLY_FT4` prims, all with a degenerate `clut=0 tpage=0x800E` signature that
+> stride-1 floods that window. On angle-c the 188 real-CLUT (`0x7840..48`)
+> clusters match **0** bytes in the continent windows. The backdrop is the dome,
+> not a tiled terrain table. The world-map overlay being paged in
+> (`prim-dispatch-survey` reports `world-map overlay loaded`) reflects the
+> overworld *code* staying resident, not a continent-terrain draw.
+
+**The "half the scene" shape.** The dome is a **front half** — verts span
+`X ∈ [-12155, 12155]`, `Z ∈ [-1260, +12155]` (open toward `-Z`), `Y ∈ [-6883, 12]`
+(PSX Y-down: `-6883` = sky top, `0` = ground; the ground is a ring, inner radius
+`2889`). A single instance under the orbit camera fills the frame at front-facing
+yaws but exposes the open back at side angles. Retail shows a full surround at
+every captured angle; its exact back-fill submission lives in the battle
+overlay's `func_0x801d02c0` (not yet dumped). The engine reproduces the surround
+by drawing the dome plus a `Ry(180°)` mirror, which matches the savestate
+framebuffer at the cut-side angle.
+
+### Battle camera (exact)
+
+The orbit camera (game mode `_DAT_8007b83c == 0x15`) is pinned exactly from the
+four saves + Ghidra. Per-frame `FUN_80026ce4` → `FUN_80026f50` builds the view
+matrix via the Euler kernel `FUN_80026988` (cos table `DAT_8007b7f8`, sin table
+`_DAT_8007b81c`), composed with the identity base matrix `DAT_80010b84` and
+stored at `DAT_8007bf10`; the backdrop + actors then draw through
+`func_0x801d02c0`. For a PSX (Y-down) world vertex `v`:
+
+```
+screen = H * (R*v + TR) / Ze          R = Rx(pitch) * Ry(yaw)
+```
+
+with `pitch = _DAT_8007b790 = 32` (12-bit angle, `4096` = 360°, ≈2.8° down-tilt),
+`yaw = _DAT_8007b792` (the orbit azimuth; the battle tick `FUN_801D0748`
+decrements it by `DAT_1f800393 * 2` ≈ 4 units/frame while idle), `roll = 0`,
+`TR = (_DAT_800840b8, _DAT_800840bc, _DAT_800840c0) = (0, 1280, 7680)` (eye-space
+depth 7680 / height 1280), `H = _DAT_8007b6f4 = 256` (written to the GTE
+projection register by `FUN_8003d254`), and the look-at target at the world
+origin. The engine mirrors this in `legaia-engine`'s `retail_battle_mvp` as
+`Proj_H * T(TR) * R * F` (`F` = the renderer's Y-flip), verified to 0.0002 px
+against the hand-rolled projection and against the savestate framebuffer.
 
 ## Battle action state machine (`FUN_801E295C`)
 

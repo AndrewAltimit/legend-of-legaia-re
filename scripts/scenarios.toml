@@ -984,15 +984,18 @@ end = 0x80200000
 # diffing them isolates what is camera-dependent (the 3D stage:
 # ground + mountains) from what is fixed (the sky backdrop).
 #
-# These back the "battle background = world-map continent terrain"
-# finding: the world-map overlay is paged in across all four
-# (`prim-dispatch-survey`), the ~738 background prims (619 POLY_GT4)
-# match the world-map continent terrain descriptor table
-# (`prim-trace`), and the rendered frame is grass + mountain
-# landmarks + clouded sky. So an overworld encounter keeps the
-# continent terrain resident and renders it as the full battle
-# backdrop with an orbiting camera. Randomizer disc (mechanism is
-# disc-independent). See docs/subsystems/battle.md "Battle background".
+# These pin the overworld battle backdrop = the map's scene_tmd_stream
+# DOME (PROT 88 for map01): sky + mountain ring + grass ground,
+# resident at RAM 0x800A8B34, registered as DAT_80076810. The ~738
+# background prims (619 POLY_GT4 + 116 POLY_GT3) are the dome's
+# gouraud-textured geometry. (NOT the world-map continent heightfield:
+# the old "3715 hits in 0x80190000" was a prim-trace false positive
+# from 3 degenerate clut=0 FT4 prims; the real-CLUT clusters match 0
+# bytes in the continent windows.) Diffing the four angles isolates
+# the orbit yaw `_DAT_8007b792` (the only camera global that changes:
+# 224/3808/3136/2632) from the fixed rig (pitch 32, TR (0,1280,7680),
+# H 256). Randomizer disc (mechanism is disc-independent). See
+# docs/subsystems/battle.md "Battle background".
 
 [[scenarios]]
 slot = 2
@@ -1001,7 +1004,7 @@ backup_fingerprint = "7269ae2b694a6a276037ad437eee9c331479c20d1eefb4f9c9a57ca982
 phase = "battle"
 expected_game_mode = 0x15
 diff_against = [3, 4, 5]
-description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle A. World-map overlay resident; background = world-map continent terrain (grass + mountains + sky). Randomizer disc."
+description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle A. Backdrop = the map01 scene_tmd_stream dome (PROT 88, resident at 0x800A8B34): sky + mountain ring + grass. Randomizer disc."
 topics = ["battle", "battle background", "world map", "terrain", "camera orbit", "Gobu Gobu", "randomizer", "RE"]
 
 [[scenarios]]
