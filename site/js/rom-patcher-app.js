@@ -4,7 +4,7 @@
  *
  * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, drops,
  * encounters, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items,
- * unused_enemies, unused_items) -> { data, summary, seed }`
+ * door_of_wind, all_warps, unused_enemies, unused_items, equipment_drops) -> { data, summary, seed }`
  * and `resolve_seed(str)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`.
@@ -65,6 +65,9 @@ function init() {
   const doorCouplingSel = $('rom-door-coupling');
   const houseDoorSel = $('rom-house-doors');
   const startingItemsSel = $('rom-starting-items');
+  const doorOfWindChk = $('rom-door-of-wind');
+  const doorOfWindCountInput = $('rom-door-of-wind-count');
+  const allWarpsChk = $('rom-all-warps');
   const unusedEnemiesChk = $('rom-unused-enemies');
   const unusedItemsChk = $('rom-unused-items');
   const runBtn = $('rom-run');
@@ -95,6 +98,12 @@ function init() {
     const doorCoupling = doorCouplingSel ? doorCouplingSel.value : 'coupled';
     const houseDoors = houseDoorSel ? houseDoorSel.value : 'none';
     const startingItems = startingItemsSel ? parseInt(startingItemsSel.value, 10) || 0 : 0;
+    // Door of Wind: the count (0 = off). The checkbox enables it; the number
+    // input (default 10) sets how many, clamped to 1..99.
+    const doorOfWind = doorOfWindChk && doorOfWindChk.checked
+      ? Math.min(99, Math.max(1, parseInt(doorOfWindCountInput && doorOfWindCountInput.value, 10) || 10))
+      : 0;
+    const allWarps = allWarpsChk ? allWarpsChk.checked : false;
     const unusedEnemies = unusedEnemiesChk ? unusedEnemiesChk.checked : false;
     const unusedItems = unusedItemsChk ? unusedItemsChk.checked : false;
     if (
@@ -108,7 +117,9 @@ function init() {
       arts === 'none' &&
       doors === 'none' &&
       houseDoors === 'none' &&
-      startingItems === 0
+      startingItems === 0 &&
+      doorOfWind === 0 &&
+      !allWarps
     ) {
       setStatus('Enable at least one option.', 'err');
       return;
@@ -124,7 +135,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, unusedEnemies, unusedItems, equipmentDrops);
+      const result = mod.patch_rom(buf, seed, drops, encounters, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, allWarps, unusedEnemies, unusedItems, equipmentDrops);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

@@ -195,10 +195,28 @@ struct RandomizeArgs {
     house_doors: DropArg,
     /// Number of random starting items the new game begins with (`0` = leave the
     /// vanilla Healing Leaf ×5 untouched). Each is a distinct random consumable
-    /// with a small random count; capped at the seed region's capacity (5).
-    /// `legaia-rando starting-items` shows the current contents.
+    /// with a small random count; capped at the seed region's capacity (5, or 3
+    /// when `--all-warps` is set). `legaia-rando starting-items` shows the
+    /// current contents.
     #[arg(long, default_value_t = 0)]
     starting_items: usize,
+    /// Seed Door of Wind (the warp consumable) into the new game's starting bag.
+    /// Pass `--door-of-wind` for the default stack (10) or `--door-of-wind N` for
+    /// N (1..=99). Additive to a normal new game (the Healing Leaf is kept)
+    /// unless `--starting-items` also rerolls the bag. Pairs with `--all-warps`.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "10",
+        value_name = "COUNT"
+    )]
+    door_of_wind: Option<u8>,
+    /// Unlock every Door-of-Wind warp destination from the start (preset the
+    /// "visited towns" story-flag bitmask). Lets Door of Wind teleport to any
+    /// town immediately. Costs part of the starting-seed budget, so it caps
+    /// `--starting-items` at 3.
+    #[arg(long, default_value_t = false)]
+    all_warps: bool,
     /// Re-introduce unused enemies (the Evil Bat duplicates that no formation
     /// references) into the random-encounter pool. Only takes effect with
     /// `--encounters random` (a `shuffle` can't introduce a new monster).
@@ -616,24 +634,29 @@ fn cmd_starting_items(input: &Path) -> Result<()> {
             .unwrap_or("?")
             .to_string()
     };
+    let all_warps = apply::current_all_warps(&patcher)?;
     if items.is_empty() {
         println!("The new game starts with an empty inventory.");
-        return Ok(());
-    }
-    println!("New game starting inventory:");
-    for (id, count) in &items {
+    } else {
+        println!("New game starting inventory:");
+        for (id, count) in &items {
+            println!(
+                "  {:>3} x item {:>3} (0x{:02x}, {})",
+                count,
+                id,
+                id,
+                name_of(*id)
+            );
+        }
         println!(
-            "  {:>3} x item {:>3} (0x{:02x}, {})",
-            count,
-            id,
-            id,
-            name_of(*id)
+            "\n{} slot(s) seeded (the randomizer can set up to {}).",
+            items.len(),
+            legaia_rando::starting_items::MAX_STARTING_ITEMS
         );
     }
     println!(
-        "\n{} slot(s) seeded (the randomizer can set up to {}).",
-        items.len(),
-        legaia_rando::starting_items::MAX_STARTING_ITEMS
+        "Door-of-Wind all-warps preset: {}",
+        if all_warps { "ON" } else { "off" }
     );
     Ok(())
 }
@@ -992,8 +1015,13 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("house_doors = \"none\"".to_string());
     }
 
-    if args.starting_items > 0 {
-        let report = apply::randomize_starting_items(&mut patcher, seed, args.starting_items)?;
+    let seed_opts = legaia_rando::starting_items::StartingSeedOptions {
+        random_items: args.starting_items,
+        door_of_wind: args.door_of_wind.unwrap_or(0),
+        all_warps: args.all_warps,
+    };
+    if seed_opts.is_active() {
+        let report = apply::randomize_starting_items(&mut patcher, seed, &seed_opts)?;
         let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
         let summary: Vec<String> = report
@@ -1005,15 +1033,20 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             })
             .collect();
         println!(
-            "starting-items: new game now begins with {} random item(s): {}",
+            "starting-items: new game now begins with {} item(s): {}",
             report.items_set,
             summary.join(", ")
         );
+        if report.all_warps {
+            println!("all-warps: every Door of Wind destination unlocked from the start");
+        }
         manifest.push(format!("starting_items = {}", report.items_set));
         manifest.push(format!("starting_items_set = {:?}", report.items));
+        manifest.push(format!("all_warps = {}", report.all_warps));
     } else {
         println!("starting-items: untouched (vanilla Healing Leaf x5)");
         manifest.push("starting_items = 0".to_string());
+        manifest.push("all_warps = false".to_string());
     }
 
     // Diff original vs patched -> PPF.

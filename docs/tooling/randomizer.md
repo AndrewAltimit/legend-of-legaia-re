@@ -100,7 +100,12 @@ and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--starting-items N` seeds the new game with `N` random consumables
-(0 = vanilla; capped at 5). `--unused-enemies` and `--unused-items` re-introduce
+(0 = vanilla; capped at 5). `--door-of-wind [N]` adds
+`N` Door of Wind (the warp consumable; default 10) to the starting bag and
+`--all-warps` unlocks every
+Door-of-Wind destination from the start (see
+[Door of Wind convenience toggles](#door-of-wind-convenience-toggles)).
+`--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
@@ -462,6 +467,41 @@ write lands directly in the consumable page (bypassing the engine's id-routing
 add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
 (Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
 read-only `starting-items` listing shows the current bag.
+
+### Door of Wind convenience toggles
+
+Two opt-in flags that ride the same reclaimable seed region as the starting
+items, built for fast-travel testing. Door of Wind (item `0x89`) is the warp
+consumable: using one opens a menu to teleport to any town you have already
+visited.
+
+**`--door-of-wind [N]`** seeds Door of Wind into the new game's starting bag —
+`N` of them (1..=99; the default when the flag is given bare is 10). It is
+*additive*: with no `--starting-items` reroll the vanilla Healing Leaf ×5 is kept
+alongside it; with a reroll the random consumables replace the Healing Leaf and
+Door of Wind is forced on top.
+
+**`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
+*anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
+(`SC + 0x161C`), split into the two halfwords the well-known "Access All Towns"
+GameShark code writes (`0x8008575C = 0xF77F`, `0x8008575E = 0xF8FF`). It lives in
+the story-flag block (`SC + 0x14C0..0x16C0`), which the New-Game seed `memset`
+covers, so the seed code can preset it the same way it presets the inventory. The
+preset gets its **own** reclaimable region in `FUN_80034A6C` —
+`0x80034adc..0x80034aeb`, four redundant `sw $zero` stores into `SC` words the
+caller already zeroed — so it does **not** reduce the starting-item budget (items
+keep all five slots). It uses `$v1` (not `$v0`, which carries a live `0x2dc0`
+constant into `DAT_80073ef8` just below) and survives because the inventory
+seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
+overwritten when the seed is rewritten. `region_unlocks_all_warps` /
+`scus_unlocks_all_warps` read it back.
+
+The clean-room engine seeds the forced Door of Wind through the same
+`World::seed_starting_inventory` path as any other starting item (covered by the
+runtime oracle). The all-warps preset has no engine consumer yet — there is no
+Door-of-Wind warp menu in the port — so it is validated at the disc-round-trip
+level (`door_of_wind_and_all_warps_round_trip_on_disc`) and matches the
+user-verified GameShark write byte-for-byte.
 
 ### Unused content
 

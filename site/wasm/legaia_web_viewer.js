@@ -2255,7 +2255,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
- * 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
+ * 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+ * into the starting bag (`0` = none); `all_warps` presets the visited-towns
+ * bitmask so Door of Wind can teleport to any town from the start (its own code
+ * region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
  * "Something Good" / unnamed-accessory items to the random-fill pool (only the
  * `random` drop / chest / steal modes use it). `equipment_drops` turns every
@@ -2275,12 +2278,14 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {string} door_coupling
  * @param {string} house_doors
  * @param {number} starting_items
+ * @param {number} door_of_wind
+ * @param {boolean} all_warps
  * @param {boolean} unused_enemies
  * @param {boolean} unused_items
  * @param {boolean} equipment_drops
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, unused_enemies, unused_items, equipment_drops) {
+export function patch_rom(image, seed, drops, encounters, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, all_warps, unused_enemies, unused_items, equipment_drops) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2305,7 +2310,7 @@ export function patch_rom(image, seed, drops, encounters, chests, shops, casino,
     const len10 = WASM_VECTOR_LEN;
     const ptr11 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len11 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, starting_items, unused_enemies, unused_items, equipment_drops);
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, starting_items, door_of_wind, all_warps, unused_enemies, unused_items, equipment_drops);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

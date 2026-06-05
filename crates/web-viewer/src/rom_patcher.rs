@@ -49,7 +49,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
 /// `"shuffle"`. `starting_items` is the number of random starting consumables
 /// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
-/// 5). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
+/// 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+/// into the starting bag (`0` = none); `all_warps` presets the visited-towns
+/// bitmask so Door of Wind can teleport to any town from the start (its own code
+/// region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
 /// pool (only with `encounters = "random"`); `unused_items` adds the unused
 /// "Something Good" / unnamed-accessory items to the random-fill pool (only the
 /// `random` drop / chest / steal modes use it). `equipment_drops` turns every
@@ -72,6 +75,8 @@ pub fn patch_rom(
     door_coupling: &str,
     house_doors: &str,
     starting_items: usize,
+    door_of_wind: u8,
+    all_warps: bool,
     unused_enemies: bool,
     unused_items: bool,
     equipment_drops: bool,
@@ -293,8 +298,13 @@ pub fn patch_rom(
         None => summary.push_str("house-doors: untouched\n"),
     }
 
-    if starting_items > 0 {
-        let rep = apply::randomize_starting_items(&mut patcher, seed_n, starting_items)
+    let seed_opts = legaia_rando::starting_items::StartingSeedOptions {
+        random_items: starting_items,
+        door_of_wind,
+        all_warps,
+    };
+    if seed_opts.is_active() {
+        let rep = apply::randomize_starting_items(&mut patcher, seed_n, &seed_opts)
             .map_err(|e| err(format!("starting-items: {e}")))?;
         let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
             .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
@@ -307,10 +317,13 @@ pub fn patch_rom(
             })
             .collect();
         summary.push_str(&format!(
-            "starting-items: new game begins with {} random item(s): {}\n",
+            "starting-items: new game begins with {} item(s): {}\n",
             rep.items_set,
             list.join(", ")
         ));
+        if rep.all_warps {
+            summary.push_str("all-warps: every Door of Wind destination unlocked from the start\n");
+        }
     } else {
         summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
     }

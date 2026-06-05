@@ -77,7 +77,12 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
 
     // --- Patch the starting items on a scratch copy of the disc. ---
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
-    let report = apply::randomize_starting_items(&mut patcher, seed, n).expect("randomize");
+    let opts = legaia_rando::starting_items::StartingSeedOptions {
+        random_items: n,
+        door_of_wind: 0,
+        all_warps: false,
+    };
+    let report = apply::randomize_starting_items(&mut patcher, seed, &opts).expect("randomize");
     assert!(report.items_set >= 2, "expected several seeded items");
 
     // --- Re-decode the seed off the PATCHED image (what a fresh New Game runs)
@@ -119,4 +124,65 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
         },
         vanilla.items()
     );
+}
+
+/// Runtime oracle for the **Door of Wind** convenience toggle: forcing the warp
+/// consumable into the new game's starting bag. Same structure as above — seed a
+/// fresh world from the patched seed and assert the bag holds Door of Wind. The
+/// all-warps toggle is a story-flag preset the clean-room engine has no consumer
+/// for yet (there is no Door-of-Wind warp menu), so its runtime check stays at
+/// the disc-round-trip level (`crates/rando/tests/starting_items_patch_real`);
+/// here we cover the half that the engine *does* run — the item grant.
+#[test]
+fn forced_door_of_wind_seeds_the_bag_at_runtime() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    use legaia_asset::new_game::DOOR_OF_WIND_ITEM;
+    use legaia_rando::starting_items::{DOOR_OF_WIND_COUNT, StartingSeedOptions};
+
+    // Baseline: a vanilla New Game has no Door of Wind in the bag.
+    let scus = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");
+    let vanilla = StartingInventory::from_scus(&scus).expect("decode vanilla seed");
+    let vanilla_bag = seed_bag(&vanilla);
+    assert_eq!(
+        vanilla_bag.get(&DOOR_OF_WIND_ITEM),
+        None,
+        "baseline: vanilla bag has no Door of Wind (non-vacuous)"
+    );
+
+    // Patch with the Door-of-Wind toggle (no reroll, no warps): additive to vanilla.
+    let mut patcher = DiscPatcher::open(disc).expect("open disc");
+    let opts = StartingSeedOptions {
+        random_items: 0,
+        door_of_wind: DOOR_OF_WIND_COUNT,
+        all_warps: false,
+    };
+    let report = apply::randomize_starting_items(&mut patcher, 1, &opts).expect("randomize");
+    assert!(!report.all_warps);
+
+    let patched_scus =
+        legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+    let patched = StartingInventory::from_scus(&patched_scus).expect("decode patched seed");
+    let bag = seed_bag(&patched);
+
+    // The runtime bag holds Door of Wind ×DOOR_OF_WIND_COUNT, and the vanilla
+    // Healing Leaf base is preserved (additive toggle).
+    assert_eq!(
+        bag.get(&DOOR_OF_WIND_ITEM).copied(),
+        Some(DOOR_OF_WIND_COUNT),
+        "the New Game bag holds the forced Door of Wind"
+    );
+    assert_eq!(
+        bag.get(&0x77).copied(),
+        Some(5),
+        "the vanilla Healing Leaf base is preserved (additive)"
+    );
+
+    eprintln!("door-of-wind runtime oracle: New Game bag = {:?}", {
+        let mut v: Vec<_> = bag.iter().map(|(k, c)| (*k, *c)).collect();
+        v.sort_unstable();
+        v
+    });
 }

@@ -1497,38 +1497,72 @@ pub fn current_starting_items(patcher: &DiscPatcher) -> Result<Vec<(u8, u8)>> {
     Ok(inv.items().to_vec())
 }
 
-/// Outcome of randomizing the new game's starting inventory.
+/// Read whether the new game currently presets the all-towns Door-of-Wind warp
+/// bitmask (the `--all-warps` toggle). Purely read-only.
+pub fn current_all_warps(patcher: &DiscPatcher) -> Result<bool> {
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    Ok(legaia_asset::new_game::scus_unlocks_all_warps(&scus).unwrap_or(false))
+}
+
+/// Outcome of randomizing the new game's starting seed.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct StartingItemsApplyReport {
     /// Number of starting-item slots written (`0..=MAX_STARTING_ITEMS`).
     pub items_set: usize,
     /// The seeded `(item_id, count)` slots, for the manifest / CLI summary.
     pub items: Vec<(u8, u8)>,
+    /// Whether the all-towns Door-of-Wind warp bitmask was preset.
+    pub all_warps: bool,
 }
 
-/// Replace the new game's fixed Healing Leaf with `n` random consumables
-/// (`n` clamped to `0..=MAX_STARTING_ITEMS`). Rewrites the seed code region in
-/// `SCUS_942.54` with a same-size packed-halfword-store patch (no executable
-/// growth). `n == 0` restores the region to all-`nop` (an empty starting
-/// inventory). Deterministic in `(seed, n)`.
+/// Rewrite the new game's starting-seed code in `SCUS_942.54` from
+/// [`StartingSeedOptions`].
+///
+/// Two independent reclaimable regions of `FUN_80034A6C` are patched in place
+/// (same-size, no executable growth): the inventory seed region gets the planned
+/// `(id, count)` slots, and — only when `all_warps` is set — a separate region
+/// gets the visited-towns warp preset (so it never reduces the item capacity).
+/// [`plan_seed`] resolves the options into the concrete plan. With inactive
+/// options nothing is written (callers guard on
+/// [`StartingSeedOptions::is_active`]). Deterministic in `(seed, opts)`.
+///
+/// [`StartingSeedOptions`]: crate::starting_items::StartingSeedOptions
+/// [`plan_seed`]: crate::starting_items::plan_seed
 pub fn randomize_starting_items(
     patcher: &mut DiscPatcher,
     seed: u64,
-    n: usize,
+    opts: &crate::starting_items::StartingSeedOptions,
 ) -> Result<StartingItemsApplyReport> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    let off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
+    let inv_off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
         .context("locate starting-inventory seed region in SCUS_942.54")? as u64;
-    let items = crate::starting_items::plan_starting_items(seed, n);
-    let patch = crate::starting_items::build_seed_patch(&items);
+    let plan = crate::starting_items::plan_seed(seed, opts);
+
+    // Inventory seed region: always rewritten when active (this also drops the
+    // zero-loop, which the warp preset below relies on).
+    let inv_patch = crate::starting_items::build_seed_patch_for(&plan);
     patcher
-        .patch_named_file(crate::steal::SCUS_NAME, off, &patch)
-        .with_context(|| format!("write starting-item seed at SCUS offset {off:#x}"))?;
+        .patch_named_file(crate::steal::SCUS_NAME, inv_off, &inv_patch)
+        .with_context(|| format!("write starting-item seed at SCUS offset {inv_off:#x}"))?;
+
+    // Warp preset: a separate code region, only touched when enabled.
+    if plan.all_warps {
+        let warp_off = legaia_asset::new_game::warp_seed_file_offset(&scus)
+            .context("locate warp-preset region in SCUS_942.54")? as u64;
+        let warp_patch = crate::starting_items::build_warp_patch();
+        patcher
+            .patch_named_file(crate::steal::SCUS_NAME, warp_off, &warp_patch)
+            .with_context(|| format!("write warp preset at SCUS offset {warp_off:#x}"))?;
+    }
+
     Ok(StartingItemsApplyReport {
-        items_set: items.len(),
-        items,
+        items_set: plan.items.len(),
+        items: plan.items,
+        all_warps: plan.all_warps,
     })
 }
 

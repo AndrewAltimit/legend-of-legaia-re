@@ -25,21 +25,41 @@ use legaia_save::{
     parse_card, read_block,
 };
 
+/// Find a Legaia memory-card image that actually holds an active save block.
+///
+/// The mednafen `sav` directory accumulates one `.mcr` per disc fingerprint,
+/// and emulator playtests routinely leave behind *empty* cards (a fresh card
+/// written before any in-game save). Those parse fine but carry zero active
+/// blocks, so picking the first name match would make the decode test panic on
+/// a card that simply has nothing to decode. Scan all candidates (sorted for a
+/// stable choice) and return the first one with at least one active block;
+/// return `None` — so the tests skip — only when no usable card exists.
 fn locate_card() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     let dir = PathBuf::from(home).join(".mednafen/sav");
     if !dir.exists() {
         return None;
     }
-    let entries = std::fs::read_dir(&dir).ok()?;
-    for e in entries.flatten() {
-        let p = e.path();
-        let name = p.file_name()?.to_string_lossy().to_string();
-        if name.contains("Legaia") && name.ends_with(".0.mcr") {
-            return Some(p);
-        }
-    }
-    None
+    let mut candidates: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .map(|n| {
+                    let name = n.to_string_lossy();
+                    name.contains("Legaia") && name.ends_with(".0.mcr")
+                })
+                .unwrap_or(false)
+        })
+        .collect();
+    candidates.sort();
+    candidates.into_iter().find(|p| {
+        std::fs::read(p)
+            .ok()
+            .and_then(|b| parse_card(&b).ok())
+            .is_some_and(|saves| !saves.is_empty())
+    })
 }
 
 #[test]
