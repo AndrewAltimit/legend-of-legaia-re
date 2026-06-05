@@ -8157,9 +8157,21 @@ impl ApplicationHandler for PlayWindowApp {
                                 && let Some(mesh) = self.meshes.get(stage_idx)
                             {
                                 let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                // Front half-dome at raw world coords.
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * flip,
+                                });
+                                // The dome geometry is a FRONT half (Z>=0), so a
+                                // single instance leaves the back of the horizon
+                                // open. Draw a 180-deg-Y mirror so the mountain
+                                // ring + sky complete the full circle around the
+                                // actors. (Retail's dome is a front half with
+                                // partial coverage; the mirror reads fuller.)
+                                let back = flip * Mat4::from_rotation_y(std::f32::consts::PI);
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * back,
                                 });
                             }
                         } else {
@@ -8198,6 +8210,14 @@ impl ApplicationHandler for PlayWindowApp {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
                             };
+                            // In a stage-dome battle, draw only the ACTIVE battle
+                            // actors (party + monsters). The scene-init actors
+                            // (bound but inactive, parked at the origin) would
+                            // otherwise pile their meshes at world (0,0,0) - the
+                            // "duplicate Vahn" + scattered scene geometry.
+                            if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
+                                continue;
+                            }
                             let mesh = posed_overrides
                                 .get(tmd_idx)
                                 .and_then(|o| o.as_ref())
