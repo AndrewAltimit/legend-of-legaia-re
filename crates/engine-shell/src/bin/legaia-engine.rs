@@ -5720,6 +5720,11 @@ impl PlayWindowApp {
                     // Keep `scene_tmd_data` length-parallel with `meshes`.
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
+                    // Record the texture slot so the posed-animation rebuild can
+                    // re-apply the per-slot CBA/TSB relocation (the raw-TMD posed
+                    // mesh otherwise carries the nominal on-disc addresses and
+                    // samples the wrong VRAM page → untextured/white).
+                    self.session.host.world.actors[actor_idx].battle_tex_slot = Some(slot);
                     // Attach the monster's idle clip so its limbs move in
                     // battle. The clip's part count should equal the TMD object
                     // count (one rigid transform per object); MonsterAnimPlayer
@@ -7559,7 +7564,7 @@ impl ApplicationHandler for PlayWindowApp {
                         // (rotation matters), so use the full `R·v + T` builder;
                         // field actors keep the translation-only ANM path
                         // unchanged.
-                        let vmesh = if actor.battle_animation.is_some() {
+                        let mut vmesh = if actor.battle_animation.is_some() {
                             legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
                                 tmd,
                                 raw,
@@ -7568,6 +7573,17 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs)
                         };
+                        // The posed mesh is rebuilt from the raw TMD, so its
+                        // CBA/TSB are the nominal on-disc defaults. Re-apply the
+                        // per-slot relocation `battle_render_mesh` did for the
+                        // rest mesh, or the animated monster samples the wrong
+                        // VRAM page and renders white.
+                        if let Some(slot) = actor.battle_tex_slot {
+                            for ct in &mut vmesh.cba_tsb {
+                                ct[0] = legaia_asset::monster_archive::relocate_cba(ct[0], slot);
+                                ct[1] = legaia_asset::monster_archive::relocate_tsb(ct[1], slot);
+                            }
+                        }
                         if vmesh.indices.is_empty() {
                             continue;
                         }

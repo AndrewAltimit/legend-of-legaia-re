@@ -536,6 +536,14 @@ pub struct Actor {
     /// `active_animation` (field ANM) on a given actor.
     pub battle_animation: Option<crate::battle_anim::MonsterAnimPlayer>,
 
+    /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
+    /// are nominal defaults the battle loader relocates per slot
+    /// (`FUN_80055468` → `legaia_asset::monster_archive::relocate_cba/relocate_tsb`).
+    /// Renderers that rebuild this actor's mesh from the raw TMD each frame (the
+    /// posed-animation path) must re-apply that relocation, since a fresh build
+    /// carries the nominal addresses again. `None` for non-monster actors.
+    pub battle_tex_slot: Option<u8>,
+
     /// Index into `SceneResources::tmds` for this actor's bound mesh.
     /// `None` means no TMD is bound - the actor has no visible 3D model.
     /// Set via [`World::set_actor_tmd_binding`].
