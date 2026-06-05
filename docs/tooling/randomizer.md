@@ -332,29 +332,32 @@ current table (the audit surface).
 
 ### Arts button combos
 
-The directional combo that fires each Tactical Art is a glyph string in the
-**static `SCUS_942.54` arts-name table** region (`DAT_80075EC4`):
-`[count][2-byte direction glyphs + one `0xFF06`/`0xFF09` separator marker]`.
-Two pointers reach each string and **both read the same bytes**: the record's
-`+8` is the Arts-menu **display**, and its `+0x10` description pointer is
-followed by the string the in-battle input **matcher** reads. (The old "PROT
-`0x05C4` record holds the matched bytes" claim is falsified — see
-[art-data.md](../formats/art-data.md).) So moving the `+8` *pointer* changes only
-the menu and desyncs the trigger (an emulator playtest caught this); the
-faithful edit is to overwrite the combo's **glyph bytes in place** (a same-size
-2-byte-per-direction edit, the separator marker left untouched).
+Each art's combo lives in **two** files, and both must change together
+(emulator playtests proved editing only the menu copy leaves the trigger on the
+old combo — see [art-data.md](../formats/art-data.md)):
 
-Because identical combos are **deduplicated across characters** (Vahn's Cyclone
-and Noa's Swan Driver point at one `D U U U` string), the editable unit is the
-*distinct combo string*, not the art. `apply::randomize_arts`
-(`--arts shuffle|random`) permutes the **contents** of the distinct strings
-within each length class, preserving two invariants: each art keeps its **input
-count** (a 4-input art stays 4 inputs) and each character's combos stay unique —
-the latter for free, since every character's arts map to distinct strings and a
-bijection keeps them distinct. `Shuffle` reassigns existing same-length combos
-(no new input ambiguity); `Random` writes fresh same-length combos. The
-per-character **Miracle Art** (`0xFF09` marker) strings are left untouched.
-`legaia-rando arts` lists the current combos.
+- **The matcher** (what fires the art) reads the per-character art records at RAM
+  `0x80160EFC`/`0x80176998`/`0x8018BA54`, where the combo is the `1=L,2=R,3=D,4=U`
+  byte run at record `+0`, on a fixed `0xD0` stride. They load from each
+  character's player-data file `record0` — Vahn `PROT 0861`, Noa `0864`, Gala
+  `0865`. `randomize_arts` decompresses `record0`, rewrites each art's combo
+  bytes in place (located by clean-start search filtered to the `0xD0` grid;
+  multi-record arts like Noa's 3-level Hurricane Kick get all their records),
+  and recompresses to fit the original footprint.
+- **The display** is the SCUS `DAT_80075EC4` arts-name table `+8` glyph string
+  (the menu arrows), rewritten in place to the same combo.
+
+`apply::randomize_arts` (`--arts shuffle|random`) assigns each art a new combo
+and writes it to both copies. Because the display glyph strings are
+**deduplicated across characters** (Vahn's Cyclone and Noa's Swan Driver share
+one `D U U U` string), the assignment is a permutation of the *distinct combo
+strings'* contents within each length class — so each art keeps its **input
+count** (a 4-input art stays 4 inputs) and each character's combos stay unique
+(every character's arts map to distinct strings; a bijection keeps them
+distinct). `Shuffle` reassigns existing same-length combos (no new input
+ambiguity); `Random` writes fresh same-length combos. The per-character
+**Miracle Art** (`0xFF09` marker) is left untouched. `legaia-rando arts` lists
+the current combos.
 
 ### Doors (scene transitions)
 
@@ -571,7 +574,7 @@ bit-for-bit.
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
 | `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
-| `crates/rando` `arts_patch_real` | disc-gated | arts-combo shuffle + random (in-place glyph-byte edits): re-decode the patched `SCUS_942.54` combos, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) the global per-length set of distinct combos preserved + image size unchanged + sector EDC/ECC-valid + deterministic |
+| `crates/rando` `arts_patch_real` | disc-gated | arts-combo shuffle + random: re-decode the patched combos, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) the global per-length set of distinct combos preserved + sector EDC/ECC-valid + deterministic; **plus the MATCHER GUARD** — decompress each character's player-file `record0` and assert every art's display combo is present as a matcher record and the records actually changed (the desync the feature tripped over) |
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
 | `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
