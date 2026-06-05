@@ -12,6 +12,7 @@
 --
 -- Output: log lines (camera / grid / actors) to the probe log.
 
+package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",

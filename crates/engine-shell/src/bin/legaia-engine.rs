@@ -9806,72 +9806,32 @@ fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result<()> {
 fn build_battle_ground_grid(
     dome: &legaia_tmd::mesh::VramMesh,
 ) -> Option<legaia_tmd::mesh::VramMesh> {
-    // Borrow the dome's GRASS texture: among the flat ground-plane (|y| ~ 0)
-    // textured vertices, group by CBA/TSB and pick the texture covering the
-    // largest XZ area. The grass ground (dome obj3) is the widest flat surface;
-    // this avoids accidentally grabbing the localized ground-mist object (obj1,
-    // also near y=0) which a "first textured vertex" pick selected. Then TILE
-    // that texture's UV box across the grid cells (a single shared UV makes each
-    // quad zero-area in UV space -> the rasteriser samples one edge texel and
-    // the grid renders nothing).
-    /// Per-texture accumulator while grouping the dome's flat ground verts.
-    struct GrassGroup {
-        umin: u8,
-        vmin: u8,
-        umax: u8,
-        vmax: u8,
-        xmin: f32,
-        zmin: f32,
-        xmax: f32,
-        zmax: f32,
-        count: usize,
-    }
-    let mut groups: std::collections::HashMap<[u16; 2], GrassGroup> =
-        std::collections::HashMap::new();
-    for i in 0..dome.positions.len() {
-        if dome.positions[i][1].abs() >= 5.0 || dome.cba_tsb[i] == [0, 0] {
-            continue;
-        }
-        let [u, v] = dome.uvs[i];
-        let (x, z) = (dome.positions[i][0], dome.positions[i][2]);
-        let e = groups.entry(dome.cba_tsb[i]).or_insert(GrassGroup {
-            umin: 255,
-            vmin: 255,
-            umax: 0,
-            vmax: 0,
-            xmin: f32::MAX,
-            zmin: f32::MAX,
-            xmax: f32::MIN,
-            zmax: f32::MIN,
-            count: 0,
-        });
-        e.umin = e.umin.min(u);
-        e.vmin = e.vmin.min(v);
-        e.umax = e.umax.max(u);
-        e.vmax = e.vmax.max(v);
-        e.xmin = e.xmin.min(x);
-        e.zmin = e.zmin.min(z);
-        e.xmax = e.xmax.max(x);
-        e.zmax = e.zmax.max(z);
-        e.count += 1;
-    }
-    // pick the group with the largest XZ footprint = the grass ground
-    let (&cba_tsb, g) = groups.iter().max_by(|(_, a), (_, b)| {
-        let area = |g: &GrassGroup| (g.xmax - g.xmin) * (g.zmax - g.zmin);
-        area(a).partial_cmp(&area(b)).unwrap()
-    })?;
-    let (umin, vmin, umax, vmax) = (g.umin, g.vmin, g.umax, g.vmax);
-    let same_len = g.count;
-    // Tiling the WHOLE grass-texture bbox repeats whatever dirt path it spans;
-    // sample a small window near the centre (likelier pure grass) and tile that.
-    let cu = ((umin as u16 + umax as u16) / 2) as u8;
-    let cv = ((vmin as u16 + vmax as u16) / 2) as u8;
-    const T: u8 = 8;
-    let (u0, u1) = (cu.saturating_sub(T), cu.saturating_add(T));
-    let (v0, v1) = (cv.saturating_sub(T), cv.saturating_add(T));
+    // Borrow the dome's GRASS texture, targeting the exact tile retail's grid
+    // (func_0x801d02c0) uses. `mednafen-state prim-trace` on the real map01
+    // battle shows those ground tiles at uv ~ (132..140, 2..13) with their own
+    // CBA/TSB. PROT 88 is the same TMD, so the dome's grass vertices carry the
+    // same UVs - find the flat ground vertex nearest that tile centre, take its
+    // CBA/TSB, and tile that small window. (Earlier picks - "first textured
+    // vertex", "largest XZ area + bbox centre" - landed on the ground-mist
+    // object or a 2-tone checker region of the texture, hence the checkerboard.)
+    const GU0: u8 = 132;
+    const GU1: u8 = 140;
+    const GV0: u8 = 2;
+    const GV1: u8 = 13;
+    let tcu = ((GU0 as u16 + GU1 as u16) / 2) as i32;
+    let tcv = ((GV0 as u16 + GV1 as u16) / 2) as i32;
+    let best = (0..dome.positions.len())
+        .filter(|&i| dome.positions[i][1].abs() < 5.0 && dome.cba_tsb[i] != [0, 0])
+        .min_by_key(|&i| {
+            let [u, v] = dome.uvs[i];
+            (u as i32 - tcu).pow(2) + (v as i32 - tcv).pow(2)
+        })?;
+    let cba_tsb = dome.cba_tsb[best];
+    let [bu, bv] = dome.uvs[best];
     log::info!(
-        "battle ground grid: grass texture {same_len} verts, uv [{u0}..{u1}]x[{v0}..{v1}] cba_tsb={cba_tsb:?}"
+        "battle ground grid: grass tile uv [{GU0}..{GU1}]x[{GV0}..{GV1}] cba_tsb={cba_tsb:?} (nearest dome vert uv=({bu},{bv}))"
     );
+    let (u0, u1, v0, v1) = (GU0, GU1, GV0, GV1);
 
     const N: i32 = 64; // cells per side
     const P: f32 = 512.0; // retail func_0x801d02c0 cell pitch (0x200) -> ~+/-16384 extent
