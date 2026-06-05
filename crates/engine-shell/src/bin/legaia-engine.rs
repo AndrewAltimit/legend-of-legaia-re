@@ -5490,6 +5490,52 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
     }
 
+    /// Battle camera: frame the **monster** actors (the ones carrying a bound
+    /// mesh + idle animation) rather than the player vicinity. The live-loop
+    /// seats battle actors around the world origin (`enter_battle(.., 600)` —
+    /// party at `x=-600`, monsters at `x=+600`), far from the field player's
+    /// world coords, so `camera_mvp`'s player-centred box leaves the enemies
+    /// entirely off-screen. Framing the enemy cluster (gently orbiting) puts
+    /// the animated monsters centre-frame and at a useful size.
+    fn battle_camera_mvp(&self, aspect: f32) -> Mat4 {
+        let world = &self.session.host.world;
+        let pc = world.party_count as usize;
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        let mut any = false;
+        for (i, a) in world.actors.iter().enumerate() {
+            // Monster slots only (party occupies slots 0..party_count and isn't
+            // mesh-bound in the play-window battle path anyway).
+            if i < pc || a.tmd_binding.is_none() {
+                continue;
+            }
+            let p = [
+                a.move_state.world_x as f32,
+                a.move_state.world_y as f32,
+                a.move_state.world_z as f32,
+            ];
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+            any = true;
+        }
+        if !any {
+            // No bound monsters yet — fall back to the field framing.
+            return self.camera_mvp(aspect);
+        }
+        // The bare position box collapses to a point/line; expand it to enclose
+        // the monster mesh bodies (a few hundred units tall/wide).
+        const M: f32 = 450.0;
+        for k in 0..3 {
+            lo[k] -= M;
+            hi[k] += M;
+        }
+        // Gentle orbit (slower than the field's 0.25) so the animated enemies
+        // read in 3D from several angles without spinning fast.
+        orbit_camera_mvp(lo, hi, 0.12, 0.35, self.win.elapsed_secs(), aspect)
+    }
+
     /// Camera parameters for the cutscene shot, decoded from the cutscene
     /// timeline's executed op-`0x45` Camera Configure params (read from
     /// `World::camera_state`, committed by `FUN_801DE084`). Returns
@@ -7440,6 +7486,10 @@ impl ApplicationHandler for PlayWindowApp {
                             self.scene_aabb.1,
                             aspect,
                         )
+                    } else if self.session.host.world.mode == SceneMode::Battle {
+                        // Frame the animated enemies, not the player's field
+                        // vicinity (the battle actors live at the world origin).
+                        self.battle_camera_mvp(aspect)
                     } else {
                         self.camera_mvp(aspect)
                     };
