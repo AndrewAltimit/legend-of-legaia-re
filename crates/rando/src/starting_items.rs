@@ -24,18 +24,84 @@
 //! ([`STARTING_ITEM_POOL`], Healing Leaf .. Wonder Elixir) so a starting item
 //! is always something that belongs on that page.
 
-use legaia_asset::new_game::{INVENTORY_SC_OFFSET, STARTING_INV_SEED_LEN};
+use legaia_asset::new_game::{
+    DOOR_OF_WIND_ITEM, INVENTORY_SC_OFFSET, STARTING_INV_SEED_LEN, WARP_ALL_FLAGS_HI,
+    WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET,
+};
 
 use crate::rng::SplitMix64;
 
+/// Number of MIPS instructions the reclaimable seed region holds (40 bytes / 4).
+const SEED_INSTRS: usize = STARTING_INV_SEED_LEN / 4;
+
+/// Instructions one inventory slot costs: one `addiu $v0,(count<<8)|id` + one
+/// `sh $v0,off($s0)`.
+const INSTRS_PER_ITEM: usize = 2;
+
+/// Instructions the all-warps preset costs: two `addiu`/`sh` pairs (the low and
+/// high halfwords of the visited-towns bitmask at [`WARP_FLAGS_SC_OFFSET`]).
+const WARP_FLAG_INSTRS: usize = 4;
+
 /// Most starting-item slots the reclaimable seed region can hold: ten
 /// instructions / two per item (`addiu` + `sh`).
-pub const MAX_STARTING_ITEMS: usize = STARTING_INV_SEED_LEN / 4 / 2;
+pub const MAX_STARTING_ITEMS: usize = SEED_INSTRS / INSTRS_PER_ITEM;
+
+/// Item id of Door of Wind (the warp consumable), re-exported for callers.
+pub const DOOR_OF_WIND_ID: u8 = DOOR_OF_WIND_ITEM;
+
+/// How many Door of Wind to seed when the convenience toggle is on. Door of
+/// Wind is consumed per warp, so a small stack keeps it useful for a while
+/// without the GameShark "99 in one slot" overkill.
+pub const DOOR_OF_WIND_COUNT: u8 = 10;
+
+/// The vanilla New Game starting item: Healing Leaf (`0x77`) ×5. Preserved as
+/// the base slot when a convenience toggle is on but no random reroll was
+/// requested, so the toggles read as *additional* to a normal new game.
+pub const VANILLA_STARTING_ITEM: (u8, u8) = (0x77, 5);
 
 /// Default `(min, max)` random count for each seeded item (inclusive). Modest,
 /// so a random start is helpful without trivializing the early game; vanilla
 /// seeds five Healing Leaves.
 pub const DEFAULT_COUNT_RANGE: (u8, u8) = (1, 5);
+
+/// Most inventory slots the seed region can hold once the all-warps preset (if
+/// enabled) has claimed its share of the instruction budget. Without warps the
+/// full [`MAX_STARTING_ITEMS`]; with warps, fewer (the 4 warp instructions
+/// leave 6 → 3 slots).
+pub fn max_items_with_warps(all_warps: bool) -> usize {
+    let warp = if all_warps { WARP_FLAG_INSTRS } else { 0 };
+    ((SEED_INSTRS - warp) / INSTRS_PER_ITEM).min(MAX_STARTING_ITEMS)
+}
+
+/// What the New Game starting seed should set, beyond the vanilla Healing Leaf.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StartingSeedOptions {
+    /// Number of random consumables to reroll the starting bag to. `0` keeps
+    /// the vanilla Healing Leaf base (so the convenience toggles stay additive).
+    pub random_items: usize,
+    /// Seed Door of Wind ([`DOOR_OF_WIND_COUNT`]×) into the starting bag.
+    pub door_of_wind: bool,
+    /// Preset the all-towns visited-towns bitmask so Door of Wind can warp to
+    /// every destination from the start.
+    pub all_warps: bool,
+}
+
+impl StartingSeedOptions {
+    /// `true` when the seed should be rewritten at all (any toggle is set).
+    pub fn is_active(&self) -> bool {
+        self.random_items > 0 || self.door_of_wind || self.all_warps
+    }
+}
+
+/// A resolved starting-seed plan: the warp preset plus the concrete inventory
+/// slots to write, already clamped to the region's capacity.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SeedPlan {
+    /// Whether to write the all-warps bitmask preset.
+    pub all_warps: bool,
+    /// The `(id, count)` inventory slots in slot order.
+    pub items: Vec<(u8, u8)>,
+}
 
 /// The consumable item-id pool starting items are drawn from: the contiguous
 /// block from Healing Leaf (`0x77`) through Wonder Elixir (`0x8e`) in the
@@ -65,36 +131,111 @@ fn sh_v0_s0(off: u16) -> u32 {
 /// `n` is clamped to `0..=MAX_STARTING_ITEMS` and to the pool size. Deterministic
 /// in `(seed, n)`.
 pub fn plan_starting_items(seed: u64, n: usize) -> Vec<(u8, u8)> {
-    let n = n.min(MAX_STARTING_ITEMS).min(STARTING_ITEM_POOL.len());
+    plan_random_items(seed, n.min(MAX_STARTING_ITEMS), &[])
+}
+
+/// Plan `n` random starting items, excluding any id in `exclude` from the draw
+/// (so a forced item like Door of Wind isn't also dealt a duplicate slot). `n`
+/// is clamped to the (filtered) pool size. Deterministic in `(seed, n, exclude)`.
+fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
     let mut rng = SplitMix64::new(seed ^ 0x5247_4E49_5453_5452); // "RGNITSTR"-ish salt
-    let mut pool = STARTING_ITEM_POOL.to_vec();
+    let mut pool: Vec<u8> = STARTING_ITEM_POOL
+        .iter()
+        .copied()
+        .filter(|id| !exclude.contains(id))
+        .collect();
     rng.shuffle(&mut pool);
     let (lo, hi) = DEFAULT_COUNT_RANGE;
     let span = (hi - lo) as usize + 1;
     pool.into_iter()
-        .take(n)
+        .take(n.min(MAX_STARTING_ITEMS))
         .map(|id| (id, lo + rng.below(span) as u8))
         .collect()
 }
 
-/// Encode a list of `(id, count)` starting items into the 40-byte seed patch.
+/// Resolve [`StartingSeedOptions`] into a concrete [`SeedPlan`] for `seed`.
 ///
-/// Emits one `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)`
-/// pair per item, then pads to [`STARTING_INV_SEED_LEN`] with `nop`. Panics if
-/// more than [`MAX_STARTING_ITEMS`] items are passed (callers clamp first). The
-/// inventory base offset comes from [`INVENTORY_SC_OFFSET`].
+/// Composition, in slot order:
+/// 1. **Door of Wind** ([`DOOR_OF_WIND_COUNT`]×) if `door_of_wind`, written
+///    first so it always survives the capacity clamp.
+/// 2. **Base / reroll**: with `random_items == 0` the vanilla Healing Leaf base
+///    is kept (the convenience toggles stay additive to a normal new game);
+///    with `random_items > 0` the bag is rerolled to that many random
+///    consumables instead (the existing `--starting-items` behaviour), drawn
+///    excluding Door of Wind so it isn't duplicated.
+///
+/// The whole list is clamped to [`max_items_with_warps`] so the warp preset
+/// (if enabled) always has room. Deterministic in `(seed, opts)`.
+pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
+    let cap = max_items_with_warps(opts.all_warps);
+    let mut items: Vec<(u8, u8)> = Vec::new();
+
+    if opts.door_of_wind {
+        items.push((DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT));
+    }
+
+    if opts.random_items > 0 {
+        let room = cap.saturating_sub(items.len());
+        let n = opts.random_items.min(room);
+        // Exclude the forced item from the reroll so it isn't dealt twice; when
+        // Door of Wind isn't forced it stays an eligible random consumable.
+        let exclude: &[u8] = if opts.door_of_wind {
+            &[DOOR_OF_WIND_ID]
+        } else {
+            &[]
+        };
+        items.extend(plan_random_items(seed, n, exclude));
+    } else if items.len() < cap {
+        // No reroll requested: keep the vanilla Healing Leaf base so the
+        // toggles are purely additive.
+        items.push(VANILLA_STARTING_ITEM);
+    }
+
+    items.truncate(cap);
+    SeedPlan {
+        all_warps: opts.all_warps,
+        items,
+    }
+}
+
+/// Encode a list of `(id, count)` starting items into the 40-byte seed patch
+/// (no warp preset). Convenience wrapper over [`build_seed_patch_for`].
 pub fn build_seed_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
-    assert!(
-        items.len() <= MAX_STARTING_ITEMS,
-        "at most {MAX_STARTING_ITEMS} starting items fit the seed region"
-    );
-    let mut words: Vec<u32> = Vec::with_capacity(STARTING_INV_SEED_LEN / 4);
-    for (slot, &(id, count)) in items.iter().enumerate() {
+    build_seed_patch_for(&SeedPlan {
+        all_warps: false,
+        items: items.to_vec(),
+    })
+}
+
+/// Encode a [`SeedPlan`] into the 40-byte seed patch.
+///
+/// When `all_warps` is set, emits the two `addiu`/`sh` pairs that preset the
+/// visited-towns bitmask ([`WARP_FLAGS_SC_OFFSET`]) first. Then one
+/// `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)` pair per
+/// inventory slot, padded to [`STARTING_INV_SEED_LEN`] with `nop`. Panics if the
+/// plan exceeds the [`SEED_INSTRS`]-instruction budget (callers clamp first via
+/// [`plan_seed`]). The inventory base offset comes from [`INVENTORY_SC_OFFSET`].
+pub fn build_seed_patch_for(plan: &SeedPlan) -> [u8; STARTING_INV_SEED_LEN] {
+    let mut words: Vec<u32> = Vec::with_capacity(SEED_INSTRS);
+    if plan.all_warps {
+        // addiu sign-extends the immediate, but `sh` stores only the low 16
+        // bits, so the high 0xFFFF.. fill is harmless.
+        words.push(addiu_v0(WARP_ALL_FLAGS_LO));
+        words.push(sh_v0_s0(WARP_FLAGS_SC_OFFSET as u16));
+        words.push(addiu_v0(WARP_ALL_FLAGS_HI));
+        words.push(sh_v0_s0(WARP_FLAGS_SC_OFFSET as u16 + 2));
+    }
+    for (slot, &(id, count)) in plan.items.iter().enumerate() {
         let off = (INVENTORY_SC_OFFSET as usize + slot * 2) as u16;
         words.push(addiu_v0(((count as u16) << 8) | id as u16));
         words.push(sh_v0_s0(off));
     }
-    while words.len() < STARTING_INV_SEED_LEN / 4 {
+    assert!(
+        words.len() <= SEED_INSTRS,
+        "seed plan needs {} instructions but only {SEED_INSTRS} fit the region",
+        words.len()
+    );
+    while words.len() < SEED_INSTRS {
         words.push(NOP);
     }
     let mut out = [0u8; STARTING_INV_SEED_LEN];
@@ -175,5 +316,120 @@ mod tests {
         let items = plan_starting_items(7, 5);
         let patch = build_seed_patch(&items);
         assert_eq!(StartingInventory::decode_region(&patch).items(), &items[..]);
+    }
+
+    #[test]
+    fn warps_cut_the_item_capacity_to_three() {
+        assert_eq!(max_items_with_warps(false), MAX_STARTING_ITEMS);
+        assert_eq!(max_items_with_warps(false), 5);
+        assert_eq!(max_items_with_warps(true), 3);
+    }
+
+    #[test]
+    fn door_of_wind_only_is_additive_to_the_vanilla_base() {
+        // No reroll, no warps: keep Healing Leaf AND add Door of Wind x10.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                random_items: 0,
+                door_of_wind: true,
+                all_warps: false,
+            },
+        );
+        assert!(!plan.all_warps);
+        assert_eq!(
+            plan.items,
+            vec![(DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT), VANILLA_STARTING_ITEM]
+        );
+        let patch = build_seed_patch_for(&plan);
+        assert!(!legaia_asset::new_game::region_unlocks_all_warps(&patch));
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &[(DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT), VANILLA_STARTING_ITEM]
+        );
+    }
+
+    #[test]
+    fn all_warps_emits_the_bitmask_and_keeps_the_base() {
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                random_items: 0,
+                door_of_wind: false,
+                all_warps: true,
+            },
+        );
+        assert!(plan.all_warps);
+        assert_eq!(plan.items, vec![VANILLA_STARTING_ITEM]);
+        let patch = build_seed_patch_for(&plan);
+        assert!(legaia_asset::new_game::region_unlocks_all_warps(&patch));
+        // The inventory base still decodes alongside the warp preset.
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &[VANILLA_STARTING_ITEM]
+        );
+    }
+
+    #[test]
+    fn door_plus_warps_plus_reroll_clamps_to_three_slots() {
+        // Request 5 random + door of wind + warps: cap is 3, door takes one,
+        // leaving room for 2 random items.
+        let opts = StartingSeedOptions {
+            random_items: 5,
+            door_of_wind: true,
+            all_warps: true,
+        };
+        let plan = plan_seed(99, &opts);
+        assert!(plan.all_warps);
+        assert_eq!(plan.items.len(), 3, "clamped to the 3-slot warp budget");
+        assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT));
+        // The two random fills are distinct consumables, never Door of Wind.
+        for (id, _) in &plan.items[1..] {
+            assert!(STARTING_ITEM_POOL.contains(id));
+            assert_ne!(*id, DOOR_OF_WIND_ID, "reroll excludes the forced item");
+        }
+        let patch = build_seed_patch_for(&plan);
+        assert!(legaia_asset::new_game::region_unlocks_all_warps(&patch));
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &plan.items[..]
+        );
+    }
+
+    #[test]
+    fn reroll_replaces_the_vanilla_base() {
+        // With a reroll requested, the Healing Leaf base is dropped.
+        let plan = plan_seed(
+            3,
+            &StartingSeedOptions {
+                random_items: 3,
+                door_of_wind: false,
+                all_warps: false,
+            },
+        );
+        assert_eq!(plan.items.len(), 3);
+        assert_eq!(plan.items, plan_starting_items(3, 3));
+    }
+
+    #[test]
+    fn plan_seed_is_deterministic() {
+        let opts = StartingSeedOptions {
+            random_items: 4,
+            door_of_wind: true,
+            all_warps: true,
+        };
+        assert_eq!(plan_seed(0xABCD, &opts), plan_seed(0xABCD, &opts));
+    }
+
+    #[test]
+    fn inactive_options_are_detected() {
+        assert!(!StartingSeedOptions::default().is_active());
+        assert!(
+            StartingSeedOptions {
+                all_warps: true,
+                ..Default::default()
+            }
+            .is_active()
+        );
     }
 }

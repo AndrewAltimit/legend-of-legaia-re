@@ -1497,38 +1497,57 @@ pub fn current_starting_items(patcher: &DiscPatcher) -> Result<Vec<(u8, u8)>> {
     Ok(inv.items().to_vec())
 }
 
-/// Outcome of randomizing the new game's starting inventory.
+/// Read whether the new game currently presets the all-towns Door-of-Wind warp
+/// bitmask (the `--all-warps` toggle). Purely read-only.
+pub fn current_all_warps(patcher: &DiscPatcher) -> Result<bool> {
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    Ok(legaia_asset::new_game::scus_unlocks_all_warps(&scus).unwrap_or(false))
+}
+
+/// Outcome of randomizing the new game's starting seed.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct StartingItemsApplyReport {
     /// Number of starting-item slots written (`0..=MAX_STARTING_ITEMS`).
     pub items_set: usize,
     /// The seeded `(item_id, count)` slots, for the manifest / CLI summary.
     pub items: Vec<(u8, u8)>,
+    /// Whether the all-towns Door-of-Wind warp bitmask was preset.
+    pub all_warps: bool,
 }
 
-/// Replace the new game's fixed Healing Leaf with `n` random consumables
-/// (`n` clamped to `0..=MAX_STARTING_ITEMS`). Rewrites the seed code region in
-/// `SCUS_942.54` with a same-size packed-halfword-store patch (no executable
-/// growth). `n == 0` restores the region to all-`nop` (an empty starting
-/// inventory). Deterministic in `(seed, n)`.
+/// Rewrite the new game's starting-seed code region in `SCUS_942.54` from
+/// [`StartingSeedOptions`].
+///
+/// The same 40-byte reclaimable region (`FUN_80034A6C`) can hold a mix of
+/// inventory slots and an optional all-warps story-flag preset; [`plan_seed`]
+/// resolves the options into a concrete, capacity-clamped plan. A same-size
+/// packed-store patch is written in place (no executable growth). With
+/// inactive options the region is left untouched (callers guard on
+/// [`StartingSeedOptions::is_active`]). Deterministic in `(seed, opts)`.
+///
+/// [`StartingSeedOptions`]: crate::starting_items::StartingSeedOptions
+/// [`plan_seed`]: crate::starting_items::plan_seed
 pub fn randomize_starting_items(
     patcher: &mut DiscPatcher,
     seed: u64,
-    n: usize,
+    opts: &crate::starting_items::StartingSeedOptions,
 ) -> Result<StartingItemsApplyReport> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
     let off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
         .context("locate starting-inventory seed region in SCUS_942.54")? as u64;
-    let items = crate::starting_items::plan_starting_items(seed, n);
-    let patch = crate::starting_items::build_seed_patch(&items);
+    let plan = crate::starting_items::plan_seed(seed, opts);
+    let patch = crate::starting_items::build_seed_patch_for(&plan);
     patcher
         .patch_named_file(crate::steal::SCUS_NAME, off, &patch)
         .with_context(|| format!("write starting-item seed at SCUS offset {off:#x}"))?;
     Ok(StartingItemsApplyReport {
-        items_set: items.len(),
-        items,
+        items_set: plan.items.len(),
+        items: plan.items,
+        all_warps: plan.all_warps,
     })
 }
 

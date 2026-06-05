@@ -84,6 +84,28 @@ pub const STARTING_INV_SEED_LEN: usize = 40;
 /// with these offsets, so the decoder reads slots from here.
 pub const INVENTORY_SC_OFFSET: u32 = 0x1818;
 
+/// Item id of Door of Wind — the consumable that opens the warp menu (a teleport
+/// to any *previously visited* town). In the contiguous consumable block, so the
+/// starting-item seed can write it directly to the inventory page.
+pub const DOOR_OF_WIND_ITEM: u8 = 0x89;
+
+/// Byte offset of the low half of the Door-of-Wind "visited towns" bitmask
+/// relative to the save-context (`SC`) base; the live word is `SC + 0x161C`
+/// (`0x8008575C`). It lives in the story-flag block (`SC + 0x14C0..0x16C0` =
+/// `0x80085600..0x80085800`, see `docs/reference/memory-map.md`), which the
+/// New-Game seed memset covers, so the seed code can preset it the same way it
+/// presets the inventory. Door of Wind reads this mask to decide which warp
+/// destinations to offer; the known "Access All Towns" GameShark code forces it.
+pub const WARP_FLAGS_SC_OFFSET: u32 = 0x161C;
+
+/// The "all towns" visited-towns bitmask, split into the two halfwords the
+/// GameShark code writes (`0x8008575C = 0xF77F`, `0x8008575E = 0xF8FF`): every
+/// real Door-of-Wind warp destination marked reachable. Stored little-endian as
+/// the four bytes `7F F7 FF F8` at `WARP_FLAGS_SC_OFFSET`.
+pub const WARP_ALL_FLAGS_LO: u16 = 0xF77F;
+/// High halfword of the [`WARP_ALL_FLAGS_LO`] bitmask (`0x8008575E`).
+pub const WARP_ALL_FLAGS_HI: u16 = 0xF8FF;
+
 /// CDNAME label of the prologue cutscene a New Game enters first (the
 /// in-engine "It was the Seru." Genesis-tree narration). Written as the
 /// opening scene id by the front-end launcher (`init_game`), verified live in
@@ -216,6 +238,69 @@ impl StartingParty {
     }
 }
 
+/// Replay the seed region's `$v0`-relative byte/halfword stores into a sparse
+/// `SC`-offset → byte map.
+///
+/// The region writes `SC` bytes with one of two idioms, both of which load a
+/// constant into `$v0` then store it relative to `$s0` (= `SC` base): the
+/// vanilla `sb` byte-store (`addiu $v0,imm; sb …`) or the randomizer's packed
+/// `sh` halfword-store (`addiu $v0,imm; sh …`). Both the inventory decoder and
+/// the warp-flag reader interpret the resulting map. See the instruction
+/// encodings in `docs/formats/new-game-table.md`.
+fn replay_seed_stores(region: &[u8]) -> std::collections::BTreeMap<u32, u8> {
+    use std::collections::BTreeMap;
+    // Top 16 bits of the LE instruction word identify the op + fixed registers
+    // ($v0 = rt 2, $s0 = base 16).
+    const ADDIU_V0: u16 = 0x2402; // addiu $v0, $zero, imm16
+    const SB_V0_S0: u16 = 0xA202; // sb    $v0, off($s0)
+    const SH_V0_S0: u16 = 0xA602; // sh    $v0, off($s0)
+
+    let mut bytes: BTreeMap<u32, u8> = BTreeMap::new();
+    let mut v0: u32 = 0;
+    for chunk in region.chunks_exact(4) {
+        let word = u32::from_le_bytes(chunk.try_into().unwrap());
+        let top = (word >> 16) as u16;
+        let imm = word & 0xFFFF;
+        match top {
+            ADDIU_V0 => v0 = imm,
+            SB_V0_S0 => {
+                bytes.insert(imm, (v0 & 0xFF) as u8);
+            }
+            SH_V0_S0 => {
+                bytes.insert(imm, (v0 & 0xFF) as u8);
+                bytes.insert(imm + 1, ((v0 >> 8) & 0xFF) as u8);
+            }
+            _ => {}
+        }
+    }
+    bytes
+}
+
+/// `true` if a 40-byte seed region presets the full [`WARP_ALL_FLAGS_LO`] /
+/// [`WARP_ALL_FLAGS_HI`] "all towns" Door-of-Wind bitmask at
+/// [`WARP_FLAGS_SC_OFFSET`] — i.e. the all-warps starting toggle is enabled.
+pub fn region_unlocks_all_warps(region: &[u8]) -> bool {
+    let bytes = replay_seed_stores(region);
+    let halfword = |off: u32| -> Option<u16> {
+        Some(u16::from_le_bytes([
+            *bytes.get(&off)?,
+            *bytes.get(&(off + 1))?,
+        ]))
+    };
+    halfword(WARP_FLAGS_SC_OFFSET) == Some(WARP_ALL_FLAGS_LO)
+        && halfword(WARP_FLAGS_SC_OFFSET + 2) == Some(WARP_ALL_FLAGS_HI)
+}
+
+/// `true` if a `SCUS_942.54` image's seed region presets the all-towns
+/// Door-of-Wind bitmask. `None` if the image isn't a PSX-EXE / the region is out
+/// of range.
+pub fn scus_unlocks_all_warps(scus: &[u8]) -> Option<bool> {
+    let map = ExeMap::parse(scus)?;
+    let off = map.off(STARTING_INV_SEED_VA)?;
+    let region = scus.get(off..off + STARTING_INV_SEED_LEN)?;
+    Some(region_unlocks_all_warps(region))
+}
+
 /// The decoded new-game starting inventory: the `(item_id, count)` slots the
 /// seed routine ([`STARTING_INV_SEED_VA`]) writes into the live consumable
 /// inventory at New Game, in slot order. Vanilla retail is a single slot
@@ -249,32 +334,7 @@ impl StartingInventory {
     /// Decode a 40-byte seed region (exposed for callers that already hold the
     /// raw bytes, e.g. a patcher reading back its own edit).
     pub fn decode_region(region: &[u8]) -> Self {
-        use std::collections::BTreeMap;
-        // Top 16 bits of the LE instruction word identify the op + fixed
-        // registers ($v0 = rt 2, $s0 = base 16); see the encodings in
-        // `docs/formats/new-game-table.md`.
-        const ADDIU_V0: u16 = 0x2402; // addiu $v0, $zero, imm16
-        const SB_V0_S0: u16 = 0xA202; // sb    $v0, off($s0)
-        const SH_V0_S0: u16 = 0xA602; // sh    $v0, off($s0)
-
-        let mut bytes: BTreeMap<u32, u8> = BTreeMap::new();
-        let mut v0: u32 = 0;
-        for chunk in region.chunks_exact(4) {
-            let word = u32::from_le_bytes(chunk.try_into().unwrap());
-            let top = (word >> 16) as u16;
-            let imm = word & 0xFFFF;
-            match top {
-                ADDIU_V0 => v0 = imm,
-                SB_V0_S0 => {
-                    bytes.insert(imm, (v0 & 0xFF) as u8);
-                }
-                SH_V0_S0 => {
-                    bytes.insert(imm, (v0 & 0xFF) as u8);
-                    bytes.insert(imm + 1, ((v0 >> 8) & 0xFF) as u8);
-                }
-                _ => {}
-            }
-        }
+        let bytes = replay_seed_stores(region);
         let mut items = Vec::new();
         let mut slot = 0u32;
         loop {
@@ -464,5 +524,53 @@ mod tests {
     #[test]
     fn empty_region_decodes_to_no_items() {
         assert!(StartingInventory::decode_region(&[0u8; STARTING_INV_SEED_LEN]).is_empty());
+    }
+
+    #[test]
+    fn region_with_warp_stores_unlocks_all_warps() {
+        // addiu $v0, lo; sh $v0, 0x161C($s0); addiu $v0, hi; sh $v0, 0x161E($s0).
+        // addiu sign-extends, but the `sh` only stores the low 16 bits.
+        let r = region(&[
+            0x2402_0000 | WARP_ALL_FLAGS_LO as u32,
+            0xA602_0000 | WARP_FLAGS_SC_OFFSET,
+            0x2402_0000 | WARP_ALL_FLAGS_HI as u32,
+            0xA602_0000 | (WARP_FLAGS_SC_OFFSET + 2),
+            // followed by a normal inventory slot, which must still decode.
+            0x24020a89, // id 0x89, count 0x0a (Door of Wind x10)
+            0xa6021818, // sh slot 0
+            0,
+            0,
+            0,
+            0,
+        ]);
+        assert!(region_unlocks_all_warps(&r));
+        assert_eq!(
+            StartingInventory::decode_region(&r).items(),
+            &[(DOOR_OF_WIND_ITEM, 10)],
+            "warp-flag stores don't disturb the inventory decode"
+        );
+    }
+
+    #[test]
+    fn region_without_warp_stores_is_not_unlocked() {
+        // The vanilla Healing Leaf seed writes nothing to the story-flag window.
+        let r = region(&[
+            0x24020077, 0xa2021818, 0x24020005, 0xa2021819, 0, 0, 0, 0, 0, 0,
+        ]);
+        assert!(!region_unlocks_all_warps(&r));
+        // A partial mask (only the low half) must not read as fully unlocked.
+        let half = region(&[
+            0x2402_0000 | WARP_ALL_FLAGS_LO as u32,
+            0xA602_0000 | WARP_FLAGS_SC_OFFSET,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]);
+        assert!(!region_unlocks_all_warps(&half));
     }
 }
