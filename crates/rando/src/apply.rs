@@ -1355,6 +1355,76 @@ pub fn randomize_steals(
     Ok((plan, report))
 }
 
+/// One art's current button combo, for the read-only `arts` listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtSite {
+    pub character: legaia_art::queue::Character,
+    pub index: u8,
+    pub ap: u8,
+    /// Decoded combo (separator marker stripped).
+    pub commands: Vec<legaia_art::queue::Command>,
+    pub is_miracle: bool,
+}
+
+/// Read every Tactical Art's current button combo out of the static
+/// `SCUS_942.54` arts-name table (`DAT_80075EC4`). Purely read-only — the audit
+/// surface for what an arts-combo randomization would change. Includes the
+/// per-character Miracle Art rows (flagged `is_miracle`), which the randomizer
+/// leaves untouched.
+pub fn current_arts(patcher: &DiscPatcher) -> Result<Vec<ArtSite>> {
+    let edits = crate::arts::ArtsEdits::locate(patcher.image())
+        .context("locate SCUS_942.54 arts-name table")?;
+    Ok(edits
+        .current()
+        .into_iter()
+        .map(|c| ArtSite {
+            character: c.character,
+            index: c.index,
+            ap: c.ap,
+            commands: c.commands,
+            is_miracle: c.is_miracle,
+        })
+        .collect())
+}
+
+/// Outcome of randomizing Tactical-Arts button combos.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ArtsApplyReport {
+    /// `+8` command pointers actually rewritten (no-op reassignments skipped).
+    pub combos_changed: usize,
+    /// Regular (non-Miracle) arts considered for reassignment.
+    pub arts: usize,
+}
+
+/// Randomize each art's button combo by reassigning its `+8` command-glyph
+/// pointer (a same-size 4-byte SCUS edit — no re-pack, nothing skipped). The
+/// per-character Miracle Art is left untouched, and each character's regular
+/// arts stay unique combos. `Shuffle` permutes a character's own combos among
+/// its arts; `Random` draws each from the global pool of every regular art's
+/// combo. Returns the plan plus the apply report.
+pub fn randomize_arts(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: crate::arts::ArtsMode,
+) -> Result<(Vec<crate::arts::ArtAssignment>, ArtsApplyReport)> {
+    let edits = crate::arts::ArtsEdits::locate(patcher.image())
+        .context("locate SCUS_942.54 arts-name table")?;
+    let plan = edits.plan(seed, mode);
+    let arts = plan.len();
+    let patches = edits.pointer_patches(&plan);
+    let mut report = ArtsApplyReport {
+        combos_changed: 0,
+        arts,
+    };
+    for (off, bytes) in patches {
+        patcher
+            .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
+            .with_context(|| format!("write art command pointer at SCUS offset {off:#x}"))?;
+        report.combos_changed += 1;
+    }
+    Ok((plan, report))
+}
+
 /// Give the unnamed accessory (item `0xFD`) the display name **"Seru Bell"** so
 /// the `--unused-items` toggle hands out a presentable item instead of a blank.
 /// Writes the name into reclaimable `SCUS_942.54` tail space and repoints only

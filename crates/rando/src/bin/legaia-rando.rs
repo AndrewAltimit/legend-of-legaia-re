@@ -58,6 +58,13 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every Tactical Art's current button combo, grouped by
+    /// character, from the static `SCUS_942.54` arts-name table.
+    Arts {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Read-only: list every scene-transition door/exit the randomizer can
     /// touch, grouped by the scene it lives in, with the destination each
     /// currently leads to.
@@ -160,6 +167,13 @@ struct RandomizeArgs {
     /// valid item pool — the steal *chance* is always preserved).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     steals: DropArg,
+    /// How each Tactical Art's button combo is reassigned. `shuffle` permutes a
+    /// character's own combos among its arts; `random` draws each art a combo
+    /// from the global pool of every regular art's combo. Either way every art
+    /// keeps a combo that's unique within its character, and the Miracle Art is
+    /// left untouched. `legaia-rando arts` lists current combos.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    arts: DropArg,
     /// How scene-transition doors/exits are reassigned (one-way / decoupled:
     /// each door's whole destination — scene + entry tile + facing — is
     /// reassigned globally; `shuffle` permutes the existing destinations across
@@ -269,6 +283,7 @@ fn main() -> Result<()> {
         Cmd::Drops { input } => cmd_drops(&input),
         Cmd::Chests { input } => cmd_chests(&input),
         Cmd::Steals { input } => cmd_steals(&input),
+        Cmd::Arts { input } => cmd_arts(&input),
         Cmd::Doors { input } => cmd_doors(&input),
         Cmd::HouseDoors { input } => cmd_house_doors(&input),
         Cmd::StartingItems { input } => cmd_starting_items(&input),
@@ -516,6 +531,45 @@ fn cmd_chests(input: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cmd_arts(input: &Path) -> Result<()> {
+    use legaia_art::queue::Character;
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .context("read SCUS_942.54")?;
+    let entries =
+        legaia_art::arts_table::parse_from_scus(&scus).context("parse arts-name table")?;
+    let mut regular = 0usize;
+    for ch in Character::all() {
+        println!("{}:", ch.name());
+        for e in entries.iter().filter(|e| e.character == ch) {
+            let combo = legaia_rando::arts::pretty_combo(&e.commands);
+            let tag = if e.is_miracle {
+                "  [Miracle, not randomized]"
+            } else {
+                ""
+            };
+            println!(
+                "  {:>2}  ap{:>3}  {:<11}  {}{}",
+                e.index,
+                e.ap,
+                if combo.is_empty() { "-".into() } else { combo },
+                e.name,
+                tag
+            );
+            if !e.is_miracle {
+                regular += 1;
+            }
+        }
+    }
+    println!(
+        "\n{} arts total, {} regular arts the randomizer reassigns (3 Miracle arts left untouched).",
+        entries.len(),
+        regular
+    );
+    Ok(())
+}
+
 fn cmd_steals(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
@@ -596,6 +650,10 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let enc_mode = args.encounters.mode();
     let chest_mode = args.chests.mode();
     let steal_mode = args.steals.mode();
+    let arts_mode = args.arts.mode().map(|m| match m {
+        DropMode::Shuffle => legaia_rando::arts::ArtsMode::Shuffle,
+        DropMode::Random => legaia_rando::arts::ArtsMode::Random,
+    });
     let door_mode = args.doors.mode();
     let shop_mode = args.shops.mode();
     let casino_mode = args.casino.mode();
@@ -839,6 +897,30 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("steals: untouched");
         manifest.push("steals = \"none\"".to_string());
+    }
+
+    if let Some(arts_mode) = arts_mode {
+        let (plan, report) = apply::randomize_arts(&mut patcher, seed, arts_mode)?;
+        println!(
+            "arts: {} of {} arts re-combo'd ({:?})",
+            report.combos_changed,
+            plan.len(),
+            arts_mode
+        );
+        manifest.push(format!(
+            "arts = {:?}",
+            match arts_mode {
+                legaia_rando::arts::ArtsMode::Shuffle => "shuffle",
+                legaia_rando::arts::ArtsMode::Random => "random",
+            }
+        ));
+        manifest.push(format!(
+            "arts_changed = {}  # of {} regular arts",
+            report.combos_changed, report.arts
+        ));
+    } else {
+        println!("arts: untouched");
+        manifest.push("arts = \"none\"".to_string());
     }
 
     if let Some(door_mode) = door_mode {

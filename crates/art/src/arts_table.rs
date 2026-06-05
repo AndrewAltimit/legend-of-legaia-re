@@ -197,6 +197,76 @@ pub fn parse_from_scus(scus: &[u8]) -> Option<Vec<ArtTableEntry>> {
     Some(out)
 }
 
+/// One arts-table record with the raw editing metadata an in-place rewriter
+/// needs: the record's own file offset, the `+8` command-glyph pointer, plus
+/// the decoded view. The `+8` pointer is the lever the arts-combo randomizer
+/// reassigns (the glyph string it points at is the SOLE in-memory/on-disc
+/// representation of the art's button combo, shared/deduplicated across
+/// characters - so reassigning the per-record pointer is safe where editing
+/// the shared string bytes would not be).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawArtRecord {
+    /// Byte offset of this 20-byte record inside the `SCUS_942.54` image.
+    pub record_file_offset: usize,
+    pub character: Character,
+    /// Display index within the character's list (`0` = Miracle Art).
+    pub index: u8,
+    pub ap: u8,
+    /// Virtual address stored in the record's `+8` command-glyph pointer.
+    pub cmd_ptr: u32,
+    /// Decoded directional command (glyph marker stripped).
+    pub commands: Vec<Command>,
+    /// `true` for the index-`0` Miracle Art row (or a row whose glyph string
+    /// carries the `0xFF09` Miracle separator marker).
+    pub is_miracle: bool,
+}
+
+impl RawArtRecord {
+    /// File offset of the `+8` command-glyph pointer word itself (what an
+    /// editor overwrites to reassign the combo).
+    pub fn cmd_ptr_file_offset(&self) -> usize {
+        self.record_file_offset + 8
+    }
+}
+
+/// Parse the arts-name table into raw editing records (file offset + `+8`
+/// pointer + decoded combo per record), up to the `(99, 99)` sentinel.
+/// `None` if the image isn't a PSX-EXE or the table is out of range.
+///
+/// Sibling of [`parse_from_scus`] for tooling that must rewrite the table in
+/// place rather than just read it.
+pub fn raw_records_from_scus(scus: &[u8]) -> Option<Vec<RawArtRecord>> {
+    let map = ExeMap::parse(scus)?;
+    let mut out = Vec::new();
+    for i in 0..64usize {
+        let rec_va = TABLE_VA + (i * RECORD_STRIDE) as u32;
+        let o = map.off(rec_va)?;
+        let rec = scus.get(o..o + RECORD_STRIDE)?;
+        let row = rec[0];
+        let col = rec[1];
+        if row == SENTINEL_KEY {
+            break;
+        }
+        let Some(character) = character_for_row(row) else {
+            break;
+        };
+        let ap = rec[2];
+        let cmd_ptr = u32::from_le_bytes(rec[8..0xC].try_into().ok()?);
+        let (commands, miracle_marker) =
+            read_commands(scus, &map, cmd_ptr).unwrap_or((Vec::new(), false));
+        out.push(RawArtRecord {
+            record_file_offset: o,
+            character,
+            index: col,
+            ap,
+            cmd_ptr,
+            commands,
+            is_miracle: col == 0 || miracle_marker,
+        });
+    }
+    Some(out)
+}
+
 /// A queryable view over the decoded arts-name table.
 ///
 /// The SCUS table is the executable's **ground-truth** source for each art's

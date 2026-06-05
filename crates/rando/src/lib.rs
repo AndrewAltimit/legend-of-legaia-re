@@ -25,6 +25,9 @@
 //! ## Modules
 //!
 //! - [`rng`] — a version-stable seeded PRNG so a seed always reproduces a run.
+//! - [`arts`] — reassign each Tactical Art's button combo (the `+8`
+//!   command-glyph pointer in the SCUS arts-name table) so every art has a new,
+//!   unique-within-character combo.
 //! - [`items`] — the valid item-id pool (from the SCUS item-name table).
 //! - [`unused`] — curated "unused content" sets (Evil Bat enemy ids, the
 //!   Something Good / unnamed-accessory items) the opt-in toggles re-introduce.
@@ -44,6 +47,7 @@
 //! - [`ppf`] — PPF 3.0 patch writer/reader (the portable deliverable).
 
 pub mod apply;
+pub mod arts;
 pub mod casino;
 pub mod chest;
 pub mod disc;
