@@ -2247,8 +2247,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
 /**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
- * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `doors`
- * / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`. `shops`
+ * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
+ * `doors` / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`.
+ * `arts` reassigns Tactical-Arts button combos (same-length, unique within
+ * character; Miracle Arts untouched). `shops`
  * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
@@ -2268,6 +2270,7 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {string} shops
  * @param {string} casino
  * @param {string} steals
+ * @param {string} arts
  * @param {string} doors
  * @param {string} door_coupling
  * @param {string} house_doors
@@ -2277,7 +2280,7 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {boolean} equipment_drops
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, chests, shops, casino, steals, doors, door_coupling, house_doors, starting_items, unused_enemies, unused_items, equipment_drops) {
+export function patch_rom(image, seed, drops, encounters, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, unused_enemies, unused_items, equipment_drops) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2294,13 +2297,15 @@ export function patch_rom(image, seed, drops, encounters, chests, shops, casino,
     const len6 = WASM_VECTOR_LEN;
     const ptr7 = passStringToWasm0(steals, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len7 = WASM_VECTOR_LEN;
-    const ptr8 = passStringToWasm0(doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr8 = passStringToWasm0(arts, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len8 = WASM_VECTOR_LEN;
-    const ptr9 = passStringToWasm0(door_coupling, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr9 = passStringToWasm0(doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len9 = WASM_VECTOR_LEN;
-    const ptr10 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr10 = passStringToWasm0(door_coupling, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len10 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, starting_items, unused_enemies, unused_items, equipment_drops);
+    const ptr11 = passStringToWasm0(house_doors, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len11 = WASM_VECTOR_LEN;
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, starting_items, unused_enemies, unused_items, equipment_drops);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
