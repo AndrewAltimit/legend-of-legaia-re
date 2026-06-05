@@ -3686,6 +3686,16 @@ struct PlayWindowApp {
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
+    /// The battle VRAM (field base + injected monster textures) stashed by
+    /// `enter_battle_render`, so a mid-battle player-summon spawn can inject its
+    /// own creature texture into a clone and re-upload.
+    battle_vram: Option<legaia_tim::Vram>,
+    /// Number of monster texture slots in use this battle (0..=4). A player
+    /// summon reuses the next free slot for its creature texture.
+    battle_tex_slots_used: u8,
+    /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
+    /// it never collides with the party/monster battle slots), or `None`.
+    summon_actor_slot: Option<usize>,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
@@ -5758,6 +5768,99 @@ impl PlayWindowApp {
             }
             log::info!("play-window: battle render bound {bound} monster mesh(es)");
         }
+        // Stash the battle VRAM + the monster-slot count so a mid-battle player
+        // summon can inject its creature texture into the next free slot.
+        self.battle_tex_slots_used = (bound as u8).min(4);
+        self.battle_vram = Some(vram);
+    }
+
+    /// Spawn the player Seru-magic summon as a battle creature, the faithful
+    /// render (the summon reuses its namesake `battle_data` enemy creature -
+    /// see `summon::summon_creature_id`). Loads that creature's mesh + texture
+    /// (`battle_render_mesh`) into a free battle texture slot and binds it to a
+    /// high actor slot with its idle [`MonsterAnimPlayer`], so the existing
+    /// battle render animates + textures it exactly like an enemy. Replaces the
+    /// move-VM `SummonScene` stand-in for the visual. No-op outside battle.
+    fn spawn_summon_creature(&mut self, spell_id: u8) {
+        if self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let Some(archive) = self.monster_archive_bytes() else {
+            return;
+        };
+        let Some(creature) = legaia_engine_core::summon::summon_creature_id(spell_id, &archive)
+        else {
+            return;
+        };
+        let Some(mut vram) = self.battle_vram.clone() else {
+            return;
+        };
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let mesh = match legaia_asset::monster_archive::mesh(&archive, creature) {
+            Ok(Some(m)) => m,
+            _ => return,
+        };
+        let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+            return;
+        };
+        // Inject the creature texture into the next free battle slot.
+        let tex_slot = self.battle_tex_slots_used.min(4);
+        let Some(vmesh) = mesh.battle_render_mesh(tex_slot, &mut vram) else {
+            return;
+        };
+        if vmesh.indices.is_empty() {
+            return;
+        }
+        let uploaded = match r.upload_vram_mesh(
+            &vmesh.positions,
+            &vmesh.uvs,
+            &vmesh.cba_tsb,
+            &vmesh.normals,
+            &vmesh.indices,
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("play-window: summon mesh upload: {e:#}");
+                return;
+            }
+        };
+        let idx = self.meshes.len();
+        self.meshes.push(uploaded);
+        self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
+        match r.upload_vram(&vram) {
+            Ok(v) => self.uploaded_vram = Some(v),
+            Err(e) => log::error!("play-window: summon VRAM re-upload: {e:#}"),
+        }
+
+        // Seat the summon in a free high actor slot (>= 8) so it never collides
+        // with the party/monster battle slots, positioned in front of the enemy
+        // cluster (party casts toward the +x enemies).
+        let slot = self
+            .summon_actor_slot
+            .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
+        self.summon_actor_slot = Some(slot);
+        if let Some(a) = self.session.host.world.actors.get_mut(slot) {
+            a.active = true;
+            a.tmd_binding = Some(idx);
+            a.battle_tex_slot = Some(tex_slot);
+            a.move_state.world_x = 300;
+            a.move_state.world_y = 0;
+            a.move_state.world_z = 0;
+        }
+        if let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, creature)
+            && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
+        {
+            self.session
+                .host
+                .world
+                .set_actor_battle_animation(slot, player);
+        }
+        log::info!(
+            "play-window: summon spell {spell_id:#04x} -> battle_data creature {creature} \
+             (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})"
+        );
     }
 
     /// Leave battle: restore the clean field VRAM and drop the appended
@@ -5774,6 +5877,18 @@ impl PlayWindowApp {
         self.meshes.truncate(keep);
         self.scene_tmd_data
             .truncate(keep.min(self.scene_tmd_data.len()));
+        // Tear down a spawned player-summon creature.
+        if let Some(slot) = self.summon_actor_slot.take()
+            && let Some(a) = self.session.host.world.actors.get_mut(slot)
+        {
+            a.active = false;
+            a.tmd_binding = None;
+            a.battle_tex_slot = None;
+            a.battle_animation = None;
+            a.pose_frame = None;
+        }
+        self.battle_vram = None;
+        self.battle_tex_slots_used = 0;
     }
 
     /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
@@ -7064,6 +7179,12 @@ impl ApplicationHandler for PlayWindowApp {
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()
                 {
+                    // In battle, debug-spawn the faithful summon creature
+                    // (Gimard, 0x81) through the battle-creature render path.
+                    if self.session.host.world.mode == SceneMode::Battle {
+                        self.spawn_summon_creature(0x81);
+                        return;
+                    }
                     const PROT_GIMARD_SUMMON_STAGER: u32 = 905;
                     let origin = self
                         .session
@@ -7298,34 +7419,16 @@ impl ApplicationHandler for PlayWindowApp {
                         log::error!("session tick: {e:#}");
                     }
                     // Production cast-band trigger: a player Seru-magic cast
-                    // (spell id 0x81..=0x8b) requests a summon spawn; the host
-                    // resolves the per-summon overlay PROT entry, loads it,
-                    // parses the part records, and seats the scene-graph. The
-                    // engine equivalent of the retail cast band's overlay load.
-                    if let Some((spell_id, origin)) =
+                    // (spell id 0x81..=0x8b) requests a summon spawn. The
+                    // faithful render is the namesake battle_data creature drawn
+                    // through the enemy animation pipeline (the summon reuses
+                    // that creature's mesh + per-object TRS animation), so spawn
+                    // it as a battle creature rather than the move-VM scene-graph
+                    // stand-in (`summon::summon_creature_id`).
+                    if let Some((spell_id, _origin)) =
                         self.session.host.world.take_pending_summon_spawn()
-                        && let Some(entry) =
-                            legaia_engine_core::summon::summon_stager_prot_entry(spell_id)
                     {
-                        match self.session.host.index.entry_bytes(entry) {
-                            Ok(bytes) => {
-                                let overlay = legaia_asset::summon_overlay::parse(
-                                    &bytes,
-                                    legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
-                                );
-                                self.session.host.world.spawn_summon(
-                                    &overlay,
-                                    &bytes,
-                                    legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX,
-                                    origin,
-                                );
-                                log::info!(
-                                    "summon cast: spell {spell_id:#04x} -> PROT {entry}, {} parts",
-                                    overlay.parts.len()
-                                );
-                            }
-                            Err(e) => log::warn!("summon cast: read PROT {entry}: {e:#}"),
-                        }
+                        self.spawn_summon_creature(spell_id);
                     }
                     // Advance an active Seru-magic summon scene-graph (the cast
                     // above, or the `G` debug spawn) through the move VM.
@@ -8715,6 +8818,9 @@ fn cmd_play_window_with_record(
         world_map_terrain_draws: Vec::new(),
         world_map_heightfield: None,
         cpu_vram_base: None,
+        battle_vram: None,
+        battle_tex_slots_used: 0,
+        summon_actor_slot: None,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
