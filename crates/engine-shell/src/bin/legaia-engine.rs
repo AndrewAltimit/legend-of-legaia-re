@@ -5636,7 +5636,15 @@ impl PlayWindowApp {
     /// centre. (The exact `tr.z = 7680` projection is preserved in
     /// [`retail_battle_mvp`] for the camera-RE reference + regression test.)
     fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
-        const DEPTH: f32 = 2200.0;
+        // Unified close depth so the SMALL battle meshes (party + monsters are
+        // only ~130-370 units tall) read at a usable size while the dome's huge
+        // radius still sits on the horizon. The probe-confirmed exact dome
+        // projection is tr.z=7680, but at that true depth these small meshes are
+        // only a few pixels (retail draws the actors off a separate close
+        // matrix, not the backdrop's 7680 plane). Kept as the playable
+        // single-camera compromise; the exact projection lives in
+        // `retail_battle_mvp`.
+        const DEPTH: f32 = 1500.0;
         Self::battle_mvp_with_tr(
             self.battle_orbit_yaw_rad(),
             Vec3::new(0.0, DEPTH / 6.0, DEPTH),
@@ -5949,12 +5957,164 @@ impl PlayWindowApp {
             }
         }
 
-        if bound > 0 {
+        // Load the REAL battle party meshes (PROT 1204 Vahn/Noa/Gala) and bind
+        // them to the party actor slots, so the party renders its large
+        // battle-form models (live-confirmed: actors run at scale 1.0 and sit at
+        // the exact camera's `tr.z=7680` plane, so they read large only because
+        // the battle MESHES are large - the field/placeholder meshes are why the
+        // party was invisible/tiny). Mirrors the web-viewer's
+        // `battle_char_vram_bytes_battle`: upload the 7 atlases, overlay each
+        // character's decoded battle palette onto the rows its mesh CBA samples,
+        // then build the mesh against that VRAM with its nominal CBA/TSB.
+        let mut party_bound = 0usize;
+        let party_count = self.session.host.world.party_count as usize;
+        if party_count > 0
+            && let Ok(pack_raw) = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
+            && let Ok(pack) = legaia_asset::battle_char_pack::parse(&pack_raw)
+        {
+            // Upload the 7 character atlases (256x256 4bpp + their CLUT rows).
+            for atlas in &pack.atlases {
+                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
+                    vram.upload_tim(&tim);
+                }
+            }
+            // The battle party mesh is a set of object-local TMD pieces (head,
+            // torso, limbs) - NOT pre-assembled. The retail engine sockets them
+            // with the battle ANM (PROT 1203 `other5`): frame 0 of each
+            // character's idle record = the combat-stance rest pose, applied
+            // R*v + T per object. Load that bundle; the 30 records are 3 banks of
+            // 10 (Vahn @ 0, Noa @ 10, Gala @ 20).
+            let battle_anm = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(1203)
+                .ok()
+                .and_then(|raw| {
+                    [6usize, 3, 5, 7].iter().find_map(|&dc| {
+                        legaia_asset::player_anm::find_in_entry(&raw, dc)
+                            .into_iter()
+                            .next()
+                    })
+                });
+            // Per-character: build the assembled mesh, overlay its battle palette
+            // onto the CLUT rows the mesh samples, upload, bind to the party actor.
+            // char slot 0/1/2 = Vahn/Noa/Gala; palette source PROT 861/864/865.
+            for member in 0..party_count.min(3) {
+                let cslot = member; // actor slot i -> char slot i (Vahn/Noa/Gala)
+                let Some(slot) = pack.slot(cslot) else {
+                    continue;
+                };
+                let Ok(tmd) = legaia_tmd::parse(&slot.tmd_bytes) else {
+                    continue;
+                };
+                // Assemble: frame-0 (T,R) per object from this char's idle record.
+                let bone_offsets: Vec<([i16; 3], [i16; 3])> = match &battle_anm {
+                    Some(b) => {
+                        let rec = cslot * 10; // bank start = idle record
+                        (0..tmd.objects.len())
+                            .map(|o| match b.bone_transform(rec, 0, o) {
+                                Some(t) => (
+                                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                                ),
+                                None => ([0; 3], [0; 3]),
+                            })
+                            .collect()
+                    }
+                    None => Vec::new(),
+                };
+                let vmesh = if bone_offsets.is_empty() {
+                    legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &slot.tmd_bytes)
+                } else {
+                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                        &tmd,
+                        &slot.tmd_bytes,
+                        &bone_offsets,
+                    )
+                };
+                if vmesh.indices.is_empty() {
+                    continue;
+                }
+                // Rows the mesh CBA samples, and (for collect) the columns.
+                let mut rows: Vec<u16> =
+                    vmesh.cba_tsb.iter().map(|c| (c[0] >> 6) & 0x1FF).collect();
+                rows.sort_unstable();
+                rows.dedup();
+                let mut cols: Vec<u16> = vmesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
+                cols.sort_unstable();
+                cols.dedup();
+                // Decode + overlay the battle palette. Vahn (861) = byte-exact
+                // parse_record; Noa (864) / Gala (865) = equipment-robust collect.
+                let pal = match cslot {
+                    0 => self
+                        .session
+                        .host
+                        .index
+                        .entry_bytes_extended(861)
+                        .ok()
+                        .and_then(|f| {
+                            let rec0 = legaia_asset::battle_char_palette::find_record0(&f)?;
+                            legaia_asset::battle_char_palette::parse_record(&f, rec0).ok()
+                        }),
+                    1 | 2 => {
+                        let prot = if cslot == 1 { 864 } else { 865 };
+                        self.session
+                            .host
+                            .index
+                            .entry_bytes_extended(prot)
+                            .ok()
+                            .and_then(|f| {
+                                legaia_asset::battle_char_palette::collect_palette(&f, 0, &cols)
+                                    .ok()
+                            })
+                    }
+                    _ => None,
+                };
+                if let Some(pal) = pal {
+                    // STP-set palette bands onto each row the mesh CBA samples.
+                    for &row in &rows {
+                        for band in &pal.bands {
+                            let bytes: Vec<u8> = band
+                                .vram_words()
+                                .iter()
+                                .flat_map(|w| w.to_le_bytes())
+                                .collect();
+                            vram.write_clut_row(band.base, row, &bytes);
+                        }
+                    }
+                }
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        let idx = self.meshes.len();
+                        self.meshes.push(m);
+                        self.scene_tmd_data.push((tmd, slot.tmd_bytes.clone()));
+                        self.session.host.world.actors[member].tmd_binding = Some(idx);
+                        party_bound += 1;
+                    }
+                    Err(e) => log::warn!("play-window: party {cslot} mesh upload: {e:#}"),
+                }
+            }
+        }
+
+        if bound > 0 || party_bound > 0 {
             match r.upload_vram(&vram) {
                 Ok(v) => self.uploaded_vram = Some(v),
                 Err(e) => log::error!("play-window: battle VRAM re-upload: {e:#}"),
             }
-            log::info!("play-window: battle render bound {bound} monster mesh(es)");
+            log::info!(
+                "play-window: battle render bound {bound} monster + {party_bound} party mesh(es)"
+            );
         }
         // Stash the battle VRAM + the monster-slot count so a mid-battle player
         // summon can inject its creature texture into the next free slot.
@@ -9833,7 +9993,7 @@ fn build_battle_ground_grid(
     );
     let (u0, u1, v0, v1) = (GU0, GU1, GV0, GV1);
 
-    const N: i32 = 64; // cells per side
+    const N: i32 = 28; // cells per side (retail func_0x801d02c0 grid)
     const P: f32 = 512.0; // retail func_0x801d02c0 cell pitch (0x200) -> ~+/-16384 extent
     let mut m = legaia_tmd::mesh::VramMesh {
         positions: Vec::new(),

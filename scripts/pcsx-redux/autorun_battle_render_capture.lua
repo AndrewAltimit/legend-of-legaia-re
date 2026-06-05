@@ -85,12 +85,18 @@ local function dump_actors()
     if ap >= 0x80000000 and ap < 0x80200000 then
       local scale = s16(ap + 0x72)
       if scale >= 0x800 and scale <= 0x2000 then -- ~0.5..2.0, an actor scale
-        local f = {}
-        for o = 0x10, 0x22, 2 do f[#f + 1] = string.format("%+d", s16(ap + o)) end
+        -- dump +0x00..0x40 as i32 (world positions are likely 32-bit) so the
+        -- position offset can be identified (3 large values placing the actor).
+        local w = {}
+        for o = 0x0C, 0x44, 4 do
+          local v = probe.read_u32(ap + o) or 0
+          if v >= 0x80000000 then v = v - 0x100000000 end
+          w[#w + 1] = string.format("+%X=%d", o, v)
+        end
         PCSX.log(string.format(
-          "[actor] ctx+0x%X -> 0x%08X scale+0x72=%d id+0x5a=%d ang+0x24=(%d,%d,%d) +0x10..0x22=[%s]",
+          "[actor] ctx+0x%X -> 0x%08X scale=%d id+0x5a=%d ang+0x24=(%d,%d,%d) i32[%s]",
           off, ap, scale, s16(ap + 0x5a),
-          s16(ap + 0x24), s16(ap + 0x26), s16(ap + 0x28), table.concat(f, " ")))
+          s16(ap + 0x24), s16(ap + 0x26), s16(ap + 0x28), table.concat(w, " ")))
         found = found + 1
         if found >= 8 then break end
       end
