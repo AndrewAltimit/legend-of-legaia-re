@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
@@ -5550,40 +5550,61 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.12, 0.35, self.win.elapsed_secs(), aspect)
     }
 
-    /// Azimuth of the orbiting stage-dome battle camera (radians). The dome is
-    /// locked to this same angle so it always faces the camera — retail spins
-    /// the camera a **full circle** around the actors while the backdrop stays
-    /// behind them, which a front half-dome can only do by rotating with the
-    /// camera.
-    fn battle_orbit_azimuth(&self) -> f32 {
-        self.win.elapsed_secs() * 0.35
+    /// Battle orbit yaw in radians, at the **retail rate**. The battle tick
+    /// (`FUN_801D0748`) decrements the camera yaw `_DAT_8007b792` by
+    /// `DAT_1f800393 * 2` (≈2) per frame while idle: ≈ -4 units/frame, and a
+    /// PSX turn is 4096 units, so the idle orbit is `4*60/4096` turn/s ≈ 0.059
+    /// turn/s. Decreasing yaw = retail's spin sense.
+    fn battle_orbit_yaw_rad(&self) -> f32 {
+        const RETAIL_UNITS_PER_SEC: f32 = 4.0 * 60.0; // -4 u/frame at 60 fps
+        -self.win.elapsed_secs() * RETAIL_UNITS_PER_SEC / 4096.0 * std::f32::consts::TAU
     }
 
-    /// World-space center the battle orbit looks at (the actor cluster, lifted a
-    /// little so the camera sits low and roughly level).
-    fn battle_orbit_center() -> Vec3 {
-        Vec3::new(0.0, 250.0, 0.0)
+    /// The **exact** retail overworld-battle camera (game mode `0x15`), pinned
+    /// from the four fingerprinted `overworld_battle_bg_angle_*` saves and
+    /// `FUN_80026988`/`FUN_80026f50`. For a PSX (Y-down) world vertex `v` retail
+    /// computes `screen = H * (R*v + TR) / Ze` with
+    ///   `R  = Rx(pitch=32u) * Ry(yaw)`         (12-bit angles, 4096 = 360°),
+    ///   `TR = (0, 1280, 7680)`                 (eye-space: depth 7680, height 1280),
+    ///   `H  = 256`                             (GTE projection focal length),
+    /// the look-at target is the world origin, and PSX screen `+Y` is **down**
+    /// with screen-centre `(160, 120)` over the 320x240 frame.
+    ///
+    /// The engine draws its meshes Y-flipped (`scale(1,-1,1)` = `F`, PSX Y-down
+    /// -> renderer Y-up), so this builds `cam = Proj_H * T(TR) * R * F`: every
+    /// battle draw is `cam * model` where `model` already carries an `F` (the
+    /// dome's plain flip, the actors' `Translate * F`), and `F*F = I` recovers
+    /// the raw PSX vertex the retail transform expects. Verified by projecting
+    /// PROT 88's dome through this matrix and matching the savestate framebuffer
+    /// (sky / mountain-ring / horizon). See `project_battle_camera_re`.
+    fn retail_battle_mvp(yaw_rad: f32, aspect: f32) -> Mat4 {
+        const H: f32 = 256.0;
+        const PITCH_UNITS: f32 = 32.0;
+        let pitch = PITCH_UNITS / 4096.0 * std::f32::consts::TAU;
+        let r = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw_rad);
+        let t = Mat4::from_translation(Vec3::new(0.0, 1280.0, 7680.0));
+        let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+        // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
+        // ndc.y = -H*Ey/(120*Ez) (PSX +Y down -> NDC up), clip.w = Ez, depth
+        // mapped to wgpu [0,1]. Correct X for non-4:3 viewports so the 4:3
+        // retail framing holds at any window size.
+        let (near, far) = (4.0f32, 60000.0f32);
+        let a = far / (far - near);
+        let b = -near * far / (far - near);
+        let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
+        let proj = Mat4::from_cols(
+            Vec4::new(H / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, -H / 120.0, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, a, 1.0),
+            Vec4::new(0.0, 0.0, b, 0.0),
+        );
+        proj * t * r * f
     }
 
-    /// Battle camera for a stage-dome battle: a low, roughly level shot orbiting
-    /// the actors a full circle (matching retail). The dome ([`battle_orbit_
-    /// azimuth`]-locked in the draw) keeps the mountain ring + sky behind the
-    /// actors at every angle, so the grass foreground / horizon / sky framing
-    /// holds all the way around. World space is renderer Y-up (post-flip): the
-    /// ground sits at `y≈0`, the sky rises to large `+y`.
+    /// Battle camera for a stage-dome battle: the exact retail orbit
+    /// ([`retail_battle_mvp`]) spun at the retail rate ([`battle_orbit_yaw_rad`]).
     fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
-        let theta = self.battle_orbit_azimuth();
-        let center = Self::battle_orbit_center();
-        let r = 2300.0;
-        // Low + roughly level: eye just above the actors, looking nearly across
-        // the grass to the mountain horizon (retail's framing), so the ground
-        // fills the foreground rather than the camera peering down past its
-        // near edge into the clear colour.
-        let eye = center + Vec3::new(r * theta.cos(), 620.0, r * theta.sin());
-        let target = center + Vec3::new(0.0, 360.0, 0.0);
-        let view = Mat4::look_at_rh(eye, target, Vec3::Y);
-        let proj = Mat4::perspective_rh(58f32.to_radians(), aspect.max(0.01), 50.0, 60000.0);
-        proj * view
+        Self::retail_battle_mvp(self.battle_orbit_yaw_rad(), aspect)
     }
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene
@@ -7891,33 +7912,37 @@ impl ApplicationHandler for PlayWindowApp {
                     } else {
                         let in_battle = self.session.host.world.mode == SceneMode::Battle;
                         if in_battle {
-                            // Battle backdrop: the scene's stage half-dome (sky +
-                            // mountain ring + ground), **locked to the orbiting
-                            // camera** so its front (model +z) always points the
-                            // way the camera looks (mountains + sky behind the
-                            // actors at every orbit angle, a front half-dome
-                            // standing in for a full surround). Positioned just in
-                            // front of the camera so its ground (model z>=0)
-                            // sweeps under the actors and fills the foreground,
-                            // y-flipped like every other mesh.
+                            // Battle backdrop: the scene's `scene_tmd_stream`
+                            // dome (PROT 88 for the overworld map01 battle) —
+                            // sky hemisphere + mountain ring + grass ground —
+                            // drawn at its **raw world coordinates** under the
+                            // exact retail orbit camera (`retail_battle_mvp`).
+                            // `model = F` (plain Y-flip) because the camera bakes
+                            // in `F`, so `cam * F` recovers the raw PSX vertex
+                            // the retail transform expects.
+                            //
+                            // The dome geometry is a FRONT half (verts span
+                            // `Z in [-1260, +12155]`, open toward -Z), so a
+                            // single instance exposes the open back when the
+                            // camera orbits to a side angle. Retail shows a full
+                            // surround at every angle (its exact back-fill lives
+                            // in the battle overlay's `func_0x801d02c0`, not yet
+                            // dumped — see `project_battle_backdrop_is_prot88_
+                            // dome`); a 180°-Y mirror of the same half-dome
+                            // completes the surround and matches the retail
+                            // framebuffer at the cut-side angle.
                             if let Some(stage_idx) = self.battle_stage_mesh
                                 && let Some(mesh) = self.meshes.get(stage_idx)
                             {
-                                let theta = self.battle_orbit_azimuth();
-                                let center = Self::battle_orbit_center();
-                                // Camera-forward (xz): from the eye through the
-                                // centre. The dome's +z faces this way.
-                                let (s, c) = theta.sin_cos();
-                                let dome_angle = (-c).atan2(-s);
-                                // Pull the dome origin toward the camera so its
-                                // ground near-edge sits just ahead of the eye.
-                                let pos = center + Vec3::new(c, 0.0, s) * 2100.0;
-                                let model = Mat4::from_translation(pos)
-                                    * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
-                                    * Mat4::from_rotation_y(dome_angle);
+                                let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * model,
+                                    mvp: cam * flip,
+                                });
+                                let back = flip * Mat4::from_rotation_y(std::f32::consts::PI);
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * back,
                                 });
                             }
                         } else {
@@ -9975,4 +10000,65 @@ fn cmd_seru_capture(seru: u16, count: u32, party: &str) -> Result<()> {
         println!("  char {c} learned spells: {:?}", log.learned_spells(*c));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod battle_camera_tests {
+    use super::PlayWindowApp;
+    use glam::Vec4;
+    use std::f32::consts::TAU;
+
+    /// `retail_battle_mvp` must reproduce the exact retail overworld-battle
+    /// projection `screen = H*(Rx(32u)*Ry(yaw)*v + (0,1280,7680))/Ze`, H=256,
+    /// PSX +Y down, screen-centre (160,120) over 320x240 — pinned from the
+    /// `overworld_battle_bg_angle_*` saves + `FUN_80026988`. Disc-free: pure
+    /// math. Guards the glam matrix construction against regression.
+    #[test]
+    fn retail_battle_mvp_matches_psx_projection() {
+        // Hand-rolled retail projection (the savestate-verified reference).
+        fn handrolled(v: [f32; 3], yaw_u: f32) -> Option<(f32, f32)> {
+            let yaw = yaw_u / 4096.0 * TAU;
+            let pitch = 32.0 / 4096.0 * TAU;
+            let (sy, cy) = yaw.sin_cos();
+            let (sp, cp) = pitch.sin_cos();
+            let ry = [cy * v[0] + sy * v[2], v[1], -sy * v[0] + cy * v[2]];
+            let e = [ry[0], cp * ry[1] - sp * ry[2], sp * ry[1] + cp * ry[2]];
+            let ez = e[2] + 7680.0;
+            if ez <= 1.0 {
+                return None;
+            }
+            Some((
+                256.0 * e[0] / ez + 160.0,
+                256.0 * (e[1] + 1280.0) / ez + 120.0,
+            ))
+        }
+        // Sample several world points and orbit angles (4:3 so aspect_fix == 1).
+        let mvp_aspect = 4.0 / 3.0;
+        for &yaw_u in &[0.0f32, 224.0, 1024.0, 2632.0, 3136.0, 3808.0] {
+            let mvp = PlayWindowApp::retail_battle_mvp(yaw_u / 4096.0 * TAU, mvp_aspect);
+            for &v in &[
+                [1000.0f32, -500.0, 3000.0],
+                [-2000.0, 0.0, 6000.0],
+                [0.0, -3000.0, -800.0],
+                [5000.0, 12.0, 5000.0],
+            ] {
+                // Engine draws `cam * model` with `model` carrying the Y-flip F,
+                // so the dome sample is `cam * F * v_psx` == flip v.y first.
+                let clip = mvp * Vec4::new(v[0], -v[1], v[2], 1.0);
+                if clip.w <= 1.0 {
+                    continue;
+                }
+                let ndc = (clip.x / clip.w, clip.y / clip.w);
+                let sx = 160.0 + ndc.0 * 160.0;
+                let sy = 120.0 - ndc.1 * 120.0; // NDC up+ -> PSX screen down+
+                if let Some((hx, hy)) = handrolled(v, yaw_u) {
+                    let d = ((sx - hx).powi(2) + (sy - hy).powi(2)).sqrt();
+                    assert!(
+                        d < 0.05,
+                        "yaw={yaw_u} v={v:?}: {d}px off ({sx},{sy} vs {hx},{hy})"
+                    );
+                }
+            }
+        }
+    }
 }
