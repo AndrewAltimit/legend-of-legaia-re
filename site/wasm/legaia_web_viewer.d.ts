@@ -1086,10 +1086,10 @@ export class LegaiaViewer {
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
- * 5, or 3 with `all_warps`). `door_of_wind` is how many Door of Wind (the warp
- * consumable) to seed into the starting bag (`0` = none); `all_warps` presets
- * the visited-towns bitmask so Door of Wind can teleport to any town from the
- * start. `unused_enemies` adds the unused Evil Bat ids to the random-encounter
+ * 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+ * into the starting bag (`0` = none); `all_warps` presets the visited-towns
+ * bitmask so Door of Wind can teleport to any town from the start (its own code
+ * region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
  * "Something Good" / unnamed-accessory items to the random-fill pool (only the
  * `random` drop / chest / steal modes use it). `equipment_drops` turns every

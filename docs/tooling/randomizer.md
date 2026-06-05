@@ -100,7 +100,7 @@ and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--starting-items N` seeds the new game with `N` random consumables
-(0 = vanilla; capped at 5, or 3 with `--all-warps`). `--door-of-wind [N]` adds
+(0 = vanilla; capped at 5). `--door-of-wind [N]` adds
 `N` Door of Wind (the warp consumable; default 10) to the starting bag and
 `--all-warps` unlocks every
 Door-of-Wind destination from the start (see
@@ -486,10 +486,15 @@ Door of Wind is forced on top.
 (`SC + 0x161C`), split into the two halfwords the well-known "Access All Towns"
 GameShark code writes (`0x8008575C = 0xF77F`, `0x8008575E = 0xF8FF`). It lives in
 the story-flag block (`SC + 0x14C0..0x16C0`), which the New-Game seed `memset`
-covers, so the seed code can preset it exactly the way it presets the inventory —
-two more `addiu`/`sh` pairs in the reclaimable region (`region_unlocks_all_warps`
-reads them back). Those four instructions claim part of the 10-instruction
-budget, so `--all-warps` caps `--starting-items` at **three** slots.
+covers, so the seed code can preset it the same way it presets the inventory. The
+preset gets its **own** reclaimable region in `FUN_80034A6C` —
+`0x80034adc..0x80034aeb`, four redundant `sw $zero` stores into `SC` words the
+caller already zeroed — so it does **not** reduce the starting-item budget (items
+keep all five slots). It uses `$v1` (not `$v0`, which carries a live `0x2dc0`
+constant into `DAT_80073ef8` just below) and survives because the inventory
+seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
+overwritten when the seed is rewritten. `region_unlocks_all_warps` /
+`scus_unlocks_all_warps` read it back.
 
 The clean-room engine seeds the forced Door of Wind through the same
 `World::seed_starting_inventory` path as any other starting item (covered by the
