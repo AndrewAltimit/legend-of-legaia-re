@@ -5550,6 +5550,42 @@ impl PlayWindowApp {
         orbit_camera_mvp(lo, hi, 0.12, 0.35, self.win.elapsed_secs(), aspect)
     }
 
+    /// Azimuth of the orbiting stage-dome battle camera (radians). The dome is
+    /// locked to this same angle so it always faces the camera — retail spins
+    /// the camera a **full circle** around the actors while the backdrop stays
+    /// behind them, which a front half-dome can only do by rotating with the
+    /// camera.
+    fn battle_orbit_azimuth(&self) -> f32 {
+        self.win.elapsed_secs() * 0.35
+    }
+
+    /// World-space center the battle orbit looks at (the actor cluster, lifted a
+    /// little so the camera sits low and roughly level).
+    fn battle_orbit_center() -> Vec3 {
+        Vec3::new(0.0, 250.0, 0.0)
+    }
+
+    /// Battle camera for a stage-dome battle: a low, roughly level shot orbiting
+    /// the actors a full circle (matching retail). The dome ([`battle_orbit_
+    /// azimuth`]-locked in the draw) keeps the mountain ring + sky behind the
+    /// actors at every angle, so the grass foreground / horizon / sky framing
+    /// holds all the way around. World space is renderer Y-up (post-flip): the
+    /// ground sits at `y≈0`, the sky rises to large `+y`.
+    fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
+        let theta = self.battle_orbit_azimuth();
+        let center = Self::battle_orbit_center();
+        let r = 2300.0;
+        // Low + roughly level: eye just above the actors, looking nearly across
+        // the grass to the mountain horizon (retail's framing), so the ground
+        // fills the foreground rather than the camera peering down past its
+        // near edge into the clear colour.
+        let eye = center + Vec3::new(r * theta.cos(), 620.0, r * theta.sin());
+        let target = center + Vec3::new(0.0, 360.0, 0.0);
+        let view = Mat4::look_at_rh(eye, target, Vec3::Y);
+        let proj = Mat4::perspective_rh(58f32.to_radians(), aspect.max(0.01), 50.0, 60000.0);
+        proj * view
+    }
+
     /// Camera parameters for the cutscene shot, decoded from the cutscene
     /// timeline's executed op-`0x45` Camera Configure params (read from
     /// `World::camera_state`, committed by `FUN_801DE084`). Returns
@@ -7674,9 +7710,15 @@ impl ApplicationHandler for PlayWindowApp {
                             aspect,
                         )
                     } else if self.session.host.world.mode == SceneMode::Battle {
-                        // Frame the animated enemies, not the player's field
-                        // vicinity (the battle actors live at the world origin).
-                        self.battle_camera_mvp(aspect)
+                        if self.battle_stage_mesh.is_some() {
+                            // Stage-dome battle: low front-facing shot into the
+                            // dome (grass foreground, mountains on the horizon).
+                            self.battle_dome_camera_mvp(aspect)
+                        } else {
+                            // No stage: frame the animated enemies (the battle
+                            // actors live at the world origin).
+                            self.battle_camera_mvp(aspect)
+                        }
                     } else {
                         self.camera_mvp(aspect)
                     };
@@ -7850,17 +7892,29 @@ impl ApplicationHandler for PlayWindowApp {
                         let in_battle = self.session.host.world.mode == SceneMode::Battle;
                         if in_battle {
                             // Battle backdrop: the scene's stage half-dome (sky +
-                            // mountain ring + ground) at the world origin. The
-                            // dome's "front" (+z) is rotated onto the enemy
-                            // direction (+x) so the camera looks into it, and
-                            // y-flipped (PSX Y-down -> renderer Y-up) like every
-                            // other mesh. The dome (~±12264) dwarfs the ±600
-                            // actors, so it surrounds them.
+                            // mountain ring + ground), **locked to the orbiting
+                            // camera** so its front (model +z) always points the
+                            // way the camera looks (mountains + sky behind the
+                            // actors at every orbit angle, a front half-dome
+                            // standing in for a full surround). Positioned just in
+                            // front of the camera so its ground (model z>=0)
+                            // sweeps under the actors and fills the foreground,
+                            // y-flipped like every other mesh.
                             if let Some(stage_idx) = self.battle_stage_mesh
                                 && let Some(mesh) = self.meshes.get(stage_idx)
                             {
-                                let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
-                                    * Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2);
+                                let theta = self.battle_orbit_azimuth();
+                                let center = Self::battle_orbit_center();
+                                // Camera-forward (xz): from the eye through the
+                                // centre. The dome's +z faces this way.
+                                let (s, c) = theta.sin_cos();
+                                let dome_angle = (-c).atan2(-s);
+                                // Pull the dome origin toward the camera so its
+                                // ground near-edge sits just ahead of the eye.
+                                let pos = center + Vec3::new(c, 0.0, s) * 2100.0;
+                                let model = Mat4::from_translation(pos)
+                                    * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+                                    * Mat4::from_rotation_y(dome_angle);
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * model,
