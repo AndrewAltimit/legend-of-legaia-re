@@ -46,47 +46,61 @@ field/world walk camera to a slow orbit around the party↔enemy midpoint) and
 overlays the actors + HUD; the surrounding terrain keeps drawing through its
 normal renderer.
 
-For an **overworld (world-map) encounter** the backdrop is the map's own
-`scene_tmd_stream` **dome** — pinned from a 4-angle capture set
+For an **overworld (world-map) encounter** the backdrop is **two layers** —
+a flat tiled **ground grid** + the map's `scene_tmd_stream` **dome** (sky +
+distant mountains) — pinned from a 4-angle capture set
 (`overworld_battle_bg_angle_a..d`, the same Vahn-vs-Gobu-Gobu battle paused on
 the Begin/Run menu while the camera idly orbits).
 
-### Backdrop geometry — the scene dome (PROT 88 for `map01`)
+### Backdrop ground — a procedural flat grid (`func_0x801d02c0`)
 
-The backdrop is the map's `scene_tmd_stream` dome (PROT `88` for the `map01`
-overworld battle): a sky hemisphere + mountain ring + grass ground, the same
-geometry the asset viewer shows for that entry.
+The grass underfoot is **not** geometry from a file; it is a procedural flat
+tiled grid emitted by `func_0x801d02c0` (battle-overlay variant), the **sole
+draw call** the mode-`0x15` render `FUN_80026f50` makes
+(`ghidra/scripts/dump_battle_backdrop_draw.py`). It is a GTE rasteriser, not a
+TMD walk:
 
-- PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-match
-  against all four saves; the leading TMD magic `0x80000002` sits at file `+4`,
-  uncompressed). Loaded by the battle-init type-`0x01` chunk walker `FUN_8001FE70`
-  into `_DAT_8007b864`, registered as TMD handle `DAT_80076810` by the battle
-  state-handler `FUN_800513F0` (`tmd_register(_DAT_8007b864, 0)`), and drawn by
-  `func_0x801d02c0`.
-- The live GPU pool holds **619 `POLY_GT4` + 116 `POLY_GT3`** (angle-a) gouraud-
-  textured dome prims. (The dome geometry is a single LZS-free TMD: 4 objects,
-  968 verts, 1104 indices, + two `TimList` texture chunks. PROT 88/89/90 share
-  identical geometry and differ only in their texture payload.)
+- A `_DAT_1f8003f8 × _DAT_1f8003fa` cell grid (cell pitch `0x200`, sub-step
+  `0x100`), centred at the world origin on a **`Y ≈ 0` flat plane**.
+- **Pass 1** — RTPS each grid point and write a per-cell visibility byte
+  (`-1`/`0`/`1`) into the `0x1000`-byte buffer `_DAT_8007b814` (so the grid can
+  be up to ~64×64). **Pass 2** — for each visible cell, RTPT its corners and
+  emit one `POLY_GT4` (GP0 `0x0C000000`) into the ordering table.
+- These tiles are the **619 `POLY_GT4`** in the live pool. Because the grid is a
+  *full* flat plane centred on the actors, it fills the foreground/ground at
+  **every** orbit angle — there is no half-dome gap for the ground.
+  `overlay_0896` (`bat_back`, battle background) shares this grid renderer + the
+  `_DAT_8007b814` buffer.
 
-> **Correction.** An earlier reading of this page concluded the backdrop was the
-> *world-map continent heightfield* per a `prim-trace` "3715 hits in the
-> `0x80190000` region". That was a **false positive**: angle-a has only 3
-> `POLY_FT4` prims, all with a degenerate `clut=0 tpage=0x800E` signature that
-> stride-1 floods that window. On angle-c the 188 real-CLUT (`0x7840..48`)
-> clusters match **0** bytes in the continent windows. The backdrop is the dome,
-> not a tiled terrain table. The world-map overlay being paged in
-> (`prim-dispatch-survey` reports `world-map overlay loaded`) reflects the
-> overworld *code* staying resident, not a continent-terrain draw.
+> **Correction.** An earlier reading called the backdrop the *world-map continent
+> heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
+> positive** (3 degenerate `clut=0` `POLY_FT4` prims stride-1 flooding that
+> window). The ground is this **flat procedural grid**, not a per-tile continent
+> descriptor table read from RAM, and not a 3D heightfield (cell `Y ≈ 0`).
 
-**The "half the scene" shape.** The dome is a **front half** — verts span
-`X ∈ [-12155, 12155]`, `Z ∈ [-1260, +12155]` (open toward `-Z`), `Y ∈ [-6883, 12]`
-(PSX Y-down: `-6883` = sky top, `0` = ground; the ground is a ring, inner radius
-`2889`). A single instance under the orbit camera fills the frame at front-facing
-yaws but exposes the open back at side angles. Retail shows a full surround at
-every captured angle; its exact back-fill submission lives in the battle
-overlay's `func_0x801d02c0` (not yet dumped). The engine reproduces the surround
-by drawing the dome plus a `Ry(180°)` mirror, which matches the savestate
-framebuffer at the cut-side angle.
+### Backdrop dome — sky + distant mountains (PROT 88 for `map01`)
+
+The sky hemisphere + distant mountain ring come from the map's `scene_tmd_stream`
+dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
+
+- PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-matched
+  across all four saves; leading TMD magic `0x80000002` at file `+4`,
+  uncompressed). Loaded by the type-`0x01` chunk walker `FUN_8001FE70` into
+  `_DAT_8007b864`, registered as TMD handle `DAT_80076810` by `FUN_800513F0`
+  (`tmd_register(_DAT_8007b864, 0)`). It is a 4-object, 968-vertex TMD + two
+  `TimList` texture chunks; PROT 88/89/90 share identical geometry and differ
+  only in texture payload.
+- The dome geometry is a **front half** — verts span `X ∈ [-12155, 12155]`,
+  `Z ∈ [-1260, +12155]` (open toward `-Z`), `Y ∈ [-6883, 12]` (PSX Y-down:
+  `-6883` = sky top, `0` = ground; the dome's own ground is a ring, inner radius
+  `2889`, that sits *behind* the flat grid as the far grass). The exact draw
+  callsite for the dome (the `DAT_80076810` consumer) and how its front-half
+  mountains surround at every angle are **still open**.
+
+**Engine status.** The clean-room engine currently approximates the whole
+backdrop with the dome + a `Ry(180°)` mirror under the exact camera (matches the
+framebuffer at the cut-side angle). The faithful match is a flat tiled ground
+grid + the dome for sky/mountains — a follow-up.
 
 ### Battle camera (exact)
 
