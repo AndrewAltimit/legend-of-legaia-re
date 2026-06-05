@@ -1517,14 +1517,15 @@ pub struct StartingItemsApplyReport {
     pub all_warps: bool,
 }
 
-/// Rewrite the new game's starting-seed code region in `SCUS_942.54` from
+/// Rewrite the new game's starting-seed code in `SCUS_942.54` from
 /// [`StartingSeedOptions`].
 ///
-/// The same 40-byte reclaimable region (`FUN_80034A6C`) can hold a mix of
-/// inventory slots and an optional all-warps story-flag preset; [`plan_seed`]
-/// resolves the options into a concrete, capacity-clamped plan. A same-size
-/// packed-store patch is written in place (no executable growth). With
-/// inactive options the region is left untouched (callers guard on
+/// Two independent reclaimable regions of `FUN_80034A6C` are patched in place
+/// (same-size, no executable growth): the inventory seed region gets the planned
+/// `(id, count)` slots, and — only when `all_warps` is set — a separate region
+/// gets the visited-towns warp preset (so it never reduces the item capacity).
+/// [`plan_seed`] resolves the options into the concrete plan. With inactive
+/// options nothing is written (callers guard on
 /// [`StartingSeedOptions::is_active`]). Deterministic in `(seed, opts)`.
 ///
 /// [`StartingSeedOptions`]: crate::starting_items::StartingSeedOptions
@@ -1537,13 +1538,27 @@ pub fn randomize_starting_items(
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    let off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
+    let inv_off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
         .context("locate starting-inventory seed region in SCUS_942.54")? as u64;
     let plan = crate::starting_items::plan_seed(seed, opts);
-    let patch = crate::starting_items::build_seed_patch_for(&plan);
+
+    // Inventory seed region: always rewritten when active (this also drops the
+    // zero-loop, which the warp preset below relies on).
+    let inv_patch = crate::starting_items::build_seed_patch_for(&plan);
     patcher
-        .patch_named_file(crate::steal::SCUS_NAME, off, &patch)
-        .with_context(|| format!("write starting-item seed at SCUS offset {off:#x}"))?;
+        .patch_named_file(crate::steal::SCUS_NAME, inv_off, &inv_patch)
+        .with_context(|| format!("write starting-item seed at SCUS offset {inv_off:#x}"))?;
+
+    // Warp preset: a separate code region, only touched when enabled.
+    if plan.all_warps {
+        let warp_off = legaia_asset::new_game::warp_seed_file_offset(&scus)
+            .context("locate warp-preset region in SCUS_942.54")? as u64;
+        let warp_patch = crate::starting_items::build_warp_patch();
+        patcher
+            .patch_named_file(crate::steal::SCUS_NAME, warp_off, &warp_patch)
+            .with_context(|| format!("write warp preset at SCUS offset {warp_off:#x}"))?;
+    }
+
     Ok(StartingItemsApplyReport {
         items_set: plan.items.len(),
         items: plan.items,

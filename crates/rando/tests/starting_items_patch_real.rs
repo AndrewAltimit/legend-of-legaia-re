@@ -8,8 +8,9 @@
 //! `LEGAIA_DISC_BIN`.
 
 use legaia_asset::new_game::{
-    DOOR_OF_WIND_ITEM, STARTING_INV_SEED_LEN, StartingInventory, region_unlocks_all_warps,
-    scus_unlocks_all_warps, starting_inv_seed_file_offset,
+    DOOR_OF_WIND_ITEM, STARTING_INV_SEED_LEN, StartingInventory, WARP_SEED_LEN,
+    region_unlocks_all_warps, scus_unlocks_all_warps, starting_inv_seed_file_offset,
+    warp_seed_file_offset,
 };
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
@@ -133,9 +134,10 @@ fn randomize_starting_items_round_trips_on_disc() {
 }
 
 /// The Door-of-Wind convenience toggles: forcing the warp consumable into the
-/// starting bag and presetting the all-towns warp bitmask. Re-decodes both the
-/// inventory and the warp flag off the patched image, and confirms the warp
-/// preset doesn't disturb the inventory decode or the surrounding code.
+/// starting bag and presetting the all-towns warp bitmask. The warp preset lives
+/// in its OWN reclaimable region, so it must not reduce the item capacity, must
+/// not disturb the inventory region, and must not clobber the live instruction
+/// just after it (which carries `$v0 = 0x2dc0` into `DAT_80073ef8`).
 #[test]
 fn door_of_wind_and_all_warps_round_trip_on_disc() {
     let Some(original) = load_disc() else {
@@ -143,17 +145,24 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
         return;
     };
     let seed = 0xD00D_0FE1_1500_0089_u64;
+    // 5 random + Door of Wind + warps: the budget would have capped items at 3
+    // when the warp preset shared the inventory region. It no longer does.
     let opts = StartingSeedOptions {
-        random_items: 2, // also reroll, to exercise the mixed budget
+        random_items: 5,
         door_of_wind: legaia_rando::starting_items::DOOR_OF_WIND_COUNT,
         all_warps: true,
     };
 
     let scus = read_file_in_image(&original, "SCUS_942.54").expect("SCUS present");
-    let off = starting_inv_seed_file_offset(&scus).expect("seed offset");
-    let before_prologue = scus[off - 16..off].to_vec();
-    let after_region_orig =
-        scus[off + STARTING_INV_SEED_LEN..off + STARTING_INV_SEED_LEN + 16].to_vec();
+    let inv_off = starting_inv_seed_file_offset(&scus).expect("inv seed offset");
+    let warp_off = warp_seed_file_offset(&scus).expect("warp seed offset");
+    let before_prologue = scus[inv_off - 16..inv_off].to_vec();
+    let after_inv_region =
+        scus[inv_off + STARTING_INV_SEED_LEN..inv_off + STARTING_INV_SEED_LEN + 16].to_vec();
+    // The live constant load (addiu $v0,0x2dc0 at 0x80034ad8) just before the warp
+    // region, and the live consumer (sw $v0,0x3ef8 at 0x80034aec) just after it.
+    let before_warp = scus[warp_off - 4..warp_off].to_vec();
+    let after_warp = scus[warp_off + WARP_SEED_LEN..warp_off + WARP_SEED_LEN + 8].to_vec();
     assert!(
         !scus_unlocks_all_warps(&scus).unwrap_or(true),
         "vanilla disc does not preset the warp bitmask"
@@ -164,8 +173,11 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
     assert!(report.all_warps, "report records the warp preset");
     assert_eq!(report.items, plan_seed(seed, &opts).items);
 
-    // With warps on, the budget caps inventory at 3 slots; Door of Wind is first.
-    assert!(report.items_set <= 3, "warp budget caps items at 3");
+    // Warps no longer steal item budget: all five slots fill, Door of Wind first.
+    assert_eq!(
+        report.items_set, 5,
+        "all five item slots fill with warps on"
+    );
     assert_eq!(
         report.items[0],
         (
@@ -183,37 +195,54 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
         "the all-warps bitmask is preset on the patched disc"
     );
     let patched_scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
-    let region = &patched_scus[off..off + STARTING_INV_SEED_LEN];
+
+    // The warp preset is in the WARP region, not the inventory region.
     assert!(
-        region_unlocks_all_warps(region),
-        "the seed region writes the all-towns bitmask"
+        region_unlocks_all_warps(&patched_scus[warp_off..warp_off + WARP_SEED_LEN]),
+        "the warp region writes the all-towns bitmask"
+    );
+    assert!(
+        !region_unlocks_all_warps(&patched_scus[inv_off..inv_off + STARTING_INV_SEED_LEN]),
+        "the inventory region carries no warp stores"
     );
 
-    // The edit is still confined to the 40-byte seed region.
+    // Neither edit disturbs the surrounding live code.
     assert_eq!(
-        &patched_scus[off - 16..off],
+        &patched_scus[inv_off - 16..inv_off],
         &before_prologue[..],
-        "prologue untouched"
+        "inventory prologue untouched"
     );
     assert_eq!(
-        &patched_scus[off + STARTING_INV_SEED_LEN..off + STARTING_INV_SEED_LEN + 16],
-        &after_region_orig[..],
-        "code after the seed region untouched"
+        &patched_scus[inv_off + STARTING_INV_SEED_LEN..inv_off + STARTING_INV_SEED_LEN + 16],
+        &after_inv_region[..],
+        "code after the inventory region untouched"
+    );
+    assert_eq!(
+        &patched_scus[warp_off - 4..warp_off],
+        &before_warp[..],
+        "the addiu $v0,0x2dc0 before the warp region is untouched"
+    );
+    assert_eq!(
+        &patched_scus[warp_off + WARP_SEED_LEN..warp_off + WARP_SEED_LEN + 8],
+        &after_warp[..],
+        "the sw $v0,0x3ef8 after the warp region is untouched ($v0 preserved)"
     );
 
-    // Same image size; the touched SCUS sector stays EDC/ECC-valid.
+    // Same image size; both touched SCUS sectors stay EDC/ECC-valid.
     assert_eq!(
         patcher.image().len(),
         original.len(),
         "image size unchanged"
     );
     let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
-    let seed_sector = scus_lba as usize + off / USER_DATA_SIZE;
-    let sb = seed_sector * SECTOR_SIZE;
-    assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
-        "patched seed-region sector must be EDC/ECC-valid"
-    );
+    for region_off in [inv_off, warp_off] {
+        let sector = scus_lba as usize + region_off / USER_DATA_SIZE;
+        let sb = sector * SECTOR_SIZE;
+        assert!(
+            legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+            "patched sector must be EDC/ECC-valid"
+        );
+    }
 
     // Determinism.
     let mut patcher2 = DiscPatcher::open(original).expect("open");

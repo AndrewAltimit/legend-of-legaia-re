@@ -26,21 +26,18 @@
 
 use legaia_asset::new_game::{
     DOOR_OF_WIND_ITEM, INVENTORY_SC_OFFSET, STARTING_INV_SEED_LEN, WARP_ALL_FLAGS_HI,
-    WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET,
+    WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET, WARP_SEED_LEN,
 };
 
 use crate::rng::SplitMix64;
 
-/// Number of MIPS instructions the reclaimable seed region holds (40 bytes / 4).
+/// Number of MIPS instructions the reclaimable inventory-seed region holds
+/// (40 bytes / 4).
 const SEED_INSTRS: usize = STARTING_INV_SEED_LEN / 4;
 
 /// Instructions one inventory slot costs: one `addiu $v0,(count<<8)|id` + one
 /// `sh $v0,off($s0)`.
 const INSTRS_PER_ITEM: usize = 2;
-
-/// Instructions the all-warps preset costs: two `addiu`/`sh` pairs (the low and
-/// high halfwords of the visited-towns bitmask at [`WARP_FLAGS_SC_OFFSET`]).
-const WARP_FLAG_INSTRS: usize = 4;
 
 /// Most starting-item slots the reclaimable seed region can hold: ten
 /// instructions / two per item (`addiu` + `sh`).
@@ -69,15 +66,6 @@ pub const VANILLA_STARTING_ITEM: (u8, u8) = (0x77, 5);
 /// so a random start is helpful without trivializing the early game; vanilla
 /// seeds five Healing Leaves.
 pub const DEFAULT_COUNT_RANGE: (u8, u8) = (1, 5);
-
-/// Most inventory slots the seed region can hold once the all-warps preset (if
-/// enabled) has claimed its share of the instruction budget. Without warps the
-/// full [`MAX_STARTING_ITEMS`]; with warps, fewer (the 4 warp instructions
-/// leave 6 → 3 slots).
-pub fn max_items_with_warps(all_warps: bool) -> usize {
-    let warp = if all_warps { WARP_FLAG_INSTRS } else { 0 };
-    ((SEED_INSTRS - warp) / INSTRS_PER_ITEM).min(MAX_STARTING_ITEMS)
-}
 
 /// What the New Game starting seed should set, beyond the vanilla Healing Leaf.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -134,6 +122,16 @@ fn addiu_v0(imm: u16) -> u32 {
 fn sh_v0_s0(off: u16) -> u32 {
     0xA602_0000 | off as u32
 }
+/// `addiu $v1, $zero, imm16` — the warp preset uses `$v1` so it never clobbers
+/// `$v0`, which carries a live constant through its region (see
+/// [`legaia_asset::new_game::WARP_SEED_VA`]).
+fn addiu_v1(imm: u16) -> u32 {
+    0x2403_0000 | imm as u32
+}
+/// `sh $v1, off($s0)`.
+fn sh_v1_s0(off: u16) -> u32 {
+    0xA603_0000 | off as u32
+}
 
 /// Plan `n` random starting items from `seed`: `n` distinct ids drawn from
 /// [`STARTING_ITEM_POOL`], each with a random count in [`DEFAULT_COUNT_RANGE`].
@@ -173,10 +171,11 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
 ///    consumables instead (the existing `--starting-items` behaviour), drawn
 ///    excluding Door of Wind so it isn't duplicated.
 ///
-/// The whole list is clamped to [`max_items_with_warps`] so the warp preset
-/// (if enabled) always has room. Deterministic in `(seed, opts)`.
+/// The item list is clamped to [`MAX_STARTING_ITEMS`]. The all-warps preset
+/// lives in its **own** code region (it doesn't share the inventory budget), so
+/// it never reduces how many items fit. Deterministic in `(seed, opts)`.
 pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
-    let cap = max_items_with_warps(opts.all_warps);
+    let cap = MAX_STARTING_ITEMS;
     let mut items: Vec<(u8, u8)> = Vec::new();
 
     let door_count = opts.door_of_wind.min(MAX_ITEM_STACK);
@@ -208,8 +207,8 @@ pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
     }
 }
 
-/// Encode a list of `(id, count)` starting items into the 40-byte seed patch
-/// (no warp preset). Convenience wrapper over [`build_seed_patch_for`].
+/// Encode a list of `(id, count)` starting items into the 40-byte inventory
+/// seed patch. Convenience wrapper over [`build_seed_patch_for`].
 pub fn build_seed_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
     build_seed_patch_for(&SeedPlan {
         all_warps: false,
@@ -217,24 +216,19 @@ pub fn build_seed_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
     })
 }
 
-/// Encode a [`SeedPlan`] into the 40-byte seed patch.
+/// Encode a [`SeedPlan`]'s inventory slots into the 40-byte inventory-seed patch
+/// (the region at [`legaia_asset::new_game::STARTING_INV_SEED_VA`]).
 ///
-/// When `all_warps` is set, emits the two `addiu`/`sh` pairs that preset the
-/// visited-towns bitmask ([`WARP_FLAGS_SC_OFFSET`]) first. Then one
-/// `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)` pair per
-/// inventory slot, padded to [`STARTING_INV_SEED_LEN`] with `nop`. Panics if the
-/// plan exceeds the [`SEED_INSTRS`]-instruction budget (callers clamp first via
-/// [`plan_seed`]). The inventory base offset comes from [`INVENTORY_SC_OFFSET`].
+/// Emits one `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)`
+/// pair per inventory slot, padded to [`STARTING_INV_SEED_LEN`] with `nop` (which
+/// also overwrites the redundant zero-loop — required for the warp preset, see
+/// [`build_warp_patch`]). Panics if the plan exceeds the [`SEED_INSTRS`]-instruction
+/// budget (callers clamp via [`plan_seed`]). The `all_warps` flag is **not**
+/// encoded here — the warp preset is a separate region ([`build_warp_patch`]) so
+/// it never reduces the item capacity. The inventory base offset comes from
+/// [`INVENTORY_SC_OFFSET`].
 pub fn build_seed_patch_for(plan: &SeedPlan) -> [u8; STARTING_INV_SEED_LEN] {
     let mut words: Vec<u32> = Vec::with_capacity(SEED_INSTRS);
-    if plan.all_warps {
-        // addiu sign-extends the immediate, but `sh` stores only the low 16
-        // bits, so the high 0xFFFF.. fill is harmless.
-        words.push(addiu_v0(WARP_ALL_FLAGS_LO));
-        words.push(sh_v0_s0(WARP_FLAGS_SC_OFFSET as u16));
-        words.push(addiu_v0(WARP_ALL_FLAGS_HI));
-        words.push(sh_v0_s0(WARP_FLAGS_SC_OFFSET as u16 + 2));
-    }
     for (slot, &(id, count)) in plan.items.iter().enumerate() {
         let off = (INVENTORY_SC_OFFSET as usize + slot * 2) as u16;
         words.push(addiu_v0(((count as u16) << 8) | id as u16));
@@ -249,6 +243,31 @@ pub fn build_seed_patch_for(plan: &SeedPlan) -> [u8; STARTING_INV_SEED_LEN] {
         words.push(NOP);
     }
     let mut out = [0u8; STARTING_INV_SEED_LEN];
+    for (i, w) in words.iter().enumerate() {
+        out[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+    }
+    out
+}
+
+/// Encode the all-warps preset into the 16-byte warp-seed patch (the separate
+/// region at [`legaia_asset::new_game::WARP_SEED_VA`]).
+///
+/// Two `addiu $v1, $zero, imm` + `sh $v1, off($s0)` pairs that write the
+/// visited-towns bitmask ([`WARP_FLAGS_SC_OFFSET`]). It uses `$v1` (not `$v0`)
+/// to avoid clobbering the live `0x2dc0` constant the surrounding code carries
+/// in `$v0`. Only applied when `all_warps` is set; otherwise the region keeps
+/// its original (redundant) bytes. Because this region runs *before* the
+/// inventory seed's zero-loop, the caller must also rewrite the inventory region
+/// (dropping that loop) for the preset to survive — which is always the case
+/// when any seed toggle is active.
+pub fn build_warp_patch() -> [u8; WARP_SEED_LEN] {
+    let words = [
+        addiu_v1(WARP_ALL_FLAGS_LO),
+        sh_v1_s0(WARP_FLAGS_SC_OFFSET as u16),
+        addiu_v1(WARP_ALL_FLAGS_HI),
+        sh_v1_s0(WARP_FLAGS_SC_OFFSET as u16 + 2),
+    ];
+    let mut out = [0u8; WARP_SEED_LEN];
     for (i, w) in words.iter().enumerate() {
         out[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
     }
@@ -329,10 +348,29 @@ mod tests {
     }
 
     #[test]
-    fn warps_cut_the_item_capacity_to_three() {
-        assert_eq!(max_items_with_warps(false), MAX_STARTING_ITEMS);
-        assert_eq!(max_items_with_warps(false), 5);
-        assert_eq!(max_items_with_warps(true), 3);
+    fn warps_do_not_reduce_the_item_capacity() {
+        // The warp preset lives in its own region, so enabling it leaves the
+        // full 5-slot item capacity intact.
+        let with = plan_seed(
+            7,
+            &StartingSeedOptions {
+                random_items: 5,
+                door_of_wind: 0,
+                all_warps: true,
+            },
+        );
+        assert_eq!(with.items.len(), MAX_STARTING_ITEMS);
+        assert_eq!(with.items.len(), 5);
+        let without = plan_seed(
+            7,
+            &StartingSeedOptions {
+                random_items: 5,
+                door_of_wind: 0,
+                all_warps: false,
+            },
+        );
+        // Same items either way — warps don't perturb the inventory plan.
+        assert_eq!(with.items, without.items);
     }
 
     #[test]
@@ -352,7 +390,6 @@ mod tests {
             vec![(DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT), VANILLA_STARTING_ITEM]
         );
         let patch = build_seed_patch_for(&plan);
-        assert!(!legaia_asset::new_game::region_unlocks_all_warps(&patch));
         assert_eq!(
             StartingInventory::decode_region(&patch).items(),
             &[(DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT), VANILLA_STARTING_ITEM]
@@ -395,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn all_warps_emits_the_bitmask_and_keeps_the_base() {
+    fn all_warps_emits_the_bitmask_in_its_own_region() {
         let plan = plan_seed(
             1,
             &StartingSeedOptions {
@@ -406,19 +443,23 @@ mod tests {
         );
         assert!(plan.all_warps);
         assert_eq!(plan.items, vec![VANILLA_STARTING_ITEM]);
-        let patch = build_seed_patch_for(&plan);
-        assert!(legaia_asset::new_game::region_unlocks_all_warps(&patch));
-        // The inventory base still decodes alongside the warp preset.
+        // The warp preset is a SEPARATE region; the inventory patch carries no
+        // warp stores.
+        let inv = build_seed_patch_for(&plan);
+        assert!(!legaia_asset::new_game::region_unlocks_all_warps(&inv));
         assert_eq!(
-            StartingInventory::decode_region(&patch).items(),
+            StartingInventory::decode_region(&inv).items(),
             &[VANILLA_STARTING_ITEM]
         );
+        // The dedicated warp patch sets the bitmask.
+        let warp = build_warp_patch();
+        assert!(legaia_asset::new_game::region_unlocks_all_warps(&warp));
     }
 
     #[test]
-    fn door_plus_warps_plus_reroll_clamps_to_three_slots() {
-        // Request 5 random + door of wind + warps: cap is 3, door takes one,
-        // leaving room for 2 random items.
+    fn door_plus_warps_plus_reroll_keeps_five_item_slots() {
+        // Request 5 random + door of wind + warps: warps no longer steal item
+        // budget, so all 5 slots fill (door takes one, 4 random fills).
         let opts = StartingSeedOptions {
             random_items: 5,
             door_of_wind: DOOR_OF_WIND_COUNT,
@@ -426,17 +467,16 @@ mod tests {
         };
         let plan = plan_seed(99, &opts);
         assert!(plan.all_warps);
-        assert_eq!(plan.items.len(), 3, "clamped to the 3-slot warp budget");
+        assert_eq!(plan.items.len(), 5, "all five item slots stay available");
         assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT));
-        // The two random fills are distinct consumables, never Door of Wind.
+        // The random fills are distinct consumables, never Door of Wind.
         for (id, _) in &plan.items[1..] {
             assert!(STARTING_ITEM_POOL.contains(id));
             assert_ne!(*id, DOOR_OF_WIND_ID, "reroll excludes the forced item");
         }
-        let patch = build_seed_patch_for(&plan);
-        assert!(legaia_asset::new_game::region_unlocks_all_warps(&patch));
+        let inv = build_seed_patch_for(&plan);
         assert_eq!(
-            StartingInventory::decode_region(&patch).items(),
+            StartingInventory::decode_region(&inv).items(),
             &plan.items[..]
         );
     }

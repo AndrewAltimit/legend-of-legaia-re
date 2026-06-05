@@ -106,6 +106,34 @@ pub const WARP_ALL_FLAGS_LO: u16 = 0xF77F;
 /// High halfword of the [`WARP_ALL_FLAGS_LO`] bitmask (`0x8008575E`).
 pub const WARP_ALL_FLAGS_HI: u16 = 0xF8FF;
 
+/// RAM address of a **second** reclaimable region in `FUN_80034A6C`, used to
+/// preset the Door-of-Wind warp bitmask **without** stealing from the
+/// inventory-seed budget. At `0x80034adc..0x80034aeb` the routine clears four
+/// `SC` words it has already been told are zero —
+///
+/// ```text
+/// 80034adc  sw $zero, 0x460($s0)
+/// 80034ae0  sw $zero, 0x464($s0)
+/// 80034ae4  sw $zero, 0x470($s0)
+/// 80034ae8  sw $zero, 0x478($s0)
+/// ```
+///
+/// — all inside `SC[0..0x1a18)`, which both callers `memset` before the call,
+/// so these four stores are redundant in exactly the way the zero-loop is. They
+/// are reclaimable for the warp preset. **Crucially the preset must not touch
+/// `$v0`**: it holds `0x2dc0` set just above (`0x80034ad8`) and consumed just
+/// below (`0x80034af0` → `DAT_80073ef8`), so the warp stores use `$v1` (dead
+/// after `0x80034acc`). The party-stat seeder `FUN_800560b4` called between this
+/// region and gameplay never touches the warp window, so the preset survives —
+/// **provided** the zero-loop at [`STARTING_INV_SEED_VA`] (which would otherwise
+/// re-clear `SC+0x161C`) is overwritten, which it always is whenever the seed is
+/// rewritten at all.
+pub const WARP_SEED_VA: u32 = 0x8003_4ADC;
+
+/// Byte length of the reclaimable warp-preset region ([`WARP_SEED_VA`]): four
+/// MIPS instructions = two `addiu`/`sh` pairs.
+pub const WARP_SEED_LEN: usize = 16;
+
 /// CDNAME label of the prologue cutscene a New Game enters first (the
 /// in-engine "It was the Seru." Genesis-tree narration). Written as the
 /// opening scene id by the front-end launcher (`init_game`), verified live in
@@ -149,6 +177,14 @@ impl ExeMap {
 /// address is out of range. The disc patcher writes the seed patch here.
 pub fn starting_inv_seed_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(STARTING_INV_SEED_VA)
+}
+
+/// File offset of the warp-preset region ([`WARP_SEED_VA`]) within a
+/// `SCUS_942.54` image, or `None` if the image isn't a PSX-EXE or the address is
+/// out of range. The disc patcher writes the warp preset here (separate from the
+/// inventory seed, so it never reduces the starting-item capacity).
+pub fn warp_seed_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(WARP_SEED_VA)
 }
 
 /// One roster member's opening stats + name, decoded from the template.
@@ -238,37 +274,40 @@ impl StartingParty {
     }
 }
 
-/// Replay the seed region's `$v0`-relative byte/halfword stores into a sparse
+/// Replay a seed region's `$s0`-relative byte/halfword stores into a sparse
 /// `SC`-offset → byte map.
 ///
-/// The region writes `SC` bytes with one of two idioms, both of which load a
-/// constant into `$v0` then store it relative to `$s0` (= `SC` base): the
-/// vanilla `sb` byte-store (`addiu $v0,imm; sb …`) or the randomizer's packed
-/// `sh` halfword-store (`addiu $v0,imm; sh …`). Both the inventory decoder and
-/// the warp-flag reader interpret the resulting map. See the instruction
-/// encodings in `docs/formats/new-game-table.md`.
+/// A seed region loads a constant into a scratch register then stores it
+/// relative to `$s0` (= `SC` base): `addiu rt,$zero,imm` then `sb`/`sh
+/// rt,off($s0)`. The inventory seed uses `$v0`; the warp preset uses `$v1` (it
+/// must leave `$v0` alone, see [`WARP_SEED_VA`]). This recognises stores from
+/// either register so both regions decode through one walker. See the
+/// instruction encodings in `docs/formats/new-game-table.md`.
 fn replay_seed_stores(region: &[u8]) -> std::collections::BTreeMap<u32, u8> {
     use std::collections::BTreeMap;
-    // Top 16 bits of the LE instruction word identify the op + fixed registers
-    // ($v0 = rt 2, $s0 = base 16).
-    const ADDIU_V0: u16 = 0x2402; // addiu $v0, $zero, imm16
-    const SB_V0_S0: u16 = 0xA202; // sb    $v0, off($s0)
-    const SH_V0_S0: u16 = 0xA602; // sh    $v0, off($s0)
 
     let mut bytes: BTreeMap<u32, u8> = BTreeMap::new();
-    let mut v0: u32 = 0;
+    // The scratch registers a seed store may use: $v0 (2) and $v1 (3).
+    let mut regs: [u32; 32] = [0; 32];
     for chunk in region.chunks_exact(4) {
         let word = u32::from_le_bytes(chunk.try_into().unwrap());
-        let top = (word >> 16) as u16;
+        let op = word >> 26;
+        let rs = (word >> 21) & 0x1F;
+        let rt = ((word >> 16) & 0x1F) as usize;
         let imm = word & 0xFFFF;
-        match top {
-            ADDIU_V0 => v0 = imm,
-            SB_V0_S0 => {
-                bytes.insert(imm, (v0 & 0xFF) as u8);
+        let is_scratch = rt == 2 || rt == 3;
+        match op {
+            // addiu rt, $zero, imm  (load the constant; low 16 bits are all the
+            // stores below use).
+            0x09 if rs == 0 && is_scratch => regs[rt] = imm,
+            // sb rt, imm($s0)
+            0x28 if rs == 16 && is_scratch => {
+                bytes.insert(imm, (regs[rt] & 0xFF) as u8);
             }
-            SH_V0_S0 => {
-                bytes.insert(imm, (v0 & 0xFF) as u8);
-                bytes.insert(imm + 1, ((v0 >> 8) & 0xFF) as u8);
+            // sh rt, imm($s0)
+            0x29 if rs == 16 && is_scratch => {
+                bytes.insert(imm, (regs[rt] & 0xFF) as u8);
+                bytes.insert(imm + 1, ((regs[rt] >> 8) & 0xFF) as u8);
             }
             _ => {}
         }
@@ -291,13 +330,13 @@ pub fn region_unlocks_all_warps(region: &[u8]) -> bool {
         && halfword(WARP_FLAGS_SC_OFFSET + 2) == Some(WARP_ALL_FLAGS_HI)
 }
 
-/// `true` if a `SCUS_942.54` image's seed region presets the all-towns
-/// Door-of-Wind bitmask. `None` if the image isn't a PSX-EXE / the region is out
-/// of range.
+/// `true` if a `SCUS_942.54` image's warp-preset region ([`WARP_SEED_VA`])
+/// presets the all-towns Door-of-Wind bitmask. `None` if the image isn't a
+/// PSX-EXE / the region is out of range.
 pub fn scus_unlocks_all_warps(scus: &[u8]) -> Option<bool> {
     let map = ExeMap::parse(scus)?;
-    let off = map.off(STARTING_INV_SEED_VA)?;
-    let region = scus.get(off..off + STARTING_INV_SEED_LEN)?;
+    let off = map.off(WARP_SEED_VA)?;
+    let region = scus.get(off..off + WARP_SEED_LEN)?;
     Some(region_unlocks_all_warps(region))
 }
 
@@ -527,50 +566,60 @@ mod tests {
     }
 
     #[test]
-    fn region_with_warp_stores_unlocks_all_warps() {
-        // addiu $v0, lo; sh $v0, 0x161C($s0); addiu $v0, hi; sh $v0, 0x161E($s0).
-        // addiu sign-extends, but the `sh` only stores the low 16 bits.
-        let r = region(&[
-            0x2402_0000 | WARP_ALL_FLAGS_LO as u32,
-            0xA602_0000 | WARP_FLAGS_SC_OFFSET,
-            0x2402_0000 | WARP_ALL_FLAGS_HI as u32,
-            0xA602_0000 | (WARP_FLAGS_SC_OFFSET + 2),
-            // followed by a normal inventory slot, which must still decode.
-            0x24020a89, // id 0x89, count 0x0a (Door of Wind x10)
-            0xa6021818, // sh slot 0
-            0,
-            0,
-            0,
-            0,
-        ]);
+    fn warp_region_with_v1_stores_unlocks_all_warps() {
+        // The real warp preset uses $v1 (rt 3) to avoid clobbering $v0:
+        // addiu $v1, lo; sh $v1, 0x161C($s0); addiu $v1, hi; sh $v1, 0x161E($s0).
+        let r = [
+            0x2403_0000 | WARP_ALL_FLAGS_LO as u32,
+            0xA603_0000 | WARP_FLAGS_SC_OFFSET,
+            0x2403_0000 | WARP_ALL_FLAGS_HI as u32,
+            0xA603_0000 | (WARP_FLAGS_SC_OFFSET + 2),
+        ]
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect::<Vec<u8>>();
+        assert_eq!(r.len(), WARP_SEED_LEN);
         assert!(region_unlocks_all_warps(&r));
+    }
+
+    #[test]
+    fn warp_region_decode_is_independent_of_the_inventory_region() {
+        // An inventory region full of $v0 item stores does NOT read as a warp
+        // preset (the two are separate regions now).
+        let inv = region(&[
+            0x24020a89, // addiu $v0, Door of Wind x10
+            0xa6021818, // sh slot 0
+            0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+        assert!(!region_unlocks_all_warps(&inv));
         assert_eq!(
-            StartingInventory::decode_region(&r).items(),
-            &[(DOOR_OF_WIND_ITEM, 10)],
-            "warp-flag stores don't disturb the inventory decode"
+            StartingInventory::decode_region(&inv).items(),
+            &[(DOOR_OF_WIND_ITEM, 10)]
         );
     }
 
     #[test]
-    fn region_without_warp_stores_is_not_unlocked() {
-        // The vanilla Healing Leaf seed writes nothing to the story-flag window.
-        let r = region(&[
-            0x24020077, 0xa2021818, 0x24020005, 0xa2021819, 0, 0, 0, 0, 0, 0,
-        ]);
-        assert!(!region_unlocks_all_warps(&r));
+    fn warp_region_without_stores_is_not_unlocked() {
+        // The original four `sw $zero` redundant stores at WARP_SEED_VA do not
+        // read as a warp preset.
+        let zeros = [
+            0xAE00_0460u32, // sw $zero, 0x460($s0)
+            0xAE00_0464,    // sw $zero, 0x464($s0)
+            0xAE00_0470,    // sw $zero, 0x470($s0)
+            0xAE00_0478,    // sw $zero, 0x478($s0)
+        ]
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect::<Vec<u8>>();
+        assert!(!region_unlocks_all_warps(&zeros));
         // A partial mask (only the low half) must not read as fully unlocked.
-        let half = region(&[
-            0x2402_0000 | WARP_ALL_FLAGS_LO as u32,
-            0xA602_0000 | WARP_FLAGS_SC_OFFSET,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ]);
+        let half = [
+            0x2403_0000 | WARP_ALL_FLAGS_LO as u32,
+            0xA603_0000 | WARP_FLAGS_SC_OFFSET,
+        ]
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect::<Vec<u8>>();
         assert!(!region_unlocks_all_warps(&half));
     }
 }
