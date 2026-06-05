@@ -5674,6 +5674,26 @@ impl PlayWindowApp {
                     // Keep `scene_tmd_data` length-parallel with `meshes`.
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
+                    // Attach the monster's idle clip so its limbs move in
+                    // battle. The clip's part count should equal the TMD object
+                    // count (one rigid transform per object); MonsterAnimPlayer
+                    // tolerates a mismatch (extra objects stay at rest).
+                    match legaia_asset::monster_archive::idle_animation(&archive, monster_id) {
+                        Ok(Some(idle)) => {
+                            if let Some(player) =
+                                legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
+                            {
+                                self.session
+                                    .host
+                                    .world
+                                    .set_actor_battle_animation(actor_idx, player);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
+                        }
+                    }
                     bound += 1;
                 }
                 Err(e) => log::warn!("play-window: monster {monster_id} mesh upload: {e:#}"),
@@ -7259,6 +7279,12 @@ impl ApplicationHandler for PlayWindowApp {
                     // Advance an active Seru-magic summon scene-graph (the cast
                     // above, or the `G` debug spawn) through the move VM.
                     self.session.host.world.tick_summon(0x0400);
+                    // In battle, advance each monster actor's per-object idle
+                    // animation into its `pose_frame` (the render pass below
+                    // deforms the mesh via the rigid `posed_rot` builder).
+                    if self.session.host.world.mode == SceneMode::Battle {
+                        self.session.host.world.tick_battle_animations();
+                    }
                     if self.menu_runtime.is_open() {
                         let p = self.pad;
                         let input = MenuInput {
@@ -7479,8 +7505,19 @@ impl ApplicationHandler for PlayWindowApp {
                         let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                             continue;
                         };
-                        let vmesh =
-                            legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs);
+                        // Battle actors carry a per-object rigid-transform clip
+                        // (rotation matters), so use the full `R·v + T` builder;
+                        // field actors keep the translation-only ANM path
+                        // unchanged.
+                        let vmesh = if actor.battle_animation.is_some() {
+                            legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            )
+                        } else {
+                            legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs)
+                        };
                         if vmesh.indices.is_empty() {
                             continue;
                         }
