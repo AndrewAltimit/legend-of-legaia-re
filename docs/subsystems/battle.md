@@ -108,11 +108,18 @@ dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
   along its edge) — *not* a ring. The dome's own ground ring (inner radius
   `2889`) is the far grass behind the flat grid.
 
-**Engine status.** The clean-room engine draws the dome **once** (world-fixed)
-under the exact camera, matching retail's single-actor mechanism and its partial
-horizon coverage. (An earlier build added a `Ry(180°)` mirror to "complete" the
-surround; that over-fills what retail leaves open, so it is removed.) The fully
-faithful backdrop would also emit the flat tiled ground grid — a follow-up.
+**Engine status.** `legaia-engine play-window --scene map01 --live-loop` renders
+the overworld battle as a faithful scene: the exact orbit camera (below), the
+PROT 88 dome at raw coords plus a `Ry(180°)` mirror so the mountain ring + sky
+read as a full circle, a flat tiled grass grid under the actors (the
+`func_0x801d02c0` grid, `0x200` cell pitch, sampling the dome's grass tile), a
+sky-blue clear so the open horizon reads as sky, the real **assembled** battle
+party (see below), and animated monsters. One caveat: the live camera uses a
+*closer* unified depth than the exact `tr.z = 7680` — the battle meshes are small
+(party 134–284 units, monsters 77–368), so at the true depth they are a few
+pixels (retail draws actors off the rotation-only `DAT_8007bf10` + a per-actor
+position, not the backdrop's deep matrix). Cosmetic gaps remain (the ground-mist
+`obj1` is more prominent than retail; the mountain CLUT skews tan vs grey).
 
 ### Battle camera (exact)
 
@@ -136,6 +143,32 @@ projection register by `FUN_8003d254`), and the look-at target at the world
 origin. The engine mirrors this in `legaia-engine`'s `retail_battle_mvp` as
 `Proj_H * T(TR) * R * F` (`F` = the renderer's Y-flip), verified to 0.0002 px
 against the hand-rolled projection and against the savestate framebuffer.
+
+These values are **live-confirmed byte-exact** by
+[`scripts/pcsx-redux/autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua):
+run on a real `map01` battle save (reading at the `func_0x801d02c0` grid-render
+breakpoint, since at frame 0 the globals hold stale field state) it reports
+`mode=0x15 pitch=32 roll=0 TR=(0,1280,7680) H=256`, the grid as **28×28** cells,
+the battle actors at scale `+0x72 = 0x1000` (1.0, *not* scaled up — the
+on-screen size comes from the mesh, not a scale), and the dome registered at
+`DAT_8007C018[2]`.
+
+### Battle party meshes (assembled)
+
+The party renders the real **battle-form meshes** (PROT 1204 — Vahn/Noa/Gala),
+installed into `DAT_8007C018[0..=2]`. The battle char TMD is a set of
+object-local pieces (head/torso/limbs), **not** a single pre-assembled mesh, so
+the engine sockets them with the **battle ANM (PROT 1203 `other5`)**: frame 0 of
+each character's idle record is the combat-stance rest pose, applied `R*v + T`
+per object (`tmd_to_vram_mesh_posed_rot`). The 30 records are 3 banks of 10
+(Vahn @ 0 / Noa @ 10 / Gala @ 20). Textures: the pack's 7 atlases upload to VRAM
+and each character's decoded battle palette (Vahn `parse_record` PROT 0861;
+Noa/Gala `collect_palette` 0864/0865 — see
+[`character-mesh.md`](../formats/character-mesh.md)) overlays the CLUT rows its
+mesh samples, so the party reads in its real colours (blue Vahn / pink Noa /
+Gala). A stage battle draws **only active actors** — the scene-init actors are
+bound but inactive and parked at the world origin, so without that gate they
+pile their meshes at `(0,0,0)`.
 
 ## Battle action state machine (`FUN_801E295C`)
 

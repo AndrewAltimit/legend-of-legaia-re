@@ -249,7 +249,10 @@ PROT 1203's 30 records are organised in **per-character banks** by bone count
 Vahn set, 9–17 the 16-bone Noa set, 18–26 the 15-bone Gala set, 27–29 a 10-bone
 simplified rig. The first record of each bank is that character's idle. The site
 `/characters.html` viewer assembles all three party meshes this way (the
-`BattleMeshView` pose path mirrors the GTE pipeline above).
+`BattleMeshView` pose path mirrors the GTE pipeline above), and the clean-room
+engine does the same in a live battle — `legaia-engine play-window` poses each
+party mesh with `tmd_to_vram_mesh_posed_rot` against its bank-idle frame 0 (see
+[`subsystems/battle.md` § Battle party meshes](../subsystems/battle.md#battle-party-meshes-assembled)).
 
 **Loader provenance — pinned (write-watchpoint).** The party meshes are
 installed by the generic registrar `tmd_register` (`FUN_80026B4C`, the store at

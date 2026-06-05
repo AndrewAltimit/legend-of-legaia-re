@@ -5986,8 +5986,8 @@ impl PlayWindowApp {
             // torso, limbs) - NOT pre-assembled. The retail engine sockets them
             // with the battle ANM (PROT 1203 `other5`): frame 0 of each
             // character's idle record = the combat-stance rest pose, applied
-            // R*v + T per object. Load that bundle; the 30 records are 3 banks of
-            // 10 (Vahn @ 0, Noa @ 10, Gala @ 20).
+            // R*v + T per object. Load that bundle; its 30 records are per-char
+            // banks (Vahn 0-8 / Noa 9-17 / Gala 18-26), idle = each bank's first.
             let battle_anm = self
                 .session
                 .host
@@ -6013,9 +6013,12 @@ impl PlayWindowApp {
                     continue;
                 };
                 // Assemble: frame-0 (T,R) per object from this char's idle record.
+                // PROT 1203 banks (per docs/formats/character-mesh.md): records
+                // 0-8 = Vahn (15-bone), 9-17 = Noa (16), 18-26 = Gala (15); the
+                // FIRST record of each bank is that character's idle rest pose.
                 let bone_offsets: Vec<([i16; 3], [i16; 3])> = match &battle_anm {
                     Some(b) => {
-                        let rec = cslot * 10; // bank start = idle record
+                        let rec = [0usize, 9, 18][cslot]; // idle record per bank
                         (0..tmd.objects.len())
                             .map(|o| match b.bone_transform(rec, 0, o) {
                                 Some(t) => (
