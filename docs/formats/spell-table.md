@@ -86,7 +86,7 @@ the save-state pin recorded in `legaia_engine_core::capture_observations::seru_c
 | `0x8a` | Freed | water | 40 | all enemies |
 | `0x8b` | Nova | wind | 48 | one enemy |
 
-### Per-spell damage power is not static data
+### Per-spell damage power is not static data — it is caster-state-derived
 
 There is **no per-spell magic-power / multiplier field anywhere in this table**,
 and it isn't a separate static array either. Verified bytes + trace:
@@ -110,11 +110,50 @@ and it isn't a separate static array either. Verified bytes + trace:
   `0x13 < *param_2 - 0xc`), which magic (`ActionConstant::Magic = 0x02`) never
   enters.
 
-So the per-spell power the engine wants requires decoding the per-summon effect
-scripts at `PTR_801f6734[id - 0x81]`, an open thread (see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)). Until then
-the `base_power` figures in `legaia_engine_core::retail_magic` are explicitly
-MP-scaled placeholders.
+**Resolved by static disassembly of the summon overlays (PROT 0900 + 0903..0915).**
+The jump table `FUN_801f2d68` reads (`jr *(0x801F69D8 + state*4)`, `state < 7`)
+resolve to PROT **0900** file offset 0 — the resident **render** overlay (pinned to
+load at `0x801F69D8`). Those five entries are staggered entry points into one
+per-frame routine that lerps move-VM anim banks (`FUN_8003ce9c`/`ce64`/`ceb8`) and
+emits GPU display-list packets into scratchpad `0x1F800314`. It contains **no
+`mult`/`div`, no `actor+0x14c` write, no power read** — so the long-standing "the
+magnitude is in this jump table" hypothesis is **falsified**. The JT is animation /
+rendering only.
+
+The magnitude is applied by the paired **stager** overlay (PROT 0903..0915 — the file
+holding the `jal FUN_80021B04` part-spawn calls), in the *same function* that spawns
+the summon body parts. Each stager carries exactly one `actor+0x14c` (HP) writer, and
+they split cleanly into damage vs. heal:
+
+- **Damage summons** (PROT 0904 / 0912 / 0914, plus 0915's second arm) compute the
+  amount with the shared battle kernel **`FUN_801dd0ac`** (`a0` = a per-summon
+  move-type constant `0x10..0x12`, `a1 = 7`, `a2` = target slot), clamp it to the
+  target's current HP, add it to the damage-popup accumulator at `actor+0x10`, then
+  store `HP = curHP - amount` (`subu`). For the summon path (`param_2 == 7`) the
+  attacker roll is
+  `rand % (AGL@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_AGL@+0x168 * 2`
+  minus a defender-mitigation term (`FUN_801dd0ac` returns `roll - mitigation`) — i.e.
+  **caster/summon battle-state-derived, not a static per-spell scalar.**
+- **Heal summons** (PROT 0903 / 0905 / 0910 / 0911 / 0913, plus 0915's first arm)
+  compute the amount inline as `(power_byte << 5) + 0xe0` (= `power*32 + 224`), clamp
+  to `maxHP - curHP`, skip dead/flagged actors, then store `HP = curHP + amount`
+  (`addu`). `power_byte` is fetched from a table based at `0x80084140` (the
+  SC / character-record block) by a 32-slot search that matches the cast spell-id
+  (`actor+0x1df`) against an id list at `+0x705`, reading the parallel power byte at
+  `+0x729`.
+
+`FUN_801dd0ac`'s **non-summon** branch (`param_2 != 7`, the arts / physical path) reads
+a 26-byte-stride per-move power table at **`0x801F4F5C`** — that is where a genuine
+per-move "power" scalar lives, but it feeds melee/arts, not summon magic.
+
+So the "missing per-spell power scalar" the engine wanted largely **does not exist for
+summons**: the game derives summon magnitude from caster/summon battle stats
+(`FUN_801dd0ac`) or, for recovery summons, from a per-character magic-power byte. The
+`base_power` figures in `legaia_engine_core::retail_magic` stay MP-scaled placeholders
+until the `FUN_801dd0ac` summon roll (and the `0x801F4F5C` move-power table contents)
+are ported. (Method: capstone disassembly of the extracted PROT 0900 / 0903..0915
+overlays; `FUN_801dd0ac` itself is already dumped at
+`ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`.)
 
 The mirror lives at `legaia_engine_core::retail_magic` (`SERU_MAGIC` +
 `retail_seru_magic_catalog`); the Seru that teach these ids are wired in

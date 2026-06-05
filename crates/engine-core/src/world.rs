@@ -3827,11 +3827,19 @@ impl World {
     }
 
     /// Spawn a Seru-magic summon scene-graph from a parsed stager overlay (e.g.
-    /// PROT 0905, Gimard *Tail Fire*) at `origin` (world units). `record_bytes`
-    /// is the overlay's raw bytes (the buffer `overlay` was parsed from);
-    /// `model_base` is the pool index a part's `model_sel == 0` resolves to
+    /// PROT 0905, Gimard *Burning Attack*) at `origin` (world units).
+    /// `record_bytes` is the overlay's raw bytes (the buffer `overlay` was parsed
+    /// from); `model_base` is the pool index a part's `model_sel == 0` resolves to
     /// (the summon's mesh-set base, e.g. [`crate::scene::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
     /// Replaces any in-flight summon. Tick it with [`Self::tick_summon`].
+    ///
+    /// NOTE this drives the engine's **move-VM scene-graph stand-in**
+    /// ([`crate::summon::SummonScene`]), not the faithful player-summon render. A
+    /// live trace resolved that retail draws the player summon as an ordinary
+    /// battle actor via the per-object TRS-keyframe path `FUN_80048A08` /
+    /// `FUN_8004998C` (ported in [`legaia_engine_vm::anim_vm`]); see the
+    /// `SummonScene` module reconciliation note.
+    // REF: FUN_80048A08 (faithful player-summon render = battle-actor TRS-keyframe draw)
     pub fn spawn_summon(
         &mut self,
         overlay: &legaia_asset::summon_overlay::SummonOverlay,
