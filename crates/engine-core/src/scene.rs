@@ -238,6 +238,27 @@ impl ProtIndex {
         cdname::block_range_for_name(map, scene_name)
     }
 
+    /// PROT entries in `scene_name`'s CDNAME block whose payload is a
+    /// `scene_tmd_stream` — the battle-stage half-dome backdrops (sky + mountain
+    /// ring + ground that the battle is fought inside; see
+    /// [`docs/subsystems/battle.md`] "Battle background"). For an overworld
+    /// scene like `map01` these are the per-area stage variants (e.g. 88/89/90:
+    /// byte-identical dome geometry, different textures). The first is the
+    /// default backdrop; per-sub-area variant selection is a follow-up. Empty
+    /// when no CDNAME map is loaded or the block has no stage entries.
+    pub fn battle_stage_entries(&self, scene_name: &str) -> Vec<u32> {
+        let Some((start, end)) = self.block_range(scene_name) else {
+            return Vec::new();
+        };
+        (start..end)
+            .filter(|&idx| {
+                self.entry_bytes(idx)
+                    .map(|b| legaia_asset::scene_tmd_stream::is_scene_tmd_stream(&b))
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
     /// First scene label whose block contains `idx`. Useful for diagnostics
     /// (e.g. "this BGM is part of which scene?").
     pub fn scene_for_index(&self, idx: u32) -> Option<&str> {

@@ -3696,6 +3696,10 @@ struct PlayWindowApp {
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
+    /// Mesh index of the battle-stage backdrop dome (the scene's
+    /// `scene_tmd_stream` half-dome), drawn behind the actors. `None` when the
+    /// scene has no stage or it failed to load.
+    battle_stage_mesh: Option<usize>,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
@@ -5663,16 +5667,67 @@ impl PlayWindowApp {
     /// at the loader's per-slot coords, upload the relocated mesh, and bind it
     /// to the enemy actor. Re-uploads the edited VRAM so the injected texture
     /// pages resolve.
+    /// Build the current scene's battle-stage backdrop, if it has one. Returns
+    /// the battle VRAM (scene + stage-dome textures resident) and the stage
+    /// dome's `(Tmd, raw)`. The faithful battle backdrop is the scene's
+    /// `scene_tmd_stream` half-dome (sky + mountain ring + ground); building the
+    /// scene in `SceneLoadKind::Battle` makes that dome TMD + its textures
+    /// resident (the Field build excludes them). `None` when the scene has no
+    /// stage entry.
+    fn build_battle_stage(&self) -> Option<(legaia_tim::Vram, (legaia_tmd::Tmd, Vec<u8>))> {
+        let scene = self.session.host.scene.as_ref()?;
+        let scene_name = scene.name.clone();
+        let stage_entry = *self
+            .session
+            .host
+            .index
+            .battle_stage_entries(&scene_name)
+            .first()?;
+        let mut shared: Vec<Scene> = Vec::new();
+        for name in FIELD_SHARED_BLOCKS {
+            if let Ok(s) = Scene::load(&self.session.host.index, name) {
+                shared.push(s);
+            }
+        }
+        let refs: Vec<&Scene> = shared.iter().collect();
+        let (res, _) = SceneResources::build_targeted_with_options(
+            scene,
+            &refs,
+            BuildOptions {
+                kind: SceneLoadKind::Battle,
+                upload_all_tims: true,
+            },
+        )
+        .ok()?;
+        // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
+        let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
+        log::info!(
+            "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
+             ({} objects)",
+            dome.tmd.objects.len()
+        );
+        Some((res.vram.clone(), (dome.tmd.clone(), dome.raw.clone())))
+    }
+
     fn enter_battle_render(&mut self) {
         let monsters = self.session.host.world.battle_monster_slots();
         if monsters.is_empty() {
             return;
         }
-        let Some(base) = self.cpu_vram_base.clone() else {
+        let Some(field_base) = self.cpu_vram_base.clone() else {
             return;
         };
         let Some(archive) = self.monster_archive_bytes() else {
             return;
+        };
+        // Build the battle-stage backdrop (the scene's scene_tmd_stream
+        // half-dome). Its VRAM (scene + stage-dome textures resident) becomes
+        // the battle base, so the dome renders textured behind the actors;
+        // fall back to the field VRAM when the scene has no stage.
+        let stage = self.build_battle_stage();
+        let base = match &stage {
+            Some((sv, _)) => sv.clone(),
+            None => field_base,
         };
         let Some(r) = self.win.renderer.as_ref() else {
             return;
@@ -5695,6 +5750,27 @@ impl PlayWindowApp {
             log::warn!("play-window: flame-atlas VRAM upload skipped: {e:#}");
         }
         self.battle_mesh_base = self.meshes.len();
+        // Upload the stage dome mesh (drawn as the backdrop). Its textures live
+        // in the stage VRAM, so build it unfiltered (all textured prims are
+        // resident). Appended after `battle_mesh_base`, so battle exit truncates
+        // it away with the monster meshes.
+        self.battle_stage_mesh = None;
+        if let Some((_, (tmd, raw))) = &stage {
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+            if !vmesh.indices.is_empty()
+                && let Ok(m) = r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.indices,
+                )
+            {
+                self.battle_stage_mesh = Some(self.meshes.len());
+                self.meshes.push(m);
+                self.scene_tmd_data.push((tmd.clone(), raw.clone()));
+            }
+        }
         let mut bound = 0usize;
         for (actor_idx, monster_id, slot) in monsters {
             let mesh = match legaia_asset::monster_archive::mesh(&archive, monster_id) {
@@ -5891,6 +5967,7 @@ impl PlayWindowApp {
         }
         self.battle_vram = None;
         self.battle_tex_slots_used = 0;
+        self.battle_stage_mesh = None;
     }
 
     /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
@@ -7770,18 +7847,37 @@ impl ApplicationHandler for PlayWindowApp {
                             }
                         }
                     } else {
-                        // Static environment geometry: draw each placed
-                        // building / terrain mesh at its world transform
-                        // (resolved at scene load in `resolve_field_placement_
-                        // draws`). Without this the field shows only the ~8
-                        // actor-bound meshes and the town's 100+ environment
-                        // meshes never render (or pile at the origin).
-                        for (mesh_idx, model) in &self.field_placement_draws {
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                        let in_battle = self.session.host.world.mode == SceneMode::Battle;
+                        if in_battle {
+                            // Battle backdrop: the scene's stage half-dome (sky +
+                            // mountain ring + ground) at the world origin. The
+                            // dome's "front" (+z) is rotated onto the enemy
+                            // direction (+x) so the camera looks into it, and
+                            // y-flipped (PSX Y-down -> renderer Y-up) like every
+                            // other mesh. The dome (~±12264) dwarfs the ±600
+                            // actors, so it surrounds them.
+                            if let Some(stage_idx) = self.battle_stage_mesh
+                                && let Some(mesh) = self.meshes.get(stage_idx)
+                            {
+                                let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+                                    * Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2);
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp: cam * model,
                                 });
+                            }
+                        } else {
+                            // Static environment geometry: draw each placed
+                            // building / terrain mesh at its world transform
+                            // (resolved at scene load in
+                            // `resolve_field_placement_draws`).
+                            for (mesh_idx, model) in &self.field_placement_draws {
+                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                    draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * *model,
+                                    });
+                                }
                             }
                         }
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
@@ -8823,6 +8919,7 @@ fn cmd_play_window_with_record(
         battle_vram: None,
         battle_tex_slots_used: 0,
         summon_actor_slot: None,
+        battle_stage_mesh: None,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
