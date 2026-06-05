@@ -9873,8 +9873,8 @@ fn build_battle_ground_grid(
         "battle ground grid: grass texture {same_len} verts, uv [{u0}..{u1}]x[{v0}..{v1}] cba_tsb={cba_tsb:?}"
     );
 
-    const N: i32 = 24; // cells per side
-    const P: f32 = 1400.0; // cell pitch (world units) -> ~+/-16800 extent
+    const N: i32 = 64; // cells per side
+    const P: f32 = 512.0; // retail func_0x801d02c0 cell pitch (0x200) -> ~+/-16384 extent
     let mut m = legaia_tmd::mesh::VramMesh {
         positions: Vec::new(),
         uvs: Vec::new(),
