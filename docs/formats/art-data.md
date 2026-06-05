@@ -18,7 +18,9 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 
 Confidence: **Inferred** - the per-record damage / animation / effect schema below comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
 
-> **Where the button combos live (corrected).** The directional **command sequence** is NOT in a "PROT `0x05C4` record at `+0x00`" - that claim is falsified (`0x05C4` = 1476 isn't even a valid PROT index; the archive has 1232 entries), and the RAM bases above (`0x80160EFC` etc.) hold the art *name / animation* records, not the combos. The combo lives in exactly **one** place: the SCUS `DAT_80075EC4` arts-name table's `+8` **command-glyph string** (see [Arts-name table](#arts-name-table-dat_80075ec4) below). An exhaustive search of all 2 MB of a mid-battle save's RAM and of the whole disc finds each art's combo nowhere as a contiguous direction run (in any of the `1=L..4=U`, action-constant `0x0C..0x0F`, or single-byte-glyph encodings) - only as those `+8` glyph strings. Since the game matches combos and there is only one copy, the input matcher necessarily derives from this table, so the `+8` string is **both** the menu display **and** the gameplay trigger. (This is what the arts-combo randomizer edits - see [`docs/tooling/randomizer.md`](../tooling/randomizer.md).)
+> **Where the button combos live (corrected).** The directional **command sequence** is NOT in a "PROT `0x05C4` record at `+0x00`" - that claim is falsified (`0x05C4` = 1476 isn't even a valid PROT index; the archive has 1232 entries), and the RAM bases above (`0x80160EFC` etc.) hold the art *name / animation* records, not the combos. The combo's directional bytes live in exactly **one** place: a glyph string in the SCUS `DAT_80075EC4` arts-name table region (see [Arts-name table](#arts-name-table-dat_80075ec4) below). An exhaustive search of all 2 MB of a save's RAM and of the whole disc finds each art's combo nowhere as a contiguous direction run (in any of the `1=L..4=U`, action-constant `0x0C..0x0F`, or single-byte-glyph encodings) - only as those glyph strings.
+>
+> **Two pointers reach each combo string, both dereferencing the same bytes:** the record's `+8` is the **Arts-menu display**, and the record's `+0x10` description pointer is followed by the combo string the **in-battle input matcher** reads (the combo sits immediately after the description). So moving the `+8` *pointer* changes only the menu arrows - the matcher keeps reading the original string and the art still triggers on the old combo (an emulator playtest confirmed this). The faithful edit is to overwrite the combo's **glyph bytes in place** (same size), which both the display and the matcher read. This is what the arts-combo randomizer does - see [`docs/tooling/randomizer.md`](../tooling/randomizer.md).
 
 ## Action Constants
 
@@ -218,13 +220,14 @@ for that table's `ap` column + the canonical art display order.
 ### Command-glyph string (`+8`)
 
 The `+8` pointer is the **command-input string** - the arrow sequence shown in
-the arts menu **and** the single on-disc representation of each art's directional
-combo (so it is also the source the runtime input matcher derives from; see the
-warning at the top of this page). Encoding: `[count u8]` then `count` two-byte
-glyph codes. A one-off `0xFF XX` marker separates the sequence (`0xFF06` for
-regular arts, `0xFF09` for Miracle arts), is **not** a direction, and its
-position within the string varies (it can sit mid-combo). The arrow glyphs map
-to physical d-pad directions:
+the arts menu. Its bytes are also the single on-disc representation of each
+art's directional combo, reached separately by the input matcher via the `+0x10`
+description pointer (see the warning at the top of this page), so editing the
+**bytes** updates both display and trigger. Encoding: `[count u8]` then `count`
+two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence
+(`0xFF06` for regular arts, `0xFF09` for Miracle arts), is **not** a direction,
+and its position within the string varies (it can sit mid-combo). The arrow
+glyphs map to physical d-pad directions:
 
 | Glyph | Direction | dir code |
 |---|---|---|

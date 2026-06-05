@@ -332,30 +332,29 @@ current table (the audit surface).
 
 ### Arts button combos
 
-The directional combo that fires each Tactical Art lives in the **static
-`SCUS_942.54` arts-name table** `DAT_80075EC4`: every 20-byte record points, at
-`+8`, to a glyph string `[count][2-byte direction glyphs + one `0xFF06`/`0xFF09`
-separator marker]`. That glyph string is the **sole** on-disc/in-memory
-representation of the combo (the old "PROT `0x05C4` record holds the matched
-bytes at `+0x00`" claim is falsified — see [art-data.md](../formats/art-data.md)),
-so editing it changes both the Arts-menu display and the gameplay trigger.
+The directional combo that fires each Tactical Art is a glyph string in the
+**static `SCUS_942.54` arts-name table** region (`DAT_80075EC4`):
+`[count][2-byte direction glyphs + one `0xFF06`/`0xFF09` separator marker]`.
+Two pointers reach each string and **both read the same bytes**: the record's
+`+8` is the Arts-menu **display**, and its `+0x10` description pointer is
+followed by the string the in-battle input **matcher** reads. (The old "PROT
+`0x05C4` record holds the matched bytes" claim is falsified — see
+[art-data.md](../formats/art-data.md).) So moving the `+8` *pointer* changes only
+the menu and desyncs the trigger (an emulator playtest caught this); the
+faithful edit is to overwrite the combo's **glyph bytes in place** (a same-size
+2-byte-per-direction edit, the separator marker left untouched).
 
-Two facts shape the edit. First, identical combos are **deduplicated and shared
-across characters** (Vahn's Cyclone and Noa's Swan Driver point at one `D U U U`
-string), so overwriting a string's bytes would corrupt another character's art.
-The randomizer instead reassigns each record's `+8` **pointer** to a *different
-existing* combo string — a same-size 4-byte SCUS edit, no relocation, no sharing
-hazard. Second, vanilla combos are already unique *within* a character, so a
-within-character permutation keeps "each art is a unique combo".
-
-`apply::randomize_arts` (`--arts shuffle|random`) preserves two invariants: each
-art keeps its **input count** (a 4-input art stays 4 inputs, so its AP /
-available-spaces balance is unchanged) and each character's combos stay unique.
-Reassignment runs within each character's per-length groups: `Shuffle` permutes a
-character's own same-length combos (a length the character has a single art of
-stays put); `Random` draws each art a same-length combo from the global pool of
-every regular art's combo. The per-character **Miracle Art** (record index 0,
-`0xFF09` marker) is left untouched. `legaia-rando arts` lists the current combos.
+Because identical combos are **deduplicated across characters** (Vahn's Cyclone
+and Noa's Swan Driver point at one `D U U U` string), the editable unit is the
+*distinct combo string*, not the art. `apply::randomize_arts`
+(`--arts shuffle|random`) permutes the **contents** of the distinct strings
+within each length class, preserving two invariants: each art keeps its **input
+count** (a 4-input art stays 4 inputs) and each character's combos stay unique —
+the latter for free, since every character's arts map to distinct strings and a
+bijection keeps them distinct. `Shuffle` reassigns existing same-length combos
+(no new input ambiguity); `Random` writes fresh same-length combos. The
+per-character **Miracle Art** (`0xFF09` marker) strings are left untouched.
+`legaia-rando arts` lists the current combos.
 
 ### Doors (scene transitions)
 
@@ -572,7 +571,7 @@ bit-for-bit.
 | `crates/rando` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
 | `crates/rando` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
 | `crates/rando` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
-| `crates/rando` `arts_patch_real` | disc-gated | arts-combo shuffle + random: re-decode the patched `SCUS_942.54` arts table, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) each character's per-length combo multiset preserved / (random) only existing same-length combos assigned + image size unchanged + sector EDC/ECC-valid + deterministic |
+| `crates/rando` `arts_patch_real` | disc-gated | arts-combo shuffle + random (in-place glyph-byte edits): re-decode the patched `SCUS_942.54` combos, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) the global per-length set of distinct combos preserved + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
 | `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
@@ -586,7 +585,7 @@ bit-for-bit.
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
 | `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
-| `crates/engine-core` `arts_randomizer_runtime_e2e` | disc-gated | runtime oracle: shuffle the arts combos, re-decode them off the patched image, and drive the real combo-recognition kernel (`battle_arts::chain_matches_record`) — assert every changed art fires on the new combo and no longer on the old one (baseline: each art fires on its original combo) |
+| `crates/engine-core` `arts_randomizer_runtime_e2e` | disc-gated | runtime oracle: shuffle the arts combos (in-place glyph-byte edits), re-decode them off the patched image, and drive the real combo-recognition kernel (`battle_arts::chain_matches_record`) — assert every changed art fires on the new combo bytes and no longer on the old one (baseline: each art fires on its original combo) |
 | `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
 | `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
 | `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
