@@ -900,12 +900,10 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(arts_mode) = arts_mode {
-        let (plan, report) = apply::randomize_arts(&mut patcher, seed, arts_mode)?;
+        let (_plan, report) = apply::randomize_arts(&mut patcher, seed, arts_mode)?;
         println!(
             "arts: {} of {} arts re-combo'd ({:?})",
-            report.combos_changed,
-            plan.len(),
-            arts_mode
+            report.combos_changed, report.arts, arts_mode
         );
         manifest.push(format!(
             "arts = {:?}",

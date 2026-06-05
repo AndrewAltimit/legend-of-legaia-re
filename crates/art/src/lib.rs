@@ -43,7 +43,10 @@ pub mod record;
 pub mod super_art;
 pub mod tables;
 
-pub use arts_table::{ArtTableEntry, ArtsOracle, RawArtRecord, raw_records_from_scus};
+pub use arts_table::{
+    ArtTableEntry, ArtsOracle, ComboStringLayout, RawArtRecord, combo_string_layout,
+    command_to_glyph, raw_records_from_scus,
+};
 pub use miracle::{MIRACLE_ARTS, MiracleArt, MiracleMatcher};
 pub use parse::{ParseError, ParsedArtRecord, parse_record};
 pub use power::{ArtPower, PowerByte, PowerTarget};

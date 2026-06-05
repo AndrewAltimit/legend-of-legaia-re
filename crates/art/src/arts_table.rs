@@ -73,6 +73,74 @@ pub fn glyph_to_command(hi: u8, lo: u8) -> Option<Command> {
     }
 }
 
+/// Encode a [`Command`] as its two-byte display/match glyph (`[hi, lo]`).
+/// Inverse of [`glyph_to_command`] over the four directions.
+pub fn command_to_glyph(c: Command) -> [u8; 2] {
+    match c {
+        Command::Left => [0x81, 0xA9],
+        Command::Right => [0x81, 0xA8],
+        Command::Down => [0x81, 0xAB],
+        Command::Up => [0x81, 0xAA],
+    }
+}
+
+/// In-place editing layout of one combo-glyph string: the SCUS file offset of
+/// each **direction** glyph's 2-byte entry (the `0xFF06`/`0xFF09` separator
+/// marker is excluded and stays put), plus the decoded directions.
+///
+/// This is what the arts-combo randomizer rewrites: the combo's directional
+/// bytes are the single copy both the Arts-menu display and the in-battle
+/// input matcher read (the display reaches them via the record's `+8` pointer,
+/// the matcher via the record's `+0x10` description pointer to the string that
+/// immediately follows the description). Editing the **bytes** updates both;
+/// moving a *pointer* only updates the display, which desyncs the trigger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComboStringLayout {
+    /// File offset of the string's `count` byte.
+    pub count_file_offset: usize,
+    /// File offset of each direction glyph's 2-byte entry, in order (marker
+    /// entry excluded).
+    pub direction_slots: Vec<usize>,
+    /// Decoded directions, same order/length as [`Self::direction_slots`].
+    pub directions: Vec<Command>,
+    /// `true` if the string carries the `0xFF09` Miracle separator marker.
+    pub is_miracle: bool,
+}
+
+/// Decode the combo-glyph string at virtual address `cmd_ptr` into its in-place
+/// editing layout (direction-glyph file offsets + decoded directions). `None`
+/// if the image isn't a PSX-EXE or `cmd_ptr` is out of range.
+pub fn combo_string_layout(scus: &[u8], cmd_ptr: u32) -> Option<ComboStringLayout> {
+    let map = ExeMap::parse(scus)?;
+    let o = map.off(cmd_ptr)?;
+    let count = *scus.get(o)? as usize;
+    let mut direction_slots = Vec::new();
+    let mut directions = Vec::new();
+    let mut is_miracle = false;
+    for k in 0..count {
+        let p = o + 1 + k * 2;
+        let hi = *scus.get(p)?;
+        let lo = *scus.get(p + 1)?;
+        match glyph_to_command(hi, lo) {
+            Some(c) => {
+                direction_slots.push(p);
+                directions.push(c);
+            }
+            None => {
+                if hi == 0xFF && lo == 0x09 {
+                    is_miracle = true;
+                }
+            }
+        }
+    }
+    Some(ComboStringLayout {
+        count_file_offset: o,
+        direction_slots,
+        directions,
+        is_miracle,
+    })
+}
+
 /// PSX-EXE `t_addr` → file-offset resolver. `SCUS_942.54` loads its data
 /// segment at `t_addr` from file offset `0x800`.
 struct ExeMap {

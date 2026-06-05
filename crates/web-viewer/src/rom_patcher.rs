@@ -244,13 +244,11 @@ pub fn patch_rom(
 
     match arts_mode {
         Some(m) => {
-            let (plan, rep) = apply::randomize_arts(&mut patcher, seed_n, m)
+            let (_plan, rep) = apply::randomize_arts(&mut patcher, seed_n, m)
                 .map_err(|e| err(format!("arts: {e}")))?;
             summary.push_str(&format!(
                 "arts: {} of {} arts re-combo'd ({})\n",
-                rep.combos_changed,
-                plan.len(),
-                arts
+                rep.combos_changed, rep.arts, arts
             ));
         }
         None => summary.push_str("arts: untouched\n"),

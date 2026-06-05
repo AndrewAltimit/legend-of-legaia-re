@@ -1396,31 +1396,30 @@ pub struct ArtsApplyReport {
     pub arts: usize,
 }
 
-/// Randomize each art's button combo by reassigning its `+8` command-glyph
-/// pointer (a same-size 4-byte SCUS edit — no re-pack, nothing skipped). The
-/// per-character Miracle Art is left untouched, and each character's regular
-/// arts stay unique combos. `Shuffle` permutes a character's own combos among
-/// its arts; `Random` draws each from the global pool of every regular art's
-/// combo. Returns the plan plus the apply report.
+/// Randomize each art's button combo by rewriting its directional **glyph
+/// bytes in place** (same-size 2-byte SCUS edits — no re-pack, nothing
+/// skipped). The bytes are the single copy both the Arts-menu display and the
+/// in-battle input matcher read, so the trigger and the display stay in sync.
+/// Input counts are preserved and each character's combos stay unique; the
+/// per-character Miracle Art strings are left untouched. `Shuffle` permutes the
+/// existing combos among same-length strings; `Random` writes fresh same-length
+/// combos. Returns the plan plus the apply report.
 pub fn randomize_arts(
     patcher: &mut DiscPatcher,
     seed: u64,
     mode: crate::arts::ArtsMode,
-) -> Result<(Vec<crate::arts::ArtAssignment>, ArtsApplyReport)> {
+) -> Result<(Vec<crate::arts::ComboEdit>, ArtsApplyReport)> {
     let edits = crate::arts::ArtsEdits::locate(patcher.image())
         .context("locate SCUS_942.54 arts-name table")?;
     let plan = edits.plan(seed, mode);
-    let arts = plan.len();
-    let patches = edits.pointer_patches(&plan);
-    let mut report = ArtsApplyReport {
-        combos_changed: 0,
-        arts,
+    let report = ArtsApplyReport {
+        combos_changed: edits.arts_changed(&plan),
+        arts: edits.regular_art_count(),
     };
-    for (off, bytes) in patches {
+    for (off, bytes) in edits.glyph_patches(&plan) {
         patcher
             .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
-            .with_context(|| format!("write art command pointer at SCUS offset {off:#x}"))?;
-        report.combos_changed += 1;
+            .with_context(|| format!("write art combo glyph at SCUS offset {off:#x}"))?;
     }
     Ok((plan, report))
 }
