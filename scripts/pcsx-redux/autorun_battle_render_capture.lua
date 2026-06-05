@@ -38,6 +38,9 @@ local GRID_FN = 0x801D02C0
 local SCRATCH = 0x1F800034 -- first of the 16 tile constant words
 local GRID_W  = 0x1F8003F8
 local GRID_H  = 0x1F8003FA
+-- FUN_80048A08 = battle per-actor draw; a0 = actor ptr. Scale at actor+0x72
+-- (default 0x1000 = 1.0), Euler angles at +0x24, position in +0x10..+0x20.
+local ACTOR_DRAW = 0x80048A08
 
 local function s16(addr)
   local v = probe.read_u16(addr) or 0
@@ -54,11 +57,14 @@ local function dump_camera()
 end
 
 local function dump_grid()
-  PCSX.log(string.format("[grid] dims = %d x %d cells (0x200 pitch)",
-    s16(GRID_W), s16(GRID_H)))
+  -- grid dims live in the scratchpad (0x1f8003f8/fa), packed in one u32.
+  local dims = probe.read_scratch_u32(0x1F8003F8) or 0
+  local w = bit.band(dims, 0xFFFF)
+  local h = bit.band(bit.rshift(dims, 16), 0xFFFF)
+  PCSX.log(string.format("[grid] dims = %d x %d cells (0x200 pitch)", w, h))
   local words = {}
   for i = 0, 15 do
-    words[#words + 1] = string.format("%08X", probe.read_u32(SCRATCH + i * 4) or 0)
+    words[#words + 1] = string.format("%08X", probe.read_scratch_u32(SCRATCH + i * 4) or 0)
   end
   PCSX.log("[grid] tile constants 0x1f800034..70: " .. table.concat(words, " "))
 end
@@ -71,14 +77,26 @@ local function dump_actors()
   end
   PCSX.log(string.format("[actors] ctx=0x%08X party_count=%d",
     ctx, probe.read_u8(ctx + 0x275) or 0))
-  for n = 0, 7 do
-    local ap = probe.read_u32(ctx + 0x1114 + n * 4) or 0
-    if ap < 0x80000000 or ap >= 0x80200000 then break end
-    local f = {}
-    for off = 0x10, 0x30, 2 do f[#f + 1] = string.format("%+d", s16(ap + off)) end
-    PCSX.log(string.format("[actor%d] @0x%08X id+0x5a=%d  [+0x10..0x30 i16]: %s",
-      n, ap, s16(ap + 0x5a), table.concat(f, " ")))
+  -- Scan the ctx for pointers to actor structs. A battle actor has its scale
+  -- at +0x72 (default 0x1000) - use that as the identifying signature.
+  local found = 0
+  for off = 0x1000, 0x1800, 4 do
+    local ap = probe.read_u32(ctx + off) or 0
+    if ap >= 0x80000000 and ap < 0x80200000 then
+      local scale = s16(ap + 0x72)
+      if scale >= 0x800 and scale <= 0x2000 then -- ~0.5..2.0, an actor scale
+        local f = {}
+        for o = 0x10, 0x22, 2 do f[#f + 1] = string.format("%+d", s16(ap + o)) end
+        PCSX.log(string.format(
+          "[actor] ctx+0x%X -> 0x%08X scale+0x72=%d id+0x5a=%d ang+0x24=(%d,%d,%d) +0x10..0x22=[%s]",
+          off, ap, scale, s16(ap + 0x5a),
+          s16(ap + 0x24), s16(ap + 0x26), s16(ap + 0x28), table.concat(f, " ")))
+        found = found + 1
+        if found >= 8 then break end
+      end
+    end
   end
+  if found == 0 then PCSX.log("[actors] no actor structs found by ctx scan") end
   PCSX.log(string.format("[dome] descriptor@0x%08X mesh_slot(+4)=%d",
     DOME, s16(DOME + 4)))
 end
@@ -88,21 +106,34 @@ probe.run({
   capture_frames = FRAMES,
   on_arm = function()
     PCSX.log("== battle render capture ==")
-    if (probe.read_u8(GMODE) or 0) ~= 0x15 then
-      PCSX.log(string.format("[warn] game mode is 0x%02X, expected 0x15 (battle)",
-        probe.read_u8(GMODE) or 0))
-    end
-    dump_camera()
-    dump_grid()
-    dump_actors()
-    -- Catch the grid renderer live so the scratchpad read is the value the GTE
-    -- actually consumed this frame (it's rewritten every frame).
+    -- The camera globals, battle ctx, and scratchpad grid setup are only the
+    -- battle's values WHILE the battle render runs. Read them from inside
+    -- func_0x801d02c0 (the grid renderer FUN_80026f50 calls each battle frame),
+    -- not at frame 0 (which is still a field/transition state).
+    local cam_done = false
     probe.arm_breakpoint(GRID_FN, "Exec", 4, "grid_fn", function()
+      if cam_done then return end
+      cam_done = true
       PCSX.log("[grid] (live, inside func_0x801d02c0)")
+      dump_camera()
       dump_grid()
-      probe.disarm_all()
+      dump_actors()
     end)
-    return { { addr = GRID_FN, name = "grid_fn" } }
+    -- Capture each distinct battle actor as it is drawn (a0 = actor ptr).
+    local seen = {}
+    probe.arm_breakpoint(ACTOR_DRAW, "Exec", 4, "actor_draw", function()
+      local r = PCSX.getRegisters()
+      local ap = bit.band(tonumber(r.GPR.n.a0) or 0, 0xFFFFFFFF)
+      if ap < 0x80000000 or ap >= 0x80200000 or seen[ap] then return end
+      seen[ap] = true
+      local pos = {}
+      for off = 0x10, 0x22, 2 do pos[#pos + 1] = string.format("%+d", s16(ap + off)) end
+      PCSX.log(string.format(
+        "[actordraw] @0x%08X scale+0x72=%d id+0x5a=%d ang+0x24=(%d,%d,%d) +0x10..0x22=[%s]",
+        ap, s16(ap + 0x72), s16(ap + 0x5a),
+        s16(ap + 0x24), s16(ap + 0x26), s16(ap + 0x28), table.concat(pos, " ")))
+    end)
+    return { { addr = GRID_FN, name = "grid_fn" }, { addr = ACTOR_DRAW, name = "actor_draw" } }
   end,
   on_capture = function() end,
 })
