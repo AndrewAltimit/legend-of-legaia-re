@@ -911,6 +911,127 @@ pub fn tmd_to_vram_mesh_posed(
     }
 }
 
+/// Rotate a vector by the PSX `Rz · Ry · Rx` Euler composition, given the
+/// per-axis cos/sin. Mirrors the byte-for-byte order the retail engine applies
+/// (`RotMatrixX` then `Y` then `Z`, i.e. the matrix product `Rz·Ry·Rx`) and the
+/// visually-validated site animator (`monsters.html` `_assemble`). Shared by
+/// vertex and normal transforms.
+#[inline]
+fn rot_zyx(v: [f32; 3], cx: f32, sx: f32, cy: f32, sy: f32, cz: f32, sz: f32) -> [f32; 3] {
+    let (mut x, mut y, mut z) = (v[0], v[1], v[2]);
+    // Rx
+    let ny = y * cx - z * sx;
+    let nz = y * sx + z * cx;
+    y = ny;
+    z = nz;
+    // Ry
+    let nx = x * cy + z * sy;
+    let nz = -x * sy + z * cy;
+    x = nx;
+    z = nz;
+    // Rz
+    let nx = x * cz - y * sz;
+    let ny = x * sz + y * cz;
+    [nx, ny, z]
+}
+
+/// Like [`tmd_to_vram_mesh_posed`] but applies the full per-object **rigid
+/// transform** (rotate-then-translate, `R·v + T`) instead of translation only.
+///
+/// Each element of `bone_offsets` is a `(pos, rot)` pair for the corresponding
+/// TMD object index; `rot` holds three PSX 12-bit Euler angles (`4096` = a full
+/// turn) on the X/Y/Z axes, composed `Rz·Ry·Rx` about the object's local
+/// origin, then offset by `pos`. This matches the retail per-object pose
+/// assembly (`FUN_8004998C` → `RotMatrixX/Y/Z`) and the site's monster /
+/// character animators. Objects past the end of `bone_offsets` render at their
+/// TMD-local rest position (identity transform).
+///
+/// Normals are recomputed from the posed positions (same as
+/// [`tmd_to_vram_mesh_posed`]), so the rotation propagates to lighting without a
+/// separate normal transform.
+pub fn tmd_to_vram_mesh_posed_rot(
+    tmd: &Tmd,
+    buf: &[u8],
+    bone_offsets: &[([i16; 3], [i16; 3])],
+) -> VramMesh {
+    const A2R: f32 = std::f32::consts::TAU / 4096.0;
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut cba_tsb = Vec::new();
+    let mut indices = Vec::new();
+
+    for (o_idx, o) in tmd.objects.iter().enumerate() {
+        let (bone_pos, trig) = match bone_offsets.get(o_idx) {
+            Some((p, r)) => {
+                let (sx, cx) = (r[0] as f32 * A2R).sin_cos();
+                let (sy, cy) = (r[1] as f32 * A2R).sin_cos();
+                let (sz, cz) = (r[2] as f32 * A2R).sin_cos();
+                (
+                    [p[0] as f32, p[1] as f32, p[2] as f32],
+                    [cx, sx, cy, sy, cz, sz],
+                )
+            }
+            None => ([0.0; 3], [1.0, 0.0, 1.0, 0.0, 1.0, 0.0]),
+        };
+        let [cx, sx, cy, sy, cz, sz] = trig;
+
+        let object_vert_count = o.header.n_vert;
+        let groups = legaia_prims::iter_groups_lenient(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+
+        for g in &groups {
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                if prim.uvs.is_empty() {
+                    continue;
+                }
+                let ct = [prim.cba, prim.tsb];
+                let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let r = rot_zyx([v.x as f32, v.y as f32, v.z as f32], cx, sx, cy, sy, cz, sz);
+                    let i = positions.len() as u32;
+                    positions.push([r[0] + bone_pos[0], r[1] + bone_pos[1], r[2] + bone_pos[2]]);
+                    let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
+                    uvs.push([u8v, v8v]);
+                    cba_tsb.push(ct);
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        let i3 = push_vert(raw_idx[3], 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let normals = compute_smooth_normals(&positions, &indices);
+    VramMesh {
+        positions,
+        uvs,
+        cba_tsb,
+        indices,
+        normals,
+    }
+}
+
 /// Build per-vertex normals from triangle geometry. Triangles whose three
 /// vertices share an integer-quantized position with another triangle's
 /// vertices contribute to a per-position normal bin; the per-vertex normal
@@ -1242,6 +1363,58 @@ mod tests {
         for (u, p) in unposed.positions.iter().zip(posed.positions.iter()) {
             assert_eq!(u, p, "zero offset should not move vertices");
         }
+    }
+
+    #[test]
+    fn rot_zyx_identity_and_axis_quarter_turns() {
+        let id = rot_zyx([3.0, 5.0, 7.0], 1.0, 0.0, 1.0, 0.0, 1.0, 0.0);
+        assert_eq!(id, [3.0, 5.0, 7.0], "all-zero angles = identity");
+
+        // 90 deg about Z (cz=0, sz=1): (x,y,z) -> (-y, x, z).
+        let rz = rot_zyx([1.0, 0.0, 0.0], 1.0, 0.0, 1.0, 0.0, 0.0, 1.0);
+        assert!((rz[0] - 0.0).abs() < 1e-5 && (rz[1] - 1.0).abs() < 1e-5 && rz[2].abs() < 1e-5);
+
+        // 90 deg about X (cx=0, sx=1): (x,y,z) -> (x, -z, y).
+        let rx = rot_zyx([0.0, 1.0, 0.0], 0.0, 1.0, 1.0, 0.0, 1.0, 0.0);
+        assert!(rx[0].abs() < 1e-5 && rx[1].abs() < 1e-5 && (rx[2] - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn posed_rot_zero_rotation_matches_translation_posed() {
+        // With zero rotation the rigid-transform builder must reduce exactly to
+        // the translation-only builder (so battle posing and field posing agree
+        // at the rest orientation).
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        let bone = [([100i16, 200, 300], [0i16; 3])];
+
+        let t_only = tmd_to_vram_mesh_posed(&tmd, &buf, &bone);
+        let rigid = tmd_to_vram_mesh_posed_rot(&tmd, &buf, &bone);
+
+        assert_eq!(t_only.positions.len(), rigid.positions.len());
+        for (a, b) in t_only.positions.iter().zip(rigid.positions.iter()) {
+            for k in 0..3 {
+                assert!((a[k] - b[k]).abs() < 1e-3, "{a:?} vs {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn posed_rot_quarter_turn_z_rotates_the_aabb() {
+        // A 90-deg Z turn (rz = 4096/4 = 1024) maps (x,y,z) -> (-y, x, z), so
+        // the pyramid's tall -Y apex swings onto +X. Check the posed AABB.
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        let bone = [([0i16; 3], [0i16, 0, 1024])];
+        let posed = tmd_to_vram_mesh_posed_rot(&tmd, &buf, &bone);
+        let (lo, hi) = posed.aabb();
+        // verts rotate to x in [-85,170], y in [-64,64], z in [-64,64].
+        assert!((lo[0] - -85.0).abs() < 0.5, "lo.x {}", lo[0]);
+        assert!((hi[0] - 170.0).abs() < 0.5, "hi.x {}", hi[0]);
+        assert!(
+            (lo[1] - -64.0).abs() < 0.5 && (hi[1] - 64.0).abs() < 0.5,
+            "y {lo:?} {hi:?}"
+        );
     }
 
     #[test]
