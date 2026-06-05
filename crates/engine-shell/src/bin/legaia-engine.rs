@@ -5835,8 +5835,10 @@ impl PlayWindowApp {
         }
 
         // Seat the summon in a free high actor slot (>= 8) so it never collides
-        // with the party/monster battle slots, positioned in front of the enemy
-        // cluster (party casts toward the +x enemies).
+        // with the party/monster battle slots. Place it on the party side
+        // (`enter_battle` seats party at `x = -600`, enemies at `x = +600`), in
+        // front of the party and clearly clear of the enemy cluster, so the
+        // battle camera frames it distinct from the enemies it attacks.
         let slot = self
             .summon_actor_slot
             .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
@@ -5845,7 +5847,7 @@ impl PlayWindowApp {
             a.active = true;
             a.tmd_binding = Some(idx);
             a.battle_tex_slot = Some(tex_slot);
-            a.move_state.world_x = 300;
+            a.move_state.world_x = -350;
             a.move_state.world_y = 0;
             a.move_state.world_z = 0;
         }
