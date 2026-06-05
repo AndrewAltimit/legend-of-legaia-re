@@ -49,10 +49,16 @@ pub const MAX_STARTING_ITEMS: usize = SEED_INSTRS / INSTRS_PER_ITEM;
 /// Item id of Door of Wind (the warp consumable), re-exported for callers.
 pub const DOOR_OF_WIND_ID: u8 = DOOR_OF_WIND_ITEM;
 
-/// How many Door of Wind to seed when the convenience toggle is on. Door of
-/// Wind is consumed per warp, so a small stack keeps it useful for a while
-/// without the GameShark "99 in one slot" overkill.
+/// Default Door of Wind stack seeded when the toggle is enabled without an
+/// explicit count. Door of Wind is consumed per warp, so a small stack keeps it
+/// useful for a while without the GameShark "99 in one slot" overkill; the user
+/// can override it.
 pub const DOOR_OF_WIND_COUNT: u8 = 10;
+
+/// Maximum stack the game holds in one inventory slot. A seeded Door-of-Wind
+/// count is clamped to this (the count byte is written raw, so a larger value
+/// would either overflow the display or be capped by the bag anyway).
+pub const MAX_ITEM_STACK: u8 = 99;
 
 /// The vanilla New Game starting item: Healing Leaf (`0x77`) ×5. Preserved as
 /// the base slot when a convenience toggle is on but no random reroll was
@@ -79,8 +85,11 @@ pub struct StartingSeedOptions {
     /// Number of random consumables to reroll the starting bag to. `0` keeps
     /// the vanilla Healing Leaf base (so the convenience toggles stay additive).
     pub random_items: usize,
-    /// Seed Door of Wind ([`DOOR_OF_WIND_COUNT`]×) into the starting bag.
-    pub door_of_wind: bool,
+    /// How many Door of Wind to seed into the starting bag. `0` = off; any
+    /// positive count seeds one slot of Door of Wind, clamped to
+    /// [`MAX_ITEM_STACK`]. (The CLI / web default when the toggle is enabled is
+    /// [`DOOR_OF_WIND_COUNT`].)
+    pub door_of_wind: u8,
     /// Preset the all-towns visited-towns bitmask so Door of Wind can warp to
     /// every destination from the start.
     pub all_warps: bool,
@@ -89,7 +98,7 @@ pub struct StartingSeedOptions {
 impl StartingSeedOptions {
     /// `true` when the seed should be rewritten at all (any toggle is set).
     pub fn is_active(&self) -> bool {
-        self.random_items > 0 || self.door_of_wind || self.all_warps
+        self.random_items > 0 || self.door_of_wind > 0 || self.all_warps
     }
 }
 
@@ -156,8 +165,8 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
 /// Resolve [`StartingSeedOptions`] into a concrete [`SeedPlan`] for `seed`.
 ///
 /// Composition, in slot order:
-/// 1. **Door of Wind** ([`DOOR_OF_WIND_COUNT`]×) if `door_of_wind`, written
-///    first so it always survives the capacity clamp.
+/// 1. **Door of Wind** (`door_of_wind`× , clamped to [`MAX_ITEM_STACK`]) if the
+///    count is non-zero, written first so it always survives the capacity clamp.
 /// 2. **Base / reroll**: with `random_items == 0` the vanilla Healing Leaf base
 ///    is kept (the convenience toggles stay additive to a normal new game);
 ///    with `random_items > 0` the bag is rerolled to that many random
@@ -170,8 +179,9 @@ pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
     let cap = max_items_with_warps(opts.all_warps);
     let mut items: Vec<(u8, u8)> = Vec::new();
 
-    if opts.door_of_wind {
-        items.push((DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT));
+    let door_count = opts.door_of_wind.min(MAX_ITEM_STACK);
+    if door_count > 0 {
+        items.push((DOOR_OF_WIND_ID, door_count));
     }
 
     if opts.random_items > 0 {
@@ -179,7 +189,7 @@ pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
         let n = opts.random_items.min(room);
         // Exclude the forced item from the reroll so it isn't dealt twice; when
         // Door of Wind isn't forced it stays an eligible random consumable.
-        let exclude: &[u8] = if opts.door_of_wind {
+        let exclude: &[u8] = if door_count > 0 {
             &[DOOR_OF_WIND_ID]
         } else {
             &[]
@@ -332,7 +342,7 @@ mod tests {
             1,
             &StartingSeedOptions {
                 random_items: 0,
-                door_of_wind: true,
+                door_of_wind: DOOR_OF_WIND_COUNT,
                 all_warps: false,
             },
         );
@@ -350,12 +360,47 @@ mod tests {
     }
 
     #[test]
+    fn door_of_wind_count_is_user_settable_and_clamped() {
+        // An explicit count is seeded verbatim.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                random_items: 0,
+                door_of_wind: 25,
+                all_warps: false,
+            },
+        );
+        assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, 25));
+        // A count above the stack cap clamps to MAX_ITEM_STACK.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                random_items: 0,
+                door_of_wind: 250,
+                all_warps: false,
+            },
+        );
+        assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, MAX_ITEM_STACK));
+        // Count 0 means off: no Door of Wind, just the vanilla base.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                random_items: 0,
+                door_of_wind: 0,
+                all_warps: false,
+            },
+        );
+        assert_eq!(plan.items, vec![VANILLA_STARTING_ITEM]);
+        assert!(!plan.items.iter().any(|(id, _)| *id == DOOR_OF_WIND_ID));
+    }
+
+    #[test]
     fn all_warps_emits_the_bitmask_and_keeps_the_base() {
         let plan = plan_seed(
             1,
             &StartingSeedOptions {
                 random_items: 0,
-                door_of_wind: false,
+                door_of_wind: 0,
                 all_warps: true,
             },
         );
@@ -376,7 +421,7 @@ mod tests {
         // leaving room for 2 random items.
         let opts = StartingSeedOptions {
             random_items: 5,
-            door_of_wind: true,
+            door_of_wind: DOOR_OF_WIND_COUNT,
             all_warps: true,
         };
         let plan = plan_seed(99, &opts);
@@ -403,7 +448,7 @@ mod tests {
             3,
             &StartingSeedOptions {
                 random_items: 3,
-                door_of_wind: false,
+                door_of_wind: 0,
                 all_warps: false,
             },
         );
@@ -415,7 +460,7 @@ mod tests {
     fn plan_seed_is_deterministic() {
         let opts = StartingSeedOptions {
             random_items: 4,
-            door_of_wind: true,
+            door_of_wind: DOOR_OF_WIND_COUNT,
             all_warps: true,
         };
         assert_eq!(plan_seed(0xABCD, &opts), plan_seed(0xABCD, &opts));

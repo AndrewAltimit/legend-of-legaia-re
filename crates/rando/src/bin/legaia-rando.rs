@@ -201,10 +201,16 @@ struct RandomizeArgs {
     #[arg(long, default_value_t = 0)]
     starting_items: usize,
     /// Seed Door of Wind (the warp consumable) into the new game's starting bag.
-    /// Additive to a normal new game (the Healing Leaf is kept) unless
-    /// `--starting-items` also rerolls the bag. Pairs with `--all-warps`.
-    #[arg(long, default_value_t = false)]
-    door_of_wind: bool,
+    /// Pass `--door-of-wind` for the default stack (10) or `--door-of-wind N` for
+    /// N (1..=99). Additive to a normal new game (the Healing Leaf is kept)
+    /// unless `--starting-items` also rerolls the bag. Pairs with `--all-warps`.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "10",
+        value_name = "COUNT"
+    )]
+    door_of_wind: Option<u8>,
     /// Unlock every Door-of-Wind warp destination from the start (preset the
     /// "visited towns" story-flag bitmask). Lets Door of Wind teleport to any
     /// town immediately. Costs part of the starting-seed budget, so it caps
@@ -1011,7 +1017,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     let seed_opts = legaia_rando::starting_items::StartingSeedOptions {
         random_items: args.starting_items,
-        door_of_wind: args.door_of_wind,
+        door_of_wind: args.door_of_wind.unwrap_or(0),
         all_warps: args.all_warps,
     };
     if seed_opts.is_active() {

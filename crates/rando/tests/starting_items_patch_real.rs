@@ -34,7 +34,7 @@ fn randomize_starting_items_round_trips_on_disc() {
     let n = 4;
     let opts = StartingSeedOptions {
         random_items: n,
-        door_of_wind: false,
+        door_of_wind: 0,
         all_warps: false,
     };
 
@@ -145,7 +145,7 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
     let seed = 0xD00D_0FE1_1500_0089_u64;
     let opts = StartingSeedOptions {
         random_items: 2, // also reroll, to exercise the mixed budget
-        door_of_wind: true,
+        door_of_wind: legaia_rando::starting_items::DOOR_OF_WIND_COUNT,
         all_warps: true,
     };
 
