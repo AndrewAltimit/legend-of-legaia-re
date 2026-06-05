@@ -110,11 +110,21 @@ and it isn't a separate static array either. Verified bytes + trace:
   `0x13 < *param_2 - 0xc`), which magic (`ActionConstant::Magic = 0x02`) never
   enters.
 
-So the per-spell power the engine wants requires decoding the per-summon effect
-scripts at `PTR_801f6734[id - 0x81]`, an open thread (see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)). Until then
-the `base_power` figures in `legaia_engine_core::retail_magic` are explicitly
-MP-scaled placeholders.
+So the per-spell power the engine wants is produced inside the **un-dumped PROT
+905..915 overlay state machine** (the jump table `FUN_801f2d68` at `0x801F69D8`,
+reached via `PTR_801f6734[id - 0x81]` + `func_0x8003ec70`, with no static SCUS
+xref). The whole cast/animation layer is dumped and provably never writes an HP
+delta — `FUN_8003EC70` is a pure overlay loader, `FUN_801DBF9C`/`FUN_801DC0A0`
+are anim drivers, and the only `FUN_800402F4` damage-apply in the action SM sits
+in the **Spirit** band, not magic — so the magnitude lives in that overlay's
+records, which the staging code reads from a runtime buffer at `0x801f8314+`
+outside PROT 905's extracted file. This is an open thread (see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)); the two ways
+to close it are a write-watchpoint on the target HP (`actor+0x14c`) during a cast
+or a static Ghidra re-dump of the `0x801F69D8` jump-table targets. Until then the
+`base_power` figures in `legaia_engine_core::retail_magic` are explicitly
+MP-scaled placeholders (MP cost is the only retail-pinned per-spell magnitude
+signal, and gamedata carries no power column to substitute).
 
 The mirror lives at `legaia_engine_core::retail_magic` (`SERU_MAGIC` +
 `retail_seru_magic_catalog`); the Seru that teach these ids are wired in
