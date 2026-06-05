@@ -1,15 +1,23 @@
 //! Tactical-Arts button-combo randomization.
 //!
-//! Each art's button combo (the directional sequence the player enters to fire
-//! it) is a glyph string in the static `SCUS_942.54` arts-name table region:
-//! `[count][2-byte direction glyphs + one 0xFF06/0xFF09 separator marker]`.
-//! Two pointers reach each combo string — the arts-name record's `+8` (the
-//! Arts-menu **display**) and its `+0x10` description pointer (the in-battle
-//! input **matcher** reads the string that immediately follows the
-//! description). Both read the **same bytes**, so the only edit that keeps the
-//! display and the trigger in sync is to rewrite the **glyph bytes in place**.
-//! (Moving the `+8` pointer changes only the menu arrows and desyncs the
-//! trigger — a bug an emulator playtest caught.)
+//! There are **two** copies of each art's combo, in different files, and both
+//! must change together (emulator playtests proved that editing only the menu
+//! copy leaves the trigger on the old combo):
+//!
+//! 1. **The matcher** (what fires the art) reads the per-character art records
+//!    at RAM `0x80160EFC`/`0x80176998`/`0x8018BA54`, where the combo is stored
+//!    in `1=L,2=R,3=D,4=U` form (0-terminated) at record `+0`, on a fixed `0xD0`
+//!    stride. Those records load from each character's player-data file
+//!    `record0` — Vahn `PROT 0861`, Noa `0864`, Gala `0865` ([`player_entry_index`]).
+//!    [`patch_player_record0`] decompresses `record0`, rewrites the combo bytes
+//!    (same length), and recompresses to fit.
+//! 2. **The display** is a glyph string in the static `SCUS_942.54` arts-name
+//!    table (`[count][2-byte direction glyphs + 0xFF06/0xFF09 marker]`), reached
+//!    by the arts-name record's `+8`. [`glyph_patches`](ArtsEdits::glyph_patches)
+//!    rewrites the glyph bytes in place. Editing only this (whether by moving the
+//!    `+8` pointer or overwriting the bytes) changes the menu but not the trigger.
+//!
+//! [`crate::apply::randomize_arts`] applies both with the same per-art combo.
 //!
 //! ## Why a global content permutation is correct
 //!
@@ -220,6 +228,178 @@ impl ArtsEdits {
     pub fn regular_art_count(&self) -> usize {
         self.records.iter().filter(|r| !r.is_miracle).count()
     }
+
+    /// Per-character `(vanilla_combo, new_combo)` pairs in the `1=L,2=R,3=D,4=U`
+    /// record encoding, for rewriting the **matcher's** art records in the
+    /// player file (see [`patch_player_record0`]). The new combo for an art is
+    /// the one its display glyph string was assigned, so the matcher and the
+    /// menu stay in sync. No-ops (combo unchanged) are dropped.
+    pub fn player_edits(&self, plan: &[ComboEdit], ch: Character) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let new_by_ptr: std::collections::HashMap<u32, &Vec<Command>> = plan
+            .iter()
+            .map(|e| (e.cmd_ptr, &e.new_directions))
+            .collect();
+        let as_bytes = |cs: &[Command]| cs.iter().map(|c| c.as_byte()).collect::<Vec<u8>>();
+        self.records
+            .iter()
+            .filter(|r| r.character == ch && !r.is_miracle)
+            .filter_map(|r| {
+                let new = new_by_ptr.get(&r.cmd_ptr)?;
+                let vanilla = as_bytes(&r.commands);
+                let new_bytes = as_bytes(new);
+                (new_bytes != vanilla && new_bytes.len() == vanilla.len())
+                    .then_some((vanilla, new_bytes))
+            })
+            .collect()
+    }
+}
+
+/// Player-data PROT entry index per character (the `edstati3`/PLAYERn file whose
+/// `record0` holds the matcher's art records). Vahn `0861`, Noa `0864`, Gala
+/// `0865`.
+pub fn player_entry_index(ch: Character) -> usize {
+    match ch {
+        Character::Vahn => 861,
+        Character::Noa => 864,
+        Character::Gala => 865,
+    }
+}
+
+/// Fixed stride of the per-character art records inside the decoded `record0`.
+const ART_RECORD_STRIDE: usize = 0xD0;
+
+/// Decode a player-data entry's `record0` (the block holding the matcher's art
+/// records). `None` if the header can't be read or the LZS decode fails.
+pub fn player_record0_decoded(entry: &[u8]) -> Option<Vec<u8>> {
+    let ro = record0_offset(entry);
+    let hdr = entry.get(ro..ro + 0x10)?;
+    let budget = u32::from_le_bytes(hdr[0xC..0x10].try_into().ok()?) as usize;
+    if !(0x400..=0x40000).contains(&budget) {
+        return None;
+    }
+    legaia_lzs::decompress(entry.get(ro + 0x10..)?, budget).ok()
+}
+
+/// `true` if `combo` (in `1=L,2=R,3=D,4=U` bytes) appears as a matcher art
+/// record in `decoded` record0 — a clean-start (preceding byte not a direction)
+/// 0-terminated run. This is what the in-battle input matcher recognises.
+pub fn record0_has_combo(decoded: &[u8], combo: &[Command]) -> bool {
+    if combo.is_empty() {
+        return false;
+    }
+    let mut needle: Vec<u8> = combo.iter().map(|c| c.as_byte()).collect();
+    needle.push(0);
+    let mut from = 0;
+    while let Some(rel) = decoded[from..]
+        .windows(needle.len())
+        .position(|w| w == needle.as_slice())
+    {
+        let p = from + rel;
+        if p == 0 || !(1..=4).contains(&decoded[p - 1]) {
+            return true;
+        }
+        from = p + 1;
+    }
+    false
+}
+
+/// File offset of `record0`'s header inside a player-data entry: `0x1000` when
+/// the entry begins with the `"pochi"` pad (Vahn `0861`), else `0` (`0864`/
+/// `0865`).
+fn record0_offset(entry: &[u8]) -> usize {
+    if entry.starts_with(b"pochi") {
+        0x1000
+    } else {
+        0
+    }
+}
+
+/// Rewrite the matcher's art-record combos inside a player-data entry's
+/// `record0` and return `(lzs_file_offset, recompressed_stream)` to splice back,
+/// or `None` if `record0` can't be located/decoded or the recompressed stream
+/// wouldn't fit the original footprint.
+///
+/// `record0` = `[u32 desc_off][u32 clut_a][u32 clut_b][u32 budget]` then an LZS
+/// stream (at header `+0x10`) that decodes to `budget` bytes. The art records
+/// are a fixed [`ART_RECORD_STRIDE`] array inside the decoded block, combo at
+/// record `+0` in `1=L,2=R,3=D,4=U` form, 0-terminated. Each `(vanilla, new)`
+/// edit overwrites the vanilla combo bytes with the new ones (same length) at
+/// every record-grid-aligned clean-start occurrence.
+pub fn patch_player_record0(
+    entry: &[u8],
+    edits: &[(Vec<u8>, Vec<u8>)],
+) -> Option<(usize, Vec<u8>)> {
+    let ro = record0_offset(entry);
+    let hdr = entry.get(ro..ro + 0x10)?;
+    let desc_off = u32::from_le_bytes(hdr[0..4].try_into().ok()?) as usize;
+    let budget = u32::from_le_bytes(hdr[0xC..0x10].try_into().ok()?) as usize;
+    if !(0x400..=0x40000).contains(&budget) {
+        return None;
+    }
+    let lzs_off = ro + 0x10;
+    let mut decoded = legaia_lzs::decompress(entry.get(lzs_off..)?, budget).ok()?;
+    // Available compressed footprint: [lzs_off, ro + desc_off).
+    let avail = (ro + desc_off).checked_sub(lzs_off)?;
+    let changed = apply_record_edits(&mut decoded, edits);
+    if changed == 0 {
+        return None;
+    }
+    let recompressed = legaia_lzs::compress(&decoded);
+    if recompressed.len() > avail {
+        return None;
+    }
+    Some((lzs_off, recompressed))
+}
+
+/// Overwrite each `(vanilla, new)` combo at its clean-start, record-grid-aligned
+/// occurrences in the decoded `record0`. Returns the number of records changed.
+fn apply_record_edits(decoded: &mut [u8], edits: &[(Vec<u8>, Vec<u8>)]) -> usize {
+    let is_dir = |b: u8| (1..=4).contains(&b);
+    // Collect all clean-start matches (a combo run terminated by 0x00 whose
+    // preceding byte isn't a direction, i.e. a record start).
+    let mut matches: Vec<(usize, usize)> = Vec::new(); // (offset, edit index)
+    for (ei, (van, _)) in edits.iter().enumerate() {
+        if van.is_empty() {
+            continue;
+        }
+        let mut needle = van.clone();
+        needle.push(0);
+        let mut from = 0;
+        while let Some(rel) = decoded[from..]
+            .windows(needle.len())
+            .position(|w| w == needle.as_slice())
+        {
+            let p = from + rel;
+            if p == 0 || !is_dir(decoded[p - 1]) {
+                matches.push((p, ei));
+            }
+            from = p + 1;
+        }
+    }
+    if matches.is_empty() {
+        return 0;
+    }
+    // The records sit on a 0xD0 grid; keep only matches sharing the dominant
+    // residue mod the stride (filters coincidental matches in record data).
+    let mut residues: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (off, _) in &matches {
+        *residues.entry(off % ART_RECORD_STRIDE).or_default() += 1;
+    }
+    let grid = residues
+        .into_iter()
+        .max_by_key(|&(_, c)| c)
+        .map(|(r, _)| r)
+        .unwrap_or(0);
+    let mut changed = 0;
+    for (off, ei) in matches {
+        if off % ART_RECORD_STRIDE != grid {
+            continue;
+        }
+        let (_van, new) = &edits[ei];
+        decoded[off..off + new.len()].copy_from_slice(new);
+        changed += 1;
+    }
+    changed
 }
 
 const DIRS: [Command; 4] = [Command::Left, Command::Right, Command::Down, Command::Up];

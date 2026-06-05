@@ -129,6 +129,31 @@ fn run(mode: ArtsMode, seed: u64) {
     let after = read(&patcher);
     assert_invariants(&before, &after, mode);
 
+    // The MATCHER guard (the bug this whole feature tripped over): every art's
+    // display combo must also be present as a matcher art record in its
+    // character's player-data file (`record0`), so the trigger matches the menu.
+    // And at least one matcher record must actually differ from vanilla.
+    for ch in legaia_art::queue::Character::all() {
+        let index = legaia_rando::arts::player_entry_index(ch);
+        let vanilla_entry = base.read_entry(index).expect("read vanilla player file");
+        let patched_entry = patcher.read_entry(index).expect("read patched player file");
+        let vanilla_rec0 = legaia_rando::arts::player_record0_decoded(&vanilla_entry)
+            .expect("decode vanilla record0");
+        let patched_rec0 = legaia_rando::arts::player_record0_decoded(&patched_entry)
+            .expect("decode patched record0");
+        assert_ne!(
+            vanilla_rec0, patched_rec0,
+            "{ch:?} player-file matcher records must change"
+        );
+        for a in after.iter().filter(|a| a.character == ch && !a.is_miracle) {
+            assert!(
+                legaia_rando::arts::record0_has_combo(&patched_rec0, &a.commands),
+                "{ch:?} art {}: display combo not present as a matcher record (display/trigger desync)",
+                a.index
+            );
+        }
+    }
+
     // Image size unchanged (all edits are same-size glyph-byte writes).
     assert_eq!(
         patcher.image().len(),

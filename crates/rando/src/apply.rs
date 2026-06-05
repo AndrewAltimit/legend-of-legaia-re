@@ -1416,6 +1416,27 @@ pub fn randomize_arts(
         combos_changed: edits.arts_changed(&plan),
         arts: edits.regular_art_count(),
     };
+    // 1. The in-battle/menu input MATCHER: rewrite the 1-4 combo in each
+    //    character's player-data record0 (the bytes the trigger actually reads).
+    for ch in legaia_art::queue::Character::all() {
+        let char_edits = edits.player_edits(&plan, ch);
+        if char_edits.is_empty() {
+            continue;
+        }
+        let index = crate::arts::player_entry_index(ch);
+        let entry = patcher
+            .read_entry(index)
+            .with_context(|| format!("read player file PROT {index}"))?;
+        if let Some((lzs_off, recompressed)) =
+            crate::arts::patch_player_record0(&entry, &char_edits)
+        {
+            patcher
+                .patch_prot_entry(index, lzs_off as u64, &recompressed)
+                .with_context(|| format!("write player file PROT {index} record0"))?;
+        }
+    }
+    // 2. The Arts-menu DISPLAY: rewrite the SCUS glyph string to the same combo
+    //    so the shown arrows match the (now-patched) trigger.
     for (off, bytes) in edits.glyph_patches(&plan) {
         patcher
             .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
