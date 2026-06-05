@@ -1,14 +1,40 @@
-//! Seru-magic **summon scene-graph driver**.
+//! Seru-magic **summon scene-graph driver** (engine stand-in render — see the
+//! reconciliation note below; this is **not** the faithful player-summon path).
 //!
-//! A player Seru-magic cast spawns a hierarchy of move-VM-driven body parts (see
-//! [`legaia_asset::summon_overlay`] for the on-disc part records). This module
-//! drives them: it seeds one move-VM [`ActorState`] per part from its record and
-//! ticks every part through the **already-ported move VM** each frame, exactly
-//! as the retail spawn helper `FUN_80021B04` stages a part (`actor[+0x48]` =
-//! record move-buffer base, `actor[+0x70] = 2` PC → bytecode at `record+4`) and
-//! the per-frame actor tick `FUN_80021DF4` runs `FUN_80023070` on it.
+//! The per-summon stager overlay (PROT 905..=915; Gimard *Burning Attack* = 905)
+//! carries real move-VM scene-graph part records, recovered by
+//! [`legaia_asset::summon_overlay`]. This module drives them: it seeds one
+//! move-VM [`ActorState`] per part from its record and ticks every part through
+//! the **already-ported move VM** each frame, exactly as the retail spawn helper
+//! `FUN_80021B04` stages a part (`actor[+0x48]` = record move-buffer base,
+//! `actor[+0x70] = 2` PC → bytecode at `record+4`) and the per-frame actor tick
+//! `FUN_80021DF4` runs `FUN_80023070` on it.
 //!
-//! ## What is faithful vs. interpreted
+//! ## Reconciliation: this is not how retail renders the player summon
+//!
+//! A live PCSX-Redux trace of a player Gimard *Burning Attack* cast (scenarios
+//! `gimard_summon_start` / `_visible` / `gimard_burning_attack`) shows the
+//! rendered summon is an **ordinary battle actor**, not this move-VM scene-graph:
+//! across all three phases `FUN_801F7088` fired **0×**, the move VM
+//! `FUN_80023070` fired only **2-3×** (trace noise, not a per-part driver), and
+//! the **battle per-actor draw `FUN_80048A08` fired 35-64×/frame** → the
+//! per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A
+//! `FUN_80043390`. So the player summon is posed exactly like an enemy monster
+//! body (per-object rigid TRS keyframes), and the **faithful render path is the
+//! battle TRS-keyframe draw already ported in
+//! [`legaia_engine_vm::anim_vm`]** (`FUN_80048A08` / `FUN_8004998C`), *not* this
+//! [`SummonScene`].
+//!
+//! [`SummonScene`] is kept because (1) it is the validated parser/driver for the
+//! genuinely-on-disc move-VM stager records (disc-gated `summon_scene_real` —
+//! every Gimard part runs the move VM without an unimplemented opcode), (2) it is
+//! the engine's only summon render today, and (3) the **enemy** Gimard *Fire
+//! Tail* boss move is untraced and may still use the overlay/move-VM path, so
+//! this remains its candidate model. The live trace covers the **player**
+//! "Burning Attack" only. See the open-rev-eng-threads "Seru-magic summon visual"
+//! row for the full reconciliation.
+//!
+//! ## What is faithful vs. interpreted (within this stand-in model)
 //!
 //! - **Faithful:** the per-part animation *computation*. Each part's move-VM
 //!   program runs through [`legaia_engine_vm::move_vm`] verbatim — the same
@@ -33,12 +59,15 @@
 //!   target) is added to the lerp endpoint. This is why a summon part animates
 //!   off the spawn point with no `WORLD_ADD` op — its motion lives in the anim
 //!   banks, and it now glides there instead of snapping on completion.
-//! - **Interpreted (rotation):** the part's *orientation*. Retail composes it in
-//!   PROT 0900 with `RotMatrixX/Y/Z` (a per-part local rotation plus the camera
-//!   angles `_DAT_8007B790/2/4`, gated per axis) over the part hierarchy. The
-//!   exact actor→render-node rotation source isn't pinned yet, so
-//!   [`SummonScene::part_draws`] derives Euler angles from the move-VM rotation
-//!   banks as the engine's interpretation — the remaining open piece.
+//! - **Interpreted (rotation):** the part's *orientation*. Within this stand-in
+//!   model [`SummonScene::part_draws`] derives Euler angles from the move-VM
+//!   rotation banks. This is the engine's interpretation of the scene-graph
+//!   model, **not** a faithful port of retail's player-summon orientation —
+//!   which the live trace resolved as the per-object TRS keyframes that
+//!   `FUN_8004998C` decodes (the battle-actor path above), not a move-VM /
+//!   `FUN_801F7088` rotation. (PROT 0900's `RotMatrixX/Y/Z` + camera-angle
+//!   `FUN_801F7088` build is the **world-map top-view tile renderer** aliasing
+//!   the same `0x801Fxxxx` band, not the battle-summon code.)
 
 use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
