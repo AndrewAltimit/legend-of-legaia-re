@@ -7914,23 +7914,29 @@ impl ApplicationHandler for PlayWindowApp {
                         if in_battle {
                             // Battle backdrop: the scene's `scene_tmd_stream`
                             // dome (PROT 88 for the overworld map01 battle) —
-                            // sky hemisphere + mountain ring + grass ground —
-                            // drawn at its **raw world coordinates** under the
-                            // exact retail orbit camera (`retail_battle_mvp`).
-                            // `model = F` (plain Y-flip) because the camera bakes
-                            // in `F`, so `cam * F` recovers the raw PSX vertex
-                            // the retail transform expects.
+                            // sky hemisphere + mountain arc + grass — drawn at its
+                            // **raw world coordinates** under the exact retail
+                            // orbit camera (`retail_battle_mvp`). `model = F`
+                            // (plain Y-flip): the camera bakes in `F`, so
+                            // `cam * F` recovers the raw PSX vertex the retail
+                            // transform expects.
                             //
-                            // The dome geometry is a FRONT half (verts span
-                            // `Z in [-1260, +12155]`, open toward -Z), so a
-                            // single instance exposes the open back when the
-                            // camera orbits to a side angle. Retail shows a full
-                            // surround at every angle (its exact back-fill lives
-                            // in the battle overlay's `func_0x801d02c0`, not yet
-                            // dumped — see `project_battle_backdrop_is_prot88_
-                            // dome`); a 180°-Y mirror of the same half-dome
-                            // completes the surround and matches the retail
-                            // framebuffer at the cut-side angle.
+                            // Drawn ONCE, world-fixed — matching retail, which
+                            // sets the dome up as a background **actor**
+                            // (`FUN_800513F0`: `tmd_register` -> `DAT_8007C018[]`
+                            // + `FUN_80020de0` actor_alloc + `FUN_80020f88` link)
+                            // rendered by the normal actor path `FUN_80048A08`.
+                            // The dome is a FRONT half (verts `Z in [-1260,
+                            // +12155]`), so it is NOT a full surround: as the
+                            // camera orbits, different portions of the front arc
+                            // come into view and the rest of the horizon is open
+                            // sky/grass. The retail captures bear this out —
+                            // mountains cover only 44–81% of the horizon columns
+                            // depending on angle (NOT a ring). Earlier engine
+                            // builds added a 180° mirror to "complete" the
+                            // surround; that over-fills what retail leaves as a
+                            // gap, so it is removed. See
+                            // `project_battle_backdrop_is_prot88_dome`.
                             if let Some(stage_idx) = self.battle_stage_mesh
                                 && let Some(mesh) = self.meshes.get(stage_idx)
                             {
@@ -7938,11 +7944,6 @@ impl ApplicationHandler for PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * flip,
-                                });
-                                let back = flip * Mat4::from_rotation_y(std::f32::consts::PI);
-                                draws.push(SceneDraw {
-                                    mesh,
-                                    mvp: cam * back,
                                 });
                             }
                         } else {

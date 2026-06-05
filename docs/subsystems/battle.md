@@ -86,21 +86,33 @@ dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
 - PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-matched
   across all four saves; leading TMD magic `0x80000002` at file `+4`,
   uncompressed). Loaded by the type-`0x01` chunk walker `FUN_8001FE70` into
-  `_DAT_8007b864`, registered as TMD handle `DAT_80076810` by `FUN_800513F0`
-  (`tmd_register(_DAT_8007b864, 0)`). It is a 4-object, 968-vertex TMD + two
-  `TimList` texture chunks; PROT 88/89/90 share identical geometry and differ
-  only in texture payload.
-- The dome geometry is a **front half** — verts span `X ∈ [-12155, 12155]`,
-  `Z ∈ [-1260, +12155]` (open toward `-Z`), `Y ∈ [-6883, 12]` (PSX Y-down:
-  `-6883` = sky top, `0` = ground; the dome's own ground is a ring, inner radius
-  `2889`, that sits *behind* the flat grid as the far grass). The exact draw
-  callsite for the dome (the `DAT_80076810` consumer) and how its front-half
-  mountains surround at every angle are **still open**.
+  `_DAT_8007b864`. It is a 4-object, 968-vertex TMD + two `TimList` texture
+  chunks (obj0 = sky `Y` to `-10522`, obj2 = mountains `Y` to `-2257`,
+  obj3 = flat ground `Y = 0`, obj1 = near detail); PROT 88/89/90 share identical
+  geometry and differ only in texture payload.
+- **The dome is drawn as a background ACTOR.** `FUN_800513F0` does
+  `tmd_register(_DAT_8007b864)` → installs the TMD pointer into the mesh table
+  `DAT_8007C018[idx]` (returning the slot `idx`, stashed at the dome descriptor
+  `0x8007680c + 4` = `DAT_80076810`), then `FUN_80020de0` (`actor_alloc`)
+  allocates a battle actor whose mesh index is that slot and `FUN_80020f88`
+  links it into the actor list. So the dome is rendered by the **normal battle
+  actor path** (`FUN_80048A08`) — same as monsters/party — with no special
+  dome-draw function (which is why `DAT_80076810` has no resolved reader: the
+  actor list is walked pointer-indirect).
+- **No full surround.** The dome geometry is a **front half** (`X ∈ [-12155,
+  12155]`, `Z ∈ [-1260, +12155]` open toward `-Z`, all 4 objects `Z ≥ 0`), drawn
+  **once**, world-fixed. As the orbit camera sweeps, different portions of the
+  front arc come into view and the rest of the horizon is open sky/grass. The
+  retail captures confirm this: mountains cover only **44–81 % of the horizon
+  columns** depending on angle (peak when the camera looks into the arc, trough
+  along its edge) — *not* a ring. The dome's own ground ring (inner radius
+  `2889`) is the far grass behind the flat grid.
 
-**Engine status.** The clean-room engine currently approximates the whole
-backdrop with the dome + a `Ry(180°)` mirror under the exact camera (matches the
-framebuffer at the cut-side angle). The faithful match is a flat tiled ground
-grid + the dome for sky/mountains — a follow-up.
+**Engine status.** The clean-room engine draws the dome **once** (world-fixed)
+under the exact camera, matching retail's single-actor mechanism and its partial
+horizon coverage. (An earlier build added a `Ry(180°)` mirror to "complete" the
+surround; that over-fills what retail leaves open, so it is removed.) The fully
+faithful backdrop would also emit the flat tiled ground grid — a follow-up.
 
 ### Battle camera (exact)
 
