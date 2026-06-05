@@ -146,6 +146,38 @@ they split cleanly into damage vs. heal:
 a 26-byte-stride per-move power table at **`0x801F4F5C`** — that is where a genuine
 per-move "power" scalar lives, but it feeds melee/arts, not summon magic.
 
+#### The full damage-roll chain (three stages)
+
+The damage a summon deals is the `attacker_roll - defender_roll` margin after a
+three-stage pipeline, all of it now byte-traced:
+
+1. **Roll** — `FUN_801dd0ac` builds an attacker roll
+   (`rand % (summon_AGL + 1) + summon_HP + caster_AGL*2`) and a defender roll
+   (`rand % ((target_AGL >> 1) + 1) + (target_HP >> 8) + (target_DEFa >> 4) +
+   (target_DEFb >> 4) + target_AGL*2`).
+2. **Scale** — `FUN_801dd864` scales the attacker roll by the element-affinity
+   percent from the 8×8 byte matrix at `0x801F53E8`, then the attacker/defender
+   status-weaken bits (`+0x16e & 1` → 9/10, `& 2` → 7/10; defender guard
+   `+0x1de == 4` doubles its roll first), and — summon only — the caster's
+   magic-power byte (`SC + 0x729`, matched on the spell-id at `+0x705`):
+   `roll += roll*(power_byte − 1) >> 3`. `FUN_801dd0ac` then re-rolls the
+   attacker as `defender_roll + rand % ((summon_AGL >> 1) + 1) + summon_HP`
+   whenever the scaled attacker has not already overwhelmed the defender.
+3. **Finish** — `FUN_801ddb30` applies the per-element resistance bits (from the
+   defender's SC ability words `+0x6bc`/`+0x6c0`), a `rand % 9 + 8` floor, the
+   9999 cap, the spirit-gauge fill, the damage-popup accumulator, MP drain, and
+   the per-element stat-debuff for the active field type
+   (`*(DAT_801c9358 + 0x1d)`).
+
+The bounded, state-free arithmetic of stages 1 + 2 is ported as pure kernels in
+[`legaia_engine_vm::battle_formulas`](../subsystems/battle-formulas.md)
+(`summon_attacker_roll` / `summon_defender_roll` / `summon_predamage` /
+`apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` /
+`heal_summon_amount`). Stage 3 reads ~20 battle globals and mutates live battle
+state, so it stays the coupled tail of the live battle context rather than a
+pure kernel. See the `FUN_801dd0ac` / `FUN_801dd864` / `FUN_801ddb30` rows in
+[`reference/functions.md`](../reference/functions.md).
+
 So the "missing per-spell power scalar" the engine wanted largely **does not exist for
 summons**: the game derives summon magnitude from caster/summon battle stats
 (`FUN_801dd0ac`) or, for recovery summons, from a per-character magic-power byte. The
