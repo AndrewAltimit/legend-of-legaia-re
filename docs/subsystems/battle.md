@@ -37,6 +37,48 @@ The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 s
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 
+## Battle background
+
+A battle is fought **on the environment where the encounter triggered, kept
+resident and rendered as a full 3D backdrop** — the battle does not load a
+separate flat arena. The battle-action SM only swaps the **camera** (from the
+field/world walk camera to a slow orbit around the party↔enemy midpoint) and
+overlays the actors + HUD; the surrounding terrain keeps drawing through its
+normal renderer.
+
+For an **overworld (world-map continent) encounter** this is pinned from a
+4-angle capture set (`overworld_battle_bg_angle_a..d`, the same Vahn-vs-Gobu-Gobu
+battle paused on the Begin/Run menu while the camera idly orbits):
+
+- The **world-map overlay stays paged in** during the battle — all four saves
+  report `world-map overlay loaded` (the `0x801F7644..0x801F8690` per-prim
+  terrain leaves) via `mednafen-state prim-dispatch-survey`. So the world-map
+  controller's terrain draw is still the background renderer; battle is layered
+  on top.
+- The rendered backdrop is **~738 textured prims** (619 `POLY_GT4` + 116
+  `POLY_GT3`) in the live GPU pool, whose ground tiles match the **world-map
+  continent terrain per-tile descriptor table** (3715 hits in the
+  `0x80190000`-region, `mednafen-state prim-trace`). The framebuffer shows
+  textured grass + distant mountain landmarks + a clouded sky — the continent
+  surface around the encounter point.
+- Across the four orbit angles the **ground and mountain landmarks rotate with
+  the camera** (true 3D continent geometry — the heightfield surface + the
+  `flags & 0x4` placed landmark meshes), while the **sky** stays a fixed
+  backdrop. This is the [world-map render pipeline](world-map.md) (`world_map_heightfield`
+  + `world_map_terrain_draws`), not the field scene-pack.
+
+**Why the engine's battle "looks like half the scene."** `play-window`'s
+live-loop battle currently reuses the *field* draw branch (`field_placement_draws`
++ actors) for the backdrop, so a battle triggered from a field/town scene shows
+that scene's partial placement geometry, and an overworld battle does not keep
+the continent terrain resident. The faithful fix is to keep the **active
+environment's own renderer running as the battle backdrop** — for an overworld
+encounter, continue drawing `world_map_heightfield` + `world_map_terrain_draws`
+under the orbiting battle camera (which the engine already has via
+`battle_camera_mvp`), rather than switching to the field/cave geometry. The
+per-area battle backdrop (cave / dungeon / town battles) is the same idea with
+that area's own geometry; only the overworld case is capture-pinned here.
+
 ## Battle action state machine (`FUN_801E295C`)
 
 16 KB / 4099 instructions / 155 outgoing calls. The action-execution dispatcher: it takes the player's selected action and runs it to completion across multiple frames.

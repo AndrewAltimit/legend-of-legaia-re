@@ -975,3 +975,61 @@ topics = ["steal", "Evil God Icon", "battle", "skeleton", "incense", "randomizer
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+# ----------------------------------------------------------------
+# Overworld battle-background capture set (4 camera angles). Vahn
+# (solo, LV 1) vs a Gobu Gobu on the OVERWORLD continent, paused on
+# the Begin/Run turn menu while the battle camera idly orbits the
+# scene. The four slots are the SAME battle at four orbit angles, so
+# diffing them isolates what is camera-dependent (the 3D stage:
+# ground + mountains) from what is fixed (the sky backdrop).
+#
+# These back the "battle background = world-map continent terrain"
+# finding: the world-map overlay is paged in across all four
+# (`prim-dispatch-survey`), the ~738 background prims (619 POLY_GT4)
+# match the world-map continent terrain descriptor table
+# (`prim-trace`), and the rendered frame is grass + mountain
+# landmarks + clouded sky. So an overworld encounter keeps the
+# continent terrain resident and renders it as the full battle
+# backdrop with an orbiting camera. Randomizer disc (mechanism is
+# disc-independent). See docs/subsystems/battle.md "Battle background".
+
+[[scenarios]]
+slot = 2
+label = "overworld_battle_bg_angle_a"
+backup_fingerprint = "7269ae2b694a6a276037ad437eee9c331479c20d1eefb4f9c9a57ca982d46019"
+phase = "battle"
+expected_game_mode = 0x15
+diff_against = [3, 4, 5]
+description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle A. World-map overlay resident; background = world-map continent terrain (grass + mountains + sky). Randomizer disc."
+topics = ["battle", "battle background", "world map", "terrain", "camera orbit", "Gobu Gobu", "randomizer", "RE"]
+
+[[scenarios]]
+slot = 3
+label = "overworld_battle_bg_angle_b"
+backup_fingerprint = "32257e93ca63ebea0907c504b3d3e864fd13b97a430faa16010ff339ebadcde9"
+phase = "battle"
+expected_game_mode = 0x15
+diff_against = [2, 4, 5]
+description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle B. Sister of overworld_battle_bg_angle_a at a different orbit angle. Randomizer disc."
+topics = ["battle", "battle background", "world map", "terrain", "camera orbit", "Gobu Gobu", "randomizer", "RE"]
+
+[[scenarios]]
+slot = 4
+label = "overworld_battle_bg_angle_c"
+backup_fingerprint = "d0e4abc503bc0a914ae7989d8bb4c7ca28abbd95c95fe5114dc75bc732c74bf7"
+phase = "battle"
+expected_game_mode = 0x15
+diff_against = [2, 3, 5]
+description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle C. Sister angle. Randomizer disc."
+topics = ["battle", "battle background", "world map", "terrain", "camera orbit", "Gobu Gobu", "randomizer", "RE"]
+
+[[scenarios]]
+slot = 5
+label = "overworld_battle_bg_angle_d"
+backup_fingerprint = "af7a80a0d203fe57d904fdb1de559714b418100a08a38def0c5d09644357ebb9"
+phase = "battle"
+expected_game_mode = 0x15
+diff_against = [2, 3, 4]
+description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle D. Sister angle. Randomizer disc."
+topics = ["battle", "battle background", "world map", "terrain", "camera orbit", "Gobu Gobu", "randomizer", "RE"]

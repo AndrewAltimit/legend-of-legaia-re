@@ -36,6 +36,18 @@
   <p class="hint">The asset-viewer's <code>--bundle battle</code> mode mirrors this loader's PROT 865&ndash;890 set so character meshes have the right CLUT bindings.</p>
 </section>
 
+<section class="doc-section" id="battle-background">
+  <h2>Battle background</h2>
+  <p>A battle is fought <strong>on the environment where the encounter triggered, kept resident and drawn as a full 3D backdrop</strong> &mdash; there is no separate flat arena. The battle SM only swaps the <strong>camera</strong> (field/world walk camera &rarr; a slow orbit around the party&harr;enemy midpoint) and overlays the actors + HUD; the surrounding terrain keeps rendering normally.</p>
+  <p>For an <strong>overworld (world-map continent) encounter</strong>, pinned from a 4-angle capture set (<code>overworld_battle_bg_angle_a..d</code> &mdash; the same Vahn-vs-Gobu-Gobu fight paused on the Begin/Run menu while the camera idly orbits):</p>
+  <ul>
+    <li>The <strong>world-map overlay stays paged in</strong> through the battle (all four saves report <code>world-map overlay loaded</code> via <code>prim-dispatch-survey</code>), so the world-map terrain draw is still the background renderer.</li>
+    <li>The backdrop is <strong>~738 textured prims</strong> (619 <code>POLY_GT4</code>) whose ground tiles match the <strong>world-map continent terrain descriptor table</strong> (<code>prim-trace</code>); the frame shows grass + distant mountain landmarks + a clouded sky.</li>
+    <li>Across the angles the <strong>ground + mountains rotate</strong> with the camera (3D continent heightfield + placed landmark meshes) while the <strong>sky stays fixed</strong>. This is the <a href="world-map.html">world-map render pipeline</a>, not the field scene-pack.</li>
+  </ul>
+  <p><strong>Why the engine's battle looks like "half the scene":</strong> <code>play-window</code> reuses the <em>field</em> draw branch for the backdrop, so a field/town battle shows that scene's partial placement geometry and an overworld battle drops the continent terrain. The faithful fix is to keep the active environment's own renderer running as the backdrop &mdash; for an overworld encounter, keep drawing the world-map heightfield + terrain under the orbiting battle camera.</p>
+</section>
+
 <section class="doc-section" id="action-state-machine">
   <h2>Battle action state machine</h2>
   <dl class="kv">
