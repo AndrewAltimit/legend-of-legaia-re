@@ -3700,6 +3700,11 @@ struct PlayWindowApp {
     /// `scene_tmd_stream` half-dome), drawn behind the actors. `None` when the
     /// scene has no stage or it failed to load.
     battle_stage_mesh: Option<usize>,
+    /// Mesh index of the flat tiled ground grid drawn under the battle actors
+    /// (retail's `func_0x801d02c0` grass grid). Reuses the stage dome's grass
+    /// texel so it samples real grass from the battle VRAM. `None` outside a
+    /// stage-dome battle or when the dome has no usable ground texel.
+    battle_ground_mesh: Option<usize>,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
@@ -5577,6 +5582,11 @@ impl PlayWindowApp {
     /// the raw PSX vertex the retail transform expects. Verified by projecting
     /// PROT 88's dome through this matrix and matching the savestate framebuffer
     /// (sky / mountain-ring / horizon). See `project_battle_camera_re`.
+    /// The exact retail dome projection (`tr = (0,1280,7680)`), kept as the
+    /// camera-RE reference and the regression-test target. The live battle uses
+    /// the unified [`battle_dome_camera_mvp`] (closer depth) for a coherent
+    /// single-camera scene; this stays as the pinned ground truth.
+    #[allow(dead_code)]
     fn retail_battle_mvp(yaw_rad: f32, aspect: f32) -> Mat4 {
         Self::battle_mvp_with_tr(yaw_rad, Vec3::new(0.0, 1280.0, 7680.0), aspect)
     }
@@ -5614,24 +5624,22 @@ impl PlayWindowApp {
         proj * t * r * f
     }
 
-    /// Backdrop (dome) camera: the exact retail orbit pushed to `tr.z = 7680`
-    /// so the dome's mountains sit on the horizon. Spun at the retail rate.
+    /// The single battle camera, used for **everything** in a stage-dome battle
+    /// (dome, ground grid, and actors) so the scene reads as one coherent space
+    /// rather than two overlapping layers. The retail dome projection wants
+    /// `tr.z = 7680`, but that shoves the foreground actors onto the same far
+    /// plane (tiny); driving a *separate* close camera for the actors instead
+    /// split the horizon (the grass grid and the dome no longer met). A single
+    /// middle depth keeps the dome's huge radius reading at the horizon while
+    /// the party/enemies near the origin read at roughly retail scale. `tr.y`
+    /// holds the dome's `1/6` down-shift ratio so the action sits just below
+    /// centre. (The exact `tr.z = 7680` projection is preserved in
+    /// [`retail_battle_mvp`] for the camera-RE reference + regression test.)
     fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
-        Self::retail_battle_mvp(self.battle_orbit_yaw_rad(), aspect)
-    }
-
-    /// Foreground (actor) camera: same rotation/projection as the backdrop, but
-    /// a much closer eye-space depth so the party/enemies read at retail scale
-    /// instead of being shoved to the dome's `7680`-deep plane (which made them
-    /// tiny). `tr.z = 1700` frames a ~1000-unit-tall battle actor at roughly
-    /// retail size; `tr.y` keeps the dome's `1/6` down-shift ratio so the action
-    /// sits just below centre like retail. Mirrors retail drawing actors off the
-    /// rotation-only `DAT_8007bf10` rather than the backdrop's deep matrix.
-    fn battle_actor_camera_mvp(&self, aspect: f32) -> Mat4 {
-        const ACTOR_DEPTH: f32 = 1700.0;
+        const DEPTH: f32 = 2200.0;
         Self::battle_mvp_with_tr(
             self.battle_orbit_yaw_rad(),
-            Vec3::new(0.0, ACTOR_DEPTH / 6.0, ACTOR_DEPTH),
+            Vec3::new(0.0, DEPTH / 6.0, DEPTH),
             aspect,
         )
     }
@@ -5855,6 +5863,24 @@ impl PlayWindowApp {
                 self.battle_stage_mesh = Some(self.meshes.len());
                 self.meshes.push(m);
                 self.scene_tmd_data.push((tmd.clone(), raw.clone()));
+                // Flat tiled ground grid under the actors (retail's
+                // `func_0x801d02c0` grass grid). Reuse the dome's grass texel so
+                // it samples real grass from the battle VRAM; drawn with the
+                // actor camera so the party stands on it.
+                self.battle_ground_mesh = None;
+                if let Some(grid) = build_battle_ground_grid(&vmesh)
+                    && let Ok(gm) = r.upload_vram_mesh(
+                        &grid.positions,
+                        &grid.uvs,
+                        &grid.cba_tsb,
+                        &grid.normals,
+                        &grid.indices,
+                    )
+                {
+                    self.battle_ground_mesh = Some(self.meshes.len());
+                    self.meshes.push(gm);
+                    self.scene_tmd_data.push((tmd.clone(), raw.clone())); // keep meshes/data aligned
+                }
             }
         }
         let mut bound = 0usize;
@@ -6054,6 +6080,7 @@ impl PlayWindowApp {
         self.battle_vram = None;
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
+        self.battle_ground_mesh = None;
     }
 
     /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
@@ -7989,16 +8016,24 @@ impl ApplicationHandler for PlayWindowApp {
                                 }
                             }
                         }
-                        // In a stage-dome battle the actors use the closer
-                        // foreground camera (party/enemies at retail scale)
-                        // while the dome stays on the far backdrop camera; the
-                        // two share the orbit so they rotate together. Every
-                        // other mode keeps the single `cam`.
-                        let actor_cam = if in_battle && self.battle_stage_mesh.is_some() {
-                            self.battle_actor_camera_mvp(aspect)
-                        } else {
-                            cam
-                        };
+                        // Single battle camera for the actors too (same `cam` as
+                        // the dome + grid) so the whole scene shares one space.
+                        let actor_cam = cam;
+                        // Flat tiled ground grid (retail's func_0x801d02c0 grass)
+                        // under the actors, on the same battle camera so the
+                        // party stands on it and the foreground reads as grass
+                        // instead of the bare clear colour. `cam` bakes in the
+                        // Y-flip, so `* flip` recovers the raw PSX y=0 plane.
+                        if in_battle
+                            && let Some(gi) = self.battle_ground_mesh
+                            && let Some(gmesh) = self.meshes.get(gi)
+                        {
+                            let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                            draws.push(SceneDraw {
+                                mesh: gmesh,
+                                mvp: cam * flip,
+                            });
+                        }
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
@@ -8048,9 +8083,16 @@ impl ApplicationHandler for PlayWindowApp {
 
                     // Force a pure-black background during boot UI so the
                     // logos / title / save-select panels read on PSX-style
-                    // black instead of the default dark-blue clear.
+                    // black instead of the default dark-blue clear. In a
+                    // stage-dome battle clear to a sky blue so the gaps the
+                    // front-half dome leaves open read as sky (like retail)
+                    // rather than the bare grey clear.
                     let scene_clear = if self.boot_ui.is_active() {
                         Some([0.0, 0.0, 0.0, 1.0])
+                    } else if self.session.host.world.mode == SceneMode::Battle
+                        && self.battle_stage_mesh.is_some()
+                    {
+                        Some([0.32, 0.46, 0.66, 1.0])
                     } else {
                         None
                     };
@@ -9039,6 +9081,7 @@ fn cmd_play_window_with_record(
         battle_tex_slots_used: 0,
         summon_actor_slot: None,
         battle_stage_mesh: None,
+        battle_ground_mesh: None,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
@@ -9751,6 +9794,121 @@ fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result<()> {
     }
     println!("title: outcome = {:?}", s.outcome());
     Ok(())
+}
+
+/// Build the flat tiled battle ground grid (retail's `func_0x801d02c0` grass
+/// grid): a `(N+1)x(N+1)` vertex grid of quads on the PSX `y=0` plane centred at
+/// the world origin, every vertex sampling the stage dome's **grass texel** so
+/// it reads as real grass from the battle VRAM instead of the bare clear colour.
+/// Returns `None` if the dome has no ground-plane (`|y|` small) textured vertex
+/// to borrow the texel from. Drawn with the actor camera so the party stands on
+/// it; coarse cells are fine because every vertex samples the same texel.
+fn build_battle_ground_grid(
+    dome: &legaia_tmd::mesh::VramMesh,
+) -> Option<legaia_tmd::mesh::VramMesh> {
+    // Borrow the dome's GRASS texture: among the flat ground-plane (|y| ~ 0)
+    // textured vertices, group by CBA/TSB and pick the texture covering the
+    // largest XZ area. The grass ground (dome obj3) is the widest flat surface;
+    // this avoids accidentally grabbing the localized ground-mist object (obj1,
+    // also near y=0) which a "first textured vertex" pick selected. Then TILE
+    // that texture's UV box across the grid cells (a single shared UV makes each
+    // quad zero-area in UV space -> the rasteriser samples one edge texel and
+    // the grid renders nothing).
+    /// Per-texture accumulator while grouping the dome's flat ground verts.
+    struct GrassGroup {
+        umin: u8,
+        vmin: u8,
+        umax: u8,
+        vmax: u8,
+        xmin: f32,
+        zmin: f32,
+        xmax: f32,
+        zmax: f32,
+        count: usize,
+    }
+    let mut groups: std::collections::HashMap<[u16; 2], GrassGroup> =
+        std::collections::HashMap::new();
+    for i in 0..dome.positions.len() {
+        if dome.positions[i][1].abs() >= 5.0 || dome.cba_tsb[i] == [0, 0] {
+            continue;
+        }
+        let [u, v] = dome.uvs[i];
+        let (x, z) = (dome.positions[i][0], dome.positions[i][2]);
+        let e = groups.entry(dome.cba_tsb[i]).or_insert(GrassGroup {
+            umin: 255,
+            vmin: 255,
+            umax: 0,
+            vmax: 0,
+            xmin: f32::MAX,
+            zmin: f32::MAX,
+            xmax: f32::MIN,
+            zmax: f32::MIN,
+            count: 0,
+        });
+        e.umin = e.umin.min(u);
+        e.vmin = e.vmin.min(v);
+        e.umax = e.umax.max(u);
+        e.vmax = e.vmax.max(v);
+        e.xmin = e.xmin.min(x);
+        e.zmin = e.zmin.min(z);
+        e.xmax = e.xmax.max(x);
+        e.zmax = e.zmax.max(z);
+        e.count += 1;
+    }
+    // pick the group with the largest XZ footprint = the grass ground
+    let (&cba_tsb, g) = groups.iter().max_by(|(_, a), (_, b)| {
+        let area = |g: &GrassGroup| (g.xmax - g.xmin) * (g.zmax - g.zmin);
+        area(a).partial_cmp(&area(b)).unwrap()
+    })?;
+    let (umin, vmin, umax, vmax) = (g.umin, g.vmin, g.umax, g.vmax);
+    let same_len = g.count;
+    // Tiling the WHOLE grass-texture bbox repeats whatever dirt path it spans;
+    // sample a small window near the centre (likelier pure grass) and tile that.
+    let cu = ((umin as u16 + umax as u16) / 2) as u8;
+    let cv = ((vmin as u16 + vmax as u16) / 2) as u8;
+    const T: u8 = 8;
+    let (u0, u1) = (cu.saturating_sub(T), cu.saturating_add(T));
+    let (v0, v1) = (cv.saturating_sub(T), cv.saturating_add(T));
+    log::info!(
+        "battle ground grid: grass texture {same_len} verts, uv [{u0}..{u1}]x[{v0}..{v1}] cba_tsb={cba_tsb:?}"
+    );
+
+    const N: i32 = 24; // cells per side
+    const P: f32 = 1400.0; // cell pitch (world units) -> ~+/-16800 extent
+    let mut m = legaia_tmd::mesh::VramMesh {
+        positions: Vec::new(),
+        uvs: Vec::new(),
+        cba_tsb: Vec::new(),
+        indices: Vec::new(),
+        normals: Vec::new(),
+    };
+    // Per-cell quads (own 4 vertices each) so EVERY cell maps to the same full
+    // grass UV tile `[u0..u1]x[v0..v1]`. Shared-vertex grids forced a single UV
+    // per vertex, which (alternating box corners by parity) made adjacent cells
+    // sample different texture columns -> green-vs-dirt whole-cell jumps. With
+    // each cell carrying the whole tile, the grass repeats uniformly.
+    let half = N / 2;
+    for iz in 0..N {
+        for ix in 0..N {
+            let (x0, z0) = ((ix - half) as f32 * P, (iz - half) as f32 * P);
+            let (x1, z1) = (x0 + P, z0 + P);
+            let base = m.positions.len() as u32;
+            for (x, z, u, v) in [
+                (x0, z0, u0, v0),
+                (x1, z0, u1, v0),
+                (x0, z1, u0, v1),
+                (x1, z1, u1, v1),
+            ] {
+                m.positions.push([x, 0.0, z]);
+                m.uvs.push([u, v]);
+                m.cba_tsb.push(cba_tsb);
+                m.normals.push([0.0, -1.0, 0.0]); // PSX up = -y (flat ground faces up)
+            }
+            m.indices
+                .extend([base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+        }
+    }
+    Some(m)
 }
 
 fn select_input_for(c: char) -> legaia_engine_core::save_select::SelectInput {
