@@ -58,6 +58,21 @@ the two labels every record:
 
 Record 0 is an all-zero unused slot.
 
+**Cross-checked against the monster archive** (PROT 867 `+0x21..=+0x23` global
+magic-attack ids): **28 of the 29** mapped named ids (`≥0x25`) are exactly the
+special attacks enemies cast — so the named-attack records line up with the
+enemy roster's attack lists. But the table is a **subset** of all enemy
+named attacks: across 186 monsters, 46 distinct attack ids appear, of which only
+28 are in this table; the other 18 (`0x2E`/`0x2F`/`0x3C`/`0x4A..=0x6E`, and
+`0xA7`/`0xB8` — the last two beyond the `0x00..=0x7F` map entirely) have **no
+move-power record**. Those are the magic / elemental casts, whose damage is
+caster-state-derived (the magic path — see [spell-table.md](spell-table.md) and
+the per-spell-power thread in [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)),
+consistent with this being the **physical/arts** power table, not the magic one.
+Every enemy attack id is `≥0x25` — none land in the basic-attack band — and
+95 of 186 monsters carry no magic attack at all (they fight with the basic
+physical, the unmapped path).
+
 ### This table is special-attack-only — a party member's basic attacks / arts do *not* use it
 
 The map covers exactly 44 special-attack ids (the internal tiers `0x04..=0x07` /
