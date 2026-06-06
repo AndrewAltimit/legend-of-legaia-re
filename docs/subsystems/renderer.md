@@ -4,19 +4,27 @@ The renderer is `FUN_8002735C` - 60 GTE ops, per-mode descriptor table at `DAT_8
 
 ## Per-mode descriptor table
 
-The renderer indexes into an 8-byte-stride table at `0x8007326C` using `((flags >> 1) - 8) >> 1`:
+The renderer treats the 8-byte-stride table at `0x8007326C` as a packed `{u32
+first; u32 second}` per row, selects `row = ((flags >> 1) - 8) >> 1`, and reads
+**byte3 = `first >> 24`** (the shape selector, `& 3` = `F`/`FT`/`G`/`GT`) and
+**byte4 = `second & 0xFF`** (the base vertex-index offset in u16 units):
 
-| flags | table idx | byte 0 | byte 4 |
-|---|---|---|---|
-| 0x10/11 | 0 | 0x04 | 0x05 |
-| 0x12/13 | 1 | 0x09 | 0x07 |
-| 0x14/15 | 2 | 0x04 | 0x00 |
-| 0x16/17 | 3 | 0x06 | 0x06 |
-| 0x18/19 | 4 | 0x07 | 0x07 |
-| 0x1A/1B | 5 | 0x09 | 0x0B |
-| 0x20-23 | 4 | (same) | |
+| flags   | row | raw 8 bytes               | byte3 (shape) | byte4 (vtx off) |
+|---------|-----|---------------------------|---------------|-----------------|
+| 0x10/11 | 0   | `04 00 00 05 07 00 00 00` | 0x05          | 0x07            |
+| 0x12/13 | 1   | `09 00 00 07 06 00 00 00` | 0x07          | 0x06            |
+| 0x14/15 | 2   | `04 00 00 00 02 00 00 00` | 0x00          | 0x02            |
+| 0x16/17 | 3   | `06 00 00 02 06 00 00 00` | 0x02          | 0x06            |
+| 0x18/19 | 4   | `07 03 00 01 07 00 00 00` | 0x01          | 0x07            |
+| 0x1A/1B | 5   | `09 03 00 03 0B 00 00 00` | 0x03          | 0x0B            |
+| 0x20-27 | (re-uses rows 0-5 via the same `(flags>>1)-8` math) |  |  |  |
 
-Each entry's first u32 has bytes `[?, ?, ?, type_bits]` where the low 2 bits of byte 3 select the OT packet shape (0/1/2/3 → different DrawPolyXX variants). Each entry's second u32 has the vertex-index offset (in u16 units) within the prim in its low byte. See [`formats/tmd.md`](../formats/tmd.md) for the full layout.
+The low 2 bits of byte3 select the OT packet shape (`0`=flat untextured,
+`1`=flat textured, `2`=gouraud untextured, `3`=gouraud textured); the quad bit
+`(flags>>1)&1` picks tri vs quad. Untextured prims carry a per-prim/per-vertex
+**colour** block instead of UVs and are lit by the GTE `NCDS` op; **no per-prim
+normal is stored** (the renderer never reads the object's normal table). See
+[`formats/tmd.md`](../formats/tmd.md) for the full per-mode record layout.
 
 ## TMD pointer table
 
@@ -66,12 +74,12 @@ Earlier versions filtered CLUT uploads with a `clut_collides_page` suppression t
 
 #### Field static-object placement render gap (town01)
 
-The field static-object table (`FUN_8003A55C`, `legaia_asset::field_objects`) places 46 environment-pack meshes in town01; 38 of them draw and **8 drop** across exactly three distinct pack meshes (pinned by `field_object_placement_disc::town01_dropped_placements_split_untextured_vs_missing_clut`). The split has two distinct, deeper root causes - neither is a render-filter tweak:
+The field static-object table (`FUN_8003A55C`, `legaia_asset::field_objects`) places 46 environment-pack meshes in town01; the field render now draws **40** and **6 drop** (all one pack mesh), pinned by `field_object_placement_disc::town01_dropped_placements_split_untextured_vs_missing_clut`. The historical 8-drop set splits into two distinct root causes - neither was a render-filter tweak:
 
-- **2 untextured props** (pack 31 / obj 315, pack 109 / obj 114): their prims carry no UVs (flat per-vertex-colour primitives), so the VRAM-textured mesh builder skips them (`prim.uvs.is_empty()`). Recovering them needs a per-vertex-RGB fallback, which in turn needs the per-prim **colour block** decoded - that layout is still unreversed for Legaia's six prim modes (the same gap noted for the per-prim normal offset), so the colour data isn't available to emit yet.
-- **6 placements of one mesh** (pack 74 / obj 347): all four of its prims sample the **same** texture page `(960, 256)` + CLUT row 510 - i.e. the bottom-right VRAM band `x ∈ [896, 1024], y = 256` that the `Field` pre-pass excludes by design (the character / party-texture region; the same band that surfaces as the documented town01 static-VRAM residue). Even `upload_all_tims: true` doesn't fill CLUT row 510, so the texture isn't a static scene TIM at all - it's a runtime targeted upload the field pre-pass doesn't model. Recovering this mesh needs that runtime texture-band upload reproduced, not a coverage flag.
+- **2 untextured props** (pack 31 / obj 315, pack 109 / obj 114) - **now rendered**: their prims carry no UVs (flat / gouraud per-vertex-colour primitives), so the VRAM-textured mesh builder skips them. The per-prim **colour block** is now reversed (F4/G3/G4 layouts + the `00 01 03 02` quad winding remap + the negative "no per-prim normal" result; see [`formats/tmd.md`](../formats/tmd.md#per-prim-color--texture-block)), `legaia_tmd::mesh::tmd_to_color_mesh` builds a `ColorMesh` from those prims, and the renderer's **vertex-colour pipeline** (`scene_color_mesh_pipeline`, `Renderer::upload_color_mesh`, `Scene::color_draws` - flat face-shaded, no VRAM lookup) draws them. `play-window` builds a colour mesh whenever the textured build comes back empty and resolves its placement transforms the same way as the textured props.
+- **6 placements of one mesh** (pack 74 / obj 347) - **still dropped**: all four of its prims sample the **same** texture page `(960, 256)` + CLUT row 510 - i.e. the bottom-right VRAM band `x ∈ [896, 1024], y = 256` that the `Field` pre-pass excludes by design (the character / party-texture region; the same band that surfaces as the documented town01 static-VRAM residue). Even `upload_all_tims: true` doesn't fill CLUT row 510, so the texture isn't a static scene TIM at all - it's a runtime targeted upload the field pre-pass doesn't model. A per-vertex-RGB fallback would render this mesh *wrong* (it IS textured), so it correctly stays dropped; recovering it needs that runtime texture-band upload reproduced.
 
-So the "recover the dropped town meshes" item resolves to two separate follow-ups (per-prim colour-block decode; the runtime character/party-texture-band upload) rather than a filter change. The placement test pins both root causes as regression guards.
+So the colour-block follow-up is done; the remaining town-render item is the runtime character/party-texture-band upload (a VRAM-coverage question). The placement test pins the recovery (untextured props build a non-empty `ColorMesh`; the missing-CLUT mesh stays empty) as a regression guard. **Known limitation:** a *mixed* mesh (some textured + some untextured prims) renders only its textured half - the colour path fires only when the whole textured build is empty; the town props are fully untextured, so they recover fully.
 
 #### CLUT-trace + VRAM-oracle diagnostics
 

@@ -394,20 +394,14 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
         for g in &groups {
             let desc = Descriptor::for_flags(g.header.flags);
             let is_textured = desc.is_some_and(|d| d.packet_shape.is_textured());
-            let is_gouraud = desc.is_some_and(|d| d.packet_shape.is_gouraud());
-            // The colour block runs [prim_start .. vertex_offset). Gouraud
-            // prims store one 4-byte RGB(+code) per corner; flat prims store a
-            // single RGB shared by all corners.
+            // Per-vertex colour comes from the walker's decoded `Prim::colors`
+            // (untextured F*/G* prims only; textured prims render white here and
+            // sample their atlas via `cba_tsb`).
             let color_of = |prim: &legaia_prims::Prim, corner: usize| -> [u8; 3] {
                 if is_textured {
                     return [255, 255, 255];
                 }
-                let off = prim.bytes_offset + if is_gouraud { corner * 4 } else { 0 };
-                if off + 3 <= buf.len() {
-                    [buf[off], buf[off + 1], buf[off + 2]]
-                } else {
-                    [128, 128, 128]
-                }
+                prim.colors.get(corner).copied().unwrap_or([128, 128, 128])
             };
 
             for prim in &g.prims {
@@ -464,6 +458,87 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
             textured: textured_flags,
         },
     )
+}
+
+/// A flat / gouraud, **untextured** mesh: per-vertex position + RGB colour,
+/// no UVs or VRAM lookup. Built from a TMD's `F*`/`G*` primitives for the
+/// engine's vertex-colour render path (the props whose prims carry colours
+/// instead of texture coordinates, which the textured VRAM-mesh builder drops).
+#[derive(Debug, Clone, Default)]
+pub struct ColorMesh {
+    /// Per-vertex object-local position (one entry per emitted corner).
+    pub positions: Vec<[f32; 3]>,
+    /// Per-vertex RGB colour (0..=255), index-aligned with `positions`.
+    pub colors: Vec<[u8; 3]>,
+    /// Triangle indices into `positions` (quads emitted as two triangles).
+    pub indices: Vec<u32>,
+}
+
+impl ColorMesh {
+    /// `true` when there is nothing to draw.
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+}
+
+/// Build a [`ColorMesh`] from a TMD's **untextured** primitives only (the
+/// `F*`/`G*` flat / gouraud prims that carry a per-vertex colour block instead
+/// of UVs - see [`legaia_prims::Prim::colors`]). Textured prims are skipped:
+/// they belong to the VRAM-mesh path, so a caller can render the textured part
+/// via [`tmd_to_vram_mesh_filtered`] and the untextured part via this without
+/// double-drawing. Mirrors the walk / winding of [`tmd_to_vram_mesh_field_hybrid`]
+/// (quad → `[0,1,2, 1,3,2]`), but emits a standalone colour mesh.
+pub fn tmd_to_color_mesh(tmd: &Tmd, buf: &[u8]) -> ColorMesh {
+    use crate::descriptor::Descriptor;
+
+    let mut out = ColorMesh::default();
+    for o in &tmd.objects {
+        let object_vert_count = o.header.n_vert;
+        let groups = legaia_prims::iter_groups_lenient(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+        for g in &groups {
+            let desc = Descriptor::for_flags(g.header.flags);
+            // Only untextured prims have a colour block; textured ones go
+            // through the VRAM-mesh path.
+            if desc.is_none_or(|d| d.packet_shape.is_textured()) {
+                continue;
+            }
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                let mut push_vert = |corner: usize, vidx: u16| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = out.positions.len() as u32;
+                    out.positions.push([v.x as f32, v.y as f32, v.z as f32]);
+                    out.colors
+                        .push(prim.colors.get(corner).copied().unwrap_or([128, 128, 128]));
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(0, raw_idx[0]);
+                        let i1 = push_vert(1, raw_idx[1]);
+                        let i2 = push_vert(2, raw_idx[2]);
+                        out.indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(0, raw_idx[0]);
+                        let i1 = push_vert(1, raw_idx[1]);
+                        let i2 = push_vert(2, raw_idx[2]);
+                        let i3 = push_vert(3, raw_idx[3]);
+                        out.indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't
@@ -1254,6 +1329,71 @@ mod tests {
             buf.extend_from_slice(&0i16.to_le_bytes());
         }
         buf
+    }
+
+    /// One untextured gouraud triangle (`G3`, flags 0x1D): 3 colour words at
+    /// the prim start, then 3 vertex indices. Exercises the colour-mesh path.
+    fn synth_untextured_g3_tmd() -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes()); // magic
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&1u32.to_le_bytes()); // 1 object
+        let prim_top: u32 = 28;
+        let prim_size: u32 = 8 + (1 + 1) * 20 + 4; // 1 prim + footer + terminator
+        let vert_top: u32 = prim_top + prim_size;
+        buf.extend_from_slice(&vert_top.to_le_bytes()); // vert_top
+        buf.extend_from_slice(&3u32.to_le_bytes()); // n_vert
+        buf.extend_from_slice(&0u32.to_le_bytes()); // normal_top
+        buf.extend_from_slice(&0u32.to_le_bytes()); // n_normal
+        buf.extend_from_slice(&prim_top.to_le_bytes()); // prim_top
+        buf.extend_from_slice(&1u32.to_le_bytes()); // n_primitive
+        buf.extend_from_slice(&0i32.to_le_bytes()); // scale
+        // Group: count=1 flags=0x1D (G3) olen=5 ilen=5 flag=0 mode=0x31.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x001Du16.to_le_bytes());
+        buf.extend_from_slice(&[5, 5, 0, 0x31]);
+        // Prim: [0..4) red, [4..8) green, [8..12) blue, [12..18) verts 0,1,2.
+        let mut prim = vec![0u8; 20];
+        prim[0..4].copy_from_slice(&[0xFF, 0x00, 0x00, 0x34]);
+        prim[4..8].copy_from_slice(&[0x00, 0xFF, 0x00, 0x34]);
+        prim[8..12].copy_from_slice(&[0x00, 0x00, 0xFF, 0x34]);
+        for (i, &raw) in [0u16, 8, 16].iter().enumerate() {
+            prim[12 + i * 2..14 + i * 2].copy_from_slice(&raw.to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 20]); // footer slot
+        buf.extend_from_slice(&0u32.to_le_bytes()); // terminator
+        for (x, y, z) in [(0i16, 0i16, 0i16), (64, 0, 0), (0, 64, 0)] {
+            buf.extend_from_slice(&x.to_le_bytes());
+            buf.extend_from_slice(&y.to_le_bytes());
+            buf.extend_from_slice(&z.to_le_bytes());
+            buf.extend_from_slice(&0i16.to_le_bytes());
+        }
+        buf
+    }
+
+    #[test]
+    fn color_mesh_from_untextured_prim() {
+        let buf = synth_untextured_g3_tmd();
+        let tmd = parse(&buf).unwrap();
+        let cm = tmd_to_color_mesh(&tmd, &buf);
+        assert!(!cm.is_empty());
+        assert_eq!(cm.positions.len(), 3);
+        assert_eq!(cm.indices, vec![0, 1, 2]);
+        // Per-vertex gouraud colours (RGB, code byte dropped).
+        assert_eq!(cm.colors, vec![[0xFF, 0, 0], [0, 0xFF, 0], [0, 0, 0xFF]]);
+        // The textured VRAM builder drops this prim (no UVs) -> empty mesh,
+        // which is exactly why the colour path exists.
+        let vm = tmd_to_vram_mesh(&tmd, &buf);
+        assert!(vm.indices.is_empty());
+    }
+
+    #[test]
+    fn color_mesh_skips_textured_prims() {
+        // The FT3 pyramid is all textured -> the colour mesh is empty.
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        assert!(tmd_to_color_mesh(&tmd, &buf).is_empty());
     }
 
     #[test]

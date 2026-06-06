@@ -920,13 +920,40 @@ fn move_power_cmd(input: &Path) -> Result<()> {
         if r.is_empty() {
             continue;
         }
+        let tag = r
+            .annotation_tag()
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+        let contact = r.contact_effects();
+        let launch = r.launch_effects();
+        let fx = |v: &[u8]| -> String {
+            if v.is_empty() {
+                "-".to_string()
+            } else {
+                v.iter()
+                    .map(|b| format!("{b:#04x}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }
+        };
         println!(
-            "  idx {:3}  power {:5} (raw {:#06x})  counter {:5}  sfx {:#04x}{}",
+            "  idx {:3}  power {:5} (raw {:#06x})  ctr {:4}  phase {:4}  homing {:#04x}  \
+             yoff {:5}  impact {}  trail {}  sfx {:#04x}  list {:#04x}  tag {:1}  \
+             contact[{}]  launch[{}]{}",
             r.index,
             r.power(),
             r.power_raw as u16,
             r.counter_init(),
+            r.phase_duration(),
+            r.homing_speed(),
+            r.strike_y_offset(),
+            r.impact_effect(),
+            r.trail_texture_page(),
             r.sound_cue_id(),
+            r.list_mode(),
+            tag,
+            fx(&contact),
+            fx(&launch),
             move_ids_for(r.index),
         );
     }

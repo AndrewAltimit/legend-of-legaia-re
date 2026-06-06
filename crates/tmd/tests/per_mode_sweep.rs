@@ -65,6 +65,10 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
     let mut count_mismatch = 0usize;
     let mut iter_fail = 0usize;
     let mut parse_fail = 0usize;
+    // Colour-decode invariants: untextured prims expose per-vertex colours +
+    // no UVs; textured prims expose no colours. Counters keep it non-vacuous.
+    let mut color_invariant_fail = 0usize;
+    let mut untextured_prims_with_colors = 0usize;
     let mut modes_seen: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
     // Track flag values that vertex_offset_bytes returns None for -
     // those would be missing entries in the 6-entry descriptor table.
@@ -107,12 +111,31 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
                 if legaia_prims::vertex_offset_bytes(g.header.flags).is_none() {
                     unknown_flag_values.insert(g.header.flags);
                 }
+                let desc = legaia_tmd::descriptor::Descriptor::for_flags(g.header.flags);
+                let is_textured = desc.is_some_and(|d| d.packet_shape.is_textured());
+                let n_verts = g.header.n_vertices();
                 for prim in &g.prims {
                     let idxs = prim.vertex_indices();
                     if !idxs.is_empty() && idxs.iter().any(|&v| (v as usize) >= o.vertices.len()) {
                         bad_vertex_idx += 1;
                         file_ok = false;
                         break;
+                    }
+                    // Colour decode: textured prims carry no colours; untextured
+                    // prims carry exactly one colour per vertex and no UVs.
+                    if is_textured {
+                        if !prim.colors.is_empty() {
+                            color_invariant_fail += 1;
+                            file_ok = false;
+                        }
+                    } else {
+                        if prim.colors.len() != n_verts || !prim.uvs.is_empty() {
+                            color_invariant_fail += 1;
+                            file_ok = false;
+                        }
+                        if prim.colors.iter().any(|&c| c != [0, 0, 0]) {
+                            untextured_prims_with_colors += 1;
+                        }
                     }
                 }
             }
@@ -139,6 +162,16 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
     assert_eq!(
         bad_vertex_idx, 0,
         "{bad_vertex_idx} prims reference out-of-range vertex indices"
+    );
+    eprintln!("[per-mode] untextured prims with non-black colours: {untextured_prims_with_colors}");
+    assert_eq!(
+        color_invariant_fail, 0,
+        "{color_invariant_fail} prims broke the colour-decode invariant \
+         (textured carries colours, or untextured missing colours / carrying UVs)"
+    );
+    assert!(
+        untextured_prims_with_colors > 0,
+        "no untextured prim yielded a non-black colour - colour decode is vacuous"
     );
     assert!(
         unknown_flag_values.is_empty(),

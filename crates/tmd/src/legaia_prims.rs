@@ -171,6 +171,15 @@ pub struct Prim {
     /// Texture sub-base / "tpage" (raw 16-bit value). Decode with `tpage_xy()`
     /// for the VRAM page.
     pub tsb: u16,
+    /// Per-vertex `[R, G, B]` colours for **untextured** prims (`F*`/`G*`), in
+    /// the same stored order as [`vertex_indices_raw`](Self::vertex_indices_raw)
+    /// — `colors[i]` pairs with `vertex_indices_raw[i]`. A **flat** prim stores
+    /// one colour word at the prim start, replicated to every vertex here; a
+    /// **gouraud** prim stores one colour word per vertex at a 4-byte stride.
+    /// Empty for textured prims (their pre-vertex block is UV/CBA/TSB, exposed
+    /// via [`uvs`](Self::uvs)/[`cba`](Self::cba)/[`tsb`](Self::tsb)). The 4th
+    /// byte of each colour word is the SDK GP0 code byte and is dropped here.
+    pub colors: Vec<[u8; 3]>,
 }
 
 impl Prim {
@@ -255,6 +264,28 @@ fn extract_textures(
     (uvs, cba, tsb)
 }
 
+/// Extract the per-vertex `[R, G, B]` colour block of an **untextured** prim.
+///
+/// The colour block sits at the prim's start (before the vertex indices). A
+/// **flat** prim (`F3`/`F4`) stores one colour word at offset 0 shared by every
+/// vertex; a **gouraud** prim (`G3`/`G4`) stores one colour word per vertex at a
+/// 4-byte stride. The returned colours are in stored order — `colors[i]` pairs
+/// with the prim's `vertex_indices_raw[i]`. The colour word's 4th byte (the SDK
+/// GP0 code) is dropped. Returns `n_verts` entries; a colour word that runs past
+/// the buffer falls back to mid-grey so a malformed tail can't panic.
+fn extract_colors(buf: &[u8], prim_off: usize, n_verts: usize, is_gouraud: bool) -> Vec<[u8; 3]> {
+    (0..n_verts)
+        .map(|corner| {
+            let off = prim_off + if is_gouraud { corner * 4 } else { 0 };
+            if off + 3 <= buf.len() {
+                [buf[off], buf[off + 1], buf[off + 2]]
+            } else {
+                [128, 128, 128]
+            }
+        })
+        .collect()
+}
+
 /// One group: header + decoded prims.
 #[derive(Debug, Clone, Serialize)]
 pub struct Group {
@@ -321,31 +352,19 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
         // bogus CBA/TSB values in earlier renderer output.
         let descriptor = Descriptor::for_flags(header.flags);
         let is_textured = descriptor.is_some_and(|d| d.packet_shape.is_textured());
+        let is_gouraud = descriptor.is_some_and(|d| d.packet_shape.is_gouraud());
         let mut prims = Vec::with_capacity(header.count as usize);
         for i in 0..header.count as usize {
             let prim_off = prim_base + i * stride;
-            let mut vertex_indices_raw = Vec::with_capacity(n_verts);
-            if let Some(off) = vert_off
-                && off + n_verts * 2 <= stride
-            {
-                for v in 0..n_verts {
-                    let o = prim_off + off + v * 2;
-                    vertex_indices_raw.push(u16::from_le_bytes(buf[o..o + 2].try_into().unwrap()));
-                }
-            }
-            let (uvs, cba, tsb) = if is_textured && let Some(off) = vert_off {
-                extract_textures(buf, prim_off, n_verts, off)
-            } else {
-                (Vec::new(), 0, 0)
-            };
-            prims.push(Prim {
-                bytes_offset: prim_off,
-                bytes_size: stride,
-                vertex_indices_raw,
-                uvs,
-                cba,
-                tsb,
-            });
+            prims.push(decode_prim(
+                buf,
+                prim_off,
+                stride,
+                n_verts,
+                vert_off,
+                is_textured,
+                is_gouraud,
+            ));
         }
         out.push(Group {
             header_offset,
@@ -355,6 +374,55 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
         pos += group_total;
     }
     Ok(out)
+}
+
+/// Decode one primitive at `prim_off`: the vertex-index list (at `vert_off`), the
+/// texture block (`extract_textures`) for textured prims, or the per-vertex
+/// colour block (`extract_colors`) for untextured `F*`/`G*` prims. Shared by
+/// [`iter_groups`] and [`iter_groups_lenient`] so the two stay byte-identical.
+#[allow(clippy::too_many_arguments)]
+fn decode_prim(
+    buf: &[u8],
+    prim_off: usize,
+    stride: usize,
+    n_verts: usize,
+    vert_off: Option<usize>,
+    is_textured: bool,
+    is_gouraud: bool,
+) -> Prim {
+    let mut vertex_indices_raw = Vec::with_capacity(n_verts);
+    if let Some(off) = vert_off
+        && off + n_verts * 2 <= stride
+    {
+        for v in 0..n_verts {
+            let o = prim_off + off + v * 2;
+            vertex_indices_raw.push(u16::from_le_bytes(buf[o..o + 2].try_into().unwrap()));
+        }
+    }
+    let (uvs, cba, tsb, colors) = if is_textured {
+        let (uvs, cba, tsb) = match vert_off {
+            Some(off) => extract_textures(buf, prim_off, n_verts, off),
+            None => (Vec::new(), 0, 0),
+        };
+        (uvs, cba, tsb, Vec::new())
+    } else {
+        // Untextured (F*/G*): per-vertex colour block at the prim start.
+        (
+            Vec::new(),
+            0,
+            0,
+            extract_colors(buf, prim_off, n_verts, is_gouraud),
+        )
+    };
+    Prim {
+        bytes_offset: prim_off,
+        bytes_size: stride,
+        vertex_indices_raw,
+        uvs,
+        cba,
+        tsb,
+        colors,
+    }
 }
 
 /// Lenient sibling of [`iter_groups`]: walk groups until a terminator,
@@ -397,31 +465,19 @@ pub fn iter_groups_lenient(buf: &[u8], section_start: usize, section_size: usize
         let vert_off = vertex_offset_bytes(header.flags);
         let descriptor = Descriptor::for_flags(header.flags);
         let is_textured = descriptor.is_some_and(|d| d.packet_shape.is_textured());
+        let is_gouraud = descriptor.is_some_and(|d| d.packet_shape.is_gouraud());
         let mut prims = Vec::with_capacity(header.count as usize);
         for i in 0..header.count as usize {
             let prim_off = prim_base + i * stride;
-            let mut vertex_indices_raw = Vec::with_capacity(n_verts);
-            if let Some(off) = vert_off
-                && off + n_verts * 2 <= stride
-            {
-                for v in 0..n_verts {
-                    let o = prim_off + off + v * 2;
-                    vertex_indices_raw.push(u16::from_le_bytes(buf[o..o + 2].try_into().unwrap()));
-                }
-            }
-            let (uvs, cba, tsb) = if is_textured && let Some(off) = vert_off {
-                extract_textures(buf, prim_off, n_verts, off)
-            } else {
-                (Vec::new(), 0, 0)
-            };
-            prims.push(Prim {
-                bytes_offset: prim_off,
-                bytes_size: stride,
-                vertex_indices_raw,
-                uvs,
-                cba,
-                tsb,
-            });
+            prims.push(decode_prim(
+                buf,
+                prim_off,
+                stride,
+                n_verts,
+                vert_off,
+                is_textured,
+                is_gouraud,
+            ));
         }
         out.push(Group {
             header_offset,
@@ -655,5 +711,53 @@ mod tests {
         assert_eq!(p.tsb, 0, "untextured G4 must not produce a TSB");
         // Vertex indices must still decode normally.
         assert_eq!(p.vertex_indices(), vec![0, 1, 2, 3]);
+        // Gouraud quad: one [R,G,B] per corner at a 4-byte stride from the prim
+        // start, in stored order (colors[i] pairs with vertex_indices_raw[i]).
+        assert_eq!(
+            p.colors,
+            vec![
+                [0xC0, 0xC1, 0xC2],
+                [0xC4, 0xC5, 0xC6],
+                [0xC8, 0xC9, 0xCA],
+                [0xCC, 0xCD, 0xCE],
+            ]
+        );
+    }
+
+    /// Flat quad (`F4`, flags `0x1B` -> row 2, byte3 0x00): one colour word at
+    /// the prim start shared by all four vertices; the vertex indices follow at
+    /// `vert_off = byte4 = 4` (the byte3==0 path cancels the quad `+2`).
+    #[test]
+    fn flat_quad_replicates_single_colour() {
+        let mut buf = Vec::new();
+        // Group header: count=1, flags=0x1B, olen=4, ilen=3, flag=0, mode=0x29.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x001Bu16.to_le_bytes());
+        buf.extend_from_slice(&[4, 3, 0, 0x29]);
+        // Prim body: 12 bytes. [0..4) colour word R G B code, [4..12) 4 u16 verts.
+        let mut prim = vec![0u8; 12];
+        prim[0..4].copy_from_slice(&[0x11, 0x22, 0x33, 0x28]);
+        for (vi, &raw) in [0u16, 8, 24, 16].iter().enumerate() {
+            let off = 4 + vi * 2;
+            prim[off..off + 2].copy_from_slice(&raw.to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 12]); // footer slot
+        buf.extend_from_slice(&0u32.to_le_bytes()); // terminator
+
+        let groups = iter_groups(&buf, 0, buf.len()).unwrap();
+        let p = &groups[0].prims[0];
+        assert!(p.uvs.is_empty());
+        assert_eq!(p.vertex_indices(), vec![0, 1, 3, 2]);
+        // The single colour word, dropping the code byte, replicated to all 4.
+        assert_eq!(
+            p.colors,
+            vec![
+                [0x11, 0x22, 0x33],
+                [0x11, 0x22, 0x33],
+                [0x11, 0x22, 0x33],
+                [0x11, 0x22, 0x33]
+            ]
+        );
     }
 }

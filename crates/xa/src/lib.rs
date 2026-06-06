@@ -24,9 +24,11 @@
 //!   even and the **high** nibble when `u` is odd. So byte 0 carries units
 //!   0 (low) and 1 (high), byte 1 carries units 2/3, etc.
 //!
-//! For 8-bit ADPCM, there are 4 sound units of 28 samples each (28 bytes per
-//! unit, packed as the same 28×4 line layout but each byte = one 8-bit
-//! sample). Less common for music; not yet implemented.
+//! For 8-bit ADPCM, there are 4 sound units of 28 samples each (the params live
+//! at bytes 0..4 mirrored four times; the data region is the same 28×4 line
+//! layout but each byte is one full 8-bit sample, so unit `u` reads byte `u` of
+//! every line). Select it with [`DecodeOptions::bits`] = [`BitsPerSample::Eight`]
+//! (the whole NA corpus is 4-bit, so 4-bit is the default).
 //!
 //! ## Filter coefficients
 //!
@@ -63,6 +65,8 @@ use anyhow::{Context, Result, bail};
 pub const SOUND_GROUP_BYTES: usize = 128;
 pub const SAMPLES_PER_UNIT: usize = 28;
 pub const UNITS_PER_GROUP_4BIT: usize = 8;
+/// 8-bit groups hold 4 sound units (one full byte per sample) instead of 8.
+pub const UNITS_PER_GROUP_8BIT: usize = 4;
 
 pub const F0: [i32; 5] = [0, 60, 115, 98, 122];
 pub const F1: [i32; 5] = [0, 0, -52, -55, -60];
@@ -91,6 +95,28 @@ impl Channels {
     }
 }
 
+/// ADPCM sample width. The CD-XA subheader's coding-info byte selects this
+/// (bit `0x10`); it is stripped from these files, so supply it externally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BitsPerSample {
+    /// 8 sound units of 4-bit nibbles per group (the common PSX mode; the whole
+    /// NA Legaia corpus is 4-bit).
+    #[default]
+    Four,
+    /// 4 sound units of full 8-bit samples per group.
+    Eight,
+}
+
+impl BitsPerSample {
+    /// Sound units packed into one 128-byte group at this width.
+    pub fn units_per_group(self) -> usize {
+        match self {
+            BitsPerSample::Four => UNITS_PER_GROUP_4BIT,
+            BitsPerSample::Eight => UNITS_PER_GROUP_8BIT,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DecodeOptions {
     pub channels: Channels,
@@ -98,6 +124,9 @@ pub struct DecodeOptions {
     /// and 37800 (high-quality). The rate is normally encoded in the per-sector
     /// CD-XA subheader, which is stripped from these files; supply it externally.
     pub sample_rate: u32,
+    /// ADPCM sample width (4-bit or 8-bit). Also subheader-encoded; defaults to
+    /// 4-bit, the only width the NA corpus uses.
+    pub bits: BitsPerSample,
 }
 
 impl Default for DecodeOptions {
@@ -105,6 +134,7 @@ impl Default for DecodeOptions {
         Self {
             channels: Channels::Mono,
             sample_rate: 37800,
+            bits: BitsPerSample::default(),
         }
     }
 }
@@ -148,24 +178,25 @@ pub fn decode(buf: &[u8], opts: DecodeOptions) -> Result<(Vec<i16>, DecodeReport
         );
     }
     let n_groups = buf.len() / SOUND_GROUP_BYTES;
-    let mut out: Vec<i16> = Vec::with_capacity(n_groups * UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT);
+    let units = opts.bits.units_per_group();
+    let mut out: Vec<i16> = Vec::with_capacity(n_groups * units * SAMPLES_PER_UNIT);
 
     let mut state = [ChannelState::default(); 2];
     let mut skipped = 0usize;
 
     for g in 0..n_groups {
         let group = &buf[g * SOUND_GROUP_BYTES..(g + 1) * SOUND_GROUP_BYTES];
-        if !group_is_valid(group) {
+        if !group_is_valid(group, opts.bits) {
             // Emit silence for this group; reset state so we don't carry a
             // stale prediction across the gap.
             state[0] = ChannelState::default();
             state[1] = ChannelState::default();
-            let n = UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT;
+            let n = units * SAMPLES_PER_UNIT;
             out.extend(std::iter::repeat_n(0i16, n));
             skipped += 1;
             continue;
         }
-        decode_group_4bit(group, opts.channels, &mut state, &mut out)?;
+        decode_group(group, opts.channels, opts.bits, &mut state, &mut out)?;
     }
 
     Ok((
@@ -188,23 +219,42 @@ fn sound_unit_params(group: &[u8]) -> [u8; UNITS_PER_GROUP_4BIT] {
     ]
 }
 
+/// The 4 sound-unit parameter bytes of an 8-bit group. The 8-bit header stores
+/// the params for units 0..4 at bytes 0..4, redundantly mirrored at 4..8, 8..12
+/// and 12..16; the live copy is bytes 0..4.
+fn sound_unit_params_8bit(group: &[u8]) -> [u8; UNITS_PER_GROUP_8BIT] {
+    [group[0], group[1], group[2], group[3]]
+}
+
 /// Round half away from zero, then clamp to the signed 16-bit PCM range.
 fn round_clamp_i16(v: f64) -> i16 {
     let rounded = if v > 0.0 { v + 0.5 } else { v - 0.5 } as i64;
     rounded.clamp(i16::MIN as i64, i16::MAX as i64) as i16
 }
 
-fn group_is_valid(group: &[u8]) -> bool {
+fn group_is_valid(group: &[u8], bits: BitsPerSample) -> bool {
     // Validity check: every sound-unit parameter byte must have a filter
-    // nibble in 0..=3. The params live at bytes [0,1,2,3,8,9,10,11] (the
-    // CD-XA layout), so check those rather than the first 8 bytes.
-    for byte in sound_unit_params(group) {
-        let filter = (byte >> 4) & 0x0F;
-        if filter > 3 {
-            return false;
-        }
+    // nibble in 0..=3. The params live at the CD-XA header bytes for the
+    // group's width, so check those rather than the first N bytes.
+    let valid = |byte: &u8| (byte >> 4) & 0x0F <= 3;
+    match bits {
+        BitsPerSample::Four => sound_unit_params(group).iter().all(valid),
+        BitsPerSample::Eight => sound_unit_params_8bit(group).iter().all(valid),
     }
-    true
+}
+
+/// Decode one 128-byte group at the requested width.
+fn decode_group(
+    group: &[u8],
+    channels: Channels,
+    bits: BitsPerSample,
+    state: &mut [ChannelState; 2],
+    out: &mut Vec<i16>,
+) -> Result<()> {
+    match bits {
+        BitsPerSample::Four => decode_group_4bit(group, channels, state, out),
+        BitsPerSample::Eight => decode_group_8bit(group, channels, state, out),
+    }
 }
 
 fn decode_group_4bit(
@@ -300,6 +350,70 @@ fn decode_group_4bit(
     Ok(())
 }
 
+fn decode_group_8bit(
+    group: &[u8],
+    channels: Channels,
+    state: &mut [ChannelState; 2],
+    out: &mut Vec<i16>,
+) -> Result<()> {
+    debug_assert_eq!(group.len(), SOUND_GROUP_BYTES);
+
+    // 8-bit groups hold 4 sound units; the param for unit `u` is at byte `u`
+    // (mirrored at u+4/u+8/u+12). The data region (bytes 16..128) is the same
+    // 28 lines × 4 bytes, but each byte is one full 8-bit sample, so unit `u`
+    // reads byte `u` of every line (no nibble split).
+    let params = sound_unit_params_8bit(group);
+    let mut decoded = [[0i16; SAMPLES_PER_UNIT]; UNITS_PER_GROUP_8BIT];
+
+    for unit in 0..UNITS_PER_GROUP_8BIT {
+        let p = params[unit];
+        let range = (p & 0x0F) as u32;
+        let filter = ((p >> 4) & 0x0F) as usize;
+        if filter > 3 {
+            bail!("XA filter {} out of range (0..=3)", filter);
+        }
+        let k0 = K0[filter];
+        let k1 = K1[filter];
+
+        let ch = match channels {
+            Channels::Mono => 0,
+            Channels::Stereo => unit & 1,
+        };
+
+        for s in 0..SAMPLES_PER_UNIT {
+            let sample_byte = group[16 + s * 4 + unit];
+            // The 8-bit sample sits in the top byte of a 16-bit word (sign
+            // extended), then arithmetic-shifted down by `range` for the gain
+            // (16 - 8 = 8 bits of headroom, vs the 4-bit path's 12).
+            let top = ((sample_byte as i8 as i16) << 8) as i32;
+            let shifted: i32 = if range >= 16 { 0 } else { top >> range };
+            let predicted = shifted as f64 + k0 * state[ch].prev1 + k1 * state[ch].prev2;
+            decoded[unit][s] = round_clamp_i16(predicted);
+            state[ch].prev2 = state[ch].prev1;
+            state[ch].prev1 = predicted;
+        }
+    }
+
+    match channels {
+        Channels::Mono => {
+            // 4 units in serial: SU0[0..28], SU1[0..28], SU2, SU3.
+            for unit in decoded.iter() {
+                out.extend_from_slice(unit);
+            }
+        }
+        Channels::Stereo => {
+            // Left = even units (0,2), right = odd units (1,3); pair (0,1),(2,3).
+            for pair in decoded.chunks_exact(2) {
+                for (ls, rs) in pair[0].iter().zip(pair[1].iter()) {
+                    out.push(*ls);
+                    out.push(*rs);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Incremental XA-ADPCM decoder. Holds per-channel filter state across
 /// calls so callers can feed the decoder one sound group (or a small
 /// batch) at a time as bytes arrive.
@@ -345,13 +459,19 @@ impl StreamingDecoder {
         let mut groups = 0usize;
         while start + SOUND_GROUP_BYTES <= buf.len() {
             let group = &buf[start..start + SOUND_GROUP_BYTES];
-            if group_is_valid(group) {
-                decode_group_4bit(group, self.opts.channels, &mut self.state, out)?;
+            if group_is_valid(group, self.opts.bits) {
+                decode_group(
+                    group,
+                    self.opts.channels,
+                    self.opts.bits,
+                    &mut self.state,
+                    out,
+                )?;
             } else {
                 // Same silent-skip behaviour as the batch decoder.
                 self.state[0] = ChannelState::default();
                 self.state[1] = ChannelState::default();
-                let n = UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT;
+                let n = self.opts.bits.units_per_group() * SAMPLES_PER_UNIT;
                 out.extend(std::iter::repeat_n(0i16, n));
                 self.n_groups_skipped += 1;
             }
@@ -408,6 +528,7 @@ mod streaming_tests {
         let opts = DecodeOptions {
             channels: Channels::Mono,
             sample_rate: 18900,
+            bits: BitsPerSample::Four,
         };
         let (batch_pcm, _) = decode(&buf, opts).unwrap();
         let mut decoder = StreamingDecoder::new(opts);
@@ -424,6 +545,7 @@ mod streaming_tests {
         let opts = DecodeOptions {
             channels: Channels::Mono,
             sample_rate: 18900,
+            bits: BitsPerSample::Four,
         };
         let mut decoder = StreamingDecoder::new(opts);
         let mut pcm = Vec::new();
@@ -513,6 +635,7 @@ mod tests {
             DecodeOptions {
                 channels: Channels::Stereo,
                 sample_rate: 37800,
+                bits: BitsPerSample::Four,
             },
         )
         .unwrap();
@@ -531,6 +654,81 @@ mod tests {
         g[16] = 0x01; // line 0, byte 0, low nibble: SU0 sample 0 = 1
         let (samples, _) = decode(&g, DecodeOptions::default()).unwrap();
         assert_eq!(samples[0], 16);
+    }
+
+    #[test]
+    fn eight_bit_silence_and_unit_count() {
+        // 4 units × 28 samples = 112 per group (half the 4-bit count).
+        let g = [0u8; SOUND_GROUP_BYTES];
+        let (samples, report) = decode(
+            &g,
+            DecodeOptions {
+                channels: Channels::Mono,
+                sample_rate: 37800,
+                bits: BitsPerSample::Eight,
+            },
+        )
+        .unwrap();
+        assert_eq!(report.n_groups, 1);
+        assert_eq!(samples.len(), UNITS_PER_GROUP_8BIT * SAMPLES_PER_UNIT);
+        assert_eq!(samples.len(), 112);
+        assert!(samples.iter().all(|&s| s == 0));
+    }
+
+    #[test]
+    fn eight_bit_full_byte_sample_and_sign_extension() {
+        // Filter 0, range 8. A full 8-bit sample byte sits in the top byte of a
+        // 16-bit word then shifts right by `range`: byte b -> (i8 b << 8) >> 8 = b.
+        let mut g = [0u8; SOUND_GROUP_BYTES];
+        g[0] = 0x08; // SU0 param: filter 0, range 8
+        g[16] = 0x7F; // line 0, byte 0 (unit 0), sample 0 = +127
+        g[16 + 4] = 0x80; // line 1, byte 0 (unit 0), sample 1 = -128 (sign-extended)
+        let (samples, _) = decode(
+            &g,
+            DecodeOptions {
+                channels: Channels::Mono,
+                sample_rate: 37800,
+                bits: BitsPerSample::Eight,
+            },
+        )
+        .unwrap();
+        // Unit 0 is emitted first (mono, serial). 0x80 sign-extends to -128, not 128.
+        assert_eq!(samples[0], 127);
+        assert_eq!(samples[1], -128);
+    }
+
+    #[test]
+    fn eight_bit_stereo_splits_even_left_odd_right() {
+        // Filter 0, range 8 -> output == signed sample byte. Units 0,2 = left,
+        // units 1,3 = right; one line, byte u per unit.
+        let mut g = [0u8; SOUND_GROUP_BYTES];
+        g[0..4].fill(0x08); // all four units: filter 0, range 8
+        g[16] = 0x10; // unit 0 (L) sample 0 = 16
+        g[17] = 0x20; // unit 1 (R) sample 0 = 32
+        let (samples, _) = decode(
+            &g,
+            DecodeOptions {
+                channels: Channels::Stereo,
+                sample_rate: 37800,
+                bits: BitsPerSample::Eight,
+            },
+        )
+        .unwrap();
+        // Interleaved L,R: pair (unit0, unit1) emits first.
+        assert_eq!(samples[0], 16); // left
+        assert_eq!(samples[1], 32); // right
+        assert_eq!(samples.len(), 112);
+    }
+
+    #[test]
+    fn eight_bit_params_skip_redundant_copies() {
+        // Live params at bytes 0..4; mirrors at 4..16 ignored.
+        let mut g = [0u8; SOUND_GROUP_BYTES];
+        g[0..4].copy_from_slice(&[0x01, 0x12, 0x23, 0x30]);
+        g[4..16].fill(0xFF); // redundant copies: ignored
+        assert_eq!(sound_unit_params_8bit(&g), [0x01, 0x12, 0x23, 0x30]);
+        // Still a valid group (filters 0/1/2/3 are all <= 3).
+        assert!(group_is_valid(&g, BitsPerSample::Eight));
     }
 
     #[test]
@@ -577,6 +775,7 @@ mod tests {
             DecodeOptions {
                 channels: Channels::Stereo,
                 sample_rate: 37_800,
+                bits: BitsPerSample::Four,
             },
         )
         .unwrap();

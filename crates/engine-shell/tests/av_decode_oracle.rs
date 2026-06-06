@@ -294,7 +294,7 @@ fn xa_channels_decode_to_expected_sample_counts() {
                 s.ch_no
             );
             if s.bits_per_sample != 4 {
-                continue; // 8-bit unsupported by the group decoder; skip-and-warn path
+                continue; // this oracle's expected-sample math is 4-bit-specific
             }
             let opts = legaia_xa::DecodeOptions {
                 channels: if s.stereo {
@@ -303,6 +303,7 @@ fn xa_channels_decode_to_expected_sample_counts() {
                     legaia_xa::Channels::Mono
                 },
                 sample_rate: s.sample_rate,
+                bits: legaia_xa::BitsPerSample::Four,
             };
             let (pcm, report) = legaia_xa::decode(&s.audio, opts).expect("decode XA");
             // 4-bit: 8 sound units x 28 samples per group, interleaved across

@@ -55,6 +55,8 @@
 "8006ee6c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4E)"
 "8006ee7c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x50)"
 "8006ef68" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4C). One of the SPU-voice-init B0 thunks called in sequence by 8006ef18 (libspu init)"
+"8006f088" = "SPU-voice-init B0 thunk (EnterCriticalSection + B0 0x57 + swap of 5 dwords DAT_8006F058.. <-> SPU voice block +0x9C8 + FlushCache). Sibling of 8006ef68 in the 8006ef18 init trio; BIOS/libspu glue, no game state"
+"8006f118" = "SPU-voice-init B0 thunk (EnterCriticalSection + B0 0x56 + symmetric dword swap at voice block +0x18 / -0xE80). Sibling of 8006ef68/8006f088 in the 8006ef18 init trio; BIOS/libspu glue, no game state"
 
 
 # libc / PsyQ runtime glue. Each maps to a Rust stdlib equivalent.
@@ -82,6 +84,7 @@
 "8005adb8" = "Fixed-point bit-rotation / arc helper (85-instr ladder)"
 "8005af0c" = "isqrt-style normalise (wraps 8005ba1c)"
 "8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
+"8005afb0" = "InitGeom-adjacent GTE control-reg init: enables cop2 in Status, then setCopControlWord(2, 0xE800/0xF000, ..) seeds the GTE projection/ZSF control regs (sibling of 8005bb48 InitGeom). Pure libgte; engine carries projection in Camera"
 "8005ba68" = "GTE 3-point transform helper (RTPT)"
 "8005b038" = "GTE RTPS (perspective-transform-single) vertex-batch loop (cop2 0x198003D in a per-vertex stride-8 loop)"
 "8003d344" = "GTE NCLIP (cop2 0x480012) - 9-instruction normal-clip helper; engine emits via wgpu winding test"
@@ -159,6 +162,9 @@
 "80058778" = "PutDrawEnv"
 "8005887c" = "DrawOTagEnv"
 "800589d0" = "PutDispEnv"
+"8005724c" = "SetDefDispEnv-shape env filler: writes the DISPENV struct (xy/wh + GetGraphType via 800608e0); one of the two libgpu env fillers 8001daf8 calls to build the double-buffered DISPENV/DRAWENV. Engine uses a wgpu surface, no DISPENV"
+"8005731c" = "SetDefDrawEnv-shape env filler: writes the DRAWENV struct (clip/ofs/zero-fill); the DRAWENV sibling of 8005724c in 8001daf8's double-buffer setup. Engine uses a wgpu render pass, no DRAWENV"
+"8005832c" = "ClearImage internal (GPU-queue add via vtable PTR_80078d4c+8, dev-string 'ClearImage'): the lower-level form behind 80058298. PsyQ libgpu; engine clears via wgpu"
 "80059bd4" = "LoadImage2 / MoveImage internal (DMA over GPU MMIO ports DAT_80078e24/E28)"
 "80059c00" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
 "80059de4" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"

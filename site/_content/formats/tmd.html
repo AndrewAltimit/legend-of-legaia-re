@@ -47,68 +47,37 @@ i32 scale         // ALWAYS 0x00808080 in Legaia (Legaia-custom; standard
 prim data (count × ilen*4 bytes):
   count × [ilen u32 words]</code></pre>
   <p><code>n_primitive</code> in the OBJECT header is the <strong>sum</strong> of <code>count</code> across all groups in the object's primitive section.</p>
-  <p>The per-prim layout depends on the prim type. The renderer (<code>FUN_8002735C</code>) indexes into an 8-byte-stride table at <code>0x8007326C</code> using <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1) * 8</code>:</p>
+  <p>The per-prim layout depends on the prim type. The renderer (<code>FUN_8002735C</code>) treats the 8-byte-stride table at <code>0x8007326C</code> as a packed <code>{u32 first; u32 second}</code> per row, selects <code>row = ((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code>, and reads exactly two fields: <strong>byte3 = <code>first &gt;&gt; 24</code></strong> (the shape selector, <code>&amp; 3</code> = <code>F</code>/<code>FT</code>/<code>G</code>/<code>GT</code>) and <strong>byte4 = <code>second &amp; 0xFF</code></strong> (the base vertex-index offset in u16 units):</p>
 <table>
 <thead><tr>
 <th>flags</th>
-<th>table idx</th>
-<th>byte 0</th>
-<th>byte 4</th>
-<th>meaning of byte 4</th>
+<th>row</th>
+<th>raw 8 bytes</th>
+<th>byte3 (shape)</th>
+<th>byte4 (vtx off)</th>
 </tr></thead>
 <tbody>
-<tr>
-<td>0x10/11</td>
-<td>0</td>
-<td>0x04</td>
-<td>0x05</td>
-<td>vertex-index byte offset / 2 within prim</td>
-</tr>
-<tr>
-<td>0x12/13</td>
-<td>1</td>
-<td>0x09</td>
-<td>0x07</td>
-<td>(varies per type)</td>
-</tr>
-<tr>
-<td>0x14/15</td>
-<td>2</td>
-<td>0x04</td>
-<td>0x00</td>
-<td></td>
-</tr>
-<tr>
-<td>0x16/17</td>
-<td>3</td>
-<td>0x06</td>
-<td>0x06</td>
-<td></td>
-</tr>
-<tr>
-<td>0x18/19</td>
-<td>4</td>
-<td>0x07</td>
-<td>0x07</td>
-<td>FT3-style prims (uVar3 = 7 → vertex idx at byte 14 of 20-byte prim)</td>
-</tr>
-<tr>
-<td>0x1A/1B</td>
-<td>5</td>
-<td>0x09</td>
-<td>0x0B</td>
-<td>FT4-style prims</td>
-</tr>
-<tr>
-<td>0x20-23</td>
-<td>4</td>
-<td>(same as above)</td>
-<td></td>
-<td></td>
-</tr>
+<tr><td>0x10/11</td><td>0</td><td><code>04 00 00 05 07 00 00 00</code></td><td>0x05</td><td>0x07</td></tr>
+<tr><td>0x12/13</td><td>1</td><td><code>09 00 00 07 06 00 00 00</code></td><td>0x07</td><td>0x06</td></tr>
+<tr><td>0x14/15</td><td>2</td><td><code>04 00 00 00 02 00 00 00</code></td><td>0x00</td><td>0x02</td></tr>
+<tr><td>0x16/17</td><td>3</td><td><code>06 00 00 02 06 00 00 00</code></td><td>0x02</td><td>0x06</td></tr>
+<tr><td>0x18/19</td><td>4</td><td><code>07 03 00 01 07 00 00 00</code></td><td>0x01</td><td>0x07</td></tr>
+<tr><td>0x1A/1B</td><td>5</td><td><code>09 03 00 03 0B 00 00 00</code></td><td>0x03</td><td>0x0B</td></tr>
+<tr><td>0x20-27</td><td colspan="4">re-uses rows 0&ndash;5 via the same <code>(flags&gt;&gt;1)-8</code> math</td></tr>
 </tbody>
 </table>
-  <p>Each entry's first u32 has bytes <code>[?, ?, ?, type_bits]</code> where the low 2 bits of byte 3 select the OT packet shape (0/1/2/3 → different DrawPolyXX variants). Each entry's second u32 has the vertex-index offset (in u16 units) within the prim in its low byte.</p>
+  <p><code>byte3 &amp; 3</code> is the shading / texture family (<code>0 = F</code> flat untextured, <code>1 = FT</code> flat textured, <code>2 = G</code> gouraud untextured, <code>3 = GT</code> gouraud textured); the quad bit <code>(flags &gt;&gt; 1) &amp; 1</code> picks tri vs quad. The vertex read offset is <code>byte4</code> with a quad adjustment (<code>+2</code>, overridden to <code>8</code> when byte3==1 and <code>0xE</code> when byte3==3, the <code>+2</code> cancelled when byte3==0; <code>&times; 2</code> for the byte offset). The crate's <code>legaia_tmd::descriptor::TABLE</code> is authoritative.</p>
+</section>
+
+<section class="doc-section" id="per-prim-colour">
+  <h2>Per-prim colour / texture block</h2>
+  <p>The bytes from the prim's start up to the vertex-index offset hold either a <strong>texture block</strong> (<code>FT*</code>/<code>GT*</code>) or a per-vertex <strong>colour block</strong> (<code>F*</code>/<code>G*</code>), selected by the byte3 shape. The colour word is PSX <code>[R, G, B, code]</code> (the 4th byte is the SDK GP0 code, dropped). Pinned byte-exact from the renderer + real town01 props:</p>
+  <ul class="bullets">
+    <li><strong>F4</strong> (flags 0x1B, 12-byte record): one colour word at offset 0 broadcast to all 4 verts, then 4&times;u16 vertex byte-offsets; quad winding <code>[0,1,3,2]</code>.</li>
+    <li><strong>G3</strong> (flags 0x1D, 20-byte record): 3 colour words at a 4-byte stride, then 3&times;u16 vertex offsets.</li>
+    <li><strong>G4</strong> (flags 0x1F, 24-byte record): 4 colour words read in winding order <code>[0,1,3,2]</code> (table <code>DAT_8007b410 = 00 01 03 02</code>, applied to both colours and vertices), then 4&times;u16 vertex offsets.</li>
+  </ul>
+  <p><strong>No per-prim normal field exists</strong> &mdash; the renderer reads only the prim pointer, the vertex base and the loop count, never the object's normal table; lighting is the GTE <code>NCDS</code> op fed the stored colour. <code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code>, and <code>tmd_to_color_mesh</code> builds a vertex-colour mesh the engine renders for untextured props (see <a href="../subsystems/renderer.html#field-static-object-placement-render-gap-town01">renderer</a>).</p>
 </section>
 
 <section class="doc-section" id="worked-example">

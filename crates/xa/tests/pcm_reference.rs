@@ -168,6 +168,7 @@ fn xa_pcm_matches_reference() {
             DecodeOptions {
                 channels: Channels::Stereo,
                 sample_rate: stream.sample_rate,
+                bits: legaia_xa::BitsPerSample::Four,
             },
         )
         .expect("decode XA");

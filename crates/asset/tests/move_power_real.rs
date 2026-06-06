@@ -63,6 +63,38 @@ fn move_power_table_parses_with_pinned_powers() {
         assert_eq!(r.power(), (r.power_raw as i32) >> 2);
     }
 
+    // Residual record fields, pinned against the real PROT 0898 bytes (each
+    // field code-traced to a battle-action SM reader; see move_power.rs).
+    // Record 3 (move id 0x29): a homing physical strike with two effect lists.
+    let r3 = &table[3];
+    assert_eq!(r3.strike_y_offset(), 250); // +0x02
+    assert_eq!(r3.phase_duration(), 480); // +0x06
+    assert_eq!(r3.homing_speed(), 0x20); // +0x08
+    assert!(r3.effect_tracks_strike()); // +0x09
+    assert_eq!(r3.impact_effect(), 1); // +0x0a
+    assert_eq!(r3.trail_texture_page(), 0); // +0x0b
+    assert_eq!(r3.annotation_tag(), Some('C')); // +0x0c designer tag (unread at runtime)
+    assert_eq!(r3.sound_cue_id(), 0x4d); // +0x0d
+    assert_eq!(r3.contact_effects(), vec![0x27, 0x8e, 0x8d]); // +0x12 (0x00-terminated)
+    assert_eq!(r3.launch_effects(), vec![0x28, 0x64, 0x9d]); // +0x16
+    // Record 12 (move id 0x2f): a multi-target move -- list_mode 0xFF and the
+    // effect lists are the 0xFF skip sentinel (no spawns).
+    let r12 = &table[12];
+    assert_eq!(r12.list_mode(), 0xff); // +0x0e all-arms broadcast
+    assert_eq!(r12.annotation_tag(), Some('G')); // +0x0c
+    assert!(r12.launch_effects().is_empty()); // +0x16 = ff ff ff ff
+    // The 'C'/'E'/'G' designer tag only appears on the unnamed internal-tier
+    // records (ids 1..15); the named monster-attack records (16+) carry 0.
+    assert_eq!(table[16].annotation_tag(), None);
+    for r in table.iter().skip(16) {
+        assert_eq!(
+            r.annotation_tag(),
+            None,
+            "named-attack record {} should carry no designer tag",
+            r.index
+        );
+    }
+
     // The id -> power-index map (0x80 bytes before the table) resolves battle
     // move ids to records (`power_table[map[move_id]]`). Pinned move ids ->
     // index, byte-matched against the in-RAM map across two battle save states.

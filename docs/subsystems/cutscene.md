@@ -160,8 +160,9 @@ position, preserving the video-only pacing.
 **Open item:** the mapping from cutscene *name* to the expected `(file_no, ch_no)` channel pair is
 still overlay-resident (in the not-yet-captured cutscene overlay) - this is only needed for
 selecting a cutscene by name from a separate multi-channel container; the in-file interleaving above
-needs no such map. The 8-bit-ADPCM coding mode is detected and dropped with a warning rather than
-mis-decoded; no 8-bit audio appears in the movie corpus.
+needs no such map. The 8-bit-ADPCM coding mode is now decoded too (the cutscene audio path maps each
+channel's `coding_info` width); no 8-bit audio appears in the movie corpus, so it stays an untested
+fallback rather than a verified path.
 
 ## Playback loop (`play-str`)
 
@@ -444,7 +445,7 @@ Disc-gated coverage: `crates/engine-core/tests/opdeene_timeline_execution.rs` co
 - **Function-by-function overlay decompilation.** `ghidra/scripts/dump_str_fmv_overlay.py` ships a `TARGETS` list re-ranked by xref count from `inventory_overlay.py` against the captured `overlay_str_fmv.bin` slice. The 27 entry points cluster around `FUN_801CF098` (the 1236-byte main play loop) - inbound xrefs from `0x801CECA0` confirm the FMV-state struct selector reads `_DAT_8007BA78 << 6 + 0x801D0A6C` to pick the entry passed in. Per-function sub-asset decode (XA channel selector, MDEC frame demux state machine) still pending.
 - **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the STR/MDEC overlay. The MV-file table doesn't carry XA channel info directly; the channel selector is presumably driven by `\DATA\MOV.STR;1` (which appears to be a multi-channel container distinct from the per-cutscene `\MOV\MVn.STR;1` files).
 - **MOV15.STR + MV1A.STR.** Two extra path strings (`\DATA\MOV15.STR;1` and `\MOV\MV1A.STR;1`) appear alongside the six numbered MVs. These are dev / debug branches: `MOV15` is the 15-FPS test file (referenced by the `psx.cdspeedup` / 15 fps debug paths), and `MV1A` is an alternate / cut version of MV1. Neither ships in the released disc layout.
-- **8-bit ADPCM.** `coding_info` bit detection is implemented; the decoder emits silence for 8-bit groups. No 8-bit audio has been observed in the corpus so far.
+- **8-bit ADPCM.** `coding_info` width detection drives a real 8-bit group decoder (`BitsPerSample::Eight`: 4 units/group, full-byte samples). No 8-bit audio has been observed in the corpus, so the path is covered by synthetic unit tests rather than a bit-exact reference.
 
 ## Provenance
 

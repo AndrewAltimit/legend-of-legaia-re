@@ -1,0 +1,123 @@
+# Move-power / parameter table
+
+The battle-action overlay's per-move **power and behaviour** table. Each battle
+move (a physical attack, an art component, an enemy special, …) has a 26-byte
+record that the action state machine reads to drive the move's damage roll,
+homing motion, hit reaction, sound cue and spawned effects.
+
+Parser: `legaia_asset::move_power`. CLI: `asset move-power <raw PROT 0898 entry>`.
+Provenance is the battle-action overlay (PROT entry 0898, CDNAME
+`overlay_battle_action` / `overlay_0898`); dumps under `ghidra/scripts/funcs/`
+are labelled `overlay_battle_action_*` and the byte-identical aliases
+`overlay_0897_*` / `overlay_magic_*` / `overlay_muscle_dome_*`.
+
+## Location — static overlay data
+
+| Thing | Value |
+|---|---|
+| PROT entry | 0898 (battle-action overlay) |
+| Table runtime VA | `0x801F4F5C` |
+| Table raw-entry file offset | `0x26744` |
+| Record stride | 26 bytes (the `26 * index` math in `FUN_801dd0ac`) |
+| id → index map runtime VA | `0x801F4E63` (`0x80` bytes before the table) |
+| id → index map file offset | `0x2664B` (= table − `0xF9`) |
+| id → index map length | `0x80` (move ids `0x00..=0x7F`) |
+
+The whole `0x801F4F5C..0x801F69D8` window is **static** — loaded with the
+battle-action overlay image, not built per battle (byte-identical across two
+unrelated battle save states). Confidence: **Confirmed** — the raw PROT 0898
+bytes byte-match the in-RAM table, and `FUN_801dd0ac`'s code body maps with the
+same overlay base.
+
+## Indexing — `power_table[map[move_id]]`
+
+The kernel's record index is **not** the battle move id directly. The setup site
+reads the actor's move id at `actor[+0x1df]`, looks it up in the 128-byte
+id → index map, and indexes the table with the result:
+
+```
+record = &table[ map[ actor[0x1df] ] ]      (FUN_801dd0ac(*(byte*)(actor+0x1df) + 0x801F4E63, ...))
+```
+
+A map byte of `0x00` or `0xFF` means "this move id has no power record". The map
+resolves move ids `0x04..=0x74` to power indices `0x01..=0x2b`. The move id is
+the **same id space as the SCUS spell-name table** (`DAT_800754C8`,
+[spell-table.md](spell-table.md), also indexed by `actor[+0x1df]`), so joining
+the two labels every record:
+
+- records `0x10..=0x2b` (move ids `0x25..=0x74`) are the **named monster
+  special attacks** (Fire Breath `0x25`, Tail Fire `0x27`, … the late-game
+  attacks at `0x61..=0x74`) — this is their special-attack *power*, separate from
+  the *name* the spell table carries.
+- records `0x01..=0x0f` (move ids `0x04..=0x1f`) are the spell table's unnamed
+  **internal enemy-attack tiers** (escalating-power triplets).
+
+Record 0 is an all-zero unused slot.
+
+## Record layout (26 bytes)
+
+The record is consumed by three battle-action functions. `FUN_801dd0ac` /
+`801f3990` (the damage kernels) read **only `+0x00`**. `FUN_801dea50` (action
+setup) computes the record address once and stashes the pointer in the
+per-battle context at `ctx+0x1014` (`overlay_battle_action_801dea50.txt:528`,
+`sw v0,0x1014(a0)`). `FUN_801e09f8` (the per-frame action tick) dereferences
+that held pointer ~25× and reads the residual fields off it — the byte offsets
+it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
++0x16`, and **never `+0x0c`**.
+
+| Off | Type | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | `i16` | power | Damage roll modulus. The kernel uses it at full / half / quarter scale (`>>0`, `>>1`, `>>2`). | Confirmed |
+| `+0x02` | `i16` | strike Y offset | Subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) when the move's hit point is seeded from the target's position. | Inferred (read confirmed) |
+| `+0x04` | `u16` | move counter | The whole-move timing counter, seeded into `ctx+0x6c6` and decremented each frame. | Confirmed |
+| `+0x06` | `u16` | phase duration | Per-arm phase duration written to `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions (distinct from `+0x04`). | Inferred (read confirmed) |
+| `+0x08` | `u8` | homing speed | Scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - speed` reseeds the approach counter. | Inferred (read confirmed) |
+| `+0x09` | `u8` | effect-tracks-strike flag | When non-zero, the move's live XY is copied into the spawned effect actor each frame (the effect follows the strike). | Confirmed (read); semantic Inferred |
+| `+0x0a` | `u8` | impact-effect selector | Enum (typically 1..5): stored at `actor+0x21f`, indexes the impact-animation pointer table at `0x801f53d4` (`(value-1)*4`), and values 3/4/5 branch to extra crit-flag rolls. `0` = none. | Confirmed (read); enum naming Inferred |
+| `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` (`overlay_battle_action_801e1ab0.txt:250`). | Confirmed |
+| `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (ids 1,2,3,9,12,15) only. **No runtime reader exists** in any battle-action function — unused at runtime. | Unknown (no reader) |
+| `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8`. | Confirmed |
+| `+0x0e` | `u8` | list mode | `0xFF` broadcasts the move's trail/effect to all four party arms (a sweeping / multi-target move); otherwise it is the head of a small effect-id list the setup loop spawns. | Confirmed (read); semantic Inferred |
+| `+0x12` | `[u8;4]` | on-contact effects | Effect-id list dispatched on the hit branch (`0x00`/`0xFF`-terminated). | Confirmed |
+| `+0x16` | `[u8;4]` | launch effects | Effect-id list dispatched at the initial-strike transition; same dispatch as `+0x12`. | Confirmed |
+
+### Effect-id list semantics (`+0x12` / `+0x16`)
+
+Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list and
+`0xFF` is the skip sentinel (so collection stops at either). Each non-terminator
+id is dispatched: the high bit (`& 0x80`) routes to `FUN_801dfdf0`; ids `< 100`
+index the effect-prototype pointer table at `0x801f6324` (`id*4`) and the
+per-effect SFX table at `0x801f6418`; `id == 100` spawns a fixed flash. Those
+auxiliary tables live in the same PROT 0898 overlay right after the power table.
+
+### `+0x00` at full / half / quarter
+
+`FUN_801dd0ac` / `801f3990` read `+0x00` three ways for the same move: `>>0x10`
+(full), `>>0x11` (half), `>>0x12` (quarter) after the `lhu << 0x10` sign-extend.
+The roll the kernel performs is `rand % ((power >> 2) + 1)` at the quarter scale.
+
+## Worked example (real disc bytes)
+
+Record 3 (move id `0x06`, the third internal-tier attack), from PROT 0898:
+
+```
+power 1500  ctr 0  phase 480  homing 0x20  yoff 250  impact 1  trail 0
+sfx 0x4d  list 0x00  tag C  contact[0x27,0x8e,0x8d]  launch[0x28,0x64,0x9d]
+```
+
+A homing physical strike: it approaches at speed `0x20`, runs its strike phase
+for 480 frames, plays impact effect 1 + cue `0x4d`, spawns one effect list on
+launch and a different one on contact, and carries the unused designer tag `C`.
+
+## Open
+
+The residual fields are all decoded or accounted for. The `+0x0c` designer tag
+has no runtime consumer (reported as Unknown rather than guessed). The
+auxiliary effect-prototype (`0x801f6324`) and per-effect SFX (`0x801f6418`)
+tables that the `+0x12`/`+0x16` lists index are located but not separately
+parsed.
+
+The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
+*not* use this table — a summon's magnitude is derived from caster/summon battle
+state (see [spell-table.md](spell-table.md) and the summon-render thread in
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)).

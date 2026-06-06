@@ -43,6 +43,7 @@ fn in_memory_xa_decode_matches_path_based_decode_for_mv1() {
             Channels::Mono
         },
         sample_rate: ref0.sample_rate,
+        bits: legaia_xa::BitsPerSample::Four,
     };
     let (pcm_ref, _) = legaia_xa::decode(&ref0.audio, opts).expect("ref decode");
 

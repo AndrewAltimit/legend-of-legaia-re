@@ -11,6 +11,11 @@ same surface and depth attachment:
   Lit by a single directional light, depth-tested. Uses a
   `glam::Mat4` MVP supplied per-frame so the host can spin the model
   without re-uploading.
+- **Vertex-colour mesh** - `upload_color_mesh` + a `Scene`'s `color_draws`.
+  Untextured `F*`/`G*` props (per-vertex RGB, no UVs - the meshes the
+  VRAM-textured path drops). Flat face-shaded, no VRAM lookup; shares the
+  scene depth buffer and per-draw MVP slots. Fed by
+  `legaia_tmd::mesh::tmd_to_color_mesh`.
 
 ## Software PSX VRAM model
 
