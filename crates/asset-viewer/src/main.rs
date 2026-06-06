@@ -2129,6 +2129,7 @@ impl ApplicationHandler for BattleSceneApp {
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
+                        color_draws: &[],
                         overlay_lines: None,
                         overlay_sprites: None,
                         overlay_sprites_2: None,
@@ -2896,6 +2897,7 @@ impl ApplicationHandler for FieldApp {
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
+                        color_draws: &[],
                         overlay_lines: None,
                         overlay_sprites: None,
                         overlay_sprites_2: None,
@@ -3101,6 +3103,7 @@ impl ApplicationHandler for WorldApp {
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
+                        color_draws: &[],
                         overlay_lines: None,
                         overlay_sprites: None,
                         overlay_sprites_2: None,

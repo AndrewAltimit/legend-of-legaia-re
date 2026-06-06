@@ -156,6 +156,27 @@ impl UploadedVramMesh {
     }
 }
 
+/// GPU-resident **untextured** triangle mesh: per-vertex position + RGB colour,
+/// flat face-shaded with no VRAM lookup. Built by [`Renderer::upload_color_mesh`]
+/// from a [`legaia_tmd::mesh::ColorMesh`] for the `F*`/`G*` props whose prims
+/// carry per-vertex colours instead of UVs (which the textured VRAM-mesh path
+/// drops).
+pub struct UploadedColorMesh {
+    vertex_buf: wgpu::Buffer,
+    index_buf: wgpu::Buffer,
+    index_count: u32,
+}
+
+impl UploadedColorMesh {
+    pub fn index_count(&self) -> u32 {
+        self.index_count
+    }
+
+    pub fn triangle_count(&self) -> u32 {
+        self.index_count / 3
+    }
+}
+
 /// GPU-resident font atlas. Built by [`Renderer::upload_font_atlas`] from a
 /// pre-decoded RGBA8 buffer. Used as the texture binding for the 2D text
 /// pipeline.
@@ -3360,6 +3381,13 @@ pub struct SceneDraw<'a> {
     pub mvp: Mat4,
 }
 
+/// An untextured, vertex-coloured mesh draw inside a [`Scene`] (the `F*`/`G*`
+/// props). Drawn after the textured [`SceneDraw`]s, on the same depth buffer.
+pub struct ColorSceneDraw<'a> {
+    pub mesh: &'a UploadedColorMesh,
+    pub mvp: Mat4,
+}
+
 /// Multi-actor scene payload. Drawn against a single shared VRAM with one
 /// MVP per actor. Optionally overlays a [`UploadedLines`] mesh (e.g. a
 /// stage-geometry wireframe) using the supplied MVP, and/or a 2D text
@@ -3367,6 +3395,9 @@ pub struct SceneDraw<'a> {
 pub struct Scene<'a> {
     pub vram: &'a UploadedVram,
     pub draws: &'a [SceneDraw<'a>],
+    /// Untextured vertex-coloured meshes (`F*`/`G*` props), drawn after
+    /// [`Self::draws`] on the shared depth buffer. Usually empty.
+    pub color_draws: &'a [ColorSceneDraw<'a>],
     pub overlay_lines: Option<(&'a UploadedLines, Mat4)>,
     /// 2D sprite batch drawn after the 3D meshes and lines, before
     /// [`Self::overlay_text`]. Used by the actor sprite pipeline.
@@ -3414,6 +3445,10 @@ pub struct Renderer {
     /// dynamic-offset layout). Used by [`Self::render`] when a `Scene`
     /// carries `overlay_lines`.
     scene_lines_pipeline: wgpu::RenderPipeline,
+    /// Untextured vertex-colour mesh pipeline shadowing the scene path (same
+    /// scene-uniforms dynamic-offset layout, no VRAM group). Draws a `Scene`'s
+    /// `color_draws` (`F*`/`G*` props).
+    scene_color_mesh_pipeline: wgpu::RenderPipeline,
     scene_uniforms_bgl: wgpu::BindGroupLayout,
     scene_uniforms_bg: std::cell::RefCell<wgpu::BindGroup>,
     scene_uniforms_buf: std::cell::RefCell<wgpu::Buffer>,
@@ -4099,6 +4134,70 @@ impl Renderer {
             cache: None,
         });
 
+        // Vertex-colour mesh pipeline (untextured F*/G* props): same scene-
+        // uniforms dynamic-offset layout as the lines pipeline (group 0 only,
+        // no VRAM), TriangleList, position(12) + Unorm8x4 colour(4) = 16 bytes.
+        let color_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("legaia color mesh shader"),
+            source: wgpu::ShaderSource::Wgsl(COLOR_MESH_SHADER_SRC.into()),
+        });
+        let scene_color_mesh_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("legaia scene color mesh pipeline layout"),
+                bind_group_layouts: &[&scene_uniforms_bgl],
+                push_constant_ranges: &[],
+            });
+        let scene_color_mesh_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("legaia scene color mesh pipeline"),
+                layout: Some(&scene_color_mesh_layout),
+                vertex: wgpu::VertexState {
+                    module: &color_mesh_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: 16,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 12,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Unorm8x4,
+                            },
+                        ],
+                    }],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &color_mesh_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
         // Text pipeline: 2D textured quads in NDC, alpha blended, no depth.
         // Vertex layout = 8 (pos: Float32x2) + 8 (uv: Float32x2) +
         // 16 (color: Float32x4) = 32 bytes.
@@ -4231,6 +4330,7 @@ impl Renderer {
             vram_bgl,
             scene_vram_mesh_pipeline,
             scene_lines_pipeline,
+            scene_color_mesh_pipeline,
             scene_uniforms_bgl,
             scene_uniforms_bg: std::cell::RefCell::new(scene_uniforms_bg),
             scene_uniforms_buf: std::cell::RefCell::new(scene_uniforms_buf),
@@ -4512,6 +4612,67 @@ impl Renderer {
                 usage: wgpu::BufferUsages::INDEX,
             });
         Ok(UploadedVramMesh {
+            vertex_buf,
+            index_buf,
+            index_count: indices.len() as u32,
+        })
+    }
+
+    /// Upload an untextured vertex-colour triangle mesh: position + per-vertex
+    /// `[r, g, b]` (each 0..255, alpha forced opaque) + triangle indices. The
+    /// inverse of [`Self::upload_vram_mesh`] for the `F*`/`G*` props that carry
+    /// colours instead of UVs ([`legaia_tmd::mesh::ColorMesh`]).
+    pub fn upload_color_mesh(
+        &self,
+        positions: &[[f32; 3]],
+        colors: &[[u8; 3]],
+        indices: &[u32],
+    ) -> Result<UploadedColorMesh> {
+        if positions.len() != colors.len() {
+            anyhow::bail!(
+                "color mesh: positions ({}) and colors ({}) length mismatch",
+                positions.len(),
+                colors.len()
+            );
+        }
+        if !indices.len().is_multiple_of(3) {
+            anyhow::bail!(
+                "color mesh: index count {} is not a multiple of 3",
+                indices.len()
+            );
+        }
+        if let Some(&max_idx) = indices.iter().max()
+            && (max_idx as usize) >= positions.len()
+        {
+            anyhow::bail!(
+                "color mesh index {} >= vertex count {}",
+                max_idx,
+                positions.len()
+            );
+        }
+        let mut bytes = Vec::with_capacity(positions.len() * 16);
+        for (pos, c) in positions.iter().zip(colors.iter()) {
+            bytes.extend_from_slice(bytemuck::cast_slice(pos));
+            bytes.push(c[0]);
+            bytes.push(c[1]);
+            bytes.push(c[2]);
+            bytes.push(0xFF); // opaque alpha (Unorm8x4)
+        }
+        let vertex_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("color mesh vertex buffer"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let index_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("color mesh index buffer"),
+                contents: bytemuck::cast_slice(indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        Ok(UploadedColorMesh {
             vertex_buf,
             index_buf,
             index_count: indices.len() as u32,
@@ -4932,6 +5093,23 @@ impl Renderer {
                         rp.set_index_buffer(lines.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                         rp.draw_indexed(0..lines.index_count, 0, 0..1);
                     }
+                    if !scene.color_draws.is_empty() {
+                        // Untextured F*/G* props: slots follow the draws + the
+                        // optional overlay-lines slot (see stage_scene_uniforms).
+                        let color_base =
+                            scene.draws.len() as u32 + scene.overlay_lines.is_some() as u32;
+                        rp.set_pipeline(&self.scene_color_mesh_pipeline);
+                        for (i, draw) in scene.color_draws.iter().enumerate() {
+                            let off = (color_base + i as u32) * stride;
+                            rp.set_bind_group(0, bg, &[off]);
+                            rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
+                            rp.set_index_buffer(
+                                draw.mesh.index_buf.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+                            rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
+                        }
+                    }
                     let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                     if let Some(s) = scene.overlay_sprites {
                         overlays.push(s);
@@ -4990,7 +5168,8 @@ impl Renderer {
     /// least `slots` `MeshUniforms` entries, then write each entry.
     fn stage_scene_uniforms(&self, scene: &Scene<'_>) {
         let stride = self.uniform_offset_alignment as usize;
-        let needed = scene.draws.len() + scene.overlay_lines.is_some() as usize;
+        let needed =
+            scene.draws.len() + scene.overlay_lines.is_some() as usize + scene.color_draws.len();
         if needed == 0 {
             return;
         }
@@ -5049,6 +5228,11 @@ impl Renderer {
         }
         if let Some((_, mvp)) = scene.overlay_lines {
             push(&mut bytes, scene.draws.len(), mvp);
+        }
+        // Colour-mesh slots follow the draws + the optional overlay-lines slot.
+        let color_base = scene.draws.len() + scene.overlay_lines.is_some() as usize;
+        for (i, draw) in scene.color_draws.iter().enumerate() {
+            push(&mut bytes, color_base + i, draw.mvp);
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();
         let buf: &wgpu::Buffer = &buf_borrow;
@@ -5540,6 +5724,47 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let lambert = max(dot(n, l), 0.0);
     let shade = 0.45 + 0.55 * lambert;
     return vec4<f32>(color.rgb * shade, color.a);
+}
+"#;
+
+/// Vertex-colour mesh shader: untextured `F*`/`G*` props. Each vertex carries a
+/// position and an RGB colour, flat face-shaded (screen-space-derivative normal
+/// times a Lambert term, the same ambient-biased shade as the textured / VRAM
+/// paths) so the silhouette reads. No VRAM lookup - the colour comes straight
+/// from the TMD's per-prim colour block (`legaia_tmd::mesh::ColorMesh`).
+const COLOR_MESH_SHADER_SRC: &str = r#"
+struct MeshUniforms {
+    mvp: mat4x4<f32>,
+    light_dir: vec4<f32>,
+    psx_params: vec4<f32>,
+    tex_window: vec4<u32>,
+};
+@group(0) @binding(0) var<uniform> u: MeshUniforms;
+
+struct VsOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) world_pos: vec3<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(@location(0) position: vec3<f32>, @location(1) color: vec4<f32>) -> VsOut {
+    var out: VsOut;
+    out.clip_pos = u.mvp * vec4<f32>(position, 1.0);
+    out.world_pos = position;
+    out.color = color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let dx = dpdx(in.world_pos);
+    let dy = dpdy(in.world_pos);
+    let n = normalize(cross(dx, dy));
+    let l = -normalize(u.light_dir.xyz);
+    let lambert = max(dot(n, l), 0.0);
+    let shade = 0.45 + 0.55 * lambert;
+    return vec4<f32>(in.color.rgb * shade, 1.0);
 }
 "#;
 

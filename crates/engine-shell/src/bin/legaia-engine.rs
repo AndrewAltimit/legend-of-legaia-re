@@ -24,8 +24,8 @@ use legaia_engine_core::scene_resources::{
 };
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_render::{
-    RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
-    UploadedFontAtlas, UploadedVram, UploadedVramMesh, capture_banner_draws_for,
+    ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
+    UploadedColorMesh, UploadedFontAtlas, UploadedVram, UploadedVramMesh, capture_banner_draws_for,
     level_up_draws_for, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
@@ -3658,6 +3658,13 @@ struct PlayWindowApp {
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     field_placement_draws: Vec<(usize, Mat4)>,
+    /// Untextured (`F*`/`G*`) vertex-colour meshes for field props whose prims
+    /// carry per-vertex colours instead of UVs (the textured VRAM-mesh path
+    /// drops them). Parallel render list to `meshes`.
+    color_meshes: Vec<UploadedColorMesh>,
+    /// Field static-geometry colour draws: `(index into `color_meshes`, world
+    /// model)` for the untextured props. Drawn alongside `field_placement_draws`.
+    field_placement_color_draws: Vec<(usize, Mat4)>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -5217,7 +5224,18 @@ impl PlayWindowApp {
         let Some(res) = self.scene_res.take() else {
             return;
         };
-        let (vram_opt, font_opt, meshes, tmd_data, tmd_src_index, lo, hi, world_map_hf) = {
+        let (
+            vram_opt,
+            font_opt,
+            meshes,
+            tmd_data,
+            tmd_src_index,
+            color_meshes,
+            color_tmd_src_index,
+            lo,
+            hi,
+            world_map_hf,
+        ) = {
             let Some(r) = self.win.renderer.as_ref() else {
                 self.scene_res = Some(res);
                 return;
@@ -5235,6 +5253,10 @@ impl PlayWindowApp {
             // `res.tmds` index for each pushed mesh (meshes skip empty-prim
             // TMDs, so this is the bridge back to a `ResolvedTmd`).
             let mut tmd_src_index: Vec<usize> = Vec::new();
+            // Untextured (F*/G*) prop meshes + their res.tmds-index bridge,
+            // parallel to `meshes` / `tmd_src_index` but on the colour pipeline.
+            let mut color_meshes: Vec<UploadedColorMesh> = Vec::new();
+            let mut color_tmd_src_index: Vec<usize> = Vec::new();
             let mut lo = [f32::INFINITY; 3];
             let mut hi = [f32::NEG_INFINITY; 3];
             for (src_i, rtmd) in res.tmds.iter().enumerate() {
@@ -5245,6 +5267,31 @@ impl PlayWindowApp {
                 // that the unfiltered builder produces.
                 let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
                 if vmesh.indices.is_empty() {
+                    // No textured prims survived the VRAM filter. If the mesh is
+                    // an untextured (F*/G*) prop, build its vertex-colour mesh
+                    // from the per-prim colour blocks and upload it to the colour
+                    // pipeline (otherwise it's a missing-CLUT textured mesh that
+                    // correctly stays dropped).
+                    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+                    if !cmesh.is_empty() {
+                        for p in &cmesh.positions {
+                            for ax in 0..3 {
+                                if p[ax] < lo[ax] {
+                                    lo[ax] = p[ax];
+                                }
+                                if p[ax] > hi[ax] {
+                                    hi[ax] = p[ax];
+                                }
+                            }
+                        }
+                        match r.upload_color_mesh(&cmesh.positions, &cmesh.colors, &cmesh.indices) {
+                            Ok(m) => {
+                                color_meshes.push(m);
+                                color_tmd_src_index.push(src_i);
+                            }
+                            Err(e) => log::warn!("color mesh upload skipped: {e:#}"),
+                        }
+                    }
                     continue;
                 }
                 let (mlo, mhi) = vmesh.aabb();
@@ -5316,6 +5363,8 @@ impl PlayWindowApp {
                 meshes,
                 tmd_data,
                 tmd_src_index,
+                color_meshes,
+                color_tmd_src_index,
                 lo,
                 hi,
                 world_map_hf,
@@ -5326,6 +5375,10 @@ impl PlayWindowApp {
         // Built here (not per-frame) because the placement table + pack are
         // fixed for the scene; the field draw branch just replays the list.
         let field_placement_draws = self.resolve_field_placement_draws(&res, &tmd_src_index);
+        // Same resolver, but bridged through the colour-mesh list: the untextured
+        // props' placement transforms map to `color_meshes` indices.
+        let field_placement_color_draws =
+            self.resolve_field_placement_draws(&res, &color_tmd_src_index);
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Keep a clean CPU copy of the scene VRAM so a battle can inject
         // monster textures into a throwaway clone and restore this on exit.
@@ -5434,6 +5487,8 @@ impl PlayWindowApp {
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         self.field_placement_draws = field_placement_draws;
+        self.color_meshes = color_meshes;
+        self.field_placement_color_draws = field_placement_color_draws;
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.world_map_heightfield = world_map_hf;
         if lo[0].is_finite() {
@@ -8077,6 +8132,9 @@ impl ApplicationHandler for PlayWindowApp {
                     // last-loaded scene (e.g. a town) doesn't show through
                     // behind publisher logos / title / save-select.
                     let mut draws: Vec<SceneDraw<'_>> = Vec::new();
+                    // Untextured (F*/G*) field props, drawn on the colour
+                    // pipeline alongside the textured `draws`.
+                    let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
                     if self.boot_ui.is_active() {
                         // Boot UI is fullscreen - suppress 3D draws.
                     } else if in_world_map {
@@ -8185,6 +8243,16 @@ impl ApplicationHandler for PlayWindowApp {
                             for (mesh_idx, model) in &self.field_placement_draws {
                                 if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                     draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * *model,
+                                    });
+                                }
+                            }
+                            // Untextured props (the F*/G* meshes the VRAM path
+                            // drops) on the colour pipeline, same transforms.
+                            for (mesh_idx, model) in &self.field_placement_color_draws {
+                                if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                    color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * *model,
                                     });
@@ -8480,6 +8548,7 @@ impl ApplicationHandler for PlayWindowApp {
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
+                        color_draws: &color_draws,
                         overlay_lines: world_map_entity_lines
                             .as_ref()
                             .or(effect_lines.as_ref())
@@ -9257,6 +9326,8 @@ fn cmd_play_window_with_record(
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
         field_placement_draws: Vec::new(),
+        color_meshes: Vec::new(),
+        field_placement_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_heightfield: None,
         cpu_vram_base: None,

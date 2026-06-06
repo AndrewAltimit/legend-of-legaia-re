@@ -196,8 +196,10 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
 /// two distinct causes, and they are NOT the same fix:
 ///
 ///   * **untextured props** — the mesh is all flat / gouraud (per-vertex RGB,
-///     no UVs), so the textured builder skips every prim. Recovering these
-///     needs a per-vertex-colour render path (engine-render has none yet).
+///     no UVs), so the textured builder skips every prim. These are now
+///     recovered by the engine's vertex-colour path: `tmd_to_color_mesh` builds
+///     a [`legaia_tmd::mesh::ColorMesh`] from the per-prim colour blocks, which
+///     play-window uploads + draws on the colour pipeline (asserted below).
 ///   * **missing-CLUT props** — the mesh IS textured, but its prims sample a
 ///     CLUT row the field VRAM pre-pass didn't upload, so the coverage filter
 ///     correctly drops them (rendering them would show flat `CLUT[0]`).
@@ -345,4 +347,35 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
             }
         }
     }
+
+    // Vertex-colour recovery: the two untextured props (pack 31 / 109) now
+    // build a non-empty `ColorMesh` from their per-prim colour blocks, so the
+    // engine's colour pipeline renders them (the +2 placements the field render
+    // recovers). The missing-CLUT textured mesh (pack 74) yields an EMPTY colour
+    // mesh - it is textured, so the colour path correctly does NOT recover it.
+    let cm31 = legaia_tmd::mesh::tmd_to_color_mesh(&env_tmds[31].tmd, &env_tmds[31].raw);
+    let cm109 = legaia_tmd::mesh::tmd_to_color_mesh(&env_tmds[109].tmd, &env_tmds[109].raw);
+    let cm74 = legaia_tmd::mesh::tmd_to_color_mesh(&env_tmds[74].tmd, &env_tmds[74].raw);
+    assert!(
+        !cm31.is_empty() && cm31.colors.len() == cm31.positions.len(),
+        "pack[31] untextured prop recovers a colour mesh ({} verts)",
+        cm31.positions.len()
+    );
+    assert!(
+        !cm109.is_empty() && cm109.colors.len() == cm109.positions.len(),
+        "pack[109] untextured prop recovers a colour mesh ({} verts)",
+        cm109.positions.len()
+    );
+    assert!(
+        cm74.is_empty(),
+        "pack[74] is textured (missing CLUT) - colour path must not recover it"
+    );
+    // At least one decoded colour is non-black (the props aren't all (0,0,0)).
+    assert!(
+        cm31.colors
+            .iter()
+            .chain(cm109.colors.iter())
+            .any(|&c| c != [0, 0, 0]),
+        "recovered props carry real (non-black) per-vertex colours"
+    );
 }
