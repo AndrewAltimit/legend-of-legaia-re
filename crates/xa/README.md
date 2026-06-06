@@ -16,8 +16,10 @@ into 16-bit PCM, then writes a standard WAV file.
     * low nibble  = sound unit `k` sample
     * high nibble = sound unit `k+4` sample
 
-8-bit ADPCM (4 sound units of 28 samples each, 1 byte per sample) is
-less common for music and not yet implemented.
+8-bit ADPCM (4 sound units of 28 samples each, one full byte per sample;
+params at bytes 0..4 mirrored four times) is also decoded - select it with
+`DecodeOptions { bits: BitsPerSample::Eight, .. }` or `--bits 8` on the CLI.
+The NA Legaia corpus is entirely 4-bit, so 4-bit stays the default.
 
 ## Filter coefficients (1/64 units)
 
@@ -80,8 +82,9 @@ rate / channel mode (no guessed global rate). On the NA disc that's 34
 files / 316 channels, all 4-bit 37.8 kHz, with channel mode varying per
 file (16-channel mono voice vs 8-channel stereo music). `demux-disc`
 targets a single entry by `--lba` / `--size` from its ISO9660 directory
-record. Streams reporting a non-4-bit `coding_info` width are skipped
-with a warning (the group decoder is 4-bit only).
+record. The decoder handles both 4-bit and 8-bit widths (the demux path
+maps each channel's `coding_info` width automatically); any other reported
+width is skipped with a warning.
 
 ## See also
 

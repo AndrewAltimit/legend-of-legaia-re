@@ -525,6 +525,7 @@ impl AudioOut {
         let mut decoder = legaia_xa::StreamingDecoder::new(legaia_xa::DecodeOptions {
             channels,
             sample_rate,
+            bits: legaia_xa::BitsPerSample::Four,
         });
         let mut pcm = Vec::with_capacity(raw_bytes.len() / 128 * 224);
         decoder.feed(raw_bytes, &mut pcm)?;

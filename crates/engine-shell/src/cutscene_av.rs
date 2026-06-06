@@ -157,14 +157,17 @@ pub fn decode_str_av_from_disc(
         .into_iter()
         .max_by_key(|(_, acc)| acc.audio.len())
         .and_then(|((file_no, ch_no), acc)| {
-            if acc.bits_per_sample != 4 {
-                log::warn!(
-                    "STR audio f{file_no} c{ch_no}: {}-bit not supported by the group decoder; \
-                     dropping audio track",
-                    acc.bits_per_sample
-                );
-                return None;
-            }
+            let bits = match acc.bits_per_sample {
+                4 => legaia_xa::BitsPerSample::Four,
+                8 => legaia_xa::BitsPerSample::Eight,
+                other => {
+                    log::warn!(
+                        "STR audio f{file_no} c{ch_no}: {other}-bit not supported by the group \
+                         decoder; dropping audio track"
+                    );
+                    return None;
+                }
+            };
             let channels = if acc.stereo {
                 legaia_xa::Channels::Stereo
             } else {
@@ -173,6 +176,7 @@ pub fn decode_str_av_from_disc(
             let opts = legaia_xa::DecodeOptions {
                 channels,
                 sample_rate: acc.sample_rate,
+                bits,
             };
             match legaia_xa::decode(&acc.audio, opts) {
                 Ok((pcm, _)) => Some(CutsceneAudio {

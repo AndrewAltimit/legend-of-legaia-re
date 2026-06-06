@@ -67,6 +67,17 @@ The predictor history is the full-precision reconstructed `value`, **not** the r
 
 **Stereo de-interleave.** The LEFT channel is the even units (0,2,4,6) and the RIGHT channel is the odd units (1,3,5,7); output is L,R interleaved, pairing `(0,1),(2,3),(4,5),(6,7)`. Each channel keeps its own `(prev1, prev2)` history.
 
+## Sound-group decode (8-bit)
+
+The 8-bit mode (subheader `coding_info` bits 4..5 = `01`) uses the **same 128-byte group** but packs **4 sound units of 28 full-byte samples** instead of 8 nibble units:
+
+- **Parameter bytes (0..16).** The 4 unit params live at bytes 0..4, mirrored three more times at 4..8 / 8..12 / 12..16; the live copy is bytes 0..4. Same `(filter << 4) | range` encoding.
+- **Sample bytes (16..128).** 28 lines of 4 bytes; unit `u` reads byte `u` of each line (one full 8-bit sample per byte, no nibble split).
+- **Reconstruction.** Identical filter math, but the sample sits in the top byte of the 16-bit word before the gain shift: `shifted = (sign_extend(byte, 8) << 8) >> range` (8 bits of headroom vs the 4-bit path's 12). The 8-bit byte is signed (`0x80` = -128).
+- **Stereo de-interleave.** LEFT = even units (0,2), RIGHT = odd units (1,3), pairing `(0,1),(2,3)`.
+
+This yields 112 samples/group (4 × 28) vs the 4-bit path's 224. Select it with `legaia_xa::DecodeOptions { bits: BitsPerSample::Eight, .. }` (the demux path maps each channel's reported width automatically; the CLI exposes `--bits 8`). The whole NA corpus is 4-bit, so 4-bit is the default and the 8-bit path is exercised by synthetic unit tests (silence, full-byte sign-extension, the stereo split).
+
 ## "Non-standard interleave" - what it is and isn't
 
 The earliest extracted-XA tooling truncated each on-disc sector to 2048 bytes (Form 1 mode), which silently:
@@ -97,8 +108,9 @@ varies channel mode (the NA disc has 16-channel mono voice files like `XA4`/`XA6
 alongside 8-channel stereo music like `XA5`/`XA7`/`XA8`/`XA9`) decodes each
 channel at its real width: the Form-1 `convert` path read a stereo track as mono
 and played it at 2× speed; the demux path reads `coding_info` and gets it right.
-Channels reporting a non-4-bit width are skipped with a warning rather than
-mis-decoded.
+Channels report their width via `coding_info`; the decoder handles both 4-bit
+and 8-bit, and any other (unexpected) width is skipped with a warning rather
+than mis-decoded.
 
 ## What the older `extracted/XA/*.XA` files contain
 
@@ -107,7 +119,7 @@ If the tree on disk has a populated `extracted/XA/` directory from a pre-fix ext
 ## What's still open
 
 - **Top-level extract integration.** `legaia-extract` doesn't yet call `xa demux-disc-all`. Cutscene audio works end-to-end via the standalone `xa` binary; the unified pipeline still emits the legacy Form-1 bytes.
-- **8-bit ADPCM mode.** The NA corpus is **entirely 4-bit, 37.8 kHz** (`demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across 34 `*.XA` files), so the unimplemented 8-bit group decoder doesn't block anything. The demuxer surfaces `bits_per_sample` and the CLI skips-and-warns on any non-4-bit channel rather than mis-decoding it - if a JP/EU build turns out to use 8-bit, that warning is where to start.
+- **8-bit ADPCM mode — now decoded** (see "Sound-group decode (8-bit)" above). The NA corpus is **entirely 4-bit, 37.8 kHz** (`demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across 34 `*.XA` files), so nothing on the NA disc exercises it; the path is covered by synthetic unit tests and is wired through the demux/CLI/cutscene consumers (which map each channel's reported width). A JP/EU build that uses 8-bit would decode without code changes. **Not** yet verified bit-exact against a real 8-bit reference (no 8-bit source in the NA corpus).
 - **Per-cutscene file-no / ch-no map.** `demux-disc` emits one WAV per channel keyed by `(file_no, ch_no)`. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is [not yet captured](../tooling/overlay-capture.md). Until that's reversed, the WAV → cutscene assignment is manual.
 
 ## Provenance

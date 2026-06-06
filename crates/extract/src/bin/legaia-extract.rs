@@ -472,13 +472,17 @@ fn step_xa_demux(bin: &Path, out: &Path, verbose: bool) -> Result<usize> {
             stem.to_string()
         };
         for s in &f.streams {
-            if s.bits_per_sample != 4 {
-                eprintln!(
-                    "    [xa] {}_file{}_ch{}: SKIPPED ({}-bit ADPCM unsupported, 4-bit only)",
-                    stem, s.file_no, s.ch_no, s.bits_per_sample
-                );
-                continue;
-            }
+            let bits = match s.bits_per_sample {
+                4 => legaia_xa::BitsPerSample::Four,
+                8 => legaia_xa::BitsPerSample::Eight,
+                other => {
+                    eprintln!(
+                        "    [xa] {}_file{}_ch{}: SKIPPED ({other}-bit ADPCM unsupported, 4/8-bit only)",
+                        stem, s.file_no, s.ch_no
+                    );
+                    continue;
+                }
+            };
             let opts = DecodeOptions {
                 channels: if s.stereo {
                     Channels::Stereo
@@ -486,6 +490,7 @@ fn step_xa_demux(bin: &Path, out: &Path, verbose: bool) -> Result<usize> {
                     Channels::Mono
                 },
                 sample_rate: s.sample_rate,
+                bits,
             };
             let (samples, _report) = legaia_xa::decode(&s.audio, opts)?;
             let path = out.join(format!("{stem}_file{}_ch{}.wav", s.file_no, s.ch_no));

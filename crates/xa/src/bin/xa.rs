@@ -19,6 +19,8 @@ enum Cmd {
         channels: ChannelsArg,
         #[arg(long, default_value_t = 37800)]
         sample_rate: u32,
+        #[arg(long, value_enum, default_value_t = BitsArg::Four)]
+        bits: BitsArg,
     },
     /// Decode a single .XA to .WAV.
     Convert {
@@ -29,6 +31,8 @@ enum Cmd {
         channels: ChannelsArg,
         #[arg(long, default_value_t = 37800)]
         sample_rate: u32,
+        #[arg(long, value_enum, default_value_t = BitsArg::Four)]
+        bits: BitsArg,
     },
     /// Convert every .XA under `dir` to .WAV.
     ConvertDir {
@@ -39,6 +43,8 @@ enum Cmd {
         channels: ChannelsArg,
         #[arg(long, default_value_t = 37800)]
         sample_rate: u32,
+        #[arg(long, value_enum, default_value_t = BitsArg::Four)]
+        bits: BitsArg,
     },
     /// Walk the disc's ISO9660 tree and demux EVERY `*.XA` file, one WAV
     /// per `(file_no, ch_no)` channel, each decoded at its true per-sector
@@ -94,6 +100,23 @@ impl From<ChannelsArg> for Channels {
     }
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum BitsArg {
+    #[value(name = "4")]
+    Four,
+    #[value(name = "8")]
+    Eight,
+}
+
+impl From<BitsArg> for legaia_xa::BitsPerSample {
+    fn from(a: BitsArg) -> Self {
+        match a {
+            BitsArg::Four => legaia_xa::BitsPerSample::Four,
+            BitsArg::Eight => legaia_xa::BitsPerSample::Eight,
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
@@ -101,19 +124,34 @@ fn main() -> Result<()> {
             path,
             channels,
             sample_rate,
-        } => info(&path, channels.into(), sample_rate),
+            bits,
+        } => info(&path, channels.into(), sample_rate, bits.into()),
         Cmd::Convert {
             path,
             out,
             channels,
             sample_rate,
-        } => convert(&path, out.as_deref(), channels.into(), sample_rate),
+            bits,
+        } => convert(
+            &path,
+            out.as_deref(),
+            channels.into(),
+            sample_rate,
+            bits.into(),
+        ),
         Cmd::ConvertDir {
             dir,
             out,
             channels,
             sample_rate,
-        } => convert_dir(&dir, out.as_deref(), channels.into(), sample_rate),
+            bits,
+        } => convert_dir(
+            &dir,
+            out.as_deref(),
+            channels.into(),
+            sample_rate,
+            bits.into(),
+        ),
         Cmd::DemuxDiscAll { bin, out } => demux_disc_all(&bin, &out),
         Cmd::DemuxDisc {
             bin,
@@ -125,17 +163,22 @@ fn main() -> Result<()> {
     }
 }
 
-/// Decode one demuxed channel stream to a WAV. Non-4-bit streams are
-/// skipped with a warning rather than mis-decoded (the group walker is
-/// 4-bit only); returns `false` when skipped.
+/// Decode one demuxed channel stream to a WAV, mapping the stream's reported
+/// `bits_per_sample` (4 or 8) to the decoder width. Streams of any other width
+/// are skipped with a warning rather than mis-decoded; returns `false` when
+/// skipped.
 fn write_channel_wav(s: &legaia_xa::demux::ChannelStream, path: &Path) -> Result<bool> {
-    if s.bits_per_sample != 4 {
-        eprintln!(
-            "  file={:<3} ch={:<3} SKIPPED: {}-bit ADPCM unsupported (4-bit only)",
-            s.file_no, s.ch_no, s.bits_per_sample
-        );
-        return Ok(false);
-    }
+    let bits = match s.bits_per_sample {
+        4 => legaia_xa::BitsPerSample::Four,
+        8 => legaia_xa::BitsPerSample::Eight,
+        other => {
+            eprintln!(
+                "  file={:<3} ch={:<3} SKIPPED: {other}-bit ADPCM unsupported (4-bit / 8-bit only)",
+                s.file_no, s.ch_no
+            );
+            return Ok(false);
+        }
+    };
     let opts = DecodeOptions {
         channels: if s.stereo {
             Channels::Stereo
@@ -143,6 +186,7 @@ fn write_channel_wav(s: &legaia_xa::demux::ChannelStream, path: &Path) -> Result
             Channels::Mono
         },
         sample_rate: s.sample_rate,
+        bits,
     };
     let (samples, report) = legaia_xa::decode(&s.audio, opts)?;
     legaia_xa::write_wav(path, &samples, opts.channels, opts.sample_rate)?;
@@ -225,7 +269,12 @@ fn demux_disc(bin: &Path, lba: u32, size: u32, out_dir: &Path, prefix: Option<&s
     Ok(())
 }
 
-fn info(path: &Path, channels: Channels, sample_rate: u32) -> Result<()> {
+fn info(
+    path: &Path,
+    channels: Channels,
+    sample_rate: u32,
+    bits: legaia_xa::BitsPerSample,
+) -> Result<()> {
     let buf = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if buf.len() % legaia_xa::SOUND_GROUP_BYTES != 0 {
         bail!(
@@ -235,9 +284,9 @@ fn info(path: &Path, channels: Channels, sample_rate: u32) -> Result<()> {
         );
     }
     let n_groups = buf.len() / legaia_xa::SOUND_GROUP_BYTES;
-    // 4-bit mode: 8 SUs × 28 samples per group; per-channel sample count =
-    // total / channels.
-    let total_samples = n_groups * legaia_xa::UNITS_PER_GROUP_4BIT * legaia_xa::SAMPLES_PER_UNIT;
+    // SUs/group depends on the sample width (8 for 4-bit, 4 for 8-bit);
+    // per-channel sample count = total / channels.
+    let total_samples = n_groups * bits.units_per_group() * legaia_xa::SAMPLES_PER_UNIT;
     let per_channel = total_samples / channels.n() as usize;
     let dur_sec = per_channel as f64 / sample_rate as f64;
     println!("file:        {}", path.display());
@@ -247,6 +296,7 @@ fn info(path: &Path, channels: Channels, sample_rate: u32) -> Result<()> {
         n_groups
     );
     println!("channels:    {:?}", channels);
+    println!("bits:        {:?}", bits);
     println!("sample_rate: {} Hz", sample_rate);
     println!(
         "duration:    {:.3} sec ({} samples per channel)",
@@ -255,11 +305,18 @@ fn info(path: &Path, channels: Channels, sample_rate: u32) -> Result<()> {
     Ok(())
 }
 
-fn convert(path: &Path, out: Option<&Path>, channels: Channels, sample_rate: u32) -> Result<()> {
+fn convert(
+    path: &Path,
+    out: Option<&Path>,
+    channels: Channels,
+    sample_rate: u32,
+    bits: legaia_xa::BitsPerSample,
+) -> Result<()> {
     let buf = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let opts = DecodeOptions {
         channels,
         sample_rate,
+        bits,
     };
     let (samples, report) = legaia_xa::decode(&buf, opts)?;
     let target: PathBuf = out
@@ -280,7 +337,13 @@ fn convert(path: &Path, out: Option<&Path>, channels: Channels, sample_rate: u32
     Ok(())
 }
 
-fn convert_dir(dir: &Path, out: Option<&Path>, channels: Channels, sample_rate: u32) -> Result<()> {
+fn convert_dir(
+    dir: &Path,
+    out: Option<&Path>,
+    channels: Channels,
+    sample_rate: u32,
+    bits: legaia_xa::BitsPerSample,
+) -> Result<()> {
     let dir = dir
         .canonicalize()
         .with_context(|| format!("canonicalizing {}", dir.display()))?;
@@ -298,7 +361,7 @@ fn convert_dir(dir: &Path, out: Option<&Path>, channels: Channels, sample_rate: 
         };
         let rel = p.strip_prefix(&dir).unwrap_or(p);
         let target = target_root.join(rel).with_extension("wav");
-        match convert(p, Some(&target), channels, sample_rate) {
+        match convert(p, Some(&target), channels, sample_rate, bits) {
             Ok(()) => ok += 1,
             Err(e) => {
                 eprintln!("{}: {}", p.display(), e);

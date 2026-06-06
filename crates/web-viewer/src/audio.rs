@@ -239,6 +239,7 @@ pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<D
                 Channels::Mono
             },
             sample_rate: stream.sample_rate,
+            bits: legaia_xa::BitsPerSample::Four,
         };
         let Ok((pcm, _)) = decode(&stream.audio, opts) else {
             continue;
