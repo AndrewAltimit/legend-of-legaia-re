@@ -990,7 +990,7 @@ TMD-pack.
      readers — no function statically materializes any address in
      `0x8007C190..0x8007C1E0` via `lui+addiu`, `lui+lw_with_offset`,
      or positive-offset `lw` from the table base. Consistent with the
-     [Live snapshot](#live-snapshot-drake-post-warp-settled) finding
+     [Live snapshot](#live-snapshot-settled-field-scene) finding
      that those entries are real TMDs in steady state and are reached
      only through the generic table walkers that iterate
      `[0..DAT_8007BB38]`.

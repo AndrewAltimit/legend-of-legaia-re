@@ -346,7 +346,9 @@ path uses, but raises a **different flag bit** (`0x80000`, not
 `0x400`). `FUN_801DA51C` reads `actor[+0x94]` without checking either
 flag, so a single reader serves both paths.
 
-**Engine port (region-keyed roll).** The roll above is ported clean-room as
+#### Engine port (region-keyed roll)
+
+The roll above is ported clean-room as
 [`region_encounter`](../../crates/engine-core/src/region_encounter.rs)
 (`PORT: FUN_801D9E1C`). `RegionEncounterTable` preserves each region's
 tile-AABB + rate increment + formation slice (built from the MAN via
