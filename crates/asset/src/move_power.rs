@@ -75,6 +75,23 @@
 //! 8×), the `+0x0c` category byte (`C`/`E`/`G`/`0x00`), and the `+0x0e`/`+0x12`/
 //! `+0x16` fields the SM reads — meanings TBD. See
 //! `docs/reference/open-rev-eng-threads.md`.
+//!
+//! ## What the records are (cross-referenced against the spell table)
+//!
+//! The move id (`actor[+0x1df]`) the id → index map is keyed on is the **same id
+//! space as the SCUS spell-name table** ([`crate::spell_names`], `DAT_800754C8`),
+//! which the enemy name lookup also indexes by `actor[+0x1df]`. Joining the two
+//! labels every record:
+//!
+//! - **records `0x10..=0x2b`** (move ids `0x25..=0x74`) are the **named monster
+//!   special-attacks** — every one resolves to a non-empty spell-table name (Fire
+//!   Breath `0x25`, Tail Fire `0x27` (the enemy-Gimard move), … through the
+//!   late-game attacks at `0x61..=0x74`). This is their physical/special-attack
+//!   *power*, separate from the *name* the spell table carries.
+//! - **records `0x01..=0x0f`** (move ids `0x04..=0x1f`, all `< 0x24`) are the
+//!   spell table's unnamed **internal enemy-attack tiers** (escalating-power
+//!   triplets; these are the ids the spell-table docs call "internal enemy-attack
+//!   tiers with empty name strings").
 
 /// CDNAME / PROT index of the battle-action overlay holding the table.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;

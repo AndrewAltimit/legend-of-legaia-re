@@ -173,6 +173,16 @@ Still open: the `+0x02` u16, the `+0x08` flag halfword, the `+0x0a`/`+0x0b` fiel
 most-read), the `+0x0c` category byte (`C`/`E`/`G`/`0x00`), and the `+0x0e`/`+0x12`/`+0x16`
 fields.
 
+**What the records are.** Because the move id (`actor[+0x1df]`) is the *same id space* this
+spell table is indexed by, joining the two labels every record: power records `0x10..=0x2b`
+(move ids `0x25..=0x74`) are the **named monster special-attacks** — every one resolves to a
+non-empty spell-table name (Fire Breath `0x25`, the enemy-Gimard *Tail Fire* `0x27`, … the
+late-game attacks at `0x61..=0x74`); this is their physical/special-attack *power*, distinct
+from the *name* this table carries. Power records `0x01..=0x0f` (move ids `0x04..=0x1f`, all
+`< 0x24`) are the unnamed **internal enemy-attack tiers** (escalating-power triplets — the
+ids this table leaves nameless). The disc-gated `move_power_real` test pins that named /
+unnamed boundary against the live spell table (no Sony name strings embedded).
+
 #### The full damage-roll chain (three stages)
 
 The damage a summon deals is the `attacker_roll - defender_roll` margin after a

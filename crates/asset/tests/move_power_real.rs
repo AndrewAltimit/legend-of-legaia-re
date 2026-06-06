@@ -96,4 +96,58 @@ fn move_power_table_parses_with_pinned_powers() {
     // Unmapped ids resolve to no record.
     assert_eq!(move_power::index_for_move_id(&map, 0x00), None);
     assert_eq!(move_power::index_for_move_id(&map, 0x10), None);
+
+    // Cross-reference: the move id is the same id space as the SCUS spell-name
+    // table (both indexed by actor[+0x1df]). So every mapped move id >= 0x25 is a
+    // named monster attack and every mapped id < 0x24 is an unnamed internal
+    // enemy-attack tier. Pin that structural split (no Sony name strings embedded
+    // here -- only the named/unnamed boundary). Skips if the executable is
+    // absent.
+    let Some(scus) = read_scus() else {
+        eprintln!("[skip] SCUS_942.54 absent - skipping spell-name cross-reference");
+        return;
+    };
+    let spells = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
+        .expect("parse SCUS spell-name table");
+    let mut named_hi = 0usize;
+    let mut unnamed_lo = 0usize;
+    for move_id in 0u8..=0x7f {
+        if move_power::index_for_move_id(&map, move_id).is_none() {
+            continue;
+        }
+        let named = spells.name(move_id).is_some_and(|n| !n.is_empty());
+        if move_id >= 0x25 {
+            assert!(
+                named,
+                "mapped move id {move_id:#04x} (>=0x25) should be a named monster attack"
+            );
+            named_hi += 1;
+        } else {
+            assert!(
+                !named,
+                "mapped move id {move_id:#04x} (<0x24) should be an unnamed internal tier"
+            );
+            unnamed_lo += 1;
+        }
+    }
+    // Sanity: both groups are non-trivial (the named monster attacks dominate).
+    assert!(
+        named_hi >= 25,
+        "named monster-attack records (got {named_hi})"
+    );
+    assert!(
+        unnamed_lo >= 10,
+        "unnamed internal-tier records (got {unnamed_lo})"
+    );
+}
+
+/// Read `SCUS_942.54` from `extracted/` if present.
+fn read_scus() -> Option<Vec<u8>> {
+    for base in ["extracted", "../../extracted"] {
+        let p = PathBuf::from(base).join("SCUS_942.54");
+        if let Ok(b) = std::fs::read(&p) {
+            return Some(b);
+        }
+    }
+    None
 }
