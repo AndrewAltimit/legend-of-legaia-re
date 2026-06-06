@@ -79,6 +79,7 @@
 # math directly in `crates/engine-render`; the retail wrappers are not
 # carried over.
 [libgte]
+"8005b618" = "GTE rotation-matrix loader: five ctc2 of a 5-word block into COP2 control regs 0x0/0x800/0x1000/0x1800/0x2000 (the R11..R33 rotation-matrix region). Sibling of 8005b7c0 SetRotMatrix; engine emits rotation via glam Mat3/Mat4"
 "8005b7c0" = "SetRotMatrix (setCopControlWord(2, 0xD800, x))"
 "8005b7cc" = "SetTransMatrix (setCopControlWord(2, 0xE000, x))"
 "8005adb8" = "Fixed-point bit-rotation / arc helper (85-instr ladder)"
@@ -168,6 +169,14 @@
 "80059bd4" = "LoadImage2 / MoveImage internal (DMA over GPU MMIO ports DAT_80078e24/E28)"
 "80059c00" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
 "80059de4" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
+"80059568" = "libgpu OT coordinate-packer (GP0 tag 0xE3 = Drawing Area Top-Left): display-mode-aware clamp + mask/shift of (x,y) into the GP0 area word (returns ... | 0xE3000000). First of the packer trio with 80059634 (0xE4) / 80059700 (0xE5); engine-render emits its own clip via wgpu scissor"
+"80059634" = "libgpu OT coordinate-packer (GP0 tag 0xE4 = Drawing Area Bottom-Right): display-mode-aware clamp + mask/shift of (x,y) into the GP0 area word (returns ... | 0xE4000000). Sibling of 80059568 (0xE3) / 80059700 (0xE5); engine-render emits clip via wgpu scissor"
+"80059700" = "libgpu OT coordinate-packer (GP0 tag 0xE5 = Drawing Offset): mask/shift of (x,y) into the GP0 offset word (returns ... | 0xE5000000). Sibling of 80059568 (0xE3) / 80059634 (0xE4); engine-render carries the draw offset in the wgpu viewport/Camera"
+"80058f1c" = "libgpu DR_AREA primitive builder: fills a draw-env primitive (type byte 2) with the clip top-left via 80059568 (GP0 0xE3) + bottom-right via 80059634 (GP0 0xE4). Sibling of 80058fa0; engine uses a wgpu render pass with no DR_AREA primitive"
+"80058fa0" = "libgpu DR_OFFSET primitive builder: fills a draw-env primitive (type byte 2) with the drawing offset via 80059700 (GP0 0xE5). Sibling of 80058f1c; engine carries the draw offset in the wgpu viewport, no DR_OFFSET primitive"
+"8005a1c0" = "libgpu GPU command-queue enqueue: when the 0x60-stride ring (0x801C9590) has room, writes {handler, rect/inline-copy, src} into the tail slot (DAT_80078e58), kicks the flusher 8005a4a0; else blocks on GPU status *0x80078e28 & 0x4000000. PsyQ-style GPU command queue; engine-render emits wgpu directly with no GPU command ring"
+"8005a4a0" = "libgpu GPU command-queue flusher: drains the 0x60-stride ring (head DAT_80078e5c / tail DAT_80078e58), waits on GPU status *0x80078e28 & 0x4000000, dispatches each entry's handler(entry+4, entry+8). The drain half of the 8005a1c0 enqueuer; engine-render uses wgpu, no GPU command ring"
+"8005aa64" = "libgpu GPU timeout watchdog / queue-reset: on timeout prints the 'GPU_timeout que=%d stat=%08x' dev string, resets head/tail and pokes the GP1 reset words *0x80078e28 = 0x2000000 / 0x1000000. Pure libgpu transport watchdog tied to the 8005a1c0/8005a4a0 ring; engine-render uses wgpu"
 
 
 # SCUS-resident PSX GPU/GTE render-pipeline scaffolding. Unlike the [libgs] /
@@ -220,6 +229,7 @@
 "80061d18" = "SsSeqClose (full close - clears bitmap + memsets channels)"
 "80061e94" = "SsSeqClose short-arg shim (tail-calls 80061d18)"
 "80061edc" = "SsSeqSetVol"
+"80064890" = "SsSeqSetVol-style per-voice volume/pan setter: looks up the voice record (DAT_801cd2c0 + id*4); if active dispatches _SsSeqNoteOn (80067e9c), else latches vol/pan into +0x58/+0x5a. The voice-mix setter the already-ignored [actor_sound_glue] helpers call; engine-audio owns its software-SPU voice pool"
 "8006206c" = "_SsSetSlideVolume (ramp from->to over N ticks)"
 "80062004" = "SsSeqSetVol short-arg shim: sign-extends its two args and tail-calls 80061edc SsSeqSetVol with track=0"
 "80064bd0" = "SsVabClose voice-teardown loop: iterates DAT_801ce344 voices, builds a default SpuVoiceAttr (pitch 0x1000, vol 0x80ff, ADSR 0x4000) on stack, broadcasts via 8006c048 (SpuSetVoiceAttr) and resets each per-slot record via 80067480; pure libsnd/libspu, replaced by engine-audio"

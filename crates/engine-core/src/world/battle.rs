@@ -510,6 +510,13 @@ impl World {
         }
         let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
 
+        // For a monster caster whose move id carries a real per-move power
+        // record, the damage rolls through the faithful arts/physical kernel
+        // seeded with that power instead of the MP-scaled placeholder
+        // ([`Self::enemy_move_predamage`]). `None` keeps the placeholder path
+        // (disc-free / synthetic battles never install the table).
+        let move_power = self.enemy_move_power(caster, def.id);
+
         for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
                 continue;
@@ -530,7 +537,15 @@ impl World {
                 target_alive: actor.battle.liveness != 0,
                 target_weakness: crate::spells::ElementMask::default(),
             };
-            let outcome = cast_spell(def, t, &snap);
+            let mut outcome = cast_spell(def, t, &snap);
+            // Override only the magnitude of a damaging monster special-attack;
+            // heals / buffs / non-table moves fall through unchanged.
+            if let Some(power) = move_power
+                && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome
+                && let Some(faithful) = self.enemy_move_predamage(caster, t, power)
+            {
+                *amount = faithful;
+            }
             self.fold_spell_outcome(outcome);
         }
         // Cast band (live-loop path): a player Seru-magic id resolves to a
@@ -553,6 +568,102 @@ impl World {
             self.request_summon_spawn(def.id, origin);
         }
         true
+    }
+
+    /// Roll a monster special-attack's damage through the faithful
+    /// arts/physical kernel ([`legaia_engine_vm::battle_formulas::arts_physical_predamage`],
+    /// the non-summon branch of `FUN_801dd0ac`) seeded with the move's real
+    /// per-move power (the move-power table's `+0`, `>> 2`). Returns the
+    /// pre-finisher damage clamped to `1..=9999`, or `None` when the table
+    /// isn't loaded or `move_id` has no power record — in which case the caller
+    /// keeps the MP-scaled spell placeholder.
+    ///
+    /// Stat bridge (all read live off the actor arrays, faithful to the retail
+    /// fields the kernel reads): attacker/target AGL = `battle_accuracy`
+    /// (`+0x168`, the AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
+    /// defender defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`].
+    /// Element affinity defaults to 100 (neutral) — the engine doesn't yet
+    /// carry the per-actor element + `0x801F53E8` matrix, so an elementless
+    /// strike is exact and an elemental one omits only the affinity multiplier;
+    /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
+    ///
+    /// Five `rand()` draws are taken in call order (attacker ×2, defender ×1,
+    /// bonus ×2). Retail draws the bonus pair lazily (only when the bonus arm
+    /// fires); the kernel takes all five up front, so the global RNG cursor can
+    /// advance two extra draws on the non-bonus path — a documented minor
+    /// divergence that doesn't change the damage value for a given draw stream.
+    ///
+    /// REF: FUN_801dd0ac (arts/physical branch)
+    fn enemy_move_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+        use vm::battle_formulas::{ArtsPredamage, SummonRollActor, arts_physical_predamage};
+
+        let a = self.actors.get(attacker as usize)?;
+        let attacker_roll = SummonRollActor {
+            hp: a.battle.hp,
+            agl: self
+                .battle_accuracy
+                .get(attacker as usize)
+                .copied()
+                .unwrap_or(0),
+            ..Default::default()
+        };
+        let t = self.actors.get(target as usize)?;
+        let (stat_a, stat_b) = self
+            .battle_defense_split
+            .get(target as usize)
+            .copied()
+            .flatten()
+            .unwrap_or_else(|| {
+                (
+                    self.battle_defense
+                        .get(target as usize)
+                        .copied()
+                        .unwrap_or(0),
+                    0,
+                )
+            });
+        let target_roll = SummonRollActor {
+            hp: t.battle.hp,
+            agl: self
+                .battle_accuracy
+                .get(target as usize)
+                .copied()
+                .unwrap_or(0),
+            stat_a,
+            stat_b,
+            status: 0,
+            guard: 0,
+        };
+        // Retail rand() is 15-bit; mask to match its range.
+        let rng = [
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+        ];
+        let inp = ArtsPredamage {
+            power,
+            attacker: attacker_roll,
+            target: target_roll,
+            element_affinity_pct: 100,
+            rng,
+        };
+        let (atk, def) = arts_physical_predamage(&inp);
+        Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
+    }
+
+    /// Whether a monster caster's chosen move id resolves to a real per-move
+    /// power record (so its damage should roll through [`Self::enemy_move_predamage`]
+    /// rather than the MP-scaled spell placeholder). Only fires when the
+    /// move-power table is installed (disc-real battles), keeping disc-free /
+    /// synthetic battles on the placeholder path with an unchanged RNG stream.
+    fn enemy_move_power(&self, caster: u8, move_id: u8) -> Option<i32> {
+        if (caster as usize) < self.party_count as usize {
+            return None;
+        }
+        self.move_power.as_ref()?.power_for_move_id(move_id)
     }
 
     /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor

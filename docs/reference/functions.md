@@ -581,6 +581,18 @@ These are 2-instruction `jr ra` / nop bodies — likely retail-disabled debug ho
 | `8002B93C` / `8002B944` / `8002B94C` / `8002B954` | Cluster of debug-disabled helpers. |
 | `8003E7F0` | Reserved sound-path stub (called from `FUN_80017AAC`). |
 
+## Minigames
+
+Each minigame's per-frame controller, with the full per-overlay function tables in its subsystem page. These overlays **VA-alias** — the four minigame-hub overlays (fishing / slot machine / Baka Fighter / dance) are distinct files that share a common library core, so the *same* address hosts a *different* function in each; always read the overlay-qualified dump (`overlay_<minigame>_<addr>.txt`), not the bare address. The "main entry" addresses some captures label per minigame (`801d63b0` / `801d2cc0` / `801d5ed0` / `801d2f38`) are the shared **textured-quad sprite/HUD emitter** the minigame reuses for every draw (hence their high caller counts), not the controller — the real per-frame drivers are below.
+
+| Address | Role |
+|---|---|
+| `801CF3BC` | **Fishing** per-frame mode driver; `DAT_801d926c` state machine (rod-select / cast / reel / catch / exit). See [`minigame-fishing.md`](../subsystems/minigame-fishing.md). `overlay_fishing_801cf3bc.txt`. |
+| `801CF0D8` | **Slot machine** per-frame reel state machine (states 0..100; commits the overlay-local balance to coin bank `0x800845A4` on cash-out). See [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md). `overlay_slot_machine_801cf0d8.txt`. |
+| `801D3468` | **Baka Fighter** round/match resolution state machine (rock-paper-scissors exchange of attack types). See [`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md). `overlay_baka_fighter_801d3468.txt`. |
+| `801CF470` | **Dance** per-frame controller / beat-clock state machine (switch on `DAT_801d5334`). See [`minigame-dance.md`](../subsystems/minigame-dance.md). `overlay_dance_801cf470.txt`. |
+| `801D0748` | **Muscle Dome** per-frame match controller: pad read, phase dispatch on `ctx+6`, card pick/commit/resolve/score loop. Distinct overlay (not the hub family). See [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md). `overlay_muscle_dome_801d0748.txt`. |
+
 ## See also
 
 - [`docs/subsystems/script-vm.md`](../subsystems/script-vm.md) — the field/event VM dispatcher (`FUN_801DE840`) anchoring many of these entries.

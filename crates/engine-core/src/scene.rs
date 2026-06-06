@@ -1208,6 +1208,9 @@ pub struct SceneHost {
     /// serves every scene. Populated on the first field entry that needs
     /// real monster stats. See [`legaia_asset::monster_archive`].
     monster_archive_cache: Option<Arc<Vec<u8>>>,
+    /// Tracks whether the move-power table install was attempted, so the disc
+    /// read (PROT 0898) only happens once per host even when it fails.
+    move_power_loaded: bool,
     /// The current scene's disc-sourced **named scene-change destinations**
     /// (`0x3F` ops), decoded from its MAN on entry via
     /// [`crate::man_field_scripts::scene_destinations`]. Empty for scenes with
@@ -1227,6 +1230,7 @@ impl SceneHost {
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
             monster_archive_cache: None,
+            move_power_loaded: false,
             scene_destinations: Vec::new(),
         }
     }
@@ -1248,6 +1252,33 @@ impl SceneHost {
             }
         }
         self.monster_archive_cache.clone()
+    }
+
+    /// Install the battle-action move-power table onto the world from PROT
+    /// entry 0898 (the battle-action overlay), once per host. The monster
+    /// special-attack damage path reads it to roll faithful per-move damage;
+    /// a read/parse failure leaves [`crate::world::World::move_power`] `None`
+    /// (the placeholder damage path stays active) and is not retried.
+    fn ensure_move_power_table(&mut self) {
+        if self.move_power_loaded {
+            return;
+        }
+        self.move_power_loaded = true;
+        let entry = crate::move_power::BATTLE_ACTION_OVERLAY_PROT_ENTRY;
+        match self.index.entry_bytes(entry) {
+            Ok(bytes) => {
+                if let Some(cat) = crate::move_power::MovePowerCatalog::from_overlay_0898(&bytes) {
+                    self.world.move_power = Some(cat);
+                } else {
+                    eprintln!(
+                        "[scene] move-power table (PROT {entry}) parse failed - placeholder damage stays active"
+                    );
+                }
+            }
+            Err(err) => {
+                eprintln!("[scene] move-power table (PROT {entry}) load skipped: {err:#}");
+            }
+        }
     }
 
     /// Open the host directly from an extracted directory.
@@ -1619,6 +1650,11 @@ impl SceneHost {
                 for def in cat.by_id.into_values() {
                     self.world.monster_catalog.insert(def);
                 }
+                // Pair the per-move power table with the just-merged monster
+                // stats so the special-attack damage path can resolve real
+                // per-move power (PROT 0898; falls back to the placeholder if
+                // the disc read fails).
+                self.ensure_move_power_table();
             }
         }
         // Install the scene's field entity-SM carriers derived from the same

@@ -1036,3 +1036,56 @@ expected_game_mode = 0x15
 diff_against = [2, 3, 4]
 description = "Overworld Vahn vs Gobu Gobu, Begin/Run turn menu, battle camera orbit angle D. Sister angle. Randomizer disc."
 topics = ["battle", "battle background", "world map", "terrain", "camera orbit", "Gobu Gobu", "randomizer", "RE"]
+
+# ----------------------------------------------------------------------
+# Minigame captures. Five of the game's side-activities, each parked in
+# its playable state. Library-only (slot = 255): these were saved to
+# ephemeral live mednafen slots, then content-hashed into saves/library/
+# so they resolve durably via `backup_fingerprint` (the live slots get
+# reused). The exact game_mode / scene per minigame is not yet pinned, so
+# those optional fields are left off rather than asserted.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "minigame_muscle_dome"
+ram_fingerprint_sha256 = "e43e4df0d352417601d3b913665e5a711ca347886a60fe72d92bf535374932cc"
+backup_fingerprint = "6917e1a452fc38f89016c876123950b7d0bbd2d98105e386a5d19a109170ad82"
+phase = "minigame"
+description = "Muscle Dome minigame (the rapid-button arm-wrestling / dome contest), parked in its playable state"
+topics = ["minigame", "muscle dome", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_baka_fighter"
+ram_fingerprint_sha256 = "d661866d1bd91a3e18593b30101952d2eb6c17c9f8be0096a63cbd010590d1a5"
+backup_fingerprint = "c7a37c39178b2b1fa80b2fc8e150c83c97fddd98a897fe98d52172607e1bcf00"
+phase = "minigame"
+description = "Baka Fighter minigame (play as a battle-form party member; reuses the PROT 1204 battle character pack, see project_battle_char_pack_is_prot1204)"
+topics = ["minigame", "baka fighter", "PROT 1204", "battle char pack", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_dance_noa"
+ram_fingerprint_sha256 = "68994559d2663e3829bf06d5ccf6a41dde538c82944ddf16af28d386d1d830ee"
+backup_fingerprint = "5214a97ff7cac6d12cfffcf2ba6474fd159639442eacea07ec6ada5c375948c1"
+phase = "minigame"
+description = "Noa dance-rhythm minigame, parked in its playable state"
+topics = ["minigame", "dance", "rhythm", "Noa", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_fishing"
+ram_fingerprint_sha256 = "14a5afcf9d040b64b3697468f2ba6dda4073ec0e5dc3db5de4b1a8ab2164c979"
+backup_fingerprint = "9afc1f1cf6d26746765bc9a8dc46a0af7130deea9f1c68f9373a81ac10f97bf7"
+phase = "minigame"
+description = "Fishing minigame, parked in its playable state"
+topics = ["minigame", "fishing", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_slot_machine"
+ram_fingerprint_sha256 = "af9d9266c7712ddb5854a225237d153aaa170122446367557572e516a8df8b1f"
+backup_fingerprint = "9dda14702d18b7d80ffcf1f7b4d6daefbbc6490d0ed60ee8c4aaae250351d3b8"
+phase = "minigame"
+description = "Casino slot-machine minigame, parked in its playable state (the coin economy the casino prize-exchange randomizer feeds)"
+topics = ["minigame", "slot machine", "casino", "RE"]

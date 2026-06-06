@@ -1250,6 +1250,16 @@ pub struct World {
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
 
+    /// Optional battle-action move-power table (PROT 0898, runtime VA
+    /// `0x801F4F5C`). When present, the monster special-attack damage path
+    /// resolves each move id to its real per-move power scalar and rolls
+    /// damage through the faithful arts/physical kernel
+    /// ([`crate::world::World::enemy_move_predamage`]); when `None` (disc-free /
+    /// synthetic battles) that path falls back to the MP-scaled placeholder, so
+    /// the RNG stream and determinism trace are unchanged. Installed lazily from
+    /// the disc by [`crate::scene::SceneHost`].
+    pub move_power: Option<crate::move_power::MovePowerCatalog>,
+
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`World::set_equipment_table`]
     /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
@@ -1847,6 +1857,7 @@ impl World {
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
+            move_power: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
