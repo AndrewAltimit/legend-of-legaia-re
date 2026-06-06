@@ -42,7 +42,7 @@
 <tr><td><code>+0x06</code></td><td>u16</td><td>phase duration</td><td>Per-arm phase duration (&rarr; <code>ctx + arm*2 + 0x6c6</code>) at the strike / re-arm transitions.</td><td>Inferred</td></tr>
 <tr><td><code>+0x08</code></td><td>u8</td><td>homing speed</td><td>Scales the per-frame XY step toward the target; <code>0x40 - x</code> reseeds the approach counter.</td><td>Inferred</td></tr>
 <tr><td><code>+0x09</code></td><td>u8</td><td>tracking flag</td><td>When set, the live XY is copied into the spawned effect each frame.</td><td>Confirmed (read)</td></tr>
-<tr><td><code>+0x0a</code></td><td>u8</td><td>impact effect</td><td>Enum 1..5; stored at <code>actor+0x21f</code>, indexes the impact-anim table at <code>0x801f53d4</code>; 3/4/5 branch extra crit rolls.</td><td>Confirmed (read)</td></tr>
+<tr><td><code>+0x0a</code></td><td>u8</td><td>impact effect</td><td>Enum 1..5; stored at <code>actor+0x21f</code>, indexes the 5-entry packed-config table at <code>0x801f53d4</code> (<code>(v-1)*4</code>) into <code>actor+0x04</code> (packed <code>u32</code> words, not pointers); 3/4/5 branch extra status-proc rolls.</td><td>Confirmed (read)</td></tr>
 <tr><td><code>+0x0b</code></td><td>u8</td><td>trail texpage</td><td>Trail / afterimage sprite-page id (GP0 word <code>0x7700 + id</code>).</td><td>Confirmed</td></tr>
 <tr><td><code>+0x0c</code></td><td>u8</td><td>designer tag</td><td><code>'C'/'E'/'G'/0</code> annotation on the internal-tier records only; <strong>no runtime reader</strong>.</td><td>Unknown (no reader)</td></tr>
 <tr><td><code>+0x0d</code></td><td>u8</td><td>sound cue</td><td>Handed to the UI/voice cue dispatcher <code>FUN_8004fcc8</code>.</td><td>Confirmed</td></tr>

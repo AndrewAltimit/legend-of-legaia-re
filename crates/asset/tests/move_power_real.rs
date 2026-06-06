@@ -252,6 +252,52 @@ fn effect_aux_tables_parse_from_disc() {
     assert!(spawn_seen >= 1, "no Spawn entries across the records");
 }
 
+/// The impact-effect pointer table (`0x801F53D4`, the record's `+0x0a` selector)
+/// parses out of the real PROT 0898 entry: 5 overlay-VA pointers immediately
+/// before the element-affinity matrix.
+#[test]
+fn impact_effect_table_parses_from_disc() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .cloned()
+        .expect("PROT 0898 entry exists");
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0898");
+
+    let table = move_power::parse_impact_effect_table(&bytes).expect("impact-effect table parses");
+    // Five packed u32 config words written to the strike actor's +0x04 (these are
+    // NOT pointers — they carry the `0x3FF`-masked packed lanes of the impact
+    // config). Byte-matched against the real PROT 0898 bytes.
+    assert_eq!(
+        table,
+        [
+            0x0000_03FF,
+            0x3FF4_0100,
+            0x3FF1_0040,
+            0x3FF0_4040,
+            0x3FFF_FFFF
+        ]
+    );
+    // The table sits in the 0x14-byte gap immediately before the element-affinity
+    // matrix (the next pinned datum), confirming its 5-entry extent.
+    assert_eq!(
+        move_power::IMPACT_EFFECT_TABLE_FILE_OFFSET + move_power::IMPACT_EFFECT_TABLE_LEN * 4,
+        legaia_asset::element_affinity::AFFINITY_MATRIX_FILE_OFFSET,
+    );
+}
+
 /// Read `SCUS_942.54` from `extracted/` if present.
 fn read_scus() -> Option<Vec<u8>> {
     for base in ["extracted", "../../extracted"] {

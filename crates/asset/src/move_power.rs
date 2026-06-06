@@ -88,7 +88,7 @@
 //! | `+0x06` | `u16` | **per-arm phase duration** → `ctx + arm*2 + 0x6c6` at the strike/re-arm transitions | Inferred | `_801e09f8.txt:1175/1357` |
 //! | `+0x08` | `u8` | **homing / approach speed** — scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - x` reseeds the approach counter | Inferred | `_801e09f8.txt:1277/1282/1316` |
 //! | `+0x09` | `u8` | **flag: effect tracks the strike** — when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `_801e09f8.txt:1319` |
-//! | `+0x0a` | `u8` | **impact-effect selector** (enum 1..5) — stored at `actor+0x21f`, indexes the pointer table at `0x801f53d4` (`(x-1)*4`), and switches (3/4/5) extra crit-flag rolls | Confirmed reader | `_801e09f8.txt:1412/1416/1420/1422` |
+//! | `+0x0a` | `u8` | **impact-effect selector** (enum 1..5) — stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `_801e09f8.txt:1412/1416/1420/1422` |
 //! | `+0x0b` | `u8` | **trail / afterimage texture-page id** — passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `_801e09f8.txt:1244` → `_801e1ab0.txt:250` |
 //! | `+0x0c` | `u8` | **designer category tag** (`'C'/'E'/'G'/0`) — present only on the unnamed internal-tier records 1..15; **no runtime reader** (unused at runtime) | Unknown (no reader) | — |
 //! | `+0x0d` | `u8` | **sound / voice cue id** → `FUN_8004fcc8` | Confirmed | `_801e09f8.txt:1452` |
@@ -188,6 +188,22 @@ pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_SFX_TABLE_VA - EFFECT_PROTO_TABL
 /// `FUN_80024e80`).
 pub const EFFECT_LIST_FIXED_FLASH: u8 = 100;
 
+/// Runtime VA of the **impact-effect config table** the record's `+0x0a`
+/// selector indexes. `FUN_801e09f8` reads `0x801f53d4[(impact_effect - 1)]`
+/// (1-based; `(id-1)*4`) into the strike actor's `+0x04` field at the impact
+/// transition. The entries are packed `u32` config words (`0x3FF`-masked lanes),
+/// **not** pointers.
+pub const IMPACT_EFFECT_TABLE_VA: u32 = 0x801F_53D4;
+
+/// Raw-entry file offset of [`IMPACT_EFFECT_TABLE_VA`] within PROT 0898.
+pub const IMPACT_EFFECT_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (IMPACT_EFFECT_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Entry count of the impact-effect table: the `+0x0a` selector is the enum
+/// `1..=5`, so the table is 5 `u32` pointers (it ends exactly where the
+/// element-affinity matrix at `0x801f53e8` begins).
+pub const IMPACT_EFFECT_TABLE_LEN: usize = 5;
+
 /// One 26-byte move record. Only the `+0` power field is interpreted; the raw
 /// bytes are retained for forward reference as the remaining fields are decoded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,9 +260,10 @@ impl MoveRecord {
     }
 
     /// `+0x0a` `u8` — **impact-effect selector** (enum, typically 1..5): stored
-    /// at `actor+0x21f`, indexes the impact-animation pointer table at
-    /// `0x801f53d4` (`(value-1)*4`), and values 3/4/5 branch to extra crit-flag
-    /// rolls. `0` = no impact effect. Confirmed reader (`801e09f8`).
+    /// at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4`
+    /// (`(value-1)*4`) into `actor+0x04` ([`parse_impact_effect_table`]), and
+    /// values 3/4/5 branch to extra status-proc rolls. `0` = no impact effect.
+    /// Confirmed reader (`801e09f8`).
     pub fn impact_effect(&self) -> u8 {
         self.raw[0x0a]
     }
@@ -530,6 +547,40 @@ impl EffectAuxTables {
     }
 }
 
+/// Parse the 5-entry **impact-effect config table** (`0x801f53d4`) out of the
+/// raw PROT 0898 entry. Each `u32` is a packed config word (`0x3FF`-masked lanes,
+/// **not** a pointer) that the strike actor's `+0x04` is set to; index it with a
+/// record's `+0x0a` [`MoveRecord::impact_effect`] minus one (the selector is
+/// 1-based, `0` = none). Returns `None` if the slice is too short or the overlay
+/// fails the move-power structural guard.
+///
+/// Beyond the pointer, `FUN_801e09f8` rolls a per-impact status proc keyed on the
+/// selector (`overlay_battle_action_801e09f8.txt:1422..1447`): selector `3` has a
+/// `1/8` chance (`rand & 7 == 0`) to set the actor's status bit `0` (`+0x16e |
+/// 1`), selector `4` the same odds for bit `1` (`| 2`), and selector `5` rolls
+/// `rand % 3` to set one of bits `3..=5` on the *target* (gated on the target's
+/// character-record immunity flags). Selectors `1`/`2` carry no extra roll.
+pub fn parse_impact_effect_table(
+    battle_overlay_0898: &[u8],
+) -> Option<[u32; IMPACT_EFFECT_TABLE_LEN]> {
+    parse_id_index_map(battle_overlay_0898)?;
+    let end = IMPACT_EFFECT_TABLE_FILE_OFFSET + IMPACT_EFFECT_TABLE_LEN * 4;
+    if end > battle_overlay_0898.len() {
+        return None;
+    }
+    let mut table = [0u32; IMPACT_EFFECT_TABLE_LEN];
+    for (i, slot) in table.iter_mut().enumerate() {
+        let b = IMPACT_EFFECT_TABLE_FILE_OFFSET + i * 4;
+        *slot = u32::from_le_bytes([
+            battle_overlay_0898[b],
+            battle_overlay_0898[b + 1],
+            battle_overlay_0898[b + 2],
+            battle_overlay_0898[b + 3],
+        ]);
+    }
+    Some(table)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -687,6 +738,22 @@ mod tests {
             EFFECT_PROTO_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN * 4,
             EFFECT_SFX_TABLE_FILE_OFFSET
         );
+    }
+
+    #[test]
+    fn impact_effect_table_offset_and_parse() {
+        assert_eq!(IMPACT_EFFECT_TABLE_FILE_OFFSET, 0x26BBC);
+        // A 0898-shaped buffer with the map guard + a known pointer at index 0.
+        let mut buf = vec![0u8; IMPACT_EFFECT_TABLE_FILE_OFFSET + IMPACT_EFFECT_TABLE_LEN * 4];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1; // map guard
+        buf[IMPACT_EFFECT_TABLE_FILE_OFFSET..IMPACT_EFFECT_TABLE_FILE_OFFSET + 4]
+            .copy_from_slice(&0x801F_5A00u32.to_le_bytes());
+        let table = parse_impact_effect_table(&buf).expect("impact table parses");
+        assert_eq!(table.len(), 5);
+        assert_eq!(table[0], 0x801F_5A00);
+        // Guard: a bad map -> no table.
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 0;
+        assert!(parse_impact_effect_table(&buf).is_none());
     }
 
     #[test]
