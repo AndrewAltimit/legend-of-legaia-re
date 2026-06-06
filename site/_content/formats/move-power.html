@@ -28,6 +28,7 @@
     <li>records <code>0x01..=0x0f</code> (move ids <code>0x04..=0x1f</code>) are the spell table's unnamed <strong>internal enemy-attack tiers</strong>.</li>
   </ul>
   <p>Record 0 is an all-zero unused slot.</p>
+  <p><strong>Special-attack-only.</strong> The map covers 44 special-attack ids (internal tiers <code>0x04..=0x07</code>/<code>0x12..=0x1F</code> + named monster attacks <code>0x25..=0x74</code>); the basic-attack / Tactical-Art bands <code>0x08..=0x11</code> and <code>0x16..=0x18</code> are <strong>unmapped</strong>. From a live capture, a party member's queued Art (Vahn's Somersault) carries move id <code>0x0F</code> and an enemy basic attack (Gobu Gobu) <code>0x09</code> &mdash; both resolve to record 0 (zero power). So a party member's Tactical Art takes its power from the <em>art-record</em> power byte (<a href="art-data.html">art data</a>), enemy <em>special</em> attacks roll through this table, and basic attacks use the generic physical path.</p>
 </section>
 
 <section class="doc-section" id="record-layout">

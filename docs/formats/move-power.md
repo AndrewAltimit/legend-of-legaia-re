@@ -58,6 +58,27 @@ the two labels every record:
 
 Record 0 is an all-zero unused slot.
 
+### This table is special-attack-only — a party member's basic attacks / arts do *not* use it
+
+The map covers exactly 44 special-attack ids (the internal tiers `0x04..=0x07` /
+`0x12..=0x1F` and the named monster attacks `0x25..=0x74`). The **basic-attack and
+Tactical-Art move-id bands `0x08..=0x11` and `0x16..=0x18` are entirely unmapped**
+(`map[id] == 0`). Pinned from a live battle capture: a party member's queued
+Tactical Art (Vahn's Somersault) carries move id `0x0F` in `actor[+0x1df]`, and a
+basic enemy's attack (Gobu Gobu) carries `0x09` — both resolve to record 0 (no
+power). Since `FUN_801dd0ac`'s damage is `roll(record[map[actor+0x1df]].power)`,
+an unmapped id would roll against the zero-power record, i.e. deal nothing — so
+neither a party member's art nor an enemy *basic* attack draws its damage from
+this table.
+
+Damage sources therefore split cleanly: **enemy special attacks** roll through
+this move-power table (`FUN_801dd0ac`); **a party member's Tactical Art** takes its
+power from the per-strike *art-record* power byte ([art-data.md](art-data.md));
+enemy basic attacks use the generic physical path. The engine mirrors this — the
+move-power table is wired for enemy specials only, and a character's art damage
+uses the art power byte. (`move_power_map_is_special_attack_only` pins the
+coverage on disc.)
+
 ## Record layout (26 bytes)
 
 The record is consumed by three battle-action functions. `FUN_801dd0ac` /

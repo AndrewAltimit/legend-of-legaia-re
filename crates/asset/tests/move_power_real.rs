@@ -173,6 +173,68 @@ fn move_power_table_parses_with_pinned_powers() {
     );
 }
 
+/// The move-power table is **special-attack-only**: its id -> index map covers
+/// the internal enemy-attack tiers + named monster attacks, but the basic-attack
+/// / Tactical-Art move-id range `0x08..=0x18` is entirely unmapped. Pinned from a
+/// live battle capture (Vahn's queued Somersault art carries move id `0x0F`, a
+/// lone Gobu Gobu's basic attack `0x09`) cross-checked against the disc map: both
+/// resolve to no record, so neither a party member's art nor an enemy basic
+/// attack draws its damage from `FUN_801dd0ac` / this table - that path is
+/// reserved for the special attacks, and a party member's art takes its power
+/// from the art-record power byte instead (see `docs/formats/art-data.md`).
+#[test]
+fn move_power_map_is_special_attack_only() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .cloned()
+        .expect("PROT 0898 entry exists");
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0898");
+    let map = move_power::parse_id_index_map(&bytes).expect("id->index map parses");
+
+    // The captured live move ids (Vahn's Somersault art 0x0F, enemy basic 0x09)
+    // are unmapped - so the move-power damage kernel is not their damage source.
+    assert_eq!(
+        move_power::index_for_move_id(&map, 0x0F),
+        None,
+        "Somersault 0x0F"
+    );
+    assert_eq!(
+        move_power::index_for_move_id(&map, 0x09),
+        None,
+        "enemy basic 0x09"
+    );
+    // The basic-attack / art move-id bands are unmapped (the mapped `0x12..=0x15`
+    // interleaved here are the internal enemy-attack tiers, not basic/art ids).
+    for mid in (0x08u8..=0x11).chain(0x16u8..=0x18) {
+        assert_eq!(
+            move_power::index_for_move_id(&map, mid),
+            None,
+            "basic/art id {mid:#04x} should not map into the move-power table"
+        );
+    }
+    // But the special-attack ids the table IS for resolve (internal tiers +
+    // named monster attacks) - a representative sample.
+    for mid in [0x04u8, 0x07, 0x12, 0x19, 0x25, 0x27, 0x74] {
+        assert!(
+            move_power::index_for_move_id(&map, mid).is_some(),
+            "special-attack id {mid:#04x} should map into the move-power table"
+        );
+    }
+}
+
 /// The auxiliary effect tables (`0x801F6324` prototypes + `0x801F6418` SFX) the
 /// records' `+0x12` / `+0x16` effect-id lists index parse out of the same real
 /// PROT 0898 entry at their pinned offsets, and the spawn indices that appear in
