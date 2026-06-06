@@ -73,6 +73,14 @@ Every enemy attack id is `≥0x25` — none land in the basic-attack band — an
 95 of 186 monsters carry no magic attack at all (they fight with the basic
 physical, the unmapped path).
 
+The **one** mapped named record with no caster (move id `0x2C`, record idx 22) is
+the **unused "Freeze Thunder" enemy spell** — a dummied-out attack
+([TCRF](https://tcrf.net/Talk:Legend_of_Legaia): forcing it via GameShark
+`30084845 002C` crashes with an "Opcode 14 UNK" / missing-asset error). Its
+move-power record survived (power 37, `sfx 0x4A`) but its on-contact/launch
+effect lists are empty and no production formation casts it — so it shows up as
+the single mapped record the roster never uses.
+
 ### This table is special-attack-only — a party member's basic attacks / arts do *not* use it
 
 The map covers exactly 44 special-attack ids (the internal tiers `0x04..=0x07` /
