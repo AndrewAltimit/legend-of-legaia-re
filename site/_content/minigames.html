@@ -112,6 +112,64 @@
   </div>
 </section>
 
+<section class="doc-section" id="internals">
+  <h2>Internals (reverse-engineered)</h2>
+  <p>
+    The tables above are the player-facing prize / roster data. Each minigame
+    also has a reverse-engineered <strong>runtime</strong> write-up &mdash; its
+    per-frame state machine, scoring math, and RAM-state globals, traced from
+    the captured overlay code. Each is its own page under
+    <code>docs/subsystems/</code> in the repo.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Minigame</th><th>Per-frame controller</th><th>Core mechanic</th><th>Write-up</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Fishing</td>
+          <td><code>FUN_801cf3bc</code></td>
+          <td>Tension-gauge (<code>0x801d9168</code>) reel tug-of-war; catch score into the persistent counter <code>0x8008444c</code>.</td>
+          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">minigame-fishing.md</a></td>
+        </tr>
+        <tr>
+          <td>Slot machine</td>
+          <td><code>FUN_801cf0d8</code></td>
+          <td>Reel SM + dual RNG (an in-overlay LCG for reels, BIOS <code>rand</code> for balance-bracketed feature odds); payout / jackpot eval.</td>
+          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md">minigame-slot-machine.md</a></td>
+        </tr>
+        <tr>
+          <td>Baka Fighter</td>
+          <td><code>FUN_801d3468</code></td>
+          <td>Rock-paper-scissors attack-type exchange; reuses the PROT 1204 battle-form party meshes.</td>
+          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md">minigame-baka-fighter.md</a></td>
+        </tr>
+        <tr>
+          <td>Dance</td>
+          <td><code>FUN_801cf470</code></td>
+          <td>Beat-clock SM with an accuracy-weighted timing-window judge; direction-symbol step chart.</td>
+          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md">minigame-dance.md</a></td>
+        </tr>
+        <tr>
+          <td>Muscle Dome</td>
+          <td><code>FUN_801d0748</code></td>
+          <td>Card-battle: deal a hand, commit cards into the fighter's action queue under a point budget, resolve via the shared battle-action path.</td>
+          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">minigame-muscle-dome.md</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="hint">
+    The slot machine's <strong>per-spin balance is overlay-local</strong>; the
+    shared casino coin bank (<code>0x800845A4</code>) is only written when you
+    cash out at the counter &mdash; which is why an "Infinite Coins" code reads
+    full at the cage but doesn't make individual spins free. The four hub
+    minigames (fishing / slot / Baka Fighter / dance) are distinct overlay
+    files that share a library core, so the <em>same</em> code address hosts a
+    <em>different</em> function in each (VA aliasing) &mdash; the controllers
+    above are each read from their own overlay's dump.
+  </div>
+</section>
+
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <p>

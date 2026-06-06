@@ -100,7 +100,7 @@ else
     <li><code>arts_attacker_roll</code> / <code>arts_bonus_roll</code> / <code>arts_physical_predamage</code> (<code>FUN_801DD0AC</code> arts/physical branch, seeded by the <code>0x801F4F5C</code> move-power table)</li>
     <li><code>victory_gold_per_monster</code> / <code>victory_gold_finalize</code> / <code>victory_exp_per_member</code> (<code>FUN_8004E568</code> reward scaling)</li>
   </ul>
-  <p>Unit tests pin the documented formulas as fixtures - a future runtime trace can add comparison cases without touching the formula bodies. <code>accuracy_roll</code> and <code>mp_cost_after_ability_bits</code> are now also <strong>applied in the live battle loop</strong> (<code>engine-core::world::battle</code>), not just defined - attacks roll to hit and MP-saver accessories reduce cast cost.</p>
+  <p>Unit tests pin the documented formulas as fixtures - a future runtime trace can add comparison cases without touching the formula bodies. <code>accuracy_roll</code> and <code>mp_cost_after_ability_bits</code> are now also <strong>applied in the live battle loop</strong> (<code>engine-core::world::battle</code>), not just defined - attacks roll to hit and MP-saver accessories reduce cast cost. <code>arts_physical_predamage</code> is wired for <strong>monster special-attacks</strong>: the move-power table loads onto <code>World::move_power</code> and a damaging monster cast's magnitude rolls through the kernel seeded by that move's power (<code>World::enemy_move_predamage</code>), gated on the table being installed so disc-free battles keep their placeholder + RNG stream.</p>
 </section>
 
 <section class="doc-section" id="open">

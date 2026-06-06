@@ -44,7 +44,7 @@ Choose by what you're trying to do:
 | You want to… | Read |
 |---|---|
 | Understand a specific file format | [`formats/overview.md`](formats/overview.md) → per-format page |
-| Understand how a runtime subsystem works | [`subsystems/`](subsystems/) - boot, asset loader, script VM, move VM, renderer, audio, battle |
+| Understand how a runtime subsystem works | [`subsystems/`](subsystems/) - boot, asset loader, script VM, move VM, renderer, audio, battle, minigames |
 | Use the extraction tooling | [`tooling/extraction.md`](tooling/extraction.md) |
 | Reverse a new function in Ghidra | [`tooling/ghidra.md`](tooling/ghidra.md) |
 | Capture a runtime overlay | [`tooling/overlay-capture.md`](tooling/overlay-capture.md) |
