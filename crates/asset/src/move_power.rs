@@ -43,10 +43,12 @@
 //! entries (move ids `0..` — id 0 is an all-zero/unused slot); past it the
 //! region transitions to other battle-overlay data (a float/transform table,
 //! then the `data\battle\summon.DAT` / `readef.DAT` filename strings). Only the
-//! `+0` power field is decoded here — the remaining per-record bytes (a `+6`
-//! flag halfword, a `+10` two-byte move code, and several trailing words) and
-//! the precise `param_1` → move-id mapping are an open battle-action thread; see
-//! `docs/reference/open-rev-eng-threads.md`.
+//! `+0` power field is decoded here — the remaining per-record halfwords (a
+//! secondary u16 at `+2`, a flag halfword at `+8` (`0x0120`/`0x0020`/…), a small
+//! flag at `+10`, a two-byte code at `+12` (an ASCII-range category/level pair,
+//! e.g. `C`+`K`/`L`/`M` for the three lead records, `E`+`K`, or `0x00`+id), and
+//! several trailing words) plus the precise `param_1` → move-id mapping are an
+//! open battle-action thread; see `docs/reference/open-rev-eng-threads.md`.
 
 /// CDNAME / PROT index of the battle-action overlay holding the table.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;

@@ -159,8 +159,9 @@ disc-gated `move_power_real` test pins the decoded powers. The clean 26-byte str
 ~44 move ids (id 0 is an all-zero/unused slot) before the region transitions to other
 overlay data (a float/transform table, then the `data\battle\summon.DAT` / `readef.DAT`
 filename strings). Only the `+0` power field is decoded — the remaining per-record fields
-(a `+6` flag halfword, a `+10` two-byte move code, trailing words) and the `param_1` →
-move-id mapping are an open battle-action thread.
+(a secondary u16 at `+2`, a flag halfword at `+8`, a small flag at `+10`, a two-byte
+ASCII-range category/level code at `+12`, trailing words) and the `param_1` → move-id
+mapping are an open battle-action thread.
 
 #### The full damage-roll chain (three stages)
 
