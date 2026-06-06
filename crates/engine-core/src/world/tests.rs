@@ -3901,6 +3901,86 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     assert_eq!(fx[0].target_slot, 0, "the party member took the hit");
 }
 
+/// When the move-power table is installed and the monster's cast id resolves
+/// to a power record, the special-attack damage rolls through the faithful
+/// arts/physical kernel (move-power-seeded) instead of the MP-scaled spell
+/// placeholder. Proven by comparing two identically-seeded worlds — one with
+/// the table, one without — and asserting (a) the table changes the dealt
+/// damage (the path engaged) and (b) the table path is deterministic.
+#[test]
+fn move_power_table_drives_monster_special_attack_damage() {
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::move_power::MovePowerCatalog;
+    use crate::spells::SpellCatalog;
+    use legaia_asset::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+        MOVE_POWER_TABLE_LEN,
+    };
+
+    // Synthetic PROT-0898-shaped overlay: map the monster's first magic id
+    // (Bandit Boss id 5 -> Flame 0x20) to power record 1, with a large power so
+    // the kernel's roll is clearly distinct from the MP-scaled placeholder.
+    fn overlay_with_flame_power() -> Vec<u8> {
+        let mut buf = vec![
+            0u8;
+            MOVE_POWER_TABLE_FILE_OFFSET
+                + MOVE_POWER_RECORD_STRIDE * MOVE_POWER_TABLE_LEN
+        ];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1; // structural guard (id 4 -> idx 1)
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 0x20] = 1; // Flame -> power record 1
+        // record 1 power 0x0BB8 (3000) -> >>2 = 750 roll-modulus base.
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 0xB8;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 1] = 0x0B;
+        buf
+    }
+
+    fn run(install_table: bool) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        // Party target at slot 0 with a healthy HP pool + seeded AGL/DEF so the
+        // kernel reads live defender stats.
+        world.actors[0].battle.max_hp = 4000;
+        world.actors[0].battle.hp = 4000;
+        world.actors[0].battle.liveness = 1;
+        world.battle_accuracy[0] = 30;
+        world.battle_defense[0] = 40;
+        // Bandit Boss (id 5) at slot 1: casts magic[0] = Flame (0x20) on seed 0.
+        world.actors[1].battle.max_hp = 120;
+        world.actors[1].battle.hp = 120;
+        world.actors[1].battle.mp = 10;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_accuracy[1] = 25;
+        world.set_battle_magic(1, 40);
+        if install_table {
+            world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+            assert!(world.move_power.is_some(), "synthetic table installs");
+        }
+        world.rng_state = 0;
+
+        let before = world.actors[0].battle.hp;
+        world.take_monster_turn(1);
+        assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");
+        before - world.actors[0].battle.hp
+    }
+
+    let placeholder = run(false);
+    let move_power = run(true);
+    assert!(placeholder > 0, "placeholder path still deals damage");
+    assert!(move_power > 0, "move-power path deals damage");
+    assert_ne!(
+        placeholder, move_power,
+        "installing the move-power table changes the special-attack damage"
+    );
+    // Deterministic: same seed + table -> identical damage.
+    assert_eq!(move_power, run(true), "move-power damage is deterministic");
+}
+
 /// A monster with no castable spells always picks a physical strike: the
 /// action picker rolls `rand % (1 + 0) == 0`, so the magic branch is never
 /// taken regardless of the seed. It still targets a (single living) party
