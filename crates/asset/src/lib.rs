@@ -41,6 +41,7 @@ pub mod menu_glyph_atlas;
 pub mod mips_overlay;
 pub mod monster_archive;
 pub mod monster_gltf;
+pub mod move_power;
 pub mod new_game;
 pub mod overlay_ptr_table;
 pub mod pack;

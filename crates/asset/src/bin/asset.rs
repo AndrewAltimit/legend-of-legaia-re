@@ -134,6 +134,14 @@ enum Cmd {
         #[arg(long, value_parser = parse_hex_u32, default_value = "0x801F69D8")]
         base: u32,
     },
+    /// Parse the battle-action per-move power table (runtime VA `0x801F4F5C`,
+    /// read by `FUN_801dd0ac` for the arts/physical attacker roll) out of the
+    /// raw PROT 0898 (battle-action overlay) `.BIN`. Prints each populated
+    /// record's move id, decoded power (`+0` field `>> 2`), and raw bytes.
+    MovePower {
+        /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
+        input: PathBuf,
+    },
     /// Scan PROT entries (raw + LZS-decoded) for embedded PSX TIMs.
     /// Reports per-entry hit counts; with `--out` extracts each TIM to
     /// `<out>/<entry>/raw_off<H>.tim` (or `lzs<i>_off<H>.tim`).
@@ -864,7 +872,41 @@ fn main() -> Result<()> {
             lzs_sizes,
         } => find_overlay(&dir, top, &lzs_sizes),
         Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
+        Cmd::MovePower { input } => move_power_cmd(&input),
     }
+}
+
+/// Parse the battle-action per-move power table and print its records.
+fn move_power_cmd(input: &Path) -> Result<()> {
+    let bytes = std::fs::read(input)?;
+    let Some(table) = legaia_asset::move_power::parse(&bytes) else {
+        anyhow::bail!(
+            "no move-power table at the pinned offset {:#x} in {} ({} bytes) - \
+             is this the raw PROT 0898 battle-action overlay entry?",
+            legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
+            input.display(),
+            bytes.len(),
+        );
+    };
+    println!(
+        "move-power table: {} records @ file {:#x} (runtime VA {:#010x}), 26-byte stride",
+        table.len(),
+        legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
+        legaia_asset::move_power::MOVE_POWER_TABLE_VA,
+    );
+    for r in &table {
+        if r.is_empty() {
+            continue;
+        }
+        println!(
+            "  id {:3}  power {:5} (raw {:#06x})  {}",
+            r.index,
+            r.power(),
+            r.power_raw as u16,
+            r.raw.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        );
+    }
+    Ok(())
 }
 
 /// Parse a per-summon stager overlay and print its move-VM part-record list.
