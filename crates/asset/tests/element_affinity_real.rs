@@ -95,4 +95,25 @@ fn element_affinity_tables_parse_with_pinned_values() {
         Some(Element::Wind as u8),
         "Terra = wind"
     );
+    assert_eq!(
+        aff.character_element(5),
+        Some(Element::Light as u8),
+        "char 5 = light"
+    );
+
+    // The thunder row (id 4) is the one asymmetric row: thunder attacks
+    // earth/water/fire/wind at 102 and dark at only 98. This pins the full
+    // matrix shape (not just the symmetric diagonal/opposite-pair pattern).
+    for def in [0u8, 1, 2, 3] {
+        assert_eq!(
+            aff.affinity_pct(4, def),
+            Some(102),
+            "thunder attacks element {def} at 102"
+        );
+    }
+    assert_eq!(
+        aff.affinity_pct(4, 6),
+        Some(98),
+        "thunder attacks dark at 98"
+    );
 }
