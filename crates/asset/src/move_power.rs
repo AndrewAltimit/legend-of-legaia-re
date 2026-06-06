@@ -157,6 +157,37 @@ pub const MOVE_ID_INDEX_MAP_LEN: usize = 0x80;
 /// the table with it).
 pub const MOVE_ID_INDEX_NONE: u8 = 0xFF;
 
+/// Runtime VA of the **effect-prototype table** the records' `+0x12` / `+0x16`
+/// effect-id lists index (the `u32` each entry yields is the spawn parameter
+/// `FUN_801e09f8` passes to the effect spawner `FUN_80050ed4`).
+pub const EFFECT_PROTO_TABLE_VA: u32 = 0x801F_6324;
+
+/// Runtime VA of the **per-effect SFX table** indexed by the same effect-list
+/// entry: a non-zero byte is the sound cue `FUN_801e09f8` plays when the effect
+/// spawns.
+pub const EFFECT_SFX_TABLE_VA: u32 = 0x801F_6418;
+
+/// Raw-entry file offset of [`EFFECT_PROTO_TABLE_VA`] within PROT 0898 (derived
+/// from the move-power table's pinned base, the same overlay link mapping).
+pub const EFFECT_PROTO_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_PROTO_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Raw-entry file offset of [`EFFECT_SFX_TABLE_VA`] within PROT 0898.
+pub const EFFECT_SFX_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_SFX_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Entry count shared by both effect tables. The `u32`-stride prototype table is
+/// immediately followed by the byte-stride SFX table, so its extent is exactly
+/// `(0x6418 - 0x6324) / 4 = 61`; the same index space bounds both (the runtime's
+/// `< 100` spawn guard is a loose safety check — an `index >= 61` would alias the
+/// SFX table into the prototype read).
+pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_SFX_TABLE_VA - EFFECT_PROTO_TABLE_VA) as usize / 4;
+
+/// Effect-list entry value that spawns the fixed screen-flash instead of a table
+/// effect (`FUN_801e09f8`'s `e == 100` arm: the `DAT_801c9070` flash struct +
+/// `FUN_80024e80`).
+pub const EFFECT_LIST_FIXED_FLASH: u8 = 100;
+
 /// One 26-byte move record. Only the `+0` power field is interpreted; the raw
 /// bytes are retained for forward reference as the remaining fields are decoded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -395,6 +426,110 @@ pub fn record_for_move_id<'a>(
     table.get(idx)
 }
 
+/// One decoded entry of a record's `+0x12` (on-contact) / `+0x16` (launch)
+/// effect-id list, classified exactly as the `FUN_801e09f8` dispatch loop reads
+/// the byte (`overlay_battle_action_801e09f8.txt:1182..1225` / `1285..1312`).
+///
+/// Both lists dispatch their bytes identically — the only difference is *when*
+/// they fire (on contact vs at the launch transition).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectListEntry {
+    /// `0x00` — terminates the list scan (no effect).
+    Terminator,
+    /// `0x01..=0x63` — spawn the effect prototype [`EffectAuxTables::effect_proto`]
+    /// at this index and, when non-zero, play its SFX
+    /// [`EffectAuxTables::effect_sfx`].
+    Spawn(u8),
+    /// `0x64` (`== 100`) — the fixed screen-flash effect (no table lookup).
+    FixedFlash,
+    /// High bit set (and not `0xFF`) — routed to `FUN_801dfdf0` with the low 7
+    /// bits as the id.
+    AltEffect(u8),
+    /// `0xFF`, or an unused `0x65..=0x7F` byte — no effect, but the scan does not
+    /// terminate here (only `0x00` terminates).
+    Skip,
+}
+
+impl EffectListEntry {
+    /// Classify one effect-list byte exactly as `FUN_801e09f8` does: `0x00`
+    /// terminates; the `0x80` bit (except `0xFF`) routes to the alt path with
+    /// `id & 0x7F`; `0x01..=0x63` spawns a table effect; `0x64` is the fixed
+    /// flash; `0xFF` (and the unused `0x65..=0x7F`) produce no effect.
+    pub fn classify(entry: u8) -> EffectListEntry {
+        match entry {
+            0x00 => EffectListEntry::Terminator,
+            0xFF => EffectListEntry::Skip,
+            e if e & 0x80 != 0 => EffectListEntry::AltEffect(e & 0x7F),
+            EFFECT_LIST_FIXED_FLASH => EffectListEntry::FixedFlash,
+            e if (e as usize) < EFFECT_LIST_FIXED_FLASH as usize => EffectListEntry::Spawn(e),
+            _ => EffectListEntry::Skip,
+        }
+    }
+}
+
+/// The two auxiliary effect tables a move-power record's `+0x12` / `+0x16`
+/// effect-id lists index. Each [`EffectListEntry::Spawn`] index `e` yields the
+/// spawn parameter [`Self::effect_proto`]`(e)` (`0x801F6324`, `u32`) and the SFX
+/// cue [`Self::effect_sfx`]`(e)` (`0x801F6418`, `u8`; `0` = silent). Both are
+/// static PROT 0898 data, loaded with the battle-action overlay like the
+/// move-power table itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectAuxTables {
+    proto: [u32; EFFECT_AUX_TABLE_LEN],
+    sfx: [u8; EFFECT_AUX_TABLE_LEN],
+}
+
+impl EffectAuxTables {
+    /// Parse both tables out of the raw PROT 0898 (battle-action overlay) entry.
+    /// Returns `None` if the slice is too short or the overlay fails the
+    /// move-power table's structural guard (so a different build / wrong entry
+    /// can't silently yield garbage tables).
+    pub fn parse(battle_overlay_0898: &[u8]) -> Option<Self> {
+        // Tie validity to the move-power map guard in the same overlay.
+        parse_id_index_map(battle_overlay_0898)?;
+        let proto_end = EFFECT_PROTO_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN * 4;
+        let sfx_end = EFFECT_SFX_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN;
+        if proto_end > battle_overlay_0898.len() || sfx_end > battle_overlay_0898.len() {
+            return None;
+        }
+        let mut proto = [0u32; EFFECT_AUX_TABLE_LEN];
+        for (i, slot) in proto.iter_mut().enumerate() {
+            let b = EFFECT_PROTO_TABLE_FILE_OFFSET + i * 4;
+            *slot = u32::from_le_bytes([
+                battle_overlay_0898[b],
+                battle_overlay_0898[b + 1],
+                battle_overlay_0898[b + 2],
+                battle_overlay_0898[b + 3],
+            ]);
+        }
+        let mut sfx = [0u8; EFFECT_AUX_TABLE_LEN];
+        sfx.copy_from_slice(&battle_overlay_0898[EFFECT_SFX_TABLE_FILE_OFFSET..sfx_end]);
+        Some(Self { proto, sfx })
+    }
+
+    /// The effect-prototype params (`0x801F6324`), one per spawn index.
+    pub fn proto(&self) -> &[u32] {
+        &self.proto
+    }
+
+    /// The per-effect SFX ids (`0x801F6418`), one per spawn index (`0` = silent).
+    pub fn sfx(&self) -> &[u8] {
+        &self.sfx
+    }
+
+    /// The spawn parameter for a [`EffectListEntry::Spawn`] index, or `None` when
+    /// the index is outside the table.
+    pub fn effect_proto(&self, index: u8) -> Option<u32> {
+        self.proto.get(index as usize).copied()
+    }
+
+    /// The SFX cue id for a [`EffectListEntry::Spawn`] index (`0` = silent), or
+    /// `None` when the index is outside the table.
+    pub fn effect_sfx(&self, index: u8) -> Option<u8> {
+        self.sfx.get(index as usize).copied()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,5 +658,58 @@ mod tests {
         assert!(parse_at(&buf, off + 1, 3).is_none());
         // Guard: slice too short -> None.
         assert!(parse_at(&buf, buf.len() - 4, 2).is_none());
+    }
+
+    #[test]
+    fn effect_list_entry_classifies_each_dispatch_arm() {
+        use EffectListEntry::*;
+        assert_eq!(EffectListEntry::classify(0x00), Terminator);
+        assert_eq!(EffectListEntry::classify(0x01), Spawn(0x01));
+        assert_eq!(EffectListEntry::classify(0x28), Spawn(0x28));
+        assert_eq!(EffectListEntry::classify(0x63), Spawn(0x63)); // 99, last spawn
+        assert_eq!(EffectListEntry::classify(0x64), FixedFlash); // 100
+        assert_eq!(EffectListEntry::classify(0x65), Skip); // 101: unused no-op
+        assert_eq!(EffectListEntry::classify(0x7F), Skip); // 127: unused no-op
+        assert_eq!(EffectListEntry::classify(0x80), AltEffect(0x00)); // high bit
+        assert_eq!(EffectListEntry::classify(0x9d), AltEffect(0x1d));
+        assert_eq!(EffectListEntry::classify(0xFE), AltEffect(0x7E));
+        assert_eq!(EffectListEntry::classify(0xFF), Skip); // skip sentinel
+    }
+
+    #[test]
+    fn effect_aux_table_offsets_and_extent() {
+        // Pinned against the move-power table base (same overlay link mapping).
+        assert_eq!(EFFECT_PROTO_TABLE_FILE_OFFSET, 0x27B0C);
+        assert_eq!(EFFECT_SFX_TABLE_FILE_OFFSET, 0x27C00);
+        // The prototype table is bounded by the SFX table that follows it.
+        assert_eq!(EFFECT_AUX_TABLE_LEN, 61);
+        assert_eq!(
+            EFFECT_PROTO_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN * 4,
+            EFFECT_SFX_TABLE_FILE_OFFSET
+        );
+    }
+
+    #[test]
+    fn effect_aux_tables_parse_synthetic() {
+        // A 0898-shaped buffer: valid move-power map guard + known aux values.
+        let mut buf = vec![0u8; EFFECT_SFX_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1; // map guard
+        // proto[0x28] = 0xCAFEBABE, sfx[0x28] = 0x4d.
+        let pb = EFFECT_PROTO_TABLE_FILE_OFFSET + 0x28 * 4;
+        buf[pb..pb + 4].copy_from_slice(&0xCAFE_BABEu32.to_le_bytes());
+        buf[EFFECT_SFX_TABLE_FILE_OFFSET + 0x28] = 0x4d;
+
+        let aux = EffectAuxTables::parse(&buf).expect("aux tables parse");
+        assert_eq!(aux.effect_proto(0x28), Some(0xCAFE_BABE));
+        assert_eq!(aux.effect_sfx(0x28), Some(0x4d));
+        assert_eq!(aux.effect_sfx(0x00), Some(0)); // silent
+        assert_eq!(aux.effect_proto(EFFECT_AUX_TABLE_LEN as u8), None); // out of range
+        assert_eq!(aux.proto().len(), EFFECT_AUX_TABLE_LEN);
+        assert_eq!(aux.sfx().len(), EFFECT_AUX_TABLE_LEN);
+
+        // Guard: an overlay that fails the move-power map guard yields no tables.
+        let mut bad = buf.clone();
+        bad[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 0;
+        assert!(EffectAuxTables::parse(&bad).is_none());
     }
 }

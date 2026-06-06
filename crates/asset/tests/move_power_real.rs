@@ -173,6 +173,85 @@ fn move_power_table_parses_with_pinned_powers() {
     );
 }
 
+/// The auxiliary effect tables (`0x801F6324` prototypes + `0x801F6418` SFX) the
+/// records' `+0x12` / `+0x16` effect-id lists index parse out of the same real
+/// PROT 0898 entry at their pinned offsets, and the spawn indices that appear in
+/// the real records resolve to in-range entries.
+#[test]
+fn effect_aux_tables_parse_from_disc() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .cloned()
+        .expect("PROT 0898 entry exists");
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0898");
+
+    let table = move_power::parse(&bytes).expect("move-power table parses");
+    let aux = move_power::EffectAuxTables::parse(&bytes).expect("effect aux tables parse");
+    assert_eq!(aux.proto().len(), move_power::EFFECT_AUX_TABLE_LEN);
+    assert_eq!(aux.sfx().len(), move_power::EFFECT_AUX_TABLE_LEN);
+
+    // Record 3 (move id 0x29) carries a contact list [0x27, 0x8e, 0x8d] and a
+    // launch list [0x28, 0x64, 0x9d]. Classify each byte exactly as the runtime
+    // dispatch does, and pin the table lookups for the two real Spawn entries.
+    use move_power::EffectListEntry::*;
+    assert_eq!(move_power::EffectListEntry::classify(0x27), Spawn(0x27));
+    assert_eq!(move_power::EffectListEntry::classify(0x28), Spawn(0x28));
+    assert_eq!(move_power::EffectListEntry::classify(0x64), FixedFlash);
+    assert_eq!(move_power::EffectListEntry::classify(0x8e), AltEffect(0x0e));
+    assert_eq!(move_power::EffectListEntry::classify(0x8d), AltEffect(0x0d));
+    assert_eq!(move_power::EffectListEntry::classify(0x9d), AltEffect(0x1d));
+
+    // The two Spawn indices resolve to concrete table values (byte-matched
+    // against the real PROT 0898 bytes). The prototype entries are overlay VAs:
+    // `0x801F6324`'s `u32`s point at ~0x20-byte effect-prototype structs in the
+    // same overlay (here at `0x801F5BBC` / `0x801F5BDC`, exactly 0x20 apart), and
+    // both effects share SFX cue `0xD0`.
+    assert_eq!(aux.effect_proto(0x27), Some(0x801F_5BBC));
+    assert_eq!(aux.effect_proto(0x28), Some(0x801F_5BDC));
+    assert_eq!(aux.effect_sfx(0x27), Some(0xD0));
+    assert_eq!(aux.effect_sfx(0x28), Some(0xD0));
+    // The prototype pointers all land in the battle-action overlay's VA window.
+    for (i, &p) in aux.proto().iter().enumerate() {
+        if p != 0 {
+            assert!(
+                (0x801C_0000..0x8020_0000).contains(&p),
+                "proto[{i}] = {p:#010x} is not an overlay VA"
+            );
+        }
+    }
+
+    // Every Spawn entry across every record's two effect lists resolves to an
+    // in-range table index (the records never reference a spawn index past the
+    // 61-entry tables).
+    let mut spawn_seen = 0usize;
+    for r in &table {
+        for &e in r.contact_effects().iter().chain(r.launch_effects().iter()) {
+            if let Spawn(idx) = move_power::EffectListEntry::classify(e) {
+                assert!(
+                    aux.effect_proto(idx).is_some() && aux.effect_sfx(idx).is_some(),
+                    "record {} spawn index {idx:#04x} out of the aux-table range",
+                    r.index
+                );
+                spawn_seen += 1;
+            }
+        }
+    }
+    assert!(spawn_seen >= 1, "no Spawn entries across the records");
+}
+
 /// Read `SCUS_942.54` from `extracted/` if present.
 fn read_scus() -> Option<Vec<u8>> {
     for base in ["extracted", "../../extracted"] {

@@ -61,9 +61,21 @@ sfx 0x4d  list 0x00  tag C  contact[0x27,0x8e,0x8d]  launch[0x28,0x64,0x9d]</cod
   <p>A homing physical strike: it approaches at speed <code>0x20</code>, runs its strike phase for 480 frames, plays impact effect 1 + cue <code>0x4d</code>, spawns one effect list on launch and a different one on contact, and carries the unused designer tag <code>C</code>.</p>
 </section>
 
+<section class="doc-section" id="effect-lists">
+  <h2>Effect-id lists (<code>+0x12</code> / <code>+0x16</code>)</h2>
+  <p>Both lists are up to 4 ids walked until <code>0x00</code>, dispatched identically by <code>FUN_801e09f8</code> (the only difference is <em>when</em> they fire &mdash; on contact vs at launch). Each list entry indexes the <strong>same</strong> two tables:</p>
+  <ul>
+    <li><code>0x01..=0x63</code> &mdash; spawn effect prototype <code>0x801f6324[id]</code> + play SFX <code>0x801f6418[id]</code> (when non-zero)</li>
+    <li><code>0x64</code> (100) &mdash; fixed screen-flash</li>
+    <li><code>0x80</code>-bit set, not <code>0xFF</code> &mdash; <code>FUN_801dfdf0(id &amp; 0x7F)</code></li>
+    <li><code>0xFF</code> / unused <code>0x65..=0x7F</code> &mdash; no effect</li>
+  </ul>
+  <p><code>0x801f6324</code> (file <code>0x27B0C</code>) is a <strong>pointer</strong> table: each <code>u32</code> is an overlay VA to a ~<code>0x20</code>-byte effect-prototype struct (ids <code>0x27</code>/<code>0x28</code> &rarr; <code>0x801F5BBC</code>/<code>0x801F5BDC</code>). <code>0x801f6418</code> (file <code>0x27C00</code>) is the per-effect SFX byte. Exactly 61 entries (bounded by the SFX table that follows). Parsed by <code>EffectAuxTables</code>; dispatch by <code>EffectListEntry::classify</code>.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open</h2>
-  <p>The whole record is decoded. The <strong>summon</strong> branch of <code>FUN_801dd0ac</code> (attacker slot <code>== 7</code>) does <em>not</em> use this table &mdash; a summon's magnitude is caster/summon-state-derived (see <a href="spell-table.html">spell table</a> and the per-spell-power thread in <a href="../reference/open-rev-eng-threads.html">open RE threads</a>). The auxiliary effect-prototype (<code>0x801f6324</code>) and per-effect SFX (<code>0x801f6418</code>) tables the <code>+0x12</code>/<code>+0x16</code> lists index are located but not separately parsed.</p>
+  <p>The whole record is decoded and the auxiliary effect tables are now parsed (<code>EffectAuxTables</code>). The <strong>summon</strong> branch of <code>FUN_801dd0ac</code> (attacker slot <code>== 7</code>) does <em>not</em> use this table &mdash; a summon's magnitude is caster/summon-state-derived (see <a href="spell-table.html">spell table</a> and the per-spell-power thread in <a href="../reference/open-rev-eng-threads.html">open RE threads</a>). Still open: the <code>0x801f6324</code> entries point at ~<code>0x20</code>-byte effect-prototype structs whose layout (the <code>FUN_80050ed4</code> spawn parameter) is not yet decoded.</p>
 </section>
 
 <section class="doc-section" id="cli">
