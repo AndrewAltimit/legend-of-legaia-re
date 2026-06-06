@@ -255,9 +255,13 @@ The stat bridge reads live actor fields faithfully — AGL from `battle_accuracy
 retail call order. The `FUN_801dd864` scale currently passes neutral affinity
 (100) and no status/guard; the override engages **only when the move-power table
 is installed**, so disc-free / synthetic battles keep the MP-scaled placeholder
-magnitude with a bit-identical RNG stream. (Party arts / physical strikes still
-use the simpler `art_strike_damage_default` stand-in; the summon-branch live roll
-is its own remaining thread.)
+magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
+**not** route through this table — the move-power table is special-attack-only
+[its id→index map leaves the basic-attack / art id bands `0x08..=0x11` /
+`0x16..=0x18` unmapped, pinned by a live capture], so a character's art takes its
+power from the per-strike art-record power byte instead; only `apply_basic_attack`'s
+flat `art_strike_damage_default` for a no-art generic hit is a stand-in. The
+summon-branch live roll is its own remaining thread.)
 
 ### Element-affinity matrix (`FUN_801dd864`, `0x801F53E8`)
 
@@ -297,8 +301,9 @@ engine models `char_id == party slot`, so a defender at actor slot *s* is char i
 *s+1*). The multiply happens after all the rolls, so it never perturbs the RNG
 stream, and it's gated on the affinity table being installed (disc-free /
 synthetic battles keep the neutral 100% multiplier, bit-identical). The
-player-driven **summon** roll and **party** arts/physical strikes still use their
-own stand-ins.
+player-driven **summon** roll is the remaining stand-in here; a party member's
+Tactical Art is *not* a move-power case (it uses the art-record power byte — see
+the note under the arts/physical kernel above).
 
 ## MP cost & ability-bit modifiers
 

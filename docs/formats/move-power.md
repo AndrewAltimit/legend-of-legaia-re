@@ -58,6 +58,50 @@ the two labels every record:
 
 Record 0 is an all-zero unused slot.
 
+**Cross-checked against the monster archive** (PROT 867 `+0x21..=+0x23` global
+magic-attack ids): **28 of the 29** mapped named ids (`≥0x25`) are exactly the
+special attacks enemies cast — so the named-attack records line up with the
+enemy roster's attack lists. But the table is a **subset** of all enemy
+named attacks: across 186 monsters, 46 distinct attack ids appear, of which only
+28 are in this table; the other 18 (`0x2E`/`0x2F`/`0x3C`/`0x4A..=0x6E`, and
+`0xA7`/`0xB8` — the last two beyond the `0x00..=0x7F` map entirely) have **no
+move-power record**. Those are the magic / elemental casts, whose damage is
+caster-state-derived (the magic path — see [spell-table.md](spell-table.md) and
+the per-spell-power thread in [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)),
+consistent with this being the **physical/arts** power table, not the magic one.
+Every enemy attack id is `≥0x25` — none land in the basic-attack band — and
+95 of 186 monsters carry no magic attack at all (they fight with the basic
+physical, the unmapped path).
+
+The **one** mapped named record with no caster (move id `0x2C`, record idx 22) is
+the **unused "Freeze Thunder" enemy spell** — a dummied-out attack
+([TCRF](https://tcrf.net/Talk:Legend_of_Legaia): forcing it via GameShark
+`30084845 002C` crashes with an "Opcode 14 UNK" / missing-asset error). Its
+move-power record survived (power 37, `sfx 0x4A`) but its on-contact/launch
+effect lists are empty and no production formation casts it — so it shows up as
+the single mapped record the roster never uses.
+
+### This table is special-attack-only — a party member's basic attacks / arts do *not* use it
+
+The map covers exactly 44 special-attack ids (the internal tiers `0x04..=0x07` /
+`0x12..=0x1F` and the named monster attacks `0x25..=0x74`). The **basic-attack and
+Tactical-Art move-id bands `0x08..=0x11` and `0x16..=0x18` are entirely unmapped**
+(`map[id] == 0`). Pinned from a live battle capture: a party member's queued
+Tactical Art (Vahn's Somersault) carries move id `0x0F` in `actor[+0x1df]`, and a
+basic enemy's attack (Gobu Gobu) carries `0x09` — both resolve to record 0 (no
+power). Since `FUN_801dd0ac`'s damage is `roll(record[map[actor+0x1df]].power)`,
+an unmapped id would roll against the zero-power record, i.e. deal nothing — so
+neither a party member's art nor an enemy *basic* attack draws its damage from
+this table.
+
+Damage sources therefore split cleanly: **enemy special attacks** roll through
+this move-power table (`FUN_801dd0ac`); **a party member's Tactical Art** takes its
+power from the per-strike *art-record* power byte ([art-data.md](art-data.md));
+enemy basic attacks use the generic physical path. The engine mirrors this — the
+move-power table is wired for enemy specials only, and a character's art damage
+uses the art power byte. (`move_power_map_is_special_attack_only` pins the
+coverage on disc.)
+
 ## Record layout (26 bytes)
 
 The record is consumed by three battle-action functions. `FUN_801dd0ac` /
@@ -77,7 +121,7 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 | `+0x06` | `u16` | phase duration | Per-arm phase duration written to `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions (distinct from `+0x04`). | Inferred (read confirmed) |
 | `+0x08` | `u8` | homing speed | Scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - speed` reseeds the approach counter. | Inferred (read confirmed) |
 | `+0x09` | `u8` | effect-tracks-strike flag | When non-zero, the move's live XY is copied into the spawned effect actor each frame (the effect follows the strike). | Confirmed (read); semantic Inferred |
-| `+0x0a` | `u8` | impact-effect selector | Enum (typically 1..5): stored at `actor+0x21f`, indexes the impact-animation pointer table at `0x801f53d4` (`(value-1)*4`), and values 3/4/5 branch to extra crit-flag rolls. `0` = none. | Confirmed (read); enum naming Inferred |
+| `+0x0a` | `u8` | impact-effect selector | Enum (typically 1..5): stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(value-1)*4`) into `actor+0x04`, and values 3/4/5 branch to extra status-proc rolls. `0` = none. The table holds packed `u32` config words (`0x3FF`-masked lanes), not pointers. | Confirmed (read); enum naming Inferred |
 | `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` (`overlay_battle_action_801e1ab0.txt:250`). | Confirmed |
 | `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (ids 1,2,3,9,12,15) only. **No runtime reader exists** in any battle-action function — unused at runtime. | Unknown (no reader) |
 | `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8`. | Confirmed |
@@ -87,12 +131,33 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 
 ### Effect-id list semantics (`+0x12` / `+0x16`)
 
-Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list and
-`0xFF` is the skip sentinel (so collection stops at either). Each non-terminator
-id is dispatched: the high bit (`& 0x80`) routes to `FUN_801dfdf0`; ids `< 100`
-index the effect-prototype pointer table at `0x801f6324` (`id*4`) and the
-per-effect SFX table at `0x801f6418`; `id == 100` spawns a fixed flash. Those
-auxiliary tables live in the same PROT 0898 overlay right after the power table.
+Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list scan;
+each remaining byte is dispatched per `FUN_801e09f8` (`overlay_battle_action_801e09f8.txt:1182..1225`
+for `+0x16`, `:1285..1312` for `+0x12` — identical dispatch, the only difference
+is *when* they fire):
+
+| entry | meaning |
+|---|---|
+| `0x00` | terminator (ends the scan) |
+| `0x01..=0x63` | spawn effect prototype `0x801f6324[id]` + play SFX `0x801f6418[id]` (when non-zero) |
+| `0x64` (`100`) | fixed screen-flash effect (no table lookup) |
+| `0x80`-bit set, `!= 0xFF` | route to `FUN_801dfdf0(id & 0x7F)` |
+| `0xFF` (and unused `0x65..=0x7F`) | no effect, scan continues |
+
+Both effect-id lists index the **same** two tables (the doc's earlier "+0x12 →
+`0x801f6324` / +0x16 → `0x801f6418`" pairing was imprecise — each list uses
+both). The tables live in the same PROT 0898 overlay after the power table:
+
+- `0x801f6324` (file `0x27B0C`) — effect-**prototype pointer** table: a `u32`
+  per id that is itself an **overlay VA** pointing at a ~`0x20`-byte
+  effect-prototype struct (e.g. ids `0x27`/`0x28` → `0x801F5BBC`/`0x801F5BDC`,
+  exactly `0x20` apart). Passed as the spawn parameter to `FUN_80050ed4`.
+- `0x801f6418` (file `0x27C00`) — per-effect **SFX id** (`u8`, `0` = silent).
+
+The prototype table is exactly `(0x6418 - 0x6324) / 4 = 61` entries; the same
+61-entry index space bounds both (the runtime's `< 100` spawn guard is a loose
+safety check). Parsed by `legaia_asset::move_power::EffectAuxTables`; the
+per-entry dispatch is `EffectListEntry::classify`.
 
 ### `+0x00` at full / half / quarter
 
@@ -116,10 +181,11 @@ launch and a different one on contact, and carries the unused designer tag `C`.
 ## Open
 
 The residual fields are all decoded or accounted for. The `+0x0c` designer tag
-has no runtime consumer (reported as Unknown rather than guessed). The
-auxiliary effect-prototype (`0x801f6324`) and per-effect SFX (`0x801f6418`)
-tables that the `+0x12`/`+0x16` lists index are located but not separately
-parsed.
+has no runtime consumer (reported as Unknown rather than guessed). The auxiliary
+effect-prototype (`0x801f6324`) and per-effect SFX (`0x801f6418`) tables are now
+parsed (`EffectAuxTables`); their *contents'* deeper meaning is partly open — the
+`0x801f6324` entries are overlay VAs to ~`0x20`-byte effect-prototype structs
+whose layout (the `FUN_80050ed4` spawn parameter) is not yet decoded.
 
 The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
 *not* use this table — a summon's magnitude is derived from caster/summon battle

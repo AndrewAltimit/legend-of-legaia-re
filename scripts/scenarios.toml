@@ -1089,3 +1089,12 @@ backup_fingerprint = "9dda14702d18b7d80ffcf1f7b4d6daefbbc6490d0ed60ee8c4aaae2503
 phase = "minigame"
 description = "Casino slot-machine minigame, parked in its playable state (the coin economy the casino prize-exchange randomizer feeds)"
 topics = ["minigame", "slot machine", "casino", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "party_basic_attack_vs_gobu_gobu"
+backup_fingerprint = "658af41bc58b055801090f4fc91f7b4311b87aa9d505f49b94342e21bb0543f6"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Battle paused at the Begin/Reselect confirm with Vahn's queued basic Attack on a lone Gobu Gobu; pressing X (Begin) runs the turn (Gobu Gobu acts first, then Vahn's basic attack lands). Captures a party-member basic-Attack resolution for tracing the attack damage path (actor+0x1df move id, ctx+0x1014 held move-power record, damage dealt)."
+topics = ["battle", "basic attack", "party damage", "move-power", "BattleMode", "RE"]

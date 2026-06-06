@@ -28,6 +28,8 @@
     <li>records <code>0x01..=0x0f</code> (move ids <code>0x04..=0x1f</code>) are the spell table's unnamed <strong>internal enemy-attack tiers</strong>.</li>
   </ul>
   <p>Record 0 is an all-zero unused slot.</p>
+  <p><strong>Special-attack-only.</strong> The map covers 44 special-attack ids (internal tiers <code>0x04..=0x07</code>/<code>0x12..=0x1F</code> + named monster attacks <code>0x25..=0x74</code>); the basic-attack / Tactical-Art bands <code>0x08..=0x11</code> and <code>0x16..=0x18</code> are <strong>unmapped</strong>. From a live capture, a party member's queued Art (Vahn's Somersault) carries move id <code>0x0F</code> and an enemy basic attack (Gobu Gobu) <code>0x09</code> &mdash; both resolve to record 0 (zero power). So a party member's Tactical Art takes its power from the <em>art-record</em> power byte (<a href="art-data.html">art data</a>), enemy <em>special</em> attacks roll through this table, and basic attacks use the generic physical path.</p>
+  <p><strong>Cross-checked against the enemy table.</strong> Of the 29 mapped named ids (<code>&ge;0x25</code>), 28 are exactly the special attacks enemies cast (monster record <code>+0x21..=+0x23</code>) &mdash; the records line up with the roster. But the table is a <em>subset</em>: across 186 monsters, 46 distinct attack ids appear and only 28 are here; the other 18 (incl. <code>0xA7</code>/<code>0xB8</code>, beyond the <code>0x00..=0x7F</code> map) have no record &mdash; the magic / elemental casts, whose damage is caster-state-derived, consistent with this being the physical/arts table. 95 of 186 monsters carry no magic attack at all (basic physical only). The one mapped record with no caster (move id <code>0x2C</code>) is the unused &ldquo;Freeze Thunder&rdquo; enemy spell &mdash; a dummied-out attack (<a href="https://tcrf.net/Talk:Legend_of_Legaia">TCRF</a>: forcing it crashes with an &ldquo;Opcode 14 UNK&rdquo; missing-asset error); its power record (37) survived but its effect lists are empty.</p>
 </section>
 
 <section class="doc-section" id="record-layout">
@@ -42,7 +44,7 @@
 <tr><td><code>+0x06</code></td><td>u16</td><td>phase duration</td><td>Per-arm phase duration (&rarr; <code>ctx + arm*2 + 0x6c6</code>) at the strike / re-arm transitions.</td><td>Inferred</td></tr>
 <tr><td><code>+0x08</code></td><td>u8</td><td>homing speed</td><td>Scales the per-frame XY step toward the target; <code>0x40 - x</code> reseeds the approach counter.</td><td>Inferred</td></tr>
 <tr><td><code>+0x09</code></td><td>u8</td><td>tracking flag</td><td>When set, the live XY is copied into the spawned effect each frame.</td><td>Confirmed (read)</td></tr>
-<tr><td><code>+0x0a</code></td><td>u8</td><td>impact effect</td><td>Enum 1..5; stored at <code>actor+0x21f</code>, indexes the impact-anim table at <code>0x801f53d4</code>; 3/4/5 branch extra crit rolls.</td><td>Confirmed (read)</td></tr>
+<tr><td><code>+0x0a</code></td><td>u8</td><td>impact effect</td><td>Enum 1..5; stored at <code>actor+0x21f</code>, indexes the 5-entry packed-config table at <code>0x801f53d4</code> (<code>(v-1)*4</code>) into <code>actor+0x04</code> (packed <code>u32</code> words, not pointers); 3/4/5 branch extra status-proc rolls.</td><td>Confirmed (read)</td></tr>
 <tr><td><code>+0x0b</code></td><td>u8</td><td>trail texpage</td><td>Trail / afterimage sprite-page id (GP0 word <code>0x7700 + id</code>).</td><td>Confirmed</td></tr>
 <tr><td><code>+0x0c</code></td><td>u8</td><td>designer tag</td><td><code>'C'/'E'/'G'/0</code> annotation on the internal-tier records only; <strong>no runtime reader</strong>.</td><td>Unknown (no reader)</td></tr>
 <tr><td><code>+0x0d</code></td><td>u8</td><td>sound cue</td><td>Handed to the UI/voice cue dispatcher <code>FUN_8004fcc8</code>.</td><td>Confirmed</td></tr>
@@ -61,9 +63,21 @@ sfx 0x4d  list 0x00  tag C  contact[0x27,0x8e,0x8d]  launch[0x28,0x64,0x9d]</cod
   <p>A homing physical strike: it approaches at speed <code>0x20</code>, runs its strike phase for 480 frames, plays impact effect 1 + cue <code>0x4d</code>, spawns one effect list on launch and a different one on contact, and carries the unused designer tag <code>C</code>.</p>
 </section>
 
+<section class="doc-section" id="effect-lists">
+  <h2>Effect-id lists (<code>+0x12</code> / <code>+0x16</code>)</h2>
+  <p>Both lists are up to 4 ids walked until <code>0x00</code>, dispatched identically by <code>FUN_801e09f8</code> (the only difference is <em>when</em> they fire &mdash; on contact vs at launch). Each list entry indexes the <strong>same</strong> two tables:</p>
+  <ul>
+    <li><code>0x01..=0x63</code> &mdash; spawn effect prototype <code>0x801f6324[id]</code> + play SFX <code>0x801f6418[id]</code> (when non-zero)</li>
+    <li><code>0x64</code> (100) &mdash; fixed screen-flash</li>
+    <li><code>0x80</code>-bit set, not <code>0xFF</code> &mdash; <code>FUN_801dfdf0(id &amp; 0x7F)</code></li>
+    <li><code>0xFF</code> / unused <code>0x65..=0x7F</code> &mdash; no effect</li>
+  </ul>
+  <p><code>0x801f6324</code> (file <code>0x27B0C</code>) is a <strong>pointer</strong> table: each <code>u32</code> is an overlay VA to a ~<code>0x20</code>-byte effect-prototype struct (ids <code>0x27</code>/<code>0x28</code> &rarr; <code>0x801F5BBC</code>/<code>0x801F5BDC</code>). <code>0x801f6418</code> (file <code>0x27C00</code>) is the per-effect SFX byte. Exactly 61 entries (bounded by the SFX table that follows). Parsed by <code>EffectAuxTables</code>; dispatch by <code>EffectListEntry::classify</code>.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open</h2>
-  <p>The whole record is decoded. The <strong>summon</strong> branch of <code>FUN_801dd0ac</code> (attacker slot <code>== 7</code>) does <em>not</em> use this table &mdash; a summon's magnitude is caster/summon-state-derived (see <a href="spell-table.html">spell table</a> and the per-spell-power thread in <a href="../reference/open-rev-eng-threads.html">open RE threads</a>). The auxiliary effect-prototype (<code>0x801f6324</code>) and per-effect SFX (<code>0x801f6418</code>) tables the <code>+0x12</code>/<code>+0x16</code> lists index are located but not separately parsed.</p>
+  <p>The whole record is decoded and the auxiliary effect tables are now parsed (<code>EffectAuxTables</code>). The <strong>summon</strong> branch of <code>FUN_801dd0ac</code> (attacker slot <code>== 7</code>) does <em>not</em> use this table &mdash; a summon's magnitude is caster/summon-state-derived (see <a href="spell-table.html">spell table</a> and the per-spell-power thread in <a href="../reference/open-rev-eng-threads.html">open RE threads</a>). Still open: the <code>0x801f6324</code> entries point at ~<code>0x20</code>-byte effect-prototype structs whose layout (the <code>FUN_80050ed4</code> spawn parameter) is not yet decoded.</p>
 </section>
 
 <section class="doc-section" id="cli">
