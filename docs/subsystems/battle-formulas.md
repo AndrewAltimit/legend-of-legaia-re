@@ -243,6 +243,23 @@ the coupled tail of the live battle context rather than a pure kernel. Dumps:
 `overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
 [`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
 
+**Engine wiring.** The arts/physical kernel is wired into the live loop for
+**monster special-attacks**: the move-power table loads from PROT 0898 onto
+`World::move_power` (the engine wrapper `move_power::MovePowerCatalog`), and when
+a monster's chosen move id resolves to a power record, `cast_spell_on_slots`
+overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
+that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
+The stat bridge reads live actor fields faithfully — AGL from `battle_accuracy`
+(`+0x168`), HP from `battle.hp`, the two defender defense terms from the
+`battle_defense_split` (UDF/LDF) pair — and takes the five `rand()` draws in
+retail call order. Element affinity defaults to neutral (100) and status/guard to
+none, the documented gaps where the engine doesn't yet carry the per-actor
+element + the `0x801F53E8` matrix. The override engages **only when the
+move-power table is installed**, so disc-free / synthetic battles keep the
+MP-scaled placeholder magnitude with a bit-identical RNG stream. (Party arts /
+physical strikes still use the simpler `art_strike_damage_default` stand-in; the
+summon-branch live roll is its own remaining thread.)
+
 ## MP cost & ability-bit modifiers
 
 From battle-action.md state `0x28` (Magic / Item - cast begin):
