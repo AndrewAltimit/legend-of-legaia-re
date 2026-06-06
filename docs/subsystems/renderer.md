@@ -4,19 +4,27 @@ The renderer is `FUN_8002735C` - 60 GTE ops, per-mode descriptor table at `DAT_8
 
 ## Per-mode descriptor table
 
-The renderer indexes into an 8-byte-stride table at `0x8007326C` using `((flags >> 1) - 8) >> 1`:
+The renderer treats the 8-byte-stride table at `0x8007326C` as a packed `{u32
+first; u32 second}` per row, selects `row = ((flags >> 1) - 8) >> 1`, and reads
+**byte3 = `first >> 24`** (the shape selector, `& 3` = `F`/`FT`/`G`/`GT`) and
+**byte4 = `second & 0xFF`** (the base vertex-index offset in u16 units):
 
-| flags | table idx | byte 0 | byte 4 |
-|---|---|---|---|
-| 0x10/11 | 0 | 0x04 | 0x05 |
-| 0x12/13 | 1 | 0x09 | 0x07 |
-| 0x14/15 | 2 | 0x04 | 0x00 |
-| 0x16/17 | 3 | 0x06 | 0x06 |
-| 0x18/19 | 4 | 0x07 | 0x07 |
-| 0x1A/1B | 5 | 0x09 | 0x0B |
-| 0x20-23 | 4 | (same) | |
+| flags   | row | raw 8 bytes               | byte3 (shape) | byte4 (vtx off) |
+|---------|-----|---------------------------|---------------|-----------------|
+| 0x10/11 | 0   | `04 00 00 05 07 00 00 00` | 0x05          | 0x07            |
+| 0x12/13 | 1   | `09 00 00 07 06 00 00 00` | 0x07          | 0x06            |
+| 0x14/15 | 2   | `04 00 00 00 02 00 00 00` | 0x00          | 0x02            |
+| 0x16/17 | 3   | `06 00 00 02 06 00 00 00` | 0x02          | 0x06            |
+| 0x18/19 | 4   | `07 03 00 01 07 00 00 00` | 0x01          | 0x07            |
+| 0x1A/1B | 5   | `09 03 00 03 0B 00 00 00` | 0x03          | 0x0B            |
+| 0x20-27 | (re-uses rows 0-5 via the same `(flags>>1)-8` math) |  |  |  |
 
-Each entry's first u32 has bytes `[?, ?, ?, type_bits]` where the low 2 bits of byte 3 select the OT packet shape (0/1/2/3 → different DrawPolyXX variants). Each entry's second u32 has the vertex-index offset (in u16 units) within the prim in its low byte. See [`formats/tmd.md`](../formats/tmd.md) for the full layout.
+The low 2 bits of byte3 select the OT packet shape (`0`=flat untextured,
+`1`=flat textured, `2`=gouraud untextured, `3`=gouraud textured); the quad bit
+`(flags>>1)&1` picks tri vs quad. Untextured prims carry a per-prim/per-vertex
+**colour** block instead of UVs and are lit by the GTE `NCDS` op; **no per-prim
+normal is stored** (the renderer never reads the object's normal table). See
+[`formats/tmd.md`](../formats/tmd.md) for the full per-mode record layout.
 
 ## TMD pointer table
 

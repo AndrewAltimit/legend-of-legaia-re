@@ -394,20 +394,14 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
         for g in &groups {
             let desc = Descriptor::for_flags(g.header.flags);
             let is_textured = desc.is_some_and(|d| d.packet_shape.is_textured());
-            let is_gouraud = desc.is_some_and(|d| d.packet_shape.is_gouraud());
-            // The colour block runs [prim_start .. vertex_offset). Gouraud
-            // prims store one 4-byte RGB(+code) per corner; flat prims store a
-            // single RGB shared by all corners.
+            // Per-vertex colour comes from the walker's decoded `Prim::colors`
+            // (untextured F*/G* prims only; textured prims render white here and
+            // sample their atlas via `cba_tsb`).
             let color_of = |prim: &legaia_prims::Prim, corner: usize| -> [u8; 3] {
                 if is_textured {
                     return [255, 255, 255];
                 }
-                let off = prim.bytes_offset + if is_gouraud { corner * 4 } else { 0 };
-                if off + 3 <= buf.len() {
-                    [buf[off], buf[off + 1], buf[off + 2]]
-                } else {
-                    [128, 128, 128]
-                }
+                prim.colors.get(corner).copied().unwrap_or([128, 128, 128])
             };
 
             for prim in &g.prims {
