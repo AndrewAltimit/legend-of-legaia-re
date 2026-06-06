@@ -26,13 +26,17 @@
 //! its packed config word.
 //!
 //! This is the engine-side *descriptor* surface. The render / audio consumers
-//! (drawing the trail, spawning the contact / launch effects through
-//! [`crate::world::World::effect_pool`], playing the SFX cues) are a deliberate
-//! follow-up: the effect-id-list spawn entries resolve to the `0x801F6324`
-//! effect-prototype params, whose ~0x20-byte struct layout — the bridge from a
-//! spawn param to an effect-catalog ui-id — is not yet reverse-engineered. Until
-//! that lands, faithfully spawning a move's effects would be guesswork, so the
-//! catalog exposes the resolved descriptor and stops there.
+//! (drawing the trail, spawning the contact / launch effects, playing the SFX
+//! cues) are a deliberate follow-up. The `0x01..=0x63` spawn entries resolve to a
+//! `0x801F6324` prototype param that is a **move-VM scene-graph record** in the
+//! same format the player Seru-magic summons use (`legaia_asset::summon_overlay`,
+//! staged by `FUN_80021B04` → the ported move VM, with `model_sel` indexing the
+//! `DAT_8007C018` TMD pool). Wiring it reuses that machinery; the one residual is
+//! the `gp[0x754]` additive base for `model_sel` (only *read* in the corpus —
+//! one live read-watch pins it, shared with the summon thread). The high-bit
+//! (`0x80`) list bytes instead route to the 2D `efect.dat` pool
+//! ([`crate::world::World::effect_pool`] / `spawn_by_ui_id`). See
+//! `docs/formats/move-power.md`.
 
 use legaia_asset::move_power::{
     self, EffectAuxTables, EffectListEntry, IMPACT_EFFECT_TABLE_LEN, MOVE_ID_INDEX_MAP_LEN,
