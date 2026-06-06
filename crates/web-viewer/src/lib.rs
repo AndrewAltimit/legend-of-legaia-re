@@ -1456,6 +1456,7 @@ impl LegaiaViewer {
     /// ```json
     /// { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
     ///                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
+    ///                  "element": u8, "element_name": "fire"|null,
     ///                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
     ///                  "steal_item": u8, "steal_item_name": "Incense"|null,
     ///                  "steal_chance_pct": u8,
@@ -1526,6 +1527,9 @@ impl LegaiaViewer {
                     "magic_count": r.magic_count,
                     "gold": r.gold,
                     "exp": r.exp,
+                    "element": r.element,
+                    "element_name": legaia_asset::element_affinity::Element::from_id(r.element)
+                        .map(|e| e.name()),
                     "drop_item": r.drop_item,
                     "drop_item_name": drop_name(r.drop_item),
                     "drop_chance_pct": r.drop_chance_pct,
