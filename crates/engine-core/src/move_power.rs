@@ -31,9 +31,10 @@
 //! `0x801F6324` prototype param that is a **move-VM scene-graph record** in the
 //! same format the player Seru-magic summons use (`legaia_asset::summon_overlay`,
 //! staged by `FUN_80021B04` → the ported move VM, with `model_sel` indexing the
-//! `DAT_8007C018` TMD pool). Wiring it reuses that machinery; the one residual is
-//! the `gp[0x754]` additive base for `model_sel` (only *read* in the corpus —
-//! one live read-watch pins it, shared with the summon thread). The high-bit
+//! `DAT_8007C018` TMD pool). Wiring it reuses that machinery; the `gp[0x754]`
+//! additive base for `model_sel` is live-captured = 3 in battle (a move-FX
+//! `FUN_80021B04` spawn), so a battle move-FX mesh is `DAT_8007C018[model_sel + 3]`.
+//! The high-bit
 //! (`0x80`) list bytes instead route to the 2D `efect.dat` pool
 //! ([`crate::world::World::effect_pool`] / `spawn_by_ui_id`). See
 //! `docs/formats/move-power.md`.

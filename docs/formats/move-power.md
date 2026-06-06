@@ -199,7 +199,8 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 
 - reads the record's `+0x00` `model_sel` (`lh`/`lhu` at `80021b2c`/`b30`); `< 0`
   / `0x4000` / `0x4001` are transform-node / render-mode sentinels, else the mesh
-  is `DAT_8007C018[model_sel + gp[0x754]]` (decomp `210..216`),
+  is `DAT_8007C018[model_sel + gp[0x754]]` (decomp `210..216`; in battle the base
+  `gp[0x754] = 3`, live-captured — see Open),
 - allocates an actor (`jal 0x80020de0`), stores the record pointer as the actor's
   move-VM buffer base (`*(actor+0x48) = record`, `80021c80`), forces the move-VM
   PC to u16-index 2 (`*(actor+0x70) = 2`, `80021c78` → bytecode at `record+4`),
@@ -222,13 +223,21 @@ The engine exposes the whole power record as a resolved `MoveFx` descriptor
 (behavioural fields + the impact-config and effect-list cross-table joins,
 including each spawn entry's `0x801f6324` prototype VA). Render wiring — parsing
 that record with the summon-record reader, resolving `model_sel` into the TMD
-pool, and driving its `+0x04` bytecode through the ported move VM — is now
-unblocked **except** for one shared scalar: `gp[0x754]`, the additive base for
-`model_sel`, is only *read* in `FUN_80021B04`; no writer is in the corpus. The
-same `gp[0x754]` is the open follow-up for the summon thread, so a single live
-read-watch on `gp+0x754` during a move-FX (or summon) spawn pins both. Sampled
-`model_sel` values (1/2/5/24) fall inside the effect-model-library window
-`DAT_8007C018[3..=32]` the engine already loads.
+pool, and driving its `+0x04` bytecode through the ported move VM — needs the
+`gp[0x754]` additive base for `model_sel` (only *read* in `FUN_80021B04`, no
+static writer).
+
+**`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
+`FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)
+hit it once: `ra = 0x80050F08` (the `FUN_80050ed4` call), `a3 = 0x1000`, with the
+prototype-table base `0x801F6324` and the effect-list id `0x22` live in registers
+— the whole `FUN_801e09f8 → FUN_80050ed4 → FUN_80021B04` chain confirmed — and
+`gp` (`0x8007B318`) `+0x754` (global `0x8007BA6C`) read **3**. So a battle move-FX
+mesh is `DAT_8007C018[model_sel + 3]`, which lands `model_sel` exactly in the
+inferred `DAT_8007C018[3..=32]` effect-model window. (Single capture, battle
+move-FX context. The summon-part stage reads the *same* global but during its own
+library load, so the per-summon base is a separate capture — re-point the probe at
+a summon-part hit to pin it.)
 
 The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
 *not* use this table — a summon's magnitude is derived from caster/summon battle
