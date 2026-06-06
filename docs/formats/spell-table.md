@@ -144,7 +144,44 @@ they split cleanly into damage vs. heal:
 
 `FUN_801dd0ac`'s **non-summon** branch (`param_2 != 7`, the arts / physical path) reads
 a 26-byte-stride per-move power table at **`0x801F4F5C`** — that is where a genuine
-per-move "power" scalar lives, but it feeds melee/arts, not summon magic.
+per-move "power" scalar lives, but it feeds melee/arts, not summon magic. The kernel reads
+the record's `+0` signed-16-bit field and uses `(i16)power >> 2` as the attacker-roll
+modulus (`sll 0x10` then `sra 0x12`); `801f3990` also reads the same `+0` at full (`>> 0`)
+and half (`>> 1`) scale.
+
+`param_1` is **not** the raw move id — it is looked up through a 128-byte **id → index
+map** at `0x801F4E63` (immediately before the table): the setup site passes
+`param_1 = map[actor[+0x1df]]` (`overlay_battle_action_801e09f8`). The map covers move ids
+`0x00..=0x7F` and resolves ids `0x04..=0x74` to power indices `0x01..=0x2b` (a `0x00` entry
+= the unused record 0, `0xFF` = a no-record sentinel); the full resolution is
+`power_table[map[move_id]]`.
+
+Both the table and the map are **static overlay data, pinned on disc**: the
+`0x801F4E63..0x801F69D8` window is byte-identical across two unrelated battle save states (a
+full-party Gobu Gobu fight and the Tetsu-tutorial command menu), and the bytes live in
+**PROT entry 0898** (the battle-action overlay, `overlay_0898`) — both the table window and
+the `FUN_801dd0ac` code body map with one consistent base, so the table is at a fixed
+raw-entry file offset (`0x26744`; the map at `0x2664B`). Parser `legaia_asset::move_power`
+(`asset move-power <PROT-0898.BIN>` prints `idx → power / counter / sfx ← move id`); the
+disc-gated `move_power_real` test pins the decoded powers + the id→index map. The clean
+26-byte structure runs 44 indices (index 0 unused) before the region transitions to other
+overlay data (a float/transform table, then the `data\battle\summon.DAT` / `readef.DAT`
+filename strings). Decoded record fields, each code-traced to a battle-action reader: `+0x00`
+`i16` power; `+0x04` `u16` an action-timing counter (seeded at `ctx+0x6c6`, decremented by
+the SM); `+0x0d` `u8` a sound / voice cue id (handed to the cue dispatcher `FUN_8004fcc8`).
+Still open: the `+0x02` u16, the `+0x08` flag halfword, the `+0x0a`/`+0x0b` field (the SM's
+most-read), the `+0x0c` category byte (`C`/`E`/`G`/`0x00`), and the `+0x0e`/`+0x12`/`+0x16`
+fields.
+
+**What the records are.** Because the move id (`actor[+0x1df]`) is the *same id space* this
+spell table is indexed by, joining the two labels every record: power records `0x10..=0x2b`
+(move ids `0x25..=0x74`) are the **named monster special-attacks** — every one resolves to a
+non-empty spell-table name (Fire Breath `0x25`, the enemy-Gimard *Tail Fire* `0x27`, … the
+late-game attacks at `0x61..=0x74`); this is their physical/special-attack *power*, distinct
+from the *name* this table carries. Power records `0x01..=0x0f` (move ids `0x04..=0x1f`, all
+`< 0x24`) are the unnamed **internal enemy-attack tiers** (escalating-power triplets — the
+ids this table leaves nameless). The disc-gated `move_power_real` test pins that named /
+unnamed boundary against the live spell table (no Sony name strings embedded).
 
 #### The full damage-roll chain (three stages)
 
@@ -181,11 +218,13 @@ pure kernel. See the `FUN_801dd0ac` / `FUN_801dd864` / `FUN_801ddb30` rows in
 So the "missing per-spell power scalar" the engine wanted largely **does not exist for
 summons**: the game derives summon magnitude from caster/summon battle stats
 (`FUN_801dd0ac`) or, for recovery summons, from a per-character magic-power byte. The
-`base_power` figures in `legaia_engine_core::retail_magic` stay MP-scaled placeholders
-until the `FUN_801dd0ac` summon roll (and the `0x801F4F5C` move-power table contents)
-are ported. (Method: capstone disassembly of the extracted PROT 0900 / 0903..0915
-overlays; `FUN_801dd0ac` itself is already dumped at
-`ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`.)
+genuine per-move power scalar that *does* exist — the `0x801F4F5C` table — feeds the
+arts/physical branch and is now located + parsed off the disc (`legaia_asset::move_power`,
+above). The `base_power` figures in `legaia_engine_core::retail_magic` stay MP-scaled
+placeholders until the `FUN_801dd0ac` summon roll is wired into a live battle context.
+(Method: capstone disassembly of the extracted PROT 0900 / 0903..0915 overlays +
+byte-matching the resident table against the in-RAM battle save states; `FUN_801dd0ac`
+itself is dumped at `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`.)
 
 The mirror lives at `legaia_engine_core::retail_magic` (`SERU_MAGIC` +
 `retail_seru_magic_catalog`); the Seru that teach these ids are wired in

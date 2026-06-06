@@ -315,4 +315,34 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
     assert_eq!(reasons.missing_texture_page, 0);
     assert_eq!(reasons.clut_depth_mismatch, 0);
     assert_eq!(reasons.skipped_untextured, 0, "pack[74] IS textured");
+
+    // ROOT CAUSE (pinned): pack[74]'s 4 prims all sample the same texture page
+    // (960, 256) + CLUT row 510 - i.e. the bottom-right VRAM band x in
+    // [896, 1024], y = 256 that the Field pre-pass excludes by design (the
+    // character / party-texture region; this is the same band that shows up as
+    // the documented town01 static-VRAM residue at x=896..1024,y=256). Even
+    // `upload_all_tims: true` doesn't fill CLUT row 510, so the texture isn't a
+    // static scene TIM at all - it's a runtime targeted upload the field
+    // pre-pass doesn't model. So this mesh is NOT recoverable by a render-filter
+    // tweak; recovering it needs that runtime texture-band upload reproduced.
+    for o in &env_tmds[74].tmd.objects {
+        let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+            &env_tmds[74].raw,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+        for g in &groups {
+            for prim in g.prims.iter().filter(|p| !p.uvs.is_empty()) {
+                let (cx, cy) = prim.cba_xy();
+                let (tx, ty, _depth, _abr) = prim.tpage_xy();
+                assert!(
+                    (896..=1024).contains(&tx) && ty == 256,
+                    "pack[74] prim tpage ({tx},{ty}) should sit in the excluded \
+                     character/party-texture band x=[896,1024], y=256"
+                );
+                assert_eq!(cy, 510, "pack[74] prim CLUT row");
+                let _ = cx;
+            }
+        }
+    }
 }

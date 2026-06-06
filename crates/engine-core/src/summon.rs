@@ -25,14 +25,27 @@
 //! [`legaia_engine_vm::anim_vm`]** (`FUN_80048A08` / `FUN_8004998C`), *not* this
 //! [`SummonScene`].
 //!
-//! [`SummonScene`] is kept because (1) it is the validated parser/driver for the
-//! genuinely-on-disc move-VM stager records (disc-gated `summon_scene_real` —
-//! every Gimard part runs the move VM without an unimplemented opcode), (2) it is
-//! the engine's only summon render today, and (3) the **enemy** Gimard *Fire
-//! Tail* boss move is untraced and may still use the overlay/move-VM path, so
-//! this remains its candidate model. The live trace covers the **player**
-//! "Burning Attack" only. See the open-rev-eng-threads "Seru-magic summon visual"
-//! row for the full reconciliation.
+//! The faithful **player** summon render is already wired: a cast routes through
+//! [`crate::world::World::request_summon_spawn`] →
+//! [`crate::world::World::take_pending_summon_spawn`], and the host spawns the
+//! summon's namesake `battle_data` creature ([`summon_creature_id`]) as an
+//! ordinary battle actor — mesh + texture via
+//! [`legaia_asset::monster_archive::battle_render_mesh`], animation via
+//! [`legaia_asset::monster_archive::idle_animation`] →
+//! [`crate::battle_anim::MonsterAnimPlayer`] → the rigid TRS-keyframe draw
+//! (`FUN_80048A08` / `FUN_8004998C`, ported in `legaia_engine_vm::anim_vm`). That
+//! is the production summon visual.
+//!
+//! [`SummonScene`] is therefore *not* the production render — it is kept because
+//! (1) it is the validated parser/driver for the genuinely-on-disc move-VM stager
+//! records (disc-gated `summon_scene_real` — every Gimard part runs the move VM
+//! without an unimplemented opcode); (2) it backs the non-battle debug spawn
+//! (`play-window` `G` outside battle) that exercises the move-VM driver; and
+//! (3) the **enemy** Gimard *Fire Tail* boss move is untraced and may still use
+//! the overlay/move-VM path, so this remains its candidate model. The live trace
+//! that resolved the player path covers the **player** "Burning Attack" only. See
+//! the open-rev-eng-threads "Seru-magic summon visual" row for the full
+//! reconciliation.
 //!
 //! ## What is faithful vs. interpreted (within this stand-in model)
 //!
