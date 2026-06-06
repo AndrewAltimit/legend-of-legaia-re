@@ -252,13 +252,41 @@ that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
 The stat bridge reads live actor fields faithfully — AGL from `battle_accuracy`
 (`+0x168`), HP from `battle.hp`, the two defender defense terms from the
 `battle_defense_split` (UDF/LDF) pair — and takes the five `rand()` draws in
-retail call order. Element affinity defaults to neutral (100) and status/guard to
-none, the documented gaps where the engine doesn't yet carry the per-actor
-element + the `0x801F53E8` matrix. The override engages **only when the
-move-power table is installed**, so disc-free / synthetic battles keep the
-MP-scaled placeholder magnitude with a bit-identical RNG stream. (Party arts /
-physical strikes still use the simpler `art_strike_damage_default` stand-in; the
-summon-branch live roll is its own remaining thread.)
+retail call order. The `FUN_801dd864` scale currently passes neutral affinity
+(100) and no status/guard; the override engages **only when the move-power table
+is installed**, so disc-free / synthetic battles keep the MP-scaled placeholder
+magnitude with a bit-identical RNG stream. (Party arts / physical strikes still
+use the simpler `art_strike_damage_default` stand-in; the summon-branch live roll
+is its own remaining thread.)
+
+### Element-affinity matrix (`FUN_801dd864`, `0x801F53E8`)
+
+The scale stage's affinity byte comes from an 8×8 matrix, indexed
+`matrix[attacker_element][defender_element]` (the disasm computes `def_elem +
+atk_elem*8` — **row = attacker, column = defender**). The matrix and the
+per-character element table that feeds it are static battle-action-overlay data,
+now parsed off the disc by [`legaia_asset::element_affinity`] (PROT 0898; matrix
+at file `0x26BD0`, char table at `0x26C68`, same link base `0x801CE818` as the
+move-power table; CLI `asset element-affinity <0898.BIN>`).
+
+The retail values are a small nudge rather than the classic ×0/×2 weakness
+table: the same-element diagonal is `0x60` = 96 (a slight self-resist), reciprocal
+opposite-element pairs (`earth↔wind`, `water↔fire`, `light↔dark`) carry `0x68` =
+104, everything else is `0x64` = 100. The neutral element (id 7) has an all-100
+row + column, and the thunder row (id 4) is special (attacks every element at 102,
+takes 98 from dark). The element ids 2/3/4 (fire/wind/thunder) and 7 (neutral) are
+byte-pinned; 0/1/5/6 (earth/water/light/dark) are inferred from the reciprocal
+pairs + the spell-table element vocabulary.
+
+`FUN_801dd864` resolves each side's element id by actor kind: a **party member**
+(slot `< 3`) looks its element up in the per-character table by **1-based** char
+id (`CHARACTER_ELEMENTS[char_id]` at `0x801F5480`: Vahn=fire, Noa=wind,
+Gala=thunder, Terra=wind); an **enemy** (slot `>= 3`) reads `actor[+0x1d]`. The
+matrix + party table are engine-side; the one piece still **open** is the
+monster-record field the battle loader copies into the enemy `actor[+0x1d]` — the
+monster→actor builder is an indirect-dispatch handler absent from the captured
+dumps, so an elemental *enemy* attack still omits the affinity multiplier (an
+elementless / neutral hit is exact, and the multiplier is bounded to ±4%).
 
 ## MP cost & ability-bit modifiers
 

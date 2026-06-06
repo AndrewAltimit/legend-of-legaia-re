@@ -269,9 +269,12 @@ pub fn summon_defender_roll(defender: &SummonRollActor, rand: u16) -> u32 {
 }
 
 /// Element-affinity scale, `FUN_801dd864`: `roll * affinity_pct / 100`. The
-/// percent is one byte from the 8x8 element-affinity matrix at `0x801F53E8`
-/// (rows = defender element, columns = attacker element), so e.g. 100 = neutral,
-/// 200 = double (weakness), 50 = resist, 0 = immune.
+/// percent is one byte from the 8x8 element-affinity matrix at `0x801F53E8`,
+/// indexed `matrix[attacker_element][defender_element]` (the disasm computes
+/// `def_elem + atk_elem*8`, so the **row is the attacker**, the column the
+/// defender). The matrix is parsed off the disc by
+/// [`legaia_asset::element_affinity`]; retail values are a small nudge —
+/// 100 = neutral, 96 = same-element self-resist, 104 = opposite-element bonus.
 pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
     roll.saturating_mul(affinity_pct as u32) / 100
 }
@@ -318,7 +321,7 @@ pub struct SummonPredamage {
     pub caster_agl: u16,
     /// The target (defender) stats.
     pub target: SummonRollActor,
-    /// Element-affinity percent (`0x801F53E8[def_elem][atk_elem]`).
+    /// Element-affinity percent (`0x801F53E8[atk_elem][def_elem]`).
     pub element_affinity_pct: u8,
     /// Caster magic-power byte (`SC + 0x729`).
     pub magic_power_byte: u8,
@@ -440,7 +443,7 @@ pub struct ArtsPredamage {
     pub attacker: SummonRollActor,
     /// Target (defender) stats.
     pub target: SummonRollActor,
-    /// Element-affinity percent (`0x801F53E8[def_elem][atk_elem]`).
+    /// Element-affinity percent (`0x801F53E8[atk_elem][def_elem]`).
     pub element_affinity_pct: u8,
     /// Five `rand()` draws, in call order: attacker ×2, defender ×1, bonus ×2.
     pub rng: [u16; 5],
