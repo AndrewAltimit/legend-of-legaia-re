@@ -393,6 +393,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) | Pins the battle-form party-mesh install callsite. → [detail](#autorun_battle_party_mesh_installlua) |
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
+| [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
 
 #### Runtime probe details
 
