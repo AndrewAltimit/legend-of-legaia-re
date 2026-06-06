@@ -60,6 +60,7 @@
     </tbody>
   </table>
   <p>Gold commits to <code>0x8008459C</code> (clamp 99,999,999); EXP via the generic <code>FUN_80026018</code> (accumulator <code>0x80084440</code> &rarr; party XP bank <code>0x800845A4</code>). Runtime-confirmed: Gimard (<code>+0x44</code>=60) credited exactly +15 gold via a write-watchpoint on <code>0x8008459C</code>; drop ids cross-check against <code>legaia-gamedata</code> (Gimard <code>+0x48</code>=119 @ 10% drops Healing Leaf). The <a href="../monsters.html">enemy table</a> renders EXP / Gold / Drop per enemy.</p>
+  <p>The engine applies this scaling (<code>victory_gold_per_monster</code> / <code>victory_gold_finalize</code> / <code>victory_exp_per_member</code>, wired into <code>World::apply_battle_loot</code> / <code>apply_battle_xp</code>), so the credited reward is the scaled amount, not the raw record sum. The per-battle no-gold flag (<code>_DAT_8007BAC0</code>, certain scripted fights) is the one remaining unmodelled gold gate.</p>
 </section>
 
 <section class="doc-section" id="spirit-damage">
@@ -95,6 +96,9 @@ else
     <li><code>psyq_rand_step(seed)</code></li>
     <li><code>buff_ramp(value)</code></li>
     <li><code>damage_cap_for_party_slot(caps, slot)</code></li>
+    <li><code>summon_predamage</code> + parts (<code>FUN_801DD0AC</code> summon branch)</li>
+    <li><code>arts_attacker_roll</code> / <code>arts_bonus_roll</code> / <code>arts_physical_predamage</code> (<code>FUN_801DD0AC</code> arts/physical branch, seeded by the <code>0x801F4F5C</code> move-power table)</li>
+    <li><code>victory_gold_per_monster</code> / <code>victory_gold_finalize</code> / <code>victory_exp_per_member</code> (<code>FUN_8004E568</code> reward scaling)</li>
   </ul>
   <p>Unit tests pin the documented formulas as fixtures - a future runtime trace can add comparison cases without touching the formula bodies. <code>accuracy_roll</code> and <code>mp_cost_after_ability_bits</code> are now also <strong>applied in the live battle loop</strong> (<code>engine-core::world::battle</code>), not just defined - attacks roll to hit and MP-saver accessories reduce cast cost.</p>
 </section>
