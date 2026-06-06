@@ -3218,13 +3218,14 @@ impl World {
         self.battle_defense.get(idx).copied().unwrap_or(0)
     }
 
-    /// Distribute `xp_reward` to the surviving party members after a
-    /// `BattleEndCause::MonsterWipe`. Mirrors the retail-shape split:
+    /// Distribute `xp_reward` (the summed enemy EXP) to the surviving party
+    /// members after a `BattleEndCause::MonsterWipe`. Mirrors the retail split
+    /// ([`vm::battle_formulas::victory_exp_per_member`], `FUN_8004E568`):
     ///
-    /// - Surviving members (HP > 0) split the reward equally, rounded down.
-    /// - Dead members (HP == 0) receive zero XP.
-    /// - Remainder bytes from the integer divide are dropped on the floor,
-    ///   matching the retail end-of-battle distribution.
+    /// - The summed reward is scaled by 3/4 (`v - (v >> 2)`), then **ceiling**-
+    ///   divided among the surviving (HP > 0) members — not a floor-divide of
+    ///   the raw sum.
+    /// - Dead members (HP == 0) receive zero XP and are excluded from the divisor.
     ///
     /// For each member that crosses a level threshold, bumps the roster
     /// record's HP/MP maxima, resyncs the live `BattleActor` mirror, pushes
@@ -3245,7 +3246,11 @@ impl World {
         if alive.is_empty() {
             return Vec::new();
         }
-        let per_member_xp = xp_reward / alive.len() as u32;
+        // Retail scales the summed EXP by 3/4 then ceiling-divides among the
+        // living members (`FUN_8004E568` `8004e568.txt:461`), NOT a plain
+        // floor-divide of the raw sum.
+        let per_member_xp =
+            vm::battle_formulas::victory_exp_per_member(xp_reward, alive.len() as u32);
         if per_member_xp == 0 {
             return Vec::new();
         }
@@ -3282,9 +3287,13 @@ impl World {
         results
     }
 
-    /// Sum the per-monster `exp` and `gold` for every slot in `formation`,
-    /// distribute the XP via [`World::apply_battle_xp`], and add the gold
-    /// to [`World::money`]. Returns the aggregated [`BattleRewards`] so
+    /// Resolve the victory spoils for `formation` (the reward half of
+    /// `FUN_8004E568`): accumulate each dead enemy's gold as `gold >> 1`,
+    /// finalize it through the +25% bonus + halve
+    /// ([`vm::battle_formulas::victory_gold_finalize`]) and add it to
+    /// [`World::money`]; sum the enemy EXP and distribute it (scaled 3/4,
+    /// ceiling-split) via [`World::apply_battle_xp`]. Returns the aggregated
+    /// [`BattleRewards`] (`gold` is the **credited** amount, not the raw sum) so
     /// engines can surface the post-battle banner ("got N XP, M gold,
     /// learned spell X").
     ///
@@ -3297,14 +3306,18 @@ impl World {
         catalog: &crate::monster_catalog::MonsterCatalog,
     ) -> BattleRewards {
         let mut xp_total: u32 = 0;
-        let mut gold_total: u32 = 0;
+        // Accumulated `gold >> 1` over dead enemies (the victory-gold accumulator
+        // in `FUN_8004E568`); finalized below via the `>> 1` halve + optional
+        // +25% bonus. NOT the raw record-gold sum.
+        let mut gold_acc: u32 = 0;
         let mut drops: Vec<u8> = Vec::new();
         for slot in &formation.slots {
             let Some(def) = catalog.get(slot.monster_id) else {
                 continue;
             };
             xp_total = xp_total.saturating_add(def.exp as u32);
-            gold_total = gold_total.saturating_add(def.gold as u32);
+            gold_acc =
+                gold_acc.saturating_add(vm::battle_formulas::victory_gold_per_monster(def.gold));
             if let Some(item_id) = def.drop_item
                 && def.drop_rate_q8 > 0
             {
@@ -3320,16 +3333,31 @@ impl World {
                 }
             }
         }
+        // The +25% gold bonus fires when a living party member carries ability
+        // bit `0x10000` (`FUN_8004E568` `8004e568.txt:425`). Bit 16 = byte 2,
+        // mask 0x01 of the `+0xF4` ability bitfield. "Living" = post-battle
+        // battle HP > 0, the same set `apply_battle_xp` divides EXP among.
+        let party_count = self.party_count as usize;
+        let more_gold = (0..party_count).any(|i| {
+            self.actors.get(i).is_some_and(|a| a.battle.hp > 0)
+                && self
+                    .roster
+                    .members
+                    .get(i)
+                    .is_some_and(|rec| rec.ability_bits()[2] & 0x01 != 0)
+        });
+        let gold_credited = vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold);
+
         let level_ups = if xp_total > 0 {
             self.apply_battle_xp(xp_total)
         } else {
             Vec::new()
         };
-        let new_money = (self.money as i64).saturating_add(gold_total as i64);
+        let new_money = (self.money as i64).saturating_add(gold_credited as i64);
         self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         BattleRewards {
             xp: xp_total,
-            gold: gold_total,
+            gold: gold_credited,
             level_ups,
             drops,
         }

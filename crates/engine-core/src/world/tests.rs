@@ -3331,7 +3331,9 @@ fn apply_battle_xp_sets_level_up_banner() {
     world.actors[0].battle.hp = 100;
     // Placeholder XP table: 50 XP to reach level 2 (entry[0]; the placeholder
     // is a sin-LUT slice, not retail - real curve is DAT_80076AF4 via FUN_801E9504).
-    world.apply_battle_xp(50);
+    // The reward is scaled 3/4 + ceil-split (FUN_8004E568): feed 68 so the lone
+    // member receives ceil((68 - 68>>2)/1) = 51 >= the 50 threshold.
+    world.apply_battle_xp(68);
     let banner = world
         .current_level_up_banner
         .as_ref()
@@ -3356,8 +3358,9 @@ fn apply_battle_xp_skips_dead_members() {
     world.actors[0].battle.hp = 100;
     world.actors[1].battle.hp = 0;
     world.actors[2].battle.hp = 100;
-    let results = world.apply_battle_xp(100);
-    // 100 / 2 alive = 50 each; both should reach L2 (50 threshold).
+    // Scaled 3/4 + ceil-split over 2 alive: ceil((140 - 140>>2)/2) = ceil(105/2)
+    // = 53 each; both reach L2 (50 threshold).
+    let results = world.apply_battle_xp(140);
     let slot_ids: Vec<u8> = results.iter().map(|r| r.char_id).collect();
     assert!(slot_ids.contains(&0));
     assert!(slot_ids.contains(&2));
@@ -5191,7 +5194,7 @@ fn load_full_zero_level_record_clamps_to_one() {
 }
 
 #[test]
-fn apply_battle_xp_drops_remainder_from_integer_division() {
+fn apply_battle_xp_scales_three_quarters_and_ceils() {
     let mut world = World {
         party_count: 3,
         ..World::default()
@@ -5199,11 +5202,13 @@ fn apply_battle_xp_drops_remainder_from_integer_division() {
     world.actors[0].battle.hp = 100;
     world.actors[1].battle.hp = 100;
     world.actors[2].battle.hp = 100;
-    // 101 / 3 = 33; the leftover 2 XP is dropped.
+    // FUN_8004E568: 101 summed -> *3/4 = 101 - (101>>2 = 25) = 76, then
+    // ceil(76 / 3 alive) = 26 each (floor would give 25). Below the 50 L2
+    // threshold, so it just accumulates.
     let _ = world.apply_battle_xp(101);
-    assert_eq!(world.level_up_tracker.xp[0], 33);
-    assert_eq!(world.level_up_tracker.xp[1], 33);
-    assert_eq!(world.level_up_tracker.xp[2], 33);
+    assert_eq!(world.level_up_tracker.xp[0], 26);
+    assert_eq!(world.level_up_tracker.xp[1], 26);
+    assert_eq!(world.level_up_tracker.xp[2], 26);
 }
 
 #[test]
@@ -5213,7 +5218,7 @@ fn level_up_banner_countdown_clears() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.apply_battle_xp(50); // retail table: exactly L2 threshold
+    world.apply_battle_xp(68); // 3/4-scaled ceil to 51 >= the 50 L2 threshold
     assert!(world.current_level_up_banner.is_some());
     for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
         world.tick();

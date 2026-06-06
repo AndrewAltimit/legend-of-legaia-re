@@ -160,6 +160,14 @@ the Gimard fight (`+0x44`=60) credited exactly `+15` gold
 cross-check against `legaia-gamedata` (Gimard `+0x48`=119 @ 10% drops Healing
 Leaf).
 
+The gold/EXP scaling ports to pure kernels (`battle_formulas::victory_gold_per_monster`
+/ `victory_gold_finalize` / `victory_exp_per_member`) the engine's
+`World::apply_battle_loot` / `apply_battle_xp` call — so the credited reward is
+the scaled amount, not the raw record sum. The +25% gold bonus reads the living
+party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
+(`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
+gate.
+
 ## Spirit damage formula
 
 From [battle-action.md state `0x3E` and `0x46`](battle-action.md):
@@ -296,6 +304,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |
 | `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
+| `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 
 The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.
 

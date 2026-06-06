@@ -20,6 +20,9 @@
 //! mitigation/finisher glue is not reproduced here — see the REF below.)
 //! PORT: FUN_801DD864 (summon-roll scale stage — `apply_element_affinity` /
 //! `apply_status_weaken` / `apply_magic_power`).
+//! PORT: FUN_8004E568 (victory-spoils gold + EXP scaling — `victory_gold_*` /
+//! `victory_exp_per_member`. The reward resolver's drop roll + level-up
+//! application live in engine-core `apply_battle_loot` / `apply_battle_xp`.)
 //! REF: FUN_801E295C, FUN_801EED1C, FUN_801DDB30 (the post-roll finisher;
 //! deeply coupled to live battle globals, intentionally not a pure kernel).
 
@@ -480,6 +483,60 @@ pub fn arts_physical_predamage(i: &ArtsPredamage) -> (u32, u32) {
     (attacker, defender)
 }
 
+// ---------------------------------------------------------------------------
+// FUN_8004E568 — victory spoils (gold + EXP reward arithmetic)
+// ---------------------------------------------------------------------------
+//
+// The post-battle reward resolver `FUN_8004E568`
+// (`ghidra/scripts/funcs/8004e568.txt`) builds the gold and EXP awards from the
+// dead enemies' record fields (`+0x44` gold, `+0x46` EXP). Both are scaled — the
+// engine must not credit the raw record sums. Pinned arithmetic (decompiled
+// block at `8004e568.txt:411..461`):
+//
+//   gold: acc = Σ (enemy_gold >> 1) over dead enemies;
+//         if a living party member carries ability bit 0x10000: acc += acc >> 2;  // +25%
+//         credited = acc - (acc >> 1);                                            // halve
+//   exp:  per_member = ceil((Σ enemy_exp - (Σ enemy_exp >> 2)) / alive_count);    // ×3/4
+//
+// The gold path is runtime-confirmed: the lone-enemy Gimard fight (record gold
+// 60) credited exactly +15 (`60>>1 = 30`, `30 - (30>>1) = 15`) via a
+// write-watchpoint on the party purse `0x8008459C`.
+
+/// One dead enemy's contribution to the victory gold accumulator
+/// (`FUN_8004E568`, `8004e568.txt:413`): `enemy_gold >> 1` (record `+0x44`).
+/// Sum this over every dead enemy, then pass the total to
+/// [`victory_gold_finalize`].
+pub fn victory_gold_per_monster(enemy_gold: u16) -> u32 {
+    (enemy_gold >> 1) as u32
+}
+
+/// Finalize the accumulated victory gold (`FUN_8004E568`, `8004e568.txt:435/440`):
+/// apply the optional +25% "extra gold" bonus when a living party member carries
+/// ability bit `0x10000` (`acc += acc >> 2`), then halve the total (`acc - (acc
+/// >> 1)`). With `more_gold == false` and a lone enemy this is the
+/// runtime-confirmed Gimard chain `60 -> 30 -> 15` (`floor((gold >> 1) / 2)`).
+/// The party-purse cap (`99,999,999`) is applied by the caller, not here.
+pub fn victory_gold_finalize(accumulated: u32, more_gold: bool) -> u32 {
+    let acc = if more_gold {
+        accumulated.saturating_add(accumulated >> 2)
+    } else {
+        accumulated
+    };
+    acc - (acc >> 1)
+}
+
+/// Per-member EXP from a won battle (`FUN_8004E568`, `8004e568.txt:461`): the
+/// summed enemy EXP (record `+0x46`) is scaled by 3/4 (`v - (v >> 2)`) then
+/// **ceiling**-divided among the `alive` living, EXP-eligible party members
+/// (`(scaled + alive - 1) / alive`). Returns 0 when `alive == 0`.
+pub fn victory_exp_per_member(exp_sum: u32, alive: u32) -> u32 {
+    if alive == 0 {
+        return 0;
+    }
+    let scaled = exp_sum - (exp_sum >> 2);
+    scaled.div_ceil(alive)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -859,5 +916,31 @@ mod tests {
         };
         // attacker 60 * 200/100 = 120. defender 37. threshold 57; 120 >= 57 -> no bonus.
         assert_eq!(arts_physical_predamage(&i), (120, 37));
+    }
+
+    #[test]
+    fn victory_gold_matches_runtime_gimard() {
+        // Lone Gimard: record gold 60 -> 60>>1 = 30 accumulated -> 30 - (30>>1) = 15.
+        let acc = victory_gold_per_monster(60);
+        assert_eq!(acc, 30);
+        assert_eq!(victory_gold_finalize(acc, false), 15);
+        // +25% "extra gold" bonus: 30 + (30>>2 = 7) = 37 -> 37 - (37>>1 = 18) = 19.
+        assert_eq!(victory_gold_finalize(acc, true), 19);
+        // Multi-enemy accumulation rounds per monster: gold 60 + 61 -> 30 + 30 = 60.
+        let two = victory_gold_per_monster(60) + victory_gold_per_monster(61);
+        assert_eq!(two, 60);
+        assert_eq!(victory_gold_finalize(two, false), 30);
+    }
+
+    #[test]
+    fn victory_exp_per_member_scales_and_ceils() {
+        // 100 exp, 3 alive: 100 - (100>>2 = 25) = 75; ceil(75/3) = 25.
+        assert_eq!(victory_exp_per_member(100, 3), 25);
+        // 100 exp, 1 alive: 75 -> ceil(75/1) = 75.
+        assert_eq!(victory_exp_per_member(100, 1), 75);
+        // Ceiling: 10 exp, 3 alive: 10 - 2 = 8; ceil(8/3) = 3 (floor would give 2).
+        assert_eq!(victory_exp_per_member(10, 3), 3);
+        // alive 0 -> 0 (guard).
+        assert_eq!(victory_exp_per_member(100, 0), 0);
     }
 }
