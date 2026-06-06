@@ -65,6 +65,34 @@ fn known_monster_ids_decode_to_expected_records() {
     );
 }
 
+/// Record `+0x1D` is the enemy element id the battle loader copies into the
+/// live actor's element slot (read by the affinity scale `FUN_801dd864`). Pinned
+/// here on real disc bytes: every populated record's element is in the
+/// 8-element space (`0..=7`) — the decisive correlation signal — and Gimard's
+/// element is fire.
+#[test]
+fn monster_element_byte_is_in_range_and_pins_gimard_fire() {
+    use legaia_asset::element_affinity::Element;
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let all = monster_archive::records(&entry).expect("archive walk");
+    assert!(!all.is_empty());
+    for r in &all {
+        assert!(
+            r.element <= 7,
+            "monster {} ({}) element {} out of the 0..=7 id space",
+            r.id,
+            r.name,
+            r.element
+        );
+    }
+    // Gimard (id 10) is a fire monster.
+    let gimard = monster_archive::record(&entry, 10).unwrap().unwrap();
+    assert_eq!(gimard.element, Element::Fire as u8, "Gimard = fire");
+}
+
 #[test]
 fn spell_list_decodes_from_record_offset_array() {
     let Some(entry) = entry_867() else {

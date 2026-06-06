@@ -1274,9 +1274,19 @@ impl SceneHost {
                         "[scene] move-power table (PROT {entry}) parse failed - placeholder damage stays active"
                     );
                 }
+                // The element-affinity matrix + per-character element table are
+                // sibling static data in the same overlay, so parse them from the
+                // same bytes. A failure leaves the neutral 100% multiplier active.
+                if let Some(aff) = legaia_asset::element_affinity::parse(&bytes) {
+                    self.world.element_affinity = Some(aff);
+                } else {
+                    eprintln!(
+                        "[scene] element-affinity tables (PROT {entry}) parse failed - neutral affinity stays active"
+                    );
+                }
             }
             Err(err) => {
-                eprintln!("[scene] move-power table (PROT {entry}) load skipped: {err:#}");
+                eprintln!("[scene] battle-action overlay (PROT {entry}) load skipped: {err:#}");
             }
         }
     }

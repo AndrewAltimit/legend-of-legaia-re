@@ -282,11 +282,23 @@ pairs + the spell-table element vocabulary.
 (slot `< 3`) looks its element up in the per-character table by **1-based** char
 id (`CHARACTER_ELEMENTS[char_id]` at `0x801F5480`: Vahn=fire, Noa=wind,
 Gala=thunder, Terra=wind); an **enemy** (slot `>= 3`) reads `actor[+0x1d]`. The
-matrix + party table are engine-side; the one piece still **open** is the
-monster-record field the battle loader copies into the enemy `actor[+0x1d]` — the
-monster→actor builder is an indirect-dispatch handler absent from the captured
-dumps, so an elemental *enemy* attack still omits the affinity multiplier (an
-elementless / neutral hit is exact, and the multiplier is bounded to ±4%).
+enemy element comes from the monster record's **`+0x1D`** byte
+([`legaia_asset::monster_archive::MonsterRecord::element`]) — pinned by
+correlating that byte against the curated enemy elements across the whole roster
+(the four party-table ids reproduce exactly; water/earth/light/dark corroborate)
+and by the byte taking *only* values `0..=7` across every populated record.
+
+**Engine wiring.** The matrix + per-character table load from the same PROT 0898
+overlay as the move-power table (`World::element_affinity`), and the monster
+special-attack path scales by `matrix[enemy_element][party_member_element]`
+(`World::enemy_affinity_pct` → `enemy_move_predamage`): the enemy element from
+`MonsterDef::element`, the defender from the active party member's element (the
+engine models `char_id == party slot`, so a defender at actor slot *s* is char id
+*s+1*). The multiply happens after all the rolls, so it never perturbs the RNG
+stream, and it's gated on the affinity table being installed (disc-free /
+synthetic battles keep the neutral 100% multiplier, bit-identical). The
+player-driven **summon** roll and **party** arts/physical strikes still use their
+own stand-ins.
 
 ## MP cost & ability-bit modifiers
 
