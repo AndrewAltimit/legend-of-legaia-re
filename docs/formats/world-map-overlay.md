@@ -21,6 +21,28 @@
 > paged in. See
 > [`subsystems/world-map.md`](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers).
 
+## Contents
+
+- [Container layout (confirmed)](#container-layout-confirmed)
+- [Per-kingdom body inventory](#per-kingdom-body-inventory)
+- [RAM layout (confirmed)](#ram-layout-confirmed)
+- [Consumer call sites](#consumer-call-sites)
+  - [Cluster A internals](#cluster-a-internals)
+  - [How slot-4 bytes reach cluster A](#how-slot-4-bytes-reach-cluster-a)
+  - [Cross-kingdom hit-count comparison](#cross-kingdom-hit-count-comparison)
+  - [Reproducing the capture](#reproducing-the-capture)
+- [Falsified hypotheses](#falsified-hypotheses)
+- [Current working hypothesis](#current-working-hypothesis)
+- [Tooling](#tooling)
+- [`DAT_8007C018` — global TMD pointer table](#dat_8007c018--global-tmd-pointer-table-the-actual-cluster-a-source)
+  - [Live snapshot (settled field scene)](#live-snapshot-settled-field-scene)
+  - [Disc-side source of `[0..4]`](#disc-side-source-of-04)
+  - [Loader chain — partly open](#loader-chain--partly-open)
+  - [Live snapshot (Sebucus mid-warp)](#live-snapshot-sebucus-mid-warp)
+  - [Implication for slot 4 — partly resolved](#implication-for-slot-4--partly-resolved)
+- [Open work](#open-work)
+- [See also](#see-also)
+
 Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size
 buffer that the runtime loads verbatim into RAM. Three carriers:
 

@@ -7,6 +7,19 @@ decompiled source in `ghidra/scripts/funcs/<addr>.txt` plus the format
 notes in `docs/subsystems/`, with no static-recompiled bytes from the
 original executable.
 
+## Contents
+
+- [`actor_vm` - `FUN_801D6628`](#actor_vm---fun_801d6628)
+- [`field_vm` - `FUN_801DE840`](#field_vm---fun_801de840-the-fieldevent-script-vm)
+- [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`](#effect_vm---fun_801de914--fun_801dfdf8--fun_801e0088)
+- [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
+- [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
+- [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
+- [`status_effects`](#status_effects)
+- [`battle_formulas`](#battle_formulas)
+- [`action_validator`](#action_validator)
+- [See also](#see-also)
+
 ## `actor_vm` - `FUN_801D6628`
 
 Sprite / actor script VM. The first script VM identified in retail
