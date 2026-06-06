@@ -160,6 +160,14 @@ the Gimard fight (`+0x44`=60) credited exactly `+15` gold
 cross-check against `legaia-gamedata` (Gimard `+0x48`=119 @ 10% drops Healing
 Leaf).
 
+The gold/EXP scaling ports to pure kernels (`battle_formulas::victory_gold_per_monster`
+/ `victory_gold_finalize` / `victory_exp_per_member`) the engine's
+`World::apply_battle_loot` / `apply_battle_xp` call — so the credited reward is
+the scaled amount, not the raw record sum. The +25% gold bonus reads the living
+party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
+(`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
+gate.
+
 ## Spirit damage formula
 
 From [battle-action.md state `0x3E` and `0x46`](battle-action.md):
@@ -203,10 +211,35 @@ damage = atk - def;
 Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
 clamped to `maxHP - curHP`.
 
-The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels (see the
-mirror table below); stage 3 (`FUN_801ddb30`, 889 instructions) reads ~20 battle
-globals and mutates live battle state, so it stays the coupled tail of the live
-battle context rather than a pure kernel. Dumps:
+### Arts / physical branch (`attacker_slot != 7`)
+
+The **same** kernel `FUN_801dd0ac` also resolves every melee / Tactical-Art /
+enemy-special-attack hit. It is the twin of the summon branch with two
+differences: the attacker roll is seeded by the **static per-move power scalar**
+from the 26-byte-stride move-power table at `0x801F4F5C` (parsed off the disc as
+[`legaia_asset::move_power`], see [move-power.md](../formats/move-power.md)), and
+it draws two `rand()`s for the attacker roll plus two for the bonus (five total,
+vs the summon branch's three). The defender roll and the `FUN_801dd864` scale /
+`FUN_801ddb30` finisher are shared; the scale's per-character magic-power arm is
+summon-only (`param_1 == 7`), so arts hits scale by affinity + status only.
+
+```c
+// Stage 1 - rolls (FUN_801dd0ac, arts/physical branch). power = (i16)move_power[id].+0
+atk = rand() % ((power >> 2) + 1) + rand() % ((atk.AGL >> 1) + 1)
+    + (atk.HP >> 8) + power + atk.AGL*2;
+def = /* identical to the summon-branch defender roll above */;
+
+// Stage 2 - scale (FUN_801dd864): affinity + status only (no magic-power arm).
+// Stage 2c - FUN_801dd0ac re-rolls a weak attacker, this time off the power scalar:
+if (atk < def + (power >> 1) + (atk.AGL >> 1))
+    atk = def + (power >> 1) + rand() % ((power >> 3) + 1)
+        + (atk.AGL >> 1) + rand() % ((atk.AGL >> 3) + 1);
+```
+
+The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
+**both** branches (see the mirror table below); stage 3 (`FUN_801ddb30`, 889
+instructions) reads ~20 battle globals and mutates live battle state, so it stays
+the coupled tail of the live battle context rather than a pure kernel. Dumps:
 `overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
 [`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
 
@@ -267,9 +300,11 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `accuracy_roll` | this doc, selector 9 above |
 | `psyq_rand_step` | `ghidra/scripts/funcs/80056798.txt` |
 | `damage_cap_for_party_slot` | this doc, selector 0 above (`DAT_8007655C` table) |
-| `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac`) |
+| `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac` summon branch) |
+| `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |
 | `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
+| `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 
 The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.
 

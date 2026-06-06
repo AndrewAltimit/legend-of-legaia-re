@@ -11,12 +11,18 @@
 //! the individual `pub fn` docs below).
 //! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
 //! module ports the arithmetic kernel the dispatch feeds into).
-//! PORT: FUN_801DD0AC (summon-magic damage roll — `summon_attacker_roll` /
-//! `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage`. The
-//! arts/physical `0x801F4F5C`-table branch and the live `FUN_801DD864` /
-//! `FUN_801DD0AC` mitigation glue are not reproduced here.)
+//! PORT: FUN_801DD0AC (damage roll — both branches. Summon branch
+//! (`attacker_slot == 7`): `summon_attacker_roll` / `summon_defender_roll` /
+//! `summon_bonus_roll` / `summon_predamage`. Arts/physical branch
+//! (`attacker_slot != 7`, seeded by the `0x801F4F5C` move-power table):
+//! `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage`
+//! (defender roll shared with the summon branch). The live `FUN_801DDB30`
+//! mitigation/finisher glue is not reproduced here — see the REF below.)
 //! PORT: FUN_801DD864 (summon-roll scale stage — `apply_element_affinity` /
 //! `apply_status_weaken` / `apply_magic_power`).
+//! PORT: FUN_8004E568 (victory-spoils gold + EXP scaling — `victory_gold_*` /
+//! `victory_exp_per_member`. The reward resolver's drop roll + level-up
+//! application live in engine-core `apply_battle_loot` / `apply_battle_xp`.)
 //! REF: FUN_801E295C, FUN_801EED1C, FUN_801DDB30 (the post-roll finisher;
 //! deeply coupled to live battle globals, intentionally not a pure kernel).
 
@@ -362,6 +368,175 @@ pub fn heal_summon_amount(power_byte: u8) -> u16 {
     ((power_byte as u32) << 5) as u16 + 0xE0
 }
 
+// ---------------------------------------------------------------------------
+// FUN_801dd0ac — arts / physical branch (attacker_slot != 7)
+// ---------------------------------------------------------------------------
+//
+// The same shared kernel `FUN_801dd0ac` also resolves every melee / Tactical-Art
+// / enemy-special-attack hit (the `attacker_slot != 7` branch), and it is the
+// twin of the summon branch above with two differences:
+//
+//   * the attacker roll is seeded by a **static per-move power scalar** from the
+//     26-byte-stride move-power table at `0x801F4F5C` (now parsed off the disc as
+//     [`legaia_asset::move_power`], PROT 0898 file `0x26744`) — `move_type * 0x1a
+//     + 0x801F4F5C`, the i16 at `+0`. This is the one true per-move power scalar
+//     in the battle system; summons have no such scalar (see the summon block
+//     above + `docs/formats/move-power.md`).
+//   * it draws **two** `rand()`s for the attacker roll (vs the summon branch's
+//     one) and **two** for the bonus re-roll, so the arts path consumes up to
+//     five draws total (attacker ×2, defender ×1, bonus ×2) against the summon
+//     path's three.
+//
+// The `FUN_801dd864` scale stage and the `FUN_801ddb30` finisher are shared with
+// the summon branch; the scale's per-character magic-power arm is summon-only
+// (`param_1 == 7` in `FUN_801dd864`), so arts hits scale by element affinity +
+// status weaken only — exactly [`apply_element_affinity`] + [`apply_status_weaken`].
+//
+// `power` is the **sign-extended i16** read of the move-power record's `+0`, so
+// the `power >> 1/2/3` folds are arithmetic shifts. Real records carry
+// non-negative powers; the kernels mirror the signed shifts the retail code uses.
+
+/// Attacker roll, `FUN_801dd0ac` arts/physical branch (`attacker_slot != 7`):
+/// `rand0 % ((power >> 2) + 1) + rand1 % ((agl >> 1) + 1) + (hp >> 8) + power +
+/// agl * 2`.
+///
+/// `power` is the move-power record's `+0` i16 (sign-extended); `hp`/`agl` are the
+/// attacking actor's `+0x14c`/`+0x168`. Two `rand()` draws in call order.
+pub fn arts_attacker_roll(power: i32, attacker_hp: u16, attacker_agl: u16, rng: [u16; 2]) -> u32 {
+    let modulus_power = (power >> 2) + 1; // >= 1 for power >= 0
+    let modulus_agl = (attacker_agl as i32 >> 1) + 1; // never zero
+    let roll = rng[0] as i32 % modulus_power
+        + rng[1] as i32 % modulus_agl
+        + (attacker_hp as i32 >> 8)
+        + power
+        + attacker_agl as i32 * 2;
+    roll as u32
+}
+
+/// Conditional bonus re-roll, `FUN_801dd0ac` arts/physical second arm. After the
+/// scale stage, when `attacker_roll < defender_roll + (power >> 1) + (agl >> 1)`
+/// (the attacker has not overwhelmed the defender's mitigation), the attacker
+/// roll is rebuilt as `defender_roll + (power >> 1) + rand0 % ((power >> 3) + 1) +
+/// (agl >> 1) + rand1 % ((agl >> 3) + 1)`. Two `rand()` draws in call order.
+pub fn arts_bonus_roll(defender_roll: u32, power: i32, attacker_agl: u16, rng: [u16; 2]) -> u32 {
+    let modulus_power = (power >> 3) + 1; // >= 1 for power >= 0
+    let modulus_agl = (attacker_agl as i32 >> 3) + 1; // never zero
+    let bonus = defender_roll as i32
+        + (power >> 1)
+        + rng[0] as i32 % modulus_power
+        + (attacker_agl as i32 >> 1)
+        + rng[1] as i32 % modulus_agl;
+    bonus as u32
+}
+
+/// All inputs to [`arts_physical_predamage`] (stages 1 + 2 of the arts/physical
+/// damage roll).
+#[derive(Debug, Clone, Copy)]
+pub struct ArtsPredamage {
+    /// The move-power record's `+0` power scalar (sign-extended i16), from
+    /// [`legaia_asset::move_power`] indexed via the `0x801F4E63` id→index map.
+    pub power: i32,
+    /// Attacking actor stats (slot != 7).
+    pub attacker: SummonRollActor,
+    /// Target (defender) stats.
+    pub target: SummonRollActor,
+    /// Element-affinity percent (`0x801F53E8[def_elem][atk_elem]`).
+    pub element_affinity_pct: u8,
+    /// Five `rand()` draws, in call order: attacker ×2, defender ×1, bonus ×2.
+    pub rng: [u16; 5],
+}
+
+/// Compose the closed-form stages of the arts/physical damage roll: the attacker
+/// roll ([`arts_attacker_roll`], two draws) + defender roll
+/// ([`summon_defender_roll`], shared with the summon branch), the
+/// `FUN_801dd864` scale stage (affinity → status on the attacker, guard-double →
+/// status on the defender; **no** magic-power arm on this branch), and the
+/// conditional bonus re-roll ([`arts_bonus_roll`], two draws).
+///
+/// Returns `(attacker_roll, defender_roll)` *before* the `FUN_801ddb30`
+/// finisher, exactly as [`summon_predamage`] does for the summon branch. The
+/// pre-finisher damage is `attacker_roll.saturating_sub(defender_roll)`.
+pub fn arts_physical_predamage(i: &ArtsPredamage) -> (u32, u32) {
+    // Stage 1: rolls. Attacker uses rng[0..2]; defender uses rng[2].
+    let mut attacker =
+        arts_attacker_roll(i.power, i.attacker.hp, i.attacker.agl, [i.rng[0], i.rng[1]]);
+    let mut defender = summon_defender_roll(&i.target, i.rng[2]);
+
+    // Stage 2a: FUN_801dd864 scales the attacker roll (affinity, status; the
+    // magic-power arm is summon-only and does not apply here).
+    attacker = apply_element_affinity(attacker, i.element_affinity_pct);
+    attacker = apply_status_weaken(attacker, i.attacker.status);
+
+    // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
+    if i.target.guard == 4 {
+        defender = defender.saturating_mul(2);
+    }
+    defender = apply_status_weaken(defender, i.target.status);
+
+    // Stage 2c: conditional bonus re-roll (FUN_801dd0ac second arm). Threshold =
+    // defender + (power >> 1) + (attacker_agl >> 1); fires when attacker < it.
+    let threshold = defender as i32 + (i.power >> 1) + (i.attacker.agl as i32 >> 1);
+    if (attacker as i32) < threshold {
+        attacker = arts_bonus_roll(defender, i.power, i.attacker.agl, [i.rng[3], i.rng[4]]);
+    }
+
+    (attacker, defender)
+}
+
+// ---------------------------------------------------------------------------
+// FUN_8004E568 — victory spoils (gold + EXP reward arithmetic)
+// ---------------------------------------------------------------------------
+//
+// The post-battle reward resolver `FUN_8004E568`
+// (`ghidra/scripts/funcs/8004e568.txt`) builds the gold and EXP awards from the
+// dead enemies' record fields (`+0x44` gold, `+0x46` EXP). Both are scaled — the
+// engine must not credit the raw record sums. Pinned arithmetic (decompiled
+// block at `8004e568.txt:411..461`):
+//
+//   gold: acc = Σ (enemy_gold >> 1) over dead enemies;
+//         if a living party member carries ability bit 0x10000: acc += acc >> 2;  // +25%
+//         credited = acc - (acc >> 1);                                            // halve
+//   exp:  per_member = ceil((Σ enemy_exp - (Σ enemy_exp >> 2)) / alive_count);    // ×3/4
+//
+// The gold path is runtime-confirmed: the lone-enemy Gimard fight (record gold
+// 60) credited exactly +15 (`60>>1 = 30`, `30 - (30>>1) = 15`) via a
+// write-watchpoint on the party purse `0x8008459C`.
+
+/// One dead enemy's contribution to the victory gold accumulator
+/// (`FUN_8004E568`, `8004e568.txt:413`): `enemy_gold >> 1` (record `+0x44`).
+/// Sum this over every dead enemy, then pass the total to
+/// [`victory_gold_finalize`].
+pub fn victory_gold_per_monster(enemy_gold: u16) -> u32 {
+    (enemy_gold >> 1) as u32
+}
+
+/// Finalize the accumulated victory gold (`FUN_8004E568`, `8004e568.txt:435/440`):
+/// apply the optional +25% "extra gold" bonus when a living party member carries
+/// ability bit `0x10000` (`acc += acc >> 2`), then halve the total (`acc - (acc
+/// >> 1)`). With `more_gold == false` and a lone enemy this is the
+/// runtime-confirmed Gimard chain `60 -> 30 -> 15` (`floor((gold >> 1) / 2)`).
+/// The party-purse cap (`99,999,999`) is applied by the caller, not here.
+pub fn victory_gold_finalize(accumulated: u32, more_gold: bool) -> u32 {
+    let acc = if more_gold {
+        accumulated.saturating_add(accumulated >> 2)
+    } else {
+        accumulated
+    };
+    acc - (acc >> 1)
+}
+
+/// Per-member EXP from a won battle (`FUN_8004E568`, `8004e568.txt:461`): the
+/// summed enemy EXP (record `+0x46`) is scaled by 3/4 (`v - (v >> 2)`) then
+/// **ceiling**-divided among the `alive` living, EXP-eligible party members
+/// (`(scaled + alive - 1) / alive`). Returns 0 when `alive == 0`.
+pub fn victory_exp_per_member(exp_sum: u32, alive: u32) -> u32 {
+    if alive == 0 {
+        return 0;
+    }
+    let scaled = exp_sum - (exp_sum >> 2);
+    scaled.div_ceil(alive)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,5 +822,125 @@ mod tests {
         // defender 53 * 2 = 106. 106 + 200 = 306 > 237 -> bonus:
         // 106 + (5 % 11 = 5) + 200 = 311.
         assert_eq!(summon_predamage(&i), (311, 106));
+    }
+
+    #[test]
+    fn arts_attacker_roll_matches_disasm() {
+        // power 20, attacker hp 200 / agl 20, rng [0, 0]:
+        //   rand0 % ((20>>2)+1 = 6) = 0
+        // + rand1 % ((20>>1)+1 = 11) = 0
+        // + (200 >> 8 = 0) + power 20 + agl*2 (40) = 60.
+        assert_eq!(arts_attacker_roll(20, 200, 20, [0, 0]), 60);
+        // rng [5, 7]: 5%6 (5) + 7%11 (7) + 0 + 20 + 40 = 72.
+        assert_eq!(arts_attacker_roll(20, 200, 20, [5, 7]), 72);
+        // power 0 -> modulus_power (0>>2)+1 = 1, rand%1 = 0; hp 0xFFFF>>8 = 0xFF.
+        assert_eq!(arts_attacker_roll(0, 0xFFFF, 0, [123, 0]), 0xFF);
+    }
+
+    #[test]
+    fn arts_bonus_roll_matches_disasm() {
+        // defender 30, power 10, agl 0, rng [0, 0]:
+        //   30 + (10>>1 = 5) + 0%((10>>3)+1=2) + (0>>1 = 0) + 0%((0>>3)+1=1) = 35.
+        assert_eq!(arts_bonus_roll(30, 10, 0, [0, 0]), 35);
+        // rng [1, 0]: 30 + 5 + 1%2 (1) + 0 + 0 = 36.
+        assert_eq!(arts_bonus_roll(30, 10, 0, [1, 0]), 36);
+    }
+
+    #[test]
+    fn arts_physical_predamage_skips_bonus_when_attacker_dominates() {
+        let i = ArtsPredamage {
+            power: 20,
+            attacker: SummonRollActor {
+                hp: 200,
+                agl: 20,
+                ..Default::default()
+            },
+            target: SummonRollActor {
+                hp: 100,
+                agl: 16,
+                stat_a: 32,
+                stat_b: 48,
+                ..Default::default()
+            },
+            element_affinity_pct: 100,
+            rng: [0, 0, 0, 0, 0],
+        };
+        // attacker 60 (see arts_attacker_roll test), defender 0%9 + 0 + 2 + 3 + 32 = 37.
+        // threshold = 37 + (20>>1=10) + (20>>1=10) = 57; attacker 60 >= 57 -> no bonus.
+        assert_eq!(arts_physical_predamage(&i), (60, 37));
+    }
+
+    #[test]
+    fn arts_physical_predamage_takes_bonus_when_attacker_is_weak() {
+        let i = ArtsPredamage {
+            power: 10,
+            attacker: SummonRollActor {
+                hp: 0,
+                agl: 0,
+                ..Default::default()
+            },
+            target: SummonRollActor {
+                hp: 0,
+                agl: 0,
+                stat_a: 0xFF,
+                stat_b: 0xFF,
+                ..Default::default()
+            },
+            element_affinity_pct: 100,
+            rng: [0, 0, 0, 0, 0],
+        };
+        // attacker = 0%3 + 0%1 + 0 + 10 + 0 = 10. defender = 0 + 0 + 15 + 15 + 0 = 30.
+        // threshold = 30 + (10>>1=5) + (0>>1=0) = 35; attacker 10 < 35 -> bonus:
+        //   30 + 5 + 0%2 + 0 + 0%1 = 35.
+        assert_eq!(arts_physical_predamage(&i), (35, 30));
+    }
+
+    #[test]
+    fn arts_physical_predamage_scales_by_affinity() {
+        let i = ArtsPredamage {
+            power: 20,
+            attacker: SummonRollActor {
+                hp: 200,
+                agl: 20,
+                ..Default::default()
+            },
+            target: SummonRollActor {
+                hp: 100,
+                agl: 16,
+                stat_a: 32,
+                stat_b: 48,
+                ..Default::default()
+            },
+            element_affinity_pct: 200, // weakness -> double the attacker roll
+            rng: [0, 0, 0, 0, 0],
+        };
+        // attacker 60 * 200/100 = 120. defender 37. threshold 57; 120 >= 57 -> no bonus.
+        assert_eq!(arts_physical_predamage(&i), (120, 37));
+    }
+
+    #[test]
+    fn victory_gold_matches_runtime_gimard() {
+        // Lone Gimard: record gold 60 -> 60>>1 = 30 accumulated -> 30 - (30>>1) = 15.
+        let acc = victory_gold_per_monster(60);
+        assert_eq!(acc, 30);
+        assert_eq!(victory_gold_finalize(acc, false), 15);
+        // +25% "extra gold" bonus: 30 + (30>>2 = 7) = 37 -> 37 - (37>>1 = 18) = 19.
+        assert_eq!(victory_gold_finalize(acc, true), 19);
+        // Multi-enemy accumulation rounds per monster: gold 60 + 61 -> 30 + 30 = 60.
+        let two = victory_gold_per_monster(60) + victory_gold_per_monster(61);
+        assert_eq!(two, 60);
+        assert_eq!(victory_gold_finalize(two, false), 30);
+    }
+
+    #[test]
+    fn victory_exp_per_member_scales_and_ceils() {
+        // 100 exp, 3 alive: 100 - (100>>2 = 25) = 75; ceil(75/3) = 25.
+        assert_eq!(victory_exp_per_member(100, 3), 25);
+        // 100 exp, 1 alive: 75 -> ceil(75/1) = 75.
+        assert_eq!(victory_exp_per_member(100, 1), 75);
+        // Ceiling: 10 exp, 3 alive: 10 - 2 = 8; ceil(8/3) = 3 (floor would give 2).
+        assert_eq!(victory_exp_per_member(10, 3), 3);
+        // alive 0 -> 0 (guard).
+        assert_eq!(victory_exp_per_member(100, 0), 0);
     }
 }

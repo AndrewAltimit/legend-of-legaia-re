@@ -10,29 +10,38 @@
 //! and character-level-up save triplet for Vahn pinned the destination
 //! offsets ([`crate::levelup::observations::vahn_4_level_jump`]).
 //!
-//! The retail growth values themselves do *not* live in the level-up overlay's
-//! data section - a writer-search across the captured `overlay_magic_level_up_*`
+//! ## The growth source is RESOLVED — but not by this module
+//!
+//! The retail growth source is now pinned in
+//! [`legaia_asset::level_up_tables`]: static `SCUS_942.54` tables read by the
+//! **victory-path** level-up applier `FUN_801E9504` — a per-character parameter
+//! block at `DAT_80076918` (`{u16 start, u16 max, u8 jitter, u8 row}` per stat)
+//! selecting one of three growth curves at `DAT_800769CC`, with the per-level
+//! gain `(max - start) × curve[row][level-1] / 0x24C0`. The engine drives
+//! level-ups from it via [`crate::levelup::LevelUpTracker::with_growth_tables`]
+//! (installed at boot from the user's disc); see
+//! [`docs/subsystems/level-up.md`](../../../docs/subsystems/level-up.md). **This
+//! module is the legacy flat-curve convenience path** ([`with_seru_roster`]),
+//! kept for callers that want a single averaged grant per Seru rather than the
+//! per-level curve.
+//!
+//! [`with_seru_roster`]: crate::levelup::LevelUpTracker::with_seru_roster
+//!
+//! Why the source was hard to find (negative findings worth not re-walking):
+//! the growth values do *not* live in the level-up **display** overlay's data
+//! section — a writer-search across the captured `overlay_magic_level_up_*`
 //! dumps for `sb` / `sh` writes targeting `+0x10E`, `+0x11C..+0x12C`, `+0x130`,
-//! `+0x161` returns no code-side hits.
+//! `+0x161` returns no code-side hits, because the writer is `FUN_801E9504` (the
+//! victory-reward overlay), not the display code that was searched. And the
+//! "Seru struct `+0x74`" pointer-dereference hypothesis stays **falsified**: the
+//! five `+0x74` reads in that overlay each load a 32-bit battle-state flag
+//! written with the constant `0x80808080` by the SCUS battle-actor handler
+//! `FUN_800480D8` (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`), not a
+//! stat-grant pointer.
 //!
-//! A follow-up grep for any `lh` / `lhu` / `lb` / `lbu` / `lw` read at
-//! `+0x74(reg)` across the same overlay surfaces five hits - but every one of
-//! them is reading a 32-bit battle-state flag that gets *written* with the
-//! constant `0x80808080` by the SCUS-side battle-actor handler `FUN_800480D8`
-//! (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`), not a stat-grant
-//! pointer. The "Seru struct +0x74" pointer-dereference hypothesis is not
-//! supported by the captured code; either the table base lives in a
-//! still-uncaptured overlay (the most likely candidate is the battle-data
-//! init path that loads PROT entries 0x05C4 + sibling Seru blobs at boot) or
-//! the grant is computed inline from a packed Seru-record field that the
-//! current capture set doesn't surface.
-//!
-//! Engines wiring this module today should treat the shipped values as
-//! placeholders and override per-Seru with [`SeruStatTable::insert`]. The
-//! pinned destination offsets ([`crate::levelup::observations::vahn_4_level_jump`])
-//! still describe the *consumer* layout faithfully, so any future capture
-//! that pins the *source* table can drop into the existing API without
-//! re-shaping it.
+//! The pinned destination offsets
+//! ([`crate::levelup::observations::vahn_4_level_jump`]) still describe the
+//! *consumer* layout faithfully.
 //!
 //! ## What this module provides
 //!
@@ -41,7 +50,8 @@
 //! 1. [`SeruStatGrant`] - the clean-room shape of one Seru's grant: HP, MP,
 //!    Spirit, and the six u16 record-stat byte deltas. Engines populate this
 //!    from a [`crate::levelup::LevelUpObservation`] (averaging across the
-//!    observed range) until a true per-level vector is captured.
+//!    observed range) for the flat-curve path; the faithful per-level source is
+//!    [`legaia_asset::level_up_tables`] (see the module note above).
 //! 2. [`SeruStatTable`] - id-keyed map of grants. Engines compose one per
 //!    character from the Seru roster the player has equipped, sum the per-
 //!    Seru grants, and feed the resulting [`crate::levelup::StatGrowthCurve::PerLevel`]

@@ -39,6 +39,7 @@ pub mod miracle;
 pub mod parse;
 pub mod power;
 pub mod queue;
+pub mod recognize;
 pub mod record;
 pub mod super_art;
 pub mod tables;
@@ -51,6 +52,7 @@ pub use miracle::{MIRACLE_ARTS, MiracleArt, MiracleMatcher};
 pub use parse::{ParseError, ParsedArtRecord, parse_record};
 pub use power::{ArtPower, PowerByte, PowerTarget};
 pub use queue::{ActionConstant, ActionQueue, Character, Command};
+pub use recognize::{ArtCommands, recognize_art_sequence};
 pub use record::{ArtRecord, EffectCue, EnemyEffect, HitCue, RepeatFrames};
 pub use super_art::{SUPER_ARTS, SuperArt, SuperMatcher};
 pub use tables::{

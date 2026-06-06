@@ -59,6 +59,18 @@ pub struct ArtRow {
     /// resolved finisher-queue strike profile, not the raw per-direction
     /// fallback. `None` for an ordinary saved chain.
     pub miracle: Option<&'static str>,
+    /// Set when this saved chain's *recognized named-art sequence* ends on one
+    /// of the caster's Super Arts (see [`super_for_chain`]): the canonical Super
+    /// name (e.g. `"Tri-Somersault"`). The row's [`Self::power`] is then the
+    /// resolved Super finisher-replacement strike profile. `None` otherwise.
+    ///
+    /// This match is **connector-abstracted**: it compares the recognized
+    /// named-art ordering against each Super's pinned art sequence
+    /// ([`legaia_art::SuperArt::art_sequence`]), since the byte-exact queue
+    /// connectors the retail builder emits between arts are unpinned. Mutually
+    /// exclusive with [`Self::miracle`] (Miracle is checked first, matching the
+    /// retail "Miracle replacement runs before Super tail expansion" order).
+    pub super_art: Option<&'static str>,
 }
 
 impl ArtRow {
@@ -201,11 +213,9 @@ pub fn chain_matches_record(sequence: &[u8], rec: &ArtRecord) -> bool {
 /// to [`Command`]s, and look the sequence up. Returns the matched
 /// [`MiracleArt`] (carrying the finisher-replacement queue) or `None`.
 ///
-/// Super Arts are intentionally *not* detected here: their find-patterns match
-/// a queue of chained named-art constants (`0x19 <art> ...`), which the
-/// saved-chain model doesn't carry - a chain stores only raw directions, not
-/// the art-constant queue. Wiring Super requires the chained-named-art input
-/// model the simplified live loop doesn't build yet.
+/// Super Arts are *not* detected here (they're not an exact directional match);
+/// see [`super_for_chain`], which recognizes the chain's named-art sequence and
+/// tail-matches it against the caster's Super art sequences.
 pub fn miracle_for_chain(character: Character, sequence: &[u8]) -> Option<&'static MiracleArt> {
     let commands: Vec<Command> = sequence
         .iter()
@@ -216,6 +226,58 @@ pub fn miracle_for_chain(character: Character, sequence: &[u8]) -> Option<&'stat
         return None;
     }
     MiracleMatcher::with_default_table().find(character, &commands)
+}
+
+/// Decode a saved chain's flat directional command bytes into [`Command`]s,
+/// dropping terminator (`0`) padding.
+fn chain_commands(sequence: &[u8]) -> Vec<Command> {
+    sequence
+        .iter()
+        .filter(|&&b| b != 0)
+        .filter_map(|&b| Command::from_byte(b))
+        .collect()
+}
+
+/// Detect whether a saved chain's command sequence triggers one of
+/// `character`'s **Super Arts**, given the caster's loaded art catalog.
+///
+/// A Super fires when the player chains several named arts ending on a known
+/// combination. We recover that named-art ordering from the flat directional
+/// chain with [`legaia_art::recognize_art_sequence`] (each art identified by its
+/// own [`ArtRecord::commands`]), then tail-match the recognized ordering against
+/// each Super's pinned art sequence via
+/// [`SuperMatcher::trigger_by_art_sequence`]. Returns the matched [`SuperArt`]
+/// (carrying the finisher-replacement queue) or `None`.
+///
+/// **Connector-abstracted.** The byte-exact queue the retail builder emits
+/// (`ctx[+0x274]`) interleaves combo-specific connector directions between the
+/// arts; those bytes are unpinned, so this matches only the pinned named-art
+/// ordering — faithful to *which* combination triggers *which* Super, without
+/// reproducing the literal queue bytes (see [`legaia_art::SuperArt::art_sequence`]).
+///
+/// `records` is the caster's `(action, ArtRecord)` catalog (the World's
+/// `art_records` filtered to `character`); with no disc art data loaded it is
+/// empty and recognition yields nothing, so no Super is detected (the same
+/// graceful degradation the synthetic-power path uses).
+pub fn super_for_chain<'a>(
+    character: Character,
+    sequence: &[u8],
+    records: impl IntoIterator<Item = &'a ArtRecord>,
+) -> Option<&'static legaia_art::SuperArt> {
+    let commands = chain_commands(sequence);
+    if commands.is_empty() {
+        return None;
+    }
+    let arts: Vec<legaia_art::ArtCommands<'a>> = records
+        .into_iter()
+        .filter(|rec| !rec.commands.is_empty())
+        .map(|rec| (rec.action, rec.commands.as_slice()))
+        .collect();
+    if arts.is_empty() {
+        return None;
+    }
+    let recognized = legaia_art::recognize_art_sequence(&arts, &commands);
+    legaia_art::SuperMatcher::with_default_table().trigger_by_art_sequence(character, &recognized)
 }
 
 /// Build synthetic [`ArtRow`]s from a caster's saved chains (no art records) -
@@ -232,6 +294,10 @@ pub fn rows_from_chains(actor: u8, chains: &[legaia_save::SavedChainRecord]) -> 
             power: synthetic_power(&c.sequence),
             enemy_effect: EnemyEffect::None,
             miracle: miracle_for_chain(character_for_slot(actor), &c.sequence).map(|m| m.name),
+            // No art catalog on the no-disc path, so the named-art recognizer
+            // can't run; Super detection is resolved by the World (which owns
+            // the art-record catalog) in `build_battle_arts_rows`.
+            super_art: None,
         })
         .collect()
 }
