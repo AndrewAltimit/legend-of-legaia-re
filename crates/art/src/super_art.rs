@@ -30,6 +30,32 @@ pub struct SuperArt {
     pub replace: &'static [u8],
 }
 
+impl SuperArt {
+    /// The sequence of **named-art** action constants in this Super's [`find`]
+    /// pattern, with the `0x19` starters and the interleaved connector
+    /// directions stripped out — e.g. Tri-Somersault's
+    /// `find = [19 27 0F 19 1F 0E 19 27]` yields `[0x27, 0x1F, 0x27]`.
+    ///
+    /// The connector direction after each art (the `0F` / `0E` here) is
+    /// **combo-specific** — the same art appears with different connectors
+    /// across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but
+    /// `0E` in Power Slash) — so it cannot be reconstructed from each art's own
+    /// command string. The exact runtime queue-builder that emits those
+    /// connectors (`ctx[+0x274]`) is unpinned. This art-only projection is the
+    /// part of the pattern that *is* pinned, and is what the live Arts submenu
+    /// matches a recognized art chain against (see
+    /// [`SuperMatcher::trigger_by_art_sequence`]).
+    ///
+    /// [`find`]: SuperArt::find
+    pub fn art_sequence(&self) -> Vec<u8> {
+        self.find
+            .iter()
+            .copied()
+            .filter(|&b| ActionConstant::from_byte(b).is_some_and(|a| a.is_art()))
+            .collect()
+    }
+}
+
 /// Test whether `tail` ends with `find`.
 fn tail_matches(actions: &[ActionConstant], find: &[u8]) -> bool {
     if actions.len() < find.len() {
@@ -106,6 +132,38 @@ impl SuperMatcher {
             matched_len,
             appended_len: entry.replace.len(),
         })
+    }
+
+    /// Find the Super Art whose **art-only** sequence ([`SuperArt::art_sequence`])
+    /// matches the tail of a *recognized* art chain — i.e. the player chained
+    /// these named arts in this order, ending on the Super's last art.
+    ///
+    /// This is the connector-abstracted sibling of [`Self::try_trigger_at_tail`]:
+    /// where that one matches the byte-exact queue (starters + connector
+    /// directions + arts), this matches only the pinned named-art ordering, so
+    /// the live Arts submenu can fire a Super from a recognized chain without
+    /// the unpinned `ctx[+0x274]` connector bytes (see [`SuperArt::art_sequence`]).
+    /// Longest match wins, matching [`Self::try_trigger_at_tail`]'s ranking.
+    pub fn trigger_by_art_sequence(
+        &self,
+        character: Character,
+        recognized: &[ActionConstant],
+    ) -> Option<&'static SuperArt> {
+        let arts: Vec<u8> = recognized.iter().map(|a| a.as_byte()).collect();
+        let mut best: Option<(&'static SuperArt, usize)> = None;
+        for entry in self.table {
+            if entry.character != character {
+                continue;
+            }
+            let seq = entry.art_sequence();
+            if seq.len() < 2 || !arts.ends_with(&seq) {
+                continue;
+            }
+            if best.is_none_or(|(_, len)| len < seq.len()) {
+                best = Some((entry, seq.len()));
+            }
+        }
+        best.map(|(entry, _)| entry)
     }
 
     /// Run repeated Super Art expansions until a fixpoint is reached, in
@@ -250,6 +308,50 @@ mod tests {
             q.push(ActionConstant::from_byte(b).unwrap());
         }
         q
+    }
+
+    fn ac(b: u8) -> ActionConstant {
+        ActionConstant::from_byte(b).unwrap()
+    }
+
+    #[test]
+    fn art_sequence_strips_starters_and_connectors() {
+        // Tri-Somersault find = [19 27 0F 19 1F 0E 19 27] -> arts [27 1F 27].
+        let tri = SUPER_ARTS
+            .iter()
+            .find(|s| s.name == "Tri-Somersault")
+            .unwrap();
+        assert_eq!(tri.art_sequence(), vec![0x27, 0x1F, 0x27]);
+    }
+
+    #[test]
+    fn trigger_by_art_sequence_matches_the_pinned_ordering() {
+        let m = SuperMatcher::with_default_table();
+        // Exact art sequence triggers Tri-Somersault, connectors abstracted.
+        let recognized = [ac(0x27), ac(0x1F), ac(0x27)];
+        let hit = m
+            .trigger_by_art_sequence(Character::Vahn, &recognized)
+            .expect("art sequence triggers a Super");
+        assert_eq!(hit.name, "Tri-Somersault");
+        assert_eq!(hit.finisher, 0x2B);
+
+        // A leading art is allowed (tail match): [21 27 1F 27] still triggers.
+        assert!(
+            m.trigger_by_art_sequence(Character::Vahn, &[ac(0x21), ac(0x27), ac(0x1F), ac(0x27)])
+                .is_some()
+        );
+
+        // A single art never triggers a Super.
+        assert!(
+            m.trigger_by_art_sequence(Character::Vahn, &[ac(0x27)])
+                .is_none()
+        );
+
+        // The same art sequence on a different character does not match Vahn's.
+        assert!(
+            m.trigger_by_art_sequence(Character::Gala, &recognized)
+                .is_none(),
+        );
     }
 
     #[test]

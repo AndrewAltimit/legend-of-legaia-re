@@ -7129,11 +7129,14 @@ impl PlayWindowApp {
                         for (i, row) in arts.arts.iter().enumerate() {
                             let sel = i as u8 == *cursor;
                             let marker = if sel { ">" } else { " " };
-                            let line = match row.miracle {
-                                Some(name) => {
+                            let line = match (row.miracle, row.super_art) {
+                                (Some(name), _) => {
                                     format!("{} {} x{} *{}*", marker, row.name, row.hits(), name)
                                 }
-                                None => format!("{} {} x{}", marker, row.name, row.hits()),
+                                (None, Some(name)) => {
+                                    format!("{} {} x{} <{}>", marker, row.name, row.hits(), name)
+                                }
+                                (None, None) => format!("{} {} x{}", marker, row.name, row.hits()),
                             };
                             let color = if sel { white } else { dim };
                             out.extend(text_draws_for(

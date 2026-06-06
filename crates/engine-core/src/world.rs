@@ -2925,7 +2925,8 @@ impl World {
     /// synthetic profile derived from the directional commands.
     fn build_battle_arts_rows(&self, caster: u8) -> Vec<crate::battle_arts::ArtRow> {
         use crate::battle_arts::{
-            ArtRow, chain_matches_record, miracle_for_chain, power_from_record, synthetic_power,
+            ArtRow, chain_matches_record, miracle_for_chain, power_from_record, super_for_chain,
+            synthetic_power,
         };
         let character = self.caster_character(caster);
         self.saved_chains
@@ -2943,6 +2944,27 @@ impl World {
                         power,
                         enemy_effect,
                         miracle: Some(miracle.name),
+                        super_art: None,
+                    };
+                }
+                // Super Arts next (after Miracle, matching the retail order):
+                // recognize the chain's named-art sequence from the caster's
+                // art catalog and tail-match it against the caster's Super art
+                // sequences (connectors abstracted — see `super_for_chain`).
+                let caster_records = || {
+                    self.art_records
+                        .iter()
+                        .filter(|((ch, _), _)| *ch == character)
+                        .map(|(_, rec)| rec)
+                };
+                if let Some(sa) = super_for_chain(character, &c.sequence, caster_records()) {
+                    let (power, enemy_effect) = self.super_strike_profile(character, sa);
+                    return ArtRow {
+                        name: c.name.clone(),
+                        power,
+                        enemy_effect,
+                        miracle: None,
+                        super_art: Some(sa.name),
                     };
                 }
                 let best = self
@@ -2959,6 +2981,7 @@ impl World {
                             power,
                             enemy_effect,
                             miracle: None,
+                            super_art: None,
                         }
                     }
                     None => ArtRow {
@@ -2966,6 +2989,7 @@ impl World {
                         power: synthetic_power(&c.sequence),
                         enemy_effect: legaia_art::EnemyEffect::None,
                         miracle: None,
+                        super_art: None,
                     },
                 }
             })
@@ -2992,21 +3016,58 @@ impl World {
         character: legaia_art::Character,
         miracle: &legaia_art::MiracleArt,
     ) -> (Vec<legaia_art::power::PowerByte>, legaia_art::EnemyEffect) {
+        let queue =
+            legaia_engine_vm::battle_action::resolve_action_queue(character, miracle.commands, &[]);
+        self.art_actions_strike_profile(character, queue.actions().iter().copied())
+    }
+
+    /// Resolve a **Super Art**'s per-strike power profile from its
+    /// finisher-replacement queue ([`legaia_art::SuperArt::replace`]). The
+    /// replacement keeps the leading component arts and ends in the Super
+    /// finisher constant(s) (e.g. Tri-Somersault → `… 1A 2B 2B 2B`), so each art
+    /// constant in it contributes a strike via the shared resolver
+    /// ([`Self::art_actions_strike_profile`]) — real [`ArtRecord`] power where the
+    /// `(character, art)` record is staged, else a tier-0 synthetic strike.
+    ///
+    /// [`ArtRecord`]: legaia_art::ArtRecord
+    fn super_strike_profile(
+        &self,
+        character: legaia_art::Character,
+        sa: &legaia_art::SuperArt,
+    ) -> (Vec<legaia_art::power::PowerByte>, legaia_art::EnemyEffect) {
+        let actions = sa
+            .replace
+            .iter()
+            .filter_map(|&b| legaia_art::ActionConstant::from_byte(b));
+        self.art_actions_strike_profile(character, actions)
+    }
+
+    /// Turn a queue of [`ActionConstant`](legaia_art::ActionConstant)s into a
+    /// per-strike power profile: each art constant resolves to its staged
+    /// [`ArtRecord`](legaia_art::ArtRecord) power bytes + status effect, or one
+    /// tier-0 (`x12`) synthetic strike when that art's record isn't loaded (the
+    /// graceful-degradation fallback the no-disc-data path uses). The first
+    /// staged status effect is adopted for the whole finisher; the result is
+    /// clamped to [`crate::battle_arts::MAX_ART_HITS`] and floored at one strike.
+    /// Shared by the Miracle and Super finisher resolvers.
+    fn art_actions_strike_profile(
+        &self,
+        character: legaia_art::Character,
+        actions: impl Iterator<Item = legaia_art::ActionConstant>,
+    ) -> (Vec<legaia_art::power::PowerByte>, legaia_art::EnemyEffect) {
         use crate::battle_arts::MAX_ART_HITS;
         use legaia_art::power::PowerByte;
         // Synthetic UDF x12 - the tier-0 high strike a component art with no
         // staged record degrades to.
         const SYNTH_UDF_X12: u8 = 0x16;
 
-        let queue =
-            legaia_engine_vm::battle_action::resolve_action_queue(character, miracle.commands, &[]);
         let mut power: Vec<PowerByte> = Vec::new();
         let mut enemy_effect = legaia_art::EnemyEffect::None;
-        for action in queue.actions() {
+        for action in actions {
             if !action.is_art() {
                 continue;
             }
-            match self.art_records.get(&(character, *action)) {
+            match self.art_records.get(&(character, action)) {
                 Some(rec) => {
                     let (mut bytes, effect) = crate::battle_arts::power_from_record(rec);
                     if enemy_effect == legaia_art::EnemyEffect::None {

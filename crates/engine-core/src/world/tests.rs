@@ -5138,6 +5138,95 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
 }
 
 #[test]
+fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
+    use legaia_art::power::PowerByte;
+    use legaia_art::queue::{ActionConstant, Command};
+    use legaia_art::record::EnemyEffect;
+
+    // Vahn's Tri-Somersault chains Somersault (Art27) -> Cyclone (Art1F) ->
+    // Somersault (Art27); art_sequence = [0x27, 0x1F, 0x27]. Give each
+    // component art a one-direction command so a flat chain recognizes them.
+    fn stage_art(world: &mut World, action: ActionConstant, cmd: Command, strikes: usize) {
+        let rec = legaia_art::ArtRecord {
+            action,
+            commands: vec![cmd],
+            anim_index: 0,
+            anim_extra: vec![],
+            name: None,
+            power: vec![PowerByte::from_byte(0x16); strikes],
+            dmg_timing: vec![],
+            effect_cues: Default::default(),
+            hit_cues: vec![],
+            identifier: 0,
+            anim_speed: 0,
+            enemy_effect: EnemyEffect::None,
+            repeat_frames: Default::default(),
+            background: 0,
+            runtime_address: None,
+        };
+        world.set_art_record(legaia_art::Character::Vahn, action, rec);
+    }
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    stage_art(&mut world, ActionConstant::Art27, Command::Up, 2);
+    stage_art(&mut world, ActionConstant::Art1F, Command::Down, 1);
+
+    // Chain Up Down Up -> Somersault Cyclone Somersault.
+    // (Left=1 Right=2 Down=3 Up=4.)
+    world.saved_chains.push(legaia_save::SavedChainRecord {
+        char_slot: 0,
+        name: "TriSom".into(),
+        sequence: vec![4, 3, 4],
+    });
+    let rows = world.build_battle_arts_rows(0);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].super_art,
+        Some("Tri-Somersault"),
+        "recognized art sequence [27 1F 27] fires Vahn's Tri-Somersault"
+    );
+    assert_eq!(rows[0].miracle, None, "Super is not a Miracle");
+    // Super replace art constants = [27, 1F, 2B, 2B, 2B]: Art27 (2 strikes) +
+    // Art1F (1 strike) + three synthetic finisher (0x2B) strikes = 6.
+    assert_eq!(rows[0].hits(), 6, "component-art strikes + 3 finisher hits");
+
+    // Connector abstraction: a stray Left/Right between the arts (matching no
+    // staged art) is skipped, so the same Super still fires.
+    world.saved_chains.clear();
+    world.saved_chains.push(legaia_save::SavedChainRecord {
+        char_slot: 0,
+        name: "TriSomLoose".into(),
+        sequence: vec![4, 1, 3, 2, 4], // Up [Left] Down [Right] Up
+    });
+    let rows = world.build_battle_arts_rows(0);
+    assert_eq!(
+        rows[0].super_art,
+        Some("Tri-Somersault"),
+        "connector directions between arts are abstracted (skipped)"
+    );
+
+    // With no art catalog staged the recognizer can't run, so no Super is
+    // detected and the chain falls back to a plain/synthetic row.
+    let mut bare = World {
+        party_count: 1,
+        ..World::default()
+    };
+    bare.saved_chains.push(legaia_save::SavedChainRecord {
+        char_slot: 0,
+        name: "TriSom".into(),
+        sequence: vec![4, 3, 4],
+    });
+    assert_eq!(
+        bare.build_battle_arts_rows(0)[0].super_art,
+        None,
+        "no art catalog -> no Super detection (graceful degradation)"
+    );
+}
+
+#[test]
 fn apply_battle_loot_never_drops_when_rate_zero() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
     let mut cat = MonsterCatalog::new();
