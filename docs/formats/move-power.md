@@ -221,11 +221,17 @@ tag has no runtime consumer (reported as Unknown rather than guessed).
 
 The engine exposes the whole power record as a resolved `MoveFx` descriptor
 (behavioural fields + the impact-config and effect-list cross-table joins,
-including each spawn entry's `0x801f6324` prototype VA). Render wiring — parsing
-that record with the summon-record reader, resolving `model_sel` into the TMD
-pool, and driving its `+0x04` bytecode through the ported move VM — needs the
-`gp[0x754]` additive base for `model_sel` (only *read* in `FUN_80021B04`, no
-static writer).
+including each spawn entry's `0x801f6324` prototype VA), and **renders the move-FX
+scene-graph**: `World::spawn_move_fx(move_id, origin)` parses a move's
+`0x01..=0x63` spawn-entry records with the summon-record reader, stages them as a
+`SummonScene` with model base 3 (so `model_sel` resolves into the resident PROT
+0871 effect-model library `global_tmd_pool[3..=32]`), and drives each part's
+`+0x04` bytecode through the ported move VM (`World::tick_move_fx` /
+`active_move_fx_part_draws`; `play-window` `H` debug-spawns it in battle). This
+reuses the summon machinery wholesale, so it inherits the same faithful-tick /
+interpreted-transform boundary (the exact per-part transform composition is the
+shared open `FUN_801F811C`/PROT-0900 piece). The base 3 is the captured
+`gp[0x754]`:
 
 **`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
 `FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)

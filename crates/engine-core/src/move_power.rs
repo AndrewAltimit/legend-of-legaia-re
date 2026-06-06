@@ -25,17 +25,18 @@
 //! lists to the auxiliary spawn-prototype / SFX tables and the impact selector to
 //! its packed config word.
 //!
-//! This is the engine-side *descriptor* surface. The render / audio consumers
-//! (drawing the trail, spawning the contact / launch effects, playing the SFX
-//! cues) are a deliberate follow-up. The `0x01..=0x63` spawn entries resolve to a
-//! `0x801F6324` prototype param that is a **move-VM scene-graph record** in the
-//! same format the player Seru-magic summons use (`legaia_asset::summon_overlay`,
-//! staged by `FUN_80021B04` → the ported move VM, with `model_sel` indexing the
-//! `DAT_8007C018` TMD pool). Wiring it reuses that machinery; the `gp[0x754]`
+//! This is the engine-side *descriptor* surface. The `0x01..=0x63` spawn entries
+//! resolve to a `0x801F6324` prototype param that is a **move-VM scene-graph
+//! record** in the same format the player Seru-magic summons use
+//! (`legaia_asset::summon_overlay`, staged by `FUN_80021B04` → the ported move
+//! VM, with `model_sel` indexing the `DAT_8007C018` TMD pool). The `gp[0x754]`
 //! additive base for `model_sel` is live-captured = 3 in battle (a move-FX
-//! `FUN_80021B04` spawn), so a battle move-FX mesh is `DAT_8007C018[model_sel + 3]`.
-//! The high-bit
-//! (`0x80`) list bytes instead route to the 2D `efect.dat` pool
+//! `FUN_80021B04` spawn), so a battle move-FX mesh is `DAT_8007C018[model_sel + 3]`
+//! — the resident PROT 0871 effect-model library. [`crate::world::World::spawn_move_fx`]
+//! renders it: it parses a move's spawn records and stages them as a
+//! [`crate::summon::SummonScene`] at that base, driven through the move VM
+//! ([`crate::world::World::tick_move_fx`] / `active_move_fx_part_draws`). The
+//! high-bit (`0x80`) list bytes instead route to the 2D `efect.dat` pool
 //! ([`crate::world::World::effect_pool`] / `spawn_by_ui_id`). See
 //! `docs/formats/move-power.md`.
 

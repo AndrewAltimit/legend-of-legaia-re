@@ -7648,6 +7648,56 @@ impl ApplicationHandler for PlayWindowApp {
                     }
                     return;
                 }
+                // `H`: debug-spawn a battle move's effect-FX scene-graph (the
+                // move-power `0x801f6324` prototype records, summon-format
+                // move-VM parts spawned through `FUN_80021B04`). Battle only -
+                // the move-power table + overlay are battle-context. Move id
+                // 0x06 is the worked example with library-mesh Spawn entries
+                // (0x27 / 0x28); its parts resolve into the effect-model library
+                // `global_tmd_pool[model_sel + 3]` and animate via `tick_move_fx`,
+                // rendered by the move-FX draw block below.
+                if matches!(code, KeyCode::KeyH)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode != SceneMode::Battle {
+                        log::info!("move-FX spawn (H) is battle-only");
+                        return;
+                    }
+                    const MOVE_FX_DEBUG_MOVE_ID: u8 = 0x06;
+                    let origin = self
+                        .session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .find(|a| a.active)
+                        .map(|a| {
+                            [
+                                a.move_state.world_x,
+                                a.move_state.world_y,
+                                a.move_state.world_z,
+                            ]
+                        })
+                        .unwrap_or([0, 0, 0]);
+                    if self
+                        .session
+                        .host
+                        .world
+                        .spawn_move_fx(MOVE_FX_DEBUG_MOVE_ID, origin)
+                    {
+                        log::info!(
+                            "spawned move-FX for move {MOVE_FX_DEBUG_MOVE_ID:#04x}: {} mesh parts at {origin:?}",
+                            self.session.host.world.active_move_fx_part_draws().len()
+                        );
+                    } else {
+                        log::info!(
+                            "move-FX spawn for move {MOVE_FX_DEBUG_MOVE_ID:#04x} produced no parts \
+                             (table not installed / no spawnable entries)"
+                        );
+                    }
+                    return;
+                }
                 // `N`: open the name-entry overlay for the lead character. The
                 // NEW GAME flow now opens it automatically at the `opdeene` ->
                 // `town01` opening hand-off (see the prologue-handoff block
@@ -7854,6 +7904,9 @@ impl ApplicationHandler for PlayWindowApp {
                     // Advance an active Seru-magic summon scene-graph (the cast
                     // above, or the `G` debug spawn) through the move VM.
                     self.session.host.world.tick_summon(0x0400);
+                    // Advance an active battle move-FX scene-graph (the `H` debug
+                    // spawn) through the same move VM.
+                    self.session.host.world.tick_move_fx(0x0400);
                     // In battle, advance each monster actor's per-object idle
                     // animation into its `pose_frame` (the render pass below
                     // deforms the mesh via the rigid `posed_rot` builder).
@@ -8517,7 +8570,17 @@ impl ApplicationHandler for PlayWindowApp {
                     // the transform composition is the open PROT 0900 piece.
                     let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
                     if !self.boot_ui.is_active() && !in_world_map {
-                        for sp in self.session.host.world.active_summon_part_draws() {
+                        // Summon parts and battle move-FX parts render identically
+                        // (both are move-VM scene-graph parts resolving into
+                        // `global_tmd_pool`); draw both sets the same way.
+                        let part_draws = self
+                            .session
+                            .host
+                            .world
+                            .active_summon_part_draws()
+                            .into_iter()
+                            .chain(self.session.host.world.active_move_fx_part_draws());
+                        for sp in part_draws {
                             let Some(gtmd) = self
                                 .session
                                 .host
@@ -8546,7 +8609,7 @@ impl ApplicationHandler for PlayWindowApp {
                                         * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                                     summon_part_draws.push((m, model));
                                 }
-                                Err(e) => log::warn!("summon part mesh upload: {e:#}"),
+                                Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
                             }
                         }
                     }

@@ -199,8 +199,25 @@ impl SummonScene {
         model_base: usize,
         origin: [i16; 3],
     ) -> Self {
-        let parts = overlay
-            .parts
+        Self::spawn_parts(&overlay.parts, record_bytes, model_base, origin)
+    }
+
+    /// Spawn from an explicit set of [`SummonPart`] records (rather than a whole
+    /// [`SummonOverlay`]). Used by the battle move-power effect-FX path, whose
+    /// records come from the `0x801f6324` prototype-pointer table
+    /// ([`legaia_asset::summon_overlay::parse_records_at`]) rather than the
+    /// stager's `jal`-site scan, but stage through the identical
+    /// `FUN_80021B04` → move-VM machinery. `record_bytes` is the buffer the parts
+    /// were parsed from (the move-FX records live in the battle-action overlay,
+    /// PROT 0898); `model_base` is the pool index `model_sel == 0` resolves to
+    /// (the captured battle base `gp[0x754] = 3`).
+    pub fn spawn_parts(
+        parts: &[SummonPart],
+        record_bytes: &[u8],
+        model_base: usize,
+        origin: [i16; 3],
+    ) -> Self {
+        let parts = parts
             .iter()
             .filter_map(|p| seed_part(p, record_bytes, origin))
             .collect();
