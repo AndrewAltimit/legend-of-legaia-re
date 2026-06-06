@@ -28,7 +28,81 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CONTENT = ROOT / "_content"
-GAMEDATA = ROOT.parent / "data" / "gamedata"
+REPO_ROOT = ROOT.parent
+GAMEDATA = REPO_ROOT / "data" / "gamedata"
+
+# Base for linking a committed repo file (the `<repo>/blob/main/<path>` form the
+# pages already use for "full reference" links).
+REPO_BLOB = "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main"
+
+
+def _committed_md_index() -> tuple[set[str], dict[str, str]]:
+    """Index the committed Markdown files the site can link to: everything under
+    `docs/` and `crates/` plus the top-level `*.md` (README / CLAUDE). Returns
+    `(paths, by_basename)` where `paths` is the set of repo-relative paths and
+    `by_basename` maps a basename to its path **only when that basename is
+    unique** (ambiguous basenames like `README.md` are left out so they only
+    resolve via an exact path). Deliberately excludes generated trees (`target/`)
+    and the agent-only memory files (which live outside the repo), so an
+    unresolved reference — e.g. a `project_*.md` memory note — is left as plain
+    text rather than linked to a 404."""
+    paths: set[str] = set()
+    for base in ("docs", "crates"):
+        for p in (REPO_ROOT / base).rglob("*.md"):
+            paths.add(p.relative_to(REPO_ROOT).as_posix())
+    for p in REPO_ROOT.glob("*.md"):
+        paths.add(p.name)
+    by_basename: dict[str, str] = {}
+    clash: set[str] = set()
+    for path in paths:
+        name = path.rsplit("/", 1)[-1]
+        if name in by_basename:
+            clash.add(name)
+        by_basename[name] = path
+    for name in clash:
+        by_basename.pop(name, None)
+    return paths, by_basename
+
+
+def _resolve_md(ref: str, paths: set[str], by_basename: dict[str, str]) -> str | None:
+    """Resolve a Markdown reference as written in page prose to a committed
+    repo-relative path, or `None` if it isn't a committed file. Tries the
+    reference verbatim, then under `docs/`, then by unique basename — covering
+    full paths (`docs/...`, `crates/.../README.md`), docs-relative paths
+    (`subsystems/foo.md`), and bare filenames (`extraction.md`)."""
+    ref = ref.strip().removeprefix("./")
+    if ref in paths:
+        return ref
+    docs_rel = f"docs/{ref}"
+    if docs_rel in paths:
+        return docs_rel
+    return by_basename.get(ref.rsplit("/", 1)[-1])
+
+
+_MD_CODE_RE = re.compile(r"<code>([^<>]+?\.md)</code>")
+
+
+def autolink_md_refs(body: str, paths: set[str], by_basename: dict[str, str]) -> str:
+    """Wrap every bare `<code>PATH.md</code>` whose path resolves to a committed
+    repo file in a link to that file on GitHub. Skips `<code>` spans already
+    inside an `<a>` (so the existing full-reference links aren't double-wrapped)
+    and references that don't resolve to a committed file."""
+
+    def inside_anchor(upto: str) -> bool:
+        return upto.rfind("<a ") > upto.rfind("</a>")
+
+    def repl(m: re.Match) -> str:
+        if inside_anchor(body[: m.start()]):
+            return m.group(0)
+        resolved = _resolve_md(m.group(1), paths, by_basename)
+        if resolved is None:
+            return m.group(0)
+        return (
+            f'<a href="{REPO_BLOB}/{resolved}" target="_blank" rel="noopener">'
+            f"{m.group(0)}</a>"
+        )
+
+    return _MD_CODE_RE.sub(repl, body)
 
 
 # Pages that benefit from breaking out of the prose reading-width cap.
@@ -880,6 +954,10 @@ def main() -> int:
     # deploy and by `python3 site/_gen.py` for local preview).
     generated: list[str] = []
 
+    # Index the committed Markdown files once, so a bare `<code>...md</code>` in
+    # any page links to the real file in the repo.
+    md_paths, md_by_basename = _committed_md_index()
+
     for out_path, title, active, body_file in PAGES:
         depth = out_path.count("/")
         src = CONTENT / body_file
@@ -893,6 +971,8 @@ def main() -> int:
             end = body.find("-->")
             extra_head = body[len("<!--HEAD:"):end].strip()
             body = body[end + 3:].lstrip()
+
+        body = autolink_md_refs(body, md_paths, md_by_basename)
 
         html = html_template(title, depth, active, body, extra_head)
         out = ROOT / out_path

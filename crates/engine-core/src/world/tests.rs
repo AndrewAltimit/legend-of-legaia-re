@@ -3981,6 +3981,98 @@ fn move_power_table_drives_monster_special_attack_damage() {
     assert_eq!(move_power, run(true), "move-power damage is deterministic");
 }
 
+/// With both the move-power table AND the element-affinity tables installed, a
+/// monster special attack scales by `matrix[enemy_element][party_member_element]`
+/// (`FUN_801dd864`). Proven by running the same seeded cast through a neutral
+/// (100%) matrix vs a weakness (200%) matrix and asserting the weakness matrix
+/// deals more damage. A `None` affinity table reproduces the neutral result
+/// exactly — so the affinity is gated and never perturbs the RNG stream.
+#[test]
+fn element_affinity_scales_monster_special_attack_damage() {
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::move_power::MovePowerCatalog;
+    use crate::spells::SpellCatalog;
+    use legaia_asset::element_affinity::ElementAffinity;
+    use legaia_asset::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+        MOVE_POWER_TABLE_LEN,
+    };
+
+    fn overlay_with_flame_power() -> Vec<u8> {
+        let mut buf = vec![
+            0u8;
+            MOVE_POWER_TABLE_FILE_OFFSET
+                + MOVE_POWER_RECORD_STRIDE * MOVE_POWER_TABLE_LEN
+        ];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 0x20] = 1;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 0xB8;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 1] = 0x0B;
+        buf
+    }
+
+    // `affinity_pct = None` leaves the affinity table uninstalled (gated off);
+    // `Some(pct)` installs a matrix whose only non-neutral cell is the attacking
+    // monster's element row vs the party member's element column.
+    fn run(affinity_pct: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        world.actors[0].battle.max_hp = 4000;
+        world.actors[0].battle.hp = 4000;
+        world.actors[0].battle.liveness = 1;
+        world.battle_accuracy[0] = 30;
+        world.battle_defense[0] = 40;
+        world.actors[1].battle.max_hp = 120;
+        world.actors[1].battle.hp = 120;
+        world.actors[1].battle.mp = 10;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_accuracy[1] = 25;
+        world.set_battle_magic(1, 40);
+        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+        // vanilla monster 5 has the default element 7 (neutral); the party
+        // member at slot 0 is char id 1 -> element 3 in the synthetic table.
+        let enemy_elem = world.monster_catalog.get(5).unwrap().element as usize;
+        if let Some(pct) = affinity_pct {
+            let mut matrix = [[100u8; 8]; 8];
+            matrix[enemy_elem][3] = pct;
+            world.element_affinity = Some(ElementAffinity {
+                matrix,
+                character_elements: vec![3; 8],
+            });
+        }
+        world.rng_state = 0;
+
+        let before = world.actors[0].battle.hp;
+        world.take_monster_turn(1);
+        assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");
+        before - world.actors[0].battle.hp
+    }
+
+    let neutral = run(Some(100));
+    let weakness = run(Some(200));
+    let gated_off = run(None);
+    assert!(neutral > 0, "neutral affinity still deals damage");
+    assert_eq!(
+        neutral, gated_off,
+        "no affinity table reproduces the neutral 100% multiplier exactly"
+    );
+    assert!(
+        weakness > neutral,
+        "a 200% affinity cell deals more than the neutral 100%"
+    );
+    assert_eq!(
+        weakness,
+        run(Some(200)),
+        "affinity-scaled damage is deterministic"
+    );
+}
+
 /// A monster with no castable spells always picks a physical strike: the
 /// action picker rolls `rand % (1 + 0) == 0`, so the magic branch is never
 /// taken regardless of the seed. It still targets a (single living) party

@@ -107,6 +107,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th data-key="s4" title="Agility — seeds the hit / evade roll">AGL</th>
             <th data-key="s5" title="Speed — sets turn order">SPD</th>
             <th data-key="s0" title="Spirit gauge — the budget the AI spends to cast">SP</th>
+            <th data-key="element" title="Element (record +0x1D). The affinity scale multiplies an attacker's damage by matrix[attacker element][defender element] — a small ±4% nudge in retail.">Elem</th>
             <th data-key="magic" title="Total spell slots the record carries (includes passive / affinity markers)">Magic</th>
             <th data-key="castable" class="col-name" title="The enemy's named magic attacks, with MP cost. Names resolve from a full disc image; a raw PROT.DAT shows the raw id.">Magic attacks (MP)</th>
             <th data-key="exp" title="Base EXP reward — the game scales it and splits it among the party">EXP</th>
@@ -121,7 +122,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </div>
   </div>
 
-  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>EXP / Gold / Drop</strong> are the victory spoils — base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) — a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
+  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>Elem</strong> is the monster's element (record <code>+0x1D</code>) — the affinity scale multiplies an attacker's damage by <code>matrix[attacker element][defender element]</code>, a small ±4% nudge in retail (same-element 96% / opposite-element 104% / otherwise 100%). <strong>EXP / Gold / Drop</strong> are the victory spoils — base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) — a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/battle-formulas.html">Battle formulas</a>
@@ -197,6 +198,9 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       s0: s[0] ?? 0, s1: s[1] ?? 0, s2: s[2] ?? 0,
       s3: s[3] ?? 0, s4: s[4] ?? 0, s5: s[5] ?? 0,
       magic: r.magic_count ?? 0,
+      // Element id (record +0x1D, 0..7) + resolved name (always present — the
+      // table is in the same overlay, no full-disc dependency).
+      element: r.element ?? 7, element_name: r.element_name ?? null,
       spells: r.spells || [],
       // Named magic attacks (record +0x21..+0x23 -> global spell id -> name via
       // the SCUS spell table). `castable` doubles as the sort key + dim flag.
@@ -226,6 +230,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     if (!r.steal_item) return '—';
     const label = r.steal_item_name || ('#' + r.steal_item);
     return label + ' @ ' + r.steal_chance + '%';
+  }
+
+  // Element cell text: resolved element name, falling back to the raw id.
+  function fmtElement(r) {
+    return r.element_name || ('#' + r.element);
   }
 
   // Named magic attacks: resolved spell name (+ MP cost) from the SCUS spell
@@ -269,6 +278,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         <td>${r.s4}</td>
         <td>${r.s5}</td>
         <td>${r.s0}</td>
+        <td class="${r.element === 7 ? 'dim' : ''}">${escapeHtml(fmtElement(r))}</td>
         <td class="${r.magic ? '' : 'dim'}">${r.magic}</td>
         <td class="col-name ${r.castable ? '' : 'dim'}">${escapeHtml(fmtMagic(r.magicAttacks))}</td>
         <td>${r.exp}</td>

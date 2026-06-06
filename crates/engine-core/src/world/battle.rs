@@ -583,10 +583,11 @@ impl World {
     /// (`+0x168`, the AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
     /// defender defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
     /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`].
-    /// Element affinity defaults to 100 (neutral) — the engine doesn't yet
-    /// carry the per-actor element + `0x801F53E8` matrix, so an elementless
-    /// strike is exact and an elemental one omits only the affinity multiplier;
-    /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
+    /// Element affinity comes from [`Self::enemy_affinity_pct`] when the
+    /// affinity tables are installed (`matrix[enemy_element][party_element]`,
+    /// `FUN_801dd864`), else 100 (neutral); status-weaken (`+0x16e`) and the
+    /// guard byte (`+0x1de`) default to none. The affinity multiply happens
+    /// after all the rolls, so it never changes the RNG stream.
     ///
     /// Five `rand()` draws are taken in call order (attacker ×2, defender ×1,
     /// bonus ×2). Retail draws the bonus pair lazily (only when the bonus arm
@@ -598,6 +599,7 @@ impl World {
     fn enemy_move_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
         use vm::battle_formulas::{ArtsPredamage, SummonRollActor, arts_physical_predamage};
 
+        let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let a = self.actors.get(attacker as usize)?;
         let attacker_roll = SummonRollActor {
             hp: a.battle.hp,
@@ -647,11 +649,43 @@ impl World {
             power,
             attacker: attacker_roll,
             target: target_roll,
-            element_affinity_pct: 100,
+            element_affinity_pct,
             rng,
         };
         let (atk, def) = arts_physical_predamage(&inp);
         Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
+    }
+
+    /// Element-affinity multiplier (percent) for a monster (`attacker`) special
+    /// attack landing on a party member (`target`): `matrix[enemy_element]
+    /// [party_member_element]` from the parsed affinity tables
+    /// ([`legaia_asset::element_affinity`], `FUN_801dd864`). Returns `100`
+    /// (neutral, no change) when the affinity tables aren't installed or either
+    /// element doesn't resolve, so disc-free / synthetic battles are unaffected.
+    ///
+    /// The attacker (enemy) element is its monster record's `+0x1D` byte
+    /// (carried on [`crate::monster_catalog::MonsterDef::element`]); the defender
+    /// (party member) element is the per-character table entry for the active
+    /// party. The engine models the active party as `char_id == party slot`
+    /// (0-based), so a party actor at slot `target` is the 1-based char id
+    /// `target + 1` the affinity table indexes.
+    fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
+        let Some(aff) = self.element_affinity.as_ref() else {
+            return 100;
+        };
+        let Some(enemy_elem) = self
+            .actors
+            .get(attacker as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| d.element)
+        else {
+            return 100;
+        };
+        let Some(party_elem) = aff.character_element(target + 1) else {
+            return 100;
+        };
+        aff.affinity_pct(enemy_elem, party_elem).unwrap_or(100)
     }
 
     /// Whether a monster caster's chosen move id resolves to a real per-move

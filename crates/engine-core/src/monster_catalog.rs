@@ -73,6 +73,11 @@ pub struct MonsterDef {
     /// battle monster-AI chooses among the entries it can afford to fold a
     /// real spell cast onto the party. Empty = physical attacker only.
     pub magic_attacks: Vec<u8>,
+    /// Element id (`0..=7`, monster record `+0x1D`): the attacker element the
+    /// affinity scale (`FUN_801dd864`) reads to look up
+    /// `matrix[attacker][defender]`. Defaults to `7` (neutral) for synthetic
+    /// monsters; [`monster_def_from_record`] sets it from the record.
+    pub element: u8,
 }
 
 impl MonsterDef {
@@ -94,6 +99,7 @@ impl MonsterDef {
             drop_rate_q8: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
+            element: 7,
         }
     }
 
@@ -179,6 +185,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // Castable spells: the record's 3-slot global-id array (`+0x21..=+0x23`);
     // the parser already filters out the empty `<= 1` slots.
     def.magic_attacks = rec.magic_attacks.clone();
+    def.element = rec.element;
     def
 }
 
@@ -335,6 +342,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             drop_rate_q8: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
+            element: 7,
         };
         cat.insert(def_struct);
     }

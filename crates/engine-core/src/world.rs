@@ -1260,6 +1260,16 @@ pub struct World {
     /// the disc by [`crate::scene::SceneHost`].
     pub move_power: Option<crate::move_power::MovePowerCatalog>,
 
+    /// Battle **element-affinity** tables ([`legaia_asset::element_affinity`],
+    /// matrix `0x801F53E8` + per-character element table `0x801F5480`). When
+    /// present, the monster special-attack damage path scales the attacker roll
+    /// by `matrix[enemy_element][party_member_element]` (`FUN_801dd864`);
+    /// `None` (disc-free / synthetic battles) keeps the neutral 100% multiplier,
+    /// so the damage and determinism trace are unchanged. Installed lazily from
+    /// the same PROT 0898 overlay as [`Self::move_power`] by
+    /// [`crate::scene::SceneHost`].
+    pub element_affinity: Option<legaia_asset::element_affinity::ElementAffinity>,
+
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`World::set_equipment_table`]
     /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
@@ -1858,6 +1868,7 @@ impl World {
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             move_power: None,
+            element_affinity: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),

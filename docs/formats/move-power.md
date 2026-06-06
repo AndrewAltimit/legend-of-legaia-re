@@ -125,3 +125,11 @@ The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
 *not* use this table — a summon's magnitude is derived from caster/summon battle
 state (see [spell-table.md](spell-table.md) and the summon-render thread in
 [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)).
+
+## See also
+
+The roll this table seeds is then scaled by the **element-affinity matrix**
+(`FUN_801dd864`), a sibling static table in the same overlay (PROT 0898) under
+the same link base — see
+[battle-formulas.md § Element-affinity matrix](../subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8)
+(parser `legaia_asset::element_affinity`).

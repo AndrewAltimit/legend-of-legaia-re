@@ -142,6 +142,14 @@ enum Cmd {
         /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
         input: PathBuf,
     },
+    /// Parse the battle element-affinity matrix (runtime VA `0x801F53E8`, read
+    /// by `FUN_801dd864`) and the per-character element table (`0x801F5480`) out
+    /// of the raw PROT 0898 (battle-action overlay) `.BIN`. Prints the 8×8
+    /// matrix (`pct = matrix[attacker][defender]`) + each character's element.
+    ElementAffinity {
+        /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
+        input: PathBuf,
+    },
     /// Scan PROT entries (raw + LZS-decoded) for embedded PSX TIMs.
     /// Reports per-entry hit counts; with `--out` extracts each TIM to
     /// `<out>/<entry>/raw_off<H>.tim` (or `lzs<i>_off<H>.tim`).
@@ -873,6 +881,7 @@ fn main() -> Result<()> {
         } => find_overlay(&dir, top, &lzs_sizes),
         Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
         Cmd::MovePower { input } => move_power_cmd(&input),
+        Cmd::ElementAffinity { input } => element_affinity_cmd(&input),
     }
 }
 
@@ -955,6 +964,62 @@ fn move_power_cmd(input: &Path) -> Result<()> {
             fx(&contact),
             fx(&launch),
             move_ids_for(r.index),
+        );
+    }
+    Ok(())
+}
+
+/// Parse + print the battle element-affinity matrix and per-character table.
+fn element_affinity_cmd(input: &Path) -> Result<()> {
+    use legaia_asset::element_affinity::{self, Element};
+    let bytes = std::fs::read(input)?;
+    let Some(aff) = element_affinity::parse(&bytes) else {
+        anyhow::bail!(
+            "no element-affinity tables at the pinned offsets (matrix {:#x}, \
+             char table {:#x}) in {} ({} bytes) - is this the raw PROT 0898 \
+             battle-action overlay entry?",
+            element_affinity::AFFINITY_MATRIX_FILE_OFFSET,
+            element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET,
+            input.display(),
+            bytes.len(),
+        );
+    };
+    let label = |id: usize| -> String {
+        Element::from_id(id as u8)
+            .map(|e| e.name().to_string())
+            .unwrap_or_else(|| format!("?{id}"))
+    };
+    println!(
+        "element-affinity matrix @ file {:#x} (runtime VA {:#010x}); pct = matrix[attacker][defender]",
+        element_affinity::AFFINITY_MATRIX_FILE_OFFSET,
+        element_affinity::AFFINITY_MATRIX_VA,
+    );
+    print!("atk\\def ");
+    for def in 0..element_affinity::ELEMENT_COUNT {
+        print!("{:>8}", label(def));
+    }
+    println!();
+    for atk in 0..element_affinity::ELEMENT_COUNT {
+        print!("{:>7} ", label(atk));
+        for def in 0..element_affinity::ELEMENT_COUNT {
+            print!("{:>8}", aff.matrix[atk][def]);
+        }
+        println!();
+    }
+    println!(
+        "\nper-character element table @ file {:#x} (runtime VA {:#010x}, 1-based char id):",
+        element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET,
+        element_affinity::CHARACTER_ELEMENTS_VA,
+    );
+    let names = ["Vahn", "Noa", "Gala", "Terra"];
+    for (i, &elem) in aff.character_elements.iter().enumerate() {
+        let who = names.get(i).copied().unwrap_or("");
+        println!(
+            "  char {:>2} {:<6} -> element {} ({})",
+            i + 1,
+            who,
+            elem,
+            label(elem as usize)
         );
     }
     Ok(())

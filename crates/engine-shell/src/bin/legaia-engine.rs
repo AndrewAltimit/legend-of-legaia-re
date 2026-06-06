@@ -5260,6 +5260,37 @@ impl PlayWindowApp {
             let mut lo = [f32::INFINITY; 3];
             let mut hi = [f32::NEG_INFINITY; 3];
             for (src_i, rtmd) in res.tmds.iter().enumerate() {
+                // Build this mesh's untextured (F*/G*) vertex-colour primitives
+                // and upload them to the colour pipeline. `tmd_to_color_mesh`
+                // skips textured groups, so these are DISJOINT from the VRAM-mesh
+                // primitives below: a mesh carrying both textured and untextured
+                // primitives now renders BOTH halves rather than only the
+                // textured one (the old code built the colour mesh only when the
+                // textured build came back empty, silently dropping the
+                // untextured half of a mixed mesh). A mesh whose only textured
+                // prims reference missing CLUTs yields an empty colour mesh AND
+                // an empty filtered VRAM mesh, so it correctly stays dropped.
+                let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+                if !cmesh.is_empty() {
+                    for p in &cmesh.positions {
+                        for ax in 0..3 {
+                            if p[ax] < lo[ax] {
+                                lo[ax] = p[ax];
+                            }
+                            if p[ax] > hi[ax] {
+                                hi[ax] = p[ax];
+                            }
+                        }
+                    }
+                    match r.upload_color_mesh(&cmesh.positions, &cmesh.colors, &cmesh.indices) {
+                        Ok(m) => {
+                            color_meshes.push(m);
+                            color_tmd_src_index.push(src_i);
+                        }
+                        Err(e) => log::warn!("color mesh upload skipped: {e:#}"),
+                    }
+                }
+
                 // Use the VRAM-aware filter so prims whose CBA / TSB sample
                 // un-uploaded regions get dropped at mesh-build time. This
                 // matches the asset-viewer's cleanup and avoids the "flat
@@ -5267,31 +5298,8 @@ impl PlayWindowApp {
                 // that the unfiltered builder produces.
                 let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
                 if vmesh.indices.is_empty() {
-                    // No textured prims survived the VRAM filter. If the mesh is
-                    // an untextured (F*/G*) prop, build its vertex-colour mesh
-                    // from the per-prim colour blocks and upload it to the colour
-                    // pipeline (otherwise it's a missing-CLUT textured mesh that
-                    // correctly stays dropped).
-                    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-                    if !cmesh.is_empty() {
-                        for p in &cmesh.positions {
-                            for ax in 0..3 {
-                                if p[ax] < lo[ax] {
-                                    lo[ax] = p[ax];
-                                }
-                                if p[ax] > hi[ax] {
-                                    hi[ax] = p[ax];
-                                }
-                            }
-                        }
-                        match r.upload_color_mesh(&cmesh.positions, &cmesh.colors, &cmesh.indices) {
-                            Ok(m) => {
-                                color_meshes.push(m);
-                                color_tmd_src_index.push(src_i);
-                            }
-                            Err(e) => log::warn!("color mesh upload skipped: {e:#}"),
-                        }
-                    }
+                    // No textured prims survived the VRAM filter; the colour prims
+                    // (if any) were already uploaded above.
                     continue;
                 }
                 let (mlo, mhi) = vmesh.aabb();
