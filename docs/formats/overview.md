@@ -38,6 +38,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [MDT move table](mdt.md) | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
 | [Art data](art-data.md) | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
 | [Spell table](spell-table.md) | Static `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 12-byte stride). MP cost + target + name per id; player Seru-magic block `0x81..=0x8b` pinned. |
+| [Move-power table](move-power.md) | Battle-action per-move power + behaviour records (26-byte stride, runtime VA `0x801F4F5C`, PROT 0898). Damage roll, homing, hit reaction, sound cue, spawned-effect lists; id → index map at `0x801F4E63`. |
 | [Steal table](steal-table.md) | Static `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`). What the Evil God Icon steals; NOT in the PROT 867 record. |
 | [Per-character save record](save-record.md) | Runtime `0x414`-byte record at `0x80084708 + slot * 0x414`. Cheat-database-pinned offset table for stats / level / magic rank / spells / summons / equipment. |
 
