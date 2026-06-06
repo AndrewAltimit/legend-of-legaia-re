@@ -64,6 +64,15 @@ Inside `build_vram_targeted_from_buffers` the targeted upload now runs in two pa
 
 Earlier versions filtered CLUT uploads with a `clut_collides_page` suppression that dropped legitimate palette rows whenever *any* mesh's UV bbox happened to brush the CLUT row's y-coordinate. The town01 character TMDs hit this: their 256-pixel-wide palette at y=479 overlapped a separate scene mesh's texture-page rectangle, so the CLUT upload was suppressed and 388 prims dropped as `MissingClut`. Splitting into image-then-CLUT order keeps the palette rows that PSX games place on the bottom of texture pages coherent without the per-prim heuristic.
 
+#### Field static-object placement render gap (town01)
+
+The field static-object table (`FUN_8003A55C`, `legaia_asset::field_objects`) places 46 environment-pack meshes in town01; 38 of them draw and **8 drop** across exactly three distinct pack meshes (pinned by `field_object_placement_disc::town01_dropped_placements_split_untextured_vs_missing_clut`). The split has two distinct, deeper root causes - neither is a render-filter tweak:
+
+- **2 untextured props** (pack 31 / obj 315, pack 109 / obj 114): their prims carry no UVs (flat per-vertex-colour primitives), so the VRAM-textured mesh builder skips them (`prim.uvs.is_empty()`). Recovering them needs a per-vertex-RGB fallback, which in turn needs the per-prim **colour block** decoded - that layout is still unreversed for Legaia's six prim modes (the same gap noted for the per-prim normal offset), so the colour data isn't available to emit yet.
+- **6 placements of one mesh** (pack 74 / obj 347): all four of its prims sample the **same** texture page `(960, 256)` + CLUT row 510 - i.e. the bottom-right VRAM band `x ∈ [896, 1024], y = 256` that the `Field` pre-pass excludes by design (the character / party-texture region; the same band that surfaces as the documented town01 static-VRAM residue). Even `upload_all_tims: true` doesn't fill CLUT row 510, so the texture isn't a static scene TIM at all - it's a runtime targeted upload the field pre-pass doesn't model. Recovering this mesh needs that runtime texture-band upload reproduced, not a coverage flag.
+
+So the "recover the dropped town meshes" item resolves to two separate follow-ups (per-prim colour-block decode; the runtime character/party-texture-band upload) rather than a filter change. The placement test pins both root causes as regression guards.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:
