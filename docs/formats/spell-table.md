@@ -144,24 +144,34 @@ they split cleanly into damage vs. heal:
 
 `FUN_801dd0ac`'s **non-summon** branch (`param_2 != 7`, the arts / physical path) reads
 a 26-byte-stride per-move power table at **`0x801F4F5C`** — that is where a genuine
-per-move "power" scalar lives, but it feeds melee/arts, not summon magic. The kernel
-indexes it by the move-type byte `param_1` (`v1 = 26*param_1 + 0x801F4F5C`), reads the
-record's `+0` signed-16-bit field, and uses `(i16)power >> 2` as the attacker-roll
-modulus (`sll 0x10` then `sra 0x12`).
+per-move "power" scalar lives, but it feeds melee/arts, not summon magic. The kernel reads
+the record's `+0` signed-16-bit field and uses `(i16)power >> 2` as the attacker-roll
+modulus (`sll 0x10` then `sra 0x12`); `801f3990` also reads the same `+0` at full (`>> 0`)
+and half (`>> 1`) scale.
 
-This table is **static overlay data, now pinned on disc**: the `0x801F4F5C..0x801F69D8`
-window is byte-identical across two unrelated battle save states (a full-party Gobu Gobu
-fight and the Tetsu-tutorial command menu), and its bytes live in **PROT entry 0898** (the
-battle-action overlay, `overlay_0898`) — both the table window and the `FUN_801dd0ac` code
-body map with one consistent base, so the table is at a fixed raw-entry file offset
-(`0x26744`). Parser `legaia_asset::move_power` (`asset move-power <PROT-0898.BIN>`); the
-disc-gated `move_power_real` test pins the decoded powers. The clean 26-byte structure runs
-~44 move ids (id 0 is an all-zero/unused slot) before the region transitions to other
+`param_1` is **not** the raw move id — it is looked up through a 128-byte **id → index
+map** at `0x801F4E63` (immediately before the table): the setup site passes
+`param_1 = map[actor[+0x1df]]` (`overlay_battle_action_801e09f8`). The map covers move ids
+`0x00..=0x7F` and resolves ids `0x04..=0x74` to power indices `0x01..=0x2b` (a `0x00` entry
+= the unused record 0, `0xFF` = a no-record sentinel); the full resolution is
+`power_table[map[move_id]]`.
+
+Both the table and the map are **static overlay data, pinned on disc**: the
+`0x801F4E63..0x801F69D8` window is byte-identical across two unrelated battle save states (a
+full-party Gobu Gobu fight and the Tetsu-tutorial command menu), and the bytes live in
+**PROT entry 0898** (the battle-action overlay, `overlay_0898`) — both the table window and
+the `FUN_801dd0ac` code body map with one consistent base, so the table is at a fixed
+raw-entry file offset (`0x26744`; the map at `0x2664B`). Parser `legaia_asset::move_power`
+(`asset move-power <PROT-0898.BIN>` prints `idx → power / counter / sfx ← move id`); the
+disc-gated `move_power_real` test pins the decoded powers + the id→index map. The clean
+26-byte structure runs 44 indices (index 0 unused) before the region transitions to other
 overlay data (a float/transform table, then the `data\battle\summon.DAT` / `readef.DAT`
-filename strings). Only the `+0` power field is decoded — the remaining per-record fields
-(a secondary u16 at `+2`, a flag halfword at `+8`, a small flag at `+10`, a two-byte
-ASCII-range category/level code at `+12`, trailing words) and the `param_1` → move-id
-mapping are an open battle-action thread.
+filename strings). Decoded record fields, each code-traced to a battle-action reader: `+0x00`
+`i16` power; `+0x04` `u16` an action-timing counter (seeded at `ctx+0x6c6`, decremented by
+the SM); `+0x0d` `u8` a sound / voice cue id (handed to the cue dispatcher `FUN_8004fcc8`).
+Still open: the `+0x02` u16, the `+0x08` flag halfword, the `+0x0a`/`+0x0b` field (the SM's
+most-read), the `+0x0c` category byte (`C`/`E`/`G`/`0x00`), and the `+0x0e`/`+0x12`/`+0x16`
+fields.
 
 #### The full damage-roll chain (three stages)
 

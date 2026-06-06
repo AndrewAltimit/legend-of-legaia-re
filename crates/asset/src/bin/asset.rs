@@ -888,22 +888,46 @@ fn move_power_cmd(input: &Path) -> Result<()> {
             bytes.len(),
         );
     };
+    let map = legaia_asset::move_power::parse_id_index_map(&bytes);
+    // Invert the map: power index -> the move id(s) that resolve to it.
+    let move_ids_for = |idx: usize| -> String {
+        match &map {
+            None => String::new(),
+            Some(m) => {
+                let ids: Vec<String> = (0..m.len())
+                    .filter(|&mid| {
+                        legaia_asset::move_power::index_for_move_id(m, mid as u8) == Some(idx as u8)
+                    })
+                    .map(|mid| format!("{mid:#04x}"))
+                    .collect();
+                if ids.is_empty() {
+                    String::new()
+                } else {
+                    format!("  <- move {}", ids.join(","))
+                }
+            }
+        }
+    };
     println!(
-        "move-power table: {} records @ file {:#x} (runtime VA {:#010x}), 26-byte stride",
+        "move-power table: {} records @ file {:#x} (runtime VA {:#010x}), 26-byte stride; \
+         id->index map {}",
         table.len(),
         legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
         legaia_asset::move_power::MOVE_POWER_TABLE_VA,
+        if map.is_some() { "present" } else { "MISSING" },
     );
     for r in &table {
         if r.is_empty() {
             continue;
         }
         println!(
-            "  id {:3}  power {:5} (raw {:#06x})  {}",
+            "  idx {:3}  power {:5} (raw {:#06x})  counter {:5}  sfx {:#04x}{}",
             r.index,
             r.power(),
             r.power_raw as u16,
-            r.raw.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            r.counter_init(),
+            r.sound_cue_id(),
+            move_ids_for(r.index),
         );
     }
     Ok(())

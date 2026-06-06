@@ -62,4 +62,38 @@ fn move_power_table_parses_with_pinned_powers() {
     for r in &table {
         assert_eq!(r.power(), (r.power_raw as i32) >> 2);
     }
+
+    // The id -> power-index map (0x80 bytes before the table) resolves battle
+    // move ids to records (`power_table[map[move_id]]`). Pinned move ids ->
+    // index, byte-matched against the in-RAM map across two battle save states.
+    let map = move_power::parse_id_index_map(&bytes).expect("id->index map parses");
+    let expect_map: &[(u8, u8)] = &[
+        (0x04, 1),
+        (0x05, 2),
+        (0x06, 3),
+        (0x07, 4),
+        (0x19, 9),
+        (0x25, 16),
+        (0x46, 16), // a second id sharing record 16
+        (0x74, 40),
+    ];
+    for &(move_id, idx) in expect_map {
+        assert_eq!(
+            move_power::index_for_move_id(&map, move_id),
+            Some(idx),
+            "move id {move_id:#04x} -> power index"
+        );
+    }
+    // End-to-end: move id 0x04 -> record 1 -> power 187; 0x06 -> record 3 -> 1500.
+    assert_eq!(
+        move_power::record_for_move_id(&table, &map, 0x04).map(|r| r.power()),
+        Some(187)
+    );
+    assert_eq!(
+        move_power::record_for_move_id(&table, &map, 0x06).map(|r| r.power()),
+        Some(1500)
+    );
+    // Unmapped ids resolve to no record.
+    assert_eq!(move_power::index_for_move_id(&map, 0x00), None);
+    assert_eq!(move_power::index_for_move_id(&map, 0x10), None);
 }
