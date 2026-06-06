@@ -13,6 +13,22 @@ This format is **distinct from**:
 
 Implementation: [`crates/asset/src/battle_data_pack.rs`](../../crates/asset/src/battle_data_pack.rs).
 
+## Contents
+
+- [Outer layout](#outer-layout)
+- [Record (12 bytes)](#record-12-bytes)
+- [Compressed entry](#compressed-entry)
+- [Decompressed entry layout](#decompressed-entry-layout)
+  - [TMD location](#tmd-location)
+  - [Post-TMD texture pool](#post-tmd-texture-pool)
+- [Pinning the descriptor: VRAM byte-match corpus](#pinning-the-descriptor-vram-byte-match-corpus)
+  - [Findings from a four-save corpus](#findings-from-a-four-save-corpus)
+  - [What's *not* in the pack: the NPC palettes at row 479](#whats-not-in-the-pack-the-npc-palettes-at-row-479)
+- [Why this matters](#why-this-matters)
+- [CLI](#cli)
+- [Open layout questions](#open-layout-questions)
+- [See also](#see-also)
+
 ## Outer layout
 
 ```

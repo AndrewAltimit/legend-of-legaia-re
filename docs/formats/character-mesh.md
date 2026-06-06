@@ -15,6 +15,24 @@ The field form is field-only; battle uses the battle form. (An earlier reading
 held that battle reused the field pack — falsified by direct save-state
 byte-comparison; see the provenance note in § Battle form.)
 
+## Contents
+
+- [On-disc layout](#on-disc-layout) (field form, PROT 0874 §0)
+- [TMD shape (per slot)](#tmd-shape-per-slot)
+- [10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap)
+- [Textures (field form)](#textures-field-form)
+  - [CLUT upload semantic (`FUN_800198e0`)](#clut-upload-semantic-fun_800198e0)
+  - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
+- [Battle form — PROT 1204](#battle-form--prot-1204)
+  - [Assembly — object-local pieces posed by the battle ANM](#assembly--object-local-pieces-posed-by-the-battle-anm)
+  - [Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)
+  - [Equipment groups (battle only)](#equipment-groups-battle-only)
+  - [On-disc layout (PROT 1204)](#on-disc-layout-prot-1204)
+- [Animation](#animation)
+- [Readers (retail)](#readers-retail)
+- [CLI](#cli)
+- [See also](#see-also)
+
 ## On-disc layout
 
 PROT 0874 is a [`parse_player_lzs(buf, 3)`](asset-descriptor.md)-shaped
@@ -96,7 +114,7 @@ The swap is **binary**: each character has exactly one visible mesh group
 that toggles between two pre-baked variants. Different equipped items don't
 each get their own mesh swap; the toggle is a single bit ("weapon-bearing
 group is on / off") and item identity is conveyed by the character's
-[texture atlas](#textures), not by mesh changes.
+[texture atlas](#textures-field-form), not by mesh changes.
 
 `legaia_asset::character_pack::equipment_swap::apply` is the clean-room
 equivalent: given a slot's disc-form TMD bytes, a [`PatchSlot`], and the
@@ -135,7 +153,7 @@ samples; their CLUTs occupy VRAM **row 478**, columns 0..191 (Vahn 0..63 / Noa
 64..127 / Gala 128..191) — exactly the per-primitive CBA columns the meshes
 carry (Vahn 0/16/32/48, Noa 64/80, Gala 128/144). The textures are
 character-intrinsic and resident: byte-identical across every field scene, kept
-across transitions by the [`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field_shared_blocks)
+across transitions by the [`FIELD_SHARED_BLOCKS`](../subsystems/asset-loader.md#field-shared-cdname-blocks)
 residency, not re-uploaded per scene.
 
 ### CLUT upload semantic (`FUN_800198e0`)
@@ -581,7 +599,7 @@ state offsets.
 | Function | Role |
 |---|---|
 | `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 **field-form** TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The field caller is `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. |
-| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after decoding the party palette via `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry — see [§ Battle form, Loader provenance](#assembly--object-local-pieces-posed-by-the-battle-anm). |
+| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after the party-palette decode `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry — full trace in [§ Battle form, Loader provenance](#assembly--object-local-pieces-posed-by-the-battle-anm). |
 | `FUN_800542C8` → `FUN_80026B4C` | **Battle-form party install (additional members).** Battle archive loader; per-member loop bounded by `*(rec+0x4a)`, registering `*(*rec+4)`. Dispatched indirectly (no static `0x8007C018` xref). `FUN_800520F0` state `0xc` separately `tmd_register`s PROT `0x36a` into the *effect* window `[3..]`, not the party. |
 | `FUN_8001E890` | "DATA_FIELD player loader" — post-install, caps `entry[+0x08] = 10` for the three active-party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, then dispatches the per-character equipment-conditional patch to `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in [`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt). |

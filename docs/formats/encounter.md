@@ -2,6 +2,21 @@
 
 The on-disc encounter record installed onto a field actor when the script VM triggers a battle. The pointer is written at `actor[+0x94]` by field-VM op handlers and consumed by the world-map / field entity tick at `FUN_801DA51C` to populate the global encounter formation cell.
 
+## Contents
+
+- [Confidence](#confidence)
+- [Layout](#layout)
+- [Reader](#reader)
+- [Writer (record-pointer install)](#writer-record-pointer-install)
+- [Formation cell + battle-data variant selector](#formation-cell--battle-data-variant-selector)
+  - [Worked example: the Rim Elm training fight](#worked-example-the-rim-elm-training-fight)
+  - [The carrier entity](#the-carrier-entity)
+- [Scripted-battle id path (`FUN_8005567c`)](#scripted-battle-id-path-fun_8005567c)
+- [Random-encounter trigger path](#random-encounter-trigger-path)
+- [What this doesn't tell us](#what-this-doesnt-tell-us)
+- [Random vs scripted formations (the MAN encounter section)](#random-vs-scripted-formations-the-man-encounter-section)
+- [Files referencing this format](#files-referencing-this-format)
+
 ## Confidence
 
 **Confirmed (record shape, reader, install path) — Inferred (encoding within scripts).**
@@ -67,9 +82,18 @@ The `s1` register is the actor record (caller's `a0` in `FUN_801DA51C`); `+0x94`
 
 Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0]` (the **opcode byte** the record overlays — see the writer below) and, when it is non-zero, ORs bit `0x80` into a battle-setup flag byte. Because the install opcodes are themselves non-zero, this bit is effectively always raised for a scripted arm; the byte is the first of the record's three "reserved" bytes (`+0x00..+0x02` = the install opcode + its two operand bytes).
 
-**Discriminator (relevant to wiring this in an engine).** There is no dedicated "encounter" opcode: the install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields. What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state. The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context. Which specific opcode a given scripted fight uses, and how that scene advances the entity SM to the confirm state, are therefore per-scene bytecode facts (not resolvable from the static dispatcher alone).
+**Discriminator (relevant to wiring this in an engine).** There is no dedicated "encounter" opcode:
 
-**Engine port.** The clean-room field VM mirrors this discriminator split: the bare arm-encounter op (`0x37`/`0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded record window overlaying the opcode (`[opcode][op1][op2][count][≤4 ids]`). The engine consumer (`World`) parses that window as an `EncounterRecord`, registers the formation, and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`); a successful install disarms (fire-once, matching the retail `entity[+0x94]` clear). `scripted_encounter_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
+- The install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields.
+- What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state.
+- The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context.
+- Which specific opcode a given scripted fight uses, and how that scene advances the entity SM to the confirm state, are therefore per-scene bytecode facts (not resolvable from the static dispatcher alone).
+
+**Engine port.** The clean-room field VM mirrors this discriminator split:
+
+- The bare arm-encounter op (`0x37`/`0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded record window overlaying the opcode (`[opcode][op1][op2][count][≤4 ids]`).
+- The engine consumer (`World`) parses that window as an `EncounterRecord`, registers the formation, and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`); a successful install disarms (fire-once, matching the retail `entity[+0x94]` clear).
+- `scripted_encounter_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
 
 ## Writer (record-pointer install)
 
@@ -322,7 +346,9 @@ path uses, but raises a **different flag bit** (`0x80000`, not
 `0x400`). `FUN_801DA51C` reads `actor[+0x94]` without checking either
 flag, so a single reader serves both paths.
 
-**Engine port (region-keyed roll).** The roll above is ported clean-room as
+#### Engine port (region-keyed roll)
+
+The roll above is ported clean-room as
 [`region_encounter`](../../crates/engine-core/src/region_encounter.rs)
 (`PORT: FUN_801D9E1C`). `RegionEncounterTable` preserves each region's
 tile-AABB + rate increment + formation slice (built from the MAN via

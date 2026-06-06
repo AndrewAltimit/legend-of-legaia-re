@@ -26,8 +26,23 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 | Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
 | World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement) |
 | Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | XA driver + cutscene mode table; 128 functions each |
-| Minigame hub - fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | All five are variants of the same overlay binary (101–154 shared prologues), but they **VA-alias** — they are distinct files sharing a library core, so a given address hosts a *different* function per minigame; always read the overlay-qualified dump. `overlay_debug_menu.bin` is the superset (189 functions). Per-frame controllers (each a switch-on-state-byte SM, documented in the per-minigame pages under [`subsystems/`](../subsystems/)): Fishing `FUN_801CF3BC` (`DAT_801d926c` SM); Slot machine `FUN_801CF0D8`; Baka Fighter `FUN_801D3468`; Dance `FUN_801CF470` (`DAT_801d5334` SM). The previously-listed per-minigame "main entry" addresses (`801D63B0` / `801D2CC0` / `801D5ED0` / `801D2F38`) are the shared **textured-quad sprite/HUD emitter** the minigame reuses for every draw — their high caller counts reflect that, not control flow. All functions dumped. |
-| Muscle Dome / Baka card battle | ✓ | `overlay_muscle_dome.bin` | Completely distinct from the minigame-hub family (only 17 shared prologues). The per-frame match controller is `FUN_801D0748` (pad read, phase dispatch on `ctx+6`, pick/commit/resolve/score loop); `FUN_801D5854` is the camera/view director, `FUN_801D8DE8` the HUD/element renderer, `FUN_801D388C` the card/presentation driver (4-slot deal → commit into the actor `+0x1df` action queue under a point budget). 148 functions dumped. See [`subsystems/minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md). |
+| Minigame hub - fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | Five VA-aliasing variants of one overlay binary; per-frame controllers below. → [detail](#minigame-hub-overlay-controllers) |
+| Muscle Dome / Baka card battle | ✓ | `overlay_muscle_dome.bin` | Distinct from the minigame-hub family; per-frame match controller `FUN_801D0748`. → [detail](#muscle-dome-overlay-controllers) |
+
+#### Minigame-hub overlay controllers
+
+All five hub minigames are variants of the same overlay binary (101–154 shared prologues), but they **VA-alias** — they are distinct files sharing a library core, so a given address hosts a *different* function per minigame; always read the overlay-qualified dump. `overlay_debug_menu.bin` is the superset (189 functions). Per-frame controllers (each a switch-on-state-byte SM, documented in the per-minigame pages under [`subsystems/`](../subsystems/)):
+
+- Fishing `FUN_801CF3BC` (`DAT_801d926c` SM)
+- Slot machine `FUN_801CF0D8`
+- Baka Fighter `FUN_801D3468`
+- Dance `FUN_801CF470` (`DAT_801d5334` SM)
+
+The previously-listed per-minigame "main entry" addresses (`801D63B0` / `801D2CC0` / `801D5ED0` / `801D2F38`) are the shared **textured-quad sprite/HUD emitter** the minigame reuses for every draw — their high caller counts reflect that, not control flow. All functions dumped.
+
+#### Muscle Dome overlay controllers
+
+Completely distinct from the minigame-hub family (only 17 shared prologues). The per-frame match controller is `FUN_801D0748` (pad read, phase dispatch on `ctx+6`, pick/commit/resolve/score loop); `FUN_801D5854` is the camera/view director, `FUN_801D8DE8` the HUD/element renderer, `FUN_801D388C` the card/presentation driver (4-slot deal → commit into the actor `+0x1df` action queue under a point budget). 148 functions dumped. See [`subsystems/minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md).
 
 ### Level-up overlay data section (resolved)
 

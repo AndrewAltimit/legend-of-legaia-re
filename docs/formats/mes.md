@@ -124,7 +124,12 @@ A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <
 
 The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range — e.g. a `0xC1 0x00` character-name substitution — does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
 
-Decoded by `legaia_mes::dialog_box` (`pack_box` packs one box from a `0x1F` lead, capped at `LINES_PER_BOX = 3`, reporting the terminating `Dispatch`; `pack_boxes` chains pages while the dispatch continues, stopping at `End` / `Terminate` / a `Picker` / field-VM bytecode). Pinned on real disc bytes by `field_dialog_boxpack_disc`: the Rim Elm sparring partner's (Tetsu) opening narration packs into three full 3-row pages chained by `0x24`, then a 2-row box that opens the 4-option "do you want something today?" topic menu — and that narration's `Mist appeared, .., but` line keeps its tail past a `0xC1 0x00` escape. Note the pool also holds the NPC's *other* story-branch lines; the contiguous box run stops where the pager hands control back to the field VM (a non-pager control byte), which `Dispatch::Unknown` marks.
+Decoded by `legaia_mes::dialog_box`:
+
+- `pack_box` packs one box from a `0x1F` lead, capped at `LINES_PER_BOX = 3`, reporting the terminating `Dispatch`.
+- `pack_boxes` chains pages while the dispatch continues, stopping at `End` / `Terminate` / a `Picker` / field-VM bytecode.
+
+Pinned on real disc bytes by `field_dialog_boxpack_disc`: the Rim Elm sparring partner's (Tetsu) opening narration packs into three full 3-row pages chained by `0x24`, then a 2-row box that opens the 4-option "do you want something today?" topic menu — and that narration's `Mist appeared, .., but` line keeps its tail past a `0xC1 0x00` escape. Note the pool also holds the NPC's *other* story-branch lines; the contiguous box run stops where the pager hands control back to the field VM (a non-pager control byte), which `Dispatch::Unknown` marks.
 
 ### Post-page dispatch (state `0x19`)
 
@@ -141,7 +146,11 @@ When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_8008
 | `0x28` | `0x15` -> `0x14` (init -> 3-option picker) | 3-option menu |
 | `0x29` | `0x17` -> `0x16` (init -> 4-option picker) | 4-option menu |
 
-So the picker controls are MES `0x27` / `0x28` / `0x29` (the open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x29` form and the high-bit `0xA7..0xA9` form are accepted; the field corpus stores the bare form). Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`. On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) — same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch — and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
+So the picker controls are MES `0x27` / `0x28` / `0x29`:
+
+- The open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x29` form and the high-bit `0xA7..0xA9` form are accepted; the field corpus stores the bare form.
+- Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`.
+- On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) — same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch — and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
 
 ### Picker control-region layout
 

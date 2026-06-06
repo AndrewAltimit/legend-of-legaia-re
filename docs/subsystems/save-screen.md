@@ -9,6 +9,14 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 `ghidra/scripts/funcs/overlay_menu_801dc6b4.txt`,
 `overlay_menu_801daef4.txt`, `overlay_menu_801dafd4.txt`.
 
+## Contents
+
+- [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
+- [Sub-screen function pointer table](#sub-screen-function-pointer-table) — [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [per-character status preview](#per-character-status-preview-fun_801d9c14-sub-screen-0x14)
+- [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
+- [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) — [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
+- [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
+
 ## Overlay structure
 
 The save UI is hosted by the menu overlay paged into `0x801C0000..0x801EFFFF`.
@@ -311,10 +319,33 @@ N blue SLOT pills on top of the dimmed title art. Asset sources:
 | Title art behind (wordmark, NEW GAME / CONTINUE, copyright) | `PROT 0888` title TIM | Same atlas the title menu samples; rendered dimmed during SaveSelect. |
 | **`Load` panel TIM + CLUT** | **`PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2** | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(fb_x=0, fb_y=511)`; the panel-specific row (row 2 of the 16x16 CLUT block) uploads to VRAM `(32, 511)`. Byte-confirmed: the 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset 0x1934). Constants exported by `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
 | `Load` panel **9-slice tile geometry** | **PINNED — engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. No interior fill sprite is drawn — the "marbled blue" look is the dimmed title art bleeding through the empty middle of the 9-slice frame. |
-| **"Load" text glyphs** | **PINNED to the dialog font (`legaia_font`)** | Retail emits 4 GP0 `0x64` textured-sprite primitives at dst stage `(35, 13)`, `(42, 13)`, `(48, 13)`, `(55, 13)`, each `14x15`, sampling **tpage 14** (VRAM `(896, 0)` — the dialog font's runtime VRAM upload) with CLUT @ VRAM `(208, 510)`. Source UVs `(192,32)`, `(240,64)`, `(16,64)`, `(64,64)` map to `L`/`o`/`a`/`d` via `col = (ascii − 0x20) % 16`, `row = (ascii − 0x20) / 16`, `x = col * 16`, `y = row * 16` (retail uploads the dialog font with a **16×16 cell pitch**, not the `14×15` cell pitch used in `extracted/font/dialog_font_atlas.png` — same glyphs, different packing). CLUT entry `[15]` = `(206, 206, 206)` — exactly the bright "Load" pixel colour in the framebuffer. Per-glyph dst deltas (`+7, +6, +7, +6`) are byte-equal to `legaia_font::widths[c] + INTER_GLYPH_PAD = 1`. Engine port: `legaia_engine_render::save_select_draws_for` now emits the title at `SAVE_SELECT_TITLE_POS` with `SAVE_SELECT_TITLE_COLOR` tint over the whitewashed dialog-font stencil (see `legaia_font::Font::load_paths`). The earlier "menu-glyph atlas at `PROT.DAT[0x11218]` CLUT row 13" pin is **falsified** — that atlas has zero glyph indices at all four documented rects (`scripts/pcsx-redux/verify_menu_glyph_load_rects.py` confirms; left here as a negative finding). |
+| **"Load" text glyphs** | **PINNED to the dialog font (`legaia_font`)** | Drawn from the dialog font, not a menu-glyph atlas. Details in [Load-text glyph decode](#load-text-glyph-decode) below. |
 | `SLOT 1` pill | `PROT 0899 + 0x16908 (33, 97, 45, 15)` decoded with CLUT 7 | Saturated blue baked label; byte-equal to retail. |
 | `SLOT 2` pill | `PROT 0899 + 0x16908 (33, 113, 45, 15)` decoded with CLUT 7 | Stacked directly below the SLOT 1 pill in the source atlas. |
 | Hand cursor | **OPEN** | Neither the save-menu TIM nor the menu-glyph atlas carries it. Likely lives in another pre-`init_data` gap TIM. |
+
+#### Load-text glyph decode
+
+The `Load` text glyphs are **PINNED to the dialog font (`legaia_font`)**:
+
+- Retail emits 4 GP0 `0x64` textured-sprite primitives at dst stage `(35, 13)`,
+  `(42, 13)`, `(48, 13)`, `(55, 13)`, each `14x15`, sampling **tpage 14** (VRAM
+  `(896, 0)` — the dialog font's runtime VRAM upload) with CLUT @ VRAM `(208, 510)`.
+- Source UVs `(192,32)`, `(240,64)`, `(16,64)`, `(64,64)` map to `L`/`o`/`a`/`d`
+  via `col = (ascii − 0x20) % 16`, `row = (ascii − 0x20) / 16`, `x = col * 16`,
+  `y = row * 16` (retail uploads the dialog font with a **16×16 cell pitch**, not
+  the `14×15` cell pitch used in `extracted/font/dialog_font_atlas.png` — same
+  glyphs, different packing).
+- CLUT entry `[15]` = `(206, 206, 206)` — exactly the bright "Load" pixel colour
+  in the framebuffer. Per-glyph dst deltas (`+7, +6, +7, +6`) are byte-equal to
+  `legaia_font::widths[c] + INTER_GLYPH_PAD = 1`.
+- Engine port: `legaia_engine_render::save_select_draws_for` now emits the title
+  at `SAVE_SELECT_TITLE_POS` with `SAVE_SELECT_TITLE_COLOR` tint over the
+  whitewashed dialog-font stencil (see `legaia_font::Font::load_paths`).
+- The earlier "menu-glyph atlas at `PROT.DAT[0x11218]` CLUT row 13" pin is
+  **falsified** — that atlas has zero glyph indices at all four documented rects
+  (`scripts/pcsx-redux/verify_menu_glyph_load_rects.py` confirms; left here as a
+  negative finding).
 
 ### Pinned 9-slice tile rects (system-UI TIM CLUT row 2)
 

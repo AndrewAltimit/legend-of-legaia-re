@@ -6,6 +6,15 @@ virtual filesystem, asset cache, frame timing.
 No `wgpu` / windowing / audio dependencies - the asset crates (Track 1)
 talk to this layer, and the render and audio crates read from it.
 
+## Contents
+
+- [`Vfs` trait](#vfs-trait)
+- [Asset cache](#asset-cache)
+- [Frame timing](#frame-timing)
+- [Composite `World`](#composite-world)
+- [Battle helpers](#battle-helpers) — `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_runner`, `battle_session`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
+- [See also](#see-also)
+
 ## What it provides
 
 ### `Vfs` trait

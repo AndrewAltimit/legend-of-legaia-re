@@ -105,7 +105,13 @@ FUN_801D6704  (overlay 0897, scene-transition orchestrator)
               … iterates table at _DAT_8007B85C
 ```
 
-The scene transition itself is initiated by `FUN_8001FD44(scene_name, sub_index)` - a static SCUS function that strcpy's the new scene name into the scene-name table at `0x80084548`, copies the previous scene name into `0x80084558`, and OR-flips the `0x40` bit in `_DAT_1F800394` (pending-transition story flag). Dialog-overlay handlers like `FUN_801D1344` call this directly when a story event needs to warp - e.g. the `town01` warp requires `_DAT_1F800394 & 0x04000000 != 0` plus a couple of menu-state flags.
+The scene transition itself is initiated by `FUN_8001FD44(scene_name, sub_index)` - a static SCUS function that:
+
+- strcpy's the new scene name into the scene-name table at `0x80084548`;
+- copies the previous scene name into `0x80084558`;
+- OR-flips the `0x40` bit in `_DAT_1F800394` (pending-transition story flag).
+
+Dialog-overlay handlers like `FUN_801D1344` call this directly when a story event needs to warp - e.g. the `town01` warp requires `_DAT_1F800394 & 0x04000000 != 0` plus a couple of menu-state flags.
 
 `buffer_ptr` is read from scratchpad cell `0x1F8003EC` (the heap-resident scene asset buffer pointer). Per-scene values vary because the loader allocates from a pool. The asset descriptor table at `_DAT_8007B85C = 0x8015CBD0` is **statically allocated** and identical across captured saves; its entries point into the per-scene field-pack region above.
 

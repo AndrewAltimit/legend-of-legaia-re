@@ -51,7 +51,11 @@ The `0xFF00` mask above is the trick that lets the control register tell the dec
 
 ## Encoding (re-packing)
 
-The retail game ships only the *decoder*; there is no Sony encoder to reverse. `crates/lzs::compress` is an encoder for re-packing edited assets (the [randomizer / disc patcher](../tooling/randomizer.md) uses it): an LZSS matcher with one-step lazy matching (defer a match by a byte when the next position yields a strictly longer one) whose output the retail decoder accepts byte-for-byte, **not** a bit-exact clone of Sony's packer. Its correctness criterion is `decompress(compress(x)) == x`, validated by a disc-gated round-trip over the real PROT corpus. The lazy step matters for in-place editing: it packs tightly enough that a re-packed asset fits its original footprint even where that footprint has no compressed slack (every scene MAN but one fits its exact original span; a purely greedy parse overshot each by a handful of bytes).
+The retail game ships only the *decoder*; there is no Sony encoder to reverse. `crates/lzs::compress` is an encoder for re-packing edited assets (the [randomizer / disc patcher](../tooling/randomizer.md) uses it):
+
+- It is an LZSS matcher with one-step lazy matching (defer a match by a byte when the next position yields a strictly longer one) whose output the retail decoder accepts byte-for-byte, **not** a bit-exact clone of Sony's packer.
+- Its correctness criterion is `decompress(compress(x)) == x`, validated by a disc-gated round-trip over the real PROT corpus.
+- The lazy step matters for in-place editing: it packs tightly enough that a re-packed asset fits its original footprint even where that footprint has no compressed slack (every scene MAN but one fits its exact original span; a purely greedy parse overshot each by a handful of bytes).
 
 A linear-history match at distance `d` maps onto the ring-buffer back-reference base `(0xFEE + i - d) & 0xFFF`; capping the emitted distance at `4096 - MAX_MATCH` keeps every in-copy read (including the self-overlapping RLE case where `d < len`) unambiguous, so a plain linear match decodes byte-for-byte. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's `0x14000`-byte records.
 

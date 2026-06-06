@@ -5,6 +5,34 @@ Sources: `overlay_world_map.bin` (walk-view) and `overlay_world_map_top.bin` (to
 captures from mednafen save states; decompiled at `ghidra/scripts/funcs/overlay_dialog_801e76d4.txt`,
 `overlay_dialog_801ead98.txt`, and `801cfc40.txt`.
 
+This is a large page. The [world-overview viewer](world-overview-viewer.md) (the
+static-site WebGL deliverable) is documented in a sibling file. Use the contents
+below to jump within this page.
+
+## Contents
+
+**Overlay + key functions**
+- [Overlay structure](#overlay-structure)
+- [Key functions](#key-functions) — [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
+
+**Entity / encounter SM**
+- [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port--both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
+
+**Overworld player + scenes**
+- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [boot-path seeding](#boot-path-seeding)
+- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations)
+
+**Terrain + geometry**
+- [Loading the kingdom geometry](#loading-the-kingdom-geometry-engine-port) · [placing the continent terrain](#placing-the-continent-terrain-engine-port) · [ground texturing](#ground-texturing) · [rendering the placed entities](#rendering-the-placed-entities) · [auto-engage on walk-over](#auto-engage-on-walk-over)
+
+**Render pipeline**
+- [Render pipeline](#render-pipeline) — [per-frame dispatch](#per-frame-dispatch-scus-resident) · [render tick `FUN_80016444`](#fun_80016444---scus-world-map-render-tick-1352-bytes) · [horizon emitter `FUN_801D7EA0`](#fun_801d7ea0---world-map-poly_ft4-batch-emitter-832-bytes)
+- [Top-view bulk-terrain render path](#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers) — [per-slot delta vs SCUS sibling](#per-slot-delta-vs-scus-sibling)
+- [Per-frame render-pass iterator `FUN_8002519c`](#per-frame-render-pass-iterator---fun_8002519c) · [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4) · [gate-arm chain](#gate-arm-chain---fun_801d1344---fun_801d8258)
+
+**Reference**
+- [Globals used](#globals-used) · [World-overview viewer](#world-overview-viewer)
+
 ## Overlay structure
 
 Two world-map overlay variants are paged into `0x801C0000..0x801EFFFF`:
@@ -96,7 +124,7 @@ iterates the sprite-descriptor list at `DAT_801C93C8`. Present only in the
 Entry: `(entity_ptr)`. 5-state dispatcher on `entity[+0x8A]` (jump table at
 `0x801CEC28`). When `_DAT_80083808 == 0` and the entity state is 0: calls
 `FUN_800243F0` (the per-frame **BGM/asset poller** — it resolves the pending
-BGM id to a PROT slot, see [`asset-loader.md`](asset-loader.md#bgm-lookup); it is
+BGM id to a PROT slot, see [`asset-loader.md`](asset-loader.md#music--sfx-selection-bgm-lookup); it is
 *not* a location→scene resolver) and handles pad-button checks against
 `_DAT_8007BB38` for entity interaction. Called once per world-map entity per
 frame by the entity pool tick loop. (The body is the encounter→battle handoff —

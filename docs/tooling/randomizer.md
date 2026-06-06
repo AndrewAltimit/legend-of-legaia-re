@@ -12,6 +12,33 @@ Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
 so CI runs without a disc.
 
+## Contents
+
+- [Why this needs three new capabilities](#why-this-needs-three-new-capabilities)
+- [Editing model: same-size in place, except doors](#editing-model-same-size-in-place-except-doors)
+- [In the browser](#in-the-browser)
+- [CLI: `legaia-rando`](#cli-legaia-rando)
+- Per-randomizer mechanics:
+  - [Keep-static items](#keep-static-items)
+  - [Equipment drops](#equipment-drops)
+  - [Random encounters](#random-encounters)
+  - [Treasure chests](#treasure-chests)
+  - [Town shops (what stores sell)](#town-shops-what-stores-sell)
+  - [Casino prize exchange](#casino-prize-exchange)
+  - [Steal items (Evil God Icon)](#steal-items-evil-god-icon)
+  - [Arts button combos](#arts-button-combos)
+  - [Doors (scene transitions)](#doors-scene-transitions)
+  - [House doors (intra-town)](#house-doors-intra-town)
+  - [Starting items](#starting-items)
+  - [Door of Wind convenience toggles](#door-of-wind-convenience-toggles)
+  - [Unused content](#unused-content)
+  - [Re-pack slack](#re-pack-slack)
+- [The patch chain](#the-patch-chain)
+- [EDC/ECC: not game-specific](#edcecc-not-game-specific)
+- [Tests](#tests)
+- [No-Sony-bytes hygiene](#no-sony-bytes-hygiene)
+- [See also](#see-also)
+
 ## Why this needs three new capabilities
 
 Most editable values live *inside* a Legaia LZS stream that the asset

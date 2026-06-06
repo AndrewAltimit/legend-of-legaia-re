@@ -9,6 +9,15 @@ The retail world-map subsystem itself (overlay structure, key functions,
 render pipeline, globals) is documented in [`world-map.md`](world-map.md);
 this page covers only the viewer + the capture-side tooling that feeds it.
 
+## Contents
+
+- [Layout engine for unplaced slot-1 TMDs](#layout-engine-for-unplaced-slot-1-tmds)
+- [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks](#walk-frame-placed-landmarks)
+- [Distance-cue fog pass](#distance-cue-fog-pass) · [per-kingdom fog colour](#per-kingdom-fog-colour)
+- [Bulk-terrain placement resolver (MAN `0x7F` sentinels)](#bulk-terrain-placement-resolver-man-0x7f-sentinels) · [global-pool placement placeholders](#global-pool-placement-placeholders)
+- [Ocean tile — disc-side asset + 13-frame CLUT animation](#ocean-tile--disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
+- [Camera anchors](#camera-anchors)
+
 ## Layout engine for unplaced slot-1 TMDs
 
 The MAN placement table pins a small subset of each kingdom's slot-1
