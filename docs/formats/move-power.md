@@ -10,6 +10,11 @@ Engine consumer: `engine-core::move_power::MovePowerCatalog` pairs the table wit
 the id→index map and loads it onto `World::move_power` from PROT 0898; the
 monster special-attack damage path rolls each move's `+0` power through the
 arts/physical kernel (see [battle-formulas.md](../subsystems/battle-formulas.md#arts--physical-branch-attacker_slot--7)).
+The catalog also resolves a move id to a full presentation/timing descriptor
+(`MovePowerCatalog::fx_for_move_id` → `MoveFx`): every behavioural field past
+`+0` plus the cross-table joins (the `+0x0a` impact selector → its config word,
+each `+0x12`/`+0x16` effect-id-list byte → an `EffectListEntry` with its
+spawn-prototype param + SFX cue). It is a descriptor surface only — see Open.
 Provenance is the battle-action overlay (PROT entry 0898, CDNAME
 `overlay_battle_action` / `overlay_0898`); dumps under `ghidra/scripts/funcs/`
 are labelled `overlay_battle_action_*` and the byte-identical aliases
@@ -186,6 +191,14 @@ effect-prototype (`0x801f6324`) and per-effect SFX (`0x801f6418`) tables are now
 parsed (`EffectAuxTables`); their *contents'* deeper meaning is partly open — the
 `0x801f6324` entries are overlay VAs to ~`0x20`-byte effect-prototype structs
 whose layout (the `FUN_80050ed4` spawn parameter) is not yet decoded.
+
+The engine exposes the whole record as a resolved `MoveFx` descriptor
+(behavioural fields + the impact-config and effect-list cross-table joins), but
+the render/audio side does **not** yet consume it: drawing a move's trail
+(texpage `0x7700 + id`), spawning its contact/launch effects through the effect
+pool, and playing its SFX cues all wait on that prototype-struct layout, which is
+the bridge from a `0x801f6324` spawn param to an effect-catalog ui-id. Until that
+lands, spawning a move's effects faithfully would be guesswork.
 
 The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
 *not* use this table — a summon's magnitude is derived from caster/summon battle
