@@ -30,7 +30,10 @@ pub mod vab_bind;
 mod webaudio;
 
 pub use sequencer::Sequencer;
-pub use sfx::{PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler};
+pub use sfx::{
+    CueDispatch, PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler, classify_cue,
+    voice_pitch,
+};
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
