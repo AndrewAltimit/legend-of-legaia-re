@@ -4584,6 +4584,21 @@ impl PlayWindowApp {
                 .push_back(format!("slot {} {}{} HP", f.target_slot, sign, f.amount));
         }
 
+        // Battle sound cues: the art-strike outcomes resolve per-strike SFX
+        // cues (kind = the SfxBank id, played directly without classify_cue).
+        // No battle SFX bank is wired yet, so log the scheduled cue; a host
+        // with a bank would enqueue each into its SfxScheduler at timing_frames
+        // and fire via SfxBank::play_one_shot.
+        for cue in self.session.host.world.drain_battle_sfx_cues() {
+            log::debug!(
+                "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {})",
+                cue.kind,
+                cue.timing_frames,
+                cue.actor_slot,
+                cue.target_slot
+            );
+        }
+
         // Refresh per-slot status icons + age the popups one frame.
         if self.session.host.world.mode == SceneMode::Battle {
             for slot in 0..self.battle_hud.slots.len() as u8 {

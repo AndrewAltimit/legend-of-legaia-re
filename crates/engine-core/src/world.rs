@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use crate::battle_events::{BattleEvent, BattleHitFx};
+use crate::battle_events::{BattleEvent, BattleHitFx, BattleSfxCue};
 use crate::field_events::FieldEvent;
 use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
@@ -975,6 +975,14 @@ pub struct World {
     /// [`World::drain_battle_hit_fx`]; cleared on battle exit.
     pub battle_hit_fx: Vec<BattleHitFx>,
 
+    /// Per-strike battle sound cues surfaced this frame for the host to play
+    /// through its SFX bank (the art-record `HitCue` sound cues that
+    /// [`World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome —
+    /// previously dropped). Cosmetic, like [`Self::battle_hit_fx`]: no gameplay
+    /// state depends on them. Drained via [`World::drain_battle_sfx_cues`];
+    /// cleared on battle exit.
+    pub battle_sfx_cues: Vec<BattleSfxCue>,
+
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
     /// a scene starts one. Updated synchronously when the VM emits the
     /// corresponding `Bgm` event.
@@ -1855,6 +1863,7 @@ impl World {
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
+            battle_sfx_cues: Vec::new(),
             current_bgm: None,
             battle_bgm: None,
             field_bgm_resume: None,
@@ -2844,6 +2853,14 @@ impl World {
         std::mem::take(&mut self.battle_hit_fx)
     }
 
+    /// Drain the battle sound cues queued this frame (the art-strike `HitCue`
+    /// sounds [`Self::fold_battle_event`] resolves). The host plays each through
+    /// its `SfxBank::play_one_shot` at the cue's `timing_frames` delay; nothing
+    /// here mutates gameplay state. Returns them in resolve order.
+    pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {
+        std::mem::take(&mut self.battle_sfx_cues)
+    }
+
     /// Apply the gameplay-state side of a single battle event - currently
     /// `ApplyArtStrike` (subtracts the resolved damage from the target's
     /// `BattleActor::hp`, clamping at zero, and records the enemy effect on
@@ -2856,10 +2873,24 @@ impl World {
     pub fn fold_battle_event(&mut self, event: &BattleEvent) -> Option<(u8, u16)> {
         match event {
             BattleEvent::ApplyArtStrike {
+                actor_slot,
                 target_slot,
                 outcome,
                 ..
             } => {
+                // Surface the strike's sound cues for the host's SFX bank (these
+                // were previously dropped). Hit-effect-only cues (kind 0x4C)
+                // carry no sound, so only the `is_sound` cues are queued.
+                for cue in &outcome.cues {
+                    if cue.is_sound() {
+                        self.battle_sfx_cues.push(BattleSfxCue {
+                            kind: cue.kind,
+                            timing_frames: cue.timing_frames,
+                            actor_slot: *actor_slot,
+                            target_slot: *target_slot,
+                        });
+                    }
+                }
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);

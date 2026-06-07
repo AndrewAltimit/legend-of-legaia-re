@@ -5647,6 +5647,60 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
 }
 
 #[test]
+fn fold_battle_event_surfaces_art_strike_sound_cues() {
+    use crate::art_strike::{ArtStrikeOutcome, ScheduledCue};
+
+    let mut world = World::new();
+    world.party_count = 4;
+    for slot in 0..4 {
+        world.actors[slot].active = true;
+        world.actors[slot].battle.hp = 200;
+        world.actors[slot].battle.max_hp = 200;
+    }
+
+    // An art strike whose outcome carries a sound cue (0x1A, frame 16) and a
+    // hit-effect-only visual cue (0x4C) - only the sound cue should surface.
+    let outcome = ArtStrikeOutcome {
+        damage: Some(40),
+        enemy_effect: legaia_art::record::EnemyEffect::None,
+        cues: vec![
+            ScheduledCue {
+                timing_frames: 16,
+                kind: 0x1A,
+            },
+            ScheduledCue {
+                timing_frames: 8,
+                kind: 0x4C,
+            },
+        ],
+        alt_range: false,
+        power_target: Some(legaia_art::power::PowerTarget::Udf),
+    };
+    let event = BattleEvent::ApplyArtStrike {
+        actor_slot: 0,
+        target_slot: 3,
+        strike_index: 0,
+        outcome,
+    };
+
+    assert!(world.drain_battle_sfx_cues().is_empty(), "starts empty");
+    world.fold_battle_event(&event);
+
+    let cues = world.drain_battle_sfx_cues();
+    assert_eq!(
+        cues.len(),
+        1,
+        "only the sound cue (0x1A) surfaces, not 0x4C"
+    );
+    assert_eq!(cues[0].kind, 0x1A);
+    assert_eq!(cues[0].timing_frames, 16);
+    assert_eq!(cues[0].actor_slot, 0);
+    assert_eq!(cues[0].target_slot, 3);
+    // Drained once.
+    assert!(world.drain_battle_sfx_cues().is_empty());
+}
+
+#[test]
 fn fold_battle_event_other_variants_dont_modify_state() {
     let mut world = World::new();
     world.party_count = 1;

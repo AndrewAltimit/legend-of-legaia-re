@@ -308,6 +308,8 @@ When the active actor's `chosen_art` is set and `art_record` returns a record, `
 
 The engine-side translator at `crates/engine-core/src/art_strike.rs` (`apply_art_strike(attack, defense, info) -> ArtStrikeOutcome`) folds an `ArtStrikeInfo` into a concrete HP delta + status flag + scheduled SFX cues using the `art_strike_damage` formula in `legaia_engine_vm::battle_formulas`. The world's `BattleActionHost::apply_art_strike` impl resolves the per-slot weapon attack from `World::battle_attack` and the right defense (UDF or LDF, picked from `World::battle_defense_split`) before calling the translator, then emits a `BattleEvent::ApplyArtStrike` with the resolved `ArtStrikeOutcome`. Engines apply each strike's `damage` / `enemy_effect` / `cues` through whatever runtime they have for HP / status / SFX dispatch.
 
+`World::fold_battle_event` folds the `ApplyArtStrike` outcome: HP / status into the target, and the outcome's **sound cues** (`cue.is_sound()`, the `HitCue::kind` SfxBank ids — distinct from the move-power `+0x0d` `FUN_8004fcc8` namespace) into a per-frame `BattleSfxCue` queue the host drains via `World::drain_battle_sfx_cues` (the audio sibling of `drain_battle_hit_fx`). The host plays each through `SfxBank::play_one_shot` at the cue's `timing_frames` delay; these cues were previously dropped on fold. The actual SPU note-on needs a battle SFX bank, not yet wired.
+
 ## Open work
 
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.

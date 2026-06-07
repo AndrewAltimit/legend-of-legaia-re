@@ -107,6 +107,29 @@ pub struct BattleHitFx {
     pub is_crit: bool,
 }
 
+/// One battle sound-effect cue surfaced for the host to play through its SFX
+/// bank. Mirrors [`BattleHitFx`]'s "drain and present" pattern, but for audio:
+/// it carries no gameplay-state side effect — the host just fires the sound.
+///
+/// `kind` is the [`crate::art_strike::ScheduledCue`] kind = the art-record
+/// `HitCue::kind` (e.g. `0x1A` generic hit). It is the **SfxBank cue id
+/// directly**, NOT a `FUN_8004fcc8` dispatch id, so the host plays it through
+/// `SfxBank::play_one_shot` without `classify_cue`. (The move-power `+0x0d` cue
+/// is the separate `FUN_8004fcc8` namespace, surfaced via
+/// [`crate::world::World::take_pending_move_fx_cue`].) `timing_frames` is the
+/// delay after strike-start, for the host's frame-timed scheduler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleSfxCue {
+    /// SfxBank cue id (the art `HitCue::kind`).
+    pub kind: u16,
+    /// Frames after strike-start when the cue should fire.
+    pub timing_frames: u16,
+    /// Attacker actor slot (HUD / 3D-pan context).
+    pub actor_slot: u8,
+    /// Target actor slot the strike landed on.
+    pub target_slot: u8,
+}
+
 impl BattleEvent {
     /// One-line description for logging / asset-viewer overlays.
     pub fn summary(&self) -> String {
