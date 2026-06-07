@@ -119,18 +119,37 @@ and sell price (buy price ÷ 2) at y+43 (`0x2b`) with an icon at x+84.
 confirmed constants. The cost prompt and Yes/No cursor are rendered in
 `legaia-engine play-window` whenever `MenuState::ShopConfirm` is active.
 
+## Gold-shop stock source
+
+A gold town merchant's stock is **not** an overlay data table — it lives **inline
+in the scene's field-VM script** (the MAN, asset type `0x03`), as field-VM op
+`0x49` (`STATE_RESUME`) sub-op `0` carrying `[count][item_ids][ASCII name]`. The
+shared scanner [`legaia_asset::shop_stock`] (a byte-scan, robust to the
+dialogue-picker jump tables a linear walk desyncs on) locates these records;
+[`legaia_engine_core::shop_catalog`] pairs them with item prices to build a priced
+[`ShopInventory`]. `SceneHost::enter_field_scene` populates `World::scene_shops`
+for the active scene, and `World::scene_shop_session(idx)` hands a host a
+ready-to-open [`ShopSession`].
+
+Buy **prices** come from the static `SCUS_942.54` item table — the `u16` at item
+record `+2` (`legaia_asset::item_names::item_price`, base `TABLE_BASE_VA`), the
+same field the gold-debiting buy handler `FUN_801db380` reads (`_DAT_8008459C -=
+price[item_id]`). A price of `0` marks a quest / key / found-only / internal item
+the game never sells, so the price table doubles as a **sellable mask** (price
+`> 0`) for the shop-record scan. This is stronger than the randomizer's "names a
+real item" mask: several internal placeholder ids (the `Ra-Seru Meta $N` slots
+`0x01..=0x03`) *are* named but priced `0`, so a stray `0x49` run built only of
+those passes the name mask yet is correctly rejected by the engine — no phantom
+shop, no free item. Validated against the Rim Elm Variety Store's 10 pinned ids.
+
+> The casino / prize-exchange table at `0x801E4518` (8-byte `[u16 item_id][u16
+> gate][u32 price]` records in `0x60`-byte blocks) is a different thing — its buy
+> handler (`overlay_shop_save_801dc1cc.txt`) debits `_DAT_800845A4` (the **casino
+> coin bank**, not party gold), so it is already parsed by the randomizer's
+> `casino::CasinoExchange`.
+
 ## Open items
 
-- **Gold-shop stock source — open.** `0x801E4518` (the menu-overlay DATA
-  table, 8-byte `[u16 item_id][u16 gate][u32 price]` records in 0x60-byte
-  blocks indexed by `*(_DAT_8007b450 + 1)`) was previously assumed to hold
-  per-scene shop stock. It does **not**: its buy handler
-  (`overlay_shop_save_801dc1cc.txt`) debits `_DAT_800845A4` — the **casino
-  coin bank**, not party gold (`_DAT_8008459C`) — so this is the casino /
-  prize-exchange table, already parsed by the randomizer's
-  `casino::CasinoExchange`. The *gold* item-shop stock list (the table read
-  by the gold-debiting buy path) lives elsewhere and is still unpinned; the
-  engine's `ShopInventory` is host-supplied until that source is found.
 - **Quantity cap.** Retail enforces a max held count of 98 per item before
   dimming additional buy attempts; the current port allows unlimited stacking.
 - **Mode-select panel.** The Buy / Sell / Quit selector (`FUN_801d4868`) uses

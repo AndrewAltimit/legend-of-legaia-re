@@ -1302,6 +1302,19 @@ pub struct World {
     /// [`crate::scene::SceneHost`].
     pub element_affinity: Option<legaia_asset::element_affinity::ElementAffinity>,
 
+    /// Item-table data the gold-shop path needs from `SCUS_942.54` (per-id buy
+    /// price + a "names a real item" mask). Installed once at boot by the host
+    /// (e.g. `BootSession`); `None` on disc-free builds, which leaves shop stock
+    /// host-supplied and unpriced. See [`crate::shop_catalog`].
+    pub item_shop_data: Option<crate::shop_catalog::ShopItemData>,
+
+    /// Gold shops located in the active scene's MAN, priced from
+    /// [`Self::item_shop_data`]. Repopulated on each field-scene entry by
+    /// [`crate::scene::SceneHost::enter_field_scene`]; empty when the scene has
+    /// no merchant or the disc isn't available. The field-menu shop-open path
+    /// picks from these instead of a hand-authored stock list.
+    pub scene_shops: Vec<crate::shop_catalog::SceneShop>,
+
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`World::set_equipment_table`]
     /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
@@ -1947,6 +1960,8 @@ impl World {
             active_move_fx_trail_texpage: None,
             pending_move_fx_cue: None,
             element_affinity: None,
+            item_shop_data: None,
+            scene_shops: Vec::new(),
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
@@ -3681,6 +3696,21 @@ impl World {
         let count = self.inventory.entry(item_id).or_insert(0);
         *count = count.saturating_add(qty);
         Some((item_id, qty, delta))
+    }
+
+    /// Build a [`crate::shop::ShopSession`] for the `idx`-th gold shop located in
+    /// the active scene ([`Self::scene_shops`], decoded from the scene MAN +
+    /// priced from the SCUS item table at scene entry). `None` when `idx` is out
+    /// of range (no merchant, or the disc / item data was absent at boot, leaving
+    /// the list empty).
+    ///
+    /// This is the bridge from the disc-sourced per-scene stock to the menu
+    /// runtime: a host installs the returned session via
+    /// [`crate::menu_runtime::MenuRuntime::open_shop`] when the player triggers
+    /// the scene's merchant (field-VM op `0x49`).
+    pub fn scene_shop_session(&self, idx: usize) -> Option<crate::shop::ShopSession> {
+        let shop = self.scene_shops.get(idx)?;
+        Some(crate::shop::ShopSession::new(shop.inventory.clone()))
     }
 
     /// Record one use of `art_id` by `char_id` (roster index).

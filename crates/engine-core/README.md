@@ -90,6 +90,13 @@ implement the per-VM `Host` traits themselves; `World` is the default.
 - `items` - typed inventory item-effect catalog. `apply_effect`
   resolves an `ItemEffect` against a `TargetSnapshot` to produce an
   `ItemOutcome` engines fold into world state.
+- `shop` / `shop_catalog` - shop session state (buy/sell cursor,
+  quantity, gold/inventory delta) plus the disc-sourced **gold-shop
+  stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
+  (the sellable mask), and `shop_catalog::scene_shops` decodes a
+  scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
+  a priced `ShopInventory`. `SceneHost::enter_field_scene` parks them on
+  `World::scene_shops`; `World::scene_shop_session(idx)` opens one.
 - `battle_round` - per-round orchestrator. `BattleRound::begin` resets
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,

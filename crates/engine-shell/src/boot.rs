@@ -209,6 +209,29 @@ fn read_sfx_bank(source: &SceneSource<'_>) -> Option<legaia_engine_audio::SfxBan
     ))
 }
 
+/// Read the gold-shop item data (per-id buy price + "names a real item" mask)
+/// from a boot source's `SCUS_942.54` item table. Returns `None` when the
+/// executable isn't reachable or its item table doesn't parse, so a boot never
+/// fails on missing shop data - the engine then leaves shop stock host-supplied
+/// and unpriced. See [`legaia_engine_core::shop_catalog`].
+fn read_shop_item_data(
+    source: &SceneSource<'_>,
+) -> Option<legaia_engine_core::shop_catalog::ShopItemData> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_engine_core::shop_catalog::ShopItemData::from_scus(&scus)
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -256,6 +279,14 @@ impl BootSession {
         if let Some(tables) = read_retail_growth_tables(&source) {
             let tracker = std::mem::take(&mut host.world.level_up_tracker);
             host.world.level_up_tracker = tracker.with_growth_tables(&tables);
+        }
+
+        // Install the gold-shop item data (per-id buy price + name mask) from the
+        // SCUS item table, so each field scene's merchant offers its real stock
+        // at real prices (populated per scene by `enter_field_scene`). Persists
+        // across New Game; absent on disc-free builds (stock stays host-supplied).
+        if let Some(shop_data) = read_shop_item_data(&source) {
+            host.world.item_shop_data = Some(shop_data);
         }
 
         host.load_scene(&cfg.scene)
