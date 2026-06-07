@@ -67,7 +67,7 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><strong>On-disc item-effect amounts.</strong> The per-item effect <em>descriptor</em> table (<code>DAT_800752C0</code>: effect class + tier + all-party / field / battle usability) is now decoded and drives the engine's item-menu gating. What is still unpinned is the literal restore <em>amount</em> &mdash; the <code>(class, tier) -&gt; 200/800/...</code> mapping is a switch in the overlay-resident apply handler (it is <em>not</em> <code>_DAT_8006F198</code>, the SFX descriptor table), so the engine keeps the curated walkthrough amounts for those.</li>
+    <li><strong>On-disc item-effect amounts.</strong> The per-item effect <em>descriptor</em> table (<code>DAT_800752C0</code>: effect class + tier + all-party / field / battle usability) is decoded and drives the engine: the field/battle usability flags gate the item menu, and the <code>0x20</code> all-party flag fans a party-wide restorative (Healing Bloom / Fruit) across every living ally in one use. What is still unpinned is the literal restore <em>amount</em> &mdash; the <code>(class, tier) -&gt; 200/800/...</code> mapping is a switch in the overlay-resident apply handler (it is <em>not</em> <code>_DAT_8006F198</code>, the SFX descriptor table), so the engine keeps the curated walkthrough amounts for those.</li>
     <li><strong>Quantity cap.</strong> Retail caps held count at 98 before dimming; the current port allows unlimited stacking.</li>
     <li><strong>Mode-select panel.</strong> The Buy / Sell / Quit selector (<code>FUN_801d4868</code>) uses x+20 for text and the same 14 px line height as the item list.</li>
   </ul>
