@@ -41,7 +41,7 @@ fn fresh_world() -> World {
     }
     world.party_leader_slot = Some(0);
     world.set_item_catalog(ItemCatalog::vanilla());
-    world.inventory.insert(0x01, 3); // Healing Leaf
+    world.inventory.insert(0x77, 3); // Healing Leaf (real item id)
     world.money = 100;
     world
 }

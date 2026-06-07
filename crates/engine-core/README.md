@@ -87,9 +87,14 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   status-effect modifiers (Burned -ATK, Confused halves accuracy,
   Asleep / Stunned / Petrified zero evasion, Silenced / Petrified
   block Magic).
-- `items` - typed inventory item-effect catalog. `apply_effect`
-  resolves an `ItemEffect` against a `TargetSnapshot` to produce an
-  `ItemOutcome` engines fold into world state.
+- `items` - typed inventory item-effect catalog, keyed by **real**
+  retail item ids (the `SCUS_942.54` item table - e.g. Healing Leaf is
+  `0x77`), so a live granted / shop / dropped id resolves to its effect.
+  `apply_effect` resolves an `ItemEffect` against a `TargetSnapshot` to
+  produce an `ItemOutcome` engines fold into world state. `vanilla()`
+  models the faithful consumable subset (HP/MP restore, cure, revive,
+  field escape); effect *amounts* are the curated walkthrough values
+  (the on-disc effect-value table is not yet pinned).
 - `shop` / `shop_catalog` - shop session state (buy/sell cursor,
   quantity, gold/inventory delta) plus the disc-sourced **gold-shop
   stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
