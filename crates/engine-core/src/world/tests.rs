@@ -218,6 +218,57 @@ fn field_grid_set_mask_selects_quadrant() {
 }
 
 #[test]
+fn sample_field_floor_height_unloaded_or_out_of_range_returns_zero() {
+    let world = World::new();
+    // No grid loaded -> 0.
+    assert_eq!(world.sample_field_floor_height(100, 100), 0);
+
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    // Negative / out-of-range tiles -> 0 (guarded).
+    assert_eq!(world.sample_field_floor_height(-1, 0), 0);
+    assert_eq!(world.sample_field_floor_height(0, -1), 0);
+    // World x = 0x7F * 128 puts tile_x at 0x7F, whose +1 corner is out of range.
+    assert_eq!(world.sample_field_floor_height(0x7F * 128, 0), 0);
+}
+
+#[test]
+fn sample_field_floor_height_flat_returns_lut_value() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.field_floor_height_lut[5] = -50;
+    // Set the 2x2 block around tile (0,0) all to elevation tier 5.
+    for &i in &[0usize, 1, STRIDE, STRIDE + 1] {
+        world.field_collision_grid[i] = 0x05; // low nibble = tier 5
+    }
+    // Any sub-tile position in tile (0,0): all four corners match -> LUT[5].
+    assert_eq!(world.sample_field_floor_height(10, 10), -50);
+    assert_eq!(world.sample_field_floor_height(64, 100), -50);
+}
+
+#[test]
+fn sample_field_floor_height_bilinear_interpolates() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.field_floor_height_lut[1] = 0;
+    world.field_floor_height_lut[2] = 256;
+    // Corners of tile (0,0): c00=1(0), c01=2(256), c10=1(0), c11=1(0).
+    world.field_collision_grid[0] = 0x01;
+    world.field_collision_grid[1] = 0x02;
+    world.field_collision_grid[STRIDE] = 0x01;
+    world.field_collision_grid[STRIDE + 1] = 0x01;
+    // Top edge (wz=0): height interpolates linearly from c00 (0) to c01 (256)
+    // across the sub-tile, i.e. 2 * wx.
+    assert_eq!(world.sample_field_floor_height(0, 0), 0); // wx=0
+    assert_eq!(world.sample_field_floor_height(64, 0), 128); // wx=64 -> halfway
+    assert_eq!(world.sample_field_floor_height(127, 0), 254); // wx=127
+    // Pushing wz down toward the (all-zero) bottom row pulls the value toward 0.
+    assert!(world.sample_field_floor_height(64, 64) < 128);
+}
+
+#[test]
 fn field_vm_nibble7_paints_collision_grid() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -5644,6 +5695,60 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
     // PowerTarget enum is needed only to satisfy the import linter
     // when the assertions don't otherwise reference it.
     let _ = PowerTarget::Udf;
+}
+
+#[test]
+fn fold_battle_event_surfaces_art_strike_sound_cues() {
+    use crate::art_strike::{ArtStrikeOutcome, ScheduledCue};
+
+    let mut world = World::new();
+    world.party_count = 4;
+    for slot in 0..4 {
+        world.actors[slot].active = true;
+        world.actors[slot].battle.hp = 200;
+        world.actors[slot].battle.max_hp = 200;
+    }
+
+    // An art strike whose outcome carries a sound cue (0x1A, frame 16) and a
+    // hit-effect-only visual cue (0x4C) - only the sound cue should surface.
+    let outcome = ArtStrikeOutcome {
+        damage: Some(40),
+        enemy_effect: legaia_art::record::EnemyEffect::None,
+        cues: vec![
+            ScheduledCue {
+                timing_frames: 16,
+                kind: 0x1A,
+            },
+            ScheduledCue {
+                timing_frames: 8,
+                kind: 0x4C,
+            },
+        ],
+        alt_range: false,
+        power_target: Some(legaia_art::power::PowerTarget::Udf),
+    };
+    let event = BattleEvent::ApplyArtStrike {
+        actor_slot: 0,
+        target_slot: 3,
+        strike_index: 0,
+        outcome,
+    };
+
+    assert!(world.drain_battle_sfx_cues().is_empty(), "starts empty");
+    world.fold_battle_event(&event);
+
+    let cues = world.drain_battle_sfx_cues();
+    assert_eq!(
+        cues.len(),
+        1,
+        "only the sound cue (0x1A) surfaces, not 0x4C"
+    );
+    assert_eq!(cues[0].kind, 0x1A);
+    assert_eq!(cues[0].timing_frames, 16);
+    assert_eq!(cues[0].actor_slot, 0);
+    assert_eq!(cues[0].target_slot, 3);
+    // Drained once.
+    assert!(world.drain_battle_sfx_cues().is_empty());
 }
 
 #[test]

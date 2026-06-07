@@ -233,6 +233,27 @@ interpreted-transform boundary (the exact per-part transform composition is the
 shared open `FUN_801F811C`/PROT-0900 piece). The base 3 is the captured
 `gp[0x754]`:
 
+A spawn also surfaces the move's two presentation fields for the render / audio
+layers: the **trail texpage** (`+0x0b` → `0x7700 + id`) on
+`World::active_move_fx_trail_texpage()` (the 2D afterimage streak draw
+`FUN_801e1ab0` is ported as `legaia_engine_render::afterimage::build_afterimage_quad`,
+which assembles the jittered semi-transparent `POLY_FT4` from this texpage; only
+the camera-coupled GTE projection of its screen corners stays caller-side), and
+the **sound cue** (`+0x0d`) as
+a pending id `World::take_pending_move_fx_cue()` the host routes through the ported
+`FUN_8004fcc8` dispatch decode (`legaia_engine_audio::classify_cue` →
+`CueDispatch::Ring`/`Voice`; the SFX ring is `SfxScheduler`/`FUN_80035B50`, and the
+SPU note-on resolves through the [SFX descriptor table](sfx-table.md) against the
+**active scene's music VAB** — the same per-scene `scene_vab_stream` bank the BGM
+sequencer plays, not a separate SFX master).
+
+The effect-list **`AltEffect`** entries (the high-bit `0x80` bytes, distinct from
+the `0x801f6324` scene-graph `Spawn` entries) now spawn through the 2D `efect.dat`
+pool: `spawn_move_fx` calls `World::try_spawn_effect` (`spawn_by_ui_id`,
+`FUN_801dfdf0`) for each by its 7-bit id (no-op when `efect.dat` isn't loaded).
+This currently fires only on the scene-graph success path; a move whose lists hold
+*only* `AltEffect` entries (no `Spawn` prototype) is the documented edge case.
+
 **`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
 `FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)
 hit it once: `ra = 0x80050F08` (the `FUN_80050ed4` call), `a3 = 0x1000`, with the

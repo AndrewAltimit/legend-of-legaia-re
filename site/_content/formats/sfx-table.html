@@ -1,0 +1,75 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; SFX descriptor table</div>
+  <h1>Sound-effect descriptor table <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">Every actor / battle sound effect is keyed to an 8-byte descriptor in a static <code>SCUS_942.54</code> rodata table at <code>DAT_8006F198</code> &mdash; which VAB program + tone to play, how many SPU voices to fan across, and which mixer channel. The static counterpart of the runtime bank <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <code>monster.snd</code>) that covers ids <code>&ge; 0x200</code>.</p>
+</header>
+
+<section class="doc-section" id="table-layout">
+  <h2>Table base + record layout</h2>
+  <table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Base address</td><td><code>DAT_8006F198</code> (file offset <code>0x5F998</code> in <code>SCUS_942.54</code>)</td></tr>
+    <tr><td>Index form</td><td><code>DAT_8006F198 + sound_id*8</code></td></tr>
+    <tr><td>Stride</td><td><code>0x8</code> bytes</td></tr>
+    <tr><td>Entry count</td><td><strong>100</strong> descriptors (sound ids <code>0x00..=0x63</code>)</td></tr>
+  </tbody>
+  </table>
+  <p>The runtime readers gate on <code>sound_id &lt; 0x200</code>, but that is an upper <strong>bound</strong>, not the size: only ids <code>0x00..=0x63</code> are real descriptors (every one populated &mdash; voice count <code>1..=3</code>, trailing bytes zero). Id <code>0x64</code> onward is unrelated rodata, starting with the <code>\PSX.EXE</code> dev-path string, so the table's true extent is 100 entries.</p>
+  <table>
+  <thead><tr><th>Offset</th><th>Name</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0</code></td><td><code>p</code></td><td>program / VAG index &mdash; selects the loaded bank's program-attr entry</td></tr>
+    <tr><td><code>+1</code></td><td><code>t</code></td><td>tone / ADSR-region base; a multi-voice cue uses consecutive regions (<code>+i</code> per voice)</td></tr>
+    <tr><td><code>+2</code></td><td><code>l</code></td><td>note-level voice attribute (MIDI-ish, clusters near <code>60</code>)</td></tr>
+    <tr><td><code>+3</code></td><td><code>n</code></td><td>low 5 bits = <strong>voice count</strong>; bit <code>0x20</code> = sustained / continuous mode</td></tr>
+    <tr><td><code>+4</code></td><td><code>id</code></td><td>category / mixer-channel index (column in the channel-volume tables <code>DAT_80091510</code> / <code>DAT_80091513</code>)</td></tr>
+    <tr><td><code>+5..7</code></td><td>&mdash;</td><td>no observed runtime reader (zero across the whole table)</td></tr>
+  </tbody>
+  </table>
+  <p>The field names are the designer's own, recovered from the runtime debug format string <code>"setbl p:%d t:%d l:%d n:%d id:%d"</code>.</p>
+</section>
+
+<section class="doc-section" id="consumers">
+  <h2>Consumers</h2>
+  <p>Two functions read the table, both indexing <code>&amp;DAT_8006F198 + id*8</code>:</p>
+  <table>
+  <thead><tr><th>Function</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>FUN_800250D4(sound_id, voice)</code></td><td>The per-actor SFX trigger (from the actor tick <code>FUN_80021DF4</code>). Uses only the voice count (<code>n &amp; 0x1F</code>), <code>SpuKeyOn</code>-ing (<code>FUN_800653C8</code>) that many consecutive voices.</td></tr>
+    <tr><td><code>FUN_80016B6C</code></td><td>The per-frame SFX cue-ring drainer. Walks the 4-entry ring <code>DAT_8007B6D8</code> (the same ring <code>FUN_8004FCC8</code> and the move-power <code>+0x0d</code> sound cues write into), then programs <code>voice_count</code> voices via <code>FUN_80065034</code> &mdash; the libsnd <code>SpuSetVoiceAttr</code> analogue that takes program (<code>+0</code>), note/region (<code>+1</code> <code>+i</code>), attr (<code>+2</code>), and the channel volume picked by category (<code>+4</code>).</td></tr>
+  </tbody>
+  </table>
+  <p>The SPU programming itself (<code>FUN_80065034</code> &rarr; <code>SpuSetVoiceAttr</code>) is libsnd and out of clean-room scope &mdash; the engine has its own SPU. What is portable is the static <strong>data</strong>.</p>
+</section>
+
+<section class="doc-section" id="program-bank">
+  <h2>Program bank &mdash; the active scene's music VAB</h2>
+  <p>The descriptors' <code>program</code> / <code>tone</code> fields index a VAB, and that VAB is <strong>not a dedicated SFX master</strong> &mdash; it is the per-scene <a href="scene-bundles.html">scene-VAB-stream</a> bank the BGM sequencer has open. <code>FUN_80065034</code> reads the libsnd "current bank" globals: <code>_DAT_801ce33c</code> (VAB-header base), <code>_DAT_801ce334</code> (<code>ProgAtr</code> at <code>+0x20</code>), <code>_DAT_801ce340</code> (<code>VagAtr</code> at <code>+0x820</code>) &mdash; so a sound effect plays through the low programs of the same bank the music does.</p>
+  <p>Pinned from the save-state catalogue:</p>
+  <ul class="bullets">
+    <li>The bank <strong>varies per scene</strong> &mdash; across catalogued captures the open bank is 13 distinct VABs (used-program counts ranging <code>1..=16</code>).</li>
+    <li>For a <code>music_01</code>-scene state the live bank is <strong>byte-identical to the disc</strong> <code>music_01</code> VAB (PROT 1004 at offset <code>+4</code>): the <code>VabHdr</code> and every program's <code>ProgAtr</code> attribute bytes (<code>+0..7</code>) match exactly; only the PsyQ reserved per-program pointer field (<code>ProgAtr +8..15</code>) is runtime-patched to the RAM <code>VagAtr</code> address.</li>
+  </ul>
+  <p>Because scene banks differ in size, a cue resolves only where its <code>program</code> / <code>tone</code> exists &mdash; SFX availability is <strong>scene-dependent</strong>, not a guaranteed reservation. The engine therefore needs no separate SFX bank load: <code>SfxBank::from_descriptors(...)</code> plays through the scene's already-loaded BGM <code>VabBank</code> via <code>SfxBank::play_one_shot(spu, vab)</code>.</p>
+</section>
+
+<section class="doc-section" id="provenance">
+  <h2>Provenance</h2>
+  <p>Decoded directly from the disc, and cross-checked <strong>byte-for-byte against live save-state RAM</strong>: the table window at <code>0x8006F198</code> read out of a catalogued mednafen state's main RAM parses to the identical 100 descriptors as the disc <code>SCUS_942.54</code>, confirming the table is static rodata and the parser offset is right. The two cue ids the engine's default SFX bank already references resolve to <code>0x1A</code> = program 3 / note 67 and <code>0x4C</code> = program 3 / tone 8 (voice count 2).</p>
+</section>
+
+<section class="doc-section" id="parser">
+  <h2>Parser</h2>
+  <p><code>legaia_asset::sfx_table::SfxTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="../subsystems/audio.html">item-name table</a> resolver); <code>from_table_bytes</code> parses a raw window straight out of save-state RAM. <code>SfxDescriptor</code> exposes the decoded fields plus <code>voice_count()</code> / <code>sustained()</code> / <code>is_active()</code>. The disc-gated <code>sfx_table_real</code> test pins the layout against the real executable, and <code>sfx_table_live</code> validates the parse against live RAM and feeds the descriptors into <code>legaia_engine_audio::SfxBank::from_descriptors</code> &mdash; the data path the engine uses to fire cues through the SPU.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="move-power.html">Move-power table</a>
+    <a href="vab.html">VAB sound bank</a>
+    <a href="../subsystems/audio.html">Audio stack</a>
+  </div>
+</section>

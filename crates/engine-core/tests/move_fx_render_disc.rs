@@ -52,13 +52,58 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     };
     let mut world = world_with_move_power(&bytes);
 
+    // Install a synthetic 32-entry effect catalog so the high-bit (AltEffect)
+    // effect-list entries have somewhere to spawn (the real efect.dat / PROT
+    // 0873 isn't loaded in this test). Each entry is a 1-child script.
+    {
+        use legaia_engine_vm::effect_vm::{EffectCatalog, EffectScript};
+        let entries: Vec<_> = (0..32)
+            .map(|_| {
+                (
+                    EffectScript {
+                        child_count: 1,
+                        flags: 0,
+                        spread: 0,
+                        body: vec![],
+                    },
+                    vec![],
+                )
+            })
+            .collect();
+        world.effect_catalog = EffectCatalog::new(entries);
+    }
+
     // Move id 0x06 (the worked example, record index 3): contact list
     // [0x27, 0x8e, 0x8d], launch list [0x28, 0x64, 0x9d]. The 0x27 / 0x28 bytes
-    // are Spawn entries -> 0x801f6324 library-mesh records; the high-bit and
-    // FixedFlash bytes don't spawn through this path.
+    // are Spawn entries -> 0x801f6324 library-mesh records; the high-bit bytes
+    // (0x8e/0x8d/0x9d) are AltEffect entries -> the 2D efect.dat pool; 0x64 is
+    // the fixed flash (no pool spawn).
     assert!(
         world.spawn_move_fx(0x06, [0, 0, 0]),
         "move 0x06 has spawnable effect entries"
+    );
+
+    // The AltEffect (high-bit) entries spawned through the effect pool: count
+    // them off the descriptor and assert the pool got exactly that many.
+    let alt_count = {
+        use legaia_asset::move_power::EffectListEntry;
+        let fx = world
+            .move_power
+            .as_ref()
+            .unwrap()
+            .fx_for_move_id(0x06)
+            .unwrap();
+        fx.contact_effects
+            .iter()
+            .chain(fx.launch_effects.iter())
+            .filter(|e| matches!(e.entry, EffectListEntry::AltEffect(_)))
+            .count()
+    };
+    assert!(alt_count > 0, "move 0x06 carries AltEffect entries");
+    assert_eq!(
+        world.effect_pool.active_count(),
+        alt_count,
+        "each AltEffect entry spawned one effect-pool master"
     );
 
     let draws = world.active_move_fx_part_draws();
@@ -77,9 +122,45 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
         );
     }
 
-    // The move VM drives the parts for a few frames without an unimplemented op.
-    for _ in 0..8 {
+    // Presentation fields surface: the trail texpage (0x7700 + record +0x0b) and
+    // the sound cue (record +0x0d) match the move's resolved descriptor.
+    let fx = world
+        .move_power
+        .as_ref()
+        .unwrap()
+        .fx_for_move_id(0x06)
+        .expect("move 0x06 resolves an FX descriptor");
+    assert_eq!(
+        world.active_move_fx_trail_texpage(),
+        Some(fx.trail_texpage),
+        "spawn surfaces the move's trail texpage"
+    );
+    assert!(
+        fx.trail_texpage >= 0x7700,
+        "trail texpage is the 0x7700-based GP0 word"
+    );
+    // The pending sound cue matches the record's +0x0d (drained once).
+    if fx.sound_cue_id != 0 {
+        assert_eq!(world.take_pending_move_fx_cue(), Some(fx.sound_cue_id));
+        assert_eq!(world.take_pending_move_fx_cue(), None, "drained once");
+    } else {
+        assert_eq!(world.take_pending_move_fx_cue(), None);
+    }
+
+    // The move VM drives the parts for enough frames to drain the scene; once it
+    // does, the trail texpage clears.
+    for _ in 0..600 {
         world.tick_move_fx(0x100);
+        if world.active_move_fx.is_none() {
+            break;
+        }
+    }
+    if world.active_move_fx.is_none() {
+        assert_eq!(
+            world.active_move_fx_trail_texpage(),
+            None,
+            "trail clears when the scene drains"
+        );
     }
 }
 
@@ -89,6 +170,8 @@ fn move_fx_guards_when_uninstalled_or_inert() {
     let mut bare = World::new();
     assert!(!bare.spawn_move_fx(0x06, [0, 0, 0]));
     assert!(bare.active_move_fx_part_draws().is_empty());
+    assert_eq!(bare.active_move_fx_trail_texpage(), None);
+    assert_eq!(bare.take_pending_move_fx_cue(), None);
     bare.tick_move_fx(0x100); // no-op
 
     let Some(bytes) = overlay_0898() else {

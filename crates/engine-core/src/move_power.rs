@@ -36,8 +36,10 @@
 //! renders it: it parses a move's spawn records and stages them as a
 //! [`crate::summon::SummonScene`] at that base, driven through the move VM
 //! ([`crate::world::World::tick_move_fx`] / `active_move_fx_part_draws`). The
-//! high-bit (`0x80`) list bytes instead route to the 2D `efect.dat` pool
-//! ([`crate::world::World::effect_pool`] / `spawn_by_ui_id`). See
+//! high-bit (`0x80`) list bytes instead route to the 2D `efect.dat` pool:
+//! [`crate::world::World::spawn_move_fx`] spawns each `AltEffect` entry through
+//! [`crate::world::World::try_spawn_effect`] (`spawn_by_ui_id`) by its 7-bit id
+//! (no-op when the `efect.dat` catalog isn't loaded). See
 //! `docs/formats/move-power.md`.
 
 use legaia_asset::move_power::{

@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use crate::battle_events::{BattleEvent, BattleHitFx};
+use crate::battle_events::{BattleEvent, BattleHitFx, BattleSfxCue};
 use crate::field_events::FieldEvent;
 use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
@@ -733,6 +733,13 @@ pub struct World {
     /// walkable) at field entry via [`World::reset_field_collision_grid`].
     /// Empty until the first field scene is entered.
     pub field_collision_grid: Vec<u8>,
+    /// The 16-entry floor-height LUT the collision grid's low nibble indexes
+    /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
+    /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
+    /// [`crate::scene::SceneAssets::field_floor_height_lut`]; consumed by
+    /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
+    /// zero until a field scene supplies it.
+    pub field_floor_height_lut: [i16; 16],
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -974,6 +981,14 @@ pub struct World {
     /// drive the floating-number / status overlay. Drained by the host via
     /// [`World::drain_battle_hit_fx`]; cleared on battle exit.
     pub battle_hit_fx: Vec<BattleHitFx>,
+
+    /// Per-strike battle sound cues surfaced this frame for the host to play
+    /// through its SFX bank (the art-record `HitCue` sound cues that
+    /// [`World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome —
+    /// previously dropped). Cosmetic, like [`Self::battle_hit_fx`]: no gameplay
+    /// state depends on them. Drained via [`World::drain_battle_sfx_cues`];
+    /// cleared on battle exit.
+    pub battle_sfx_cues: Vec<BattleSfxCue>,
 
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
     /// a scene starts one. Updated synchronously when the VM emits the
@@ -1349,6 +1364,23 @@ pub struct World {
     /// renders it. Separate from [`active_summon`](Self::active_summon) so a
     /// move's FX and a summon don't clobber each other.
     pub active_move_fx: Option<crate::summon::SummonScene>,
+
+    /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
+    /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
+    /// `+0x0b` field and cleared when the scene drains. Surfaced via
+    /// [`World::active_move_fx_trail_texpage`] for the render layer's streak
+    /// pass — the trail id this carries is what
+    /// `legaia_engine_render::afterimage::build_afterimage_quad` (the ported
+    /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
+    pub active_move_fx_trail_texpage: Option<u16>,
+
+    /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
+    /// when the move carries a non-zero cue. The host drains it via
+    /// [`World::take_pending_move_fx_cue`] and routes it through
+    /// `legaia_engine_audio::classify_cue` → the SFX ring / voice trigger
+    /// (the retail `FUN_8004fcc8` dispatch). Same host-fulfilled-request shape
+    /// as [`pending_summon_spawn`](Self::pending_summon_spawn).
+    pub pending_move_fx_cue: Option<u8>,
 
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the in-`tick` Field <-> Battle round trip.
@@ -1798,6 +1830,7 @@ impl World {
             map_origin_xz: (0, 0),
             player_actor_slot: None,
             field_collision_grid: Vec::new(),
+            field_floor_height_lut: [0i16; 16],
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -1840,6 +1873,7 @@ impl World {
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
+            battle_sfx_cues: Vec::new(),
             current_bgm: None,
             battle_bgm: None,
             field_bgm_resume: None,
@@ -1887,6 +1921,8 @@ impl World {
             move_power: None,
             move_power_overlay: None,
             active_move_fx: None,
+            active_move_fx_trail_texpage: None,
+            pending_move_fx_cue: None,
             element_affinity: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
@@ -2827,6 +2863,14 @@ impl World {
         std::mem::take(&mut self.battle_hit_fx)
     }
 
+    /// Drain the battle sound cues queued this frame (the art-strike `HitCue`
+    /// sounds [`Self::fold_battle_event`] resolves). The host plays each through
+    /// its `SfxBank::play_one_shot` at the cue's `timing_frames` delay; nothing
+    /// here mutates gameplay state. Returns them in resolve order.
+    pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {
+        std::mem::take(&mut self.battle_sfx_cues)
+    }
+
     /// Apply the gameplay-state side of a single battle event - currently
     /// `ApplyArtStrike` (subtracts the resolved damage from the target's
     /// `BattleActor::hp`, clamping at zero, and records the enemy effect on
@@ -2839,10 +2883,24 @@ impl World {
     pub fn fold_battle_event(&mut self, event: &BattleEvent) -> Option<(u8, u16)> {
         match event {
             BattleEvent::ApplyArtStrike {
+                actor_slot,
                 target_slot,
                 outcome,
                 ..
             } => {
+                // Surface the strike's sound cues for the host's SFX bank (these
+                // were previously dropped). Hit-effect-only cues (kind 0x4C)
+                // carry no sound, so only the `is_sound` cues are queued.
+                for cue in &outcome.cues {
+                    if cue.is_sound() {
+                        self.battle_sfx_cues.push(BattleSfxCue {
+                            kind: cue.kind,
+                            timing_frames: cue.timing_frames,
+                            actor_slot: *actor_slot,
+                            target_slot: *target_slot,
+                        });
+                    }
+                }
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
@@ -4114,7 +4172,47 @@ impl World {
             crate::scene::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
+        // Surface the move's presentation fields for the render / audio layers:
+        // the trail/afterimage texpage (`+0x0b`) and the sound cue (`+0x0d`).
+        self.active_move_fx_trail_texpage = Some(fx.trail_texpage);
+        if fx.sound_cue_id != 0 {
+            self.pending_move_fx_cue = Some(fx.sound_cue_id);
+        }
+
+        // The high-bit (`0x80`) effect-list entries route to the 2D efect.dat
+        // pool (`FUN_801dfdf0`), not the 0x801f6324 scene-graph: spawn each
+        // through the effect pool by its 7-bit id (no-op when efect.dat isn't
+        // loaded). (Reached only on the scene-graph success path; a move whose
+        // lists hold *only* AltEffect entries returns early above with the
+        // empty-Spawn-set guard — an documented edge case, rare for FX moves.)
+        let alt_ids: Vec<u8> = fx
+            .contact_effects
+            .iter()
+            .chain(fx.launch_effects.iter())
+            .filter_map(|e| match e.entry {
+                legaia_asset::move_power::EffectListEntry::AltEffect(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        for id in alt_ids {
+            self.try_spawn_effect(id, origin, 0);
+        }
         true
+    }
+
+    /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
+    /// this step. The host routes it through `legaia_engine_audio::classify_cue`
+    /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
+    /// `None` when no cue is pending.
+    pub fn take_pending_move_fx_cue(&mut self) -> Option<u8> {
+        self.pending_move_fx_cue.take()
+    }
+
+    /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
+    /// move-FX scene, or `None` when none is playing. The render layer applies
+    /// it to the move's streak pass.
+    pub fn active_move_fx_trail_texpage(&self) -> Option<u16> {
+        self.active_move_fx_trail_texpage
     }
 
     /// Advance the active move-FX scene one frame through the move VM (the
@@ -4134,6 +4232,9 @@ impl World {
         }
         if !scene.finished() {
             self.active_move_fx = Some(scene);
+        } else {
+            // Scene drained: drop the trail texpage with it.
+            self.active_move_fx_trail_texpage = None;
         }
     }
 
@@ -5554,6 +5655,69 @@ impl World {
     ///
     /// Out-of-range tiles are skipped. The low nibble (floor-elevation
     /// tier) is preserved.
+    /// Sample the field floor height at a world `(x, z)`, the port of
+    /// `FUN_80019278`'s height branch (`ghidra/scripts/funcs/80019278.txt`).
+    ///
+    /// The collision grid's **low nibble** is a floor-elevation tier; this
+    /// resolves it through the per-scene [`Self::field_floor_height_lut`] and
+    /// **bilinearly interpolates** the `2x2` tile block around the position. The
+    /// tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
+    /// `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match, the
+    /// LUT value is returned directly (the retail fast path); otherwise the four
+    /// corner heights are weighted `top*(0x80-wz) + bottom*wz` (each edge
+    /// interpolated by `wx`) and divided by `0x4000` (`>> 14`, with the retail
+    /// `+0x3FFF` round-toward-zero on a negative accumulator).
+    ///
+    /// This is the town-field floor sampler: the retail function's `+0x8000`
+    /// attribute gating — the world-map continent `0x1000` on-grid flag side
+    /// effect and the `0x800` tile-board special branch (`func_0x801d5630`) — is
+    /// **not** reproduced here (the engine doesn't keep that attribute grid).
+    /// Returns `0` when the grid / LUT isn't loaded or the tile is out of range.
+    ///
+    /// PORT: FUN_80019278 (floor-height branch; the `+0x8000` continent /
+    /// tile-board branches stay with the field/world-map systems).
+    pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
+        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+            return 0;
+        }
+        let tile_x = world_x >> 7;
+        let tile_z = world_z >> 7;
+        // The 2x2 block needs (tile_x+1, tile_z+1) in range.
+        if tile_x < 0
+            || tile_z < 0
+            || tile_x as usize + 1 >= FIELD_GRID_STRIDE
+            || tile_z as usize + 1 >= FIELD_GRID_STRIDE
+        {
+            return 0;
+        }
+        let base = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
+        let g = &self.field_collision_grid;
+        let lut = &self.field_floor_height_lut;
+        // Low nibble = elevation tier; LUT-index it for each of the 4 corners.
+        let c00 = (g[base] & 0x0F) as usize;
+        let c01 = (g[base + 1] & 0x0F) as usize;
+        let c10 = (g[base + FIELD_GRID_STRIDE] & 0x0F) as usize;
+        let c11 = (g[base + FIELD_GRID_STRIDE + 1] & 0x0F) as usize;
+        if c00 == c01 && c00 == c10 && c00 == c11 {
+            return lut[c00] as i32;
+        }
+        let wx = world_x & 0x7F;
+        let wz = world_z & 0x7F;
+        let (l00, l01, l10, l11) = (
+            lut[c00] as i32,
+            lut[c01] as i32,
+            lut[c10] as i32,
+            lut[c11] as i32,
+        );
+        let acc =
+            (l01 * wx + l00 * (0x80 - wx)) * (0x80 - wz) + l10 * (0x80 - wx) * wz + l11 * wx * wz;
+        if acc < 0 {
+            (acc + 0x3FFF) >> 14
+        } else {
+            acc >> 14
+        }
+    }
+
     fn paint_field_collision(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             self.reset_field_collision_grid();

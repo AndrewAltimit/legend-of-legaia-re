@@ -1980,8 +1980,10 @@ impl World {
         self.battle_item_menu = None;
         self.battle_spell_menu = None;
         self.battle_arts_menu = None;
-        // Stale damage popups must not bleed into the next encounter / field.
+        // Stale damage popups + sound cues must not bleed into the next
+        // encounter / field.
         self.battle_hit_fx.clear();
+        self.battle_sfx_cues.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Restore the field actor table captured at the transition.

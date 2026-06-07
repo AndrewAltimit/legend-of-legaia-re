@@ -4584,6 +4584,21 @@ impl PlayWindowApp {
                 .push_back(format!("slot {} {}{} HP", f.target_slot, sign, f.amount));
         }
 
+        // Battle sound cues: the art-strike outcomes resolve per-strike SFX
+        // cues (kind = the SfxBank id, played directly without classify_cue).
+        // No battle SFX bank is wired yet, so log the scheduled cue; a host
+        // with a bank would enqueue each into its SfxScheduler at timing_frames
+        // and fire via SfxBank::play_one_shot.
+        for cue in self.session.host.world.drain_battle_sfx_cues() {
+            log::debug!(
+                "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {})",
+                cue.kind,
+                cue.timing_frames,
+                cue.actor_slot,
+                cue.target_slot
+            );
+        }
+
         // Refresh per-slot status icons + age the popups one frame.
         if self.session.host.world.mode == SceneMode::Battle {
             for slot in 0..self.battle_hud.slots.len() as u8 {
@@ -7690,6 +7705,19 @@ impl ApplicationHandler for PlayWindowApp {
                             "spawned move-FX for move {MOVE_FX_DEBUG_MOVE_ID:#04x}: {} mesh parts at {origin:?}",
                             self.session.host.world.active_move_fx_part_draws().len()
                         );
+                        // Consume the surfaced presentation fields: the trail
+                        // texpage (render layer's streak pass) and the sound cue
+                        // (routed through the FUN_8004fcc8 dispatch decode). The
+                        // host has no battle SFX bank wired yet, so the cue is
+                        // resolved + logged rather than fired through the SPU.
+                        if let Some(trail) = self.session.host.world.active_move_fx_trail_texpage()
+                        {
+                            log::info!("  move-FX trail texpage = {trail:#06x}");
+                        }
+                        if let Some(cue) = self.session.host.world.take_pending_move_fx_cue() {
+                            let dispatch = legaia_engine_audio::classify_cue(cue as u32);
+                            log::info!("  move-FX sound cue {cue:#04x} -> {dispatch:?}");
+                        }
                     } else {
                         log::info!(
                             "move-FX spawn for move {MOVE_FX_DEBUG_MOVE_ID:#04x} produced no parts \

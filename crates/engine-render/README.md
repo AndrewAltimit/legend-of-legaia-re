@@ -68,6 +68,17 @@ LoadImage / DMA-to-VRAM trace work can replay the register state
 faithfully.
 
 Toggle is global - apply once per frame before submitting draws.
+
+The [`afterimage`](src/afterimage.rs) module ports the battle move-FX
+streak draw (`FUN_801e1ab0`): `build_afterimage_quad` assembles one
+jittered, semi-transparent textured quad (`POLY_FT4`) from four projected
+screen corners + the move's trail-texture id, reproducing the per-corner
+`rand` wobble, the random brightness band that picks a texture sub-column,
+and the exact UV / CLUT / texpage layout. It takes an injected rng (the
+retail source is the BIOS `rand`) so the construction is pure and
+unit-tested; the camera-coupled GTE projection of the corners stays with
+the caller.
+
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
 live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu
 math, but the module is the single citation point for retail-correct

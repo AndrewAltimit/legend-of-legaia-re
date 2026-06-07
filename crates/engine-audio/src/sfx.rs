@@ -113,6 +113,20 @@ impl SfxBank {
         s
     }
 
+    /// Build a bank from decoded SFX descriptors - the `(id, program, key)`
+    /// triples [`legaia_asset::sfx_table::SfxTable::active`] yields (program =
+    /// `SfxDescriptor::program`, key = `SfxDescriptor::note`). Keeping the
+    /// argument a plain tuple iterator avoids a dependency on the asset crate
+    /// from the audio layer; the host (engine-core) wires the disc-decoded
+    /// table in. Later triples overwrite earlier ones with the same id.
+    pub fn from_descriptors<I: IntoIterator<Item = (u8, u8, u8)>>(descriptors: I) -> Self {
+        let mut bank = Self::new();
+        for (id, program_index, key) in descriptors {
+            bank.insert(SfxEntry::new(id, program_index, key));
+        }
+        bank
+    }
+
     /// Insert (or overwrite) the entry for `entry.id`.
     pub fn insert(&mut self, entry: SfxEntry) {
         if let Some(slot) = self.entries.iter_mut().find(|e| e.id == entry.id) {
@@ -171,6 +185,95 @@ fn first_idle_voice(spu: &Spu) -> Option<u8> {
         }
     }
     None
+}
+
+/// How the cue dispatcher `FUN_8004fcc8` routes a raw cue id.
+///
+/// `FUN_8004fcc8` is the front-end in front of the [`SfxScheduler`]'s cue ring
+/// (`FUN_80035B50`): it classifies the raw id, de-dups UI/SFX cues against the
+/// currently-selected cue, and routes voice ids (`>= 0x100`) to the streamed
+/// voice trigger `FUN_8003D53C` instead. This enum is the pure classification;
+/// the actual ring write, the runtime voice gates (`gp[0xA0C]+0x276 == 0`,
+/// `FUN_8003DE7C(1) == 0`), and the SPU note-on stay with the caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CueDispatch {
+    /// A UI / SFX one-shot to enqueue into the cue ring. `ring_value` is the
+    /// value stored (`id - 1` for `id < 0x40`, else `id`); `dedup_key` is what
+    /// the dispatcher compares against the currently-selected cue
+    /// (`DAT_8007B724`) to suppress an immediate repeat — see
+    /// [`CueDispatch::ring_suppressed_by`].
+    Ring { ring_value: u16, dedup_key: i32 },
+    /// A streamed voice trigger (`FUN_8003D53C`). `channel` is the voice channel
+    /// after the `1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C` remap; `submode = id & 7`;
+    /// `pitch_index` indexes the pitch table (`DAT_800788B8`) — feed its `u16`
+    /// entry through [`voice_pitch`] to get the playback pitch.
+    Voice {
+        channel: u8,
+        submode: u8,
+        pitch_index: u16,
+    },
+}
+
+impl CueDispatch {
+    /// For a [`CueDispatch::Ring`] cue, whether the dispatcher suppresses it
+    /// because `current_selection` (`DAT_8007B724`) already equals its
+    /// `dedup_key` (so a held/repeated selection cue doesn't re-fire). Always
+    /// `false` for [`CueDispatch::Voice`].
+    pub fn ring_suppressed_by(&self, current_selection: i32) -> bool {
+        matches!(self, CueDispatch::Ring { dedup_key, .. } if *dedup_key == current_selection)
+    }
+}
+
+/// Classify a raw cue id the way `FUN_8004fcc8` does (the pure decode; no ring
+/// write, no voice gate, no SPU access).
+///
+/// - `id < 0x40` → [`CueDispatch::Ring`] storing `id - 1`, de-dup key `id - 1`.
+/// - `0x40 <= id < 0x100` → [`CueDispatch::Ring`] storing `id`, de-dup key
+///   `id + 0x19C` (the retail `param_1 + 0x19c` compare).
+/// - `id >= 0x100` → [`CueDispatch::Voice`]: `channel = remap((id - 0x100) >> 3)`
+///   (`1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C`), `submode = (id - 0x100) & 7`,
+///   `pitch_index = id - 0x100`.
+///
+/// PORT: FUN_8004FCC8 (cue dispatch decode; the ring write / voice gate / SPU
+/// note-on stay with the caller — the ring is [`SfxScheduler`] / `FUN_80035B50`).
+pub fn classify_cue(id: u32) -> CueDispatch {
+    if id < 0x100 {
+        if id < 0x40 {
+            let v = id.wrapping_sub(1);
+            CueDispatch::Ring {
+                ring_value: v as u16,
+                dedup_key: v as i32,
+            }
+        } else {
+            CueDispatch::Ring {
+                ring_value: id as u16,
+                dedup_key: (id + 0x19C) as i32,
+            }
+        }
+    } else {
+        let v = id - 0x100;
+        let channel = match v >> 3 {
+            1 => 0x1A,
+            3 => 0x1B,
+            5 => 0x1C,
+            other => other as u8,
+        };
+        CueDispatch::Voice {
+            channel,
+            submode: (v & 7) as u8,
+            pitch_index: v as u16,
+        }
+    }
+}
+
+/// The voice playback pitch `FUN_8004fcc8` computes for a [`CueDispatch::Voice`]:
+/// `(pitch_table_value * 0x3C + 99) / 100` (the integer round-up of
+/// `pitch_table_value * 0.6`). `pitch_table_value` is the `u16` at
+/// `DAT_800788B8[pitch_index]`.
+pub fn voice_pitch(pitch_table_value: u16) -> u16 {
+    // Retail: `(value * 0x3C + 99) / 100`; the `+ 99` over `/ 100` is the
+    // round-up of `value * 0.6`, i.e. `(value * 0x3C).div_ceil(100)`.
+    (pitch_table_value as u32 * 0x3C).div_ceil(100) as u16
 }
 
 /// One queued cue waiting for its firing frame.
@@ -326,6 +429,22 @@ mod tests {
     }
 
     #[test]
+    fn bank_from_descriptors_maps_program_and_key() {
+        // Mirrors the retail descriptors for ids 0x1A (p3 note67) and 0x4C
+        // (p3 note64) decoded from DAT_8006F198.
+        let bank = SfxBank::from_descriptors([(0x1A, 3, 67), (0x4C, 3, 64)]);
+        assert_eq!(bank.len(), 2);
+        let a = bank.get(0x1A).unwrap();
+        assert_eq!((a.program_index, a.key), (3, 67));
+        let b = bank.get(0x4C).unwrap();
+        assert_eq!((b.program_index, b.key), (3, 64));
+        // Later triple overwrites an earlier same-id one.
+        let over = SfxBank::from_descriptors([(0x1A, 1, 10), (0x1A, 9, 90)]);
+        assert_eq!(over.len(), 1);
+        assert_eq!(over.get(0x1A).unwrap().program_index, 9);
+    }
+
+    #[test]
     fn bank_with_vel_and_with_voice_chain() {
         let e = SfxEntry::new(0x1A, 0, 60).with_vel(127).with_voice(7);
         assert_eq!(e.vel, 127);
@@ -425,6 +544,106 @@ mod tests {
         let f4 = s.tick_frame();
         assert_eq!(f4.fired.len(), 1);
         assert_eq!(f4.fired[0].id, 0xB);
+    }
+
+    #[test]
+    fn classify_cue_low_range_stores_id_minus_one() {
+        // id < 0x40: ring_value = id - 1, dedup_key = id - 1.
+        match classify_cue(0x05) {
+            CueDispatch::Ring {
+                ring_value,
+                dedup_key,
+            } => {
+                assert_eq!(ring_value, 4);
+                assert_eq!(dedup_key, 4);
+            }
+            _ => panic!("expected Ring"),
+        }
+        // id 0 underflows to 0xFFFF / -1 (mirrors the retail uint - 1).
+        match classify_cue(0) {
+            CueDispatch::Ring {
+                ring_value,
+                dedup_key,
+            } => {
+                assert_eq!(ring_value, 0xFFFF);
+                assert_eq!(dedup_key, -1);
+            }
+            _ => panic!("expected Ring"),
+        }
+    }
+
+    #[test]
+    fn classify_cue_high_range_stores_id_with_offset_dedup() {
+        // 0x40..0x100: ring_value = id, dedup_key = id + 0x19C.
+        match classify_cue(0x50) {
+            CueDispatch::Ring {
+                ring_value,
+                dedup_key,
+            } => {
+                assert_eq!(ring_value, 0x50);
+                assert_eq!(dedup_key, 0x50 + 0x19C);
+            }
+            _ => panic!("expected Ring"),
+        }
+    }
+
+    #[test]
+    fn classify_cue_voice_range_remaps_channel() {
+        // id >= 0x100: voice. v = id - 0x100; channel = remap(v >> 3),
+        // submode = v & 7, pitch_index = v.
+        // v = 8 -> v>>3 = 1 -> channel 0x1A; submode 0; pitch_index 8.
+        match classify_cue(0x108) {
+            CueDispatch::Voice {
+                channel,
+                submode,
+                pitch_index,
+            } => {
+                assert_eq!(channel, 0x1A);
+                assert_eq!(submode, 0);
+                assert_eq!(pitch_index, 8);
+            }
+            _ => panic!("expected Voice"),
+        }
+        // v = 0x1B -> v>>3 = 3 -> channel 0x1B; submode 3.
+        match classify_cue(0x100 + 0x1B) {
+            CueDispatch::Voice {
+                channel, submode, ..
+            } => {
+                assert_eq!(channel, 0x1B);
+                assert_eq!(submode, 3);
+            }
+            _ => panic!("expected Voice"),
+        }
+        // v = 0x28 -> v>>3 = 5 -> channel 0x1C.
+        match classify_cue(0x128) {
+            CueDispatch::Voice { channel, .. } => assert_eq!(channel, 0x1C),
+            _ => panic!("expected Voice"),
+        }
+        // v = 0x10 -> v>>3 = 2 (no remap) -> channel 2.
+        match classify_cue(0x110) {
+            CueDispatch::Voice { channel, .. } => assert_eq!(channel, 2),
+            _ => panic!("expected Voice"),
+        }
+    }
+
+    #[test]
+    fn cue_ring_suppression_matches_current_selection() {
+        let cue = classify_cue(0x05); // dedup_key = 4
+        assert!(cue.ring_suppressed_by(4));
+        assert!(!cue.ring_suppressed_by(3));
+        // Voice cues are never ring-suppressed.
+        assert!(!classify_cue(0x108).ring_suppressed_by(0));
+    }
+
+    #[test]
+    fn voice_pitch_rounds_up_times_point_six() {
+        // (100 * 0x3C + 99) / 100 = (6000 + 99)/100 = 60.
+        assert_eq!(voice_pitch(100), 60);
+        // (1 * 60 + 99)/100 = 159/100 = 1 (round-up of 0.6).
+        assert_eq!(voice_pitch(1), 1);
+        assert_eq!(voice_pitch(0), 0);
+        // (200*60+99)/100 = 12099/100 = 120.
+        assert_eq!(voice_pitch(200), 120);
     }
 
     #[test]

@@ -27,6 +27,7 @@ use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+pub mod afterimage;
 pub mod gte;
 pub mod gte_trace;
 pub mod window;
