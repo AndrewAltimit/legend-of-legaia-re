@@ -220,14 +220,15 @@ pub fn retail_seru_magic_catalog() -> SpellCatalog {
 }
 
 /// Like [`retail_seru_magic_catalog`], but the player Seru-magic block's **MP
-/// cost** (`+3`) and **target shape** (`+2`, decoded via
-/// [`legaia_asset::spell_names::SpellEntry::target_shape`]) are read from the
-/// user's `SCUS_942.54` instead of the pinned constants. On the retail disc
-/// this is byte-identical to [`retail_seru_magic_catalog`] (the pinned values
-/// were decoded from the same table); on a randomized / translated disc it
-/// honours the patched MP / targeting. Per-field fallback to the pinned record
-/// keeps a malformed table from zeroing a spell. Returns `None` only when the
-/// image isn't a parseable PSX-EXE.
+/// cost** (`+3`), **target shape** (`+2`, decoded via
+/// [`legaia_asset::spell_names::SpellEntry::target_shape`]) and **display name**
+/// (`name_ptr`) are read from the user's `SCUS_942.54` instead of the pinned
+/// constants. On the retail disc this is byte-identical to
+/// [`retail_seru_magic_catalog`] (the pinned values were decoded from the same
+/// table); on a randomized / translated disc it honours the patched MP /
+/// targeting and shows the disc's own (e.g. localised) names. Per-field fallback
+/// to the pinned record keeps a malformed table from zeroing a spell. Returns
+/// `None` only when the image isn't a parseable PSX-EXE.
 pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
     let table = legaia_asset::spell_names::SpellNameTable::from_scus(scus)?;
     let mut c = SpellCatalog::vanilla();
@@ -236,7 +237,13 @@ pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
             Some(e) => (e.mp, target_from_shape(e.target_shape())),
             None => (s.mp, s.target),
         };
-        c.insert(spell_def_with(s, mp, target));
+        let mut def = spell_def_with(s, mp, target);
+        // Prefer the disc's own name string (localised on a JP/EU disc); fall
+        // back to the pinned English name for empty / missing slots.
+        if let Some(name) = table.name(s.id) {
+            def.name = name.to_string();
+        }
+        c.insert(def);
     }
     Some(c)
 }

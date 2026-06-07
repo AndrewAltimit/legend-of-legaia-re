@@ -26,13 +26,15 @@ fn disc_spell_catalog_matches_pinned_mp_and_target() {
     let disc = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("spell table parses");
 
-    // Every pinned Seru spell's MP + target read back identically from disc.
+    // Every pinned Seru spell's MP + target + name read back identically from
+    // the retail disc (the pinned constants were decoded from this same table).
     for s in legaia_engine_core::retail_magic::SERU_MAGIC {
         let def = disc
             .get(s.id)
             .unwrap_or_else(|| panic!("disc catalog missing {:#04x}", s.id));
         assert_eq!(def.mp_cost, s.mp, "{} MP from disc", s.name);
         assert_eq!(def.target, s.target, "{} target shape from disc", s.name);
+        assert_eq!(def.name, s.name, "{:#04x} name from disc", s.id);
     }
 
     // Spot-check the four decoded shapes are actually present in the block
