@@ -9265,6 +9265,12 @@ fn cmd_play_window_with_record(
     // Opt-in: route live basic-attack damage through the retail damage
     // finisher (9999 cap + no-damage floor). Off by default → flat path.
     session.host.world.use_damage_finish = damage_finish;
+    // Opt-in, NON-FAITHFUL QoL: redirect a monster's single-target attack to
+    // the lowest-HP living party member (the faithful default is a uniform
+    // random target). Enable with `LEGAIA_SMART_MONSTERS=1`. The RNG stream is
+    // unchanged, so determinism within a run is preserved.
+    session.host.world.smarter_monster_targeting =
+        std::env::var_os("LEGAIA_SMART_MONSTERS").is_some();
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {

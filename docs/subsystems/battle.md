@@ -462,6 +462,18 @@ The picker drives the live loop's monster turns, folding a chosen cast through
 catalog knows the id (the disc spell table, or the clean-room monster block in
 `SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
 
+**Faithful default = uniform-random single target.** Retail's `OneEnemy` /
+physical target is a uniform random living party member (`rand % party_count`,
+re-rolled past downed slots). An **opt-in, non-faithful** QoL toggle
+(`World::smarter_monster_targeting`, off by default; `legaia-engine play-window`
+reads `LEGAIA_SMART_MONSTERS=1`) instead redirects a single-target attack to the
+lowest-HP living member. It is RNG-neutral by construction: the faithful random
+pick is still rolled in full (magic roll, target roll + re-roll loop, scripted
+override, anti-repeat ring), and only the resolved single party slot is replaced
+afterwards — so the RNG stream and call count are byte-identical to the faithful
+path, all-party / monster-band / self targets are never touched, and a run stays
+deterministic. The default path is bit-for-bit unchanged.
+
 **The two AI gates.** The `ctx+0x28a` battle-mode counter and the `actor+0x16e &
 0x380` flag are distinct, and only the first is a monster behaviour the AI flips:
 
