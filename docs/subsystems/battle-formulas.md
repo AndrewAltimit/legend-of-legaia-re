@@ -262,6 +262,14 @@ The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
 instructions) splits: its **closed-form finalisation arithmetic** now ports too —
 `battle_formulas::damage_finish` (the six damage-rewrite stages above) and
 `spirit_gauge_fill` (the gauge accrual), both with hand-checked unit tests. The
+engine can route the live basic-attack damage through `damage_finish` behind the
+`World::use_damage_finish` gate (the `--damage-finish` play-window flag): the raw
+roll feeds the finisher so the 9999 cap and the `rand()%9+8` no-damage floor
+apply. Off by default — equipment resistance + guard state aren't modelled on the
+battle actor yet, so the resistance / guard / enemy-halve inputs default to "no
+mitigation" and only the cap + floor stages currently change a hit; the finisher
+draws its one RNG only when a hit zeroes out, so the default RNG call-count is
+unchanged. The
 finisher's remaining tail — the damage-popup accumulator (`_DAT_8007bd14`), the
 `DAT_801f6980` AI revenge table, the MP drain, and the per-element stat-debuff
 `switch` (keyed on the attacker element at `DAT_801c9358+0x1d`) — reads/writes

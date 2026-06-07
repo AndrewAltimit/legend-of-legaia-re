@@ -726,6 +726,13 @@ enum Cmd {
         /// see slopes / steps. No effect on the world-map walk.
         #[arg(long, default_value_t = false)]
         terrain_y: bool,
+        /// Route live basic-attack damage through the retail damage finisher
+        /// (`FUN_801ddb30`): adds the 9999 cap and the rand-based no-damage
+        /// floor on top of the raw roll. Off by default (flat path, 0xFFFF cap,
+        /// min-floor 1). Equipment resistance / guard aren't modelled yet, so
+        /// only the cap + floor stages contribute today.
+        #[arg(long, default_value_t = false)]
+        damage_finish: bool,
         /// BGM id to cross-fade to when a live-loop encounter starts; the
         /// field track resumes when the battle ends. Routed through the same
         /// BGM director as field op-`0x35` starts, so the id must resolve in
@@ -1170,6 +1177,7 @@ fn main() -> Result<()> {
             player_battle,
             vm_dialogue,
             terrain_y,
+            damage_finish,
             battle_bgm,
         } => cmd_play_window(
             &scene,
@@ -1187,6 +1195,7 @@ fn main() -> Result<()> {
             player_battle,
             vm_dialogue,
             terrain_y,
+            damage_finish,
             battle_bgm,
         ),
         Cmd::Save {
@@ -2781,6 +2790,7 @@ fn cmd_record(
         save_dir,
         None,
         None,
+        false,
         false,
         false,
         false,
@@ -9006,6 +9016,7 @@ fn cmd_play_window(
     player_battle: bool,
     vm_dialogue: bool,
     terrain_y: bool,
+    damage_finish: bool,
     battle_bgm: Option<u16>,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -9024,6 +9035,7 @@ fn cmd_play_window(
         player_battle,
         vm_dialogue,
         terrain_y,
+        damage_finish,
         battle_bgm,
         None,
     )
@@ -9046,6 +9058,7 @@ fn cmd_play_window_with_record(
     player_battle: bool,
     vm_dialogue: bool,
     terrain_y: bool,
+    damage_finish: bool,
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -9111,6 +9124,9 @@ fn cmd_play_window_with_record(
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
     session.host.world.follow_terrain_height = terrain_y;
+    // Opt-in: route live basic-attack damage through the retail damage
+    // finisher (9999 cap + no-damage floor). Off by default → flat path.
+    session.host.world.use_damage_finish = damage_finish;
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {

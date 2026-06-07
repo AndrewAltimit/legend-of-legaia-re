@@ -1413,6 +1413,19 @@ pub struct World {
     /// by default — when off, behaviour is identical to before.
     pub use_vm_dialogue: bool,
 
+    /// Opt-in: route the live basic-attack damage through the retail damage
+    /// finisher ([`legaia_engine_vm::battle_formulas::damage_finish`], the port
+    /// of `FUN_801ddb30`) instead of stopping at the raw roll. The finisher
+    /// adds the universal post-stages — elemental resistance, guard / enemy
+    /// halve, the rand-based no-damage floor, and the 9999 cap. Equipment
+    /// resistance + guard state aren't modelled on the battle actor yet, so
+    /// those inputs default to "no mitigation"; with the gate on the finisher
+    /// currently contributes the faithful 9999 cap and the `rand()%9+8` floor
+    /// on a zeroed hit. Off by default so the existing flat path (min-floor 1,
+    /// `0xFFFF` cap) and its RNG call-count stay the default. The finisher
+    /// draws one RNG **only** when the hit zeroes out, matching retail.
+    pub use_damage_finish: bool,
+
     /// Opt-in for a **player-driven** battle inside the live loop. When
     /// `false` (the default) the live loop auto-resolves each party turn with
     /// a physical Attack on the first living monster (the historical spine
@@ -1941,6 +1954,7 @@ impl World {
             global_tmd_pool: Vec::new(),
             live_gameplay_loop: false,
             use_vm_dialogue: false,
+            use_damage_finish: false,
             battle_player_driven: false,
             battle_command: None,
             battle_item_menu: None,

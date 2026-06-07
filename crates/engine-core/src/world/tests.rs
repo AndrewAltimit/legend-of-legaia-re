@@ -3510,6 +3510,57 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
 }
 
 #[test]
+fn apply_basic_attack_damage_finish_gate() {
+    // One-on-one auto-hit setup (no accuracy seeded -> no accuracy RNG), so the
+    // only RNG the call can draw is the finisher's no-damage floor. Returns
+    // (damage, did_draw_rng).
+    let run = |attack: u16, defense: u16, gate: bool| -> (u16, bool) {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.rng_state = 0xABCD_1234;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.hp = 60_000;
+        world.actors[1].battle.max_hp = 60_000;
+        world.actors[1].battle.liveness = 1;
+        world.battle_attack[0] = attack;
+        world.battle_defense[1] = defense;
+        world.use_damage_finish = gate;
+        let rng_before = world.rng_state;
+        world.battle_ctx.active_actor = 0;
+        world.apply_basic_attack();
+        let dmg = world
+            .drain_battle_hit_fx()
+            .first()
+            .map(|f| f.amount)
+            .unwrap_or(0);
+        (dmg, world.rng_state != rng_before)
+    };
+
+    // Gate off: flat path. 40 atk vs 10 def -> 30, no RNG.
+    assert_eq!(run(40, 10, false), (30, false));
+    // Gate on, normal hit: same raw damage (no mitigation modelled), and the
+    // finisher's rand fires only on a zeroed hit, so still no RNG.
+    assert_eq!(run(40, 10, true), (30, false));
+
+    // Zeroed hit (atk <= def). Gate on: no-damage floor (rand()%9 + 8 -> 8..=16)
+    // and exactly one RNG draw. Gate off: flat min-floor of 1, no RNG.
+    let (dmg_on, drew_on) = run(10, 40, true);
+    assert!(
+        (8..=16).contains(&dmg_on),
+        "zeroed hit floored, got {dmg_on}"
+    );
+    assert!(drew_on, "zeroed hit draws one RNG");
+    assert_eq!(run(10, 40, false), (1, false));
+
+    // Overflow: the finisher caps at 9999 (the flat path caps at 0xFFFF).
+    assert_eq!(run(50_000, 0, true), (9999, false));
+    assert_eq!(run(50_000, 0, false).0, 50_000);
+}
+
+#[test]
 fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
     // Count landed strikes over many calls of a seeded attacker (acc) against a
     // high-evasion, can't-die target.
