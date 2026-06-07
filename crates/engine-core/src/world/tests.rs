@@ -3855,7 +3855,6 @@ fn multi_monster_battle_all_monsters_act_and_party_can_win() {
 #[test]
 fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     use crate::input::PadButton;
-    use crate::items::ItemCatalog;
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
@@ -3864,7 +3863,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     };
     world.battle_player_driven = true;
     world.mode = SceneMode::Battle;
-    world.set_item_catalog(ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Two party members (slot 0 wounded), one monster.
     for i in 0..2usize {
         world.actors[i].battle.max_hp = 200;
@@ -3921,7 +3920,6 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
 #[test]
 fn battle_item_menu_cancel_reopens_command_menu() {
     use crate::input::PadButton;
-    use crate::items::ItemCatalog;
 
     let mut world = World {
         party_count: 1,
@@ -3929,7 +3927,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     };
     world.battle_player_driven = true;
     world.mode = SceneMode::Battle;
-    world.set_item_catalog(ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     world.actors[0].battle.max_hp = 100;
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.liveness = 1;
@@ -3955,17 +3953,102 @@ fn battle_item_menu_cancel_reopens_command_menu() {
 
 /// Build a 1-party-member, 1-monster battle world for the offensive-item
 /// tests. The monster sits at slot 1 (party_count = 1) with the supplied
+/// A purpose-built item catalog covering every effect *type* at stable test
+/// ids, for the world item-apply tests. These exercise the apply/grant kernels,
+/// not the shipped consumable list, so they use fixed ids rather than
+/// [`crate::items::ItemCatalog::vanilla`]'s real retail ids (which only models a
+/// faithful subset; stat-boost / capture / damage / battle-escape consumables
+/// aren't shipped yet). `vanilla()`'s real-id correctness is pinned in `items.rs`
+/// + the disc-gated `item_catalog_disc` test.
+#[cfg(test)]
+fn full_test_catalog() -> crate::items::ItemCatalog {
+    use crate::items::{ItemCatalog, ItemEffect, ItemEntry, StatBoostTarget};
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut c = ItemCatalog::new();
+    let mut add = |id, name, effect, b, f| {
+        c.insert(ItemEntry {
+            id,
+            name,
+            effect,
+            usable_in_battle: b,
+            usable_in_field: f,
+        })
+    };
+    add(0x01, "Heal", ItemEffect::Heal { amount: 100 }, true, true);
+    add(0x04, "Heal All", ItemEffect::HealAll, true, true);
+    add(0x05, "Magic", ItemEffect::HealMp { amount: 30 }, true, true);
+    add(
+        0x08,
+        "Cure Poison",
+        ItemEffect::Cure {
+            kind: StatusKind::Poisoned,
+        },
+        true,
+        true,
+    );
+    add(0x09, "Cure All", ItemEffect::CureAll, true, true);
+    add(
+        0x0C,
+        "Revive",
+        ItemEffect::Revive { factor: 128 },
+        true,
+        true,
+    );
+    add(
+        0x0E,
+        "Attack Up",
+        ItemEffect::StatBoost {
+            target: StatBoostTarget::Attack,
+            delta: 1,
+        },
+        false,
+        true,
+    );
+    add(
+        0x0F,
+        "HP Up",
+        ItemEffect::StatBoost {
+            target: StatBoostTarget::HpMax,
+            delta: 10,
+        },
+        false,
+        true,
+    );
+    add(
+        0x10,
+        "Spirit",
+        ItemEffect::Spirit { amount: 5 },
+        true,
+        false,
+    );
+    add(
+        0x11,
+        "Capture",
+        ItemEffect::Capture { strength: 100 },
+        true,
+        false,
+    );
+    add(0x12, "Escape", ItemEffect::Escape, true, false);
+    add(
+        0x13,
+        "Bomb",
+        ItemEffect::Damage { amount: 200 },
+        true,
+        false,
+    );
+    c
+}
+
 /// HP and a `battle_monster_id` so it shows up as an enemy target row.
 #[cfg(test)]
 fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
-    use crate::items::ItemCatalog;
     let mut world = World {
         party_count: 1,
         ..World::default()
     };
     world.battle_player_driven = true;
     world.mode = SceneMode::Battle;
-    world.set_item_catalog(ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.liveness = 1;
@@ -5877,7 +5960,7 @@ fn use_item_heals_hp_clamped_to_max() {
     world.party_count = 1;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 50;
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Item id 1 is the small heal in the vanilla catalog.
     let outcome = world.use_item(1, 0);
     assert!(matches!(
@@ -5895,7 +5978,7 @@ fn use_item_heal_all_fills_to_max() {
     world.party_count = 1;
     world.actors[0].battle.max_hp = 300;
     world.actors[0].battle.hp = 100;
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Find the HealAll entry (id 4 in the vanilla catalog - Healing Globe).
     let outcome = world.use_item(4, 0);
     assert!(matches!(
@@ -5909,7 +5992,7 @@ fn use_item_heal_all_fills_to_max() {
 fn use_item_unknown_id_returns_no_effect() {
     let mut world = World::new();
     world.party_count = 1;
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     let outcome = world.use_item(99, 0);
     assert!(matches!(outcome, crate::items::ItemOutcome::NoEffect));
 }
@@ -5920,7 +6003,7 @@ fn use_item_revive_writes_hp_after() {
     world.party_count = 1;
     world.actors[0].battle.max_hp = 400;
     world.actors[0].battle.hp = 0; // dead
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Resurrection Leaf is id 0x0C (50% revive).
     let outcome = world.use_item(0x0C, 0);
     assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
@@ -5937,7 +6020,7 @@ fn use_item_hp_max_boost_raises_record_and_live_actor() {
     party.members[0].set_hp_mp_sp(hms);
     let mut world = World::new();
     world.load_party(party);
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Vital Tonic (0x0F): HpMax +10 - the outcome the old kernel dropped.
     let outcome = world.use_item(0x0F, 0);
     assert!(matches!(
@@ -5962,7 +6045,7 @@ fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
     let mut world = World::new();
     world.load_party(party);
     world.set_battle_attack(0, 20);
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Power Tonic (0x0E): Attack +1.
     let outcome = world.use_item(0x0E, 0);
     assert!(matches!(
@@ -6023,7 +6106,7 @@ fn use_item_cure_clears_status() {
         .status_effects
         .apply_from_enemy_effect(0, EnemyEffect::Burned);
     assert!(world.status_effects.is_afflicted(0));
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     // Antidote Flower is id 0x09 (CureAll).
     let outcome = world.use_item(0x09, 0);
     assert!(matches!(outcome, crate::items::ItemOutcome::CuredAll));
@@ -6129,10 +6212,9 @@ fn reset_party_ap_refills_all_three_gauges() {
 
 #[test]
 fn item_catalog_setter_replaces() {
-    use crate::items::ItemCatalog;
     let mut world = World::new();
     assert!(world.item_catalog.is_empty());
-    world.set_item_catalog(ItemCatalog::vanilla());
+    world.set_item_catalog(full_test_catalog());
     assert!(!world.item_catalog.is_empty());
 }
 
@@ -6747,4 +6829,113 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
 
     // An out-of-range / unknown monster id is also None.
     assert_eq!(World::default().apply_steal(999, &table), None);
+}
+
+// --- Live gold-shop trigger via field-VM op-0x49 (shop_catalog + try_arm_field_shop) ---
+
+/// Build a field script that opens a 2-item shop: op `0x49` sub-0, length 0,
+/// `[count=2][0x22][0x34]`, name `"Shop\0"`.
+#[cfg(test)]
+fn shop_op49_script() -> Vec<u8> {
+    let mut code = vec![0x49, 0x00, 0x00, 0x02, 0x22, 0x34];
+    code.extend_from_slice(b"Shop\0");
+    code
+}
+
+#[test]
+fn field_vm_op49_opens_a_gold_shop_then_resumes() {
+    use vm::field::{FieldHost, Op49State};
+    let mut world = World::new();
+    // Priced item data: 0x22 = 50g, 0x34 = 120g (both sellable).
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    prices[0x34] = 120;
+    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+
+    let code = shop_op49_script();
+    let mut ctx = FieldCtx::default();
+    let pc = 0usize;
+
+    // Frame 1: Idle -> the host recognises the inline shop, arms it, VM halts.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Idle);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(
+            matches!(r, FieldStepResult::Halt { .. }),
+            "op-0x49 suspends the script while the shop is up"
+        );
+    }
+    assert!(
+        world.field_shop_armed && world.field_shop_open,
+        "shop armed"
+    );
+    // The opened shop carries the priced inline stock.
+    let sess = world
+        .take_pending_field_shop()
+        .expect("the field VM opened a shop");
+    let items: Vec<(u8, u32)> = sess
+        .inventory
+        .items
+        .iter()
+        .map(|i| (i.item_id, i.price))
+        .collect();
+    assert_eq!(items, vec![(0x22, 50), (0x34, 120)]);
+
+    // Frame 2: shop still up -> Armed, VM stays suspended at the same pc.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Armed);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(matches!(r, FieldStepResult::Halt { .. }));
+    }
+
+    // Player closes the shop -> Done; the VM advances past the merchant op.
+    world.finish_field_shop();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Done);
+        match vm::field::step(&mut host, &mut ctx, &code, pc) {
+            FieldStepResult::Advance { next_pc } => {
+                assert!(next_pc > pc, "advanced past the shop record")
+            }
+            other => panic!("expected Advance, got {other:?}"),
+        }
+    }
+    assert!(
+        !world.field_shop_armed,
+        "the arm clears so a later op-0x49 can open the next merchant"
+    );
+}
+
+#[test]
+fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
+    let mut world = World::new();
+    // 0x22 priced, 0x34 left unpriced (0) -> the record fails the sellable mask.
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    let code = shop_op49_script();
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    }
+    assert!(!world.field_shop_armed, "an unpriced id is not a gold shop");
+    assert!(world.take_pending_field_shop().is_none());
+}
+
+#[test]
+fn field_vm_op49_without_item_data_never_opens_a_shop() {
+    // Disc-free build: no prices installed -> no sellable mask, so a stray
+    // op-0x49 sub-0 can never be mistaken for a shop (and there'd be no prices).
+    let mut world = World::new();
+    let code = shop_op49_script();
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    }
+    assert!(!world.field_shop_armed);
+    assert!(world.take_pending_field_shop().is_none());
 }

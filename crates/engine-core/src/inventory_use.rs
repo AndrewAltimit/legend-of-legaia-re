@@ -389,8 +389,57 @@ mod tests {
         ]
     }
 
+    /// Small synthetic catalog with stable ids covering every session-logic
+    /// case (single heal, revive, field-only, battle-only, offensive). These
+    /// tests exercise the *session* state machine, so they use fixed test ids
+    /// rather than [`ItemCatalog::vanilla`]'s real retail ids/amounts (those are
+    /// validated in `items.rs` + the disc-gated `item_catalog_disc` test).
+    fn test_catalog() -> ItemCatalog {
+        use crate::items::{ItemEffect, ItemEntry};
+        let mut c = ItemCatalog::new();
+        let heal = |id, name| ItemEntry {
+            id,
+            name,
+            effect: ItemEffect::Heal { amount: 100 },
+            usable_in_battle: true,
+            usable_in_field: true,
+        };
+        c.insert(heal(0x01, "Test Heal A"));
+        c.insert(heal(0x02, "Test Heal B"));
+        c.insert(heal(0x03, "Test Heal C"));
+        c.insert(ItemEntry {
+            id: 0x0C,
+            name: "Test Revive",
+            effect: ItemEffect::Revive { factor: 128 }, // 50%
+            usable_in_battle: true,
+            usable_in_field: true,
+        });
+        c.insert(ItemEntry {
+            id: 0x0E,
+            name: "Test Field-Only",
+            effect: ItemEffect::Heal { amount: 50 },
+            usable_in_battle: false,
+            usable_in_field: true,
+        });
+        c.insert(ItemEntry {
+            id: 0x10,
+            name: "Test Battle-Only",
+            effect: ItemEffect::Spirit { amount: 5 },
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+        c.insert(ItemEntry {
+            id: 0x13,
+            name: "Test Offensive",
+            effect: ItemEffect::Damage { amount: 200 },
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+        c
+    }
+
     fn empty_session(items: Vec<u8>, ctx: InventoryContext) -> InventoryUseSession {
-        InventoryUseSession::new(ItemCatalog::vanilla(), items, party_targets(), ctx)
+        InventoryUseSession::new(test_catalog(), items, party_targets(), ctx)
     }
 
     #[test]
@@ -446,7 +495,7 @@ mod tests {
         // Bomb (0x13) is offensive: confirming from browsing should skip the
         // ally row and land the target cursor on the enemy.
         let mut s = InventoryUseSession::new(
-            ItemCatalog::vanilla(),
+            test_catalog(),
             vec![0x13],
             mixed_targets(),
             InventoryContext::Battle,
@@ -463,7 +512,7 @@ mod tests {
         // Healing Leaf (0x01) is ally-only. Force the cursor onto the enemy
         // row and confirm - it must reject with InvalidConfirm.
         let mut s = InventoryUseSession::new(
-            ItemCatalog::vanilla(),
+            test_catalog(),
             vec![0x01],
             mixed_targets(),
             InventoryContext::Battle,
@@ -564,7 +613,7 @@ mod tests {
         targets[0].alive = false;
         targets[0].hp = 0;
         let mut s = InventoryUseSession::new(
-            ItemCatalog::vanilla(),
+            test_catalog(),
             vec![0x0C],
             targets,
             InventoryContext::Battle,
@@ -646,7 +695,7 @@ mod tests {
 
     #[test]
     fn inventory_context_allows_field_or_battle_per_entry() {
-        let cat = ItemCatalog::vanilla();
+        let cat = test_catalog();
         let healing_leaf = cat.get(0x01).unwrap();
         assert!(InventoryContext::Battle.allows(healing_leaf));
         assert!(InventoryContext::Field.allows(healing_leaf));

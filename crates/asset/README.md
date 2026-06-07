@@ -61,6 +61,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`. |
 | `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). Plus `SceneAssetTable::size_word_offset` / `encode_size_word` for rewriting a descriptor's decompressed-size word after a variable-length asset edit. |
 | `scene_v12_table` | Variant of the per-scene table. |
+| `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_rando::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
 
 ### `monster_archive`
 

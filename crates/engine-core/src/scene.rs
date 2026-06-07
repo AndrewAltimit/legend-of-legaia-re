@@ -1934,9 +1934,44 @@ impl SceneHost {
                 _ => {}
             }
         }
+        // Decode the scene's gold-shop stock from its MAN so the field-menu
+        // shop-open path offers real per-scene items at real prices instead of a
+        // hand-authored list. Cheap when the scene has no merchant.
+        self.populate_scene_shops();
         // Drain any pending transition the previous scene left behind.
         self.world.pending_scene_transition = None;
         Ok(())
+    }
+
+    /// Decode the active scene's gold shops from its MAN(s) and park them on
+    /// [`crate::world::World::scene_shops`], priced from
+    /// [`crate::world::World::item_shop_data`]. Scans every entry in the scene's
+    /// CDNAME block (most carry one bundle MAN); cheap for non-bundle entries -
+    /// the locator returns early without decompressing when an entry isn't a
+    /// scene bundle with a MAN. No-op shop list when the disc / item data is
+    /// absent.
+    fn populate_scene_shops(&mut self) {
+        let entry_idxs: Vec<u32> = match self.scene.as_ref() {
+            Some(s) => s.entries.iter().map(|e| e.idx).collect(),
+            None => {
+                self.world.scene_shops.clear();
+                return;
+            }
+        };
+        let item_data = self.world.item_shop_data.clone();
+        let mut shops = Vec::new();
+        for idx in entry_idxs {
+            let bytes = match self.index.entry_bytes_extended(idx) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            shops.extend(crate::shop_catalog::scene_shops(
+                &bytes,
+                idx as usize,
+                item_data.as_ref(),
+            ));
+        }
+        self.world.scene_shops = shops;
     }
 
     /// Enter `name` as the **overworld** (world-map) scene.

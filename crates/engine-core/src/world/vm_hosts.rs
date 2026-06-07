@@ -512,6 +512,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // to the default Idle, so a normal field-VM op-0x49 behaves as before.
     // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
     fn op49_state(&self) -> Op49State {
+        // A field-VM-opened gold shop (op 0x49 sub-0 inline shop record) gates
+        // the resume the same way name-entry does: Armed while the shop UI is
+        // up, Done once the host closes it (`finish_field_shop`), so the VM
+        // suspends across the shop and then advances past the merchant op.
+        if self.world.field_shop_armed {
+            return if self.world.field_shop_open {
+                Op49State::Armed
+            } else {
+                Op49State::Done
+            };
+        }
         if self.world.in_cutscene_timeline && self.world.prologue_naming_armed {
             if self.world.name_entry_active() {
                 Op49State::Armed
@@ -520,6 +531,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             }
         } else {
             Op49State::Idle
+        }
+    }
+    fn op49_clear(&mut self) {
+        // The shop op's resume ran: drop the arm so a later op-0x49 can open
+        // the next merchant. (Name-entry clears via its own pending flags.)
+        self.world.field_shop_armed = false;
+    }
+    fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
+        // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
+        // payloads (inn / save prompts) fail the priced-record validation.
+        if sub_op == 0 {
+            self.world.try_arm_field_shop(instr);
         }
     }
     fn op49_invoke_setup(&mut self) {

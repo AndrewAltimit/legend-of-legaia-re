@@ -68,6 +68,7 @@ pub mod scene_resources;
 pub mod seru_learning;
 pub mod seru_stats;
 pub mod shop;
+pub mod shop_catalog;
 pub mod spell_menu;
 pub mod spells;
 pub mod status_screen;

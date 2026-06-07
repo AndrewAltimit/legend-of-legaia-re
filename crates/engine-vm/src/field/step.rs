@@ -2577,6 +2577,12 @@ pub fn step<H: FieldHost>(
                     if sub_op > 0xD {
                         return StepResult::Halt { final_pc: pc };
                     }
+                    // Hand the host the instruction (opcode onward) so it can
+                    // recognise an inline menu payload (e.g. a shop record) and
+                    // open the right overlay before the op suspends. `operand`
+                    // is `pc + header_size`, so `operand - 1` is the opcode byte
+                    // (works for the extended-script header too).
+                    host.op49_menu_request(sub_op, &bytecode[operand - 1..]);
                     host.op49_invoke_setup();
                     let captured = if sub_op == 1 { ctx.field_90 } else { 0 };
                     host.op49_arm(pc, captured);

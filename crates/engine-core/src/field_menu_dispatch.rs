@@ -496,7 +496,7 @@ mod tests {
             hms.mp_max = 30;
             member.set_hp_mp_sp(hms);
         }
-        world.inventory.insert(0x01, 3); // Healing Leaf
+        world.inventory.insert(0x77, 3); // Healing Leaf (real item id)
         world.party_leader_slot = Some(0);
         world.set_item_catalog(crate::items::ItemCatalog::vanilla());
         world

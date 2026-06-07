@@ -1,10 +1,17 @@
 //! Inventory item-effect catalog.
 //!
-//! Maps item IDs to typed [`ItemEffect`] descriptions that the battle
-//! and field menus consume. The retail engine reads these effects from
-//! the SCUS data section table starting at `_DAT_8006F198` in the
-//! action validator (cf. `ghidra/scripts/funcs/8003fb10.txt` arm 6),
-//! plus the per-spell consumer table at `+0x9C0` for healing magic.
+//! Maps **real** retail item ids ([`legaia_asset::item_names`], the
+//! `SCUS_942.54` item table) to typed [`ItemEffect`] descriptions the battle
+//! and field menus consume.
+//!
+//! The per-item *effect-value* table the retail engine reads at use time is
+//! **not yet pinned**. (An earlier note here placed it at `_DAT_8006F198` via
+//! the "action validator" `FUN_8003fb10`; that is a misattribution -
+//! `_DAT_8006F198`'s only consumers are the SFX-cue functions `FUN_800250D4` /
+//! `FUN_80016B6C`, i.e. it is the [SFX descriptor table](../../docs/formats/sfx-table.md),
+//! and `FUN_8003fb10` reads battle-actor HP fields, not an item table.) Until
+//! that table is found, the amounts here are the curated walkthrough values
+//! (`data/gamedata/items.toml`).
 //!
 //! ## Format
 //!
@@ -109,66 +116,77 @@ impl ItemCatalog {
         Self::default()
     }
 
-    /// Build the default catalog from the catalogued vanilla items.
-    /// Ids match the order in the retail item table at
-    /// `_DAT_8007AB14` (item display strings reference these).
+    /// Build the default catalog of consumable items keyed by their **real**
+    /// retail item ids - the `SCUS_942.54` item table ([`legaia_asset::item_names`]),
+    /// the same id space a granted / shop / dropped item carries. (The prior
+    /// catalog keyed effects by fabricated sequential ids `0x01..` that collide
+    /// with the table's internal `Ra-Seru Meta $N` placeholders, so live
+    /// item-use never matched a real granted id; e.g. the real Healing Leaf is
+    /// `0x77`, not `0x01`.)
+    ///
+    /// Only the consumables the current effect taxonomy models faithfully are
+    /// included: single-target HP/MP restore, full restore, single + all status
+    /// cure, revive, and field escape. Items that need infra this engine doesn't
+    /// have yet are intentionally **omitted** (a held one just isn't offered)
+    /// rather than shown as a no-op:
+    /// - party-wide fixed-amount heals (Healing Bloom `0x7A`, Healing Fruit
+    ///   `0x7B`) need all-target application;
+    /// - temporary battle stat buffs (Power/Shield/Speed/Wonder Elixir
+    ///   `0x8B..=0x8E`, the *Water* line `0x82..=0x87`, Fury Boost `0x81`) need
+    ///   a battle-buff taxonomy;
+    /// - utility (Door of Wind warp `0x89`, Incense encounter-rate `0x8A`, the
+    ///   summon flutes `0x98`/`0x99`) have no engine consumer yet.
+    ///
+    /// Amounts are the curated walkthrough values
+    /// (`data/gamedata/items.toml`); the on-disc per-item effect-value table is
+    /// not yet pinned (see the module docs).
     pub fn vanilla() -> Self {
         let mut c = Self::new();
-        // Healing
-        c.insert(ItemEntry {
-            id: 0x01,
-            name: "Healing Leaf",
-            effect: ItemEffect::Heal { amount: 100 },
+        let heal = |id, name, amount| ItemEntry {
+            id,
+            name,
+            effect: ItemEffect::Heal { amount },
             usable_in_battle: true,
             usable_in_field: true,
-        });
+        };
+        // Single-target HP restore.
+        c.insert(heal(0x77, "Healing Leaf", 200));
+        c.insert(heal(0x78, "Healing Flower", 800));
+        c.insert(heal(0xA3, "Healing Shroom", 60));
+        // Full HP restore ("Restores maximum HP").
         c.insert(ItemEntry {
-            id: 0x02,
-            name: "Healing Flower",
-            effect: ItemEffect::Heal { amount: 300 },
-            usable_in_battle: true,
-            usable_in_field: true,
-        });
-        c.insert(ItemEntry {
-            id: 0x03,
-            name: "Healing Fruit",
-            effect: ItemEffect::Heal { amount: 600 },
-            usable_in_battle: true,
-            usable_in_field: true,
-        });
-        c.insert(ItemEntry {
-            id: 0x04,
-            name: "Heal All Leaf",
+            id: 0x79,
+            name: "Healing Berry",
             effect: ItemEffect::HealAll,
             usable_in_battle: true,
             usable_in_field: true,
         });
-        // MP
         c.insert(ItemEntry {
-            id: 0x05,
+            id: 0xB2,
+            name: "Soru Bread",
+            effect: ItemEffect::HealAll,
+            usable_in_battle: true,
+            usable_in_field: true,
+        });
+        // MP restore.
+        c.insert(ItemEntry {
+            id: 0x7C,
             name: "Magic Leaf",
-            effect: ItemEffect::HealMp { amount: 30 },
+            effect: ItemEffect::HealMp { amount: 50 },
             usable_in_battle: true,
             usable_in_field: true,
         });
         c.insert(ItemEntry {
-            id: 0x06,
-            name: "Magic Flower",
-            effect: ItemEffect::HealMp { amount: 80 },
-            usable_in_battle: true,
-            usable_in_field: true,
-        });
-        c.insert(ItemEntry {
-            id: 0x07,
+            id: 0x7D,
             name: "Magic Fruit",
-            effect: ItemEffect::HealMpAll,
+            effect: ItemEffect::HealMp { amount: 200 },
             usable_in_battle: true,
             usable_in_field: true,
         });
-        // Cure
+        // Status cure.
         c.insert(ItemEntry {
-            id: 0x08,
-            name: "Antidote Leaf",
+            id: 0x7E,
+            name: "Antidote",
             effect: ItemEffect::Cure {
                 kind: StatusKind::Poisoned,
             },
@@ -176,97 +194,27 @@ impl ItemCatalog {
             usable_in_field: true,
         });
         c.insert(ItemEntry {
-            id: 0x09,
-            name: "Antidote Flower",
+            id: 0x7F,
+            name: "Medicine",
             effect: ItemEffect::CureAll,
             usable_in_battle: true,
             usable_in_field: true,
         });
+        // Revive a fallen ally with a small amount of HP (~25%).
         c.insert(ItemEntry {
-            id: 0x0A,
-            name: "Awake Leaf",
-            effect: ItemEffect::Cure {
-                kind: StatusKind::Asleep,
-            },
+            id: 0x80,
+            name: "Phoenix",
+            effect: ItemEffect::Revive { factor: 64 },
             usable_in_battle: true,
             usable_in_field: true,
         });
+        // Field escape ("Escape from a dungeon").
         c.insert(ItemEntry {
-            id: 0x0B,
-            name: "Wake-Up Leaf",
-            effect: ItemEffect::Cure {
-                kind: StatusKind::Confused,
-            },
-            usable_in_battle: true,
-            usable_in_field: true,
-        });
-        // Revive
-        c.insert(ItemEntry {
-            id: 0x0C,
-            name: "Resurrection Leaf",
-            effect: ItemEffect::Revive { factor: 128 }, // 50%
-            usable_in_battle: true,
-            usable_in_field: true,
-        });
-        c.insert(ItemEntry {
-            id: 0x0D,
-            name: "Resurrection Flower",
-            effect: ItemEffect::Revive { factor: 255 }, // 100%
-            usable_in_battle: true,
-            usable_in_field: true,
-        });
-        // Stat boosts
-        c.insert(ItemEntry {
-            id: 0x0E,
-            name: "Power Tonic",
-            effect: ItemEffect::StatBoost {
-                target: StatBoostTarget::Attack,
-                delta: 1,
-            },
-            usable_in_battle: false,
-            usable_in_field: true,
-        });
-        c.insert(ItemEntry {
-            id: 0x0F,
-            name: "Vital Tonic",
-            effect: ItemEffect::StatBoost {
-                target: StatBoostTarget::HpMax,
-                delta: 10,
-            },
-            usable_in_battle: false,
-            usable_in_field: true,
-        });
-        // AP / Spirit
-        c.insert(ItemEntry {
-            id: 0x10,
-            name: "Spirit Sphere",
-            effect: ItemEffect::Spirit { amount: 5 },
-            usable_in_battle: true,
-            usable_in_field: false,
-        });
-        // Capture
-        c.insert(ItemEntry {
-            id: 0x11,
-            name: "Genocide Crystal",
-            effect: ItemEffect::Capture { strength: 100 },
-            usable_in_battle: true,
-            usable_in_field: false,
-        });
-        // Escape
-        c.insert(ItemEntry {
-            id: 0x12,
-            name: "Goblin Foot",
+            id: 0x88,
+            name: "Door of Light",
             effect: ItemEffect::Escape,
-            usable_in_battle: true,
-            usable_in_field: false,
-        });
-        // Damage
-        c.insert(ItemEntry {
-            id: 0x13,
-            name: "Bomb",
-            effect: ItemEffect::Damage { amount: 200 },
-            usable_in_battle: true,
-            usable_in_field: false,
+            usable_in_battle: false,
+            usable_in_field: true,
         });
         c
     }
@@ -397,11 +345,17 @@ mod tests {
     }
 
     #[test]
-    fn vanilla_catalog_has_basic_items() {
+    fn vanilla_catalog_uses_real_item_ids() {
         let c = ItemCatalog::vanilla();
-        assert!(c.len() >= 18);
-        assert!(c.get(0x01).is_some()); // healing leaf
-        assert!(c.get(0x12).is_some()); // goblin foot
+        assert!(c.len() >= 10);
+        // Real retail ids (not the old fabricated 0x01.. sequence).
+        let leaf = c.get(0x77).expect("Healing Leaf is item id 0x77");
+        assert_eq!(leaf.name, "Healing Leaf");
+        assert_eq!(leaf.effect, ItemEffect::Heal { amount: 200 });
+        assert_eq!(c.get(0x7E).map(|e| e.name), Some("Antidote")); // id 0x7E
+        // The internal placeholder id 0x01 ("Ra-Seru Meta $1") is not a usable
+        // consumable, so the catalog must not claim it.
+        assert!(c.get(0x01).is_none());
     }
 
     #[test]

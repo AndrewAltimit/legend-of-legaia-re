@@ -6,10 +6,12 @@
 //! Gold and inventory mutations are applied to the caller's `World` by
 //! [`ShopSession::try_buy`] and [`ShopSession::try_sell`].
 //!
-//! **Placeholder note**: item prices and shop inventories are supplied by the
-//! engine at `open_shop` time. The actual per-scene shop layouts are encoded
-//! in the shop overlay (`overlay_shop_save`); trace the data tables to
-//! populate `ShopInventory` from decoded disc data.
+//! Per-scene shop **stock + prices** are decoded from the disc by
+//! [`crate::shop_catalog`] (the scene MAN's op-`0x49` records + the SCUS item
+//! price table) and parked on [`crate::world::World::scene_shops`]; the field-VM
+//! op-`0x49` merchant trigger opens one ([`crate::world::World::try_arm_field_shop`]).
+//! This module owns only the buy/sell session state. (Disc-free builds leave the
+//! stock host-supplied.)
 
 /// One item a shop stocks.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -87,9 +87,25 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   status-effect modifiers (Burned -ATK, Confused halves accuracy,
   Asleep / Stunned / Petrified zero evasion, Silenced / Petrified
   block Magic).
-- `items` - typed inventory item-effect catalog. `apply_effect`
-  resolves an `ItemEffect` against a `TargetSnapshot` to produce an
-  `ItemOutcome` engines fold into world state.
+- `items` - typed inventory item-effect catalog, keyed by **real**
+  retail item ids (the `SCUS_942.54` item table - e.g. Healing Leaf is
+  `0x77`), so a live granted / shop / dropped id resolves to its effect.
+  `apply_effect` resolves an `ItemEffect` against a `TargetSnapshot` to
+  produce an `ItemOutcome` engines fold into world state. `vanilla()`
+  models the faithful consumable subset (HP/MP restore, cure, revive,
+  field escape); effect *amounts* are the curated walkthrough values
+  (the on-disc effect-value table is not yet pinned).
+- `shop` / `shop_catalog` - shop session state (buy/sell cursor,
+  quantity, gold/inventory delta) plus the disc-sourced **gold-shop
+  stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
+  (the sellable mask), and `shop_catalog::scene_shops` decodes a
+  scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
+  a priced `ShopInventory`. `SceneHost::enter_field_scene` parks them on
+  `World::scene_shops`; `World::scene_shop_session(idx)` opens one. The **live
+  trigger** is the field VM's op `0x49` sub-0: `World::try_arm_field_shop`
+  recognises an inline shop record on the op's bytes and stages it on
+  `World::pending_field_shop` (Armed -> Done op-0x49 gating), so a host drains
+  `take_pending_field_shop` -> drives the buy UI -> `finish_field_shop`.
 - `battle_round` - per-round orchestrator. `BattleRound::begin` resets
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,
