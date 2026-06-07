@@ -240,8 +240,22 @@ Voice allocation is round-robin over the 24 SPU voices, with the
 sequencer tracking `(channel, key) → voice` so the matching key-off can
 shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
-`0xFF 0x51`). PitchBend / Aftertouch are accepted by the parser and
-ignored by the playback path until the engine wires per-voice modulation.
+`0xFF 0x51`).
+
+**Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
+sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
+of `0xEn` events concentrated in a handful of music banks - so the
+sequencer acts on it: a bend sets the channel's 14-bit wheel
+(`ChannelState::pitch_bend`, center `0x2000`), re-pitches every voice
+already sounding on that channel, and is folded into subsequent NoteOns.
+Each `ActiveNote` keeps its unbent base pitch so repeated bends scale the
+base rather than compounding. The wheel maps to a pitch multiplier over a
+`±2`-semitone range (`PITCH_BEND_RANGE_SEMITONES`) - the General-MIDI
+default; the SEQ stream carries no RPN override and libsnd's bend handler
+is statically-linked PsyQ (not in the dumped corpus), so the range is the
+one scalar in this path not pinned to retail bytes. Channel and polyphonic
+aftertouch (`0xDn` / `0xAn`) are parsed but the same sweep confirms the
+retail score never emits them, so they have no consumer to drive.
 
 **Loop points.** SEQ loop markers are read from the stream: the NRPN-style
 control changes on `0xB0` (controller 99 value 20 = Loop Start, value 30 =

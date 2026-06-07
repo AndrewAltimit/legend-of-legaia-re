@@ -72,6 +72,8 @@ fn cmd_info(path: &PathBuf) -> Result<()> {
     println!("  program_change: {}", s.program_change);
     println!("  control_change: {}", s.control_change);
     println!("  pitch_bend:     {}", s.pitch_bend);
+    println!("  chan_aftertouch:{}", s.channel_aftertouch);
+    println!("  poly_aftertouch:{}", s.poly_aftertouch);
     println!("  set_tempo:      {}", s.set_tempo);
     println!("  end_of_track:   {}", s.end_of_track);
     println!("  other_meta:     {}", s.other_meta);

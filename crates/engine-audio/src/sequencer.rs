@@ -50,6 +50,31 @@ const LOOP_START_VALUE: u8 = 20;
 /// `CC_LOOP_MARKER` value marking Loop Forever (jump to the last Loop Start).
 const LOOP_FOREVER_VALUE: u8 = 30;
 
+/// Center value of the 14-bit pitch-bend wheel - no bend.
+const PITCH_BEND_CENTER: u16 = 0x2000;
+/// Pitch-bend range, in semitones, applied at full wheel deflection
+/// (`0x0000` = -range, `0x3FFF` ≈ +range). The SEQ stream carries no RPN
+/// to override this, and libsnd's bend handler is statically-linked PsyQ
+/// (not in the dumped corpus), so this is the General-MIDI default ±2
+/// semitones - the one scalar in this path not pinned to retail bytes. If a
+/// capture ever pins libsnd's range, change only this constant.
+const PITCH_BEND_RANGE_SEMITONES: f64 = 2.0;
+
+/// Convert a 14-bit pitch-bend wheel value into a pitch multiplier (`1.0` at
+/// center). Shared by NoteOn (bend a fresh note) and the `0xEn` handler
+/// (re-bend sounding notes).
+fn pitch_bend_factor(bend: u16) -> f64 {
+    let norm = (bend as f64 - PITCH_BEND_CENTER as f64) / PITCH_BEND_CENTER as f64;
+    let semitones = norm * PITCH_BEND_RANGE_SEMITONES;
+    2f64.powf(semitones / 12.0)
+}
+
+/// Scale a base SPU pitch register by a bend factor, clamped to the valid
+/// `1..=0x3FFF` register range (the same clamp `compute_pitch` applies).
+fn bend_pitch(base: u16, factor: f64) -> u16 {
+    ((base as f64 * factor).round() as i64).clamp(1, 0x3FFF) as u16
+}
+
 /// Per-channel state carried across events.
 #[derive(Debug, Clone, Copy)]
 struct ChannelState {
@@ -59,6 +84,11 @@ struct ChannelState {
     volume: u8,
     /// Per-channel pan (CC 10), 0..=127.
     pan: u8,
+    /// Current 14-bit pitch-bend wheel value (`0..=0x3FFF`, center `0x2000`).
+    /// Set by `0xEn` events; applied to every note sounding on the channel
+    /// and to subsequent NoteOns. The retail score uses this (see the
+    /// `real_seq_expressive_events` corpus sweep); aftertouch is never used.
+    pitch_bend: u16,
     /// Last program-change tick. Diagnostic only.
     _last_pc_tick: u64,
 }
@@ -69,6 +99,7 @@ impl Default for ChannelState {
             program: 0,
             volume: 127,
             pan: 64,
+            pitch_bend: PITCH_BEND_CENTER,
             _last_pc_tick: 0,
         }
     }
@@ -81,6 +112,10 @@ struct ActiveNote {
     channel: u8,
     key: u8,
     voice: u8,
+    /// The voice's SPU pitch register at NoteOn, before this channel's
+    /// pitch-bend was folded in. Re-applying a new bend multiplies this
+    /// base so repeated bends don't compound rounding error.
+    base_pitch: u16,
 }
 
 /// Sequencer state machine. One per playing SEQ.
@@ -392,8 +427,18 @@ impl Sequencer {
             ChannelMessage::NoteOff { key, .. } => {
                 self.note_off(spu, ch as u8, key);
             }
-            // PolyAftertouch / ChannelAftertouch / PitchBend not yet wired.
-            _ => {}
+            ChannelMessage::PitchBend { value } => {
+                self.channels[ch].pitch_bend = value;
+                let factor = pitch_bend_factor(value);
+                for note in self.active.iter().filter(|n| n.channel as usize == ch) {
+                    if let Some(v) = spu.voices.get_mut(note.voice as usize) {
+                        v.pitch = bend_pitch(note.base_pitch, factor);
+                    }
+                }
+            }
+            // Aftertouch (channel + poly) is recognized but unused by the
+            // retail score (corpus sweep), so there is nothing to drive.
+            ChannelMessage::PolyAftertouch { .. } | ChannelMessage::ChannelAftertouch { .. } => {}
         }
     }
 
@@ -420,10 +465,24 @@ impl Sequencer {
             .bank
             .play_note(spu, voice as usize, cs.program as usize, key, combined);
         if ok {
+            // play_note set the voice's base pitch; remember it so later bends
+            // re-scale the unbent value, then fold in any bend already held on
+            // this channel.
+            let base_pitch = spu
+                .voices
+                .get(voice as usize)
+                .map(|v| v.pitch)
+                .unwrap_or(0x1000);
+            if cs.pitch_bend != PITCH_BEND_CENTER
+                && let Some(v) = spu.voices.get_mut(voice as usize)
+            {
+                v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend));
+            }
             self.active.push(ActiveNote {
                 channel,
                 key,
                 voice,
+                base_pitch,
             });
         }
     }
@@ -757,5 +816,64 @@ mod tests {
         assert!(!s.is_finished()); // halfway through
         s.tick_us(&mut spu, 500_000.0);
         assert!(s.is_finished());
+    }
+
+    #[test]
+    fn pitch_bend_factor_center_is_unity() {
+        // Center wheel = no bend.
+        assert!((pitch_bend_factor(PITCH_BEND_CENTER) - 1.0).abs() < 1e-9);
+        // Full up bends sharp (> 1.0), full down bends flat (< 1.0).
+        assert!(pitch_bend_factor(0x3FFF) > 1.0);
+        assert!(pitch_bend_factor(0x0000) < 1.0);
+        // Symmetry: full up is (near) the inverse of full down.
+        let up = pitch_bend_factor(0x3FFF);
+        let down = pitch_bend_factor(0x0000);
+        assert!((up * down - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn bend_pitch_clamps_to_register_range() {
+        // A large base × a sharp bend saturates at 0x3FFF, never overflows.
+        assert_eq!(bend_pitch(0x3FFF, pitch_bend_factor(0x3FFF)), 0x3FFF);
+        // A bend never drives the register below 1.
+        assert!(bend_pitch(1, pitch_bend_factor(0x0000)) >= 1);
+        // Center leaves a mid-range pitch untouched.
+        assert_eq!(
+            bend_pitch(0x1000, pitch_bend_factor(PITCH_BEND_CENTER)),
+            0x1000
+        );
+    }
+
+    #[test]
+    fn pitch_bend_event_repitches_sounding_voice() {
+        let mut spu = Spu::new();
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        // Seed a sounding note on channel 0, voice 0 at a known base pitch.
+        let base = 0x1000u16;
+        spu.voices[0].pitch = base;
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60,
+            voice: 0,
+            base_pitch: base,
+        });
+
+        // Bend sharp: the voice's live pitch register rises, the channel
+        // state records the wheel, and the stored base is untouched.
+        seq.fire_channel(&mut spu, 0, ChannelMessage::PitchBend { value: 0x3FFF });
+        assert_eq!(seq.channels[0].pitch_bend, 0x3FFF);
+        assert!(spu.voices[0].pitch > base);
+        assert_eq!(seq.active[0].base_pitch, base);
+
+        // Return to center: the voice snaps back to exactly the base pitch
+        // (re-bending the base, not the already-bent value).
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::PitchBend {
+                value: PITCH_BEND_CENTER,
+            },
+        );
+        assert_eq!(spu.voices[0].pitch, base);
     }
 }
