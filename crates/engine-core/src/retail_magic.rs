@@ -159,32 +159,50 @@ pub fn get(id: u8) -> Option<&'static RetailSpell> {
     SERU_MAGIC.iter().find(|s| s.id == id)
 }
 
-/// Build a [`SpellDef`] for one [`RetailSpell`]. Ally-target light spells are
-/// modelled as heals (Vera / Orb); everything else is elemental damage. The
-/// damage figure is an MP-scaled placeholder (see the module docs).
-fn spell_def_for(s: &RetailSpell) -> SpellDef {
-    let effect = match s.target {
+/// Build a [`SpellDef`] for one [`RetailSpell`] with explicit `mp` / `target`
+/// (so the pinned and disc-sourced paths share the same effect mapping).
+/// Ally-target light spells are modelled as heals (Vera / Orb); everything else
+/// is elemental damage. The damage figure is an MP-scaled placeholder (see the
+/// module docs).
+fn spell_def_with(s: &RetailSpell, mp: u8, target: SpellTarget) -> SpellDef {
+    let effect = match target {
         SpellTarget::OneAlly => SpellEffect::Heal {
-            amount: (s.mp as u16) * 8,
+            amount: (mp as u16) * 8,
         },
         SpellTarget::AllAllies => SpellEffect::HealAll {
-            amount: (s.mp as u16) * 6,
+            amount: (mp as u16) * 6,
         },
         _ => SpellEffect::Damage {
-            base_power: (s.mp as u16) * 2,
+            base_power: (mp as u16) * 2,
             element: s.element,
         },
     };
     SpellDef {
         id: s.id,
         name: s.name.into(),
-        mp_cost: s.mp,
+        mp_cost: mp,
         element: s.element,
-        target: s.target,
+        target,
         effect,
         // anim id == real table anim (0x25 + block index), kept aligned so a
         // future anim-table port can drive the same trigger.
         anim_id: 0x25 + (s.id - 0x81),
+    }
+}
+
+/// Build a [`SpellDef`] from the pinned record (MP + target from [`SERU_MAGIC`]).
+fn spell_def_for(s: &RetailSpell) -> SpellDef {
+    spell_def_with(s, s.mp, s.target)
+}
+
+/// Map the parser's decoded `+2` target shape onto the engine [`SpellTarget`].
+fn target_from_shape(shape: legaia_asset::spell_names::SpellTargetShape) -> SpellTarget {
+    use legaia_asset::spell_names::SpellTargetShape as S;
+    match shape {
+        S::OneEnemy => SpellTarget::OneEnemy,
+        S::AllEnemies => SpellTarget::AllEnemies,
+        S::OneAlly => SpellTarget::OneAlly,
+        S::AllAllies => SpellTarget::AllAllies,
     }
 }
 
@@ -199,6 +217,28 @@ pub fn retail_seru_magic_catalog() -> SpellCatalog {
         c.insert(spell_def_for(s));
     }
     c
+}
+
+/// Like [`retail_seru_magic_catalog`], but the player Seru-magic block's **MP
+/// cost** (`+3`) and **target shape** (`+2`, decoded via
+/// [`legaia_asset::spell_names::SpellEntry::target_shape`]) are read from the
+/// user's `SCUS_942.54` instead of the pinned constants. On the retail disc
+/// this is byte-identical to [`retail_seru_magic_catalog`] (the pinned values
+/// were decoded from the same table); on a randomized / translated disc it
+/// honours the patched MP / targeting. Per-field fallback to the pinned record
+/// keeps a malformed table from zeroing a spell. Returns `None` only when the
+/// image isn't a parseable PSX-EXE.
+pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
+    let table = legaia_asset::spell_names::SpellNameTable::from_scus(scus)?;
+    let mut c = SpellCatalog::vanilla();
+    for s in SERU_MAGIC {
+        let (mp, target) = match table.entry(s.id) {
+            Some(e) => (e.mp, target_from_shape(e.target_shape())),
+            None => (s.mp, s.target),
+        };
+        c.insert(spell_def_with(s, mp, target));
+    }
+    Some(c)
 }
 
 #[cfg(test)]
@@ -230,6 +270,47 @@ mod tests {
             assert_eq!(s.mp, mp, "mp for {name}");
         }
         assert_eq!(SERU_MAGIC.len(), expect.len());
+    }
+
+    #[test]
+    fn target_from_shape_maps_all_four_shapes() {
+        use legaia_asset::spell_names::SpellTargetShape as S;
+        assert_eq!(target_from_shape(S::OneEnemy), SpellTarget::OneEnemy);
+        assert_eq!(target_from_shape(S::AllEnemies), SpellTarget::AllEnemies);
+        assert_eq!(target_from_shape(S::OneAlly), SpellTarget::OneAlly);
+        assert_eq!(target_from_shape(S::AllAllies), SpellTarget::AllAllies);
+    }
+
+    #[test]
+    fn pinned_seru_target_bytes_decode_to_pinned_targets() {
+        // The +2 target byte each pinned Seru spell *would* carry (byte-exact
+        // from SCUS), decoded via the parser, must reproduce its pinned target.
+        // This locks the bit decode (0x02 ally / 0x20 all) to the catalog.
+        use legaia_asset::spell_names::{SpellEntry, SpellTargetShape as S};
+        let byte_for = |t: SpellTarget| -> u8 {
+            match t {
+                SpellTarget::OneEnemy => 0x44,
+                SpellTarget::AllEnemies => 0x64,
+                SpellTarget::OneAlly => 0x06,
+                SpellTarget::AllAllies => 0x26,
+                SpellTarget::SelfOnly => unreachable!("no Seru spell self-targets"),
+            }
+        };
+        let shape_to_target = |s: S| target_from_shape(s);
+        for spell in SERU_MAGIC {
+            let e = SpellEntry {
+                name: None,
+                mp: spell.mp,
+                target: byte_for(spell.target),
+            };
+            assert_eq!(
+                shape_to_target(e.target_shape()),
+                spell.target,
+                "{} (#{:#04x}) target round-trips through the byte decode",
+                spell.name,
+                spell.id
+            );
+        }
     }
 
     #[test]

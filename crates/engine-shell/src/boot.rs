@@ -112,6 +112,12 @@ pub struct BootSession {
     /// ([`legaia_engine_core::equip_session::EquipSession::new_with_restrictions`]);
     /// `None` on disc-free builds.
     pub equip_restrictions: Option<legaia_engine_core::equipment::DiscEquipInfo>,
+    /// Player Seru-magic catalog with MP cost + target shape read from the
+    /// boot source's `SCUS_942.54` spell table ([`legaia_asset::spell_names`]).
+    /// Preferred over the pinned `retail_seru_magic_catalog` when installing the
+    /// battle spell catalog, so a randomized / translated disc is honoured;
+    /// `None` on disc-free builds.
+    pub spell_catalog: Option<legaia_engine_core::spells::SpellCatalog>,
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -299,6 +305,28 @@ fn read_retail_equip_tables(
     Some((modifiers, restrictions))
 }
 
+/// Read the player Seru-magic catalog (MP cost + target shape from the spell
+/// table, see `spell-table.md`) from a boot source's `SCUS_942.54`. Returns
+/// `None` when the executable isn't reachable or doesn't parse, so a boot falls
+/// back to the pinned `retail_seru_magic_catalog`.
+fn read_retail_spell_catalog(
+    source: &SceneSource<'_>,
+) -> Option<legaia_engine_core::spells::SpellCatalog> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -324,6 +352,7 @@ impl BootSession {
             Some((m, r)) => (Some(m), Some(r)),
             None => (None, None),
         };
+        let spell_catalog = read_retail_spell_catalog(&source);
         let mut host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
@@ -413,6 +442,7 @@ impl BootSession {
             starting_inventory,
             equip_modifier_table,
             equip_restrictions,
+            spell_catalog,
         })
     }
 
@@ -521,7 +551,11 @@ impl BootSession {
         if opts.player_battle {
             world.battle_player_driven = true;
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+            world.set_spell_catalog(
+                self.spell_catalog
+                    .clone()
+                    .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+            );
             world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
         }
 
@@ -575,7 +609,11 @@ impl BootSession {
         if opts.player_battle {
             world.battle_player_driven = true;
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+            world.set_spell_catalog(
+                self.spell_catalog
+                    .clone()
+                    .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+            );
             world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
         }
         Ok(world.mode)
