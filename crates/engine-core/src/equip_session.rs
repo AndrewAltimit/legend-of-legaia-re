@@ -381,6 +381,8 @@ mod tests {
             base_ldf: 25,
             base_accuracy: 80,
             base_evasion: 20,
+            base_spd: 35,
+            base_int: 18,
             equip: [0; 8],
         }
     }
@@ -521,6 +523,45 @@ mod tests {
             _ => panic!("expected Confirm state"),
         }
         assert_eq!(s.preview_stats.atk, 55);
+    }
+
+    #[test]
+    fn preview_reflects_equipment_spd_and_int() {
+        // A footwear/head item that carries SPD + INT bonuses (the equipment
+        // table's +4 / +0 bytes). The preview must move SPD/INT, not acc/eva.
+        let mut inv = HashMap::new();
+        inv.insert(0x05, 1);
+        let mut eq = EquipmentTable::new();
+        eq.set(
+            0x05,
+            ItemModifier {
+                spd: 6,
+                int: 4,
+                ..Default::default()
+            },
+        );
+        let mut s = EquipSession::new(
+            fresh_record(),
+            inv,
+            eq,
+            StatusModifiers::default(),
+            Vec::new(),
+        );
+        // Open slot 0's picker, then confirm item 0x05.
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        // fresh_record base SPD=35, INT=18.
+        assert_eq!(s.preview_stats.spd, 41);
+        assert_eq!(s.preview_stats.int, 22);
+        // Derived accuracy / evasion stay at the base (AGL-derived).
+        assert_eq!(s.preview_stats.acc, 80);
+        assert_eq!(s.preview_stats.eva, 20);
     }
 
     #[test]

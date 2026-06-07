@@ -454,12 +454,16 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
 
 fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {
     let eq_bytes = c.equipment().slots;
+    let live = c.live_stats();
     StatRecord {
-        base_attack: 0,
-        base_udf: 0,
-        base_ldf: 0,
-        base_accuracy: 0,
-        base_evasion: 0,
+        base_attack: live.atk,
+        base_udf: live.udf,
+        base_ldf: live.ldf,
+        // Accuracy / evasion derive from AGL (not equipment-fed).
+        base_accuracy: live.agl,
+        base_evasion: live.agl,
+        base_spd: live.spd,
+        base_int: live.int,
         equip: eq_bytes,
     }
 }

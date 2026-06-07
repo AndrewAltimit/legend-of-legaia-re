@@ -10185,6 +10185,8 @@ fn cmd_equip(slot: u8, item: u8) -> Result<()> {
         base_ldf: 25,
         base_accuracy: 80,
         base_evasion: 20,
+        base_spd: 35,
+        base_int: 18,
         equip: [0; 8],
     };
     let mut inv = HashMap::new();

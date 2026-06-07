@@ -6398,8 +6398,8 @@ fn seed_party_battle_stats_folds_live_stats_and_equipment() {
             atk: 7,
             udf: 3,
             ldf: 2,
-            acc: 0,
-            eva: 0,
+            spd: 0,
+            int: 0,
             ability_bits: [0; 32],
         },
     );
