@@ -506,6 +506,20 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Dump the static item tables out of a `SCUS_942.54`: per item id the
+    /// name + the consumable effect descriptor (`DAT_800752C0`) or the
+    /// equipment stat-bonus record (`DAT_80074F68`). See
+    /// `docs/formats/item-effect-table.md` and `equipment-table.md`.
+    ItemTables {
+        /// Path to `SCUS_942.54` (typically `extracted/SCUS_942.54`).
+        scus: PathBuf,
+        /// Only print equippable items.
+        #[arg(long, default_value_t = false)]
+        equipment_only: bool,
+        /// Only print usable consumables.
+        #[arg(long, default_value_t = false)]
+        consumables_only: bool,
+    },
     /// Render a kingdom's slot-4 wireframe (or a raw decoded slot-4 .bin)
     /// to a top-down PNG. The output uses the same per-body color palette
     /// as the WebGL world-overview viewer so a PNG screenshot can be
@@ -770,6 +784,11 @@ fn main() -> Result<()> {
             only_hits,
         } => scene_v12_scan(&dir, cdname.as_deref(), only_hits),
         Cmd::WorldmapMenu { scus, json } => worldmap_menu_cmd(&scus, json),
+        Cmd::ItemTables {
+            scus,
+            equipment_only,
+            consumables_only,
+        } => item_tables_cmd(&scus, equipment_only, consumables_only),
         Cmd::KingdomSlot {
             input,
             slot,
@@ -1431,6 +1450,64 @@ fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
             "   {:>2}  0x{:02X}  0x{:04X}   ({:3}, {:3})  {}",
             p.index, p.discovery_flag, p.scene_id, p.menu_x, p.menu_y, name
         );
+    }
+    Ok(())
+}
+
+fn item_tables_cmd(scus: &Path, equipment_only: bool, consumables_only: bool) -> Result<()> {
+    use legaia_asset::{equip_stats, item_effect, item_names};
+
+    let bytes = std::fs::read(scus)?;
+    let names = item_names::ItemNameTable::from_scus(&bytes).context("parse item-name table")?;
+    let effects =
+        item_effect::ItemEffectTable::from_scus(&bytes).context("parse item-effect table")?;
+    let equips =
+        equip_stats::EquipStatTable::from_scus(&bytes).context("parse equip-stat table")?;
+
+    println!("id    name                       category");
+    for id in 0u8..=u8::MAX {
+        let name = names.name(id).unwrap_or("");
+        if name.is_empty() {
+            continue;
+        }
+        if let Some(b) = equips.bonus(id) {
+            if consumables_only {
+                continue;
+            }
+            let bonuses = b.stat_bonus();
+            let ra = if b.is_ra_seru() { " ra-seru" } else { "" };
+            println!(
+                "0x{id:02X}  {name:26} equip  atk={} udf={} ldf={} mask={:#05b} slot={:?}{ra} \
+                 [+0={} +4={}]",
+                b.attack(),
+                b.def_up(),
+                b.def_down(),
+                b.equip_mask(),
+                b.slot(),
+                bonuses[0],
+                bonuses[4],
+            );
+        } else if let Some(e) = effects.effect(id) {
+            if equipment_only || !e.is_usable_consumable() {
+                continue;
+            }
+            let mut where_ = String::new();
+            if e.field_usable() {
+                where_.push('F');
+            }
+            if e.battle_usable() {
+                where_.push('B');
+            }
+            if e.all_party() {
+                where_.push_str(" all-party");
+            }
+            println!(
+                "0x{id:02X}  {name:26} {:?} tier={} [{}]",
+                e.category(),
+                e.tier,
+                where_,
+            );
+        }
     }
     Ok(())
 }

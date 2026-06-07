@@ -138,6 +138,8 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | Module | Table |
 |---|---|
 | `item_names` | `SCUS_942.54` item-name table (`PTR_DAT_8007436C[id*3]`, 256 ids): `ItemNameTable::from_scus` → `name(id)`. The id space a monster record's `drop_item` indexes; used by the web viewer's enemy table. See [`item-table.md`](../../docs/formats/item-table.md). |
+| `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability; literal restore amounts are overlay-resident, not here. See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
+| `equip_stats` | `SCUS_942.54` equipment stat-bonus table (`DAT_80074F68`, 8-byte stride): `EquipStatTable::from_scus` → `bonus(id)` (equippable id → property `+1` byte → record). Attack/def-up/def-down (byte-exact vs gamedata) + equip-character mask + slot type + Ra-Seru flag. See [`equipment-table.md`](../../docs/formats/equipment-table.md). |
 | `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). See [`spell-table.md`](../../docs/formats/spell-table.md). |
 | `steal_table` | `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`): `StealTable::from_scus` → `entry(id)` / `steal_item(id)`. What the Evil God Icon steals; the item id resolves through `item_names`. NOT in the PROT 867 record. See [`steal-table.md`](../../docs/formats/steal-table.md). |
 
@@ -218,6 +220,7 @@ asset field-pack / field-pack-scan
 asset effect-bundle / effect-bundle-scan
 asset battle-data-pack / battle-data-pack-scan
 asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
+asset item-tables <SCUS_942.54>           # dump item-effect + equipment tables (--equipment-only / --consumables-only)
 asset validate                            # cross-check detector coverage
 ```
 
