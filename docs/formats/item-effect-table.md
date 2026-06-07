@@ -101,6 +101,18 @@ a `SCUS_942.54` image at runtime (`t_addr -> file-offset` map, identical to the
 test pins the `(class, tier, flags)` bytes for a span of consumables against the
 real executable and cross-checks each against its on-disc description.
 
+## Engine consumption
+
+`legaia_engine_core::items::ItemCatalog::apply_effect_flags` installs three of
+the flag bits over the curated catalog from disc: the `0x02`/`0x04` usability
+gates (per item id) and the `0x20` all-party flag (`ItemCatalog::is_all_party`).
+The item-use session ([`legaia_engine_core::inventory_use::InventoryUseSession`])
+reads `is_all_party`: a flagged restorative item (Healing Bloom `0x7A`, Healing
+Fruit `0x7B`) skips target-select and fans its effect across every living ally
+in one use, consuming one copy. The disc-gated `item_effect_flags_disc` test
+pins the all-party flag for `0x7A`/`0x7B` (and its absence on the single-target
+heals) against the real executable.
+
 ## See also
 
 - [Item-name table](item-table.md) - the sibling name/price table this indexes through.

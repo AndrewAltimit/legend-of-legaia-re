@@ -216,17 +216,15 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
     let InventoryUseState::Done(_) = session.state else {
         return;
     };
-    // The session's events log includes the resolved Used { slot, .. } -
-    // engines that need the per-event detail can drain it separately.
-    // For the field-menu commit we just walk the events for a Used row
-    // and forward to the world via use_item, which also decrements stock.
-    for ev in &session.events {
-        if let crate::inventory_use::InventoryUseEvent::Used { slot, .. } = ev {
-            // Find the item id under the active item-cursor - same lookup
-            // the session ran when it built the outcome.
-            if let Some(entry) = session.current_item() {
-                world.use_item(entry.id, *slot);
-            }
+    // `used_item` + `used_slots` carry the consumed item and every slot the
+    // completed use applied to (one for a single-target item, every healed ally
+    // for an all-party item). Forward each to the world via use_item, which
+    // folds HP / MP / status / SP. (`current_item` is unavailable here - it
+    // returns `None` once the session reaches `Done`.) Stock is decremented
+    // once by the menu commit, not here.
+    if let Some(id) = session.used_item {
+        for &slot in &session.used_slots {
+            world.use_item(id, slot);
         }
     }
 }

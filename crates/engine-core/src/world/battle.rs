@@ -1081,7 +1081,7 @@ impl World {
     /// the command menu for the same actor.
     pub(super) fn tick_battle_item_menu(&mut self) {
         use crate::input::PadButton;
-        use crate::inventory_use::{InventoryUseEvent, InventoryUseInput, InventoryUseState};
+        use crate::inventory_use::{InventoryUseInput, InventoryUseState};
 
         let Some(mut menu) = self.battle_item_menu.take() else {
             return;
@@ -1106,16 +1106,20 @@ impl World {
         if let Some(ev) = ev {
             menu.input(ev);
         }
-        let used = menu.drain_events().into_iter().find_map(|e| match e {
-            InventoryUseEvent::Used { slot, .. } => Some(slot),
-            _ => None,
-        });
+        // Discard the event log; `used_slots` is the authoritative list of
+        // targets the completed use applied to (one for a single-target item,
+        // every healed ally for an all-party item).
+        let _ = menu.drain_events();
+        let used_slots = menu.used_slots.clone();
 
-        if let Some(target_slot) = used {
+        if !used_slots.is_empty() {
             if let Some(item_id) = item_before {
-                let outcome = self.use_item(item_id, target_slot);
+                // Apply to every affected slot, but consume only one copy.
+                for &target_slot in &used_slots {
+                    let outcome = self.use_item(item_id, target_slot);
+                    self.push_item_use_fx(target_slot, outcome);
+                }
                 self.consume_item(item_id);
-                self.push_item_use_fx(target_slot, outcome);
             }
             if self.battle_escaped {
                 // Escape item succeeded: leave the encounter now (no loot, no

@@ -45,6 +45,12 @@
 //!
 //! [`ItemEffect::apply`] returns an [`ItemOutcome`] enum that engines
 //! fold into their world / battle event stream. Pure data - no I/O.
+//!
+//! Target shape is orthogonal to the effect: the descriptor's `0x20`
+//! all-party flag is tracked separately ([`ItemCatalog::is_all_party`], set by
+//! [`ItemCatalog::apply_effect_flags`]). The item-use session fans a flagged
+//! restorative item out across every living ally rather than asking for a
+//! single target.
 
 use legaia_engine_vm::status_effects::StatusKind;
 
@@ -115,6 +121,13 @@ pub struct ItemEntry {
 #[derive(Debug, Default, Clone)]
 pub struct ItemCatalog {
     by_id: std::collections::HashMap<u8, ItemEntry>,
+    /// Item ids whose effect applies to the **whole party** (the item-effect
+    /// descriptor's `0x20` all-party flag, e.g. Healing Bloom / Healing Fruit).
+    /// Seeded for the vanilla party-heal items and refreshed authoritatively
+    /// from disc by [`ItemCatalog::apply_effect_flags`]. The item-use session
+    /// fans a flagged item out across every valid ally instead of asking for a
+    /// single target.
+    all_party: std::collections::HashSet<u8>,
 }
 
 impl ItemCatalog {
@@ -132,11 +145,11 @@ impl ItemCatalog {
     ///
     /// Only the consumables the current effect taxonomy models faithfully are
     /// included: single-target HP/MP restore, full restore, single + all status
-    /// cure, revive, and field escape. Items that need infra this engine doesn't
-    /// have yet are intentionally **omitted** (a held one just isn't offered)
-    /// rather than shown as a no-op:
-    /// - party-wide fixed-amount heals (Healing Bloom `0x7A`, Healing Fruit
-    ///   `0x7B`) need all-target application;
+    /// cure, revive, field escape, and the party-wide HP heals (Healing Bloom
+    /// `0x7A`, Healing Fruit `0x7B`), which fan out across the party via the
+    /// item-effect descriptor's all-party flag (see [`Self::is_all_party`]).
+    /// Items that need infra this engine doesn't have yet are intentionally
+    /// **omitted** (a held one just isn't offered) rather than shown as a no-op:
     /// - temporary battle stat buffs (Power/Shield/Speed/Wonder Elixir
     ///   `0x8B..=0x8E`, the *Water* line `0x82..=0x87`, Fury Boost `0x81`) need
     ///   a battle-buff taxonomy;
@@ -225,6 +238,29 @@ impl ItemCatalog {
             usable_in_battle: false,
             usable_in_field: true,
         });
+        // Party-wide HP restore ("Restores NHP to each character"). Each entry
+        // carries a single-target per-member [`ItemEffect::Heal`]; the all-party
+        // flag (below) fans the effect across every living ally. Disc tiers:
+        // Bloom = HealHpAllParty tier 0 (200), Fruit = tier 1 (800).
+        c.insert(ItemEntry {
+            id: 0x7A,
+            name: "Healing Bloom",
+            effect: ItemEffect::Heal { amount: 200 },
+            usable_in_battle: true,
+            usable_in_field: true,
+        });
+        c.insert(ItemEntry {
+            id: 0x7B,
+            name: "Healing Fruit",
+            effect: ItemEffect::Heal { amount: 800 },
+            usable_in_battle: true,
+            usable_in_field: true,
+        });
+        // Seed the all-party flag for the vanilla party-heal items so the
+        // item-use session fans them out even on disc-free builds;
+        // `apply_effect_flags` refreshes this from the real descriptor table.
+        c.all_party.insert(0x7A);
+        c.all_party.insert(0x7B);
         c
     }
 
@@ -243,13 +279,44 @@ impl ItemCatalog {
     /// on-disc consumable are left untouched (the curated amount/effect kind
     /// stays - this only corrects the usability gates).
     pub fn apply_effect_flags(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
-        for entry in self.by_id.values_mut() {
-            if let Some(eff) = table.effect(entry.id)
-                && eff.is_usable_consumable()
+        // Collect ids first to avoid borrowing `self.by_id` while mutating
+        // `self.all_party`.
+        let ids: Vec<u8> = self.by_id.keys().copied().collect();
+        for id in ids {
+            let Some(eff) = table.effect(id) else {
+                continue;
+            };
+            if eff.is_usable_consumable()
+                && let Some(entry) = self.by_id.get_mut(&id)
             {
                 entry.usable_in_field = eff.field_usable();
                 entry.usable_in_battle = eff.battle_usable();
             }
+            // The all-party flag is authoritative from disc for every item in
+            // the catalog (even non-usable rows keep a consistent flag).
+            if eff.all_party() {
+                self.all_party.insert(id);
+            } else {
+                self.all_party.remove(&id);
+            }
+        }
+    }
+
+    /// `true` if the item's effect applies to the whole party (the descriptor's
+    /// `0x20` all-party flag). The item-use session fans a flagged item out
+    /// across every valid ally instead of asking for a single target.
+    pub fn is_all_party(&self, id: u8) -> bool {
+        self.all_party.contains(&id)
+    }
+
+    /// Set or clear the all-party flag for an item id. Engines that source the
+    /// flag from somewhere other than [`Self::apply_effect_flags`] (and tests)
+    /// use this directly.
+    pub fn set_all_party(&mut self, id: u8, on: bool) {
+        if on {
+            self.all_party.insert(id);
+        } else {
+            self.all_party.remove(&id);
         }
     }
 
