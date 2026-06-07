@@ -114,11 +114,10 @@ than mis-decoded.
 
 ## What the older `extracted/XA/*.XA` files contain
 
-If the tree on disk has a populated `extracted/XA/` directory from a pre-fix extraction, those files are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. They should be deleted and re-extracted via `xa demux-disc-all` (or via the top-level `legaia-extract` once it integrates the new path).
+The `extracted/XA/*.XA` files copied by the disc-extract step are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. The listenable per-channel WAVs are produced by the demux step; `legaia-extract` runs it automatically and writes them to `extracted/XA_WAV/` (or run `xa demux-disc-all` standalone).
 
 ## What's still open
 
-- **Top-level extract integration.** `legaia-extract` doesn't yet call `xa demux-disc-all`. Cutscene audio works end-to-end via the standalone `xa` binary; the unified pipeline still emits the legacy Form-1 bytes.
 - **8-bit ADPCM mode — now decoded** (see "Sound-group decode (8-bit)" above). The NA corpus is **entirely 4-bit, 37.8 kHz** (`demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across 34 `*.XA` files), so nothing on the NA disc exercises it; the path is covered by synthetic unit tests and is wired through the demux/CLI/cutscene consumers (which map each channel's reported width). A JP/EU build that uses 8-bit would decode without code changes. **Not** yet verified bit-exact against a real 8-bit reference (no 8-bit source in the NA corpus).
 - **Per-cutscene file-no / ch-no map.** `demux-disc` emits one WAV per channel keyed by `(file_no, ch_no)`. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is [not yet captured](../tooling/overlay-capture.md). Until that's reversed, the WAV → cutscene assignment is manual.
 
