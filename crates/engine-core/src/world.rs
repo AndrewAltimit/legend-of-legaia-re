@@ -733,6 +733,13 @@ pub struct World {
     /// walkable) at field entry via [`World::reset_field_collision_grid`].
     /// Empty until the first field scene is entered.
     pub field_collision_grid: Vec<u8>,
+    /// The 16-entry floor-height LUT the collision grid's low nibble indexes
+    /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
+    /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
+    /// [`crate::scene::SceneAssets::field_floor_height_lut`]; consumed by
+    /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
+    /// zero until a field scene supplies it.
+    pub field_floor_height_lut: [i16; 16],
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -1821,6 +1828,7 @@ impl World {
             map_origin_xz: (0, 0),
             player_actor_slot: None,
             field_collision_grid: Vec::new(),
+            field_floor_height_lut: [0i16; 16],
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -5645,6 +5653,69 @@ impl World {
     ///
     /// Out-of-range tiles are skipped. The low nibble (floor-elevation
     /// tier) is preserved.
+    /// Sample the field floor height at a world `(x, z)`, the port of
+    /// `FUN_80019278`'s height branch (`ghidra/scripts/funcs/80019278.txt`).
+    ///
+    /// The collision grid's **low nibble** is a floor-elevation tier; this
+    /// resolves it through the per-scene [`Self::field_floor_height_lut`] and
+    /// **bilinearly interpolates** the `2x2` tile block around the position. The
+    /// tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
+    /// `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match, the
+    /// LUT value is returned directly (the retail fast path); otherwise the four
+    /// corner heights are weighted `top*(0x80-wz) + bottom*wz` (each edge
+    /// interpolated by `wx`) and divided by `0x4000` (`>> 14`, with the retail
+    /// `+0x3FFF` round-toward-zero on a negative accumulator).
+    ///
+    /// This is the town-field floor sampler: the retail function's `+0x8000`
+    /// attribute gating — the world-map continent `0x1000` on-grid flag side
+    /// effect and the `0x800` tile-board special branch (`func_0x801d5630`) — is
+    /// **not** reproduced here (the engine doesn't keep that attribute grid).
+    /// Returns `0` when the grid / LUT isn't loaded or the tile is out of range.
+    ///
+    /// PORT: FUN_80019278 (floor-height branch; the `+0x8000` continent /
+    /// tile-board branches stay with the field/world-map systems).
+    pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
+        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+            return 0;
+        }
+        let tile_x = world_x >> 7;
+        let tile_z = world_z >> 7;
+        // The 2x2 block needs (tile_x+1, tile_z+1) in range.
+        if tile_x < 0
+            || tile_z < 0
+            || tile_x as usize + 1 >= FIELD_GRID_STRIDE
+            || tile_z as usize + 1 >= FIELD_GRID_STRIDE
+        {
+            return 0;
+        }
+        let base = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
+        let g = &self.field_collision_grid;
+        let lut = &self.field_floor_height_lut;
+        // Low nibble = elevation tier; LUT-index it for each of the 4 corners.
+        let c00 = (g[base] & 0x0F) as usize;
+        let c01 = (g[base + 1] & 0x0F) as usize;
+        let c10 = (g[base + FIELD_GRID_STRIDE] & 0x0F) as usize;
+        let c11 = (g[base + FIELD_GRID_STRIDE + 1] & 0x0F) as usize;
+        if c00 == c01 && c00 == c10 && c00 == c11 {
+            return lut[c00] as i32;
+        }
+        let wx = world_x & 0x7F;
+        let wz = world_z & 0x7F;
+        let (l00, l01, l10, l11) = (
+            lut[c00] as i32,
+            lut[c01] as i32,
+            lut[c10] as i32,
+            lut[c11] as i32,
+        );
+        let acc =
+            (l01 * wx + l00 * (0x80 - wx)) * (0x80 - wz) + l10 * (0x80 - wx) * wz + l11 * wx * wz;
+        if acc < 0 {
+            (acc + 0x3FFF) >> 14
+        } else {
+            acc >> 14
+        }
+    }
+
     fn paint_field_collision(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             self.reset_field_collision_grid();

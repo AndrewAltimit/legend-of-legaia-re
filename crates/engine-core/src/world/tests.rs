@@ -218,6 +218,57 @@ fn field_grid_set_mask_selects_quadrant() {
 }
 
 #[test]
+fn sample_field_floor_height_unloaded_or_out_of_range_returns_zero() {
+    let world = World::new();
+    // No grid loaded -> 0.
+    assert_eq!(world.sample_field_floor_height(100, 100), 0);
+
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    // Negative / out-of-range tiles -> 0 (guarded).
+    assert_eq!(world.sample_field_floor_height(-1, 0), 0);
+    assert_eq!(world.sample_field_floor_height(0, -1), 0);
+    // World x = 0x7F * 128 puts tile_x at 0x7F, whose +1 corner is out of range.
+    assert_eq!(world.sample_field_floor_height(0x7F * 128, 0), 0);
+}
+
+#[test]
+fn sample_field_floor_height_flat_returns_lut_value() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.field_floor_height_lut[5] = -50;
+    // Set the 2x2 block around tile (0,0) all to elevation tier 5.
+    for &i in &[0usize, 1, STRIDE, STRIDE + 1] {
+        world.field_collision_grid[i] = 0x05; // low nibble = tier 5
+    }
+    // Any sub-tile position in tile (0,0): all four corners match -> LUT[5].
+    assert_eq!(world.sample_field_floor_height(10, 10), -50);
+    assert_eq!(world.sample_field_floor_height(64, 100), -50);
+}
+
+#[test]
+fn sample_field_floor_height_bilinear_interpolates() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.field_floor_height_lut[1] = 0;
+    world.field_floor_height_lut[2] = 256;
+    // Corners of tile (0,0): c00=1(0), c01=2(256), c10=1(0), c11=1(0).
+    world.field_collision_grid[0] = 0x01;
+    world.field_collision_grid[1] = 0x02;
+    world.field_collision_grid[STRIDE] = 0x01;
+    world.field_collision_grid[STRIDE + 1] = 0x01;
+    // Top edge (wz=0): height interpolates linearly from c00 (0) to c01 (256)
+    // across the sub-tile, i.e. 2 * wx.
+    assert_eq!(world.sample_field_floor_height(0, 0), 0); // wx=0
+    assert_eq!(world.sample_field_floor_height(64, 0), 128); // wx=64 -> halfway
+    assert_eq!(world.sample_field_floor_height(127, 0), 254); // wx=127
+    // Pushing wz down toward the (all-zero) bottom row pulls the value toward 0.
+    assert!(world.sample_field_floor_height(64, 64) < 128);
+}
+
+#[test]
 fn field_vm_nibble7_paints_collision_grid() {
     let mut world = World::new();
     world.mode = SceneMode::Field;

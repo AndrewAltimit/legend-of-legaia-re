@@ -1593,6 +1593,19 @@ impl SceneHost {
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
         }
+        // The 16-entry floor-height LUT (MAN header, negated `s16` tiers) the
+        // collision grid's low nibble indexes - resident so the floor-height
+        // sampler (`World::sample_field_floor_height`, port of `FUN_80019278`)
+        // can resolve terrain elevation from the grid.
+        match self
+            .scene
+            .as_ref()
+            .map(|s| s.field_floor_height_lut(&self.index))
+        {
+            Some(Ok(Some(lut))) => self.world.field_floor_height_lut = lut,
+            Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
+            _ => {}
+        }
         // Prefer the real scene-entry system script (ctx 0xFB) over event-
         // script record 0. Record 0 is a per-scene trigger/dispatch table,
         // not linear bytecode, so the field VM halts at its pc 0 and the
