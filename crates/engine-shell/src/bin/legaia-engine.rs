@@ -7682,8 +7682,13 @@ impl ApplicationHandler for PlayWindowApp {
                 // `F`: seat a synthetic *Tail Fire* effect carrying its `etmd`
                 // 3D model (global TMD pool index 4, textured by the resident
                 // `etim` texels) at the first active actor, exercising the
-                // model render path. Like `E`, a dev hand-spawn - the runtime
-                // effect-id -> etmd-model selection is not yet decoded.
+                // model render path with a fixed model index. The data-driven
+                // effect-id -> etmd-model selection is decoded (move-power
+                // record `+0x12`/`+0x16` effect-id lists -> the `0x801F6324`
+                // prototype table -> record `model_sel` -> `global_tmd_pool
+                // [model_sel + 3]`; `legaia_asset::move_power::EffectListEntry`
+                // + `World::spawn_move_fx`, exercised by the `H` key); `F` is
+                // just the simpler fixed-model dev hand-spawn.
                 if matches!(code, KeyCode::KeyF)
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()

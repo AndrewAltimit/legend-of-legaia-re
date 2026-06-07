@@ -4,14 +4,20 @@
 //! `SCUS_942.54` item table) to typed [`ItemEffect`] descriptions the battle
 //! and field menus consume.
 //!
-//! The per-item *effect-value* table the retail engine reads at use time is
-//! **not yet pinned**. (An earlier note here placed it at `_DAT_8006F198` via
-//! the "action validator" `FUN_8003fb10`; that is a misattribution -
-//! `_DAT_8006F198`'s only consumers are the SFX-cue functions `FUN_800250D4` /
-//! `FUN_80016B6C`, i.e. it is the [SFX descriptor table](../../docs/formats/sfx-table.md),
-//! and `FUN_8003fb10` reads battle-actor HP fields, not an item table.) Until
-//! that table is found, the amounts here are the curated walkthrough values
-//! (`data/gamedata/items.toml`).
+//! The retail engine's per-item *effect class / targeting / usability* is the
+//! on-disc [item-effect descriptor table](../../docs/formats/item-effect-table.md)
+//! (`DAT_800752C0`, parser [`legaia_asset::item_effect`]): keyed by item id ->
+//! subtype -> `[class, tier, flags]`. [`ItemCatalog::apply_effect_flags`]
+//! installs its field/battle usability gates over the curated entries (which is
+//! how cure/revive items end up correctly battle-only). What the table does NOT
+//! carry is the literal restore *amount*: the `(class, tier) -> 200/800/...`
+//! mapping is a `switch` in the overlay-resident apply handler, so the numeric
+//! amounts here stay the curated walkthrough values (`data/gamedata/items.toml`).
+//!
+//! (An earlier note placed the effect table at `_DAT_8006F198` via the "action
+//! validator" `FUN_8003fb10`; that was a misattribution - `_DAT_8006F198` is the
+//! [SFX descriptor table](../../docs/formats/sfx-table.md), and `FUN_8003fb10`
+//! reads battle-actor HP fields, not an item table.)
 //!
 //! ## Format
 //!
@@ -149,10 +155,13 @@ impl ItemCatalog {
             usable_in_battle: true,
             usable_in_field: true,
         };
-        // Single-target HP restore.
+        // Single-target HP restore. Healing Shroom (0xA3) shares the item
+        // table's subtype 0 with Healing Leaf (0x77) and its on-disc
+        // description reads "Recover 200HP. Ally." - so it heals 200, not 60
+        // (the curated gamedata conflated its 60-gold price with the amount).
         c.insert(heal(0x77, "Healing Leaf", 200));
         c.insert(heal(0x78, "Healing Flower", 800));
-        c.insert(heal(0xA3, "Healing Shroom", 60));
+        c.insert(heal(0xA3, "Healing Shroom", 200));
         // Full HP restore ("Restores maximum HP").
         c.insert(ItemEntry {
             id: 0x79,
@@ -221,6 +230,27 @@ impl ItemCatalog {
 
     pub fn insert(&mut self, entry: ItemEntry) {
         self.by_id.insert(entry.id, entry);
+    }
+
+    /// Override each entry's field/battle usability from the real on-disc
+    /// item-effect descriptor table ([`legaia_asset::item_effect`],
+    /// `DAT_800752C0`). The on-disc flags are authoritative: e.g. the cure /
+    /// revive items (Antidote `0x7E`, Medicine `0x7F`, Phoenix `0x80`) carry
+    /// the battle-only flag byte `0x84` - they are usable in battle but NOT
+    /// from the field menu, even though hand-curated data marked them
+    /// field-usable. Healers carry `0x86` (both menus); the field-utility items
+    /// carry `0x02` (field only). Entries whose id doesn't resolve to a usable
+    /// on-disc consumable are left untouched (the curated amount/effect kind
+    /// stays - this only corrects the usability gates).
+    pub fn apply_effect_flags(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        for entry in self.by_id.values_mut() {
+            if let Some(eff) = table.effect(entry.id)
+                && eff.is_usable_consumable()
+            {
+                entry.usable_in_field = eff.field_usable();
+                entry.usable_in_battle = eff.battle_usable();
+            }
+        }
     }
 
     pub fn get(&self, id: u8) -> Option<&ItemEntry> {

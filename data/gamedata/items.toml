@@ -25,7 +25,10 @@ key = "healing_shroom"
 name = "Healing Shroom"
 category = "consumable"
 price = 60
-effect = "Restores 60 HP."
+# Disc-corrected: the SCUS item table gives Healing Shroom the same effect
+# subtype (0) as the Healing Leaf, and its on-disc description reads "Recover
+# 200HP. Ally." The earlier "60" conflated the 60-gold price with the amount.
+effect = "Restores 200 HP."
 
 [[item]]
 key = "healing_bloom"

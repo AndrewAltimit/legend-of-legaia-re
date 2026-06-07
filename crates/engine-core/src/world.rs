@@ -1195,6 +1195,12 @@ pub struct World {
     /// the field VM doesn't trigger item effects in non-battle scenes.
     pub item_catalog: crate::items::ItemCatalog,
 
+    /// Real on-disc item-effect descriptor table ([`legaia_asset::item_effect`],
+    /// `DAT_800752C0`), if the boot source's `SCUS_942.54` was readable. When
+    /// present, [`Self::set_item_catalog`] applies its field/battle usability
+    /// flags onto the installed catalog so item-menu gating matches retail.
+    pub item_effects: Option<legaia_asset::item_effect::ItemEffectTable>,
+
     /// Spell catalog used by the player-driven battle Magic submenu to resolve
     /// spell ids → names / MP cost / effect. Populated at battle init from
     /// [`crate::spells::SpellCatalog::vanilla`] (or a custom catalog via
@@ -1956,6 +1962,7 @@ impl World {
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
+            item_effects: None,
             spell_catalog: crate::spells::SpellCatalog::default(),
             art_records: std::collections::HashMap::new(),
             battle_buffs: Vec::new(),
@@ -3031,8 +3038,24 @@ impl World {
     /// Set the item catalog the battle / field menu consults for item
     /// actions. Replaces any prior catalog. Engines populate this at
     /// boot time (typically from the vanilla catalog).
+    ///
+    /// When a real on-disc item-effect table has been installed via
+    /// [`Self::set_item_effects`], its field/battle usability flags are applied
+    /// onto the new catalog so the item-menu gating matches retail.
     pub fn set_item_catalog(&mut self, catalog: crate::items::ItemCatalog) {
+        let mut catalog = catalog;
+        if let Some(table) = &self.item_effects {
+            catalog.apply_effect_flags(table);
+        }
         self.item_catalog = catalog;
+    }
+
+    /// Install the real on-disc item-effect descriptor table. Subsequent
+    /// [`Self::set_item_catalog`] calls apply its usability flags; this also
+    /// re-applies them to the catalog already installed.
+    pub fn set_item_effects(&mut self, table: legaia_asset::item_effect::ItemEffectTable) {
+        self.item_catalog.apply_effect_flags(&table);
+        self.item_effects = Some(table);
     }
 
     /// Install the spell catalog used by the player-driven battle Magic

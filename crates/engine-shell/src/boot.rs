@@ -100,6 +100,11 @@ pub struct BootSession {
     /// ×5; the starting-item randomizer rewrites it. Used by
     /// [`BootSession::begin_new_game`] to seed the opening bag faithfully.
     pub starting_inventory: Option<legaia_asset::new_game::StartingInventory>,
+    /// Disc-accurate equipment modifier table keyed by real item ids, parsed
+    /// from the boot source's `SCUS_942.54` ([`legaia_asset::equip_stats`]).
+    /// Preferred over the fabricated-id vanilla catalog when installing the
+    /// battle-stat equipment table; `None` on disc-free builds.
+    pub equip_modifier_table: Option<legaia_engine_core::battle_stats::EquipmentTable>,
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -232,6 +237,54 @@ fn read_shop_item_data(
     legaia_engine_core::shop_catalog::ShopItemData::from_scus(&scus)
 }
 
+/// Read + parse the static item-effect descriptor table (`DAT_800752C0`, see
+/// `item-effect-table.md`) from a boot source's `SCUS_942.54`. Returns `None`
+/// when the executable isn't reachable or the table doesn't parse, so a boot
+/// never fails on missing item-effect data - the engine then keeps the curated
+/// usability flags on its item catalog.
+fn read_retail_item_effects(
+    source: &SceneSource<'_>,
+) -> Option<legaia_asset::item_effect::ItemEffectTable> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_asset::item_effect::ItemEffectTable::from_scus(&scus)
+}
+
+/// Read the static equipment stat-bonus table (`DAT_80074F68`, see
+/// `equipment-table.md`) from a boot source's `SCUS_942.54` and build a
+/// disc-accurate equipment modifier table keyed by real item ids. Returns
+/// `None` when the executable isn't reachable or the table doesn't parse, so a
+/// boot never fails on missing equipment data - the engine then falls back to
+/// the (fabricated-id) vanilla equipment catalog.
+fn read_retail_equip_modifiers(
+    source: &SceneSource<'_>,
+) -> Option<legaia_engine_core::battle_stats::EquipmentTable> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus)?;
+    Some(legaia_engine_core::equipment::equip_modifier_table_from_disc(&table))
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -253,6 +306,7 @@ impl BootSession {
         // (best-effort; never fails the boot).
         let starting_party = read_starting_party(&source);
         let starting_inventory = read_starting_inventory(&source);
+        let equip_modifier_table = read_retail_equip_modifiers(&source);
         let mut host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
@@ -287,6 +341,14 @@ impl BootSession {
         // across New Game; absent on disc-free builds (stock stays host-supplied).
         if let Some(shop_data) = read_shop_item_data(&source) {
             host.world.item_shop_data = Some(shop_data);
+        }
+
+        // Install the real item-effect descriptor table so the item catalog's
+        // field/battle usability gating matches retail (e.g. cure/revive items
+        // are battle-only). Best-effort: absent on disc-free builds, where the
+        // catalog keeps its curated usability flags.
+        if let Some(effects) = read_retail_item_effects(&source) {
+            host.world.set_item_effects(effects);
         }
 
         host.load_scene(&cfg.scene)
@@ -332,6 +394,7 @@ impl BootSession {
             frames: 0,
             starting_party,
             starting_inventory,
+            equip_modifier_table,
         })
     }
 
@@ -430,10 +493,11 @@ impl BootSession {
         if opts.live_loop || opts.player_battle {
             world.live_gameplay_loop = true;
             // Equipped-gear bonuses fold onto party attack/defense at battle
-            // entry (no-op until a real roster with non-zero stats is loaded).
-            world.set_equipment_table(
-                legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table(),
-            );
+            // entry. Prefer the disc-accurate real-id table; fall back to the
+            // fabricated-id vanilla catalog on disc-free builds.
+            world.set_equipment_table(self.equip_modifier_table.clone().unwrap_or_else(|| {
+                legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+            }));
         }
         world.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
@@ -483,11 +547,12 @@ impl BootSession {
             }
         }
 
+        let equip_table = self.equip_modifier_table.clone().unwrap_or_else(|| {
+            legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+        });
         let world = &mut self.host.world;
         world.live_gameplay_loop = true;
-        world.set_equipment_table(
-            legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table(),
-        );
+        world.set_equipment_table(equip_table);
         world.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
             world.battle_player_driven = true;
