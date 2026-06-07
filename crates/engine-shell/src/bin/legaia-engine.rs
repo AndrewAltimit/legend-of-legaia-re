@@ -8031,10 +8031,26 @@ impl ApplicationHandler for PlayWindowApp {
                     // Route this frame's pad into the engine before the
                     // tick so World::tick's mode dispatch (world-map
                     // controller, field-VM dialog-advance poll) sees real
-                    // input. Edge detection lives in World.input.
-                    self.session.host.world.set_pad(self.pad);
+                    // input. Edge detection lives in World.input. While a
+                    // menu-runtime overlay (shop / inn) is up the pad drives
+                    // the menu, not the field, so feed the field a neutral pad
+                    // (the player must not walk while shopping).
+                    let field_pad = if self.menu_runtime.is_open() {
+                        0
+                    } else {
+                        self.pad
+                    };
+                    self.session.host.world.set_pad(field_pad);
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
+                    }
+                    // A field-VM shop op (`0x49` sub-0 inline shop record) opened
+                    // a priced gold shop this tick: hand the player into its buy
+                    // list. The field VM is suspended (op-0x49 Armed) until the
+                    // player leaves, at which point `finish_field_shop` (below)
+                    // lets it resume past the merchant op.
+                    if let Some(shop) = self.session.host.world.take_pending_field_shop() {
+                        self.menu_runtime.open_shop_buy(shop);
                     }
                     // Production cast-band trigger: a player Seru-magic cast
                     // (spell id 0x81..=0x8b) requests a summon spawn. The
@@ -8076,6 +8092,12 @@ impl ApplicationHandler for PlayWindowApp {
                             right: p & 0x0020 != 0,
                         };
                         self.menu_runtime.tick(&mut self.session.host.world, input);
+                    }
+                    // A field-VM-triggered shop the player has now closed: tell
+                    // the world so the suspended op-0x49 resumes (Armed -> Done)
+                    // and the field VM advances past the merchant op next tick.
+                    if self.session.host.world.field_shop_open && !self.menu_runtime.is_open() {
+                        self.session.host.world.finish_field_shop();
                     }
                     self.prev_pad = self.pad;
                     // Record-mode: advance the log's frame counter so

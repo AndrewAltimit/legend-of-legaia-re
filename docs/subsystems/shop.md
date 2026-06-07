@@ -131,6 +131,23 @@ dialogue-picker jump tables a linear walk desyncs on) locates these records;
 for the active scene, and `World::scene_shop_session(idx)` hands a host a
 ready-to-open [`ShopSession`].
 
+### Live trigger (op `0x49` sub-0)
+
+Opening a merchant in-game is the field VM's own op `0x49` (`STATE_RESUME`).
+On the Idle->arm edge the VM hands the host the instruction bytes
+(`FieldHost::op49_menu_request`); `World::try_arm_field_shop` runs the same
+sellable-mask-gated record validation directly on those bytes, and on a match
+stages a priced `ShopSession` on `World::pending_field_shop` and arms the
+op-0x49 tristate (so the script stays suspended exactly the way the name-entry
+overlay suspends it). The host drains `World::take_pending_field_shop`, drives
+the buy/sell UI (the engine's `MenuRuntime` shop screens), and calls
+`World::finish_field_shop` when the player leaves — flipping the tristate
+Armed -> Done so the field VM resumes past the merchant op. Non-shop op-0x49
+sub-0 payloads (inn / save prompts carry MES text, not a priced item list) fail
+the validation and arm nothing; with no `item_shop_data` installed (disc-free)
+the path is inert. `play-window` wires this end to end (it opens the menu-runtime
+shop on the pending signal and finishes on close).
+
 Buy **prices** come from the static `SCUS_942.54` item table — the `u16` at item
 record `+2` (`legaia_asset::item_names::item_price`, base `TABLE_BASE_VA`), the
 same field the gold-debiting buy handler `FUN_801db380` reads (`_DAT_8008459C -=

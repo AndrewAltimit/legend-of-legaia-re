@@ -110,6 +110,17 @@ impl MenuRuntime {
         self.shop_session = Some(session);
     }
 
+    /// Open a shop directly into its **buy list** - the field-VM op-`0x49`
+    /// merchant trigger path (distinct from the pause-menu [`Self::open`]).
+    /// Installs the session and enters `ShopBuy` at the top of the list, so a
+    /// host that drained [`crate::world::World::take_pending_field_shop`] can
+    /// hand the player straight into the store.
+    pub fn open_shop_buy(&mut self, session: ShopSession) {
+        self.shop_session = Some(session);
+        self.ctx.state = MenuState::ShopBuy.as_byte();
+        self.ctx.cursor = 0;
+    }
+
     /// Install an inn session and prepare for `InnConfirm` entry. `cost` is
     /// the gold required for a rest at this inn.
     pub fn open_inn(&mut self, cost: u32) {

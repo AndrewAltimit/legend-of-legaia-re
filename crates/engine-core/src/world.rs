@@ -1315,6 +1315,23 @@ pub struct World {
     /// picks from these instead of a hand-authored stock list.
     pub scene_shops: Vec<crate::shop_catalog::SceneShop>,
 
+    /// A priced shop the field VM has just opened (op `0x49` sub-0 inline shop
+    /// record - see [`Self::try_arm_field_shop`]). The host drains it with
+    /// [`Self::take_pending_field_shop`] to drive the buy/sell UI, then calls
+    /// [`Self::finish_field_shop`] when the player leaves so the field VM
+    /// resumes past the op. `None` between shop opens.
+    pub pending_field_shop: Option<crate::shop::ShopSession>,
+
+    /// `true` from the frame a field-VM shop op (`0x49` sub-0) is recognised
+    /// until the op's resume runs - it gates the op-0x49 tristate so the VM
+    /// stays suspended while the shop is up. Distinguishes a shop arm from the
+    /// name-entry arm and a plain script yield.
+    pub field_shop_armed: bool,
+
+    /// `true` while the opened shop UI is still up; the host clears it via
+    /// [`Self::finish_field_shop`] so the op-0x49 tristate flips Armed -> Done.
+    pub field_shop_open: bool,
+
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`World::set_equipment_table`]
     /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
@@ -1962,6 +1979,9 @@ impl World {
             element_affinity: None,
             item_shop_data: None,
             scene_shops: Vec::new(),
+            pending_field_shop: None,
+            field_shop_armed: false,
+            field_shop_open: false,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
@@ -3711,6 +3731,61 @@ impl World {
     pub fn scene_shop_session(&self, idx: usize) -> Option<crate::shop::ShopSession> {
         let shop = self.scene_shops.get(idx)?;
         Some(crate::shop::ShopSession::new(shop.inventory.clone()))
+    }
+
+    /// Recognise + open a gold shop from a field-VM op-`0x49` sub-0 instruction
+    /// (`instr` = the opcode byte onward: `[0x49][0x00][len][...][count][ids][name]`).
+    ///
+    /// The same strict, sellable-mask-gated record validation the shop catalog
+    /// uses ([`legaia_asset::shop_stock::parse_record`]) rejects every non-shop
+    /// op-0x49 sub-0 (inn / save prompts carry MES text, not a priced item
+    /// list), so this only fires on a real merchant. Gated on
+    /// [`Self::item_shop_data`] being installed - without prices there's no
+    /// sellable mask (so a disc-free build can't false-positive) and no shop to
+    /// price anyway. On a match it stages a priced [`crate::shop::ShopSession`]
+    /// on [`Self::pending_field_shop`] and arms the op-0x49 gate; a no-op if a
+    /// shop is already armed (single-open) or the record doesn't validate.
+    ///
+    /// Returns `true` when a shop was armed.
+    pub fn try_arm_field_shop(&mut self, instr: &[u8]) -> bool {
+        if self.field_shop_armed {
+            return false;
+        }
+        let Some(data) = self.item_shop_data.as_ref() else {
+            return false;
+        };
+        let mask = data.sellable_mask();
+        let Some(rec) = legaia_asset::shop_stock::parse_record(instr, 0, Some(&mask)) else {
+            return false;
+        };
+        let items = rec
+            .id_offsets
+            .iter()
+            .filter_map(|&o| instr.get(o).copied())
+            .map(|id| crate::shop::ShopItem {
+                item_id: id,
+                price: data.price(id) as u32,
+            })
+            .collect();
+        let inv = crate::shop::ShopInventory::new(0, items);
+        self.pending_field_shop = Some(crate::shop::ShopSession::new(inv));
+        self.field_shop_armed = true;
+        self.field_shop_open = true;
+        true
+    }
+
+    /// Drain the shop the field VM just opened (see [`Self::try_arm_field_shop`])
+    /// so the host can drive its buy/sell UI. Returns `None` if no shop is
+    /// pending. The op-0x49 gate stays armed until [`Self::finish_field_shop`].
+    pub fn take_pending_field_shop(&mut self) -> Option<crate::shop::ShopSession> {
+        self.pending_field_shop.take()
+    }
+
+    /// Mark the open field shop closed: the op-0x49 tristate flips Armed ->
+    /// Done so the field VM resumes past the merchant op on its next step. The
+    /// arm itself is cleared by the VM's resume (`op49_clear`).
+    pub fn finish_field_shop(&mut self) {
+        self.field_shop_open = false;
     }
 
     /// Record one use of `art_id` by `char_id` (roster index).

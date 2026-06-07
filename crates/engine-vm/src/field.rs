@@ -509,6 +509,18 @@ pub trait FieldHost {
     /// suspending the script. Default no-op.
     fn op49_invoke_setup(&mut self) {}
 
+    /// Op 0x49 **menu-request** edge (Idle->arm), handed the instruction bytes
+    /// from the opcode onward (`[0x49][sub_op][len][...][payload]`). The op
+    /// `0x49` (`STATE_RESUME`) is how a field script opens a menu overlay by
+    /// driving the request register `_DAT_8007B450`; for `sub_op == 0` the
+    /// payload can be an inline **shop** record (`[count][item_ids][name]`).
+    /// Hosts inspect `instr` to recognise + open the right menu (a gold shop,
+    /// say) before the op suspends. Default no-op (the op still arms + halts).
+    /// Called once on the Idle->arm edge, before [`Self::op49_invoke_setup`].
+    fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
+        let _ = (sub_op, instr);
+    }
+
     /// Op 0x34 sub-3 (3D model anim trigger). The original calls
     /// `func_0x800252ec(arg + 1, ctx + 0x14, ctx + 0x24)` where
     /// `arg = pbVar47[1]`. The host owns the actual animator; we pass the

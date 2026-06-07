@@ -51,6 +51,12 @@ impl ShopItemData {
         Some(Self { prices })
     }
 
+    /// Build directly from a 256-entry price table. Mainly for tests and hosts
+    /// that source prices another way; [`Self::from_scus`] is the disc path.
+    pub fn from_prices(prices: [u16; 256]) -> Self {
+        Self { prices }
+    }
+
     /// Buy price in gold for `id` (`0` = not for sale).
     pub fn price(&self, id: u8) -> u16 {
         self.prices[id as usize]

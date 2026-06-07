@@ -101,7 +101,11 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   (the sellable mask), and `shop_catalog::scene_shops` decodes a
   scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
   a priced `ShopInventory`. `SceneHost::enter_field_scene` parks them on
-  `World::scene_shops`; `World::scene_shop_session(idx)` opens one.
+  `World::scene_shops`; `World::scene_shop_session(idx)` opens one. The **live
+  trigger** is the field VM's op `0x49` sub-0: `World::try_arm_field_shop`
+  recognises an inline shop record on the op's bytes and stages it on
+  `World::pending_field_shop` (Armed -> Done op-0x49 gating), so a host drains
+  `take_pending_field_shop` -> drives the buy UI -> `finish_field_shop`.
 - `battle_round` - per-round orchestrator. `BattleRound::begin` resets
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,

@@ -6830,3 +6830,112 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
     // An out-of-range / unknown monster id is also None.
     assert_eq!(World::default().apply_steal(999, &table), None);
 }
+
+// --- Live gold-shop trigger via field-VM op-0x49 (shop_catalog + try_arm_field_shop) ---
+
+/// Build a field script that opens a 2-item shop: op `0x49` sub-0, length 0,
+/// `[count=2][0x22][0x34]`, name `"Shop\0"`.
+#[cfg(test)]
+fn shop_op49_script() -> Vec<u8> {
+    let mut code = vec![0x49, 0x00, 0x00, 0x02, 0x22, 0x34];
+    code.extend_from_slice(b"Shop\0");
+    code
+}
+
+#[test]
+fn field_vm_op49_opens_a_gold_shop_then_resumes() {
+    use vm::field::{FieldHost, Op49State};
+    let mut world = World::new();
+    // Priced item data: 0x22 = 50g, 0x34 = 120g (both sellable).
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    prices[0x34] = 120;
+    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+
+    let code = shop_op49_script();
+    let mut ctx = FieldCtx::default();
+    let pc = 0usize;
+
+    // Frame 1: Idle -> the host recognises the inline shop, arms it, VM halts.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Idle);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(
+            matches!(r, FieldStepResult::Halt { .. }),
+            "op-0x49 suspends the script while the shop is up"
+        );
+    }
+    assert!(
+        world.field_shop_armed && world.field_shop_open,
+        "shop armed"
+    );
+    // The opened shop carries the priced inline stock.
+    let sess = world
+        .take_pending_field_shop()
+        .expect("the field VM opened a shop");
+    let items: Vec<(u8, u32)> = sess
+        .inventory
+        .items
+        .iter()
+        .map(|i| (i.item_id, i.price))
+        .collect();
+    assert_eq!(items, vec![(0x22, 50), (0x34, 120)]);
+
+    // Frame 2: shop still up -> Armed, VM stays suspended at the same pc.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Armed);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(matches!(r, FieldStepResult::Halt { .. }));
+    }
+
+    // Player closes the shop -> Done; the VM advances past the merchant op.
+    world.finish_field_shop();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Done);
+        match vm::field::step(&mut host, &mut ctx, &code, pc) {
+            FieldStepResult::Advance { next_pc } => {
+                assert!(next_pc > pc, "advanced past the shop record")
+            }
+            other => panic!("expected Advance, got {other:?}"),
+        }
+    }
+    assert!(
+        !world.field_shop_armed,
+        "the arm clears so a later op-0x49 can open the next merchant"
+    );
+}
+
+#[test]
+fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
+    let mut world = World::new();
+    // 0x22 priced, 0x34 left unpriced (0) -> the record fails the sellable mask.
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    let code = shop_op49_script();
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    }
+    assert!(!world.field_shop_armed, "an unpriced id is not a gold shop");
+    assert!(world.take_pending_field_shop().is_none());
+}
+
+#[test]
+fn field_vm_op49_without_item_data_never_opens_a_shop() {
+    // Disc-free build: no prices installed -> no sellable mask, so a stray
+    // op-0x49 sub-0 can never be mistaken for a shop (and there'd be no prices).
+    let mut world = World::new();
+    let code = shop_op49_script();
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    }
+    assert!(!world.field_shop_armed);
+    assert!(world.take_pending_field_shop().is_none());
+}
