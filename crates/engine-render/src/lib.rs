@@ -5624,7 +5624,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let lambert = max(dot(n, l), 0.0);
     // Bias so unlit areas aren't pitch black (PSX hardware doesn't really
     // do per-face lighting; we just want some shape readable).
-    let shade = 0.45 + 0.55 * lambert;
+    // In PSX-faithful mode the engine's synthetic directional Lambert is
+    // disabled: retail bakes lighting into the GTE-shaded vertex colours /
+    // texels rather than re-lighting per frame from a made-up light dir, so
+    // faithful mode shows the source data unlit. Default keeps the readable
+    // ambient-biased shade.
+    let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
     let texel = textureSample(t_color, s_color, in.uv);
     let rgb = psx_dither(texel.rgb * shade, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, texel.a);
@@ -5809,7 +5814,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     let l = -normalize(u.light_dir.xyz);
     let lambert = max(dot(n, l), 0.0);
-    let shade = 0.45 + 0.55 * lambert;
+    // In PSX-faithful mode the engine's synthetic directional Lambert is
+    // disabled: retail bakes lighting into the GTE-shaded vertex colours /
+    // texels rather than re-lighting per frame from a made-up light dir, so
+    // faithful mode shows the source data unlit. Default keeps the readable
+    // ambient-biased shade.
+    let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
     let rgb = psx_dither(color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
@@ -5851,7 +5861,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(cross(dx, dy));
     let l = -normalize(u.light_dir.xyz);
     let lambert = max(dot(n, l), 0.0);
-    let shade = 0.45 + 0.55 * lambert;
+    // In PSX-faithful mode the engine's synthetic directional Lambert is
+    // disabled: retail bakes lighting into the GTE-shaded vertex colours /
+    // texels rather than re-lighting per frame from a made-up light dir, so
+    // faithful mode shows the source data unlit. Default keeps the readable
+    // ambient-biased shade.
+    let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
     let rgb = psx_dither(in.color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
 }

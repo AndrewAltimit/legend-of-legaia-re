@@ -60,6 +60,12 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
 - **TSB / CBA flat shading per primitive.** Texture page and CLUT base
   remain `@interpolate(flat)` so each triangle samples from the same
   page and palette, matching `GP0(0x24)` semantics.
+- **No synthetic lighting.** The engine's default readability hack - a
+  per-frame directional Lambert from a made-up light direction - is
+  disabled. Retail bakes its GTE lighting into the per-vertex colours and
+  texels; faithful mode shows that source data unlit (the textured/colour
+  meshes pass texel/vertex colour straight through). Default mode keeps
+  the ambient-biased shade so untextured silhouettes stay readable.
 
 In the `legaia-engine play-window` binary this whole mode is opt-in via
 the `LEGAIA_PSX_RENDER=1` environment variable.
