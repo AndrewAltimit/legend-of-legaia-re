@@ -26,10 +26,10 @@
 //!
 //! | Offset | Type | Field |
 //! |---|---|---|
-//! | `+0` | u8 | stat bonus 0 - the head-gear stat (only head accessories set it) |
-//! | `+1` | u8 | **attack** bonus (the only field weapons set) |
-//! | `+2` | u8 | **defense-up** (`UDF`) bonus |
-//! | `+3` | u8 | **defense-down** (`LDF`) bonus |
+//! | `+0` | u8 | stat bonus 0 - the head-gear stat (set by head accessories) |
+//! | `+1` | u8 | **attack** bonus (weapons' only field; boots also add a small amount) |
+//! | `+2` | u8 | **defense-up** (`UDF`) bonus (body armor + head accessories) |
+//! | `+3` | u8 | **defense-down** (`LDF`) bonus (body armor + boots) |
 //! | `+4` | u8 | stat bonus 4 - the footwear stat (only boots/shoes set it) |
 //! | `+5` | u8 | constant `0x40` |
 //! | `+6` | u8 | **equip character mask** (`1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` = anyone) |
