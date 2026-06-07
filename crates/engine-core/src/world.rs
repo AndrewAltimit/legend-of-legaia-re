@@ -740,6 +740,15 @@ pub struct World {
     /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub field_floor_height_lut: [i16; 16],
+    /// When set, field free-movement snaps the player's `world_y` to the
+    /// per-scene terrain elevation each step via
+    /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`).
+    /// Off by default so the flat-Y locomotion oracles keep their constant
+    /// `world_y`; enable it for terrain-following play. Only the pad
+    /// locomotion path consults it - world-map walk keeps its own height
+    /// model - and it no-ops harmlessly (height `0`) until a scene supplies a
+    /// floor LUT + collision grid.
+    pub follow_terrain_height: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -1831,6 +1840,7 @@ impl World {
             player_actor_slot: None,
             field_collision_grid: Vec::new(),
             field_floor_height_lut: [0i16; 16],
+            follow_terrain_height: false,
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -5899,6 +5909,21 @@ impl World {
         }
 
         self.advance_with_collision(slot, dir_bits, speed);
+
+        // Terrain follow (gated): after the X/Z step commits, snap the
+        // player's Y to the per-scene floor elevation at the new tile. Done
+        // here rather than inside the shared `advance_with_collision` so the
+        // world-map walk path (which collides through the same routine but
+        // derives height from the continent grid) is unaffected. No-op height
+        // 0 until a scene supplies a floor LUT.
+        if self.follow_terrain_height {
+            let (x, z) = {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_x as i32, ms.world_z as i32)
+            };
+            let y = self.sample_field_floor_height(x, z);
+            self.actors[slot].move_state.world_y = y as i16;
+        }
     }
 
     /// Advance actor `slot` by `speed` world units in the direction encoded by

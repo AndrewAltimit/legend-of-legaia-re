@@ -720,6 +720,12 @@ enum Cmd {
         /// the simplified typewriter. Up/Down navigate a menu, Cross confirms.
         #[arg(long, default_value_t = false)]
         vm_dialogue: bool,
+        /// Make the player follow the per-scene terrain elevation: each field
+        /// locomotion step snaps the player's Y to the floor-height sample
+        /// (`FUN_80019278`) at the new tile. Off by default (flat Y); enable to
+        /// see slopes / steps. No effect on the world-map walk.
+        #[arg(long, default_value_t = false)]
+        terrain_y: bool,
         /// BGM id to cross-fade to when a live-loop encounter starts; the
         /// field track resumes when the battle ends. Routed through the same
         /// BGM director as field op-`0x35` starts, so the id must resolve in
@@ -1163,6 +1169,7 @@ fn main() -> Result<()> {
             live_loop,
             player_battle,
             vm_dialogue,
+            terrain_y,
             battle_bgm,
         } => cmd_play_window(
             &scene,
@@ -1179,6 +1186,7 @@ fn main() -> Result<()> {
             live_loop,
             player_battle,
             vm_dialogue,
+            terrain_y,
             battle_bgm,
         ),
         Cmd::Save {
@@ -2773,6 +2781,7 @@ fn cmd_record(
         save_dir,
         None,
         None,
+        false,
         false,
         false,
         false,
@@ -8996,6 +9005,7 @@ fn cmd_play_window(
     live_loop: bool,
     player_battle: bool,
     vm_dialogue: bool,
+    terrain_y: bool,
     battle_bgm: Option<u16>,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -9013,6 +9023,7 @@ fn cmd_play_window(
         live_loop,
         player_battle,
         vm_dialogue,
+        terrain_y,
         battle_bgm,
         None,
     )
@@ -9034,6 +9045,7 @@ fn cmd_play_window_with_record(
     live_loop: bool,
     player_battle: bool,
     vm_dialogue: bool,
+    terrain_y: bool,
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -9096,6 +9108,9 @@ fn cmd_play_window_with_record(
     // Opt-in: drive field dialogue through the inline-script field-VM runner
     // (branch handlers execute). Off by default → identical to before.
     session.host.world.use_vm_dialogue = vm_dialogue;
+    // Opt-in: snap the player's Y to the per-scene floor height each
+    // locomotion step. Off by default → flat-Y behaviour preserved.
+    session.host.world.follow_terrain_height = terrain_y;
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {

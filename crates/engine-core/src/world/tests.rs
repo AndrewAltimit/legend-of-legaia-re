@@ -367,6 +367,37 @@ fn locomotion_stops_at_wall() {
 }
 
 #[test]
+fn locomotion_follows_terrain_height_only_when_gated_on() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.reset_field_collision_grid();
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 200;
+    world.actors[0].move_state.world_y = 999; // sentinel
+    // Floor tier 3 -> -40 across the 2x2 block around tile (1,1), which the
+    // +Z walk lands in (x=200, z=208 -> tile (1,1)).
+    world.field_floor_height_lut[3] = -40;
+    let base = STRIDE + 1;
+    for &i in &[base, base + 1, base + STRIDE, base + STRIDE + 1] {
+        world.field_collision_grid[i] = 0x03; // low nibble = tier 3, walkable
+    }
+
+    // Gate off (default): Y stays at the sentinel, flat-Y behaviour preserved.
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.actors[0].move_state.world_z, 208);
+    assert_eq!(world.actors[0].move_state.world_y, 999);
+
+    // Gate on: the next step snaps Y to the sampled floor height.
+    world.follow_terrain_height = true;
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.actors[0].move_state.world_y, -40);
+}
+
+#[test]
 fn locomotion_gated_by_movement_disabled_flag() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
