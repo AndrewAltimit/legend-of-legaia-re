@@ -288,6 +288,40 @@ pub fn parse(bytes: &[u8], link_base: u32) -> SummonOverlay {
     }
 }
 
+/// Parse summon-format part records at an explicit, caller-provided set of file
+/// offsets, bounding each record's move-VM bytecode by the next offset in sorted
+/// order. Use this when the record *locations* come from somewhere other than the
+/// `jal FUN_80021B04` scan — notably the battle-action move-power effect-prototype
+/// pointer table (`0x801f6324`), whose `0x01..=0x63` entries spawn records in this
+/// exact format through the same stager (see
+/// [`crate::move_power`] / `docs/formats/move-power.md`).
+///
+/// `offsets` are file offsets into `bytes`; out-of-range or sub-header offsets are
+/// dropped. The returned parts are sorted by offset and deduped.
+pub fn parse_records_at(bytes: &[u8], offsets: &[usize]) -> Vec<SummonPart> {
+    let mut offs: Vec<usize> = offsets
+        .iter()
+        .copied()
+        .filter(|&f| f + 4 <= bytes.len())
+        .collect();
+    offs.sort_unstable();
+    offs.dedup();
+
+    let mut parts = Vec::with_capacity(offs.len());
+    for (i, &f) in offs.iter().enumerate() {
+        let model_sel = i16::from_le_bytes([bytes[f], bytes[f + 1]]);
+        let flags = u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]);
+        let end = offs.get(i + 1).copied().unwrap_or(bytes.len());
+        parts.push(SummonPart {
+            record_off: f,
+            model_sel,
+            flags,
+            bytecode: (f + 4)..end.max(f + 4),
+        });
+    }
+    parts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,5 +378,29 @@ mod tests {
         assert_eq!(ov.parts[1].record_off, rec1);
         // first record's bytecode runs up to the second record
         assert_eq!(ov.parts[0].bytecode, (rec0 + 4)..rec1);
+    }
+
+    #[test]
+    fn parse_records_at_bounds_each_record_by_the_next() {
+        // Two packed records at explicit offsets (the move-power 0x801f6324 path).
+        let mut b = vec![0u8; 0x80];
+        let (r0, r1) = (0x20usize, 0x30usize);
+        b[r0..r0 + 2].copy_from_slice(&2i16.to_le_bytes()); // model_sel = 2 (library)
+        b[r0 + 4] = 0x0c; // some move-VM op
+        b[r1..r1 + 2].copy_from_slice(&(-1i16).to_le_bytes()); // transform node
+        // Offsets handed out of order + a duplicate + an out-of-range one.
+        let parts = parse_records_at(&b, &[r1, r0, r0, 0x1000]);
+        assert_eq!(parts.len(), 2, "sorted + deduped + range-filtered");
+        assert_eq!(parts[0].record_off, r0);
+        assert_eq!(parts[0].model_sel, 2);
+        assert_eq!(parts[0].kind(), SummonPartKind::LibraryMesh);
+        assert_eq!(
+            parts[0].bytecode,
+            (r0 + 4)..r1,
+            "bytecode runs to next record"
+        );
+        assert_eq!(parts[1].record_off, r1);
+        assert!(parts[1].is_transform_node());
+        assert_eq!(parts[1].bytecode, (r1 + 4)..b.len(), "last runs to EOF");
     }
 }

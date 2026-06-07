@@ -1260,6 +1260,14 @@ pub struct World {
     /// the disc by [`crate::scene::SceneHost`].
     pub move_power: Option<crate::move_power::MovePowerCatalog>,
 
+    /// Raw bytes of the battle-action overlay (PROT 0898) the [`move_power`]
+    /// catalog was parsed from, retained so the move-FX render path can read the
+    /// `0x801f6324` prototype records' move-VM bytecode (the catalog holds only
+    /// the parsed tables). Installed alongside [`move_power`] by
+    /// [`crate::scene::SceneHost`]; `None` in disc-free battles (move FX simply
+    /// don't spawn). `Arc` so cloning `World` stays cheap.
+    pub move_power_overlay: Option<Arc<[u8]>>,
+
     /// Battle **element-affinity** tables ([`legaia_asset::element_affinity`],
     /// matrix `0x801F53E8` + per-character element table `0x801F5480`). When
     /// present, the monster special-attack damage path scales the attacker roll
@@ -1332,6 +1340,15 @@ pub struct World {
     /// host-fulfilled request because `World` is index-agnostic (same pattern
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
+
+    /// Active battle move-power effect-FX scene-graph, while one is playing. A
+    /// move's `0x01..=0x63` on-contact / launch effect-list entries spawn the
+    /// `0x801f6324` prototype records (summon-format move-VM parts) through the
+    /// same machinery as a summon — [`World::spawn_move_fx`] seeds it,
+    /// [`World::tick_move_fx`] advances it, [`World::active_move_fx_part_draws`]
+    /// renders it. Separate from [`active_summon`](Self::active_summon) so a
+    /// move's FX and a summon don't clobber each other.
+    pub active_move_fx: Option<crate::summon::SummonScene>,
 
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the in-`tick` Field <-> Battle round trip.
@@ -1868,6 +1885,8 @@ impl World {
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             move_power: None,
+            move_power_overlay: None,
+            active_move_fx: None,
             element_affinity: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
@@ -4011,6 +4030,118 @@ impl World {
     /// for the faithful-tick / interpreted-transform boundary.
     pub fn active_summon_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
         self.active_summon
+            .as_ref()
+            .map(|s| s.part_draws())
+            .unwrap_or_default()
+    }
+
+    /// Spawn a battle move's effect-FX scene-graph at `origin` (world units).
+    ///
+    /// A move's `0x01..=0x63` on-contact (`+0x12`) / launch (`+0x16`) effect-list
+    /// entries each index the `0x801f6324` prototype-pointer table; every such
+    /// entry resolves to a summon-format move-VM record (`+0x00 model_sel`,
+    /// `+0x02 flags`, `+0x04` bytecode) staged by the shared `FUN_80021B04`
+    /// machinery. This parses those records out of the retained battle-action
+    /// overlay (PROT 0898) and spawns them as a [`crate::summon::SummonScene`]
+    /// with model base [`crate::scene::EFFECT_MODEL_LIBRARY_BASE`] (the captured
+    /// battle `gp[0x754] = 3`), so each mesh part resolves to
+    /// `global_tmd_pool[model_sel + 3]` — the PROT 0871 effect-model library,
+    /// already resident.
+    ///
+    /// Returns `false` (no scene spawned) when the move-power table / overlay
+    /// isn't installed (disc-free battles), the move id has no power record, or
+    /// the move carries no spawnable effect entries. Replaces any in-flight
+    /// move-FX scene. Tick with [`Self::tick_move_fx`].
+    pub fn spawn_move_fx(&mut self, move_id: u8, origin: [i16; 3]) -> bool {
+        let Some(overlay) = self.move_power_overlay.clone() else {
+            return false;
+        };
+        let Some(cat) = self.move_power.as_ref() else {
+            return false;
+        };
+        let Some(fx) = cat.fx_for_move_id(move_id) else {
+            return false;
+        };
+        use legaia_asset::move_power::EffectListEntry;
+
+        // VA → file-offset delta for the battle-action overlay (the move-power
+        // table's VA vs its file offset). A 0x801f6324 entry's VA minus this
+        // lands on the record's file offset.
+        let va_to_file = legaia_asset::move_power::MOVE_POWER_TABLE_VA
+            - legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET as u32;
+
+        // Parse ALL prototype records first (full offset set) so each record's
+        // move-VM bytecode is bounded by its true packed neighbour, then select
+        // the ones this move's Spawn entries reference. Bounding against only
+        // this move's subset would over-run each record into the next selected
+        // one rather than the next packed one.
+        let Some(aux) = cat.aux_tables() else {
+            return false;
+        };
+        let all_offsets: Vec<usize> = aux
+            .proto()
+            .iter()
+            .filter(|&&va| va != 0)
+            .map(|&va| va.wrapping_sub(va_to_file) as usize)
+            .filter(|&f| f + 4 <= overlay.len())
+            .collect();
+        let all_parts = legaia_asset::summon_overlay::parse_records_at(&overlay, &all_offsets);
+
+        // The file offsets this move's Spawn entries point at.
+        let wanted: std::collections::BTreeSet<usize> = fx
+            .contact_effects
+            .iter()
+            .chain(fx.launch_effects.iter())
+            .filter_map(|e| match e.entry {
+                EffectListEntry::Spawn(_) => e.proto,
+                _ => None,
+            })
+            .map(|va| va.wrapping_sub(va_to_file) as usize)
+            .collect();
+        if wanted.is_empty() {
+            return false;
+        }
+        let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+            .into_iter()
+            .filter(|p| wanted.contains(&p.record_off))
+            .collect();
+        if parts.is_empty() {
+            return false;
+        }
+        self.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
+            &parts,
+            &overlay,
+            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+            origin,
+        ));
+        true
+    }
+
+    /// Advance the active move-FX scene one frame through the move VM (the
+    /// move-FX sibling of [`Self::tick_summon`]). No-op when none is playing;
+    /// drains the scene once every part has finished.
+    pub fn tick_move_fx(&mut self, frame_delta: u16) {
+        let Some(mut scene) = self.active_move_fx.take() else {
+            return;
+        };
+        {
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+            };
+            scene.tick(&mut host, frame_delta);
+        }
+        if !scene.finished() {
+            self.active_move_fx = Some(scene);
+        }
+    }
+
+    /// Per-part render draws for the active move-FX scene's mesh-bearing parts
+    /// (empty when none is playing). Each draw's `model_index` indexes
+    /// [`Self::global_tmd_pool`] (the PROT 0871 effect-model library).
+    pub fn active_move_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+        self.active_move_fx
             .as_ref()
             .map(|s| s.part_draws())
             .unwrap_or_default()

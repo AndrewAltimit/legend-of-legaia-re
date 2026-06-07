@@ -62,3 +62,75 @@ fn move_power_catalog_resolves_named_monster_attacks() {
     // An id outside the mapped move space resolves to nothing.
     assert_eq!(cat.power_for_move_id(0x00), None);
 }
+
+#[test]
+fn move_fx_descriptor_decodes_from_the_real_overlay() {
+    let Some(entry) = overlay_0898() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT/0898 missing");
+        return;
+    };
+    use legaia_engine_core::move_power::MovePowerCatalog;
+
+    let cat = MovePowerCatalog::from_overlay_0898(&entry).expect("move-power table parses");
+
+    // A real boot reaches the auxiliary effect tables + impact-config table that
+    // live further into the same overlay than the power table.
+    assert!(
+        cat.aux_tables().is_some(),
+        "the real overlay reaches the 0x801F6324 / 0x801F6418 aux tables"
+    );
+    assert!(
+        cat.impact_table().is_some(),
+        "the real overlay reaches the 0x801f53d4 impact-config table"
+    );
+
+    // The full behavioural descriptor resolves for Tail Fire (move id 0x27): the
+    // trail texpage is always a 0x77xx word, and every resolved on-contact /
+    // launch spawn entry that names an aux index resolves its prototype + SFX.
+    let fx = cat
+        .fx_for_move_id(0x27)
+        .expect("Tail Fire (0x27) has a power record");
+    assert_eq!(fx.move_id, 0x27);
+    assert_eq!(fx.record_index, 0x12);
+    assert_eq!(
+        fx.trail_texpage & 0xFF00,
+        0x7700,
+        "trail texpage is a 0x77xx GP0 word"
+    );
+
+    // Across the whole named-attack band, every Spawn entry the lists carry
+    // resolves through the aux tables (no out-of-table index escapes), and at
+    // least one move actually carries an effect list (the band isn't inert).
+    use legaia_asset::move_power::{EffectListEntry, IMPACT_EFFECT_TABLE_LEN};
+    let mut moves_with_effects = 0usize;
+    for move_id in 0x25u8..=0x74 {
+        let Some(fx) = cat.fx_for_move_id(move_id) else {
+            continue;
+        };
+        // An in-range impact selector resolves a config word.
+        if fx.impact_effect != 0 && (fx.impact_effect as usize) <= IMPACT_EFFECT_TABLE_LEN {
+            assert!(
+                fx.impact_config.is_some(),
+                "move {move_id:#04x} impact selector {} resolves a config word",
+                fx.impact_effect
+            );
+        }
+        let mut had = false;
+        for eff in fx.contact_effects.iter().chain(fx.launch_effects.iter()) {
+            had = true;
+            if let EffectListEntry::Spawn(_) = eff.entry {
+                assert!(
+                    eff.proto.is_some() && eff.sfx.is_some(),
+                    "move {move_id:#04x} spawn entry resolves a prototype + SFX"
+                );
+            }
+        }
+        if had {
+            moves_with_effects += 1;
+        }
+    }
+    assert!(
+        moves_with_effects >= 1,
+        "at least one named attack carries a resolved effect list ({moves_with_effects})"
+    );
+}

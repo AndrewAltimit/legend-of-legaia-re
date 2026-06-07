@@ -10,6 +10,11 @@ Engine consumer: `engine-core::move_power::MovePowerCatalog` pairs the table wit
 the id→index map and loads it onto `World::move_power` from PROT 0898; the
 monster special-attack damage path rolls each move's `+0` power through the
 arts/physical kernel (see [battle-formulas.md](../subsystems/battle-formulas.md#arts--physical-branch-attacker_slot--7)).
+The catalog also resolves a move id to a full presentation/timing descriptor
+(`MovePowerCatalog::fx_for_move_id` → `MoveFx`): every behavioural field past
+`+0` plus the cross-table joins (the `+0x0a` impact selector → its config word,
+each `+0x12`/`+0x16` effect-id-list byte → an `EffectListEntry` with its
+spawn-prototype param + SFX cue). It is a descriptor surface only — see Open.
 Provenance is the battle-action overlay (PROT entry 0898, CDNAME
 `overlay_battle_action` / `overlay_0898`); dumps under `ghidra/scripts/funcs/`
 are labelled `overlay_battle_action_*` and the byte-identical aliases
@@ -149,9 +154,14 @@ Both effect-id lists index the **same** two tables (the doc's earlier "+0x12 →
 both). The tables live in the same PROT 0898 overlay after the power table:
 
 - `0x801f6324` (file `0x27B0C`) — effect-**prototype pointer** table: a `u32`
-  per id that is itself an **overlay VA** pointing at a ~`0x20`-byte
-  effect-prototype struct (e.g. ids `0x27`/`0x28` → `0x801F5BBC`/`0x801F5BDC`,
-  exactly `0x20` apart). Passed as the spawn parameter to `FUN_80050ed4`.
+  per id, an **overlay VA** pointing at a **variable-length move-VM scene-graph
+  record** (e.g. ids `0x27`/`0x28` → `0x801F5BBC`/`0x801F5BDC`). It is passed as
+  arg 3 to `FUN_80050ed4`, which forwards it to the shared spawn stager
+  `FUN_80021B04` — the same record format and stager the player Seru-magic
+  **summons** use (`legaia_asset::summon_overlay`, `SPAWN_HELPER`). The "~`0x20`-
+  byte struct" reading was a coincidence (record `0x27` is 0x20 bytes; `0x28`
+  begins where it ends — packed variable-length records, not a fixed stride). See
+  Open for the decoded layout.
 - `0x801f6418` (file `0x27C00`) — per-effect **SFX id** (`u8`, `0` = silent).
 
 The prototype table is exactly `(0x6418 - 0x6324) / 4 = 61` entries; the same
@@ -178,14 +188,62 @@ A homing physical strike: it approaches at speed `0x20`, runs its strike phase
 for 480 frames, plays impact effect 1 + cue `0x4d`, spawns one effect list on
 launch and a different one on contact, and carries the unused designer tag `C`.
 
+## Effect-prototype records — the spawn path
+
+A `0x01..=0x63` effect-list byte spawns the move-VM record `0x801f6324[id]`
+points at. The dispatch (`FUN_801e09f8`) calls
+`FUN_80050ed4(world_pos, src_pos, 0x801f6324[id], 0x1000)`; `FUN_80050ed4` is a
+0x60-slot allocator that tail-calls the shared stager `FUN_80021B04` with the
+args intact (the Ghidra C decomp drops them; the disassembly preserves
+`a0..a3`). `FUN_80021B04` (`SPAWN_HELPER`):
+
+- reads the record's `+0x00` `model_sel` (`lh`/`lhu` at `80021b2c`/`b30`); `< 0`
+  / `0x4000` / `0x4001` are transform-node / render-mode sentinels, else the mesh
+  is `DAT_8007C018[model_sel + gp[0x754]]` (decomp `210..216`; in battle the base
+  `gp[0x754] = 3`, live-captured — see Open),
+- allocates an actor (`jal 0x80020de0`), stores the record pointer as the actor's
+  move-VM buffer base (`*(actor+0x48) = record`, `80021c80`), forces the move-VM
+  PC to u16-index 2 (`*(actor+0x70) = 2`, `80021c78` → bytecode at `record+4`),
+- and drives it through the move VM (`jal 0x80023070`, `80021dc0`).
+
+So each `0x801f6324` record is **byte-identical to a summon part record**
+(`+0x00 i16 model_sel`, `+0x02 u16 flags`, `+0x04` move-VM bytecode) and reuses
+the same stager, move VM, and `DAT_8007C018` TMD-pool bridge — see
+[`legaia_asset::summon_overlay`](../../crates/asset/src/summon_overlay.rs). The
+`0x80`-bit list bytes route to the *separate* 2D-billboard path
+(`FUN_801dfdf0(id & 0x7F)` → the `efect.dat` `EffectCatalog`), already ported as
+`spawn_by_ui_id`.
+
 ## Open
 
-The residual fields are all decoded or accounted for. The `+0x0c` designer tag
-has no runtime consumer (reported as Unknown rather than guessed). The auxiliary
-effect-prototype (`0x801f6324`) and per-effect SFX (`0x801f6418`) tables are now
-parsed (`EffectAuxTables`); their *contents'* deeper meaning is partly open — the
-`0x801f6324` entries are overlay VAs to ~`0x20`-byte effect-prototype structs
-whose layout (the `FUN_80050ed4` spawn parameter) is not yet decoded.
+The residual record fields are all decoded or accounted for. The `+0x0c` designer
+tag has no runtime consumer (reported as Unknown rather than guessed).
+
+The engine exposes the whole power record as a resolved `MoveFx` descriptor
+(behavioural fields + the impact-config and effect-list cross-table joins,
+including each spawn entry's `0x801f6324` prototype VA), and **renders the move-FX
+scene-graph**: `World::spawn_move_fx(move_id, origin)` parses a move's
+`0x01..=0x63` spawn-entry records with the summon-record reader, stages them as a
+`SummonScene` with model base 3 (so `model_sel` resolves into the resident PROT
+0871 effect-model library `global_tmd_pool[3..=32]`), and drives each part's
+`+0x04` bytecode through the ported move VM (`World::tick_move_fx` /
+`active_move_fx_part_draws`; `play-window` `H` debug-spawns it in battle). This
+reuses the summon machinery wholesale, so it inherits the same faithful-tick /
+interpreted-transform boundary (the exact per-part transform composition is the
+shared open `FUN_801F811C`/PROT-0900 piece). The base 3 is the captured
+`gp[0x754]`:
+
+**`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
+`FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)
+hit it once: `ra = 0x80050F08` (the `FUN_80050ed4` call), `a3 = 0x1000`, with the
+prototype-table base `0x801F6324` and the effect-list id `0x22` live in registers
+— the whole `FUN_801e09f8 → FUN_80050ed4 → FUN_80021B04` chain confirmed — and
+`gp` (`0x8007B318`) `+0x754` (global `0x8007BA6C`) read **3**. So a battle move-FX
+mesh is `DAT_8007C018[model_sel + 3]`, which lands `model_sel` exactly in the
+inferred `DAT_8007C018[3..=32]` effect-model window. (Single capture, battle
+move-FX context. The summon-part stage reads the *same* global but during its own
+library load, so the per-summon base is a separate capture — re-point the probe at
+a summon-part hit to pin it.)
 
 The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
 *not* use this table — a summon's magnitude is derived from caster/summon battle

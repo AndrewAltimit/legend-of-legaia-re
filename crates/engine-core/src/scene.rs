@@ -1269,6 +1269,9 @@ impl SceneHost {
             Ok(bytes) => {
                 if let Some(cat) = crate::move_power::MovePowerCatalog::from_overlay_0898(&bytes) {
                     self.world.move_power = Some(cat);
+                    // Retain the overlay so the move-FX render path can read the
+                    // 0x801f6324 prototype records' move-VM bytecode.
+                    self.world.move_power_overlay = Some(std::sync::Arc::from(bytes.as_slice()));
                 } else {
                     eprintln!(
                         "[scene] move-power table (PROT {entry}) parse failed - placeholder damage stays active"
@@ -2157,7 +2160,13 @@ const PROT_EFFECT_MODEL_LIBRARY_ENTRY: u32 = 871;
 /// `[3..=32]`, overwriting the two trailing slots of the PROT 0874 §0 field
 /// head (`[3]`, `[4]`) - exactly retail's temporal layout (the field head
 /// seeds `[0..=4]`; battle init reloads `[3..=32]`).
-const EFFECT_MODEL_LIBRARY_BASE: usize = 3;
+///
+/// This is also the **battle `gp[0x754]` value** — the additive base
+/// `FUN_80021B04` applies to a move-FX / summon part record's `model_sel`
+/// (`DAT_8007C018[model_sel + gp[0x754]]`). Live-captured = 3 during a battle
+/// move-FX spawn (see `docs/formats/move-power.md`), matching this independently
+/// chosen library base. `World::spawn_move_fx` uses it as the move-FX model base.
+pub(crate) const EFFECT_MODEL_LIBRARY_BASE: usize = 3;
 
 /// Number of TMDs in the PROT 0871 effect-model library (`word[0]`).
 const EFFECT_MODEL_LIBRARY_COUNT: usize = 30;
