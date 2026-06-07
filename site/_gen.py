@@ -223,6 +223,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/move-power.html",    "Move-power table",              "formats/move-power",         "formats/move-power.html"),
     ("formats/art-data.html",      "Art data",                      "formats/art-data",           "formats/art-data.html"),
     ("formats/dialog-font.html",   "Dialog font",                   "formats/dialog-font",        "formats/dialog-font.html"),
+    ("formats/sfx-table.html",     "SFX descriptor table",          "formats/sfx-table",          "formats/sfx-table.html"),
     ("formats/sound-driver.html",  "Sound-driver paths",            "formats/sound-driver",       "formats/sound-driver.html"),
     ("formats/pochi.html",         "Pochi-filler placeholders",     "formats/pochi",              "formats/pochi.html"),
     ("formats/mips-overlay.html",  "MIPS overlay code",             "formats/mips-overlay",       "formats/mips-overlay.html"),

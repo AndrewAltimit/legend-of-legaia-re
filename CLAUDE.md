@@ -73,6 +73,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`mips-overlay.md`](docs/formats/mips-overlay.md) | Per-PROT MIPS-code-likelihood detection. |
 | [`overlay-ptr-table.md`](docs/formats/overlay-ptr-table.md) | Sister of `mips-overlay`. |
 | **Auxiliary** | |
+| [`sfx-table.md`](docs/formats/sfx-table.md) | Static `SCUS_942.54` sound-effect descriptor table `DAT_8006F198 + id*8` (8-byte stride, 100 entries `0x00..=0x63`; the `< 0x200` runtime check is a bound, not the size). Per cue: `+0` program/VAG, `+1` tone/ADSR-region base (`+i` per voice), `+2` note-level attr, `+3` voice count (low 5 bits) + sustained bit `0x20`, `+4` mixer channel. Read by the per-actor SFX trigger `FUN_800250D4` + the cue-ring drainer `FUN_80016B6C` (programs voices via `FUN_80065034`); ids `>= 0x200` use the runtime bank `_DAT_8007B8D0`. Parser `legaia_asset::sfx_table`; byte-exact vs live save-state RAM; feeds `SfxBank::from_descriptors`. |
 | [`sound-driver.md`](docs/formats/sound-driver.md) | `.dpk` / `.spk` / `.MAP` / `.PCH` (sound-driver outputs in `sound_data` blocks). |
 | [`dialog-font.md`](docs/formats/dialog-font.md) | Glyph metadata at SCUS `0x80074050`; bitmaps in VRAM. |
 

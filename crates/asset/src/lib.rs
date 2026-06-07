@@ -53,6 +53,7 @@ pub mod scene_scripted_asset_table;
 pub mod scene_tmd_stream;
 pub mod scene_v12_table;
 pub mod scene_vab_stream;
+pub mod sfx_table;
 pub mod spell_names;
 pub mod stage_geom;
 pub mod steal_table;

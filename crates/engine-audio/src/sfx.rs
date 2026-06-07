@@ -113,6 +113,20 @@ impl SfxBank {
         s
     }
 
+    /// Build a bank from decoded SFX descriptors - the `(id, program, key)`
+    /// triples [`legaia_asset::sfx_table::SfxTable::active`] yields (program =
+    /// `SfxDescriptor::program`, key = `SfxDescriptor::note`). Keeping the
+    /// argument a plain tuple iterator avoids a dependency on the asset crate
+    /// from the audio layer; the host (engine-core) wires the disc-decoded
+    /// table in. Later triples overwrite earlier ones with the same id.
+    pub fn from_descriptors<I: IntoIterator<Item = (u8, u8, u8)>>(descriptors: I) -> Self {
+        let mut bank = Self::new();
+        for (id, program_index, key) in descriptors {
+            bank.insert(SfxEntry::new(id, program_index, key));
+        }
+        bank
+    }
+
     /// Insert (or overwrite) the entry for `entry.id`.
     pub fn insert(&mut self, entry: SfxEntry) {
         if let Some(slot) = self.entries.iter_mut().find(|e| e.id == entry.id) {
@@ -412,6 +426,22 @@ mod tests {
         assert!(bank.get(0x1A).is_some());
         assert!(bank.get(0x4C).is_some());
         assert!(bank.get(0xFF).is_none());
+    }
+
+    #[test]
+    fn bank_from_descriptors_maps_program_and_key() {
+        // Mirrors the retail descriptors for ids 0x1A (p3 note67) and 0x4C
+        // (p3 note64) decoded from DAT_8006F198.
+        let bank = SfxBank::from_descriptors([(0x1A, 3, 67), (0x4C, 3, 64)]);
+        assert_eq!(bank.len(), 2);
+        let a = bank.get(0x1A).unwrap();
+        assert_eq!((a.program_index, a.key), (3, 67));
+        let b = bank.get(0x4C).unwrap();
+        assert_eq!((b.program_index, b.key), (3, 64));
+        // Later triple overwrites an earlier same-id one.
+        let over = SfxBank::from_descriptors([(0x1A, 1, 10), (0x1A, 9, 90)]);
+        assert_eq!(over.len(), 1);
+        assert_eq!(over.get(0x1A).unwrap().program_index, 9);
     }
 
     #[test]
