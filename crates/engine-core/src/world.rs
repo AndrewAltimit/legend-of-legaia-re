@@ -1350,6 +1350,21 @@ pub struct World {
     /// move's FX and a summon don't clobber each other.
     pub active_move_fx: Option<crate::summon::SummonScene>,
 
+    /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
+    /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
+    /// `+0x0b` field and cleared when the scene drains. Surfaced via
+    /// [`World::active_move_fx_trail_texpage`] for the render layer's streak
+    /// pass (the 2D afterimage layer `FUN_801e1ab0` itself is not yet drawn).
+    pub active_move_fx_trail_texpage: Option<u16>,
+
+    /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
+    /// when the move carries a non-zero cue. The host drains it via
+    /// [`World::take_pending_move_fx_cue`] and routes it through
+    /// `legaia_engine_audio::classify_cue` → the SFX ring / voice trigger
+    /// (the retail `FUN_8004fcc8` dispatch). Same host-fulfilled-request shape
+    /// as [`pending_summon_spawn`](Self::pending_summon_spawn).
+    pub pending_move_fx_cue: Option<u8>,
+
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the in-`tick` Field <-> Battle round trip.
     ///
@@ -1887,6 +1902,8 @@ impl World {
             move_power: None,
             move_power_overlay: None,
             active_move_fx: None,
+            active_move_fx_trail_texpage: None,
+            pending_move_fx_cue: None,
             element_affinity: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
@@ -4114,7 +4131,28 @@ impl World {
             crate::scene::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
+        // Surface the move's presentation fields for the render / audio layers:
+        // the trail/afterimage texpage (`+0x0b`) and the sound cue (`+0x0d`).
+        self.active_move_fx_trail_texpage = Some(fx.trail_texpage);
+        if fx.sound_cue_id != 0 {
+            self.pending_move_fx_cue = Some(fx.sound_cue_id);
+        }
         true
+    }
+
+    /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
+    /// this step. The host routes it through `legaia_engine_audio::classify_cue`
+    /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
+    /// `None` when no cue is pending.
+    pub fn take_pending_move_fx_cue(&mut self) -> Option<u8> {
+        self.pending_move_fx_cue.take()
+    }
+
+    /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
+    /// move-FX scene, or `None` when none is playing. The render layer applies
+    /// it to the move's streak pass.
+    pub fn active_move_fx_trail_texpage(&self) -> Option<u16> {
+        self.active_move_fx_trail_texpage
     }
 
     /// Advance the active move-FX scene one frame through the move VM (the
@@ -4134,6 +4172,9 @@ impl World {
         }
         if !scene.finished() {
             self.active_move_fx = Some(scene);
+        } else {
+            // Scene drained: drop the trail texpage with it.
+            self.active_move_fx_trail_texpage = None;
         }
     }
 

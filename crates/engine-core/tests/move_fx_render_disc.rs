@@ -77,9 +77,45 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
         );
     }
 
-    // The move VM drives the parts for a few frames without an unimplemented op.
-    for _ in 0..8 {
+    // Presentation fields surface: the trail texpage (0x7700 + record +0x0b) and
+    // the sound cue (record +0x0d) match the move's resolved descriptor.
+    let fx = world
+        .move_power
+        .as_ref()
+        .unwrap()
+        .fx_for_move_id(0x06)
+        .expect("move 0x06 resolves an FX descriptor");
+    assert_eq!(
+        world.active_move_fx_trail_texpage(),
+        Some(fx.trail_texpage),
+        "spawn surfaces the move's trail texpage"
+    );
+    assert!(
+        fx.trail_texpage >= 0x7700,
+        "trail texpage is the 0x7700-based GP0 word"
+    );
+    // The pending sound cue matches the record's +0x0d (drained once).
+    if fx.sound_cue_id != 0 {
+        assert_eq!(world.take_pending_move_fx_cue(), Some(fx.sound_cue_id));
+        assert_eq!(world.take_pending_move_fx_cue(), None, "drained once");
+    } else {
+        assert_eq!(world.take_pending_move_fx_cue(), None);
+    }
+
+    // The move VM drives the parts for enough frames to drain the scene; once it
+    // does, the trail texpage clears.
+    for _ in 0..600 {
         world.tick_move_fx(0x100);
+        if world.active_move_fx.is_none() {
+            break;
+        }
+    }
+    if world.active_move_fx.is_none() {
+        assert_eq!(
+            world.active_move_fx_trail_texpage(),
+            None,
+            "trail clears when the scene drains"
+        );
     }
 }
 
@@ -89,6 +125,8 @@ fn move_fx_guards_when_uninstalled_or_inert() {
     let mut bare = World::new();
     assert!(!bare.spawn_move_fx(0x06, [0, 0, 0]));
     assert!(bare.active_move_fx_part_draws().is_empty());
+    assert_eq!(bare.active_move_fx_trail_texpage(), None);
+    assert_eq!(bare.take_pending_move_fx_cue(), None);
     bare.tick_move_fx(0x100); // no-op
 
     let Some(bytes) = overlay_0898() else {

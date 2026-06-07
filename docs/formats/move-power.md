@@ -233,6 +233,15 @@ interpreted-transform boundary (the exact per-part transform composition is the
 shared open `FUN_801F811C`/PROT-0900 piece). The base 3 is the captured
 `gp[0x754]`:
 
+A spawn also surfaces the move's two presentation fields for the render / audio
+layers: the **trail texpage** (`+0x0b` → `0x7700 + id`) on
+`World::active_move_fx_trail_texpage()` (for the streak pass — the 2D afterimage
+draw `FUN_801e1ab0` itself is not yet emitted), and the **sound cue** (`+0x0d`) as
+a pending id `World::take_pending_move_fx_cue()` the host routes through the ported
+`FUN_8004fcc8` dispatch decode (`legaia_engine_audio::classify_cue` →
+`CueDispatch::Ring`/`Voice`; the SFX ring is `SfxScheduler`/`FUN_80035B50`, and the
+SPU note-on stays with a battle SFX bank that is not yet wired).
+
 **`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
 `FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)
 hit it once: `ra = 0x80050F08` (the `FUN_80050ed4` call), `a3 = 0x1000`, with the
