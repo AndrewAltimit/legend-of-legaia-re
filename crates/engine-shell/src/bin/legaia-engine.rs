@@ -3912,7 +3912,10 @@ impl PlayWindowApp {
                             log::info!("title: Continue");
                         }
                         TitleEvent::OptionsSelected => {
-                            log::info!("title: Options (not yet wired)");
+                            // The selection event is informational; the Options
+                            // panel opens when the title session resolves to
+                            // `TitleOutcome::Options` below.
+                            log::info!("title: Options");
                         }
                         _ => {}
                     }
