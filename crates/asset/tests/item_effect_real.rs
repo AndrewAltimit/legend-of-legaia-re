@@ -75,6 +75,18 @@ fn decodes_the_item_effect_table_or_skips() {
     assert!(warp.field_usable() && !warp.battle_usable());
     assert!(table.effect(0x7A).unwrap().all_party());
 
+    // Healing Shroom (0xA3) shares the item table's subtype 0 with Healing
+    // Leaf (0x77), so it resolves to the SAME effect descriptor (HealHp tier 0)
+    // - i.e. it heals 200 HP, not the 60 the curated gamedata listed (which had
+    // conflated the 60-gold price with the amount).
+    assert_eq!(
+        table.subtype(0xA3),
+        table.subtype(0x77),
+        "Shroom shares Leaf subtype"
+    );
+    assert_eq!(table.subtype(0xA3), 0);
+    assert_eq!(table.effect(0xA3), table.effect(0x77));
+
     // A key item (Swimsuit, id 0x58) funnels to class 0 but with neither
     // usability bit set, so it is NOT a usable consumable.
     let swimsuit = table.effect(0x58).expect("swimsuit effect");

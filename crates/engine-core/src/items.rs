@@ -155,10 +155,13 @@ impl ItemCatalog {
             usable_in_battle: true,
             usable_in_field: true,
         };
-        // Single-target HP restore.
+        // Single-target HP restore. Healing Shroom (0xA3) shares the item
+        // table's subtype 0 with Healing Leaf (0x77) and its on-disc
+        // description reads "Recover 200HP. Ally." - so it heals 200, not 60
+        // (the curated gamedata conflated its 60-gold price with the amount).
         c.insert(heal(0x77, "Healing Leaf", 200));
         c.insert(heal(0x78, "Healing Flower", 800));
-        c.insert(heal(0xA3, "Healing Shroom", 60));
+        c.insert(heal(0xA3, "Healing Shroom", 200));
         // Full HP restore ("Restores maximum HP").
         c.insert(ItemEntry {
             id: 0x79,
