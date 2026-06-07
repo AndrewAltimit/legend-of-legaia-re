@@ -617,6 +617,8 @@ Typed catalogue of inventory items the battle / field menu consults. Each entry 
 
 `apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver - engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
 
+`World::use_item(item_id, target_slot)` is the shared apply kernel (battle item command + field menu both route through it): it builds the `TargetSnapshot` from the live actor, resolves the outcome, and writes it back. `StatRaised` (the permanent stat-up consumables - Power Tonic, Vital Tonic) is applied via `apply_stat_raise`: an HP/MP-max raise bumps the persistent character record **and** the live actor's caps (refilling the gained amount); a combat-stat raise lands in the record's `+0x110` live-stat block that `seed_party_battle_stats` re-derives from, so the gain shows immediately and survives a save. Combat stats cap at the record's per-stat cap constant; HP/MP max at 9999. (These items are field-only and absent from the captured battle traces, so the exact retail cap / refill rule is not byte-pinned - the engine uses self-consistent rules.)
+
 Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
 
 
