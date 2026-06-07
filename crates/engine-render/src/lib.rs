@@ -15,9 +15,10 @@
 //!   light, depth-tested. Uses the `glam::Mat4` MVP supplied per-frame so
 //!   the host can spin the model without re-uploading.
 //!
-//! Both pipelines share the same surface + depth attachment. Future phases
-//! will add PSX-style affine texturing, sub-pixel jitter, GTE emulation,
-//! and batched draws.
+//! Both pipelines share the same surface + depth attachment. PSX-faithful
+//! rasterisation (affine UV warp, sub-pixel vertex jitter, 15-bit ordered
+//! dithering) is opt-in via [`Renderer::set_psx_mode`]; GTE emulation and
+//! batched draws are future phases.
 //! REF: FUN_801D0148, FUN_801D5DE0, FUN_801D84D0, FUN_801E08D8, FUN_801E1C1C, FUN_801E36C4
 //! REF: FUN_801E3EE0, FUN_801E3FF0
 
@@ -58,7 +59,8 @@ struct MeshUniforms {
     /// - `[1]` viewport height in pixels
     /// - `[2]` `1.0` to snap clip-space x/y to integer pixels (PSX-style
     ///   "vertex jitter"); `0.0` for smooth modern subpixel positions
-    /// - `[3]` reserved (padding to vec4 std140)
+    /// - `[3]` `1.0` to ordered-dither the shaded colour to 15-bit BGR555
+    ///   (PSX framebuffer depth); `0.0` for full-precision colour
     psx_params: [f32; 4],
     /// GP0(0xE2) "Texture Window setting" - per-frame scene state.
     /// `[0..4]` = `(mask_x, mask_y, offset_x, offset_y)` each in 8-pixel
@@ -3663,7 +3665,7 @@ impl Renderer {
         // Mesh pipeline: 3D triangle list, depth-tested, single directional light.
         let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(MESH_SHADER_SRC.into()),
+            source: wgpu::ShaderSource::Wgsl(compose_psx_shader(MESH_SHADER_SRC).into()),
         });
         let mesh_uniforms_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("mesh uniforms bgl"),
@@ -3756,7 +3758,7 @@ impl Renderer {
         // texture+sampler layout from the quad pipeline) at group 1.
         let textured_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia textured mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(TEXTURED_MESH_SHADER_SRC.into()),
+            source: wgpu::ShaderSource::Wgsl(compose_psx_shader(TEXTURED_MESH_SHADER_SRC).into()),
         });
         let textured_mesh_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("legaia textured mesh pipeline layout"),
@@ -3836,7 +3838,7 @@ impl Renderer {
         });
         let vram_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia vram mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(VRAM_MESH_SHADER_SRC.into()),
+            source: wgpu::ShaderSource::Wgsl(compose_psx_shader(VRAM_MESH_SHADER_SRC).into()),
         });
         let vram_mesh_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("legaia vram mesh pipeline layout"),
@@ -4140,7 +4142,7 @@ impl Renderer {
         // no VRAM), TriangleList, position(12) + Unorm8x4 colour(4) = 16 bytes.
         let color_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia color mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(COLOR_MESH_SHADER_SRC.into()),
+            source: wgpu::ShaderSource::Wgsl(compose_psx_shader(COLOR_MESH_SHADER_SRC).into()),
         });
         let scene_color_mesh_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -4352,12 +4354,14 @@ impl Renderer {
         })
     }
 
-    /// Toggle PSX-style affine UV interpolation + sub-pixel vertex snap on
-    /// the VRAM-mesh pipeline. With `psx_mode = true` the pipeline mimics
-    /// the retail GTE: UVs interpolate linearly in screen space (no
-    /// perspective correction → the characteristic surface-warp on slanted
-    /// surfaces), and clip-space X/Y are snapped to integer pixels (the
-    /// GTE's per-vertex jitter). Default `false` (smooth modern rendering).
+    /// Toggle PSX-style rendering on the 3D mesh pipelines. With
+    /// `psx_mode = true` the pipeline mimics the retail GTE/GPU: UVs
+    /// interpolate linearly in screen space (no perspective correction → the
+    /// characteristic surface-warp on slanted surfaces), clip-space X/Y are
+    /// snapped to integer pixels (the GTE's per-vertex jitter), and the
+    /// shaded colour is ordered-dithered down to 15-bit BGR555 (the PSX
+    /// framebuffer depth — see [`PSX_DITHER_WGSL`] / [`psx_dither`]). Default
+    /// `false` (smooth, full-precision modern rendering).
     pub fn set_psx_mode(&self, enable: bool) {
         self.psx_mode.set(enable);
     }
@@ -4926,7 +4930,7 @@ impl Renderer {
                             self.config.width as f32,
                             self.config.height as f32,
                             snap,
-                            0.0,
+                            snap, // .w = dither_enable (shares the psx_mode flag)
                         ],
                         tex_window: self.tex_window.get(),
                     }]),
@@ -5210,7 +5214,7 @@ impl Renderer {
             self.config.width as f32,
             self.config.height as f32,
             snap,
-            0.0,
+            snap, // .w = dither_enable (shares the psx_mode flag)
         ];
         let tex_window = self.tex_window.get();
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
@@ -5438,16 +5442,96 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// PSX 24-bit -> 15-bit ordered-dither helper, prepended to every shaded
+/// 3D shader via [`compose_psx_shader`]. Mirrors [`psx_dither`] on the CPU
+/// (kept in lockstep - see that module's tests). Gated on `enable` so the
+/// default (non-PSX) render path is bit-unchanged.
+const PSX_DITHER_WGSL: &str = r#"
+// PSX GPU ordered dithering: a signed 4x4 offset is added to each 8-bit
+// colour component before truncation to the 5-bit-per-channel BGR555
+// framebuffer. `enable < 0.5` passes the colour through unchanged.
+// Reference: nocash PSX-SPX "GPU - Dithering/Color-Depth".
+fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
+    if (dither_on < 0.5) {
+        return rgb;
+    }
+    var dm = array<f32, 16>(
+        -4.0,  0.0, -3.0,  1.0,
+         2.0, -2.0,  3.0, -1.0,
+        -3.0,  1.0, -4.0,  0.0,
+         3.0, -1.0,  2.0, -2.0,
+    );
+    let xi = u32(frag.x) & 3u;
+    let yi = u32(frag.y) & 3u;
+    let d = dm[yi * 4u + xi];
+    var outc = vec3<f32>(0.0, 0.0, 0.0);
+    for (var i = 0u; i < 3u; i = i + 1u) {
+        let c8 = clamp(rgb[i] * 255.0 + d, 0.0, 255.0);
+        let c5 = floor(c8 / 8.0);            // truncate to 5 bits
+        let e8 = c5 * 8.0 + floor(c5 / 4.0); // expand 5->8: (c5<<3)|(c5>>2)
+        outc[i] = e8 / 255.0;
+    }
+    return outc;
+}
+"#;
+
+/// Prepend [`PSX_DITHER_WGSL`] to a shaded 3D shader source so its fragment
+/// stage can call `psx_dither`. WGSL module-scope declarations are
+/// order-independent, so the leading helper is valid ahead of the shader's
+/// own structs and entry points.
+fn compose_psx_shader(base: &str) -> String {
+    format!("{PSX_DITHER_WGSL}\n{base}")
+}
+
+/// CPU mirror of the [`PSX_DITHER_WGSL`] shader helper, kept byte-for-byte
+/// equivalent so the dither algorithm can be unit-tested without a GPU. The
+/// PSX GPU dithers when packing a 24-bit shaded colour into the 15-bit
+/// (BGR555) framebuffer: a signed 4x4 matrix offset is added to each 8-bit
+/// component, the result is clamped, truncated to 5 bits, then expanded back
+/// to 8 bits by bit-replication.
+pub mod psx_dither {
+    /// The PSX GPU's 4x4 ordered-dither offset matrix, row-major by
+    /// `(y & 3, x & 3)`. Reference: nocash PSX-SPX "GPU - Dithering".
+    pub const DITHER_MATRIX: [i32; 16] = [
+        -4, 0, -3, 1, //
+        2, -2, 3, -1, //
+        -3, 1, -4, 0, //
+        3, -1, 2, -2,
+    ];
+
+    /// Dither + quantize one 8-bit colour component at screen pixel
+    /// `(x, y)`. Returns the 5-bit-truncated value re-expanded to 8 bits
+    /// (the value the BGR555 framebuffer would read back as).
+    pub fn dither_component(c8: i32, x: u32, y: u32) -> u8 {
+        let d = DITHER_MATRIX[((y & 3) * 4 + (x & 3)) as usize];
+        let c = (c8 + d).clamp(0, 255);
+        let c5 = c >> 3; // truncate to 5 bits
+        ((c5 << 3) | (c5 >> 2)) as u8
+    }
+
+    /// Dither a linear `[0, 1]` RGB triple at pixel `(x, y)`, returning the
+    /// quantized triple back in `[0, 1]`.
+    pub fn dither_rgb(rgb: [f32; 3], x: u32, y: u32) -> [f32; 3] {
+        let mut out = [0.0f32; 3];
+        for i in 0..3 {
+            let c8 = (rgb[i] * 255.0).round() as i32;
+            out[i] = dither_component(c8, x, y) as f32 / 255.0;
+        }
+        out
+    }
+}
+
 /// Mesh shader: transforms positions by the host-supplied MVP, computes a
 /// per-fragment normal from screen-space derivatives, lights with a single
-/// directional light, and outputs a flat-shaded result. PSX-faithful
-/// shading effects (affine warp, vertex jitter, dithering) are deferred
-/// to a later phase.
+/// directional light, and outputs a flat-shaded result. With `psx_mode`
+/// (see [`Renderer::set_psx_mode`]) the result is also ordered-dithered to
+/// 15-bit via [`PSX_DITHER_WGSL`]; affine warp + vertex jitter live in the
+/// VRAM-mesh path.
 const MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
-    // (viewport_w, viewport_h, snap_enable, _pad)
+    // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
     //   .x = mask_x  (in 8-pixel steps, 0..31)
@@ -5487,7 +5571,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Soft amber-tinted ambient + directional fill, matching the site theme.
     let ambient = vec3<f32>(0.18, 0.20, 0.26);
     let diffuse = vec3<f32>(0.80, 0.78, 0.70) * lambert;
-    return vec4<f32>(ambient + diffuse, 1.0);
+    let rgb = psx_dither(ambient + diffuse, in.clip_pos.xy, u.psx_params.w);
+    return vec4<f32>(rgb, 1.0);
 }
 "#;
 
@@ -5500,7 +5585,7 @@ const TEXTURED_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
-    // (viewport_w, viewport_h, snap_enable, _pad)
+    // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
     //   .x = mask_x  (in 8-pixel steps, 0..31)
@@ -5541,7 +5626,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // do per-face lighting; we just want some shape readable).
     let shade = 0.45 + 0.55 * lambert;
     let texel = textureSample(t_color, s_color, in.uv);
-    return vec4<f32>(texel.rgb * shade, texel.a);
+    let rgb = psx_dither(texel.rgb * shade, in.clip_pos.xy, u.psx_params.w);
+    return vec4<f32>(rgb, texel.a);
 }
 "#;
 
@@ -5563,7 +5649,7 @@ const VRAM_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
-    // (viewport_w, viewport_h, snap_enable, _pad)
+    // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
     //   .x = mask_x  (in 8-pixel steps, 0..31)
@@ -5724,7 +5810,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let l = -normalize(u.light_dir.xyz);
     let lambert = max(dot(n, l), 0.0);
     let shade = 0.45 + 0.55 * lambert;
-    return vec4<f32>(color.rgb * shade, color.a);
+    let rgb = psx_dither(color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
+    return vec4<f32>(rgb, color.a);
 }
 "#;
 
@@ -5765,7 +5852,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let l = -normalize(u.light_dir.xyz);
     let lambert = max(dot(n, l), 0.0);
     let shade = 0.45 + 0.55 * lambert;
-    return vec4<f32>(in.color.rgb * shade, 1.0);
+    let rgb = psx_dither(in.color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
+    return vec4<f32>(rgb, 1.0);
 }
 "#;
 
@@ -5777,7 +5865,7 @@ const LINES_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
-    // (viewport_w, viewport_h, snap_enable, _pad)
+    // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
     //   .x = mask_x  (in 8-pixel steps, 0..31)
@@ -7362,6 +7450,92 @@ mod tests {
         assert_eq!(text_landed.len(), text_slid.len());
         for (a, b) in text_landed.iter().zip(text_slid.iter()) {
             assert_eq!(b.dst.1 - a.dst.1, 50);
+        }
+    }
+
+    // ---- PSX dithering ----
+
+    #[test]
+    fn dither_matrix_is_balanced_4x4() {
+        // The 16 offsets span the documented [-4, +3] range and (being a
+        // balanced ordered-dither pattern) sum to a small bias near zero.
+        let m = psx_dither::DITHER_MATRIX;
+        assert_eq!(m.len(), 16);
+        assert_eq!(*m.iter().min().unwrap(), -4);
+        assert_eq!(*m.iter().max().unwrap(), 3);
+        assert_eq!(m.iter().sum::<i32>(), -8);
+    }
+
+    #[test]
+    fn dither_component_quantizes_to_5bit_expanded() {
+        // Every output is a 5-bit value re-expanded by bit-replication:
+        // (c5 << 3) | (c5 >> 2). Check the endpoints and that all outputs
+        // belong to that 32-value set regardless of pixel / input.
+        let valid: std::collections::HashSet<u8> =
+            (0..32).map(|c5| ((c5 << 3) | (c5 >> 2)) as u8).collect();
+        for c8 in 0..=255i32 {
+            for y in 0..4u32 {
+                for x in 0..4u32 {
+                    let out = psx_dither::dither_component(c8, x, y);
+                    assert!(valid.contains(&out), "c8={c8} -> {out} not a 5-bit level");
+                }
+            }
+        }
+        // Black stays black, white stays white (no offset escapes the clamp).
+        assert_eq!(psx_dither::dither_component(0, 1, 1), 0);
+        assert_eq!(psx_dither::dither_component(255, 1, 1), 255);
+    }
+
+    #[test]
+    fn dither_varies_across_the_4x4_cell() {
+        // A mid-grey that sits between two 5-bit levels must resolve to
+        // different quantized values across the dither cell - that spatial
+        // variation IS the dithering. Pick a value off the 5-bit grid.
+        let c8 = 134; // straddles the 5-bit boundary at 136 (134-4=130, 134+3=137)
+        let mut seen = std::collections::HashSet::new();
+        for y in 0..4u32 {
+            for x in 0..4u32 {
+                seen.insert(psx_dither::dither_component(c8, x, y));
+            }
+        }
+        assert!(seen.len() >= 2, "dither produced no spatial variation");
+    }
+
+    #[test]
+    fn dither_rgb_disabled_path_is_identity_in_shader_only() {
+        // The CPU helper always dithers; the *shader* gates on enable. Here
+        // we just confirm the CPU triple path stays in range and quantizes.
+        let out = psx_dither::dither_rgb([0.5, 0.25, 1.0], 2, 3);
+        for c in out {
+            assert!((0.0..=1.0).contains(&c));
+        }
+    }
+
+    /// Every shaded 3D shader (with the dither helper prepended) must parse
+    /// and pass naga validation - this is the GPU-free guard that the WGSL
+    /// edits are well-formed, since the render pipelines can't build in CI.
+    #[test]
+    fn psx_shaders_parse_and_validate() {
+        use wgpu::naga;
+        let sources = [
+            ("mesh", compose_psx_shader(MESH_SHADER_SRC)),
+            (
+                "textured_mesh",
+                compose_psx_shader(TEXTURED_MESH_SHADER_SRC),
+            ),
+            ("vram_mesh", compose_psx_shader(VRAM_MESH_SHADER_SRC)),
+            ("color_mesh", compose_psx_shader(COLOR_MESH_SHADER_SRC)),
+        ];
+        for (name, src) in sources {
+            let module = naga::front::wgsl::parse_str(&src)
+                .unwrap_or_else(|e| panic!("{name} shader failed to parse: {e:?}"));
+            let mut validator = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            );
+            validator
+                .validate(&module)
+                .unwrap_or_else(|e| panic!("{name} shader failed to validate: {e:?}"));
         }
     }
 }

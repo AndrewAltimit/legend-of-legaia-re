@@ -42,7 +42,7 @@ correctly in one draw, instead of needing per-page sub-meshes.
 
 ## PSX-style rendering
 
-The VRAM-mesh pipeline supports PSX-faithful rasterisation via
+The 3D mesh pipelines support PSX-faithful rasterisation via
 `Renderer::set_psx_mode(true)`:
 
 - **Affine UV interpolation.** UVs interpolate linearly in screen space
@@ -52,9 +52,17 @@ The VRAM-mesh pipeline supports PSX-faithful rasterisation via
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x`/`y` are
   snapped to the nearest integer pixel before rasterisation, giving the
   GTE's characteristic per-vertex shimmer on slow-moving geometry.
+- **15-bit ordered dithering.** The shaded colour is dithered with the
+  PSX GPU's 4x4 offset matrix and quantized to 5 bits per channel (BGR555
+  framebuffer depth) - the cross-hatch gradients of retail output. The
+  WGSL helper (`PSX_DITHER_WGSL`) mirrors the unit-tested CPU `psx_dither`
+  module, and the composed shaders are naga-validated in the test suite.
 - **TSB / CBA flat shading per primitive.** Texture page and CLUT base
   remain `@interpolate(flat)` so each triangle samples from the same
   page and palette, matching `GP0(0x24)` semantics.
+
+In the `legaia-engine play-window` binary this whole mode is opt-in via
+the `LEGAIA_PSX_RENDER=1` environment variable.
 
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to
 GP0(0xE2) "Texture Window setting" - four 5-bit values in 8-pixel steps
