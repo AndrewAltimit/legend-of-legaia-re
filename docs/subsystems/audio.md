@@ -267,6 +267,18 @@ track. The rewind resets the integer sample-clock, so the looped body re-fires
 on the same sample offset every pass. `set_loop_to` is the fallback for the
 four retail tracks with no markers.
 
+**Controller census.** A disc-wide sweep of every SEQ-bearing PROT entry
+(`engine-audio/tests/real_seq_expressive_events.rs`) fixes which control
+changes the retail score actually emits: CC7 (channel volume) and CC10 (pan)
+carry the bulk; CC99 carries **only** the two loop-marker values 20 and 30
+(so the loop handler drops nothing); and CC6 (Data Entry) is a constant 127
+emitted ~once per track (a fixed init the engine ignores — it varies nothing,
+so it is not a per-track parameter). Notably **absent**: expression (CC11)
+and reverb-depth (CC91). So per-channel volume swells and per-cue reverb
+sends are not encoded in the SEQ stream — whatever drives the live
+reverb-enable for BGM (see the reverb routing above) lives outside the
+sequence data.
+
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.
 Timing is computed with an **exact integer accumulator** (units of
