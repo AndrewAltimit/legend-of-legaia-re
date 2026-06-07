@@ -53,15 +53,36 @@ fn decodes_the_equip_stat_table_or_skips() {
     armor(0x47, 45, 45, 1); // Master Armor: 45 / 45, Vahn.
 
     // Head accessory (War God Band, Gala): slot = Head, mask = Gala (4).
+    // Head gear carries the INT bonus (+0), never the SPD bonus (+4).
     let band = table.bonus(0x41).expect("War God Band");
     assert_eq!(band.slot(), EquipSlot::Head);
     assert_eq!(band.equip_mask(), 4, "War God Band equips Gala");
     assert_eq!(band.def_up(), 47, "War God Band def-up");
+    assert_eq!(band.spd_up(), 0, "head gear sets no SPD bonus");
 
-    // Footwear (Warrior Boots, Vahn): slot = Footwear; sets the +4 footwear stat.
+    // Footwear (Warrior Boots, Vahn): slot = Footwear; the +4 byte is the SPD
+    // bonus (pinned via FUN_801CF5D0: equip +4 -> char record +0x118 = SPD).
     let boots = table.bonus(0x59).expect("Warrior Boots");
     assert_eq!(boots.slot(), EquipSlot::Footwear);
-    assert_eq!(boots.stat_bonus()[4], 4, "Warrior Boots footwear stat");
+    assert_eq!(boots.spd_up(), 4, "Warrior Boots SPD bonus");
+    assert_eq!(boots.int_up(), 0, "footwear sets no INT bonus");
+
+    // Corpus invariant matching the slot->stat mapping: the INT bonus (+0)
+    // appears only on head gear, the SPD bonus (+4) only on footwear. (Body and
+    // weapon records leave both at 0.)
+    for id in 0u8..=255 {
+        let Some(b) = table.bonus(id) else { continue };
+        if b.int_up() != 0 {
+            assert_eq!(b.slot(), EquipSlot::Head, "INT bonus on non-head {id:#x}");
+        }
+        if b.spd_up() != 0 {
+            assert_eq!(
+                b.slot(),
+                EquipSlot::Footwear,
+                "SPD bonus on non-footwear {id:#x}"
+            );
+        }
+    }
 
     // Ra-Seru gear sets the +7 bit-0 flag.
     assert!(

@@ -44,23 +44,35 @@ pub struct StatRecord {
     pub base_udf: u16,
     /// Base lower-defense factor (LDF).
     pub base_ldf: u16,
-    /// Base accuracy (hit rate stat).
+    /// Base accuracy (hit rate stat - derived from AGL, not equipment-fed).
     pub base_accuracy: u16,
-    /// Base evasion / agility.
+    /// Base evasion / agility (derived from AGL, not equipment-fed).
     pub base_evasion: u16,
+    /// Base speed (`SPD`) - turn-order stat, equipment-boosted by footwear.
+    pub base_spd: u16,
+    /// Base intelligence (`INT`) - magic stat, equipment-boosted by head gear.
+    pub base_int: u16,
     /// Currently-equipped item ids in the 8 equipment slots.
     pub equip: [u8; 8],
 }
 
 /// Per-item modifier table entry. Each equipment item adds these
 /// values onto the character's resolved [`BattleStats`].
+///
+/// The retail equipment stat-bonus table (`DAT_80074F68`) modifies exactly
+/// these five stats - `ATK` / `UDF` / `LDF` / `SPD` / `INT` (see
+/// `legaia_asset::equip_stats`; the `+0` byte is the INT bonus, `+4` the SPD
+/// bonus). Equipment never touches the derived accuracy / evasion lines, so
+/// those are not represented here.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ItemModifier {
     pub atk: i16,
     pub udf: i16,
     pub ldf: i16,
-    pub acc: i16,
-    pub eva: i16,
+    /// Speed (`SPD`) bonus - footwear's `+4` byte.
+    pub spd: i16,
+    /// Intelligence (`INT`) bonus - head gear's `+0` byte.
+    pub int: i16,
     /// Ability bits OR'd into the resolved [`BattleStats::abilities`].
     /// 32 bytes = 256 bits, matching the runtime mask shape.
     pub ability_bits: [u8; 32],
@@ -136,7 +148,13 @@ pub struct BattleStats {
     pub atk: u16,
     pub udf: u16,
     pub ldf: u16,
+    /// Resolved speed (`SPD`) - base + equipment (footwear). Feeds turn order.
+    pub spd: u16,
+    /// Resolved intelligence (`INT`) - base + equipment (head gear).
+    pub int: u16,
+    /// Derived accuracy. Comes from AGL upstream; equipment does not feed it.
     pub acc: u16,
+    /// Derived evasion. Comes from AGL upstream; equipment does not feed it.
     pub eva: u16,
     /// 256-bit ability mask. Equipment + character record contribute.
     pub abilities: [u8; 32],
@@ -189,12 +207,17 @@ fn mul_clamp(value: u16, mult: f32) -> u16 {
 /// subscreens: it walks the 5 equipment bytes at `char_record + 0x196`, for
 /// each non-zero slot looks up the item entry at stride `0xC` from the item
 /// table (`0x8007433C`), gates on `entry[0] == 1` (equippable type), reads
-/// the stat-bonus row at `entry[1] * 8` from `0x8007EF68`, and accumulates
-/// into the menu's stat-display globals (`DAT_801EF08C/090/094/098/09C` —
-/// STR / INT / DEF / LUCK / …). This function is the clean-room equivalent:
-/// it consumes the same five equipment ids (`record.equip`), looks each up
-/// in the engine's [`EquipmentTable`] (analogue of the `0x8007EF68` bonus
-/// row), and accumulates the modifiers into [`BattleStats`]. It also folds
+/// the stat-bonus row at `entry[1] * 8` from `0x80074F68`, and accumulates
+/// into the menu's stat-display globals (`DAT_801EF08C/090/094/098/09C`). Those
+/// five accumulators are pre-loaded by `FUN_801CF5D0` from the character
+/// record's `ATK / UDF / LDF / SPD / INT` halfwords (`+0x112/0x114/0x116/0x118/
+/// 0x11A`), so the five equipment bytes target `ATK / UDF / LDF / SPD / INT`
+/// respectively (the `+0` byte is INT, the `+4` byte is SPD). This function is
+/// the clean-room equivalent: it consumes the same five equipment ids
+/// (`record.equip`), looks each up in the engine's [`EquipmentTable`] (analogue
+/// of the `0x80074F68` bonus row), and accumulates the modifiers into
+/// [`BattleStats`]. Accuracy / evasion are derived from AGL upstream and are
+/// not equipment-fed, so the equipment loop leaves them alone. It also folds
 /// status-effect multipliers, which the SCUS pass leaves to the battle-side
 /// kernels in `FUN_801EC3E4`. (The town-overlay alias at the same address —
 /// emitter ramp-actor allocator — is a separate function; see
@@ -209,13 +232,17 @@ pub fn compute_battle_stats(
         atk: record.base_attack,
         udf: record.base_udf,
         ldf: record.base_ldf,
+        spd: record.base_spd,
+        int: record.base_int,
         acc: record.base_accuracy,
         eva: record.base_evasion,
         abilities: [0u8; 32],
         magic_blocked: false,
         action_blocked: false,
     };
-    // Walk equipment slots, sum modifiers + OR ability bits.
+    // Walk equipment slots, sum the five equipment-fed stats (ATK/UDF/LDF/SPD/
+    // INT) + OR ability bits. Accuracy/evasion are derived from AGL and are not
+    // touched by equipment.
     for &id in record.equip.iter() {
         if id == 0 {
             continue;
@@ -224,8 +251,8 @@ pub fn compute_battle_stats(
             stats.atk = add_clamped(stats.atk, m.atk);
             stats.udf = add_clamped(stats.udf, m.udf);
             stats.ldf = add_clamped(stats.ldf, m.ldf);
-            stats.acc = add_clamped(stats.acc, m.acc);
-            stats.eva = add_clamped(stats.eva, m.eva);
+            stats.spd = add_clamped(stats.spd, m.spd);
+            stats.int = add_clamped(stats.int, m.int);
             or_assign_bits(&mut stats.abilities, &m.ability_bits);
         }
     }
@@ -274,6 +301,8 @@ mod tests {
             base_ldf: 60,
             base_accuracy: 90,
             base_evasion: 30,
+            base_spd: 40,
+            base_int: 25,
             equip: [1, 2, 0, 0, 0, 0, 0, 0],
         }
     }
@@ -304,8 +333,36 @@ mod tests {
         assert_eq!(s.ldf, 60);
         assert_eq!(s.acc, 90);
         assert_eq!(s.eva, 30);
+        assert_eq!(s.spd, 40);
+        assert_eq!(s.int, 25);
         assert!(!s.action_blocked);
         assert!(!s.magic_blocked);
+    }
+
+    #[test]
+    fn equipment_spd_and_int_add_but_not_acc_eva() {
+        let mut t = EquipmentTable::new();
+        // Footwear SPD bonus in slot id 1, head-gear INT bonus in slot id 2.
+        t.set(
+            1,
+            ItemModifier {
+                spd: 5,
+                ..ItemModifier::default()
+            },
+        );
+        t.set(
+            2,
+            ItemModifier {
+                int: 8,
+                ..ItemModifier::default()
+            },
+        );
+        let s = compute_battle_stats_default(&record(), &t, &[]);
+        assert_eq!(s.spd, 45); // 40 + 5
+        assert_eq!(s.int, 33); // 25 + 8
+        // Equipment never moves the derived accuracy / evasion lines.
+        assert_eq!(s.acc, 90);
+        assert_eq!(s.eva, 30);
     }
 
     #[test]

@@ -160,9 +160,11 @@ impl EquipmentCatalog {
 /// table indexes by the same ids a character record's `equip[8]` actually
 /// carries.
 ///
-/// The head-gear / footwear bonuses (the `+0` / `+4` bytes - the agility /
-/// evasion pair) are left unmapped (`acc`/`eva` stay 0) pending stat-order
-/// confirmation; the proven attack / defense bonuses are applied.
+/// All five equipment-fed stats are mapped: attack (`+1`), def-up (`+2`),
+/// def-down (`+3`), plus the head-gear `+0` byte (INT) and footwear `+4` byte
+/// (SPD), pinned via the equip-screen aggregator's record-offset preload
+/// (`FUN_801CF5D0`; see `legaia_asset::equip_stats`). Accuracy / evasion are
+/// derived from AGL and are not equipment-fed, so they are absent here.
 pub fn equip_modifier_table_from_disc(
     table: &legaia_asset::equip_stats::EquipStatTable,
 ) -> EquipmentTable {
@@ -175,8 +177,8 @@ pub fn equip_modifier_table_from_disc(
                     atk: b.attack() as i16,
                     udf: b.def_up() as i16,
                     ldf: b.def_down() as i16,
-                    acc: 0,
-                    eva: 0,
+                    spd: b.spd_up() as i16,
+                    int: b.int_up() as i16,
                     ability_bits: [0; 32],
                 },
             );
@@ -189,13 +191,13 @@ const VAHN: u8 = 0;
 const NOA: u8 = 1;
 const GALA: u8 = 2;
 
-fn mk_modifier(atk: i16, udf: i16, ldf: i16, acc: i16, eva: i16) -> ItemModifier {
+fn mk_modifier(atk: i16, udf: i16, ldf: i16, spd: i16, int: i16) -> ItemModifier {
     ItemModifier {
         atk,
         udf,
         ldf,
-        acc,
-        eva,
+        spd,
+        int,
         ability_bits: [0; 32],
     }
 }
@@ -204,8 +206,8 @@ fn mk_modifier_with_ability(
     atk: i16,
     udf: i16,
     ldf: i16,
-    acc: i16,
-    eva: i16,
+    spd: i16,
+    int: i16,
     ability_bit: u16,
 ) -> ItemModifier {
     let mut bits = [0u8; 32];
@@ -218,8 +220,8 @@ fn mk_modifier_with_ability(
         atk,
         udf,
         ldf,
-        acc,
-        eva,
+        spd,
+        int,
         ability_bits: bits,
     }
 }
@@ -442,7 +444,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         name: "Cloth Shoes",
         slot: EquipSlot::Boot,
         restriction: CharRestriction::Any,
-        modifier: mk_modifier(0, 0, 1, 0, 2),
+        modifier: mk_modifier(0, 0, 1, 2, 0),
         buy_price: 60,
         sell_price: 30,
     });
@@ -451,7 +453,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         name: "Leather Boots",
         slot: EquipSlot::Boot,
         restriction: CharRestriction::Any,
-        modifier: mk_modifier(0, 0, 3, 0, 4),
+        modifier: mk_modifier(0, 0, 3, 4, 0),
         buy_price: 200,
         sell_price: 100,
     });
@@ -460,7 +462,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         name: "Iron Boots",
         slot: EquipSlot::Boot,
         restriction: CharRestriction::Any,
-        modifier: mk_modifier(0, 0, 7, 0, 2),
+        modifier: mk_modifier(0, 0, 7, 2, 0),
         buy_price: 480,
         sell_price: 240,
     });
@@ -470,7 +472,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         slot: EquipSlot::Boot,
         restriction: CharRestriction::Any,
         // Ability bit 12 = "evasion bonus" - mirrors retail's hidden flag.
-        modifier: mk_modifier_with_ability(0, 0, 5, 2, 8, 12),
+        modifier: mk_modifier_with_ability(0, 0, 5, 2, 0, 12),
         buy_price: 1100,
         sell_price: 550,
     });
@@ -672,11 +674,12 @@ mod tests {
     }
 
     #[test]
-    fn wind_boots_grant_evasion_bit() {
+    fn wind_boots_grant_speed_and_evasion_bit() {
         let c = vanilla_equipment_catalog();
         let boots = c.get(0xA3).unwrap();
-        assert!(boots.modifier.eva > 0);
-        // Ability bit 12 set.
+        // Footwear boosts SPD; the evasion flavour is the hidden ability bit.
+        assert!(boots.modifier.spd > 0);
+        // Ability bit 12 set (evasion flag).
         assert_ne!(boots.modifier.ability_bits[1] & 0x10, 0);
     }
 }

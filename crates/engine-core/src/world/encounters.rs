@@ -126,6 +126,8 @@ impl World {
                 base_ldf: live.ldf,
                 base_accuracy: live.agl,
                 base_evasion: live.agl,
+                base_spd: live.spd,
+                base_int: live.int,
                 equip: rec.equipment().slots,
             };
             let stats = crate::battle_stats::compute_battle_stats_default(

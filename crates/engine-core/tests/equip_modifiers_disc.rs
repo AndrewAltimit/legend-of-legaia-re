@@ -24,14 +24,26 @@ fn disc_modifier_table_uses_real_ids_and_stats() {
     let stats = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
     let table = equip_modifier_table_from_disc(&stats);
 
-    // Chaos Breaker (id 0x27) is a weapon: attack 72, no defense.
+    // Chaos Breaker (id 0x27) is a weapon: attack 72, no defense / SPD / INT.
     let cb = table.get(0x27).expect("Chaos Breaker modifier");
     assert_eq!(cb.atk, 72);
     assert_eq!(cb.udf, 0);
-    // Master Armor (id 0x47): def-up/def-down 45/45, no attack.
+    assert_eq!((cb.spd, cb.int), (0, 0), "weapons carry no SPD/INT");
+    // Master Armor (id 0x47): def-up/def-down 45/45, no attack / SPD / INT.
     let armor = table.get(0x47).expect("Master Armor modifier");
     assert_eq!(armor.atk, 0);
     assert_eq!((armor.udf, armor.ldf), (45, 45));
+    assert_eq!(
+        (armor.spd, armor.int),
+        (0, 0),
+        "body armor carries no SPD/INT"
+    );
+
+    // Warrior Boots (id 0x59) are footwear: the +4 byte is the SPD bonus (4),
+    // and footwear never carries INT.
+    let boots = table.get(0x59).expect("Warrior Boots modifier");
+    assert_eq!(boots.spd, 4, "Warrior Boots SPD bonus");
+    assert_eq!(boots.int, 0, "footwear carries no INT");
 
     // The fabricated vanilla catalog keys 0x20 as "Bronze Sword" (atk 10), but
     // the real id 0x20 is the Mace (attack 38) - proving the disc table is the

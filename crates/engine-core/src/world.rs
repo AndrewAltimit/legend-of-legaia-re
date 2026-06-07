@@ -1442,6 +1442,16 @@ pub struct World {
     /// play-window`, the v0.1 playthrough oracle) set this once after boot.
     pub live_gameplay_loop: bool,
 
+    /// Opt-in, NON-FAITHFUL gameplay tweak: when a monster picks a single
+    /// living party member to attack, override the (faithful, random) choice
+    /// with the lowest-HP living member. Off by default — the retail behaviour
+    /// is a uniform random target. The faithful random target is still rolled
+    /// in full (identical RNG-call count + stream); only the final single
+    /// party slot is replaced, so a replay stays internally deterministic and
+    /// all downstream battle RNG is unaffected. All-party / monster-band / self
+    /// targets are never touched.
+    pub smarter_monster_targeting: bool,
+
     /// Opt-in: route field NPC dialogue through the inline-script field-VM
     /// runner ([`Self::drive_inline_dialogue`]) instead of the simplified
     /// `current_dialog` / `OwnedDialogPanel` path, so dialogue branch handlers
@@ -1995,6 +2005,7 @@ impl World {
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
             live_gameplay_loop: false,
+            smarter_monster_targeting: false,
             use_vm_dialogue: false,
             use_damage_finish: false,
             battle_player_driven: false,

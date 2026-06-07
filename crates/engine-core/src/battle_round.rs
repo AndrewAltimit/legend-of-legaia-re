@@ -172,6 +172,8 @@ mod tests {
             base_ldf: 40,
             base_accuracy: 80,
             base_evasion: 30,
+            base_spd: 45,
+            base_int: 20,
             equip: [10, 0, 0, 0, 0, 0, 0, 0],
         };
         let mut per_slot: [Option<StatRecord>; 8] = Default::default();

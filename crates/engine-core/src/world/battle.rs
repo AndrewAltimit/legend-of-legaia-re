@@ -1528,7 +1528,7 @@ impl World {
     ///
     /// PORT: FUN_801E9FD4
     /// REF: FUN_801DABA4, FUN_801DA51C
-    fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
+    pub(super) fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
         let pc = self.party_count.max(1);
 
         // --- generic decision core ---
@@ -1621,6 +1621,20 @@ impl World {
                 &mut || self.next_rng(),
             );
             self.monster_ai_state = ai;
+        }
+
+        // Optional, gated, NON-FAITHFUL: smarter single-target selection. By
+        // now every RNG draw of the faithful random pick (magic roll, target
+        // roll + re-roll loop, scripted override, anti-repeat ring) is already
+        // consumed, so overriding the chosen slot here does not move the RNG
+        // stream. We only redirect a single living-party target (`class < pc`)
+        // to the lowest-HP living member; all-party (8) / monster-band (9) /
+        // self targets are left exactly as the faithful path resolved them.
+        if self.smarter_monster_targeting
+            && target_class < pc
+            && let Some(low) = self.lowest_hp_living_party_member(pc)
+        {
+            target_class = low;
         }
 
         // --- build the action ---
@@ -1747,6 +1761,25 @@ impl World {
                 return Some(t);
             }
         }
+    }
+
+    /// Lowest-HP living party member (slot `0..party_count`), ties broken by
+    /// the lower slot index. `None` only when the whole party is down.
+    /// Consumes no RNG — used solely by the opt-in
+    /// [`World::smarter_monster_targeting`] override, which runs after the
+    /// faithful random pick has already advanced the RNG stream.
+    fn lowest_hp_living_party_member(&self, party_count: u8) -> Option<u8> {
+        let pc = party_count.max(1);
+        let mut best: Option<(u8, u16)> = None;
+        for i in 0..pc {
+            if let Some(a) = self.actors.get(i as usize)
+                && a.battle.liveness != 0
+                && best.is_none_or(|(_, hp)| a.battle.hp < hp)
+            {
+                best = Some((i, a.battle.hp));
+            }
+        }
+        best.map(|(i, _)| i)
     }
 
     /// Clean-room port of `FUN_801E7320` - the monster-AI **target resolver**,

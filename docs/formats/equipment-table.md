@@ -32,25 +32,51 @@ record      = (&DAT_80074F68)[bonus_index * 8]   ; stride-8 record
 
 | Offset | Type | Field |
 |---|---|---|
-| `+0` | u8 | stat bonus 0 - the head-gear stat (set by head accessories) |
+| `+0` | u8 | **intelligence** (`INT`) bonus (head accessories set it) |
 | `+1` | u8 | **attack** bonus (weapons' only field; boots also add a small amount) |
 | `+2` | u8 | **defense-up** (`UDF`) bonus (body armor + head accessories) |
 | `+3` | u8 | **defense-down** (`LDF`) bonus (body armor + boots) |
-| `+4` | u8 | stat bonus 4 - the footwear stat (only boots/shoes set it) |
+| `+4` | u8 | **speed** (`SPD`) bonus (only boots/shoes set it) |
 | `+5` | u8 | constant `0x40` |
 | `+6` | u8 | **equip character mask**: bit `1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` = any |
 | `+7` | u8 | **slot type** (`& 0x60`: `0x00` body, `0x20` head, `0x40` weapon, `0x60` footwear) + bit `0x01` = Ra-Seru |
 
+### Which stat each `+0..+4` byte targets
+
+The five accumulators the aggregator sums into are pre-loaded from the active
+character record by `FUN_801CF5D0`
+(`ghidra/scripts/funcs/overlay_shop_save_801cf5d0.txt`) before the equipment
+bytes are added. Reading those record load offsets pins each byte's stat target.
+The aggregator's record base is `0x80084140 + idx*0x414`; the live character
+record is `0x80084708 + idx*0x414` (i.e. `+0x5C8` further), whose live-stat
+block is `(AGL, ATK, UDF, LDF, SPD, INT)` at `+0x110..+0x11B` (pinned in
+`legaia_save` by the "Max AGL / Max ATK / ..." GameShark cheats):
+
+```text
+equip +0  ->  DAT_801EF09C  <- record +0x6E2  =  char +0x11A  =  INT
+equip +1  ->  DAT_801EF08C  <- record +0x6DA  =  char +0x112  =  ATK
+equip +2  ->  DAT_801EF090  <- record +0x6DC  =  char +0x114  =  UDF
+equip +3  ->  DAT_801EF094  <- record +0x6DE  =  char +0x116  =  LDF
+equip +4  ->  DAT_801EF098  <- record +0x6E0  =  char +0x118  =  SPD
+```
+
+So equipment modifies ATK / UDF / LDF / SPD / INT and **never** AGL (the AGL
+accumulator `DAT_801EF088` takes no equipment add). The earlier "agility /
+speed pair" reading of `+0`/`+4` is **falsified**: `+0` is the INT bonus
+(head gear), `+4` is the SPD bonus (footwear).
+
 ### What is pinned vs. best-effort
 
-The `+1` / `+2` / `+3` fields are **byte-exact** against the curated gamedata:
-every weapon's `+1` equals its `attack`, every body armor's `+2`/`+3` equal its
-`udf`/`ldf`. The `+6` mask matches each item's `equip_best` / `equip_others`,
-and the `+7` slot byte cleanly partitions weapons / body / head / footwear with
-the Ra-Seru upgrade flag. The `+0` and `+4` fields are the remaining two
-battle-stat bonuses (the agility / speed pair; `+0` appears only on head gear,
-`+4` only on footwear) - the curated tables don't carry those per item, so they
-are exposed raw rather than named to a guessed stat.
+All five `+0..+4` stat *targets* are **pinned** from the accumulator ->
+record-offset mapping above. The `+1` / `+2` / `+3` magnitudes are additionally
+**byte-exact** against the curated gamedata (every weapon's `+1` equals its
+`attack`, every body armor's `+2`/`+3` equal its `udf`/`ldf`). The `+6` mask
+matches each item's `equip_best` / `equip_others`, and the `+7` slot byte cleanly
+partitions weapons / body / head / footwear with the Ra-Seru upgrade flag. The
+curated tables don't carry per-item SPD/INT bonuses, so the `+0`/`+4` magnitudes
+aren't cross-checked against an external source, but their stat targets are fixed
+and the disc-gated test asserts the slot invariant (INT only on head gear, SPD
+only on footwear).
 
 Note that boots/shoes spread bonuses across `+1` (a small attack bump), `+3`
 (`LDF`), and `+4`, so a walkthrough that lists only "two defense numbers" for a

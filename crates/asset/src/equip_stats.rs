@@ -26,24 +26,48 @@
 //!
 //! | Offset | Type | Field |
 //! |---|---|---|
-//! | `+0` | u8 | stat bonus 0 - the head-gear stat (set by head accessories) |
+//! | `+0` | u8 | **intelligence** (`INT`) bonus (head accessories set it) |
 //! | `+1` | u8 | **attack** bonus (weapons' only field; boots also add a small amount) |
 //! | `+2` | u8 | **defense-up** (`UDF`) bonus (body armor + head accessories) |
 //! | `+3` | u8 | **defense-down** (`LDF`) bonus (body armor + boots) |
-//! | `+4` | u8 | stat bonus 4 - the footwear stat (only boots/shoes set it) |
+//! | `+4` | u8 | **speed** (`SPD`) bonus (only boots/shoes set it) |
 //! | `+5` | u8 | constant `0x40` |
 //! | `+6` | u8 | **equip character mask** (`1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` = anyone) |
 //! | `+7` | u8 | **slot type** (`0x00` body, `0x20` head, `0x40` weapon, `0x60` footwear) + bit `0x01` = Ra-Seru |
 //!
+//! ## What each `+0..+4` byte targets (Ghidra-traced)
+//!
+//! The aggregator's five accumulators (`DAT_801EF08C/090/094/098/09C`) are
+//! pre-loaded from the active character record by `FUN_801CF5D0`
+//! (`ghidra/scripts/funcs/overlay_shop_save_801cf5d0.txt`): each is seeded from
+//! a record halfword before the equipment bytes are summed in. Reading those
+//! load offsets (record base `0x80084140 + idx*0x414`; the live char record is
+//! `0x80084708 + idx*0x414`, i.e. `+0x5C8` further) pins which stat each
+//! equipment byte modifies. The record's live-stat block is `(AGL, ATK, UDF,
+//! LDF, SPD, INT)` at `+0x110..+0x11B` (pinned in `legaia_save`):
+//!
+//! ```text
+//! equip +0  ->  DAT_801EF09C  <- record +0x6E2  =  char +0x11A  =  INT
+//! equip +1  ->  DAT_801EF08C  <- record +0x6DA  =  char +0x112  =  ATK
+//! equip +2  ->  DAT_801EF090  <- record +0x6DC  =  char +0x114  =  UDF
+//! equip +3  ->  DAT_801EF094  <- record +0x6DE  =  char +0x116  =  LDF
+//! equip +4  ->  DAT_801EF098  <- record +0x6E0  =  char +0x118  =  SPD
+//! ```
+//!
+//! So equipment modifies ATK / UDF / LDF / SPD / INT; it never touches AGL
+//! (the AGL accumulator `DAT_801EF088` takes no equipment add). The earlier
+//! "agility / evasion pair" reading of `+0`/`+4` is **falsified**: `+0` is the
+//! INT bonus (head gear), `+4` is the SPD bonus (footwear).
+//!
 //! ## What is pinned vs. best-effort
 //!
-//! The `+1`/`+2`/`+3` fields are **byte-exact** against the curated gamedata:
-//! every weapon's `+1` equals its `attack`, and every body armor's `+2`/`+3`
-//! equal its `udf`/`ldf`. The `+6` mask matches each item's `equip_best` /
-//! `equip_others`. The `+0` and `+4` fields are the remaining two battle-stat
-//! bonuses (the agility / speed pair - `+0` appears only on head gear, `+4`
-//! only on footwear); the curated tables don't carry those per item, so they
-//! are exposed raw rather than named to a guessed stat.
+//! All five `+0..+4` stat targets are now **pinned** from the accumulator ->
+//! record-offset mapping above. The `+1`/`+2`/`+3` magnitudes are additionally
+//! **byte-exact** against the curated gamedata (every weapon's `+1` equals its
+//! `attack`; every body armor's `+2`/`+3` equal its `udf`/`ldf`), and the `+6`
+//! mask matches each item's `equip_best` / `equip_others`. The curated tables
+//! don't carry per-item SPD/INT bonuses, so the `+0`/`+4` magnitudes are not
+//! cross-checked against an external source, but their stat targets are fixed.
 //!
 //! ## Provenance + parser
 //!
@@ -89,9 +113,8 @@ pub struct EquipBonus {
 }
 
 impl EquipBonus {
-    /// The five battle-stat bonuses (`+0..+4`). Indices 1/2/3 are
-    /// attack/def-up/def-down (pinned); indices 0/4 are the head/footwear stat
-    /// bonuses (exposed raw - see module docs).
+    /// The five battle-stat bonuses (`+0..+4`), in record order
+    /// `[INT, ATK, UDF, LDF, SPD]` (see module docs for the stat mapping).
     pub fn stat_bonus(&self) -> [u8; 5] {
         [
             self.raw[0],
@@ -100,6 +123,11 @@ impl EquipBonus {
             self.raw[3],
             self.raw[4],
         ]
+    }
+
+    /// Intelligence (`INT`) bonus (`+0`) - set by head accessories.
+    pub fn int_up(&self) -> u8 {
+        self.raw[0]
     }
 
     /// Attack bonus (`+1`).
@@ -115,6 +143,11 @@ impl EquipBonus {
     /// Defense-down (`LDF`) bonus (`+3`).
     pub fn def_down(&self) -> u8 {
         self.raw[3]
+    }
+
+    /// Speed (`SPD`) bonus (`+4`) - set by footwear.
+    pub fn spd_up(&self) -> u8 {
+        self.raw[4]
     }
 
     /// Equip character-mask byte (`+6`): bit `1` Vahn/Meta, `2` Noa/Terra,
@@ -275,5 +308,19 @@ mod tests {
         assert!(vahn.equips_mask_bit(1));
         assert!(!vahn.equips_mask_bit(2));
         assert_eq!(vahn.attack(), 40);
+    }
+
+    #[test]
+    fn stat_bytes_map_to_int_atk_udf_ldf_spd() {
+        // raw[0..5] = [INT, ATK, UDF, LDF, SPD]
+        let rec = EquipBonus {
+            raw: [3, 10, 8, 7, 5, 0x40, 7, 0x60],
+        };
+        assert_eq!(rec.int_up(), 3);
+        assert_eq!(rec.attack(), 10);
+        assert_eq!(rec.def_up(), 8);
+        assert_eq!(rec.def_down(), 7);
+        assert_eq!(rec.spd_up(), 5);
+        assert_eq!(rec.stat_bonus(), [3, 10, 8, 7, 5]);
     }
 }

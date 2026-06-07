@@ -4117,6 +4117,68 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     assert_eq!(fx[0].target_slot, 0, "the party member took the hit");
 }
 
+/// The opt-in `smarter_monster_targeting` tweak redirects a single-target
+/// monster attack to the lowest-HP living party member, but does NOT move the
+/// RNG stream: the faithful random pick is still rolled in full, so for every
+/// seed the post-decision RNG state is byte-identical between the faithful and
+/// smart modes — only the chosen slot differs. Default (faithful) behaviour is
+/// thus bit-for-bit unchanged, and a smart-mode replay stays deterministic.
+#[test]
+fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
+    fn world3() -> World {
+        let mut w = World {
+            party_count: 3,
+            ..World::default()
+        };
+        w.mode = SceneMode::Battle;
+        // Party HP: slot 1 is the lowest-HP living member.
+        for (i, hp) in [200u16, 50, 200].into_iter().enumerate() {
+            w.actors[i].battle.max_hp = 200;
+            w.actors[i].battle.hp = hp;
+            w.actors[i].battle.liveness = 1;
+        }
+        // Monster at slot 3 with no castable magic -> always a physical strike
+        // at a single living party member (no scripted override / ring filter).
+        w.actors[3].battle.max_hp = 100;
+        w.actors[3].battle.hp = 100;
+        w.actors[3].battle.liveness = 1;
+        w
+    }
+    fn target_of(a: MonsterAction) -> u8 {
+        match a {
+            MonsterAction::Physical { target } => target,
+            MonsterAction::Cast { targets, .. } => targets[0],
+        }
+    }
+
+    let mut saw_redirect = false;
+    for seed in 0u32..32 {
+        let mut faithful = world3();
+        faithful.rng_state = seed;
+        let ft = target_of(faithful.pick_monster_action(3));
+        let frng = faithful.rng_state;
+
+        let mut smart = world3();
+        smart.smarter_monster_targeting = true;
+        smart.rng_state = seed;
+        let st = target_of(smart.pick_monster_action(3));
+        let srng = smart.rng_state;
+
+        assert_eq!(st, 1, "seed {seed}: smart mode targets the lowest-HP slot");
+        assert_eq!(
+            frng, srng,
+            "seed {seed}: RNG state identical across modes (override consumes none)"
+        );
+        if ft != 1 {
+            saw_redirect = true;
+        }
+    }
+    assert!(
+        saw_redirect,
+        "expected at least one seed where the faithful pick is not the lowest-HP slot"
+    );
+}
+
 /// When the move-power table is installed and the monster's cast id resolves
 /// to a power record, the special-attack damage rolls through the faithful
 /// arts/physical kernel (move-power-seeded) instead of the MP-scaled spell
@@ -6398,8 +6460,8 @@ fn seed_party_battle_stats_folds_live_stats_and_equipment() {
             atk: 7,
             udf: 3,
             ldf: 2,
-            acc: 0,
-            eva: 0,
+            spd: 0,
+            int: 0,
             ability_bits: [0; 32],
         },
     );
