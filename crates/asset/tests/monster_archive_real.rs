@@ -486,3 +486,60 @@ fn monster_glb_export_is_structurally_valid() {
         "image is PNG"
     );
 }
+
+/// Spell-entry effect/aux offsets resolve through the per-block effect-offset
+/// table (the `FUN_800542C8` index→table→offset indirection). Pins the decode
+/// against the real archive: the `+0x04`/`+0x08` fields are 1-based indices, not
+/// direct pointers, and the resolved offsets land on a real effect descriptor.
+#[test]
+fn spell_effect_offsets_resolve_through_the_effect_table() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Evil Fly (id 1): spell 0x10 indexes effect descriptor at block 0xEE88.
+    let evil_fly = monster_archive::record(&entry, 1).unwrap().unwrap();
+    let s10 = evil_fly
+        .spells
+        .iter()
+        .find(|s| s.id == 0x10)
+        .expect("Evil Fly spell 0x10");
+    assert_eq!(
+        s10.effect_offset,
+        Some(0xEE88),
+        "Evil Fly 0x10 effect descriptor offset"
+    );
+    // The descriptor head is a short fixed record, not a TMD (magic != 0x80000002).
+    let mesh = monster_archive::mesh(&entry, 1).unwrap().unwrap();
+    let d = &mesh.block[0xEE88..0xEE88 + 8];
+    assert_eq!(d, &[0x00, 0x24, 0x27, 0x27, 0x2c, 0x00, 0x00, 0x00]);
+
+    // Green Slime (id 7): each indexed spell resolves to a distinct in-block
+    // descriptor; spell 0x00 sits at 0x2C98.
+    let slime = monster_archive::record(&entry, 7).unwrap().unwrap();
+    let s00 = slime.spells.iter().find(|s| s.id == 0x00).unwrap();
+    assert_eq!(s00.effect_offset, Some(0x2C98));
+
+    // Corpus invariants: the index field is sparse (most entries carry none),
+    // and every resolved offset is in-bounds by construction.
+    let (mut eff, mut aux) = (0usize, 0usize);
+    for id in 1..=240u16 {
+        let Ok(Some(rec)) = monster_archive::record(&entry, id) else {
+            continue;
+        };
+        for sp in &rec.spells {
+            if sp.effect_offset.is_some() {
+                eff += 1;
+            }
+            if sp.aux_offset.is_some() {
+                aux += 1;
+            }
+        }
+    }
+    assert_eq!(
+        eff, 289,
+        "spell entries with a resolved +0x04 effect offset"
+    );
+    assert_eq!(aux, 24, "spell entries with a resolved +0x08 aux offset");
+}

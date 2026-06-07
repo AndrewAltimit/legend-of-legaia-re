@@ -61,11 +61,20 @@
 //! - `+0x74` (u8) — **SP (spirit) cost**. The enemy-AI spell picker only
 //!   considers a spell when `cost != 0xFF` and the actor's current SP
 //!   (`+0x154`) is `>= cost`, then subtracts it on cast. `0xFF` = unavailable.
-//! - `+0x04` / `+0x08` (u32) — block-relative sub-pointers (spell effect /
-//!   animation script data; fixed up at load), `+0x88` a self-pointer the
-//!   loader initialises to `entry+0x8C`. Their interior layout is the same
-//!   attack-effect geometry as the monster's own `+0x04` data and is left
-//!   undecoded here.
+//! - `+0x04` / `+0x08` (u32) — on disc these are **1-based indices** (`0` =
+//!   none), not pointers. Each indexes the per-block **effect-offset table**
+//!   that immediately follows the `+0x4C` spell-offset array (table word base
+//!   `magic_count + 0x13`). The battle loader `FUN_800542C8` resolves them with
+//!   `entry[+0x04] = block[(index + magic_count + 0x12)*4] + block_base`, and
+//!   initialises `+0x88` to `entry+0x8C` (a self-pointer; `0` on disc).
+//!   [`MonsterSpell::effect_offset`] / [`MonsterSpell::aux_offset`] expose the
+//!   resolved block-relative offsets, which land on a short fixed effect /
+//!   animation descriptor (a small record, not a TMD); its interior field
+//!   semantics are not yet pinned (the runtime consumer is the cast/effect path,
+//!   not the AI picker). Earlier notes calling `+0x04`/`+0x08` direct
+//!   block-relative sub-pointers "with the same geometry as the monster's own
+//!   `+0x04`" were wrong twice over: they are indices (max observed `0x0A`), and
+//!   the target is a small descriptor, not TMD geometry.
 //!
 //! ## Stat-name mapping (traced from `FUN_80054CB0` + the formula consumers)
 //!
@@ -142,6 +151,17 @@ pub struct MonsterSpell {
     /// Block-relative byte offset of this spell entry (the `+0x4C` array
     /// element, before the loader's add-block-base fixup).
     pub offset: u32,
+    /// Resolved block-relative byte offset of this spell's **effect /
+    /// animation descriptor**, or `None` when the entry has none. On disc the
+    /// entry's `+0x04` field is a 1-based **index** (0 = none) into the
+    /// per-block effect-offset table; this is the table slot already resolved
+    /// to a block-relative offset (the value the loader then add-block-bases
+    /// into the runtime `+0x04` pointer). See [`Self::aux_offset`] for `+0x08`.
+    pub effect_offset: Option<u32>,
+    /// Resolved block-relative byte offset of this spell's secondary descriptor
+    /// (entry `+0x08`, same index-into-effect-offset-table scheme as
+    /// [`Self::effect_offset`]), or `None`. Set on far fewer entries.
+    pub aux_offset: Option<u32>,
 }
 
 impl MonsterSpell {
@@ -379,9 +399,33 @@ fn parse_spells(block: &[u8], magic_count: u8) -> Vec<MonsterSpell> {
             id,
             sp_cost,
             offset,
+            effect_offset: resolve_effect_offset(block, magic_count, read_u32(block, entry + 4)),
+            aux_offset: resolve_effect_offset(block, magic_count, read_u32(block, entry + 8)),
         });
     }
     out
+}
+
+/// Resolve a spell entry's `+0x04` / `+0x08` **effect index** to a block-relative
+/// byte offset, mirroring the battle loader's fixup (`FUN_800542C8`,
+/// `ghidra/scripts/funcs/800542c8.txt`): the on-disc field is a 1-based index
+/// (`0` = none) into the per-block **effect-offset table** that sits immediately
+/// after the `+0x4C` spell-offset array (table word base `magic_count + 0x13`).
+/// The loader computes `block[(index + magic_count + 0x12) * 4] + block_base`;
+/// this returns the pre-`block_base` table value. `None` when the index is `0`,
+/// the table slot is out of range, or the resolved offset is zero / past the
+/// block.
+fn resolve_effect_offset(block: &[u8], magic_count: u8, index: Option<u32>) -> Option<u32> {
+    let index = index? as usize;
+    if index == 0 {
+        return None;
+    }
+    let word = index + magic_count as usize + 0x12;
+    let off = read_u32(block, word * 4)?;
+    if off == 0 || off as usize >= block.len() {
+        return None;
+    }
+    Some(off)
 }
 
 /// Read a NUL-terminated monster name at `off` and clean it to a display
@@ -999,11 +1043,15 @@ mod tests {
                     id: 0x0D,
                     sp_cost: 12,
                     offset: 0x100,
+                    effect_offset: None,
+                    aux_offset: None,
                 },
                 MonsterSpell {
                     id: 0x03,
                     sp_cost: 0xFF,
                     offset: 0x180,
+                    effect_offset: None,
+                    aux_offset: None,
                 },
             ]
         );
@@ -1017,6 +1065,42 @@ mod tests {
         assert!(parse_block(1, &[0u8; 0x60]).is_none());
         // Too short.
         assert!(parse_block(1, &[0u8; 8]).is_none());
+    }
+
+    #[test]
+    fn spell_effect_index_resolves_through_table() {
+        // magic_count = 2 -> effect-offset table word base = 2 + 0x13 = 0x15
+        // (byte 0x54), immediately after the two-entry spell-offset array.
+        let mc: u8 = 2;
+        let mut block = vec![0u8; 0x200];
+        // Spell entry @ 0x100: a +0x04 index of 1, +0x08 index of 0 (none).
+        block[0x100 + 4] = 1;
+        // table[index-1=0] @ byte 0x54: a block-relative offset of 0x1C0.
+        block[0x54..0x58].copy_from_slice(&0x1C0u32.to_le_bytes());
+        // table[1] @ 0x58: 0 -> would resolve to None if referenced.
+        assert_eq!(
+            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 4)),
+            Some(0x1C0)
+        );
+        assert_eq!(
+            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 8)),
+            None,
+            "index 0 -> none"
+        );
+        // An index whose table slot is zero resolves to None.
+        block[0x100 + 4] = 2;
+        assert_eq!(
+            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 4)),
+            None,
+            "zero table slot -> none"
+        );
+        // An out-of-range resolved offset is rejected.
+        block[0x58..0x5C].copy_from_slice(&0x9999u32.to_le_bytes());
+        assert_eq!(
+            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 4)),
+            None,
+            "offset past block end -> none"
+        );
     }
 
     #[test]
