@@ -293,6 +293,8 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
+The bank those programs index is **not a dedicated SFX VAB** — it is the active scene's music VAB. `FUN_80065034` reads the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`), which point at the per-scene `scene_vab_stream` bank the BGM sequencer has open: across the save-state catalogue that bank is 13 distinct VABs, and for a `music_01`-scene state it is byte-identical to the disc `music_01` VAB. So the engine fires a cue with `SfxBank::play_one_shot(spu, scene_vab)` against the BGM `VabBank` it already loaded — no separate SFX bank. Because scene banks differ in size (`1..=16` used programs), a cue resolves only where its program/tone exists; see [`formats/sfx-table.md`](../formats/sfx-table.md).
+
 | Cue ID | Meaning |
 |---|---|
 | `0x1A` | Generic SFX trigger ("play sound" hit cue). Catalog typically maps to per-strike weapon impact tones. |

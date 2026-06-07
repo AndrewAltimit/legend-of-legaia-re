@@ -243,7 +243,9 @@ the **sound cue** (`+0x0d`) as
 a pending id `World::take_pending_move_fx_cue()` the host routes through the ported
 `FUN_8004fcc8` dispatch decode (`legaia_engine_audio::classify_cue` →
 `CueDispatch::Ring`/`Voice`; the SFX ring is `SfxScheduler`/`FUN_80035B50`, and the
-SPU note-on stays with a battle SFX bank that is not yet wired).
+SPU note-on resolves through the [SFX descriptor table](sfx-table.md) against the
+**active scene's music VAB** — the same per-scene `scene_vab_stream` bank the BGM
+sequencer plays, not a separate SFX master).
 
 The effect-list **`AltEffect`** entries (the high-bit `0x80` bytes, distinct from
 the `0x801f6324` scene-graph `Spawn` entries) now spawn through the 2D `efect.dat`

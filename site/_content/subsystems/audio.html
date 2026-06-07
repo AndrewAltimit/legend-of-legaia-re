@@ -266,6 +266,7 @@
 <section class="doc-section" id="sfx-bank">
   <h2>Engine-audio model - SFX bank + scheduler</h2>
   <p>Maps battle / field cue IDs (the <code>kind</code> byte the art-record <code>HitCue</code> / overlay scripts emit) to per-cue <code>SfxEntry</code> descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward <code>ScheduledCue</code>-like requests through <code>SfxScheduler</code> which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.</p>
+  <p><code>SfxBank::from_descriptors</code> builds the catalog from the disc-decoded static SFX table (<a href="../formats/sfx-table.html"><code>DAT_8006F198</code></a>). The bank those programs index is <strong>not a dedicated SFX VAB</strong> &mdash; it is the active scene's music VAB: <code>FUN_80065034</code> reads the libsnd current-bank globals (<code>_DAT_801ce33c</code>/<code>_DAT_801ce334</code>/<code>_DAT_801ce340</code>), which point at the per-scene <code>scene_vab_stream</code> bank the BGM sequencer has open (13 distinct banks across the save catalogue; byte-identical to the disc <code>music_01</code> VAB for a <code>music_01</code>-scene state). So the engine fires a cue with <code>SfxBank::play_one_shot(spu, scene_vab)</code> against the BGM <code>VabBank</code> it already loaded &mdash; no separate SFX bank.</p>
   <table>
     <thead><tr><th>Cue ID</th><th>Meaning</th></tr></thead>
     <tbody>

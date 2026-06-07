@@ -52,6 +52,31 @@ The SPU programming itself (`FUN_80065034` → `SpuSetVoiceAttr`) is libsnd and 
 of clean-room scope — the engine has its own SPU. What is portable is the static
 **data**.
 
+## Program bank — the active scene's music VAB
+
+The descriptors' `program` / `tone` fields index a VAB, and that VAB is **not a
+dedicated SFX master** — it is the per-scene [`scene_vab_stream`](scene-bundles.md)
+bank the BGM sequencer has open. `FUN_80065034` reads the libsnd "current bank"
+globals: `_DAT_801ce33c` (VAB-header base), `_DAT_801ce334` (`ProgAtr` at `+0x20`,
+stride `0x10`), `_DAT_801ce340` (`VagAtr` at `+0x820`, stride `0x20`) — so a
+sound effect plays through the low programs of the same bank the music does.
+
+Pinned from the save-state catalogue:
+
+- The bank **varies per scene** — across catalogued captures the open bank is 13
+  distinct VABs (used-program counts ranging `1..=16`).
+- For a `music_01`-scene state the live bank is **byte-identical to the disc**
+  `music_01` VAB ([`field-pack`](field-pack.md)-style stream, PROT 1004 at
+  offset `+4`): the `VabHdr` and every program's `ProgAtr` attribute bytes
+  (`+0..7`) match exactly; only the PsyQ reserved per-program pointer field
+  (`ProgAtr +8..15`) is runtime-patched to the RAM `VagAtr` address.
+
+Because scene banks differ in size, a cue resolves only where its `program` /
+`tone` exists — SFX availability is **scene-dependent**, not a guaranteed
+reservation. The engine therefore needs no separate SFX bank load:
+`SfxBank::from_descriptors(...)` (this table) plays through the scene's
+already-loaded BGM `VabBank` via `SfxBank::play_one_shot(spu, vab)`.
+
 ## Provenance
 
 Decoded directly from the disc, and cross-checked **byte-for-byte against live
@@ -68,9 +93,12 @@ to `0x1A` = program 3 / note 67 and `0x4C` = program 3 / tone 8 (voice count 2).
 [item-name table](item-table.md) resolver); `from_table_bytes` parses a raw
 table window straight out of save-state RAM. `SfxDescriptor` exposes the decoded
 fields plus `voice_count()` / `sustained()` / `is_active()`. The disc-gated
-`sfx_table_real` test pins the layout + anchors against the real executable, and
+`sfx_table_real` test pins the layout + anchors against the real executable,
 `sfx_table_live` (engine-shell) validates the parse against live RAM and feeds
-the descriptors into `legaia_engine_audio::SfxBank::from_descriptors`.
+the descriptors into `legaia_engine_audio::SfxBank::from_descriptors`, and
+`sfx_vab_bank` (engine-shell) proves the program bank is the per-scene music VAB
+(SFX programs resolve in the `music_01` bank; the live bank is byte-identical to
+the disc bank; the bank varies per scene).
 
 ## See also
 

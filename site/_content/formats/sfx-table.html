@@ -43,6 +43,17 @@
   <p>The SPU programming itself (<code>FUN_80065034</code> &rarr; <code>SpuSetVoiceAttr</code>) is libsnd and out of clean-room scope &mdash; the engine has its own SPU. What is portable is the static <strong>data</strong>.</p>
 </section>
 
+<section class="doc-section" id="program-bank">
+  <h2>Program bank &mdash; the active scene's music VAB</h2>
+  <p>The descriptors' <code>program</code> / <code>tone</code> fields index a VAB, and that VAB is <strong>not a dedicated SFX master</strong> &mdash; it is the per-scene <a href="scene-bundles.html">scene-VAB-stream</a> bank the BGM sequencer has open. <code>FUN_80065034</code> reads the libsnd "current bank" globals: <code>_DAT_801ce33c</code> (VAB-header base), <code>_DAT_801ce334</code> (<code>ProgAtr</code> at <code>+0x20</code>), <code>_DAT_801ce340</code> (<code>VagAtr</code> at <code>+0x820</code>) &mdash; so a sound effect plays through the low programs of the same bank the music does.</p>
+  <p>Pinned from the save-state catalogue:</p>
+  <ul class="bullets">
+    <li>The bank <strong>varies per scene</strong> &mdash; across catalogued captures the open bank is 13 distinct VABs (used-program counts ranging <code>1..=16</code>).</li>
+    <li>For a <code>music_01</code>-scene state the live bank is <strong>byte-identical to the disc</strong> <code>music_01</code> VAB (PROT 1004 at offset <code>+4</code>): the <code>VabHdr</code> and every program's <code>ProgAtr</code> attribute bytes (<code>+0..7</code>) match exactly; only the PsyQ reserved per-program pointer field (<code>ProgAtr +8..15</code>) is runtime-patched to the RAM <code>VagAtr</code> address.</li>
+  </ul>
+  <p>Because scene banks differ in size, a cue resolves only where its <code>program</code> / <code>tone</code> exists &mdash; SFX availability is <strong>scene-dependent</strong>, not a guaranteed reservation. The engine therefore needs no separate SFX bank load: <code>SfxBank::from_descriptors(...)</code> plays through the scene's already-loaded BGM <code>VabBank</code> via <code>SfxBank::play_one_shot(spu, vab)</code>.</p>
+</section>
+
 <section class="doc-section" id="provenance">
   <h2>Provenance</h2>
   <p>Decoded directly from the disc, and cross-checked <strong>byte-for-byte against live save-state RAM</strong>: the table window at <code>0x8006F198</code> read out of a catalogued mednafen state's main RAM parses to the identical 100 descriptors as the disc <code>SCUS_942.54</code>, confirming the table is static rodata and the parser offset is right. The two cue ids the engine's default SFX bank already references resolve to <code>0x1A</code> = program 3 / note 67 and <code>0x4C</code> = program 3 / tone 8 (voice count 2).</p>
