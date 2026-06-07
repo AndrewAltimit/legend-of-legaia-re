@@ -121,10 +121,16 @@ confirmed constants. The cost prompt and Yes/No cursor are rendered in
 
 ## Open items
 
-- **Per-scene item tables.** The retail shop stocks are encoded in the menu
-  overlay's DATA segment at `0x801E4518` (8-byte strides, 0x60 bytes per
-  scene; dispatched by `FUN_801DC6B4`). Locating the per-shop item list
-  requires tracing the scene-index → DATA offset mapping.
+- **Gold-shop stock source — open.** `0x801E4518` (the menu-overlay DATA
+  table, 8-byte `[u16 item_id][u16 gate][u32 price]` records in 0x60-byte
+  blocks indexed by `*(_DAT_8007b450 + 1)`) was previously assumed to hold
+  per-scene shop stock. It does **not**: its buy handler
+  (`overlay_shop_save_801dc1cc.txt`) debits `_DAT_800845A4` — the **casino
+  coin bank**, not party gold (`_DAT_8008459C`) — so this is the casino /
+  prize-exchange table, already parsed by the randomizer's
+  `casino::CasinoExchange`. The *gold* item-shop stock list (the table read
+  by the gold-debiting buy path) lives elsewhere and is still unpinned; the
+  engine's `ShopInventory` is host-supplied until that source is found.
 - **Quantity cap.** Retail enforces a max held count of 98 per item before
   dimming additional buy attempts; the current port allows unlimited stacking.
 - **Mode-select panel.** The Buy / Sell / Quit selector (`FUN_801d4868`) uses

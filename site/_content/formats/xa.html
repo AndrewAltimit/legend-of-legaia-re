@@ -94,13 +94,12 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
 
 <section class="doc-section" id="what-the-older-extracted-xa-xa-files-contain">
   <h2>What the older <code>extracted/XA/*.XA</code> files contain</h2>
-  <p>If the tree on disk has a populated <code>extracted/XA/</code> directory from a pre-fix extraction, those files are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. They should be deleted and re-extracted via <code>xa demux-disc-all</code> (or via the top-level <code>legaia-extract</code> once it integrates the new path).</p>
+  <p>The <code>extracted/XA/*.XA</code> files copied by the disc-extract step are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. The listenable per-channel WAVs are produced by the demux step; <code>legaia-extract</code> runs it automatically and writes them to <code>extracted/XA_WAV/</code> (or run <code>xa demux-disc-all</code> standalone).</p>
 </section>
 
 <section class="doc-section" id="what-s-still-open">
   <h2>What's still open</h2>
   <ul class="bullets">
-    <li><strong>Top-level extract integration.</strong> <code>legaia-extract</code> doesn't yet call <code>xa demux-disc-all</code>. Cutscene audio works end-to-end via the standalone <code>xa</code> binary; the unified pipeline still emits the legacy Form-1 bytes.</li>
     <li><strong>8-bit ADPCM mode &mdash; now decoded.</strong> The 8-bit path (4 sound units of 28 full-byte samples per group, params at bytes 0..4 mirrored four times) is implemented behind <code>DecodeOptions { bits: BitsPerSample::Eight }</code> / <code>--bits 8</code>; the demux / cutscene / extract consumers map each channel's reported <code>bits_per_sample</code> automatically. The NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for all 316 channels across 34 <code>*.XA</code> files), so nothing on the NA disc exercises 8-bit &mdash; it is covered by synthetic unit tests, <strong>not</strong> yet verified bit-exact against a real 8-bit source.</li>
     <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that's reversed, the WAV → cutscene assignment is manual.</li>
   </ul>

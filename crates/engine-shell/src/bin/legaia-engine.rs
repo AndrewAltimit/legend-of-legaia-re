@@ -7609,6 +7609,16 @@ impl ApplicationHandler for PlayWindowApp {
         if !self.win.open(evl, "legaia-engine") {
             return;
         }
+        // Opt-in PSX-faithful rendering: affine (perspective-incorrect) UV
+        // warp + sub-pixel vertex jitter + 15-bit BGR555 ordered dithering on
+        // the 3D mesh pipelines. Off by default (clean modern output); enable
+        // with `LEGAIA_PSX_RENDER=1`.
+        if std::env::var_os("LEGAIA_PSX_RENDER").is_some()
+            && let Some(r) = self.win.renderer.as_ref()
+        {
+            r.set_psx_mode(true);
+            log::info!("play-window: PSX-faithful render mode enabled");
+        }
         self.upload_assets();
         self.win.request_redraw();
     }

@@ -151,13 +151,32 @@ impl XaPlayback {
                 (lerp_i16(l0, l1, alpha), lerp_i16(r0, r1, alpha))
             }
         };
-        // Apply gain (Q1.14 fixed-point: gain / 0x4000).
+        // Tail fade-out: a one-shot stream that hard-cuts from its last
+        // (possibly loud) sample straight to silence pops. Ramp the final
+        // few ms down to zero so exhaustion is click-free. Past the end
+        // `tick_for_spu` already returns (0, 0), so the stream is silent by
+        // the time the mixer detaches it. Looping streams wrap, so no fade.
+        let fade = if self.looping {
+            1.0
+        } else {
+            // ~4 ms expressed in source frames, capped to a quarter of the
+            // buffer so short clips (and the leading samples of any stream)
+            // aren't attenuated - only the genuine tail ramps down.
+            let window = (self.sample_rate as f64 / 256.0).min(frames as f64 / 4.0);
+            if window < 1.0 {
+                1.0
+            } else {
+                let remaining = frames as f64 - self.cursor;
+                (remaining / window).clamp(0.0, 1.0) as f32
+            }
+        };
+        // Apply gain (Q1.14 fixed-point: gain / 0x4000) then the tail fade.
         let g = self.gain as i32;
-        let l = ((l as i32 * g) >> 14).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-        let r = ((r as i32 * g) >> 14).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        let l = (((l as i32 * g) >> 14) as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32);
+        let r = (((r as i32 * g) >> 14) as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32);
         // Advance one SPU-rate output sample.
         self.cursor += self.sample_rate as f64 / SPU_INTERNAL_RATE as f64;
-        (l, r)
+        (l as i16, r as i16)
     }
 }
 
@@ -786,6 +805,43 @@ mod tests {
             let _ = xa.tick_for_spu();
         }
         assert!(xa.is_done(), "one-shot should mark done after consumption");
+    }
+
+    #[test]
+    fn xa_oneshot_tail_fades_out_to_avoid_click() {
+        // Constant loud mono buffer, one-shot. Mid-stream output is ~full
+        // amplitude, but the final few ms must ramp toward zero so the
+        // stream doesn't hard-cut from a loud sample straight to silence.
+        let amp = 16384i16;
+        let n = 400usize;
+        let mut xa = make_mono_xa(SPU_INTERNAL_RATE, vec![amp; n], false);
+        let outs: Vec<i16> = (0..n).map(|_| xa.tick_for_spu().0).collect();
+        // Mid-stream (well before the tail) is at full amplitude.
+        assert!(
+            outs[10] > amp - 100,
+            "mid-stream should be ~full: {}",
+            outs[10]
+        );
+        // The last sample is heavily attenuated by the tail fade.
+        let last = *outs.last().unwrap();
+        assert!(last.abs() < amp / 8, "tail should fade out, last={last}");
+        // The fade is monotonic non-increasing over the final stretch.
+        for w in outs[n - 100..].windows(2) {
+            assert!(w[1] <= w[0], "tail fade not monotone: {} -> {}", w[0], w[1]);
+        }
+    }
+
+    #[test]
+    fn xa_looping_does_not_tail_fade() {
+        // A looping stream wraps rather than exhausting, so it must NOT fade.
+        let amp = 16384i16;
+        let mut xa = make_mono_xa(SPU_INTERNAL_RATE, vec![amp; 400], true);
+        for _ in 0..399 {
+            let _ = xa.tick_for_spu();
+        }
+        // Near the buffer end a looping stream is still full volume.
+        let (l, _) = xa.tick_for_spu();
+        assert!(l > amp - 100, "looping stream should not fade: {l}");
     }
 
     #[test]

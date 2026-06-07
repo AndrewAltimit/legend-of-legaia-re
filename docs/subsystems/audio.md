@@ -182,16 +182,16 @@ Sits between the SsApi seq layer and the libspu register primitives. This is the
 
 ### Reverb model (engine-audio)
 
-The retail SPU implements reverb as a comb-filter + allpass network with a configurable work buffer at the bottom of SPU RAM. The 9 standard libspu modes (`Room` / `StudioA-C` / `Hall` / `Space` / `Echo` / `Delay` / `Pipe`) plus `Off` set parameter triples the SPU's reverb registers consume.
+The retail SPU implements reverb as a same-side / different-side IIR reflection pair feeding a 4-tap comb early-echo and two all-pass stages, run at 22050 Hz over a work buffer at the top of SPU RAM (`mBASE = 0x80000 - work_size`). The 9 standard libspu modes (`Room` / `StudioA-C` / `Hall` / `Space` / `Echo` / `Delay` / `Pipe`) plus `Off` each select a 32-register set (work-area size + IIR/comb/all-pass coefficients + tap addresses).
 
-The `engine-audio` clean-room port models reverb perceptually rather than at the register level: a per-channel circular delay buffer with a single feedback tap and a wet/dry mix. Each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) maps to a `(delay_samples, feedback_q14, wet_q14)` triple tuned by ear against retail recordings.
+The `engine-audio` clean-room port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants — the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
 
 Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`. Spirit Arts and echo-flagged sound effects opt in; everything else stays dry.
 
-Trade-offs:
-- Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`.
-- The retail `SpuSetReverbModeParam` (`FUN_8006B1B4`, 30-attribute commit) is *stored* but not interpreted - the perceptual presets win.
-- Pitch-of-reverb-tail relative to retail is approximate. Goal is "Spirit Arts have an echo," not bit-exact reproduction.
+Boundaries:
+- Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
+- The hardware's 39-tap FIR input/output resampler (44.1 kHz ↔ 22.05 kHz) is approximated by decimation + zero-order hold; the tail's character comes from the network, the FIR only affects high-frequency detail.
+- Output volume (`vLOUT`/`vROUT`) isn't part of the mode preset on hardware (libspu sets it separately via `SpuSetReverbDepth`); the engine applies a fixed depth, overridable with `Reverb::set_output_volume`.
 
 ### SsApi seq-management layer (above libspu)
 
@@ -273,7 +273,7 @@ for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 
 | Module | Maps to |
 |---|---|
-| [`spu::Spu`](../../crates/engine-audio/src/spu/mod.rs) | The 24-voice mixer (one [`Voice`] per slot) + master volume + a stub reverb-mode register. |
+| [`spu::Spu`](../../crates/engine-audio/src/spu/mod.rs) | The 24-voice mixer (one [`Voice`] per slot) + master volume + the [`spu::reverb`] network. |
 | [`spu::voice::Voice`](../../crates/engine-audio/src/spu/voice.rs) | Per-voice state: sample address, loop point, pitch, ADSR, L/R volume - the libspu `SpuSetVoiceAttr` surface. |
 | [`spu::adsr`](../../crates/engine-audio/src/spu/adsr.rs) | The 5-phase ADSR envelope (Attack-Decay-Sustain-Release-Off) with linear / exponential / increase / decrease modes per the standard PSX formula. |
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
@@ -283,7 +283,6 @@ for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 
 What this **does not** model (out of scope for the first port pass):
 
-- Reverb. The reverb register is stored, never interpreted. Spirit Arts use it; needs work before those play correctly.
 - Pitch modulation, noise, FM. None of these are used by Legaia (verified against the libspu calls in the SCUS dumps - `SpuSetPitch` is the only pitch path).
 - Asynchronous DMA timing. The transfer engine here is synchronous (the queue + drain are collapsed) - fine because the playback layer reads SPU RAM directly during voice ticks. The real hardware is asynchronous via the transfer engine described above; the model preserves the *API shape* (`set_transfer_start_units_8` / `set_direction` / `write`) so the libspu callers map cleanly.
 
