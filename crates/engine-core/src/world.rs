@@ -3318,9 +3318,95 @@ impl World {
                 // the battle item-menu tick returns to the field.
                 self.battle_escaped = true;
             }
+            crate::items::ItemOutcome::StatRaised { target, delta } => {
+                // Permanent stat-up consumable (Power Tonic, Vital Tonic, ...):
+                // raise the persistent roster record and refresh the live
+                // derived values so the gain shows immediately and survives a
+                // save. These items are field-only.
+                self.apply_stat_raise(idx, target, delta);
+            }
             _ => {}
         }
         outcome
+    }
+
+    /// Apply a permanent [`crate::items::ItemOutcome::StatRaised`] to party
+    /// slot `idx`: mutate the persistent character record and re-derive the
+    /// live battle stats. HP/MP-max raises bump the live actor's caps (and
+    /// current values) too; combat-stat raises land in the `+0x110` live-stat
+    /// block that [`Self::seed_party_battle_stats`] reads.
+    ///
+    /// The exact retail cap / refill rules for stat-up consumables are not
+    /// byte-pinned (the items are field-only and absent from the captured
+    /// battle traces), so the engine uses self-consistent rules: combat stats
+    /// cap at the record's per-stat cap constant (fallback `999`), HP/MP max
+    /// cap at `9999`, and a max raise refills the gained amount.
+    fn apply_stat_raise(&mut self, idx: usize, target: crate::items::StatBoostTarget, delta: u16) {
+        use crate::items::StatBoostTarget as T;
+        const STAT_CAP_FALLBACK: u16 = 999;
+        const HPMP_CAP: u16 = 9999;
+        if self.roster.members.get(idx).is_none() {
+            return;
+        }
+        match target {
+            T::HpMax => {
+                {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.hp_max = hms.hp_max.saturating_add(delta).min(HPMP_CAP);
+                    hms.hp_cur = hms.hp_cur.saturating_add(delta).min(hms.hp_max);
+                    rec.set_hp_mp_sp(hms);
+                    let mut rs = rec.record_stats();
+                    rs.hp_max = rs.hp_max.saturating_add(delta).min(HPMP_CAP);
+                    rec.set_record_stats(rs);
+                }
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.max_hp = a.battle.max_hp.saturating_add(delta).min(HPMP_CAP);
+                    a.battle.hp = a.battle.hp.saturating_add(delta).min(a.battle.max_hp);
+                }
+            }
+            T::MpMax => {
+                let new_max;
+                {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.mp_max = hms.mp_max.saturating_add(delta).min(HPMP_CAP);
+                    hms.mp_cur = hms.mp_cur.saturating_add(delta).min(hms.mp_max);
+                    rec.set_hp_mp_sp(hms);
+                    let mut rs = rec.record_stats();
+                    rs.mp_max = rs.mp_max.saturating_add(delta).min(HPMP_CAP);
+                    rec.set_record_stats(rs);
+                    new_max = hms.mp_max;
+                }
+                self.set_character_max_mp(idx as u8, new_max);
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.mp = a.battle.mp.saturating_add(delta).min(new_max);
+                }
+            }
+            // Combat stats live in the +0x110 block the stat resolver reads.
+            // Accuracy + Evasion both derive from AGL there, so both land on
+            // AGL (matching `seed_party_battle_stats`).
+            T::Attack | T::Udf | T::Ldf | T::Accuracy | T::Evasion => {
+                {
+                    let rec = &mut self.roster.members[idx];
+                    let cap = match rec.record_stats().cap_constant {
+                        0 => STAT_CAP_FALLBACK,
+                        c => c,
+                    };
+                    let mut ls = rec.live_stats();
+                    let bump = |v: u16| v.saturating_add(delta).min(cap);
+                    match target {
+                        T::Attack => ls.atk = bump(ls.atk),
+                        T::Udf => ls.udf = bump(ls.udf),
+                        T::Ldf => ls.ldf = bump(ls.ldf),
+                        T::Accuracy | T::Evasion => ls.agl = bump(ls.agl),
+                        T::HpMax | T::MpMax => {}
+                    }
+                    rec.set_live_stats(ls);
+                }
+                self.seed_party_battle_stats();
+            }
+        }
     }
 
     /// Set per-slot character max MP (mirrors `char_record[+0x140]`

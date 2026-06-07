@@ -5929,6 +5929,89 @@ fn use_item_revive_writes_hp_after() {
 }
 
 #[test]
+fn use_item_hp_max_boost_raises_record_and_live_actor() {
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut hms = party.members[0].hp_mp_sp();
+    hms.hp_cur = 50;
+    hms.hp_max = 100;
+    party.members[0].set_hp_mp_sp(hms);
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    // Vital Tonic (0x0F): HpMax +10 - the outcome the old kernel dropped.
+    let outcome = world.use_item(0x0F, 0);
+    assert!(matches!(
+        outcome,
+        crate::items::ItemOutcome::StatRaised { .. }
+    ));
+    // Persistent record raised, current HP refilled by the gained amount.
+    let rec_hms = world.roster.members[0].hp_mp_sp();
+    assert_eq!(rec_hms.hp_max, 110);
+    assert_eq!(rec_hms.hp_cur, 60);
+    // Live battle actor raised too.
+    assert_eq!(world.actors[0].battle.max_hp, 110);
+    assert_eq!(world.actors[0].battle.hp, 60);
+}
+
+#[test]
+fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut ls = party.members[0].live_stats();
+    ls.atk = 20;
+    party.members[0].set_live_stats(ls);
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_battle_attack(0, 20);
+    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    // Power Tonic (0x0E): Attack +1.
+    let outcome = world.use_item(0x0E, 0);
+    assert!(matches!(
+        outcome,
+        crate::items::ItemOutcome::StatRaised { .. }
+    ));
+    assert_eq!(
+        world.roster.members[0].live_stats().atk,
+        21,
+        "persistent attack raised"
+    );
+    // Re-derived live battle stat reflects it.
+    assert_eq!(world.battle_attack[0], 21);
+}
+
+#[test]
+fn use_item_stat_boost_caps_at_cap_constant() {
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut rs = party.members[0].record_stats();
+    rs.cap_constant = 100;
+    party.members[0].set_record_stats(rs);
+    let mut ls = party.members[0].live_stats();
+    ls.atk = 99;
+    party.members[0].set_live_stats(ls);
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_battle_attack(0, 99);
+    // A custom big-boost item to exercise the cap.
+    let mut cat = crate::items::ItemCatalog::new();
+    cat.insert(crate::items::ItemEntry {
+        id: 0x50,
+        name: "Mega Tonic",
+        effect: crate::items::ItemEffect::StatBoost {
+            target: crate::items::StatBoostTarget::Attack,
+            delta: 50,
+        },
+        usable_in_battle: false,
+        usable_in_field: true,
+    });
+    world.set_item_catalog(cat);
+    world.use_item(0x50, 0);
+    assert_eq!(
+        world.roster.members[0].live_stats().atk,
+        100,
+        "capped at the per-stat cap constant"
+    );
+}
+
+#[test]
 fn use_item_cure_clears_status() {
     use legaia_art::record::EnemyEffect;
     let mut world = World::new();
