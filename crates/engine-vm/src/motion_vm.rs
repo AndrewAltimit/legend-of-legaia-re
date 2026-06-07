@@ -90,7 +90,8 @@ pub struct MotionState {
 pub enum MotionOp {
     /// `0x37` - translate along Y axis at per-frame speed.
     TranslateY = 0x37,
-    /// `0x38` - rotate yaw toward absolute angle (not yet implemented).
+    /// `0x38` - rotate yaw toward an absolute angle (from the 16-entry
+    /// `ANGLE_TABLE`) over a frame budget, shortest-path or forced-direction.
     RotateToAngle = 0x38,
     /// `0x41` - translate along X axis at per-frame speed.
     TranslateX = 0x41,

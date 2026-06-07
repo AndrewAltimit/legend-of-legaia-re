@@ -25,11 +25,11 @@ When the high bit is set, the VM resolves a target actor before applying the bod
 | byte | retail addr | name             | semantics                                |
 |------|-------------|------------------|------------------------------------------|
 | 0x37 | 80037894    | TranslateY       | accumulate Y axis by per-frame speed     |
-| 0x38 | 80037de0    | RotateToAngle    | yaw rotates toward absolute angle (12-bit fixed-point quadrant logic; not yet ported - treated as `Pending`) |
+| 0x38 | 80037de0    | RotateToAngle    | yaw rotates toward an absolute angle (16-entry `ANGLE_TABLE`) over a frame budget; shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`), 12-bit fixed-point |
 | 0x41 | 80037894    | TranslateX       | accumulate X axis by per-frame speed     |
 | 0x43 | 80037f5c    | NoOp             | tick budget consumed, no actor mutation  |
 | 0x47 | 80037ba8    | MoveTowardTarget | step actor XZ toward `(tx, tz)`          |
-| 0x4C | 80037de0    | FaceTarget       | yaw rotates to bearing; sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated. Not yet ported - treated as `Pending` |
+| 0x4C | 80037de0    | FaceTarget       | yaw rotates to the target's bearing over a frame budget; sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated (0x8F forces clockwise) |
 |      |             | (default arm)    | terminate with `Done`                    |
 
 ## Per-frame speed
@@ -38,7 +38,7 @@ When the high bit is set, the VM resolves a target actor before applying the bod
 
 ## Clean-room port
 
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the clean-room port. Implemented opcodes: `0x37` `TranslateY`, `0x41` `TranslateX`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`. `0x38` and `0x4C` are documented but not yet ported - the VM reports `StepResult::Pending { op }` so engines can route them to a fallback.
+[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the clean-room port. All six opcodes are implemented: `0x37` `TranslateY`, `0x38` `RotateToAngle`, `0x41` `TranslateX`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
 ## Camera integration
 
