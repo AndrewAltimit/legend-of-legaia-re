@@ -44,6 +44,7 @@ pub mod monster_archive;
 pub mod monster_gltf;
 pub mod move_power;
 pub mod new_game;
+pub mod ocean;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod player_anm;

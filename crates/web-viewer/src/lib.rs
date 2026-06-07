@@ -8,7 +8,6 @@
 pub mod audio;
 pub mod disc;
 pub mod fog_lut;
-pub mod ocean;
 pub mod rom_patcher;
 pub mod runtime;
 pub mod sentinel_placements;
@@ -111,7 +110,7 @@ enum TimSource {
     Lzs { section: usize, offset: usize },
 }
 
-use crate::ocean::{OceanAssets, find_ocean_assets};
+use legaia_asset::ocean::{OceanAssets, find_ocean_assets};
 
 /// Loaded kingdom bundle (slot 0 = TIM_LIST -> VRAM, slot 1 = TMD pack ->
 /// per-slot TMD bodies). Built by [`LegaiaViewer::set_scene_kingdom`] and
