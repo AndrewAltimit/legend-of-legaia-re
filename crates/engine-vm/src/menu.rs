@@ -16,12 +16,16 @@
 //! the close-and-deactivate path the dispatcher takes when the player
 //! cancels with Triangle).
 //!
-//! The full per-state body is not yet ported - this module establishes
-//! the typed surface (state enum + host trait + step entry point) so
-//! engine code can wire menu transitions without reaching into the
-//! overlay's RAM scratchpad bytes directly. Per-state handler bodies
-//! land in follow-up commits as each menu screen's behaviour is
-//! reverse-engineered.
+//! This module establishes the typed surface (state enum + host trait +
+//! step entry point) plus the per-screen routing graph. [`commit_route`]
+//! and [`back_route`] encode the dispatcher's `_DAT_801F0204 = N` writes:
+//! the multi-step shop (browse -> quantity -> confirm -> back-to-list /
+//! exit) and inn (confirm -> sleep) flows advance on Cross and back up one
+//! screen on Triangle, on top of the host's commit kernels. Status
+//! sub-screens back up to the status top-level. Per-screen specifics that
+//! still need a side-effect kernel (item-use apply, the standalone
+//! save/load progress states - the live save UI is driven separately by
+//! the save-select session) stay as pass-through screens for now.
 //!
 //! See [`docs/subsystems/`] for the menu-VM doc page (TODO: add when
 //! the second pass lands).
@@ -144,6 +148,68 @@ impl MenuState {
     }
 }
 
+/// Where a Cross-commit routes the state machine next, as a function of
+/// the current screen and the committed slot. `None` means "stay on the
+/// current screen" - the screen's [`MenuHost::commit`] hook applied a
+/// side effect in place (a status sub-screen mutation, a save-slot pick)
+/// but the menu doesn't move.
+///
+/// PORT: the per-case `_DAT_801F0204 = N` writes in `FUN_801DD35C`. The
+/// shop flow returns to the buy list after every confirm (the player buys
+/// repeatedly and leaves with Triangle); the inn rest routes through the
+/// sleep fade only on "yes".
+pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
+    match state {
+        // Shop: pick an item (buy or sell), choose a quantity, confirm,
+        // then drop back to the buy list to shop again.
+        MenuState::ShopBuy | MenuState::ShopSell => Some(MenuState::ShopQuantity),
+        MenuState::ShopQuantity => Some(MenuState::ShopConfirm),
+        MenuState::ShopConfirm => Some(MenuState::ShopBuy),
+        // Inn: "yes" (slot 0) plays the rest fade; "no" closes the prompt.
+        MenuState::InnConfirm if slot == 0 => Some(MenuState::InnSleep),
+        MenuState::InnConfirm => Some(MenuState::Closing),
+        _ => None,
+    }
+}
+
+/// Where a Triangle (cancel / back) routes the state machine. Multi-step
+/// flows back up one screen; status sub-screens return to the status
+/// top-level; top-of-flow screens close the menu. Routing to
+/// [`MenuState::Closing`] also fires [`MenuHost::cancel`] so the engine
+/// can tear down the active session.
+///
+/// PORT: the Triangle-handling arms of `FUN_801DD35C`.
+pub fn back_route(state: MenuState) -> MenuState {
+    match state {
+        // Shop: step back through the purchase flow.
+        MenuState::ShopQuantity => MenuState::ShopBuy,
+        MenuState::ShopConfirm => MenuState::ShopQuantity,
+        // Leaving the shop list runs the canonical teardown screen so the
+        // session always clears.
+        MenuState::ShopBuy | MenuState::ShopSell => MenuState::ShopExit,
+        // Status sub-screens return to the status top-level.
+        MenuState::StatusCharacter
+        | MenuState::StatusEquipment
+        | MenuState::StatusInventory
+        | MenuState::StatusMagic
+        | MenuState::StatusTacticalArts
+        | MenuState::StatusConfig
+        | MenuState::StatusLog => MenuState::StatusTop,
+        // Everything else (status top-level, slot pickers, confirms)
+        // closes the menu.
+        _ => MenuState::Closing,
+    }
+}
+
+/// Transient screens auto-advance: they fire a one-shot
+/// [`MenuHost::commit`] side effect on entry, hold for the render layer's
+/// animation, then route forward along [`commit_route`] (falling back to
+/// [`MenuState::Closing`]). They ignore input. Used for the shop teardown
+/// and the inn rest fade.
+fn is_transient(state: MenuState) -> bool {
+    matches!(state, MenuState::ShopExit | MenuState::InnSleep)
+}
+
 /// Menu input - narrowed to the buttons the dispatcher actually reads.
 /// The full PSX pad has more, but the menu only checks Cross / Circle /
 /// Triangle / Square + the d-pad.
@@ -209,17 +275,26 @@ pub trait MenuHost {
     fn close_hold_frames(&self) -> u16 {
         16
     }
+
+    /// Number of frames a transient screen (shop teardown, inn rest fade)
+    /// holds before auto-advancing along its forward route. The one-shot
+    /// side effect fires on entry; the hold gives the render layer time to
+    /// play the fade. Default `8`; engines that drive their own animation
+    /// override per state.
+    fn transient_hold_frames(&self, _state: MenuState) -> u16 {
+        8
+    }
 }
 
 /// One frame of menu execution. Reads `ctx.state`, applies `input`,
 /// possibly mutates `ctx`, possibly calls hooks on `host`. Returns the
 /// post-step state byte for engines that want to drive UI off it.
 ///
-/// The body is intentionally minimal in this first pass - it covers the
-/// open / close transitions cleanly (the most common path) and folds
-/// every per-screen state into a single "advance the cursor on input,
-/// commit on Cross, cancel on Triangle" handler. Per-screen specifics
-/// (shop quantity entry, save-slot prompts, etc.) land in follow-ups.
+/// Open / close transitions are handled directly. Transient screens
+/// ([`is_transient`]) fire their one-shot side effect on entry, hold, then
+/// auto-advance. Every other (interactive) screen advances the cursor on
+/// the d-pad, commits on Cross - then routes forward via [`commit_route`] -
+/// and on Triangle routes back via [`back_route`].
 pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuInput) -> u8 {
     ctx.frame = ctx.frame.wrapping_add(1);
     let state = MenuState::from_byte(ctx.state);
@@ -252,9 +327,22 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
             ctx.cursor = 0;
             ctx.selected_slot = 0;
         }
-        // Per-screen: advance cursor on d-pad, commit on Cross, cancel
-        // on Triangle. The `screen_item_count` hook clamps wrap-around
-        // per-screen.
+        // Transient screens: fire a one-shot side effect on entry, hold for
+        // the render layer's fade, then auto-advance forward. Input ignored.
+        Some(s) if is_transient(s) => {
+            if ctx.frame == 1 {
+                host.commit(s, ctx.selected_slot);
+            }
+            if ctx.frame >= host.transient_hold_frames(s).max(1) {
+                let next = commit_route(s, ctx.selected_slot).unwrap_or(MenuState::Closing);
+                ctx.state = next.as_byte();
+                ctx.frame = 0;
+                ctx.cursor = 0;
+            }
+        }
+        // Interactive screens: advance cursor on d-pad, commit on Cross
+        // (then route forward), back up on Triangle. The `screen_item_count`
+        // hook clamps wrap-around per-screen.
         Some(s) => {
             let count = host.screen_item_count(s).max(1);
             if input.up {
@@ -265,11 +353,19 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
             if input.cross {
                 ctx.selected_slot = ctx.cursor;
                 host.commit(s, ctx.cursor);
-            }
-            if input.triangle {
-                host.cancel();
-                ctx.state = MenuState::Closing.as_byte();
+                if let Some(next) = commit_route(s, ctx.cursor) {
+                    ctx.state = next.as_byte();
+                    ctx.frame = 0;
+                    ctx.cursor = 0;
+                }
+            } else if input.triangle {
+                let next = back_route(s);
+                if next == MenuState::Closing {
+                    host.cancel();
+                }
+                ctx.state = next.as_byte();
                 ctx.frame = 0;
+                ctx.cursor = 0;
             }
         }
         // Unknown state byte - fall through, leave ctx untouched.
@@ -375,13 +471,34 @@ mod tests {
     }
 
     #[test]
-    fn triangle_routes_to_closing_then_deactivate_then_closed() {
+    fn triangle_backs_status_subscreen_to_status_top() {
         let mut ctx = MenuCtx {
             state: MenuState::StatusInventory.as_byte(),
             ..Default::default()
         };
         let mut h = H::default();
-        // Press triangle once - should switch to Closing.
+        // Triangle from a status sub-screen backs up to the status top-level,
+        // it does not close the menu (so no `cancel`).
+        step(
+            &mut h,
+            &mut ctx,
+            MenuInput {
+                triangle: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(ctx.state, MenuState::StatusTop.as_byte());
+        assert_eq!(h.cancels, 0);
+    }
+
+    #[test]
+    fn triangle_from_status_top_closes_then_deactivates_then_closed() {
+        let mut ctx = MenuCtx {
+            state: MenuState::StatusTop.as_byte(),
+            ..Default::default()
+        };
+        let mut h = H::default();
+        // Triangle from the top-level closes the menu (and fires cancel).
         step(
             &mut h,
             &mut ctx,
@@ -400,6 +517,114 @@ mod tests {
         // One more tick - closes.
         step(&mut h, &mut ctx, MenuInput::default());
         assert_eq!(ctx.state, MenuState::Closed.as_byte());
+    }
+
+    #[test]
+    fn shop_buy_flow_routes_browse_quantity_confirm_back_to_list() {
+        // ShopBuy -> (Cross) ShopQuantity -> (Cross) ShopConfirm -> (Cross)
+        // back to ShopBuy, with a commit recorded at each interactive step.
+        let mut ctx = MenuCtx {
+            state: MenuState::ShopBuy.as_byte(),
+            ..Default::default()
+        };
+        let mut h = H::default();
+        h.item_counts.insert(MenuState::ShopBuy.as_byte(), 4);
+        h.item_counts.insert(MenuState::ShopQuantity.as_byte(), 9);
+        h.item_counts.insert(MenuState::ShopConfirm.as_byte(), 2);
+
+        let cross = MenuInput {
+            cross: true,
+            ..Default::default()
+        };
+        step(&mut h, &mut ctx, cross);
+        assert_eq!(ctx.state, MenuState::ShopQuantity.as_byte());
+        step(&mut h, &mut ctx, cross);
+        assert_eq!(ctx.state, MenuState::ShopConfirm.as_byte());
+        step(&mut h, &mut ctx, cross);
+        assert_eq!(ctx.state, MenuState::ShopBuy.as_byte());
+        assert_eq!(
+            h.commits,
+            vec![
+                (MenuState::ShopBuy.as_byte(), 0),
+                (MenuState::ShopQuantity.as_byte(), 0),
+                (MenuState::ShopConfirm.as_byte(), 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn shop_triangle_backs_one_screen_then_tears_down_via_exit() {
+        // From ShopConfirm: Triangle backs to ShopQuantity, then ShopBuy,
+        // then the ShopExit teardown screen, which auto-advances to Closing
+        // after firing its one-shot commit.
+        let mut ctx = MenuCtx {
+            state: MenuState::ShopConfirm.as_byte(),
+            ..Default::default()
+        };
+        let mut h = H::default();
+        let tri = MenuInput {
+            triangle: true,
+            ..Default::default()
+        };
+        step(&mut h, &mut ctx, tri);
+        assert_eq!(ctx.state, MenuState::ShopQuantity.as_byte());
+        step(&mut h, &mut ctx, tri);
+        assert_eq!(ctx.state, MenuState::ShopBuy.as_byte());
+        step(&mut h, &mut ctx, tri);
+        assert_eq!(ctx.state, MenuState::ShopExit.as_byte());
+        // ShopExit is transient: fires its one-shot commit on entry, holds,
+        // then routes to Closing.
+        step(&mut h, &mut ctx, MenuInput::default());
+        assert_eq!(h.commits, vec![(MenuState::ShopExit.as_byte(), 0)]);
+        for _ in 0..8 {
+            step(&mut h, &mut ctx, MenuInput::default());
+        }
+        assert_eq!(ctx.state, MenuState::Closing.as_byte());
+    }
+
+    #[test]
+    fn inn_yes_routes_through_sleep_fade_then_closes() {
+        let mut ctx = MenuCtx {
+            state: MenuState::InnConfirm.as_byte(),
+            ..Default::default()
+        };
+        let mut h = H::default();
+        h.item_counts.insert(MenuState::InnConfirm.as_byte(), 2);
+        // Cursor on slot 0 (yes) -> InnSleep fade.
+        step(
+            &mut h,
+            &mut ctx,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(ctx.state, MenuState::InnSleep.as_byte());
+        assert_eq!(h.commits, vec![(MenuState::InnConfirm.as_byte(), 0)]);
+        // Sleep fade holds, then closes.
+        for _ in 0..8 {
+            step(&mut h, &mut ctx, MenuInput::default());
+        }
+        assert_eq!(ctx.state, MenuState::Closing.as_byte());
+    }
+
+    #[test]
+    fn inn_no_closes_without_sleeping() {
+        let mut ctx = MenuCtx {
+            state: MenuState::InnConfirm.as_byte(),
+            cursor: 1, // slot 1 = no
+            ..Default::default()
+        };
+        let mut h = H::default();
+        step(
+            &mut h,
+            &mut ctx,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(ctx.state, MenuState::Closing.as_byte());
     }
 
     #[test]

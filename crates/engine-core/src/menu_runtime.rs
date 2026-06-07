@@ -427,6 +427,8 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                     }
                 }
             }
+            // Transient teardown screen reached by routing out of the shop
+            // list (Triangle) - clears the session as the menu closes.
             MenuState::ShopExit => {
                 *self.shop_session = None;
             }
@@ -473,6 +475,15 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             }
             _ => {}
         }
+    }
+
+    /// Triangle from a top-of-flow screen closes the menu. Tear down any
+    /// active shop / inn session so a re-open starts clean (the routed
+    /// `ShopExit` teardown already clears the shop session; this catches
+    /// the inn-cancel path and any direct close).
+    fn cancel(&mut self) {
+        *self.shop_session = None;
+        *self.inn_session = None;
     }
 }
 
@@ -728,6 +739,118 @@ mod tests {
             );
         }
         assert_eq!(runtime.ctx.cursor, 1);
+    }
+
+    fn cross() -> MenuInput {
+        MenuInput {
+            cross: true,
+            ..Default::default()
+        }
+    }
+
+    fn triangle() -> MenuInput {
+        MenuInput {
+            triangle: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn shop_buy_flow_drives_through_tick_and_grants_item() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.money = 500;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 10,
+                price: 100,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+
+        // ShopBuy (cursor 0 = item 10) -> ShopQuantity.
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+        // ShopQuantity (cursor 0 = qty 1) -> ShopConfirm.
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopConfirm.as_byte());
+        // ShopConfirm (cursor 0 = yes) -> back to ShopBuy, purchase applied.
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
+
+        assert_eq!(world.money, 400, "100 gold deducted");
+        assert_eq!(world.inventory.get(&10), Some(&1), "one item 10 granted");
+        assert!(runtime.shop_session.is_some(), "still shopping");
+    }
+
+    #[test]
+    fn shop_triangle_from_list_tears_down_session_and_closes() {
+        use crate::shop::{ShopInventory, ShopSession};
+
+        let mut world = world_with_party(1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(1, vec![])));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+
+        // Triangle from the buy list -> ShopExit teardown screen.
+        runtime.tick(&mut world, triangle());
+        assert_eq!(runtime.ctx.state, MenuState::ShopExit.as_byte());
+        // ShopExit fires its one-shot commit (clears the session) then holds.
+        runtime.tick(&mut world, MenuInput::default());
+        assert!(
+            runtime.shop_session.is_none(),
+            "session cleared on teardown"
+        );
+        // Holds, then closes.
+        for _ in 0..8 {
+            runtime.tick(&mut world, MenuInput::default());
+        }
+        assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
+    }
+
+    #[test]
+    fn inn_rest_drives_through_tick_restores_hp_and_charges_gold() {
+        let mut world = world_with_party(1);
+        world.money = 50;
+        world.party_count = 1;
+        world.actors[0].active = true;
+        world.actors[0].battle.max_hp = 100;
+        world.actors[0].battle.hp = 10;
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_inn(10);
+        runtime.ctx.state = MenuState::InnConfirm.as_byte();
+
+        // InnConfirm (cursor 0 = yes) -> InnSleep, rest applied.
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::InnSleep.as_byte());
+        assert_eq!(world.money, 40, "10 gold charged");
+        assert_eq!(world.actors[0].battle.hp, 100, "HP restored to max");
+        assert!(runtime.inn_session.is_none(), "inn session cleared");
+
+        // Sleep fade holds, then closes.
+        for _ in 0..8 {
+            runtime.tick(&mut world, MenuInput::default());
+        }
+        assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
+    }
+
+    #[test]
+    fn inn_decline_closes_without_charging() {
+        let mut world = world_with_party(1);
+        world.money = 50;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_inn(10);
+        runtime.ctx.state = MenuState::InnConfirm.as_byte();
+        runtime.ctx.cursor = 1; // slot 1 = no
+
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
+        assert_eq!(world.money, 50, "no gold charged on decline");
+        assert!(runtime.inn_session.is_none(), "inn session cleared");
     }
 
     #[test]
