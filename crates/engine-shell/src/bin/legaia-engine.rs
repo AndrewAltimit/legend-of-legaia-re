@@ -4586,17 +4586,29 @@ impl PlayWindowApp {
 
         // Battle sound cues: the art-strike outcomes resolve per-strike SFX
         // cues (kind = the SfxBank id, played directly without classify_cue).
-        // No battle SFX bank is wired yet, so log the scheduled cue; a host
-        // with a bank would enqueue each into its SfxScheduler at timing_frames
-        // and fire via SfxBank::play_one_shot.
-        for cue in self.session.host.world.drain_battle_sfx_cues() {
-            log::debug!(
-                "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {})",
-                cue.kind,
-                cue.timing_frames,
-                cue.actor_slot,
-                cue.target_slot
-            );
+        // Enqueue each into the director's SfxScheduler at its strike-relative
+        // timing, then advance the scheduler one frame and fire any matured cue
+        // through the scene VAB. Drain first so the world borrow ends before
+        // the director borrow. SFX touch the SPU only - no RNG - so battle
+        // determinism stays bit-exact.
+        let cues = self.session.host.world.drain_battle_sfx_cues();
+        if let Some(bgm) = self.session.bgm.as_mut() {
+            for cue in &cues {
+                bgm.enqueue_sfx(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
+            }
+            for (id, voice) in bgm.tick_sfx_frame() {
+                log::debug!("battle SFX cue {id:#04x} fired on voice {voice}");
+            }
+        } else {
+            for cue in &cues {
+                log::debug!(
+                    "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {}; no audio)",
+                    cue.kind,
+                    cue.timing_frames,
+                    cue.actor_slot,
+                    cue.target_slot
+                );
+            }
         }
 
         // Refresh per-slot status icons + age the popups one frame.

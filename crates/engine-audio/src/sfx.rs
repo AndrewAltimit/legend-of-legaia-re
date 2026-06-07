@@ -647,6 +647,58 @@ mod tests {
     }
 
     #[test]
+    fn play_one_shot_keys_on_a_voice_through_an_uploaded_bank() {
+        use crate::spu::Spu;
+        use crate::vab_bind::{UploadedVag, VabBank};
+        use legaia_vab::VagAtr;
+
+        // Minimal one-program bank: a single tone covering every note, bound
+        // to VAG #1 (1-based, so samples[0]).
+        let tone = VagAtr {
+            prior: 0,
+            mode: 0,
+            vol: 127,
+            pan: 64,
+            center: 60,
+            shift: 0,
+            min: 0,
+            max: 127,
+            vibw: 0,
+            vibt: 0,
+            porw: 0,
+            port: 0,
+            pbmin: 0,
+            pbmax: 0,
+            reserved1: 0,
+            reserved2: 0,
+            adsr1: 0,
+            adsr2: 0,
+            prog: 0,
+            vag: 1,
+            reserved3: [0; 4],
+        };
+        let vab = VabBank {
+            master_vol: 127,
+            samples: vec![Some(UploadedVag {
+                addr: 0x1010,
+                size: 0x20,
+            })],
+            programs: vec![vec![tone]],
+        };
+        let mut spu = Spu::new();
+
+        // Bank maps cue 0x1A -> program 0, key 60 (the tone above). Firing it
+        // claims the first idle voice and keys it on.
+        let bank = SfxBank::from_descriptors([(0x1A, 0, 60)]);
+        let voice = bank.play_one_shot(0x1A, &mut spu, &vab);
+        assert_eq!(voice, Some(0), "first idle voice keyed on");
+        assert!(!spu.voices[0].is_off(), "voice 0 is now playing");
+
+        // A cue id not in the bank is a no-op and never touches the SPU.
+        assert_eq!(bank.play_one_shot(0x4C, &mut spu, &vab), None);
+    }
+
+    #[test]
     fn scheduler_enqueue_all_appends_in_order() {
         let mut s = SfxScheduler::new();
         s.enqueue_all([
