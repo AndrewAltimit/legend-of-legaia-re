@@ -146,6 +146,45 @@ impl EquipmentCatalog {
     }
 }
 
+/// Build a disc-accurate equipment modifier table keyed by **real** retail item
+/// ids from the static equipment stat-bonus table
+/// ([`legaia_asset::equip_stats`], `DAT_80074F68`). Each equippable id's
+/// attack / def-up / def-down bytes (byte-exact vs the curated gamedata) map
+/// onto an [`ItemModifier`].
+///
+/// This is the real-id counterpart to [`vanilla_equipment_catalog`]'s
+/// [`EquipmentCatalog::to_modifier_table`]: the vanilla catalog keys by
+/// fabricated ids (e.g. `0x20` "Bronze Sword") that collide with the real item
+/// id space (`0x20` is the Mace), so a save holding a real equipped id pulls a
+/// wrong / empty modifier from it. Built from the user's `SCUS_942.54`, this
+/// table indexes by the same ids a character record's `equip[8]` actually
+/// carries.
+///
+/// The head-gear / footwear bonuses (the `+0` / `+4` bytes - the agility /
+/// evasion pair) are left unmapped (`acc`/`eva` stay 0) pending stat-order
+/// confirmation; the proven attack / defense bonuses are applied.
+pub fn equip_modifier_table_from_disc(
+    table: &legaia_asset::equip_stats::EquipStatTable,
+) -> EquipmentTable {
+    let mut out = EquipmentTable::new();
+    for id in 0u8..=u8::MAX {
+        if let Some(b) = table.bonus(id) {
+            out.set(
+                id,
+                ItemModifier {
+                    atk: b.attack() as i16,
+                    udf: b.def_up() as i16,
+                    ldf: b.def_down() as i16,
+                    acc: 0,
+                    eva: 0,
+                    ability_bits: [0; 32],
+                },
+            );
+        }
+    }
+    out
+}
+
 const VAHN: u8 = 0;
 const NOA: u8 = 1;
 const GALA: u8 = 2;
@@ -185,10 +224,13 @@ fn mk_modifier_with_ability(
     }
 }
 
-/// Vanilla equipment catalog. Approximates the retail Legaia roster.
-/// Numeric values are rounded to the nearest "feels right" tier; the
-/// actual retail equipment table still requires the level_up overlay
-/// trace for exact values (see `docs/subsystems/levelup.md`).
+/// Vanilla equipment catalog. Approximates the retail Legaia roster with
+/// **fabricated ids** (e.g. `0x20` "Bronze Sword") and "feels right" stat
+/// tiers - kept as a disc-free fallback / UI scaffold. The real per-equip
+/// attack / def values are the static `SCUS_942.54` table (`DAT_80074F68`,
+/// [`legaia_asset::equip_stats`]); [`equip_modifier_table_from_disc`] builds a
+/// disc-accurate modifier table keyed by the real item ids, which the boot path
+/// prefers when the executable is readable.
 pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
     let mut c = EquipmentCatalog::new();
 
