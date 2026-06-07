@@ -21,6 +21,7 @@ Engines push voice attributes / key-on masks / sample uploads through
 | [`spu::adsr`](src/spu/adsr.rs) | 5-phase envelope state machine matching the PSX `(adsr1, adsr2)` word layout (linear / exponential / increase / decrease). |
 | [`spu::adpcm`](src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder - 28 samples per 16-byte block, stateful across blocks. |
 | [`spu::ram`](src/spu/ram.rs) | 512 KB SPU RAM model + libspu-style transfer pointer / direction + a first-fit `SpuAllocator` for `SsSpuMalloc` / `SpuFree`. |
+| [`spu::reverb`](src/spu/reverb.rs) | Faithful register-driven reverb network (same/different-side IIR + 4-tap comb + 2 all-pass), with the 9 standard libspu mode presets. Per-voice opt-in via `Voice::set_reverb_send`. |
 | [`vab_bind`](src/vab_bind.rs) | `VabBank::upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM; `VabBank::play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. |
 | [`sfx`](src/sfx.rs) | `SfxBank` maps cue IDs (the `HitCue::kind` byte from art records, plus engine-extended slots for menu blips / footsteps) to per-cue `SfxEntry` descriptors. `play_one_shot` delegates to `VabBank::play_note`. `SfxScheduler::tick_frame` drains queued `PendingCue`s with retail-style `timing_frames` offsets so cues fire on the right anim frame. |
 
@@ -31,8 +32,6 @@ verified across several extracted banks.
 
 ## Out of scope (first port pass)
 
-- **Reverb.** Stored as a u32 register but never interpreted. Spirit
-  Arts use it.
 - **Pitch modulation, noise, FM.** None of these are used by Legaia
   (verified against the libspu calls in the SCUS dumps).
 - **Asynchronous DMA timing.** The transfer engine here is synchronous;

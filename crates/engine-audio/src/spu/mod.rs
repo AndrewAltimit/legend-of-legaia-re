@@ -15,14 +15,14 @@
 //!   is the only pitch path, `SpuSetVoiceAttr` writes only sample addr +
 //!   ADSR + volume).
 //!
-//! ## Reverb (perceptual model)
+//! ## Reverb
 //!
-//! [`Reverb`] is a per-channel comb-filter network with [`ReverbMode`]
-//! presets covering the 9 standard PSX modes plus Off. Routing is
-//! per-voice: set [`Voice::reverb_send`] to opt a voice into the wet
-//! signal (libspu `SpuSetVoiceReverb` analogue). The retail SPU's
-//! register-level reverb topology is not reproduced - the goal is a
-//! perceptible echo tail for Spirit Arts, not bit-accuracy.
+//! [`Reverb`] is a faithful register-driven port of the hardware reverb
+//! network (same/different-side IIR reflections + 4-tap comb + two all-pass
+//! stages) with the standard libspu [`ReverbMode`] presets covering the 9
+//! PSX modes plus Off. Routing is per-voice: set [`Voice::reverb_send`] to
+//! opt a voice into the wet signal (libspu `SpuSetVoiceReverb` analogue).
+//! The 22.05 kHz FIR resampler is approximated; see the [`reverb`] module.
 //!
 //! See `docs/subsystems/audio.md` "engine-audio model" for the consumer.
 
@@ -32,7 +32,7 @@ pub mod ram;
 pub mod reverb;
 pub mod voice;
 
-pub use reverb::{Reverb, ReverbMode, ReverbParams};
+pub use reverb::{Reverb, ReverbMode};
 
 use ram::SpuRam;
 use voice::Voice;
