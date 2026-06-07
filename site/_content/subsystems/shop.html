@@ -18,6 +18,7 @@
     </tbody>
   </table>
   <p>On <code>ShopConfirm</code> slot 0 (Yes): <code>try_buy</code> deducts gold and credits inventory; <code>try_sell</code> credits gold and decrements inventory. Sell price is <code>max(buy_price / 2, 1)</code>; items not in the shop's buy list sell for 1 gold.</p>
+  <p>The menu state machine (<code>engine-vm::menu</code>) owns the per-screen transition graph &mdash; <code>commit_route</code> on Cross, <code>back_route</code> on Triangle &mdash; while the <code>MenuHost</code> commit hooks apply only the side effects. Cross steps <code>ShopBuy</code>/<code>ShopSell</code> &rarr; <code>ShopQuantity</code> &rarr; <code>ShopConfirm</code> &rarr; back to <code>ShopBuy</code> (so the player keeps shopping after each confirm); Triangle backs up one screen, and from the list it routes through the auto-advancing <code>ShopExit</code> teardown screen. <code>ShopExit</code> fires its one-shot session-clear on entry, holds for the render fade (<code>transient_hold_frames</code>), then drops to the menu&rsquo;s <code>Closing</code> state. The same routing drives the inn (<code>InnConfirm</code> Yes &rarr; transient <code>InnSleep</code> fade &rarr; close; No &rarr; close).</p>
 </section>
 
 <section class="doc-section" id="session">

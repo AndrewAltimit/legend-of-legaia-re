@@ -27,6 +27,27 @@ Gold and inventory deltas are applied to the world on `ShopConfirm` slot 0
 (Yes): `try_buy` deducts gold and credits inventory; `try_sell` credits gold
 and decrements inventory.
 
+### State-machine routing
+
+The menu state machine (`engine-vm::menu`) owns the per-screen transition graph
+(`commit_route` for Cross, `back_route` for Triangle); the `MenuHost` commit
+hooks only apply side effects. The shop walks:
+
+```
+ShopBuy/ShopSell --Cross--> ShopQuantity --Cross--> ShopConfirm --Cross--> ShopBuy
+       ^                          |                       |
+       | Triangle (teardown)      | Triangle              | Triangle
+   ShopExit  <----------- ShopBuy <--------------- ShopQuantity
+```
+
+Confirm (either Yes or No) routes back to the buy list so the player can shop
+again; the only way out is Triangle from the list, which routes through the
+transient `ShopExit` screen. `ShopExit` is auto-advancing: on entry it fires its
+one-shot commit (clears the session via `MenuRuntimeHost::commit` / `cancel`),
+holds for the render layer's fade (`transient_hold_frames`), then routes to the
+menu's `Closing` state. The same routing drives the inn (`InnConfirm` Yes →
+transient `InnSleep` fade → close; No → close).
+
 ## Key data structures
 
 ### `ShopItem` (`engine-core::shop`)

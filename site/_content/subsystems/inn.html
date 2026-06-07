@@ -11,10 +11,12 @@
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td>Cost prompt</td><td><code>InnConfirm</code></td><td>Shows cost for one stay and a Yes / No cursor.</td></tr>
+      <tr><td>Rest fade</td><td><code>InnSleep</code></td><td>Transient screen that plays the rest fade after a Yes, then closes.</td></tr>
       <tr><td>Commit</td><td>-</td><td>Deducts gold; restores all active party members&rsquo; HP and MP to their current maxima.</td></tr>
     </tbody>
   </table>
   <p>On commit: <code>InnSession::can_afford(world_money)</code> gates the transaction. If affordable, gold is deducted (<code>World::money -= cost</code>) and every active roster member gets <code>hp_cur = hp_max</code>, <code>mp_cur = mp_max</code>. <code>save_party()</code> is called to sync the roster records.</p>
+  <p>The menu state machine (<code>engine-vm::menu</code>) routes the prompt: <code>InnConfirm</code> Yes (slot 0) commits the rest and routes to the transient <code>InnSleep</code> fade, which auto-advances to the menu&rsquo;s <code>Closing</code> state after <code>transient_hold_frames</code>; No (slot 1) and Triangle route straight to <code>Closing</code>. Either way the inn session is cleared.</p>
 </section>
 
 <section class="doc-section" id="session">
