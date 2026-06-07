@@ -59,7 +59,7 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><strong>Per-scene item tables.</strong> Retail shop stocks are in the menu overlay DATA segment at <code>0x801E4518</code> (8-byte strides, <code>0x60</code> bytes per scene; dispatched by <code>FUN_801DC6B4</code>). Scene-index to offset mapping is not yet traced.</li>
+    <li><strong>Gold-shop stock source &mdash; open.</strong> <code>0x801E4518</code> (the menu-overlay DATA table, 8-byte <code>[u16 item_id][u16 gate][u32 price]</code> records in <code>0x60</code>-byte blocks) was previously assumed to hold per-scene shop stock. It does not: its buy handler debits <code>_DAT_800845A4</code> &mdash; the casino coin bank, not party gold (<code>_DAT_8008459C</code>) &mdash; so this is the casino / prize-exchange table, already parsed by the randomizer's <code>CasinoExchange</code>. The <em>gold</em> item-shop stock list lives elsewhere and is still unpinned; the engine's <code>ShopInventory</code> is host-supplied until that source is found.</li>
     <li><strong>Quantity cap.</strong> Retail caps held count at 98 before dimming; the current port allows unlimited stacking.</li>
     <li><strong>Mode-select panel.</strong> The Buy / Sell / Quit selector (<code>FUN_801d4868</code>) uses x+20 for text and the same 14 px line height as the item list.</li>
   </ul>
