@@ -33,6 +33,7 @@ pub mod field_disasm;
 pub mod field_objects;
 pub mod field_pack;
 pub mod init_pak;
+pub mod item_effect;
 pub mod item_names;
 pub mod kingdom_bundle;
 pub mod level_up_tables;

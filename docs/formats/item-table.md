@@ -61,6 +61,7 @@ real executable.
 
 ## See also
 
+- [Item-effect descriptor table](item-effect-table.md) - the sibling table this id space indexes into for effect class / targeting / usability.
 - [Spell table](spell-table.md) - the sibling static `SCUS_942.54` name+stat table.
 - [Art records](art-data.md) - the Tactical Arts records and arts-name table.
 - [`reference/gamedata.md`](../reference/gamedata.md) - the curated ground-truth item/drop tables.
