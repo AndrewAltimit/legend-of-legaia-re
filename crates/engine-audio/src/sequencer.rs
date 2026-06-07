@@ -52,20 +52,19 @@ const LOOP_FOREVER_VALUE: u8 = 30;
 
 /// Center value of the 14-bit pitch-bend wheel - no bend.
 const PITCH_BEND_CENTER: u16 = 0x2000;
-/// Pitch-bend range, in semitones, applied at full wheel deflection
-/// (`0x0000` = -range, `0x3FFF` ≈ +range). The SEQ stream carries no RPN
-/// to override this, and libsnd's bend handler is statically-linked PsyQ
-/// (not in the dumped corpus), so this is the General-MIDI default ±2
-/// semitones - the one scalar in this path not pinned to retail bytes. If a
-/// capture ever pins libsnd's range, change only this constant.
-const PITCH_BEND_RANGE_SEMITONES: f64 = 2.0;
 
 /// Convert a 14-bit pitch-bend wheel value into a pitch multiplier (`1.0` at
-/// center). Shared by NoteOn (bend a fresh note) and the `0xEn` handler
-/// (re-bend sounding notes).
-fn pitch_bend_factor(bend: u16) -> f64 {
+/// center) using the sounding tone's own bend range (semitones): `up` at
+/// full-up wheel, `down` at full-down. The range is the VAB tone's
+/// `pbmax`/`pbmin` (disc-sourced, per [`VabBank::pitch_bend_range`]), so a
+/// tone with a `(0, 0)` range does not respond to the wheel at all - exactly
+/// as libsnd applies the per-tone range rather than a global constant. Shared
+/// by NoteOn (bend a fresh note) and the `0xEn` handler (re-bend sounding
+/// notes).
+fn pitch_bend_factor(bend: u16, down: u8, up: u8) -> f64 {
     let norm = (bend as f64 - PITCH_BEND_CENTER as f64) / PITCH_BEND_CENTER as f64;
-    let semitones = norm * PITCH_BEND_RANGE_SEMITONES;
+    let range = if norm >= 0.0 { up } else { down } as f64;
+    let semitones = norm * range;
     2f64.powf(semitones / 12.0)
 }
 
@@ -116,6 +115,10 @@ struct ActiveNote {
     /// pitch-bend was folded in. Re-applying a new bend multiplies this
     /// base so repeated bends don't compound rounding error.
     base_pitch: u16,
+    /// The sounding tone's pitch-bend range `(pbmin, pbmax)` in semitones,
+    /// captured at NoteOn so a later `0xEn` event scales by the note's own
+    /// range (a `(0, 0)` tone never bends).
+    bend_range: (u8, u8),
 }
 
 /// Sequencer state machine. One per playing SEQ.
@@ -429,10 +432,10 @@ impl Sequencer {
             }
             ChannelMessage::PitchBend { value } => {
                 self.channels[ch].pitch_bend = value;
-                let factor = pitch_bend_factor(value);
                 for note in self.active.iter().filter(|n| n.channel as usize == ch) {
                     if let Some(v) = spu.voices.get_mut(note.voice as usize) {
-                        v.pitch = bend_pitch(note.base_pitch, factor);
+                        let (down, up) = note.bend_range;
+                        v.pitch = bend_pitch(note.base_pitch, pitch_bend_factor(value, down, up));
                     }
                 }
             }
@@ -465,24 +468,27 @@ impl Sequencer {
             .bank
             .play_note(spu, voice as usize, cs.program as usize, key, combined);
         if ok {
-            // play_note set the voice's base pitch; remember it so later bends
-            // re-scale the unbent value, then fold in any bend already held on
-            // this channel.
+            // play_note set the voice's base pitch; remember it (and the
+            // tone's disc-sourced bend range) so later bends re-scale the
+            // unbent value, then fold in any bend already held on this channel.
             let base_pitch = spu
                 .voices
                 .get(voice as usize)
                 .map(|v| v.pitch)
                 .unwrap_or(0x1000);
+            let bend_range = self.bank.pitch_bend_range(cs.program as usize, key);
             if cs.pitch_bend != PITCH_BEND_CENTER
                 && let Some(v) = spu.voices.get_mut(voice as usize)
             {
-                v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend));
+                let (down, up) = bend_range;
+                v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
             }
             self.active.push(ActiveNote {
                 channel,
                 key,
                 voice,
                 base_pitch,
+                bend_range,
             });
         }
     }
@@ -820,26 +826,33 @@ mod tests {
 
     #[test]
     fn pitch_bend_factor_center_is_unity() {
-        // Center wheel = no bend.
-        assert!((pitch_bend_factor(PITCH_BEND_CENTER) - 1.0).abs() < 1e-9);
-        // Full up bends sharp (> 1.0), full down bends flat (< 1.0).
-        assert!(pitch_bend_factor(0x3FFF) > 1.0);
-        assert!(pitch_bend_factor(0x0000) < 1.0);
-        // Symmetry: full up is (near) the inverse of full down.
-        let up = pitch_bend_factor(0x3FFF);
-        let down = pitch_bend_factor(0x0000);
-        assert!((up * down - 1.0).abs() < 0.01);
+        // Center wheel = no bend, whatever the tone range.
+        assert!((pitch_bend_factor(PITCH_BEND_CENTER, 2, 2) - 1.0).abs() < 1e-9);
+        // With a ±2-semitone tone range, full up bends sharp, full down flat.
+        assert!(pitch_bend_factor(0x3FFF, 2, 2) > 1.0);
+        assert!(pitch_bend_factor(0x0000, 2, 2) < 1.0);
+        // A tone with a (0, 0) range never responds to the wheel.
+        assert!((pitch_bend_factor(0x3FFF, 0, 0) - 1.0).abs() < 1e-9);
+        assert!((pitch_bend_factor(0x0000, 0, 0) - 1.0).abs() < 1e-9);
+        // Asymmetric range: full up uses `up`, full down uses `down`.
+        let up = pitch_bend_factor(0x3FFF, 1, 12);
+        let down = pitch_bend_factor(0x0000, 1, 12);
+        assert!(up > 1.5); // ~+1 octave
+        assert!(down > 0.94 && down < 1.0); // ~-1 semitone
     }
 
     #[test]
     fn bend_pitch_clamps_to_register_range() {
         // A large base × a sharp bend saturates at 0x3FFF, never overflows.
-        assert_eq!(bend_pitch(0x3FFF, pitch_bend_factor(0x3FFF)), 0x3FFF);
+        assert_eq!(
+            bend_pitch(0x3FFF, pitch_bend_factor(0x3FFF, 12, 12)),
+            0x3FFF
+        );
         // A bend never drives the register below 1.
-        assert!(bend_pitch(1, pitch_bend_factor(0x0000)) >= 1);
+        assert!(bend_pitch(1, pitch_bend_factor(0x0000, 12, 12)) >= 1);
         // Center leaves a mid-range pitch untouched.
         assert_eq!(
-            bend_pitch(0x1000, pitch_bend_factor(PITCH_BEND_CENTER)),
+            bend_pitch(0x1000, pitch_bend_factor(PITCH_BEND_CENTER, 2, 2)),
             0x1000
         );
     }
@@ -856,6 +869,7 @@ mod tests {
             key: 60,
             voice: 0,
             base_pitch: base,
+            bend_range: (2, 2),
         });
 
         // Bend sharp: the voice's live pitch register rises, the channel

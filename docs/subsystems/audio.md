@@ -249,13 +249,23 @@ sequencer acts on it: a bend sets the channel's 14-bit wheel
 (`ChannelState::pitch_bend`, center `0x2000`), re-pitches every voice
 already sounding on that channel, and is folded into subsequent NoteOns.
 Each `ActiveNote` keeps its unbent base pitch so repeated bends scale the
-base rather than compounding. The wheel maps to a pitch multiplier over a
-`±2`-semitone range (`PITCH_BEND_RANGE_SEMITONES`) - the General-MIDI
-default; the SEQ stream carries no RPN override and libsnd's bend handler
-is statically-linked PsyQ (not in the dumped corpus), so the range is the
-one scalar in this path not pinned to retail bytes. Channel and polyphonic
-aftertouch (`0xDn` / `0xAn`) are parsed but the same sweep confirms the
-retail score never emits them, so they have no consumer to drive.
+base rather than compounding.
+
+The bend **range is a per-tone disc value**, not a global constant: each VAB
+tone carries `pbmin`/`pbmax` (downward/upward bend in semitones), and the
+wheel scales by the sounding tone's own range — `+pbmax` semitones at
+full-up, `-pbmin` at full-down (`VabBank::pitch_bend_range`, captured into
+the `ActiveNote` at NoteOn). A tone with a `(0, 0)` range does not respond
+to the wheel at all, exactly as libsnd applies the per-tone range. A
+disc-wide tone census (`engine-audio/tests/real_vab_tone_attributes.rs`)
+pins this: the common non-zero range is 2 semitones (the GM default, which
+is why a global `±2` would approximate it), with a few tones at 4/12/24/40;
+vibrato (`vibw`/`vibt`) and portamento (`porw`/`port`) are zero on every
+tone, so the voice model needs no LFO.
+
+Channel and polyphonic aftertouch (`0xDn` / `0xAn`) are parsed but the
+expressive-event sweep confirms the retail score never emits them, so they
+have no consumer to drive.
 
 **Loop points.** SEQ loop markers are read from the stream: the NRPN-style
 control changes on `0xB0` (controller 99 value 20 = Loop Start, value 30 =

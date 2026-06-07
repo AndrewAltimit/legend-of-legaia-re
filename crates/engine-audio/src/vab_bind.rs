@@ -162,6 +162,20 @@ impl VabBank {
         voices[voice].key_on(ram);
         true
     }
+
+    /// The tone that would be selected for `(program, note)` carries a
+    /// pitch-bend range in the VAB attributes: `pbmin` semitones of downward
+    /// bend at full-down wheel, `pbmax` semitones up at full-up. Returns
+    /// `(pbmin, pbmax)` so the sequencer can scale a `0xEn` wheel value by the
+    /// note's own range (a tone with `(0, 0)` does not respond to the wheel).
+    /// `(0, 0)` is also the fallback when the program/tone can't be resolved.
+    pub fn pitch_bend_range(&self, program: usize, note: u8) -> (u8, u8) {
+        self.programs
+            .get(program)
+            .and_then(|tones| tones.iter().find(|t| note >= t.min && note <= t.max))
+            .map(|t| (t.pbmin, t.pbmax))
+            .unwrap_or((0, 0))
+    }
 }
 
 /// Compute the SPU pitch register value for `note` against `tone.center`,

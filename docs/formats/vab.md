@@ -9,6 +9,13 @@ The format itself is documented externally; the Legaia-specific notes are:
 - Block names from CDNAME can be misleading; trust the `VABp` magic rather than the surrounding cluster name.
 - The trailing VAG size table (256 × `u16`) is **1-indexed**: `vag_table[1..=vs]` hold each sample's size in 8-byte units, so `vag_table[0]` is a reserved leading spacer. It is universally `0` across the retail corpus (986 / 986 VABs, asserted by the disc-gated `corpus_vag_spacer` test) - it is **not** a master pitch / sample-rate shift, so no pitch offset is derived from it (`VabReport::vag_table_spacer` surfaces the raw byte only).
 
+### Tone attributes the engine uses (and the ones it can ignore)
+
+Each 16-byte tone (`VagAtr`) carries the standard Sony fields. A disc-wide census of every tone (986 banks, ~44.8k tones; `engine-audio/tests/real_vab_tone_attributes.rs`) fixes which the retail data actually populates:
+
+- **Used by playback:** `vol`/`pan` (mix), `center`/`shift` (key → pitch), `min`/`max` (note range → tone select), `adsr1`/`adsr2` (envelope), and **`pbmin`/`pbmax`** — the per-tone pitch-bend range in semitones (`pbmin` down, `pbmax` up). Only some tones carry a non-zero range; the common value is 2 (the GM-default ±2 semitones), with a few at 4/12/24/40. The sequencer scales a `0xEn` wheel event by the **sounding tone's** range (`VabBank::pitch_bend_range`), so a `(0, 0)` tone does not bend - see [`subsystems/audio.md`](../subsystems/audio.md).
+- **Always zero in retail (no consumer needed):** `vibw`/`vibt` (vibrato) and `porw`/`port` (portamento) are zero on every tone, so the clean-room voice model needs no LFO.
+
 ## API
 
 ```rust
