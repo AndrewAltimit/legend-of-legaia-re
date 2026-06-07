@@ -23,8 +23,15 @@
 //! PORT: FUN_8004E568 (victory-spoils gold + EXP scaling — `victory_gold_*` /
 //! `victory_exp_per_member`. The reward resolver's drop roll + level-up
 //! application live in engine-core `apply_battle_loot` / `apply_battle_xp`.)
-//! REF: FUN_801E295C, FUN_801EED1C, FUN_801DDB30 (the post-roll finisher;
-//! deeply coupled to live battle globals, intentionally not a pure kernel).
+//! PORT: FUN_801DDB30 (damage finisher — the closed-form damage-finalisation
+//! arithmetic (`damage_finish`: equipment elemental-resistance halving, the
+//! guard halve, the no-damage `rand%9+8` floor, the summon power-percent scale,
+//! the 9999 cap) + the spirit-gauge fill (`spirit_gauge_fill`). The finisher's
+//! state-mutating tail — damage-popup accumulator, AI revenge table, MP drain,
+//! and the per-element stat-debuff switch — reads/writes ~20 battle globals and
+//! stays in the live battle context; see the REF below + `damage_finish` docs.)
+//! REF: FUN_801E295C, FUN_801EED1C (the action-SM glue that drives the kernels
+//! and applies the finisher's coupled global side effects).
 
 #![allow(clippy::too_many_arguments)]
 
@@ -487,6 +494,215 @@ pub fn arts_physical_predamage(i: &ArtsPredamage) -> (u32, u32) {
 }
 
 // ---------------------------------------------------------------------------
+// FUN_801ddb30 — damage finisher (post-roll finalisation)
+// ---------------------------------------------------------------------------
+//
+// The shared finisher `FUN_801ddb30` (`overlay_battle_action_801ddb30.txt`) takes
+// the pre-finisher damage produced by the roll + scale stages above and turns it
+// into the final HP loss + the defender's spirit-gauge fill. It works on
+// `over = *param_3 - *param_4` (the damage *above* the base `*param_4`); every
+// stage rewrites `over` in place. The closed-form arithmetic splits cleanly into
+// two pure kernels:
+//
+//   * [`damage_finish`] — equipment elemental-resistance halving (one element
+//     bit per attacker element; the absorb-bit `0x10` gate routes to a 3/4 scale
+//     instead), the defender-guard halve (`actor+0x1de == 4`), the no-damage
+//     `rand()%9 + 8` floor, the summon power-percent scale (`attacker_slot == 7`),
+//     and the `9999` cap. Returns the final `over` (HP loss).
+//   * [`spirit_gauge_fill`] — the defender's spirit-gauge accrual from the same
+//     `over`, plus the two "spirit gain up" equipment bits, clamped to 100.
+//
+// The finisher's remaining tail is genuinely coupled to live battle state and is
+// **not** reproduced here: the damage-popup accumulator (`_DAT_8007bd14`), the
+// `DAT_801f6980` AI revenge / counter-aggro table, the MP-drain + the
+// per-element stat-debuff `switch` keyed on the attacker's element
+// (`DAT_801c9358+0x1d`), and the `+0x16e` "nullify" status that zeroes the hit
+// after the spirit accrual. The action SM applies those; see the REF in the
+// module header.
+
+/// The defender's equipment-derived elemental-resistance + spirit flags, read by
+/// [`damage_finish`] / [`spirit_gauge_fill`] from the live character record's two
+/// words at `+0xF4` (`lo`) and `+0xF8` (`hi`) (runtime `0x800847FC`/`0x80084800`
+/// for member 0, `0x414` stride). Only a party defender (slot `< 3`) carries
+/// these; enemy defenders pass [`Default`] (no resistance).
+///
+/// Bit layout (mirroring the disassembly's per-element `if` ladder):
+///
+/// | element | bit | word |
+/// |---|---|---|
+/// | 0 | `0x20000000` | `hi` |
+/// | 1 | `0x40000000` | `hi` |
+/// | 2 | `0x80000000` | `hi` |
+/// | 3 | `0x1` | `lo` |
+/// | 4 | `0x2` | `lo` |
+/// | 5 | `0x4` | `lo` |
+/// | 6 | `0x8` | `lo` |
+///
+/// `hi & 0x10` is the absorb/null gate; `hi & 0x200` / `hi & 0x100` are the two
+/// spirit-gain-up flags (see [`spirit_gauge_fill`]).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefenderResist {
+    /// Record word `+0xF4`: elements 3..=6 in the low nibble.
+    pub lo: u32,
+    /// Record word `+0xF8`: elements 0..=2 in the high bits, plus the absorb
+    /// gate (`0x10`) and the spirit-gain-up bits (`0x100`/`0x200`).
+    pub hi: u32,
+}
+
+impl DefenderResist {
+    /// `true` if the defender resists `element` (0..=6) — the per-element bit set.
+    fn resists(&self, element: u8) -> bool {
+        match element {
+            0 => self.hi & 0x2000_0000 != 0,
+            1 => self.hi & 0x4000_0000 != 0,
+            2 => self.hi & 0x8000_0000 != 0,
+            3 => self.lo & 0x1 != 0,
+            4 => self.lo & 0x2 != 0,
+            5 => self.lo & 0x4 != 0,
+            6 => self.lo & 0x8 != 0,
+            _ => false,
+        }
+    }
+}
+
+/// All inputs to [`damage_finish`] (the closed-form stages of `FUN_801ddb30`).
+#[derive(Debug, Clone, Copy)]
+pub struct DamageFinish {
+    /// Pre-finisher damage above base (`attacker_roll - defender_roll`, the
+    /// `over` the roll/scale stages produce — already saturated to `>= 0`).
+    pub predamage: u32,
+    /// Attacker actor slot (`param_1`); `7` is the summon body, `>= 3` an enemy.
+    pub attacker_slot: u8,
+    /// Defender actor slot (`param_2`); `< 3` a party member.
+    pub defender_slot: u8,
+    /// Attacker element (0..=6); `7` = non-elemental, which bypasses the absorb
+    /// gate so the per-element halve ladder still runs.
+    pub attacker_element: u8,
+    /// The party defender's equipment resistance flags. Ignored for an enemy
+    /// defender (`defender_slot >= 3`).
+    pub defender_resist: DefenderResist,
+    /// Defender is in the guard/defend state (`actor+0x1de == 4`) — halves `over`.
+    pub defender_guarding: bool,
+    /// The `_DAT_8007bd84` global, consulted only for an enemy defender
+    /// (`defender_slot >= 3`): when set, the enemy takes half damage.
+    pub enemy_defender_halve: bool,
+    /// The `param_5` flag: when non-zero the party-defender resistance block is
+    /// skipped entirely (the retail caller passes it for certain fixed hits).
+    pub bypass_party_resist: bool,
+    /// Summon power-percent (`attacker_slot == 7` only): `over` is scaled
+    /// `over * pct / 100`. From the per-caster element table at `0x801F5468`.
+    pub summon_power_pct: u8,
+    /// One `rand()` draw (`0..=0x7FFF`), consumed **only** when `over` has been
+    /// reduced to `0` by mitigation (the `rand()%9 + 8` floor). Pass any value
+    /// when the caller knows mitigation can't zero the hit.
+    pub floor_rand: u16,
+}
+
+/// Apply the closed-form finalisation stages of `FUN_801ddb30` to the
+/// pre-finisher damage and return the final HP loss (`over`).
+///
+/// Order mirrors the disassembly exactly:
+///
+/// 1. **Party-defender elemental resistance** (`defender_slot < 3`, attacker is
+///    an enemy `>= 3`, and `!bypass_party_resist`): if the defender's absorb bit
+///    (`hi & 0x10`) is clear *or* the attacker is non-elemental (element 7), the
+///    per-element halve ladder runs — `over >>= 1` when the defender resists the
+///    attacker's element. Otherwise `over = over * 3 >> 2` (3/4).
+/// 2. **Enemy-defender halve** (`defender_slot >= 3`): `over >>= 1` when
+///    `enemy_defender_halve`.
+/// 3. **Guard halve**: `over >>= 1` when the defender is guarding.
+/// 4. **No-damage floor**: when `over == 0`, `over = rand()%9 + 8`.
+/// 5. **Summon power scale** (`attacker_slot == 7`): `over = over * pct / 100`.
+/// 6. **9999 cap**.
+///
+/// The multi-hit pointer bump (`if *param_3 == *param_4 param_3++`) and the
+/// `+0x16e` nullify status are not part of this value — they are caller concerns
+/// (see the module section comment).
+pub fn damage_finish(i: &DamageFinish) -> u32 {
+    let mut over = i.predamage;
+
+    // Stage 1: party-defender elemental resistance.
+    if (i.defender_slot as u32) < 3 {
+        if i.attacker_slot >= 3 && !i.bypass_party_resist {
+            let absorb_gate = i.defender_resist.hi & 0x10 != 0;
+            if !absorb_gate || i.attacker_element == 7 {
+                if i.attacker_element <= 6 && i.defender_resist.resists(i.attacker_element) {
+                    over >>= 1;
+                }
+            } else {
+                // Absorb bit set + elemental attacker: 3/4 scale.
+                over = (over * 3) >> 2;
+            }
+        }
+    } else if i.enemy_defender_halve {
+        // Stage 2: enemy-defender global halve.
+        over >>= 1;
+    }
+
+    // Stage 3: defender guard halve.
+    if i.defender_guarding {
+        over >>= 1;
+    }
+
+    // Stage 4: no-damage floor (the only RNG draw the finisher consumes).
+    if over == 0 {
+        over = (i.floor_rand as u32) % 9 + 8;
+    }
+
+    // Stage 5: summon power-percent scale.
+    if i.attacker_slot == 7 {
+        over = over.saturating_mul(i.summon_power_pct as u32) / 100;
+    }
+
+    // Stage 6: 9999 cap.
+    if over > 9999 {
+        over = 9999;
+    }
+    over
+}
+
+/// The defender's spirit-gauge fill from a finished hit, `FUN_801ddb30`'s spirit
+/// stage. Mirrors the disassembly:
+///
+/// ```text
+/// pct = max(1, over * 100 / defender_maxhp)
+/// if defender_is_party:
+///     if (resist.hi & 0x200): spirit += pct >> 2     // "spirit gain up" ×1
+///     if (resist.hi & 0x100): spirit += pct / 10     // "spirit gain up" ×2
+/// spirit = min(100, spirit + pct)
+/// ```
+///
+/// `over` is the **pre-nullify** damage (spirit still accrues when a `+0x16e`
+/// nullify status later zeroes the HP loss). `defender_maxhp` is `actor+0x14e`;
+/// retail `trap`s on a zero max-HP — the kernel instead returns the gauge
+/// unchanged (the caller guarantees a living defender). Returns the new gauge
+/// value (already clamped to `100`).
+pub fn spirit_gauge_fill(
+    over: u32,
+    defender_maxhp: u16,
+    current_spirit: u16,
+    resist: DefenderResist,
+    defender_is_party: bool,
+) -> u16 {
+    if defender_maxhp == 0 {
+        return current_spirit.min(100);
+    }
+    let pct = (over * 100) / defender_maxhp as u32;
+    let pct = if pct == 0 { 1 } else { pct };
+    let mut spirit = current_spirit as u32;
+    if defender_is_party {
+        if resist.hi & 0x200 != 0 {
+            spirit += pct >> 2;
+        }
+        if resist.hi & 0x100 != 0 {
+            spirit += pct / 10;
+        }
+    }
+    spirit += pct;
+    spirit.min(100) as u16
+}
+
+// ---------------------------------------------------------------------------
 // FUN_8004E568 — victory spoils (gold + EXP reward arithmetic)
 // ---------------------------------------------------------------------------
 //
@@ -945,5 +1161,177 @@ mod tests {
         assert_eq!(victory_exp_per_member(10, 3), 3);
         // alive 0 -> 0 (guard).
         assert_eq!(victory_exp_per_member(100, 0), 0);
+    }
+
+    // -- FUN_801ddb30 finisher -------------------------------------------------
+
+    fn finish(predamage: u32) -> DamageFinish {
+        DamageFinish {
+            predamage,
+            attacker_slot: 3, // enemy attacker
+            defender_slot: 0, // party defender
+            attacker_element: 0,
+            defender_resist: DefenderResist::default(),
+            defender_guarding: false,
+            enemy_defender_halve: false,
+            bypass_party_resist: false,
+            summon_power_pct: 0,
+            floor_rand: 0,
+        }
+    }
+
+    #[test]
+    fn damage_finish_passthrough_when_no_mitigation() {
+        // No resistance, no guard, no cap: over passes through unchanged.
+        assert_eq!(damage_finish(&finish(500)), 500);
+    }
+
+    #[test]
+    fn damage_finish_halves_on_matching_element_resist() {
+        let mut i = finish(500);
+        // Defender resists element 0 (hi bit 0x20000000); attacker is element 0.
+        i.defender_resist = DefenderResist {
+            lo: 0,
+            hi: 0x2000_0000,
+        };
+        i.attacker_element = 0;
+        assert_eq!(damage_finish(&i), 250);
+        // A non-matching attacker element (1) is not resisted -> full damage.
+        i.attacker_element = 1;
+        assert_eq!(damage_finish(&i), 500);
+    }
+
+    #[test]
+    fn damage_finish_low_word_elements_and_absorb_gate() {
+        let mut i = finish(800);
+        // Element 3 lives in the low word bit 0x1.
+        i.defender_resist = DefenderResist { lo: 0x1, hi: 0 };
+        i.attacker_element = 3;
+        assert_eq!(damage_finish(&i), 400);
+        // Absorb gate (hi & 0x10) set + elemental attacker -> 3/4 scale, ignoring
+        // the per-element ladder: 800 * 3 >> 2 = 600.
+        i.defender_resist = DefenderResist { lo: 0x1, hi: 0x10 };
+        assert_eq!(damage_finish(&i), 600);
+        // ...but a non-elemental attacker (7) bypasses the gate -> ladder runs,
+        // and element 7 resists nothing -> full damage.
+        i.attacker_element = 7;
+        assert_eq!(damage_finish(&i), 800);
+    }
+
+    #[test]
+    fn damage_finish_guard_and_resist_stack() {
+        let mut i = finish(800);
+        i.defender_resist = DefenderResist {
+            lo: 0,
+            hi: 0x2000_0000,
+        }; // element 0 resist -> /2
+        i.defender_guarding = true; // -> /2 again
+        // 800 -> 400 -> 200.
+        assert_eq!(damage_finish(&i), 200);
+    }
+
+    #[test]
+    fn damage_finish_enemy_defender_halve() {
+        let mut i = finish(500);
+        i.defender_slot = 3; // enemy defender -> party-resist block skipped
+        i.attacker_slot = 0; // party attacker
+        i.defender_resist = DefenderResist {
+            lo: 0xFFFF_FFFF,
+            hi: 0xFFFF_FFFF,
+        }; // ignored for enemy defender
+        assert_eq!(damage_finish(&i), 500, "no halve flag -> full");
+        i.enemy_defender_halve = true;
+        assert_eq!(damage_finish(&i), 250);
+    }
+
+    #[test]
+    fn damage_finish_bypass_party_resist() {
+        let mut i = finish(500);
+        i.defender_resist = DefenderResist {
+            lo: 0,
+            hi: 0x2000_0000,
+        };
+        i.attacker_element = 0;
+        i.bypass_party_resist = true; // resistance block skipped entirely
+        assert_eq!(damage_finish(&i), 500);
+    }
+
+    #[test]
+    fn damage_finish_no_damage_floor_uses_rand() {
+        // Mitigation reduces over to 0 -> floor rand()%9 + 8.
+        let mut i = finish(1);
+        i.defender_resist = DefenderResist {
+            lo: 0,
+            hi: 0x2000_0000,
+        };
+        i.attacker_element = 0; // 1 >> 1 = 0 -> floor fires
+        i.floor_rand = 0; // 0 % 9 + 8 = 8
+        assert_eq!(damage_finish(&i), 8);
+        i.floor_rand = 17; // 17 % 9 = 8 -> 8 + 8 = 16
+        assert_eq!(damage_finish(&i), 16);
+        // A predamage of 0 also triggers the floor.
+        assert_eq!(damage_finish(&finish(0)), 8);
+    }
+
+    #[test]
+    fn damage_finish_summon_power_scale() {
+        let mut i = finish(400);
+        i.attacker_slot = 7; // summon body
+        i.summon_power_pct = 150; // 400 * 150 / 100 = 600
+        assert_eq!(damage_finish(&i), 600);
+        i.summon_power_pct = 50; // 400 * 50 / 100 = 200
+        assert_eq!(damage_finish(&i), 200);
+    }
+
+    #[test]
+    fn damage_finish_caps_at_9999() {
+        assert_eq!(damage_finish(&finish(50_000)), 9999);
+        // Exactly 9999 passes; 10000 caps.
+        assert_eq!(damage_finish(&finish(9999)), 9999);
+        assert_eq!(damage_finish(&finish(10_000)), 9999);
+    }
+
+    #[test]
+    fn spirit_gauge_fill_basic_accrual() {
+        // over 50 of maxhp 500 -> pct = 10; gauge 0 -> 10.
+        assert_eq!(
+            spirit_gauge_fill(50, 500, 0, DefenderResist::default(), true),
+            10
+        );
+        // pct floors at 1 even for tiny hits.
+        assert_eq!(
+            spirit_gauge_fill(1, 500, 0, DefenderResist::default(), true),
+            1
+        );
+        // Clamps to 100.
+        assert_eq!(
+            spirit_gauge_fill(500, 500, 50, DefenderResist::default(), true),
+            100
+        );
+    }
+
+    #[test]
+    fn spirit_gauge_fill_gain_up_bits_party_only() {
+        // pct = 40 (over 200 / max 500). hi & 0x200 -> +pct>>2 (=10); base +pct.
+        let resist = DefenderResist { lo: 0, hi: 0x200 };
+        // 0 + 10 + 40 = 50.
+        assert_eq!(spirit_gauge_fill(200, 500, 0, resist, true), 50);
+        // hi & 0x100 -> +pct/10 (=4); 0 + 4 + 40 = 44.
+        let resist = DefenderResist { lo: 0, hi: 0x100 };
+        assert_eq!(spirit_gauge_fill(200, 500, 0, resist, true), 44);
+        // Both bits: +10 +4 +40 = 54.
+        let resist = DefenderResist { lo: 0, hi: 0x300 };
+        assert_eq!(spirit_gauge_fill(200, 500, 0, resist, true), 54);
+        // Enemy defender (not party): gain-up bits ignored -> just +pct.
+        assert_eq!(spirit_gauge_fill(200, 500, 0, resist, false), 40);
+    }
+
+    #[test]
+    fn spirit_gauge_fill_zero_maxhp_guard() {
+        // Retail traps; the kernel returns the (clamped) gauge unchanged.
+        assert_eq!(
+            spirit_gauge_fill(100, 0, 73, DefenderResist::default(), true),
+            73
+        );
     }
 }

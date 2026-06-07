@@ -212,10 +212,22 @@ atk += atk * (magic_power_byte - 1) >> 3;             // SC + 0x729, summon only
 // FUN_801dd0ac re-rolls a weak attacker:
 if (def + summon.HP > atk) atk = def + rand() % ((summon.AGL >> 1) + 1) + summon.HP;
 
-// Stage 3 - finish (FUN_801ddb30): resistance bits, rand%9+8 floor, 9999 cap,
+// Stage 3 - finish (FUN_801ddb30): equipment elemental-resistance halving,
+//   guard halve, rand%9+8 no-damage floor, summon power-% scale, 9999 cap,
 //   spirit-gauge fill, damage popup, MP drain, per-element stat debuffs.
 damage = atk - def;
 ```
+
+The finisher works on `over = atk - def` (the damage above the base) and rewrites
+it through six closed-form stages: (1) **party-defender elemental resistance** —
+if the defender's equipment sets the resist bit for the attacker's element,
+`over >>= 1` (the absorb bit `0x10` instead routes to a `over*3>>2` 3/4 scale);
+(2) **enemy-defender halve** (`_DAT_8007bd84`); (3) **guard halve** (defender
+`+0x1de == 4`); (4) the **no-damage floor** `over = rand()%9 + 8` when mitigation
+zeroed it; (5) the **summon power-% scale** (`attacker_slot == 7`); (6) the
+**9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
+over*100/maxHP)` plus the two "spirit gain up" equipment bits (`+0xF8 & 0x200`
+→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100.
 
 Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
 clamped to `maxHP - curHP`.
@@ -246,9 +258,14 @@ if (atk < def + (power >> 1) + (atk.AGL >> 1))
 ```
 
 The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
-**both** branches (see the mirror table below); stage 3 (`FUN_801ddb30`, 889
-instructions) reads ~20 battle globals and mutates live battle state, so it stays
-the coupled tail of the live battle context rather than a pure kernel. Dumps:
+**both** branches (see the mirror table below). Stage 3 (`FUN_801ddb30`, 889
+instructions) splits: its **closed-form finalisation arithmetic** now ports too —
+`battle_formulas::damage_finish` (the six damage-rewrite stages above) and
+`spirit_gauge_fill` (the gauge accrual), both with hand-checked unit tests. The
+finisher's remaining tail — the damage-popup accumulator (`_DAT_8007bd14`), the
+`DAT_801f6980` AI revenge table, the MP drain, and the per-element stat-debuff
+`switch` (keyed on the attacker element at `DAT_801c9358+0x1d`) — reads/writes
+~20 battle globals and stays in the live battle context. Dumps:
 `overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
 [`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
 
@@ -374,6 +391,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac` summon branch) |
 | `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |
 | `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
+| `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 

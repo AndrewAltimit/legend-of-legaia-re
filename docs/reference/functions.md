@@ -685,7 +685,7 @@ For the **summon** case (`attacker_slot == 7`) it adds the per-character magic-p
 
 In order: per-element **resistance** bits read from the defender's SC ability words (`+0x6BC` / `+0x6C0` on the `0x80084140`-based record) halve the margin `*atk − *def` when the attacker's element index (`actor+0x1D`) matches the bit; a guaranteed `rand % 9 + 8` floor when `*atk ≤ *def`; the summon magic-power re-scale; the **9999 damage cap**; the **spirit-gauge** fill at defender `+0x170` (`+ margin/4` or `/10` per `+0x6C0` bits `0x200`/`0x100`, clamped to 100) plus the death-flag (`+0x16E & 4`) instant-kill arm; MP-drain / spirit-field accumulators; and a stat-**debuff** switch on the global field type `*(DAT_801C9358 + 0x1D)` (cases 0..6 each shave a defender stat in `+0x15C..+0x16A` / `+0x150` / `+0x156` / `+0x158` by `stat * _DAT_801F6960 / 100`).
 
-Reads ~20 battle globals + both full actor records and mutates live state, so it is not reproduced as a pure kernel (see the `battle_formulas` boundary note). Dump: `overlay_battle_action_801ddb30.txt`.
+**Closed-form finalisation arithmetic ported** as pure kernels in `legaia_engine_vm::battle_formulas`: `damage_finish` (the six damage-rewrite stages — elemental-resistance halving / guard halve / `rand%9+8` floor / summon power-% scale / 9999 cap) and `spirit_gauge_fill` (the gauge accrual + the two gain-up bits), both unit-tested. The state-mutating tail (damage-popup accumulator, AI revenge table, MP drain, the per-element stat-**debuff** switch) reads/writes ~20 battle globals and stays in the live battle context (see the `battle_formulas` boundary note). Dump: `overlay_battle_action_801ddb30.txt`.
 
 ### `801E295C`
 
