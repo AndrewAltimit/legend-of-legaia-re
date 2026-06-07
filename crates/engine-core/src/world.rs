@@ -1369,7 +1369,9 @@ pub struct World {
     /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
     /// [`World::active_move_fx_trail_texpage`] for the render layer's streak
-    /// pass (the 2D afterimage layer `FUN_801e1ab0` itself is not yet drawn).
+    /// pass — the trail id this carries is what
+    /// `legaia_engine_render::afterimage::build_afterimage_quad` (the ported
+    /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
     pub active_move_fx_trail_texpage: Option<u16>,
 
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
