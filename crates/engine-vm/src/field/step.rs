@@ -774,8 +774,9 @@ pub fn step<H: FieldHost>(
                     // FUN_801DE840 reads: target = signed_16(op+1..3),
                     // ticks = signed_16(op+3..5), then dispatches on
                     // `op0 & 0x0F`. PC advance = 6 (= header_size + 5)
-                    // for the ported sub-ops; the abs-jump branches in
-                    // sub-3 / sub-4 are deferred and return `Pending`.
+                    // for the immediate/ramp sub-ops; sub-3 / sub-4 reuse the
+                    // same 6-byte encoding as an absolute jump (their `target`
+                    // becomes the new PC) on the branch noted at each arm.
                     if operand + 5 > bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }

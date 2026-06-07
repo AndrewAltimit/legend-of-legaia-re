@@ -367,6 +367,37 @@ fn locomotion_stops_at_wall() {
 }
 
 #[test]
+fn locomotion_follows_terrain_height_only_when_gated_on() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.reset_field_collision_grid();
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 200;
+    world.actors[0].move_state.world_y = 999; // sentinel
+    // Floor tier 3 -> -40 across the 2x2 block around tile (1,1), which the
+    // +Z walk lands in (x=200, z=208 -> tile (1,1)).
+    world.field_floor_height_lut[3] = -40;
+    let base = STRIDE + 1;
+    for &i in &[base, base + 1, base + STRIDE, base + STRIDE + 1] {
+        world.field_collision_grid[i] = 0x03; // low nibble = tier 3, walkable
+    }
+
+    // Gate off (default): Y stays at the sentinel, flat-Y behaviour preserved.
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.actors[0].move_state.world_z, 208);
+    assert_eq!(world.actors[0].move_state.world_y, 999);
+
+    // Gate on: the next step snaps Y to the sampled floor height.
+    world.follow_terrain_height = true;
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.actors[0].move_state.world_y, -40);
+}
+
+#[test]
 fn locomotion_gated_by_movement_disabled_flag() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -3479,6 +3510,57 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
 }
 
 #[test]
+fn apply_basic_attack_damage_finish_gate() {
+    // One-on-one auto-hit setup (no accuracy seeded -> no accuracy RNG), so the
+    // only RNG the call can draw is the finisher's no-damage floor. Returns
+    // (damage, did_draw_rng).
+    let run = |attack: u16, defense: u16, gate: bool| -> (u16, bool) {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.rng_state = 0xABCD_1234;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.hp = 60_000;
+        world.actors[1].battle.max_hp = 60_000;
+        world.actors[1].battle.liveness = 1;
+        world.battle_attack[0] = attack;
+        world.battle_defense[1] = defense;
+        world.use_damage_finish = gate;
+        let rng_before = world.rng_state;
+        world.battle_ctx.active_actor = 0;
+        world.apply_basic_attack();
+        let dmg = world
+            .drain_battle_hit_fx()
+            .first()
+            .map(|f| f.amount)
+            .unwrap_or(0);
+        (dmg, world.rng_state != rng_before)
+    };
+
+    // Gate off: flat path. 40 atk vs 10 def -> 30, no RNG.
+    assert_eq!(run(40, 10, false), (30, false));
+    // Gate on, normal hit: same raw damage (no mitigation modelled), and the
+    // finisher's rand fires only on a zeroed hit, so still no RNG.
+    assert_eq!(run(40, 10, true), (30, false));
+
+    // Zeroed hit (atk <= def). Gate on: no-damage floor (rand()%9 + 8 -> 8..=16)
+    // and exactly one RNG draw. Gate off: flat min-floor of 1, no RNG.
+    let (dmg_on, drew_on) = run(10, 40, true);
+    assert!(
+        (8..=16).contains(&dmg_on),
+        "zeroed hit floored, got {dmg_on}"
+    );
+    assert!(drew_on, "zeroed hit draws one RNG");
+    assert_eq!(run(10, 40, false), (1, false));
+
+    // Overflow: the finisher caps at 9999 (the flat path caps at 0xFFFF).
+    assert_eq!(run(50_000, 0, true), (9999, false));
+    assert_eq!(run(50_000, 0, false).0, 50_000);
+}
+
+#[test]
 fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
     // Count landed strikes over many calls of a seeded attacker (acc) against a
     // high-evasion, can't-die target.
@@ -5844,6 +5926,89 @@ fn use_item_revive_writes_hp_after() {
     assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
     // 50% of 400 = 200.
     assert_eq!(world.actors[0].battle.hp, 200);
+}
+
+#[test]
+fn use_item_hp_max_boost_raises_record_and_live_actor() {
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut hms = party.members[0].hp_mp_sp();
+    hms.hp_cur = 50;
+    hms.hp_max = 100;
+    party.members[0].set_hp_mp_sp(hms);
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    // Vital Tonic (0x0F): HpMax +10 - the outcome the old kernel dropped.
+    let outcome = world.use_item(0x0F, 0);
+    assert!(matches!(
+        outcome,
+        crate::items::ItemOutcome::StatRaised { .. }
+    ));
+    // Persistent record raised, current HP refilled by the gained amount.
+    let rec_hms = world.roster.members[0].hp_mp_sp();
+    assert_eq!(rec_hms.hp_max, 110);
+    assert_eq!(rec_hms.hp_cur, 60);
+    // Live battle actor raised too.
+    assert_eq!(world.actors[0].battle.max_hp, 110);
+    assert_eq!(world.actors[0].battle.hp, 60);
+}
+
+#[test]
+fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut ls = party.members[0].live_stats();
+    ls.atk = 20;
+    party.members[0].set_live_stats(ls);
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_battle_attack(0, 20);
+    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    // Power Tonic (0x0E): Attack +1.
+    let outcome = world.use_item(0x0E, 0);
+    assert!(matches!(
+        outcome,
+        crate::items::ItemOutcome::StatRaised { .. }
+    ));
+    assert_eq!(
+        world.roster.members[0].live_stats().atk,
+        21,
+        "persistent attack raised"
+    );
+    // Re-derived live battle stat reflects it.
+    assert_eq!(world.battle_attack[0], 21);
+}
+
+#[test]
+fn use_item_stat_boost_caps_at_cap_constant() {
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut rs = party.members[0].record_stats();
+    rs.cap_constant = 100;
+    party.members[0].set_record_stats(rs);
+    let mut ls = party.members[0].live_stats();
+    ls.atk = 99;
+    party.members[0].set_live_stats(ls);
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_battle_attack(0, 99);
+    // A custom big-boost item to exercise the cap.
+    let mut cat = crate::items::ItemCatalog::new();
+    cat.insert(crate::items::ItemEntry {
+        id: 0x50,
+        name: "Mega Tonic",
+        effect: crate::items::ItemEffect::StatBoost {
+            target: crate::items::StatBoostTarget::Attack,
+            delta: 50,
+        },
+        usable_in_battle: false,
+        usable_in_field: true,
+    });
+    world.set_item_catalog(cat);
+    world.use_item(0x50, 0);
+    assert_eq!(
+        world.roster.members[0].live_stats().atk,
+        100,
+        "capped at the per-stat cap constant"
+    );
 }
 
 #[test]

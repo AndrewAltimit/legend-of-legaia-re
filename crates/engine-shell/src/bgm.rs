@@ -19,7 +19,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{AudioOut, Sequencer, VabBank};
+use legaia_engine_audio::{AudioOut, PendingCue, Sequencer, SfxBank, SfxScheduler, VabBank};
 use legaia_engine_core::scene::BgmDirector;
 use legaia_seq::Seq;
 
@@ -46,6 +46,17 @@ pub struct AudioBgmDirector {
     /// Optional pending BGM bytes - used by `queue` to defer playback until
     /// the engine signals a transition (typically the next field-VM tick).
     pending: Option<(u16, Vec<u8>)>,
+    /// Sound-effect descriptor bank (decoded from the executable's
+    /// `DAT_8006F198` table, see `sfx-table.md`). Empty until
+    /// [`Self::set_sfx_bank`]; play requests against an empty bank no-op.
+    /// The bank is static across scenes (it lives in the executable), so it
+    /// is set once at boot; the per-scene VAB it plays through is the same
+    /// [`Self::bank`] the BGM sequencer uses.
+    sfx_bank: SfxBank,
+    /// Frame-timed one-shot cue queue. [`Self::enqueue_sfx`] adds a cue at
+    /// its strike-relative delay; [`Self::tick_sfx_frame`] advances one frame
+    /// and fires matured cues through the SPU.
+    sfx_sched: SfxScheduler,
 }
 
 impl AudioBgmDirector {
@@ -58,7 +69,60 @@ impl AudioBgmDirector {
             paused: false,
             last_started: None,
             pending: None,
+            sfx_bank: SfxBank::new(),
+            sfx_sched: SfxScheduler::new(),
         }
+    }
+
+    /// Install the sound-effect descriptor bank (decoded from the user's
+    /// `SCUS_942.54` `DAT_8006F198` table at boot). Replaces any prior bank.
+    pub fn set_sfx_bank(&mut self, bank: SfxBank) {
+        self.sfx_bank = bank;
+    }
+
+    /// Borrow the active SFX bank - useful for tests / inspection.
+    pub fn sfx_bank(&self) -> &SfxBank {
+        &self.sfx_bank
+    }
+
+    /// Queue a one-shot sound cue to fire `frames` after this call (the
+    /// strike's `timing_frames`). `id` is the [`SfxBank`] descriptor id
+    /// directly (the art-record `HitCue::kind`), played without
+    /// `classify_cue`. `actor` / `target` ride along for HUD context.
+    pub fn enqueue_sfx(&mut self, id: u16, frames: u16, actor: u8, target: u8) {
+        self.sfx_sched
+            .enqueue(PendingCue::new(id, frames).with_actors(actor, target));
+    }
+
+    /// Advance the SFX scheduler one frame and fire any matured cue through
+    /// the SPU using the active scene VAB. Returns the `(cue_id, voice)`
+    /// pairs that keyed on. A cue is silently dropped when no scene VAB is
+    /// staged, its id isn't in the bank, or no SPU voice is free (matching
+    /// the retail "no voice -> skip" behaviour). Call once per simulation
+    /// tick so delayed cues advance even when none are enqueued that frame.
+    pub fn tick_sfx_frame(&mut self) -> Vec<(u16, u8)> {
+        let batch = self.sfx_sched.tick_frame();
+        if batch.is_empty() {
+            return Vec::new();
+        }
+        let Some(vab) = self.bank.as_ref() else {
+            return Vec::new();
+        };
+        let bank = &self.sfx_bank;
+        let mut fired = Vec::new();
+        self.audio.with_spu(|spu| {
+            for cue in &batch.fired {
+                if let Some(voice) = bank.play_one_shot(cue.id as u8, spu, vab) {
+                    fired.push((cue.id, voice));
+                }
+            }
+        });
+        fired
+    }
+
+    /// Drop every queued SFX cue (scene transition / battle abort).
+    pub fn clear_sfx(&mut self) {
+        self.sfx_sched.clear();
     }
 
     /// Replace the active VAB bank. Engines call this once per scene after

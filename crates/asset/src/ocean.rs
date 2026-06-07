@@ -5,9 +5,17 @@
 //! are overwritten each frame by one of 13 precomputed BGR555 frames -
 //! that's the rolling-wave animation. The texture, base CLUT, and
 //! animation table all live inside slot 0 (TIM_LIST) of each world-map
-//! kingdom's 7-asset bundle (PROT 0085 / 0244 / 0391) and are
-//! byte-identical across the three kingdoms (shared global asset baked
-//! into each TIM_LIST).
+//! kingdom's 7-asset bundle (PROT 0085 / 0244 / 0391). The **13-frame
+//! animation table is the shared global asset** - byte-identical across the
+//! three kingdoms - while the **tile texture and base CLUT are per-kingdom**
+//! (each kingdom's coastline tile + water palette differ; verified against the
+//! three real bundles). So the same wave cycle animates a different-coloured
+//! sea per kingdom.
+//!
+//! Shared by the static-site world-overview WebGL viewer (`legaia-web-viewer`)
+//! and the live wgpu engine (`legaia-engine-shell`), both of which upload the
+//! texture + base CLUT once at world-map entry and cycle the 13 frames over
+//! the first 16 CLUT entries.
 //!
 //! See `docs/subsystems/world-map.md` § "Ocean / coastline source" for
 //! the reverse-engineering provenance, including the 532-byte
@@ -36,8 +44,9 @@ pub struct OceanAssets {
 /// Frame-0 signature of the ocean CLUT animation table. 16 BGR555 entries
 /// little-endian: index 0 = transparent black, indices 1..15 = the first
 /// frame of the wave-peak cycle starting at `(0x3083, 0x2C83, 0x3083,
-/// 0x34C4, 0x38E4, 0x3D05, ...)`. Identical across PROT 0085 / 0244 /
-/// 0391 (verified by SHA-256 cross-check).
+/// 0x34C4, 0x38E4, 0x3D05, ...)`. The animation table is identical across
+/// PROT 0085 / 0244 / 0391 (the tile texture + base CLUT are not - they are
+/// per-kingdom; see the module docs).
 pub const OCEAN_ANIM_FRAME0_HEAD: [u8; 16] = [
     0x00, 0x00, 0x83, 0x30, 0x83, 0x2C, 0x83, 0x30, 0xC4, 0x34, 0xE4, 0x38, 0x05, 0x3D, 0xE4, 0x38,
 ];
@@ -49,8 +58,8 @@ pub const OCEAN_ANIM_FRAME_COUNT: usize = 13;
 
 /// Extract the ocean tile texture + base CLUT + 13-frame CLUT animation
 /// table out of a kingdom bundle's decompressed slot 0 (TIM_LIST). The
-/// caller decompresses slot 0 via [`legaia_lzs::decompress`] and passes
-/// the resulting buffer here.
+/// caller decompresses slot 0 via [`crate::kingdom_bundle::decode_slot`]
+/// (or [`legaia_lzs::decompress`]) and passes the resulting buffer here.
 ///
 /// Returns `None` when the buffer doesn't contain the ocean TIM (any
 /// non-world-map kingdom, or a corrupt bundle). The ocean TIM is keyed

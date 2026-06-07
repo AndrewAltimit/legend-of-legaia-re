@@ -17,8 +17,15 @@ overlay handles:
 | Phase | Sub-screen | Description |
 |---|---|---|
 | Cost prompt | `InnConfirm` | Shows the cost for one night and a Yes / No cursor. |
+| Rest fade | `InnSleep` | Transient screen that plays the rest fade after a Yes. |
 | Commit | - | Deducts gold, restores all active party members' HP/MP. |
 | Exit | - | Returns to field without resting if No or gold insufficient. |
+
+The menu state machine (`engine-vm::menu`) routes the prompt: `InnConfirm` Yes
+(slot 0) commits the rest and routes to the transient `InnSleep` fade, which
+auto-advances to the menu's `Closing` state after `transient_hold_frames`;
+`InnConfirm` No (slot 1) and Triangle route straight to `Closing`. Either way the
+inn session is cleared (`MenuRuntimeHost::commit` / `cancel`).
 
 On confirmation the engine calls `InnSession::can_afford(world_money)` before
 committing. The commit path:

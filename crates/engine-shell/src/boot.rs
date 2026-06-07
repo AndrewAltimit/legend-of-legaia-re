@@ -185,6 +185,30 @@ fn read_retail_growth_tables(
     legaia_asset::level_up_tables::growth_tables_from_scus(&scus)
 }
 
+/// Read + decode the sound-effect descriptor bank from a boot source's
+/// `SCUS_942.54` (`DAT_8006F198`, see `sfx-table.md`). Returns `None` when the
+/// executable isn't reachable or the table doesn't decode, so a boot never
+/// fails on missing SFX data - the director just keeps its empty bank and
+/// resolved cues no-op until one is staged.
+fn read_sfx_bank(source: &SceneSource<'_>) -> Option<legaia_engine_audio::SfxBank> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    let table = legaia_asset::sfx_table::SfxTable::from_scus(&scus)?;
+    Some(legaia_engine_audio::SfxBank::from_descriptors(
+        table.active().map(|(id, d)| (id, d.program, d.note)),
+    ))
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -251,6 +275,13 @@ impl BootSession {
                     if let Err(e) = stage_scene_vab(&mut director, audio.as_ref(), &host) {
                         log::warn!("BGM bank not staged (scene VAB resolution failed): {e:#}");
                     }
+                    // Decode the static SFX descriptor bank from the same
+                    // executable once; it plays one-shot battle/field cues
+                    // through the per-scene VAB. Best-effort - an empty bank
+                    // just no-ops resolved cues.
+                    if let Some(sfx) = read_sfx_bank(&source) {
+                        director.set_sfx_bank(sfx);
+                    }
                     (Some(audio), Some(director))
                 }
                 Err(e) => {
@@ -316,7 +347,9 @@ impl BootSession {
         if let SceneTickEvent::SceneEntered { .. } = &event
             && let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref())
         {
-            // New scene -> upload its VAB bank.
+            // New scene -> upload its VAB bank and drop any SFX cues that
+            // were queued against the previous scene's VAB.
+            bgm.clear_sfx();
             if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
                 log::warn!("BGM bank not staged after scene enter: {e:#}");
             }

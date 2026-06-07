@@ -617,6 +617,8 @@ Typed catalogue of inventory items the battle / field menu consults. Each entry 
 
 `apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver - engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
 
+`World::use_item(item_id, target_slot)` is the shared apply kernel (battle item command + field menu both route through it): it builds the `TargetSnapshot` from the live actor, resolves the outcome, and writes it back. `StatRaised` (the permanent stat-up consumables - Power Tonic, Vital Tonic) is applied via `apply_stat_raise`: an HP/MP-max raise bumps the persistent character record **and** the live actor's caps (refilling the gained amount); a combat-stat raise lands in the record's `+0x110` live-stat block that `seed_party_battle_stats` re-derives from, so the gain shows immediately and survives a save. Combat stats cap at the record's per-stat cap constant; HP/MP max at 9999. (These items are field-only and absent from the captured battle traces, so the exact retail cap / refill rule is not byte-pinned - the engine uses self-consistent rules.)
+
 Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
 
 
@@ -712,7 +714,9 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::play_one_shot` delegates to the existing `VabBank::play_note` for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call.
 
-Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
+The bank is decoded from the user's `SCUS_942.54` `DAT_8006F198` descriptor table at boot (`SfxTable::from_scus` → `SfxBank::from_descriptors`, see [`sfx-table.md`](../formats/sfx-table.md)) and plays through the per-scene music VAB. The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued into the director's scheduler at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick advances the queue and keys matured cues on through the SPU. Cues touch only the SPU (no RNG), so battle determinism is unaffected; a missing bank / VAB / free voice silently drops the cue.
+
+Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs); the host-side bank decode + per-tick drive live in `crates/engine-shell` (`AudioBgmDirector::{set_sfx_bank,enqueue_sfx,tick_sfx_frame}`).
 
 ## Inventory item-use session
 

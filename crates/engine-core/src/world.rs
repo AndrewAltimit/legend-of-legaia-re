@@ -740,6 +740,15 @@ pub struct World {
     /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub field_floor_height_lut: [i16; 16],
+    /// When set, field free-movement snaps the player's `world_y` to the
+    /// per-scene terrain elevation each step via
+    /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`).
+    /// Off by default so the flat-Y locomotion oracles keep their constant
+    /// `world_y`; enable it for terrain-following play. Only the pad
+    /// locomotion path consults it - world-map walk keeps its own height
+    /// model - and it no-ops harmlessly (height `0`) until a scene supplies a
+    /// floor LUT + collision grid.
+    pub follow_terrain_height: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -1404,6 +1413,19 @@ pub struct World {
     /// by default — when off, behaviour is identical to before.
     pub use_vm_dialogue: bool,
 
+    /// Opt-in: route the live basic-attack damage through the retail damage
+    /// finisher ([`legaia_engine_vm::battle_formulas::damage_finish`], the port
+    /// of `FUN_801ddb30`) instead of stopping at the raw roll. The finisher
+    /// adds the universal post-stages — elemental resistance, guard / enemy
+    /// halve, the rand-based no-damage floor, and the 9999 cap. Equipment
+    /// resistance + guard state aren't modelled on the battle actor yet, so
+    /// those inputs default to "no mitigation"; with the gate on the finisher
+    /// currently contributes the faithful 9999 cap and the `rand()%9+8` floor
+    /// on a zeroed hit. Off by default so the existing flat path (min-floor 1,
+    /// `0xFFFF` cap) and its RNG call-count stay the default. The finisher
+    /// draws one RNG **only** when the hit zeroes out, matching retail.
+    pub use_damage_finish: bool,
+
     /// Opt-in for a **player-driven** battle inside the live loop. When
     /// `false` (the default) the live loop auto-resolves each party turn with
     /// a physical Attack on the first living monster (the historical spine
@@ -1831,6 +1853,7 @@ impl World {
             player_actor_slot: None,
             field_collision_grid: Vec::new(),
             field_floor_height_lut: [0i16; 16],
+            follow_terrain_height: false,
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -1931,6 +1954,7 @@ impl World {
             global_tmd_pool: Vec::new(),
             live_gameplay_loop: false,
             use_vm_dialogue: false,
+            use_damage_finish: false,
             battle_player_driven: false,
             battle_command: None,
             battle_item_menu: None,
@@ -3294,9 +3318,95 @@ impl World {
                 // the battle item-menu tick returns to the field.
                 self.battle_escaped = true;
             }
+            crate::items::ItemOutcome::StatRaised { target, delta } => {
+                // Permanent stat-up consumable (Power Tonic, Vital Tonic, ...):
+                // raise the persistent roster record and refresh the live
+                // derived values so the gain shows immediately and survives a
+                // save. These items are field-only.
+                self.apply_stat_raise(idx, target, delta);
+            }
             _ => {}
         }
         outcome
+    }
+
+    /// Apply a permanent [`crate::items::ItemOutcome::StatRaised`] to party
+    /// slot `idx`: mutate the persistent character record and re-derive the
+    /// live battle stats. HP/MP-max raises bump the live actor's caps (and
+    /// current values) too; combat-stat raises land in the `+0x110` live-stat
+    /// block that [`Self::seed_party_battle_stats`] reads.
+    ///
+    /// The exact retail cap / refill rules for stat-up consumables are not
+    /// byte-pinned (the items are field-only and absent from the captured
+    /// battle traces), so the engine uses self-consistent rules: combat stats
+    /// cap at the record's per-stat cap constant (fallback `999`), HP/MP max
+    /// cap at `9999`, and a max raise refills the gained amount.
+    fn apply_stat_raise(&mut self, idx: usize, target: crate::items::StatBoostTarget, delta: u16) {
+        use crate::items::StatBoostTarget as T;
+        const STAT_CAP_FALLBACK: u16 = 999;
+        const HPMP_CAP: u16 = 9999;
+        if self.roster.members.get(idx).is_none() {
+            return;
+        }
+        match target {
+            T::HpMax => {
+                {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.hp_max = hms.hp_max.saturating_add(delta).min(HPMP_CAP);
+                    hms.hp_cur = hms.hp_cur.saturating_add(delta).min(hms.hp_max);
+                    rec.set_hp_mp_sp(hms);
+                    let mut rs = rec.record_stats();
+                    rs.hp_max = rs.hp_max.saturating_add(delta).min(HPMP_CAP);
+                    rec.set_record_stats(rs);
+                }
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.max_hp = a.battle.max_hp.saturating_add(delta).min(HPMP_CAP);
+                    a.battle.hp = a.battle.hp.saturating_add(delta).min(a.battle.max_hp);
+                }
+            }
+            T::MpMax => {
+                let new_max;
+                {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.mp_max = hms.mp_max.saturating_add(delta).min(HPMP_CAP);
+                    hms.mp_cur = hms.mp_cur.saturating_add(delta).min(hms.mp_max);
+                    rec.set_hp_mp_sp(hms);
+                    let mut rs = rec.record_stats();
+                    rs.mp_max = rs.mp_max.saturating_add(delta).min(HPMP_CAP);
+                    rec.set_record_stats(rs);
+                    new_max = hms.mp_max;
+                }
+                self.set_character_max_mp(idx as u8, new_max);
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.mp = a.battle.mp.saturating_add(delta).min(new_max);
+                }
+            }
+            // Combat stats live in the +0x110 block the stat resolver reads.
+            // Accuracy + Evasion both derive from AGL there, so both land on
+            // AGL (matching `seed_party_battle_stats`).
+            T::Attack | T::Udf | T::Ldf | T::Accuracy | T::Evasion => {
+                {
+                    let rec = &mut self.roster.members[idx];
+                    let cap = match rec.record_stats().cap_constant {
+                        0 => STAT_CAP_FALLBACK,
+                        c => c,
+                    };
+                    let mut ls = rec.live_stats();
+                    let bump = |v: u16| v.saturating_add(delta).min(cap);
+                    match target {
+                        T::Attack => ls.atk = bump(ls.atk),
+                        T::Udf => ls.udf = bump(ls.udf),
+                        T::Ldf => ls.ldf = bump(ls.ldf),
+                        T::Accuracy | T::Evasion => ls.agl = bump(ls.agl),
+                        T::HpMax | T::MpMax => {}
+                    }
+                    rec.set_live_stats(ls);
+                }
+                self.seed_party_battle_stats();
+            }
+        }
     }
 
     /// Set per-slot character max MP (mirrors `char_record[+0x140]`
@@ -5899,6 +6009,21 @@ impl World {
         }
 
         self.advance_with_collision(slot, dir_bits, speed);
+
+        // Terrain follow (gated): after the X/Z step commits, snap the
+        // player's Y to the per-scene floor elevation at the new tile. Done
+        // here rather than inside the shared `advance_with_collision` so the
+        // world-map walk path (which collides through the same routine but
+        // derives height from the continent grid) is unaffected. No-op height
+        // 0 until a scene supplies a floor LUT.
+        if self.follow_terrain_height {
+            let (x, z) = {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_x as i32, ms.world_z as i32)
+            };
+            let y = self.sample_field_floor_height(x, z);
+            self.actors[slot].move_state.world_y = y as i16;
+        }
     }
 
     /// Advance actor `slot` by `speed` world units in the direction encoded by

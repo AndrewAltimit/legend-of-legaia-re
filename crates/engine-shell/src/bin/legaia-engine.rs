@@ -720,6 +720,19 @@ enum Cmd {
         /// the simplified typewriter. Up/Down navigate a menu, Cross confirms.
         #[arg(long, default_value_t = false)]
         vm_dialogue: bool,
+        /// Make the player follow the per-scene terrain elevation: each field
+        /// locomotion step snaps the player's Y to the floor-height sample
+        /// (`FUN_80019278`) at the new tile. Off by default (flat Y); enable to
+        /// see slopes / steps. No effect on the world-map walk.
+        #[arg(long, default_value_t = false)]
+        terrain_y: bool,
+        /// Route live basic-attack damage through the retail damage finisher
+        /// (`FUN_801ddb30`): adds the 9999 cap and the rand-based no-damage
+        /// floor on top of the raw roll. Off by default (flat path, 0xFFFF cap,
+        /// min-floor 1). Equipment resistance / guard aren't modelled yet, so
+        /// only the cap + floor stages contribute today.
+        #[arg(long, default_value_t = false)]
+        damage_finish: bool,
         /// BGM id to cross-fade to when a live-loop encounter starts; the
         /// field track resumes when the battle ends. Routed through the same
         /// BGM director as field op-`0x35` starts, so the id must resolve in
@@ -1163,6 +1176,8 @@ fn main() -> Result<()> {
             live_loop,
             player_battle,
             vm_dialogue,
+            terrain_y,
+            damage_finish,
             battle_bgm,
         } => cmd_play_window(
             &scene,
@@ -1179,6 +1194,8 @@ fn main() -> Result<()> {
             live_loop,
             player_battle,
             vm_dialogue,
+            terrain_y,
+            damage_finish,
             battle_bgm,
         ),
         Cmd::Save {
@@ -2777,6 +2794,8 @@ fn cmd_record(
         false,
         false,
         false,
+        false,
+        false,
         None,
         Some(RecordTarget {
             out: out.to_path_buf(),
@@ -3679,6 +3698,11 @@ struct PlayWindowApp {
     /// the sparse placed landmarks on top. Kept out of `meshes` (it has no
     /// `Tmd` / actor binding); drawn directly with a constant Y-flip model.
     world_map_heightfield: Option<UploadedVramMesh>,
+    /// World-map ocean CLUT animation. `Some` for a world-map kingdom scene that
+    /// ships the ocean tile; drives the 13-frame rolling-wave by overwriting the
+    /// first 16 CLUT entries at VRAM `(0, 506)` each animation step (the retail
+    /// per-frame DMA target). `None` off the world map.
+    ocean_anim: Option<OceanAnim>,
     /// Pristine CPU-side scene VRAM, cloned at scene-load before any battle
     /// edits. A battle injects monster texture pools into a working copy and
     /// re-uploads; leaving battle restores this base so the field renders
@@ -3893,7 +3917,10 @@ impl PlayWindowApp {
                             log::info!("title: Continue");
                         }
                         TitleEvent::OptionsSelected => {
-                            log::info!("title: Options (not yet wired)");
+                            // The selection event is informational; the Options
+                            // panel opens when the title session resolves to
+                            // `TitleOutcome::Options` below.
+                            log::info!("title: Options");
                         }
                         _ => {}
                     }
@@ -4586,17 +4613,29 @@ impl PlayWindowApp {
 
         // Battle sound cues: the art-strike outcomes resolve per-strike SFX
         // cues (kind = the SfxBank id, played directly without classify_cue).
-        // No battle SFX bank is wired yet, so log the scheduled cue; a host
-        // with a bank would enqueue each into its SfxScheduler at timing_frames
-        // and fire via SfxBank::play_one_shot.
-        for cue in self.session.host.world.drain_battle_sfx_cues() {
-            log::debug!(
-                "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {})",
-                cue.kind,
-                cue.timing_frames,
-                cue.actor_slot,
-                cue.target_slot
-            );
+        // Enqueue each into the director's SfxScheduler at its strike-relative
+        // timing, then advance the scheduler one frame and fire any matured cue
+        // through the scene VAB. Drain first so the world borrow ends before
+        // the director borrow. SFX touch the SPU only - no RNG - so battle
+        // determinism stays bit-exact.
+        let cues = self.session.host.world.drain_battle_sfx_cues();
+        if let Some(bgm) = self.session.bgm.as_mut() {
+            for cue in &cues {
+                bgm.enqueue_sfx(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
+            }
+            for (id, voice) in bgm.tick_sfx_frame() {
+                log::debug!("battle SFX cue {id:#04x} fired on voice {voice}");
+            }
+        } else {
+            for cue in &cues {
+                log::debug!(
+                    "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {}; no audio)",
+                    cue.kind,
+                    cue.timing_frames,
+                    cue.actor_slot,
+                    cue.target_slot
+                );
+            }
         }
 
         // Refresh per-slot status icons + age the popups one frame.
@@ -5155,6 +5194,72 @@ impl PlayWindowApp {
         self.resolve_placement_draws(res, tmd_src_index, &tiles)
     }
 
+    /// Resolve the world-map ocean CLUT animation for the active scene: scan the
+    /// scene's PROT entries for the kingdom bundle, decode its slot-0 TIM_LIST,
+    /// and pull the ocean tile's 13-frame CLUT animation table
+    /// ([`legaia_asset::ocean::find_ocean_assets`]). Returns `None` for a
+    /// non-world-map scene or a bundle without the ocean tile. The ocean tile
+    /// texture and its base CLUT are already uploaded into VRAM by the slot-0
+    /// TIM pass; this only recovers the per-frame palette overrides.
+    fn resolve_ocean_anim(&self) -> Option<OceanAnim> {
+        let scene = self.session.host.scene.as_ref()?;
+        if !legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+            return None;
+        }
+        for entry in &scene.entries {
+            let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) else {
+                continue;
+            };
+            if let Some(ocean) = legaia_asset::ocean::find_ocean_assets(&slot0)
+                && ocean.animation_frames.len() >= 32
+            {
+                return Some(OceanAnim {
+                    frames: ocean.animation_frames,
+                    cur: 0,
+                    tick: 0,
+                });
+            }
+        }
+        None
+    }
+
+    /// Advance the world-map ocean CLUT animation one sim tick. When the frame
+    /// cursor crosses [`OCEAN_ANIM_TICKS_PER_FRAME`], write the next frame's 16
+    /// BGR555 entries into the CPU VRAM CLUT row at `(0, 506)` and re-upload the
+    /// VRAM so the heightfield's water cells (which sample that CLUT) shimmer.
+    /// No-op when no ocean animation is loaded. Cheap: the whole-VRAM re-upload
+    /// fires only on a frame change (~10x/s), not every render frame.
+    fn advance_ocean_animation(&mut self) {
+        let frame: [u8; 32] = {
+            let Some(anim) = self.ocean_anim.as_mut() else {
+                return;
+            };
+            anim.tick += 1;
+            if anim.tick < OCEAN_ANIM_TICKS_PER_FRAME {
+                return;
+            }
+            anim.tick = 0;
+            let nframes = anim.frames.len() / 32;
+            if nframes == 0 {
+                return;
+            }
+            anim.cur = (anim.cur + 1) % nframes;
+            let off = anim.cur * 32;
+            anim.frames[off..off + 32].try_into().unwrap()
+        };
+        let Some(base) = self.cpu_vram_base.as_mut() else {
+            return;
+        };
+        // CLUT row at VRAM (0, 506) - the retail per-frame ocean DMA target.
+        base.write_clut_row(0, 506, &frame);
+        if let Some(r) = self.win.renderer.as_ref() {
+            match r.upload_vram(base) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("play-window: ocean CLUT re-upload: {e:#}"),
+            }
+        }
+    }
+
     /// Shared placement -> world-transform resolver for both the field static-
     /// object layer and the world-map continent terrain. Maps each placement's
     /// scene-pack mesh index through the uploaded-mesh bridge and builds its
@@ -5514,6 +5619,10 @@ impl PlayWindowApp {
         self.field_placement_color_draws = field_placement_color_draws;
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.world_map_heightfield = world_map_hf;
+        // World-map ocean: recover the 13-frame CLUT animation for the kingdom
+        // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
+        // pass). `None` off the world map, so the per-tick advance self-gates.
+        self.ocean_anim = self.resolve_ocean_anim();
         if lo[0].is_finite() {
             self.scene_aabb = (lo, hi);
         }
@@ -7941,6 +8050,9 @@ impl ApplicationHandler for PlayWindowApp {
                     if self.session.host.world.mode == SceneMode::Battle {
                         self.session.host.world.tick_battle_animations();
                     }
+                    // World-map ocean shimmer: cycle the 13-frame CLUT animation
+                    // (self-gates to None off the world map).
+                    self.advance_ocean_animation();
                     if self.menu_runtime.is_open() {
                         let p = self.pad;
                         let input = MenuInput {
@@ -8790,6 +8902,26 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
     }
 }
 
+/// World-map ocean CLUT animation state. Holds the 13 BGR555 frames (32 bytes
+/// each) decoded from the kingdom bundle and the current frame cursor + tick
+/// accumulator. Each step overwrites the first 16 CLUT entries at VRAM
+/// `(0, 506)` with the next frame, reproducing the retail rolling-wave DMA.
+struct OceanAnim {
+    /// 13 frames × 32 bytes (16 BGR555 entries each), as decoded by
+    /// [`legaia_asset::ocean::find_ocean_assets`].
+    frames: Vec<u8>,
+    /// Current frame index (`0..frames.len()/32`).
+    cur: usize,
+    /// Sim-tick accumulator; the frame advances every
+    /// [`OCEAN_ANIM_TICKS_PER_FRAME`] ticks.
+    tick: u32,
+}
+
+/// Sim ticks between ocean-CLUT frame advances. A gentle shimmer: the 13-frame
+/// cycle completes in ~1.3 s at 60 Hz. The exact retail DMA cadence isn't
+/// pinned, so this is a tuned approximation, not a parity figure.
+const OCEAN_ANIM_TICKS_PER_FRAME: u32 = 6;
+
 /// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`]. The heightfield
 /// supplies per-vertex UVs (the `+0x14` atlas tile) **and** per-vertex
 /// `[clut, tpage]` (the cell's terrain page + palette from `+0x15` /
@@ -8984,6 +9116,8 @@ fn cmd_play_window(
     live_loop: bool,
     player_battle: bool,
     vm_dialogue: bool,
+    terrain_y: bool,
+    damage_finish: bool,
     battle_bgm: Option<u16>,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -9001,6 +9135,8 @@ fn cmd_play_window(
         live_loop,
         player_battle,
         vm_dialogue,
+        terrain_y,
+        damage_finish,
         battle_bgm,
         None,
     )
@@ -9022,6 +9158,8 @@ fn cmd_play_window_with_record(
     live_loop: bool,
     player_battle: bool,
     vm_dialogue: bool,
+    terrain_y: bool,
+    damage_finish: bool,
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -9084,6 +9222,12 @@ fn cmd_play_window_with_record(
     // Opt-in: drive field dialogue through the inline-script field-VM runner
     // (branch handlers execute). Off by default → identical to before.
     session.host.world.use_vm_dialogue = vm_dialogue;
+    // Opt-in: snap the player's Y to the per-scene floor height each
+    // locomotion step. Off by default → flat-Y behaviour preserved.
+    session.host.world.follow_terrain_height = terrain_y;
+    // Opt-in: route live basic-attack damage through the retail damage
+    // finisher (9999 cap + no-damage floor). Off by default → flat path.
+    session.host.world.use_damage_finish = damage_finish;
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
     let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {
@@ -9432,6 +9576,7 @@ fn cmd_play_window_with_record(
         field_placement_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_heightfield: None,
+        ocean_anim: None,
         cpu_vram_base: None,
         battle_vram: None,
         battle_tex_slots_used: 0,

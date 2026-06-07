@@ -666,6 +666,18 @@ fallback for cells whose record carries no terrain run. (Distinct from the
 MAN `0x7F`-sentinel resolver — see
 [`world-overview-viewer.md`](world-overview-viewer.md).)
 
+**Ocean animation.** The water tile is a 4bpp texture at fb `(768, 256)` whose
+CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine DMAs one of 13
+precomputed BGR555 frames into each animation step — the rolling-wave shimmer.
+The 13-frame table is the shared global asset across the three kingdoms; the
+tile texture + base CLUT are per-kingdom ([`legaia_asset::ocean`]). In the live
+engine the ocean texture + base CLUT already land in VRAM via the kingdom
+slot-0 TIM pass, and the heightfield's water cells reference that CLUT (~39% of
+map01's verts carry CBA `0x7E80`), so `play-window` animates the sea by writing
+each frame's 16 entries into the CPU VRAM CLUT row at `(0, 506)` and
+re-uploading (`OceanAnim` / `advance_ocean_animation`). The exact retail DMA
+cadence isn't pinned, so the engine's frame interval is a tuned approximation.
+
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
 

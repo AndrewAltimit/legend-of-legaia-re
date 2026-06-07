@@ -1380,7 +1380,40 @@ impl World {
         if !hit {
             return;
         }
-        let dmg = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
+        let dmg = if self.use_damage_finish {
+            // Raw roll BEFORE any floor (`min_floor = 0`), then run it through
+            // the retail damage finisher so the universal post-stages apply.
+            // Equipment resistance + guard state aren't modelled yet, so those
+            // inputs are "no mitigation"; the finisher still contributes the
+            // 9999 cap and the rand-based no-damage floor. The finisher draws a
+            // rand ONLY when the hit zeroes out, so draw one only then to keep
+            // the RNG call-count identical to retail (and to the flat path when
+            // the gate is off). Slots are classified party (`< 3`) vs enemy
+            // (`>= 3`) the way the finisher expects, independent of the engine's
+            // variable monster-slot base.
+            let raw = vm::battle_formulas::art_strike_damage(attack, defense, 16, 16, 0);
+            let floor_rand = if raw == 0 {
+                (self.next_rng() & 0x7FFF) as u16
+            } else {
+                0
+            };
+            let attacker_is_party = (attacker as u8) < self.party_count;
+            let target_is_party = (target as u8) < self.party_count;
+            vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
+                predamage: raw as u32,
+                attacker_slot: if attacker_is_party { 0 } else { 3 },
+                defender_slot: if target_is_party { 0 } else { 3 },
+                attacker_element: 7, // basic attack is non-elemental
+                defender_resist: vm::battle_formulas::DefenderResist::default(),
+                defender_guarding: false,
+                enemy_defender_halve: false,
+                bypass_party_resist: false,
+                summon_power_pct: 100,
+                floor_rand,
+            }) as u16
+        } else {
+            vm::battle_formulas::art_strike_damage_default(attack, defense, 16)
+        };
         let a = &mut self.actors[target];
         a.battle.hp = a.battle.hp.saturating_sub(dmg);
         if a.battle.hp == 0 {
