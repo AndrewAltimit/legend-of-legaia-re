@@ -105,6 +105,13 @@ pub struct BootSession {
     /// Preferred over the fabricated-id vanilla catalog when installing the
     /// battle-stat equipment table; `None` on disc-free builds.
     pub equip_modifier_table: Option<legaia_engine_core::battle_stats::EquipmentTable>,
+    /// Disc-pinned equip restrictions (character mask `+6` + slot category
+    /// `+7`) keyed by real item ids, parsed from the same equipment stat-bonus
+    /// table ([`legaia_asset::equip_stats`]). Drives the equip screen's
+    /// per-character item gate
+    /// ([`legaia_engine_core::equip_session::EquipSession::new_with_restrictions`]);
+    /// `None` on disc-free builds.
+    pub equip_restrictions: Option<legaia_engine_core::equipment::DiscEquipInfo>,
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -261,14 +268,19 @@ fn read_retail_item_effects(
 }
 
 /// Read the static equipment stat-bonus table (`DAT_80074F68`, see
-/// `equipment-table.md`) from a boot source's `SCUS_942.54` and build a
-/// disc-accurate equipment modifier table keyed by real item ids. Returns
-/// `None` when the executable isn't reachable or the table doesn't parse, so a
-/// boot never fails on missing equipment data - the engine then falls back to
-/// the (fabricated-id) vanilla equipment catalog.
-fn read_retail_equip_modifiers(
+/// `equipment-table.md`) from a boot source's `SCUS_942.54` and build both the
+/// disc-accurate equipment modifier table (stat bonuses keyed by real item ids)
+/// and the per-item equip restrictions (character mask `+6` + slot category
+/// `+7`) from the single parse. Returns `None` when the executable isn't
+/// reachable or the table doesn't parse, so a boot never fails on missing
+/// equipment data - the engine then falls back to the (fabricated-id) vanilla
+/// equipment catalog.
+fn read_retail_equip_tables(
     source: &SceneSource<'_>,
-) -> Option<legaia_engine_core::battle_stats::EquipmentTable> {
+) -> Option<(
+    legaia_engine_core::battle_stats::EquipmentTable,
+    legaia_engine_core::equipment::DiscEquipInfo,
+)> {
     use legaia_engine_core::Vfs;
     let scus = match source {
         SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
@@ -282,7 +294,9 @@ fn read_retail_equip_modifiers(
             .ok()?,
     };
     let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus)?;
-    Some(legaia_engine_core::equipment::equip_modifier_table_from_disc(&table))
+    let modifiers = legaia_engine_core::equipment::equip_modifier_table_from_disc(&table);
+    let restrictions = legaia_engine_core::equipment::DiscEquipInfo::from_disc(&table);
+    Some((modifiers, restrictions))
 }
 
 impl BootSession {
@@ -306,7 +320,10 @@ impl BootSession {
         // (best-effort; never fails the boot).
         let starting_party = read_starting_party(&source);
         let starting_inventory = read_starting_inventory(&source);
-        let equip_modifier_table = read_retail_equip_modifiers(&source);
+        let (equip_modifier_table, equip_restrictions) = match read_retail_equip_tables(&source) {
+            Some((m, r)) => (Some(m), Some(r)),
+            None => (None, None),
+        };
         let mut host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
@@ -395,6 +412,7 @@ impl BootSession {
             starting_party,
             starting_inventory,
             equip_modifier_table,
+            equip_restrictions,
         })
     }
 

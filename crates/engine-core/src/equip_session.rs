@@ -13,6 +13,7 @@
 use crate::battle_stats::{
     BattleStats, EquipmentTable, ItemModifier, StatRecord, StatusModifiers, compute_battle_stats,
 };
+use crate::equipment::{DiscEquipInfo, EquipSlot, engine_slot_disc_category};
 use legaia_engine_vm::status_effects::StatusKind;
 use std::collections::HashMap;
 
@@ -113,6 +114,14 @@ pub struct EquipSession {
     pub preview_stats: BattleStats,
     /// Events drained per `input()`.
     events: Vec<EquipEvent>,
+    /// Optional disc-pinned equip restrictions (`DAT_80074F68`). When set,
+    /// the per-slot item list is gated on the active character's equip mask
+    /// (`+6`) and, for the four unambiguous UI slots, the disc slot category
+    /// (`+7`). When `None`, the legacy `id >> 5` placeholder rule is used.
+    restrictions: Option<DiscEquipInfo>,
+    /// Active party slot (`0` Vahn, `1` Noa, `2` Gala) the session is editing.
+    /// Drives the equip-mask gate when `restrictions` is set.
+    active_party_slot: u8,
 }
 
 impl EquipSession {
@@ -134,7 +143,30 @@ impl EquipSession {
             state: EquipState::SlotPicker { cursor: 0 },
             preview_stats,
             events: Vec::new(),
+            restrictions: None,
+            active_party_slot: 0,
         }
+    }
+
+    /// Construct a session that gates the item list on the disc-pinned equip
+    /// restrictions for `active_party_slot` (`0` Vahn, `1` Noa, `2` Gala).
+    /// Each candidate item must be equippable by that character (the `+6`
+    /// mask) and, for the weapon / body / helmet / boots slots, match the
+    /// item's disc slot category (`+7`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_restrictions(
+        record: StatRecord,
+        inventory: HashMap<u8, u8>,
+        equipment: EquipmentTable,
+        modifiers: StatusModifiers,
+        active_status: Vec<StatusKind>,
+        restrictions: DiscEquipInfo,
+        active_party_slot: u8,
+    ) -> Self {
+        let mut s = Self::new(record, inventory, equipment, modifiers, active_status);
+        s.restrictions = Some(restrictions);
+        s.active_party_slot = active_party_slot;
+        s
     }
 
     /// Current state.
@@ -182,11 +214,13 @@ impl EquipSession {
     /// Filter the inventory to items targeting `slot` and owned ≥ 1.
     /// Returns a list sorted by item id so cursor positions are stable
     /// across HashMap iteration orderings.
+    ///
+    /// When the session carries disc-pinned [`DiscEquipInfo`] restrictions,
+    /// the list is gated on the active character's equip mask (`+6`) and, for
+    /// the four unambiguous UI slots (weapon / body / helmet / boots), the
+    /// item's disc slot category (`+7`). Otherwise it falls back to the legacy
+    /// `id >> 5` placeholder rule.
     pub fn items_for_slot(&self, slot: u8) -> Vec<EquipItem> {
-        // Each item id encodes its target slot in the upper 3 bits of the
-        // id (slot = id >> 5). This is a placeholder rule - engines that
-        // wire the real per-item slot from disc data should override
-        // [`Self::items_for_slot`] (next revision will accept a closure).
         let mut out: Vec<EquipItem> = self
             .inventory
             .iter()
@@ -194,19 +228,41 @@ impl EquipSession {
                 if *qty == 0 {
                     return None;
                 }
-                let item_slot = (*id >> 5) & 0x07;
-                if item_slot != slot {
+                if !self.item_fits_slot(*id, slot) {
                     return None;
                 }
                 Some(EquipItem {
                     id: *id,
-                    slot: item_slot,
+                    slot,
                     owned: *qty > 0,
                 })
             })
             .collect();
         out.sort_by_key(|i| i.id);
         out
+    }
+
+    /// Whether `id` is a valid candidate for UI `slot`. Uses the disc-pinned
+    /// restrictions when installed, else the legacy `id >> 5` rule.
+    fn item_fits_slot(&self, id: u8, slot: u8) -> bool {
+        match &self.restrictions {
+            Some(info) => {
+                // Must be equippable by the active character (the `+6` mask).
+                if !info.can_equip(id, self.active_party_slot) {
+                    return false;
+                }
+                // For the four UI slots the disc `+7` byte resolves cleanly,
+                // require a category match; the ambiguous head/hand slots are
+                // mask-gated only (the disc cannot separate them).
+                match EquipSlot::from_index(slot).and_then(engine_slot_disc_category) {
+                    Some(wanted) => info.category(id) == Some(wanted),
+                    None => true,
+                }
+            }
+            // Legacy placeholder: the item id encodes its target slot in the
+            // upper 3 bits (slot = id >> 5).
+            None => ((id >> 5) & 0x07) == slot,
+        }
     }
 
     /// Apply a per-frame input.
@@ -499,6 +555,112 @@ mod tests {
         assert_eq!(slot1[0].id, 0x25);
         let slot7 = s.items_for_slot(7);
         assert!(slot7.is_empty());
+    }
+
+    #[test]
+    fn restrictions_gate_item_list_by_character_mask() {
+        use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+
+        // Two weapons: one Vahn-only (mask 1), one anyone (mask 7).
+        let mut inv = HashMap::new();
+        inv.insert(0x20, 1); // Vahn sword
+        inv.insert(0x30, 1); // universal weapon
+
+        let info = DiscEquipInfo::from_entries([
+            (
+                0x20,
+                DiscEquipEntry {
+                    mask: 1,
+                    category: Disc::Weapon,
+                    is_ra_seru: false,
+                },
+            ),
+            (
+                0x30,
+                DiscEquipEntry {
+                    mask: 7,
+                    category: Disc::Weapon,
+                    is_ra_seru: false,
+                },
+            ),
+        ]);
+
+        // Vahn (slot 0) sees both weapons in the weapon slot (0).
+        let vahn = EquipSession::new_with_restrictions(
+            fresh_record(),
+            inv.clone(),
+            EquipmentTable::new(),
+            StatusModifiers::default(),
+            Vec::new(),
+            info.clone(),
+            0,
+        );
+        let v_weapons = vahn.items_for_slot(0);
+        let mut v_ids: Vec<u8> = v_weapons.iter().map(|i| i.id).collect();
+        v_ids.sort();
+        assert_eq!(v_ids, vec![0x20, 0x30]);
+
+        // Noa (slot 1) only sees the universal weapon (the Vahn-only one is
+        // masked out).
+        let noa = EquipSession::new_with_restrictions(
+            fresh_record(),
+            inv,
+            EquipmentTable::new(),
+            StatusModifiers::default(),
+            Vec::new(),
+            info,
+            1,
+        );
+        let n_weapons = noa.items_for_slot(0);
+        let n_ids: Vec<u8> = n_weapons.iter().map(|i| i.id).collect();
+        assert_eq!(n_ids, vec![0x30]);
+    }
+
+    #[test]
+    fn restrictions_gate_unambiguous_slot_by_disc_category() {
+        use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+
+        let mut inv = HashMap::new();
+        inv.insert(0x20, 1); // weapon
+        inv.insert(0x40, 1); // body armor
+
+        let info = DiscEquipInfo::from_entries([
+            (
+                0x20,
+                DiscEquipEntry {
+                    mask: 7,
+                    category: Disc::Weapon,
+                    is_ra_seru: false,
+                },
+            ),
+            (
+                0x40,
+                DiscEquipEntry {
+                    mask: 7,
+                    category: Disc::Body,
+                    is_ra_seru: false,
+                },
+            ),
+        ]);
+        let s = EquipSession::new_with_restrictions(
+            fresh_record(),
+            inv,
+            EquipmentTable::new(),
+            StatusModifiers::default(),
+            Vec::new(),
+            info,
+            0,
+        );
+        // UI slot 0 = Weapon -> only the weapon.
+        let weapons = s.items_for_slot(0);
+        assert_eq!(weapons.iter().map(|i| i.id).collect::<Vec<_>>(), vec![0x20]);
+        // UI slot 2 = BodyArmor -> only the armor.
+        let body = s.items_for_slot(2);
+        assert_eq!(body.iter().map(|i| i.id).collect::<Vec<_>>(), vec![0x40]);
+        // UI slot 0 must not surface the body armor.
+        assert!(!weapons.iter().any(|i| i.id == 0x40));
     }
 
     #[test]

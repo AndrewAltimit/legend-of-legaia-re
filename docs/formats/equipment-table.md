@@ -91,6 +91,30 @@ identical to the [item-name table](item-table.md) resolver). The disc-gated
 `equip_stats_real` test pins the attack / defense bytes, equip masks, and slot
 types against the real executable and the curated gamedata.
 
+`EquipBonus::equips_party_slot(party_slot)` maps a party slot (`0` Vahn, `1`
+Noa, `2` Gala) to the mask bit `1 << party_slot`, matching the retail
+equip-screen gate (`a3 = 1 << char_index`).
+
+## Engine consumption
+
+`legaia_engine_core::equipment::DiscEquipInfo` lifts the `+6` character mask and
+the `+7` slot category off the parsed table, keyed by real item ids:
+`can_equip(id, party_slot)` answers the per-character equip gate, `category(id)`
+returns the disc slot category. The equip session
+(`legaia_engine_core::equip_session::EquipSession::new_with_restrictions`)
+filters each character's per-slot item list on it - a Vahn-only weapon no longer
+appears in Noa's weapon picker. For the four UI slots the `+7` byte resolves
+cleanly (weapon / body armor / helmet / boots) the list is also category-gated;
+the helmet/ring/accessory/hand-guard slots collapse to the disc "head" category
+(see below), so they are mask-gated only. The disc-gated
+`equip_modifiers_disc::disc_equip_restrictions_gate_equip_session_item_list`
+test drives the whole chain on the real executable.
+
+**Slot-category limitation (still open):** the `+7` byte only distinguishes the
+four categories above, so it cannot drive an 8-slot UI that separates helmet vs.
+ring vs. accessory - all read as "head". The disambiguation source is unpinned
+(see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+
 ## See also
 
 - [Item property / name table](item-table.md) - the shared table this indexes through.
