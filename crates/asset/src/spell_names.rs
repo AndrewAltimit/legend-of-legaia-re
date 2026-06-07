@@ -78,6 +78,35 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
+/// Decoded shape of a spell's `+2` target byte.
+///
+/// The byte is two independent bits over a side/scope pair (pinned against the
+/// player Seru-magic block `0x81..=0x8b`, whose shapes are byte-exact from the
+/// gamedata cross-reference):
+///
+/// - bit `0x02` = **ally side** (clear = enemy side)
+/// - bit `0x20` = **all targets** (clear = single target)
+///
+/// So `0x44` = single enemy, `0x64` = all enemies, `0x06` = single ally,
+/// `0x26` = all allies. (Empty / internal-tier slots read `0x00`/`0x04`,
+/// decoding to single-enemy.) See [`docs/formats/spell-table.md`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpellTargetShape {
+    /// Single enemy (bit `0x02` clear, `0x20` clear).
+    OneEnemy,
+    /// All enemies (bit `0x02` clear, `0x20` set).
+    AllEnemies,
+    /// Single ally (bit `0x02` set, `0x20` clear).
+    OneAlly,
+    /// All allies (bit `0x02` set, `0x20` set).
+    AllAllies,
+}
+
+/// Target-byte bit: the spell targets the **ally** side (clear = enemy side).
+pub const TARGET_ALLY_BIT: u8 = 0x02;
+/// Target-byte bit: the spell hits **all** targets on its side (clear = one).
+pub const TARGET_ALL_BIT: u8 = 0x20;
+
 /// One decoded spell-table entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpellEntry {
@@ -87,6 +116,20 @@ pub struct SpellEntry {
     pub mp: u8,
     /// Target-shape byte (`stats +2`).
     pub target: u8,
+}
+
+impl SpellEntry {
+    /// Decode the `+2` byte into a [`SpellTargetShape`] (side + scope bits).
+    pub fn target_shape(&self) -> SpellTargetShape {
+        let ally = self.target & TARGET_ALLY_BIT != 0;
+        let all = self.target & TARGET_ALL_BIT != 0;
+        match (ally, all) {
+            (false, false) => SpellTargetShape::OneEnemy,
+            (false, true) => SpellTargetShape::AllEnemies,
+            (true, false) => SpellTargetShape::OneAlly,
+            (true, true) => SpellTargetShape::AllAllies,
+        }
+    }
 }
 
 /// The decoded spell table: one entry per spell id (`0x00..=0xFF`).
@@ -194,5 +237,25 @@ mod tests {
     #[test]
     fn non_psx_exe_returns_none() {
         assert!(SpellNameTable::from_scus(b"nope").is_none());
+    }
+
+    #[test]
+    fn target_shape_decodes_side_and_scope_bits() {
+        let shape = |b: u8| {
+            SpellEntry {
+                name: None,
+                mp: 0,
+                target: b,
+            }
+            .target_shape()
+        };
+        // The four player Seru-block byte values.
+        assert_eq!(shape(0x44), SpellTargetShape::OneEnemy);
+        assert_eq!(shape(0x64), SpellTargetShape::AllEnemies);
+        assert_eq!(shape(0x06), SpellTargetShape::OneAlly);
+        assert_eq!(shape(0x26), SpellTargetShape::AllAllies);
+        // Internal-tier / empty slots decode to single-enemy.
+        assert_eq!(shape(0x00), SpellTargetShape::OneEnemy);
+        assert_eq!(shape(0x04), SpellTargetShape::OneEnemy);
     }
 }

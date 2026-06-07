@@ -162,6 +162,18 @@ impl EquipBonus {
         self.equip_mask() & bit != 0
     }
 
+    /// `true` if the item is equippable by the party member in slot
+    /// `party_slot` (`0` Vahn/Meta, `1` Noa/Terra, `2` Gala/Ozma). The mask
+    /// bit for a party slot is `1 << party_slot`, matching the retail
+    /// equip-screen gate (`a3 = 1 << char_index` in `FUN_8003fb10`). Slots
+    /// `>= 3` never match (only three battle-party slots exist).
+    pub fn equips_party_slot(&self, party_slot: u8) -> bool {
+        if party_slot >= 3 {
+            return false;
+        }
+        self.equips_mask_bit(1 << party_slot)
+    }
+
     /// The equip slot category, from `+7 & 0x60`.
     pub fn slot(&self) -> EquipSlot {
         match self.raw[7] & 0x60 {
@@ -308,6 +320,25 @@ mod tests {
         assert!(vahn.equips_mask_bit(1));
         assert!(!vahn.equips_mask_bit(2));
         assert_eq!(vahn.attack(), 40);
+    }
+
+    #[test]
+    fn equips_party_slot_maps_slot_to_mask_bit() {
+        let vahn = EquipBonus {
+            raw: [0, 40, 0, 0, 0, 0x40, 1, 0x40],
+        };
+        assert!(vahn.equips_party_slot(0)); // Vahn
+        assert!(!vahn.equips_party_slot(1)); // Noa
+        assert!(!vahn.equips_party_slot(2)); // Gala
+        assert!(!vahn.equips_party_slot(3)); // no 4th battle slot
+
+        let anyone = EquipBonus {
+            raw: [0, 6, 0, 0, 0, 0x40, 7, 0x40],
+        };
+        assert!(anyone.equips_party_slot(0));
+        assert!(anyone.equips_party_slot(1));
+        assert!(anyone.equips_party_slot(2));
+        assert!(!anyone.equips_party_slot(3));
     }
 
     #[test]

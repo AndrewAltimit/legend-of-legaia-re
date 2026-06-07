@@ -51,4 +51,14 @@ fn effect_flags_correct_item_usability_gates() {
     assert_eq!(gate(0x80), (false, true), "Phoenix battle-only");
     // Field utility: field-only (flag 0x02, no battle bit).
     assert_eq!(gate(0x88), (true, false), "Door of Light field-only");
+
+    // All-party flag (descriptor `0x20`): the party-wide heals carry it; the
+    // single-target heals do not. apply_effect_flags refreshes it from disc.
+    assert!(catalog.is_all_party(0x7A), "Healing Bloom is all-party");
+    assert!(catalog.is_all_party(0x7B), "Healing Fruit is all-party");
+    assert!(!catalog.is_all_party(0x77), "Healing Leaf is single-target");
+    assert!(
+        !catalog.is_all_party(0x79),
+        "Healing Berry is single-target"
+    );
 }

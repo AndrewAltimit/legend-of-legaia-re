@@ -172,6 +172,16 @@ pub struct InventoryUseSession {
     pub context: InventoryContext,
     /// The catalog the session resolves item ids against.
     pub catalog: ItemCatalog,
+    /// Slots the completed use applied to. A single-target use records one
+    /// slot; an all-party item ([`ItemCatalog::is_all_party`]) records every
+    /// living ally it healed. Consumers (field + battle item menus) iterate
+    /// this to fold the outcome into the world, decrementing one item copy
+    /// regardless of how many targets were affected.
+    pub used_slots: Vec<u8>,
+    /// The item id the completed use consumed. `None` until a use completes
+    /// (or if the session aborts). Set explicitly because [`Self::current_item`]
+    /// returns `None` once the session reaches [`InventoryUseState::Done`].
+    pub used_item: Option<u8>,
 }
 
 impl InventoryUseSession {
@@ -197,6 +207,8 @@ impl InventoryUseSession {
             events: Vec::new(),
             context,
             catalog,
+            used_slots: Vec::new(),
+            used_item: None,
         }
     }
 
@@ -265,12 +277,22 @@ impl InventoryUseSession {
                     self.events.push(InventoryUseEvent::InvalidConfirm);
                     return;
                 }
+                let entry = self.current_item().copied();
+                // All-party items (Healing Bloom / Fruit) skip target select and
+                // fan out across every valid ally in one use.
+                if let Some(entry) = entry
+                    && self.context.allows(&entry)
+                    && self.catalog.is_all_party(entry.id)
+                    && effect_is_party_distributable(&entry.effect)
+                {
+                    self.confirm_all_party(entry);
+                    return;
+                }
                 // Start the cursor on the first target that's valid for this
                 // item's effect, so offensive items land on an enemy and heals
                 // land on an ally without the player scrolling past the wrong
                 // side. Falls back to row 0 when nothing matches.
-                let start = self
-                    .current_item()
+                let start = entry
                     .map(|e| e.effect)
                     .and_then(|eff| {
                         self.targets
@@ -334,6 +356,8 @@ impl InventoryUseSession {
                     return;
                 }
                 let outcome = crate::items::apply_effect(entry.effect, &target.snapshot());
+                self.used_slots.push(target.slot);
+                self.used_item = Some(entry.id);
                 self.state = InventoryUseState::Done(outcome);
                 self.events.push(InventoryUseEvent::Used {
                     slot: target.slot,
@@ -348,6 +372,50 @@ impl InventoryUseSession {
             }
         }
     }
+
+    /// Resolve an all-party item against every valid ally target in one use.
+    /// Records each affected slot in [`Self::used_slots`] and emits a `Used`
+    /// event per ally; the terminal [`InventoryUseState::Done`] carries the
+    /// first ally's outcome as a representative. Bounces with `InvalidConfirm`
+    /// when no valid ally is present (e.g. the whole party is down).
+    fn confirm_all_party(&mut self, entry: ItemEntry) {
+        let mut first: Option<ItemOutcome> = None;
+        for target in &self.targets {
+            if !target_valid_for_effect(&entry.effect, target) {
+                continue;
+            }
+            let outcome = crate::items::apply_effect(entry.effect, &target.snapshot());
+            self.used_slots.push(target.slot);
+            self.events.push(InventoryUseEvent::Used {
+                slot: target.slot,
+                outcome,
+            });
+            first.get_or_insert(outcome);
+        }
+        match first {
+            Some(outcome) => {
+                self.used_item = Some(entry.id);
+                self.state = InventoryUseState::Done(outcome);
+            }
+            None => self.events.push(InventoryUseEvent::InvalidConfirm),
+        }
+    }
+}
+
+/// Whether an effect makes sense to fan out across the whole party. The
+/// all-party flag also rides on field-utility items (warp / encounter-rate),
+/// so the session only distributes ally-beneficial restorative effects;
+/// anything else falls back to the single-target flow.
+fn effect_is_party_distributable(effect: &ItemEffect) -> bool {
+    matches!(
+        effect,
+        ItemEffect::Heal { .. }
+            | ItemEffect::HealAll
+            | ItemEffect::HealMp { .. }
+            | ItemEffect::HealMpAll
+            | ItemEffect::Cure { .. }
+            | ItemEffect::CureAll
+    )
 }
 
 fn filter_items(items: &[u8], catalog: &ItemCatalog, context: InventoryContext) -> Vec<usize> {
@@ -556,6 +624,67 @@ mod tests {
         s.input(InventoryUseInput::Confirm);
         s.input(InventoryUseInput::Cancel);
         assert!(matches!(s.state, InventoryUseState::Browsing { cursor: 1 }));
+    }
+
+    /// An all-party heal fans out across every living ally in one Confirm
+    /// (no target-select), records each slot in `used_slots`, and emits a
+    /// `Used` event per ally.
+    #[test]
+    fn all_party_item_fans_out_across_living_allies() {
+        let mut cat = test_catalog();
+        // Mark the test heal id 0x01 as an all-party item.
+        cat.set_all_party(0x01, true);
+        let mut targets = party_targets(); // Vahn 100/200, Noa 150/200
+        targets.push(TargetRow::new(2, "Gala").with_stats(0, 200, 0, 0)); // dead
+        targets[2].alive = false;
+
+        let mut s = InventoryUseSession::new(cat, vec![0x01], targets, InventoryContext::Field);
+        s.input(InventoryUseInput::Confirm);
+
+        // Completed in one input (no TargetSelect), Done state.
+        assert!(matches!(s.state, InventoryUseState::Done(_)));
+        // Applied to the two living allies (slots 0 and 1), not the dead one.
+        assert_eq!(s.used_slots, vec![0, 1]);
+        assert_eq!(s.used_item, Some(0x01));
+        // One Used event per healed ally.
+        let used: Vec<u8> = s
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                InventoryUseEvent::Used { slot, .. } => Some(*slot),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(used, vec![0, 1]);
+    }
+
+    /// An all-party heal with no living ally bounces with InvalidConfirm.
+    #[test]
+    fn all_party_item_with_no_living_ally_buzzes() {
+        let mut cat = test_catalog();
+        cat.set_all_party(0x01, true);
+        let mut targets = party_targets();
+        for t in &mut targets {
+            t.alive = false;
+        }
+        let mut s = InventoryUseSession::new(cat, vec![0x01], targets, InventoryContext::Field);
+        s.input(InventoryUseInput::Confirm);
+        assert!(matches!(s.state, InventoryUseState::Browsing { .. }));
+        assert!(s.used_slots.is_empty());
+        assert!(
+            s.drain_events()
+                .contains(&InventoryUseEvent::InvalidConfirm)
+        );
+    }
+
+    /// A single-target use records exactly one slot in `used_slots` + the id.
+    #[test]
+    fn single_target_use_records_one_slot() {
+        let mut s = empty_session(vec![0x01], InventoryContext::Battle);
+        s.input(InventoryUseInput::Confirm); // -> TargetSelect
+        s.input(InventoryUseInput::Confirm); // confirm on slot 0
+        assert_eq!(s.used_slots, vec![0]);
+        assert_eq!(s.used_item, Some(0x01));
     }
 
     #[test]

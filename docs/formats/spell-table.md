@@ -29,8 +29,11 @@ an element-colour byte, a space) before the ASCII name.
 
 ### Target shape (`+2`)
 
-A 2-bit shape: bit `0x40` targets enemies (else allies), bit `0x20` is "all"
-(else single).
+Two independent bits over a side/scope pair:
+
+- bit `0x02` = **ally side** (clear = enemy side; equivalently the low nibble
+  is `_4` for enemy, `_6` for ally)
+- bit `0x20` = **all** targets on that side (clear = single)
 
 | Value | Shape |
 |---|---|
@@ -38,6 +41,20 @@ A 2-bit shape: bit `0x40` targets enemies (else allies), bit `0x20` is "all"
 | `0x64` | all enemies |
 | `0x06` | one ally |
 | `0x26` | all allies |
+
+(The earlier "bit `0x40` = enemies" reading is equivalent for these four
+player-block values but misclassifies the internal enemy-attack tiers, whose
+byte is `0x04`: that has `0x40` clear yet they are enemy-targeting monster
+attacks. The `0x02` / low-nibble reading classifies `0x04` as enemy-side,
+matching their role.)
+
+Decoded by `legaia_asset::spell_names::SpellEntry::target_shape`
+(`SpellTargetShape`). The engine sources the player Seru-magic catalog's MP +
+target from the user's `SCUS_942.54` via
+`legaia_engine_core::retail_magic::seru_magic_catalog_from_scus` (falling back
+to the pinned `retail_seru_magic_catalog` on a disc-free build); the disc-gated
+`spell_catalog_disc` test confirms the decode reproduces all 11 pinned targets
++ MP byte-for-byte.
 
 ## Id ranges
 

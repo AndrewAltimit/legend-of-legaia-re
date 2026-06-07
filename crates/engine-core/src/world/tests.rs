@@ -598,6 +598,58 @@ fn enter_battle_caps_party_at_three() {
 }
 
 #[test]
+fn all_party_item_heals_every_living_party_actor_in_battle() {
+    use crate::inventory_use::{
+        InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow,
+    };
+
+    let mut world = World::default();
+    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.enter_battle(3, 1, 600);
+    // Wound the whole party; down the third member.
+    for i in 0..3 {
+        world.actors[i].battle.max_hp = 500;
+        world.actors[i].battle.hp = 100;
+    }
+    world.actors[2].battle.hp = 0; // dead - excluded from a party heal
+
+    // Healing Bloom (0x7A): all-party HP heal of 200.
+    let targets: Vec<TargetRow> = (0..3)
+        .map(|i| {
+            let a = &world.actors[i];
+            let mut r = TargetRow::new(i as u8, "P").with_stats(a.battle.hp, a.battle.max_hp, 0, 0);
+            r.alive = a.battle.liveness != 0 && a.battle.hp > 0;
+            r
+        })
+        .collect();
+    let mut s = InventoryUseSession::new(
+        world.item_catalog.clone(),
+        vec![0x7A],
+        targets,
+        InventoryContext::Battle,
+    );
+    // One Confirm fans the item out across the living party (no target select).
+    s.input(InventoryUseInput::Confirm);
+    assert!(matches!(
+        s.state,
+        crate::inventory_use::InventoryUseState::Done(_)
+    ));
+    assert_eq!(s.used_item, Some(0x7A));
+    assert_eq!(s.used_slots, vec![0, 1], "only the two living allies");
+
+    // Apply exactly as the field / battle consumers do: one use_item per slot.
+    for &slot in &s.used_slots {
+        world.use_item(0x7A, slot);
+    }
+    assert_eq!(world.actors[0].battle.hp, 300, "Vahn +200");
+    assert_eq!(world.actors[1].battle.hp, 300, "Noa +200");
+    assert_eq!(
+        world.actors[2].battle.hp, 0,
+        "dead ally untouched by a heal"
+    );
+}
+
+#[test]
 fn enter_world_map_installs_controller() {
     let mut world = World::default();
     assert!(world.world_map_ctrl.is_none());

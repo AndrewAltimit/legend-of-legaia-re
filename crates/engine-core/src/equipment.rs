@@ -187,6 +187,121 @@ pub fn equip_modifier_table_from_disc(
     out
 }
 
+/// Disc-pinned per-item equip restrictions, built from the static equipment
+/// stat-bonus table (`DAT_80074F68`, [`legaia_asset::equip_stats`]).
+///
+/// Two facts the equip UI needs that the modifier-only [`EquipmentTable`] view
+/// drops: **which characters** may equip an item (the `+6` character mask) and
+/// the item's **slot category** (the `+7` byte). The retail equip screen gates
+/// each character's item list on the mask (`equip_mask & (1 << char_index)`);
+/// this is the disc-accurate replacement for the engine's placeholder
+/// `id >> 5` slot rule + previously-missing character gate.
+///
+/// Only the four disc slot *categories* (weapon / body / head / footwear) are
+/// pinned — the `+7` byte does not distinguish helmet vs. ring vs. accessory
+/// (all read as "head"), so this table cannot fully drive the engine's 8-slot
+/// model. [`DiscEquipInfo::category`] returns the disc category; the equip
+/// session maps it onto the four unambiguous UI slots and falls back to the
+/// mask-only gate for the ambiguous head/hand slots.
+#[derive(Debug, Clone, Default)]
+pub struct DiscEquipInfo {
+    entries: std::collections::HashMap<u8, DiscEquipEntry>,
+}
+
+/// One item's disc-pinned equip restriction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiscEquipEntry {
+    /// `+6` character mask (`1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` any).
+    pub mask: u8,
+    /// `+7 & 0x60` disc slot category.
+    pub category: legaia_asset::equip_stats::EquipSlot,
+    /// `+7 & 0x01` Ra-Seru (story upgrade) flag.
+    pub is_ra_seru: bool,
+}
+
+impl DiscEquipInfo {
+    /// Build from the parsed equipment stat-bonus table. Indexes every
+    /// equippable item id (`kind == 1`) that resolves to a bonus record.
+    pub fn from_disc(table: &legaia_asset::equip_stats::EquipStatTable) -> Self {
+        let mut entries = std::collections::HashMap::new();
+        for id in 0u8..=u8::MAX {
+            if let Some(b) = table.bonus(id) {
+                entries.insert(
+                    id,
+                    DiscEquipEntry {
+                        mask: b.equip_mask(),
+                        category: b.slot(),
+                        is_ra_seru: b.is_ra_seru(),
+                    },
+                );
+            }
+        }
+        Self { entries }
+    }
+
+    /// Build from explicit `(id, entry)` pairs. Useful for engines that
+    /// source restrictions from somewhere other than the static table, and
+    /// for tests.
+    pub fn from_entries(entries: impl IntoIterator<Item = (u8, DiscEquipEntry)>) -> Self {
+        Self {
+            entries: entries.into_iter().collect(),
+        }
+    }
+
+    /// `true` if `id` is a known equippable item.
+    pub fn is_equipment(&self, id: u8) -> bool {
+        self.entries.contains_key(&id)
+    }
+
+    /// The disc restriction record for `id`, if it is equipment.
+    pub fn entry(&self, id: u8) -> Option<DiscEquipEntry> {
+        self.entries.get(&id).copied()
+    }
+
+    /// The disc slot category for `id`, if it is equipment.
+    pub fn category(&self, id: u8) -> Option<legaia_asset::equip_stats::EquipSlot> {
+        self.entries.get(&id).map(|e| e.category)
+    }
+
+    /// `true` if the party member in `party_slot` (`0` Vahn, `1` Noa, `2` Gala)
+    /// may equip `id`. Returns `false` for non-equipment ids.
+    pub fn can_equip(&self, id: u8, party_slot: u8) -> bool {
+        match self.entries.get(&id) {
+            Some(e) => party_slot < 3 && (e.mask & (1 << party_slot)) != 0,
+            None => false,
+        }
+    }
+
+    /// Number of equippable ids indexed.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// `true` if no equippable ids were indexed.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+/// Map an engine [`EquipSlot`] (8-slot UI model) to the disc slot category it
+/// unambiguously corresponds to, or `None` for the slots the disc `+7` byte
+/// cannot distinguish (hand guard + rings + accessory all collapse to the
+/// "head" category, and helmet shares it). The four mapped slots get
+/// disc-category filtering in the equip session; the rest fall back to a
+/// mask-only gate. See [`DiscEquipInfo`] for the disambiguation limitation.
+pub fn engine_slot_disc_category(slot: EquipSlot) -> Option<legaia_asset::equip_stats::EquipSlot> {
+    use legaia_asset::equip_stats::EquipSlot as Disc;
+    match slot {
+        EquipSlot::Weapon => Some(Disc::Weapon),
+        EquipSlot::BodyArmor => Some(Disc::Body),
+        EquipSlot::Helmet => Some(Disc::Head),
+        EquipSlot::Boot => Some(Disc::Footwear),
+        // Hand guard, both rings, and accessory are not separable from the
+        // disc "head" category, so they are not category-filtered.
+        EquipSlot::HandGuard | EquipSlot::Ring1 | EquipSlot::Ring2 | EquipSlot::Accessory => None,
+    }
+}
+
 const VAHN: u8 = 0;
 const NOA: u8 = 1;
 const GALA: u8 = 2;
@@ -650,6 +765,70 @@ mod tests {
         // Bit 12 => byte 1, bit 4 => 0x10.
         assert_eq!(m.ability_bits[1], 0x10);
         assert_eq!(m.ability_bits[0], 0x00);
+    }
+
+    #[test]
+    fn disc_equip_info_gates_by_mask_and_category() {
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+        let info = DiscEquipInfo::from_entries([
+            (
+                0x20,
+                DiscEquipEntry {
+                    mask: 1,
+                    category: Disc::Weapon,
+                    is_ra_seru: false,
+                },
+            ),
+            (
+                0xC0,
+                DiscEquipEntry {
+                    mask: 7,
+                    category: Disc::Head,
+                    is_ra_seru: false,
+                },
+            ),
+        ]);
+        assert!(info.is_equipment(0x20));
+        assert!(!info.is_equipment(0x21));
+        // Vahn-only weapon.
+        assert!(info.can_equip(0x20, 0));
+        assert!(!info.can_equip(0x20, 1));
+        assert!(!info.can_equip(0x20, 2));
+        // Universal accessory.
+        assert!(info.can_equip(0xC0, 0));
+        assert!(info.can_equip(0xC0, 2));
+        // Non-equipment id never equips.
+        assert!(!info.can_equip(0x21, 0));
+        assert_eq!(info.category(0x20), Some(Disc::Weapon));
+        assert_eq!(info.category(0xC0), Some(Disc::Head));
+        assert_eq!(info.category(0x21), None);
+        assert_eq!(info.len(), 2);
+    }
+
+    #[test]
+    fn engine_slot_disc_category_maps_only_unambiguous_slots() {
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+        assert_eq!(
+            engine_slot_disc_category(EquipSlot::Weapon),
+            Some(Disc::Weapon)
+        );
+        assert_eq!(
+            engine_slot_disc_category(EquipSlot::BodyArmor),
+            Some(Disc::Body)
+        );
+        assert_eq!(
+            engine_slot_disc_category(EquipSlot::Helmet),
+            Some(Disc::Head)
+        );
+        assert_eq!(
+            engine_slot_disc_category(EquipSlot::Boot),
+            Some(Disc::Footwear)
+        );
+        // Ambiguous slots (the disc +7 byte can't separate them).
+        assert_eq!(engine_slot_disc_category(EquipSlot::HandGuard), None);
+        assert_eq!(engine_slot_disc_category(EquipSlot::Ring1), None);
+        assert_eq!(engine_slot_disc_category(EquipSlot::Ring2), None);
+        assert_eq!(engine_slot_disc_category(EquipSlot::Accessory), None);
     }
 
     #[test]
