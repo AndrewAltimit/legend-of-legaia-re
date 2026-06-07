@@ -4168,6 +4168,25 @@ impl World {
         if fx.sound_cue_id != 0 {
             self.pending_move_fx_cue = Some(fx.sound_cue_id);
         }
+
+        // The high-bit (`0x80`) effect-list entries route to the 2D efect.dat
+        // pool (`FUN_801dfdf0`), not the 0x801f6324 scene-graph: spawn each
+        // through the effect pool by its 7-bit id (no-op when efect.dat isn't
+        // loaded). (Reached only on the scene-graph success path; a move whose
+        // lists hold *only* AltEffect entries returns early above with the
+        // empty-Spawn-set guard — an documented edge case, rare for FX moves.)
+        let alt_ids: Vec<u8> = fx
+            .contact_effects
+            .iter()
+            .chain(fx.launch_effects.iter())
+            .filter_map(|e| match e.entry {
+                legaia_asset::move_power::EffectListEntry::AltEffect(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        for id in alt_ids {
+            self.try_spawn_effect(id, origin, 0);
+        }
         true
     }
 

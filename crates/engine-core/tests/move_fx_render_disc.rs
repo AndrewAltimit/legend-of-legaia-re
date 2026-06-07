@@ -52,13 +52,58 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     };
     let mut world = world_with_move_power(&bytes);
 
+    // Install a synthetic 32-entry effect catalog so the high-bit (AltEffect)
+    // effect-list entries have somewhere to spawn (the real efect.dat / PROT
+    // 0873 isn't loaded in this test). Each entry is a 1-child script.
+    {
+        use legaia_engine_vm::effect_vm::{EffectCatalog, EffectScript};
+        let entries: Vec<_> = (0..32)
+            .map(|_| {
+                (
+                    EffectScript {
+                        child_count: 1,
+                        flags: 0,
+                        spread: 0,
+                        body: vec![],
+                    },
+                    vec![],
+                )
+            })
+            .collect();
+        world.effect_catalog = EffectCatalog::new(entries);
+    }
+
     // Move id 0x06 (the worked example, record index 3): contact list
     // [0x27, 0x8e, 0x8d], launch list [0x28, 0x64, 0x9d]. The 0x27 / 0x28 bytes
-    // are Spawn entries -> 0x801f6324 library-mesh records; the high-bit and
-    // FixedFlash bytes don't spawn through this path.
+    // are Spawn entries -> 0x801f6324 library-mesh records; the high-bit bytes
+    // (0x8e/0x8d/0x9d) are AltEffect entries -> the 2D efect.dat pool; 0x64 is
+    // the fixed flash (no pool spawn).
     assert!(
         world.spawn_move_fx(0x06, [0, 0, 0]),
         "move 0x06 has spawnable effect entries"
+    );
+
+    // The AltEffect (high-bit) entries spawned through the effect pool: count
+    // them off the descriptor and assert the pool got exactly that many.
+    let alt_count = {
+        use legaia_asset::move_power::EffectListEntry;
+        let fx = world
+            .move_power
+            .as_ref()
+            .unwrap()
+            .fx_for_move_id(0x06)
+            .unwrap();
+        fx.contact_effects
+            .iter()
+            .chain(fx.launch_effects.iter())
+            .filter(|e| matches!(e.entry, EffectListEntry::AltEffect(_)))
+            .count()
+    };
+    assert!(alt_count > 0, "move 0x06 carries AltEffect entries");
+    assert_eq!(
+        world.effect_pool.active_count(),
+        alt_count,
+        "each AltEffect entry spawned one effect-pool master"
     );
 
     let draws = world.active_move_fx_part_draws();

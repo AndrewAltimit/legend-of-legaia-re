@@ -242,6 +242,13 @@ a pending id `World::take_pending_move_fx_cue()` the host routes through the por
 `CueDispatch::Ring`/`Voice`; the SFX ring is `SfxScheduler`/`FUN_80035B50`, and the
 SPU note-on stays with a battle SFX bank that is not yet wired).
 
+The effect-list **`AltEffect`** entries (the high-bit `0x80` bytes, distinct from
+the `0x801f6324` scene-graph `Spawn` entries) now spawn through the 2D `efect.dat`
+pool: `spawn_move_fx` calls `World::try_spawn_effect` (`spawn_by_ui_id`,
+`FUN_801dfdf0`) for each by its 7-bit id (no-op when `efect.dat` isn't loaded).
+This currently fires only on the scene-graph success path; a move whose lists hold
+*only* `AltEffect` entries (no `Spawn` prototype) is the documented edge case.
+
 **`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
 `FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)
 hit it once: `ra = 0x80050F08` (the `FUN_80050ed4` call), `a3 = 0x1000`, with the
