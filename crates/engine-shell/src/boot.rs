@@ -232,6 +232,29 @@ fn read_shop_item_data(
     legaia_engine_core::shop_catalog::ShopItemData::from_scus(&scus)
 }
 
+/// Read + parse the static item-effect descriptor table (`DAT_800752C0`, see
+/// `item-effect-table.md`) from a boot source's `SCUS_942.54`. Returns `None`
+/// when the executable isn't reachable or the table doesn't parse, so a boot
+/// never fails on missing item-effect data - the engine then keeps the curated
+/// usability flags on its item catalog.
+fn read_retail_item_effects(
+    source: &SceneSource<'_>,
+) -> Option<legaia_asset::item_effect::ItemEffectTable> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    legaia_asset::item_effect::ItemEffectTable::from_scus(&scus)
+}
+
 impl BootSession {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
@@ -287,6 +310,14 @@ impl BootSession {
         // across New Game; absent on disc-free builds (stock stays host-supplied).
         if let Some(shop_data) = read_shop_item_data(&source) {
             host.world.item_shop_data = Some(shop_data);
+        }
+
+        // Install the real item-effect descriptor table so the item catalog's
+        // field/battle usability gating matches retail (e.g. cure/revive items
+        // are battle-only). Best-effort: absent on disc-free builds, where the
+        // catalog keeps its curated usability flags.
+        if let Some(effects) = read_retail_item_effects(&source) {
+            host.world.set_item_effects(effects);
         }
 
         host.load_scene(&cfg.scene)
