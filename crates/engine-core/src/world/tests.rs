@@ -4893,6 +4893,57 @@ fn scripted_ai_monster_self_heals_when_wounded() {
     assert!(fx.iter().any(|f| f.is_heal && f.target_slot == 1));
 }
 
+/// Monster `0x8A` reads its own spirit-art gauge (`actor+0x170`) as a charge
+/// gate: once it passes `0x31` the AI fires the `0x4E` all-enemies cast and the
+/// live loop clamps the caster's gauge to `0x32`. Below the threshold the
+/// generic core stands (this monster has no castable magic in the catalog, so
+/// that means a physical strike) and the gauge is left untouched.
+#[test]
+fn monster_8a_charge_gate_drives_cast_and_clamps_gauge() {
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::spells::SpellCatalog;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.set_spell_catalog(SpellCatalog::vanilla());
+    world.monster_catalog = vanilla_monster_catalog();
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.max_hp = 300;
+    world.actors[1].battle.hp = 300;
+    world.actors[1].battle.mp = 200;
+    world.actors[1].battle.liveness = 1;
+    world.actors[1].battle_monster_id = Some(0x8a);
+
+    // Charged: the gate fires the 0x4E cast and clamps the gauge to 0x32.
+    world.actors[1].battle.spirit_gauge = 100;
+    world.rng_state = 7;
+    match world.pick_monster_action(1) {
+        MonsterAction::Cast { spell_id, .. } => assert_eq!(spell_id, 0x4e),
+        other => panic!("expected the 0x4E charge cast, got {other:?}"),
+    }
+    assert_eq!(
+        world.actors[1].battle.spirit_gauge, 0x32,
+        "the gauge is clamped to 0x32 as the cast commits"
+    );
+
+    // Below threshold: no override, gauge left exactly as-is.
+    world.actors[1].battle.spirit_gauge = 0x31;
+    world.rng_state = 7;
+    assert!(matches!(
+        world.pick_monster_action(1),
+        MonsterAction::Physical { .. }
+    ));
+    assert_eq!(
+        world.actors[1].battle.spirit_gauge, 0x31,
+        "an uncharged 0x8A leaves its gauge untouched"
+    );
+}
+
 /// Faithful `FUN_801E7320`: a targeting class in `3..=6` resolves to a
 /// living PARTY slot; a class in `0..=2` resolves to a living MONSTER slot.
 /// (Dead slots are skipped via the re-roll loop.)

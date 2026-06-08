@@ -43,10 +43,12 @@
 //! - The per-monster cooldown latches (`DAT_801C8FE0`) are armed by the cases;
 //!   the retail clear site is outside the picker, so [`MonsterAiState`] is reset
 //!   at battle start and the host clears the latches between rounds.
-//! - A few cases that touch actor fields the engine does not model yet are
-//!   skipped with a `TODO`: monster `0x8A` (`actor+0x170` charge counter), the
-//!   `'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-
-//!   archive preload for spell ids `0x2E/0x2F`.
+//! - Monster `0x8A` reads its own spirit-art charge gauge (`actor+0x170`,
+//!   modelled as [`MonsterAiCtx::spirit_gauge`]) as a cast gate; the override
+//!   returns an [`AiCast::spirit_gauge_writeback`] the caller applies.
+//! - A couple of cases that touch actor fields the engine does not model yet are
+//!   still skipped with a `TODO`: the `'O'` (`0x4F`) boss that rewrites another
+//!   actor slot, and the capture-archive preload for spell ids `0x2E/0x2F`.
 
 // [`decide`] is a line-by-line transcription of the retail per-monster `switch`.
 // Its literal shape - discrete case labels (not ranges), `rand() % k == 0` gates
@@ -150,6 +152,14 @@ pub struct MonsterAiCtx {
     pub field_flags: u16,
     /// Count of living party members with non-zero MP (for monster `0xA7`).
     pub allies_with_mp: u8,
+    /// `actor+0x170` - the per-actor spirit-art charge gauge (0..=100), filled
+    /// on the defender of every damaging hit by the shared finisher
+    /// (`crate::world::World::accrue_spirit_gauge`, the port of
+    /// `FUN_801DDB30`'s spirit stage). Monster `0x8A` reads it as a charge gate:
+    /// once it passes `0x31` the monster fires its big all-enemies cast and the
+    /// gauge is clamped back to `0x32` (see the `0x8a` case + the returned
+    /// [`AiCast::spirit_gauge_writeback`]).
+    pub spirit_gauge: u16,
 }
 
 /// One AI-script override: the monster casts `spell_id` (action category `2` =
@@ -162,6 +172,12 @@ pub struct AiCast {
     pub spell_id: u8,
     pub target_class: u8,
     pub category: u8,
+    /// When `Some(v)`, the caller writes `v` back to the caster's spirit-art
+    /// gauge (`actor+0x170`) as part of committing this action - retail's
+    /// `*(ushort *)(actor + 0x170) = 0x32` clamp in the monster `0x8A` case
+    /// (`FUN_801E9FD4`). `None` for every other override (they don't touch the
+    /// gauge). Draws no RNG, so it never perturbs the determinism stream.
+    pub spirit_gauge_writeback: Option<u16>,
 }
 
 impl AiCast {
@@ -170,6 +186,7 @@ impl AiCast {
             spell_id,
             target_class,
             category: 2,
+            spirit_gauge_writeback: None,
         }
     }
 }
@@ -273,6 +290,7 @@ pub fn decide(
                     spell_id: 0,
                     target_class: (rng() % pc as u32) as u8,
                     category: 3,
+                    spirit_gauge_writeback: None,
                 });
             }
         }
@@ -346,7 +364,17 @@ pub fn decide(
                 return Some(cast_self(0xba, self_slot));
             }
         }
-        // 0x8A: needs actor+0x170 (a per-actor charge counter) - not modelled.
+        0x8a => {
+            // Charge gate: once the monster's own spirit-art gauge passes 0x31
+            // it fires its big all-enemies cast (0x4E) and the gauge is clamped
+            // back to 0x32. The gauge fills as the monster takes damage
+            // (`accrue_spirit_gauge`), so this arms after it has been worn down.
+            if ctx.spirit_gauge > 0x31 {
+                let mut cast = cast_all_enemies(0x4e);
+                cast.spirit_gauge_writeback = Some(0x32);
+                return Some(cast);
+            }
+        }
         0x8b => {
             if state.dat[pi + 4] != 0 {
                 return Some(cast_all_enemies(0x5d));
@@ -524,6 +552,15 @@ mod tests {
             monster_count: 1,
             field_flags: 0,
             allies_with_mp: 0,
+            spirit_gauge: 0,
+        }
+    }
+
+    /// As [`ctx`] but with the spirit-art gauge pre-set (for monster `0x8A`).
+    fn ctx_gauge(id: u8, gauge: u16) -> MonsterAiCtx {
+        MonsterAiCtx {
+            spirit_gauge: gauge,
+            ..ctx(id, 100, 100, 100)
         }
     }
 
@@ -624,5 +661,31 @@ mod tests {
         let mut rng = || 0u32;
         let t = apply_recent_target_ring(8, 0x53, 3, &mut state, &mut rng);
         assert_eq!(t, 8);
+    }
+
+    #[test]
+    fn monster_8a_fires_all_enemies_cast_once_charged() {
+        // 0x8A reads its own spirit-art gauge: below the 0x31 threshold it keeps
+        // the generic-core choice; at/above it fires the 0x4E all-enemies cast
+        // and asks the caller to clamp the gauge to 0x32. Draws no RNG.
+        let mut state = MonsterAiState::new();
+        let mut rng = || 0u32;
+
+        // Gauge 0x31 (49) is NOT strictly greater than 0x31 -> no override.
+        let below = ctx_gauge(0x8a, 0x31);
+        assert!(decide(&below, &mut state, &mut rng).is_none());
+
+        // Gauge 0x32 (50) trips the gate.
+        let at = ctx_gauge(0x8a, 0x32);
+        let cast = decide(&at, &mut state, &mut rng).expect("charged cast");
+        assert_eq!(cast.spell_id, 0x4e);
+        assert_eq!(cast.category, 2);
+        assert_eq!(cast.target_class, 8, "all enemies");
+        assert_eq!(cast.spirit_gauge_writeback, Some(0x32));
+
+        // A full gauge still clamps back to 0x32, not zero.
+        let full = ctx_gauge(0x8a, 100);
+        let cast = decide(&full, &mut state, &mut rng).expect("charged cast");
+        assert_eq!(cast.spirit_gauge_writeback, Some(0x32));
     }
 }

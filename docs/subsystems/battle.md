@@ -491,14 +491,16 @@ deterministic. The default path is bit-for-bit unchanged.
   `field_flags == 0`). The set-`0x380` path (AI-driven party members) is a
   separate status-effect feature, not a flag the monster AI sets.
 
-**Remaining gaps** (documented in `monster_ai`): a few cases touch actor fields
-the engine doesn't fully consume yet. The `actor+0x170` **spirit-art gauge** is
-modelled (`BattleActor::spirit_gauge`) and filled on every damaging hit by the
-finisher's spirit stage (`spirit_gauge_fill`, see
-[`battle-formulas.md`](battle-formulas.md)); what is still unwired is monster
-`0x8A`'s AI reading that gauge as a charge gate for its big attack. Also unwired:
-the `'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
-preload for spell ids `0x2E/0x2F`.
+**Remaining gaps** (documented in `monster_ai`): a couple of cases touch actor
+fields the engine doesn't fully consume yet. The `actor+0x170` **spirit-art
+gauge** is modelled (`BattleActor::spirit_gauge`) and filled on every damaging
+hit by the finisher's spirit stage (`spirit_gauge_fill`, see
+[`battle-formulas.md`](battle-formulas.md)); monster `0x8A`'s AI now reads that
+gauge as a charge gate — once it passes `0x31` the monster fires its `0x4E`
+all-enemies cast and the gauge is clamped back to `0x32`
+(`MonsterAiCtx::spirit_gauge` + `AiCast::spirit_gauge_writeback`, drawing no
+RNG). Still unwired: the `'O'` (`0x4F`) boss that rewrites another actor slot,
+and the capture-archive preload for spell ids `0x2E/0x2F`.
 
 ## Stat aggregator (`FUN_80042558`)
 

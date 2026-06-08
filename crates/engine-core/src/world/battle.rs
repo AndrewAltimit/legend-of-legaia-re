@@ -1828,12 +1828,27 @@ impl World {
                     .map(|a| a.battle.field_flags)
                     .unwrap_or(0),
                 allies_with_mp,
+                spirit_gauge: self
+                    .actors
+                    .get(slot as usize)
+                    .map(|a| a.battle.spirit_gauge)
+                    .unwrap_or(0),
             };
             let mut ai = std::mem::take(&mut self.monster_ai_state);
+            let mut spirit_writeback = None;
             if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
                 category = cast.category;
                 spell_id = cast.spell_id;
                 target_class = cast.target_class;
+                spirit_writeback = cast.spirit_gauge_writeback;
+            }
+            // The 0x8A charge gate clamps the caster's own gauge as it fires
+            // (`actor+0x170 = 0x32`). Applied after the RNG borrow window; it
+            // draws no RNG, so the determinism stream is untouched.
+            if let Some(g) = spirit_writeback
+                && let Some(a) = self.actors.get_mut(slot as usize)
+            {
+                a.battle.spirit_gauge = g;
             }
             // Anti-repeat ring (applies to whichever single party target stands).
             target_class = crate::monster_ai::apply_recent_target_ring(
