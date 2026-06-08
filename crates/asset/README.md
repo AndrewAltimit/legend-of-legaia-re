@@ -83,8 +83,9 @@ Global monster stat archive (PROT 867, extended footprint): per-id `0x14000` LZS
 slot.
 
 - `record(entry, id)` → name / HP / MP / stats / `element` (record `+0x1D`, the
-  `0..=7` element id the battle loader copies into the live actor for the
-  `element_affinity` scale).
+  `0..=7` element id the `element_affinity` scale `FUN_801dd864` reads
+  record-direct via the record-pointer table `0x801C9348[slot-3]`, not a copied
+  live-actor field).
 - `mesh(entry, id)` → the monster's embedded battle-model TMD (record `+0x04`).
 - `MonsterMesh::texture()` → the decoded texture pool (record `+0x08`: fifteen
   16-colour CLUTs at `[0..0x1E0]` + a 4bpp page, layout from the loader

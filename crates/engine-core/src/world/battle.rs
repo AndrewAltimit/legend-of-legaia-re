@@ -673,7 +673,14 @@ impl World {
     /// (party member) element is the per-character table entry for the active
     /// party. The engine models the active party as `char_id == party slot`
     /// (0-based), so a party actor at slot `target` is the 1-based char id
-    /// `target + 1` the affinity table indexes.
+    /// `target + 1` the affinity table indexes. Reading the enemy element off
+    /// `MonsterDef::element` is faithful to the retail read: `FUN_801dd864`
+    /// fetches it record-direct (`0x801C9348[slot-3]` → `+0x1d`), not from a
+    /// copied live-actor field.
+    ///
+    /// PORT: FUN_801dd864 (element resolution + affinity-matrix lookup, the
+    /// enemy→party direction; the status-weaken / guard-double / slot-7 summon
+    /// stages of the full retail function are not part of this scalar)
     fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
         let Some(aff) = self.element_affinity.as_ref() else {
             return 100;

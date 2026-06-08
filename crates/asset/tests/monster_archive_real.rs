@@ -65,11 +65,12 @@ fn known_monster_ids_decode_to_expected_records() {
     );
 }
 
-/// Record `+0x1D` is the enemy element id the battle loader copies into the
-/// live actor's element slot (read by the affinity scale `FUN_801dd864`). Pinned
-/// here on real disc bytes: every populated record's element is in the
-/// 8-element space (`0..=7`) — the decisive correlation signal — and Gimard's
-/// element is fire.
+/// Record `+0x1D` is the enemy element id the affinity scale `FUN_801dd864`
+/// reads **record-direct** (via the per-enemy record-pointer table
+/// `0x801C9348[slot-3]`, not a copied live-actor field). Pinned here on real
+/// disc bytes: every populated record's element is in the 8-element space
+/// (`0..=7`) — the invariant the unchecked `matrix[elem*8 + elem]` index relies
+/// on — and Gimard's element is fire.
 #[test]
 fn monster_element_byte_is_in_range_and_pins_gimard_fire() {
     use legaia_asset::element_affinity::Element;

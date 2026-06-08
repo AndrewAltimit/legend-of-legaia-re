@@ -31,12 +31,18 @@
 //!   the **1-based** char id (`(byte)DAT_8007bd10[slot]`, 1=Vahn 2=Noa 3=Gala
 //!   4=Terra). Disasm reads `*(byte*)(char_id + 0x801F547F)`, i.e. char id 1 →
 //!   first table byte.
-//! - **enemy** (actor slot `>= 3`): `element = actor[+0x1d]` — a byte on the live
-//!   battle actor (`DAT_801c9348[slot-3] + 0x1d`). The monster-record field that
-//!   the battle loader copies into `actor[+0x1d]` is **not yet pinned** (the
-//!   monster→actor builder is an indirect-dispatch handler absent from the
-//!   captured dumps), so the enemy element source remains open. See
-//!   `docs/subsystems/battle-formulas.md`.
+//! - **enemy / summon body** (actor slot `>= 3`): `element` is read **directly
+//!   from the monster-archive record's `+0x1d` byte** — no copy into a live-actor
+//!   field. `FUN_801dd864` indexes the per-enemy **record-pointer table** at
+//!   `DAT_801c9348` (`= 0x801C9348`, populated by the battle loader
+//!   `FUN_800542C8`; the same table the victory-spoils path reads rewards from)
+//!   by `slot - 3`, then `lbu t0,0x1d(v0)` (dump
+//!   `overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). So the
+//!   element source is the [`crate::monster_archive::MonsterRecord::element`]
+//!   field itself (same record whose `+0x44`/`+0x46`/`+0x48` reward fields the
+//!   spoils path reads) — there is no separate "monster→actor builder" copy to
+//!   pin. (The earlier "copied into a live `actor[+0x1d]`, not yet pinned"
+//!   framing is corrected: the read is record-direct.)
 //!
 //! ## Provenance
 //!

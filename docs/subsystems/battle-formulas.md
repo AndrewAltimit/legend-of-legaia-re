@@ -322,7 +322,13 @@ pairs + the spell-table element vocabulary.
 the spell**: a **party member** (slot `< 3`) looks its element up in the
 per-character table by **1-based** char id (`CHARACTER_ELEMENTS[char_id]` at
 `0x801F5480`: Vahn=fire, Noa=wind, Gala=thunder, Terra=wind); any **other slot**
-(`>= 3`, which is both enemies *and* the slot-7 summon body) reads `actor[+0x1d]`.
+(`>= 3`, which is both enemies *and* the slot-7 summon body) reads the element
+**directly from the monster-archive record `+0x1d`** — `FUN_801dd864` indexes the
+per-enemy **record-pointer table** `0x801C9348` (NOT the live-actor table
+`0x801C9370`) by `slot - 3` and does `lbu …,0x1d(record)` (dump
+`overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). There is **no**
+copy of the element into a live-actor field (unlike the `+0x0E..+0x1A` stats,
+which `FUN_80054CB0` *does* copy into `+0x14C..`).
 
 This **resolves the player-cast element question**: a player Seru-magic cast
 attacks *as the summoned creature* — it rolls through the summon path
@@ -334,10 +340,15 @@ is never read here). The matrix index is the raw `0..=7` element byte, so there 
 no separate `SpellElement → index` mapping. A party member's *non-summon* attack
 (slot `< 3`) instead uses that member's character-table element. The
 enemy element comes from the monster record's **`+0x1D`** byte
-([`legaia_asset::monster_archive::MonsterRecord::element`]) — pinned by
-correlating that byte against the curated enemy elements across the whole roster
-(the four party-table ids reproduce exactly; water/earth/light/dark corroborate)
-and by the byte taking *only* values `0..=7` across every populated record.
+([`legaia_asset::monster_archive::MonsterRecord::element`]) — now **pinned by the
+`FUN_801dd864` disasm directly** (the record-direct `lbu …,0x1d(record)` read
+above), which supersedes the earlier curated-element *correlation* argument as
+the mechanism: the affinity scale reaches `MonsterRecord::element` through the
+same `0x801C9348` record-pointer table the victory-spoils path uses, so the byte
+is consumed by the live game exactly as the parser exposes it. (The correlation
+still corroborates the *id labelling* — the four party-table ids reproduce
+exactly, water/earth/light/dark corroborate, and the byte takes only `0..=7`
+across every populated record.)
 
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster
