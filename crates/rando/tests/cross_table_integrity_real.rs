@@ -16,6 +16,10 @@
 //!     padding stays within the observed bound.
 //!   * **door dest name  -> CDNAME scene**       every `0x3F` named-warp's inline
 //!     destination resolves to a declared scene block in `CDNAME.TXT`.
+//!   * **casino prize id  -> item-name table**   every active coin-exchange prize
+//!     names a real item in the 256-id space.
+//!   * **start-inv id     -> item-name table**   every new-game starting slot
+//!     grants a real, named item in a non-zero quantity.
 //!
 //! ## Shop-record padding (found by this sweep)
 //!
@@ -187,6 +191,80 @@ fn every_door_destination_resolves_to_a_real_scene() {
     assert!(
         dangling.is_empty(),
         "door destinations that don't resolve to a CDNAME scene (parser drift?):\n{}",
+        dangling.join("\n")
+    );
+}
+
+#[test]
+fn every_casino_prize_id_names_a_real_item() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+    let items = ItemNameTable::from_scus(&scus(&disc)).expect("parse item-name table");
+
+    let casino = apply::current_casino(&patcher)
+        .expect("read casino")
+        .expect("casino prize table present");
+
+    let mut checked = 0usize;
+    let mut dangling: Vec<String> = Vec::new();
+    for (b, block) in casino.blocks.iter().enumerate() {
+        for r in block {
+            // Active prizes have a non-zero id (the run terminator is 0). They
+            // hand out ordinary inventory items, so the id is in the 256-id space.
+            if r.item_id == 0 {
+                continue;
+            }
+            checked += 1;
+            if r.item_id > 0xFF {
+                dangling.push(format!(
+                    "casino block {b} prize id 0x{:04X} > 0xFF",
+                    r.item_id
+                ));
+            } else if items.name(r.item_id as u8).is_none_or(|s| s.is_empty()) {
+                dangling.push(format!(
+                    "casino block {b} prize id 0x{:02X} has no item name",
+                    r.item_id
+                ));
+            }
+        }
+    }
+    eprintln!("[xtable] casino_prizes_checked={checked}");
+    assert!(checked > 10, "too few casino prizes checked: {checked}");
+    assert!(
+        dangling.is_empty(),
+        "casino prize ids that don't name a real item (parser drift?):\n{}",
+        dangling.join("\n")
+    );
+}
+
+#[test]
+fn every_starting_inventory_id_names_a_real_item() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+    let items = ItemNameTable::from_scus(&scus(&disc)).expect("parse item-name table");
+
+    let inv = apply::current_starting_items(&patcher).expect("decode starting inventory");
+    assert!(!inv.is_empty(), "the new game seeds a starting inventory");
+
+    let mut dangling: Vec<String> = Vec::new();
+    for (id, count) in &inv {
+        // Each seeded slot grants `count` of a real item (vanilla: Healing Leaf ×5).
+        if *count == 0 {
+            dangling.push(format!("starting slot id 0x{id:02X} grants count 0"));
+        }
+        if items.name(*id).is_none_or(|s| s.is_empty()) {
+            dangling.push(format!("starting slot grants unnamed id 0x{id:02X}"));
+        }
+    }
+    assert!(
+        dangling.is_empty(),
+        "starting-inventory ids that don't name a real item (seed drift?):\n{}",
         dangling.join("\n")
     );
 }
