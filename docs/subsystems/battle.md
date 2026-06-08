@@ -608,15 +608,16 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 | Stone | `7` | whole battle (255) | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability (core strike paths) + counts-as-defeated in the wipe checks; escape-restore not modelled |
 | Faint | `8` | until cured | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 
-Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
+Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines. Both battle drivers tick it once per round: the runner path at `BattleRound::end`, and the live loop at the initiative round boundary (when no living actor still holds an initiative key, just before the keys reseed). The tick folds the Venom / Toxic DoT into `BattleActor::hp` and downs the actor (`liveness = 0`) on a tick kill — a poison death is a death, so it registers with the liveness-keyed wipe checks and target resolvers. It draws no RNG, so it never perturbs the reseed RNG stream.
 
 **Turn-level enforcement (live loop).** The action-blocking columns above are
 enforced at the turn grant, not just modelled. When the live battle loop
 (`World::live_battle_tick`) hands a combatant its turn, an actor carrying a
 `blocks_actions` status (Numb / Sleep / Stone / Faint) **loses the turn** — its
 initiative key is already consumed, so play passes on and the SM stays at
-`EndOfAction` with no action armed (the status duration still ticks, so the
-affliction wears off). A caster carrying a `blocks_magic` status (Curse /
+`EndOfAction` with no action armed (the status duration ticks once per round at
+the initiative boundary, so the affliction wears off). A caster carrying a
+`blocks_magic` status (Curse /
 Faint) that the monster AI picks a cast for **falls back to a physical
 strike** (`World::take_monster_turn`, mirroring the MP-affordability fallback).
 The gate reads `StatusKind::blocks_actions`/`blocks_magic` via

@@ -3054,6 +3054,13 @@ impl World {
                 && let Some(actor) = self.actors.get_mut(slot as usize)
             {
                 actor.battle.hp = actor.battle.hp.saturating_sub(dmg);
+                // A DoT kill is a death: pair HP==0 with liveness=0 like every
+                // other damage entry point (fold_spell_outcome / apply_battle_art
+                // / apply_basic_attack). Otherwise the corpse stays "alive" for
+                // the liveness-keyed wipe checks + target/turn resolvers.
+                if actor.battle.hp == 0 {
+                    actor.battle.liveness = 0;
+                }
             }
         }
     }

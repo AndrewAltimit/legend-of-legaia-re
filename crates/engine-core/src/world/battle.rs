@@ -1462,8 +1462,30 @@ impl World {
         let n = self.actors.len() as u8;
         // A petrified actor counts as defeated (Stone), so it doesn't keep its
         // side "alive" - a fully-petrified party is a wipe, not a stuck loop.
-        let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
-        let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        let mut party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+        let mut monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+
+        // Round boundary: the SM idles at EndOfAction and no living actor still
+        // holds an initiative key, so a full round just completed. Tick every
+        // actor's status effects once here - DoT damage (Venom / Toxic) plus
+        // duration decay - mirroring the `BattleRound::end` tick the runner path
+        // uses, so poison actually drains HP and afflictions wear off in the
+        // live loop (this is the tick the skip-turn comment below relies on).
+        // RNG-free (DoT is deterministic), so the upcoming reseed's RNG stream
+        // is unchanged; gated on the SPD initiative path (a no-SPD synthetic
+        // battle has no round concept). A DoT can down the last member of a
+        // side, so re-evaluate the wipe flags afterward before arming a turn.
+        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            && party_alive
+            && monsters_alive
+            && self.any_battle_speed()
+            && !self.any_living_initiative_key()
+        {
+            self.tick_status_effects();
+            party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+            monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        }
+
         if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             && party_alive
             && monsters_alive
@@ -1478,9 +1500,9 @@ impl World {
                 // initiative key was already consumed by the picker, so the
                 // next advance moves on; advancing `active_actor` also moves
                 // the no-speed round-robin past it. The status duration ticks
-                // independently (`tick_status_effects`), so the affliction
-                // still wears off. The SM stays at EndOfAction (no action
-                // armed) - exactly the "skipped turn" outcome.
+                // once per round at the boundary above (`tick_status_effects`),
+                // so the affliction still wears off. The SM stays at EndOfAction
+                // (no action armed) - exactly the "skipped turn" outcome.
                 self.battle_ctx.active_actor = next;
             } else if next_is_party && self.actor_is_confused(next) {
                 // Confused party member: it "acts uncontrollably", so the player
@@ -2243,6 +2265,20 @@ impl World {
     /// Seed every living battle slot's initiative key from its SPD; dead slots
     /// get `0`. Per-actor formula `init_key = speed + rand()%(speed/2 + 1) + 1`
     /// (`overlay_0897_801e23ec`), so every living actor's key is `>= 1`.
+    /// `true` while any *living* actor still holds an unspent initiative key.
+    /// When this goes false the round is over and the next
+    /// [`Self::next_combatant_by_initiative`] reseeds — the live loop uses this
+    /// as its once-per-round boundary for status ticking. Dead actors' stale
+    /// keys are ignored (only living actors count), so it agrees with the
+    /// reseed condition inside the selector.
+    fn any_living_initiative_key(&self) -> bool {
+        (0..BATTLE_SLOTS).any(|i| {
+            self.actors
+                .get(i)
+                .is_some_and(|a| a.battle.liveness != 0 && a.battle.init_key != 0)
+        })
+    }
+
     fn reseed_initiative(&mut self) {
         for i in 0..BATTLE_SLOTS {
             let alive = self.actors.get(i).is_some_and(|a| a.battle.liveness != 0);

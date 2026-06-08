@@ -852,6 +852,86 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
     );
 }
 
+/// A damage-over-time kill must down the actor: `tick_status_effects` pairs
+/// `hp == 0` with `liveness = 0` like every other damage entry point. Otherwise
+/// the poisoned corpse stays "alive" for the liveness-keyed wipe checks and turn
+/// / target resolvers (it would keep being armed and targeted).
+#[test]
+fn dot_kill_sets_liveness_zero() {
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    let mut world = World::new();
+    world.enter_battle(1, 1, 600);
+    // Toxic ticks max_hp/8 = 10, more than the monster's remaining 4 HP.
+    world.actors[1].battle.max_hp = 80;
+    world.actors[1].battle.hp = 4;
+    world.actors[1].battle.liveness = 1;
+    world.status_effects.apply(1, StatusKind::Toxic);
+
+    world.tick_status_effects();
+
+    assert_eq!(world.actors[1].battle.hp, 0, "Toxic DoT drains the last HP");
+    assert_eq!(
+        world.actors[1].battle.liveness, 0,
+        "a DoT kill downs the actor (liveness must not desync from HP)"
+    );
+}
+
+/// In the live battle loop a poison/toxic affliction must actually drain HP and
+/// expire: `tick_status_effects` is called once per round at the initiative
+/// boundary. A poisoned party member loses HP across rounds even when the enemy
+/// can never strike (asleep), so the only HP source is the DoT.
+#[test]
+fn live_loop_ticks_dot_at_the_round_boundary() {
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    fn party_lost_hp(poisoned: bool) -> bool {
+        let mut world = World::new();
+        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.live_gameplay_loop = true;
+        world.battle_player_driven = false;
+        // Both sides carry SPD so the initiative round boundary engages (the DoT
+        // tick is gated on it); seed up front so battle start isn't mistaken for
+        // a round boundary.
+        world.battle_speed[0] = 10;
+        world.battle_speed[1] = 10;
+        world.seed_battle_initiative();
+        // The monster is asleep, so it never attacks - the party's only HP loss
+        // can come from the DoT.
+        world
+            .status_effects
+            .apply_with_duration(1, StatusKind::Sleep, 255);
+        world.actors[0].battle.max_hp = 800;
+        world.actors[0].battle.hp = 800;
+        world.actors[1].battle.max_hp = 9999;
+        world.actors[1].battle.hp = 9999;
+        if poisoned {
+            world
+                .status_effects
+                .apply_with_duration(0, StatusKind::Toxic, 255);
+        }
+        let start = world.actors[0].battle.hp;
+        for _ in 0..600 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                break;
+            }
+        }
+        world.actors[0].battle.hp < start
+    }
+
+    // Control: with no poison and an asleep enemy the party is never touched.
+    assert!(
+        !party_lost_hp(false),
+        "control: no DoT + asleep enemy must leave the party at full HP"
+    );
+    // The fix: the live loop ticks the DoT each round, so the party bleeds.
+    assert!(
+        party_lost_hp(true),
+        "a poisoned party member must lose HP to the DoT in the live loop"
+    );
+}
+
 #[test]
 fn all_party_item_heals_every_living_party_actor_in_battle() {
     use crate::inventory_use::{
