@@ -630,6 +630,41 @@ fn status_block_helpers_classify_by_kind() {
 }
 
 #[test]
+fn confuse_retargets_a_monster_strike_to_its_own_band() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    // Party slots 0..2 + monster slots 3,4 alive; everything else stays dead.
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    // Monster slot 3 picked a party member (slot 1) as its target.
+    world.actors[3].battle.active_target = 1;
+
+    // Not confused: the picked target stands.
+    world.maybe_confuse_retarget(3);
+    assert_eq!(world.actors[3].battle.active_target, 1);
+
+    // Confused: the strike flips to a living member of its own (monster) band.
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Confuse, 3);
+    world.maybe_confuse_retarget(3);
+    let t = world.actors[3].battle.active_target;
+    assert!(
+        t >= 3,
+        "confused monster targets its own band, got slot {t}"
+    );
+    assert!(
+        world.actors[t as usize].battle.liveness != 0,
+        "the retarget lands on a living actor"
+    );
+}
+
+#[test]
 fn stone_counts_as_defeated_and_is_petrified() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();

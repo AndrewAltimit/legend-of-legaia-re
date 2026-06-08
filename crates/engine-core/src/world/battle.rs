@@ -1550,7 +1550,31 @@ impl World {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
                 }
+                self.maybe_confuse_retarget(slot);
             }
+        }
+    }
+
+    /// Confuse retarget: a confused actor "acts uncontrollably", so once its
+    /// single-target action's target is picked, flip it to a random living
+    /// member of the *opposite* side via the ported `FUN_801E7320` resolver
+    /// ([`Self::resolve_monster_target`]). Consumes battle RNG (reroll-while-
+    /// dead), matching retail's structure; no-op when `slot` isn't confused.
+    ///
+    /// Retail triggers the resolver off the actor's `+0x16E` status word
+    /// (`field_flags & 0x380`); the engine bridges directly from
+    /// [`StatusKind::Confuse`] instead, since the bit-set site is the still-open
+    /// capture thread and the engine tracks status by kind. Currently wired only
+    /// for the monster physical-strike path; confused casts and the
+    /// player-driven party path route their targets elsewhere (follow-up).
+    pub(super) fn maybe_confuse_retarget(&mut self, slot: u8) {
+        let confused = self
+            .status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind == vm::status_effects::StatusKind::Confuse);
+        if confused {
+            self.resolve_monster_target(slot);
         }
     }
 
@@ -1565,6 +1589,7 @@ impl World {
             a.battle.active_target = target;
             a.battle.action_category = 3;
         }
+        self.maybe_confuse_retarget(slot);
     }
 
     /// Monster-AI action picker - clean-room port of the **generic decision
@@ -1871,10 +1896,12 @@ impl World {
     /// `ctx[+0x13]` = active slot - here read from `party_count` / the actor
     /// table / `slot`. See `ghidra/scripts/funcs/overlay_battle_action_801e7320.txt`.
     ///
-    /// Note: in the current live loop monsters carry `field_flags == 0`, so the
-    /// SM does not invoke this and the picker's own target stands. Wiring the
-    /// `0x380` flag (set by retail at an as-yet-untraced init site) is the open
-    /// RE thread; this port keeps the routine faithful for when that lands.
+    /// Retail invokes this from the SM when the actor's `+0x16E` status word has
+    /// `field_flags & 0x380` set (the confuse-class statuses). The engine doesn't
+    /// model that bitfield, so [`Self::maybe_confuse_retarget`] bridges directly
+    /// from [`StatusKind::Confuse`] and calls this on the monster physical-strike
+    /// path. (Side detection assumes the retail 3-slot party layout - correct for
+    /// a full party; a reduced party + confused monster is a pre-existing edge.)
     ///
     /// PORT: FUN_801E7320
     /// REF: FUN_801E295C

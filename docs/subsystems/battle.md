@@ -595,7 +595,7 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 | Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | full block + clear-on-hit (enforced, same shape as Sleep) |
 | Venom | `3` (Other) | 6 turns | "Poison": HP drains (lesser than Toxic) | `current_hp/8` tick |
 | Sleep | `4` | 3 turns | Asleep; wakes when hit | block + clear-on-hit (matches) |
-| Confuse | `5` | 3 turns | Acts uncontrollably / random target | random target (LoL-1 wiki page is a stub) |
+| Confuse | `5` | 3 turns | Acts uncontrollably / random target | a confused monster's physical strike retargets to a random living member of the opposite side (`FUN_801E7320`); confused casts + the player-driven party path are follow-ups |
 | Curse | `6` | 4 turns | Blocks Magic | blocks Magic (matches) |
 | Stone | `7` | whole battle (255) | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability (core strike paths) + counts-as-defeated in the wipe checks; escape-restore not modelled |
 | Faint | `8` | until cured | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
