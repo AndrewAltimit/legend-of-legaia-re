@@ -38,9 +38,20 @@ Both `FUN_8001FA88` and `FUN_8001FC00` carry a `_DAT_8007B8C2` (debug-flag) carv
 
 Both paths land at the same files; only the indirection differs. The same dev/retail split appears in [`FUN_800255B8`](../subsystems/asset-loader.md), so it's a pattern that repeats across asset-loading subsystems.
 
+## `bse.dat` master-bank header (from `FUN_8001FA88`)
+
+`FUN_8001FA88`'s body (`ghidra/scripts/funcs/8001fa88.txt`) loads the master sound bank `bse.dat` into the 0x1800-byte buffer `_DAT_8007B8D0`, then derives a second pointer from a single `u16` at offset `+2`:
+
+```text
+count     = *(u16 *)(bse_base + 2)
+gp[0x678] = bse_base + (count & ~1)        ; (count/2)*2 -- an even byte offset
+```
+
+So `bse.dat` leads with `[u16 @0][u16 @2 = even byte-offset to a second section][section A ...][section B at bse_base + (count & ~1)]`. The earlier "`+2` is a record-count divisor" reading was imprecise: the value is used as a **byte offset** that splits `bse.dat` into two sections (the `>>1 … *2` is a round-to-even, not a division of the data), and it indexes into the once-loaded master bank, **not** the per-scene `.dpk`.
+
 ## What's left to format-spec
 
-The byte-level layouts of the individual files (`.MAP` / `.PCH` / `.spk` / `.dpk` / `.pac`) are still TBD. With consumers identified, the next move is to read the body of `FUN_8001FA88` (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns) for the `.dpk` byte layout - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor (almost certainly a record count).
+The byte-level layouts of the individual files (`.MAP` / `.PCH` / `.spk` / `.dpk` / `.pac`) are still TBD. Note `FUN_8001FA88` loads the per-scene `.dpk` into the *caller's* buffer (`param_3`) and does **not** read it - so the `.dpk` internal record layout must be reversed from its **consumer** (wherever that buffer is read field-by-field during sound playback), which is not yet pinned. `.MAP` (sample-address map) and `.PCH` (patch / program data) are standard PsyQ SoundArtist outputs - the VAB-adjacent program/tone tables.
 
 The eventual home is a `crates/sound` companion to `crates/vab`.
 
