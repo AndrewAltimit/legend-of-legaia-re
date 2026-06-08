@@ -33,21 +33,29 @@
   <h2>Slot A vs slot B</h2>
   <p>The overlay loaders manage two independently swappable slots.</p>
   <ul>
-    <li><strong>Slot A</strong> (<code>~0x801CE818</code>) holds the big scene overlays &mdash; field (0897), battle (0898), menu (0899). These are VA-alias siblings (same base, resident at different times) with dense internal call graphs, so the base recovers from <code>jal</code> alone.</li>
-    <li><strong>Slot B</strong> (link base <code>0x801F69D8</code>) holds the player-summon / effect / minigame-data blobs from the <code>0900..0969</code> PROT cluster. These <strong>timeshare one buffer</strong>, so a save state catches an inseparable <em>mix</em> of two overlays &mdash; there is no clean whole-overlay RAM prefix, and most have too sparse a call graph to recover. Their base comes from a capture anchor or a cross-referenced RE result. This is precisely where static extraction earns its keep: the <em>disc</em> entry disassembles cleanly at the link base even though the <em>runtime</em> buffer is unusable.</li>
+    <li><strong>Slot A</strong> (<code>~0x801CE818</code>) holds the big scene overlays &mdash; field (0897), battle (0898), menu (0899), the STR/MDEC <strong>cutscene</strong> overlay (0970), and the <strong>minigame</strong> overlays (fishing 0972, slot machine 0973, baka fighter 0976, dance 0980). All VA-alias siblings (same base, resident at different times). The field/battle/menu/cutscene rows recover from <code>jal</code> alone; the minigame rows are cross-checked instead by a documented minigame function landing on a prologue at the base (<code>anchor_va</code>), because their footprints over-read each other (one minigame's code is duplicated across consecutive entries at <code>base + N&times;0x800</code>, so <code>jal</code>-recovery can latch a phantom base; the canonical entry recovers <code>0x801CE818</code>, slot machine excepted with a <code>0x4000</code> over-read prefix). The &ldquo;world-map&rdquo;, &ldquo;save&rdquo;, and &ldquo;shop&rdquo; UIs are <strong>not</strong> separate entries: the overworld controller lives in field 0897, and the save + shop sessions live in menu 0899 (each function's signature byte-matches only that entry via <code>find-sig</code>).</li>
+    <li><strong>Slot B</strong> (link base <code>0x801F69D8</code>) holds the player-summon / dance / minigame-data blobs from the <code>0900..0969</code> PROT cluster. These <strong>timeshare one buffer</strong>, so a save state catches an inseparable <em>mix</em> of two overlays &mdash; there is no clean whole-overlay RAM prefix, and most have too sparse a call graph to recover. Their base is cross-checked the slot-B way: a high fraction of the overlay's internal absolute self-pointers (<code>lui 0x801f/0x8020 ; addiu</code>) resolve in-file only at the committed base. This is precisely where static extraction earns its keep: the <em>disc</em> entry disassembles cleanly at the link base even though the <em>runtime</em> buffer is unusable.</li>
   </ul>
-  <p>The slot-B cluster is <strong>heterogeneous</strong>: it interleaves summon stagers (0905 Gimard, &hellip;) with Disco King <strong>dance-song</strong> overlays (0907 &ldquo;Hell's Music&rdquo;, 0924, 0927, 0957) and other minigame data &mdash; so the historical contiguous &ldquo;summon <code>0905..0915</code>&rdquo; range is over-broad. Only entries with a pinned identity are listed in the map; per-entry identity for the rest is an <a href="../reference/open-rev-eng-threads.html">open thread</a>.</p>
+  <p>The slot-B cluster is <strong>heterogeneous</strong>: it interleaves summon stagers (0905 Gimard) with Disco King <strong>dance-song</strong> overlays (0907 &ldquo;Hell's Music&rdquo;, 0924 &ldquo;Ultimate Rave&rdquo;, 0927 &ldquo;Dark Eclipse&rdquo;), the GAME OVER overlay (0902), and summon-effect data (0957). So the historical contiguous &ldquo;summon <code>0905..0915</code>&rdquo; range is over-broad &mdash; <strong>0907 inside it is a dance song, not a summon</strong> (it only parsed as a scene-graph because its over-read footprint bled into the neighbouring stagers' spawn calls). The mapped slot-B rows carry pinned identity; the remaining binary stagers' per-summon spell-id assignment is an <a href="../reference/open-rev-eng-threads.html">open thread</a>.</p>
 </section>
 
 <section class="doc-section" id="map">
   <h2>The committed map</h2>
-  <p><code>crates/asset/data/static-overlays.toml</code> is the entry&rarr;base map &mdash; one record per overlay: <code>prot_index</code> (the identity), <code>base_va</code>, <code>form</code> (raw / lzs), <code>clean_copy_bytes</code> (RAM-verified prefix length), <code>eligibility</code> (<code>verified</code> / <code>static</code> / <code>ineligible</code>), <code>base_source</code> (<code>jal</code> / <code>capture</code> / <code>cross_ref</code>), and the <code>fingerprint_sha256</code> reproducibility anchor.</p>
+  <p><code>crates/asset/data/static-overlays.toml</code> is the entry&rarr;base map &mdash; one record per overlay: <code>prot_index</code> (the identity), <code>base_va</code>, <code>form</code> (raw / lzs), <code>clean_copy_bytes</code> (RAM-verified prefix length), <code>eligibility</code> (<code>verified</code> / <code>static</code> / <code>ineligible</code>), <code>base_source</code> (<code>jal</code> / <code>capture</code> / <code>cross_ref</code>), an optional <code>anchor_va</code> (a known function VA that must land on a prologue at the base &mdash; a capture-free base cross-check for non-<code>jal</code> rows), and the <code>fingerprint_sha256</code> reproducibility anchor. It now spans 15 overlays: the slot-A scene family (field/battle/menu + cutscene + four minigames) and the pinned slot-B entries (summon render/stager, GAME OVER, three dance songs, summon-effect data).</p>
 </section>
 
 <section class="doc-section" id="cli">
   <h2>CLI</h2>
 <pre><code># Inspect the map.
 asset overlay list
+
+# Reconnaissance sweep: recover each entry's base + print its leading dev
+# string (the identity tell). --base filters to one overlay slot.
+asset overlay scan extracted/PROT.DAT --from 895 --to 985 --base 0x801CE818
+
+# Locate a function-head signature across the corpus and infer the host
+# overlay's base (the capture-free byte-search that pins an entry).
+asset overlay find-sig extracted/PROT.DAT "1e80043c a046838c" --anchor-va 0x801DC6B4
 
 # Re-extract from your PROT.DAT and assert every committed fingerprint
 # reproduces (bit-for-bit, from any copy of the disc).
