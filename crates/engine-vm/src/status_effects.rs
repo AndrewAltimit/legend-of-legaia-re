@@ -23,7 +23,7 @@
 //! | Status    | byte | Retail effect (wiki)                                        | Engine |
 //! |-----------|------|-------------------------------------------------------------|--------|
 //! | `Toxic`   | `1`  | "Deadly Poison": HP drains faster than Venom AND ATK/DEF drop | DoT `max_hp/16` + ATK x0.875; DoT-vs-Venom magnitude and the DEF drop not modelled |
-//! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns | NOT enforced yet (the old "50% skip" was never wired - retail is a full block, not a roll) |
+//! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns | full block + clear-on-hit (matches; same shape as Sleep) |
 //! | `Venom`   | `3`  | "Poison": HP drains (lesser than Toxic)                      | DoT `current_hp/8` |
 //! | `Sleep`   | `4`  | Asleep; wakes when hit                                       | block + clear-on-hit (matches) |
 //! | `Confuse` | `5`  | Acts uncontrollably / random target                         | random target (LoL-1 wiki page is a stub; modelled clean-room) |
@@ -47,7 +47,8 @@ pub enum StatusKind {
     /// faster-than-Venom magnitude and the DEF penalty are not yet modelled.
     Toxic,
     /// Paralysis: the unit cannot act; clears on being hit or after some turns
-    /// (a full block, NOT a probability roll - retail does not skip-by-chance).
+    /// (a full block, NOT a probability roll). Enforced via [`Self::blocks_actions`]
+    /// + [`Self::clears_on_damage`], same shape as Sleep.
     Numb,
     /// Standard poison: HP drains (lesser than Toxic). Clean-room
     /// `current_hp / 8` tick.
@@ -104,11 +105,13 @@ impl StatusKind {
         }
     }
 
-    /// `true` if the kind blocks the actor from acting on its turn.
+    /// `true` if the kind blocks the actor from acting on its turn. Numb is a
+    /// full paralysis (the unit "cannot perform any action" per the wiki), so
+    /// it blocks the turn outright - not a probability roll.
     pub fn blocks_actions(self) -> bool {
         matches!(
             self,
-            StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint
+            StatusKind::Numb | StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint
         )
     }
 
@@ -117,9 +120,11 @@ impl StatusKind {
         matches!(self, StatusKind::Curse | StatusKind::Faint)
     }
 
-    /// `true` if being hit clears this status (Sleep wakes on damage).
+    /// `true` if being hit clears this status. Sleep wakes on damage, and Numb
+    /// clears on being attacked too (the wiki: it wears off "by being attacked
+    /// or enough turns passing").
     pub fn clears_on_damage(self) -> bool {
-        matches!(self, StatusKind::Sleep)
+        matches!(self, StatusKind::Numb | StatusKind::Sleep)
     }
 }
 
@@ -161,7 +166,7 @@ pub enum StatusEvent {
     },
     /// Status `kind` expired this turn and is now cleared.
     Cleared { actor_slot: u8, kind: StatusKind },
-    /// Status `kind` blocked the actor's turn (Sleep / Stone / Faint).
+    /// Status `kind` blocked the actor's turn (Numb / Sleep / Stone / Faint).
     Blocked { actor_slot: u8, kind: StatusKind },
     /// Status `kind` blocked the actor's Magic action (Curse / Faint).
     BlockedMagic { actor_slot: u8, kind: StatusKind },
@@ -520,11 +525,29 @@ mod tests {
     }
 
     #[test]
-    fn shock_does_not_deal_damage_on_tick() {
+    fn numb_does_not_deal_damage_on_tick() {
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Numb);
         let dmg = t.tick_actor(0, 100, 160);
         assert_eq!(dmg, 0);
+    }
+
+    #[test]
+    fn numb_blocks_actions_and_clears_on_being_hit() {
+        // Numb is a full paralysis (not a chance roll): it blocks the turn and,
+        // like Sleep, wears off when the unit is attacked.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Numb);
+        assert!(!t.check_can_act(0), "Numb blocks the turn");
+        assert!(t.drain_events().iter().any(|e| matches!(
+            e,
+            StatusEvent::Blocked {
+                kind: StatusKind::Numb,
+                ..
+            }
+        )));
+        t.on_damaged(0);
+        assert!(!t.has(0, StatusKind::Numb), "being hit clears Numb");
     }
 
     #[test]
@@ -544,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn check_can_act_passes_when_only_burned() {
+    fn check_can_act_passes_when_only_toxic() {
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Toxic);
         assert!(t.check_can_act(0));

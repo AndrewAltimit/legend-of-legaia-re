@@ -122,7 +122,7 @@ pub struct StatusModifiers {
     pub toxic_atk_mult: f32,
     /// Multiplier applied to accuracy when the actor is Confuse. `0.5`.
     pub confuse_acc_mult: f32,
-    /// Multiplier applied to evasion when Sleep / Stone / Faint.
+    /// Multiplier applied to evasion when Numb / Sleep / Stone / Faint.
     /// `0.0` - these statuses make the actor a sitting duck.
     pub immobilised_eva_mult: f32,
     /// Multiplier applied to MP cost when Curse. The retail engine
@@ -162,7 +162,7 @@ pub struct BattleStats {
     pub abilities: [u8; 32],
     /// `true` if Magic actions should be filtered out by the validator.
     pub magic_blocked: bool,
-    /// `true` if the actor cannot act this turn (Sleep / Stone /
+    /// `true` if the actor cannot act this turn (Numb / Sleep / Stone /
     /// Faint). The action validator should treat the slot as
     /// "select-only".
     pub action_blocked: bool,
@@ -267,7 +267,7 @@ pub fn compute_battle_stats(
             StatusKind::Confuse => {
                 stats.acc = mul_clamp(stats.acc, modifiers.confuse_acc_mult);
             }
-            StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint => {
+            StatusKind::Numb | StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint => {
                 stats.eva = mul_clamp(stats.eva, modifiers.immobilised_eva_mult);
                 stats.action_blocked = true;
             }

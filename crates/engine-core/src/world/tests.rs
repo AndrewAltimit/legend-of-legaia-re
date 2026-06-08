@@ -607,6 +607,11 @@ fn status_block_helpers_classify_by_kind() {
         .apply_with_duration(1, StatusKind::Sleep, 5);
     assert!(world.actor_blocked_from_acting(1));
     assert!(!world.actor_blocked_from_magic(1));
+    // Numb is a full paralysis - blocks the whole turn (so magic is moot too).
+    world
+        .status_effects
+        .apply_with_duration(4, StatusKind::Numb, 5);
+    assert!(world.actor_blocked_from_acting(4));
     // Silence blocks magic only.
     world
         .status_effects

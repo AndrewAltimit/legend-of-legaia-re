@@ -592,7 +592,7 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 | Status | byte | Default duration (clean-room) | Retail effect (wiki) | Engine |
 |---|---|---|---|---|
 | Toxic | `1` | 4 turns | "Deadly Poison": HP drains faster than Venom AND attack/defense drop | `max_hp/16` tick + ATK x0.875; the faster-than-Venom rate and the DEF drop aren't modelled |
-| Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | NOT enforced (the old "50% skip" was never wired; retail is a full block, not a roll) |
+| Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | full block + clear-on-hit (enforced, same shape as Sleep) |
 | Venom | `3` (Other) | 6 turns | "Poison": HP drains (lesser than Toxic) | `current_hp/8` tick |
 | Sleep | `4` | 3 turns | Asleep; wakes when hit | block + clear-on-hit (matches) |
 | Confuse | `5` | 3 turns | Acts uncontrollably / random target | random target (LoL-1 wiki page is a stub) |
@@ -605,7 +605,7 @@ Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/
 **Turn-level enforcement (live loop).** The action-blocking columns above are
 enforced at the turn grant, not just modelled. When the live battle loop
 (`World::live_battle_tick`) hands a combatant its turn, an actor carrying a
-`blocks_actions` status (Sleep / Stone / Faint) **loses the turn** — its
+`blocks_actions` status (Numb / Sleep / Stone / Faint) **loses the turn** — its
 initiative key is already consumed, so play passes on and the SM stays at
 `EndOfAction` with no action armed (the status duration still ticks, so the
 affliction wears off). A caster carrying a `blocks_magic` status (Curse /
@@ -637,7 +637,7 @@ Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap
 
 ## Battle stat aggregator
 
-Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK by ~12.5%, Confuse halves accuracy, Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
+Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
 Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
@@ -666,7 +666,7 @@ Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items
 
 `BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle_attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Toxic / Venom tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
 
-The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
+The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Numb / Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
 
 Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/src/battle_round.rs).
 
