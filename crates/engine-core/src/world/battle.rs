@@ -325,12 +325,17 @@ impl World {
     /// Build the battle Magic submenu for `caster` (an actor-table / party-row
     /// index). Reads the caster's learned spells off their roster record and
     /// their live battle MP to grey out unaffordable rows. Returns `None` when
-    /// there's no roster record for the slot (the caller reopens the command
-    /// menu so the SM isn't stranded).
+    /// there's no roster record for the slot, OR when the caster is **silenced
+    /// / petrified** (a `blocks_magic` status) — in both cases the caller
+    /// reopens the command menu so the player picks a non-magic action, which
+    /// is the party-side mirror of the monster AI's cast→physical fallback.
     pub(super) fn build_battle_spell_session(
         &self,
         caster: u8,
     ) -> Option<crate::battle_magic::BattleSpellSession> {
+        if self.actor_blocked_from_magic(caster) {
+            return None;
+        }
         let member = self.roster.members.get(caster as usize)?;
         let list = member.spell_list();
         let n = (list.count as usize).min(list.ids.len());

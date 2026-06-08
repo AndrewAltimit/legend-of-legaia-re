@@ -4910,6 +4910,42 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
 }
 
 #[test]
+fn silenced_caster_cannot_open_the_magic_submenu() {
+    use crate::spells::SpellCatalog;
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Battle;
+    world.set_spell_catalog(SpellCatalog::vanilla());
+    world.actors[0].battle.mp = 50;
+    world.actors[0].battle.liveness = 1;
+    world.set_battle_magic(0, 100);
+    // A learned offensive spell, so the submenu would build absent any status.
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut list = party.members[0].spell_list();
+    list.count = 1;
+    list.ids[0] = 0x20;
+    party.members[0].set_spell_list(list);
+    world.roster = party;
+
+    // No status: the Magic submenu builds.
+    assert!(
+        world.build_battle_spell_session(0).is_some(),
+        "control: an unafflicted caster can open Magic"
+    );
+
+    // Silenced: the submenu refuses to open, so the caller bounces the player
+    // back to the command menu (the party-side mirror of the monster path).
+    world
+        .status_effects
+        .apply_with_duration(0, StatusKind::Silenced, 4);
+    assert!(
+        world.build_battle_spell_session(0).is_none(),
+        "a silenced caster must not open the Magic submenu"
+    );
+}
+
+#[test]
 fn battle_magic_cast_applies_mp_half_ability_bit() {
     use crate::input::PadButton;
     use crate::spells::SpellCatalog;
