@@ -135,6 +135,56 @@ fn battle_overlay_is_a_clean_copy() {
 }
 
 #[test]
+fn menu_overlay_is_a_clean_copy() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / extracted/PROT.DAT missing");
+        return;
+    };
+    // menu_equipment_field (equipment menu open from the field, map01) backup.
+    let Some(save) =
+        library_save("9b0e7a6a4498c06e618d05fb1a1f9fa1d9d7d9101c5ed1e65d6175a6bcf24d98")
+    else {
+        eprintln!("[skip] menu_equipment_field save-state backup not in library");
+        return;
+    };
+
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let map = static_overlay::overlay_map();
+    let rec = map.by_label("menu").expect("menu in map");
+    let disc = as_loaded(&mut archive, rec);
+
+    let state = SaveState::from_path(&save).expect("load save state");
+    let ram = state.main_ram().expect("main RAM");
+
+    // The menu overlay (PROT 0899) REPLACES the field overlay in slot A, so the
+    // field VM at 0x801DE840 must NOT be a prologue here while the equip
+    // aggregator FUN_801CF650 IS -- the proof these are swapping VA-alias
+    // siblings, not the same overlay.
+    let field_vm = legaia_mednafen::extract::read_u32_le(ram, 0x801D_E840).expect("ram word");
+    assert_ne!(
+        field_vm & 0xFFFF_0000,
+        0x27BD_0000,
+        "field VM is a prologue -- field overlay resident, not the menu overlay"
+    );
+    let equip_agg = legaia_mednafen::extract::read_u32_le(ram, 0x801C_F650).expect("ram word");
+    assert_eq!(
+        equip_agg & 0xFFFF_0000,
+        0x27BD_0000,
+        "equip aggregator FUN_801CF650 not a prologue -- menu overlay not resident"
+    );
+
+    let lcp = confirm_base_and_prefix(&disc, ram, rec);
+    let clean = rec.clean_copy_bytes.expect("menu has clean_copy_bytes") as usize;
+    assert!(
+        lcp >= clean,
+        "menu clean prefix shrank: RAM-matched 0x{lcp:x} < committed 0x{clean:x}"
+    );
+    eprintln!(
+        "[ok] menu (PROT 0899): clean copy verified, RAM-matched 0x{lcp:x} bytes (>= committed 0x{clean:x})"
+    );
+}
+
+#[test]
 fn field_overlay_head_and_base_match_ram() {
     let Some(prot) = prot_dat() else {
         eprintln!("[skip] LEGAIA_DISC_BIN / extracted/PROT.DAT missing");
