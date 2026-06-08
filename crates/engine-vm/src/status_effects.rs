@@ -28,7 +28,7 @@
 //! | `Sleep`   | `4`  | Asleep; wakes when hit                                       | block + clear-on-hit (matches) |
 //! | `Confuse` | `5`  | Acts uncontrollably / random target                         | random target (LoL-1 wiki page is a stub; modelled clean-room) |
 //! | `Curse`   | `6`  | Blocks Magic (Magic Amulet protects)                        | blocks Magic (matches) |
-//! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block only - the invulnerability, defeat-counting, and whole-battle duration are not modelled |
+//! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability (core strikes) + counts-as-defeated; the escape-restore nicety isn't modelled |
 //! | `Faint`   | `8`  | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 //!
 //! Engines drain pending [`StatusEvent`]s from [`StatusEffectTracker::tick_actor`]
@@ -61,8 +61,10 @@ pub enum StatusKind {
     Curse,
     /// Petrification: cannot act and cannot be damaged; petrified members count
     /// as defeated and Stone lasts the whole battle (no in-battle cure - a
-    /// successful escape restores them). The engine models only the action
-    /// block, not the invulnerability / defeat-counting / whole-battle duration.
+    /// successful escape restores them). The engine models the action block, a
+    /// whole-battle duration ([`Self::default_duration`] = 255), invulnerability
+    /// on the core combat-strike paths, and counts-as-defeated in the wipe
+    /// checks; the on-escape "restored to normal" nicety is not modelled.
     Stone,
     /// KO at 0 HP: the unit collapses and cannot act; revived only by a Phoenix
     /// or revive Magic. If the whole party Faints it is a Game Over.
@@ -100,7 +102,9 @@ impl StatusKind {
             StatusKind::Sleep => 3,
             StatusKind::Confuse => 3,
             StatusKind::Curse => 4,
-            StatusKind::Stone => 1,
+            // Stone has no in-battle cure - it lasts the whole battle. 255 is
+            // effectively "until battle end" (no battle runs that many turns).
+            StatusKind::Stone => 255,
             StatusKind::Faint => 255, // until cured
         }
     }
@@ -306,11 +310,17 @@ impl StatusEffectTracker {
         // Compute damages first to avoid holding a mutable borrow while
         // we push events.
         let snapshot: Vec<StatusInstance> = self.slots(actor_slot).to_vec();
+        // A petrified actor can't be damaged, so its poison DoTs don't tick.
+        let petrified = snapshot.iter().any(|s| s.kind == StatusKind::Stone);
         for inst in &snapshot {
-            let dmg = match inst.kind {
-                StatusKind::Toxic => toxic_tick_damage(max_hp),
-                StatusKind::Venom => venom_tick_damage(current_hp),
-                _ => 0,
+            let dmg = if petrified {
+                0
+            } else {
+                match inst.kind {
+                    StatusKind::Toxic => toxic_tick_damage(max_hp),
+                    StatusKind::Venom => venom_tick_damage(current_hp),
+                    _ => 0,
+                }
             };
             if dmg > 0 {
                 total_damage = total_damage.saturating_add(dmg);
@@ -551,6 +561,22 @@ mod tests {
     }
 
     #[test]
+    fn petrified_actor_takes_no_poison_tick() {
+        // Stone makes the unit invulnerable, so its poison DoT doesn't tick.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Stone);
+        t.apply(0, StatusKind::Venom);
+        assert_eq!(t.tick_actor(0, 80, 160), 0, "Stone absorbs poison ticks");
+    }
+
+    #[test]
+    fn stone_lasts_the_whole_battle() {
+        // Stone has no in-battle cure - its default duration is effectively
+        // "until battle end".
+        assert_eq!(StatusKind::Stone.default_duration(), 255);
+    }
+
+    #[test]
     fn check_can_act_emits_blocked_when_asleep() {
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Sleep);
@@ -646,11 +672,13 @@ mod tests {
     }
 
     #[test]
-    fn stunned_clears_after_one_tick() {
+    fn stone_persists_across_turns() {
+        // Stone has no in-battle expiry (whole-battle duration), so a single
+        // turn tick does not clear it.
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Stone);
         assert!(t.has(0, StatusKind::Stone));
         t.tick_actor(0, 100, 100);
-        assert!(!t.has(0, StatusKind::Stone));
+        assert!(t.has(0, StatusKind::Stone), "Stone lasts the whole battle");
     }
 }

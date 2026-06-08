@@ -630,6 +630,61 @@ fn status_block_helpers_classify_by_kind() {
 }
 
 #[test]
+fn stone_counts_as_defeated_and_is_petrified() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    // A petrified actor stays "alive" (liveness != 0) but counts as defeated
+    // for wipe detection, and reads as petrified.
+    world.actors[1].battle.liveness = 1;
+    world.actors[1].battle.hp = 100;
+    world
+        .status_effects
+        .apply_with_duration(1, StatusKind::Stone, 255);
+    assert!(world.actor_is_petrified(1));
+    assert!(world.actor_blocked_from_acting(1), "Stone blocks the turn");
+    assert!(
+        world.actor_effectively_defeated(1),
+        "Stone counts as defeated for wipe detection"
+    );
+    // A clean living actor is neither.
+    world.actors[0].battle.liveness = 1;
+    assert!(!world.actor_is_petrified(0));
+    assert!(!world.actor_effectively_defeated(0));
+}
+
+#[test]
+fn petrified_target_absorbs_art_strike_damage() {
+    use crate::art_strike::ArtStrikeOutcome;
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 4;
+    for slot in 0..4 {
+        world.actors[slot].active = true;
+        world.actors[slot].battle.hp = 200;
+        world.actors[slot].battle.max_hp = 200;
+        world.actors[slot].battle.liveness = 1;
+    }
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Stone, 255);
+    let event = BattleEvent::ApplyArtStrike {
+        actor_slot: 0,
+        target_slot: 3,
+        strike_index: 0,
+        outcome: ArtStrikeOutcome {
+            damage: Some(150),
+            enemy_effect: legaia_art::record::EnemyEffect::None,
+            cues: vec![],
+            alt_range: false,
+            power_target: None,
+        },
+    };
+    let r = world.fold_battle_event(&event);
+    assert_eq!(world.actors[3].battle.hp, 200, "Stone absorbs the strike");
+    assert_eq!(r, Some((3, 200)));
+}
+
+#[test]
 fn asleep_monster_loses_its_turn_and_never_attacks() {
     use legaia_engine_vm::status_effects::StatusKind;
 

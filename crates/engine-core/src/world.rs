@@ -2978,11 +2978,16 @@ impl World {
                         });
                     }
                 }
+                // A petrified target (Stone) can't be damaged - the strike is
+                // fully absorbed (and so doesn't wake a Sleep/Numb either).
+                let petrified = self.actor_is_petrified(*target_slot);
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
-                    if let Some(dmg) = outcome.damage {
+                    if let Some(dmg) = outcome.damage
+                        && !petrified
+                    {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
-                        // Damage clears Sleep on the target (matches retail -
-                        // the enemy wakes when hit).
+                        // Damage clears Sleep / Numb on the target (matches
+                        // retail - the unit wakes when hit).
                         self.status_effects.on_damaged(*target_slot);
                     }
                     if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {

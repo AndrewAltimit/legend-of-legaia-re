@@ -1312,8 +1312,10 @@ impl World {
         // BattleComplete next step.
         let party_count = self.party_count.max(1);
         let n = self.actors.len() as u8;
-        let party_alive = (0..party_count).any(|i| self.actors[i as usize].battle.liveness != 0);
-        let monsters_alive = (party_count..n).any(|i| self.actors[i as usize].battle.liveness != 0);
+        // A petrified actor counts as defeated (Stone), so it doesn't keep its
+        // side "alive" - a fully-petrified party is a wipe, not a stuck loop.
+        let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+        let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
         if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             && party_alive
             && monsters_alive
@@ -1429,6 +1431,12 @@ impl World {
         } else {
             vm::battle_formulas::art_strike_damage_default(attack, defense, 16)
         };
+        // A petrified target (Stone) absorbs the hit - no HP loss.
+        let dmg = if self.actor_is_petrified(target as u8) {
+            0
+        } else {
+            dmg
+        };
         let a = &mut self.actors[target];
         a.battle.hp = a.battle.hp.saturating_sub(dmg);
         if a.battle.hp == 0 {
@@ -1490,6 +1498,27 @@ impl World {
             .statuses(slot)
             .iter()
             .any(|s| s.kind.blocks_magic())
+    }
+
+    /// True if `slot` is petrified (Stone). A petrified actor can't be damaged
+    /// (the wiki: it is "no longer able to be damaged") and counts as defeated.
+    pub(crate) fn actor_is_petrified(&self, slot: u8) -> bool {
+        self.status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind == vm::status_effects::StatusKind::Stone)
+    }
+
+    /// True if `slot` is out of the fight for wipe-detection purposes: either
+    /// downed (`liveness == 0`, i.e. KO / Faint) or petrified (Stone counts as
+    /// defeated even though the actor's `liveness` stays non-zero). A petrified
+    /// member is still a valid target ("distraction") - this only governs the
+    /// party-/monster-wipe checks, not target selection.
+    pub(crate) fn actor_effectively_defeated(&self, slot: u8) -> bool {
+        self.actors
+            .get(slot as usize)
+            .is_none_or(|a| a.battle.liveness == 0)
+            || self.actor_is_petrified(slot)
     }
 
     pub(super) fn take_monster_turn(&mut self, slot: u8) {
