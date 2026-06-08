@@ -89,6 +89,7 @@
 </tbody>
 </table>
   <p>Channel index is the low nibble of the status byte (<code>0..=15</code>). Retail data only uses <code>0x90</code> / <code>0xB0</code> / <code>0xC0</code> / <code>0xE0</code> (Note Off is <code>0x90</code> with <code>velocity == 0</code>).</p>
+  <p>A disc-wide sweep of every SEQ-bearing PROT entry pins exactly what the score emits, and the engine <code>Sequencer</code> acts on all of it: <strong>pitch bend</strong> (<code>0xE0</code>) is used heavily (thousands of events across a handful of music banks) and is applied by scaling each sounding voice's pitch over the tone's own <code>pbmin</code>/<code>pbmax</code> range; <strong>channel volume (CC7)</strong> and <strong>pan (CC10)</strong> are the busiest controllers and are <em>dynamic</em> (the music swells and pans voices mid-note), re-derived per change from a channel-free per-note base. <strong>Channel/poly aftertouch</strong> (<code>0xD0</code>/<code>0xA0</code>) and expression/reverb controllers never appear, so the per-cue reverb-enable for BGM is not carried in the sequence data.</p>
   <h3>Variable-length quantity (VLQ)</h3>
   <p>A VLQ is a big-endian sequence of 7-bit groups; the high bit of each byte is <code>1</code> for "more bytes follow", <code>0</code> for the final group. Maximum 4 bytes per delta. SEQ uses VLQ for delta-times. See <code>legaia_seq::read_vlq</code>.</p>
   <h3>Meta events</h3>

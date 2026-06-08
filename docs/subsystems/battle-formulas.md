@@ -318,10 +318,21 @@ takes 98 from dark). The element ids 2/3/4 (fire/wind/thunder) and 7 (neutral) a
 byte-pinned; 0/1/5/6 (earth/water/light/dark) are inferred from the reciprocal
 pairs + the spell-table element vocabulary.
 
-`FUN_801dd864` resolves each side's element id by actor kind: a **party member**
-(slot `< 3`) looks its element up in the per-character table by **1-based** char
-id (`CHARACTER_ELEMENTS[char_id]` at `0x801F5480`: Vahn=fire, Noa=wind,
-Gala=thunder, Terra=wind); an **enemy** (slot `>= 3`) reads `actor[+0x1d]`. The
+`FUN_801dd864` resolves each side's element id **by the actor's battle slot, not
+the spell**: a **party member** (slot `< 3`) looks its element up in the
+per-character table by **1-based** char id (`CHARACTER_ELEMENTS[char_id]` at
+`0x801F5480`: Vahn=fire, Noa=wind, Gala=thunder, Terra=wind); any **other slot**
+(`>= 3`, which is both enemies *and* the slot-7 summon body) reads `actor[+0x1d]`.
+
+This **resolves the player-cast element question**: a player Seru-magic cast
+attacks *as the summoned creature* — it rolls through the summon path
+(`FUN_801dd0ac` `param_2 == 7`) and `FUN_801dd864` is called with the attacker as
+slot 7, so the attacker element is the **summon body's `+0x1d`** (the namesake
+creature's monster element — Gimard's creature, etc.), **not** the caster
+character's element and **not** the spell's own `SpellElement` (the spell element
+is never read here). The matrix index is the raw `0..=7` element byte, so there is
+no separate `SpellElement → index` mapping. A party member's *non-summon* attack
+(slot `< 3`) instead uses that member's character-table element. The
 enemy element comes from the monster record's **`+0x1D`** byte
 ([`legaia_asset::monster_archive::MonsterRecord::element`]) — pinned by
 correlating that byte against the curated enemy elements across the whole roster
@@ -336,10 +347,18 @@ special-attack path scales by `matrix[enemy_element][party_member_element]`
 engine models `char_id == party slot`, so a defender at actor slot *s* is char id
 *s+1*). The multiply happens after all the rolls, so it never perturbs the RNG
 stream, and it's gated on the affinity table being installed (disc-free /
-synthetic battles keep the neutral 100% multiplier, bit-identical). The
-player-driven **summon** roll is the remaining stand-in here; a party member's
-Tactical Art is *not* a move-power case (it uses the art-record power byte — see
-the note under the arts/physical kernel above).
+synthetic battles keep the neutral 100% multiplier, bit-identical).
+
+The **player→enemy** direction is the same matrix the other way round —
+`matrix[summon-creature element][target element]` (attacker = the summon body's
+`+0x1d`, defender = the target monster's `+0x1d`). With the element source now
+resolved, the only thing left for byte-exactness is wiring it, which is
+deliberately deferred: the player summon's *base* damage is still the
+caster-state-derived stand-in (the faithful slot-7 summon roll is open), and the
+affinity is only a ±4% post-multiply on top, so layering it on a placeholder
+adds plumbing (spell → summon-creature → element) for a sub-rounding nudge. A
+party member's Tactical Art is *not* a move-power case (it uses the art-record
+power byte — see the note under the arts/physical kernel above).
 
 ## MP cost & ability-bit modifiers
 

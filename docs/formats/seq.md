@@ -70,7 +70,11 @@ treat that byte as data.
 
 Channel index is the low nibble of the status byte (`0..=15`). Retail data
 only uses `0x90` / `0xB0` / `0xC0` / `0xE0` (Note Off is `0x90` with
-`velocity == 0`).
+`velocity == 0`). A disc-wide sweep of every SEQ-bearing PROT entry
+(`engine-audio/tests/real_seq_expressive_events.rs`) confirms this set:
+pitch bend (`0xE0`) is present (thousands of events across a handful of
+music banks) and is acted on by the sequencer; channel/poly aftertouch
+(`0xD0` / `0xA0`) never appear.
 
 ### Variable-length quantity (VLQ)
 

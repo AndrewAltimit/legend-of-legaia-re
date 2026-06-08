@@ -240,8 +240,32 @@ Voice allocation is round-robin over the 24 SPU voices, with the
 sequencer tracking `(channel, key) → voice` so the matching key-off can
 shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
-`0xFF 0x51`). PitchBend / Aftertouch are accepted by the parser and
-ignored by the playback path until the engine wires per-voice modulation.
+`0xFF 0x51`).
+
+**Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
+sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
+of `0xEn` events concentrated in a handful of music banks - so the
+sequencer acts on it: a bend sets the channel's 14-bit wheel
+(`ChannelState::pitch_bend`, center `0x2000`), re-pitches every voice
+already sounding on that channel, and is folded into subsequent NoteOns.
+Each `ActiveNote` keeps its unbent base pitch so repeated bends scale the
+base rather than compounding.
+
+The bend **range is a per-tone disc value**, not a global constant: each VAB
+tone carries `pbmin`/`pbmax` (downward/upward bend in semitones), and the
+wheel scales by the sounding tone's own range — `+pbmax` semitones at
+full-up, `-pbmin` at full-down (`VabBank::pitch_bend_range`, captured into
+the `ActiveNote` at NoteOn). A tone with a `(0, 0)` range does not respond
+to the wheel at all, exactly as libsnd applies the per-tone range. A
+disc-wide tone census (`engine-audio/tests/real_vab_tone_attributes.rs`)
+pins this: the common non-zero range is 2 semitones (the GM default, which
+is why a global `±2` would approximate it), with a few tones at 4/12/24/40;
+vibrato (`vibw`/`vibt`) and portamento (`porw`/`port`) are zero on every
+tone, so the voice model needs no LFO.
+
+Channel and polyphonic aftertouch (`0xDn` / `0xAn`) are parsed but the
+expressive-event sweep confirms the retail score never emits them, so they
+have no consumer to drive.
 
 **Loop points.** SEQ loop markers are read from the stream: the NRPN-style
 control changes on `0xB0` (controller 99 value 20 = Loop Start, value 30 =
@@ -252,6 +276,35 @@ so looped BGM repeats from the correct bar instead of restarting the whole
 track. The rewind resets the integer sample-clock, so the looped body re-fires
 on the same sample offset every pass. `set_loop_to` is the fallback for the
 four retail tracks with no markers.
+
+**Controller census.** A disc-wide sweep of every SEQ-bearing PROT entry
+(`engine-audio/tests/real_seq_expressive_events.rs`) fixes which control
+changes the retail score actually emits: CC7 (channel volume) and CC10 (pan)
+carry the bulk; CC99 carries **only** the two loop-marker values 20 and 30
+(so the loop handler drops nothing); and CC6 (Data Entry) is a constant 127
+emitted ~once per track (a fixed init the engine ignores — it varies nothing,
+so it is not a per-track parameter). Notably **absent**: expression (CC11)
+and reverb-depth (CC91). So per-channel volume swells and per-cue reverb
+sends are not encoded in the SEQ stream — whatever drives the live
+reverb-enable for BGM (see the reverb routing above) lives outside the
+sequence data.
+
+**Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
+the two most-used controllers, and both are **dynamic** — the score swells
+volume and pans voices around mid-note, not just at note-on (a corpus sweep
+finds the majority of CC7 events fire while a note is already sounding). The
+sequencer treats them as channel-expression layered over a per-note base:
+`play_note` leaves the voice at `master × velocity × tone-vol`, tone-panned,
+with **no** channel volume or pan; each `ActiveNote` stores that channel-free
+base L/R (mirroring `base_pitch` for bend). `channel_mix` then folds in the
+channel's CC7 volume (scale both sides by `volume/127`) and CC10 pan, where
+pan uses libsnd's voice-volume law (`FUN_80067550`): a pan left of center
+(`< 0x40`) attenuates the **right** by `pan/0x3f`, a pan right of center
+attenuates the **left** by `(0x7f - pan)/0x3f`. A mid-note CC7 or CC10 event
+re-derives every sounding voice on the channel from its base (`remix_channel`),
+so successive changes don't compound, and a fresh NoteOn picks up the
+channel's current volume + pan. A full-volume, centered channel is the
+identity, so this is faithful over the prior note-on-only behavior.
 
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.
@@ -317,7 +370,17 @@ Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame
 
 The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. JSONL records: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }`. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
 
-PCSX-Redux's Lua API does not expose the SPU register file directly (`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on `PCSX.createSaveState()` which returns the full state as a protobuf slice (~20 MiB); the autorun script walks the slice in-place via FFI and writes only the ~600 KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt `GPU::Vsync` event delivery (same shape as the `readAt(2 MiB)` caveat in [`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The SPU schema is the one declared in PCSX-Redux's `src/core/sstate.h` + `src/spu/types.h`: `Channel.Data.on || .stop` is the retail-side "audible" criterion (`ADSRInfoEx.state` is the configured next-attack shape and reads as Sustain even for unused voices, so it's not a reliable audibility signal).
+PCSX-Redux's Lua API does not expose the SPU register file directly
+(`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on
+`PCSX.createSaveState()` which returns the full state as a protobuf slice
+(~20 MiB); the autorun script walks the slice in-place via FFI and writes only
+the ~600 KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt
+`GPU::Vsync` event delivery (same shape as the `readAt(2 MiB)` caveat in
+[`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The SPU
+schema is the one declared in PCSX-Redux's `src/core/sstate.h` +
+`src/spu/types.h`: `Channel.Data.on || .stop` is the retail-side "audible"
+criterion (`ADSRInfoEx.state` is the configured next-attack shape and reads as
+Sustain even for unused voices, so it's not a reliable audibility signal).
 
 Two known asymmetries the diff function explicitly models:
 
@@ -334,7 +397,20 @@ Entry points:
 
 The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
 
-The **Field↔Battle BGM-swap** is *not* yet observable through this voice-activity oracle, and not for an oracle reason: the engine's opening battle is a `SceneMode::Battle` overlay on the loaded field scene (`enter_battle_from_formation` does not load a distinct battle audio bundle), and a field scene's per-scene BGM table carries no battle track — `town01` resolves *zero* battle ids through `SceneAssets::bgm_seq_entry`, so the `swap_to_battle_bgm` start event resolves to no SEQ bytes and no battle voices key on. The swap *contract* (track stash → battle start → field restore) is modeled and regression-tested at the `World` level (`battle_bgm_swaps_on_encounter_and_restores_on_finish`); the *audible* swap stays blocked on the engine resolving a battle track from the (currently unloaded) battle bundle. So the v0.1 playthrough oracle pins the Field→Battle transition on the mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`), not the audio axis.
+The **Field↔Battle BGM-swap** is *not* yet observable through this
+voice-activity oracle, and not for an oracle reason: the engine's opening
+battle is a `SceneMode::Battle` overlay on the loaded field scene
+(`enter_battle_from_formation` does not load a distinct battle audio bundle),
+and a field scene's per-scene BGM table carries no battle track — `town01`
+resolves *zero* battle ids through `SceneAssets::bgm_seq_entry`, so the
+`swap_to_battle_bgm` start event resolves to no SEQ bytes and no battle voices
+key on. The swap *contract* (track stash → battle start → field restore) is
+modeled and regression-tested at the `World` level
+(`battle_bgm_swaps_on_encounter_and_restores_on_finish`); the *audible* swap
+stays blocked on the engine resolving a battle track from the (currently
+unloaded) battle bundle. So the v0.1 playthrough oracle pins the Field→Battle
+transition on the mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`),
+not the audio axis.
 
 ## What's left
 

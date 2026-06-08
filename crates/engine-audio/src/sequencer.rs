@@ -50,6 +50,63 @@ const LOOP_START_VALUE: u8 = 20;
 /// `CC_LOOP_MARKER` value marking Loop Forever (jump to the last Loop Start).
 const LOOP_FOREVER_VALUE: u8 = 30;
 
+/// Center value of the 14-bit pitch-bend wheel - no bend.
+const PITCH_BEND_CENTER: u16 = 0x2000;
+
+/// Convert a 14-bit pitch-bend wheel value into a pitch multiplier (`1.0` at
+/// center) using the sounding tone's own bend range (semitones): `up` at
+/// full-up wheel, `down` at full-down. The range is the VAB tone's
+/// `pbmax`/`pbmin` (disc-sourced, per [`VabBank::pitch_bend_range`]), so a
+/// tone with a `(0, 0)` range does not respond to the wheel at all - exactly
+/// as libsnd applies the per-tone range rather than a global constant. Shared
+/// by NoteOn (bend a fresh note) and the `0xEn` handler (re-bend sounding
+/// notes).
+fn pitch_bend_factor(bend: u16, down: u8, up: u8) -> f64 {
+    let norm = (bend as f64 - PITCH_BEND_CENTER as f64) / PITCH_BEND_CENTER as f64;
+    let range = if norm >= 0.0 { up } else { down } as f64;
+    let semitones = norm * range;
+    2f64.powf(semitones / 12.0)
+}
+
+/// Scale a base SPU pitch register by a bend factor, clamped to the valid
+/// `1..=0x3FFF` register range (the same clamp `compute_pitch` applies).
+fn bend_pitch(base: u16, factor: f64) -> u16 {
+    ((base as f64 * factor).round() as i64).clamp(1, 0x3FFF) as u16
+}
+
+/// Center value of the 7-bit channel-pan controller (CC10) - no pan.
+const PAN_CENTER: u8 = 0x40;
+
+/// Apply a channel pan (CC10, `0..=127`) to a voice's `(left, right)` volume
+/// pair using libsnd's pan law: a pan left of center (`< 0x40`) attenuates
+/// the **right** side by `pan/0x3f`; a pan right of center attenuates the
+/// **left** side by `(0x7f - pan)/0x3f`. This is the per-pan-source stage the
+/// libsnd voice-volume builder applies on top of the tone's own L/R (it runs
+/// this same attenuation once per pan source - channel / sequence / tone).
+/// The engine bakes the tone pan into the base L/R via `pan_split`, so this
+/// adds only the channel pan that `play_note` does not see.
+fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
+    let pan = pan.min(0x7f) as i32;
+    if pan < 0x40 {
+        (left, (right as i32 * pan / 0x3f) as i16)
+    } else {
+        ((left as i32 * (0x7f - pan) / 0x3f) as i16, right)
+    }
+}
+
+/// Combine a note's channel-expression — channel volume (CC7) then channel
+/// pan (CC10) — over its channel-free base `(left, right)` (master × velocity
+/// × tone vol, tone-panned). Volume scales both sides by `volume/127`; pan
+/// then attenuates the opposite side. Both are dynamic: a mid-note CC7 or
+/// CC10 recomputes the live voice volume from this same base, so successive
+/// changes don't compound. A centered, full-volume channel is the identity.
+fn channel_mix(base: (i16, i16), volume: u8, pan: u8) -> (i16, i16) {
+    let v = volume.min(127) as i32;
+    let left = (base.0 as i32 * v / 127) as i16;
+    let right = (base.1 as i32 * v / 127) as i16;
+    apply_channel_pan(left, right, pan)
+}
+
 /// Per-channel state carried across events.
 #[derive(Debug, Clone, Copy)]
 struct ChannelState {
@@ -59,6 +116,11 @@ struct ChannelState {
     volume: u8,
     /// Per-channel pan (CC 10), 0..=127.
     pan: u8,
+    /// Current 14-bit pitch-bend wheel value (`0..=0x3FFF`, center `0x2000`).
+    /// Set by `0xEn` events; applied to every note sounding on the channel
+    /// and to subsequent NoteOns. The retail score uses this (see the
+    /// `real_seq_expressive_events` corpus sweep); aftertouch is never used.
+    pitch_bend: u16,
     /// Last program-change tick. Diagnostic only.
     _last_pc_tick: u64,
 }
@@ -68,7 +130,8 @@ impl Default for ChannelState {
         Self {
             program: 0,
             volume: 127,
-            pan: 64,
+            pan: PAN_CENTER,
+            pitch_bend: PITCH_BEND_CENTER,
             _last_pc_tick: 0,
         }
     }
@@ -81,6 +144,20 @@ struct ActiveNote {
     channel: u8,
     key: u8,
     voice: u8,
+    /// The voice's SPU pitch register at NoteOn, before this channel's
+    /// pitch-bend was folded in. Re-applying a new bend multiplies this
+    /// base so repeated bends don't compound rounding error.
+    base_pitch: u16,
+    /// The sounding tone's pitch-bend range `(pbmin, pbmax)` in semitones,
+    /// captured at NoteOn so a later `0xEn` event scales by the note's own
+    /// range (a `(0, 0)` tone never bends).
+    bend_range: (u8, u8),
+    /// The voice's channel-free `(left, right)` volume: master × velocity ×
+    /// tone vol, tone-panned, with NO channel volume (CC7) or channel pan
+    /// (CC10) applied. A later CC7/CC10 re-derives the live voice volume from
+    /// this base via [`channel_mix`] so successive changes don't compound,
+    /// mirroring `base_pitch` for bend.
+    base_vol: (i16, i16),
 }
 
 /// Sequencer state machine. One per playing SEQ.
@@ -364,8 +441,14 @@ impl Sequencer {
                 self.channels[ch].program = program;
             }
             ChannelMessage::ControlChange { control, value } => match control {
-                0x07 => self.channels[ch].volume = value,
-                0x0A => self.channels[ch].pan = value,
+                0x07 => {
+                    self.channels[ch].volume = value;
+                    self.remix_channel(spu, ch);
+                }
+                0x0A => {
+                    self.channels[ch].pan = value;
+                    self.remix_channel(spu, ch);
+                }
                 CC_LOOP_MARKER => match value {
                     LOOP_START_VALUE => {
                         // Record the position *after* this marker. `self.next`
@@ -392,8 +475,18 @@ impl Sequencer {
             ChannelMessage::NoteOff { key, .. } => {
                 self.note_off(spu, ch as u8, key);
             }
-            // PolyAftertouch / ChannelAftertouch / PitchBend not yet wired.
-            _ => {}
+            ChannelMessage::PitchBend { value } => {
+                self.channels[ch].pitch_bend = value;
+                for note in self.active.iter().filter(|n| n.channel as usize == ch) {
+                    if let Some(v) = spu.voices.get_mut(note.voice as usize) {
+                        let (down, up) = note.bend_range;
+                        v.pitch = bend_pitch(note.base_pitch, pitch_bend_factor(value, down, up));
+                    }
+                }
+            }
+            // Aftertouch (channel + poly) is recognized but unused by the
+            // retail score (corpus sweep), so there is nothing to drive.
+            ChannelMessage::PolyAftertouch { .. } | ChannelMessage::ChannelAftertouch { .. } => {}
         }
     }
 
@@ -411,20 +504,66 @@ impl Sequencer {
             return;
         };
         let cs = self.channels[channel as usize];
-        // Combine master, channel, and event velocity so the bank's
-        // play_note math sees a single 0..=127 effective velocity. The
-        // bank further multiplies by program & tone vol.
-        let combined = ((self.master_vol as u32 * cs.volume as u32 * velocity as u32) / (127 * 127))
-            .min(127) as u8;
+        // Give play_note the master × velocity effective velocity only -
+        // NOT the channel volume. The channel volume (CC7) and pan (CC10) are
+        // applied afterward as dynamic channel-expression (`channel_mix`) so a
+        // mid-note CC7/CC10 can re-derive the voice volume from the same base.
+        let combined = ((self.master_vol as u32 * velocity as u32) / 127).min(127) as u8;
         let ok = self
             .bank
             .play_note(spu, voice as usize, cs.program as usize, key, combined);
         if ok {
+            // play_note set the voice's base pitch; remember it (and the
+            // tone's disc-sourced bend range) so later bends re-scale the
+            // unbent value, then fold in any bend already held on this channel.
+            let base_pitch = spu
+                .voices
+                .get(voice as usize)
+                .map(|v| v.pitch)
+                .unwrap_or(0x1000);
+            let bend_range = self.bank.pitch_bend_range(cs.program as usize, key);
+            if cs.pitch_bend != PITCH_BEND_CENTER
+                && let Some(v) = spu.voices.get_mut(voice as usize)
+            {
+                let (down, up) = bend_range;
+                v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
+            }
+            // play_note left the voice at master × velocity × tone vol, tone-
+            // panned, with NO channel volume/pan; capture that as the channel-
+            // free base, then fold in the channel's current CC7 volume + CC10
+            // pan. A later CC7/CC10 re-derives from this same base.
+            let base_vol = spu
+                .voices
+                .get(voice as usize)
+                .map(|v| (v.vol_left, v.vol_right))
+                .unwrap_or((0x3FFF, 0x3FFF));
+            if let Some(v) = spu.voices.get_mut(voice as usize) {
+                let (l, r) = channel_mix(base_vol, cs.volume, cs.pan);
+                v.vol_left = l;
+                v.vol_right = r;
+            }
             self.active.push(ActiveNote {
                 channel,
                 key,
                 voice,
+                base_pitch,
+                bend_range,
+                base_vol,
             });
+        }
+    }
+
+    /// Re-derive the live voice volume for every note sounding on `ch` from
+    /// its channel-free base, using the channel's current CC7 volume + CC10
+    /// pan. Called whenever either controller changes mid-note.
+    fn remix_channel(&mut self, spu: &mut Spu, ch: usize) {
+        let cs = self.channels[ch];
+        for note in self.active.iter().filter(|n| n.channel as usize == ch) {
+            if let Some(v) = spu.voices.get_mut(note.voice as usize) {
+                let (l, r) = channel_mix(note.base_vol, cs.volume, cs.pan);
+                v.vol_left = l;
+                v.vol_right = r;
+            }
         }
     }
 
@@ -757,5 +896,180 @@ mod tests {
         assert!(!s.is_finished()); // halfway through
         s.tick_us(&mut spu, 500_000.0);
         assert!(s.is_finished());
+    }
+
+    #[test]
+    fn pitch_bend_factor_center_is_unity() {
+        // Center wheel = no bend, whatever the tone range.
+        assert!((pitch_bend_factor(PITCH_BEND_CENTER, 2, 2) - 1.0).abs() < 1e-9);
+        // With a ±2-semitone tone range, full up bends sharp, full down flat.
+        assert!(pitch_bend_factor(0x3FFF, 2, 2) > 1.0);
+        assert!(pitch_bend_factor(0x0000, 2, 2) < 1.0);
+        // A tone with a (0, 0) range never responds to the wheel.
+        assert!((pitch_bend_factor(0x3FFF, 0, 0) - 1.0).abs() < 1e-9);
+        assert!((pitch_bend_factor(0x0000, 0, 0) - 1.0).abs() < 1e-9);
+        // Asymmetric range: full up uses `up`, full down uses `down`.
+        let up = pitch_bend_factor(0x3FFF, 1, 12);
+        let down = pitch_bend_factor(0x0000, 1, 12);
+        assert!(up > 1.5); // ~+1 octave
+        assert!(down > 0.94 && down < 1.0); // ~-1 semitone
+    }
+
+    #[test]
+    fn bend_pitch_clamps_to_register_range() {
+        // A large base × a sharp bend saturates at 0x3FFF, never overflows.
+        assert_eq!(
+            bend_pitch(0x3FFF, pitch_bend_factor(0x3FFF, 12, 12)),
+            0x3FFF
+        );
+        // A bend never drives the register below 1.
+        assert!(bend_pitch(1, pitch_bend_factor(0x0000, 12, 12)) >= 1);
+        // Center leaves a mid-range pitch untouched.
+        assert_eq!(
+            bend_pitch(0x1000, pitch_bend_factor(PITCH_BEND_CENTER, 2, 2)),
+            0x1000
+        );
+    }
+
+    #[test]
+    fn pitch_bend_event_repitches_sounding_voice() {
+        let mut spu = Spu::new();
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        // Seed a sounding note on channel 0, voice 0 at a known base pitch.
+        let base = 0x1000u16;
+        spu.voices[0].pitch = base;
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60,
+            voice: 0,
+            base_pitch: base,
+            bend_range: (2, 2),
+            base_vol: (0x3FFF, 0x3FFF),
+        });
+
+        // Bend sharp: the voice's live pitch register rises, the channel
+        // state records the wheel, and the stored base is untouched.
+        seq.fire_channel(&mut spu, 0, ChannelMessage::PitchBend { value: 0x3FFF });
+        assert_eq!(seq.channels[0].pitch_bend, 0x3FFF);
+        assert!(spu.voices[0].pitch > base);
+        assert_eq!(seq.active[0].base_pitch, base);
+
+        // Return to center: the voice snaps back to exactly the base pitch
+        // (re-bending the base, not the already-bent value).
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::PitchBend {
+                value: PITCH_BEND_CENTER,
+            },
+        );
+        assert_eq!(spu.voices[0].pitch, base);
+    }
+
+    #[test]
+    fn apply_channel_pan_attenuates_opposite_side() {
+        // Center pan leaves both sides untouched.
+        assert_eq!(
+            apply_channel_pan(0x3000, 0x3000, PAN_CENTER),
+            (0x3000, 0x3000)
+        );
+        // Hard left silences the right, leaves the left.
+        assert_eq!(apply_channel_pan(0x3000, 0x3000, 0), (0x3000, 0));
+        // Hard right silences the left, leaves the right.
+        assert_eq!(apply_channel_pan(0x3000, 0x3000, 0x7f), (0, 0x3000));
+        // Partial left attenuates the right but not below zero / not the left.
+        let (l, r) = apply_channel_pan(0x3000, 0x3000, 0x20);
+        assert_eq!(l, 0x3000);
+        assert!(r > 0 && r < 0x3000);
+    }
+
+    #[test]
+    fn cc7_volume_rescales_sounding_voice_from_base() {
+        let mut spu = Spu::new();
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let base = (0x3000i16, 0x2000i16);
+        spu.voices[0].vol_left = base.0;
+        spu.voices[0].vol_right = base.1;
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60,
+            voice: 0,
+            base_pitch: 0x1000,
+            bend_range: (0, 0),
+            base_vol: base,
+        });
+
+        // Halve the channel volume: both sides scale by ~63/127, pan centered.
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::ControlChange {
+                control: 0x07,
+                value: 63,
+            },
+        );
+        assert_eq!(seq.channels[0].volume, 63);
+        assert_eq!(spu.voices[0].vol_left, (0x3000 * 63 / 127) as i16);
+        assert_eq!(spu.voices[0].vol_right, (0x2000 * 63 / 127) as i16);
+
+        // Back to full restores the base exactly (re-derives from base).
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::ControlChange {
+                control: 0x07,
+                value: 127,
+            },
+        );
+        assert_eq!(
+            (spu.voices[0].vol_left, spu.voices[0].vol_right),
+            (base.0, base.1)
+        );
+    }
+
+    #[test]
+    fn cc10_pan_repans_sounding_voice_from_base() {
+        let mut spu = Spu::new();
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let base = (0x3000i16, 0x3000i16);
+        spu.voices[0].vol_left = base.0;
+        spu.voices[0].vol_right = base.1;
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60,
+            voice: 0,
+            base_pitch: 0x1000,
+            bend_range: (0, 0),
+            base_vol: base,
+        });
+
+        // Pan hard left: the right side is silenced, left untouched, channel
+        // state updated.
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::ControlChange {
+                control: 0x0A,
+                value: 0,
+            },
+        );
+        assert_eq!(seq.channels[0].pan, 0);
+        assert_eq!(spu.voices[0].vol_left, base.0);
+        assert_eq!(spu.voices[0].vol_right, 0);
+
+        // Returning to center restores the full base (re-pans the base, not
+        // the already-panned value).
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::ControlChange {
+                control: 0x0A,
+                value: PAN_CENTER,
+            },
+        );
+        assert_eq!(
+            (spu.voices[0].vol_left, spu.voices[0].vol_right),
+            (base.0, base.1)
+        );
     }
 }

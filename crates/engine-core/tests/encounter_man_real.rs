@@ -12,8 +12,11 @@
 //!   `legaia_asset::man_section`'s record layout.
 //! - The scene-bundle MAN extractor (`extract_man_payload`) drops bytes.
 
-use legaia_asset::scene_asset_table;
-use legaia_engine_core::encounter_man::{encounter_table_from_man, formation_record_for_row};
+use legaia_asset::{monster_archive, scene_asset_table};
+use legaia_engine_core::encounter_man::{
+    encounter_table_from_man, formation_defs_from_man, formation_record_for_row,
+};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 fn extracted_prot() -> Option<PathBuf> {
@@ -140,5 +143,92 @@ fn real_corpus_encounter_tables_load_for_every_scene_bundle() {
     );
     eprintln!(
         "[encounter_man_real] {scenes_with_tables} scenes wired, {total_entries} total formation entries"
+    );
+}
+
+/// Cross-table integrity: every monster id a scene's encounter formations
+/// reference must resolve to a real monster in the archive (PROT 867). This
+/// ties the encounter-MAN parser to the monster-archive parser — a drift in
+/// either (a shifted formation field, a wrong slot stride) would make a
+/// formation point at an empty/out-of-range monster slot, which the encounter
+/// and door randomizers would then spawn as garbage. Guards both at once.
+#[test]
+fn every_encounter_formation_references_a_real_monster() {
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    // The set of monster ids the archive actually populates (real records,
+    // non-empty name).
+    let archive = std::fs::read(prot.join("0867_battle_data.BIN"))
+        .expect("0867_battle_data.BIN missing - check extracted/PROT");
+    let valid: HashSet<u16> = monster_archive::records(&archive)
+        .expect("decode monster archive")
+        .into_iter()
+        .filter(|r| !r.name.trim().is_empty())
+        .map(|r| r.id)
+        .collect();
+    assert!(valid.len() > 150, "expected a populated monster archive");
+
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(&prot)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("BIN"))
+        .collect();
+    entries.sort();
+
+    let mut formations_checked = 0usize;
+    let mut slots_checked = 0usize;
+    let mut dangling: Vec<String> = Vec::new();
+    for path in &entries {
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
+        let Some(man) = load_man_from_scene(&bytes) else {
+            continue;
+        };
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+        for def in formation_defs_from_man(&man) {
+            formations_checked += 1;
+            for slot in &def.slots {
+                let id = slot.monster_id;
+                if id == 0 {
+                    continue;
+                }
+                slots_checked += 1;
+                if !valid.contains(&id) {
+                    dangling.push(format!(
+                        "{stem} formation {} references monster id {id} not in the archive",
+                        def.formation_id
+                    ));
+                }
+            }
+        }
+    }
+
+    eprintln!(
+        "[encounter-xref] formations_checked={formations_checked} slots_checked={slots_checked} \
+         dangling={}",
+        dangling.len()
+    );
+    assert!(
+        formations_checked > 300 && slots_checked > 300,
+        "too few formations/slots checked ({formations_checked}/{slots_checked}) - sweep not exercising the corpus"
+    );
+    assert!(
+        dangling.is_empty(),
+        "encounter formations reference monsters absent from the archive (parser drift?):\n{}",
+        dangling
+            .iter()
+            .take(30)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
