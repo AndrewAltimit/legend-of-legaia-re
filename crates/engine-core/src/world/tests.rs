@@ -3868,6 +3868,83 @@ fn apply_basic_attack_damage_finish_gate() {
 }
 
 #[test]
+fn basic_attack_accrues_defender_spirit_gauge() {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.hp = 200;
+    world.actors[1].battle.max_hp = 200;
+    world.actors[1].battle.liveness = 1;
+    world.battle_attack[0] = 40;
+    world.battle_defense[1] = 10;
+    world.battle_ctx.active_actor = 0;
+
+    // 40 atk vs 10 def -> 30 damage; pct = 30*100/200 = 15.
+    assert_eq!(world.spirit_gauge(1), 0);
+    world.apply_basic_attack();
+    let _ = world.drain_battle_hit_fx();
+    assert_eq!(world.spirit_gauge(1), 15);
+    // A second identical hit accumulates.
+    world.actors[1].battle.liveness = 1;
+    world.apply_basic_attack();
+    let _ = world.drain_battle_hit_fx();
+    assert_eq!(world.spirit_gauge(1), 30);
+    assert!(!world.spirit_gauge_full(1));
+}
+
+#[test]
+fn spirit_gauge_clamps_at_full() {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    // A small max-HP so each ~50-damage hit is ~50% of the gauge.
+    world.actors[1].battle.hp = 9999;
+    world.actors[1].battle.max_hp = 100;
+    world.actors[1].battle.liveness = 1;
+    world.battle_attack[0] = 60;
+    world.battle_defense[1] = 10;
+    world.battle_ctx.active_actor = 0;
+
+    // 50 damage on a 100-HP gauge denominator -> pct 50 each hit.
+    for _ in 0..4 {
+        world.actors[1].battle.liveness = 1;
+        world.apply_basic_attack();
+        let _ = world.drain_battle_hit_fx();
+    }
+    assert_eq!(world.spirit_gauge(1), 100);
+    assert!(world.spirit_gauge_full(1));
+}
+
+#[test]
+fn spell_damage_accrues_spirit_gauge() {
+    use crate::spells::{SpellElement, SpellOutcome};
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[1].battle.hp = 400;
+    world.actors[1].battle.max_hp = 400;
+    world.actors[1].battle.liveness = 1;
+
+    // A 100-damage cast -> pct = 100*100/400 = 25.
+    world.fold_spell_outcome(SpellOutcome::Damage {
+        target: 1,
+        amount: 100,
+        element: SpellElement::Fire,
+        weakness: false,
+    });
+    assert_eq!(world.spirit_gauge(1), 25);
+    // Out-of-range slot reads 0, never panics.
+    assert_eq!(world.spirit_gauge(250), 0);
+}
+
+#[test]
 fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
     // Count landed strikes over many calls of a seeded attacker (acc) against a
     // high-evasion, can't-die target.

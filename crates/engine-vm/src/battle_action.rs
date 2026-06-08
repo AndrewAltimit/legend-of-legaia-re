@@ -355,6 +355,18 @@ pub struct BattleActor {
     /// `0` = "has acted this round / dead" (the selector zeroes dead actors'
     /// keys). See `docs/subsystems/battle-formulas.md`.
     pub init_key: u16,
+    /// `+0x170` - **spirit-art gauge** (0..=100). The shared damage finisher
+    /// `FUN_801ddb30` accrues this on the *defender* from each hit's
+    /// post-mitigation damage (`pct = max(1, over*100/maxhp)`, plus the two
+    /// equipment "spirit gain up" bits for a party defender), clamped to 100;
+    /// the engine fills it via [`crate::battle_formulas::spirit_gauge_fill`].
+    /// A party member's Spirit-Art (`ActionState::SpiritArtsEntry`) becomes
+    /// available once this reaches its ceiling. Distinct from the per-turn AP
+    /// budget the **Spirit command** charges (`ApGauge::charge_spirit`).
+    ///
+    /// REF: FUN_801ddb30 (the finisher's spirit stage; ported as
+    /// [`crate::battle_formulas::spirit_gauge_fill`])
+    pub spirit_gauge: u16,
     /// `+0x172` / `+0x174` - HP / max-HP (or current / max).
     pub hp: u16,
     pub max_hp: u16,

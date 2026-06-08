@@ -677,6 +677,12 @@ pub fn damage_finish(i: &DamageFinish) -> u32 {
 /// retail `trap`s on a zero max-HP — the kernel instead returns the gauge
 /// unchanged (the caller guarantees a living defender). Returns the new gauge
 /// value (already clamped to `100`).
+///
+/// The live battle loop drives this on the defender of every damaging hit
+/// (physical and magic) into [`BattleActor::spirit_gauge`] (`actor+0x170`); see
+/// `World::accrue_spirit_gauge`. The engine passes [`DefenderResist::default`]
+/// (the per-character resist/spirit-gain-up words aren't modelled yet), so only
+/// the unconditional base `pct` term contributes today.
 pub fn spirit_gauge_fill(
     over: u32,
     defender_maxhp: u16,

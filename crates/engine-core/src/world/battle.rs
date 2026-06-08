@@ -729,6 +729,9 @@ impl World {
                         a.battle.liveness = 0;
                     }
                 }
+                // The shared damage finisher fills the defender's spirit-art
+                // gauge from any hit, magic included.
+                self.accrue_spirit_gauge(target, amount);
                 self.battle_hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount,
@@ -784,6 +787,50 @@ impl World {
             // is a no-op (MP was already spent up front).
             _ => {}
         }
+    }
+
+    /// Accrue the defender's spirit-art gauge (`actor+0x170`) from a hit that
+    /// landed `over` damage, the spirit stage of the shared damage finisher
+    /// `FUN_801ddb30`. Runs for *any* defender (the base `pct` term is
+    /// unconditional); the two equipment "spirit gain up" bits only apply to a
+    /// party defender, and the engine doesn't model the per-character
+    /// resistance words yet, so [`vm::battle_formulas::DefenderResist::default`]
+    /// (no gain-up, no resist) is passed — faithful for a character without
+    /// that gear and a no-op for an enemy. Draws no RNG, so the determinism
+    /// stream is untouched; `over` is the post-mitigation damage already
+    /// computed by the caller (the pre-nullify value retail accrues from).
+    ///
+    /// PORT: FUN_801ddb30 (spirit-gauge stage)
+    pub(super) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+        let defender_is_party = defender_slot < self.party_count;
+        let Some(a) = self.actors.get_mut(defender_slot as usize) else {
+            return;
+        };
+        a.battle.spirit_gauge = vm::battle_formulas::spirit_gauge_fill(
+            over as u32,
+            a.battle.max_hp,
+            a.battle.spirit_gauge,
+            vm::battle_formulas::DefenderResist::default(),
+            defender_is_party,
+        );
+    }
+
+    /// The current spirit-art gauge value (0..=100) for an actor slot, or `0`
+    /// for an out-of-range slot. The HUD reads this to draw the spirit bar and
+    /// the command menu reads [`Self::spirit_gauge_full`] to gate the Spirit-Art
+    /// option.
+    pub fn spirit_gauge(&self, slot: u8) -> u16 {
+        self.actors
+            .get(slot as usize)
+            .map(|a| a.battle.spirit_gauge)
+            .unwrap_or(0)
+    }
+
+    /// `true` when `slot`'s spirit-art gauge has reached its ceiling (100), the
+    /// retail condition for a Spirit-Art being available
+    /// ([`vm::battle_action::ActionState::SpiritArtsEntry`]).
+    pub fn spirit_gauge_full(&self, slot: u8) -> bool {
+        self.spirit_gauge(slot) >= 100
     }
 
     /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
@@ -1437,6 +1484,10 @@ impl World {
         } else {
             vm::battle_formulas::art_strike_damage_default(attack, defense, 16)
         };
+        // Spirit accrues from the pre-nullify hit: retail's finisher fills the
+        // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
+        // target's absorbed hit still charges its gauge.
+        self.accrue_spirit_gauge(target as u8, dmg);
         // A petrified target (Stone) absorbs the hit - no HP loss.
         let dmg = if self.actor_is_petrified(target as u8) {
             0

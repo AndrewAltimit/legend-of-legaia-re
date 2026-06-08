@@ -492,8 +492,12 @@ deterministic. The default path is bit-for-bit unchanged.
   separate status-effect feature, not a flag the monster AI sets.
 
 **Remaining gaps** (documented in `monster_ai`): a few cases touch actor fields
-the engine doesn't model yet - monster `0x8A`'s `actor+0x170` charge counter, the
-`'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
+the engine doesn't fully consume yet. The `actor+0x170` **spirit-art gauge** is
+modelled (`BattleActor::spirit_gauge`) and filled on every damaging hit by the
+finisher's spirit stage (`spirit_gauge_fill`, see
+[`battle-formulas.md`](battle-formulas.md)); what is still unwired is monster
+`0x8A`'s AI reading that gauge as a charge gate for its big attack. Also unwired:
+the `'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
 preload for spell ids `0x2E/0x2F`.
 
 ## Stat aggregator (`FUN_80042558`)
