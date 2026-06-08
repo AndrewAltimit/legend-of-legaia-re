@@ -601,27 +601,209 @@ fn enter_battle_caps_party_at_three() {
 fn status_block_helpers_classify_by_kind() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    // Asleep blocks all actions but not magic specifically.
+    // Sleep blocks all actions but not magic specifically.
     world
         .status_effects
-        .apply_with_duration(1, StatusKind::Asleep, 5);
+        .apply_with_duration(1, StatusKind::Sleep, 5);
     assert!(world.actor_blocked_from_acting(1));
     assert!(!world.actor_blocked_from_magic(1));
+    // Numb is a full paralysis - blocks the whole turn (so magic is moot too).
+    world
+        .status_effects
+        .apply_with_duration(4, StatusKind::Numb, 5);
+    assert!(world.actor_blocked_from_acting(4));
     // Silence blocks magic only.
     world
         .status_effects
-        .apply_with_duration(2, StatusKind::Silenced, 5);
+        .apply_with_duration(2, StatusKind::Curse, 5);
     assert!(!world.actor_blocked_from_acting(2));
     assert!(world.actor_blocked_from_magic(2));
     // Petrify blocks both.
     world
         .status_effects
-        .apply_with_duration(3, StatusKind::Petrified, 5);
+        .apply_with_duration(3, StatusKind::Faint, 5);
     assert!(world.actor_blocked_from_acting(3));
     assert!(world.actor_blocked_from_magic(3));
     // A clean actor is blocked from nothing.
     assert!(!world.actor_blocked_from_acting(0));
     assert!(!world.actor_blocked_from_magic(0));
+}
+
+#[test]
+fn confuse_retargets_a_monster_strike_to_its_own_band() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    // Party slots 0..2 + monster slots 3,4 alive; everything else stays dead.
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    // Monster slot 3 picked a party member (slot 1) as its target.
+    world.actors[3].battle.active_target = 1;
+
+    // Not confused: the picked target stands.
+    world.maybe_confuse_retarget(3);
+    assert_eq!(world.actors[3].battle.active_target, 1);
+
+    // Confused: the strike flips to a living member of its own (monster) band.
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Confuse, 3);
+    world.maybe_confuse_retarget(3);
+    let t = world.actors[3].battle.active_target;
+    assert!(
+        t >= 3,
+        "confused monster targets its own band, got slot {t}"
+    );
+    assert!(
+        world.actors[t as usize].battle.liveness != 0,
+        "the retarget lands on a living actor"
+    );
+}
+
+#[test]
+fn confuse_retargets_a_party_strike_to_a_living_ally() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    // A confused party member (slot 1) whose action targeted a monster (slot 3)
+    // flips to a random living member of its own (party) side.
+    world.actors[1].battle.active_target = 3;
+    world
+        .status_effects
+        .apply_with_duration(1, StatusKind::Confuse, 3);
+    world.maybe_confuse_retarget(1);
+    let t = world.actors[1].battle.active_target;
+    assert!(t < 3, "confused party member targets an ally, got slot {t}");
+    assert!(world.actors[t as usize].battle.liveness != 0);
+}
+
+#[test]
+fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    world.battle_player_driven = true;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    world
+        .status_effects
+        .apply_with_duration(0, StatusKind::Confuse, 3);
+    // The confused party member auto-arms a physical strike (no command session)
+    // aimed at a living ally.
+    world.arm_party_physical(0);
+    assert!(
+        world.battle_command.is_none(),
+        "a confused party member never opens the command menu"
+    );
+    assert_eq!(world.actors[0].battle.action_category, 3, "physical armed");
+    let t = world.actors[0].battle.active_target;
+    assert!(t < 3, "retargeted onto an ally, got slot {t}");
+}
+
+#[test]
+fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Confuse, 3);
+
+    // Non-confused caster (slot 4): targets untouched.
+    let mut t = vec![0u8, 1, 2];
+    world.confuse_retarget_cast(4, &mut t);
+    assert_eq!(t, vec![0, 1, 2]);
+
+    // Confused single-target cast at a party member flips to one living monster.
+    let mut t1 = vec![1u8];
+    world.confuse_retarget_cast(3, &mut t1);
+    assert_eq!(t1.len(), 1);
+    assert!(t1[0] >= 3, "single cast flips to a monster, got {}", t1[0]);
+
+    // Confused area cast at the whole party flips to every living monster.
+    let mut t2 = vec![0u8, 1, 2];
+    world.confuse_retarget_cast(3, &mut t2);
+    assert_eq!(t2, vec![3, 4]);
+
+    // A self-only cast is left alone.
+    let mut t3 = vec![3u8];
+    world.confuse_retarget_cast(3, &mut t3);
+    assert_eq!(t3, vec![3]);
+}
+
+#[test]
+fn stone_counts_as_defeated_and_is_petrified() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    // A petrified actor stays "alive" (liveness != 0) but counts as defeated
+    // for wipe detection, and reads as petrified.
+    world.actors[1].battle.liveness = 1;
+    world.actors[1].battle.hp = 100;
+    world
+        .status_effects
+        .apply_with_duration(1, StatusKind::Stone, 255);
+    assert!(world.actor_is_petrified(1));
+    assert!(world.actor_blocked_from_acting(1), "Stone blocks the turn");
+    assert!(
+        world.actor_effectively_defeated(1),
+        "Stone counts as defeated for wipe detection"
+    );
+    // A clean living actor is neither.
+    world.actors[0].battle.liveness = 1;
+    assert!(!world.actor_is_petrified(0));
+    assert!(!world.actor_effectively_defeated(0));
+}
+
+#[test]
+fn petrified_target_absorbs_art_strike_damage() {
+    use crate::art_strike::ArtStrikeOutcome;
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 4;
+    for slot in 0..4 {
+        world.actors[slot].active = true;
+        world.actors[slot].battle.hp = 200;
+        world.actors[slot].battle.max_hp = 200;
+        world.actors[slot].battle.liveness = 1;
+    }
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Stone, 255);
+    let event = BattleEvent::ApplyArtStrike {
+        actor_slot: 0,
+        target_slot: 3,
+        strike_index: 0,
+        outcome: ArtStrikeOutcome {
+            damage: Some(150),
+            enemy_effect: legaia_art::record::EnemyEffect::None,
+            cues: vec![],
+            alt_range: false,
+            power_target: None,
+        },
+    };
+    let r = world.fold_battle_event(&event);
+    assert_eq!(world.actors[3].battle.hp, 200, "Stone absorbs the strike");
+    assert_eq!(r, Some((3, 200)));
 }
 
 #[test]
@@ -646,7 +828,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
         if asleep {
             world
                 .status_effects
-                .apply_with_duration(1, StatusKind::Asleep, 255);
+                .apply_with_duration(1, StatusKind::Sleep, 255);
         }
         let start = world.actors[0].battle.hp;
         for _ in 0..600 {
@@ -3686,6 +3868,83 @@ fn apply_basic_attack_damage_finish_gate() {
 }
 
 #[test]
+fn basic_attack_accrues_defender_spirit_gauge() {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.hp = 200;
+    world.actors[1].battle.max_hp = 200;
+    world.actors[1].battle.liveness = 1;
+    world.battle_attack[0] = 40;
+    world.battle_defense[1] = 10;
+    world.battle_ctx.active_actor = 0;
+
+    // 40 atk vs 10 def -> 30 damage; pct = 30*100/200 = 15.
+    assert_eq!(world.spirit_gauge(1), 0);
+    world.apply_basic_attack();
+    let _ = world.drain_battle_hit_fx();
+    assert_eq!(world.spirit_gauge(1), 15);
+    // A second identical hit accumulates.
+    world.actors[1].battle.liveness = 1;
+    world.apply_basic_attack();
+    let _ = world.drain_battle_hit_fx();
+    assert_eq!(world.spirit_gauge(1), 30);
+    assert!(!world.spirit_gauge_full(1));
+}
+
+#[test]
+fn spirit_gauge_clamps_at_full() {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    // A small max-HP so each ~50-damage hit is ~50% of the gauge.
+    world.actors[1].battle.hp = 9999;
+    world.actors[1].battle.max_hp = 100;
+    world.actors[1].battle.liveness = 1;
+    world.battle_attack[0] = 60;
+    world.battle_defense[1] = 10;
+    world.battle_ctx.active_actor = 0;
+
+    // 50 damage on a 100-HP gauge denominator -> pct 50 each hit.
+    for _ in 0..4 {
+        world.actors[1].battle.liveness = 1;
+        world.apply_basic_attack();
+        let _ = world.drain_battle_hit_fx();
+    }
+    assert_eq!(world.spirit_gauge(1), 100);
+    assert!(world.spirit_gauge_full(1));
+}
+
+#[test]
+fn spell_damage_accrues_spirit_gauge() {
+    use crate::spells::{SpellElement, SpellOutcome};
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[1].battle.hp = 400;
+    world.actors[1].battle.max_hp = 400;
+    world.actors[1].battle.liveness = 1;
+
+    // A 100-damage cast -> pct = 100*100/400 = 25.
+    world.fold_spell_outcome(SpellOutcome::Damage {
+        target: 1,
+        amount: 100,
+        element: SpellElement::Fire,
+        weakness: false,
+    });
+    assert_eq!(world.spirit_gauge(1), 25);
+    // Out-of-range slot reads 0, never panics.
+    assert_eq!(world.spirit_gauge(250), 0);
+}
+
+#[test]
 fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
     // Count landed strikes over many calls of a seeded attacker (acc) against a
     // high-evasion, can't-die target.
@@ -4106,7 +4365,7 @@ fn full_test_catalog() -> crate::items::ItemCatalog {
         0x08,
         "Cure Poison",
         ItemEffect::Cure {
-            kind: StatusKind::Poisoned,
+            kind: StatusKind::Venom,
         },
         true,
         true,
@@ -4634,6 +4893,57 @@ fn scripted_ai_monster_self_heals_when_wounded() {
     assert!(fx.iter().any(|f| f.is_heal && f.target_slot == 1));
 }
 
+/// Monster `0x8A` reads its own spirit-art gauge (`actor+0x170`) as a charge
+/// gate: once it passes `0x31` the AI fires the `0x4E` all-enemies cast and the
+/// live loop clamps the caster's gauge to `0x32`. Below the threshold the
+/// generic core stands (this monster has no castable magic in the catalog, so
+/// that means a physical strike) and the gauge is left untouched.
+#[test]
+fn monster_8a_charge_gate_drives_cast_and_clamps_gauge() {
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::spells::SpellCatalog;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.set_spell_catalog(SpellCatalog::vanilla());
+    world.monster_catalog = vanilla_monster_catalog();
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.max_hp = 300;
+    world.actors[1].battle.hp = 300;
+    world.actors[1].battle.mp = 200;
+    world.actors[1].battle.liveness = 1;
+    world.actors[1].battle_monster_id = Some(0x8a);
+
+    // Charged: the gate fires the 0x4E cast and clamps the gauge to 0x32.
+    world.actors[1].battle.spirit_gauge = 100;
+    world.rng_state = 7;
+    match world.pick_monster_action(1) {
+        MonsterAction::Cast { spell_id, .. } => assert_eq!(spell_id, 0x4e),
+        other => panic!("expected the 0x4E charge cast, got {other:?}"),
+    }
+    assert_eq!(
+        world.actors[1].battle.spirit_gauge, 0x32,
+        "the gauge is clamped to 0x32 as the cast commits"
+    );
+
+    // Below threshold: no override, gauge left exactly as-is.
+    world.actors[1].battle.spirit_gauge = 0x31;
+    world.rng_state = 7;
+    assert!(matches!(
+        world.pick_monster_action(1),
+        MonsterAction::Physical { .. }
+    ));
+    assert_eq!(
+        world.actors[1].battle.spirit_gauge, 0x31,
+        "an uncharged 0x8A leaves its gauge untouched"
+    );
+}
+
 /// Faithful `FUN_801E7320`: a targeting class in `3..=6` resolves to a
 /// living PARTY slot; a class in `0..=2` resolves to a living MONSTER slot.
 /// (Dead slots are skipped via the re-roll loop.)
@@ -4934,11 +5244,11 @@ fn silenced_caster_cannot_open_the_magic_submenu() {
         "control: an unafflicted caster can open Magic"
     );
 
-    // Silenced: the submenu refuses to open, so the caller bounces the player
+    // Curse: the submenu refuses to open, so the caller bounces the player
     // back to the command menu (the party-side mirror of the monster path).
     world
         .status_effects
-        .apply_with_duration(0, StatusKind::Silenced, 4);
+        .apply_with_duration(0, StatusKind::Curse, 4);
     assert!(
         world.build_battle_spell_session(0).is_none(),
         "a silenced caster must not open the Magic submenu"
@@ -5637,7 +5947,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         hit_cues: vec![],
         identifier: 0,
         anim_speed: 0,
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         repeat_frames: Default::default(),
         background: 0,
         runtime_address: None,
@@ -5653,7 +5963,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
 
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
-    assert_eq!(rows[0].enemy_effect, EnemyEffect::Burned);
+    assert_eq!(rows[0].enemy_effect, EnemyEffect::Toxic);
 
     world.battle_ctx.active_actor = 0;
     world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
@@ -5672,7 +5982,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert_eq!(world.actors[1].battle.hp, 4000 - expect as u16);
     assert!(
         world.status_effects.is_afflicted(1),
-        "the art's Burned effect was applied to the target"
+        "the art's Toxic effect was applied to the target"
     );
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
@@ -5729,7 +6039,7 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
         hit_cues: vec![],
         identifier: 0,
         anim_speed: 0,
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         repeat_frames: Default::default(),
         background: 0,
         runtime_address: None,
@@ -5743,7 +6053,7 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
     );
     assert_eq!(
         rows[0].enemy_effect,
-        EnemyEffect::Burned,
+        EnemyEffect::Toxic,
         "first staged component art's status effect is adopted"
     );
 }
@@ -5963,7 +6273,7 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
         art: ActionConstant::Art1B,
         power: Some(PowerByte::from_byte(0x1A)), // UDF × 28
         dmg_timing: Some(0x10),
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         hit_cue: None,
     };
     let mut host = BattleHostImpl { world: &mut world };
@@ -5981,7 +6291,7 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
             assert_eq!(*target_slot, 3);
             assert_eq!(*strike_index, 0);
             assert_eq!(outcome.damage, Some(102));
-            assert_eq!(outcome.enemy_effect, EnemyEffect::Burned);
+            assert_eq!(outcome.enemy_effect, EnemyEffect::Toxic);
         }
         other => panic!("unexpected event: {:?}", other.summary()),
     }
@@ -6061,7 +6371,7 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
         art: ActionConstant::Art1B,
         power: Some(PowerByte::from_byte(0x1A)), // UDF × 28
         dmg_timing: Some(0x10),
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         hit_cue: None,
     };
     let mut host = BattleHostImpl { world: &mut world };
@@ -6075,10 +6385,10 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
         assert_eq!(r, Some((3, 93)));
     }
     assert_eq!(world.actors[3].battle.hp, 93);
-    // Burned status was folded into pending_status.
+    // Toxic status was folded into pending_status.
     assert_eq!(
         world.actors[3].pending_status,
-        Some(legaia_art::record::EnemyEffect::Burned)
+        Some(legaia_art::record::EnemyEffect::Toxic)
     );
     // PowerTarget enum is needed only to satisfy the import linter
     // when the assertions don't otherwise reference it.
@@ -6318,16 +6628,72 @@ fn use_item_stat_boost_caps_at_cap_constant() {
 }
 
 #[test]
+fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
+    let mut world = World::new();
+    // Seed a Fury Boost catalog entry directly (the disc seeder installs the
+    // same `ActionGauge` marker; this exercises the apply path without a disc).
+    world.item_catalog.insert(crate::items::ItemEntry {
+        id: 0x81,
+        name: "Fury Boost",
+        effect: crate::items::ItemEffect::ActionGauge,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    world.ap_gauges[0] = crate::ap_gauge::ApGauge::with_base(10);
+    world.ap_gauges[0].current_ap = 6; // mid-turn, some AP already spent
+
+    // Fury Boost extends the gauge by the retail ×7/5 ratio: base 10 -> 14, and
+    // the live gauge gains the +4 delta immediately.
+    let out = world.use_item(0x81, 0);
+    assert_eq!(out, crate::items::ItemOutcome::ActionGaugeExtended);
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.ap_gauges[0].current_ap, 10);
+    assert_eq!(world.fury_boost[0], Some(4));
+
+    // The boost survives a turn reset (it's "for one battle").
+    world.ap_gauges[0].reset_for_turn();
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.ap_gauges[0].current_ap, 14);
+
+    // Idempotent within the battle: a second Fury Boost does not compound.
+    assert_eq!(
+        world.use_item(0x81, 0),
+        crate::items::ItemOutcome::ActionGaugeExtended
+    );
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.fury_boost[0], Some(4));
+
+    // Battle end reverts the extension and clears the flag.
+    world.finish_battle();
+    assert_eq!(world.ap_gauges[0].base_ap, 10);
+    assert_eq!(world.fury_boost[0], None);
+}
+
+#[test]
+fn use_item_fury_boost_on_non_party_slot_is_noop() {
+    let mut world = World::new();
+    world.item_catalog.insert(crate::items::ItemEntry {
+        id: 0x81,
+        name: "Fury Boost",
+        effect: crate::items::ItemEffect::ActionGauge,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    // Slot 3+ is not a party AP-gauge slot (gauges are 0..=2).
+    assert_eq!(world.use_item(0x81, 5), crate::items::ItemOutcome::NoEffect);
+}
+
+#[test]
 fn use_item_cure_clears_status() {
     use legaia_art::record::EnemyEffect;
     let mut world = World::new();
     world.party_count = 1;
     world.actors[0].battle.max_hp = 100;
     world.actors[0].battle.hp = 50;
-    // Apply a Burned status, then cure it via CureAll.
+    // Apply a Toxic status, then cure it via CureAll.
     world
         .status_effects
-        .apply_from_enemy_effect(0, EnemyEffect::Burned);
+        .apply_from_enemy_effect(0, EnemyEffect::Toxic);
     assert!(world.status_effects.is_afflicted(0));
     world.set_item_catalog(full_test_catalog());
     // Antidote Flower is id 0x09 (CureAll).
@@ -6397,7 +6763,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
         art: ActionConstant::Art1B,
         power: Some(PowerByte::from_byte(0x1A)),
         dmg_timing: None,
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         hit_cue: None,
     };
     let mut host = BattleHostImpl { world: &mut world };
@@ -6406,7 +6772,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
     for e in &events {
         world.fold_battle_event(e);
     }
-    assert!(world.status_effects.has(3, StatusKind::Burned));
+    assert!(world.status_effects.has(3, StatusKind::Toxic));
 }
 
 #[test]
@@ -6415,9 +6781,10 @@ fn tick_status_effects_drains_hp() {
     let mut world = World::new();
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.max_hp = 160;
-    world.status_effects.apply(0, StatusKind::Burned);
+    world.status_effects.apply(0, StatusKind::Toxic);
     world.tick_status_effects();
-    assert_eq!(world.actors[0].battle.hp, 90);
+    // Toxic drains max_hp / 8 = 160 / 8 = 20.
+    assert_eq!(world.actors[0].battle.hp, 80);
 }
 
 #[test]
@@ -6647,6 +7014,38 @@ fn seed_party_battle_stats_skips_zeroed_roster() {
     world.seed_party_battle_stats();
     assert_eq!(world.battle_attack[0], 60, "zeroed roster leaves it intact");
     assert_eq!(world.battle_defense_split[0], None);
+}
+
+#[test]
+fn seed_party_battle_stats_scales_ap_base_with_level() {
+    use legaia_save::character::LiveStats;
+
+    let mut world = World::new();
+    let mut party = legaia_save::Party::zeroed(3);
+    // Slot 0 at level 1 (base 4), slot 1 at level 23 (base 6), slot 2 at
+    // level 99 (capped 10). A non-zero atk so the seed doesn't skip them.
+    for (slot, level) in [(0usize, 1u8), (1, 23), (2, 99)] {
+        party.members[slot].set_live_stats(LiveStats {
+            agl: 10,
+            atk: 20,
+            udf: 8,
+            ldf: 8,
+            spd: 5,
+            int: 4,
+        });
+        party.members[slot].set_level(level);
+    }
+    world.load_party(party);
+
+    world.seed_party_battle_stats();
+    assert_eq!(world.ap_gauges[0].base_ap, 4, "level 1 -> base 4");
+    assert_eq!(world.ap_gauges[1].base_ap, 6, "level 23 -> 4 + 23/10 = 6");
+    assert_eq!(world.ap_gauges[2].base_ap, 10, "level 99 -> capped at 10");
+
+    // The round-start reset picks up the seeded base as the per-turn budget.
+    world.reset_party_ap();
+    assert_eq!(world.ap_gauges[1].current_ap, 6);
+    assert_eq!(world.ap_gauges[2].current_ap, 10);
 }
 
 #[test]

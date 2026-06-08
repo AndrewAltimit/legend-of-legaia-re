@@ -422,8 +422,18 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         .enumerate()
         .map(|(i, member)| {
             let hms = member.hp_mp_sp();
-            InvTargetRow::new(i as u8, names.get(i).cloned().unwrap_or_default())
+            let mut row = InvTargetRow::new(i as u8, names.get(i).cloned().unwrap_or_default())
                 .with_stats(hms.hp_cur, hms.hp_max, hms.mp_cur, hms.mp_max)
+                .with_statuses(
+                    world
+                        .status_effects
+                        .statuses(i as u8)
+                        .iter()
+                        .map(|s| s.kind),
+                );
+            // A fallen ally (HP 0) gates revive items in / heals out.
+            row.alive = !(hms.hp_cur == 0 && hms.hp_max > 0);
+            row
         })
         .collect();
     InventoryUseSession::new(

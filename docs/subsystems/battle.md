@@ -446,8 +446,10 @@ The clean-room engine ports it across `engine-core`:
 - `monster_ai::decide` is the **per-monster-id `switch`** - keyed by monster id,
   it overrides the generic choice with the bespoke scripted casts (low-HP
   self-heal, MP-gated nukes, multi-phase boss scripts), reading/writing the
-  battle-scoped `MonsterAiState` (per-monster cooldowns `DAT_801C8FE0`, the
-  `DAT_801C8FE4` phase counter, the recent-target ring).
+  battle-scoped `MonsterAiState` (per-monster cooldowns `DAT_801C8FE0` - armed
+  once per battle, with no per-round re-arm: retail clears the latch array only at
+  battle init in `FUN_80055b6c`, so a boss self-heals at most once per fight; the
+  `DAT_801C8FE4` phase counter; the recent-target ring).
 - `monster_ai::apply_recent_target_ring` is the post-switch anti-repeat ring.
 - `World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
   `monster_setup` hook.
@@ -491,10 +493,16 @@ deterministic. The default path is bit-for-bit unchanged.
   `field_flags == 0`). The set-`0x380` path (AI-driven party members) is a
   separate status-effect feature, not a flag the monster AI sets.
 
-**Remaining gaps** (documented in `monster_ai`): a few cases touch actor fields
-the engine doesn't model yet - monster `0x8A`'s `actor+0x170` charge counter, the
-`'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
-preload for spell ids `0x2E/0x2F`.
+**Remaining gaps** (documented in `monster_ai`): a couple of cases touch actor
+fields the engine doesn't fully consume yet. The `actor+0x170` **spirit-art
+gauge** is modelled (`BattleActor::spirit_gauge`) and filled on every damaging
+hit by the finisher's spirit stage (`spirit_gauge_fill`, see
+[`battle-formulas.md`](battle-formulas.md)); monster `0x8A`'s AI now reads that
+gauge as a charge gate — once it passes `0x31` the monster fires its `0x4E`
+all-enemies cast and the gauge is clamped back to `0x32`
+(`MonsterAiCtx::spirit_gauge` + `AiCast::spirit_gauge_writeback`, drawing no
+RNG). Still unwired: the `'O'` (`0x4F`) boss that rewrites another actor slot,
+and the capture-archive preload for spell ids `0x2E/0x2F`.
 
 ## Stat aggregator (`FUN_80042558`)
 
@@ -587,27 +595,29 @@ The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 
 
 Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around `+0x130`; the layout is per-flag and not captured in any single overlay dump.
 
-| Kind | Source byte | Default duration | Per-turn effect |
-|---|---|---|---|
-| Burned | `1` | 4 turns | `max_hp / 16` HP tick damage |
-| Shocked | `2` | 3 turns | 50% chance to skip turn |
-| Poisoned | `3` (Other) | 6 turns | `current_hp / 8` tick damage |
-| Asleep | `4` | 3 turns | Skip until hit |
-| Confused | `5` | 3 turns | Random target |
-| Silenced | `6` | 4 turns | Block Magic actions |
-| Stunned | `7` | 1 turn | Skip one turn |
-| Petrified | `8` | until cured | Skip turn entirely |
+Conditions are named with the game's in-game ailment terms (the `enemy_effect` byte is the on-disc art-record value). The `Retail effect` column is the published behaviour from the Legaia wiki status pages; the wiki gives the qualitative mechanics + cure methods but **not** exact turn counts or HP-per-turn formulas, so the `Default duration` and the tick formulas are clean-room approximations (the retail per-status tables aren't in any single overlay dump). The `Engine` column flags where this port diverges from retail.
+
+| Status | byte | Default duration (clean-room) | Retail effect (wiki) | Engine |
+|---|---|---|---|---|
+| Toxic | `1` | 4 turns | "Deadly Poison": HP drains faster than Venom AND attack/defense drop | `max_hp/8` tick (>= Venom, ~2x once below half HP) + ATK & DEF x0.875 |
+| Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | full block + clear-on-hit (enforced, same shape as Sleep) |
+| Venom | `3` (Other) | 6 turns | "Poison": HP drains (lesser than Toxic) | `current_hp/8` tick |
+| Sleep | `4` | 3 turns | Asleep; wakes when hit | block + clear-on-hit (matches) |
+| Confuse | `5` | 3 turns | Acts uncontrollably / random target | a confused action (monster *or* party physical, plus monster casts) retargets to a random living member of the opposite side (`FUN_801E7320`); a confused party member auto-acts a physical strike with no command menu |
+| Curse | `6` | 4 turns | Blocks Magic | blocks Magic (matches) |
+| Stone | `7` | whole battle (255) | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability (core strike paths) + counts-as-defeated in the wipe checks; escape-restore not modelled |
+| Faint | `8` | until cured | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
 
 **Turn-level enforcement (live loop).** The action-blocking columns above are
 enforced at the turn grant, not just modelled. When the live battle loop
 (`World::live_battle_tick`) hands a combatant its turn, an actor carrying a
-`blocks_actions` status (Asleep / Stunned / Petrified) **loses the turn** — its
+`blocks_actions` status (Numb / Sleep / Stone / Faint) **loses the turn** — its
 initiative key is already consumed, so play passes on and the SM stays at
 `EndOfAction` with no action armed (the status duration still ticks, so the
-affliction wears off). A caster carrying a `blocks_magic` status (Silenced /
-Petrified) that the monster AI picks a cast for **falls back to a physical
+affliction wears off). A caster carrying a `blocks_magic` status (Curse /
+Faint) that the monster AI picks a cast for **falls back to a physical
 strike** (`World::take_monster_turn`, mirroring the MP-affordability fallback).
 The gate reads `StatusKind::blocks_actions`/`blocks_magic` via
 `World::actor_blocked_from_acting`/`actor_blocked_from_magic`. The party side
@@ -620,7 +630,7 @@ fallback it uses when there's no caster record).
 
 Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's `+0xC9` (`current_ap`) and `+0xCA` (`bonus_ap`) bytes. Pressing the Spirit button during command input adds `+5` AP exactly once per turn.
 
-The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 5 AP, …, 60+ → 10 AP capped).
+The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 5 AP, …, 60+ → 10 AP capped; `ap_base_for_level`). The engine seeds each party member's `ApGauge::base_ap` from that formula at battle entry — `seed_party_battle_stats` reads the live character level alongside the attack / defense fold, so a higher-level character chains more arts per turn. The round-start `reset_party_ap` then refills `current_ap` to that base, and Fury Boost extends from / reverts to it.
 
 | Action constant range | AP cost | Notes |
 |---|---|---|
@@ -635,7 +645,7 @@ Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap
 
 ## Battle stat aggregator
 
-Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Burned reduces ATK by ~12.5%, Confused halves accuracy, Asleep / Stunned / Petrified zero evasion and block actions, Silenced / Petrified block Magic).
+Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
 Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
@@ -662,9 +672,9 @@ Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items
 
 ## Battle round lifecycle
 
-`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle_attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Burned / Poisoned tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
+`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle_attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Toxic / Venom tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
 
-The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Asleep / Stunned / Petrified actors lose action; Silenced / Petrified actors lose Magic).
+The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Numb / Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
 
 Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/src/battle_round.rs).
 

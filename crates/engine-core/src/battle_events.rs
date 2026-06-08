@@ -294,7 +294,7 @@ mod tests {
                 strike_index: 1,
                 outcome: ArtStrikeOutcome {
                     damage: Some(102),
-                    enemy_effect: legaia_art::record::EnemyEffect::Burned,
+                    enemy_effect: legaia_art::record::EnemyEffect::Toxic,
                     cues: Vec::new(),
                     alt_range: false,
                     power_target: Some(legaia_art::power::PowerTarget::Udf),

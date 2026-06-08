@@ -9,10 +9,16 @@
 //! (`DAT_800752C0`, parser [`legaia_asset::item_effect`]): keyed by item id ->
 //! subtype -> `[class, tier, flags]`. [`ItemCatalog::apply_effect_flags`]
 //! installs its field/battle usability gates over the curated entries (which is
-//! how cure/revive items end up correctly battle-only). What the table does NOT
-//! carry is the literal restore *amount*: the `(class, tier) -> 200/800/...`
-//! mapping is a `switch` in the overlay-resident apply handler, so the numeric
-//! amounts here stay the curated walkthrough values (`data/gamedata/items.toml`).
+//! how cure/revive items end up correctly battle-only). The literal restore
+//! *amount* lives in a **separate, also static** heal-amount table
+//! (`0x8007655C`) the apply handler `FUN_800402F4` reads: HP tiers
+//! `[200, 800, 9999]`, MP tiers `[50, 200, 20]` (parser
+//! [`legaia_asset::item_effect::ItemEffectTable::heal_amounts`] /
+//! `restore_amount`). The curated walkthrough values here are **byte-confirmed**
+//! against that table by the disc-gated `item_effect_real` test, so they stay as
+//! the engine's source (no behaviour change). (This corrects an earlier note
+//! that the amounts were an *overlay-resident* immediate switch with no disc
+//! table - they are static `SCUS_942.54` data.)
 //!
 //! (An earlier note placed the effect table at `_DAT_8006F198` via the "action
 //! validator" `FUN_8003fb10`; that was a misattribution - `_DAT_8006F198` is the
@@ -54,6 +60,41 @@
 
 use legaia_engine_vm::status_effects::StatusKind;
 
+/// The permanent stat-up consumables (class 6) by their **real** retail item
+/// ids + names (the `SCUS_942.54` item table). The *Water* line raises one
+/// record stat each; Honey / Miracle Water raise every stat. Seeded only when
+/// the on-disc effect table is installed ([`ItemCatalog::apply_stat_items`]);
+/// the actual per-stat changes are resolved from that table at use time. Names
+/// are the on-disc item-table strings so they match the real id space.
+const PERMANENT_STAT_ITEMS: &[(u8, &str)] = &[
+    (0x82, "Life Water"),     // tier 0: Max HP +16
+    (0x83, "Power Water"),    // tier 1: ATK +4
+    (0x84, "Guardian Water"), // tier 2: DEF +4 (both facets)
+    (0x85, "Swift Water"),    // tier 3: SPD +4
+    (0x86, "Wisdom Water"),   // tier 4: INT +4
+    (0x87, "Magic Water"),    // tier 5: Max MP +8
+    (0x65, "Honey"),          // tier 6: all stats +4
+    (0x6D, "Miracle Water"),  // tier 6: all stats +4
+];
+
+/// The one-battle stat-buff consumables (class 7, the Elixirs) by their real
+/// retail ids + names. Each ramps the targeted battle-actor stat by ×6/5 for
+/// the rest of the battle. Seeded only when the on-disc effect table is
+/// installed ([`ItemCatalog::apply_buff_items`]); the buffed stats are resolved
+/// from that table at use time ([`crate::World::use_item`]).
+const BATTLE_BUFF_ITEMS: &[(u8, &str)] = &[
+    (0x8B, "Power Elixir"),  // ATK
+    (0x8C, "Shield Elixir"), // DEF (both facets)
+    (0x8D, "Speed Elixir"),  // SPD
+    (0x8E, "Wonder Elixir"), // all (SPD + DEF + ATK + AGL)
+];
+
+/// The action-gauge-extension consumable (class 5, Fury Boost) by its real
+/// retail id + name. Extends the action gauge for the rest of the battle.
+/// Seeded only when the on-disc effect table is installed
+/// ([`ItemCatalog::apply_action_gauge_items`]).
+const ACTION_GAUGE_ITEMS: &[(u8, &str)] = &[(0x81, "Fury Boost")];
+
 /// Which stat an [`ItemEffect::StatBoost`] modifies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatBoostTarget {
@@ -64,6 +105,13 @@ pub enum StatBoostTarget {
     Ldf,
     Accuracy,
     Evasion,
+    /// Agility (`+0x110` live block). The permanent stat-up *Water* line raises
+    /// it directly (vs. the Accuracy/Evasion aliases, which also derive from AGL).
+    Agility,
+    /// Speed (`+0x118`) — turn-order initiative stat.
+    Speed,
+    /// Intelligence (`+0x11A`).
+    Intelligence,
 }
 
 /// Typed item effect.
@@ -90,6 +138,23 @@ pub enum ItemEffect {
         target: StatBoostTarget,
         delta: u16,
     },
+    /// Permanent multi-stat increase (the class-6 *Water* line + the all-stats
+    /// Honey / Miracle Water). A marker: the actual per-stat changes are
+    /// resolved from the on-disc effect table at use time
+    /// ([`crate::World::use_item`]), so this is only ever installed when a real
+    /// item-effect table is present (see [`ItemCatalog::apply_stat_items`]).
+    StatUp,
+    /// One-battle stat buff (the class-7 Elixirs). A marker: the buffed stats are
+    /// resolved from the on-disc effect table at use time
+    /// ([`crate::World::use_item`]), which ramps each by ×6/5 for the battle.
+    /// Only ever installed when a real table is present (see
+    /// [`ItemCatalog::apply_buff_items`]).
+    BattleBuff,
+    /// One-battle action-gauge extension (the class-5 Fury Boost). A marker
+    /// handled in [`crate::World::use_item`]: it extends the target's AP gauge
+    /// for the rest of the battle. Only installed when a real table is present
+    /// (see [`ItemCatalog::apply_action_gauge_items`]).
+    ActionGauge,
     Spirit {
         amount: u8,
     },
@@ -148,11 +213,17 @@ impl ItemCatalog {
     /// cure, revive, field escape, and the party-wide HP heals (Healing Bloom
     /// `0x7A`, Healing Fruit `0x7B`), which fan out across the party via the
     /// item-effect descriptor's all-party flag (see [`Self::is_all_party`]).
-    /// Items that need infra this engine doesn't have yet are intentionally
+    ///
+    /// The stat-affecting consumables are **not** in this static set — they are
+    /// seeded from the on-disc effect table (so they only appear when the disc
+    /// is present) and resolve their per-stat changes from that table at use
+    /// time: the permanent stat-up *Water* line (`0x82..=0x87` + the all-stats
+    /// Honey `0x65` / Miracle Water `0x6D`) via [`Self::apply_stat_items`], and
+    /// the one-battle buff Elixirs (Power/Shield/Speed/Wonder Elixir
+    /// `0x8B..=0x8E`) via [`Self::apply_buff_items`], and Fury Boost (`0x81`,
+    /// the action-gauge extension) via [`Self::apply_action_gauge_items`]. Items
+    /// that still need infra this engine doesn't have are intentionally
     /// **omitted** (a held one just isn't offered) rather than shown as a no-op:
-    /// - temporary battle stat buffs (Power/Shield/Speed/Wonder Elixir
-    ///   `0x8B..=0x8E`, the *Water* line `0x82..=0x87`, Fury Boost `0x81`) need
-    ///   a battle-buff taxonomy;
     /// - utility (Door of Wind warp `0x89`, Incense encounter-rate `0x8A`, the
     ///   summon flutes `0x98`/`0x99`) have no engine consumer yet.
     ///
@@ -210,7 +281,7 @@ impl ItemCatalog {
             id: 0x7E,
             name: "Antidote",
             effect: ItemEffect::Cure {
-                kind: StatusKind::Poisoned,
+                kind: StatusKind::Venom,
             },
             usable_in_battle: true,
             usable_in_field: true,
@@ -302,6 +373,84 @@ impl ItemCatalog {
         }
     }
 
+    /// Seed the permanent stat-up consumables (class 6, the *Water* line + the
+    /// all-stats Honey / Miracle Water) into the catalog from the real on-disc
+    /// item-effect table. Each is installed as an [`ItemEffect::StatUp`] marker;
+    /// the per-stat changes are resolved from the same table at use time
+    /// ([`crate::World::use_item`]).
+    ///
+    /// These are seeded **only** when the disc table is present (called from
+    /// [`crate::World::set_item_effects`] / [`crate::World::set_item_catalog`]),
+    /// so a disc-free build never offers an item that would resolve to a no-op.
+    /// An item is added only if the installed table actually classifies it as a
+    /// permanent stat-up (defensive against an edited table).
+    pub fn apply_stat_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        use legaia_asset::item_effect::StatItemEffect;
+        for &(id, name) in PERMANENT_STAT_ITEMS {
+            if matches!(table.stat_effect(id), Some(StatItemEffect::Permanent(_))) {
+                let field_usable = table.effect(id).map(|e| e.field_usable()).unwrap_or(true);
+                self.insert(ItemEntry {
+                    id,
+                    name,
+                    effect: ItemEffect::StatUp,
+                    usable_in_battle: false,
+                    usable_in_field: field_usable,
+                });
+            }
+        }
+    }
+
+    /// Seed the one-battle stat-buff Elixirs (class 7) into the catalog from the
+    /// real on-disc item-effect table. Each is installed as an
+    /// [`ItemEffect::BattleBuff`] marker (battle-only); the buffed stats are
+    /// resolved from the same table at use time ([`crate::World::use_item`]),
+    /// which ramps each by ×6/5 for the rest of the battle.
+    ///
+    /// Like [`Self::apply_stat_items`], seeded **only** when the disc table is
+    /// present, and only for ids the table actually classifies as a one-battle
+    /// buff (defensive against an edited table).
+    pub fn apply_buff_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        use legaia_asset::item_effect::StatItemEffect;
+        for &(id, name) in BATTLE_BUFF_ITEMS {
+            if matches!(
+                table.stat_effect(id),
+                Some(StatItemEffect::BuffOneBattle(_))
+            ) {
+                let battle_usable = table.effect(id).map(|e| e.battle_usable()).unwrap_or(true);
+                self.insert(ItemEntry {
+                    id,
+                    name,
+                    effect: ItemEffect::BattleBuff,
+                    usable_in_battle: battle_usable,
+                    usable_in_field: false,
+                });
+            }
+        }
+    }
+
+    /// Seed the action-gauge-extension consumable (class 5, Fury Boost) into the
+    /// catalog from the real on-disc item-effect table, as an
+    /// [`ItemEffect::ActionGauge`] marker (battle-only). The extension is applied
+    /// to the target's AP gauge in [`crate::World::use_item`].
+    ///
+    /// Like the sibling seeders, installed **only** when the disc table is
+    /// present and the id is actually classified as an action-gauge item.
+    pub fn apply_action_gauge_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        use legaia_asset::item_effect::StatItemEffect;
+        for &(id, name) in ACTION_GAUGE_ITEMS {
+            if matches!(table.stat_effect(id), Some(StatItemEffect::ActionGauge)) {
+                let battle_usable = table.effect(id).map(|e| e.battle_usable()).unwrap_or(true);
+                self.insert(ItemEntry {
+                    id,
+                    name,
+                    effect: ItemEffect::ActionGauge,
+                    usable_in_battle: battle_usable,
+                    usable_in_field: false,
+                });
+            }
+        }
+    }
+
     /// `true` if the item's effect applies to the whole party (the descriptor's
     /// `0x20` all-party flag). The item-use session fans a flagged item out
     /// across every valid ally instead of asking for a single target.
@@ -342,17 +491,56 @@ impl ItemCatalog {
 /// world state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemOutcome {
-    HealedHp { amount: u16 },
-    HealedMp { amount: u16 },
-    Cured { kind: StatusKind },
+    HealedHp {
+        amount: u16,
+    },
+    HealedMp {
+        amount: u16,
+    },
+    Cured {
+        kind: StatusKind,
+    },
     CuredAll,
-    Revived { hp_after: u16 },
-    StatRaised { target: StatBoostTarget, delta: u16 },
-    SpiritGained { amount: u8 },
-    CaptureRolled { strength: u16 },
+    Revived {
+        hp_after: u16,
+    },
+    StatRaised {
+        target: StatBoostTarget,
+        delta: u16,
+    },
+    /// A permanent multi-stat boost ([`ItemEffect::StatUp`]) was applied;
+    /// `count` is the number of individual stat raises performed (a single
+    /// *Water* raises one, the all-stats items raise several).
+    StatsRaised {
+        count: u8,
+    },
+    /// A one-battle stat buff ([`ItemEffect::BattleBuff`], the class-7 Elixirs)
+    /// was applied; `count` is the number of stats ramped (Power/Shield/Speed
+    /// Elixir buff one, Wonder Elixir buffs four).
+    Buffed {
+        count: u8,
+    },
+    /// A one-battle action-gauge extension ([`ItemEffect::ActionGauge`], Fury
+    /// Boost) was applied to the target's AP gauge.
+    ActionGaugeExtended,
+    SpiritGained {
+        amount: u8,
+    },
+    CaptureRolled {
+        strength: u16,
+    },
     EscapeRequested,
-    DamageDealt { amount: u16 },
+    DamageDealt {
+        amount: u16,
+    },
     NoEffect,
+}
+
+/// Bit position of a [`StatusKind`] in a status bitset (the `StatusKind` enum
+/// is fieldless, so its discriminant is the bit index). Shared by
+/// [`TargetSnapshot::status_mask`] and the item-menu usability gate.
+pub(crate) fn status_bit(kind: StatusKind) -> u8 {
+    1u8 << (kind as u8)
 }
 
 /// Per-target snapshot the apply pass reads.
@@ -363,6 +551,16 @@ pub struct TargetSnapshot {
     pub mp: u16,
     pub mp_max: u16,
     pub is_dead: bool,
+    /// Bitset of [`StatusKind`]s afflicting the target (bit `status_bit(kind)`).
+    /// Cure effects read it to no-op when the relevant affliction is absent.
+    pub status_mask: u8,
+}
+
+impl TargetSnapshot {
+    /// `true` if `kind` currently afflicts the target.
+    pub fn has_status(&self, kind: StatusKind) -> bool {
+        self.status_mask & status_bit(kind) != 0
+    }
 }
 
 /// Apply an [`ItemEffect`] against a [`TargetSnapshot`]. Pure function;
@@ -393,8 +591,24 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
             let healed = target.mp_max.saturating_sub(target.mp);
             ItemOutcome::HealedMp { amount: healed }
         }
-        ItemEffect::Cure { kind } => ItemOutcome::Cured { kind },
-        ItemEffect::CureAll => ItemOutcome::CuredAll,
+        ItemEffect::Cure { kind } => {
+            // Curing an unafflicted target does nothing - report it honestly
+            // rather than a phantom "Cured" (matches the retail relevance
+            // predicate, which only treats a cure as applicable when the
+            // matching status is present).
+            if target.has_status(kind) {
+                ItemOutcome::Cured { kind }
+            } else {
+                ItemOutcome::NoEffect
+            }
+        }
+        ItemEffect::CureAll => {
+            if target.status_mask != 0 {
+                ItemOutcome::CuredAll
+            } else {
+                ItemOutcome::NoEffect
+            }
+        }
         ItemEffect::Revive { factor } => {
             if !target.is_dead {
                 return ItemOutcome::NoEffect;
@@ -406,6 +620,12 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
             }
         }
         ItemEffect::StatBoost { target: t, delta } => ItemOutcome::StatRaised { target: t, delta },
+        // The multi-stat permanent boost, the one-battle buff, and the
+        // action-gauge extension are all resolved against live battle state in
+        // `World::use_item`, so the pure, table-less path is a no-op.
+        ItemEffect::StatUp | ItemEffect::BattleBuff | ItemEffect::ActionGauge => {
+            ItemOutcome::NoEffect
+        }
         ItemEffect::Spirit { amount } => ItemOutcome::SpiritGained { amount },
         ItemEffect::Capture { strength } => ItemOutcome::CaptureRolled { strength },
         ItemEffect::Escape => ItemOutcome::EscapeRequested,
@@ -428,6 +648,7 @@ mod tests {
             mp,
             mp_max,
             is_dead: false,
+            status_mask: 0,
         }
     }
 
@@ -438,6 +659,7 @@ mod tests {
             mp: 0,
             mp_max: 0,
             is_dead: true,
+            status_mask: 0,
         }
     }
 
@@ -506,19 +728,47 @@ mod tests {
     }
 
     #[test]
-    fn cure_just_passes_through_kind() {
-        let t = alive(50, 100, 0, 0);
+    fn cure_passes_through_kind_when_the_status_is_present() {
+        let mut t = alive(50, 100, 0, 0);
+        t.status_mask = status_bit(StatusKind::Venom);
         let r = apply_effect(
             ItemEffect::Cure {
-                kind: StatusKind::Poisoned,
+                kind: StatusKind::Venom,
             },
             &t,
         );
         assert_eq!(
             r,
             ItemOutcome::Cured {
-                kind: StatusKind::Poisoned
+                kind: StatusKind::Venom
             }
+        );
+    }
+
+    #[test]
+    fn cure_is_a_no_op_when_the_status_is_absent() {
+        // Venom cure on a target afflicted only by Toxic (and on a clean
+        // target) does nothing.
+        let mut t = alive(50, 100, 0, 0);
+        t.status_mask = status_bit(StatusKind::Toxic);
+        let r = apply_effect(
+            ItemEffect::Cure {
+                kind: StatusKind::Venom,
+            },
+            &t,
+        );
+        assert_eq!(r, ItemOutcome::NoEffect);
+
+        let clean = alive(50, 100, 0, 0);
+        assert_eq!(
+            apply_effect(ItemEffect::CureAll, &clean),
+            ItemOutcome::NoEffect
+        );
+        let mut afflicted = alive(50, 100, 0, 0);
+        afflicted.status_mask = status_bit(StatusKind::Curse);
+        assert_eq!(
+            apply_effect(ItemEffect::CureAll, &afflicted),
+            ItemOutcome::CuredAll
         );
     }
 
@@ -573,6 +823,23 @@ mod tests {
                 target: StatBoostTarget::Attack,
                 delta: 5
             }
+        );
+    }
+
+    #[test]
+    fn stat_up_marker_is_a_noop_in_the_table_less_path() {
+        // The multi-stat StatUp boost and the one-battle BattleBuff are both
+        // resolved from the on-disc table in `World::use_item`; the pure
+        // `apply_effect` has no table, so they no-op.
+        let t = alive(50, 100, 0, 0);
+        assert_eq!(apply_effect(ItemEffect::StatUp, &t), ItemOutcome::NoEffect);
+        assert_eq!(
+            apply_effect(ItemEffect::BattleBuff, &t),
+            ItemOutcome::NoEffect
+        );
+        assert_eq!(
+            apply_effect(ItemEffect::ActionGauge, &t),
+            ItemOutcome::NoEffect
         );
     }
 

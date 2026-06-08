@@ -594,15 +594,15 @@ impl World {
     /// guard byte (`+0x1de`) default to none. The affinity multiply happens
     /// after all the rolls, so it never changes the RNG stream.
     ///
-    /// Five `rand()` draws are taken in call order (attacker ×2, defender ×1,
-    /// bonus ×2). Retail draws the bonus pair lazily (only when the bonus arm
-    /// fires); the kernel takes all five up front, so the global RNG cursor can
-    /// advance two extra draws on the non-bonus path — a documented minor
-    /// divergence that doesn't change the damage value for a given draw stream.
+    /// The `rand()` draws are taken in retail call order: attacker ×2, defender
+    /// ×1, then the bonus pair ×2 **lazily** — drawn only when the conditional
+    /// bonus arm fires ([`arts_physical_predamage_lazy`]). So the global RNG
+    /// cursor advances by exactly three draws on the no-bonus path and five on
+    /// the bonus path, matching `FUN_801dd0ac`'s call order.
     ///
     /// REF: FUN_801dd0ac (arts/physical branch)
     fn enemy_move_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
-        use vm::battle_formulas::{ArtsPredamage, SummonRollActor, arts_physical_predamage};
+        use vm::battle_formulas::{SummonRollActor, arts_physical_predamage_lazy};
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let a = self.actors.get(attacker as usize)?;
@@ -642,22 +642,28 @@ impl World {
             status: 0,
             guard: 0,
         };
-        // Retail rand() is 15-bit; mask to match its range.
-        let rng = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+        // Retail rand() is 15-bit; mask to match its range. The attacker (×2) and
+        // defender (×1) draws are always taken; the bonus pair is drawn lazily by
+        // the closure below, only when the bonus arm fires, so the shared RNG
+        // cursor advances exactly as retail's does (three or five draws).
+        let rng3 = [
             (self.next_rng() & 0x7fff) as u16,
             (self.next_rng() & 0x7fff) as u16,
             (self.next_rng() & 0x7fff) as u16,
         ];
-        let inp = ArtsPredamage {
+        let (atk, def) = arts_physical_predamage_lazy(
             power,
-            attacker: attacker_roll,
-            target: target_roll,
+            &attacker_roll,
+            &target_roll,
             element_affinity_pct,
-            rng,
-        };
-        let (atk, def) = arts_physical_predamage(&inp);
+            rng3,
+            || {
+                [
+                    (self.next_rng() & 0x7fff) as u16,
+                    (self.next_rng() & 0x7fff) as u16,
+                ]
+            },
+        );
         Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
     }
 
@@ -673,7 +679,14 @@ impl World {
     /// (party member) element is the per-character table entry for the active
     /// party. The engine models the active party as `char_id == party slot`
     /// (0-based), so a party actor at slot `target` is the 1-based char id
-    /// `target + 1` the affinity table indexes.
+    /// `target + 1` the affinity table indexes. Reading the enemy element off
+    /// `MonsterDef::element` is faithful to the retail read: `FUN_801dd864`
+    /// fetches it record-direct (`0x801C9348[slot-3]` → `+0x1d`), not from a
+    /// copied live-actor field.
+    ///
+    /// PORT: FUN_801dd864 (element resolution + affinity-matrix lookup, the
+    /// enemy→party direction; the status-weaken / guard-double / slot-7 summon
+    /// stages of the full retail function are not part of this scalar)
     fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
         let Some(aff) = self.element_affinity.as_ref() else {
             return 100;
@@ -722,6 +735,9 @@ impl World {
                         a.battle.liveness = 0;
                     }
                 }
+                // The shared damage finisher fills the defender's spirit-art
+                // gauge from any hit, magic included.
+                self.accrue_spirit_gauge(target, amount);
                 self.battle_hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount,
@@ -779,6 +795,50 @@ impl World {
         }
     }
 
+    /// Accrue the defender's spirit-art gauge (`actor+0x170`) from a hit that
+    /// landed `over` damage, the spirit stage of the shared damage finisher
+    /// `FUN_801ddb30`. Runs for *any* defender (the base `pct` term is
+    /// unconditional); the two equipment "spirit gain up" bits only apply to a
+    /// party defender, and the engine doesn't model the per-character
+    /// resistance words yet, so [`vm::battle_formulas::DefenderResist::default`]
+    /// (no gain-up, no resist) is passed — faithful for a character without
+    /// that gear and a no-op for an enemy. Draws no RNG, so the determinism
+    /// stream is untouched; `over` is the post-mitigation damage already
+    /// computed by the caller (the pre-nullify value retail accrues from).
+    ///
+    /// PORT: FUN_801ddb30 (spirit-gauge stage)
+    pub(super) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+        let defender_is_party = defender_slot < self.party_count;
+        let Some(a) = self.actors.get_mut(defender_slot as usize) else {
+            return;
+        };
+        a.battle.spirit_gauge = vm::battle_formulas::spirit_gauge_fill(
+            over as u32,
+            a.battle.max_hp,
+            a.battle.spirit_gauge,
+            vm::battle_formulas::DefenderResist::default(),
+            defender_is_party,
+        );
+    }
+
+    /// The current spirit-art gauge value (0..=100) for an actor slot, or `0`
+    /// for an out-of-range slot. The HUD reads this to draw the spirit bar and
+    /// the command menu reads [`Self::spirit_gauge_full`] to gate the Spirit-Art
+    /// option.
+    pub fn spirit_gauge(&self, slot: u8) -> u16 {
+        self.actors
+            .get(slot as usize)
+            .map(|a| a.battle.spirit_gauge)
+            .unwrap_or(0)
+    }
+
+    /// `true` when `slot`'s spirit-art gauge has reached its ceiling (100), the
+    /// retail condition for a Spirit-Art being available
+    /// ([`vm::battle_action::ActionState::SpiritArtsEntry`]).
+    pub fn spirit_gauge_full(&self, slot: u8) -> bool {
+        self.spirit_gauge(slot) >= 100
+    }
+
     /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
     /// straight into the matching per-slot battle scalar so it changes damage
     /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
@@ -800,7 +860,7 @@ impl World {
     /// runs. Re-casting the same `(slot, stat)` refreshes: the old delta is
     /// reverted first (so the ramp re-applies from the base, no compounding on
     /// refresh).
-    fn apply_battle_buff(
+    pub(super) fn apply_battle_buff(
         &mut self,
         slot: u8,
         stat: crate::spells::BuffStat,
@@ -1037,12 +1097,9 @@ impl World {
                     .get(i)
                     .cloned()
                     .unwrap_or_else(|| format!("P{}", i + 1));
-                let mut row = TargetRow::new(i as u8, name).with_stats(
-                    a.battle.hp,
-                    a.battle.max_hp,
-                    a.battle.mp,
-                    mp_max,
-                );
+                let mut row = TargetRow::new(i as u8, name)
+                    .with_stats(a.battle.hp, a.battle.max_hp, a.battle.mp, mp_max)
+                    .with_statuses(self.status_effects.statuses(i as u8).iter().map(|s| s.kind));
                 row.alive = a.battle.liveness != 0;
                 Some(row)
             })
@@ -1315,8 +1372,10 @@ impl World {
         // BattleComplete next step.
         let party_count = self.party_count.max(1);
         let n = self.actors.len() as u8;
-        let party_alive = (0..party_count).any(|i| self.actors[i as usize].battle.liveness != 0);
-        let monsters_alive = (party_count..n).any(|i| self.actors[i as usize].battle.liveness != 0);
+        // A petrified actor counts as defeated (Stone), so it doesn't keep its
+        // side "alive" - a fully-petrified party is a wipe, not a stuck loop.
+        let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+        let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
         if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             && party_alive
             && monsters_alive
@@ -1327,7 +1386,7 @@ impl World {
             self.tick_battle_buffs_on_turn(next);
             let next_is_party = next < party_count;
             if self.actor_blocked_from_acting(next) {
-                // Asleep / Stunned / Petrified: the actor loses its turn. Its
+                // Sleep / Stone / Faint: the actor loses its turn. Its
                 // initiative key was already consumed by the picker, so the
                 // next advance moves on; advancing `active_actor` also moves
                 // the no-speed round-robin past it. The status duration ticks
@@ -1335,6 +1394,12 @@ impl World {
                 // still wears off. The SM stays at EndOfAction (no action
                 // armed) - exactly the "skipped turn" outcome.
                 self.battle_ctx.active_actor = next;
+            } else if next_is_party && self.actor_is_confused(next) {
+                // Confused party member: it "acts uncontrollably", so the player
+                // does NOT get the command menu - auto-arm a physical strike,
+                // then flip the target to a random living ally (the retarget
+                // runs inside `arm_party_physical`).
+                self.arm_party_physical(next);
             } else if next_is_party && self.battle_player_driven {
                 // Party turn under player control: pause the SM and let the
                 // player pick the command. `tick_battle_command` arms the SM
@@ -1346,14 +1411,7 @@ impl World {
             } else {
                 // Party turn when not player-driven: arm a generic physical
                 // attack against the first living opponent.
-                let target = self.first_living_opponent_of(next).unwrap_or(next);
-                self.battle_ctx.active_actor = next;
-                self.battle_ctx.queued_action = 3;
-                self.battle_ctx.action_state = ActionState::Begin.as_byte();
-                if let Some(a) = self.actors.get_mut(next as usize) {
-                    a.battle.active_target = target;
-                    a.battle.action_category = 3;
-                }
+                self.arm_party_physical(next);
             }
         }
 
@@ -1432,6 +1490,16 @@ impl World {
         } else {
             vm::battle_formulas::art_strike_damage_default(attack, defense, 16)
         };
+        // Spirit accrues from the pre-nullify hit: retail's finisher fills the
+        // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
+        // target's absorbed hit still charges its gauge.
+        self.accrue_spirit_gauge(target as u8, dmg);
+        // A petrified target (Stone) absorbs the hit - no HP loss.
+        let dmg = if self.actor_is_petrified(target as u8) {
+            0
+        } else {
+            dmg
+        };
         let a = &mut self.actors[target];
         a.battle.hp = a.battle.hp.saturating_sub(dmg);
         if a.battle.hp == 0 {
@@ -1474,8 +1542,8 @@ impl World {
     /// decision core) and either folds the chosen cast and parks the SM at
     /// `EndOfAction` (a spell is the whole turn, like the player magic path) or
     /// arms a physical strike for the action SM to run.
-    /// True if `slot` carries any status that blocks all actions (Asleep /
-    /// Stunned / Petrified), so it loses its turn. The blocking set is defined
+    /// True if `slot` carries any status that blocks all actions (Sleep /
+    /// Stone / Faint), so it loses its turn. The blocking set is defined
     /// by [`legaia_engine_vm::status_effects::StatusKind::blocks_actions`]; the
     /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
     pub(super) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
@@ -1485,14 +1553,35 @@ impl World {
             .any(|s| s.kind.blocks_actions())
     }
 
-    /// True if `slot` carries any status that blocks magic (Silenced /
-    /// Petrified). A blocked caster falls back to a physical strike rather
+    /// True if `slot` carries any status that blocks magic (Curse /
+    /// Faint). A blocked caster falls back to a physical strike rather
     /// than casting.
     pub(super) fn actor_blocked_from_magic(&self, slot: u8) -> bool {
         self.status_effects
             .statuses(slot)
             .iter()
             .any(|s| s.kind.blocks_magic())
+    }
+
+    /// True if `slot` is petrified (Stone). A petrified actor can't be damaged
+    /// (the wiki: it is "no longer able to be damaged") and counts as defeated.
+    pub(crate) fn actor_is_petrified(&self, slot: u8) -> bool {
+        self.status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind == vm::status_effects::StatusKind::Stone)
+    }
+
+    /// True if `slot` is out of the fight for wipe-detection purposes: either
+    /// downed (`liveness == 0`, i.e. KO / Faint) or petrified (Stone counts as
+    /// defeated even though the actor's `liveness` stays non-zero). A petrified
+    /// member is still a valid target ("distraction") - this only governs the
+    /// party-/monster-wipe checks, not target selection.
+    pub(crate) fn actor_effectively_defeated(&self, slot: u8) -> bool {
+        self.actors
+            .get(slot as usize)
+            .is_none_or(|a| a.battle.liveness == 0)
+            || self.actor_is_petrified(slot)
     }
 
     pub(super) fn take_monster_turn(&mut self, slot: u8) {
@@ -1505,7 +1594,12 @@ impl World {
             MonsterAction::Cast { .. } if self.actor_blocked_from_magic(slot) => {
                 self.arm_monster_physical(slot);
             }
-            MonsterAction::Cast { spell_id, targets } => {
+            MonsterAction::Cast {
+                spell_id,
+                mut targets,
+            } => {
+                // A confused caster's spell lands on the opposite side.
+                self.confuse_retarget_cast(slot, &mut targets);
                 let def = self.spell_catalog.get(spell_id).cloned();
                 if let Some(def) = def
                     && self.cast_spell_on_slots(slot, &def, &targets)
@@ -1524,8 +1618,98 @@ impl World {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
                 }
+                self.maybe_confuse_retarget(slot);
             }
         }
+    }
+
+    /// Confuse retarget: a confused actor "acts uncontrollably", so once its
+    /// single-target action's target is picked, flip it to a random living
+    /// member of the *opposite* side via the ported `FUN_801E7320` resolver
+    /// ([`Self::resolve_monster_target`]). Consumes battle RNG (reroll-while-
+    /// dead), matching retail's structure; no-op when `slot` isn't confused.
+    ///
+    /// Retail triggers the resolver off the actor's `+0x16E` status word
+    /// (`field_flags & 0x380`); the engine bridges directly from
+    /// [`StatusKind::Confuse`] instead, since the bit-set site is the still-open
+    /// capture thread and the engine tracks status by kind. Wired for both the
+    /// monster physical strike ([`Self::take_monster_turn`]) and the party
+    /// physical strike ([`Self::arm_party_physical`], which the live loop routes
+    /// a confused party member through instead of opening the command menu).
+    /// Confused monster *casts* flip via [`Self::confuse_retarget_cast`] (the
+    /// cast path resolves a targets `Vec` rather than `active_target`).
+    pub(super) fn maybe_confuse_retarget(&mut self, slot: u8) {
+        if self.actor_is_confused(slot) {
+            self.resolve_monster_target(slot);
+        }
+    }
+
+    /// Confuse retarget for a *cast*: a confused caster's spell lands on the
+    /// opposite side (uncontrollably), mirroring the physical retarget. The
+    /// engine's monster cast resolves targets into a `Vec` (not the single
+    /// `active_target` byte `FUN_801E7320` rewrites), so this flips the whole
+    /// list: a single-target cast picks one random living member of the opposite
+    /// side (one RNG draw); an area cast hits every living member there. A
+    /// self-only cast is left as-is, and the flip is skipped when the opposite
+    /// side has no living member. No-op when `caster` isn't confused.
+    ///
+    /// Monster-only in practice: a confused party member never reaches a cast -
+    /// it auto-flails physically (see [`Self::arm_party_physical`]).
+    pub(super) fn confuse_retarget_cast(&mut self, caster: u8, targets: &mut Vec<u8>) {
+        if !self.actor_is_confused(caster) || targets.is_empty() {
+            return;
+        }
+        // A self-only cast (e.g. a self-buff) isn't a side-flip target.
+        if targets.len() == 1 && targets[0] == caster {
+            return;
+        }
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let opposite_is_monster = targets[0] < pc;
+        let opp = if opposite_is_monster { pc..n } else { 0..pc };
+        let living: Vec<u8> = opp
+            .filter(|&s| {
+                self.actors
+                    .get(s as usize)
+                    .is_some_and(|a| a.battle.liveness != 0)
+            })
+            .collect();
+        if living.is_empty() {
+            return;
+        }
+        if targets.len() == 1 {
+            let pick = living[(self.next_rng() as usize) % living.len()];
+            *targets = vec![pick];
+        } else {
+            *targets = living;
+        }
+    }
+
+    /// True if `slot` carries the Confuse status.
+    pub(super) fn actor_is_confused(&self, slot: u8) -> bool {
+        self.status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind == vm::status_effects::StatusKind::Confuse)
+    }
+
+    /// Arm a generic physical strike for party member `slot` against the first
+    /// living opponent, then apply any [`Self::maybe_confuse_retarget`]. Shared
+    /// by the non-player-driven party turn and the confused-party turn (a
+    /// confused member can't be controlled, so it auto-acts and the retarget
+    /// flips its strike to a random living ally). No-op retarget when the member
+    /// isn't confused, so the auto-resolve path is RNG-unchanged.
+    pub(super) fn arm_party_physical(&mut self, slot: u8) {
+        use vm::battle_action::ActionState;
+        let target = self.first_living_opponent_of(slot).unwrap_or(slot);
+        self.battle_ctx.active_actor = slot;
+        self.battle_ctx.queued_action = 3;
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.active_target = target;
+            a.battle.action_category = 3;
+        }
+        self.maybe_confuse_retarget(slot);
     }
 
     /// Arm a generic physical strike for monster `slot` against the first
@@ -1539,6 +1723,7 @@ impl World {
             a.battle.active_target = target;
             a.battle.action_category = 3;
         }
+        self.maybe_confuse_retarget(slot);
     }
 
     /// Monster-AI action picker - clean-room port of the **generic decision
@@ -1649,12 +1834,27 @@ impl World {
                     .map(|a| a.battle.field_flags)
                     .unwrap_or(0),
                 allies_with_mp,
+                spirit_gauge: self
+                    .actors
+                    .get(slot as usize)
+                    .map(|a| a.battle.spirit_gauge)
+                    .unwrap_or(0),
             };
             let mut ai = std::mem::take(&mut self.monster_ai_state);
+            let mut spirit_writeback = None;
             if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
                 category = cast.category;
                 spell_id = cast.spell_id;
                 target_class = cast.target_class;
+                spirit_writeback = cast.spirit_gauge_writeback;
+            }
+            // The 0x8A charge gate clamps the caster's own gauge as it fires
+            // (`actor+0x170 = 0x32`). Applied after the RNG borrow window; it
+            // draws no RNG, so the determinism stream is untouched.
+            if let Some(g) = spirit_writeback
+                && let Some(a) = self.actors.get_mut(slot as usize)
+            {
+                a.battle.spirit_gauge = g;
             }
             // Anti-repeat ring (applies to whichever single party target stands).
             target_class = crate::monster_ai::apply_recent_target_ring(
@@ -1845,10 +2045,12 @@ impl World {
     /// `ctx[+0x13]` = active slot - here read from `party_count` / the actor
     /// table / `slot`. See `ghidra/scripts/funcs/overlay_battle_action_801e7320.txt`.
     ///
-    /// Note: in the current live loop monsters carry `field_flags == 0`, so the
-    /// SM does not invoke this and the picker's own target stands. Wiring the
-    /// `0x380` flag (set by retail at an as-yet-untraced init site) is the open
-    /// RE thread; this port keeps the routine faithful for when that lands.
+    /// Retail invokes this from the SM when the actor's `+0x16E` status word has
+    /// `field_flags & 0x380` set (the confuse-class statuses). The engine doesn't
+    /// model that bitfield, so [`Self::maybe_confuse_retarget`] bridges directly
+    /// from [`StatusKind::Confuse`] and calls this on the monster physical-strike
+    /// path. (Side detection assumes the retail 3-slot party layout - correct for
+    /// a full party; a reduced party + confused monster is a pre-existing edge.)
     ///
     /// PORT: FUN_801E7320
     /// REF: FUN_801E295C
@@ -2081,6 +2283,15 @@ impl World {
         let buffs = std::mem::take(&mut self.battle_buffs);
         for b in buffs {
             self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+        }
+        // Revert any Fury Boost AP-gauge extension (class-5 item) and clear the
+        // per-slot flags, so the next battle starts from the base gauge.
+        for idx in 0..self.ap_gauges.len() {
+            if let Some(delta) = self.fury_boost[idx].take() {
+                let gauge = &mut self.ap_gauges[idx];
+                gauge.base_ap = gauge.base_ap.saturating_sub(delta);
+                gauge.current_ap = gauge.current_ap.min(gauge.ceiling());
+            }
         }
         // Bank any captured Seru into learning progress (drains battle_captures).
         self.resolve_captures();

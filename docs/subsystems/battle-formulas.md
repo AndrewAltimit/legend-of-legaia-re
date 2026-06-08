@@ -136,16 +136,34 @@ These cases multiply the actor stat block by `6/5` (decompiles to `0x4cccccccd >
 
 **Engine wiring.** `battle_formulas::buff_ramp` ports the `×6/5`-clamped ramp, and the live battle loop applies it for **stat-up** buffs: `World::apply_battle_buff` routes a positive-magnitude `Buff` outcome through `ramp_buff_scalar`, which ramps the live per-slot scalar (`battle_attack` / `battle_magic` / `battle_defense`) by +20% of its current value and records the exact `u16` delta for precise revert on expiry (a refresh reverts the old delta first, so the ramp re-applies from the base with no compounding). Buffs consume **no RNG**, so determinism oracles are unaffected. **Debuffs** (negative magnitude) keep the saturating additive model because retail's debuff scaling factor is not yet pinned — the engine does not fabricate one. Accuracy / Evasion / Speed have no live-loop scalar, so a buff on them only runs the turn timer.
 
-Selector 7's `param_2` sub-index picks which stat group to buff (lines 2473-2574 of `800402f4.txt`):
+Class 7's `param_2` sub-index picks which stat group to buff (`800402f4.txt`
+`case 7`, lines 2473-2639). This is the **one-battle stat-buff Elixir** path —
+the consumer is the item-use apply handler, and each item's `param_2` is its
+descriptor `tier` byte (`legaia_asset::item_effect`):
 
-| `param_2` | Actor pairs raised | Stat(s) |
-|---|---|---|
-| 3 | `+0x158/+0x15A` | ATK |
-| 2 | `+0x15C/+0x15E` and `+0x160/+0x162` | both defense facets (DEF↑ + DEF↓) |
-| 1 | `+0x164/+0x166` | `stat5` (role open) |
-| 4 | `+0x164/+0x166` + `+0x15C/+0x15E` | `stat5` + DEF↑ |
+| `param_2` (= tier) | Actor pairs raised | Stat(s) | Item |
+|---|---|---|---|
+| 1 | `+0x164/+0x166` | **SPD** | Speed Elixir |
+| 2 | `+0x15C/+0x15E` and `+0x160/+0x162` | both defence facets (DEF↑ + DEF↓) | Shield Elixir |
+| 3 | `+0x158/+0x15A` | **ATK** | Power Elixir |
+| 4 | `+0x164/+0x166` + the two DEF pairs + `+0x158/+0x15A` + `+0x168/+0x16A` | **all** (SPD + DEF + ATK + AGL) | Wonder Elixir |
 
-The single "Defense Up" buff (sub 2) raising **both** `+0x15C` and `+0x160` together is what confirms those two are the two facets of one defense, not separate stats.
+(This corrects an earlier reading that labelled `param_2 == 1` "`stat5` (role
+open)" and `param_2 == 4` "`stat5` + DEF↑" — the `+0x164` field is **SPD** (Speed
+Elixir confirms it), and `param_2 == 4` raises every battle stat (Wonder Elixir,
+the full `case 7` arm at lines 2555-2638), not just two.)
+
+The single "Defense Up" buff (sub 2) raising **both** `+0x15C` and `+0x160`
+together is what confirms those two are the two facets of one defense, not
+separate stats.
+
+The sibling **permanent** stat-up classes are in the same handler. **Class 6**
+(field-use, the *Water* line: Life / Power / Guardian / Swift / Wisdom / Magic
+Water + the all-stats Honey / Miracle Water) adds a flat increment to the
+**character record** (`0x80084708 + slot*0x414`), `tier` selecting the stat;
+**class 5** (Fury Boost) sets the action-gauge flag. Full taxonomy +
+disc-pinned item ids in [`item-effect-table.md`](../formats/item-effect-table.md#stat-up--buff-items-class-567);
+parser `legaia_asset::item_effect::stat_item_effect` / `ItemEffectTable::stat_effect`.
 
 ## Victory spoils (rewards)
 
@@ -287,9 +305,14 @@ overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
 that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
 The stat bridge reads live actor fields faithfully — AGL from `battle_accuracy`
 (`+0x168`), HP from `battle.hp`, the two defender defense terms from the
-`battle_defense_split` (UDF/LDF) pair — and takes the five `rand()` draws in
-retail call order. The `FUN_801dd864` scale currently passes neutral affinity
-(100) and no status/guard; the override engages **only when the move-power table
+`battle_defense_split` (UDF/LDF) pair — and takes the `rand()` draws in retail
+call order: attacker ×2 + defender ×1 up front, then the bonus pair **lazily**
+(only when the bonus arm fires, via `arts_physical_predamage_lazy`), so the
+shared RNG cursor advances by three or five draws exactly as `FUN_801dd0ac` does.
+The `FUN_801dd864` scale supplies the real enemy→party element affinity
+(`World::enemy_affinity_pct`, `matrix[enemy_element][party_member_element]`,
+neutral 100 when the affinity table isn't installed) with status/guard still
+defaulted; the override engages **only when the move-power table
 is installed**, so disc-free / synthetic battles keep the MP-scaled placeholder
 magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
 **not** route through this table — the move-power table is special-attack-only
@@ -322,7 +345,13 @@ pairs + the spell-table element vocabulary.
 the spell**: a **party member** (slot `< 3`) looks its element up in the
 per-character table by **1-based** char id (`CHARACTER_ELEMENTS[char_id]` at
 `0x801F5480`: Vahn=fire, Noa=wind, Gala=thunder, Terra=wind); any **other slot**
-(`>= 3`, which is both enemies *and* the slot-7 summon body) reads `actor[+0x1d]`.
+(`>= 3`, which is both enemies *and* the slot-7 summon body) reads the element
+**directly from the monster-archive record `+0x1d`** — `FUN_801dd864` indexes the
+per-enemy **record-pointer table** `0x801C9348` (NOT the live-actor table
+`0x801C9370`) by `slot - 3` and does `lbu …,0x1d(record)` (dump
+`overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). There is **no**
+copy of the element into a live-actor field (unlike the `+0x0E..+0x1A` stats,
+which `FUN_80054CB0` *does* copy into `+0x14C..`).
 
 This **resolves the player-cast element question**: a player Seru-magic cast
 attacks *as the summoned creature* — it rolls through the summon path
@@ -334,10 +363,15 @@ is never read here). The matrix index is the raw `0..=7` element byte, so there 
 no separate `SpellElement → index` mapping. A party member's *non-summon* attack
 (slot `< 3`) instead uses that member's character-table element. The
 enemy element comes from the monster record's **`+0x1D`** byte
-([`legaia_asset::monster_archive::MonsterRecord::element`]) — pinned by
-correlating that byte against the curated enemy elements across the whole roster
-(the four party-table ids reproduce exactly; water/earth/light/dark corroborate)
-and by the byte taking *only* values `0..=7` across every populated record.
+([`legaia_asset::monster_archive::MonsterRecord::element`]) — now **pinned by the
+`FUN_801dd864` disasm directly** (the record-direct `lbu …,0x1d(record)` read
+above), which supersedes the earlier curated-element *correlation* argument as
+the mechanism: the affinity scale reaches `MonsterRecord::element` through the
+same `0x801C9348` record-pointer table the victory-spoils path uses, so the byte
+is consumed by the live game exactly as the parser exposes it. (The correlation
+still corroborates the *id labelling* — the four party-table ids reproduce
+exactly, water/earth/light/dark corroborate, and the byte takes only `0..=7`
+across every populated record.)
 
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster

@@ -120,6 +120,11 @@ impl World {
             if live.atk == 0 {
                 continue;
             }
+            // Per-turn AP budget scales with the character's level (retail base
+            // = 4 + level/10, capped 10). Captured before the `ap_gauges`
+            // mutable borrow below; `rec` still owns the immutable roster borrow
+            // through the stat fold.
+            let ap_base = crate::ap_gauge::ap_base_for_level(rec.level());
             let record = crate::battle_stats::StatRecord {
                 base_attack: live.atk,
                 base_udf: live.udf,
@@ -145,6 +150,15 @@ impl World {
                 *s = stats.eva;
             }
             self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
+            // Seed the AP gauge base from the captured level. Base only — the
+            // round-start `reset_party_ap` refills `current_ap` to it, and Fury
+            // Boost still extends from / reverts to this base. Re-seeding
+            // mid-battle (a permanent stat-up item also calls this) is a no-op:
+            // the level is unchanged, so the base is rewritten to the same value
+            // and the live balance is untouched.
+            if let Some(g) = self.ap_gauges.get_mut(slot) {
+                g.set_base_ap(ap_base);
+            }
         }
     }
 

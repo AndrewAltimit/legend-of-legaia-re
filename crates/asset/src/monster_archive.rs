@@ -34,7 +34,8 @@
 //! +0x16  u16  stat3=DEF_lo  ; -> actor +0x160/+0x162  (defender defense B)
 //! +0x18  u16  stat4=AGL     ; -> actor +0x168/+0x16A  (accuracy/evasion)
 //! +0x1A  u16  stat5=SPD     ; -> actor +0x164/+0x166  (turn-order speed)
-//! +0x1D  u8   element       ; -> actor +0x1d  (element id 0..7, affinity scale)
+//! +0x1D  u8   element       ; element id 0..7; read record-DIRECT by affinity scale
+//!                           ; FUN_801dd864 (record-ptr table 0x801C9348, NOT copied to actor)
 //! +0x44  u16  gold          ; base gold reward (victory spoils)
 //! +0x46  u16  exp           ; base EXP reward (victory spoils)
 //! +0x48  u8   drop_item     ; drop item id (0 = no drop)
@@ -199,10 +200,13 @@ pub struct MonsterRecord {
     pub drop_item: u8,
     /// Drop chance in percent (`+0x49`; `rand() % 100 < drop_chance_pct`).
     pub drop_chance_pct: u8,
-    /// Element id (`+0x1D`, `0..=7`): the battle loader copies this byte into
-    /// the live actor's element slot (`actor[+0x1d]`, read by the affinity scale
-    /// `FUN_801dd864`). Id space `earth=0/water=1/fire=2/wind=3/thunder=4/
-    /// light=5/dark=6/neutral=7` — matches [`crate::element_affinity::Element`].
+    /// Element id (`+0x1D`, `0..=7`): the affinity scale `FUN_801dd864` reads
+    /// this byte **directly from the record** (via the per-enemy record-pointer
+    /// table `0x801C9348[slot-3]`, dump `overlay_battle_action_801dd864.txt`
+    /// `0x801dd8dc`) — it is **not** copied into a live-actor field the way the
+    /// `+0x0E..+0x1A` stats are. Id space `earth=0/water=1/fire=2/wind=3/
+    /// thunder=4/light=5/dark=6/neutral=7` — matches
+    /// [`crate::element_affinity::Element`].
     /// Pinned by correlating this byte against the curated enemy elements across
     /// the whole roster (the four party-table ids fire/wind/thunder/neutral
     /// reproduce exactly; water/earth/light/dark corroborate per-element), and

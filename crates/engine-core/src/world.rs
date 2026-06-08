@@ -509,8 +509,8 @@ pub struct Actor {
     /// flash it has. We just record the actor id for inspection.
     pub last_effect: u32,
 
-    /// Most recent status effect inflicted by an art strike (Burned /
-    /// Shocked / …). Engines clear this when they've folded it into their
+    /// Most recent status effect inflicted by an art strike (Toxic /
+    /// Numb / …). Engines clear this when they've folded it into their
     /// status-bar UI; defaults to `None`.
     pub pending_status: Option<legaia_art::record::EnemyEffect>,
 
@@ -1175,8 +1175,8 @@ pub struct World {
     /// (`overlay_0897_801ef2b0` case 2).
     pub tile_board_target: Option<(i32, i32)>,
 
-    /// Per-actor status-effect tracker (Burned / Shocked / Poisoned /
-    /// Asleep / Confused / Silenced / Stunned / Petrified). Populated by
+    /// Per-actor status-effect tracker (Toxic / Numb / Venom /
+    /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
     /// `enemy_effect` is non-`None`; ticked per turn by engines that
     /// drive a battle round. See [`legaia_engine_vm::status_effects`].
@@ -1188,6 +1188,12 @@ pub struct World {
     /// [`crate::ap_gauge::ApGauge::charge_spirit`] when the player
     /// presses Spirit during command input.
     pub ap_gauges: [crate::ap_gauge::ApGauge; 3],
+
+    /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
+    /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
+    /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
+    /// the same lifecycle as [`Self::battle_buffs`]; `None` = not boosted.
+    pub fury_boost: [Option<u8>; 3],
 
     /// Item catalog used by item-action resolution. Populated at battle
     /// init from [`crate::items::ItemCatalog::vanilla`] (or a custom
@@ -1971,6 +1977,7 @@ impl World {
             tile_board_target: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
+            fury_boost: [None; 3],
             item_catalog: crate::items::ItemCatalog::default(),
             item_effects: None,
             spell_catalog: crate::spells::SpellCatalog::default(),
@@ -2978,11 +2985,16 @@ impl World {
                         });
                     }
                 }
+                // A petrified target (Stone) can't be damaged - the strike is
+                // fully absorbed (and so doesn't wake a Sleep/Numb either).
+                let petrified = self.actor_is_petrified(*target_slot);
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
-                    if let Some(dmg) = outcome.damage {
+                    if let Some(dmg) = outcome.damage
+                        && !petrified
+                    {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
-                        // Damage clears Asleep on the target (matches retail -
-                        // the enemy wakes when hit).
+                        // Damage clears Sleep / Numb on the target (matches
+                        // retail - the unit wakes when hit).
                         self.status_effects.on_damaged(*target_slot);
                     }
                     if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
@@ -3057,6 +3069,9 @@ impl World {
         let mut catalog = catalog;
         if let Some(table) = &self.item_effects {
             catalog.apply_effect_flags(table);
+            catalog.apply_stat_items(table);
+            catalog.apply_buff_items(table);
+            catalog.apply_action_gauge_items(table);
         }
         self.item_catalog = catalog;
     }
@@ -3066,6 +3081,9 @@ impl World {
     /// re-applies them to the catalog already installed.
     pub fn set_item_effects(&mut self, table: legaia_asset::item_effect::ItemEffectTable) {
         self.item_catalog.apply_effect_flags(&table);
+        self.item_catalog.apply_stat_items(&table);
+        self.item_catalog.apply_buff_items(&table);
+        self.item_catalog.apply_action_gauge_items(&table);
         self.item_effects = Some(table);
     }
 
@@ -3318,12 +3336,33 @@ impl World {
             Some(e) => *e,
             None => return crate::items::ItemOutcome::NoEffect,
         };
+        // Permanent multi-stat boost (class-6 Water line): resolved from the
+        // on-disc effect table (which this path needs anyway), not the pure
+        // table-less `apply_effect`.
+        if let crate::items::ItemEffect::StatUp = entry.effect {
+            return self.apply_stat_up_item(item_id, target_slot);
+        }
+        // One-battle stat buff (class-7 Elixir): ramps the target's battle-actor
+        // stat scalars by ×6/5, resolved from the on-disc table.
+        if let crate::items::ItemEffect::BattleBuff = entry.effect {
+            return self.apply_buff_item(item_id, target_slot);
+        }
+        // One-battle action-gauge extension (class-5 Fury Boost): extends the
+        // target's AP gauge for the rest of the battle.
+        if let crate::items::ItemEffect::ActionGauge = entry.effect {
+            return self.apply_fury_boost_item(target_slot);
+        }
         let idx = target_slot as usize;
         // BattleActor holds `mp` but not `max_mp`; engines that wire the
         // character record into the actor populate it via a sibling field.
         // For the snapshot we use the character_max_mp accessor (defaults
         // to `mp` itself when not separately tracked, which gives a
         // conservative "MP already capped" reading).
+        let status_mask = self
+            .status_effects
+            .statuses(target_slot)
+            .iter()
+            .fold(0u8, |m, s| m | crate::items::status_bit(s.kind));
         let snapshot = match self.actors.get(idx) {
             Some(a) => crate::items::TargetSnapshot {
                 hp: a.battle.hp,
@@ -3335,6 +3374,7 @@ impl World {
                     .copied()
                     .unwrap_or(a.battle.mp),
                 is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
+                status_mask,
             },
             None => return crate::items::ItemOutcome::NoEffect,
         };
@@ -3399,6 +3439,137 @@ impl World {
         outcome
     }
 
+    /// Apply a one-battle action-gauge extension
+    /// ([`crate::items::ItemEffect::ActionGauge`], Fury Boost) to party
+    /// `target_slot`. Retail sets the actor `+0x1F9` flag, and the action-SM
+    /// gauge-build phase then sizes the gauge as `gauge_stat * 7 / 5 + 8`
+    /// (clamped) instead of the base length. The engine models the AP gauge as a
+    /// discrete per-turn budget rather than a continuous pixel length, so it
+    /// approximates the extension by raising the slot's [`ApGauge::base_ap`] by
+    /// the retail `×7/5` ratio (the `+8` pixel term and the gauge-stat source are
+    /// not representable here). The boost persists for the battle (`base_ap`
+    /// survives [`ApGauge::reset_for_turn`]) and the live gauge gains the delta
+    /// immediately; it is reverted at battle end ([`Self::finish_battle`]).
+    /// Idempotent within a battle (a second Fury Boost re-sets the already-set
+    /// flag, no extra gauge). Returns [`crate::items::ItemOutcome::NoEffect`] for
+    /// a non-party slot.
+    fn apply_fury_boost_item(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
+        let idx = target_slot as usize;
+        if idx >= self.ap_gauges.len() {
+            return crate::items::ItemOutcome::NoEffect;
+        }
+        // Already boosted this battle: retail re-sets the same flag, no compound.
+        if self.fury_boost[idx].is_none() {
+            let gauge = &mut self.ap_gauges[idx];
+            let before = gauge.base_ap;
+            let after = ((before as u16 * 7) / 5) as u8;
+            let delta = after.saturating_sub(before);
+            gauge.set_base_ap(after);
+            // Extend the live gauge so the longer budget is usable this turn.
+            gauge.current_ap = gauge.current_ap.saturating_add(delta);
+            self.fury_boost[idx] = Some(delta);
+        }
+        crate::items::ItemOutcome::ActionGaugeExtended
+    }
+
+    /// Apply a one-battle stat buff ([`crate::items::ItemEffect::BattleBuff`],
+    /// the class-7 Elixirs) to `target_slot`. The buffed stats are resolved from
+    /// the installed on-disc item-effect table; each is ramped ×6/5 for the rest
+    /// of the battle through the shared buff path ([`Self::apply_battle_buff`],
+    /// the same machinery as buff *spells*) — so it reuses the precise
+    /// revert-on-expiry / revert-at-battle-end bookkeeping. `Defense` ramps the
+    /// single defence scalar; `Agility` maps to the accuracy/evasion proxy (no
+    /// live scalar yet, so it only runs the turn timer, like a buff spell on
+    /// Speed). Returns [`crate::items::ItemOutcome::NoEffect`] when no table is
+    /// installed or the id isn't a one-battle buff.
+    fn apply_buff_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
+        use crate::spells::BuffStat;
+        use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+        // "One battle": a turn count large enough to outlast the encounter; the
+        // buff is reverted wholesale at battle end (`finish_battle`).
+        const ONE_BATTLE: u8 = u8::MAX;
+        // Positive magnitude selects the retail ×6/5 multiplicative ramp in
+        // `apply_battle_buff` (the value itself is only a sign hint there).
+        const BUFF_SIGN: i16 = 1;
+
+        let resolved = self
+            .item_effects
+            .as_ref()
+            .and_then(|t| t.stat_effect(item_id));
+        let Some(StatItemEffect::BuffOneBattle(stats)) = resolved else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        let mut count = 0u8;
+        for stat in stats {
+            let buff_stat = match stat {
+                StatTarget::Attack => BuffStat::Attack,
+                StatTarget::Defense => BuffStat::Defense,
+                StatTarget::Speed => BuffStat::Speed,
+                // AGL drives accuracy + evasion (both proxy it); one entry
+                // models the AGL buff.
+                StatTarget::Agility => BuffStat::Accuracy,
+                // The permanent-only stats never appear in a class-7 buff; skip
+                // defensively rather than fabricate a battle scalar for them.
+                StatTarget::MaxHp | StatTarget::MaxMp | StatTarget::Intelligence => continue,
+            };
+            self.apply_battle_buff(target_slot, buff_stat, BUFF_SIGN, ONE_BATTLE);
+            count = count.saturating_add(1);
+        }
+        if count == 0 {
+            crate::items::ItemOutcome::NoEffect
+        } else {
+            crate::items::ItemOutcome::Buffed { count }
+        }
+    }
+
+    /// Apply a permanent multi-stat boost ([`crate::items::ItemEffect::StatUp`],
+    /// the class-6 *Water* line) to party slot `target_slot`. The per-stat
+    /// changes are resolved from the installed on-disc item-effect table via the
+    /// item's `(class, tier)` descriptor (`legaia_asset::item_effect`), then each
+    /// is applied through the shared [`Self::apply_stat_raise`] persistent path.
+    /// `Defense` raises both defence facets (DEF-up + DEF-down), matching the
+    /// retail apply handler. Returns [`crate::items::ItemOutcome::NoEffect`] when
+    /// no table is installed or the id isn't a permanent stat-up.
+    fn apply_stat_up_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
+        use crate::items::StatBoostTarget as T;
+        use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+        let idx = target_slot as usize;
+        // Resolve to an owned value so the immutable table borrow is dropped
+        // before the mutable `apply_stat_raise` calls.
+        let resolved = self
+            .item_effects
+            .as_ref()
+            .and_then(|t| t.stat_effect(item_id));
+        let Some(StatItemEffect::Permanent(changes)) = resolved else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        let mut raises: Vec<(T, u16)> = Vec::with_capacity(changes.len() + 1);
+        for ch in &changes {
+            match ch.stat {
+                StatTarget::MaxHp => raises.push((T::HpMax, ch.delta)),
+                StatTarget::MaxMp => raises.push((T::MpMax, ch.delta)),
+                StatTarget::Attack => raises.push((T::Attack, ch.delta)),
+                // The retail handler writes both defence facets for one item.
+                StatTarget::Defense => {
+                    raises.push((T::Udf, ch.delta));
+                    raises.push((T::Ldf, ch.delta));
+                }
+                StatTarget::Speed => raises.push((T::Speed, ch.delta)),
+                StatTarget::Intelligence => raises.push((T::Intelligence, ch.delta)),
+                StatTarget::Agility => raises.push((T::Agility, ch.delta)),
+            }
+        }
+        let count = raises.len().min(u8::MAX as usize) as u8;
+        for (target, delta) in raises {
+            self.apply_stat_raise(idx, target, delta);
+        }
+        if count == 0 {
+            crate::items::ItemOutcome::NoEffect
+        } else {
+            crate::items::ItemOutcome::StatsRaised { count }
+        }
+    }
+
     /// Apply a permanent [`crate::items::ItemOutcome::StatRaised`] to party
     /// slot `idx`: mutate the persistent character record and re-derive the
     /// live battle stats. HP/MP-max raises bump the live actor's caps (and
@@ -3454,8 +3625,16 @@ impl World {
             }
             // Combat stats live in the +0x110 block the stat resolver reads.
             // Accuracy + Evasion both derive from AGL there, so both land on
-            // AGL (matching `seed_party_battle_stats`).
-            T::Attack | T::Udf | T::Ldf | T::Accuracy | T::Evasion => {
+            // AGL (matching `seed_party_battle_stats`), as does the AGL raise
+            // itself; Speed and Intelligence have their own halfwords.
+            T::Attack
+            | T::Udf
+            | T::Ldf
+            | T::Accuracy
+            | T::Evasion
+            | T::Agility
+            | T::Speed
+            | T::Intelligence => {
                 {
                     let rec = &mut self.roster.members[idx];
                     let cap = match rec.record_stats().cap_constant {
@@ -3468,7 +3647,9 @@ impl World {
                         T::Attack => ls.atk = bump(ls.atk),
                         T::Udf => ls.udf = bump(ls.udf),
                         T::Ldf => ls.ldf = bump(ls.ldf),
-                        T::Accuracy | T::Evasion => ls.agl = bump(ls.agl),
+                        T::Accuracy | T::Evasion | T::Agility => ls.agl = bump(ls.agl),
+                        T::Speed => ls.spd = bump(ls.spd),
+                        T::Intelligence => ls.int = bump(ls.int),
                         T::HpMax | T::MpMax => {}
                     }
                     rec.set_live_stats(ls);

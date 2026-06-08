@@ -38,11 +38,26 @@ Both `FUN_8001FA88` and `FUN_8001FC00` carry a `_DAT_8007B8C2` (debug-flag) carv
 
 Both paths land at the same files; only the indirection differs. The same dev/retail split appears in [`FUN_800255B8`](../subsystems/asset-loader.md), so it's a pattern that repeats across asset-loading subsystems.
 
+## `bse.dat` master-bank header (from `FUN_8001FA88`)
+
+`FUN_8001FA88`'s body (`ghidra/scripts/funcs/8001fa88.txt`) loads the master sound bank `bse.dat` into the 0x1800-byte buffer `_DAT_8007B8D0`, then derives a second pointer from a single `u16` at offset `+2`:
+
+```text
+count     = *(u16 *)(bse_base + 2)
+gp[0x678] = bse_base + (count & ~1)        ; (count/2)*2 -- an even byte offset
+```
+
+So `bse.dat` leads with `[u16 @0][u16 @2 = even byte-offset to a second section][section A ...][section B at bse_base + (count & ~1)]`. The earlier "`+2` is a record-count divisor" reading was imprecise: the value is used as a **byte offset** that splits `bse.dat` into two sections (the `>>1 … *2` is a round-to-even, not a division of the data), and it indexes into the once-loaded master bank, **not** the per-scene `.dpk`.
+
+## `.dpk` is a streaming-chunk container
+
+`FUN_8001FA88` loads the per-scene `.dpk` into the caller's buffer (`param_3`) and does **not** read it; the **consumer** is `FUN_8001FE70`, which `FUN_800513F0` calls on that same buffer right after the load (`ghidra/scripts/funcs/800513f0.txt:405-413` passes `gp[0xA8C]` to both). `FUN_8001FE70` (`ghidra/scripts/funcs/8001fe70.txt`) is the generic **streaming-chunk walker** the asset dispatcher already models (`legaia_asset` lib docs; `[u32 (type << 24) | (size & 0xFFFFFF)][size bytes, 4-padded]` chunks, advance by `(size & ~3) + 4`, type `1` → `FUN_800198E0`, type `2` = terminator). So the `.dpk` / `sound_data2` per-scene sound pack **is that container**, not a novel layout.
+
+Empirically confirmed against the disc: PROT `0877` (`sound_data2`) walks cleanly as `[type 0: 0x2820][type 1: 0x1BA90][type 2: terminator]` and the type-`2` marker lands inside the file - the same shape `FUN_8001FE70` expects. (`FUN_8001FA88`'s dev branch loads PROT `0x37A` = `sound_data2`, tying the `.dpk` filename to this PROT family.) The difference from the DATA_FIELD walker is **only the terminator**: `FUN_8001FE70` ends on a type-`0x02` chunk (whose `size` is non-zero), whereas `FUN_8002541C` ends on a zero-`size` header - so the DATA_FIELD parser mis-reads a `.dpk`. The walker is `legaia_asset::parse_streaming_with(buf, max, StreamTerminator::TypeTwo)`; the disc-gated `sound_pack_stream_real` test pins the clean type-2 walk of PROT `0877`.
+
 ## What's left to format-spec
 
-The byte-level layouts of the individual files (`.MAP` / `.PCH` / `.spk` / `.dpk` / `.pac`) are still TBD. With consumers identified, the next move is to read the body of `FUN_8001FA88` (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns) for the `.dpk` byte layout - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor (almost certainly a record count).
-
-The eventual home is a `crates/sound` companion to `crates/vab`.
+The container is solved; the open piece is the **type-1 chunk payload semantic** - what the `FUN_800198E0`-processed body holds for the sound path (a `.MAP` / `.PCH` / `.spk` triple? a VAB?), which the static trace does not settle. `.MAP` (sample-address map) and `.PCH` (patch / program data) are standard PsyQ SoundArtist outputs - the VAB-adjacent program/tone tables - so the eventual home is a `crates/sound` companion to `crates/vab`. (Caution: an interim trace mislabelled the `.dpk` as a bare VAG-record container - that is **falsified**; the consumer is the `(type<<24)|size` chunk walker above, and its type-1 processor is the graphics-side `FUN_800198E0`, so the buffer's payload identity is not a plain sample stream.)
 
 ## See also
 

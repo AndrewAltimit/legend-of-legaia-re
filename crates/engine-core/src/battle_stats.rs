@@ -111,32 +111,38 @@ impl EquipmentTable {
 /// Status-effect modifiers folded into the resolved stats.
 ///
 /// The retail engine applies a per-status delta to the stat lines in
-/// the same `FUN_80042558` pass - Burned reduces ATK by 1/8, Confused
+/// the same `FUN_80042558` pass - Toxic reduces ATK by 1/8, Confuse
 /// drops accuracy in half, etc. These values are baked into the
-/// resolver and exposed for engines that want to override them.
+/// resolver and exposed for engines that want to override them. (Per the
+/// Legaia wiki, Toxic lowers both ATK and DEFENSE.)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatusModifiers {
-    /// Multiplier applied to ATK when the actor is Burned. Default `0.875`.
-    pub burned_atk_mult: f32,
-    /// Multiplier applied to accuracy when the actor is Confused. `0.5`.
-    pub confused_acc_mult: f32,
-    /// Multiplier applied to evasion when Asleep / Stunned / Petrified.
+    /// Multiplier applied to ATK when the actor is Toxic. Default `0.875`.
+    pub toxic_atk_mult: f32,
+    /// Multiplier applied to both defenses (UDF + LDF) when the actor is Toxic -
+    /// the wiki notes the deadly poison drops attack *and* defense. Default
+    /// `0.875` (the exact retail magnitude isn't pinned; mirrors the ATK drop).
+    pub toxic_def_mult: f32,
+    /// Multiplier applied to accuracy when the actor is Confuse. `0.5`.
+    pub confuse_acc_mult: f32,
+    /// Multiplier applied to evasion when Numb / Sleep / Stone / Faint.
     /// `0.0` - these statuses make the actor a sitting duck.
     pub immobilised_eva_mult: f32,
-    /// Multiplier applied to MP cost when Silenced. The retail engine
+    /// Multiplier applied to MP cost when Curse. The retail engine
     /// blocks magic outright; this is exposed for engines that prefer
     /// "magic costs more" semantics. Default `f32::INFINITY` - a host
     /// that wants a hard block reads [`BattleStats::magic_blocked`].
-    pub silenced_mp_mult: f32,
+    pub curse_mp_mult: f32,
 }
 
 impl Default for StatusModifiers {
     fn default() -> Self {
         Self {
-            burned_atk_mult: 0.875,
-            confused_acc_mult: 0.5,
+            toxic_atk_mult: 0.875,
+            toxic_def_mult: 0.875,
+            confuse_acc_mult: 0.5,
             immobilised_eva_mult: 0.0,
-            silenced_mp_mult: f32::INFINITY,
+            curse_mp_mult: f32::INFINITY,
         }
     }
 }
@@ -160,8 +166,8 @@ pub struct BattleStats {
     pub abilities: [u8; 32],
     /// `true` if Magic actions should be filtered out by the validator.
     pub magic_blocked: bool,
-    /// `true` if the actor cannot act this turn (Asleep / Stunned /
-    /// Petrified). The action validator should treat the slot as
+    /// `true` if the actor cannot act this turn (Numb / Sleep / Stone /
+    /// Faint). The action validator should treat the slot as
     /// "select-only".
     pub action_blocked: bool,
 }
@@ -259,23 +265,26 @@ pub fn compute_battle_stats(
     // Fold status-effect modifiers.
     for &k in statuses {
         match k {
-            StatusKind::Burned => {
-                stats.atk = mul_clamp(stats.atk, modifiers.burned_atk_mult);
+            StatusKind::Toxic => {
+                stats.atk = mul_clamp(stats.atk, modifiers.toxic_atk_mult);
+                // Toxic also drops defense (both UDF and LDF).
+                stats.udf = mul_clamp(stats.udf, modifiers.toxic_def_mult);
+                stats.ldf = mul_clamp(stats.ldf, modifiers.toxic_def_mult);
             }
-            StatusKind::Confused => {
-                stats.acc = mul_clamp(stats.acc, modifiers.confused_acc_mult);
+            StatusKind::Confuse => {
+                stats.acc = mul_clamp(stats.acc, modifiers.confuse_acc_mult);
             }
-            StatusKind::Asleep | StatusKind::Stunned | StatusKind::Petrified => {
+            StatusKind::Numb | StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint => {
                 stats.eva = mul_clamp(stats.eva, modifiers.immobilised_eva_mult);
                 stats.action_blocked = true;
             }
-            StatusKind::Silenced => {
+            StatusKind::Curse => {
                 stats.magic_blocked = true;
             }
             _ => {}
         }
     }
-    if statuses.iter().any(|s| matches!(s, StatusKind::Petrified)) {
+    if statuses.iter().any(|s| matches!(s, StatusKind::Faint)) {
         stats.magic_blocked = true;
     }
     stats
@@ -412,46 +421,37 @@ mod tests {
     #[test]
     fn burn_reduces_attack() {
         let s =
-            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Burned]);
+            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Toxic]);
         assert_eq!(s.atk, 88); // 100 * 0.875 = 87.5 -> 88 (rounded)
     }
 
     #[test]
     fn confuse_halves_accuracy() {
-        let s = compute_battle_stats_default(
-            &record(),
-            &EquipmentTable::new(),
-            &[StatusKind::Confused],
-        );
+        let s =
+            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Confuse]);
         assert_eq!(s.acc, 45);
     }
 
     #[test]
     fn sleep_zeros_evasion_and_blocks_actions() {
         let s =
-            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Asleep]);
+            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Sleep]);
         assert_eq!(s.eva, 0);
         assert!(s.action_blocked);
     }
 
     #[test]
     fn silence_blocks_magic_only() {
-        let s = compute_battle_stats_default(
-            &record(),
-            &EquipmentTable::new(),
-            &[StatusKind::Silenced],
-        );
+        let s =
+            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Curse]);
         assert!(s.magic_blocked);
         assert!(!s.action_blocked);
     }
 
     #[test]
     fn petrify_blocks_both_magic_and_actions() {
-        let s = compute_battle_stats_default(
-            &record(),
-            &EquipmentTable::new(),
-            &[StatusKind::Petrified],
-        );
+        let s =
+            compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Faint]);
         assert!(s.magic_blocked);
         assert!(s.action_blocked);
     }
@@ -461,24 +461,25 @@ mod tests {
         let mut t = EquipmentTable::new();
         t.set(1, weapon(40));
         t.set(2, armor(20, 25));
-        let s = compute_battle_stats_default(&record(), &t, &[StatusKind::Burned]);
-        // Atk: 100 + 40 = 140; Burned -> 140 * 0.875 = 122.5 -> 123 (rounded).
+        let s = compute_battle_stats_default(&record(), &t, &[StatusKind::Toxic]);
+        // Atk: 100 + 40 = 140; Toxic -> 140 * 0.875 = 122.5 -> 123 (rounded).
         assert_eq!(s.atk, 123);
-        // UDF: 50 + 20 = 70; LDF: 60 + 25 = 85.
-        assert_eq!(s.udf, 70);
-        assert_eq!(s.ldf, 85);
+        // Toxic also drops defense by 0.875:
+        // UDF: (50 + 20) * 0.875 = 61.25 -> 61; LDF: (60 + 25) * 0.875 = 74.375 -> 74.
+        assert_eq!(s.udf, 61);
+        assert_eq!(s.ldf, 74);
     }
 
     #[test]
     fn custom_modifiers_let_engines_tune_severity() {
         let mods = StatusModifiers {
-            burned_atk_mult: 0.5, // Brutal burn
+            toxic_atk_mult: 0.5, // Brutal toxic
             ..StatusModifiers::default()
         };
         let s = compute_battle_stats(
             &record(),
             &EquipmentTable::new(),
-            &[StatusKind::Burned],
+            &[StatusKind::Toxic],
             &mods,
         );
         assert_eq!(s.atk, 50);
@@ -489,7 +490,7 @@ mod tests {
         let s = compute_battle_stats_default(
             &record(),
             &EquipmentTable::new(),
-            &[StatusKind::Asleep, StatusKind::Burned, StatusKind::Confused],
+            &[StatusKind::Sleep, StatusKind::Toxic, StatusKind::Confuse],
         );
         assert!(s.action_blocked);
         assert_eq!(s.eva, 0);

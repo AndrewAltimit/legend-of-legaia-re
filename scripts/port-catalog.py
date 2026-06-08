@@ -76,6 +76,19 @@ IGNORE_TOML = REPO / "scripts" / "port-catalog-ignore.toml"
 # as the lowercase form Ghidra emits.
 CODE_ADDR_RE = re.compile(r"80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4}", re.IGNORECASE)
 
+# Addresses scraped from a `// PORT:` tag's tail. Same code-range shape as
+# CODE_ADDR_RE, but with the citation regex's negative lookbehinds on `_DAT_` /
+# `DAT_` / `PTR_`: a PORT tag's prose often names the *data global* a ported
+# function writes (e.g. ``PORT: the `_DAT_801F0204 = N` writes in FUN_801DD35C``),
+# and an overlay-range data global (0x801c..0x8020) would otherwise be miscounted
+# as a ported function address - a "ported but not dumped" false positive, since
+# data globals have no function dump. The function on the same line (`FUN_...`)
+# is still picked up, so the real port credit is unaffected.
+PORT_ADDR_RE = re.compile(
+    r"(?<!PTR_)(?<!_DAT_)(?<!DAT_)(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
+    re.IGNORECASE,
+)
+
 # Citations of an address by some other piece of text. Covers Ghidra's auto-named
 # call forms plus raw disassembly forms. Matches `function-coverage.py` with one
 # addition: a negative lookbehind on `PTR_` so we don't false-positive on
@@ -197,9 +210,10 @@ def collect_ports() -> dict[str, set[str]]:
             tag = PORT_TAG_RE.search(line)
             if not tag:
                 continue
-            # Inside the tail of the tag, pick up every code-range address.
-            for m in CODE_ADDR_RE.finditer(tag.group(1)):
-                addr = m.group(0).lower()
+            # Inside the tail of the tag, pick up every code-range *function*
+            # address - excluding `_DAT_` / `PTR_` data globals the prose names.
+            for m in PORT_ADDR_RE.finditer(tag.group(1)):
+                addr = m.group(1).lower()
                 out[addr].add(crate)
     return out
 

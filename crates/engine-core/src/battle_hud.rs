@@ -118,10 +118,10 @@ impl BattleSlotHud {
     /// Engines pass this to the renderer's `HudSlotView::status_letters`
     /// without an extra allocation step.
     ///
-    /// Letter encoding (first character of the kind name):
-    ///   `B` Burned, `S` Shocked, `P` Poisoned, `A` Asleep, `C` Confused,
-    ///   `s` Silenced (lowercase to disambiguate from Shocked), `T` Stunned,
-    ///   `X` Petrified.
+    /// Letter encoding (first character of the in-game status name):
+    ///   `T` Toxic, `N` Numb, `V` Venom, `S` Sleep, `C` Confuse, `F` Faint;
+    ///   the two collisions take the rarer status' lowercase form -
+    ///   `c` Curse (vs `C` Confuse) and `s` Stone (vs `S` Sleep).
     pub fn status_letters(&self) -> Vec<u8> {
         self.status_icons
             .iter()
@@ -134,27 +134,29 @@ impl BattleSlotHud {
 /// these as glyph overlays on the HUD slot row.
 pub fn status_kind_letter(kind: StatusKind) -> u8 {
     match kind {
-        StatusKind::Burned => b'B',
-        StatusKind::Shocked => b'S',
-        StatusKind::Poisoned => b'P',
-        StatusKind::Asleep => b'A',
-        StatusKind::Confused => b'C',
-        StatusKind::Silenced => b's',
-        StatusKind::Stunned => b'T',
-        StatusKind::Petrified => b'X',
+        StatusKind::Toxic => b'T',
+        StatusKind::Numb => b'N',
+        StatusKind::Venom => b'V',
+        StatusKind::Sleep => b'S',
+        StatusKind::Confuse => b'C',
+        // The two first-letter collisions (Curse vs Confuse, Stone vs Sleep)
+        // take the lowercase form of the rarer status.
+        StatusKind::Curse => b'c',
+        StatusKind::Stone => b's',
+        StatusKind::Faint => b'F',
     }
 }
 
 fn status_kind_sort_key(k: StatusKind) -> u8 {
     match k {
-        StatusKind::Burned => 0,
-        StatusKind::Shocked => 1,
-        StatusKind::Poisoned => 2,
-        StatusKind::Asleep => 3,
-        StatusKind::Confused => 4,
-        StatusKind::Silenced => 5,
-        StatusKind::Stunned => 6,
-        StatusKind::Petrified => 7,
+        StatusKind::Toxic => 0,
+        StatusKind::Numb => 1,
+        StatusKind::Venom => 2,
+        StatusKind::Sleep => 3,
+        StatusKind::Confuse => 4,
+        StatusKind::Curse => 5,
+        StatusKind::Stone => 6,
+        StatusKind::Faint => 7,
     }
 }
 
@@ -175,7 +177,7 @@ pub struct DamagePopup {
     /// in yellow with a bigger glyph).
     pub is_crit: bool,
     /// Optional status hint for popups that surface a status application
-    /// (`Burned!` / `Asleep`). `None` for plain damage / heal popups.
+    /// (`Toxic!` / `Sleep`). `None` for plain damage / heal popups.
     pub status: Option<StatusKind>,
     /// Frames left before the popup expires.
     pub frames_remaining: u16,
@@ -538,26 +540,18 @@ mod tests {
     #[test]
     fn slot_hud_status_icons_sort_by_kind_order() {
         let mut s = BattleSlotHud::new();
-        s.set_status_icons([
-            StatusKind::Petrified,
-            StatusKind::Burned,
-            StatusKind::Confused,
-        ]);
+        s.set_status_icons([StatusKind::Faint, StatusKind::Toxic, StatusKind::Confuse]);
         assert_eq!(
             s.status_icons,
-            vec![
-                StatusKind::Burned,
-                StatusKind::Confused,
-                StatusKind::Petrified
-            ]
+            vec![StatusKind::Toxic, StatusKind::Confuse, StatusKind::Faint]
         );
     }
 
     #[test]
     fn slot_hud_status_icons_dedup_repeated_kinds() {
         let mut s = BattleSlotHud::new();
-        s.set_status_icons([StatusKind::Burned, StatusKind::Burned, StatusKind::Asleep]);
-        assert_eq!(s.status_icons, vec![StatusKind::Burned, StatusKind::Asleep]);
+        s.set_status_icons([StatusKind::Toxic, StatusKind::Toxic, StatusKind::Sleep]);
+        assert_eq!(s.status_icons, vec![StatusKind::Toxic, StatusKind::Sleep]);
     }
 
     #[test]
@@ -583,8 +577,8 @@ mod tests {
 
     #[test]
     fn damage_popup_with_status_carries_kind() {
-        let p = DamagePopup::damage(0, 0).with_status(StatusKind::Asleep);
-        assert_eq!(p.status, Some(StatusKind::Asleep));
+        let p = DamagePopup::damage(0, 0).with_status(StatusKind::Sleep);
+        assert_eq!(p.status, Some(StatusKind::Sleep));
     }
 
     #[test]
@@ -673,13 +667,13 @@ mod tests {
     fn hud_sync_status_pulls_from_tracker() {
         let mut h = BattleHud::new();
         let mut tracker = StatusEffectTracker::new();
-        tracker.apply(2, StatusKind::Burned);
-        tracker.apply(2, StatusKind::Poisoned);
+        tracker.apply(2, StatusKind::Toxic);
+        tracker.apply(2, StatusKind::Venom);
         h.sync_status(2, &tracker);
-        // Sorted order: Burned (0) before Poisoned (2).
+        // Sorted order: Toxic (0) before Venom (2).
         assert_eq!(
             h.slots[2].status_icons,
-            vec![StatusKind::Burned, StatusKind::Poisoned]
+            vec![StatusKind::Toxic, StatusKind::Venom]
         );
     }
 
@@ -750,9 +744,9 @@ mod tests {
     #[test]
     fn hud_push_status_emits_zero_amount_with_status_set() {
         let mut h = BattleHud::new();
-        h.push_status(0, StatusKind::Asleep);
+        h.push_status(0, StatusKind::Sleep);
         assert_eq!(h.popups[0].amount, 0);
-        assert_eq!(h.popups[0].status, Some(StatusKind::Asleep));
+        assert_eq!(h.popups[0].status, Some(StatusKind::Sleep));
     }
 
     #[test]
@@ -769,19 +763,23 @@ mod tests {
     }
 
     #[test]
-    fn status_kind_letter_uses_first_char_with_silenced_lowercase() {
-        assert_eq!(status_kind_letter(StatusKind::Burned), b'B');
-        assert_eq!(status_kind_letter(StatusKind::Shocked), b'S');
-        assert_eq!(status_kind_letter(StatusKind::Silenced), b's');
-        assert_eq!(status_kind_letter(StatusKind::Petrified), b'X');
+    fn status_kind_letter_uses_first_char_with_collisions_lowercased() {
+        assert_eq!(status_kind_letter(StatusKind::Toxic), b'T');
+        assert_eq!(status_kind_letter(StatusKind::Numb), b'N');
+        assert_eq!(status_kind_letter(StatusKind::Sleep), b'S');
+        assert_eq!(status_kind_letter(StatusKind::Confuse), b'C');
+        // Collisions take the lowercase form.
+        assert_eq!(status_kind_letter(StatusKind::Curse), b'c');
+        assert_eq!(status_kind_letter(StatusKind::Stone), b's');
+        assert_eq!(status_kind_letter(StatusKind::Faint), b'F');
     }
 
     #[test]
     fn slot_hud_status_letters_returns_one_byte_per_icon() {
         let mut s = BattleSlotHud::new();
-        s.set_status_icons([StatusKind::Burned, StatusKind::Asleep]);
+        s.set_status_icons([StatusKind::Toxic, StatusKind::Sleep]);
         let letters = s.status_letters();
-        assert_eq!(letters, vec![b'B', b'A']);
+        assert_eq!(letters, vec![b'T', b'S']);
     }
 
     #[test]
@@ -823,9 +821,9 @@ mod tests {
                 ap: None,
             },
         );
-        hud.slots[0].set_status_icons([StatusKind::Burned, StatusKind::Confused]);
+        hud.slots[0].set_status_icons([StatusKind::Toxic, StatusKind::Confuse]);
         let views = hud.slot_views();
-        assert_eq!(views[0].status_letters, vec![b'B', b'C']);
+        assert_eq!(views[0].status_letters, vec![b'T', b'C']);
     }
 
     #[test]
@@ -845,9 +843,9 @@ mod tests {
     #[test]
     fn popup_views_carries_status_letter_when_set() {
         let mut hud = BattleHud::new();
-        hud.push_status(2, StatusKind::Petrified);
+        hud.push_status(2, StatusKind::Faint);
         let views = hud.popup_views();
-        assert_eq!(views[0].status_letter, Some(b'X'));
+        assert_eq!(views[0].status_letter, Some(b'F'));
     }
 
     #[test]

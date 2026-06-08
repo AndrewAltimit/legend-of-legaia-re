@@ -212,7 +212,7 @@ pub struct BattleSession {
     /// Equipment table - engines populate before `begin_round` so the
     /// stat-aggregator can sum per-item modifiers.
     pub equipment: EquipmentTable,
-    /// Status modifiers (Burned -ATK, Confused -accuracy, etc.).
+    /// Status modifiers (Toxic -ATK, Confuse -accuracy, etc.).
     pub modifiers: StatusModifiers,
     /// Number of monster slots in the current battle (3..=5).
     monster_count: u8,
@@ -908,7 +908,13 @@ impl BattleSession {
         }
         let raw = (atk * 2 - target_def).max(1);
         let var = (psyq_rand_step(&mut self.rng_seed) as i32 % 25) - 12;
-        let dmg = (raw + raw * var / 100).clamp(1, 0xFFFF) as u16;
+        // Roll the damage as usual (RNG unaffected), then absorb it if the
+        // target is petrified (Stone can't be damaged).
+        let dmg = if world.actor_is_petrified(target_slot) {
+            0
+        } else {
+            (raw + raw * var / 100).clamp(1, 0xFFFF) as u16
+        };
         let target = &mut world.actors[target_slot as usize].battle;
         target.hp = target.hp.saturating_sub(dmg);
         if target.hp == 0 {
@@ -965,11 +971,15 @@ impl BattleSession {
         }
         self.turn = self.turn.saturating_add(1);
         // Wipe detection: party = slots 0..=2; monsters = slots 3..3+count.
-        let party_alive = (0..3)
-            .filter(|i| self.slots[*i].record.is_some())
-            .any(|i| world.actors.get(i).is_some_and(|a| a.battle.hp > 0));
-        let monsters_alive = (0..self.monster_count as usize)
-            .any(|i| world.actors.get(3 + i).is_some_and(|a| a.battle.hp > 0));
+        // A petrified actor (Stone) counts as defeated even at full HP.
+        let party_alive = (0..3).filter(|i| self.slots[*i].record.is_some()).any(|i| {
+            world.actors.get(i).is_some_and(|a| a.battle.hp > 0)
+                && !world.actor_is_petrified(i as u8)
+        });
+        let monsters_alive = (0..self.monster_count as usize).any(|i| {
+            world.actors.get(3 + i).is_some_and(|a| a.battle.hp > 0)
+                && !world.actor_is_petrified((3 + i) as u8)
+        });
         if !party_alive {
             self.handle_battle_end(BattleEndCause::PartyWipe, out);
         } else if !monsters_alive {
@@ -1725,7 +1735,7 @@ mod tests {
 
         let outcome = ArtStrikeOutcome {
             damage: Some(0),
-            enemy_effect: EnemyEffect::Burned,
+            enemy_effect: EnemyEffect::Toxic,
             ..Default::default()
         };
         let ev = BattleEvent::ApplyArtStrike {
@@ -1740,7 +1750,7 @@ mod tests {
             e,
             SessionEvent::StatusApplied {
                 slot: 3,
-                kind: StatusKind::Burned
+                kind: StatusKind::Toxic
             }
         )));
     }

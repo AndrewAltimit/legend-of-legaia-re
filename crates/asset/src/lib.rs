@@ -445,6 +445,20 @@ pub struct StreamReport {
     pub bytes_consumed: usize,
 }
 
+/// Which sentinel ends a `(type << 24) | size` streaming-chunk walk. The two
+/// retail walkers share the chunk header but differ only in the terminator:
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamTerminator {
+    /// DATA_FIELD walker (`FUN_8002541C`): a header whose low-24 `size` is `0`
+    /// ends the stream (the 4-byte zero header is the sentinel, not a chunk).
+    ZeroSize,
+    /// Battle-init / sound-pack walker (`FUN_8001FE70`): the stream ends at the
+    /// first chunk whose **type byte is `0x02`**. That chunk's `size` is
+    /// usually non-zero (it carries a real body); the type byte alone is the
+    /// loop's exit condition. A `size == 0` header still hard-stops.
+    TypeTwo,
+}
+
 /// Parse a DATA_FIELD-style streaming buffer. Returns `(chunks, &data_slices)`-equivalent
 /// info plus a layout report. Stops on terminator or on bounds violation.
 ///
@@ -454,6 +468,21 @@ pub struct StreamReport {
 /// streaming-asset driver; the `0xA` tim.dat / `0xF` move.mdt branches are
 /// handled by their own per-format parsers, not here).
 pub fn parse_streaming(buffer: &[u8], max_chunks: usize) -> Result<StreamReport> {
+    parse_streaming_with(buffer, max_chunks, StreamTerminator::ZeroSize)
+}
+
+/// Parse a streaming buffer with an explicit [`StreamTerminator`]. The
+/// [`StreamTerminator::TypeTwo`] variant walks the battle-init / per-scene
+/// sound-pack streams (`sound_data2` / `.dpk`) that `FUN_8001FE70` consumes,
+/// which terminate on a type-`0x02` chunk rather than a zero-size header.
+///
+/// PORT: FUN_8001FE70 (the type-`0x02`-terminated chunk walker; `FUN_8002541C`
+/// is the zero-size-terminated DATA_FIELD sibling reached via [`parse_streaming`]).
+pub fn parse_streaming_with(
+    buffer: &[u8],
+    max_chunks: usize,
+    terminator: StreamTerminator,
+) -> Result<StreamReport> {
     let mut chunks = Vec::new();
     let mut pos = 0usize;
     let mut terminated = false;
@@ -508,6 +537,12 @@ pub fn parse_streaming(buffer: &[u8], max_chunks: usize) -> Result<StreamReport>
         // Mirrors the runtime: `(size >> 2) + 1` words = 4 + (size & ~3) bytes.
         let advance = 4 + ((size as usize) & !3);
         pos += advance;
+
+        // The type-2 chunk is a real (pushed) chunk that also ends the walk.
+        if terminator == StreamTerminator::TypeTwo && type_byte == 0x02 {
+            terminated = true;
+            break;
+        }
     }
 
     Ok(StreamReport {
@@ -592,6 +627,36 @@ mod tests {
         assert_eq!(r.chunks[1].type_byte, 0x00);
         assert_eq!(r.chunks[1].size, 4);
         assert_eq!(r.chunks[1].magic, "00000010");
+    }
+
+    #[test]
+    fn type_two_terminator_ends_on_the_type2_chunk_not_a_zero_header() {
+        // FUN_8001FE70 shape: chunk0 type=0, chunk1 type=1, chunk2 type=2 with a
+        // NON-zero size (a real terminator chunk). After it, bytes that would
+        // mis-walk under the zero-size rule.
+        let mut file = Vec::new();
+        file.extend_from_slice(&0x00_000004u32.to_le_bytes()); // type=0 size=4
+        file.extend_from_slice(&[0x10, 0, 0, 0]);
+        file.extend_from_slice(&0x01_000008u32.to_le_bytes()); // type=1 size=8
+        file.extend_from_slice(&[0x20, 0, 0, 0, 0x30, 0, 0, 0]);
+        file.extend_from_slice(&0x02_000004u32.to_le_bytes()); // type=2 size=4 (terminator)
+        file.extend_from_slice(&[0x40, 0, 0, 0]);
+        // Trailing garbage that a zero-size walk would keep chewing on.
+        file.extend_from_slice(&0x00_00FFFFu32.to_le_bytes());
+        file.extend_from_slice(&vec![0xCC; 0x100]);
+
+        let r = parse_streaming_with(&file, 64, StreamTerminator::TypeTwo).unwrap();
+        assert!(r.terminated, "type-2 chunk terminates the walk");
+        assert_eq!(r.chunks.len(), 3);
+        assert_eq!(r.chunks[2].type_byte, 0x02);
+        assert_eq!(r.chunks[2].size, 4, "terminator chunk keeps its real size");
+        // It stops right after the type-2 chunk, not in the trailing garbage.
+        assert_eq!(r.bytes_consumed, 0x1c);
+
+        // The same buffer under the zero-size rule does NOT stop at the type-2
+        // chunk (it walks into the trailing region).
+        let z = parse_streaming(&file, 64).unwrap();
+        assert!(z.chunks.len() > 3 || !z.terminated);
     }
 
     #[test]

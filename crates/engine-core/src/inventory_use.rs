@@ -29,7 +29,8 @@
 //! actual key bindings (Z = Confirm, X = Cancel, arrows for navigation)
 //! lives in `crate::input` and is engine-side.
 
-use crate::items::{ItemCatalog, ItemEffect, ItemEntry, ItemOutcome, TargetSnapshot};
+use crate::items::{ItemCatalog, ItemEffect, ItemEntry, ItemOutcome, TargetSnapshot, status_bit};
+use legaia_engine_vm::status_effects::StatusKind;
 
 /// Where the session is being driven from. Filters which items show up
 /// (`usable_in_battle` vs `usable_in_field`) and which targets are
@@ -66,6 +67,11 @@ pub struct TargetRow {
     pub hp_max: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// Bitset of [`StatusKind`]s currently afflicting this target (bit
+    /// `status_bit(kind)`). Drives the cure-item usability gate: an
+    /// Antidote / Medicine is only offered when a curable status is present.
+    /// Builders that don't track status leave this `0` (no afflictions).
+    pub status_mask: u8,
 }
 
 impl TargetRow {
@@ -79,6 +85,7 @@ impl TargetRow {
             hp_max: 0,
             mp: 0,
             mp_max: 0,
+            status_mask: 0,
         }
     }
 
@@ -96,6 +103,23 @@ impl TargetRow {
         self
     }
 
+    /// Set the raw affliction bitset (see [`Self::status_mask`]).
+    pub fn with_status_mask(mut self, mask: u8) -> Self {
+        self.status_mask = mask;
+        self
+    }
+
+    /// Set the affliction bitset from an iterator of [`StatusKind`]s.
+    pub fn with_statuses(mut self, kinds: impl IntoIterator<Item = StatusKind>) -> Self {
+        self.status_mask = kinds.into_iter().fold(0, |m, k| m | status_bit(k));
+        self
+    }
+
+    /// `true` if `kind` currently afflicts this target.
+    pub fn has_status(&self, kind: StatusKind) -> bool {
+        self.status_mask & status_bit(kind) != 0
+    }
+
     pub fn is_dead(&self) -> bool {
         !self.alive
     }
@@ -108,6 +132,7 @@ impl TargetRow {
             mp: self.mp,
             mp_max: self.mp_max,
             is_dead: !self.alive,
+            status_mask: self.status_mask,
         }
     }
 }
@@ -195,7 +220,7 @@ impl InventoryUseSession {
         targets: Vec<TargetRow>,
         context: InventoryContext,
     ) -> Self {
-        let filtered_items = filter_items(&items, &catalog, context);
+        let filtered_items = filter_items(&items, &catalog, context, &targets);
         // Empty filter still starts at the browsing screen - engines need
         // to render the "no items" overlay rather than insta-abort.
         let state = InventoryUseState::Browsing { cursor: 0 };
@@ -295,9 +320,17 @@ impl InventoryUseSession {
                 let start = entry
                     .map(|e| e.effect)
                     .and_then(|eff| {
+                        // Land on the target that actually benefits (the hurt
+                        // ally / the afflicted member), falling back to the
+                        // first merely-valid row, then row 0.
                         self.targets
                             .iter()
-                            .position(|t| target_valid_for_effect(&eff, t))
+                            .position(|t| effect_benefits_target(&eff, t))
+                            .or_else(|| {
+                                self.targets
+                                    .iter()
+                                    .position(|t| target_valid_for_effect(&eff, t))
+                            })
                     })
                     .unwrap_or(0);
                 self.state = InventoryUseState::TargetSelect {
@@ -418,16 +451,92 @@ fn effect_is_party_distributable(effect: &ItemEffect) -> bool {
     )
 }
 
-fn filter_items(items: &[u8], catalog: &ItemCatalog, context: InventoryContext) -> Vec<usize> {
+fn filter_items(
+    items: &[u8],
+    catalog: &ItemCatalog,
+    context: InventoryContext,
+    targets: &[TargetRow],
+) -> Vec<usize> {
     let mut out = Vec::new();
     for (i, id) in items.iter().enumerate() {
         if let Some(entry) = catalog.get(*id)
             && context.allows(entry)
+            && item_has_valid_target(entry, targets)
         {
             out.push(i);
         }
     }
     out
+}
+
+/// The retail menu-usability gate: an item is only offered when at least one
+/// currently-eligible target would actually *benefit* from it. A Healing Leaf
+/// is greyed out (omitted) when every living ally is at full HP, an Antidote
+/// when nobody is poisoned, a Phoenix when nobody has fallen. The retail check
+/// walks the party (`+0x458` class byte) calling the shared per-target
+/// relevance/validity predicate `FUN_8003fb10(class, tier, target)` (already
+/// ported as `legaia_engine_vm::action_validator`; its item-relevance arms are
+/// mirrored here by [`effect_benefits_target`]). The all-party descriptor flag
+/// (`& 0x20`) collapses the per-member loop into a single check, which falls
+/// out naturally from the `targets.iter().any(...)` below.
+///
+/// PORT: FUN_8003043c
+/// REF: FUN_8003fb10 (action_validator)
+fn item_has_valid_target(entry: &ItemEntry, targets: &[TargetRow]) -> bool {
+    // Effects with no per-target relevance notion (Escape, permanent stat-up /
+    // spirit) are always offered. Key items are gated and their benefit
+    // predicate is always false, so they fall out below.
+    if !effect_gated_by_target_state(&entry.effect) {
+        return true;
+    }
+    targets
+        .iter()
+        .any(|t| effect_benefits_target(&entry.effect, t))
+}
+
+/// `true` when an effect's *usability* depends on a target's live state (HP /
+/// MP / status / liveness). The relevance gate only filters these; everything
+/// else (Escape, StatBoost, Spirit) is always offered.
+fn effect_gated_by_target_state(effect: &ItemEffect) -> bool {
+    matches!(
+        effect,
+        ItemEffect::Heal { .. }
+            | ItemEffect::HealAll
+            | ItemEffect::HealMp { .. }
+            | ItemEffect::HealMpAll
+            | ItemEffect::Cure { .. }
+            | ItemEffect::CureAll
+            | ItemEffect::Revive { .. }
+            | ItemEffect::Damage { .. }
+            | ItemEffect::Capture { .. }
+            | ItemEffect::KeyItem
+    )
+}
+
+/// Whether `target` would actually benefit from `effect` right now - the
+/// per-target relevance predicate. Side + liveness mirror
+/// [`target_valid_for_effect`]; on top of that a heal needs HP below max, an
+/// MP restore needs MP below max, a cure needs the matching affliction
+/// present, and a revive needs a fallen ally. HP/MP maxes of `0` read as
+/// "unknown" and stay permissive so a builder that didn't populate stats
+/// never hides a restorative item.
+fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
+    match effect {
+        ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
+        ItemEffect::KeyItem => false,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.alive && target.is_enemy,
+        ItemEffect::Heal { .. } | ItemEffect::HealAll => {
+            target.alive && !target.is_enemy && (target.hp_max == 0 || target.hp < target.hp_max)
+        }
+        ItemEffect::HealMp { .. } | ItemEffect::HealMpAll => {
+            target.alive && !target.is_enemy && (target.mp_max == 0 || target.mp < target.mp_max)
+        }
+        ItemEffect::Cure { kind } => target.alive && !target.is_enemy && target.has_status(*kind),
+        ItemEffect::CureAll => target.alive && !target.is_enemy && target.status_mask != 0,
+        // Escape / StatBoost / Spirit: not target-state gated (handled by the
+        // caller before reaching here), but keep a sensible living-ally default.
+        _ => target.alive && !target.is_enemy,
+    }
 }
 
 /// Validate that the picked target makes sense for the chosen effect, and
@@ -502,6 +611,15 @@ mod tests {
             effect: ItemEffect::Damage { amount: 200 },
             usable_in_battle: true,
             usable_in_field: false,
+        });
+        c.insert(ItemEntry {
+            id: 0x14,
+            name: "Test Antidote",
+            effect: ItemEffect::Cure {
+                kind: StatusKind::Venom,
+            },
+            usable_in_battle: true,
+            usable_in_field: true,
         });
         c
     }
@@ -722,18 +840,92 @@ mod tests {
     }
 
     #[test]
-    fn revive_targeting_alive_actor_emits_invalid_confirm() {
-        // Resurrection Leaf (id 0x0C) - only valid on dead targets.
-        let mut s = empty_session(vec![0x0C], InventoryContext::Battle);
-        s.input(InventoryUseInput::Confirm); // -> target select
-        s.input(InventoryUseInput::Confirm); // confirm on Vahn (alive)
-        // Should remain in target-select with InvalidConfirm event.
+    fn heal_filtered_out_when_every_ally_is_at_full_hp() {
+        // The menu-usability gate omits a heal item when no ally can benefit.
+        let targets = vec![
+            TargetRow::new(0, "Vahn").with_stats(200, 200, 30, 30),
+            TargetRow::new(1, "Noa").with_stats(200, 200, 20, 20),
+        ];
+        let s =
+            InventoryUseSession::new(test_catalog(), vec![0x01], targets, InventoryContext::Field);
+        assert_eq!(s.filtered_items.len(), 0);
+    }
+
+    #[test]
+    fn heal_offered_when_one_ally_is_hurt() {
+        // One ally below max HP -> the heal item is offered again.
+        let targets = vec![
+            TargetRow::new(0, "Vahn").with_stats(200, 200, 30, 30),
+            TargetRow::new(1, "Noa").with_stats(40, 200, 20, 20),
+        ];
+        let s =
+            InventoryUseSession::new(test_catalog(), vec![0x01], targets, InventoryContext::Field);
+        assert_eq!(s.filtered_items.len(), 1);
+    }
+
+    #[test]
+    fn cure_item_gated_by_a_present_affliction() {
+        let healthy = vec![TargetRow::new(0, "Vahn").with_stats(200, 200, 30, 30)];
+        let s =
+            InventoryUseSession::new(test_catalog(), vec![0x14], healthy, InventoryContext::Field);
+        assert_eq!(
+            s.filtered_items.len(),
+            0,
+            "antidote greyed with nobody poisoned"
+        );
+
+        let poisoned = vec![
+            TargetRow::new(0, "Vahn").with_stats(200, 200, 30, 30),
+            TargetRow::new(1, "Noa")
+                .with_stats(200, 200, 20, 20)
+                .with_statuses([StatusKind::Venom]),
+        ];
+        let s2 = InventoryUseSession::new(
+            test_catalog(),
+            vec![0x14],
+            poisoned,
+            InventoryContext::Field,
+        );
+        assert_eq!(
+            s2.filtered_items.len(),
+            1,
+            "antidote offered with a poisoned ally"
+        );
+    }
+
+    #[test]
+    fn revive_filtered_out_when_every_ally_is_alive() {
+        // The retail menu-usability gate (FUN_8003043c): a revive item is
+        // greyed / omitted when nobody has fallen, so it never reaches the
+        // browse list. party_targets() are both alive.
+        let s = empty_session(vec![0x0C], InventoryContext::Battle);
+        assert_eq!(s.filtered_items.len(), 0);
+    }
+
+    #[test]
+    fn revive_on_living_ally_emits_invalid_confirm_when_a_fallen_ally_exists() {
+        // With one fallen ally the revive item IS offered; the start cursor
+        // lands on the fallen member, but the player can still scroll to a
+        // living one - confirming there bounces with InvalidConfirm.
+        let mut targets = party_targets(); // Vahn (slot 0) alive, Noa (slot 1) alive
+        targets[1].alive = false;
+        targets[1].hp = 0;
+        let mut s = InventoryUseSession::new(
+            test_catalog(),
+            vec![0x0C],
+            targets,
+            InventoryContext::Battle,
+        );
+        assert_eq!(s.filtered_items.len(), 1);
+        s.input(InventoryUseInput::Confirm); // -> target select (cursor on the fallen Noa)
+        s.input(InventoryUseInput::Up); // move to the living Vahn (slot 0)
+        s.input(InventoryUseInput::Confirm); // confirm on a living ally
         assert!(matches!(s.state, InventoryUseState::TargetSelect { .. }));
         let evs = s.drain_events();
-        let invalid = evs
-            .iter()
-            .find(|e| matches!(e, InventoryUseEvent::InvalidConfirm));
-        assert!(invalid.is_some());
+        assert!(
+            evs.iter()
+                .any(|e| matches!(e, InventoryUseEvent::InvalidConfirm))
+        );
     }
 
     #[test]
