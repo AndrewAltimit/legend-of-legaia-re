@@ -60,6 +60,14 @@
 # Regenerable with LEGAIA_UPDATE_FIXTURES=1.
 !/crates/save/tests/fixtures/*.bin
 
+# Static overlay-extraction output (Sony overlay code + generated Ghidra
+# import scripts; the as-loaded .bin already matches *.bin above, but stop
+# the generated import_*.py / driver from being committed). The committed
+# side is the map at crates/asset/data/static-overlays.toml + the docs.
+# See docs/tooling/static-overlay-pipeline.md.
+/overlays/
+/extracted/overlays/
+
 # Mednafen save states (referenced by scripts/analyze-overlay.sh; the
 # canonical location is ~/.mednafen/mcs/, but ignore stray copies here).
 *.mc[0-9]

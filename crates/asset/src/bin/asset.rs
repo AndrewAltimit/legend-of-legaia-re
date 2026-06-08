@@ -684,6 +684,64 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Static overlay-extraction pipeline: extract each clean-copy runtime
+    /// overlay from PROT.DAT in its as-loaded form, with identity attached from
+    /// the source entry. Complements (does not replace) the dynamic save-state
+    /// captures. See docs/tooling/static-overlay-pipeline.md.
+    Overlay {
+        #[command(subcommand)]
+        cmd: OverlayCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OverlayCmd {
+    /// Print the committed static-overlay map (PROT index -> base -> identity).
+    List {
+        /// Emit JSON instead of a table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Extract each eligible overlay's as-loaded bytes to a gitignored .bin in
+    /// `--out` (these are Sony code; the dir is expected to be gitignored).
+    Extract {
+        /// Path to `PROT.DAT`.
+        prot_dat: PathBuf,
+        /// Output directory for the `.bin` blobs.
+        #[arg(long)]
+        out: PathBuf,
+        /// Only this overlay label (default: every eligible overlay).
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Re-extract from PROT.DAT and assert each overlay's as-loaded bytes hash
+    /// to the committed fingerprint (disc-gated reproducibility check).
+    Verify {
+        /// Path to `PROT.DAT`.
+        prot_dat: PathBuf,
+    },
+    /// Emit Ghidra import helpers: a per-overlay Jython rename script and a
+    /// shell driver that imports each overlay at its base into the compose
+    /// service (program named `overlay_<label>`).
+    Ghidra {
+        /// Output directory for the generated scripts.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Regenerate map rows from PROT.DAT: recover each base statically and hash
+    /// the as-loaded bytes. Prints TOML to stdout (review, then paste into
+    /// `crates/asset/data/static-overlays.toml`).
+    Generate {
+        /// Path to `PROT.DAT`.
+        prot_dat: PathBuf,
+        /// PROT index to (re)derive a row for. Repeatable. Default: refresh
+        /// every index already in the committed map.
+        #[arg(long = "index")]
+        indices: Vec<u32>,
+        /// Minimum corroborating call targets to accept a recovered base.
+        #[arg(long, default_value_t = 8)]
+        min_votes: u32,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -901,6 +959,21 @@ fn main() -> Result<()> {
         Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
         Cmd::MovePower { input } => move_power_cmd(&input),
         Cmd::ElementAffinity { input } => element_affinity_cmd(&input),
+        Cmd::Overlay { cmd } => match cmd {
+            OverlayCmd::List { json } => overlay_list_cmd(json),
+            OverlayCmd::Extract {
+                prot_dat,
+                out,
+                label,
+            } => overlay_extract_cmd(&prot_dat, &out, label.as_deref()),
+            OverlayCmd::Verify { prot_dat } => overlay_verify_cmd(&prot_dat),
+            OverlayCmd::Ghidra { out } => overlay_ghidra_cmd(&out),
+            OverlayCmd::Generate {
+                prot_dat,
+                indices,
+                min_votes,
+            } => overlay_generate_cmd(&prot_dat, &indices, min_votes),
+        },
     }
 }
 
@@ -4771,6 +4844,178 @@ fn befect_cluster_cmd(
             cluster.parts.len(),
             dir.display()
         );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// `asset overlay` - static overlay-extraction pipeline.
+// ---------------------------------------------------------------------------
+
+use legaia_asset::static_overlay::{
+    self, Eligibility, OverlayForm, OverlayRecord, ghidra_import_driver, ghidra_import_jython,
+    overlay_map, recover_base, verify_fingerprint,
+};
+
+/// Read one overlay's as-loaded bytes from an already-open archive.
+fn overlay_read_as_loaded(
+    ar: &mut legaia_prot::archive::Archive,
+    rec: &OverlayRecord,
+) -> Result<Vec<u8>> {
+    let entry = ar
+        .entries
+        .iter()
+        .find(|e| e.index == rec.prot_index)
+        .cloned()
+        .with_context(|| format!("PROT entry {} not found in archive", rec.prot_index))?;
+    let mut buf = Vec::new();
+    ar.read_entry(&entry, &mut buf)?;
+    static_overlay::as_loaded(&buf, rec)
+}
+
+fn overlay_list_cmd(json: bool) -> Result<()> {
+    let map = overlay_map();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&map.overlays)?);
+        return Ok(());
+    }
+    println!(
+        "{:>5}  {:<16}  {:<10}  {:<5}  {:<11}  clean_copy",
+        "PROT", "label", "base", "form", "eligibility"
+    );
+    for o in &map.overlays {
+        let form = match o.form {
+            OverlayForm::Raw => "raw",
+            OverlayForm::Lzs => "lzs",
+        };
+        let elig = match o.eligibility {
+            Eligibility::Verified => "verified",
+            Eligibility::Static => "static",
+            Eligibility::Ineligible => "ineligible",
+        };
+        let cc = o
+            .clean_copy_bytes
+            .map(|n| format!("0x{n:x}"))
+            .unwrap_or_else(|| "-".into());
+        println!(
+            "{:>5}  {:<16}  0x{:08X}  {:<5}  {:<11}  {}",
+            o.prot_index, o.label, o.base_va, form, elig, cc
+        );
+    }
+    Ok(())
+}
+
+fn overlay_extract_cmd(prot_dat: &Path, out: &Path, label: Option<&str>) -> Result<()> {
+    let map = overlay_map();
+    std::fs::create_dir_all(out)?;
+    let mut ar = legaia_prot::archive::Archive::open(prot_dat)?;
+    let mut wrote = 0usize;
+    for rec in &map.overlays {
+        if rec.eligibility == Eligibility::Ineligible {
+            continue;
+        }
+        if label.is_some_and(|want| rec.label != want) {
+            continue;
+        }
+        let bytes = overlay_read_as_loaded(&mut ar, rec)?;
+        let path = out.join(rec.bin_filename());
+        std::fs::write(&path, &bytes)?;
+        println!(
+            "[ok] {:<28} PROT {:>4} @ 0x{:08X}  {} bytes",
+            rec.bin_filename(),
+            rec.prot_index,
+            rec.base_va,
+            bytes.len()
+        );
+        wrote += 1;
+    }
+    println!(
+        "[done] extracted {wrote} overlay blob(s) to {}",
+        out.display()
+    );
+    Ok(())
+}
+
+fn overlay_verify_cmd(prot_dat: &Path) -> Result<()> {
+    let map = overlay_map();
+    let mut ar = legaia_prot::archive::Archive::open(prot_dat)?;
+    let mut checked = 0usize;
+    for rec in &map.overlays {
+        if rec.fingerprint_sha256.is_none() {
+            continue;
+        }
+        let bytes = overlay_read_as_loaded(&mut ar, rec)?;
+        verify_fingerprint(rec, &bytes)?;
+        println!(
+            "[ok] {:<16} PROT {:>4} fingerprint reproduces ({} bytes)",
+            rec.label,
+            rec.prot_index,
+            bytes.len()
+        );
+        checked += 1;
+    }
+    println!("[done] {checked} overlay fingerprint(s) reproduce from this disc");
+    Ok(())
+}
+
+fn overlay_ghidra_cmd(out: &Path) -> Result<()> {
+    let map = overlay_map();
+    std::fs::create_dir_all(out)?;
+    for rec in &map.overlays {
+        if rec.eligibility == Eligibility::Ineligible {
+            continue;
+        }
+        let script = ghidra_import_jython(rec);
+        let path = out.join(format!("import_{}.py", rec.program_name()));
+        std::fs::write(&path, script)?;
+        println!("[ok] {}", path.display());
+    }
+    let driver = ghidra_import_driver(map);
+    let driver_path = out.join("import_static_overlays.sh");
+    std::fs::write(&driver_path, driver)?;
+    println!("[ok] {}", driver_path.display());
+    Ok(())
+}
+
+fn overlay_generate_cmd(prot_dat: &Path, indices: &[u32], min_votes: u32) -> Result<()> {
+    let map = overlay_map();
+    // Default to refreshing every index already in the committed map.
+    let targets: Vec<u32> = if indices.is_empty() {
+        map.overlays.iter().map(|o| o.prot_index).collect()
+    } else {
+        indices.to_vec()
+    };
+    let mut ar = legaia_prot::archive::Archive::open(prot_dat)?;
+    println!("# Generated by `asset overlay generate`. Review before committing.");
+    for idx in targets {
+        let entry = match ar.entries.iter().find(|e| e.index == idx).cloned() {
+            Some(e) => e,
+            None => {
+                eprintln!("[warn] PROT entry {idx} not found; skipping");
+                continue;
+            }
+        };
+        let mut buf = Vec::new();
+        ar.read_entry(&entry, &mut buf)?;
+        // Generation assumes the raw (uncompressed) as-loaded form; LZS overlays
+        // must be filled in by hand with `form = "lzs"` + `decompressed_size`.
+        let fp = static_overlay::fingerprint(&buf);
+        let existing = map.by_prot_index(idx);
+        let label = existing.map(|r| r.label.clone()).unwrap_or_default();
+        let recovered = recover_base(&buf, min_votes);
+        let base = recovered
+            .map(|r| r.base_va)
+            .or_else(|| existing.map(|r| r.base_va))
+            .unwrap_or(0);
+        let votes = recovered.map(|r| r.votes).unwrap_or(0);
+        println!();
+        println!("[[overlays]]");
+        println!("prot_index = {idx}");
+        println!("label = \"{label}\"");
+        println!("base_va = 0x{base:08X}   # recovered votes={votes}");
+        println!("form = \"raw\"");
+        println!("eligibility = \"static\"");
+        println!("fingerprint_sha256 = \"{fp}\"");
     }
     Ok(())
 }

@@ -328,6 +328,7 @@ The bulk-imported overlays still need a subsystem-naming pass (correlating strin
 
 ## See also
 
+- [`docs/tooling/static-overlay-pipeline.md`](static-overlay-pipeline.md) — the **static** complement: extract each clean-copy overlay from the disc at its recovered base, with identity attached from the PROT entry (solves the VA-aliasing identity problem structurally). This page (dynamic capture) stays authoritative for runtime values.
 - [`docs/tooling/mednafen-automation.md`](mednafen-automation.md) — the save-state diff / bisect toolkit these slices come from.
 - [`docs/reference/functions.md`](../reference/functions.md) — overlay-resident entry points the captured slices expose.
 - [`docs/reference/memory-map.md`](../reference/memory-map.md) — the `0x801C0000+` overlay window addresses.

@@ -63,6 +63,20 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `scene_v12_table` | Variant of the per-scene table. |
 | `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_rando::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
 
+### `static_overlay`
+
+Static overlay-extraction pipeline. PSX overlays are clean copies of a
+fixed-VA-linked blob, so each runtime overlay (field / battle / …) is extracted
+straight from its `PROT.DAT` entry and disassembled at its load base, identity
+attached from the source entry — the structural fix for the VA-aliasing identity
+problem the `overlay_<label>_<addr>` dump naming works around. `recover_base`
+recovers the load base statically from the overlay's own internal `jal` call
+graph; `as_loaded` / `fingerprint` / `verify_fingerprint` back the committed map
+(`data/static-overlays.toml`); `ghidra_import_jython` / `ghidra_import_driver`
+emit the Ghidra import helpers. CLI: `asset overlay list/extract/verify/ghidra/generate`.
+Complements the dynamic save-state captures (it does not address runtime values).
+See [`docs/tooling/static-overlay-pipeline.md`](../../docs/tooling/static-overlay-pipeline.md).
+
 ### `monster_archive`
 
 Global monster stat archive (PROT 867, extended footprint): per-id `0x14000` LZS
