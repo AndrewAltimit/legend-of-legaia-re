@@ -247,3 +247,41 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     assert_eq!(world.battle_defense[0], 60);
     assert_eq!(world.battle_buffs.len(), 4);
 }
+
+/// Installing the disc table seeds Fury Boost (class 5, the action-gauge
+/// extension) as a battle-only item, and using it extends the target's AP gauge
+/// by the retail ×7/5 ratio. Skips without `LEGAIA_DISC_BIN`.
+#[test]
+fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    if !path.is_file() {
+        eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
+        return;
+    }
+    let scus = legaia_engine_core::DiscVfs::open(&path)
+        .expect("open disc")
+        .read("SCUS_942.54")
+        .expect("SCUS_942.54 present");
+    let table = ItemEffectTable::from_scus(&scus).expect("item-effect table parses");
+
+    // Disc-free vanilla never offers Fury Boost.
+    assert!(
+        ItemCatalog::vanilla().get(0x81).is_none(),
+        "Fury Boost is omitted until the disc table is installed"
+    );
+
+    let mut world = World::new();
+    world.set_item_effects(table); // seeds Fury Boost onto the catalog
+    world.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
+
+    // Fury Boost is battle-only and extends the gauge: base 10 -> 14 (×7/5).
+    let fb = world.item_catalog.get(0x81).expect("Fury Boost seeded");
+    assert_eq!(fb.name, "Fury Boost");
+    assert!(fb.usable_in_battle && !fb.usable_in_field);
+    assert_eq!(world.use_item(0x81, 0), ItemOutcome::ActionGaugeExtended);
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.fury_boost[0], Some(4));
+}

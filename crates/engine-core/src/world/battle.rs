@@ -2212,6 +2212,15 @@ impl World {
         for b in buffs {
             self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
         }
+        // Revert any Fury Boost AP-gauge extension (class-5 item) and clear the
+        // per-slot flags, so the next battle starts from the base gauge.
+        for idx in 0..self.ap_gauges.len() {
+            if let Some(delta) = self.fury_boost[idx].take() {
+                let gauge = &mut self.ap_gauges[idx];
+                gauge.base_ap = gauge.base_ap.saturating_sub(delta);
+                gauge.current_ap = gauge.current_ap.min(gauge.ceiling());
+            }
+        }
         // Bank any captured Seru into learning progress (drains battle_captures).
         self.resolve_captures();
         // Drop any open command / item / spell session - they belong to the

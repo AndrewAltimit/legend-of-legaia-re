@@ -6500,6 +6500,62 @@ fn use_item_stat_boost_caps_at_cap_constant() {
 }
 
 #[test]
+fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
+    let mut world = World::new();
+    // Seed a Fury Boost catalog entry directly (the disc seeder installs the
+    // same `ActionGauge` marker; this exercises the apply path without a disc).
+    world.item_catalog.insert(crate::items::ItemEntry {
+        id: 0x81,
+        name: "Fury Boost",
+        effect: crate::items::ItemEffect::ActionGauge,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    world.ap_gauges[0] = crate::ap_gauge::ApGauge::with_base(10);
+    world.ap_gauges[0].current_ap = 6; // mid-turn, some AP already spent
+
+    // Fury Boost extends the gauge by the retail ×7/5 ratio: base 10 -> 14, and
+    // the live gauge gains the +4 delta immediately.
+    let out = world.use_item(0x81, 0);
+    assert_eq!(out, crate::items::ItemOutcome::ActionGaugeExtended);
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.ap_gauges[0].current_ap, 10);
+    assert_eq!(world.fury_boost[0], Some(4));
+
+    // The boost survives a turn reset (it's "for one battle").
+    world.ap_gauges[0].reset_for_turn();
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.ap_gauges[0].current_ap, 14);
+
+    // Idempotent within the battle: a second Fury Boost does not compound.
+    assert_eq!(
+        world.use_item(0x81, 0),
+        crate::items::ItemOutcome::ActionGaugeExtended
+    );
+    assert_eq!(world.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.fury_boost[0], Some(4));
+
+    // Battle end reverts the extension and clears the flag.
+    world.finish_battle();
+    assert_eq!(world.ap_gauges[0].base_ap, 10);
+    assert_eq!(world.fury_boost[0], None);
+}
+
+#[test]
+fn use_item_fury_boost_on_non_party_slot_is_noop() {
+    let mut world = World::new();
+    world.item_catalog.insert(crate::items::ItemEntry {
+        id: 0x81,
+        name: "Fury Boost",
+        effect: crate::items::ItemEffect::ActionGauge,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    // Slot 3+ is not a party AP-gauge slot (gauges are 0..=2).
+    assert_eq!(world.use_item(0x81, 5), crate::items::ItemOutcome::NoEffect);
+}
+
+#[test]
 fn use_item_cure_clears_status() {
     use legaia_art::record::EnemyEffect;
     let mut world = World::new();

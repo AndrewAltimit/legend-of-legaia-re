@@ -1189,6 +1189,12 @@ pub struct World {
     /// presses Spirit during command input.
     pub ap_gauges: [crate::ap_gauge::ApGauge; 3],
 
+    /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
+    /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
+    /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
+    /// the same lifecycle as [`Self::battle_buffs`]; `None` = not boosted.
+    pub fury_boost: [Option<u8>; 3],
+
     /// Item catalog used by item-action resolution. Populated at battle
     /// init from [`crate::items::ItemCatalog::vanilla`] (or a custom
     /// catalog set by [`World::set_item_catalog`]); empty by default so
@@ -1971,6 +1977,7 @@ impl World {
             tile_board_target: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
+            fury_boost: [None; 3],
             item_catalog: crate::items::ItemCatalog::default(),
             item_effects: None,
             spell_catalog: crate::spells::SpellCatalog::default(),
@@ -3064,6 +3071,7 @@ impl World {
             catalog.apply_effect_flags(table);
             catalog.apply_stat_items(table);
             catalog.apply_buff_items(table);
+            catalog.apply_action_gauge_items(table);
         }
         self.item_catalog = catalog;
     }
@@ -3075,6 +3083,7 @@ impl World {
         self.item_catalog.apply_effect_flags(&table);
         self.item_catalog.apply_stat_items(&table);
         self.item_catalog.apply_buff_items(&table);
+        self.item_catalog.apply_action_gauge_items(&table);
         self.item_effects = Some(table);
     }
 
@@ -3338,6 +3347,11 @@ impl World {
         if let crate::items::ItemEffect::BattleBuff = entry.effect {
             return self.apply_buff_item(item_id, target_slot);
         }
+        // One-battle action-gauge extension (class-5 Fury Boost): extends the
+        // target's AP gauge for the rest of the battle.
+        if let crate::items::ItemEffect::ActionGauge = entry.effect {
+            return self.apply_fury_boost_item(target_slot);
+        }
         let idx = target_slot as usize;
         // BattleActor holds `mp` but not `max_mp`; engines that wire the
         // character record into the actor populate it via a sibling field.
@@ -3423,6 +3437,39 @@ impl World {
             _ => {}
         }
         outcome
+    }
+
+    /// Apply a one-battle action-gauge extension
+    /// ([`crate::items::ItemEffect::ActionGauge`], Fury Boost) to party
+    /// `target_slot`. Retail sets the actor `+0x1F9` flag, and the action-SM
+    /// gauge-build phase then sizes the gauge as `gauge_stat * 7 / 5 + 8`
+    /// (clamped) instead of the base length. The engine models the AP gauge as a
+    /// discrete per-turn budget rather than a continuous pixel length, so it
+    /// approximates the extension by raising the slot's [`ApGauge::base_ap`] by
+    /// the retail `×7/5` ratio (the `+8` pixel term and the gauge-stat source are
+    /// not representable here). The boost persists for the battle (`base_ap`
+    /// survives [`ApGauge::reset_for_turn`]) and the live gauge gains the delta
+    /// immediately; it is reverted at battle end ([`Self::finish_battle`]).
+    /// Idempotent within a battle (a second Fury Boost re-sets the already-set
+    /// flag, no extra gauge). Returns [`crate::items::ItemOutcome::NoEffect`] for
+    /// a non-party slot.
+    fn apply_fury_boost_item(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
+        let idx = target_slot as usize;
+        if idx >= self.ap_gauges.len() {
+            return crate::items::ItemOutcome::NoEffect;
+        }
+        // Already boosted this battle: retail re-sets the same flag, no compound.
+        if self.fury_boost[idx].is_none() {
+            let gauge = &mut self.ap_gauges[idx];
+            let before = gauge.base_ap;
+            let after = ((before as u16 * 7) / 5) as u8;
+            let delta = after.saturating_sub(before);
+            gauge.set_base_ap(after);
+            // Extend the live gauge so the longer budget is usable this turn.
+            gauge.current_ap = gauge.current_ap.saturating_add(delta);
+            self.fury_boost[idx] = Some(delta);
+        }
+        crate::items::ItemOutcome::ActionGaugeExtended
     }
 
     /// Apply a one-battle stat buff ([`crate::items::ItemEffect::BattleBuff`],

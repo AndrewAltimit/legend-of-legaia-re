@@ -89,6 +89,12 @@ const BATTLE_BUFF_ITEMS: &[(u8, &str)] = &[
     (0x8E, "Wonder Elixir"), // all (SPD + DEF + ATK + AGL)
 ];
 
+/// The action-gauge-extension consumable (class 5, Fury Boost) by its real
+/// retail id + name. Extends the action gauge for the rest of the battle.
+/// Seeded only when the on-disc effect table is installed
+/// ([`ItemCatalog::apply_action_gauge_items`]).
+const ACTION_GAUGE_ITEMS: &[(u8, &str)] = &[(0x81, "Fury Boost")];
+
 /// Which stat an [`ItemEffect::StatBoost`] modifies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatBoostTarget {
@@ -144,6 +150,11 @@ pub enum ItemEffect {
     /// Only ever installed when a real table is present (see
     /// [`ItemCatalog::apply_buff_items`]).
     BattleBuff,
+    /// One-battle action-gauge extension (the class-5 Fury Boost). A marker
+    /// handled in [`crate::World::use_item`]: it extends the target's AP gauge
+    /// for the rest of the battle. Only installed when a real table is present
+    /// (see [`ItemCatalog::apply_action_gauge_items`]).
+    ActionGauge,
     Spirit {
         amount: u8,
     },
@@ -209,10 +220,10 @@ impl ItemCatalog {
     /// time: the permanent stat-up *Water* line (`0x82..=0x87` + the all-stats
     /// Honey `0x65` / Miracle Water `0x6D`) via [`Self::apply_stat_items`], and
     /// the one-battle buff Elixirs (Power/Shield/Speed/Wonder Elixir
-    /// `0x8B..=0x8E`) via [`Self::apply_buff_items`]. Items that still need infra
-    /// this engine doesn't have are intentionally **omitted** (a held one just
-    /// isn't offered) rather than shown as a no-op:
-    /// - Fury Boost (`0x81`) needs the action-gauge-extend consumer;
+    /// `0x8B..=0x8E`) via [`Self::apply_buff_items`], and Fury Boost (`0x81`,
+    /// the action-gauge extension) via [`Self::apply_action_gauge_items`]. Items
+    /// that still need infra this engine doesn't have are intentionally
+    /// **omitted** (a held one just isn't offered) rather than shown as a no-op:
     /// - utility (Door of Wind warp `0x89`, Incense encounter-rate `0x8A`, the
     ///   summon flutes `0x98`/`0x99`) have no engine consumer yet.
     ///
@@ -417,6 +428,29 @@ impl ItemCatalog {
         }
     }
 
+    /// Seed the action-gauge-extension consumable (class 5, Fury Boost) into the
+    /// catalog from the real on-disc item-effect table, as an
+    /// [`ItemEffect::ActionGauge`] marker (battle-only). The extension is applied
+    /// to the target's AP gauge in [`crate::World::use_item`].
+    ///
+    /// Like the sibling seeders, installed **only** when the disc table is
+    /// present and the id is actually classified as an action-gauge item.
+    pub fn apply_action_gauge_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        use legaia_asset::item_effect::StatItemEffect;
+        for &(id, name) in ACTION_GAUGE_ITEMS {
+            if matches!(table.stat_effect(id), Some(StatItemEffect::ActionGauge)) {
+                let battle_usable = table.effect(id).map(|e| e.battle_usable()).unwrap_or(true);
+                self.insert(ItemEntry {
+                    id,
+                    name,
+                    effect: ItemEffect::ActionGauge,
+                    usable_in_battle: battle_usable,
+                    usable_in_field: false,
+                });
+            }
+        }
+    }
+
     /// `true` if the item's effect applies to the whole party (the descriptor's
     /// `0x20` all-party flag). The item-use session fans a flagged item out
     /// across every valid ally instead of asking for a single target.
@@ -486,6 +520,9 @@ pub enum ItemOutcome {
     Buffed {
         count: u8,
     },
+    /// A one-battle action-gauge extension ([`ItemEffect::ActionGauge`], Fury
+    /// Boost) was applied to the target's AP gauge.
+    ActionGaugeExtended,
     SpiritGained {
         amount: u8,
     },
@@ -583,10 +620,12 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
             }
         }
         ItemEffect::StatBoost { target: t, delta } => ItemOutcome::StatRaised { target: t, delta },
-        // The multi-stat permanent boost and the one-battle buff are both
-        // resolved from the on-disc table in `World::use_item` (which has the
-        // table + the target actor), so the pure, table-less path is a no-op.
-        ItemEffect::StatUp | ItemEffect::BattleBuff => ItemOutcome::NoEffect,
+        // The multi-stat permanent boost, the one-battle buff, and the
+        // action-gauge extension are all resolved against live battle state in
+        // `World::use_item`, so the pure, table-less path is a no-op.
+        ItemEffect::StatUp | ItemEffect::BattleBuff | ItemEffect::ActionGauge => {
+            ItemOutcome::NoEffect
+        }
         ItemEffect::Spirit { amount } => ItemOutcome::SpiritGained { amount },
         ItemEffect::Capture { strength } => ItemOutcome::CaptureRolled { strength },
         ItemEffect::Escape => ItemOutcome::EscapeRequested,
@@ -796,6 +835,10 @@ mod tests {
         assert_eq!(apply_effect(ItemEffect::StatUp, &t), ItemOutcome::NoEffect);
         assert_eq!(
             apply_effect(ItemEffect::BattleBuff, &t),
+            ItemOutcome::NoEffect
+        );
+        assert_eq!(
+            apply_effect(ItemEffect::ActionGauge, &t),
             ItemOutcome::NoEffect
         );
     }

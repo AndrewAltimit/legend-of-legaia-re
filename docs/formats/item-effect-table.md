@@ -220,7 +220,21 @@ bookkeeping as buff *spells*): Power/Shield/Speed Elixir ramp ATK / DEF / SPD,
 Wonder Elixir ramps all four (SPD + DEF + ATK + AGL). The disc-gated
 `elixir_battle_buffs_seed_and_ramp_from_disc` test pins that Power Elixir ramps a
 100 ATK scalar to 120 and Wonder Elixir installs four buff trackers without
-compounding. Fury Boost (class 5, action-gauge) still needs its own consumer.
+compounding.
+
+**Fury Boost** (class 5) is seeded by `ItemCatalog::apply_action_gauge_items`
+(battle-only) and extends the target's action gauge for the battle. Retail sets
+the actor `+0x1F9` flag, after which the action-SM gauge-build phase (`case 4`,
+`overlay_0898_801e295c.txt` line ~4294) sizes the gauge as `gauge_stat * 7 / 5 + 8`
+(clamped to `0x120`) instead of the base length. The engine models the AP gauge
+as a discrete per-turn budget, not a continuous pixel length, so `World::use_item`
+approximates the extension by raising the slot's `ApGauge::base_ap` by the retail
+`×7/5` ratio (the `+8` pixel term and the gauge-stat source aren't representable);
+it persists for the battle and is reverted at battle end. The disc-gated
+`fury_boost_seeds_and_extends_the_ap_gauge_from_disc` test pins the seeding +
+extension, and the in-crate
+`use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end` the full
+apply / idempotent / revert lifecycle.
 
 ## See also
 
