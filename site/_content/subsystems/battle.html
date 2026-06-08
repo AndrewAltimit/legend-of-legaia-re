@@ -276,7 +276,7 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
   <table>
     <thead><tr><th>Status</th><th>Source byte</th><th>Default duration (clean-room)</th><th>Retail effect (wiki)</th></tr></thead>
     <tbody>
-      <tr><td>Toxic</td><td><code>1</code></td><td>4 turns</td><td>"Deadly Poison": HP drains faster than Venom and attack/defense drop (engine: <code>max_hp/16</code> tick + ATK x0.875)</td></tr>
+      <tr><td>Toxic</td><td><code>1</code></td><td>4 turns</td><td>"Deadly Poison": HP drains faster than Venom and attack/defense drop (engine: <code>max_hp/8</code> tick + ATK & DEF x0.875)</td></tr>
       <tr><td>Numb</td><td><code>2</code></td><td>3 turns</td><td>Paralysis: cannot act; clears on being hit or after some turns (a full block, not a chance roll)</td></tr>
       <tr><td>Venom</td><td><code>3</code> (Other)</td><td>6 turns</td><td>"Poison": HP drains, lesser than Toxic (engine: <code>current_hp/8</code> tick)</td></tr>
       <tr><td>Sleep</td><td><code>4</code></td><td>3 turns</td><td>Asleep; wakes when hit</td></tr>

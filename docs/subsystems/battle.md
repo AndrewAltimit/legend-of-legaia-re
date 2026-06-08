@@ -591,7 +591,7 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 
 | Status | byte | Default duration (clean-room) | Retail effect (wiki) | Engine |
 |---|---|---|---|---|
-| Toxic | `1` | 4 turns | "Deadly Poison": HP drains faster than Venom AND attack/defense drop | `max_hp/16` tick + ATK x0.875; the faster-than-Venom rate and the DEF drop aren't modelled |
+| Toxic | `1` | 4 turns | "Deadly Poison": HP drains faster than Venom AND attack/defense drop | `max_hp/8` tick (>= Venom, ~2x once below half HP) + ATK & DEF x0.875 |
 | Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | full block + clear-on-hit (enforced, same shape as Sleep) |
 | Venom | `3` (Other) | 6 turns | "Poison": HP drains (lesser than Toxic) | `current_hp/8` tick |
 | Sleep | `4` | 3 turns | Asleep; wakes when hit | block + clear-on-hit (matches) |
@@ -637,7 +637,7 @@ Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap
 
 ## Battle stat aggregator
 
-Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
+Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
 Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 

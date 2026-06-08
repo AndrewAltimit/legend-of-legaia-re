@@ -114,12 +114,15 @@ impl EquipmentTable {
 /// the same `FUN_80042558` pass - Toxic reduces ATK by 1/8, Confuse
 /// drops accuracy in half, etc. These values are baked into the
 /// resolver and exposed for engines that want to override them. (Per the
-/// Legaia wiki, Toxic also lowers DEFENSE, not just ATK; that DEF penalty is
-/// not modelled here yet - only the ATK multiplier is applied.)
+/// Legaia wiki, Toxic lowers both ATK and DEFENSE.)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatusModifiers {
     /// Multiplier applied to ATK when the actor is Toxic. Default `0.875`.
     pub toxic_atk_mult: f32,
+    /// Multiplier applied to both defenses (UDF + LDF) when the actor is Toxic -
+    /// the wiki notes the deadly poison drops attack *and* defense. Default
+    /// `0.875` (the exact retail magnitude isn't pinned; mirrors the ATK drop).
+    pub toxic_def_mult: f32,
     /// Multiplier applied to accuracy when the actor is Confuse. `0.5`.
     pub confuse_acc_mult: f32,
     /// Multiplier applied to evasion when Numb / Sleep / Stone / Faint.
@@ -136,6 +139,7 @@ impl Default for StatusModifiers {
     fn default() -> Self {
         Self {
             toxic_atk_mult: 0.875,
+            toxic_def_mult: 0.875,
             confuse_acc_mult: 0.5,
             immobilised_eva_mult: 0.0,
             curse_mp_mult: f32::INFINITY,
@@ -263,6 +267,9 @@ pub fn compute_battle_stats(
         match k {
             StatusKind::Toxic => {
                 stats.atk = mul_clamp(stats.atk, modifiers.toxic_atk_mult);
+                // Toxic also drops defense (both UDF and LDF).
+                stats.udf = mul_clamp(stats.udf, modifiers.toxic_def_mult);
+                stats.ldf = mul_clamp(stats.ldf, modifiers.toxic_def_mult);
             }
             StatusKind::Confuse => {
                 stats.acc = mul_clamp(stats.acc, modifiers.confuse_acc_mult);
@@ -457,9 +464,10 @@ mod tests {
         let s = compute_battle_stats_default(&record(), &t, &[StatusKind::Toxic]);
         // Atk: 100 + 40 = 140; Toxic -> 140 * 0.875 = 122.5 -> 123 (rounded).
         assert_eq!(s.atk, 123);
-        // UDF: 50 + 20 = 70; LDF: 60 + 25 = 85.
-        assert_eq!(s.udf, 70);
-        assert_eq!(s.ldf, 85);
+        // Toxic also drops defense by 0.875:
+        // UDF: (50 + 20) * 0.875 = 61.25 -> 61; LDF: (60 + 25) * 0.875 = 74.375 -> 74.
+        assert_eq!(s.udf, 61);
+        assert_eq!(s.ldf, 74);
     }
 
     #[test]

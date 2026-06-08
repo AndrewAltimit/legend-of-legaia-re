@@ -22,7 +22,7 @@
 //!
 //! | Status    | byte | Retail effect (wiki)                                        | Engine |
 //! |-----------|------|-------------------------------------------------------------|--------|
-//! | `Toxic`   | `1`  | "Deadly Poison": HP drains faster than Venom AND ATK/DEF drop | DoT `max_hp/16` + ATK x0.875; DoT-vs-Venom magnitude and the DEF drop not modelled |
+//! | `Toxic`   | `1`  | "Deadly Poison": HP drains faster than Venom AND ATK/DEF drop | DoT `max_hp/8` (>= Venom, ~2x once below half HP) + ATK & DEF x0.875 |
 //! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns | full block + clear-on-hit (matches; same shape as Sleep) |
 //! | `Venom`   | `3`  | "Poison": HP drains (lesser than Toxic)                      | DoT `current_hp/8` |
 //! | `Sleep`   | `4`  | Asleep; wakes when hit                                       | block + clear-on-hit (matches) |
@@ -42,9 +42,10 @@ use legaia_art::record::EnemyEffect;
 /// `EnemyEffect::Other(_)`. Per-turn effects are clean-room approximations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusKind {
-    /// Deadly poison: HP drains faster than Venom and ATK/DEF drop. Modelled
-    /// as an HP tick (clean-room `max_hp / 16`) + an ATK penalty; the
-    /// faster-than-Venom magnitude and the DEF penalty are not yet modelled.
+    /// Deadly poison: HP drains faster than Venom and ATK/DEF drop. Modelled as
+    /// an HP tick (clean-room `max_hp / 8`, a flat fraction of max HP so it
+    /// doesn't taper and stays >= Venom's `current_hp / 8`) plus ATK + DEF
+    /// penalties (see [`crate::status_effects`] consumers).
     Toxic,
     /// Paralysis: the unit cannot act; clears on being hit or after some turns
     /// (a full block, NOT a probability roll). Enforced via [`Self::blocks_actions`]
@@ -397,11 +398,14 @@ impl StatusEffectTracker {
     }
 }
 
-/// Tick-damage formula for Toxic (clean-room `max_hp / 16`, floored at 1).
-/// Toxic is the deadly poison (~2x Venom in-game); that relative magnitude is
-/// not yet reflected here - the formula is a placeholder pending a disc trace.
+/// Tick-damage formula for Toxic (clean-room `max_hp / 8`, floored at 1).
+/// Toxic is the deadly poison: it bites a flat fraction of *max* HP (so it
+/// doesn't taper as HP falls, unlike Venom, and can deplete the target to 0),
+/// which keeps it >= Venom's `current_hp / 8` at every HP and lands at ~2x once
+/// the target drops below half HP. The exact disc rate isn't pinned - the wiki
+/// only gives "drains faster than Venom".
 pub fn toxic_tick_damage(max_hp: u16) -> u16 {
-    (max_hp / 16).max(1)
+    (max_hp / 8).max(1)
 }
 
 /// Tick-damage formula for Venom (clean-room `current_hp / 8`, floored at 1).
@@ -484,15 +488,15 @@ mod tests {
     }
 
     #[test]
-    fn burned_tick_dot_dropping_max_hp() {
+    fn toxic_tick_dot_uses_max_hp() {
         let mut t = StatusEffectTracker::new();
         t.apply_with_duration(0, StatusKind::Toxic, 3);
         let dmg = t.tick_actor(0, 100, 160);
-        assert_eq!(dmg, 10); // 160 / 16
+        assert_eq!(dmg, 20); // 160 / 8
     }
 
     #[test]
-    fn burned_floors_at_1() {
+    fn toxic_floors_at_1() {
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Toxic);
         let dmg = t.tick_actor(0, 5, 5);
@@ -574,6 +578,16 @@ mod tests {
         // Stone has no in-battle cure - its default duration is effectively
         // "until battle end".
         assert_eq!(StatusKind::Stone.default_duration(), 255);
+    }
+
+    #[test]
+    fn toxic_drains_at_least_as_fast_as_venom() {
+        // Toxic bites max_hp/8 (a flat fraction of max, doesn't taper); Venom
+        // bites current_hp/8. For an actor with max_hp 100: equal at full HP,
+        // and ~2x once below half HP.
+        assert_eq!(toxic_tick_damage(100), venom_tick_damage(100)); // full: 12 == 12
+        assert!(toxic_tick_damage(100) > venom_tick_damage(40)); // hurt: 12 > 5
+        assert_eq!(toxic_tick_damage(100), 2 * venom_tick_damage(50)); // half: 12 == 2*6
     }
 
     #[test]

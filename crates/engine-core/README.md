@@ -84,7 +84,7 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   command input. Charges +5 on Spirit-press, refills per turn.
 - `battle_stats` - equipment-aware stat aggregator (clean-room port of
   `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
-  status-effect modifiers (Toxic -ATK, Confuse halves accuracy,
+  status-effect modifiers (Toxic -ATK/-DEF, Confuse halves accuracy,
   Numb / Sleep / Stone / Faint zero evasion, Curse / Faint block Magic).
 - `items` - typed inventory item-effect catalog, keyed by **real**
   retail item ids (the `SCUS_942.54` item table - e.g. Healing Leaf is

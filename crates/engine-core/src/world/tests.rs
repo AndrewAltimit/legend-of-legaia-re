@@ -6477,7 +6477,8 @@ fn tick_status_effects_drains_hp() {
     world.actors[0].battle.max_hp = 160;
     world.status_effects.apply(0, StatusKind::Toxic);
     world.tick_status_effects();
-    assert_eq!(world.actors[0].battle.hp, 90);
+    // Toxic drains max_hp / 8 = 160 / 8 = 20.
+    assert_eq!(world.actors[0].battle.hp, 80);
 }
 
 #[test]

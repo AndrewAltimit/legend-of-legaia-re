@@ -260,10 +260,8 @@ mod tests {
             a.battle.hp = 5;
             a.battle.max_hp = 100;
         }
-        // Apply Venom - drains hp/8 per tick = 12 → kills the actor.
-        // (max_hp 100, so toxic would only do 6; use Venom current_hp/8 = 0
-        // which won't kill, fall back to Toxic with low max_hp.)
-        // Toxic drain is max_hp / 16 = 6 → kills the 5-HP actor.
+        // Toxic drains max_hp / 8 = 100/8 = 12 per tick → kills the 5-HP actor
+        // (Toxic bites a fraction of max HP, so it can deplete the target).
         world
             .status_effects
             .apply_from_enemy_effect(0, EnemyEffect::Toxic);
