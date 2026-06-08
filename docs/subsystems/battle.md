@@ -600,7 +600,21 @@ Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` byt
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
 
-**Turn-level enforcement (live loop).** The action-blocking columns above are enforced at the turn grant, not just modelled: when the live battle loop (`World::live_battle_tick`) hands a combatant its turn, an actor carrying a `blocks_actions` status (Asleep / Stunned / Petrified) **loses the turn** — its initiative key is already consumed, so play passes on and the SM stays at `EndOfAction` with no action armed (the status duration still ticks, so the affliction wears off). A caster carrying a `blocks_magic` status (Silenced / Petrified) that the monster AI picks a cast for **falls back to a physical strike** (`World::take_monster_turn`, mirroring the MP-affordability fallback). The gate reads `StatusKind::blocks_actions`/`blocks_magic` via `World::actor_blocked_from_acting`/`actor_blocked_from_magic`. The party side mirrors this: a silenced/petrified player who picks **Magic** can't open the submenu — `World::build_battle_spell_session` returns `None` for a `blocks_magic` caster, so the caller bounces back to the command menu (the same graceful fallback it uses when there's no caster record).
+**Turn-level enforcement (live loop).** The action-blocking columns above are
+enforced at the turn grant, not just modelled. When the live battle loop
+(`World::live_battle_tick`) hands a combatant its turn, an actor carrying a
+`blocks_actions` status (Asleep / Stunned / Petrified) **loses the turn** — its
+initiative key is already consumed, so play passes on and the SM stays at
+`EndOfAction` with no action armed (the status duration still ticks, so the
+affliction wears off). A caster carrying a `blocks_magic` status (Silenced /
+Petrified) that the monster AI picks a cast for **falls back to a physical
+strike** (`World::take_monster_turn`, mirroring the MP-affordability fallback).
+The gate reads `StatusKind::blocks_actions`/`blocks_magic` via
+`World::actor_blocked_from_acting`/`actor_blocked_from_magic`. The party side
+mirrors this: a silenced/petrified player who picks **Magic** can't open the
+submenu — `World::build_battle_spell_session` returns `None` for a `blocks_magic`
+caster, so the caller bounces back to the command menu (the same graceful
+fallback it uses when there's no caster record).
 
 ## AP / Spirit gauge
 
@@ -631,7 +645,17 @@ Typed catalogue of inventory items the battle / field menu consults. Each entry 
 
 `apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver - engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
 
-`World::use_item(item_id, target_slot)` is the shared apply kernel (battle item command + field menu both route through it): it builds the `TargetSnapshot` from the live actor, resolves the outcome, and writes it back. `StatRaised` (the permanent stat-up consumables - Power Tonic, Vital Tonic) is applied via `apply_stat_raise`: an HP/MP-max raise bumps the persistent character record **and** the live actor's caps (refilling the gained amount); a combat-stat raise lands in the record's `+0x110` live-stat block that `seed_party_battle_stats` re-derives from, so the gain shows immediately and survives a save. Combat stats cap at the record's per-stat cap constant; HP/MP max at 9999. (These items are field-only and absent from the captured battle traces, so the exact retail cap / refill rule is not byte-pinned - the engine uses self-consistent rules.)
+`World::use_item(item_id, target_slot)` is the shared apply kernel (battle item
+command + field menu both route through it): it builds the `TargetSnapshot` from
+the live actor, resolves the outcome, and writes it back. `StatRaised` (the
+permanent stat-up consumables - Power Tonic, Vital Tonic) is applied via
+`apply_stat_raise`: an HP/MP-max raise bumps the persistent character record
+**and** the live actor's caps (refilling the gained amount); a combat-stat raise
+lands in the record's `+0x110` live-stat block that `seed_party_battle_stats`
+re-derives from, so the gain shows immediately and survives a save. Combat stats
+cap at the record's per-stat cap constant; HP/MP max at 9999. (These items are
+field-only and absent from the captured battle traces, so the exact retail cap /
+refill rule is not byte-pinned - the engine uses self-consistent rules.)
 
 Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
 
@@ -773,7 +797,17 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`crates/engine-core::target_picker`](../../crates/engine-core/src/target_picker.rs).
 
-`BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the wiring API engines drive when a command needs a target. The session charges AP up-front, opens the picker, and stashes the command in `pending_target_command`. When the picker resolves, `maybe_close_picker_with_world` writes the resolved slot to `BattleActor::active_target` (the field the action SM reads at strike time via `host.actor(actor_slot).active_target`) and admits the buffered command into the runner queue without re-charging AP. Sweep targets write a `0xFF` sentinel; cancellation drops the command without admitting it. Engines that already have a `&World` borrow at picker-open time use [`open_target_picker`]; engines that need the same active-target write at open-time (sweep / self) call [`open_target_picker_mut`].
+`BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the
+wiring API engines drive when a command needs a target. The session charges AP
+up-front, opens the picker, and stashes the command in `pending_target_command`.
+When the picker resolves, `maybe_close_picker_with_world` writes the resolved
+slot to `BattleActor::active_target` (the field the action SM reads at strike
+time via `host.actor(actor_slot).active_target`) and admits the buffered command
+into the runner queue without re-charging AP. Sweep targets write a `0xFF`
+sentinel; cancellation drops the command without admitting it. Engines that
+already have a `&World` borrow at picker-open time use [`open_target_picker`];
+engines that need the same active-target write at open-time (sweep / self) call
+[`open_target_picker_mut`].
 
 ## Encounter trigger - runtime memory layout
 
@@ -861,7 +895,19 @@ The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../to
 | Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
 | Level-up | `+0x130` | `0x02 → 0x03` | rank counter (+1) |
 
-The retail per-level growth source **is** in `SCUS_942.54`: the per-stat 98-entry curves at `DAT_800769CC` (stride `0x62`) + the parameter block at `DAT_80076918` that selects each stat's curve row, read and applied by the overlay level-up function `FUN_801E9504` (see [`subsystems/level-up.md`](level-up.md#stat-gains)). The earlier writer-search came up empty because it scanned the `magic_level_up` *display* overlay, not the victory-path applier; the "Seru struct +0x74" hypothesis stays falsified (those `+0x74` reads are a `0x80808080` battle-state flag the SCUS handler `FUN_800480D8` writes, not a stat grant). `legaia_asset::level_up_tables::growth_tables_from_scus` parses the curves + param block; turning their bytes into a per-character `StatGrowthCurve::PerLevel` vector is the remaining step (it needs a pre/post level-up capture to validate the byte->gain math before wiring).
+The retail per-level growth source **is** in `SCUS_942.54`: the per-stat
+98-entry curves at `DAT_800769CC` (stride `0x62`) + the parameter block at
+`DAT_80076918` that selects each stat's curve row, read and applied by the
+overlay level-up function `FUN_801E9504` (see
+[`subsystems/level-up.md`](level-up.md#stat-gains)). The earlier writer-search
+came up empty because it scanned the `magic_level_up` *display* overlay, not the
+victory-path applier; the "Seru struct +0x74" hypothesis stays falsified (those
+`+0x74` reads are a `0x80808080` battle-state flag the SCUS handler
+`FUN_800480D8` writes, not a stat grant).
+`legaia_asset::level_up_tables::growth_tables_from_scus` parses the curves +
+param block; turning their bytes into a per-character
+`StatGrowthCurve::PerLevel` vector is the remaining step (it needs a pre/post
+level-up capture to validate the byte->gain math before wiring).
 
 Engines populate one captured observation at a time via:
 
@@ -936,7 +982,19 @@ Monster ids missing from the catalog contribute zero (silently skipped) so a par
 
 With the flag set, the per-frame flow is:
 
-- **Field tick** (`World::live_field_tick`): a *step* is the player actor crossing into a new 128-unit collision tile (`pos >> 7`). Each step drives one `World::on_field_step` encounter roll; `World::tick_encounter` advances the session's `Transition` / `Grace` countdowns every frame. When the `EncounterSession` reaches `Triggered`, `World::begin_encounter_battle` resolves the rolled `formation_id` against `World::formation_table`, snapshots the field actor table into `World::field_return`, seeds the battle actor table from the formation + `MonsterCatalog` (`enter_battle_from_formation`), and flips `mode` to `Battle`. If a battle track is configured (`World::battle_bgm`, set via `World::set_battle_bgm`), `enter_battle_from_formation` also calls `World::swap_to_battle_bgm`: it stashes the current field track and queues a `FieldEvent::Bgm{sub_op: 1}` for the battle id, which the host's BGM director cross-fades to exactly like a field op-`0x35` start.
+- **Field tick** (`World::live_field_tick`): a *step* is the player actor
+crossing into a new 128-unit collision tile (`pos >> 7`). Each step drives one
+`World::on_field_step` encounter roll; `World::tick_encounter` advances the
+session's `Transition` / `Grace` countdowns every frame. When the
+`EncounterSession` reaches `Triggered`, `World::begin_encounter_battle` resolves
+the rolled `formation_id` against `World::formation_table`, snapshots the field
+actor table into `World::field_return`, seeds the battle actor table from the
+formation + `MonsterCatalog` (`enter_battle_from_formation`), and flips `mode`
+to `Battle`. If a battle track is configured (`World::battle_bgm`, set via
+`World::set_battle_bgm`), `enter_battle_from_formation` also calls
+`World::swap_to_battle_bgm`: it stashes the current field track and queues a
+`FieldEvent::Bgm{sub_op: 1}` for the battle id, which the host's BGM director
+cross-fades to exactly like a field op-`0x35` start.
 - **Battle tick** (`World::live_battle_tick`): wraps `step_battle` with the host-side glue the retail engine performs through its render + animation systems, so the battle resolves from `tick` alone. It folds this frame's `BattleEvent::ApplyArtStrike` damage into target HP; applies a generic physical strike (`apply_basic_attack`, `damage = art_strike_damage_default(attack, defense, 16)`) on the `AttackChain → AttackRecovery` edge when no art strike did; marks zero-HP combatants dead so the SM's wipe scan resolves; clears `ADVANCE_DONE` at `AttackRecovery`; and re-arms the next party attacker at `EndOfAction`. On `StepOutcome::BattleComplete` it calls `World::finish_battle`.
 - **Return** (`World::finish_battle`): on `BattleEndCause::MonsterWipe` it credits loot via `World::apply_battle_loot` (recorded in `World::last_battle_rewards`); on `PartyWipe` it raises `World::game_over`. Either way it ends the encounter session's battle (post-battle grace + suppression), restores the `field_return` actor snapshot, and flips `mode` back to `Field`. When a battle-BGM swap was active it also calls `World::restore_field_bgm`, which queues a `FieldEvent::Bgm{sub_op: 1}` for the stashed field track (or a stop, sub-op 4, if no field track was playing at encounter start) so the director cross-fades back.
 
@@ -957,16 +1015,57 @@ The battle tick has two modes.
 
 All four commands — **Attack**, **Arts**, **Magic**, **Item** — are wired into the live loop. Attack opens a target cursor and commits a physical strike through the action SM. Arts / Magic / Item resolve to `Resolution::OpenArtsMenu` / `OpenSpellMenu` / `OpenItemMenu` — the command session can't run those pickers itself (they need the caster's saved chains / learned spells / live MP / inventory + party stats), so it hands off to a host-owned submenu:
 
-- **Item** opens a battle-context `inventory_use::InventoryUseSession` on `World::battle_item_menu` (built by `World::build_battle_item_session` from the live inventory, with one ally row per party slot **plus one enemy row per live monster slot**, the enemy rows tagged `TargetRow::is_enemy`). The session routes by item: heals / cures / revives validate against ally rows, offensive items (Bomb / capture / escape) against enemy rows, and on entering target-select the cursor auto-positions on the first valid-side target (`target_valid_for_effect`). On a completed use the item applies via `World::use_item`, one copy is removed (`World::consume_item`), and a popup is surfaced — heal-coloured for heals/revives, damage-coloured for offensive items. `World::use_item` folds the offensive outcomes too: `DamageDealt` subtracts enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture` (down + log id into `battle_captures`), and `EscapeRequested` sets `World::battle_escaped` so the item tick returns to the field via `finish_battle` (no loot).
+- **Item** opens a battle-context `inventory_use::InventoryUseSession` on
+`World::battle_item_menu` (built by `World::build_battle_item_session` from the
+live inventory, with one ally row per party slot **plus one enemy row per live
+monster slot**, the enemy rows tagged `TargetRow::is_enemy`). The session routes
+by item: heals / cures / revives validate against ally rows, offensive items
+(Bomb / capture / escape) against enemy rows, and on entering target-select the
+cursor auto-positions on the first valid-side target
+(`target_valid_for_effect`). On a completed use the item applies via
+`World::use_item`, one copy is removed (`World::consume_item`), and a popup is
+surfaced — heal-coloured for heals/revives, damage-coloured for offensive items.
+`World::use_item` folds the offensive outcomes too: `DamageDealt` subtracts
+enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
+(down + log id into `battle_captures`), and `EscapeRequested` sets
+`World::battle_escaped` so the item tick returns to the field via
+`finish_battle` (no loot).
 - **Magic** opens a `battle_magic::BattleSpellSession` on `World::battle_spell_menu` (built by `World::build_battle_spell_session` from the caster's learned spells off their roster record + live MP, MP-gated). The picker kind matches the spell's `SpellTarget` shape. On confirm `World::apply_battle_spell` deducts MP once, resolves each affected slot through `spells::cast_spell` (caster magic from `World::battle_magic`, target magic-defense reusing `World::battle_defense`), and folds the outcome into the live actor table via `World::fold_spell_outcome`. All `SpellOutcome` shapes apply:
     - damage / heal / cure / revive;
     - **buffs** (`World::apply_battle_buff` writes the delta straight into the per-slot `battle_attack` / `battle_defense` / `battle_magic` scalar with refresh semantics + a per-turn timer aged in the re-arm path, reverted exactly on expiry);
     - **capture** (`World::resolve_capture` rolls vs the monster's missing-HP fraction — reliable only on a weakened Seru — downing it and logging the id into `World::battle_captures` on success);
     - and **escape** (sets `World::battle_escaped`, and the spell tick returns to the field via `finish_battle` with no loot).
     - Accuracy / Evasion / Speed buffs are tracked but have no live-loop scalar to move yet.
-- **Arts** opens a `battle_arts::BattleArtsSession` on `World::battle_arts_menu` (built by `World::build_battle_arts_rows` from `World::saved_chains` filtered to the caster). An Art is a saved command chain; each menu row carries a per-strike **power profile** (`Vec<PowerByte>` + `EnemyEffect`) and runs through the real art-power path: `World::apply_battle_art` drives each power byte through `crate::art_strike::apply_art_strike`, so the byte's multiplier tier + UDF/LDF target decode, `resolve_battle_defense` picks the matching defense half, and the art's status effect lands on a hit. The profile comes from a staged `ArtRecord` (`World::art_records`, keyed by `(Character, ActionConstant)`, populated from disc PROT entry `0x05C4` via `World::set_art_record`) when a record's command string the saved chain ends with (`chain_matches_record`); with no matching record it falls back to a synthetic per-direction profile (`battle_arts::synthetic_power` — Down → LDF, else UDF, tier-0 ×12, clamped to `MAX_ART_HITS`). Both paths share the one `apply_art_strike` kernel; the synthetic fallback keeps a saved chain playable when the disc art tables aren't loaded.
+- **Arts** opens a `battle_arts::BattleArtsSession` on `World::battle_arts_menu`
+(built by `World::build_battle_arts_rows` from `World::saved_chains` filtered to
+the caster). An Art is a saved command chain; each menu row carries a per-strike
+**power profile** (`Vec<PowerByte>` + `EnemyEffect`) and runs through the real
+art-power path: `World::apply_battle_art` drives each power byte through
+`crate::art_strike::apply_art_strike`, so the byte's multiplier tier + UDF/LDF
+target decode, `resolve_battle_defense` picks the matching defense half, and the
+art's status effect lands on a hit. The profile comes from a staged `ArtRecord`
+(`World::art_records`, keyed by `(Character, ActionConstant)`, populated from
+disc PROT entry `0x05C4` via `World::set_art_record`) when a record's command
+string the saved chain ends with (`chain_matches_record`); with no matching
+record it falls back to a synthetic per-direction profile
+(`battle_arts::synthetic_power` — Down → LDF, else UDF, tier-0 ×12, clamped to
+`MAX_ART_HITS`). Both paths share the one `apply_art_strike` kernel; the
+synthetic fallback keeps a saved chain playable when the disc art tables aren't
+loaded.
 
-While any submenu is open both the SM and the command session are parked; `World::tick_battle_{arts,spell,item}_menu` drives it from `World::input`. On a completed action the result is applied, the relevant popup is surfaced (`battle_hit_fx`), and the action SM is **parked at `EndOfAction`** so the re-arm block cycles to the next combatant — a cast / art / item use is the actor's whole turn, no Attack-SM strike fires. Backing out reopens the command menu for the same actor. Implementation: [`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs) + [`battle_arts`](../../crates/engine-core/src/battle_arts.rs) / [`battle_magic`](../../crates/engine-core/src/battle_magic.rs); coverage `crates/engine-core/tests/battle_player_driven.rs` walks into a battle, asserts no strike lands until the player confirms a command, then drives the picker to a monster wipe + loot.
+While any submenu is open both the SM and the command session are parked;
+`World::tick_battle_{arts,spell,item}_menu` drives it from `World::input`. On a
+completed action the result is applied, the relevant popup is surfaced
+(`battle_hit_fx`), and the action SM is **parked at `EndOfAction`** so the
+re-arm block cycles to the next combatant — a cast / art / item use is the
+actor's whole turn, no Attack-SM strike fires. Backing out reopens the command
+menu for the same actor. Implementation:
+[`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs)
++ [`battle_arts`](../../crates/engine-core/src/battle_arts.rs) /
+[`battle_magic`](../../crates/engine-core/src/battle_magic.rs); coverage
+`crates/engine-core/tests/battle_player_driven.rs` walks into a battle, asserts
+no strike lands until the player confirms a command, then drives the picker to a
+monster wipe + loot.
 
 ### Post-battle Seru learning
 
