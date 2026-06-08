@@ -2,7 +2,7 @@
 //! if present. Skips and passes when the executable isn't on disk - same gating
 //! pattern as the other disc-dependent tests so CI doesn't need Sony bytes.
 
-use legaia_asset::item_effect::{ItemEffectCategory, ItemEffectTable};
+use legaia_asset::item_effect::{ItemEffectCategory, ItemEffectTable, RestoreAmount};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -92,4 +92,47 @@ fn decodes_the_item_effect_table_or_skips() {
     let swimsuit = table.effect(0x58).expect("swimsuit effect");
     assert_eq!(swimsuit.class, 0);
     assert!(!swimsuit.is_usable_consumable());
+}
+
+/// The literal restore *amounts* the apply handler `FUN_800402F4` reads from the
+/// static heal-amount table at `0x8007655C`. Pins, on real disc bytes, that the
+/// amounts are an on-disc table (NOT an overlay-resident immediate switch) and
+/// that the engine's curated heal/MP figures match it byte-for-byte.
+#[test]
+fn decodes_the_heal_amount_table_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let table = ItemEffectTable::from_scus(&bytes).expect("parse item-effect table");
+
+    // The tier-indexed sub-tables, byte-exact off the disc.
+    let amts = table.heal_amounts();
+    assert_eq!(amts.hp, [200, 800, 9999], "HP heal caps (tiers 0/1/2)");
+    assert_eq!(amts.mp, [50, 200, 20], "MP heal caps (tiers 0/1/2)");
+
+    // Per-item restore, resolved through each item's (class, tier) descriptor.
+    // Healing Leaf / Flower / Berry climb the HP tiers; tier 2 is a full heal.
+    assert_eq!(table.restore_amount(0x77), Some(RestoreAmount::Hp(200)));
+    assert_eq!(table.restore_amount(0x78), Some(RestoreAmount::Hp(800)));
+    assert_eq!(table.restore_amount(0x79), Some(RestoreAmount::Hp(9999)));
+    // Healing Bloom (all-party HP, class 1) shares the HP table.
+    assert_eq!(table.restore_amount(0x7A), Some(RestoreAmount::Hp(200)));
+    // Magic Leaf / Fruit restore MP.
+    assert_eq!(table.restore_amount(0x7C), Some(RestoreAmount::Mp(50)));
+    assert_eq!(table.restore_amount(0x7D), Some(RestoreAmount::Mp(200)));
+    // Healing Shroom shares Leaf's subtype 0, so it really heals 200 (not 60).
+    assert_eq!(table.restore_amount(0xA3), Some(RestoreAmount::Hp(200)));
+    // Revive (Phoenix) is character-relative (max_hp*0.4 + rand), not a flat
+    // table amount; cures resolve to None (not a flat heal at all).
+    assert_eq!(
+        table.restore_amount(0x80),
+        Some(RestoreAmount::CharRelative)
+    );
+    assert_eq!(
+        table.restore_amount(0x7E),
+        None,
+        "Antidote is a cure, not a heal"
+    );
 }

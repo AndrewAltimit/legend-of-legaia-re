@@ -9,10 +9,16 @@
 //! (`DAT_800752C0`, parser [`legaia_asset::item_effect`]): keyed by item id ->
 //! subtype -> `[class, tier, flags]`. [`ItemCatalog::apply_effect_flags`]
 //! installs its field/battle usability gates over the curated entries (which is
-//! how cure/revive items end up correctly battle-only). What the table does NOT
-//! carry is the literal restore *amount*: the `(class, tier) -> 200/800/...`
-//! mapping is a `switch` in the overlay-resident apply handler, so the numeric
-//! amounts here stay the curated walkthrough values (`data/gamedata/items.toml`).
+//! how cure/revive items end up correctly battle-only). The literal restore
+//! *amount* lives in a **separate, also static** heal-amount table
+//! (`0x8007655C`) the apply handler `FUN_800402F4` reads: HP tiers
+//! `[200, 800, 9999]`, MP tiers `[50, 200, 20]` (parser
+//! [`legaia_asset::item_effect::ItemEffectTable::heal_amounts`] /
+//! `restore_amount`). The curated walkthrough values here are **byte-confirmed**
+//! against that table by the disc-gated `item_effect_real` test, so they stay as
+//! the engine's source (no behaviour change). (This corrects an earlier note
+//! that the amounts were an *overlay-resident* immediate switch with no disc
+//! table - they are static `SCUS_942.54` data.)
 //!
 //! (An earlier note placed the effect table at `_DAT_8006F198` via the "action
 //! validator" `FUN_8003fb10`; that was a misattribution - `_DAT_8006F198` is the

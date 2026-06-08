@@ -88,6 +88,29 @@ pub const FLAG_BATTLE_USABLE: u8 = 0x04;
 /// Flag bit: the item is usable from the **field** item menu.
 pub const FLAG_FIELD_USABLE: u8 = 0x02;
 
+/// RAM address of the **heal-amount table** the apply handler `FUN_800402F4`
+/// (jump table `0x80014FA0`, indexed by descriptor class) reads to size a
+/// restore. Two contiguous `u16[4]` sub-tables, tier-indexed (`base + tier*2`),
+/// only tiers `0..=2` read; tier `3+` falls through to the character-relative
+/// Seru-heal path (the `0x80084140`-based per-character spell tables) instead:
+///
+/// - `+0x00` (this VA): **HP** restore caps — `[200, 800, 9999, 0]`. The single-
+///   target HP heal (class `0`) and the all-party HP heal (class `1`) both read
+///   it; tier `2` (`9999`) is an effective full restore.
+/// - `+0x08` (`0x80076564`): **MP** restore caps — `[50, 200, 20, 0]`, read by
+///   the MP heal (class `2`).
+///
+/// Each restore is `min(max - current, table[tier])` (deficit-clamped). Pinned
+/// from `ghidra/scripts/funcs/800402f4.txt` (HP arm `0x800404b8`, MP arm
+/// `0x80040dc0`); the amounts are **static `SCUS_942.54` data**, not an
+/// overlay-resident immediate switch.
+pub const HEAL_AMOUNT_TABLE_VA: u32 = 0x8007_655C;
+/// Byte offset from [`HEAL_AMOUNT_TABLE_VA`] to the MP sub-table.
+pub const MP_SUBTABLE_OFFSET: u32 = 0x08;
+/// Number of tier entries read per heal sub-table (tier `0..=2`; tier `3+` is
+/// character-relative, not a flat amount).
+pub const HEAL_TIER_COUNT: usize = 3;
+
 /// PSX-EXE `t_addr` -> file-offset resolver (`SCUS_942.54` loads its data
 /// segment at `t_addr` from file offset `0x800`). Same shape as the resolver in
 /// [`crate::item_names`].
@@ -217,6 +240,57 @@ impl ItemEffect {
     }
 }
 
+/// The resolved literal restore amount for a `(class, tier)` consumable, decoded
+/// from the [`HEAL_AMOUNT_TABLE_VA`] table the apply handler reads. Only the
+/// flat (deficit-clamped) cases are an on-disc amount; the rest carry the
+/// mechanism so a consumer doesn't mistake them for a fixed number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreAmount {
+    /// HP restore of up to `amount`, clamped to the target's HP deficit (class
+    /// `0` single, class `1` all-party). `9999` (tier 2) is an effective full
+    /// restore.
+    Hp(u16),
+    /// MP restore of up to `amount`, clamped to the MP deficit (class `2`).
+    Mp(u16),
+    /// A heal whose magnitude is **character-relative**, not a flat table value:
+    /// the higher-tier HP heals (tier `3+`) scale off the per-character
+    /// `0x80084140` Seru-heal tables, and revive (class `4`) restores
+    /// `max_hp*0.4 + rand()%(max_hp/8)` (tier `0`) or full HP (tier `> 0`).
+    CharRelative,
+}
+
+/// The two tier-indexed heal-amount sub-tables (`HP` + `MP`) the apply handler
+/// `FUN_800402F4` reads, decoded off the disc. See [`HEAL_AMOUNT_TABLE_VA`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HealAmounts {
+    /// HP restore cap per tier (`0..=2`); `hp[2]` is the effective full restore.
+    pub hp: [u16; HEAL_TIER_COUNT],
+    /// MP restore cap per tier (`0..=2`).
+    pub mp: [u16; HEAL_TIER_COUNT],
+}
+
+impl HealAmounts {
+    /// The flat restore for a `(class, tier)`, or `None` when the class isn't a
+    /// flat-amount heal (cure/buff/arts-book/flute/field) — read
+    /// [`ItemEffect::category`] for those. Class `0`/`1` (single/all-party HP)
+    /// read the HP table; class `2` (MP) reads the MP table; tier `3+` and the
+    /// revive class resolve to [`RestoreAmount::CharRelative`].
+    pub fn resolve(&self, class: u8, tier: u8) -> Option<RestoreAmount> {
+        match class {
+            0 | 1 => Some(match self.hp.get(tier as usize) {
+                Some(&amt) => RestoreAmount::Hp(amt),
+                None => RestoreAmount::CharRelative,
+            }),
+            2 => Some(match self.mp.get(tier as usize) {
+                Some(&amt) => RestoreAmount::Mp(amt),
+                None => RestoreAmount::CharRelative,
+            }),
+            4 => Some(RestoreAmount::CharRelative),
+            _ => None,
+        }
+    }
+}
+
 /// The resolved item-effect table: per item id, the subtype byte it indexes by
 /// and the descriptor that subtype selects.
 #[derive(Debug, Clone)]
@@ -225,6 +299,8 @@ pub struct ItemEffectTable {
     descriptors: Vec<ItemEffect>,
     /// `subtype[id]` - the item-name table `+1` byte, per item id.
     subtype: Vec<u8>,
+    /// The tier-indexed heal-amount sub-tables the apply handler reads.
+    heal_amounts: HealAmounts,
 }
 
 impl ItemEffectTable {
@@ -251,9 +327,23 @@ impl ItemEffectTable {
             subtype.push(*scus.get(off)?);
         }
 
+        let read_tiers = |base_va: u32| -> Option<[u16; HEAL_TIER_COUNT]> {
+            let mut out = [0u16; HEAL_TIER_COUNT];
+            for (tier, slot) in out.iter_mut().enumerate() {
+                let off = map.off(base_va + (tier as u32) * 2)?;
+                *slot = u16::from_le_bytes(scus.get(off..off + 2)?.try_into().ok()?);
+            }
+            Some(out)
+        };
+        let heal_amounts = HealAmounts {
+            hp: read_tiers(HEAL_AMOUNT_TABLE_VA)?,
+            mp: read_tiers(HEAL_AMOUNT_TABLE_VA + MP_SUBTABLE_OFFSET)?,
+        };
+
         Some(Self {
             descriptors,
             subtype,
+            heal_amounts,
         })
     }
 
@@ -276,6 +366,20 @@ impl ItemEffectTable {
     /// Number of descriptor rows parsed.
     pub fn record_count(&self) -> usize {
         self.descriptors.len()
+    }
+
+    /// The tier-indexed heal-amount sub-tables (HP + MP) the apply handler reads.
+    pub fn heal_amounts(&self) -> HealAmounts {
+        self.heal_amounts
+    }
+
+    /// The literal restore an item id applies, decoded from the heal-amount
+    /// table via the item's `(class, tier)` descriptor. `None` for non-heal
+    /// effects (cure / buff / arts book / flute / field) or unparsed ids — read
+    /// [`Self::effect`] / [`ItemEffect::category`] for those.
+    pub fn restore_amount(&self, id: u8) -> Option<RestoreAmount> {
+        let eff = self.effect(id)?;
+        self.heal_amounts.resolve(eff.class, eff.tier)
     }
 }
 
@@ -328,5 +432,25 @@ mod tests {
             ..heal
         };
         assert!(!key.is_usable_consumable());
+    }
+
+    #[test]
+    fn heal_amounts_resolve_by_class_and_tier() {
+        let amts = HealAmounts {
+            hp: [200, 800, 9999],
+            mp: [50, 200, 20],
+        };
+        // Single (0) + all-party (1) HP heals both read the HP table.
+        assert_eq!(amts.resolve(0, 0), Some(RestoreAmount::Hp(200)));
+        assert_eq!(amts.resolve(0, 2), Some(RestoreAmount::Hp(9999)));
+        assert_eq!(amts.resolve(1, 1), Some(RestoreAmount::Hp(800)));
+        // MP heal (class 2) reads the MP table.
+        assert_eq!(amts.resolve(2, 0), Some(RestoreAmount::Mp(50)));
+        // Tier past the flat table (3+) is character-relative, not a number.
+        assert_eq!(amts.resolve(0, 3), Some(RestoreAmount::CharRelative));
+        // Revive is always character-relative; non-heal classes resolve to None.
+        assert_eq!(amts.resolve(4, 0), Some(RestoreAmount::CharRelative));
+        assert_eq!(amts.resolve(8, 0), None); // cure-single
+        assert_eq!(amts.resolve(130, 0), None); // reduce-encounter
     }
 }

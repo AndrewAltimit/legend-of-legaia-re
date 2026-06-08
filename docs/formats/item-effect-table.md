@@ -12,10 +12,18 @@ static data, and this table ends exactly where the spell table begins.
 This table holds the effect **class + tier + flags**, **not** the literal
 restore amounts. "Healing Leaf restores 200 HP" is split in two: this table
 records `(class = heal-HP, tier = 0)`, and the `(class, tier) -> 200` mapping is
-a `switch` inside the item-use *apply* handler, which is **overlay-resident and
-not in the dumped corpus**. So the numeric heal/restore/stat-up amounts are
-**not** recoverable from this table alone - the engine keeps curated walkthrough
-amounts for the numbers, and reads class/targeting/usability from here.
+a separate, **also static** [heal-amount table](#heal-amount-table-0x8007655c).
+
+The apply handler is the **static** `FUN_800402F4` (`ghidra/scripts/funcs/
+800402f4.txt`), reached through a 132-entry jump table at `0x80014FA0` indexed by
+the descriptor class byte. It handles both the field item menu and the battle
+item path in one function (it branches on `game_mode == 0x15`, walking either the
+char records or the battle-actor table `0x801C9370`). The HP / MP heal arms size
+the restore by reading a tier-indexed `u16` table at `0x8007655C` (HP) /
+`0x80076564` (MP) - so the numbers **are** on the disc, decoded by
+`legaia_asset::item_effect` (`ItemEffectTable::heal_amounts` / `restore_amount`).
+(This **corrects** the earlier "the amounts are a switch of immediates inside an
+overlay-resident apply handler, not in the dumped corpus" reading.)
 
 ## Table base + record layout
 
@@ -71,6 +79,32 @@ record `+8` pointer):
 Note that the class byte is meaningful **only together with the usability
 flags**: many key items funnel to class `0` with no usability bit set, so
 "class 0" is not by itself "an HP potion" - gate on the field/battle bits.
+
+## Heal-amount table (`0x8007655C`)
+
+The literal restore *amounts* the apply handler `FUN_800402F4` reads. Two
+contiguous `u16[4]` sub-tables, indexed by the descriptor **tier** (`base +
+tier*2`); only tiers `0..=2` are read flat.
+
+| VA | Sub-table | Tier 0 | Tier 1 | Tier 2 | Read by |
+|---|---|---|---|---|---|
+| `0x8007655C` (file `0x66D5C`) | HP restore cap | `200` | `800` | `9999` | class `0` (single), class `1` (all-party) |
+| `0x80076564` | MP restore cap | `50` | `200` | `20` | class `2` (MP) |
+
+Each restore is **deficit-clamped**: `applied = min(max - current, table[tier])`,
+so tier `2`'s `9999` is an effective full HP restore. Tier `3+` does **not** read
+this table - those higher HP heals are **character-relative** (they scale off the
+per-character `0x80084140` Seru-heal tables). **Revive** (class `4`) is also not a
+flat amount: tier `0` restores `max_hp*0.4 + rand()%(max_hp/8)`, tier `>0` is a
+full revive. Provenance: HP arm `0x800404b8`, MP arm `0x80040dc0`, revive arm
+`0x80040f58` (`ghidra/scripts/funcs/800402f4.txt`).
+
+Parser: `ItemEffectTable::heal_amounts()` (the two `u16` arrays) and
+`restore_amount(id)` (resolves an item id through its `(class, tier)` to a
+[`RestoreAmount`] - `Hp(u16)` / `Mp(u16)` / `CharRelative`). The disc-gated
+`item_effect_real` test pins the table and a set of items byte-for-byte against
+the engine's curated figures (Leaf `200`, Flower `800`, Berry `9999` full, Magic
+Leaf `50` MP, Magic Fruit `200` MP, Healing Shroom `200`).
 
 ## Indexing (Ghidra-traced)
 
