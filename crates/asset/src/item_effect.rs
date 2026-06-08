@@ -291,6 +291,142 @@ impl HealAmounts {
     }
 }
 
+/// A character stat an item raises. `Defense` is the single defence stat the
+/// engine stores as two adjacent facets (DEF-up / DEF-down) that the handler
+/// always writes together; the rest map one-to-one to a record / battle-actor
+/// stat halfword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatTarget {
+    /// Maximum HP (record `+0x11C`).
+    MaxHp,
+    /// Maximum MP (record `+0x11E`).
+    MaxMp,
+    /// Agility (record `+0x122`, actor `+0x168/+0x16A`).
+    Agility,
+    /// Attack (record `+0x124`, actor `+0x158/+0x15A`).
+    Attack,
+    /// Defence — both facets together (record `+0x126/+0x128`, actor
+    /// `+0x15C/+0x15E` + `+0x160/+0x162`).
+    Defense,
+    /// Speed (record `+0x12A`, actor `+0x164/+0x166`).
+    Speed,
+    /// Intelligence (record `+0x12C`); permanent stat-up only — battle buffs
+    /// never touch it.
+    Intelligence,
+}
+
+/// One permanent stat increase (class 6): add `delta` to a character-record
+/// stat, saturating at `cap`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StatChange {
+    /// Which record stat is raised.
+    pub stat: StatTarget,
+    /// The literal increment the handler adds.
+    pub delta: u16,
+    /// The handler's per-stat saturating cap (HP `9999`, AGL `280`, else `999`).
+    pub cap: u16,
+}
+
+/// What a stat-affecting consumable does, decoded from the **static** apply
+/// handler `FUN_800402F4` (classes 5/6/7). Unlike the heal amounts, these
+/// magnitudes are inline immediates in the handler's switch (not a data table),
+/// so the `(class, tier)` -> effect mapping is pinned to the disassembly
+/// (`ghidra/scripts/funcs/800402f4.txt`, `case 5/6/7`); the per-item `(class,
+/// tier)` itself is parsed from the on-disc descriptor table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatItemEffect {
+    /// Class 5 (Fury Boost): extend the action gauge for one battle. No stat
+    /// target — sets the actor `+0x1F9` gauge flag.
+    ActionGauge,
+    /// Class 6 (the *Water* line + Honey / Miracle Water): permanent stat
+    /// increase(s) written to the **character record** (`0x80084708 + slot*0x414`,
+    /// field-use). A single-stat item carries one change; the tier-6 "all stats"
+    /// items carry one per stat, in the handler's write order.
+    Permanent(Vec<StatChange>),
+    /// Class 7 (the Elixirs): one-battle `×6/5` (+20%, [`BUFF_NUMERATOR`] /
+    /// [`BUFF_DENOMINATOR`]) buff on the listed **battle-actor** stats
+    /// (`DAT_801C9370[slot]`), each clamped to `0xFFFF`. A single-stat item
+    /// carries one target; Wonder Elixir lists Speed / Defence / Attack / Agility.
+    BuffOneBattle(Vec<StatTarget>),
+}
+
+/// The one-battle stat-buff multiplier numerator (class 7): each stat becomes
+/// `stat * 6 / 5` (the handler's `uVar + uVar/5`), clamped to `0xFFFF`.
+pub const BUFF_NUMERATOR: u16 = 6;
+/// The one-battle stat-buff multiplier denominator (class 7). See
+/// [`BUFF_NUMERATOR`].
+pub const BUFF_DENOMINATOR: u16 = 5;
+
+/// The permanent stat-up record cap for HP (`+0x11C`).
+const CAP_HP: u16 = 9999;
+/// The permanent stat-up record cap for AGL in the all-stats item (`+0x122`).
+const CAP_AGL: u16 = 280;
+/// The permanent stat-up record cap for every other stat.
+const CAP_STD: u16 = 999;
+
+/// The `(class, tier)` -> [`StatItemEffect`] mapping the apply handler
+/// `FUN_800402F4` implements for the stat-affecting classes (5/6/7). Returns
+/// `None` for any other class (heal / cure / revive / field utility — those are
+/// [`HealAmounts::resolve`] / [`ItemEffect::category`]). An out-of-range tier
+/// returns the variant with an empty change/target list.
+pub fn stat_item_effect(class: u8, tier: u8) -> Option<StatItemEffect> {
+    match class {
+        5 => Some(StatItemEffect::ActionGauge),
+        6 => Some(StatItemEffect::Permanent(permanent_stat_changes(tier))),
+        7 => Some(StatItemEffect::BuffOneBattle(buff_targets(tier))),
+        _ => None,
+    }
+}
+
+/// Class-6 permanent stat changes per tier (`FUN_800402F4` `case 6`, the inner
+/// `switch(param_2)`). Tier 6 is the "all stats" item, written in the handler's
+/// order (`AGL, HP, ATK, SPD, INT, MP, DEF`).
+fn permanent_stat_changes(tier: u8) -> Vec<StatChange> {
+    let one = |stat, delta, cap| vec![StatChange { stat, delta, cap }];
+    match tier {
+        0 => one(StatTarget::MaxHp, 16, CAP_HP),
+        1 => one(StatTarget::Attack, 4, CAP_STD),
+        2 => one(StatTarget::Defense, 4, CAP_STD),
+        3 => one(StatTarget::Speed, 4, CAP_STD),
+        4 => one(StatTarget::Intelligence, 4, CAP_STD),
+        5 => one(StatTarget::MaxMp, 8, CAP_STD),
+        6 => [
+            (StatTarget::Agility, CAP_AGL),
+            (StatTarget::MaxHp, CAP_HP),
+            (StatTarget::Attack, CAP_STD),
+            (StatTarget::Speed, CAP_STD),
+            (StatTarget::Intelligence, CAP_STD),
+            (StatTarget::MaxMp, CAP_STD),
+            (StatTarget::Defense, CAP_STD),
+        ]
+        .into_iter()
+        .map(|(stat, cap)| StatChange {
+            stat,
+            delta: 4,
+            cap,
+        })
+        .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Class-7 one-battle buff targets per tier (`= param_2`; `FUN_800402F4`
+/// `case 7`). Tier 4 (Wonder Elixir) buffs every battle stat.
+fn buff_targets(tier: u8) -> Vec<StatTarget> {
+    match tier {
+        1 => vec![StatTarget::Speed],
+        2 => vec![StatTarget::Defense],
+        3 => vec![StatTarget::Attack],
+        4 => vec![
+            StatTarget::Speed,
+            StatTarget::Defense,
+            StatTarget::Attack,
+            StatTarget::Agility,
+        ],
+        _ => Vec::new(),
+    }
+}
+
 /// The resolved item-effect table: per item id, the subtype byte it indexes by
 /// and the descriptor that subtype selects.
 #[derive(Debug, Clone)]
@@ -381,6 +517,18 @@ impl ItemEffectTable {
         let eff = self.effect(id)?;
         self.heal_amounts.resolve(eff.class, eff.tier)
     }
+
+    /// The stat effect an item id applies — the action-gauge extension (class
+    /// 5), permanent stat-up (class 6, the *Water* line), or one-battle buff
+    /// (class 7, the Elixirs) — decoded from the apply handler via the item's
+    /// `(class, tier)` descriptor. `None` for non-stat effects (heal / cure /
+    /// revive / arts book / flute / field) or unparsed ids; see
+    /// [`stat_item_effect`] for the raw mapping and [`Self::restore_amount`] for
+    /// the heal cases.
+    pub fn stat_effect(&self, id: u8) -> Option<StatItemEffect> {
+        let eff = self.effect(id)?;
+        stat_item_effect(eff.class, eff.tier)
+    }
 }
 
 #[cfg(test)]
@@ -452,5 +600,67 @@ mod tests {
         assert_eq!(amts.resolve(4, 0), Some(RestoreAmount::CharRelative));
         assert_eq!(amts.resolve(8, 0), None); // cure-single
         assert_eq!(amts.resolve(130, 0), None); // reduce-encounter
+    }
+
+    #[test]
+    fn stat_item_effect_maps_class_and_tier() {
+        use StatTarget::*;
+        let ch = |stat, delta, cap| StatChange { stat, delta, cap };
+
+        // Class 5 (Fury Boost): action gauge, tier-agnostic.
+        assert_eq!(stat_item_effect(5, 0), Some(StatItemEffect::ActionGauge));
+
+        // Class 6 (permanent stat-up, the Water line): single-stat tiers 0..=5.
+        assert_eq!(
+            stat_item_effect(6, 0),
+            Some(StatItemEffect::Permanent(vec![ch(MaxHp, 16, 9999)]))
+        );
+        assert_eq!(
+            stat_item_effect(6, 1),
+            Some(StatItemEffect::Permanent(vec![ch(Attack, 4, 999)]))
+        );
+        assert_eq!(
+            stat_item_effect(6, 2),
+            Some(StatItemEffect::Permanent(vec![ch(Defense, 4, 999)]))
+        );
+        assert_eq!(
+            stat_item_effect(6, 5),
+            Some(StatItemEffect::Permanent(vec![ch(MaxMp, 8, 999)]))
+        );
+        // Tier 6 (Honey / Miracle Water): every stat +4, AGL capped at 280.
+        let StatItemEffect::Permanent(all) = stat_item_effect(6, 6).unwrap() else {
+            panic!("tier 6 is permanent");
+        };
+        assert_eq!(all.len(), 7);
+        assert!(all.contains(&ch(Agility, 4, 280)));
+        assert!(all.contains(&ch(MaxHp, 4, 9999)));
+        assert!(all.contains(&ch(Defense, 4, 999)));
+
+        // Class 7 (one-battle buff, the Elixirs): param_2 picks the stat group.
+        assert_eq!(
+            stat_item_effect(7, 1),
+            Some(StatItemEffect::BuffOneBattle(vec![Speed]))
+        );
+        assert_eq!(
+            stat_item_effect(7, 2),
+            Some(StatItemEffect::BuffOneBattle(vec![Defense]))
+        );
+        assert_eq!(
+            stat_item_effect(7, 3),
+            Some(StatItemEffect::BuffOneBattle(vec![Attack]))
+        );
+        assert_eq!(
+            stat_item_effect(7, 4),
+            Some(StatItemEffect::BuffOneBattle(vec![
+                Speed, Defense, Attack, Agility
+            ]))
+        );
+
+        // The ×6/5 buff multiplier the handler applies.
+        assert_eq!((100u16 * BUFF_NUMERATOR) / BUFF_DENOMINATOR, 120);
+
+        // Non-stat classes resolve to None.
+        assert_eq!(stat_item_effect(0, 0), None); // heal-HP
+        assert_eq!(stat_item_effect(4, 0), None); // revive
     }
 }

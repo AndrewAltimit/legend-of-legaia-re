@@ -2,7 +2,9 @@
 //! if present. Skips and passes when the executable isn't on disk - same gating
 //! pattern as the other disc-dependent tests so CI doesn't need Sony bytes.
 
-use legaia_asset::item_effect::{ItemEffectCategory, ItemEffectTable, RestoreAmount};
+use legaia_asset::item_effect::{
+    ItemEffectCategory, ItemEffectTable, RestoreAmount, StatChange, StatItemEffect, StatTarget,
+};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -135,4 +137,83 @@ fn decodes_the_heal_amount_table_or_skips() {
         None,
         "Antidote is a cure, not a heal"
     );
+}
+
+/// The stat-affecting consumables (classes 5/6/7) the apply handler
+/// `FUN_800402F4` writes, decoded off the disc by their real retail ids. Pins
+/// that the *Water* line is permanent stat-up, the Elixirs are one-battle
+/// buffs, and Fury Boost is the action-gauge extension — the items the engine
+/// catalog historically omitted for lack of a buff taxonomy.
+#[test]
+fn decodes_the_stat_item_taxonomy_or_skips() {
+    use StatTarget::*;
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let table = ItemEffectTable::from_scus(&bytes).expect("parse item-effect table");
+    let ch = |stat, delta, cap| StatChange { stat, delta, cap };
+
+    // Class 5: Fury Boost (0x81) extends the action gauge.
+    assert_eq!(table.stat_effect(0x81), Some(StatItemEffect::ActionGauge));
+
+    // Class 6: the permanent stat-up *Water* line (field-use). Each Water item
+    // raises one record stat; the amounts are the handler's inline immediates.
+    assert_eq!(
+        table.stat_effect(0x82), // Life Water
+        Some(StatItemEffect::Permanent(vec![ch(MaxHp, 16, 9999)]))
+    );
+    assert_eq!(
+        table.stat_effect(0x83), // Power Water
+        Some(StatItemEffect::Permanent(vec![ch(Attack, 4, 999)]))
+    );
+    assert_eq!(
+        table.stat_effect(0x84), // Guardian Water
+        Some(StatItemEffect::Permanent(vec![ch(Defense, 4, 999)]))
+    );
+    assert_eq!(
+        table.stat_effect(0x85), // Swift Water
+        Some(StatItemEffect::Permanent(vec![ch(Speed, 4, 999)]))
+    );
+    assert_eq!(
+        table.stat_effect(0x86), // Wisdom Water
+        Some(StatItemEffect::Permanent(vec![ch(Intelligence, 4, 999)]))
+    );
+    assert_eq!(
+        table.stat_effect(0x87), // Magic Water
+        Some(StatItemEffect::Permanent(vec![ch(MaxMp, 8, 999)]))
+    );
+    // Honey (0x65) and Miracle Water (0x6D) share the tier-6 "all stats" subtype.
+    for all_stats in [0x65u8, 0x6D] {
+        let Some(StatItemEffect::Permanent(changes)) = table.stat_effect(all_stats) else {
+            panic!("{all_stats:#04x} is a permanent all-stats item");
+        };
+        assert_eq!(changes.len(), 7, "{all_stats:#04x} raises all seven stats");
+        assert!(changes.contains(&ch(Agility, 4, 280)));
+        assert!(changes.contains(&ch(MaxHp, 4, 9999)));
+    }
+
+    // Class 7: the one-battle ×6/5 buff Elixirs (battle-use). param_2 = tier.
+    assert_eq!(
+        table.stat_effect(0x8D), // Speed Elixir
+        Some(StatItemEffect::BuffOneBattle(vec![Speed]))
+    );
+    assert_eq!(
+        table.stat_effect(0x8C), // Shield Elixir
+        Some(StatItemEffect::BuffOneBattle(vec![Defense]))
+    );
+    assert_eq!(
+        table.stat_effect(0x8B), // Power Elixir
+        Some(StatItemEffect::BuffOneBattle(vec![Attack]))
+    );
+    assert_eq!(
+        table.stat_effect(0x8E), // Wonder Elixir
+        Some(StatItemEffect::BuffOneBattle(vec![
+            Speed, Defense, Attack, Agility
+        ]))
+    );
+
+    // A heal item is not a stat item.
+    assert_eq!(table.stat_effect(0x77), None); // Healing Leaf
 }
