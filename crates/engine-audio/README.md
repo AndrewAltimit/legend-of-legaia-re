@@ -32,8 +32,12 @@ verified across several extracted banks.
 
 ## Out of scope (first port pass)
 
-- **Pitch modulation, noise, FM.** None of these are used by Legaia
-  (verified against the libspu calls in the SCUS dumps).
+- **SPU-level pitch modulation, noise, FM.** None of these *hardware* voice
+  modes are used by Legaia (verified against the libspu calls in the SCUS
+  dumps). Sequencer-level **MIDI pitch-bend** (`0xEn`) *is* used and *is*
+  handled — the [`Sequencer`](src/sequencer.rs) applies it by scaling the
+  voice's pitch register over the tone's own `pbmin`/`pbmax` range, alongside
+  dynamic channel volume (CC7) and pan (CC10). See the audio subsystem doc.
 - **Asynchronous DMA timing.** The transfer engine here is synchronous;
   the API shape (`set_transfer_start_units_8` / `set_direction` /
   `write`) preserves the libspu surface.
