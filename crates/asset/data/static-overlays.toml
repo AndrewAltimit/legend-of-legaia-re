@@ -44,6 +44,14 @@
 #   capture   - pinned by byte-matching a resident RAM image (anchor / region).
 #   cross_ref - taken from another pinned RE result in-tree (e.g. the summon
 #               link base). For sparse / timeshared-buffer overlays.
+#
+# anchor_va (optional): a known function VA that must land on a function
+#   prologue (`addiu sp, sp, -X`) at base_va, i.e. as_loaded[anchor_va -
+#   base_va] is a prologue. A capture-free, disc-reproducible cross-check of the
+#   load base -- decisive for rows whose base did NOT come from jal-recovery
+#   (the reproducibility test skips the jal assertion for those, so the anchor
+#   keeps the base claim non-vacuous). The slot-A minigame siblings use a
+#   documented minigame function (a pinned in-tree RE result) as the anchor.
 
 [[overlays]]
 prot_index = 898
@@ -62,7 +70,7 @@ base_va = 0x801CE818
 form = "raw"
 eligibility = "static"
 fingerprint_sha256 = "216f846db5ab085a295cef4064747380a06c995caa3e1b2773e78a1d349f126b"
-notes = "Town / field / dialog / inventory overlay. Field/event VM FUN_801DE840 (base+0x10028), MAIN INIT FUN_801D6704 (base+0x07eec, clean prologue), MES renderer, inventory hub FUN_801F5748. Data-section-first (leading EVC debug strings); a live town capture has runtime-mutated globals so the clean region is not a single prefix, but the head (7844 B) is byte-identical in RAM and both function anchors align. Base recovered statically (60 corroborating call targets)."
+notes = "Town / field / dialog / inventory / OVERWORLD overlay. Field/event VM FUN_801DE840 (base+0x10028), MAIN INIT FUN_801D6704 (base+0x07eec, clean prologue), MES renderer, inventory hub FUN_801F5748. Also hosts the WORLD-MAP / overworld controller FUN_801E76D4 (base+0x18EBC) + the player free-movement controller FUN_801d01b0 + collision FUN_801cfe4c -- i.e. 'world-map' is a SUBSYSTEM of this overlay, not a separate PROT entry (its signature byte-matches PROT 0897 file 0x18EBC, implied base 0x801CE818; `asset overlay find-sig`). The same bytes alias into PROT 0896's over-read footprint at that overlay's own base. Data-section-first (leading EVC debug strings); a live town capture has runtime-mutated globals so the clean region is not a single prefix, but the head (7844 B) is byte-identical in RAM and both function anchors align. Base recovered statically (60 corroborating call targets)."
 
 [[overlays]]
 prot_index = 899
@@ -72,7 +80,70 @@ form = "raw"
 clean_copy_bytes = 0x15e8c
 eligibility = "verified"
 fingerprint_sha256 = "6ffd69a87fb351ff1c01cc9879276624c954801cd4d5353898882ca6e1a0f172"
-notes = "Options / pause / inventory-equipment-status menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38; menu functions span base+0x0db8..base+0x15b44. VA-alias sibling of the field overlay (0897) in slot A: the menu overlay REPLACES the field overlay at 0x801CE818 (in a menu-open capture the field VM at 0x801DE840 is not a prologue while FUN_801CF650 is). RAM-matched vs six menu-open saves (equipment/status/options x field map01 + town town01): the clean prefix 0x15e8c (89740 B of 0x25000) is byte-identical in all six (99.99% total; only runtime globals diverge). PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base also recovered statically (30 corroborating call targets)."
+notes = "Options / pause / inventory-equipment-status / SAVE / SHOP menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38; menu functions span base+0x0db8..base+0x15b44. Also hosts the SAVE-slot select + write dispatcher FUN_801DC6B4 (base+0xDE9C, signature byte-matches PROT 0899 only; `asset overlay find-sig`) and the SHOP/buy session (FUN_801CF5D0 record-offset preload + the shared FUN_801CF650 aggregator) -- 'save' and 'shop' are SUBSYSTEMS of this overlay, not separate PROT entries. VA-alias sibling of the field overlay (0897) in slot A: the menu overlay REPLACES the field overlay at 0x801CE818 (in a menu-open capture the field VM at 0x801DE840 is not a prologue while FUN_801CF650 is). RAM-matched vs six menu-open saves (equipment/status/options x field map01 + town town01): the clean prefix 0x15e8c (89740 B of 0x25000) is byte-identical in all six (99.99% total; only runtime globals diverge). PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base also recovered statically (30 corroborating call targets)."
+
+# --- More slot-A overlays (same swappable slot as field/battle/menu; base
+#     0x801CE818, *DAT_8001038C). These are the cutscene + minigame VA-alias
+#     siblings -- each resident at a different game mode, all linking to the
+#     same overlay window. Identity comes from the leading dev strings + a
+#     documented function VA that lands on a prologue at the base (`anchor_va`),
+#     not just jal-recovery. A subtlety unique to this cluster: the minigame
+#     entries' PROT footprints over-read each other, so one minigame's code is
+#     physically duplicated across several consecutive entries at base_va +
+#     (multiple of 0x800). The CANONICAL entry is the one whose base recovers to
+#     0x801CE818 (no over-read prefix); the slot machine is the lone exception
+#     (its clean copy carries a 0x4000 over-read prefix, so base_va is
+#     0x801CA818 -- loading the entry there still places its functions at their
+#     real VAs). Re-run `asset overlay scan` to see the full cluster. ---
+
+[[overlays]]
+prot_index = 970
+label = "cutscene_str"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+fingerprint_sha256 = "366f76dd7371e69309aeb8038f7fa63922d4f6018d6cbb2392d7acf6886bedc3"
+notes = "STR / MDEC FMV cutscene overlay (game modes 26/27 STR INIT/MODE). Decisive identity from the leading ISO9660 movie paths (\\DATA\\MOV.STR;1, \\MOV\\MV1..MV6.STR) + the MDEC decoder strings (MDEC_in_sync / MDEC_out_sync / 'MDEC_rest:bad option(%d)' / the DMA + FIFO trace). This is the overlay behind the long-capture-blocked F-FMV hunt -- now Ghidra-importable straight from the disc (`asset overlay ghidra`), so the static-analysis half of the STR-mode master-dispatch + per-scene FMV-id trigger work no longer needs a capture. Base recovered statically (16 corroborating call targets); the overlay was never captured resident, so the strings + jal-recovery are the evidence (no anchor_va)."
+
+[[overlays]]
+prot_index = 972
+label = "fishing"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+anchor_va = 0x801CF3BC
+fingerprint_sha256 = "1949cd5f6aa4a711572fc38199ca7212cc7a6e037263a8134594cb6b545e4f98"
+notes = "Fishing minigame overlay (docs/subsystems/minigame-fishing.md). State machine FUN_801cf3bc (base+0xBA4, the anchor), reel tug-of-war FUN_801d4004, catch scoring FUN_801d5298 -- 15 of 20 documented fishing functions land on prologues at this base. Leading strings are the 'How to Fish' help text ('button while turning the reel', 'your line will snap', 'Continue Fishing'). Base recovered statically (29 corroborating call targets)."
+
+[[overlays]]
+prot_index = 973
+label = "slot_machine"
+base_va = 0x801CA818
+form = "raw"
+eligibility = "static"
+anchor_va = 0x801CF0D8
+fingerprint_sha256 = "fcce87931513434245c0d6d9a3dea91891750a1f2e806bc416ba623b80a05809"
+notes = "Casino slot-machine minigame overlay (docs/subsystems/minigame-slot-machine.md). Reel SM FUN_801cf0d8 (the anchor), payout/jackpot FUN_801d13e8, LCG FUN_801d30cc -- documented slot functions land on prologues at this base. Externally confirmed: boot.md maps mode-0 CONFIG INIT (FUN_8003EBE4(0x4C) -> 0x4C+0x381 = 973) to the 'slot-machine debug' overlay (the dev 'CONFIG' label is a misnomer). NOTE base_va is 0x801CA818, NOT the canonical 0x801CE818: this entry's PROT footprint carries a 0x4000-byte over-read prefix, so its first byte maps 0x4000 below the slot-A base; loading the blob at 0x801CA818 still places every function at its real VA (FUN_801cf0d8 -> 0x801CE818-region). Base recovered statically (13 corroborating call targets)."
+
+[[overlays]]
+prot_index = 976
+label = "baka_fighter"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+anchor_va = 0x801D3B18
+fingerprint_sha256 = "c4a254eb18217908741b4d92c884a6a3ce9b0a1bc70af62c6e93d317ae9d3ea5"
+notes = "Baka Fighter duel minigame overlay (docs/subsystems/minigame-baka-fighter.md). Round SM FUN_801d3468, rock-paper-scissors resolver FUN_801d3a14, combo damage FUN_801d3b18 (the anchor) -- 13 of 21 documented baka-fighter functions land on prologues at this base. Leading strings include 'How to play Baka Fighter.', 'OTHER5 %d %d', the round / 'beats' text. (This minigame reuses the PROT 1204 battle-form party meshes via data\\field\\other5.lzs.) Base recovered statically (22 corroborating call targets)."
+
+[[overlays]]
+prot_index = 980
+label = "dance"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+anchor_va = 0x801CF470
+fingerprint_sha256 = "0a3da15ea4d5e921c30943c4efb76465a77310394ce6725182254da7bd718295"
+notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). Beat-clock SM FUN_801cf470 (the anchor), timing-window judge FUN_801d1960 -- 6 of 8 documented dance functions land on prologues at this base. Leading strings are the 'Disco King' help text ('how to dance?', 'buttons to dance', 'you can try more advanced steps'). Base recovered statically (17 corroborating call targets)."
 
 # --- Slot-B overlays (the second swappable overlay slot, *DAT_80010390; link
 #     base 0x801F69D8, summon_overlay::SUMMON_OVERLAY_LINK_BASE). These are the
@@ -81,11 +152,18 @@ notes = "Options / pause / inventory-equipment-status menu overlay (the real one
 #     overlays -- there is no clean whole-overlay RAM prefix, and most have too
 #     sparse an internal jal call graph to triangulate. base_va here is sourced
 #     from a capture anchor / a cross-referenced RE result (base_source), not
-#     jal-recovery. The cluster is HETEROGENEOUS: it interleaves summon stagers
-#     (0905 Gimard, ...) with Disco King dance-song overlays (0907 "Hell's
-#     Music", 0924, 0927, 0957) and other minigame data, so the historical
-#     contiguous "summon 0905..=0915" range is over-broad -- only entries with a
-#     pinned identity are listed here. ---
+#     jal-recovery, but a high fraction of their internal absolute self-pointers
+#     (`lui 0x801f/0x8020 ; addiu`) resolve in-file ONLY under this base -- the
+#     base cross-check `static_overlay::pointer_resolution` (the slot-B analog of
+#     the slot-A prologue anchor; 80..100% for the rows below). The cluster is
+#     HETEROGENEOUS: it interleaves summon stagers (0905 Gimard) with Disco King
+#     dance-song overlays (0907 "Hell's Music", 0924 "Ultimate Rave", 0927 "Dark
+#     Eclipse"), the GAME OVER overlay (0902), and summon-effect data (0957). So
+#     the historical contiguous "summon 0905..=0915" range is over-broad: 0907
+#     inside that range is a dance song, not a summon. NOTE 0957 is NOT a dance
+#     song (an earlier overlay-ptr-table reading) -- its head is a summon string
+#     table ("Puera" + Damage/Recover/Both effect labels). Identity is from the
+#     leading dev string + the in-file pointer-resolution base check. ---
 
 [[overlays]]
 prot_index = 900
@@ -106,3 +184,53 @@ eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "7e0740575be7f7798c053e675903d465ebdcc4fe7a954fa153df5470989c6f4a"
 notes = "Gimard 'Tail Fire' summon spawn stager (spell id 0x81; 38 FUN_80021B04 part-spawn calls). First function at base 0x801F69D8 (head is an addiu sp prologue). Base cross-referenced from summon_overlay::SUMMON_OVERLAY_LINK_BASE: the record pointers (lui 0x8020/addiu immediates) resolve in-file only under this base (disc-gated summon_overlay_real). Overwritten by the 0900 render overlay mid-cast, so not byte-resident in the capture."
+
+[[overlays]]
+prot_index = 902
+label = "gameover"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "c29b748513cb6bf85017892d2f35e97b3da828d7552289d4b1c3a7b884025522"
+notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE). Head string is the source path 'h:\\prot\\field\\gameover\\gameover.pak' + the 'GAME OVER' caption. A slot-B overlay: 91% of its internal absolute pointers resolve in-file under the summon link base 0x801F69D8 (static_overlay::pointer_resolution), pinning the base; its internal jal graph is too sparse to triangulate."
+
+[[overlays]]
+prot_index = 907
+label = "dance_hells_music"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "d619f9818e2d1582b63b1214dfd1a8574160d34e302a68d5d94d57126a35a832"
+notes = "Disco King dance-song overlay 'Hell's Music' (ASCII title at file offset 0, then code). This is the entry that makes the contiguous summon range 0905..=0915 over-broad: spell id 0x83 arithmetics to 0907 (FUN_8003EC70), but 0907 is a dance song, not a summon stager. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (80%)."
+
+[[overlays]]
+prot_index = 924
+label = "dance_ultimate_rave"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "a80f6d33eba463d7d5874439762bb23aa37955f62752d10f2c87e5e2c75b9e45"
+notes = "Disco King dance-song overlay 'Ultimate Rave' (ASCII title at file offset 0). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
+
+[[overlays]]
+prot_index = 927
+label = "dance_dark_eclipse"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "0cff56036607ced1111829e3a3fb683833ac7ce6fcfeb0ba8abb118a14d1d233"
+notes = "Disco King dance-song overlay 'Dark Eclipse' (ASCII title at file offset 0). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (97%)."
+
+[[overlays]]
+prot_index = 957
+label = "summon_effect_table"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "410d6faa825846aea70902f35bcab2f134d2dbc16b077e5eac0a4462f36b7766"
+notes = "Slot-B summon-effect overlay. Head is a string table ['Dies','Puera','Both','Damage','Recover'] followed by an absolute-pointer table and code -- 'Puera' is a summon, Damage/Recover/Both are effect/target labels. NOT a dance song (corrects an earlier overlay-ptr-table reading that grouped 0957 with the Disco King songs). No FUN_80021B04 part-spawn calls (not a stager). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (93%); the precise role (per-summon effect descriptor vs a debug/test table) is open."

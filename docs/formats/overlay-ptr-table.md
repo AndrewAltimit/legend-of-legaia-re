@@ -36,7 +36,7 @@ All matches cluster in the `0900..=0968_xxx_dat` PROT range - sized 14 KB to 160
 - 30 entries: `0x801F6Axx`–`0x801F71xx` cluster (small function-entry tables, monotonic, 5–14 entries).
 - 12 entries: `0x801F84xx+` cluster (some monotonic, some switch dispatch with repeating handlers).
 
-A handful of entries lead with a Shift-JIS / ASCII title string before the pointer table - `0907_xxx_dat.BIN` "Hell's Music", `0924_xxx_dat.BIN` "Ultimate Rave", `0927_xxx_dat.BIN` "Dark Eclipse", `0957_xxx_dat.BIN`. These are likely the **Disco King dance-minigame** song-data overlays.
+A handful of entries lead with an ASCII title string before the pointer table. Three are **Disco King dance-minigame** song-data overlays — `0907_xxx_dat.BIN` "Hell's Music", `0924_xxx_dat.BIN` "Ultimate Rave", `0927_xxx_dat.BIN` "Dark Eclipse" (each now in the static overlay map, slot-B base `0x801F69D8`). **`0957_xxx_dat.BIN` is NOT a dance song** (an earlier reading grouped it here): its head is a summon string table — `Dies` / `Puera` / `Both` / `Damage` / `Recover` (the summon `Puera` + effect/target labels) — followed by an absolute-pointer table and code. It is the slot-B `summon_effect_table` overlay. Note `0907` is also the spell-id-`0x83` slot in the summon loader's arithmetic range (`905..=915`) — that range is over-broad; `0907` is the dance song, not a summon. See [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
 
 ## Reading the format
 

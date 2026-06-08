@@ -728,6 +728,51 @@ enum OverlayCmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Sweep a range of PROT entries: recover each base statically, count the
+    /// votes, and print the leading dev string (the identity tell). Use this to
+    /// enumerate the overlay corpus and triage which entries carry pinned
+    /// identity — a reproducible reconnaissance view, not committed anywhere.
+    Scan {
+        /// Path to `PROT.DAT`.
+        prot_dat: PathBuf,
+        /// First PROT index to scan (inclusive).
+        #[arg(long, default_value_t = 895)]
+        from: u32,
+        /// Last PROT index to scan (inclusive).
+        #[arg(long, default_value_t = 985)]
+        to: u32,
+        /// Minimum corroborating call targets to report a recovered base.
+        #[arg(long, default_value_t = 8)]
+        min_votes: u32,
+        /// Only print entries whose base recovers to this VA (e.g. the slot-A
+        /// base 0x801CE818) — filters the sweep to one overlay slot.
+        #[arg(long, value_parser = parse_hex_u32)]
+        base: Option<u32>,
+        /// Emit JSON instead of a table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Locate a function-head instruction signature across the corpus and, given
+    /// the function's known VA, infer the host overlay's load base
+    /// (`base = anchor_va - file_offset`). This is the byte-search that pins an
+    /// overlay's PROT entry with no capture — how the menu overlay (0899) was
+    /// found from `FUN_801CF650`'s signature.
+    FindSig {
+        /// Path to `PROT.DAT`.
+        prot_dat: PathBuf,
+        /// Function-head signature: little-endian machine code of the first few
+        /// instructions, as hex (spaces allowed), e.g. "1e80043c a046838c".
+        sig_hex: String,
+        /// Known VA of the function whose head this is; prints the implied base.
+        #[arg(long, value_parser = parse_hex_u32)]
+        anchor_va: Option<u32>,
+        /// First PROT index to search (inclusive).
+        #[arg(long, default_value_t = 0)]
+        from: u32,
+        /// Last PROT index to search (inclusive).
+        #[arg(long, default_value_t = 1234)]
+        to: u32,
+    },
     /// Regenerate map rows from PROT.DAT: recover each base statically and hash
     /// the as-loaded bytes. Prints TOML to stdout (review, then paste into
     /// `crates/asset/data/static-overlays.toml`).
@@ -973,6 +1018,21 @@ fn main() -> Result<()> {
                 indices,
                 min_votes,
             } => overlay_generate_cmd(&prot_dat, &indices, min_votes),
+            OverlayCmd::Scan {
+                prot_dat,
+                from,
+                to,
+                min_votes,
+                base,
+                json,
+            } => overlay_scan_cmd(&prot_dat, from, to, min_votes, base, json),
+            OverlayCmd::FindSig {
+                prot_dat,
+                sig_hex,
+                anchor_va,
+                from,
+                to,
+            } => overlay_find_sig_cmd(&prot_dat, &sig_hex, anchor_va, from, to),
         },
     }
 }
@@ -5017,5 +5077,129 @@ fn overlay_generate_cmd(prot_dat: &Path, indices: &[u32], min_votes: u32) -> Res
         println!("eligibility = \"static\"");
         println!("fingerprint_sha256 = \"{fp}\"");
     }
+    Ok(())
+}
+
+/// Reconnaissance sweep: for each PROT entry in `[from, to]`, recover its base
+/// statically, count votes, and print the leading dev string. Not committed —
+/// it's how the overlay corpus is triaged into slot-A / slot-B / non-overlay.
+fn overlay_scan_cmd(
+    prot_dat: &Path,
+    from: u32,
+    to: u32,
+    min_votes: u32,
+    base_filter: Option<u32>,
+    json: bool,
+) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct Row {
+        prot_index: u32,
+        size: usize,
+        base_va: Option<u32>,
+        votes: u32,
+        jal_targets: u32,
+        prologues: u32,
+        head: Option<String>,
+    }
+    let mut ar = legaia_prot::archive::Archive::open(prot_dat)?;
+    let mut rows: Vec<Row> = Vec::new();
+    let mut buf = Vec::new();
+    for idx in from..=to {
+        let entry = match ar.entries.iter().find(|e| e.index == idx).cloned() {
+            Some(e) => e,
+            None => continue,
+        };
+        buf.clear();
+        ar.read_entry(&entry, &mut buf)?;
+        let rec = recover_base(&buf, min_votes);
+        let base = rec.map(|r| r.base_va);
+        if let Some(want) = base_filter
+            && base != Some(want)
+        {
+            continue;
+        }
+        rows.push(Row {
+            prot_index: idx,
+            size: buf.len(),
+            base_va: base,
+            votes: rec.map(|r| r.votes).unwrap_or(0),
+            jal_targets: rec.map(|r| r.jal_targets).unwrap_or(0),
+            prologues: rec.map(|r| r.prologues).unwrap_or(0),
+            head: static_overlay::head_string(&buf, 0x800, 5),
+        });
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    println!(
+        "{:>5}  {:>9}  {:<12}  {:>5}  {:>5}  {:>5}  head",
+        "PROT", "size", "base", "votes", "jals", "prol"
+    );
+    for r in &rows {
+        let base = r
+            .base_va
+            .map(|b| format!("0x{b:08X}"))
+            .unwrap_or_else(|| "-".into());
+        let head = r.head.as_deref().unwrap_or("");
+        let head = if head.len() > 48 { &head[..48] } else { head };
+        println!(
+            "{:>5}  {:>9}  {:<12}  {:>5}  {:>5}  {:>5}  {}",
+            r.prot_index, r.size, base, r.votes, r.jal_targets, r.prologues, head
+        );
+    }
+    Ok(())
+}
+
+/// Locate a function-head signature across the corpus, printing the host PROT
+/// entry + file offset (and, given the anchor VA, the implied load base). The
+/// capture-free way to pin an overlay's entry — the menu-overlay method,
+/// generalised into a CLI.
+fn overlay_find_sig_cmd(
+    prot_dat: &Path,
+    sig_hex: &str,
+    anchor_va: Option<u32>,
+    from: u32,
+    to: u32,
+) -> Result<()> {
+    let hex: String = sig_hex.chars().filter(|c| !c.is_whitespace()).collect();
+    if !hex.len().is_multiple_of(2) {
+        anyhow::bail!("signature hex must have an even number of nibbles");
+    }
+    let sig: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
+        .collect::<std::result::Result<_, _>>()
+        .context("parsing signature hex")?;
+    if sig.is_empty() {
+        anyhow::bail!("empty signature");
+    }
+    let mut ar = legaia_prot::archive::Archive::open(prot_dat)?;
+    let mut buf = Vec::new();
+    let mut hits = 0usize;
+    println!(
+        "# searching {} byte signature {} across PROT {from}..={to}",
+        sig.len(),
+        sig.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
+    for idx in from..=to {
+        let entry = match ar.entries.iter().find(|e| e.index == idx).cloned() {
+            Some(e) => e,
+            None => continue,
+        };
+        buf.clear();
+        ar.read_entry(&entry, &mut buf)?;
+        if let Some(off) = static_overlay::find_signature(&buf, &sig) {
+            match anchor_va {
+                Some(va) => {
+                    let base = va.wrapping_sub(off as u32);
+                    println!("PROT {idx:>4}  file_off=0x{off:06X}  implied_base=0x{base:08X}");
+                }
+                None => println!("PROT {idx:>4}  file_off=0x{off:06X}"),
+            }
+            hits += 1;
+        }
+    }
+    println!("# {hits} hit(s)");
     Ok(())
 }

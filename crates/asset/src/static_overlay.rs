@@ -140,6 +140,14 @@ pub struct OverlayRecord {
     /// assertion). Defaults to [`BaseSource::Jal`].
     #[serde(default)]
     pub base_source: BaseSource,
+    /// Optional known function VA that must land on a function prologue at
+    /// `base_va` (file offset `anchor_va - base_va`). A capture-free,
+    /// disc-reproducible cross-check of the load base — decisive for rows whose
+    /// `base_source` is not `jal` (the jal-recovery assertion is skipped for
+    /// those, so the anchor keeps the base claim non-vacuous). See
+    /// [`anchor_lands_on_prologue`].
+    #[serde(default)]
+    pub anchor_va: Option<u32>,
     /// sha256 (hex) of the as-loaded bytes. Disc-derived hash — committable, no
     /// Sony bytes. Re-extraction must reproduce this exactly.
     #[serde(default)]
@@ -225,6 +233,103 @@ pub fn fingerprint(bytes: &[u8]) -> String {
     s
 }
 
+/// First printable-ASCII run of at least `min_len` bytes within the first
+/// `window` bytes of an overlay. The data-section-first overlays lead with
+/// developer debug strings that name the subsystem (`town01`, `Display Off`,
+/// `\DATA\MOV.STR;1`, `Hell's Music`, …), so this is the cheapest identity
+/// tell for an entry the base recovery alone can't name. Returns the run
+/// trimmed of trailing whitespace, or `None` when the head is binary.
+pub fn head_string(bytes: &[u8], window: usize, min_len: usize) -> Option<String> {
+    let end = window.min(bytes.len());
+    let mut best: Option<String> = None;
+    let mut run = String::new();
+    let flush = |run: &mut String, best: &mut Option<String>| {
+        if run.len() >= min_len {
+            let trimmed = run.trim();
+            if !trimmed.is_empty() && best.is_none() {
+                *best = Some(trimmed.to_string());
+            }
+        }
+        run.clear();
+    };
+    for &b in &bytes[..end] {
+        // Printable ASCII incl. space + tab + backslash; the dev strings use
+        // backslashes for DOS paths and `%` for printf specifiers.
+        if (0x20..=0x7e).contains(&b) || b == b'\t' {
+            run.push(b as char);
+        } else {
+            flush(&mut run, &mut best);
+            if best.is_some() {
+                break;
+            }
+        }
+    }
+    flush(&mut run, &mut best);
+    best
+}
+
+/// Locate a function-head instruction signature in a blob. Returns the file
+/// offset of the first occurrence. Pair with a known anchor VA to infer the
+/// load base (`base = anchor_va - offset`) — the byte-search that pinned the
+/// menu overlay (PROT 0899) by `FUN_801CF650`'s signature, generalised. The
+/// signature is the literal little-endian machine code of the first few
+/// instructions; instructions that reference fixed SCUS globals (`lui`/`lw`
+/// against `0x8008xxxx`) encode identically regardless of the overlay's load
+/// base, so the search is base-independent.
+pub fn find_signature(blob: &[u8], signature: &[u8]) -> Option<usize> {
+    if signature.is_empty() || signature.len() > blob.len() {
+        return None;
+    }
+    blob.windows(signature.len()).position(|w| w == signature)
+}
+
+/// How many of an overlay's internal absolute pointers resolve inside the
+/// file when it is loaded at `base_va`. The slot-B overlays (summon stagers,
+/// dance-song data) have sparse internal `jal` call graphs — too sparse to
+/// recover a base from — but they are dense with absolute self-pointers built
+/// as `lui rX, hi ; addiu rX, rX, lo` (the standard MIPS 32-bit-immediate
+/// idiom). If the committed base is right, a high fraction of those pointers
+/// land inside `[base_va, base_va + len)`. This is the base cross-check for
+/// `cross_ref` slot-B rows, analogous to [`anchor_lands_on_prologue`] for
+/// slot-A. Returns `(resolved_in_file, total_pointers_found)`.
+pub fn pointer_resolution(as_loaded: &[u8], base_va: u32) -> (u32, u32) {
+    let len = as_loaded.len() as u32;
+    let hi_lo = base_va & 0xFFFF_0000;
+    let hi_hi = hi_lo.wrapping_add(0x0001_0000);
+    // The overlay window's two high halves the pointers can carry (e.g. 0x801F
+    // and 0x8020 for the summon link base 0x801F69D8).
+    let hi0 = hi_lo >> 16;
+    let hi1 = hi_hi >> 16;
+    let mut total = 0u32;
+    let mut resolved = 0u32;
+    let words = as_loaded.len() / 4;
+    for i in 0..words {
+        let w1 = read_u32_le(as_loaded, i * 4).unwrap();
+        if w1 >> 26 != 0x0F {
+            continue; // not lui
+        }
+        let rt = (w1 >> 16) & 0x1F;
+        let hi = w1 & 0xFFFF;
+        if hi != hi0 && hi != hi1 {
+            continue;
+        }
+        // Look for the paired `addiu rt, rt, lo` within a short window.
+        for j in (i + 1)..(i + 7).min(words) {
+            let w2 = read_u32_le(as_loaded, j * 4).unwrap();
+            if w2 >> 26 == 0x09 && (w2 >> 21) & 0x1F == rt {
+                let lo = (w2 & 0xFFFF) as i16 as i32;
+                let addr = ((hi << 16) as i32).wrapping_add(lo) as u32;
+                total += 1;
+                if (base_va..base_va.wrapping_add(len)).contains(&addr) {
+                    resolved += 1;
+                }
+                break;
+            }
+        }
+    }
+    (resolved, total)
+}
+
 /// Result of a static base recovery.
 #[derive(Debug, Clone, Copy)]
 pub struct BaseRecovery {
@@ -252,8 +357,25 @@ fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
 /// Is this word a function-prologue `addiu sp, sp, -X` with a plausible stack
 /// adjust (8..=128 bytes)? Mirrors [`crate::mips_overlay`]'s first check.
 #[inline]
-fn is_prologue(word: u32) -> bool {
+pub fn is_prologue(word: u32) -> bool {
     word & ADDIU_SP_NEG_MASK == ADDIU_SP_NEG && (0x80..=0xF8).contains(&(word & 0xFF))
+}
+
+/// Does a known function VA land on a function prologue when the as-loaded
+/// blob is placed at `base_va`? The file offset is `anchor_va - base_va`; the
+/// word there must be an `addiu sp, sp, -X` prologue. This is the capture-free
+/// base cross-check for rows whose base did not come from jal-recovery (a
+/// documented function VA is a pinned in-tree RE result; if the committed base
+/// is right, that function's first instruction is its prologue).
+pub fn anchor_lands_on_prologue(as_loaded: &[u8], anchor_va: u32, base_va: u32) -> bool {
+    let off = match anchor_va.checked_sub(base_va) {
+        Some(o) => o as usize,
+        None => return false,
+    };
+    match read_u32_le(as_loaded, off) {
+        Some(word) => is_prologue(word),
+        None => false,
+    }
 }
 
 /// Recover an overlay's load base **statically** from its own internal call
@@ -512,6 +634,7 @@ mod tests {
             clean_copy_bytes: None,
             eligibility: Eligibility::Static,
             base_source: BaseSource::Jal,
+            anchor_va: None,
             fingerprint_sha256: None,
             notes: String::new(),
         };
@@ -550,6 +673,63 @@ mod tests {
     }
 
     #[test]
+    fn head_string_finds_leading_run() {
+        // Binary prologue, then a dev string, then more binary.
+        let mut blob = vec![0u8, 1, 2, 3];
+        blob.extend_from_slice(b"Display Off");
+        blob.extend_from_slice(&[0, 0, 0xff]);
+        assert_eq!(head_string(&blob, 0x400, 5).as_deref(), Some("Display Off"));
+        // A run shorter than min_len is ignored.
+        assert_eq!(head_string(b"\x00ab\x00", 0x400, 5), None);
+        // Pure binary head -> None.
+        assert_eq!(head_string(&[0u8, 1, 2, 0xff, 0x80], 0x400, 4), None);
+    }
+
+    #[test]
+    fn pointer_resolution_counts_in_file_self_pointers() {
+        let base = 0x801F_69D8u32;
+        // Build `lui v0, 0x801f ; addiu v0, v0, 0x6a00` -> 0x801F6A00 (in file)
+        // and `lui v0, 0x8020 ; addiu v0, v0, -0x7000` -> 0x8019_9000 (out).
+        let lui = |rt: u32, hi: u32| (0x0Fu32 << 26) | (rt << 16) | hi;
+        let addiu = |rt: u32, lo: u16| (0x09u32 << 26) | (rt << 21) | (rt << 16) | lo as u32;
+        let mut code: Vec<u8> = Vec::new();
+        let mut push = |w: u32| code.extend_from_slice(&w.to_le_bytes());
+        push(lui(2, 0x801F));
+        push(addiu(2, 0x6A00)); // -> 0x801F6A00, inside a 0x8000-byte file
+        push(lui(2, 0x8020));
+        push(addiu(2, 0x9000u16)); // 0x8020_0000 + (i16)0x9000(-0x7000) = 0x801F9000, in file
+        code.resize(0x8000, 0);
+        let (resolved, total) = pointer_resolution(&code, base);
+        assert_eq!(total, 2);
+        assert_eq!(resolved, 2);
+        // Wrong base -> nothing resolves.
+        let (r2, t2) = pointer_resolution(&code, 0x801C_E818);
+        assert_eq!(t2, 0, "no 0x801c/0x801d pointers in this blob");
+        assert_eq!(r2, 0);
+    }
+
+    #[test]
+    fn anchor_prologue_check() {
+        // Blob where file offset 0x10 holds `addiu sp, sp, -0x18` (a prologue).
+        let mut blob = vec![0u8; 0x20];
+        blob[0x10..0x14].copy_from_slice(&0x27BD_FFE8u32.to_le_bytes());
+        let base = 0x801C_E818;
+        assert!(anchor_lands_on_prologue(&blob, base + 0x10, base));
+        // Offset 0 is not a prologue.
+        assert!(!anchor_lands_on_prologue(&blob, base, base));
+        // Anchor below base -> false (no underflow panic).
+        assert!(!anchor_lands_on_prologue(&blob, base - 4, base));
+    }
+
+    #[test]
+    fn find_signature_locates_and_misses() {
+        let blob = [0u8, 1, 2, 0xde, 0xad, 0xbe, 0xef, 9];
+        assert_eq!(find_signature(&blob, &[0xde, 0xad, 0xbe, 0xef]), Some(3));
+        assert_eq!(find_signature(&blob, &[0x12, 0x34]), None);
+        assert_eq!(find_signature(&blob, &[]), None);
+    }
+
+    #[test]
     fn ghidra_jython_is_ascii_and_has_headers() {
         let rec = OverlayRecord {
             prot_index: 898,
@@ -560,6 +740,7 @@ mod tests {
             clean_copy_bytes: Some(0x28800),
             eligibility: Eligibility::Verified,
             base_source: BaseSource::Jal,
+            anchor_va: None,
             fingerprint_sha256: None,
             notes: String::new(),
         };

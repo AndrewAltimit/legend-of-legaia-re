@@ -92,6 +92,7 @@ is the entry→base map — one record per overlay:
 | `clean_copy_bytes` | Length of the RAM-verified `.text`+`.rodata` prefix (for `verified` rows). |
 | `eligibility` | `verified` (RAM byte-matched) / `static` (base-recovered + function-anchored, not RAM-prefix-verified) / `ineligible` (runtime-relocated — keep on the dynamic path). |
 | `base_source` | How `base_va` was determined: `jal` (internal call-graph recovery — default; the reproducibility test asserts the recovery agrees), `capture` (byte-matched a resident RAM anchor/region), `cross_ref` (taken from another pinned RE result in-tree). |
+| `anchor_va` | Optional known function VA that must land on a function prologue (`addiu sp, sp, -X`) at `base_va` — a capture-free, disc-reproducible base cross-check. Decisive for `cross_ref`/`capture` rows where the jal-recovery assertion is skipped (e.g. a slot-A minigame sibling anchored by a documented minigame function). |
 | `fingerprint_sha256` | sha256 of the as-loaded bytes — the disc-derived reproducibility anchor. |
 | `notes` | Which subsystems / entry points live here. |
 
@@ -101,8 +102,21 @@ The overlay loaders manage two independently swappable slots (`*DAT_8001038C`
 and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel-slots)).
 
 - **Slot A** (`~0x801CE818`) holds the big scene overlays — field (0897), battle
-  (0898), menu (0899). These are VA-alias siblings (same base, resident at
-  different times) and have dense internal call graphs, so `base_source = jal`.
+  (0898), menu (0899), the STR/MDEC **cutscene** overlay (0970), and the
+  **minigame** overlays (fishing 0972, slot machine 0973, baka fighter 0976,
+  dance 0980). These are VA-alias siblings (same base, resident at different
+  times). The field/battle/menu/cutscene rows have dense internal call graphs
+  (`base_source = jal`); the minigame rows are cross-checked instead by a
+  documented minigame function landing on a prologue at the base (`anchor_va`),
+  since their footprints over-read each other (one minigame's code is duplicated
+  across consecutive entries at `base + N×0x800`, so jal-recovery can latch a
+  phantom base — the canonical entry is the one recovering `0x801CE818`; the slot
+  machine is the lone exception, carried with a `0x4000` over-read prefix at
+  `0x801CA818`). Note: the "world-map", "save", and "shop" UIs are **not**
+  separate entries — the overworld controller `FUN_801E76D4` lives in the field
+  overlay (0897) and the save + shop sessions live in the menu overlay (0899);
+  `asset overlay find-sig` confirms each function's signature byte-matches only
+  that entry.
 - **Slot B** (link base `0x801F69D8`,
   `summon_overlay::SUMMON_OVERLAY_LINK_BASE`) holds the player-summon / effect /
   minigame-data blobs from the `0900..0969` PROT cluster. These **timeshare one
@@ -112,16 +126,26 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   an internal call graph to jal-recover. Their base comes from a capture anchor
   (`base_source = capture`; the 0900 render region `0x801F79D8..0x801F8DD8`
   byte-matches RAM, pinning the base) or a cross-referenced RE result
-  (`base_source = cross_ref`). This is precisely where static extraction earns
-  its keep: the *disc* entry disassembles cleanly at the link base even though
-  the *runtime* buffer is unusable.
+  (`base_source = cross_ref`). The base is cross-checked the **slot-B way**: a
+  high fraction of the overlay's internal absolute self-pointers (`lui
+  0x801f/0x8020 ; addiu`) must resolve in-file at the committed base
+  (`static_overlay::pointer_resolution`; 80–100 % for the mapped rows — the
+  reproducibility test asserts ≥ 70 %). This is precisely where static
+  extraction earns its keep: the *disc* entry disassembles cleanly at the link
+  base even though the *runtime* buffer is unusable.
 
   **The slot-B cluster is heterogeneous.** It interleaves summon stagers (0905
-  Gimard, …) with Disco King **dance-song** overlays (0907 "Hell's Music", 0924
-  "Ultimate Rave", 0927 "Dark Eclipse", 0957) and other minigame data — so the
-  historical contiguous "summon `0905..=0915`" range is over-broad (0907 is a
-  dance song, not a summon). Only entries with a pinned identity are listed in
-  the map; per-entry identity for the rest is open
+  Gimard) with Disco King **dance-song** overlays (0907 "Hell's Music", 0924
+  "Ultimate Rave", 0927 "Dark Eclipse"), the **GAME OVER** overlay (0902), and
+  summon-effect data (0957) — so the historical contiguous "summon `0905..=0915`"
+  range is over-broad: **0907 inside that range is a dance song, not a summon**
+  (it only parsed as a scene-graph because its over-read footprint bled into the
+  neighbouring real stagers' `FUN_80021B04` spawn calls;
+  `summon_overlay::NON_SUMMON_IN_STAGER_RANGE` records the exception). **0957 is
+  NOT a dance song** (correcting an earlier `overlay-ptr-table` reading) — its
+  head is a summon string table (`Puera` + `Damage`/`Recover`/`Both` effect
+  labels). The mapped slot-B rows now carry pinned identity; the remaining
+  binary stagers' per-summon spell-id assignment is the open piece
   ([`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
 ## CLI
@@ -129,6 +153,19 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
 ```bash
 # Inspect the map.
 asset overlay list
+
+# Reconnaissance sweep: recover each entry's base + print its leading dev
+# string (the identity tell). Triages the overlay corpus; --base filters to one
+# slot (e.g. the slot-A base). Not committed anywhere — reproducible from disc.
+asset overlay scan extracted/PROT.DAT --from 895 --to 985
+asset overlay scan extracted/PROT.DAT --from 895 --to 985 --base 0x801CE818
+
+# Locate a function-head signature across the corpus and, given the function's
+# VA, infer the host overlay's load base. The capture-free byte-search that
+# pins an overlay's PROT entry (how the menu overlay was found from
+# FUN_801CF650's signature). The signature is the function's first few
+# instructions as little-endian hex.
+asset overlay find-sig extracted/PROT.DAT "1e80043c a046838c e0ffbd27" --anchor-va 0x801DC6B4
 
 # Re-extract from your PROT.DAT and assert every committed fingerprint
 # reproduces (bit-for-bit, from any copy of the disc).
