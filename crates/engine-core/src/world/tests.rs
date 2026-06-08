@@ -4735,6 +4735,97 @@ fn element_affinity_scales_monster_special_attack_damage() {
     );
 }
 
+/// A player Seru-magic cast scales by the element affinity of its summon
+/// CREATURE vs the target — `matrix[summon-creature element][target element]`
+/// (`FUN_801dd864`), not the casting character's element. The Gimard spell
+/// (id `0x81`) summons the namesake "Gimard" creature, so the attacker element
+/// is that creature's record element; the multiply is post-roll and gated, so a
+/// `None` affinity table reproduces the neutral magnitude exactly.
+#[test]
+fn element_affinity_scales_player_summon_cast_by_creature_element() {
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    use legaia_asset::element_affinity::ElementAffinity;
+
+    const SUMMON_ELEM: usize = 2; // the "Gimard" creature's element
+    const ENEMY_ELEM: usize = 5; // the target enemy's element
+
+    // The Gimard summon spell. Damage placeholder is MP-scaled
+    // (caster_mag * base_power / 8 - mdef); base_power chosen so the affinity
+    // delta is well above the 1-HP clamp.
+    fn gimard_spell() -> SpellDef {
+        SpellDef {
+            id: 0x81,
+            name: "Gimard".into(),
+            mp_cost: 4,
+            element: SpellElement::Neutral,
+            target: SpellTarget::OneEnemy,
+            effect: SpellEffect::Damage {
+                base_power: 100,
+                element: SpellElement::Neutral,
+            },
+            anim_id: 0,
+        }
+    }
+
+    fn run(affinity_pct: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // Catalog: the summon creature (matched by the spell's display name) and
+        // the target enemy, each with a distinct element.
+        let mut catalog = MonsterCatalog::new();
+        let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
+        creature.element = SUMMON_ELEM as u8;
+        catalog.insert(creature);
+        let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);
+        enemy.element = ENEMY_ELEM as u8;
+        catalog.insert(enemy);
+        world.monster_catalog = catalog;
+
+        // Caster = party slot 0; enough MP to afford the cast.
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.mp = 40;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_magic(0, 40);
+        // Target = enemy slot 1, identified to the catalog by monster id.
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_defense[1] = 0;
+
+        if let Some(pct) = affinity_pct {
+            let mut matrix = [[100u8; 8]; 8];
+            matrix[SUMMON_ELEM][ENEMY_ELEM] = pct;
+            world.element_affinity = Some(ElementAffinity {
+                matrix,
+                character_elements: vec![3; 8],
+            });
+        }
+
+        let def = gimard_spell();
+        let before = world.actors[1].battle.hp;
+        world.cast_spell_on_slots(0, &def, &[1]);
+        before - world.actors[1].battle.hp
+    }
+
+    let neutral = run(Some(100));
+    let weakness = run(Some(200));
+    let resist = run(Some(50));
+    let gated_off = run(None);
+    assert!(neutral > 0, "neutral affinity still deals damage");
+    assert_eq!(
+        neutral, gated_off,
+        "no affinity table reproduces the neutral 100% multiplier exactly"
+    );
+    assert_eq!(weakness, neutral * 2, "200% affinity doubles the magnitude");
+    assert_eq!(resist, neutral / 2, "50% affinity halves the magnitude");
+}
+
 /// A monster with no castable spells always picks a physical strike: the
 /// action picker rolls `rand % (1 + 0) == 0`, so the magic branch is never
 /// taken regardless of the seed. It still targets a (single living) party

@@ -476,7 +476,7 @@ impl World {
     /// once up front; each target folds through [`Self::fold_spell_outcome`].
     /// Returns `false` (no MP spent, nothing folded) when the caster can't
     /// afford the cost.
-    fn cast_spell_on_slots(
+    pub(super) fn cast_spell_on_slots(
         &mut self,
         caster: u8,
         def: &crate::spells::SpellDef,
@@ -544,12 +544,24 @@ impl World {
             };
             let mut outcome = cast_spell(def, t, &snap);
             // Override only the magnitude of a damaging monster special-attack;
-            // heals / buffs / non-table moves fall through unchanged.
+            // heals / buffs / non-table moves fall through unchanged. The
+            // arts/physical kernel already folds the enemy→party affinity in.
             if let Some(power) = move_power
                 && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome
                 && let Some(faithful) = self.enemy_move_predamage(caster, t, power)
             {
                 *amount = faithful;
+            } else if let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
+                // Player Seru-magic path: scale by the element affinity of the
+                // summon creature vs. the target (FUN_801dd864). Post-roll,
+                // gated on the affinity tables — neutral (100) otherwise — so
+                // disc-free battles keep an unchanged magnitude. The summon's
+                // placeholder base damage is unchanged; only the ±4% affinity
+                // nudge is applied.
+                let pct = self.cast_affinity_pct(def.id, t);
+                if pct != 100 {
+                    *amount = ((*amount as u32 * pct as u32) / 100).min(9999) as u16;
+                }
             }
             self.fold_spell_outcome(outcome);
         }
@@ -704,6 +716,68 @@ impl World {
             return 100;
         };
         aff.affinity_pct(enemy_elem, party_elem).unwrap_or(100)
+    }
+
+    /// Element id (`0..=7`) of a battle slot, resolved by slot the way the retail
+    /// affinity stage [`FUN_801dd864`] does: a party member (slot `< party_count`)
+    /// takes its per-character table element; any other slot — an enemy, or the
+    /// slot-7 summon body — takes its monster record's `+0x1D` element
+    /// ([`crate::monster_catalog::MonsterDef::element`]). Returns `None` when the
+    /// affinity tables aren't installed or no element resolves, so callers fall
+    /// back to neutral.
+    fn battle_slot_element(&self, slot: u8) -> Option<u8> {
+        let aff = self.element_affinity.as_ref()?;
+        if (slot as usize) < self.party_count as usize {
+            aff.character_element(slot + 1)
+        } else {
+            let id = self.actors.get(slot as usize)?.battle_monster_id?;
+            Some(self.monster_catalog.get(id)?.element)
+        }
+    }
+
+    /// Element id of the *summon creature* a player Seru-magic `spell_id` attacks
+    /// as. Retail resolves a player magic cast's attacker element by slot, and a
+    /// summon cast runs through the slot-7 summon body — its namesake
+    /// `battle_data` creature ([`crate::summon::summon_creature_id`]) — so the
+    /// attacker element is that creature's record `+0x1D`, *not* the casting
+    /// character's. Resolved off the loaded monster catalog by matching the
+    /// spell's display name ([`crate::retail_magic`]) to the lowest creature id
+    /// of that name (the `"$2"`/`"$3"` higher-level variants carry distinct names
+    /// and are excluded). `None` for a non-summon id or when the catalog / spell
+    /// name doesn't resolve.
+    fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
+        if !crate::summon::SERU_SUMMON_IDS.contains(&spell_id) {
+            return None;
+        }
+        let name = crate::retail_magic::get(spell_id)?.name;
+        self.monster_catalog
+            .by_id
+            .values()
+            .filter(|d| d.name == name)
+            .min_by_key(|d| d.id)
+            .map(|d| d.element)
+    }
+
+    /// Element-affinity multiplier (percent) for a player Seru-magic cast
+    /// (`spell_id`) landing on `target`: `matrix[summon-creature element][target
+    /// element]` ([`legaia_asset::element_affinity`], `FUN_801dd864`). The
+    /// attacker element is the summon creature's ([`Self::summon_attacker_element`]),
+    /// the defender element is resolved by slot ([`Self::battle_slot_element`]).
+    /// Returns `100` (neutral, no change) when the tables aren't installed, the id
+    /// isn't a summon, or either element fails to resolve — so disc-free /
+    /// synthetic battles and non-summon casts are unaffected. Applied post-roll,
+    /// so it never touches the RNG stream.
+    fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
+        let Some(aff) = self.element_affinity.as_ref() else {
+            return 100;
+        };
+        let Some(atk_elem) = self.summon_attacker_element(spell_id) else {
+            return 100;
+        };
+        let Some(def_elem) = self.battle_slot_element(target) else {
+            return 100;
+        };
+        aff.affinity_pct(atk_elem, def_elem).unwrap_or(100)
     }
 
     /// Whether a monster caster's chosen move id resolves to a real per-move
