@@ -305,9 +305,14 @@ overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
 that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
 The stat bridge reads live actor fields faithfully — AGL from `battle_accuracy`
 (`+0x168`), HP from `battle.hp`, the two defender defense terms from the
-`battle_defense_split` (UDF/LDF) pair — and takes the five `rand()` draws in
-retail call order. The `FUN_801dd864` scale currently passes neutral affinity
-(100) and no status/guard; the override engages **only when the move-power table
+`battle_defense_split` (UDF/LDF) pair — and takes the `rand()` draws in retail
+call order: attacker ×2 + defender ×1 up front, then the bonus pair **lazily**
+(only when the bonus arm fires, via `arts_physical_predamage_lazy`), so the
+shared RNG cursor advances by three or five draws exactly as `FUN_801dd0ac` does.
+The `FUN_801dd864` scale supplies the real enemy→party element affinity
+(`World::enemy_affinity_pct`, `matrix[enemy_element][party_member_element]`,
+neutral 100 when the affinity table isn't installed) with status/guard still
+defaulted; the override engages **only when the move-power table
 is installed**, so disc-free / synthetic battles keep the MP-scaled placeholder
 magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
 **not** route through this table — the move-power table is special-attack-only

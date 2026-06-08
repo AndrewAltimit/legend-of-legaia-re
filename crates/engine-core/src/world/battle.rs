@@ -594,15 +594,15 @@ impl World {
     /// guard byte (`+0x1de`) default to none. The affinity multiply happens
     /// after all the rolls, so it never changes the RNG stream.
     ///
-    /// Five `rand()` draws are taken in call order (attacker ×2, defender ×1,
-    /// bonus ×2). Retail draws the bonus pair lazily (only when the bonus arm
-    /// fires); the kernel takes all five up front, so the global RNG cursor can
-    /// advance two extra draws on the non-bonus path — a documented minor
-    /// divergence that doesn't change the damage value for a given draw stream.
+    /// The `rand()` draws are taken in retail call order: attacker ×2, defender
+    /// ×1, then the bonus pair ×2 **lazily** — drawn only when the conditional
+    /// bonus arm fires ([`arts_physical_predamage_lazy`]). So the global RNG
+    /// cursor advances by exactly three draws on the no-bonus path and five on
+    /// the bonus path, matching `FUN_801dd0ac`'s call order.
     ///
     /// REF: FUN_801dd0ac (arts/physical branch)
     fn enemy_move_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
-        use vm::battle_formulas::{ArtsPredamage, SummonRollActor, arts_physical_predamage};
+        use vm::battle_formulas::{SummonRollActor, arts_physical_predamage_lazy};
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let a = self.actors.get(attacker as usize)?;
@@ -642,22 +642,28 @@ impl World {
             status: 0,
             guard: 0,
         };
-        // Retail rand() is 15-bit; mask to match its range.
-        let rng = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+        // Retail rand() is 15-bit; mask to match its range. The attacker (×2) and
+        // defender (×1) draws are always taken; the bonus pair is drawn lazily by
+        // the closure below, only when the bonus arm fires, so the shared RNG
+        // cursor advances exactly as retail's does (three or five draws).
+        let rng3 = [
             (self.next_rng() & 0x7fff) as u16,
             (self.next_rng() & 0x7fff) as u16,
             (self.next_rng() & 0x7fff) as u16,
         ];
-        let inp = ArtsPredamage {
+        let (atk, def) = arts_physical_predamage_lazy(
             power,
-            attacker: attacker_roll,
-            target: target_roll,
+            &attacker_roll,
+            &target_roll,
             element_affinity_pct,
-            rng,
-        };
-        let (atk, def) = arts_physical_predamage(&inp);
+            rng3,
+            || {
+                [
+                    (self.next_rng() & 0x7fff) as u16,
+                    (self.next_rng() & 0x7fff) as u16,
+                ]
+            },
+        );
         Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
     }
 

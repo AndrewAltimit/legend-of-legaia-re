@@ -453,6 +453,10 @@ pub struct ArtsPredamage {
     /// Element-affinity percent (`0x801F53E8[atk_elem][def_elem]`).
     pub element_affinity_pct: u8,
     /// Five `rand()` draws, in call order: attacker ×2, defender ×1, bonus ×2.
+    /// The bonus pair is consumed only when the bonus arm fires; a caller that
+    /// must match retail's RNG-cursor advance should use
+    /// [`arts_physical_predamage_lazy`] (which draws the bonus pair lazily)
+    /// rather than pre-drawing all five.
     pub rng: [u16; 5],
 }
 
@@ -467,30 +471,60 @@ pub struct ArtsPredamage {
 /// finisher, exactly as [`summon_predamage`] does for the summon branch. The
 /// pre-finisher damage is `attacker_roll.saturating_sub(defender_roll)`.
 pub fn arts_physical_predamage(i: &ArtsPredamage) -> (u32, u32) {
-    // Stage 1: rolls. Attacker uses rng[0..2]; defender uses rng[2].
-    let mut attacker =
-        arts_attacker_roll(i.power, i.attacker.hp, i.attacker.agl, [i.rng[0], i.rng[1]]);
-    let mut defender = summon_defender_roll(&i.target, i.rng[2]);
+    let bonus = [i.rng[3], i.rng[4]];
+    arts_physical_predamage_lazy(
+        i.power,
+        &i.attacker,
+        &i.target,
+        i.element_affinity_pct,
+        [i.rng[0], i.rng[1], i.rng[2]],
+        move || bonus,
+    )
+}
+
+/// As [`arts_physical_predamage`], but the bonus-arm draws are produced lazily by
+/// `bonus_rng`, which is invoked **only when the conditional bonus re-roll
+/// actually fires**.
+///
+/// Retail (`FUN_801dd0ac`) draws those two `rand()` values *inside* the bonus
+/// arm, so a caller that pulls from a shared RNG cursor (e.g.
+/// `World::enemy_move_predamage`) advances the cursor by exactly **three** draws
+/// on the no-bonus path and **five** on the bonus path - matching the retail call
+/// order. The eager [`arts_physical_predamage`] wrapper passes a closure that
+/// just returns its pre-drawn pair, so its observable draw count is unchanged.
+pub fn arts_physical_predamage_lazy(
+    power: i32,
+    attacker: &SummonRollActor,
+    target: &SummonRollActor,
+    element_affinity_pct: u8,
+    rng3: [u16; 3],
+    bonus_rng: impl FnOnce() -> [u16; 2],
+) -> (u32, u32) {
+    // Stage 1: rolls. Attacker uses rng3[0..2]; defender uses rng3[2].
+    let mut attacker_roll =
+        arts_attacker_roll(power, attacker.hp, attacker.agl, [rng3[0], rng3[1]]);
+    let mut defender = summon_defender_roll(target, rng3[2]);
 
     // Stage 2a: FUN_801dd864 scales the attacker roll (affinity, status; the
     // magic-power arm is summon-only and does not apply here).
-    attacker = apply_element_affinity(attacker, i.element_affinity_pct);
-    attacker = apply_status_weaken(attacker, i.attacker.status);
+    attacker_roll = apply_element_affinity(attacker_roll, element_affinity_pct);
+    attacker_roll = apply_status_weaken(attacker_roll, attacker.status);
 
     // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
-    if i.target.guard == 4 {
+    if target.guard == 4 {
         defender = defender.saturating_mul(2);
     }
-    defender = apply_status_weaken(defender, i.target.status);
+    defender = apply_status_weaken(defender, target.status);
 
     // Stage 2c: conditional bonus re-roll (FUN_801dd0ac second arm). Threshold =
-    // defender + (power >> 1) + (attacker_agl >> 1); fires when attacker < it.
-    let threshold = defender as i32 + (i.power >> 1) + (i.attacker.agl as i32 >> 1);
-    if (attacker as i32) < threshold {
-        attacker = arts_bonus_roll(defender, i.power, i.attacker.agl, [i.rng[3], i.rng[4]]);
+    // defender + (power >> 1) + (attacker_agl >> 1); fires when attacker < it. The
+    // two bonus draws are pulled here, lazily, exactly as retail does.
+    let threshold = defender as i32 + (power >> 1) + (attacker.agl as i32 >> 1);
+    if (attacker_roll as i32) < threshold {
+        attacker_roll = arts_bonus_roll(defender, power, attacker.agl, bonus_rng());
     }
 
-    (attacker, defender)
+    (attacker_roll, defender)
 }
 
 // ---------------------------------------------------------------------------
@@ -1118,6 +1152,64 @@ mod tests {
         // threshold = 30 + (10>>1=5) + (0>>1=0) = 35; attacker 10 < 35 -> bonus:
         //   30 + 5 + 0%2 + 0 + 0%1 = 35.
         assert_eq!(arts_physical_predamage(&i), (35, 30));
+    }
+
+    #[test]
+    fn arts_physical_predamage_lazy_draws_bonus_only_when_arm_fires() {
+        use std::cell::Cell;
+
+        // Reuses the eager tests' two setups. The lazy variant must (a) reproduce
+        // the eager result exactly and (b) invoke the bonus closure exactly when
+        // the bonus arm fires - zero times on the no-bonus path (so a shared RNG
+        // cursor advances by three, not five) and once on the bonus path.
+        let dominant_attacker = SummonRollActor {
+            hp: 200,
+            agl: 20,
+            ..Default::default()
+        };
+        let dominant_target = SummonRollActor {
+            hp: 100,
+            agl: 16,
+            stat_a: 32,
+            stat_b: 48,
+            ..Default::default()
+        };
+        let weak_attacker = SummonRollActor::default();
+        let weak_target = SummonRollActor {
+            stat_a: 0xFF,
+            stat_b: 0xFF,
+            ..Default::default()
+        };
+
+        // No-bonus path: attacker dominates, closure never runs.
+        let calls = Cell::new(0u32);
+        let out = arts_physical_predamage_lazy(
+            20,
+            &dominant_attacker,
+            &dominant_target,
+            100,
+            [0; 3],
+            || {
+                calls.set(calls.get() + 1);
+                [0, 0]
+            },
+        );
+        assert_eq!(out, (60, 37), "matches the eager no-bonus result");
+        assert_eq!(calls.get(), 0, "bonus pair not drawn on the no-bonus path");
+
+        // Bonus path: weak attacker, closure runs exactly once.
+        let calls = Cell::new(0u32);
+        let out =
+            arts_physical_predamage_lazy(10, &weak_attacker, &weak_target, 100, [0; 3], || {
+                calls.set(calls.get() + 1);
+                [0, 0]
+            });
+        assert_eq!(out, (35, 30), "matches the eager bonus result");
+        assert_eq!(
+            calls.get(),
+            1,
+            "bonus pair drawn exactly once when the arm fires"
+        );
     }
 
     #[test]
