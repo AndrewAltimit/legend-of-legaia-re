@@ -446,8 +446,10 @@ The clean-room engine ports it across `engine-core`:
 - `monster_ai::decide` is the **per-monster-id `switch`** - keyed by monster id,
   it overrides the generic choice with the bespoke scripted casts (low-HP
   self-heal, MP-gated nukes, multi-phase boss scripts), reading/writing the
-  battle-scoped `MonsterAiState` (per-monster cooldowns `DAT_801C8FE0`, the
-  `DAT_801C8FE4` phase counter, the recent-target ring).
+  battle-scoped `MonsterAiState` (per-monster cooldowns `DAT_801C8FE0` - armed
+  once per battle, with no per-round re-arm: retail clears the latch array only at
+  battle init in `FUN_80055b6c`, so a boss self-heals at most once per fight; the
+  `DAT_801C8FE4` phase counter; the recent-target ring).
 - `monster_ai::apply_recent_target_ring` is the post-switch anti-repeat ring.
 - `World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
   `monster_setup` hook.

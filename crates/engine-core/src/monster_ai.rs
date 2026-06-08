@@ -40,15 +40,28 @@
 //!   the `!ai380` gates are faithful as-is; the path behind a set `0x380`
 //!   (AI-driven party members) is a separate status-effect feature, not a flag
 //!   the monster AI flips.
-//! - The per-monster cooldown latches (`DAT_801C8FE0`) are armed by the cases;
-//!   the retail clear site is outside the picker, so [`MonsterAiState`] is reset
-//!   at battle start and the host clears the latches between rounds.
+//! - The per-monster cooldown latches (`DAT_801C8FE0`) are **battle-scoped**, not
+//!   per-round. Retail clears the whole latch array exactly once, at battle init
+//!   (`FUN_80055b6c`, the same sweep that zeroes `flag_bd84` / `_DAT_8007BD84`), so
+//!   the ability cooldowns the cases arm (`dat[pi+4]`) stay set for the rest of the
+//!   fight - a boss self-heals at most **once per battle**. There is no
+//!   between-rounds clear: the only other writer of `DAT_801C8FE0` is the steal /
+//!   spoils handler `FUN_8004ad80`, which reuses the same scratch region for
+//!   stolen-item bookkeeping (`[monster_index]` = stolen id, `[monster_index+8]` =
+//!   recovered flag), unrelated to the AI cooldowns. [`MonsterAiState::reset`]
+//!   mirrors the battle-init clear and is the only re-arm point.
 //! - Monster `0x8A` reads its own spirit-art charge gauge (`actor+0x170`,
 //!   modelled as [`MonsterAiCtx::spirit_gauge`]) as a cast gate; the override
 //!   returns an [`AiCast::spirit_gauge_writeback`] the caller applies.
-//! - A couple of cases that touch actor fields the engine does not model yet are
-//!   still skipped with a `TODO`: the `'O'` (`0x4F`) boss that rewrites another
-//!   actor slot, and the capture-archive preload for spell ids `0x2E/0x2F`.
+//! - Two retail tail blocks that run *after* the per-monster `switch` are not
+//!   modelled, both because they touch host state the engine has no consumer for:
+//!   (1) the `'O'` (`0x4F`) boss post-amble (`LAB_801EBDF0`) - when the band-lead
+//!   monster id is `0x4F` it pokes a *second* actor's action queue (revive + disarm
+//!   at battle-mode `1`, a three-cast chain `8/9/0xB` at mode `3`); it is a
+//!   cross-actor write keyed on runtime-pinned actor-identity globals, with no
+//!   `0x4F` encounter in the playable slice. (2) the capture-archive preload
+//!   (`FUN_8003eae4(0,0x21)`) the picker fires when the chosen action is a
+//!   category-2 cast of spell id `0x2E`/`0x2F` - host-side asset streaming.
 
 // [`decide`] is a line-by-line transcription of the retail per-monster `switch`.
 // Its literal shape - discrete case labels (not ranges), `rand() % k == 0` gates
@@ -115,13 +128,6 @@ impl MonsterAiState {
     }
     fn set_counter(&mut self, v: i32) {
         self.dat[1] = v;
-    }
-
-    /// Clear the per-monster cooldown latches. The retail clear site lives
-    /// outside the picker; the host calls this between rounds so cooldown-gated
-    /// scripted casts can re-arm.
-    pub fn clear_cooldowns(&mut self) {
-        self.dat = [0; 16];
     }
 }
 
@@ -580,6 +586,37 @@ mod tests {
         // Second turn: cooldown is set, so no scripted heal this turn.
         let again = decide(&c, &mut state, &mut rng);
         assert!(again.is_none(), "cooldown gates the re-heal");
+    }
+
+    #[test]
+    fn ability_cooldown_is_battle_scoped_and_rearms_only_on_reset() {
+        // The ability cooldown a scripted case arms (`dat[pi+4]`) is BATTLE-scoped,
+        // not per-round: retail clears the latch array only at battle init
+        // (`FUN_80055b6c`), so a wounded monster self-heals once and is gated for
+        // the rest of the fight. There is no between-rounds clear - the next battle
+        // (a fresh `reset`, which mirrors that battle-init sweep) is what re-arms it.
+        let mut state = MonsterAiState::new();
+        let mut rng = || 0u32;
+        let c = ctx(0x47, 20, 100, 50); // 20 <= maxHP/3 -> heal eligible
+
+        // Turn 1: heals, arms the ability cooldown.
+        assert_eq!(decide(&c, &mut state, &mut rng).unwrap().spell_id, 0x52);
+        assert_eq!(state.dat[4], 1, "ability cooldown armed");
+
+        // Many later turns in the SAME battle: the latch persists, no re-heal.
+        for _ in 0..8 {
+            assert!(decide(&c, &mut state, &mut rng).is_none());
+        }
+        assert_eq!(state.dat[4], 1, "no per-round clear within the battle");
+
+        // A fresh battle (`reset` = the battle-init sweep) re-arms it.
+        state.reset();
+        assert_eq!(state.dat[4], 0, "reset clears the latch");
+        assert_eq!(
+            decide(&c, &mut state, &mut rng).unwrap().spell_id,
+            0x52,
+            "heals again next battle"
+        );
     }
 
     #[test]
