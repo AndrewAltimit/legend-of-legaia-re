@@ -1321,7 +1321,16 @@ impl World {
             // that expire this turn.
             self.tick_battle_buffs_on_turn(next);
             let next_is_party = next < party_count;
-            if next_is_party && self.battle_player_driven {
+            if self.actor_blocked_from_acting(next) {
+                // Asleep / Stunned / Petrified: the actor loses its turn. Its
+                // initiative key was already consumed by the picker, so the
+                // next advance moves on; advancing `active_actor` also moves
+                // the no-speed round-robin past it. The status duration ticks
+                // independently (`tick_status_effects`), so the affliction
+                // still wears off. The SM stays at EndOfAction (no action
+                // armed) - exactly the "skipped turn" outcome.
+                self.battle_ctx.active_actor = next;
+            } else if next_is_party && self.battle_player_driven {
                 // Party turn under player control: pause the SM and let the
                 // player pick the command. `tick_battle_command` arms the SM
                 // on confirm.
@@ -1460,11 +1469,37 @@ impl World {
     /// decision core) and either folds the chosen cast and parks the SM at
     /// `EndOfAction` (a spell is the whole turn, like the player magic path) or
     /// arms a physical strike for the action SM to run.
+    /// True if `slot` carries any status that blocks all actions (Asleep /
+    /// Stunned / Petrified), so it loses its turn. The blocking set is defined
+    /// by [`legaia_engine_vm::status_effects::StatusKind::blocks_actions`]; the
+    /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
+    pub(super) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
+        self.status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind.blocks_actions())
+    }
+
+    /// True if `slot` carries any status that blocks magic (Silenced /
+    /// Petrified). A blocked caster falls back to a physical strike rather
+    /// than casting.
+    pub(super) fn actor_blocked_from_magic(&self, slot: u8) -> bool {
+        self.status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind.blocks_magic())
+    }
+
     pub(super) fn take_monster_turn(&mut self, slot: u8) {
         use vm::battle_action::ActionState;
 
         self.battle_ctx.active_actor = slot;
         match self.pick_monster_action(slot) {
+            // A silenced/petrified caster can't cast - fall back to a physical
+            // strike (mirrors the affordability fallback below).
+            MonsterAction::Cast { .. } if self.actor_blocked_from_magic(slot) => {
+                self.arm_monster_physical(slot);
+            }
             MonsterAction::Cast { spell_id, targets } => {
                 let def = self.spell_catalog.get(spell_id).cloned();
                 if let Some(def) = def

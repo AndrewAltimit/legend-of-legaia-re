@@ -598,6 +598,79 @@ fn enter_battle_caps_party_at_three() {
 }
 
 #[test]
+fn status_block_helpers_classify_by_kind() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    // Asleep blocks all actions but not magic specifically.
+    world
+        .status_effects
+        .apply_with_duration(1, StatusKind::Asleep, 5);
+    assert!(world.actor_blocked_from_acting(1));
+    assert!(!world.actor_blocked_from_magic(1));
+    // Silence blocks magic only.
+    world
+        .status_effects
+        .apply_with_duration(2, StatusKind::Silenced, 5);
+    assert!(!world.actor_blocked_from_acting(2));
+    assert!(world.actor_blocked_from_magic(2));
+    // Petrify blocks both.
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Petrified, 5);
+    assert!(world.actor_blocked_from_acting(3));
+    assert!(world.actor_blocked_from_magic(3));
+    // A clean actor is blocked from nothing.
+    assert!(!world.actor_blocked_from_acting(0));
+    assert!(!world.actor_blocked_from_magic(0));
+}
+
+#[test]
+fn asleep_monster_loses_its_turn_and_never_attacks() {
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    // Drive a 1-vs-1 auto-resolving battle for many ticks and report whether
+    // the party member took any damage. With unseeded battle stats the monster
+    // auto-hits for >= 1 each turn it acts, so the only way the party stays at
+    // full HP is if the monster never gets to act.
+    fn party_took_damage(asleep: bool) -> bool {
+        let mut world = World::new();
+        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.live_gameplay_loop = true; // route tick() through live_battle_tick
+        world.battle_player_driven = false; // both sides auto-act
+        // Big monster HP so it survives long enough to take many turns; the
+        // party HP is what we watch.
+        world.actors[1].battle.hp = 9999;
+        world.actors[1].battle.max_hp = 9999;
+        world.actors[0].battle.hp = 500;
+        world.actors[0].battle.max_hp = 500;
+        if asleep {
+            world
+                .status_effects
+                .apply_with_duration(1, StatusKind::Asleep, 255);
+        }
+        let start = world.actors[0].battle.hp;
+        for _ in 0..600 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                break;
+            }
+        }
+        world.actors[0].battle.hp < start
+    }
+
+    // Non-vacuous control: an awake monster auto-hits the party.
+    assert!(
+        party_took_damage(false),
+        "control: an awake monster must damage the party"
+    );
+    // The fix: an asleep monster loses its turn, so the party is untouched.
+    assert!(
+        !party_took_damage(true),
+        "an asleep monster must skip its turn and never attack"
+    );
+}
+
+#[test]
 fn all_party_item_heals_every_living_party_actor_in_battle() {
     use crate::inventory_use::{
         InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow,
