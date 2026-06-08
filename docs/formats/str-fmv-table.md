@@ -66,7 +66,7 @@ Three of the nine paths (`\DATA\MOV.STR;1`, `\DATA\MOV15.STR;1`, `\MOV\MV1A.STR;
 
 The same overlay data section carries seven CDNAME-shape labels for the mid-game FMV-trigger field scenes the FMV overlay knows about: `town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`. These match `legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES`.
 
-## Runtime FMV-state table (`0x801D0A6C`, 12 × 64 B)
+## FMV dispatch table (`0x801D0A6C`, 12 × 64 B)
 
 The play loop's selector lives at `0x801CECA0`:
 

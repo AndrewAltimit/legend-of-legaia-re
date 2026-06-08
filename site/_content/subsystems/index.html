@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
-  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand: title screen, town, battle, menu. Two of the runtime VMs (the field/event VM and the effect VM) live in those overlays.</p>
+  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand into one shared window. There are fewer of them than the subsystem list suggests: the <em>slot-A family</em> (field/town <code>0897</code>, battle <code>0898</code>, menu <code>0899</code>, cutscene/STR <code>0970</code>, and the minigames) all load at the same base and are mutually exclusive, while the world map, save, shop, level-up, and options are <em>subsystems inside</em> the field and menu overlays, not separate ones. Two of the runtime VMs (the field/event VM and the effect VM) live in these overlays.</p>
 
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="overlay-strip-title">
@@ -46,35 +46,25 @@
       <text x="456" y="146" class="ov-sub">FUN_801E295C / E0088</text>
 
       <rect x="640" y="92" width="200" height="68" class="ov-card"/>
-      <text x="656" y="114" class="ov-title">Menu / save / shop / options</text>
-      <text x="656" y="132" class="ov-sub">Inventory, equip, status,</text>
-      <text x="656" y="146" class="ov-sub">save-slot, options/config</text>
+      <text x="656" y="114" class="ov-title">Menu (0899)</text>
+      <text x="656" y="132" class="ov-sub">inventory / equip / status,</text>
+      <text x="656" y="146" class="ov-sub">+ save, shop, level-up, options</text>
 
       <rect x="40" y="184" width="180" height="68" class="ov-card"/>
-      <text x="56" y="206" class="ov-title">World map</text>
-      <text x="56" y="224" class="ov-sub">Controller</text>
-      <text x="56" y="238" class="ov-sub">FUN_801E76D4</text>
+      <text x="56" y="206" class="ov-title">Cutscene (0970)</text>
+      <text x="56" y="224" class="ov-sub">STR / MDEC video</text>
+      <text x="56" y="238" class="ov-sub">game modes 26/27</text>
 
-      <rect x="240" y="184" width="180" height="68" class="ov-card"/>
-      <text x="256" y="206" class="ov-title">Cutscene</text>
-      <text x="256" y="224" class="ov-sub">STR / MDEC video</text>
-      <text x="256" y="238" class="ov-sub">game modes 26/27</text>
-
-      <rect x="440" y="184" width="180" height="68" class="ov-card"/>
-      <text x="456" y="206" class="ov-title">Level-up</text>
-      <text x="456" y="224" class="ov-sub">XP, stat-grant tables,</text>
-      <text x="456" y="238" class="ov-sub">magic-rank-up flow</text>
-
-      <rect x="640" y="184" width="200" height="68" class="ov-card"/>
-      <text x="656" y="206" class="ov-title">Minigame hub</text>
-      <text x="656" y="224" class="ov-sub">Fishing, slot, Baka,</text>
-      <text x="656" y="238" class="ov-sub">dance, Muscle Dome</text>
+      <rect x="240" y="184" width="200" height="68" class="ov-card"/>
+      <text x="256" y="206" class="ov-title">Minigames</text>
+      <text x="256" y="224" class="ov-sub">fishing 0972 / slot 0973 /</text>
+      <text x="256" y="238" class="ov-sub">baka 0976 / dance 0980</text>
 
       <text x="20" y="278" class="ov-band">Always resident in 0x80010000-0x800FFFFF</text>
       <rect x="40" y="290" width="800" height="22" class="ov-card" style="stroke:#2a323e"/>
       <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, libsnd / libspu / libcd / libapi</text>
     </svg>
-    <figcaption>Battle and town never coexist in RAM - the battle overlay loads on top of the town overlay's slot. Menus are layered over field/battle but mutually exclusive among themselves.</figcaption>
+    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting. Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899).</figcaption>
   </figure>
 
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
