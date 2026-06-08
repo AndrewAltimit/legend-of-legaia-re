@@ -212,7 +212,7 @@ pub struct BattleSession {
     /// Equipment table - engines populate before `begin_round` so the
     /// stat-aggregator can sum per-item modifiers.
     pub equipment: EquipmentTable,
-    /// Status modifiers (Burned -ATK, Confused -accuracy, etc.).
+    /// Status modifiers (Toxic -ATK, Confuse -accuracy, etc.).
     pub modifiers: StatusModifiers,
     /// Number of monster slots in the current battle (3..=5).
     monster_count: u8,
@@ -1725,7 +1725,7 @@ mod tests {
 
         let outcome = ArtStrikeOutcome {
             damage: Some(0),
-            enemy_effect: EnemyEffect::Burned,
+            enemy_effect: EnemyEffect::Toxic,
             ..Default::default()
         };
         let ev = BattleEvent::ApplyArtStrike {
@@ -1740,7 +1740,7 @@ mod tests {
             e,
             SessionEvent::StatusApplied {
                 slot: 3,
-                kind: StatusKind::Burned
+                kind: StatusKind::Toxic
             }
         )));
     }

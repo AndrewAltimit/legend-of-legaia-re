@@ -210,7 +210,7 @@ impl ItemCatalog {
             id: 0x7E,
             name: "Antidote",
             effect: ItemEffect::Cure {
-                kind: StatusKind::Poisoned,
+                kind: StatusKind::Venom,
             },
             usable_in_battle: true,
             usable_in_field: true,
@@ -543,30 +543,30 @@ mod tests {
     #[test]
     fn cure_passes_through_kind_when_the_status_is_present() {
         let mut t = alive(50, 100, 0, 0);
-        t.status_mask = status_bit(StatusKind::Poisoned);
+        t.status_mask = status_bit(StatusKind::Venom);
         let r = apply_effect(
             ItemEffect::Cure {
-                kind: StatusKind::Poisoned,
+                kind: StatusKind::Venom,
             },
             &t,
         );
         assert_eq!(
             r,
             ItemOutcome::Cured {
-                kind: StatusKind::Poisoned
+                kind: StatusKind::Venom
             }
         );
     }
 
     #[test]
     fn cure_is_a_no_op_when_the_status_is_absent() {
-        // Poisoned cure on a target afflicted only by Burned (and on a clean
+        // Venom cure on a target afflicted only by Toxic (and on a clean
         // target) does nothing.
         let mut t = alive(50, 100, 0, 0);
-        t.status_mask = status_bit(StatusKind::Burned);
+        t.status_mask = status_bit(StatusKind::Toxic);
         let r = apply_effect(
             ItemEffect::Cure {
-                kind: StatusKind::Poisoned,
+                kind: StatusKind::Venom,
             },
             &t,
         );
@@ -578,7 +578,7 @@ mod tests {
             ItemOutcome::NoEffect
         );
         let mut afflicted = alive(50, 100, 0, 0);
-        afflicted.status_mask = status_bit(StatusKind::Silenced);
+        afflicted.status_mask = status_bit(StatusKind::Curse);
         assert_eq!(
             apply_effect(ItemEffect::CureAll, &afflicted),
             ItemOutcome::CuredAll

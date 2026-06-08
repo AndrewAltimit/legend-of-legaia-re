@@ -587,29 +587,29 @@ The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 
 
 Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around `+0x130`; the layout is per-flag and not captured in any single overlay dump.
 
-The `Kind` column is the clean-room label keyed off the `enemy_effect` byte; `In-game` is the player-facing ailment name where known (from the status-protection accessories in the public walkthroughs - Nature Amulet protects against *Numb*, Magic Amulet *Curse*, Stone Amulet *Petrify*; the poison-family DoTs are *Venom* / *Toxic* / *Rot*, not yet pinned to a specific byte).
+Conditions are named with the game's in-game ailment terms (the `enemy_effect` byte is the on-disc art-record value; the per-turn effect + duration are clean-room approximations - the retail per-status tables aren't in any single overlay dump):
 
-| Kind | byte | Default duration | Per-turn effect | In-game |
-|---|---|---|---|---|
-| Burned | `1` | 4 turns | `max_hp / 16` HP tick damage | poison family, unpinned |
-| Shocked | `2` | 3 turns | 50% chance to skip turn | **Numb** |
-| Poisoned | `3` (Other) | 6 turns | `current_hp / 8` tick damage | poison family, unpinned |
-| Asleep | `4` | 3 turns | Skip until hit | **Sleep** |
-| Confused | `5` | 3 turns | Random target | **Confuse** |
-| Silenced | `6` | 4 turns | Block Magic actions | **Curse** |
-| Stunned | `7` | 1 turn | Skip one turn | (unpinned) |
-| Petrified | `8` | until cured | Skip turn entirely | **Petrify** / Stone |
+| Status | byte | Default duration | Per-turn effect |
+|---|---|---|---|
+| Toxic | `1` | 4 turns | `max_hp / 16` HP tick damage (deadly poison, ~2x Venom - magnitude not yet reflected) |
+| Numb | `2` | 3 turns | ~50% chance to skip turn (paralysis) |
+| Venom | `3` (Other) | 6 turns | `current_hp / 8` HP tick damage (poison) |
+| Sleep | `4` | 3 turns | Skip until hit |
+| Confuse | `5` | 3 turns | Random target |
+| Curse | `6` | 4 turns | Block Magic actions |
+| Stone | `7` | 1 turn | Skip turn / can't act (petrification; the 1-turn duration is a guess) |
+| Faint | `8` | until cured | Skip turn entirely; die at 0 HP (KO) |
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
 
 **Turn-level enforcement (live loop).** The action-blocking columns above are
 enforced at the turn grant, not just modelled. When the live battle loop
 (`World::live_battle_tick`) hands a combatant its turn, an actor carrying a
-`blocks_actions` status (Asleep / Stunned / Petrified) **loses the turn** — its
+`blocks_actions` status (Sleep / Stone / Faint) **loses the turn** — its
 initiative key is already consumed, so play passes on and the SM stays at
 `EndOfAction` with no action armed (the status duration still ticks, so the
-affliction wears off). A caster carrying a `blocks_magic` status (Silenced /
-Petrified) that the monster AI picks a cast for **falls back to a physical
+affliction wears off). A caster carrying a `blocks_magic` status (Curse /
+Faint) that the monster AI picks a cast for **falls back to a physical
 strike** (`World::take_monster_turn`, mirroring the MP-affordability fallback).
 The gate reads `StatusKind::blocks_actions`/`blocks_magic` via
 `World::actor_blocked_from_acting`/`actor_blocked_from_magic`. The party side
@@ -637,7 +637,7 @@ Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap
 
 ## Battle stat aggregator
 
-Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Burned reduces ATK by ~12.5%, Confused halves accuracy, Asleep / Stunned / Petrified zero evasion and block actions, Silenced / Petrified block Magic).
+Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK by ~12.5%, Confuse halves accuracy, Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
 Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
@@ -664,9 +664,9 @@ Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items
 
 ## Battle round lifecycle
 
-`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle_attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Burned / Poisoned tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
+`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle_attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Toxic / Venom tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
 
-The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Asleep / Stunned / Petrified actors lose action; Silenced / Petrified actors lose Magic).
+The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
 
 Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/src/battle_round.rs).
 

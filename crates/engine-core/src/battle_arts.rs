@@ -539,7 +539,7 @@ mod tests {
             hit_cues: vec![],
             identifier: 0,
             anim_speed: 0,
-            enemy_effect: EnemyEffect::Burned,
+            enemy_effect: EnemyEffect::Toxic,
             repeat_frames: Default::default(),
             background: 0,
             runtime_address: None,
@@ -547,7 +547,7 @@ mod tests {
         let (power, effect) = power_from_record(&rec);
         assert_eq!(power.len(), 1, "no-damage byte dropped");
         assert_eq!(target_of(power[0]), Some(PowerTarget::Udf));
-        assert_eq!(effect, EnemyEffect::Burned);
+        assert_eq!(effect, EnemyEffect::Toxic);
     }
 
     #[test]

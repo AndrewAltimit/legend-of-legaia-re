@@ -15,13 +15,16 @@ use serde::{Deserialize, Serialize};
 use crate::power::PowerByte;
 use crate::queue::{ActionConstant, Command};
 
-/// Status effect an art can apply to the target.
+/// Status effect an art can apply to the target. Named with the game's
+/// in-game ailment terms; bytes 1/2 are `Toxic`/`Numb`, bytes 3..=8 arrive as
+/// `Other(_)` and map to Venom/Sleep/Confuse/Curse/Stone/Faint in
+/// `legaia_engine_vm::status_effects::StatusKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum EnemyEffect {
     #[default]
     None,
-    Burned,
-    Shocked,
+    Toxic,
+    Numb,
     Other(u8),
 }
 
@@ -29,8 +32,8 @@ impl EnemyEffect {
     pub fn from_byte(b: u8) -> Self {
         match b {
             0 => EnemyEffect::None,
-            1 => EnemyEffect::Burned,
-            2 => EnemyEffect::Shocked,
+            1 => EnemyEffect::Toxic,
+            2 => EnemyEffect::Numb,
             n => EnemyEffect::Other(n),
         }
     }
@@ -213,8 +216,8 @@ mod tests {
     #[test]
     fn enemy_effect_decodes() {
         assert_eq!(EnemyEffect::from_byte(0), EnemyEffect::None);
-        assert_eq!(EnemyEffect::from_byte(1), EnemyEffect::Burned);
-        assert_eq!(EnemyEffect::from_byte(2), EnemyEffect::Shocked);
+        assert_eq!(EnemyEffect::from_byte(1), EnemyEffect::Toxic);
+        assert_eq!(EnemyEffect::from_byte(2), EnemyEffect::Numb);
         assert_eq!(EnemyEffect::from_byte(7), EnemyEffect::Other(7));
     }
 

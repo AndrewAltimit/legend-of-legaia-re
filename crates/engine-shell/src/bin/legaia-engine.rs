@@ -9381,7 +9381,7 @@ fn cmd_play_window_with_record(
                         hit_cues: vec![],
                         identifier: 0,
                         anim_speed: 0,
-                        enemy_effect: EnemyEffect::Burned,
+                        enemy_effect: EnemyEffect::Toxic,
                         repeat_frames: Default::default(),
                         background: 0,
                         runtime_address: None,

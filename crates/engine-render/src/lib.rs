@@ -603,7 +603,7 @@ pub struct HudSlotView<'a> {
     /// Maximum AP for the slot this turn.
     pub ap_max: u8,
     /// One-letter abbreviations for active status icons. Engines pick the
-    /// mapping (e.g. 'B' = Burned, 'P' = Poisoned, 'S' = Silenced, …).
+    /// mapping (e.g. 'B' = Toxic, 'P' = Venom, 'S' = Curse, …).
     pub status_letters: &'a [u8],
 }
 
@@ -614,7 +614,7 @@ pub struct HudPopupView {
     pub amount: u16,
     pub is_heal: bool,
     pub is_crit: bool,
-    /// Status letter to overlay on the popup ('B' = Burned, etc.). `None`
+    /// Status letter to overlay on the popup ('B' = Toxic, etc.). `None`
     /// for plain numeric popups.
     pub status_letter: Option<u8>,
     /// Fade alpha 0..=1.0 multiplied into the text colour.

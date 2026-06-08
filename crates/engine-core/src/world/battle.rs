@@ -1324,7 +1324,7 @@ impl World {
             self.tick_battle_buffs_on_turn(next);
             let next_is_party = next < party_count;
             if self.actor_blocked_from_acting(next) {
-                // Asleep / Stunned / Petrified: the actor loses its turn. Its
+                // Sleep / Stone / Faint: the actor loses its turn. Its
                 // initiative key was already consumed by the picker, so the
                 // next advance moves on; advancing `active_actor` also moves
                 // the no-speed round-robin past it. The status duration ticks
@@ -1471,8 +1471,8 @@ impl World {
     /// decision core) and either folds the chosen cast and parks the SM at
     /// `EndOfAction` (a spell is the whole turn, like the player magic path) or
     /// arms a physical strike for the action SM to run.
-    /// True if `slot` carries any status that blocks all actions (Asleep /
-    /// Stunned / Petrified), so it loses its turn. The blocking set is defined
+    /// True if `slot` carries any status that blocks all actions (Sleep /
+    /// Stone / Faint), so it loses its turn. The blocking set is defined
     /// by [`legaia_engine_vm::status_effects::StatusKind::blocks_actions`]; the
     /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
     pub(super) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
@@ -1482,8 +1482,8 @@ impl World {
             .any(|s| s.kind.blocks_actions())
     }
 
-    /// True if `slot` carries any status that blocks magic (Silenced /
-    /// Petrified). A blocked caster falls back to a physical strike rather
+    /// True if `slot` carries any status that blocks magic (Curse /
+    /// Faint). A blocked caster falls back to a physical strike rather
     /// than casting.
     pub(super) fn actor_blocked_from_magic(&self, slot: u8) -> bool {
         self.status_effects

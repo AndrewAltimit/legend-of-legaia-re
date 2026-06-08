@@ -509,8 +509,8 @@ pub struct Actor {
     /// flash it has. We just record the actor id for inspection.
     pub last_effect: u32,
 
-    /// Most recent status effect inflicted by an art strike (Burned /
-    /// Shocked / …). Engines clear this when they've folded it into their
+    /// Most recent status effect inflicted by an art strike (Toxic /
+    /// Numb / …). Engines clear this when they've folded it into their
     /// status-bar UI; defaults to `None`.
     pub pending_status: Option<legaia_art::record::EnemyEffect>,
 
@@ -1175,8 +1175,8 @@ pub struct World {
     /// (`overlay_0897_801ef2b0` case 2).
     pub tile_board_target: Option<(i32, i32)>,
 
-    /// Per-actor status-effect tracker (Burned / Shocked / Poisoned /
-    /// Asleep / Confused / Silenced / Stunned / Petrified). Populated by
+    /// Per-actor status-effect tracker (Toxic / Numb / Venom /
+    /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
     /// `enemy_effect` is non-`None`; ticked per turn by engines that
     /// drive a battle round. See [`legaia_engine_vm::status_effects`].
@@ -2981,7 +2981,7 @@ impl World {
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
-                        // Damage clears Asleep on the target (matches retail -
+                        // Damage clears Sleep on the target (matches retail -
                         // the enemy wakes when hit).
                         self.status_effects.on_damaged(*target_slot);
                     }

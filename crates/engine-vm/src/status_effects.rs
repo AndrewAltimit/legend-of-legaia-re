@@ -10,59 +10,53 @@
 //! captured in any single overlay dump. This module mirrors the observed
 //! semantics rather than reproducing the byte layout.
 //!
-//! The eight kinds the runtime distinguishes. The `Kind` column is the
-//! clean-room label; `In-game` is the player-facing name where known (from the
-//! status-protection accessories in the public walkthroughs - the project's
-//! ground-truth label source, see [`docs/reference/gamedata.md`]):
+//! The eight conditions the runtime distinguishes, named with the game's
+//! in-game ailment terms (sourced from the public Legaia wiki + the
+//! status-protection accessories in the walkthroughs - the project's
+//! ground-truth label source, see [`docs/reference/gamedata.md`]). The
+//! `enemy_effect` byte is the on-disc art-record value; the per-turn effect is
+//! a clean-room approximation (the retail per-status timer / tick-damage tables
+//! aren't captured in any single overlay dump):
 //!
-//! | Kind          | byte | Per-turn effect            | In-game |
-//! |---------------|------|----------------------------|---------|
-//! | `Burned`      | `1`  | 1/16 max-HP tick damage    | poison family (Venom/Toxic/Rot), unpinned |
-//! | `Shocked`     | `2`  | Skip turn 50%              | **Numb** |
-//! | `Poisoned`    | `3`  | 1/8 current-HP tick damage | poison family (Venom/Toxic/Rot), unpinned |
-//! | `Asleep`      | `4`  | Skip turn until hit        | **Sleep** |
-//! | `Confused`    | `5`  | Random target each turn    | **Confuse** |
-//! | `Silenced`    | `6`  | Block Magic actions        | **Curse** |
-//! | `Stunned`     | `7`  | Skip one turn, then clear  | (unpinned) |
-//! | `Petrified`   | `8`  | Skip turn entirely; die at 0 HP | **Petrify** / Stone |
+//! | Status    | byte | Per-turn effect (clean-room)     | Notes |
+//! |-----------|------|----------------------------------|-------|
+//! | `Toxic`   | `1`  | HP tick (`max_hp / 16`)          | deadly poison, ~2x Venom (magnitude not yet reflected) |
+//! | `Numb`    | `2`  | ~50% chance to skip the turn     | paralysis |
+//! | `Venom`   | `3`  | HP tick (`current_hp / 8`)       | standard poison |
+//! | `Sleep`   | `4`  | Skip the turn until hit          | |
+//! | `Confuse` | `5`  | Act against a random target      | |
+//! | `Curse`   | `6`  | Block Magic actions              | Magic Amulet protects vs Curse |
+//! | `Stone`   | `7`  | Skip the turn (can't act)        | petrification; the "one turn" duration is a clean-room guess |
+//! | `Faint`   | `8`  | Skip the turn entirely; die at 0 HP | KO |
 //!
 //! Engines drain pending [`StatusEvent`]s from [`StatusEffectTracker::tick_actor`]
 //! and feed them back into their HUD / battle event log.
 
 use legaia_art::record::EnemyEffect;
 
-/// One kind of status-effect condition. The mapping from the on-disc
-/// `enemy_effect` byte uses `EnemyEffect::Burned`/`Shocked` as canonical
-/// names; the rest are reached through `EnemyEffect::Other(_)`.
-/// The variant names are clean-room descriptive labels keyed off the art
-/// record `enemy_effect` byte and the observed behaviour, NOT the game's
-/// display strings (those live in undecoded MES text). Where the in-game name
-/// is known it is noted per variant; the canonical player-facing set comes from
-/// the status-protection accessories in the public walkthroughs (Nature Amulet
-/// "protects against Numb", Magic Amulet "Curse", Stone Amulet "Petrify",
-/// plus Venom / Toxic / Rot for the poison family).
+/// One kind of status-effect condition, named with the game's in-game ailment
+/// terms. The mapping from the on-disc `enemy_effect` byte names bytes 1/2
+/// directly (`EnemyEffect::Toxic`/`Numb`); bytes 3..=8 arrive as
+/// `EnemyEffect::Other(_)`. Per-turn effects are clean-room approximations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusKind {
-    /// HP-tick damage (`max_hp / 16`). In-game: one of the poison family
-    /// (Venom / Toxic / Rot) - the exact name isn't pinned to this byte.
-    Burned,
-    /// Chance to skip the turn. In-game: **Numb** (the paralysis ailment).
-    Shocked,
-    /// HP-tick damage (`current_hp / 8`). In-game: one of the poison family
-    /// (Venom / Toxic / Rot) - not pinned to this byte.
-    Poisoned,
-    /// Skip the turn until hit. In-game: **Sleep**.
-    Asleep,
-    /// Act against a random target. In-game: **Confuse**.
-    Confused,
-    /// Block Magic actions. In-game: **Curse** (the Magic Amulet protects
-    /// against Curse attacks).
-    Silenced,
-    /// Skip one turn, then clear. In-game name not pinned (a brief stun).
-    Stunned,
-    /// Skip the turn entirely; die at 0 HP. In-game: **Petrify** / Stone
-    /// (the Stone Amulet protects against Petrify attacks).
-    Petrified,
+    /// Deadly poison (~2x Venom). HP-tick damage (clean-room `max_hp / 16`).
+    Toxic,
+    /// Paralysis - a per-turn chance to be unable to act.
+    Numb,
+    /// Standard poison. HP-tick damage (clean-room `current_hp / 8`).
+    Venom,
+    /// Sleep until hit.
+    Sleep,
+    /// Acts against a random target.
+    Confuse,
+    /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
+    Curse,
+    /// Petrification - can't act (the Stone Amulet protects against Stone
+    /// attacks). The clean-room "one turn" duration is a guess.
+    Stone,
+    /// Knocked out - skips the turn entirely; dies at 0 HP.
+    Faint,
 }
 
 impl StatusKind {
@@ -73,14 +67,14 @@ impl StatusKind {
     pub fn from_enemy_effect(eff: EnemyEffect) -> Option<Self> {
         match eff {
             EnemyEffect::None => None,
-            EnemyEffect::Burned => Some(StatusKind::Burned),
-            EnemyEffect::Shocked => Some(StatusKind::Shocked),
-            EnemyEffect::Other(3) => Some(StatusKind::Poisoned),
-            EnemyEffect::Other(4) => Some(StatusKind::Asleep),
-            EnemyEffect::Other(5) => Some(StatusKind::Confused),
-            EnemyEffect::Other(6) => Some(StatusKind::Silenced),
-            EnemyEffect::Other(7) => Some(StatusKind::Stunned),
-            EnemyEffect::Other(8) => Some(StatusKind::Petrified),
+            EnemyEffect::Toxic => Some(StatusKind::Toxic),
+            EnemyEffect::Numb => Some(StatusKind::Numb),
+            EnemyEffect::Other(3) => Some(StatusKind::Venom),
+            EnemyEffect::Other(4) => Some(StatusKind::Sleep),
+            EnemyEffect::Other(5) => Some(StatusKind::Confuse),
+            EnemyEffect::Other(6) => Some(StatusKind::Curse),
+            EnemyEffect::Other(7) => Some(StatusKind::Stone),
+            EnemyEffect::Other(8) => Some(StatusKind::Faint),
             EnemyEffect::Other(_) => None,
         }
     }
@@ -90,14 +84,14 @@ impl StatusKind {
     /// observed value across the catalogued enemy attack scripts.
     pub fn default_duration(self) -> u8 {
         match self {
-            StatusKind::Burned => 4,
-            StatusKind::Shocked => 3,
-            StatusKind::Poisoned => 6,
-            StatusKind::Asleep => 3,
-            StatusKind::Confused => 3,
-            StatusKind::Silenced => 4,
-            StatusKind::Stunned => 1,
-            StatusKind::Petrified => 255, // until cured
+            StatusKind::Toxic => 4,
+            StatusKind::Numb => 3,
+            StatusKind::Venom => 6,
+            StatusKind::Sleep => 3,
+            StatusKind::Confuse => 3,
+            StatusKind::Curse => 4,
+            StatusKind::Stone => 1,
+            StatusKind::Faint => 255, // until cured
         }
     }
 
@@ -105,18 +99,18 @@ impl StatusKind {
     pub fn blocks_actions(self) -> bool {
         matches!(
             self,
-            StatusKind::Asleep | StatusKind::Stunned | StatusKind::Petrified
+            StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint
         )
     }
 
     /// `true` if the kind blocks Magic specifically.
     pub fn blocks_magic(self) -> bool {
-        matches!(self, StatusKind::Silenced | StatusKind::Petrified)
+        matches!(self, StatusKind::Curse | StatusKind::Faint)
     }
 
-    /// `true` if being hit clears this status (Asleep wakes on damage).
+    /// `true` if being hit clears this status (Sleep wakes on damage).
     pub fn clears_on_damage(self) -> bool {
-        matches!(self, StatusKind::Asleep)
+        matches!(self, StatusKind::Sleep)
     }
 }
 
@@ -158,9 +152,9 @@ pub enum StatusEvent {
     },
     /// Status `kind` expired this turn and is now cleared.
     Cleared { actor_slot: u8, kind: StatusKind },
-    /// Status `kind` blocked the actor's turn (sleep / stun / petrify).
+    /// Status `kind` blocked the actor's turn (Sleep / Stone / Faint).
     Blocked { actor_slot: u8, kind: StatusKind },
-    /// Status `kind` blocked the actor's Magic action (silence / petrify).
+    /// Status `kind` blocked the actor's Magic action (Curse / Faint).
     BlockedMagic { actor_slot: u8, kind: StatusKind },
 }
 
@@ -270,7 +264,7 @@ impl StatusEffectTracker {
     }
 
     /// Clear-on-damage hook. Engines call this when an actor takes damage,
-    /// so Asleep clears as it would in retail.
+    /// so Sleep clears as it would in retail.
     pub fn on_damaged(&mut self, slot: u8) {
         let kinds: Vec<StatusKind> = self
             .slots(slot)
@@ -285,7 +279,7 @@ impl StatusEffectTracker {
 
     /// Step every active status on `actor_slot` forward one turn. Computes
     /// per-turn tick damage based on `current_hp` / `max_hp` for damage-
-    /// over-time conditions (Burned, Poisoned), and decrements every
+    /// over-time conditions (Toxic, Venom), and decrements every
     /// instance's `remaining_turns`. Expired instances are cleared and a
     /// [`StatusEvent::Cleared`] is queued.
     ///
@@ -300,8 +294,8 @@ impl StatusEffectTracker {
         let snapshot: Vec<StatusInstance> = self.slots(actor_slot).to_vec();
         for inst in &snapshot {
             let dmg = match inst.kind {
-                StatusKind::Burned => burned_tick_damage(max_hp),
-                StatusKind::Poisoned => poisoned_tick_damage(current_hp),
+                StatusKind::Toxic => toxic_tick_damage(max_hp),
+                StatusKind::Venom => venom_tick_damage(current_hp),
                 _ => 0,
             };
             if dmg > 0 {
@@ -379,13 +373,15 @@ impl StatusEffectTracker {
     }
 }
 
-/// Tick-damage formula for Burned. `max_hp / 16`, floored at 1.
-pub fn burned_tick_damage(max_hp: u16) -> u16 {
+/// Tick-damage formula for Toxic (clean-room `max_hp / 16`, floored at 1).
+/// Toxic is the deadly poison (~2x Venom in-game); that relative magnitude is
+/// not yet reflected here - the formula is a placeholder pending a disc trace.
+pub fn toxic_tick_damage(max_hp: u16) -> u16 {
     (max_hp / 16).max(1)
 }
 
-/// Tick-damage formula for Poisoned. `current_hp / 8`, floored at 1.
-pub fn poisoned_tick_damage(current_hp: u16) -> u16 {
+/// Tick-damage formula for Venom (clean-room `current_hp / 8`, floored at 1).
+pub fn venom_tick_damage(current_hp: u16) -> u16 {
     (current_hp / 8).max(1)
 }
 
@@ -396,20 +392,20 @@ mod tests {
     #[test]
     fn enemy_effect_byte_routes() {
         assert_eq!(
-            StatusKind::from_enemy_effect(EnemyEffect::Burned),
-            Some(StatusKind::Burned)
+            StatusKind::from_enemy_effect(EnemyEffect::Toxic),
+            Some(StatusKind::Toxic)
         );
         assert_eq!(
-            StatusKind::from_enemy_effect(EnemyEffect::Shocked),
-            Some(StatusKind::Shocked)
+            StatusKind::from_enemy_effect(EnemyEffect::Numb),
+            Some(StatusKind::Numb)
         );
         assert_eq!(
             StatusKind::from_enemy_effect(EnemyEffect::Other(3)),
-            Some(StatusKind::Poisoned)
+            Some(StatusKind::Venom)
         );
         assert_eq!(
             StatusKind::from_enemy_effect(EnemyEffect::Other(8)),
-            Some(StatusKind::Petrified)
+            Some(StatusKind::Faint)
         );
         assert_eq!(StatusKind::from_enemy_effect(EnemyEffect::None), None);
         assert_eq!(StatusKind::from_enemy_effect(EnemyEffect::Other(99)), None);
@@ -418,16 +414,16 @@ mod tests {
     #[test]
     fn apply_then_has_returns_true() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Burned);
-        assert!(t.has(0, StatusKind::Burned));
-        assert!(!t.has(0, StatusKind::Shocked));
+        t.apply(0, StatusKind::Toxic);
+        assert!(t.has(0, StatusKind::Toxic));
+        assert!(!t.has(0, StatusKind::Numb));
     }
 
     #[test]
     fn apply_idempotent_takes_longer_duration() {
         let mut t = StatusEffectTracker::new();
-        t.apply_with_duration(0, StatusKind::Burned, 2);
-        t.apply_with_duration(0, StatusKind::Burned, 5);
+        t.apply_with_duration(0, StatusKind::Toxic, 2);
+        t.apply_with_duration(0, StatusKind::Toxic, 5);
         let s = t.statuses(0);
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].remaining_turns, 5);
@@ -436,18 +432,18 @@ mod tests {
     #[test]
     fn apply_idempotent_keeps_longer_when_new_is_shorter() {
         let mut t = StatusEffectTracker::new();
-        t.apply_with_duration(0, StatusKind::Burned, 5);
-        t.apply_with_duration(0, StatusKind::Burned, 2);
+        t.apply_with_duration(0, StatusKind::Toxic, 5);
+        t.apply_with_duration(0, StatusKind::Toxic, 2);
         assert_eq!(t.statuses(0)[0].remaining_turns, 5);
     }
 
     #[test]
     fn cure_removes_and_emits_event() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Burned);
+        t.apply(0, StatusKind::Toxic);
         t.drain_events(); // flush the apply (no apply event but in case)
-        assert!(t.cure(0, StatusKind::Burned));
-        assert!(!t.has(0, StatusKind::Burned));
+        assert!(t.cure(0, StatusKind::Toxic));
+        assert!(!t.has(0, StatusKind::Toxic));
         let evs = t.drain_events();
         assert_eq!(evs.len(), 1);
         assert!(matches!(evs[0], StatusEvent::Cleared { .. }));
@@ -456,9 +452,9 @@ mod tests {
     #[test]
     fn cure_all_clears_every_kind() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Burned);
-        t.apply(0, StatusKind::Shocked);
-        t.apply(0, StatusKind::Silenced);
+        t.apply(0, StatusKind::Toxic);
+        t.apply(0, StatusKind::Numb);
+        t.apply(0, StatusKind::Curse);
         t.cure_all(0);
         assert!(!t.is_afflicted(0));
     }
@@ -466,7 +462,7 @@ mod tests {
     #[test]
     fn burned_tick_dot_dropping_max_hp() {
         let mut t = StatusEffectTracker::new();
-        t.apply_with_duration(0, StatusKind::Burned, 3);
+        t.apply_with_duration(0, StatusKind::Toxic, 3);
         let dmg = t.tick_actor(0, 100, 160);
         assert_eq!(dmg, 10); // 160 / 16
     }
@@ -474,7 +470,7 @@ mod tests {
     #[test]
     fn burned_floors_at_1() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Burned);
+        t.apply(0, StatusKind::Toxic);
         let dmg = t.tick_actor(0, 5, 5);
         assert_eq!(dmg, 1);
     }
@@ -482,7 +478,7 @@ mod tests {
     #[test]
     fn poison_tick_uses_current_hp() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Poisoned);
+        t.apply(0, StatusKind::Venom);
         let dmg = t.tick_actor(0, 80, 100);
         assert_eq!(dmg, 10); // 80 / 8
     }
@@ -490,25 +486,25 @@ mod tests {
     #[test]
     fn ticking_decrements_remaining_turns() {
         let mut t = StatusEffectTracker::new();
-        t.apply_with_duration(0, StatusKind::Burned, 2);
+        t.apply_with_duration(0, StatusKind::Toxic, 2);
         t.tick_actor(0, 100, 160);
         assert_eq!(t.statuses(0)[0].remaining_turns, 1);
         t.tick_actor(0, 100, 160);
         // Cleared at zero
-        assert!(!t.has(0, StatusKind::Burned));
+        assert!(!t.has(0, StatusKind::Toxic));
     }
 
     #[test]
     fn ticking_emits_cleared_event_at_expiry() {
         let mut t = StatusEffectTracker::new();
-        t.apply_with_duration(0, StatusKind::Burned, 1);
+        t.apply_with_duration(0, StatusKind::Toxic, 1);
         t.drain_events();
         t.tick_actor(0, 100, 160);
         let evs = t.drain_events();
         assert!(evs.iter().any(|e| matches!(
             e,
             StatusEvent::Cleared {
-                kind: StatusKind::Burned,
+                kind: StatusKind::Toxic,
                 ..
             }
         )));
@@ -517,7 +513,7 @@ mod tests {
     #[test]
     fn shock_does_not_deal_damage_on_tick() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Shocked);
+        t.apply(0, StatusKind::Numb);
         let dmg = t.tick_actor(0, 100, 160);
         assert_eq!(dmg, 0);
     }
@@ -525,14 +521,14 @@ mod tests {
     #[test]
     fn check_can_act_emits_blocked_when_asleep() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Asleep);
+        t.apply(0, StatusKind::Sleep);
         assert!(!t.check_can_act(0));
         let evs = t.drain_events();
         assert_eq!(evs.len(), 1);
         assert!(matches!(
             evs[0],
             StatusEvent::Blocked {
-                kind: StatusKind::Asleep,
+                kind: StatusKind::Sleep,
                 ..
             }
         ));
@@ -541,14 +537,14 @@ mod tests {
     #[test]
     fn check_can_act_passes_when_only_burned() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Burned);
+        t.apply(0, StatusKind::Toxic);
         assert!(t.check_can_act(0));
     }
 
     #[test]
     fn check_can_cast_magic_blocked_by_silence() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Silenced);
+        t.apply(0, StatusKind::Curse);
         assert!(!t.check_can_cast_magic(0));
         let evs = t.drain_events();
         assert!(
@@ -560,26 +556,26 @@ mod tests {
     #[test]
     fn check_can_cast_magic_blocked_by_petrify() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Petrified);
+        t.apply(0, StatusKind::Faint);
         assert!(!t.check_can_cast_magic(0));
     }
 
     #[test]
     fn on_damaged_clears_sleep() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Asleep);
-        t.apply(0, StatusKind::Burned);
+        t.apply(0, StatusKind::Sleep);
+        t.apply(0, StatusKind::Toxic);
         t.on_damaged(0);
-        assert!(!t.has(0, StatusKind::Asleep));
-        assert!(t.has(0, StatusKind::Burned));
+        assert!(!t.has(0, StatusKind::Sleep));
+        assert!(t.has(0, StatusKind::Toxic));
     }
 
     #[test]
     fn apply_from_enemy_effect_routes_burned() {
         let mut t = StatusEffectTracker::new();
-        let kind = t.apply_from_enemy_effect(2, EnemyEffect::Burned);
-        assert_eq!(kind, Some(StatusKind::Burned));
-        assert!(t.has(2, StatusKind::Burned));
+        let kind = t.apply_from_enemy_effect(2, EnemyEffect::Toxic);
+        assert_eq!(kind, Some(StatusKind::Toxic));
+        assert!(t.has(2, StatusKind::Toxic));
     }
 
     #[test]
@@ -593,18 +589,18 @@ mod tests {
     #[test]
     fn multiple_actors_tracked_independently() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Burned);
-        t.apply(3, StatusKind::Shocked);
-        assert!(t.has(0, StatusKind::Burned));
-        assert!(t.has(3, StatusKind::Shocked));
-        assert!(!t.has(0, StatusKind::Shocked));
-        assert!(!t.has(3, StatusKind::Burned));
+        t.apply(0, StatusKind::Toxic);
+        t.apply(3, StatusKind::Numb);
+        assert!(t.has(0, StatusKind::Toxic));
+        assert!(t.has(3, StatusKind::Numb));
+        assert!(!t.has(0, StatusKind::Numb));
+        assert!(!t.has(3, StatusKind::Toxic));
     }
 
     #[test]
     fn petrify_default_duration_is_huge() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Petrified);
+        t.apply(0, StatusKind::Faint);
         let inst = t.statuses(0)[0];
         assert_eq!(inst.remaining_turns, 255);
     }
@@ -620,9 +616,9 @@ mod tests {
     #[test]
     fn stunned_clears_after_one_tick() {
         let mut t = StatusEffectTracker::new();
-        t.apply(0, StatusKind::Stunned);
-        assert!(t.has(0, StatusKind::Stunned));
+        t.apply(0, StatusKind::Stone);
+        assert!(t.has(0, StatusKind::Stone));
         t.tick_actor(0, 100, 100);
-        assert!(!t.has(0, StatusKind::Stunned));
+        assert!(!t.has(0, StatusKind::Stone));
     }
 }

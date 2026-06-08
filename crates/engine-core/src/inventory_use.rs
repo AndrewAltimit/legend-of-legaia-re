@@ -616,7 +616,7 @@ mod tests {
             id: 0x14,
             name: "Test Antidote",
             effect: ItemEffect::Cure {
-                kind: StatusKind::Poisoned,
+                kind: StatusKind::Venom,
             },
             usable_in_battle: true,
             usable_in_field: true,
@@ -878,7 +878,7 @@ mod tests {
             TargetRow::new(0, "Vahn").with_stats(200, 200, 30, 30),
             TargetRow::new(1, "Noa")
                 .with_stats(200, 200, 20, 20)
-                .with_statuses([StatusKind::Poisoned]),
+                .with_statuses([StatusKind::Venom]),
         ];
         let s2 = InventoryUseSession::new(
             test_catalog(),

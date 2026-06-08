@@ -601,22 +601,22 @@ fn enter_battle_caps_party_at_three() {
 fn status_block_helpers_classify_by_kind() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    // Asleep blocks all actions but not magic specifically.
+    // Sleep blocks all actions but not magic specifically.
     world
         .status_effects
-        .apply_with_duration(1, StatusKind::Asleep, 5);
+        .apply_with_duration(1, StatusKind::Sleep, 5);
     assert!(world.actor_blocked_from_acting(1));
     assert!(!world.actor_blocked_from_magic(1));
     // Silence blocks magic only.
     world
         .status_effects
-        .apply_with_duration(2, StatusKind::Silenced, 5);
+        .apply_with_duration(2, StatusKind::Curse, 5);
     assert!(!world.actor_blocked_from_acting(2));
     assert!(world.actor_blocked_from_magic(2));
     // Petrify blocks both.
     world
         .status_effects
-        .apply_with_duration(3, StatusKind::Petrified, 5);
+        .apply_with_duration(3, StatusKind::Faint, 5);
     assert!(world.actor_blocked_from_acting(3));
     assert!(world.actor_blocked_from_magic(3));
     // A clean actor is blocked from nothing.
@@ -646,7 +646,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
         if asleep {
             world
                 .status_effects
-                .apply_with_duration(1, StatusKind::Asleep, 255);
+                .apply_with_duration(1, StatusKind::Sleep, 255);
         }
         let start = world.actors[0].battle.hp;
         for _ in 0..600 {
@@ -4106,7 +4106,7 @@ fn full_test_catalog() -> crate::items::ItemCatalog {
         0x08,
         "Cure Poison",
         ItemEffect::Cure {
-            kind: StatusKind::Poisoned,
+            kind: StatusKind::Venom,
         },
         true,
         true,
@@ -4934,11 +4934,11 @@ fn silenced_caster_cannot_open_the_magic_submenu() {
         "control: an unafflicted caster can open Magic"
     );
 
-    // Silenced: the submenu refuses to open, so the caller bounces the player
+    // Curse: the submenu refuses to open, so the caller bounces the player
     // back to the command menu (the party-side mirror of the monster path).
     world
         .status_effects
-        .apply_with_duration(0, StatusKind::Silenced, 4);
+        .apply_with_duration(0, StatusKind::Curse, 4);
     assert!(
         world.build_battle_spell_session(0).is_none(),
         "a silenced caster must not open the Magic submenu"
@@ -5637,7 +5637,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         hit_cues: vec![],
         identifier: 0,
         anim_speed: 0,
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         repeat_frames: Default::default(),
         background: 0,
         runtime_address: None,
@@ -5653,7 +5653,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
 
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
-    assert_eq!(rows[0].enemy_effect, EnemyEffect::Burned);
+    assert_eq!(rows[0].enemy_effect, EnemyEffect::Toxic);
 
     world.battle_ctx.active_actor = 0;
     world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
@@ -5672,7 +5672,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert_eq!(world.actors[1].battle.hp, 4000 - expect as u16);
     assert!(
         world.status_effects.is_afflicted(1),
-        "the art's Burned effect was applied to the target"
+        "the art's Toxic effect was applied to the target"
     );
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
@@ -5729,7 +5729,7 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
         hit_cues: vec![],
         identifier: 0,
         anim_speed: 0,
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         repeat_frames: Default::default(),
         background: 0,
         runtime_address: None,
@@ -5743,7 +5743,7 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
     );
     assert_eq!(
         rows[0].enemy_effect,
-        EnemyEffect::Burned,
+        EnemyEffect::Toxic,
         "first staged component art's status effect is adopted"
     );
 }
@@ -5963,7 +5963,7 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
         art: ActionConstant::Art1B,
         power: Some(PowerByte::from_byte(0x1A)), // UDF × 28
         dmg_timing: Some(0x10),
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         hit_cue: None,
     };
     let mut host = BattleHostImpl { world: &mut world };
@@ -5981,7 +5981,7 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
             assert_eq!(*target_slot, 3);
             assert_eq!(*strike_index, 0);
             assert_eq!(outcome.damage, Some(102));
-            assert_eq!(outcome.enemy_effect, EnemyEffect::Burned);
+            assert_eq!(outcome.enemy_effect, EnemyEffect::Toxic);
         }
         other => panic!("unexpected event: {:?}", other.summary()),
     }
@@ -6061,7 +6061,7 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
         art: ActionConstant::Art1B,
         power: Some(PowerByte::from_byte(0x1A)), // UDF × 28
         dmg_timing: Some(0x10),
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         hit_cue: None,
     };
     let mut host = BattleHostImpl { world: &mut world };
@@ -6075,10 +6075,10 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
         assert_eq!(r, Some((3, 93)));
     }
     assert_eq!(world.actors[3].battle.hp, 93);
-    // Burned status was folded into pending_status.
+    // Toxic status was folded into pending_status.
     assert_eq!(
         world.actors[3].pending_status,
-        Some(legaia_art::record::EnemyEffect::Burned)
+        Some(legaia_art::record::EnemyEffect::Toxic)
     );
     // PowerTarget enum is needed only to satisfy the import linter
     // when the assertions don't otherwise reference it.
@@ -6324,10 +6324,10 @@ fn use_item_cure_clears_status() {
     world.party_count = 1;
     world.actors[0].battle.max_hp = 100;
     world.actors[0].battle.hp = 50;
-    // Apply a Burned status, then cure it via CureAll.
+    // Apply a Toxic status, then cure it via CureAll.
     world
         .status_effects
-        .apply_from_enemy_effect(0, EnemyEffect::Burned);
+        .apply_from_enemy_effect(0, EnemyEffect::Toxic);
     assert!(world.status_effects.is_afflicted(0));
     world.set_item_catalog(full_test_catalog());
     // Antidote Flower is id 0x09 (CureAll).
@@ -6397,7 +6397,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
         art: ActionConstant::Art1B,
         power: Some(PowerByte::from_byte(0x1A)),
         dmg_timing: None,
-        enemy_effect: EnemyEffect::Burned,
+        enemy_effect: EnemyEffect::Toxic,
         hit_cue: None,
     };
     let mut host = BattleHostImpl { world: &mut world };
@@ -6406,7 +6406,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
     for e in &events {
         world.fold_battle_event(e);
     }
-    assert!(world.status_effects.has(3, StatusKind::Burned));
+    assert!(world.status_effects.has(3, StatusKind::Toxic));
 }
 
 #[test]
@@ -6415,7 +6415,7 @@ fn tick_status_effects_drains_hp() {
     let mut world = World::new();
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.max_hp = 160;
-    world.status_effects.apply(0, StatusKind::Burned);
+    world.status_effects.apply(0, StatusKind::Toxic);
     world.tick_status_effects();
     assert_eq!(world.actors[0].battle.hp, 90);
 }

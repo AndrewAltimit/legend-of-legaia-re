@@ -10,8 +10,8 @@
 //!   1. Refresh per-character AP at round-start (`reset_for_turn`).
 //!   2. Recompute per-actor [`BattleStats`] from equipment, status, and
 //!      ability bits (the retail aggregator at `FUN_80042558`).
-//!   3. Tick status effects at round-end (Burned / Poisoned drain HP;
-//!      Asleep / Stunned / Petrified might expire).
+//!   3. Tick status effects at round-end (Toxic / Venom drain HP;
+//!      Sleep / Stone / Faint might expire).
 //!
 //! This module ties those operations together against the existing
 //! `World` API so engines call `BattleRound::begin(&mut world, ...)` at
@@ -97,7 +97,7 @@ impl BattleRound {
     }
 
     /// End-of-round bookkeeping. Ticks every actor's status effects,
-    /// folds Burned / Poisoned tick damage into `BattleActor::hp`.
+    /// folds Toxic / Venom tick damage into `BattleActor::hp`.
     /// Returns the number of actors that died from tick damage this
     /// round (battle UI can use this to surface the death cue).
     pub fn end(world: &mut World) -> u32 {
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn begin_round_marks_action_blocked_for_asleep_actor() {
         let mut world = world_with_party();
-        // Mark slot 1 as Asleep before begin (Other(4) = Asleep).
+        // Mark slot 1 as Sleep before begin (Other(4) = Sleep).
         world
             .status_effects
             .apply_from_enemy_effect(1, EnemyEffect::Other(4));
@@ -260,13 +260,13 @@ mod tests {
             a.battle.hp = 5;
             a.battle.max_hp = 100;
         }
-        // Apply Poisoned - drains hp/8 per tick = 12 → kills the actor.
-        // (max_hp 100, so burned would only do 6; use Poisoned current_hp/8 = 0
-        // which won't kill, fall back to Burned with low max_hp.)
-        // Burned drain is max_hp / 16 = 6 → kills the 5-HP actor.
+        // Apply Venom - drains hp/8 per tick = 12 → kills the actor.
+        // (max_hp 100, so toxic would only do 6; use Venom current_hp/8 = 0
+        // which won't kill, fall back to Toxic with low max_hp.)
+        // Toxic drain is max_hp / 16 = 6 → kills the 5-HP actor.
         world
             .status_effects
-            .apply_from_enemy_effect(0, EnemyEffect::Burned);
+            .apply_from_enemy_effect(0, EnemyEffect::Toxic);
         let deaths = BattleRound::end(&mut world);
         assert_eq!(deaths, 1);
         assert_eq!(world.actors[0].battle.hp, 0);

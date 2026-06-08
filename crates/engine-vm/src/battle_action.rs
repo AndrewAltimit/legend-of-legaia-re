@@ -2983,7 +2983,7 @@ mod tests {
             hit_cues: vec![legaia_art::HitCue::from_word(0x0010_001A)],
             identifier: 0,
             anim_speed: 0x10,
-            enemy_effect: legaia_art::EnemyEffect::Burned,
+            enemy_effect: legaia_art::EnemyEffect::Toxic,
             repeat_frames: legaia_art::RepeatFrames::default(),
             background: 0,
             runtime_address: None,
@@ -3050,7 +3050,7 @@ mod tests {
         assert_eq!(s0.character, Character::Vahn);
         assert_eq!(s0.art, ActionConstant::Art1B);
         assert_eq!(s0.dmg_timing, Some(0x08));
-        assert_eq!(s0.enemy_effect, legaia_art::EnemyEffect::Burned);
+        assert_eq!(s0.enemy_effect, legaia_art::EnemyEffect::Toxic);
         assert!(matches!(
             s0.power,
             Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {

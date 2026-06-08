@@ -255,9 +255,9 @@ mod tests {
     #[test]
     fn strike_carries_enemy_effect() {
         let mut info = synthetic_info(Some(PowerByte::from_byte(0x1A)));
-        info.enemy_effect = EnemyEffect::Burned;
+        info.enemy_effect = EnemyEffect::Toxic;
         let outcome = apply_art_strike(64, 10, &info);
-        assert_eq!(outcome.enemy_effect, EnemyEffect::Burned);
+        assert_eq!(outcome.enemy_effect, EnemyEffect::Toxic);
     }
 
     #[test]
