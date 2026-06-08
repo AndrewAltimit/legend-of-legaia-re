@@ -238,6 +238,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/extraction.html",    "Extraction CLIs",               "tooling/extraction",         "tooling/extraction.html"),
     ("tooling/ghidra.html",        "Ghidra in Docker",              "tooling/ghidra",             "tooling/ghidra.html"),
     ("tooling/overlay-capture.html","Overlay capture",              "tooling/overlay-capture",    "tooling/overlay-capture.html"),
+    ("tooling/static-overlay-pipeline.html","Static overlay pipeline","tooling/static-overlay-pipeline","tooling/static-overlay-pipeline.html"),
     ("tooling/mednafen-automation.html","Mednafen automation",      "tooling/mednafen-automation","tooling/mednafen-automation.html"),
     ("tooling/pcsx-redux-automation.html","PCSX-Redux automation",  "tooling/pcsx-redux-automation","tooling/pcsx-redux-automation.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
