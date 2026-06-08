@@ -17,10 +17,16 @@ reads the next batch of sectors, decodes a frame, blits it full-screen, and adva
 position. When the stream ends, the mode chain transitions to `ConfigInit` (index 1).
 
 Both modes share `SceneMode::Cutscene` and see the same world state. The retail STR/MDEC FMV
-handler lives in a dedicated overlay (game modes 26/27) that has not yet been captured. Two
-script-cutscene captures (`overlay_cutscene_dialogue.bin`, `overlay_cutscene_mapview.bin`) exist in
-the Ghidra project; these cover the actor-scripted dialogue sequences (op*/ed* CDNAME labels) and
-share the town field-VM overlay binary, not the FMV decoder. Capture pipeline:
+handler lives in a dedicated overlay (game modes 26/27). Its **source is now pinned: PROT 0970**
+(`cutscene_str`, slot-A base `0x801CE818`), identified statically from the disc by its leading
+`MV*.STR` movie paths + the MDEC decoder strings (`MDEC_in_sync` / `MDEC_out_sync` /
+`MDEC_rest:bad option`); see [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
+So the overlay code is now Ghidra-importable straight from the disc (`asset overlay ghidra`) —
+the master-dispatch + mode-26/27 handler can be decompiled without a live capture; only runtime
+values (e.g. the per-scene `fmv_id` the field VM writes) still need one. The two
+script-cutscene captures (`overlay_cutscene_dialogue.bin`, `overlay_cutscene_mapview.bin`) in the
+Ghidra project are a different overlay — they cover the actor-scripted dialogue sequences (op*/ed*
+CDNAME labels) and share the town field-VM overlay binary, not the FMV decoder. Capture pipeline:
 `ghidra/scripts/dump_str_fmv_overlay.py` (instructions inside the script).
 
 ## STR sector format
@@ -259,7 +265,7 @@ once that lands without a code change.
 
 ## STR/MDEC FMV overlay residency
 
-The retail `StrInit` / `StrMode` handlers live in a dedicated overlay distinct from the dialogue overlay. The overlay loads at `0x801C0000+` and occupies roughly `0x801CAD90..0x801F1200` (~156 KB of mixed code + data + sparse zero-padding) when an FMV is active.
+The retail `StrInit` / `StrMode` handlers live in a dedicated overlay distinct from the dialogue overlay — **PROT 0970** (`cutscene_str`), a slot-A overlay at base `0x801CE818` (pinned statically; see [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md)). The residency window below is from a save state during FMV playback; the addresses match the disc entry loaded at that base.
 
 Pinned data structures inside the residency window (captured from a save state during FMV playback):
 

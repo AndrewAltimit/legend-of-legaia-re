@@ -42,7 +42,7 @@
     <li>30 entries: <code>0x801F6Axx</code>–<code>0x801F71xx</code> cluster (small function-entry tables, monotonic, 5–14 entries).</li>
     <li>12 entries: <code>0x801F84xx+</code> cluster (some monotonic, some switch dispatch with repeating handlers).</li>
   </ul>
-  <p>A handful of entries lead with a Shift-JIS / ASCII title string before the pointer table - <code>0907_xxx_dat.BIN</code> "Hell's Music", <code>0924_xxx_dat.BIN</code> "Ultimate Rave", <code>0927_xxx_dat.BIN</code> "Dark Eclipse", <code>0957_xxx_dat.BIN</code>. These are likely the <strong>Disco King dance-minigame</strong> song-data overlays.</p>
+  <p>A handful of entries lead with an ASCII title string before the pointer table. Three are <strong>Disco King dance-minigame</strong> song-data overlays - <code>0907_xxx_dat.BIN</code> "Hell's Music", <code>0924_xxx_dat.BIN</code> "Ultimate Rave", <code>0927_xxx_dat.BIN</code> "Dark Eclipse" (each now in the static overlay map at slot-B base <code>0x801F69D8</code>). <strong><code>0957_xxx_dat.BIN</code> is NOT a dance song</strong> (an earlier reading grouped it here): its head is a summon string table - <code>Dies</code> / <code>Puera</code> / <code>Both</code> / <code>Damage</code> / <code>Recover</code> - followed by a pointer table and code (the slot-B <code>summon_effect_table</code> overlay). Note <code>0907</code> is also the spell-id-<code>0x83</code> slot in the summon loader's arithmetic range (<code>905..915</code>), which is over-broad - <code>0907</code> is the dance song, not a summon. See <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
 </section>
 
 <section class="doc-section" id="reading-the-format">

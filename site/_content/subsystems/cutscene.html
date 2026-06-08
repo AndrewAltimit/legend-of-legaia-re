@@ -14,7 +14,7 @@
     </tbody>
   </table>
   <p><code>StrInit</code> bootstraps the cutscene: opens the STR stream, initialises the MDEC decoder, starts the XA channel. <code>StrMode</code> runs the per-frame loop: reads the next batch of sectors, decodes a frame, blits it full-screen, and advances the audio position. When the stream ends, the mode chain transitions to <code>ConfigInit</code> (index 1).</p>
-  <p>The retail handler is overlay-resident (cutscene overlay, not yet captured).</p>
+  <p>The retail handler is overlay-resident. Its <strong>source is pinned: PROT 0970</strong> (<code>cutscene_str</code>, slot-A base <code>0x801CE818</code>), identified statically from the disc by its <code>MV*.STR</code> movie paths + MDEC decoder strings - so the handler is now Ghidra-importable straight from the disc (<code>asset overlay ghidra</code>) without a live capture; see <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>. Only runtime values still need a capture.</p>
 </section>
 
 <section class="doc-section" id="str-sector">
@@ -126,7 +126,7 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
 
 <section class="doc-section" id="fmv-overlay-residency">
   <h2>STR/MDEC FMV overlay residency</h2>
-  <p>The retail <code>StrInit</code> / <code>StrMode</code> handlers live in a dedicated overlay distinct from the dialogue overlay. The overlay loads at <code>0x801C0000+</code> and occupies roughly <code>0x801CAD90..0x801F1200</code> (~156 KB of mixed code + data + sparse zero-padding) when an FMV is active.</p>
+  <p>The retail <code>StrInit</code> / <code>StrMode</code> handlers live in a dedicated overlay distinct from the dialogue overlay - <strong>PROT 0970</strong> (<code>cutscene_str</code>), a slot-A overlay at base <code>0x801CE818</code> (pinned statically; see <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>). The residency window below is from a save state during FMV playback; the addresses match the disc entry loaded at that base.</p>
   <p>Pinned data structures inside the residency window (captured from a save state during FMV playback):</p>
   <table class="param-table">
     <thead><tr><th>Address</th><th>Size</th><th>Stride</th><th>Contents</th></tr></thead>
