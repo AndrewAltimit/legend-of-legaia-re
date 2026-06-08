@@ -806,6 +806,46 @@ fn petrified_target_absorbs_art_strike_damage() {
     assert_eq!(r, Some((3, 200)));
 }
 
+/// Stone is invulnerable at the spell damage path too, not just the basic-attack
+/// / SM strike. A petrified party member is still targetable (target resolvers
+/// key on `liveness`, which Stone leaves non-zero), so an enemy damage spell can
+/// land on it - and it must absorb. The defender's spirit gauge still charges
+/// from the pre-nullify amount (matching the basic-attack / finisher order).
+#[test]
+fn stone_absorbs_a_damage_spell() {
+    use crate::spells::{SpellElement, SpellOutcome};
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    let mut world = World::new();
+    world.enter_battle(3, 1, 600);
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.liveness = 1;
+    world
+        .status_effects
+        .apply_with_duration(0, StatusKind::Stone, 255);
+
+    world.fold_spell_outcome(SpellOutcome::Damage {
+        target: 0,
+        amount: 150,
+        element: SpellElement::Neutral,
+        weakness: false,
+    });
+
+    assert_eq!(
+        world.actors[0].battle.hp, 200,
+        "a petrified target absorbs the damage spell"
+    );
+    assert_ne!(
+        world.actors[0].battle.liveness, 0,
+        "absorbing the cast must not down the petrified actor"
+    );
+    assert!(
+        world.spirit_gauge(0) > 0,
+        "the pre-nullify hit still charges the defender's spirit gauge"
+    );
+}
+
 #[test]
 fn asleep_monster_loses_its_turn_and_never_attacks() {
     use legaia_engine_vm::status_effects::StatusKind;

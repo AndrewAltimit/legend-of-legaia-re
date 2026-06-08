@@ -295,9 +295,18 @@ impl World {
                     )
                 };
                 if hit {
+                    // A petrified target (Stone) absorbs the hit - no HP loss
+                    // (Stone is invulnerable at every damage entry point). The
+                    // strike still counts as landed (it connected, then was
+                    // nullified), matching the basic-attack / spell paths.
+                    let applied = if self.actor_is_petrified(target as u8) {
+                        0
+                    } else {
+                        dmg
+                    };
                     let a = &mut self.actors[target].battle;
-                    a.hp = a.hp.saturating_sub(dmg);
-                    total = total.saturating_add(dmg as u32);
+                    a.hp = a.hp.saturating_sub(applied);
+                    total = total.saturating_add(applied as u32);
                     landed = landed.saturating_add(1);
                     if a.hp == 0 {
                         a.liveness = 0;
@@ -817,18 +826,28 @@ impl World {
         use crate::spells::SpellOutcome as O;
         match outcome {
             O::Damage { target, amount, .. } => {
+                // The shared damage finisher fills the defender's spirit-art
+                // gauge from any hit (magic included), and it does so on the
+                // pre-nullify amount - retail charges the gauge before the
+                // absorb stage, so a Stone target's absorbed cast still charges.
+                self.accrue_spirit_gauge(target, amount);
+                // A petrified target (Stone) absorbs the hit - no HP loss, like
+                // the basic-attack path; Stone is invulnerable at every damage
+                // entry point.
+                let applied = if self.actor_is_petrified(target) {
+                    0
+                } else {
+                    amount
+                };
                 if let Some(a) = self.actors.get_mut(target as usize) {
-                    a.battle.hp = a.battle.hp.saturating_sub(amount);
+                    a.battle.hp = a.battle.hp.saturating_sub(applied);
                     if a.battle.hp == 0 {
                         a.battle.liveness = 0;
                     }
                 }
-                // The shared damage finisher fills the defender's spirit-art
-                // gauge from any hit, magic included.
-                self.accrue_spirit_gauge(target, amount);
                 self.battle_hit_fx.push(BattleHitFx {
                     target_slot: target,
-                    amount,
+                    amount: applied,
                     is_heal: false,
                     is_crit: false,
                 });
