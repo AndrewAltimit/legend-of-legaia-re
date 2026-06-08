@@ -12,12 +12,13 @@
 //! record `+2`, [`legaia_asset::item_names::item_price`]) - the same field the
 //! gold-debiting buy handler reads. A price of `0` marks a quest / key /
 //! found-only / internal item the game never sells, so the price table doubles
-//! as a **sellable mask** (price `> 0`) that guards the shop-record scan. This
-//! is a stronger guard than the randomizer's "names a real item" mask: several
-//! internal placeholder ids (e.g. the `Ra-Seru Meta $N` slots `0x01..=0x03`)
-//! *are* named but priced `0`, so a stray `0x49` run made only of those passes
-//! the name mask yet is correctly rejected here - the engine never surfaces a
-//! phantom shop or a free item.
+//! as a **sellable mask** (price `> 0`). The mask does double duty in the scan:
+//! a record must lead with a sellable item (rejecting non-shop `0x49` payloads),
+//! and the record `count` over-counts the purchasable stock by a trailing run of
+//! unsellable template ids (the `Ra-Seru Meta $N` placeholders `0x01..=0x03`,
+//! which *are* named but priced `0`) that the mask trims out of the stock. So
+//! every id the engine surfaces is a real, priced item - and the real shops whose
+//! `count` carries that padding are kept (previously they were dropped whole).
 //!
 //! Nothing here is a Sony byte: the stock ids + prices are decoded from the
 //! user's own disc at runtime, exactly like the level-up growth tables and the
@@ -86,9 +87,12 @@ pub struct SceneShop {
 /// `entry_bytes` is the raw PROT entry (the same footprint
 /// [`legaia_asset::scene_asset_table`] expects); `entry_idx` is its PROT index,
 /// used only as the [`ShopInventory::shop_id`] tag. When `item_data` is supplied
-/// the scan is restricted to records whose every id is a **sellable** (priced
-/// `> 0`) item - the strongest false-positive guard - and the stock is priced;
-/// without it the scan is structural-only and every price is `0`.
+/// the scan uses the **sellable** (priced `> 0`) mask: a record must lead with a
+/// sellable item, and the trailing run of unsellable template-id padding the
+/// record `count` over-counts (the `Ra-Seru Meta $N` placeholders) is trimmed out
+/// of the stock - so the priced stock the player sees is exactly the leading
+/// sellable run (see [`legaia_asset::shop_stock`]). Without it the scan is
+/// structural-only and every price is `0`.
 ///
 /// Returns an empty vec when the entry isn't a scene bundle, has no MAN, or has
 /// no shop record.
@@ -148,24 +152,41 @@ mod tests {
         assert_eq!(data.price(0x34), 120);
     }
 
-    /// A record that contains a price-`0` (internal / non-sellable) id is
-    /// rejected by the sellable mask - this is what filters the phantom
-    /// `Ra-Seru Meta $N` "shops" out of the engine's stock.
+    /// A trailing price-`0` (internal / template) id is the shop-record padding
+    /// the `count` over-counts: the record is KEPT (it leads with a sellable
+    /// item) and the padding is trimmed out of the stock. This is what surfaces
+    /// the real shops whose `count` carries the `Ra-Seru Meta $N` placeholders -
+    /// previously they were wrongly dropped whole.
     #[test]
-    fn sellable_mask_rejects_record_with_unpriced_id() {
+    fn sellable_mask_trims_unsellable_padding_from_stock() {
         let mut prices = [0u16; 256];
         prices[0x22] = 50;
-        // 0x03 left at price 0 (an internal placeholder id).
+        prices[0x34] = 120;
+        // 0x03 left at price 0 (the template padding id).
         let data = ShopItemData { prices };
         let mut man = Vec::new();
-        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x22, 0x03]);
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03]);
         man.extend_from_slice(b"Variety Store\0");
         let records = legaia_asset::shop_stock::scan(&man, Some(&data.sellable_mask()));
-        assert!(
-            records.is_empty(),
-            "a record with an unpriced id is rejected"
+        assert_eq!(records.len(), 1, "the real shop is kept");
+        let stock: Vec<u8> = records[0].id_offsets.iter().map(|&o| man[o]).collect();
+        assert_eq!(stock, vec![0x22, 0x34], "the 0x03 padding is trimmed");
+
+        // A record that doesn't lead with a sellable item is still rejected.
+        let mut man = Vec::new();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x03, 0x03]);
+        man.extend_from_slice(b"Variety Store\0");
+        assert!(legaia_asset::shop_stock::scan(&man, Some(&data.sellable_mask())).is_empty());
+
+        // Structural-only (no mask) keeps the full declared list including padding.
+        let mut man = Vec::new();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03]);
+        man.extend_from_slice(b"Variety Store\0");
+        assert_eq!(
+            legaia_asset::shop_stock::scan(&man, None)[0]
+                .id_offsets
+                .len(),
+            3
         );
-        // Structural-only (no mask) still finds it - the price gate is the guard.
-        assert_eq!(legaia_asset::shop_stock::scan(&man, None).len(), 1);
     }
 }

@@ -49,6 +49,15 @@ fn gold_shops_decode_from_disc_with_real_prices() {
         }
     }
     assert!(!all.is_empty(), "the disc has gold shops");
+    // The sellable mask trims the unsellable template-id padding out of each
+    // record instead of rejecting any record that carries it, so the whole shop
+    // population decodes (most shops carry the padding; rejecting them whole left
+    // only a handful).
+    assert!(
+        all.len() >= 30,
+        "expected the full gold-shop population, got {}",
+        all.len()
+    );
 
     // Every located shop names real items at a real (non-zero) buy price - a
     // gold shop never stocks a quest / found-only (price-0) item.

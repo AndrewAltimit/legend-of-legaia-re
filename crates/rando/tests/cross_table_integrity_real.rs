@@ -93,49 +93,57 @@ fn every_shop_stock_partitions_into_priced_then_padding() {
     let scus = scus(&disc);
     let priced = |id: u8| item_names::price_slot(&scus, id).is_some_and(|(_, price)| price > 0);
 
-    let shops = apply::current_shops(&patcher).expect("enumerate shops");
-    assert!(!shops.is_empty(), "the disc has town shops");
-
+    // Scan structurally (no mask) so each record exposes its FULL declared list,
+    // padding included — the consumer scanners trim the padding, so this checks
+    // the raw on-disc partition the trim relies on.
+    let mut shops = 0usize;
     let mut ids_checked = 0usize;
     let mut sellable_total = 0usize;
     let mut bad: Vec<String> = Vec::new();
-    for s in &shops {
-        ids_checked += s.items.len();
-        // The sellable stock is the leading priced run; the tail (if any) is the
-        // unsellable template-id padding the count over-counts.
-        let stock = s.items.iter().take_while(|&&id| priced(id)).count();
-        let tail = &s.items[stock..];
-        sellable_total += stock;
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher.read_entry(idx).expect("read PROT entry");
+        let Some(loc) = legaia_asset::shop_stock::locate(&entry, None) else {
+            continue;
+        };
+        for r in &loc.records {
+            shops += 1;
+            let items: Vec<u8> = r.id_offsets.iter().map(|&o| loc.decoded[o]).collect();
+            ids_checked += items.len();
+            // The sellable stock is the leading priced run; the tail (if any) is
+            // the unsellable template-id padding the count over-counts.
+            let stock = items.iter().take_while(|&&id| priced(id)).count();
+            let tail = &items[stock..];
+            sellable_total += stock;
 
-        // Every shop must sell at least one real item.
-        if stock == 0 {
-            bad.push(format!(
-                "shop {:?} has no sellable stock: {:02X?}",
-                s.name, s.items
-            ));
-        }
-        // The tail must be ENTIRELY unsellable — a priced id after an unpriced
-        // one would mean the partition isn't clean (record-layout drift).
-        if let Some(&id) = tail.iter().find(|&&id| priced(id)) {
-            bad.push(format!(
-                "shop {:?} interleaves priced id 0x{id:02X} into the padding tail: {:02X?}",
-                s.name, s.items
-            ));
-        }
-        // The padding stays within the observed bound (≤3); a longer tail would
-        // mean a real item was misread as padding.
-        if tail.len() > 3 {
-            bad.push(format!(
-                "shop {:?} padding tail too long ({}): {:02X?}",
-                s.name,
-                tail.len(),
-                s.items
-            ));
+            // Every shop must sell at least one real item.
+            if stock == 0 {
+                bad.push(format!(
+                    "shop {:?} has no sellable stock: {items:02X?}",
+                    r.name
+                ));
+            }
+            // The tail must be ENTIRELY unsellable — a priced id after an
+            // unpriced one means the partition isn't clean (record drift).
+            if let Some(&id) = tail.iter().find(|&&id| priced(id)) {
+                bad.push(format!(
+                    "shop {:?} interleaves priced id 0x{id:02X} into the padding tail: {items:02X?}",
+                    r.name
+                ));
+            }
+            // The padding stays within the observed bound (≤3); a longer tail
+            // would mean a real item was misread as padding.
+            if tail.len() > 3 {
+                bad.push(format!(
+                    "shop {:?} padding tail too long ({}): {items:02X?}",
+                    r.name,
+                    tail.len()
+                ));
+            }
         }
     }
+    assert!(shops > 20, "too few shops found: {shops}");
     eprintln!(
-        "[xtable] shops={} ids={ids_checked} sellable={sellable_total} padding={}",
-        shops.len(),
+        "[xtable] shops={shops} ids={ids_checked} sellable={sellable_total} padding={}",
         ids_checked - sellable_total
     );
     assert!(ids_checked > 30, "too few shop ids checked: {ids_checked}");
