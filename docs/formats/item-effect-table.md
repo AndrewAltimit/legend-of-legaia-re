@@ -113,6 +113,18 @@ in one use, consuming one copy. The disc-gated `item_effect_flags_disc` test
 pins the all-party flag for `0x7A`/`0x7B` (and its absence on the single-target
 heals) against the real executable.
 
+Beyond the static field/battle bits, the session also models the retail
+**menu-usability gate** that `FUN_8003043c` performs: an item is only offered
+(not greyed) when at least one currently-eligible target would actually benefit
+from it. `FUN_8003043c` walks the live party (`+0x458` class byte) calling the
+shared relevance/validity predicate `FUN_8003fb10(class, tier, target)` per
+member - returning "usable" if any member's current state makes the effect do
+something. The clean-room equivalent (`inventory_use::item_has_valid_target` ->
+`effect_benefits_target`) greys a heal when every living ally is at full HP, a
+cure when nobody carries the matching status, and a revive when nobody has
+fallen, mirroring the item-relevance arms of the already-ported validator
+(`legaia_engine_vm::action_validator`, the clean-room port of `FUN_8003fb10`).
+
 ## See also
 
 - [Item-name table](item-table.md) - the sibling name/price table this indexes through.

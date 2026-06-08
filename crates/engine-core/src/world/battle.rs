@@ -1037,12 +1037,9 @@ impl World {
                     .get(i)
                     .cloned()
                     .unwrap_or_else(|| format!("P{}", i + 1));
-                let mut row = TargetRow::new(i as u8, name).with_stats(
-                    a.battle.hp,
-                    a.battle.max_hp,
-                    a.battle.mp,
-                    mp_max,
-                );
+                let mut row = TargetRow::new(i as u8, name)
+                    .with_stats(a.battle.hp, a.battle.max_hp, a.battle.mp, mp_max)
+                    .with_statuses(self.status_effects.statuses(i as u8).iter().map(|s| s.kind));
                 row.alive = a.battle.liveness != 0;
                 Some(row)
             })
