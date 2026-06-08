@@ -3062,6 +3062,7 @@ impl World {
         let mut catalog = catalog;
         if let Some(table) = &self.item_effects {
             catalog.apply_effect_flags(table);
+            catalog.apply_stat_items(table);
         }
         self.item_catalog = catalog;
     }
@@ -3071,6 +3072,7 @@ impl World {
     /// re-applies them to the catalog already installed.
     pub fn set_item_effects(&mut self, table: legaia_asset::item_effect::ItemEffectTable) {
         self.item_catalog.apply_effect_flags(&table);
+        self.item_catalog.apply_stat_items(&table);
         self.item_effects = Some(table);
     }
 
@@ -3323,6 +3325,12 @@ impl World {
             Some(e) => *e,
             None => return crate::items::ItemOutcome::NoEffect,
         };
+        // Permanent multi-stat boost (class-6 Water line): resolved from the
+        // on-disc effect table (which this path needs anyway), not the pure
+        // table-less `apply_effect`.
+        if let crate::items::ItemEffect::StatUp = entry.effect {
+            return self.apply_stat_up_item(item_id, target_slot);
+        }
         let idx = target_slot as usize;
         // BattleActor holds `mp` but not `max_mp`; engines that wire the
         // character record into the actor populate it via a sibling field.
@@ -3410,6 +3418,54 @@ impl World {
         outcome
     }
 
+    /// Apply a permanent multi-stat boost ([`crate::items::ItemEffect::StatUp`],
+    /// the class-6 *Water* line) to party slot `target_slot`. The per-stat
+    /// changes are resolved from the installed on-disc item-effect table via the
+    /// item's `(class, tier)` descriptor (`legaia_asset::item_effect`), then each
+    /// is applied through the shared [`Self::apply_stat_raise`] persistent path.
+    /// `Defense` raises both defence facets (DEF-up + DEF-down), matching the
+    /// retail apply handler. Returns [`crate::items::ItemOutcome::NoEffect`] when
+    /// no table is installed or the id isn't a permanent stat-up.
+    fn apply_stat_up_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
+        use crate::items::StatBoostTarget as T;
+        use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+        let idx = target_slot as usize;
+        // Resolve to an owned value so the immutable table borrow is dropped
+        // before the mutable `apply_stat_raise` calls.
+        let resolved = self
+            .item_effects
+            .as_ref()
+            .and_then(|t| t.stat_effect(item_id));
+        let Some(StatItemEffect::Permanent(changes)) = resolved else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        let mut raises: Vec<(T, u16)> = Vec::with_capacity(changes.len() + 1);
+        for ch in &changes {
+            match ch.stat {
+                StatTarget::MaxHp => raises.push((T::HpMax, ch.delta)),
+                StatTarget::MaxMp => raises.push((T::MpMax, ch.delta)),
+                StatTarget::Attack => raises.push((T::Attack, ch.delta)),
+                // The retail handler writes both defence facets for one item.
+                StatTarget::Defense => {
+                    raises.push((T::Udf, ch.delta));
+                    raises.push((T::Ldf, ch.delta));
+                }
+                StatTarget::Speed => raises.push((T::Speed, ch.delta)),
+                StatTarget::Intelligence => raises.push((T::Intelligence, ch.delta)),
+                StatTarget::Agility => raises.push((T::Agility, ch.delta)),
+            }
+        }
+        let count = raises.len().min(u8::MAX as usize) as u8;
+        for (target, delta) in raises {
+            self.apply_stat_raise(idx, target, delta);
+        }
+        if count == 0 {
+            crate::items::ItemOutcome::NoEffect
+        } else {
+            crate::items::ItemOutcome::StatsRaised { count }
+        }
+    }
+
     /// Apply a permanent [`crate::items::ItemOutcome::StatRaised`] to party
     /// slot `idx`: mutate the persistent character record and re-derive the
     /// live battle stats. HP/MP-max raises bump the live actor's caps (and
@@ -3465,8 +3521,16 @@ impl World {
             }
             // Combat stats live in the +0x110 block the stat resolver reads.
             // Accuracy + Evasion both derive from AGL there, so both land on
-            // AGL (matching `seed_party_battle_stats`).
-            T::Attack | T::Udf | T::Ldf | T::Accuracy | T::Evasion => {
+            // AGL (matching `seed_party_battle_stats`), as does the AGL raise
+            // itself; Speed and Intelligence have their own halfwords.
+            T::Attack
+            | T::Udf
+            | T::Ldf
+            | T::Accuracy
+            | T::Evasion
+            | T::Agility
+            | T::Speed
+            | T::Intelligence => {
                 {
                     let rec = &mut self.roster.members[idx];
                     let cap = match rec.record_stats().cap_constant {
@@ -3479,7 +3543,9 @@ impl World {
                         T::Attack => ls.atk = bump(ls.atk),
                         T::Udf => ls.udf = bump(ls.udf),
                         T::Ldf => ls.ldf = bump(ls.ldf),
-                        T::Accuracy | T::Evasion => ls.agl = bump(ls.agl),
+                        T::Accuracy | T::Evasion | T::Agility => ls.agl = bump(ls.agl),
+                        T::Speed => ls.spd = bump(ls.spd),
+                        T::Intelligence => ls.int = bump(ls.int),
                         T::HpMax | T::MpMax => {}
                     }
                     rec.set_live_stats(ls);

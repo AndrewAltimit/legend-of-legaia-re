@@ -203,6 +203,19 @@ cure when nobody carries the matching status, and a revive when nobody has
 fallen, mirroring the item-relevance arms of the already-ported validator
 (`legaia_engine_vm::action_validator`, the clean-room port of `FUN_8003fb10`).
 
+The **permanent stat-up *Water* line** (class 6) is seeded into the catalog
+from the installed table by `ItemCatalog::apply_stat_items` (so it appears only
+when the disc is present, never as a no-op on a disc-free build);
+`World::use_item` resolves each item's per-stat changes from the table at use
+time and applies them through the shared persistent stat-raise path (a `Defense`
+change raises both defence facets, matching the handler). The disc-gated
+`water_line_stat_up_items_seed_and_apply_from_disc` test pins that Life Water
+raises Max HP +16, the single-stat Waters raise their stat by +4, and Honey
+raises all stats. The **class-7 one-battle buff Elixirs** are decoded
+(`stat_effect` → `BuffOneBattle`) but not yet wired into the live battle loop —
+they need an in-battle buff-on-item path (the buff-ramp machinery exists for
+buff *spells*).
+
 ## See also
 
 - [Item-name table](item-table.md) - the sibling name/price table this indexes through.

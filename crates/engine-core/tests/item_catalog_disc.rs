@@ -9,7 +9,8 @@
 
 use legaia_asset::item_effect::{ItemEffectTable, RestoreAmount};
 use legaia_engine_core::Vfs;
-use legaia_engine_core::items::{ItemCatalog, ItemEffect};
+use legaia_engine_core::items::{ItemCatalog, ItemEffect, ItemOutcome};
+use legaia_engine_core::world::World;
 use std::path::PathBuf;
 
 #[test]
@@ -114,4 +115,79 @@ fn curated_heal_amounts_match_the_disc_heal_table() {
     // Spot anchors keyed by real id.
     assert_eq!(table.restore_amount(0x77), Some(RestoreAmount::Hp(200))); // Healing Leaf
     assert_eq!(table.restore_amount(0x7C), Some(RestoreAmount::Mp(50))); // Magic Leaf
+}
+
+/// Installing the on-disc item-effect table seeds the permanent stat-up *Water*
+/// line into the catalog (it is absent on disc-free builds), and using one
+/// actually raises the target's stat by the handler's decoded amount. The
+/// items the engine catalog previously omitted for lack of a buff taxonomy.
+/// Skips without `LEGAIA_DISC_BIN`.
+#[test]
+fn water_line_stat_up_items_seed_and_apply_from_disc() {
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    if !path.is_file() {
+        eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
+        return;
+    }
+    let scus = legaia_engine_core::DiscVfs::open(&path)
+        .expect("open disc")
+        .read("SCUS_942.54")
+        .expect("SCUS_942.54 present");
+    let table = ItemEffectTable::from_scus(&scus).expect("item-effect table parses");
+
+    // A disc-free vanilla catalog does NOT offer the Water line (no no-ops).
+    assert!(
+        ItemCatalog::vanilla().get(0x82).is_none(),
+        "Life Water is omitted until the disc table is installed"
+    );
+
+    // One-member party with known stats to watch the raise land.
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut hms = party.members[0].hp_mp_sp();
+    hms.hp_cur = 50;
+    hms.hp_max = 100;
+    party.members[0].set_hp_mp_sp(hms);
+    let mut ls = party.members[0].live_stats();
+    ls.atk = 20;
+    ls.spd = 10;
+    ls.int = 12;
+    party.members[0].set_live_stats(ls);
+
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_item_effects(table); // seeds the Water line onto the catalog
+
+    // Life Water is now offered: field-only, not battle.
+    let life = world.item_catalog.get(0x82).expect("Life Water seeded");
+    assert_eq!(life.name, "Life Water");
+    assert!(life.usable_in_field && !life.usable_in_battle);
+
+    // Life Water (tier 0): Max HP +16, current HP refilled by the gain.
+    let outcome = world.use_item(0x82, 0);
+    assert_eq!(outcome, ItemOutcome::StatsRaised { count: 1 });
+    assert_eq!(world.roster.members[0].hp_mp_sp().hp_max, 116);
+    assert_eq!(world.actors[0].battle.max_hp, 116);
+
+    // Power Water (tier 1): ATK +4.
+    assert_eq!(
+        world.use_item(0x83, 0),
+        ItemOutcome::StatsRaised { count: 1 }
+    );
+    assert_eq!(world.roster.members[0].live_stats().atk, 24);
+
+    // Swift Water (tier 3): SPD +4; Wisdom Water (tier 4): INT +4.
+    world.use_item(0x85, 0);
+    world.use_item(0x86, 0);
+    assert_eq!(world.roster.members[0].live_stats().spd, 14);
+    assert_eq!(world.roster.members[0].live_stats().int, 16);
+
+    // Honey (tier 6, all stats): Defence expands to both facets, so the seven
+    // record changes become eight individual raises.
+    assert_eq!(
+        world.use_item(0x65, 0),
+        ItemOutcome::StatsRaised { count: 8 }
+    );
 }

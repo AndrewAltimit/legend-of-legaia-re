@@ -60,6 +60,23 @@
 
 use legaia_engine_vm::status_effects::StatusKind;
 
+/// The permanent stat-up consumables (class 6) by their **real** retail item
+/// ids + names (the `SCUS_942.54` item table). The *Water* line raises one
+/// record stat each; Honey / Miracle Water raise every stat. Seeded only when
+/// the on-disc effect table is installed ([`ItemCatalog::apply_stat_items`]);
+/// the actual per-stat changes are resolved from that table at use time. Names
+/// are the on-disc item-table strings so they match the real id space.
+const PERMANENT_STAT_ITEMS: &[(u8, &str)] = &[
+    (0x82, "Life Water"),     // tier 0: Max HP +16
+    (0x83, "Power Water"),    // tier 1: ATK +4
+    (0x84, "Guardian Water"), // tier 2: DEF +4 (both facets)
+    (0x85, "Swift Water"),    // tier 3: SPD +4
+    (0x86, "Wisdom Water"),   // tier 4: INT +4
+    (0x87, "Magic Water"),    // tier 5: Max MP +8
+    (0x65, "Honey"),          // tier 6: all stats +4
+    (0x6D, "Miracle Water"),  // tier 6: all stats +4
+];
+
 /// Which stat an [`ItemEffect::StatBoost`] modifies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatBoostTarget {
@@ -70,6 +87,13 @@ pub enum StatBoostTarget {
     Ldf,
     Accuracy,
     Evasion,
+    /// Agility (`+0x110` live block). The permanent stat-up *Water* line raises
+    /// it directly (vs. the Accuracy/Evasion aliases, which also derive from AGL).
+    Agility,
+    /// Speed (`+0x118`) — turn-order initiative stat.
+    Speed,
+    /// Intelligence (`+0x11A`).
+    Intelligence,
 }
 
 /// Typed item effect.
@@ -96,6 +120,12 @@ pub enum ItemEffect {
         target: StatBoostTarget,
         delta: u16,
     },
+    /// Permanent multi-stat increase (the class-6 *Water* line + the all-stats
+    /// Honey / Miracle Water). A marker: the actual per-stat changes are
+    /// resolved from the on-disc effect table at use time
+    /// ([`crate::World::use_item`]), so this is only ever installed when a real
+    /// item-effect table is present (see [`ItemCatalog::apply_stat_items`]).
+    StatUp,
     Spirit {
         amount: u8,
     },
@@ -154,11 +184,16 @@ impl ItemCatalog {
     /// cure, revive, field escape, and the party-wide HP heals (Healing Bloom
     /// `0x7A`, Healing Fruit `0x7B`), which fan out across the party via the
     /// item-effect descriptor's all-party flag (see [`Self::is_all_party`]).
-    /// Items that need infra this engine doesn't have yet are intentionally
-    /// **omitted** (a held one just isn't offered) rather than shown as a no-op:
-    /// - temporary battle stat buffs (Power/Shield/Speed/Wonder Elixir
-    ///   `0x8B..=0x8E`, the *Water* line `0x82..=0x87`, Fury Boost `0x81`) need
-    ///   a battle-buff taxonomy;
+    ///
+    /// The permanent stat-up *Water* line (`0x82..=0x87` + the all-stats Honey
+    /// `0x65` / Miracle Water `0x6D`) is **not** in this static set — it is
+    /// seeded from the on-disc effect table by [`Self::apply_stat_items`] (so it
+    /// only appears when the disc is present), and its per-stat changes resolve
+    /// from that table at use time. Items that still need infra this engine
+    /// doesn't have are intentionally **omitted** (a held one just isn't offered)
+    /// rather than shown as a no-op:
+    /// - the one-battle stat-buff Elixirs (Power/Shield/Speed/Wonder Elixir
+    ///   `0x8B..=0x8E`) and Fury Boost (`0x81`) need an in-battle buff path;
     /// - utility (Door of Wind warp `0x89`, Incense encounter-rate `0x8A`, the
     ///   summon flutes `0x98`/`0x99`) have no engine consumer yet.
     ///
@@ -308,6 +343,33 @@ impl ItemCatalog {
         }
     }
 
+    /// Seed the permanent stat-up consumables (class 6, the *Water* line + the
+    /// all-stats Honey / Miracle Water) into the catalog from the real on-disc
+    /// item-effect table. Each is installed as an [`ItemEffect::StatUp`] marker;
+    /// the per-stat changes are resolved from the same table at use time
+    /// ([`crate::World::use_item`]).
+    ///
+    /// These are seeded **only** when the disc table is present (called from
+    /// [`crate::World::set_item_effects`] / [`crate::World::set_item_catalog`]),
+    /// so a disc-free build never offers an item that would resolve to a no-op.
+    /// An item is added only if the installed table actually classifies it as a
+    /// permanent stat-up (defensive against an edited table).
+    pub fn apply_stat_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        use legaia_asset::item_effect::StatItemEffect;
+        for &(id, name) in PERMANENT_STAT_ITEMS {
+            if matches!(table.stat_effect(id), Some(StatItemEffect::Permanent(_))) {
+                let field_usable = table.effect(id).map(|e| e.field_usable()).unwrap_or(true);
+                self.insert(ItemEntry {
+                    id,
+                    name,
+                    effect: ItemEffect::StatUp,
+                    usable_in_battle: false,
+                    usable_in_field: field_usable,
+                });
+            }
+        }
+    }
+
     /// `true` if the item's effect applies to the whole party (the descriptor's
     /// `0x20` all-party flag). The item-use session fans a flagged item out
     /// across every valid ally instead of asking for a single target.
@@ -348,16 +410,39 @@ impl ItemCatalog {
 /// world state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemOutcome {
-    HealedHp { amount: u16 },
-    HealedMp { amount: u16 },
-    Cured { kind: StatusKind },
+    HealedHp {
+        amount: u16,
+    },
+    HealedMp {
+        amount: u16,
+    },
+    Cured {
+        kind: StatusKind,
+    },
     CuredAll,
-    Revived { hp_after: u16 },
-    StatRaised { target: StatBoostTarget, delta: u16 },
-    SpiritGained { amount: u8 },
-    CaptureRolled { strength: u16 },
+    Revived {
+        hp_after: u16,
+    },
+    StatRaised {
+        target: StatBoostTarget,
+        delta: u16,
+    },
+    /// A permanent multi-stat boost ([`ItemEffect::StatUp`]) was applied;
+    /// `count` is the number of individual stat raises performed (a single
+    /// *Water* raises one, the all-stats items raise several).
+    StatsRaised {
+        count: u8,
+    },
+    SpiritGained {
+        amount: u8,
+    },
+    CaptureRolled {
+        strength: u16,
+    },
     EscapeRequested,
-    DamageDealt { amount: u16 },
+    DamageDealt {
+        amount: u16,
+    },
     NoEffect,
 }
 
@@ -445,6 +530,10 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
             }
         }
         ItemEffect::StatBoost { target: t, delta } => ItemOutcome::StatRaised { target: t, delta },
+        // The multi-stat permanent boost is resolved from the on-disc table in
+        // `World::use_item` (which has the table + the target record), so the
+        // pure, table-less path is a no-op.
+        ItemEffect::StatUp => ItemOutcome::NoEffect,
         ItemEffect::Spirit { amount } => ItemOutcome::SpiritGained { amount },
         ItemEffect::Capture { strength } => ItemOutcome::CaptureRolled { strength },
         ItemEffect::Escape => ItemOutcome::EscapeRequested,
@@ -643,6 +732,14 @@ mod tests {
                 delta: 5
             }
         );
+    }
+
+    #[test]
+    fn stat_up_marker_is_a_noop_in_the_table_less_path() {
+        // The multi-stat StatUp boost is resolved from the on-disc table in
+        // `World::use_item`; the pure `apply_effect` has no table, so it no-ops.
+        let t = alive(50, 100, 0, 0);
+        assert_eq!(apply_effect(ItemEffect::StatUp, &t), ItemOutcome::NoEffect);
     }
 
     #[test]
