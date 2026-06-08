@@ -10,18 +10,21 @@
 //! captured in any single overlay dump. This module mirrors the observed
 //! semantics rather than reproducing the byte layout.
 //!
-//! The eight kinds the runtime distinguishes:
+//! The eight kinds the runtime distinguishes. The `Kind` column is the
+//! clean-room label; `In-game` is the player-facing name where known (from the
+//! status-protection accessories in the public walkthroughs - the project's
+//! ground-truth label source, see [`docs/reference/gamedata.md`]):
 //!
-//! | Kind          | Source byte (art `enemy_effect`) | Per-turn effect |
-//! |---------------|----------------------------------|-----------------|
-//! | `Burned`      | `1`                              | 1/16 max-HP tick damage |
-//! | `Shocked`     | `2`                              | Skip turn 50% |
-//! | `Poisoned`    | `3` (Other variant)              | 1/8 current-HP tick damage |
-//! | `Asleep`      | `4`                              | Skip turn until hit |
-//! | `Confused`    | `5`                              | Random target each turn |
-//! | `Silenced`    | `6`                              | Block Magic actions |
-//! | `Stunned`     | `7`                              | Skip one turn, then clear |
-//! | `Petrified`   | `8`                              | Skip turn entirely; die at 0 HP |
+//! | Kind          | byte | Per-turn effect            | In-game |
+//! |---------------|------|----------------------------|---------|
+//! | `Burned`      | `1`  | 1/16 max-HP tick damage    | poison family (Venom/Toxic/Rot), unpinned |
+//! | `Shocked`     | `2`  | Skip turn 50%              | **Numb** |
+//! | `Poisoned`    | `3`  | 1/8 current-HP tick damage | poison family (Venom/Toxic/Rot), unpinned |
+//! | `Asleep`      | `4`  | Skip turn until hit        | **Sleep** |
+//! | `Confused`    | `5`  | Random target each turn    | **Confuse** |
+//! | `Silenced`    | `6`  | Block Magic actions        | **Curse** |
+//! | `Stunned`     | `7`  | Skip one turn, then clear  | (unpinned) |
+//! | `Petrified`   | `8`  | Skip turn entirely; die at 0 HP | **Petrify** / Stone |
 //!
 //! Engines drain pending [`StatusEvent`]s from [`StatusEffectTracker::tick_actor`]
 //! and feed them back into their HUD / battle event log.
@@ -31,15 +34,34 @@ use legaia_art::record::EnemyEffect;
 /// One kind of status-effect condition. The mapping from the on-disc
 /// `enemy_effect` byte uses `EnemyEffect::Burned`/`Shocked` as canonical
 /// names; the rest are reached through `EnemyEffect::Other(_)`.
+/// The variant names are clean-room descriptive labels keyed off the art
+/// record `enemy_effect` byte and the observed behaviour, NOT the game's
+/// display strings (those live in undecoded MES text). Where the in-game name
+/// is known it is noted per variant; the canonical player-facing set comes from
+/// the status-protection accessories in the public walkthroughs (Nature Amulet
+/// "protects against Numb", Magic Amulet "Curse", Stone Amulet "Petrify",
+/// plus Venom / Toxic / Rot for the poison family).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusKind {
+    /// HP-tick damage (`max_hp / 16`). In-game: one of the poison family
+    /// (Venom / Toxic / Rot) - the exact name isn't pinned to this byte.
     Burned,
+    /// Chance to skip the turn. In-game: **Numb** (the paralysis ailment).
     Shocked,
+    /// HP-tick damage (`current_hp / 8`). In-game: one of the poison family
+    /// (Venom / Toxic / Rot) - not pinned to this byte.
     Poisoned,
+    /// Skip the turn until hit. In-game: **Sleep**.
     Asleep,
+    /// Act against a random target. In-game: **Confuse**.
     Confused,
+    /// Block Magic actions. In-game: **Curse** (the Magic Amulet protects
+    /// against Curse attacks).
     Silenced,
+    /// Skip one turn, then clear. In-game name not pinned (a brief stun).
     Stunned,
+    /// Skip the turn entirely; die at 0 HP. In-game: **Petrify** / Stone
+    /// (the Stone Amulet protects against Petrify attacks).
     Petrified,
 }
 

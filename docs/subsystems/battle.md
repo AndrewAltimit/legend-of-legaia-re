@@ -587,16 +587,18 @@ The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 
 
 Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around `+0x130`; the layout is per-flag and not captured in any single overlay dump.
 
-| Kind | Source byte | Default duration | Per-turn effect |
-|---|---|---|---|
-| Burned | `1` | 4 turns | `max_hp / 16` HP tick damage |
-| Shocked | `2` | 3 turns | 50% chance to skip turn |
-| Poisoned | `3` (Other) | 6 turns | `current_hp / 8` tick damage |
-| Asleep | `4` | 3 turns | Skip until hit |
-| Confused | `5` | 3 turns | Random target |
-| Silenced | `6` | 4 turns | Block Magic actions |
-| Stunned | `7` | 1 turn | Skip one turn |
-| Petrified | `8` | until cured | Skip turn entirely |
+The `Kind` column is the clean-room label keyed off the `enemy_effect` byte; `In-game` is the player-facing ailment name where known (from the status-protection accessories in the public walkthroughs - Nature Amulet protects against *Numb*, Magic Amulet *Curse*, Stone Amulet *Petrify*; the poison-family DoTs are *Venom* / *Toxic* / *Rot*, not yet pinned to a specific byte).
+
+| Kind | byte | Default duration | Per-turn effect | In-game |
+|---|---|---|---|---|
+| Burned | `1` | 4 turns | `max_hp / 16` HP tick damage | poison family, unpinned |
+| Shocked | `2` | 3 turns | 50% chance to skip turn | **Numb** |
+| Poisoned | `3` (Other) | 6 turns | `current_hp / 8` tick damage | poison family, unpinned |
+| Asleep | `4` | 3 turns | Skip until hit | **Sleep** |
+| Confused | `5` | 3 turns | Random target | **Confuse** |
+| Silenced | `6` | 4 turns | Block Magic actions | **Curse** |
+| Stunned | `7` | 1 turn | Skip one turn | (unpinned) |
+| Petrified | `8` | until cured | Skip turn entirely | **Petrify** / Stone |
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
 
