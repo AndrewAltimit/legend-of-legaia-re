@@ -173,16 +173,19 @@ pub fn randomize_equipment_drops(
     Ok((plan, report))
 }
 
-/// Build the `256`-entry "id names a real item" mask from the disc's SCUS item
-/// table, used to validate town-shop records (so a stray `0x49`-prefixed byte
-/// run can't be mistaken for a shop). `None` if SCUS / its item table is absent
-/// (the shop locator then falls back to structural-only validation).
-fn named_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
+/// Build the `256`-entry "id is sellable" mask from the disc's SCUS item table:
+/// an id with a `> 0` price. Used to validate + delimit town-shop records — the
+/// record `count` over-counts the purchasable stock by a trailing run of
+/// unsellable (price-`0`) template ids, so the sellable mask both rejects stray
+/// `0x49` payloads and trims the padding out of the stock (see
+/// [`legaia_asset::shop_stock`]). `None` if SCUS / its item table is absent (the
+/// shop locator then falls back to structural-only validation).
+fn sellable_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
     let scus = patcher.read_named_file("SCUS_942.54")?;
-    let table = legaia_asset::item_names::ItemNameTable::from_scus(&scus)?;
     let mut mask = [false; 256];
     for (id, slot) in mask.iter_mut().enumerate() {
-        *slot = table.name(id as u8).is_some();
+        *slot = legaia_asset::item_names::price_slot(&scus, id as u8)
+            .is_some_and(|(_, price)| price > 0);
     }
     Some(mask)
 }
@@ -211,7 +214,7 @@ pub struct ShopListing {
 /// PROT-entry then in-scene order. Mirrors [`current_chests`]: read-only, decodes
 /// each scene MAN once via [`SceneShops::locate`].
 pub fn current_shops(patcher: &DiscPatcher) -> Result<Vec<ShopListing>> {
-    let mask = named_item_mask(patcher);
+    let mask = sellable_item_mask(patcher);
     let mut out = Vec::new();
     for idx in 0..patcher.entry_count() {
         let entry = patcher
@@ -293,7 +296,7 @@ pub fn randomize_shops(
     let item_pool = item_pool.as_slice();
 
     // Pass 1: collect every scene's shops (decoded MAN held for pass 2).
-    let mask = named_item_mask(patcher);
+    let mask = sellable_item_mask(patcher);
     let mut scenes: Vec<SceneShops> = Vec::new();
     for idx in 0..patcher.entry_count() {
         let entry = patcher

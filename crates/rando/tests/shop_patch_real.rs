@@ -19,6 +19,37 @@ fn item_names(image: &[u8]) -> Option<legaia_asset::item_names::ItemNameTable> {
         .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus))
 }
 
+/// For every scene shop on `patcher`'s image, the unsellable template-id padding
+/// tail each record's `count` carries past its sellable stock: keyed by
+/// `(entry_idx, count_off)` so a record matches across a re-pack, valued by the
+/// decoded padding bytes (positions `stock..count`). The shop randomizer must
+/// leave these untouched — it only rewrites the leading sellable run.
+///
+/// The price table is read from the SAME image: `randomize_shops` (Random mode)
+/// also prices the chest-found equipment, so judging "sellable" with a stale
+/// price table would mis-split the partition for an image whose prices moved.
+fn shop_padding_tails(patcher: &DiscPatcher) -> BTreeMap<(usize, usize), Vec<u8>> {
+    let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS present");
+    let priced =
+        |id: u8| legaia_asset::item_names::price_slot(&scus, id).is_some_and(|(_, p)| p > 0);
+    let mut out = BTreeMap::new();
+    for idx in 0..patcher.entry_count() {
+        let Ok(entry) = patcher.read_entry(idx) else {
+            continue;
+        };
+        // Structural scan (no mask) exposes the FULL declared list incl. padding.
+        let Some(loc) = legaia_asset::shop_stock::locate(&entry, None) else {
+            continue;
+        };
+        for r in &loc.records {
+            let ids: Vec<u8> = r.id_offsets.iter().map(|&o| loc.decoded[o]).collect();
+            let stock = ids.iter().take_while(|&&id| priced(id)).count();
+            out.insert((idx, r.count_off), ids[stock..].to_vec());
+        }
+    }
+    out
+}
+
 #[test]
 fn town_shops_enumerate_cleanly() {
     let Some(disc) = load_disc() else {
@@ -156,4 +187,34 @@ fn casino_shuffle_preserves_prizes_and_round_trips() {
     let mut p2 = DiscPatcher::open(disc).expect("reopen");
     apply::randomize_casino(&mut p2, seed, DropMode::Shuffle).unwrap();
     assert_eq!(p2.image(), p.image(), "fixed seed is byte-deterministic");
+}
+
+/// The shop randomizer rewrites only the leading sellable stock of each record,
+/// never the trailing unsellable template-id padding the `count` over-counts.
+/// Decode every shop's padding tail before and after a randomization and assert
+/// it is byte-identical — a regression that let the randomizer shuffle the
+/// padding back into the stock (the pre-fix behaviour) would change a tail.
+#[test]
+fn shop_randomization_leaves_the_padding_tail_untouched() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let before = shop_padding_tails(&DiscPatcher::open(disc.clone()).unwrap());
+    // The disc genuinely carries padding (most shops do) — otherwise the test is
+    // vacuous.
+    assert!(
+        before.values().any(|t| !t.is_empty()),
+        "expected some shops to carry an unsellable padding tail"
+    );
+
+    for mode in [DropMode::Shuffle, DropMode::Random] {
+        let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+        apply::randomize_shops(&mut patcher, 0x5EED, mode).expect("randomize shops");
+        let after = shop_padding_tails(&patcher);
+        assert_eq!(
+            before, after,
+            "{mode:?} changed a shop's unsellable padding tail"
+        );
+    }
 }

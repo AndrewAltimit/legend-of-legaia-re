@@ -124,7 +124,10 @@ confirmed constants. The cost prompt and Yes/No cursor are rendered in
 A gold town merchant's stock is **not** an overlay data table — it lives **inline
 in the scene's field-VM script** (the MAN, asset type `0x03`), as field-VM op
 `0x49` (`STATE_RESUME`) sub-op `0` carrying `[count][item_ids][ASCII name]`. The
-shared scanner [`legaia_asset::shop_stock`] (a byte-scan, robust to the
+`count` over-counts the purchasable stock by a trailing run of unsellable,
+price-`0` *template* ids (the `Ra-Seru Meta $N` placeholders `0x01/0x02/0x03`, or
+a lone `0x03`) that the on-screen shop skips — see the sellable-mask note below.
+The shared scanner [`legaia_asset::shop_stock`] (a byte-scan, robust to the
 dialogue-picker jump tables a linear walk desyncs on) locates these records;
 [`legaia_engine_core::shop_catalog`] pairs them with item prices to build a priced
 [`ShopInventory`]. `SceneHost::enter_field_scene` populates `World::scene_shops`
@@ -153,11 +156,18 @@ record `+2` (`legaia_asset::item_names::item_price`, base `TABLE_BASE_VA`), the
 same field the gold-debiting buy handler `FUN_801db380` reads (`_DAT_8008459C -=
 price[item_id]`). A price of `0` marks a quest / key / found-only / internal item
 the game never sells, so the price table doubles as a **sellable mask** (price
-`> 0`) for the shop-record scan. This is stronger than the randomizer's "names a
-real item" mask: several internal placeholder ids (the `Ra-Seru Meta $N` slots
-`0x01..=0x03`) *are* named but priced `0`, so a stray `0x49` run built only of
-those passes the name mask yet is correctly rejected by the engine — no phantom
-shop, no free item. Validated against the Rim Elm Variety Store's 10 pinned ids.
+`> 0`) for the shop-record scan. The mask does double duty: a record must lead
+with a sellable item (rejecting non-shop `0x49` payloads — inn / save prompts
+carry MES text, not a priced list), and the trailing unsellable template-id
+padding the `count` over-counts (the `Ra-Seru Meta $N` slots `0x01..=0x03`, which
+*are* named but priced `0`) is trimmed out of the stock. Across the disc every
+shop partitions cleanly — a leading priced run then an unsellable tail (≤3 ids),
+never interleaved — and the priced prefix matches the curated walkthrough stock
+(e.g. "Market" decodes to 10 ids but sells 7). Both the engine and the randomizer
+now use this mask, so each surfaces exactly the real stock; the whole gold-shop
+population decodes (earlier the "every id sellable" rule dropped every shop that
+carried the padding). Validated against the Rim Elm Variety Store's 10 pinned ids
+(a tail-less list) and the disc-wide partition guard.
 
 > The casino / prize-exchange table at `0x801E4518` (8-byte `[u16 item_id][u16
 > gate][u32 price]` records in `0x60`-byte blocks) is a different thing — its buy

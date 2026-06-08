@@ -7134,18 +7134,53 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
 #[test]
 fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
     let mut world = World::new();
-    // 0x22 priced, 0x34 left unpriced (0) -> the record fails the sellable mask.
+    // Only 0x22 is priced. A genuine shop LEADS with a sellable item (a real
+    // shop's unsellable template ids are only ever a trailing padding tail,
+    // never the lead). This payload leads with an unpriced id, so the sellable
+    // mask rejects it as not a gold shop.
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
-    let code = shop_op49_script();
+    let mut code = vec![0x49, 0x00, 0x00, 0x02, 0x34, 0x22];
+    code.extend_from_slice(b"Shop\0");
     let mut ctx = FieldCtx::default();
     {
         let mut host = FieldHostImpl { world: &mut world };
         let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
     }
-    assert!(!world.field_shop_armed, "an unpriced id is not a gold shop");
+    assert!(
+        !world.field_shop_armed,
+        "a payload that doesn't lead with a sellable item is not a gold shop"
+    );
     assert!(world.take_pending_field_shop().is_none());
+}
+
+#[test]
+fn field_vm_op49_trims_unsellable_padding_to_the_sellable_stock() {
+    let mut world = World::new();
+    // 0x22/0x34 priced; 0x03 the trailing unsellable template-id padding the
+    // record `count` over-counts. The shop opens with only the sellable stock.
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    prices[0x34] = 120;
+    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    let mut code = vec![0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03];
+    code.extend_from_slice(b"Shop\0");
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    }
+    let sess = world
+        .take_pending_field_shop()
+        .expect("the field VM opened the shop (padding doesn't reject it)");
+    let items: Vec<(u8, u32)> = sess
+        .inventory
+        .items
+        .iter()
+        .map(|i| (i.item_id, i.price))
+        .collect();
+    assert_eq!(items, vec![(0x22, 50), (0x34, 120)], "0x03 padding trimmed");
 }
 
 #[test]

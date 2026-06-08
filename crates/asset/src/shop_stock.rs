@@ -19,6 +19,21 @@
 //! PCSX-Redux capture standing in the Rim Elm Variety Store (its 10 ids match
 //! the curated shops table).
 //!
+//! ## `count` includes unsellable padding
+//!
+//! The `count` byte counts the purchasable stock **plus** a trailing run of
+//! unsellable, price-`0` *template* ids — commonly the "Ra-Seru Meta $N"
+//! placeholders `0x01/0x02/0x03`, or a lone `0x03`. The on-screen shop stops at
+//! the sellable run, so this tail is structural padding, not stock. The Rim Elm
+//! Variety Store that pinned the format happens to have a tail-less ten-item
+//! list, which is why the padding wasn't in the original capture. Across the
+//! whole disc every shop partitions cleanly — a leading run of price-`> 0` items
+//! then an unsellable tail (≤ 3 ids), never interleaved — and the priced prefix
+//! matches the curated walkthrough stock (e.g. "Market" decodes to 10 ids but
+//! sells 7). [`ShopRecord::sellable_count`] returns the priced-prefix length
+//! given the SCUS price table; the asset-`tests` cross-table sweep
+//! (`legaia_rando::cross_table_integrity_real`) pins the partition disc-wide.
+//!
 //! ## Locating sites safely
 //!
 //! Sites are found by **scanning** the decompressed MAN for the op-`0x49`
@@ -47,6 +62,11 @@ const SHOP_OPCODE: u8 = 0x49;
 /// Max item count a shop record is allowed to declare (a sanity bound that
 /// rejects a non-shop `0x49` payload whose first byte happens to be large).
 const MAX_SHOP_ITEMS: usize = 16;
+/// Max trailing unsellable template-id padding a shop record's `count` may carry
+/// past the purchasable stock (see the module docs). Observed values are 0, 1, or
+/// 3 disc-wide; the bound rejects a non-shop payload whose only valid-looking
+/// byte is its first.
+const MAX_SHOP_PAD: usize = 3;
 
 /// One town-shop site located in a scene MAN: its declared item count, the
 /// absolute offsets (within the decoded MAN) of each item-id byte, and the
@@ -59,6 +79,25 @@ pub struct ShopRecord {
     pub id_offsets: Vec<usize>,
     /// The shop's on-screen name (decoded ASCII), for listings / audit.
     pub name: String,
+}
+
+impl ShopRecord {
+    /// The number of leading **purchasable** item ids — the real shop stock,
+    /// excluding the trailing unsellable template-id padding the record `count`
+    /// over-counts (see the module docs). `man` is the decoded MAN the offsets
+    /// index into; `is_priced` reports whether an id has a `> 0` `SCUS_942.54`
+    /// price (e.g. `|id| legaia_asset::item_names::price_slot(scus, id)
+    /// .is_some_and(|(_, p)| p > 0)`).
+    ///
+    /// The stock is the leading priced run: every shop on the disc partitions
+    /// cleanly into a priced prefix then an unsellable tail (verified disc-wide),
+    /// so the prefix length is the count the shop UI actually shows.
+    pub fn sellable_count(&self, man: &[u8], is_priced: impl Fn(u8) -> bool) -> usize {
+        self.id_offsets
+            .iter()
+            .take_while(|&&o| man.get(o).copied().is_some_and(&is_priced))
+            .count()
+    }
 }
 
 /// A scene MAN located + decompressed from a PROT entry, with its shop records.
@@ -149,17 +188,36 @@ pub fn parse_record(man: &[u8], op_abs: usize, valid: Option<&[bool; 256]>) -> O
     if ids.contains(&0) {
         return None;
     }
-    if let Some(v) = valid
-        && !ids.iter().all(|&id| v[id as usize])
-    {
-        // An id that names no real item ⇒ not a (sellable) shop record.
-        return None;
-    }
-    // Name: a printable ASCII run terminated by 0x00, first char a letter.
+    // The declared `count` covers the purchasable stock PLUS a trailing run of
+    // unsellable template-id padding (see the module docs). When a `valid` mask
+    // is supplied, the stock is the leading run of valid ids; the record holds
+    // only if it sells at least one valid item, the padding tail is entirely
+    // invalid (no interleaving — verified disc-wide), and the padding stays
+    // within the observed bound. This both rejects non-shop `0x49` payloads and
+    // trims the padding out of the returned stock. With no mask the whole
+    // declared list is kept verbatim.
+    let stock = match valid {
+        Some(v) => {
+            let stock = ids.iter().take_while(|&&id| v[id as usize]).count();
+            if stock == 0 {
+                // Doesn't lead with a real sellable item ⇒ not a shop record.
+                return None;
+            }
+            let pad = &ids[stock..];
+            if pad.len() > MAX_SHOP_PAD || pad.iter().any(|&id| v[id as usize]) {
+                return None;
+            }
+            stock
+        }
+        None => count,
+    };
+    // Name: a printable ASCII run terminated by 0x00, first char a letter. It
+    // sits after the FULL declared list (count includes the padding), so the
+    // name position is unchanged whether or not the padding is trimmed.
     let name = read_name(man, ids_end)?;
     Some(ShopRecord {
         count_off,
-        id_offsets: (ids_start..ids_end).collect(),
+        id_offsets: (ids_start..ids_start + stock).collect(),
         name,
     })
 }
@@ -206,6 +264,24 @@ mod tests {
             site.id_offsets.iter().map(|&o| man[o]).collect::<Vec<_>>(),
             vec![0x22, 0x34, 0x59]
         );
+    }
+
+    /// `sellable_count` counts the leading priced run and stops at the first
+    /// unsellable padding id (here `0x01/0x02/0x03`, like the real "Market").
+    #[test]
+    fn sellable_count_trims_unsellable_padding() {
+        // 7 priced ids then the 01 02 03 template padding, "Market\0".
+        let mut man = vec![0u8; 4];
+        let stock = [0xD3u8, 0xD4, 0x77, 0x78, 0x7C, 0x7F, 0x88];
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x0A]);
+        man.extend_from_slice(&stock);
+        man.extend_from_slice(&[0x01, 0x02, 0x03]);
+        man.extend_from_slice(b"Market\0");
+        let site = parse_record(&man, 4, None).expect("valid shop record");
+        assert_eq!(site.id_offsets.len(), 10, "count includes the padding");
+        // Priced predicate: the seven real ids, not 0x01/0x02/0x03.
+        let priced = |id: u8| stock.contains(&id);
+        assert_eq!(site.sellable_count(&man, priced), 7);
     }
 
     #[test]
@@ -258,18 +334,47 @@ mod tests {
         assert_eq!(sites[0].count_off, rec_at + 3);
     }
 
+    /// With a mask, the stock is the leading valid run; a bounded trailing run
+    /// of invalid (unsellable) ids is treated as padding and trimmed, but a shop
+    /// that doesn't *lead* with a valid item — or interleaves valid past the
+    /// padding, or pads too far — is rejected.
     #[test]
-    fn valid_mask_rejects_unnamed_ids() {
-        // id 0x77 named, 0xFE not named -> with the mask, the record is rejected.
-        let mut man = vec![0x49, 0x00, 0x00, 0x02, 0x77, 0xFE];
-        man.extend_from_slice(b"Shop\0");
+    fn valid_mask_splits_stock_from_padding() {
         let mut mask = [true; 256];
-        mask[0xFE] = false;
-        assert!(
-            parse_record(&man, 0, Some(&mask)).is_none(),
-            "an unnamed id fails the SCUS mask check"
+        for id in [0x01u8, 0x02, 0x03, 0xFE] {
+            mask[id as usize] = false;
+        }
+        let rec = |ids: &[u8]| {
+            let mut man = vec![0x49, 0x00, 0x00, ids.len() as u8];
+            man.extend_from_slice(ids);
+            man.extend_from_slice(b"Shop\0");
+            man
+        };
+
+        // Trailing invalid run = padding: stock trimmed to the leading valid run.
+        let man = rec(&[0x77, 0x88, 0x01, 0x02, 0x03]);
+        let site = parse_record(&man, 0, Some(&mask)).expect("padding-tail shop");
+        assert_eq!(
+            site.id_offsets.iter().map(|&o| man[o]).collect::<Vec<_>>(),
+            vec![0x77, 0x88],
+            "padding 01 02 03 is trimmed from the stock"
         );
-        // Without the mask (structural only) it parses.
-        assert!(parse_record(&man, 0, None).is_some());
+
+        // Leads with an invalid id -> not a shop.
+        assert!(parse_record(&rec(&[0xFE, 0x77]), 0, Some(&mask)).is_none());
+
+        // Valid id *after* the padding starts (interleaved) -> rejected.
+        assert!(parse_record(&rec(&[0x77, 0xFE, 0x88]), 0, Some(&mask)).is_none());
+
+        // Padding longer than the observed bound -> rejected.
+        assert!(parse_record(&rec(&[0x77, 0x01, 0x02, 0x03, 0xFE]), 0, Some(&mask)).is_none());
+
+        // Without the mask (structural only) the whole declared list is kept.
+        let man = rec(&[0x77, 0x88, 0x01, 0x02, 0x03]);
+        assert_eq!(
+            parse_record(&man, 0, None).unwrap().id_offsets.len(),
+            5,
+            "structural scan keeps the full count"
+        );
     }
 }

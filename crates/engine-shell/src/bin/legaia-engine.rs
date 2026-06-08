@@ -4419,6 +4419,29 @@ impl PlayWindowApp {
     /// no frames drains the trigger immediately via `finish_cutscene` (no-op),
     /// matching the headless `play` loop. Leaves `self.cutscene = None` when
     /// nothing starts.
+    /// Narrow a whole-`MVn.STR`-file sector span to just the segment a given
+    /// `fmv_id` plays, using the FMV dispatch table decoded from the cutscene
+    /// overlay (PROT 0970). One `MVn.STR` can carry several cutscenes by frame
+    /// range (e.g. `MV3.STR` -> fmv 1 / 2 / ...), so without this an `fmv_id`
+    /// that seeks into the file would play from the wrong frame. Returns
+    /// `(start_lba, sector_count)`; falls back to the whole file
+    /// (`(file_lba, file_sectors)`) when the table / entry is unavailable.
+    fn fmv_segment_window(&self, fmv_id: i16, file_lba: u32, file_sectors: u32) -> (u32, u32) {
+        use legaia_asset::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX};
+        let table = self
+            .session
+            .host
+            .index
+            .entry_bytes(STR_OVERLAY_PROT_INDEX)
+            .ok()
+            .and_then(|b| FmvTable::from_str_overlay(&b[..]));
+        legaia_engine_shell::cutscene_av::fmv_segment_window(
+            table.as_ref().and_then(|t| t.entry(fmv_id)),
+            file_lba,
+            file_sectors,
+        )
+    }
+
     fn try_start_windowed_cutscene(&mut self) {
         use legaia_engine_shell::cutscene_av::{decode_str_av_from_disc, decode_str_video_only};
         let Some(fmv_id) = self.session.host.world.active_fmv() else {
@@ -4437,7 +4460,10 @@ impl PlayWindowApp {
         {
             match resolve_iso_file(disc_path, Path::new(&rel)) {
                 Ok((lba, size)) => {
-                    let count = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+                    let total = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+                    // Narrow to the fmv_id's frame-range segment (multi-cutscene
+                    // files like MV3.STR carry several fmv_ids by frame range).
+                    let (lba, count) = self.fmv_segment_window(fmv_id, lba, total);
                     match decode_str_av_from_disc(disc_path, lba, count) {
                         Ok(av) if !av.frames.is_empty() => {
                             log::info!(

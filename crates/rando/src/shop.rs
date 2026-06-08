@@ -83,10 +83,11 @@ impl SceneShops {
         Self::locate_inner(entry, entry_idx, None)
     }
 
-    /// Like [`Self::locate`], but `valid` restricts shop ids to **named items**
-    /// (a `256`-entry "id names a real item" mask from the SCUS item table), so a
-    /// stray `0x49`-prefixed byte run can't be mistaken for a shop. The apply
-    /// layer always uses this form.
+    /// Like [`Self::locate`], but `valid` restricts shop ids to **sellable items**
+    /// (a `256`-entry "id is priced `> 0`" mask from the SCUS item table), so a
+    /// stray `0x49`-prefixed byte run can't be mistaken for a shop AND the
+    /// trailing unsellable template-id padding is trimmed out of the stock (see
+    /// [`legaia_asset::shop_stock`]). The apply layer always uses this form.
     pub fn locate_with_items(entry: &[u8], entry_idx: usize, valid: &[bool; 256]) -> Option<Self> {
         Self::locate_inner(entry, entry_idx, Some(valid))
     }
