@@ -20,6 +20,9 @@
 //!     names a real item in the 256-id space.
 //!   * **start-inv id     -> item-name table**   every new-game starting slot
 //!     grants a real, named item in a non-zero quantity.
+//!   * **art display combo -> matcher record**    every Tactical Art's on-screen
+//!     button combo appears in its character's in-battle input matcher (the two
+//!     copies of the combo must agree or the shown combo wouldn't fire the art).
 //!
 //! ## Shop-record padding (found by this sweep)
 //!
@@ -265,6 +268,55 @@ fn every_starting_inventory_id_names_a_real_item() {
     assert!(
         dangling.is_empty(),
         "starting-inventory ids that don't name a real item (seed drift?):\n{}",
+        dangling.join("\n")
+    );
+}
+
+#[test]
+fn every_art_display_combo_is_recognized_by_the_matcher() {
+    use legaia_rando::arts::{player_entry_index, player_record0_decoded, record0_has_combo};
+
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+
+    // Each Tactical Art has TWO copies of its button combo: the DISPLAY glyph
+    // string in the SCUS arts-name table (what current_arts decodes) and the
+    // MATCHER record in the character's player-data record0 (what the in-battle
+    // input actually fires on). They must agree — if they drift, the on-screen
+    // combo wouldn't trigger the art. Decode the matcher block once per character
+    // and assert every displayed regular-art combo appears in it.
+    let mut matcher: std::collections::HashMap<usize, Vec<u8>> = Default::default();
+    let arts = apply::current_arts(&patcher).expect("decode arts");
+
+    let mut checked = 0usize;
+    let mut dangling: Vec<String> = Vec::new();
+    for a in &arts {
+        // Miracle Arts are triggered through a different path (not the regular
+        // combo matcher) — the randomizer leaves them alone; skip here too.
+        if a.is_miracle || a.commands.is_empty() {
+            continue;
+        }
+        let entry_idx = player_entry_index(a.character);
+        let decoded = matcher.entry(entry_idx).or_insert_with(|| {
+            let entry = patcher.read_entry(entry_idx).expect("read player entry");
+            player_record0_decoded(&entry).expect("decode matcher record0")
+        });
+        checked += 1;
+        if !record0_has_combo(decoded, &a.commands) {
+            dangling.push(format!(
+                "{:?} art #{} display combo {:?} has no matcher record",
+                a.character, a.index, a.commands
+            ));
+        }
+    }
+    eprintln!("[xtable] art_combos_checked={checked}");
+    assert!(checked > 20, "too few art combos checked: {checked}");
+    assert!(
+        dangling.is_empty(),
+        "art display combos with no matching in-battle matcher (display/matcher desync?):\n{}",
         dangling.join("\n")
     );
 }
