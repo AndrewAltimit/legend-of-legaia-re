@@ -48,10 +48,10 @@
 <td>Per-actor state machine (<code>FUN_801E295C</code>), battle main dispatcher (<code>FUN_801D0748</code>), effect VM cluster (<code>FUN_801DE914 / 801DFDF8 / 801E0088</code>); all 78 functions dumped</td>
 </tr>
 <tr>
-<td>Options / config / all pause-menus (<code>0896</code>)</td>
+<td>Options / config / all pause-menus (<code>0899</code>)</td>
 <td>✓</td>
 <td><code>overlay_menu.bin</code></td>
-<td>Items / magic / equipment / status / options UI; equipment stat aggregator (<code>FUN_801CF650</code>); all 129 functions dumped</td>
+<td>Items / magic / equipment / status / options UI; equipment stat aggregator (<code>FUN_801CF650</code> at base+0x0e38); all 129 functions dumped. <strong>Source pinned: PROT 0899 @ base <code>0x801CE818</code></strong> (RAM-byte-matched clean copy; see <a href="static-overlay-pipeline.html">static overlay pipeline</a>). VA-alias sibling of the town/field overlay (PROT 0897) in slot A &mdash; the menu overlay <em>replaces</em> the field overlay at <code>0x801CE818</code>. The earlier <code>0896</code> attribution was wrong (<code>0896</code>/<code>bat_back_dat</code> is the mode-24 OTHER overlay at <code>0x801C5818</code>).</td>
 </tr>
 <tr>
 <td>Save / load screen</td>
@@ -364,6 +364,7 @@ scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing</code></
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="static-overlay-pipeline.html">Static overlay pipeline</a>
     <a href="mednafen-automation.html">Mednafen automation</a>
     <a href="../reference/functions.html">Functions</a>
     <a href="../reference/memory-map.html">Memory map</a>

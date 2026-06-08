@@ -556,6 +556,10 @@ The piece poses `R·v + T` about its own object origin (no centroid subtraction)
 | Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (writer absent **by design** in retail) | [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) | `project_debug_flags.md` |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) | `project_xp_split_static_negative.md` |
 | Opening-prologue tail (`opdeene`) | partial | [details ↓](#opening-prologue-tail-opdeene) | `project_cold_boot_prologue.md` |
+| Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
+| Options/menu overlay PROT entry | resolved + RAM-verified (**PROT 0899** @ `0x801CE818`) | The real options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896 — `FUN_801CF650`'s instruction signature byte-matches PROT 0899 file `0xe38` (`0x801CE818 + 0xe38 = 0x801CF650`), 101/139 captured menu-dump functions align as prologues, jal-recovery agrees (30 votes). **RAM-verified clean copy:** the `0x15e8c`-byte `.text`+`.rodata` prefix is byte-identical across six menu-open saves (equipment/status/options x field `map01` + town `town01`; scenarios `menu_*_field` / `menu_*_town`). VA-alias sibling of the field overlay (0897) in slot A — the menu overlay REPLACES the field overlay at `0x801CE818` (field VM at `0x801DE840` is not a prologue while `FUN_801CF650` is). The earlier "0896 = menu" label is falsified. | `project_static_overlay_pipeline.md` |
+| PROT 0896 (`bat_back_dat`) overlay identity | open | PROT 0896 is NOT the menu overlay (that is 0899). 0896 recovers a self-consistent base `0x801C5818` and is most likely the **mode-24 OTHER overlay** (boot.md). Closes with a save state that captures it resident, byte-matched against the disc entry at `0x801C5818`. | `project_static_overlay_pipeline.md` |
+| Slot-B overlay cluster (`0900..0969`) per-entry identity | partial | The slot-B buffer (link base `0x801F69D8`) timeshares the player-summon / effect / minigame-data blobs of the `0900..0969` PROT cluster; a capture catches a mix of two, so static extraction at the link base is the clean path. Pinned so far: 0900 (summon render, capture-anchored), 0905 (Gimard stager, cross-ref). **The cluster is heterogeneous** — it interleaves summon stagers with Disco King dance-song overlays (0907 "Hell's Music", 0924, 0927, 0957), so the contiguous "summon `0905..=0915`" range (`summon_overlay::PLAYER_SUMMON_STAGER_PROT`) is **over-broad** and should be revisited (0907 parses as a "scene-graph" only via the parses-without-error trap). Closing needs per-entry identification (head string / structure / a per-summon capture). | `project_static_overlay_pipeline.md` |
 
 
 ### `title.pak` PROT entry
@@ -603,6 +607,13 @@ The **name-entry auto-open is pinned**: op `0x49` STATE_RESUME sub-op 3 at town0
 **param 0 = pitch, param 1 = yaw, param 2 = roll** (the three GTE Euler angles), params 3/4/5 = shake/offset trio, params 6/7/8 = camera focus (negated GTE translation), param 9 = GTE H (FOV/zoom). The GTE rotation build is decoded (`FUN_8001CF50` rotates by `RotMatrixX/Y/Z` at `0x800461A4/629C/638C`, sin/cos LUT `0x80070A2C`, 12-bit angles), and the per-frame ease is decoded (`FUN_801DB510` exponential `srav` lerp toward control-block targets). `play-window` wires pitch + yaw + focus + H into `cutscene_camera_mvp` + `CutsceneCameraInterp`.
 
 **What's left:** only the eye **distance** is unmapped - retail has no explicit eye-distance scalar (the eye sits at the GTE translation and projects through H), so the engine still orbits the focus at a scene-sized radius rather than placing the eye at the translation. The snap-vs-interpolate timing is resolved (it eases).
+
+
+### Overlay identity from the disc (static extraction)
+
+*Status:* resolved (pipeline landed)
+
+PSX overlays are clean copies of a fixed-VA-linked blob (FlushCache + jump, no per-load relocation), so each runtime overlay can be extracted **statically** from its `PROT.DAT` entry and disassembled at its load base — identity attached from the source entry, not a guessed label. This is the structural fix for the VA-aliasing identity problem (`0x801DD864` = battle-action in one overlay, muscle-dome in another). Proved: the battle overlay (PROT 0898 @ `0x801CE818`) is byte-identical to its resident RAM image over the full `.text`+`.rodata` (`0x28800` of `0x29800` bytes; only the trailing `.bss` diverges). The load base is recovered statically from the overlay's own internal `jal` call graph (`static_overlay::recover_base`). Pipeline: `legaia_asset::static_overlay` + `asset overlay …`; committed map `crates/asset/data/static-overlays.toml`; see [`tooling/static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md). It **complements** the dynamic captures — it does not address runtime values (those still need live probes).
 
 ---
 

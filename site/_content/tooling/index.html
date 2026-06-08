@@ -19,6 +19,10 @@
       <div class="card-title">Overlay capture</div>
       <div class="card-body">Static analysis hits a wall when code lives in RAM overlays at <code>0x801C0000+</code>. Capture from mednafen save states, PCSX-Redux Lua dumps, or Duckstation <code>.sav</code> files.</div>
     </a>
+    <a class="card" href="static-overlay-pipeline.html">
+      <div class="card-title">Static overlay pipeline</div>
+      <div class="card-body">The static complement to overlay capture: extract each clean-copy runtime overlay straight from <code>PROT.DAT</code> at its statically-recovered base, identity attached from the source entry. Solves the VA-aliasing identity problem; reproducible from the disc. Caught that the menu overlay is PROT 0899, not 0896.</div>
+    </a>
     <a class="card" href="mednafen-automation.html">
       <div class="card-title">Mednafen automation</div>
       <div class="card-body">Scriptable substitute for mednafen's interactive memory-watchpoint debugger. Pairwise diffs, sequence bisection, declarative scenarios for blocked decompilation work.</div>

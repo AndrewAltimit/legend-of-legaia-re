@@ -20,7 +20,7 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 | Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` (= walk) / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`); top-20 dumped per program |
 | Field overlay - battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (`FUN_801D081C`, `FUN_801D0370`, `FUN_801CFDA0`, `FUN_801D11D0`, and 9 more) |
 | Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
-| Options / config / all pause-menus (`0896`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650`); all 129 functions dumped |
+| Options / config / all pause-menus (`0899`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650` at base+0x0e38); all 129 functions dumped. **Source pinned: PROT 0899 @ base `0x801CE818`** (function-signature byte-search + 101/139 menu-dump function alignment + static base recovery; see [`static-overlay-pipeline.md`](static-overlay-pipeline.md)). VA-alias sibling of the field overlay (PROT 0897) in slot A — both load at `0x801CE818`. The earlier `0896` attribution was wrong (`0896`/`bat_back_dat` is the mode-24 OTHER overlay at `0x801C5818`). |
 | Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped; top-20 per program dumped; select and saving layouts are identical |
 | Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped |
 | Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
@@ -328,6 +328,7 @@ The bulk-imported overlays still need a subsystem-naming pass (correlating strin
 
 ## See also
 
+- [`docs/tooling/static-overlay-pipeline.md`](static-overlay-pipeline.md) — the **static** complement: extract each clean-copy overlay from the disc at its recovered base, with identity attached from the PROT entry (solves the VA-aliasing identity problem structurally). This page (dynamic capture) stays authoritative for runtime values.
 - [`docs/tooling/mednafen-automation.md`](mednafen-automation.md) — the save-state diff / bisect toolkit these slices come from.
 - [`docs/reference/functions.md`](../reference/functions.md) — overlay-resident entry points the captured slices expose.
 - [`docs/reference/memory-map.md`](../reference/memory-map.md) — the `0x801C0000+` overlay window addresses.

@@ -25,3 +25,4 @@ toml = "0.8"
 
 [dev-dependencies]
 legaia-engine-core = { path = "../engine-core" }
+legaia-prot = { path = "../prot" }

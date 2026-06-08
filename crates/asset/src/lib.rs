@@ -60,6 +60,7 @@ pub mod sfx_table;
 pub mod shop_stock;
 pub mod spell_names;
 pub mod stage_geom;
+pub mod static_overlay;
 pub mod steal_table;
 pub mod str_fmv_table;
 pub mod summon_overlay;

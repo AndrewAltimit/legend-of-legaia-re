@@ -115,6 +115,7 @@ const NAV = [
       { href: 'tooling/extraction.html',             text: 'Extraction CLIs',          key: 'tooling/extraction' },
       { href: 'tooling/ghidra.html',                 text: 'Ghidra in Docker',         key: 'tooling/ghidra' },
       { href: 'tooling/overlay-capture.html',        text: 'Overlay capture',          key: 'tooling/overlay-capture' },
+      { href: 'tooling/static-overlay-pipeline.html', text: 'Static overlay pipeline',  key: 'tooling/static-overlay-pipeline' },
       { href: 'tooling/mednafen-automation.html',    text: 'Mednafen automation',      key: 'tooling/mednafen-automation' },
       { href: 'tooling/pcsx-redux-automation.html',  text: 'PCSX-Redux automation',    key: 'tooling/pcsx-redux-automation' },
     ],

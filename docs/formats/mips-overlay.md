@@ -45,6 +45,7 @@ if let Some(m) = mips_overlay::detect(buf) {
 
 ## See also
 
+- [Static overlay-extraction pipeline](../tooling/static-overlay-pipeline.md) - extracts these (and the big scene overlays) from the disc at their recovered base, with identity attached from the PROT entry.
 - [Overlay pointer table](overlay-ptr-table.md) - the sister detector for overlay code with leading pointer tables.
 - [`reference/functions.md`](../reference/functions.md) - the catalogue of traced function entry points.
 - [`reference/memory-map.md`](../reference/memory-map.md) - the RAM map showing where overlays load.

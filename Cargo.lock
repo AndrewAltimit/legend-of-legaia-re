@@ -1194,6 +1194,8 @@ dependencies = [
  "png",
  "serde",
  "serde_json",
+ "sha2",
+ "toml",
 ]
 
 [[package]]
@@ -1427,6 +1429,7 @@ dependencies = [
  "legaia-asset",
  "legaia-cheats",
  "legaia-engine-core",
+ "legaia-prot",
  "png",
  "serde",
  "serde_json",
