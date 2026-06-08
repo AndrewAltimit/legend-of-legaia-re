@@ -715,6 +715,43 @@ fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
 }
 
 #[test]
+fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    world
+        .status_effects
+        .apply_with_duration(3, StatusKind::Confuse, 3);
+
+    // Non-confused caster (slot 4): targets untouched.
+    let mut t = vec![0u8, 1, 2];
+    world.confuse_retarget_cast(4, &mut t);
+    assert_eq!(t, vec![0, 1, 2]);
+
+    // Confused single-target cast at a party member flips to one living monster.
+    let mut t1 = vec![1u8];
+    world.confuse_retarget_cast(3, &mut t1);
+    assert_eq!(t1.len(), 1);
+    assert!(t1[0] >= 3, "single cast flips to a monster, got {}", t1[0]);
+
+    // Confused area cast at the whole party flips to every living monster.
+    let mut t2 = vec![0u8, 1, 2];
+    world.confuse_retarget_cast(3, &mut t2);
+    assert_eq!(t2, vec![3, 4]);
+
+    // A self-only cast is left alone.
+    let mut t3 = vec![3u8];
+    world.confuse_retarget_cast(3, &mut t3);
+    assert_eq!(t3, vec![3]);
+}
+
+#[test]
 fn stone_counts_as_defeated_and_is_petrified() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();

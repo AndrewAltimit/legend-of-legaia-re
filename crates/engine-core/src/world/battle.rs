@@ -1530,7 +1530,12 @@ impl World {
             MonsterAction::Cast { .. } if self.actor_blocked_from_magic(slot) => {
                 self.arm_monster_physical(slot);
             }
-            MonsterAction::Cast { spell_id, targets } => {
+            MonsterAction::Cast {
+                spell_id,
+                mut targets,
+            } => {
+                // A confused caster's spell lands on the opposite side.
+                self.confuse_retarget_cast(slot, &mut targets);
                 let def = self.spell_catalog.get(spell_id).cloned();
                 if let Some(def) = def
                     && self.cast_spell_on_slots(slot, &def, &targets)
@@ -1567,11 +1572,52 @@ impl World {
     /// monster physical strike ([`Self::take_monster_turn`]) and the party
     /// physical strike ([`Self::arm_party_physical`], which the live loop routes
     /// a confused party member through instead of opening the command menu).
-    /// Confused *casts* (the cast path uses a targets `Vec`, not `active_target`)
-    /// are the remaining follow-up.
+    /// Confused monster *casts* flip via [`Self::confuse_retarget_cast`] (the
+    /// cast path resolves a targets `Vec` rather than `active_target`).
     pub(super) fn maybe_confuse_retarget(&mut self, slot: u8) {
         if self.actor_is_confused(slot) {
             self.resolve_monster_target(slot);
+        }
+    }
+
+    /// Confuse retarget for a *cast*: a confused caster's spell lands on the
+    /// opposite side (uncontrollably), mirroring the physical retarget. The
+    /// engine's monster cast resolves targets into a `Vec` (not the single
+    /// `active_target` byte `FUN_801E7320` rewrites), so this flips the whole
+    /// list: a single-target cast picks one random living member of the opposite
+    /// side (one RNG draw); an area cast hits every living member there. A
+    /// self-only cast is left as-is, and the flip is skipped when the opposite
+    /// side has no living member. No-op when `caster` isn't confused.
+    ///
+    /// Monster-only in practice: a confused party member never reaches a cast -
+    /// it auto-flails physically (see [`Self::arm_party_physical`]).
+    pub(super) fn confuse_retarget_cast(&mut self, caster: u8, targets: &mut Vec<u8>) {
+        if !self.actor_is_confused(caster) || targets.is_empty() {
+            return;
+        }
+        // A self-only cast (e.g. a self-buff) isn't a side-flip target.
+        if targets.len() == 1 && targets[0] == caster {
+            return;
+        }
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let opposite_is_monster = targets[0] < pc;
+        let opp = if opposite_is_monster { pc..n } else { 0..pc };
+        let living: Vec<u8> = opp
+            .filter(|&s| {
+                self.actors
+                    .get(s as usize)
+                    .is_some_and(|a| a.battle.liveness != 0)
+            })
+            .collect();
+        if living.is_empty() {
+            return;
+        }
+        if targets.len() == 1 {
+            let pick = living[(self.next_rng() as usize) % living.len()];
+            *targets = vec![pick];
+        } else {
+            *targets = living;
         }
     }
 
