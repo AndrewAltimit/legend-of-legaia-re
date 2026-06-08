@@ -88,6 +88,21 @@ fn committed_overlays_reproduce_from_disc() {
                 recovered.votes
             );
         }
+
+        // (3) If the row pins a known function VA, it must land on a prologue at
+        // the committed base — a capture-free base cross-check that keeps the
+        // base claim non-vacuous even for rows whose base did not come from
+        // jal-recovery (the slot-A minigame siblings sourced by doc-fn anchor).
+        if let Some(anchor) = rec.anchor_va {
+            assert!(
+                static_overlay::anchor_lands_on_prologue(&as_loaded, anchor, rec.base_va),
+                "{} (PROT {}): anchor 0x{:08x} is not a prologue at base 0x{:08x}",
+                rec.label,
+                rec.prot_index,
+                anchor,
+                rec.base_va
+            );
+        }
         checked += 1;
     }
     assert!(
