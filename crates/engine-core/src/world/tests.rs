@@ -665,6 +665,56 @@ fn confuse_retargets_a_monster_strike_to_its_own_band() {
 }
 
 #[test]
+fn confuse_retargets_a_party_strike_to_a_living_ally() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    // A confused party member (slot 1) whose action targeted a monster (slot 3)
+    // flips to a random living member of its own (party) side.
+    world.actors[1].battle.active_target = 3;
+    world
+        .status_effects
+        .apply_with_duration(1, StatusKind::Confuse, 3);
+    world.maybe_confuse_retarget(1);
+    let t = world.actors[1].battle.active_target;
+    assert!(t < 3, "confused party member targets an ally, got slot {t}");
+    assert!(world.actors[t as usize].battle.liveness != 0);
+}
+
+#[test]
+fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.party_count = 3;
+    world.battle_player_driven = true;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    world
+        .status_effects
+        .apply_with_duration(0, StatusKind::Confuse, 3);
+    // The confused party member auto-arms a physical strike (no command session)
+    // aimed at a living ally.
+    world.arm_party_physical(0);
+    assert!(
+        world.battle_command.is_none(),
+        "a confused party member never opens the command menu"
+    );
+    assert_eq!(world.actors[0].battle.action_category, 3, "physical armed");
+    let t = world.actors[0].battle.active_target;
+    assert!(t < 3, "retargeted onto an ally, got slot {t}");
+}
+
+#[test]
 fn stone_counts_as_defeated_and_is_petrified() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();

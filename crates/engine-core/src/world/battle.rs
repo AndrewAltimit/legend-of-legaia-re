@@ -1334,6 +1334,12 @@ impl World {
                 // still wears off. The SM stays at EndOfAction (no action
                 // armed) - exactly the "skipped turn" outcome.
                 self.battle_ctx.active_actor = next;
+            } else if next_is_party && self.actor_is_confused(next) {
+                // Confused party member: it "acts uncontrollably", so the player
+                // does NOT get the command menu - auto-arm a physical strike,
+                // then flip the target to a random living ally (the retarget
+                // runs inside `arm_party_physical`).
+                self.arm_party_physical(next);
             } else if next_is_party && self.battle_player_driven {
                 // Party turn under player control: pause the SM and let the
                 // player pick the command. `tick_battle_command` arms the SM
@@ -1345,14 +1351,7 @@ impl World {
             } else {
                 // Party turn when not player-driven: arm a generic physical
                 // attack against the first living opponent.
-                let target = self.first_living_opponent_of(next).unwrap_or(next);
-                self.battle_ctx.active_actor = next;
-                self.battle_ctx.queued_action = 3;
-                self.battle_ctx.action_state = ActionState::Begin.as_byte();
-                if let Some(a) = self.actors.get_mut(next as usize) {
-                    a.battle.active_target = target;
-                    a.battle.action_category = 3;
-                }
+                self.arm_party_physical(next);
             }
         }
 
@@ -1564,18 +1563,43 @@ impl World {
     /// Retail triggers the resolver off the actor's `+0x16E` status word
     /// (`field_flags & 0x380`); the engine bridges directly from
     /// [`StatusKind::Confuse`] instead, since the bit-set site is the still-open
-    /// capture thread and the engine tracks status by kind. Currently wired only
-    /// for the monster physical-strike path; confused casts and the
-    /// player-driven party path route their targets elsewhere (follow-up).
+    /// capture thread and the engine tracks status by kind. Wired for both the
+    /// monster physical strike ([`Self::take_monster_turn`]) and the party
+    /// physical strike ([`Self::arm_party_physical`], which the live loop routes
+    /// a confused party member through instead of opening the command menu).
+    /// Confused *casts* (the cast path uses a targets `Vec`, not `active_target`)
+    /// are the remaining follow-up.
     pub(super) fn maybe_confuse_retarget(&mut self, slot: u8) {
-        let confused = self
-            .status_effects
-            .statuses(slot)
-            .iter()
-            .any(|s| s.kind == vm::status_effects::StatusKind::Confuse);
-        if confused {
+        if self.actor_is_confused(slot) {
             self.resolve_monster_target(slot);
         }
+    }
+
+    /// True if `slot` carries the Confuse status.
+    pub(super) fn actor_is_confused(&self, slot: u8) -> bool {
+        self.status_effects
+            .statuses(slot)
+            .iter()
+            .any(|s| s.kind == vm::status_effects::StatusKind::Confuse)
+    }
+
+    /// Arm a generic physical strike for party member `slot` against the first
+    /// living opponent, then apply any [`Self::maybe_confuse_retarget`]. Shared
+    /// by the non-player-driven party turn and the confused-party turn (a
+    /// confused member can't be controlled, so it auto-acts and the retarget
+    /// flips its strike to a random living ally). No-op retarget when the member
+    /// isn't confused, so the auto-resolve path is RNG-unchanged.
+    pub(super) fn arm_party_physical(&mut self, slot: u8) {
+        use vm::battle_action::ActionState;
+        let target = self.first_living_opponent_of(slot).unwrap_or(slot);
+        self.battle_ctx.active_actor = slot;
+        self.battle_ctx.queued_action = 3;
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.active_target = target;
+            a.battle.action_category = 3;
+        }
+        self.maybe_confuse_retarget(slot);
     }
 
     /// Arm a generic physical strike for monster `slot` against the first

@@ -28,7 +28,7 @@
 //! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns | full block + clear-on-hit (matches; same shape as Sleep) |
 //! | `Venom`   | `3`  | "Poison": HP drains (lesser than Toxic)                      | DoT `current_hp/8` |
 //! | `Sleep`   | `4`  | Asleep; wakes when hit                                       | block + clear-on-hit (matches) |
-//! | `Confuse` | `5`  | Acts uncontrollably / random target                         | physical strike retargets to a random living opposite-side member (FUN_801E7320); confused casts + the player party path are follow-ups |
+//! | `Confuse` | `5`  | Acts uncontrollably / random target                         | physical strike (monster or party) retargets to a random living opposite-side member (FUN_801E7320); a confused party member auto-acts (no menu); confused casts are a follow-up |
 //! | `Curse`   | `6`  | Blocks Magic (Magic Amulet protects)                        | blocks Magic (matches) |
 //! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability (core strikes) + counts-as-defeated; the escape-restore nicety isn't modelled |
 //! | `Faint`   | `8`  | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
@@ -59,8 +59,9 @@ pub enum StatusKind {
     /// Asleep; wakes when hit.
     Sleep,
     /// Acts uncontrollably: a single-target action flips to a random living
-    /// member of the opposite side (the engine wires this for the monster
-    /// physical strike via `FUN_801E7320`).
+    /// member of the opposite side (the engine wires this for both the monster
+    /// and party physical strike via `FUN_801E7320`; a confused party member
+    /// auto-acts without the command menu).
     Confuse,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
     Curse,
