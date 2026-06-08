@@ -260,9 +260,82 @@ pub fn due_video_frame(
     (pos / frame_period_secs) as usize
 }
 
+/// Narrow a whole-`MVn.STR`-file sector span `(file_lba, file_sectors)` to the
+/// segment a single `fmv_id` plays, given that fmv's dispatch [`FmvEntry`]
+/// (`None` -> play the whole file). One movie file can carry several cutscenes
+/// by frame range (`MV3.STR` is split across three `fmv_id`s), and the STR play
+/// loop seeks `(start_frame - 1) * SECTORS_PER_FRAME` sectors in, so an `fmv_id`
+/// that starts mid-file must skip ahead or it plays the wrong frames. Returns
+/// `(start_lba, sector_count)`, clamped to the file.
+pub fn fmv_segment_window(
+    entry: Option<&legaia_asset::fmv_dispatch::FmvEntry>,
+    file_lba: u32,
+    file_sectors: u32,
+) -> (u32, u32) {
+    use legaia_asset::fmv_dispatch::SECTORS_PER_FRAME;
+    let Some(entry) = entry else {
+        return (file_lba, file_sectors);
+    };
+    let start = entry.start_frame.saturating_sub(1) * SECTORS_PER_FRAME;
+    let frames = entry
+        .end_frame
+        .saturating_sub(entry.start_frame)
+        .saturating_add(1);
+    let count = (frames * SECTORS_PER_FRAME).min(file_sectors.saturating_sub(start));
+    if count == 0 {
+        // Degenerate range (or start past EOF) -> fall back to the whole file.
+        return (file_lba, file_sectors);
+    }
+    (file_lba + start, count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fmv_entry(start: u32, end: u32) -> legaia_asset::fmv_dispatch::FmvEntry {
+        legaia_asset::fmv_dispatch::FmvEntry {
+            fmv_id: 0,
+            path: "\\MOV\\MV3.STR;1".to_string(),
+            scale_flag: 0,
+            start_frame: start,
+            end_frame: end,
+            width: 320,
+            height: 240,
+        }
+    }
+
+    #[test]
+    fn segment_window_none_plays_whole_file() {
+        assert_eq!(fmv_segment_window(None, 1000, 6800), (1000, 6800));
+    }
+
+    #[test]
+    fn segment_window_first_segment_is_whole_when_range_spans_file() {
+        // A single-segment movie: frames 1..N over the whole file is a no-op.
+        let e = fmv_entry(1, 680);
+        assert_eq!(fmv_segment_window(Some(&e), 1000, 6800), (1000, 6800));
+    }
+
+    #[test]
+    fn segment_window_seeks_into_a_mid_file_segment() {
+        // MV3.STR fmv_id 2: frames 0x1a5..0x27b -> skip 420 frames, play 215.
+        let e = fmv_entry(0x1a5, 0x27b);
+        let (lba, count) = fmv_segment_window(Some(&e), 1000, 6800);
+        assert_eq!(lba, 1000 + 420 * 10);
+        assert_eq!(count, (0x27b - 0x1a5 + 1) * 10);
+        // Stays within the file.
+        assert!(lba - 1000 + count <= 6800);
+    }
+
+    #[test]
+    fn segment_window_clamps_count_to_file_end() {
+        // End frame past the file -> clamp to what's left.
+        let e = fmv_entry(0x1a5, 0xfff);
+        let (lba, count) = fmv_segment_window(Some(&e), 1000, 6800);
+        assert_eq!(lba, 1000 + 420 * 10);
+        assert_eq!(count, 6800 - 420 * 10);
+    }
 
     #[test]
     fn due_frame_uses_audio_cursor_when_present() {

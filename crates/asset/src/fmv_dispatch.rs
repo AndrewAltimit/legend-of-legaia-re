@@ -45,6 +45,12 @@
 
 /// Load base of the STR/MDEC overlay (PROT 0970), from the static-overlay map.
 pub const STR_OVERLAY_BASE_VA: u32 = 0x801C_E818;
+/// PROT entry index of the STR/MDEC cutscene overlay this table lives in.
+pub const STR_OVERLAY_PROT_INDEX: u32 = 970;
+/// Sectors per STR video frame — the fixed 15 fps cadence (2x speed / 150
+/// sectors-per-second) every Legaia movie runs at. The play loop seeks
+/// `(start_frame - 1) * SECTORS_PER_FRAME` into the file.
+pub const SECTORS_PER_FRAME: u32 = 10;
 /// VA of the per-`fmv_id` dispatch table the play-loop selector indexes.
 const FMV_TABLE_VA: u32 = 0x801D_0A6C;
 /// Per-`fmv_id` slot stride (`fmv_id * 0x40`); only the leading 32-byte record
