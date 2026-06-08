@@ -370,7 +370,17 @@ Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame
 
 The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. JSONL records: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }`. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
 
-PCSX-Redux's Lua API does not expose the SPU register file directly (`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on `PCSX.createSaveState()` which returns the full state as a protobuf slice (~20 MiB); the autorun script walks the slice in-place via FFI and writes only the ~600 KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt `GPU::Vsync` event delivery (same shape as the `readAt(2 MiB)` caveat in [`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The SPU schema is the one declared in PCSX-Redux's `src/core/sstate.h` + `src/spu/types.h`: `Channel.Data.on || .stop` is the retail-side "audible" criterion (`ADSRInfoEx.state` is the configured next-attack shape and reads as Sustain even for unused voices, so it's not a reliable audibility signal).
+PCSX-Redux's Lua API does not expose the SPU register file directly
+(`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on
+`PCSX.createSaveState()` which returns the full state as a protobuf slice
+(~20 MiB); the autorun script walks the slice in-place via FFI and writes only
+the ~600 KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt
+`GPU::Vsync` event delivery (same shape as the `readAt(2 MiB)` caveat in
+[`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The SPU
+schema is the one declared in PCSX-Redux's `src/core/sstate.h` +
+`src/spu/types.h`: `Channel.Data.on || .stop` is the retail-side "audible"
+criterion (`ADSRInfoEx.state` is the configured next-attack shape and reads as
+Sustain even for unused voices, so it's not a reliable audibility signal).
 
 Two known asymmetries the diff function explicitly models:
 
@@ -387,7 +397,20 @@ Entry points:
 
 The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
 
-The **Field↔Battle BGM-swap** is *not* yet observable through this voice-activity oracle, and not for an oracle reason: the engine's opening battle is a `SceneMode::Battle` overlay on the loaded field scene (`enter_battle_from_formation` does not load a distinct battle audio bundle), and a field scene's per-scene BGM table carries no battle track — `town01` resolves *zero* battle ids through `SceneAssets::bgm_seq_entry`, so the `swap_to_battle_bgm` start event resolves to no SEQ bytes and no battle voices key on. The swap *contract* (track stash → battle start → field restore) is modeled and regression-tested at the `World` level (`battle_bgm_swaps_on_encounter_and_restores_on_finish`); the *audible* swap stays blocked on the engine resolving a battle track from the (currently unloaded) battle bundle. So the v0.1 playthrough oracle pins the Field→Battle transition on the mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`), not the audio axis.
+The **Field↔Battle BGM-swap** is *not* yet observable through this
+voice-activity oracle, and not for an oracle reason: the engine's opening
+battle is a `SceneMode::Battle` overlay on the loaded field scene
+(`enter_battle_from_formation` does not load a distinct battle audio bundle),
+and a field scene's per-scene BGM table carries no battle track — `town01`
+resolves *zero* battle ids through `SceneAssets::bgm_seq_entry`, so the
+`swap_to_battle_bgm` start event resolves to no SEQ bytes and no battle voices
+key on. The swap *contract* (track stash → battle start → field restore) is
+modeled and regression-tested at the `World` level
+(`battle_bgm_swaps_on_encounter_and_restores_on_finish`); the *audible* swap
+stays blocked on the engine resolving a battle track from the (currently
+unloaded) battle bundle. So the v0.1 playthrough oracle pins the Field→Battle
+transition on the mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`),
+not the audio axis.
 
 ## What's left
 
