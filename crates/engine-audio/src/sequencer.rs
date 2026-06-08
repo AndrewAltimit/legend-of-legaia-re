@@ -94,6 +94,19 @@ fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
     }
 }
 
+/// Combine a note's channel-expression — channel volume (CC7) then channel
+/// pan (CC10) — over its channel-free base `(left, right)` (master × velocity
+/// × tone vol, tone-panned). Volume scales both sides by `volume/127`; pan
+/// then attenuates the opposite side. Both are dynamic: a mid-note CC7 or
+/// CC10 recomputes the live voice volume from this same base, so successive
+/// changes don't compound. A centered, full-volume channel is the identity.
+fn channel_mix(base: (i16, i16), volume: u8, pan: u8) -> (i16, i16) {
+    let v = volume.min(127) as i32;
+    let left = (base.0 as i32 * v / 127) as i16;
+    let right = (base.1 as i32 * v / 127) as i16;
+    apply_channel_pan(left, right, pan)
+}
+
 /// Per-channel state carried across events.
 #[derive(Debug, Clone, Copy)]
 struct ChannelState {
@@ -117,7 +130,7 @@ impl Default for ChannelState {
         Self {
             program: 0,
             volume: 127,
-            pan: 64,
+            pan: PAN_CENTER,
             pitch_bend: PITCH_BEND_CENTER,
             _last_pc_tick: 0,
         }
@@ -139,9 +152,11 @@ struct ActiveNote {
     /// captured at NoteOn so a later `0xEn` event scales by the note's own
     /// range (a `(0, 0)` tone never bends).
     bend_range: (u8, u8),
-    /// The voice's `(left, right)` volume with the tone pan baked in but the
-    /// channel pan (CC10) NOT yet applied. A later CC10 change re-pans from
-    /// this base so repeated pans don't compound, mirroring `base_pitch`.
+    /// The voice's channel-free `(left, right)` volume: master × velocity ×
+    /// tone vol, tone-panned, with NO channel volume (CC7) or channel pan
+    /// (CC10) applied. A later CC7/CC10 re-derives the live voice volume from
+    /// this base via [`channel_mix`] so successive changes don't compound,
+    /// mirroring `base_pitch` for bend.
     base_vol: (i16, i16),
 }
 
@@ -426,18 +441,13 @@ impl Sequencer {
                 self.channels[ch].program = program;
             }
             ChannelMessage::ControlChange { control, value } => match control {
-                0x07 => self.channels[ch].volume = value,
+                0x07 => {
+                    self.channels[ch].volume = value;
+                    self.remix_channel(spu, ch);
+                }
                 0x0A => {
                     self.channels[ch].pan = value;
-                    // Re-pan every voice sounding on this channel from its
-                    // pan-free base so successive CC10 events don't compound.
-                    for note in self.active.iter().filter(|n| n.channel as usize == ch) {
-                        if let Some(v) = spu.voices.get_mut(note.voice as usize) {
-                            let (l, r) = apply_channel_pan(note.base_vol.0, note.base_vol.1, value);
-                            v.vol_left = l;
-                            v.vol_right = r;
-                        }
-                    }
+                    self.remix_channel(spu, ch);
                 }
                 CC_LOOP_MARKER => match value {
                     LOOP_START_VALUE => {
@@ -494,11 +504,11 @@ impl Sequencer {
             return;
         };
         let cs = self.channels[channel as usize];
-        // Combine master, channel, and event velocity so the bank's
-        // play_note math sees a single 0..=127 effective velocity. The
-        // bank further multiplies by program & tone vol.
-        let combined = ((self.master_vol as u32 * cs.volume as u32 * velocity as u32) / (127 * 127))
-            .min(127) as u8;
+        // Give play_note the master × velocity effective velocity only -
+        // NOT the channel volume. The channel volume (CC7) and pan (CC10) are
+        // applied afterward as dynamic channel-expression (`channel_mix`) so a
+        // mid-note CC7/CC10 can re-derive the voice volume from the same base.
+        let combined = ((self.master_vol as u32 * velocity as u32) / 127).min(127) as u8;
         let ok = self
             .bank
             .play_note(spu, voice as usize, cs.program as usize, key, combined);
@@ -518,18 +528,17 @@ impl Sequencer {
                 let (down, up) = bend_range;
                 v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
             }
-            // play_note baked the tone pan into the voice L/R; capture that as
-            // the channel-pan-free base, then apply the channel pan (CC10) on
-            // top - the stage play_note does not see.
+            // play_note left the voice at master × velocity × tone vol, tone-
+            // panned, with NO channel volume/pan; capture that as the channel-
+            // free base, then fold in the channel's current CC7 volume + CC10
+            // pan. A later CC7/CC10 re-derives from this same base.
             let base_vol = spu
                 .voices
                 .get(voice as usize)
                 .map(|v| (v.vol_left, v.vol_right))
                 .unwrap_or((0x3FFF, 0x3FFF));
-            if cs.pan != PAN_CENTER
-                && let Some(v) = spu.voices.get_mut(voice as usize)
-            {
-                let (l, r) = apply_channel_pan(base_vol.0, base_vol.1, cs.pan);
+            if let Some(v) = spu.voices.get_mut(voice as usize) {
+                let (l, r) = channel_mix(base_vol, cs.volume, cs.pan);
                 v.vol_left = l;
                 v.vol_right = r;
             }
@@ -541,6 +550,20 @@ impl Sequencer {
                 bend_range,
                 base_vol,
             });
+        }
+    }
+
+    /// Re-derive the live voice volume for every note sounding on `ch` from
+    /// its channel-free base, using the channel's current CC7 volume + CC10
+    /// pan. Called whenever either controller changes mid-note.
+    fn remix_channel(&mut self, spu: &mut Spu, ch: usize) {
+        let cs = self.channels[ch];
+        for note in self.active.iter().filter(|n| n.channel as usize == ch) {
+            if let Some(v) = spu.voices.get_mut(note.voice as usize) {
+                let (l, r) = channel_mix(note.base_vol, cs.volume, cs.pan);
+                v.vol_left = l;
+                v.vol_right = r;
+            }
         }
     }
 
@@ -958,6 +981,50 @@ mod tests {
         let (l, r) = apply_channel_pan(0x3000, 0x3000, 0x20);
         assert_eq!(l, 0x3000);
         assert!(r > 0 && r < 0x3000);
+    }
+
+    #[test]
+    fn cc7_volume_rescales_sounding_voice_from_base() {
+        let mut spu = Spu::new();
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let base = (0x3000i16, 0x2000i16);
+        spu.voices[0].vol_left = base.0;
+        spu.voices[0].vol_right = base.1;
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60,
+            voice: 0,
+            base_pitch: 0x1000,
+            bend_range: (0, 0),
+            base_vol: base,
+        });
+
+        // Halve the channel volume: both sides scale by ~63/127, pan centered.
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::ControlChange {
+                control: 0x07,
+                value: 63,
+            },
+        );
+        assert_eq!(seq.channels[0].volume, 63);
+        assert_eq!(spu.voices[0].vol_left, (0x3000 * 63 / 127) as i16);
+        assert_eq!(spu.voices[0].vol_right, (0x2000 * 63 / 127) as i16);
+
+        // Back to full restores the base exactly (re-derives from base).
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::ControlChange {
+                control: 0x07,
+                value: 127,
+            },
+        );
+        assert_eq!(
+            (spu.voices[0].vol_left, spu.voices[0].vol_right),
+            (base.0, base.1)
+        );
     }
 
     #[test]

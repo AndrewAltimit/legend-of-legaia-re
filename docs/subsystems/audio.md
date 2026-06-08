@@ -289,19 +289,22 @@ sends are not encoded in the SEQ stream — whatever drives the live
 reverb-enable for BGM (see the reverb routing above) lives outside the
 sequence data.
 
-**Channel pan (CC10).** Pan is the most-used controller in the score, and
-it is **dynamic** — the music pans voices around mid-note, not just at
-note-on. The sequencer applies it the way libsnd's voice-volume builder
-does (`FUN_80067550`): each pan source attenuates the **opposite** side -
-a pan left of center (`< 0x40`) scales the right channel by `pan/0x3f`, a
-pan right of center scales the left by `(0x7f - pan)/0x3f`. `play_note`
-bakes the per-tone pan into the voice's base L/R (the analog of libsnd's
-voice-work `+0x58/+0x5a`); the sequencer then layers the channel pan on
-top. Each `ActiveNote` stores its pan-free base L/R (mirroring `base_pitch`
-for bend) so a mid-note CC10 re-pans from the base rather than compounding,
-and a fresh NoteOn picks up the channel's current pan. A centered channel
-(`0x40`) leaves the tone's L/R untouched, so this is purely additive over
-the prior tone-only behavior.
+**Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
+the two most-used controllers, and both are **dynamic** — the score swells
+volume and pans voices around mid-note, not just at note-on (a corpus sweep
+finds the majority of CC7 events fire while a note is already sounding). The
+sequencer treats them as channel-expression layered over a per-note base:
+`play_note` leaves the voice at `master × velocity × tone-vol`, tone-panned,
+with **no** channel volume or pan; each `ActiveNote` stores that channel-free
+base L/R (mirroring `base_pitch` for bend). `channel_mix` then folds in the
+channel's CC7 volume (scale both sides by `volume/127`) and CC10 pan, where
+pan uses libsnd's voice-volume law (`FUN_80067550`): a pan left of center
+(`< 0x40`) attenuates the **right** by `pan/0x3f`, a pan right of center
+attenuates the **left** by `(0x7f - pan)/0x3f`. A mid-note CC7 or CC10 event
+re-derives every sounding voice on the channel from its base (`remix_channel`),
+so successive changes don't compound, and a fresh NoteOn picks up the
+channel's current volume + pan. A full-volume, centered channel is the
+identity, so this is faithful over the prior note-on-only behavior.
 
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.
