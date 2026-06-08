@@ -3,7 +3,7 @@
 The cutscene / MDEC overlay's lookup tables for STR FMV files. Two distinct tables coexist in the str_fmv overlay's data section, with **different roles**:
 
 1. **Compact STR FMV table** at `0x801CAE40` - 6 entries, 24 bytes each, labelled `MV1.STR;1` .. `MV6.STR;1`. Carries a libcd-shaped filename + BCD MSF + size. *This table is dev-shape metadata, not the play-engine source* (see "Runtime mapping vs compact table" below).
-2. **Runtime FMV-state table** at `0x801D0A6C` - 12 entries, 64 bytes each. The play loop (`FUN_801CF098`) reads this. Each entry's `+0x00` field is a path-string pointer into the **path string table** at `0x801CE810`, plus per-segment seek offsets, frame counts, and resolution flags.
+2. **FMV dispatch table** at `0x801D0A6C` - 12 entries, 64 bytes each. The play loop (`FUN_801CF098`) reads this; it is the actual play-engine source. Each entry's leading 32-byte record is `[path_ptr, scale_flag, start_frame, end_frame, .., .., width, height]` - a path-string pointer into the **path string table** at the overlay start (`0x801CE818`) plus the frame range that segment plays. Static overlay data, so it decodes straight from the disc (`legaia_asset::fmv_dispatch`).
 
 A third copy of the six MV files appears nearby in full ISO9660 directory-record form (`0x801CCA80`, 56-byte stride); the runtime FMV-state table is the actual lookup, the directory copies are presumably retained for `CdReadDir`-style validation.
 
@@ -77,7 +77,9 @@ The play loop's selector lives at `0x801CECA0`:
 0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &runtime_table[fmv_id]
 ```
 
-The 64-byte slot has the shape `[u32 path_ptr, u32 flag, u32 segment_id, u32 frame_count, u32, u32, u32 width, u32 height, ...]`. The play loop reads the path pointer at `+0x00` and opens the file via libcd.
+Each slot's leading 32-byte record is `[u32 path_ptr, u32 scale_flag, u32 start_frame, u32 end_frame, u32 reserved, u32 (8), u32 width, u32 height]` (the second 32-byte half is a sibling segment the loop doesn't read for the primary path). The play loop opens the file at `path_ptr`, seeks `(start_frame - 1) * 10` sectors in (the 15 fps cadence), and reads to `end_frame` — which is how one `MVn.STR` carries several cutscenes by frame range. The `path_ptr` resolves into the path-string table at the **overlay start** (`0x801CE818`).
+
+This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_asset::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`), so e.g. `fmv_id 2` correctly starts at `MV3.STR` frame `0x1A5`.
 
 `_DAT_8007BA78` is a `s16` written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op) for the full opcode trace.
 
@@ -87,11 +89,11 @@ The retail USA build's twelve runtime FMV-state slots resolve as:
 
 | `fmv_id` | path resolved        | notes |
 |---------:|----------------------|-------|
-| 0        | `\MOV\MV1.STR;1`     | intro logo (also fired by title-screen attract loop) |
-| 1        | `\MOV\MV3.STR;1`     | first segment (start sector 1) |
-| 2        | `\MOV\MV3.STR;1`     | second segment (start sector offset `+0x1A5`) |
-| 3        | `\MOV\MV4.STR;1`     | |
-| 4        | `\MOV\MV6.STR;1`     | |
+| 0        | `\MOV\MV1.STR;1`     | frames 1..0x53a; intro logo (also fired by title-screen attract loop) |
+| 1        | `\MOV\MV3.STR;1`     | frames 1..0xe1 (first segment) |
+| 2        | `\MOV\MV3.STR;1`     | frames 0x1a5..0x27b (second segment) |
+| 3        | `\MOV\MV4.STR;1`     | frames 1..0x152 |
+| 4        | `\MOV\MV6.STR;1`     | frames 1..0x297 |
 | 5        | `\DATA\MOV15.STR;1`  | dev-only path (file not on retail disc) |
 | 6..=11   | `\DATA\MOV.STR;1`    | dev-only path (file not on retail disc) |
 
