@@ -64,13 +64,20 @@ For the true base `B`, every internal call target `T` maps to file offset
 pair, the true base wins by a landslide (the field overlay recovers `0x801CE818`
 with 60 corroborating call targets; battle with 44).
 
-This is decisive enough to **catch mislabelled overlays**: the historical
-"PROT 0896 = options/pause-menu overlay" label is wrong — PROT 0896 (CDNAME
-`bat_back_dat`) recovers a self-consistent base of `0x801C5818`, but the
-options-menu equipment aggregator `FUN_801CF650` lands in its *string* section
-there, so PROT 0896 does not host that overlay. It is left out of the map
-pending an identity-resolving capture (see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+This is decisive enough to **catch and correct mislabelled overlays**. The
+historical "PROT 0896 = options/pause-menu overlay" label is wrong on two
+counts: PROT 0896 (CDNAME `bat_back_dat`) recovers a self-consistent base of
+`0x801C5818` and is the mode-24 OTHER overlay (the options-menu equipment
+aggregator `FUN_801CF650` lands in its *string* section there). The **real
+options/menu overlay is PROT 0899** at base `0x801CE818` — found by byte-searching
+the corpus for `FUN_801CF650`'s instruction signature (`0x801CF650` ↔ PROT 0899
+file `0xe38`), corroborated by 101/139 captured menu-dump functions aligning as
+prologues and by jal-recovery (30 votes). PROT 0899 and the field overlay
+(PROT 0897) are **VA-alias siblings in slot A** — both load at `0x801CE818` at
+different times, so `0x801CF650` is a `"Give"` string in 0897 but the equip
+aggregator in 0899. That is the exact aliasing this pipeline exists to
+disambiguate. (PROT 0896's own identity-resolving capture is still open; see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
 
 ## The committed map
 

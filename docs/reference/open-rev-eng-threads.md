@@ -557,7 +557,8 @@ The piece poses `R·v + T` about its own object origin (no centroid subtraction)
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) | `project_xp_split_static_negative.md` |
 | Opening-prologue tail (`opdeene`) | partial | [details ↓](#opening-prologue-tail-opdeene) | `project_cold_boot_prologue.md` |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
-| PROT 0896 (`bat_back_dat`) overlay identity | open | A save state with PROT 0896's overlay resident, byte-matched against the disc entry at its recovered base `0x801C5818`. The historical "0896 = options/pause-menu overlay" label is falsified (the menu's `FUN_801CF650` lands in 0896's string section there). Which mode loads 0896 — and where the real options/pause-menu overlay lives — is unresolved. | `project_static_overlay_pipeline.md` |
+| Options/menu overlay PROT entry | resolved (**PROT 0899** @ `0x801CE818`) | The real options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896 — `FUN_801CF650`'s instruction signature byte-matches PROT 0899 file `0xe38` (`0x801CE818 + 0xe38 = 0x801CF650`), 101/139 captured menu-dump functions align as prologues, jal-recovery agrees (30 votes). VA-alias sibling of the field overlay (0897) in slot A. The earlier "0896 = menu" label is falsified. | `project_static_overlay_pipeline.md` |
+| PROT 0896 (`bat_back_dat`) overlay identity | open | PROT 0896 is NOT the menu overlay (that is 0899). 0896 recovers a self-consistent base `0x801C5818` and is most likely the **mode-24 OTHER overlay** (boot.md). Closes with a save state that captures it resident, byte-matched against the disc entry at `0x801C5818`. | `project_static_overlay_pipeline.md` |
 
 
 ### `title.pak` PROT entry

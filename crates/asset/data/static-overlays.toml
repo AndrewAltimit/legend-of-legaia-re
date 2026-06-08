@@ -17,10 +17,16 @@
 # `base_va` is recovered STATICALLY from the overlay's internal jal call graph
 # (see static_overlay::recover_base) and cross-checked against known function
 # addresses + (where a save state captures the overlay resident) the live RAM
-# image. Do NOT assume an overlay shares another's base -- the recovery caught
-# that PROT 0896 (CDNAME `bat_back_dat`) does NOT host the options/pause-menu
-# overlay (its `FUN_801CF650` does not align at the recovered base), correcting
-# a historical label; it is left out pending an identity-resolving capture.
+# image. Do NOT assume an overlay shares another's base. The recovery + a
+# function-signature byte-search corrected a historical label: the options/menu
+# overlay is **PROT 0899** at base 0x801CE818 (its `FUN_801CF650` equip
+# aggregator lands at base+0xe38; 101/139 menu-dump functions align; jal-recovery
+# agrees, 30 votes), NOT PROT 0896. PROT 0896 (CDNAME `bat_back_dat`) is the
+# mode-24 OTHER overlay (self-consistent base 0x801C5818) and is left out pending
+# its own identity-resolving capture. PROT 0899 and the field overlay (0897) are
+# VA-ALIAS siblings in slot A (both base 0x801CE818, resident at different times):
+# 0x801CF650 is a "Give" string in 0897 but the equip aggregator in 0899 -- the
+# exact aliasing this pipeline exists to disambiguate.
 #
 # eligibility:
 #   verified  - RAM byte-matched against a resident save-state image: the base
@@ -50,3 +56,12 @@ form = "raw"
 eligibility = "static"
 fingerprint_sha256 = "216f846db5ab085a295cef4064747380a06c995caa3e1b2773e78a1d349f126b"
 notes = "Town / field / dialog / inventory overlay. Field/event VM FUN_801DE840 (base+0x10028), MAIN INIT FUN_801D6704 (base+0x07eec, clean prologue), MES renderer, inventory hub FUN_801F5748. Data-section-first (leading EVC debug strings); a live town capture has runtime-mutated globals so the clean region is not a single prefix, but the head (7844 B) is byte-identical in RAM and both function anchors align. Base recovered statically (60 corroborating call targets)."
+
+[[overlays]]
+prot_index = 899
+label = "menu"
+base_va = 0x801CE818
+form = "raw"
+eligibility = "static"
+fingerprint_sha256 = "6ffd69a87fb351ff1c01cc9879276624c954801cd4d5353898882ca6e1a0f172"
+notes = "Options / pause / inventory-equipment-status menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38 (function-signature byte-matched); menu functions span base+0x0db8..base+0x15b44 (101/139 captured menu-dump addresses align as prologues). VA-alias sibling of the field overlay (0897) in slot A. PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base recovered statically (30 corroborating call targets)."
