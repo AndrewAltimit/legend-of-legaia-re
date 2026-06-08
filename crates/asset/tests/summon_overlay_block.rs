@@ -16,8 +16,10 @@
 
 use std::path::PathBuf;
 
+use legaia_asset::static_overlay;
 use legaia_asset::summon_overlay::{
-    self, PLAYER_SUMMON_STAGER_PROT, SUMMON_OVERLAY_LINK_BASE, SummonPartKind,
+    self, NON_SUMMON_IN_STAGER_RANGE, PLAYER_SUMMON_STAGER_PROT, SUMMON_OVERLAY_LINK_BASE,
+    SummonPartKind,
 };
 use legaia_prot::archive::Archive;
 
@@ -53,6 +55,21 @@ fn player_summon_block_parses_into_move_vm_scene_graphs() {
         archive
             .read_entry(&entry, &mut bytes)
             .unwrap_or_else(|_| panic!("read PROT {entry_idx}"));
+
+        // The summon-loader arithmetic range is over-broad: PROT 0907 inside it
+        // is the Disco King dance song "Hell's Music", not a summon. It only
+        // "parses" as a scene-graph because its over-read footprint bleeds into
+        // the neighbouring real stagers' FUN_80021B04 calls. Assert its true
+        // identity (ASCII title at file offset 0) and skip the stager checks.
+        if NON_SUMMON_IN_STAGER_RANGE.contains(&entry_idx) {
+            let head = static_overlay::head_string(&bytes, 0x40, 4);
+            assert_eq!(
+                head.as_deref(),
+                Some("Hell's Music"),
+                "PROT {entry_idx}: expected the dance-song title at offset 0"
+            );
+            continue;
+        }
 
         let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
 

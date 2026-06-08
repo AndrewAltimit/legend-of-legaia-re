@@ -103,6 +103,29 @@ fn committed_overlays_reproduce_from_disc() {
                 rec.base_va
             );
         }
+
+        // (4) Slot-B rows (summon link base) have too sparse a jal graph to
+        // triangulate, so their base is cross-referenced. Cross-check it the
+        // slot-B way: a high fraction of the overlay's internal absolute
+        // self-pointers must resolve in-file at the committed base. This keeps
+        // the cross_ref/capture base claims non-vacuous.
+        if rec.base_va == legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE {
+            let (resolved, total) = static_overlay::pointer_resolution(&as_loaded, rec.base_va);
+            assert!(
+                total >= 8,
+                "{} (PROT {}): too few self-pointers to confirm base ({total})",
+                rec.label,
+                rec.prot_index
+            );
+            let frac = resolved as f64 / total as f64;
+            assert!(
+                frac >= 0.70,
+                "{} (PROT {}): only {resolved}/{total} self-pointers resolve in-file at base 0x{:08x}",
+                rec.label,
+                rec.prot_index,
+                rec.base_va
+            );
+        }
         checked += 1;
     }
     assert!(

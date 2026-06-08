@@ -75,13 +75,27 @@ use std::ops::Range;
 /// SCUS actor-spawn helper `FUN_80021B04`. Each summon part is one call.
 pub const SPAWN_HELPER: u32 = 0x8002_1B04;
 
-/// CDNAME (`xxx_dat`) PROT entries that hold the per-summon stager overlays for
-/// the player Seru-magic block `spell_id 0x81..=0x8B`. Retail resolves the entry
-/// as `FUN_8003EC70(id - 0x79)` → PROT `(id - 0x81) + 905`, so the eleven player
-/// summons map one-to-one onto `905..=915` (Gimard *Tail Fire* = `0x81` → 905).
-/// Every entry in this range parses through [`parse`] into a move-VM
-/// scene-graph; see the disc-gated `summon_overlay_block` sweep.
+/// CDNAME (`xxx_dat`) PROT entries that the retail summon path arithmetics over
+/// for the player Seru-magic block `spell_id 0x81..=0x8B`: `FUN_8003EC70(id -
+/// 0x79)` → PROT `(id - 0x81) + 905`, i.e. `905..=915` (Gimard *Tail Fire* =
+/// `0x81` → 905).
+///
+/// **This is the loader's arithmetic range, NOT a clean list of summon stagers.**
+/// The slot-B buffer (`SUMMON_OVERLAY_LINK_BASE`) is timeshared across the whole
+/// `0900..0969` cluster, which interleaves summon stagers with Disco King
+/// dance-song overlays — and **PROT 0907 (spell-id-0x83 slot) is the dance song
+/// "Hell's Music", not a summon** (ASCII title at file offset 0; see the static
+/// overlay map `crates/asset/data/static-overlays.toml`). It still [`parse`]s
+/// into a "scene-graph" only via the LZS-style parses-without-error trap. So
+/// when sweeping this range for real summons, exclude 0907 (and verify any new
+/// entry carries `FUN_80021B04` part-spawn calls). See the disc-gated
+/// `summon_overlay_block` sweep and `docs/reference/open-rev-eng-threads.md`.
 pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 905..=915;
+
+/// Entries inside [`PLAYER_SUMMON_STAGER_PROT`] that are **not** summon stagers
+/// (the slot-B cluster is heterogeneous). PROT 0907 is the Disco King dance-song
+/// overlay "Hell's Music". A sweep for real player summons should skip these.
+pub const NON_SUMMON_IN_STAGER_RANGE: &[u32] = &[907];
 
 /// Upper bound (exclusive) on a `model_sel` that indexes the small effect-model
 /// library (`DAT_8007C018[model_sel + gp[0x754]]`; ~30 entries). A `model_sel`

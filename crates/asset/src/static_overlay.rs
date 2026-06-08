@@ -283,6 +283,53 @@ pub fn find_signature(blob: &[u8], signature: &[u8]) -> Option<usize> {
     blob.windows(signature.len()).position(|w| w == signature)
 }
 
+/// How many of an overlay's internal absolute pointers resolve inside the
+/// file when it is loaded at `base_va`. The slot-B overlays (summon stagers,
+/// dance-song data) have sparse internal `jal` call graphs — too sparse to
+/// recover a base from — but they are dense with absolute self-pointers built
+/// as `lui rX, hi ; addiu rX, rX, lo` (the standard MIPS 32-bit-immediate
+/// idiom). If the committed base is right, a high fraction of those pointers
+/// land inside `[base_va, base_va + len)`. This is the base cross-check for
+/// `cross_ref` slot-B rows, analogous to [`anchor_lands_on_prologue`] for
+/// slot-A. Returns `(resolved_in_file, total_pointers_found)`.
+pub fn pointer_resolution(as_loaded: &[u8], base_va: u32) -> (u32, u32) {
+    let len = as_loaded.len() as u32;
+    let hi_lo = base_va & 0xFFFF_0000;
+    let hi_hi = hi_lo.wrapping_add(0x0001_0000);
+    // The overlay window's two high halves the pointers can carry (e.g. 0x801F
+    // and 0x8020 for the summon link base 0x801F69D8).
+    let hi0 = hi_lo >> 16;
+    let hi1 = hi_hi >> 16;
+    let mut total = 0u32;
+    let mut resolved = 0u32;
+    let words = as_loaded.len() / 4;
+    for i in 0..words {
+        let w1 = read_u32_le(as_loaded, i * 4).unwrap();
+        if w1 >> 26 != 0x0F {
+            continue; // not lui
+        }
+        let rt = (w1 >> 16) & 0x1F;
+        let hi = w1 & 0xFFFF;
+        if hi != hi0 && hi != hi1 {
+            continue;
+        }
+        // Look for the paired `addiu rt, rt, lo` within a short window.
+        for j in (i + 1)..(i + 7).min(words) {
+            let w2 = read_u32_le(as_loaded, j * 4).unwrap();
+            if w2 >> 26 == 0x09 && (w2 >> 21) & 0x1F == rt {
+                let lo = (w2 & 0xFFFF) as i16 as i32;
+                let addr = ((hi << 16) as i32).wrapping_add(lo) as u32;
+                total += 1;
+                if (base_va..base_va.wrapping_add(len)).contains(&addr) {
+                    resolved += 1;
+                }
+                break;
+            }
+        }
+    }
+    (resolved, total)
+}
+
 /// Result of a static base recovery.
 #[derive(Debug, Clone, Copy)]
 pub struct BaseRecovery {
@@ -636,6 +683,29 @@ mod tests {
         assert_eq!(head_string(b"\x00ab\x00", 0x400, 5), None);
         // Pure binary head -> None.
         assert_eq!(head_string(&[0u8, 1, 2, 0xff, 0x80], 0x400, 4), None);
+    }
+
+    #[test]
+    fn pointer_resolution_counts_in_file_self_pointers() {
+        let base = 0x801F_69D8u32;
+        // Build `lui v0, 0x801f ; addiu v0, v0, 0x6a00` -> 0x801F6A00 (in file)
+        // and `lui v0, 0x8020 ; addiu v0, v0, -0x7000` -> 0x8019_9000 (out).
+        let lui = |rt: u32, hi: u32| (0x0Fu32 << 26) | (rt << 16) | hi;
+        let addiu = |rt: u32, lo: u16| (0x09u32 << 26) | (rt << 21) | (rt << 16) | lo as u32;
+        let mut code: Vec<u8> = Vec::new();
+        let mut push = |w: u32| code.extend_from_slice(&w.to_le_bytes());
+        push(lui(2, 0x801F));
+        push(addiu(2, 0x6A00)); // -> 0x801F6A00, inside a 0x8000-byte file
+        push(lui(2, 0x8020));
+        push(addiu(2, 0x9000u16)); // 0x8020_0000 + (i16)0x9000(-0x7000) = 0x801F9000, in file
+        code.resize(0x8000, 0);
+        let (resolved, total) = pointer_resolution(&code, base);
+        assert_eq!(total, 2);
+        assert_eq!(resolved, 2);
+        // Wrong base -> nothing resolves.
+        let (r2, t2) = pointer_resolution(&code, 0x801C_E818);
+        assert_eq!(t2, 0, "no 0x801c/0x801d pointers in this blob");
+        assert_eq!(r2, 0);
     }
 
     #[test]
