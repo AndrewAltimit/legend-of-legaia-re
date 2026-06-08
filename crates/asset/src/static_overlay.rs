@@ -93,6 +93,27 @@ pub enum Eligibility {
     Ineligible,
 }
 
+/// How the committed `base_va` was determined — gates the reproducibility
+/// check (jal-recovery is asserted only for `Jal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BaseSource {
+    /// Recovered from the overlay's own internal `jal` call graph
+    /// ([`recover_base`]). The reproducibility test asserts the recovery
+    /// reproduces this base.
+    #[default]
+    Jal,
+    /// Pinned by byte-matching a resident RAM image (a function anchor or a
+    /// clean prefix). Used where the overlay's internal call graph is too sparse
+    /// to triangulate.
+    Capture,
+    /// Cross-referenced from another pinned RE result in-tree (e.g. the summon
+    /// cluster's link base in `summon_overlay::SUMMON_OVERLAY_LINK_BASE`). Used
+    /// for timeshared-buffer overlays that have no clean whole-overlay RAM match
+    /// and no internal call graph to recover from.
+    CrossRef,
+}
+
 /// One overlay's identity + load metadata. The committed map is a list of these.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlayRecord {
@@ -115,6 +136,10 @@ pub struct OverlayRecord {
     pub clean_copy_bytes: Option<u32>,
     /// Backing strength of the clean-copy / base claim.
     pub eligibility: Eligibility,
+    /// How `base_va` was determined (gates the jal-recovery reproducibility
+    /// assertion). Defaults to [`BaseSource::Jal`].
+    #[serde(default)]
+    pub base_source: BaseSource,
     /// sha256 (hex) of the as-loaded bytes. Disc-derived hash — committable, no
     /// Sony bytes. Re-extraction must reproduce this exactly.
     #[serde(default)]
@@ -486,6 +511,7 @@ mod tests {
             decompressed_size: None,
             clean_copy_bytes: None,
             eligibility: Eligibility::Static,
+            base_source: BaseSource::Jal,
             fingerprint_sha256: None,
             notes: String::new(),
         };
@@ -533,6 +559,7 @@ mod tests {
             decompressed_size: None,
             clean_copy_bytes: Some(0x28800),
             eligibility: Eligibility::Verified,
+            base_source: BaseSource::Jal,
             fingerprint_sha256: None,
             notes: String::new(),
         };

@@ -20,7 +20,7 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::static_overlay::{self, Eligibility, OverlayForm};
+use legaia_asset::static_overlay::{self, BaseSource, Eligibility, OverlayForm};
 use legaia_prot::archive::Archive;
 
 fn prot_dat() -> Option<PathBuf> {
@@ -60,10 +60,16 @@ fn committed_overlays_reproduce_from_disc() {
         // (1) Fingerprint reproduces.
         static_overlay::verify_fingerprint(rec, &as_loaded).unwrap_or_else(|e| panic!("{e}"));
 
-        // (2) Static base recovery agrees with the committed base. Only raw
-        // overlays carry a recoverable internal call graph in their as-loaded
-        // bytes; LZS entries would need their own pass.
-        if rec.form == OverlayForm::Raw && rec.eligibility != Eligibility::Ineligible {
+        // (2) Static base recovery agrees with the committed base — but only
+        // for rows whose base was sourced from jal-recovery. Timeshared-buffer
+        // overlays (base_source = capture / cross_ref) have too sparse an
+        // internal call graph to triangulate; their base comes from a capture
+        // anchor or a cross-referenced RE result, and the fingerprint check
+        // above keeps them non-vacuous.
+        if rec.form == OverlayForm::Raw
+            && rec.eligibility != Eligibility::Ineligible
+            && rec.base_source == BaseSource::Jal
+        {
             let recovered = static_overlay::recover_base(&as_loaded, 8).unwrap_or_else(|| {
                 panic!(
                     "static base recovery found no consensus for {} (PROT {})",

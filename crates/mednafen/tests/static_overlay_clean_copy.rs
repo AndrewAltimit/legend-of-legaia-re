@@ -180,3 +180,52 @@ fn field_overlay_head_and_base_match_ram() {
         "[ok] field: base RAM-confirmed (head 0x{lcp:x} bytes identical), MAIN_INIT code byte-matches"
     );
 }
+
+#[test]
+fn summon_render_overlay_region_matches_ram_at_slot_b_base() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / extracted/PROT.DAT missing");
+        return;
+    };
+    // battle_gimard_tail_fire_a (mid-cast, PROT 0900 render overlay resident).
+    let Some(save) =
+        library_save("c8038c2d86f84e42c0c2148fbf499eb795b645689e7260e88f7065b5c6a7c935")
+    else {
+        eprintln!("[skip] Gimard mid-cast save-state backup not in library");
+        return;
+    };
+
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let map = static_overlay::overlay_map();
+    let rec = map.by_label("summon_render").expect("summon_render in map");
+    assert_eq!(rec.base_va, 0x801F_69D8, "slot-B link base");
+    let disc = as_loaded(&mut archive, rec);
+
+    let state = SaveState::from_path(&save).expect("load save state");
+    let ram = state.main_ram().expect("main RAM");
+
+    // The slot-B buffer timeshares two overlays, so there is no clean
+    // whole-overlay prefix -- but the resident render region (disc file
+    // 0x1000..0x2400 -> RAM 0x801F79D8..0x801F8DD8) is byte-identical, which
+    // pins the slot-B base 0x801F69D8 (the on-disc entry maps file 0x1628 to the
+    // 0x801F8000 anchor). This is exactly why these overlays want STATIC
+    // extraction: the dynamic capture is an inseparable mix of two overlays.
+    let region_start = 0x1000usize;
+    let region_end = 0x2400usize;
+    let ram_region = ram_slice(
+        ram,
+        rec.base_va + region_start as u32,
+        rec.base_va + region_end as u32,
+    )
+    .expect("ram region");
+    assert_eq!(
+        &disc[region_start..region_end],
+        ram_region,
+        "summon_render resident region diverges from RAM at base 0x{:08x}",
+        rec.base_va
+    );
+    eprintln!(
+        "[ok] summon_render: slot-B base 0x{:08x} confirmed, render region 0x{:x}..0x{:x} byte-identical in RAM",
+        rec.base_va, region_start, region_end
+    );
+}

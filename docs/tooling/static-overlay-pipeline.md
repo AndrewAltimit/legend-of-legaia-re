@@ -91,8 +91,38 @@ is the entry→base map — one record per overlay:
 | `form` | `raw` (entry bytes are the as-loaded bytes) or `lzs` (decompress; needs `decompressed_size`). |
 | `clean_copy_bytes` | Length of the RAM-verified `.text`+`.rodata` prefix (for `verified` rows). |
 | `eligibility` | `verified` (RAM byte-matched) / `static` (base-recovered + function-anchored, not RAM-prefix-verified) / `ineligible` (runtime-relocated — keep on the dynamic path). |
+| `base_source` | How `base_va` was determined: `jal` (internal call-graph recovery — default; the reproducibility test asserts the recovery agrees), `capture` (byte-matched a resident RAM anchor/region), `cross_ref` (taken from another pinned RE result in-tree). |
 | `fingerprint_sha256` | sha256 of the as-loaded bytes — the disc-derived reproducibility anchor. |
 | `notes` | Which subsystems / entry points live here. |
+
+### Slot A vs slot B
+
+The overlay loaders manage two independently swappable slots (`*DAT_8001038C`
+and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel-slots)).
+
+- **Slot A** (`~0x801CE818`) holds the big scene overlays — field (0897), battle
+  (0898), menu (0899). These are VA-alias siblings (same base, resident at
+  different times) and have dense internal call graphs, so `base_source = jal`.
+- **Slot B** (link base `0x801F69D8`,
+  `summon_overlay::SUMMON_OVERLAY_LINK_BASE`) holds the player-summon / effect /
+  minigame-data blobs from the `0900..0969` PROT cluster. These **timeshare one
+  buffer**, so a save state catches an inseparable *mix* of two overlays (e.g. in
+  a mid-cast Gimard save the 0900 render overlay has overwritten the 0905
+  stager) — there is no clean whole-overlay RAM prefix, and most have too sparse
+  an internal call graph to jal-recover. Their base comes from a capture anchor
+  (`base_source = capture`; the 0900 render region `0x801F79D8..0x801F8DD8`
+  byte-matches RAM, pinning the base) or a cross-referenced RE result
+  (`base_source = cross_ref`). This is precisely where static extraction earns
+  its keep: the *disc* entry disassembles cleanly at the link base even though
+  the *runtime* buffer is unusable.
+
+  **The slot-B cluster is heterogeneous.** It interleaves summon stagers (0905
+  Gimard, …) with Disco King **dance-song** overlays (0907 "Hell's Music", 0924
+  "Ultimate Rave", 0927 "Dark Eclipse", 0957) and other minigame data — so the
+  historical contiguous "summon `0905..=0915`" range is over-broad (0907 is a
+  dance song, not a summon). Only entries with a pinned identity are listed in
+  the map; per-entry identity for the rest is open
+  ([`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
 ## CLI
 

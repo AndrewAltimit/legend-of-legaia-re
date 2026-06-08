@@ -37,6 +37,13 @@
 #               data-section-first overlay whose live capture has runtime-mutated
 #               globals, so the clean region is not a single prefix).
 #   ineligible- runtime-relocated/constructed; keep on the dynamic path.
+#
+# base_source (how base_va was determined; gates the jal-recovery test):
+#   jal       - recovered from the overlay's own internal jal call graph
+#               (default; the reproducibility test asserts the recovery agrees).
+#   capture   - pinned by byte-matching a resident RAM image (anchor / region).
+#   cross_ref - taken from another pinned RE result in-tree (e.g. the summon
+#               link base). For sparse / timeshared-buffer overlays.
 
 [[overlays]]
 prot_index = 898
@@ -65,3 +72,36 @@ form = "raw"
 eligibility = "static"
 fingerprint_sha256 = "6ffd69a87fb351ff1c01cc9879276624c954801cd4d5353898882ca6e1a0f172"
 notes = "Options / pause / inventory-equipment-status menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38 (function-signature byte-matched); menu functions span base+0x0db8..base+0x15b44 (101/139 captured menu-dump addresses align as prologues). VA-alias sibling of the field overlay (0897) in slot A. PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base recovered statically (30 corroborating call targets)."
+
+# --- Slot-B overlays (the second swappable overlay slot, *DAT_80010390; link
+#     base 0x801F69D8, summon_overlay::SUMMON_OVERLAY_LINK_BASE). These are the
+#     player-summon / effect / minigame-data blobs from the 0900..0969 PROT
+#     cluster. They TIMESHARE one buffer, so a save state catches a MIX of two
+#     overlays -- there is no clean whole-overlay RAM prefix, and most have too
+#     sparse an internal jal call graph to triangulate. base_va here is sourced
+#     from a capture anchor / a cross-referenced RE result (base_source), not
+#     jal-recovery. The cluster is HETEROGENEOUS: it interleaves summon stagers
+#     (0905 Gimard, ...) with Disco King dance-song overlays (0907 "Hell's
+#     Music", 0924, 0927, 0957) and other minigame data, so the historical
+#     contiguous "summon 0905..=0915" range is over-broad -- only entries with a
+#     pinned identity are listed here. ---
+
+[[overlays]]
+prot_index = 900
+label = "summon_render"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "capture"
+fingerprint_sha256 = "05d8d68e3471efe33edd78afefe270031e4fccdcde7143fa210140a8e83dc624"
+notes = "Player-summon render / GTE-transform overlay (RotMatrixX/Y/Z x6 + prim emit; animates + draws the parts the 0905 stager spawned). Byte-resident in a mid-cast Gimard save: file 0x1000..0x2400 (RAM 0x801F79D8..0x801F8DD8) is byte-identical, pinning base 0x801F69D8 (anchor file 0x1628 <-> 0x801F8000). Not a clean whole-overlay copy -- the slot-B buffer timeshares two overlays at runtime. See summon_overlay.rs + docs/reference/open-rev-eng-threads.md."
+
+[[overlays]]
+prot_index = 905
+label = "summon_gimard"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "7e0740575be7f7798c053e675903d465ebdcc4fe7a954fa153df5470989c6f4a"
+notes = "Gimard 'Tail Fire' summon spawn stager (spell id 0x81; 38 FUN_80021B04 part-spawn calls). First function at base 0x801F69D8 (head is an addiu sp prologue). Base cross-referenced from summon_overlay::SUMMON_OVERLAY_LINK_BASE: the record pointers (lui 0x8020/addiu immediates) resolve in-file only under this base (disc-gated summon_overlay_real). Overwritten by the 0900 render overlay mid-cast, so not byte-resident in the capture."
