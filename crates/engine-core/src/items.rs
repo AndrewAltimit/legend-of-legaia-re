@@ -77,6 +77,18 @@ const PERMANENT_STAT_ITEMS: &[(u8, &str)] = &[
     (0x6D, "Miracle Water"),  // tier 6: all stats +4
 ];
 
+/// The one-battle stat-buff consumables (class 7, the Elixirs) by their real
+/// retail ids + names. Each ramps the targeted battle-actor stat by ×6/5 for
+/// the rest of the battle. Seeded only when the on-disc effect table is
+/// installed ([`ItemCatalog::apply_buff_items`]); the buffed stats are resolved
+/// from that table at use time ([`crate::World::use_item`]).
+const BATTLE_BUFF_ITEMS: &[(u8, &str)] = &[
+    (0x8B, "Power Elixir"),  // ATK
+    (0x8C, "Shield Elixir"), // DEF (both facets)
+    (0x8D, "Speed Elixir"),  // SPD
+    (0x8E, "Wonder Elixir"), // all (SPD + DEF + ATK + AGL)
+];
+
 /// Which stat an [`ItemEffect::StatBoost`] modifies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatBoostTarget {
@@ -126,6 +138,12 @@ pub enum ItemEffect {
     /// ([`crate::World::use_item`]), so this is only ever installed when a real
     /// item-effect table is present (see [`ItemCatalog::apply_stat_items`]).
     StatUp,
+    /// One-battle stat buff (the class-7 Elixirs). A marker: the buffed stats are
+    /// resolved from the on-disc effect table at use time
+    /// ([`crate::World::use_item`]), which ramps each by ×6/5 for the battle.
+    /// Only ever installed when a real table is present (see
+    /// [`ItemCatalog::apply_buff_items`]).
+    BattleBuff,
     Spirit {
         amount: u8,
     },
@@ -185,15 +203,16 @@ impl ItemCatalog {
     /// `0x7A`, Healing Fruit `0x7B`), which fan out across the party via the
     /// item-effect descriptor's all-party flag (see [`Self::is_all_party`]).
     ///
-    /// The permanent stat-up *Water* line (`0x82..=0x87` + the all-stats Honey
-    /// `0x65` / Miracle Water `0x6D`) is **not** in this static set — it is
-    /// seeded from the on-disc effect table by [`Self::apply_stat_items`] (so it
-    /// only appears when the disc is present), and its per-stat changes resolve
-    /// from that table at use time. Items that still need infra this engine
-    /// doesn't have are intentionally **omitted** (a held one just isn't offered)
-    /// rather than shown as a no-op:
-    /// - the one-battle stat-buff Elixirs (Power/Shield/Speed/Wonder Elixir
-    ///   `0x8B..=0x8E`) and Fury Boost (`0x81`) need an in-battle buff path;
+    /// The stat-affecting consumables are **not** in this static set — they are
+    /// seeded from the on-disc effect table (so they only appear when the disc
+    /// is present) and resolve their per-stat changes from that table at use
+    /// time: the permanent stat-up *Water* line (`0x82..=0x87` + the all-stats
+    /// Honey `0x65` / Miracle Water `0x6D`) via [`Self::apply_stat_items`], and
+    /// the one-battle buff Elixirs (Power/Shield/Speed/Wonder Elixir
+    /// `0x8B..=0x8E`) via [`Self::apply_buff_items`]. Items that still need infra
+    /// this engine doesn't have are intentionally **omitted** (a held one just
+    /// isn't offered) rather than shown as a no-op:
+    /// - Fury Boost (`0x81`) needs the action-gauge-extend consumer;
     /// - utility (Door of Wind warp `0x89`, Incense encounter-rate `0x8A`, the
     ///   summon flutes `0x98`/`0x99`) have no engine consumer yet.
     ///
@@ -370,6 +389,34 @@ impl ItemCatalog {
         }
     }
 
+    /// Seed the one-battle stat-buff Elixirs (class 7) into the catalog from the
+    /// real on-disc item-effect table. Each is installed as an
+    /// [`ItemEffect::BattleBuff`] marker (battle-only); the buffed stats are
+    /// resolved from the same table at use time ([`crate::World::use_item`]),
+    /// which ramps each by ×6/5 for the rest of the battle.
+    ///
+    /// Like [`Self::apply_stat_items`], seeded **only** when the disc table is
+    /// present, and only for ids the table actually classifies as a one-battle
+    /// buff (defensive against an edited table).
+    pub fn apply_buff_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        use legaia_asset::item_effect::StatItemEffect;
+        for &(id, name) in BATTLE_BUFF_ITEMS {
+            if matches!(
+                table.stat_effect(id),
+                Some(StatItemEffect::BuffOneBattle(_))
+            ) {
+                let battle_usable = table.effect(id).map(|e| e.battle_usable()).unwrap_or(true);
+                self.insert(ItemEntry {
+                    id,
+                    name,
+                    effect: ItemEffect::BattleBuff,
+                    usable_in_battle: battle_usable,
+                    usable_in_field: false,
+                });
+            }
+        }
+    }
+
     /// `true` if the item's effect applies to the whole party (the descriptor's
     /// `0x20` all-party flag). The item-use session fans a flagged item out
     /// across every valid ally instead of asking for a single target.
@@ -431,6 +478,12 @@ pub enum ItemOutcome {
     /// `count` is the number of individual stat raises performed (a single
     /// *Water* raises one, the all-stats items raise several).
     StatsRaised {
+        count: u8,
+    },
+    /// A one-battle stat buff ([`ItemEffect::BattleBuff`], the class-7 Elixirs)
+    /// was applied; `count` is the number of stats ramped (Power/Shield/Speed
+    /// Elixir buff one, Wonder Elixir buffs four).
+    Buffed {
         count: u8,
     },
     SpiritGained {
@@ -530,10 +583,10 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
             }
         }
         ItemEffect::StatBoost { target: t, delta } => ItemOutcome::StatRaised { target: t, delta },
-        // The multi-stat permanent boost is resolved from the on-disc table in
-        // `World::use_item` (which has the table + the target record), so the
-        // pure, table-less path is a no-op.
-        ItemEffect::StatUp => ItemOutcome::NoEffect,
+        // The multi-stat permanent boost and the one-battle buff are both
+        // resolved from the on-disc table in `World::use_item` (which has the
+        // table + the target actor), so the pure, table-less path is a no-op.
+        ItemEffect::StatUp | ItemEffect::BattleBuff => ItemOutcome::NoEffect,
         ItemEffect::Spirit { amount } => ItemOutcome::SpiritGained { amount },
         ItemEffect::Capture { strength } => ItemOutcome::CaptureRolled { strength },
         ItemEffect::Escape => ItemOutcome::EscapeRequested,
@@ -736,10 +789,15 @@ mod tests {
 
     #[test]
     fn stat_up_marker_is_a_noop_in_the_table_less_path() {
-        // The multi-stat StatUp boost is resolved from the on-disc table in
-        // `World::use_item`; the pure `apply_effect` has no table, so it no-ops.
+        // The multi-stat StatUp boost and the one-battle BattleBuff are both
+        // resolved from the on-disc table in `World::use_item`; the pure
+        // `apply_effect` has no table, so they no-op.
         let t = alive(50, 100, 0, 0);
         assert_eq!(apply_effect(ItemEffect::StatUp, &t), ItemOutcome::NoEffect);
+        assert_eq!(
+            apply_effect(ItemEffect::BattleBuff, &t),
+            ItemOutcome::NoEffect
+        );
     }
 
     #[test]

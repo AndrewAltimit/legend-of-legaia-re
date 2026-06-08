@@ -191,3 +191,59 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
         ItemOutcome::StatsRaised { count: 8 }
     );
 }
+
+/// Installing the disc table also seeds the one-battle stat-buff Elixirs (class
+/// 7, battle-only); using one ramps the target's battle-actor stat scalar by
+/// ×6/5 for the battle through the shared buff path (the same machinery as buff
+/// spells). Skips without `LEGAIA_DISC_BIN`.
+#[test]
+fn elixir_battle_buffs_seed_and_ramp_from_disc() {
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    if !path.is_file() {
+        eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
+        return;
+    }
+    let scus = legaia_engine_core::DiscVfs::open(&path)
+        .expect("open disc")
+        .read("SCUS_942.54")
+        .expect("SCUS_942.54 present");
+    let table = ItemEffectTable::from_scus(&scus).expect("item-effect table parses");
+
+    // Disc-free vanilla never offers the battle-only buff Elixirs.
+    assert!(
+        ItemCatalog::vanilla().get(0x8B).is_none(),
+        "Power Elixir is omitted until the disc table is installed"
+    );
+
+    let mut world = World::new();
+    world.set_item_effects(table); // seeds the Elixirs onto the catalog
+    world.set_battle_attack(0, 100);
+    world.set_battle_defense(0, 50);
+
+    // Power Elixir is battle-only and ramps ATK ×6/5: 100 -> 120.
+    let pe = world.item_catalog.get(0x8B).expect("Power Elixir seeded");
+    assert_eq!(pe.name, "Power Elixir");
+    assert!(pe.usable_in_battle && !pe.usable_in_field);
+    assert_eq!(world.use_item(0x8B, 0), ItemOutcome::Buffed { count: 1 });
+    assert_eq!(world.battle_attack[0], 120);
+    assert_eq!(world.battle_buffs.len(), 1);
+
+    // Shield Elixir ramps DEF ×6/5: 50 -> 60.
+    assert_eq!(world.use_item(0x8C, 0), ItemOutcome::Buffed { count: 1 });
+    assert_eq!(world.battle_defense[0], 60);
+
+    // Wonder Elixir buffs all four (SPD/DEF/ATK/AGL). ATK + DEF refresh (revert
+    // the prior delta, re-ramp from base, no compounding), SPD + AGL are new but
+    // have no live scalar; the buff list ends with four distinct (slot, stat)
+    // trackers.
+    assert_eq!(world.use_item(0x8E, 0), ItemOutcome::Buffed { count: 4 });
+    assert_eq!(
+        world.battle_attack[0], 120,
+        "ATK refreshed from base, not compounded"
+    );
+    assert_eq!(world.battle_defense[0], 60);
+    assert_eq!(world.battle_buffs.len(), 4);
+}

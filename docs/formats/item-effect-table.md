@@ -211,10 +211,16 @@ time and applies them through the shared persistent stat-raise path (a `Defense`
 change raises both defence facets, matching the handler). The disc-gated
 `water_line_stat_up_items_seed_and_apply_from_disc` test pins that Life Water
 raises Max HP +16, the single-stat Waters raise their stat by +4, and Honey
-raises all stats. The **class-7 one-battle buff Elixirs** are decoded
-(`stat_effect` → `BuffOneBattle`) but not yet wired into the live battle loop —
-they need an in-battle buff-on-item path (the buff-ramp machinery exists for
-buff *spells*).
+raises all stats.
+
+The **class-7 one-battle buff Elixirs** are seeded by `ItemCatalog::apply_buff_items`
+(battle-only) and applied in `World::use_item` through the shared buff path
+(`apply_battle_buff`, the same `×6/5` ramp + revert-on-expiry / revert-at-battle-end
+bookkeeping as buff *spells*): Power/Shield/Speed Elixir ramp ATK / DEF / SPD,
+Wonder Elixir ramps all four (SPD + DEF + ATK + AGL). The disc-gated
+`elixir_battle_buffs_seed_and_ramp_from_disc` test pins that Power Elixir ramps a
+100 ATK scalar to 120 and Wonder Elixir installs four buff trackers without
+compounding. Fury Boost (class 5, action-gauge) still needs its own consumer.
 
 ## See also
 

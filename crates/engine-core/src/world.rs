@@ -3063,6 +3063,7 @@ impl World {
         if let Some(table) = &self.item_effects {
             catalog.apply_effect_flags(table);
             catalog.apply_stat_items(table);
+            catalog.apply_buff_items(table);
         }
         self.item_catalog = catalog;
     }
@@ -3073,6 +3074,7 @@ impl World {
     pub fn set_item_effects(&mut self, table: legaia_asset::item_effect::ItemEffectTable) {
         self.item_catalog.apply_effect_flags(&table);
         self.item_catalog.apply_stat_items(&table);
+        self.item_catalog.apply_buff_items(&table);
         self.item_effects = Some(table);
     }
 
@@ -3331,6 +3333,11 @@ impl World {
         if let crate::items::ItemEffect::StatUp = entry.effect {
             return self.apply_stat_up_item(item_id, target_slot);
         }
+        // One-battle stat buff (class-7 Elixir): ramps the target's battle-actor
+        // stat scalars by ×6/5, resolved from the on-disc table.
+        if let crate::items::ItemEffect::BattleBuff = entry.effect {
+            return self.apply_buff_item(item_id, target_slot);
+        }
         let idx = target_slot as usize;
         // BattleActor holds `mp` but not `max_mp`; engines that wire the
         // character record into the actor populate it via a sibling field.
@@ -3416,6 +3423,56 @@ impl World {
             _ => {}
         }
         outcome
+    }
+
+    /// Apply a one-battle stat buff ([`crate::items::ItemEffect::BattleBuff`],
+    /// the class-7 Elixirs) to `target_slot`. The buffed stats are resolved from
+    /// the installed on-disc item-effect table; each is ramped ×6/5 for the rest
+    /// of the battle through the shared buff path ([`Self::apply_battle_buff`],
+    /// the same machinery as buff *spells*) — so it reuses the precise
+    /// revert-on-expiry / revert-at-battle-end bookkeeping. `Defense` ramps the
+    /// single defence scalar; `Agility` maps to the accuracy/evasion proxy (no
+    /// live scalar yet, so it only runs the turn timer, like a buff spell on
+    /// Speed). Returns [`crate::items::ItemOutcome::NoEffect`] when no table is
+    /// installed or the id isn't a one-battle buff.
+    fn apply_buff_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
+        use crate::spells::BuffStat;
+        use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+        // "One battle": a turn count large enough to outlast the encounter; the
+        // buff is reverted wholesale at battle end (`finish_battle`).
+        const ONE_BATTLE: u8 = u8::MAX;
+        // Positive magnitude selects the retail ×6/5 multiplicative ramp in
+        // `apply_battle_buff` (the value itself is only a sign hint there).
+        const BUFF_SIGN: i16 = 1;
+
+        let resolved = self
+            .item_effects
+            .as_ref()
+            .and_then(|t| t.stat_effect(item_id));
+        let Some(StatItemEffect::BuffOneBattle(stats)) = resolved else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        let mut count = 0u8;
+        for stat in stats {
+            let buff_stat = match stat {
+                StatTarget::Attack => BuffStat::Attack,
+                StatTarget::Defense => BuffStat::Defense,
+                StatTarget::Speed => BuffStat::Speed,
+                // AGL drives accuracy + evasion (both proxy it); one entry
+                // models the AGL buff.
+                StatTarget::Agility => BuffStat::Accuracy,
+                // The permanent-only stats never appear in a class-7 buff; skip
+                // defensively rather than fabricate a battle scalar for them.
+                StatTarget::MaxHp | StatTarget::MaxMp | StatTarget::Intelligence => continue,
+            };
+            self.apply_battle_buff(target_slot, buff_stat, BUFF_SIGN, ONE_BATTLE);
+            count = count.saturating_add(1);
+        }
+        if count == 0 {
+            crate::items::ItemOutcome::NoEffect
+        } else {
+            crate::items::ItemOutcome::Buffed { count }
+        }
     }
 
     /// Apply a permanent multi-stat boost ([`crate::items::ItemEffect::StatUp`],

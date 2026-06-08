@@ -807,7 +807,7 @@ impl World {
     /// runs. Re-casting the same `(slot, stat)` refreshes: the old delta is
     /// reverted first (so the ramp re-applies from the base, no compounding on
     /// refresh).
-    fn apply_battle_buff(
+    pub(super) fn apply_battle_buff(
         &mut self,
         slot: u8,
         stat: crate::spells::BuffStat,
