@@ -587,18 +587,18 @@ The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 
 
 Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around `+0x130`; the layout is per-flag and not captured in any single overlay dump.
 
-Conditions are named with the game's in-game ailment terms (the `enemy_effect` byte is the on-disc art-record value; the per-turn effect + duration are clean-room approximations - the retail per-status tables aren't in any single overlay dump):
+Conditions are named with the game's in-game ailment terms (the `enemy_effect` byte is the on-disc art-record value). The `Retail effect` column is the published behaviour from the Legaia wiki status pages; the wiki gives the qualitative mechanics + cure methods but **not** exact turn counts or HP-per-turn formulas, so the `Default duration` and the tick formulas are clean-room approximations (the retail per-status tables aren't in any single overlay dump). The `Engine` column flags where this port diverges from retail.
 
-| Status | byte | Default duration | Per-turn effect |
-|---|---|---|---|
-| Toxic | `1` | 4 turns | `max_hp / 16` HP tick damage (deadly poison, ~2x Venom - magnitude not yet reflected) |
-| Numb | `2` | 3 turns | ~50% chance to skip turn (paralysis) |
-| Venom | `3` (Other) | 6 turns | `current_hp / 8` HP tick damage (poison) |
-| Sleep | `4` | 3 turns | Skip until hit |
-| Confuse | `5` | 3 turns | Random target |
-| Curse | `6` | 4 turns | Block Magic actions |
-| Stone | `7` | 1 turn | Skip turn / can't act (petrification; the 1-turn duration is a guess) |
-| Faint | `8` | until cured | Skip turn entirely; die at 0 HP (KO) |
+| Status | byte | Default duration (clean-room) | Retail effect (wiki) | Engine |
+|---|---|---|---|---|
+| Toxic | `1` | 4 turns | "Deadly Poison": HP drains faster than Venom AND attack/defense drop | `max_hp/16` tick + ATK x0.875; the faster-than-Venom rate and the DEF drop aren't modelled |
+| Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | NOT enforced (the old "50% skip" was never wired; retail is a full block, not a roll) |
+| Venom | `3` (Other) | 6 turns | "Poison": HP drains (lesser than Toxic) | `current_hp/8` tick |
+| Sleep | `4` | 3 turns | Asleep; wakes when hit | block + clear-on-hit (matches) |
+| Confuse | `5` | 3 turns | Acts uncontrollably / random target | random target (LoL-1 wiki page is a stub) |
+| Curse | `6` | 4 turns | Blocks Magic | blocks Magic (matches) |
+| Stone | `7` | 1 turn | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block only - invulnerability, defeat-counting, and whole-battle duration not modelled |
+| Faint | `8` | until cured | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
 

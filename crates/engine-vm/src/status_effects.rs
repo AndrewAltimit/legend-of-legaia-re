@@ -11,23 +11,25 @@
 //! semantics rather than reproducing the byte layout.
 //!
 //! The eight conditions the runtime distinguishes, named with the game's
-//! in-game ailment terms (sourced from the public Legaia wiki + the
-//! status-protection accessories in the walkthroughs - the project's
-//! ground-truth label source, see [`docs/reference/gamedata.md`]). The
-//! `enemy_effect` byte is the on-disc art-record value; the per-turn effect is
-//! a clean-room approximation (the retail per-status timer / tick-damage tables
-//! aren't captured in any single overlay dump):
+//! in-game ailment terms. `byte` is the on-disc art-record `enemy_effect`
+//! value. `Retail effect` is the published behaviour (the Legaia wiki status
+//! pages, the project's ground-truth label source - see
+//! [`docs/reference/gamedata.md`]); `Engine` flags where this clean-room model
+//! diverges. **The wiki gives the qualitative mechanics + cure methods but
+//! NOT the exact turn counts or HP-per-turn formulas, so the durations
+//! ([`StatusKind::default_duration`]) and tick formulas below stay clean-room
+//! approximations.**
 //!
-//! | Status    | byte | Per-turn effect (clean-room)     | Notes |
-//! |-----------|------|----------------------------------|-------|
-//! | `Toxic`   | `1`  | HP tick (`max_hp / 16`)          | deadly poison, ~2x Venom (magnitude not yet reflected) |
-//! | `Numb`    | `2`  | ~50% chance to skip the turn     | paralysis |
-//! | `Venom`   | `3`  | HP tick (`current_hp / 8`)       | standard poison |
-//! | `Sleep`   | `4`  | Skip the turn until hit          | |
-//! | `Confuse` | `5`  | Act against a random target      | |
-//! | `Curse`   | `6`  | Block Magic actions              | Magic Amulet protects vs Curse |
-//! | `Stone`   | `7`  | Skip the turn (can't act)        | petrification; the "one turn" duration is a clean-room guess |
-//! | `Faint`   | `8`  | Skip the turn entirely; die at 0 HP | KO |
+//! | Status    | byte | Retail effect (wiki)                                        | Engine |
+//! |-----------|------|-------------------------------------------------------------|--------|
+//! | `Toxic`   | `1`  | "Deadly Poison": HP drains faster than Venom AND ATK/DEF drop | DoT `max_hp/16` + ATK x0.875; DoT-vs-Venom magnitude and the DEF drop not modelled |
+//! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns | NOT enforced yet (the old "50% skip" was never wired - retail is a full block, not a roll) |
+//! | `Venom`   | `3`  | "Poison": HP drains (lesser than Toxic)                      | DoT `current_hp/8` |
+//! | `Sleep`   | `4`  | Asleep; wakes when hit                                       | block + clear-on-hit (matches) |
+//! | `Confuse` | `5`  | Acts uncontrollably / random target                         | random target (LoL-1 wiki page is a stub; modelled clean-room) |
+//! | `Curse`   | `6`  | Blocks Magic (Magic Amulet protects)                        | blocks Magic (matches) |
+//! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block only - the invulnerability, defeat-counting, and whole-battle duration are not modelled |
+//! | `Faint`   | `8`  | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 //!
 //! Engines drain pending [`StatusEvent`]s from [`StatusEffectTracker::tick_actor`]
 //! and feed them back into their HUD / battle event log.
@@ -40,22 +42,29 @@ use legaia_art::record::EnemyEffect;
 /// `EnemyEffect::Other(_)`. Per-turn effects are clean-room approximations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusKind {
-    /// Deadly poison (~2x Venom). HP-tick damage (clean-room `max_hp / 16`).
+    /// Deadly poison: HP drains faster than Venom and ATK/DEF drop. Modelled
+    /// as an HP tick (clean-room `max_hp / 16`) + an ATK penalty; the
+    /// faster-than-Venom magnitude and the DEF penalty are not yet modelled.
     Toxic,
-    /// Paralysis - a per-turn chance to be unable to act.
+    /// Paralysis: the unit cannot act; clears on being hit or after some turns
+    /// (a full block, NOT a probability roll - retail does not skip-by-chance).
     Numb,
-    /// Standard poison. HP-tick damage (clean-room `current_hp / 8`).
+    /// Standard poison: HP drains (lesser than Toxic). Clean-room
+    /// `current_hp / 8` tick.
     Venom,
-    /// Sleep until hit.
+    /// Asleep; wakes when hit.
     Sleep,
-    /// Acts against a random target.
+    /// Acts uncontrollably against a random target.
     Confuse,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
     Curse,
-    /// Petrification - can't act (the Stone Amulet protects against Stone
-    /// attacks). The clean-room "one turn" duration is a guess.
+    /// Petrification: cannot act and cannot be damaged; petrified members count
+    /// as defeated and Stone lasts the whole battle (no in-battle cure - a
+    /// successful escape restores them). The engine models only the action
+    /// block, not the invulnerability / defeat-counting / whole-battle duration.
     Stone,
-    /// Knocked out - skips the turn entirely; dies at 0 HP.
+    /// KO at 0 HP: the unit collapses and cannot act; revived only by a Phoenix
+    /// or revive Magic. If the whole party Faints it is a Game Over.
     Faint,
 }
 

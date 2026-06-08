@@ -113,13 +113,15 @@ impl EquipmentTable {
 /// The retail engine applies a per-status delta to the stat lines in
 /// the same `FUN_80042558` pass - Toxic reduces ATK by 1/8, Confuse
 /// drops accuracy in half, etc. These values are baked into the
-/// resolver and exposed for engines that want to override them.
+/// resolver and exposed for engines that want to override them. (Per the
+/// Legaia wiki, Toxic also lowers DEFENSE, not just ATK; that DEF penalty is
+/// not modelled here yet - only the ATK multiplier is applied.)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatusModifiers {
     /// Multiplier applied to ATK when the actor is Toxic. Default `0.875`.
-    pub burned_atk_mult: f32,
+    pub toxic_atk_mult: f32,
     /// Multiplier applied to accuracy when the actor is Confuse. `0.5`.
-    pub confused_acc_mult: f32,
+    pub confuse_acc_mult: f32,
     /// Multiplier applied to evasion when Sleep / Stone / Faint.
     /// `0.0` - these statuses make the actor a sitting duck.
     pub immobilised_eva_mult: f32,
@@ -127,16 +129,16 @@ pub struct StatusModifiers {
     /// blocks magic outright; this is exposed for engines that prefer
     /// "magic costs more" semantics. Default `f32::INFINITY` - a host
     /// that wants a hard block reads [`BattleStats::magic_blocked`].
-    pub silenced_mp_mult: f32,
+    pub curse_mp_mult: f32,
 }
 
 impl Default for StatusModifiers {
     fn default() -> Self {
         Self {
-            burned_atk_mult: 0.875,
-            confused_acc_mult: 0.5,
+            toxic_atk_mult: 0.875,
+            confuse_acc_mult: 0.5,
             immobilised_eva_mult: 0.0,
-            silenced_mp_mult: f32::INFINITY,
+            curse_mp_mult: f32::INFINITY,
         }
     }
 }
@@ -260,10 +262,10 @@ pub fn compute_battle_stats(
     for &k in statuses {
         match k {
             StatusKind::Toxic => {
-                stats.atk = mul_clamp(stats.atk, modifiers.burned_atk_mult);
+                stats.atk = mul_clamp(stats.atk, modifiers.toxic_atk_mult);
             }
             StatusKind::Confuse => {
-                stats.acc = mul_clamp(stats.acc, modifiers.confused_acc_mult);
+                stats.acc = mul_clamp(stats.acc, modifiers.confuse_acc_mult);
             }
             StatusKind::Sleep | StatusKind::Stone | StatusKind::Faint => {
                 stats.eva = mul_clamp(stats.eva, modifiers.immobilised_eva_mult);
@@ -463,7 +465,7 @@ mod tests {
     #[test]
     fn custom_modifiers_let_engines_tune_severity() {
         let mods = StatusModifiers {
-            burned_atk_mult: 0.5, // Brutal burn
+            toxic_atk_mult: 0.5, // Brutal toxic
             ..StatusModifiers::default()
         };
         let s = compute_battle_stats(
