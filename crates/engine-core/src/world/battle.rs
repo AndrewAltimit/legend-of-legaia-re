@@ -353,12 +353,20 @@ impl World {
             .get(caster as usize)
             .map(|a| a.battle.mp)
             .unwrap_or(0);
+        // Pass the caster's MP-saver ability bits so the menu greys rows by the
+        // effective (reduced) cost the cast charges, not the raw spell cost.
+        let ability_bits = self
+            .character_ability_bits
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
         Some(crate::battle_magic::BattleSpellSession::new(
             caster,
             caster,
             &learned,
             &self.spell_catalog,
             caster_mp,
+            ability_bits,
         ))
     }
 
@@ -603,8 +611,14 @@ impl World {
     /// Element affinity comes from [`Self::enemy_affinity_pct`] when the
     /// affinity tables are installed (`matrix[enemy_element][party_element]`,
     /// `FUN_801dd864`), else 100 (neutral); status-weaken (`+0x16e`) and the
-    /// guard byte (`+0x1de`) default to none. The affinity multiply happens
-    /// after all the rolls, so it never changes the RNG stream.
+    /// guard byte (`+0x1de`) default to none. The affinity scale is applied
+    /// *during* the roll (inside [`arts_physical_predamage_lazy`], before the
+    /// conditional bonus-arm threshold, matching retail's scale→bonus order),
+    /// so a non-neutral affinity can change whether the lazy bonus pair is
+    /// drawn. What is invariant is the *gating*: an uninstalled table resolves
+    /// to 100% (no scaling), reproducing the no-affinity baseline — magnitude
+    /// and RNG stream bit-identical — so disc-free / synthetic battles are
+    /// unperturbed.
     ///
     /// The `rand()` draws are taken in retail call order: attacker ×2, defender
     /// ×1, then the bonus pair ×2 **lazily** — drawn only when the conditional

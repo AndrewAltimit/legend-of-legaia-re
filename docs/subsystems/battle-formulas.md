@@ -379,9 +379,13 @@ special-attack path scales by `matrix[enemy_element][party_member_element]`
 (`World::enemy_affinity_pct` → `enemy_move_predamage`): the enemy element from
 `MonsterDef::element`, the defender from the active party member's element (the
 engine models `char_id == party slot`, so a defender at actor slot *s* is char id
-*s+1*). The multiply happens after all the rolls, so it never perturbs the RNG
-stream, and it's gated on the affinity table being installed (disc-free /
-synthetic battles keep the neutral 100% multiplier, bit-identical).
+*s+1*). The scale is applied *inside* the roll (`arts_physical_predamage_lazy`),
+before the conditional bonus-arm threshold — matching retail's scale→bonus order
+(`FUN_801dd864` scale precedes the `FUN_801dd0ac` second arm) — so a non-neutral
+affinity can change whether the lazy bonus pair is drawn. The gating is what's
+invariant: an uninstalled table resolves to the neutral 100% multiplier (no
+scaling), reproducing the no-affinity baseline bit-identically, so disc-free /
+synthetic battles keep an unchanged magnitude *and* RNG stream.
 
 The **player→enemy** direction is **also wired** — the same matrix the other way
 round, `matrix[summon-creature element][target element]` (attacker = the summon

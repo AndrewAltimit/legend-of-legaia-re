@@ -5574,6 +5574,7 @@ fn battle_magic_escape_returns_to_field() {
         &[0x41],
         &world.spell_catalog,
         20,
+        0,
     ));
 
     // SelfOnly target resolves immediately, so one Cross casts Warp.

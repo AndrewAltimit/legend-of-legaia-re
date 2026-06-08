@@ -105,24 +105,35 @@ pub enum SpellResolution {
 impl BattleSpellSession {
     /// Build from the caster's learned spells. `learned` is the spell-id list;
     /// `catalog` resolves names + MP cost; `caster_mp` greys out unaffordable
-    /// rows. The cursor starts on the first affordable spell (or row 0 when
-    /// none are affordable). Spell ids missing from the catalog are dropped.
+    /// rows. `ability_bits` is the caster's character-record ability bitmask
+    /// (the MP-saver accessory bits Half `0x20` / Quarter `0x10`): each row's
+    /// displayed cost and affordability are computed against the **effective**
+    /// cost the cast actually charges
+    /// ([`legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`]),
+    /// so an MP-saver lets the caster select a spell whose raw cost exceeds
+    /// their MP — matching `World::cast_spell_on_slots`. The cursor starts on
+    /// the first affordable spell (or row 0 when none are affordable). Spell ids
+    /// missing from the catalog are dropped.
     pub fn new(
         actor: u8,
         party_slot: u8,
         learned: &[u8],
         catalog: &SpellCatalog,
         caster_mp: u16,
+        ability_bits: u32,
     ) -> Self {
+        use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+        let modifier = MpCostModifier::from_ability_flags(ability_bits);
         let spells: Vec<SpellRow> = learned
             .iter()
             .filter_map(|id| {
                 let def = catalog.get(*id)?;
+                let cost = mp_cost_after_ability_bits(def.mp_cost as u16, modifier);
                 Some(SpellRow {
                     id: *id,
                     name: def.name.clone(),
-                    mp_cost: def.mp_cost,
-                    affordable: caster_mp >= def.mp_cost as u16,
+                    mp_cost: cost.min(u8::MAX as u16) as u8,
+                    affordable: caster_mp >= cost,
                 })
             })
             .collect();
@@ -338,7 +349,7 @@ mod tests {
         let cat = SpellCatalog::vanilla();
         // Heal (0x10, cost 4) and Flame (0x20, cost 5). With 4 MP only Heal is
         // affordable -> cursor on row 0.
-        let s = BattleSpellSession::new(0, 0, &[0x10, 0x20], &cat, 4);
+        let s = BattleSpellSession::new(0, 0, &[0x10, 0x20], &cat, 4, 0);
         assert_eq!(s.menu_spell().map(|r| r.id), Some(0x10));
         assert!(s.spells[0].affordable);
         assert!(!s.spells[1].affordable);
@@ -349,7 +360,7 @@ mod tests {
         let cat = SpellCatalog::vanilla();
         // Flame (0x20) is single-enemy; with enough MP it opens a cursor on the
         // lone monster, then Cross confirms.
-        let mut s = BattleSpellSession::new(0, 0, &[0x20], &cat, 50);
+        let mut s = BattleSpellSession::new(0, 0, &[0x20], &cat, 50, 0);
         s.input(press("c"), &cat, party3(), one_monster());
         assert!(matches!(s.phase, SpellPhase::Targeting { .. }));
         s.input(press("c"), &cat, party3(), one_monster());
@@ -368,7 +379,7 @@ mod tests {
         let cat = SpellCatalog::vanilla();
         // Heal All (0x11) is AllAllies -> sweep, no cursor; Cross confirms in
         // one step.
-        let mut s = BattleSpellSession::new(0, 0, &[0x11], &cat, 50);
+        let mut s = BattleSpellSession::new(0, 0, &[0x11], &cat, 50, 0);
         s.input(press("c"), &cat, party3(), one_monster());
         assert!(matches!(
             s.resolved(),
@@ -379,7 +390,7 @@ mod tests {
     #[test]
     fn circle_from_spell_list_aborts() {
         let cat = SpellCatalog::vanilla();
-        let mut s = BattleSpellSession::new(0, 0, &[0x10], &cat, 50);
+        let mut s = BattleSpellSession::new(0, 0, &[0x10], &cat, 50, 0);
         s.input(press("o"), &cat, party3(), one_monster());
         assert_eq!(s.resolved(), Some(SpellResolution::Aborted));
     }
@@ -388,11 +399,38 @@ mod tests {
     fn unaffordable_spell_does_not_open_target() {
         let cat = SpellCatalog::vanilla();
         // Only Mega Heal (0x12, cost 12); caster has 3 MP -> not affordable.
-        let mut s = BattleSpellSession::new(0, 0, &[0x12], &cat, 3);
+        let mut s = BattleSpellSession::new(0, 0, &[0x12], &cat, 3, 0);
         assert!(!s.spells[0].affordable);
         s.input(press("c"), &cat, party3(), one_monster());
         // Stayed in the list (no target picker, no resolution).
         assert!(matches!(s.phase, SpellPhase::Select { .. }));
         assert!(s.resolved().is_none());
+    }
+
+    /// An MP-saver accessory (Half bit `0x20`) halves the displayed cost and
+    /// makes a spell whose RAW cost exceeds the caster's MP affordable — the
+    /// same reduced cost `World::cast_spell_on_slots` charges. Without the bit
+    /// the spell is unaffordable; with it, both the displayed cost and the
+    /// affordability flip.
+    #[test]
+    fn mp_saver_ability_bit_makes_pricey_spell_affordable() {
+        let cat = SpellCatalog::vanilla();
+        // Mega Heal (0x12, raw cost 12); caster has 7 MP.
+        let raw = BattleSpellSession::new(0, 0, &[0x12], &cat, 7, 0);
+        assert_eq!(raw.spells[0].mp_cost, 12);
+        assert!(!raw.spells[0].affordable, "raw 12 MP > 7 MP -> blocked");
+
+        // Half bit 0x20: effective cost 12 - (12 >> 1) = 6, now within 7 MP.
+        let half = BattleSpellSession::new(0, 0, &[0x12], &cat, 7, 0x20);
+        assert_eq!(
+            half.spells[0].mp_cost, 6,
+            "displayed cost reflects the charge"
+        );
+        assert!(
+            half.spells[0].affordable,
+            "an MP-saver makes the spell selectable"
+        );
+        // The cursor lands on the now-affordable row (not the row-0 fallback).
+        assert_eq!(half.menu_spell().map(|r| r.id), Some(0x12));
     }
 }
