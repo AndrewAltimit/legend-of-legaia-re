@@ -19,6 +19,21 @@
 //! PCSX-Redux capture standing in the Rim Elm Variety Store (its 10 ids match
 //! the curated shops table).
 //!
+//! ## `count` includes unsellable padding
+//!
+//! The `count` byte counts the purchasable stock **plus** a trailing run of
+//! unsellable, price-`0` *template* ids — commonly the "Ra-Seru Meta $N"
+//! placeholders `0x01/0x02/0x03`, or a lone `0x03`. The on-screen shop stops at
+//! the sellable run, so this tail is structural padding, not stock. The Rim Elm
+//! Variety Store that pinned the format happens to have a tail-less ten-item
+//! list, which is why the padding wasn't in the original capture. Across the
+//! whole disc every shop partitions cleanly — a leading run of price-`> 0` items
+//! then an unsellable tail (≤ 3 ids), never interleaved — and the priced prefix
+//! matches the curated walkthrough stock (e.g. "Market" decodes to 10 ids but
+//! sells 7). [`ShopRecord::sellable_count`] returns the priced-prefix length
+//! given the SCUS price table; the asset-`tests` cross-table sweep
+//! (`legaia_rando::cross_table_integrity_real`) pins the partition disc-wide.
+//!
 //! ## Locating sites safely
 //!
 //! Sites are found by **scanning** the decompressed MAN for the op-`0x49`
@@ -59,6 +74,25 @@ pub struct ShopRecord {
     pub id_offsets: Vec<usize>,
     /// The shop's on-screen name (decoded ASCII), for listings / audit.
     pub name: String,
+}
+
+impl ShopRecord {
+    /// The number of leading **purchasable** item ids — the real shop stock,
+    /// excluding the trailing unsellable template-id padding the record `count`
+    /// over-counts (see the module docs). `man` is the decoded MAN the offsets
+    /// index into; `is_priced` reports whether an id has a `> 0` `SCUS_942.54`
+    /// price (e.g. `|id| legaia_asset::item_names::price_slot(scus, id)
+    /// .is_some_and(|(_, p)| p > 0)`).
+    ///
+    /// The stock is the leading priced run: every shop on the disc partitions
+    /// cleanly into a priced prefix then an unsellable tail (verified disc-wide),
+    /// so the prefix length is the count the shop UI actually shows.
+    pub fn sellable_count(&self, man: &[u8], is_priced: impl Fn(u8) -> bool) -> usize {
+        self.id_offsets
+            .iter()
+            .take_while(|&&o| man.get(o).copied().is_some_and(&is_priced))
+            .count()
+    }
 }
 
 /// A scene MAN located + decompressed from a PROT entry, with its shop records.
@@ -206,6 +240,24 @@ mod tests {
             site.id_offsets.iter().map(|&o| man[o]).collect::<Vec<_>>(),
             vec![0x22, 0x34, 0x59]
         );
+    }
+
+    /// `sellable_count` counts the leading priced run and stops at the first
+    /// unsellable padding id (here `0x01/0x02/0x03`, like the real "Market").
+    #[test]
+    fn sellable_count_trims_unsellable_padding() {
+        // 7 priced ids then the 01 02 03 template padding, "Market\0".
+        let mut man = vec![0u8; 4];
+        let stock = [0xD3u8, 0xD4, 0x77, 0x78, 0x7C, 0x7F, 0x88];
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x0A]);
+        man.extend_from_slice(&stock);
+        man.extend_from_slice(&[0x01, 0x02, 0x03]);
+        man.extend_from_slice(b"Market\0");
+        let site = parse_record(&man, 4, None).expect("valid shop record");
+        assert_eq!(site.id_offsets.len(), 10, "count includes the padding");
+        // Priced predicate: the seven real ids, not 0x01/0x02/0x03.
+        let priced = |id: u8| stock.contains(&id);
+        assert_eq!(site.sellable_count(&man, priced), 7);
     }
 
     #[test]
