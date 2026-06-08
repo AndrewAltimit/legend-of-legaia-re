@@ -7017,6 +7017,38 @@ fn seed_party_battle_stats_skips_zeroed_roster() {
 }
 
 #[test]
+fn seed_party_battle_stats_scales_ap_base_with_level() {
+    use legaia_save::character::LiveStats;
+
+    let mut world = World::new();
+    let mut party = legaia_save::Party::zeroed(3);
+    // Slot 0 at level 1 (base 4), slot 1 at level 23 (base 6), slot 2 at
+    // level 99 (capped 10). A non-zero atk so the seed doesn't skip them.
+    for (slot, level) in [(0usize, 1u8), (1, 23), (2, 99)] {
+        party.members[slot].set_live_stats(LiveStats {
+            agl: 10,
+            atk: 20,
+            udf: 8,
+            ldf: 8,
+            spd: 5,
+            int: 4,
+        });
+        party.members[slot].set_level(level);
+    }
+    world.load_party(party);
+
+    world.seed_party_battle_stats();
+    assert_eq!(world.ap_gauges[0].base_ap, 4, "level 1 -> base 4");
+    assert_eq!(world.ap_gauges[1].base_ap, 6, "level 23 -> 4 + 23/10 = 6");
+    assert_eq!(world.ap_gauges[2].base_ap, 10, "level 99 -> capped at 10");
+
+    // The round-start reset picks up the seeded base as the per-turn budget.
+    world.reset_party_ap();
+    assert_eq!(world.ap_gauges[1].current_ap, 6);
+    assert_eq!(world.ap_gauges[2].current_ap, 10);
+}
+
+#[test]
 fn drain_pending_scripted_encounter_only_when_queued() {
     let mut world = World::new();
     world.set_formation_table(
