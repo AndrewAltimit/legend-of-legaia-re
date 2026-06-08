@@ -3324,6 +3324,11 @@ impl World {
         // For the snapshot we use the character_max_mp accessor (defaults
         // to `mp` itself when not separately tracked, which gives a
         // conservative "MP already capped" reading).
+        let status_mask = self
+            .status_effects
+            .statuses(target_slot)
+            .iter()
+            .fold(0u8, |m, s| m | crate::items::status_bit(s.kind));
         let snapshot = match self.actors.get(idx) {
             Some(a) => crate::items::TargetSnapshot {
                 hp: a.battle.hp,
@@ -3335,6 +3340,7 @@ impl World {
                     .copied()
                     .unwrap_or(a.battle.mp),
                 is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
+                status_mask,
             },
             None => return crate::items::ItemOutcome::NoEffect,
         };

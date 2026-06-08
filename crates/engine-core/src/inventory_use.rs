@@ -29,17 +29,8 @@
 //! actual key bindings (Z = Confirm, X = Cancel, arrows for navigation)
 //! lives in `crate::input` and is engine-side.
 
-use crate::items::{ItemCatalog, ItemEffect, ItemEntry, ItemOutcome, TargetSnapshot};
+use crate::items::{ItemCatalog, ItemEffect, ItemEntry, ItemOutcome, TargetSnapshot, status_bit};
 use legaia_engine_vm::status_effects::StatusKind;
-
-/// Bit position of a [`StatusKind`] in a [`TargetRow::status_mask`]. The
-/// `StatusKind` enum is fieldless, so its discriminant doubles as the bit
-/// index - the same compact per-target affliction set the retail menu
-/// usability check (`FUN_8003043c`) reads when it decides whether a cure
-/// item has any valid target.
-fn status_bit(kind: StatusKind) -> u8 {
-    1u8 << (kind as u8)
-}
 
 /// Where the session is being driven from. Filters which items show up
 /// (`usable_in_battle` vs `usable_in_field`) and which targets are
@@ -141,6 +132,7 @@ impl TargetRow {
             mp: self.mp,
             mp_max: self.mp_max,
             is_dead: !self.alive,
+            status_mask: self.status_mask,
         }
     }
 }

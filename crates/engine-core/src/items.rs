@@ -355,6 +355,13 @@ pub enum ItemOutcome {
     NoEffect,
 }
 
+/// Bit position of a [`StatusKind`] in a status bitset (the `StatusKind` enum
+/// is fieldless, so its discriminant is the bit index). Shared by
+/// [`TargetSnapshot::status_mask`] and the item-menu usability gate.
+pub(crate) fn status_bit(kind: StatusKind) -> u8 {
+    1u8 << (kind as u8)
+}
+
 /// Per-target snapshot the apply pass reads.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TargetSnapshot {
@@ -363,6 +370,16 @@ pub struct TargetSnapshot {
     pub mp: u16,
     pub mp_max: u16,
     pub is_dead: bool,
+    /// Bitset of [`StatusKind`]s afflicting the target (bit `status_bit(kind)`).
+    /// Cure effects read it to no-op when the relevant affliction is absent.
+    pub status_mask: u8,
+}
+
+impl TargetSnapshot {
+    /// `true` if `kind` currently afflicts the target.
+    pub fn has_status(&self, kind: StatusKind) -> bool {
+        self.status_mask & status_bit(kind) != 0
+    }
 }
 
 /// Apply an [`ItemEffect`] against a [`TargetSnapshot`]. Pure function;
@@ -393,8 +410,24 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
             let healed = target.mp_max.saturating_sub(target.mp);
             ItemOutcome::HealedMp { amount: healed }
         }
-        ItemEffect::Cure { kind } => ItemOutcome::Cured { kind },
-        ItemEffect::CureAll => ItemOutcome::CuredAll,
+        ItemEffect::Cure { kind } => {
+            // Curing an unafflicted target does nothing - report it honestly
+            // rather than a phantom "Cured" (matches the retail relevance
+            // predicate, which only treats a cure as applicable when the
+            // matching status is present).
+            if target.has_status(kind) {
+                ItemOutcome::Cured { kind }
+            } else {
+                ItemOutcome::NoEffect
+            }
+        }
+        ItemEffect::CureAll => {
+            if target.status_mask != 0 {
+                ItemOutcome::CuredAll
+            } else {
+                ItemOutcome::NoEffect
+            }
+        }
         ItemEffect::Revive { factor } => {
             if !target.is_dead {
                 return ItemOutcome::NoEffect;
@@ -428,6 +461,7 @@ mod tests {
             mp,
             mp_max,
             is_dead: false,
+            status_mask: 0,
         }
     }
 
@@ -438,6 +472,7 @@ mod tests {
             mp: 0,
             mp_max: 0,
             is_dead: true,
+            status_mask: 0,
         }
     }
 
@@ -506,8 +541,9 @@ mod tests {
     }
 
     #[test]
-    fn cure_just_passes_through_kind() {
-        let t = alive(50, 100, 0, 0);
+    fn cure_passes_through_kind_when_the_status_is_present() {
+        let mut t = alive(50, 100, 0, 0);
+        t.status_mask = status_bit(StatusKind::Poisoned);
         let r = apply_effect(
             ItemEffect::Cure {
                 kind: StatusKind::Poisoned,
@@ -519,6 +555,33 @@ mod tests {
             ItemOutcome::Cured {
                 kind: StatusKind::Poisoned
             }
+        );
+    }
+
+    #[test]
+    fn cure_is_a_no_op_when_the_status_is_absent() {
+        // Poisoned cure on a target afflicted only by Burned (and on a clean
+        // target) does nothing.
+        let mut t = alive(50, 100, 0, 0);
+        t.status_mask = status_bit(StatusKind::Burned);
+        let r = apply_effect(
+            ItemEffect::Cure {
+                kind: StatusKind::Poisoned,
+            },
+            &t,
+        );
+        assert_eq!(r, ItemOutcome::NoEffect);
+
+        let clean = alive(50, 100, 0, 0);
+        assert_eq!(
+            apply_effect(ItemEffect::CureAll, &clean),
+            ItemOutcome::NoEffect
+        );
+        let mut afflicted = alive(50, 100, 0, 0);
+        afflicted.status_mask = status_bit(StatusKind::Silenced);
+        assert_eq!(
+            apply_effect(ItemEffect::CureAll, &afflicted),
+            ItemOutcome::CuredAll
         );
     }
 
