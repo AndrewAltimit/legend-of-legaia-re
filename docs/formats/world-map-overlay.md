@@ -10,7 +10,11 @@
 > heterogeneous and the working interpretation is **a runtime library
 > of small object-local 3D meshes** the world-map renderer transforms
 > via the GTE and emits as GP0 primitive packets into the active scene
-> primitive pool.
+> primitive pool. A Drake warp capture pins this concretely: the slot-4
+> records are read **in place, per-frame**, by the world-map renderer
+> (`0x801F78D4`) + the SCUS cluster-A GTE prim path — there is **no
+> record → working-buffer transcode** (see
+> [Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture)).
 >
 > The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
 > tile the kingdom continent in the dev-menu top-view - is *not*
@@ -630,13 +634,38 @@ where cluster A reads the working buffer — NOT slot 4 directly. The
 high per-frame cluster-A hit counts (~2000 in 1800 frames) are
 procedural rendering volume, not slot-4 walks.
 
-The remaining open question is whether slot 4 ends up in
-`0x801BA000`-region (close to where cluster A reads per-frame, so
-maybe accessed via per-actor mesh-table indirection) or in some other
-region (so accessed via a different cluster-A entry path). A finer
-probe that arms Read bps on slot-4 RAM during the warp transition,
-plus Exec bps at `FUN_8001E54C`'s case-0 / case-1 / case-2 / case-12
-arms, would pin which chunks come from slot 4 and where they land.
+### Slot-4 is read IN PLACE — there is no transcode (Drake capture)
+
+The finer probe above was run: `scripts/pcsx-redux/autorun_slot4_source_map.lua`
+arms Read bps tiled across the Drake slot-4 RAM window
+(`0x8011A624 + k*0x800`) plus an Exec bp on the `FUN_8001E54C` streaming-chunk
+dispatcher, and drives the held-Up warp itself from the
+`drake_castle_to_worldmap` save. Result (365 captured rows):
+
+- **363 of the captured accesses are slot-4 reads by the renderer**, none a
+  copy. The faulting source addresses span almost the whole window
+  (`0x8011A624`..`0x80121E24`, 14 distinct tiled offsets, 8 of 16 read bps
+  hitting their per-bp cap — i.e. reads occur throughout the window, every
+  frame), and the live `a1`/`a2` registers at each read hold pointers *inside*
+  the slot-4 window (`0x8011A608`, `0x80121614`, `0x80121BF4`, …).
+- The read PCs are the SCUS cluster-A prim dispatcher's GTE mesh path
+  (`0x80044C70 = lw s5,0x10(a1); lhu s6,0xE(a1)` feeding `cop2`/GTE ops), and
+  the return addresses are **`0x801F78D4` (the world-map top-view overlay
+  renderer; 276 reads) and `0x8001BC8C` (the SCUS render path; 78 reads)**.
+- The `FUN_8001E54C` dispatcher fired only twice, and both times its data
+  pointer was `0x80184BD0` — **not** in the slot-4 window. So `FUN_8001E54C`
+  does not copy the slot-4 records.
+
+**So the slot-4 records are consumed in place as per-frame render geometry by
+the world-map renderer (`0x801F78D4` → cluster-A prim dispatcher `0x80043390`
+→ GTE mesh emit at `0x80044xxx`); there is no record → working-buffer
+transcode.** The working-buffer writes the earlier hunt saw (`FUN_80028158` at
+`0x801BA000`; `FUN_8001E54C` chunk copies) are *other* data streams — they
+never carried slot-4 pointers, exactly as that hunt already noted. This pins
+the long-open consumer and retires the "transcode" framing for slot 4. (Single
+Drake capture; the per-record `[x, y, z, attr]` field semantic — how each
+8-byte record drives the GTE prim — is the remaining piece, and a second
+kingdom would confirm the in-place read generalises.)
 
 ### Cluster-A caller (`FUN_8001ada4`)
 

@@ -30,13 +30,13 @@ Threads whose write-up is too long for a table cell keep a one-line row in the s
 
 ### Kingdom slot 4 — per-record semantic
 
-*Status:* open (next step = the transcode, not the handlers)
+*Status:* **consumer pinned — slot-4 is read in place, no transcode** (Drake capture); residual = the per-record field semantic
 
 The **consumer is fully decoded** ([`world-map-overlay.md`](../formats/world-map-overlay.md#cluster-a-internals)): `FUN_80043390` walks an 8-byte-header **command stream** (`kind` = bits 17–31, `count` = bits 0–15), tail-calling per-`kind` GTE primitive emitters (kinds 8–19 across 4 banks via the `0x8007657C` table; each reads two packed vertex indices per word `& 0x7FF8` into a vertex pool and emits a `POLY_F3/G3/G4/GT3/GT4` GP0 packet — dispatcher + the kind-12 flat-triangle handler spot-verified against `ghidra/scripts/funcs/{80043390,slot4_k12_bank0_80043658}.txt`).
 
-The handlers therefore **do not read the on-disk slot-4 records directly** — those are an 8-byte-record container (`kind ∈ {1,2,4}`, `marker 0x080C`) the scene-load streaming-chunk processor `FUN_8001E54C` distributes into the working buffer the handlers walk.
+**The handlers read the slot-4 RAM payload IN PLACE — there is no transcode.** A Drake warp capture (`scripts/pcsx-redux/autorun_slot4_source_map.lua`; 365 rows) shows 363 reads of the slot-4 window with the cluster-A GTE prim path (`0x80044C70 = lw …,0x10(a1); … andi …,0x7FF8`, the exact packed-vertex-index extraction) holding slot-4 pointers in `a1`/`a2` (`0x8011A608`, `0x80121614`, …), under return addresses `0x801F78D4` (the world-map top-view overlay renderer, 276 reads) and `0x8001BC8C` (SCUS render, 78). The streaming-chunk processor `FUN_8001E54C` fired only twice and on a non-slot-4 buffer (`0x80184BD0`). So the earlier "`FUN_8001E54C` distributes the slot-4 records into a working buffer the handlers walk" reading is **falsified**: the slot-4 sub-body payloads *are* the command stream + vertex pool, walked directly. (The working-buffer writers the prior hunt saw — `FUN_80028158` at `0x801BA000` — are unrelated procedural meshes, as that hunt already found.)
 
-**What would actually close it:** pin that transcode — arm Read bps on the slot-4 RAM window during the kingdom warp + Exec bps on `FUN_8001E54C`'s case-0/1/2/12 arms to map which on-disk bodies land where in the working-buffer command stream (the "Working-buffer writers" probe in the doc got partway). Re-deriving the handler decode is **not** needed; it is already documented.
+**Residual:** the per-record `[x, y, z, attr]` field semantic — how each 8-byte body word feeds the GTE prim — and confirming the in-place read across a second kingdom. The transcode question is closed (there is none).
 
 
 ### World-map walk-view continent ground render
