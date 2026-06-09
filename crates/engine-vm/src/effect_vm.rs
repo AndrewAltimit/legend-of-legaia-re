@@ -387,10 +387,13 @@ impl Pool {
     ///   3. Updates per-child interpolation state, emits OT primitives.
     ///
     /// Step 1 is high-confidence and ported here. Step 2 + 3 are inline
-    /// in the retail code; the port exposes [`EffectHost::advance_state`]
-    /// for engines to plug their state-transition logic into. This means
-    /// the port runs the per-frame slot iteration and the gating logic,
-    /// but the actual per-state work lives in the engine.
+    /// in the retail code; the port exposes two host hooks. The per-child
+    /// position integration (retail's drift that runs every frame
+    /// regardless of `state`) is [`EffectHost::accumulate_child_motion`],
+    /// called for every active slot before the state gate. The
+    /// `state == 0` script-transition work is [`EffectHost::advance_state`].
+    /// So the port runs the per-frame slot iteration + gating, motion drifts
+    /// every frame, and the script-state work lives in the engine.
     pub fn tick<H: EffectHost + ?Sized>(&mut self, host: &mut H) {
         for slot in 0..MAX_MASTER_SLOTS {
             // Snapshot the activeness up front; the host may compact the
@@ -399,6 +402,13 @@ impl Pool {
             if m.child_count == 0 {
                 continue;
             }
+
+            // Per-frame child-sprite motion runs FIRST, unconditionally, for
+            // every active slot - retail FUN_801E0088 integrates each child's
+            // position by its velocity in both the work loop and the
+            // wait-countdown branch, so billboards keep drifting during a
+            // wait state. Only the script advance below is `state`-gated.
+            host.accumulate_child_motion(slot, m);
 
             // State-byte countdown logic. Retail at 801e0130-801e015f:
             //   state = master[+0x03]
@@ -487,10 +497,26 @@ pub trait EffectHost {
     ) {
     }
 
+    /// Per-frame child-sprite motion integration for one active master
+    /// slot. Runs **every frame for every active slot, independent of the
+    /// master `state` byte** - the retail walker `FUN_801E0088` accumulates
+    /// each child's position (`child+0xc/+0x10/+0x14 += velocity * accel *
+    /// frame_delta`) in *both* the `state == 0` work loop and the
+    /// `state != 0` countdown else-branch (`overlay_battle_801e0088.txt`,
+    /// the two `*(int *)(pcVar7 + 0xc) = ... + ...` blocks). Only the
+    /// *script advance* (the next-state read) is gated on `state == 0`; the
+    /// position drift is not. So a child billboard keeps moving while its
+    /// effect is in a "wait" state - this hook is what reproduces that drift
+    /// (gating it behind [`advance_state`] froze waiting effects). Default
+    /// no-op for hosts that don't render child motion.
+    fn accumulate_child_motion(&mut self, _slot: usize, _master: &mut MasterSlot) {}
+
     /// Per-frame state advance for one active master slot. Engines do
-    /// whatever per-effect work they have (read the next state byte,
-    /// interpolate child positions, emit GPU primitives, decrement
-    /// counters) and return [`StateOutcome`] describing the lifecycle.
+    /// whatever per-effect *script* work they have (read the next state
+    /// byte, emit GPU primitives, decrement counters) and return
+    /// [`StateOutcome`] describing the lifecycle. Called only when the
+    /// master `state` byte is `0` (the per-frame position integration that
+    /// runs regardless of `state` lives in [`accumulate_child_motion`]).
     /// Default impl just terminates the slot - useful for engines that
     /// haven't wired the renderer yet.
     fn advance_state(&mut self, _slot: usize, _master: &mut MasterSlot) -> StateOutcome {
@@ -870,6 +896,7 @@ mod tests {
         HandleSummon(u8, [i16; 3], u16),
         ChildOffset(usize, u8, i16, i16),
         AdvanceState(usize),
+        ChildMotion(usize),
     }
 
     impl EffectHost for RecHost {
@@ -892,6 +919,10 @@ mod tests {
         fn assign_child_random_offset(&mut self, slot: usize, child_idx: u8, dx: i16, dz: i16) {
             self.events
                 .push(HostEvent::ChildOffset(slot, child_idx, dx, dz));
+        }
+
+        fn accumulate_child_motion(&mut self, slot: usize, _m: &mut MasterSlot) {
+            self.events.push(HostEvent::ChildMotion(slot));
         }
 
         fn advance_state(&mut self, slot: usize, _m: &mut MasterSlot) -> StateOutcome {
@@ -1048,8 +1079,9 @@ mod tests {
 
         // State < 8 → goes to 0 in one tick (retail clears, doesn't decrement).
         assert_eq!(pool.master_slots[0].state, 0);
-        // No advance_state - slot was waiting.
-        assert!(host.events.is_empty());
+        // No advance_state (slot was waiting) - but child motion still
+        // integrates every frame, even during the wait (C-EFXANIM).
+        assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
     }
 
     #[test]
@@ -1063,7 +1095,8 @@ mod tests {
 
         // State >= 8 → state -= 8.
         assert_eq!(pool.master_slots[0].state, 8);
-        assert!(host.events.is_empty());
+        // Waiting slot: motion integrates, but no script advance.
+        assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
     }
 
     #[test]
@@ -1077,7 +1110,11 @@ mod tests {
 
         pool.tick(&mut host);
 
-        assert_eq!(host.events, vec![HostEvent::AdvanceState(0)]);
+        // Motion integrates first, then the state==0 script advance fires.
+        assert_eq!(
+            host.events,
+            vec![HostEvent::ChildMotion(0), HostEvent::AdvanceState(0)]
+        );
         // Slot still active.
         assert_eq!(pool.master_slots[0].child_count, 1);
     }
@@ -1136,12 +1173,43 @@ mod tests {
 
         pool.tick(&mut host);
 
+        // Each active slot integrates motion then advances its state, in
+        // slot order.
         let want = vec![
+            HostEvent::ChildMotion(0),
             HostEvent::AdvanceState(0),
+            HostEvent::ChildMotion(7),
             HostEvent::AdvanceState(7),
+            HostEvent::ChildMotion(31),
             HostEvent::AdvanceState(31),
         ];
         assert_eq!(host.events, want);
+    }
+
+    /// C-EFXANIM regression: a waiting slot (`state != 0`) still integrates
+    /// child motion every frame - retail `FUN_801E0088` runs the per-child
+    /// position accumulation in its wait-countdown branch, not just the
+    /// `state == 0` work loop. The hook must fire while `advance_state` stays
+    /// gated, so a billboard keeps drifting during a wait instead of freezing.
+    #[test]
+    fn child_motion_runs_during_wait_state_but_advance_does_not() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+        host.advance_outcomes = vec![StateOutcome::Continue];
+
+        pool.master_slots[0].child_count = 1;
+        pool.master_slots[0].state = 16; // waiting (>= 8)
+
+        pool.tick(&mut host);
+
+        assert!(
+            host.events.contains(&HostEvent::ChildMotion(0)),
+            "child motion must integrate during a wait state"
+        );
+        assert!(
+            !host.events.contains(&HostEvent::AdvanceState(0)),
+            "script advance must stay gated on state == 0"
+        );
     }
 
     /// Pool exhaustion: spawning into a fully-occupied pool returns `None`.
@@ -1207,25 +1275,36 @@ mod tests {
         pool.master_slots[0].child_count = 1;
         pool.master_slots[0].state = 24;
 
+        // Each wait tick integrates motion but never advances the script.
         // After tick: 24 → 16. No advance_state.
         pool.tick(&mut host);
         assert_eq!(pool.master_slots[0].state, 16);
-        assert!(host.events.is_empty(), "advance_state called too early");
+        assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
+        assert!(
+            !host.events.contains(&HostEvent::AdvanceState(0)),
+            "advance_state called too early"
+        );
+        host.events.clear();
 
         // After tick: 16 → 8.
         pool.tick(&mut host);
         assert_eq!(pool.master_slots[0].state, 8);
-        assert!(host.events.is_empty());
+        assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
+        host.events.clear();
 
         // After tick: 8 → 0 (still NOT a work tick - saturates).
         pool.tick(&mut host);
         assert_eq!(pool.master_slots[0].state, 0);
-        assert!(host.events.is_empty());
+        assert_eq!(host.events, vec![HostEvent::ChildMotion(0)]);
+        host.events.clear();
 
-        // After tick: state==0 → advance_state fires.
+        // After tick: state==0 → motion + script advance both fire.
         host.advance_outcomes = vec![StateOutcome::Continue];
         pool.tick(&mut host);
-        assert_eq!(host.events, vec![HostEvent::AdvanceState(0)]);
+        assert_eq!(
+            host.events,
+            vec![HostEvent::ChildMotion(0), HostEvent::AdvanceState(0)]
+        );
     }
 
     #[test]
