@@ -398,4 +398,39 @@ mod tests {
         let dst = FIRST_GROUP_DESCRIPTOR_OFFSET + 5 * GROUP_DESCRIPTOR_BYTES;
         assert_eq!(g[dst], 10);
     }
+
+    #[test]
+    fn apply_adds_no_objects() {
+        // `FUN_8001EBEC` only copies a 28-byte transform over an existing
+        // group; it never grows the object/group count. The runtime `nobj`
+        // +2 (15->17) seen in battle comes from a *different* (still-unpinned)
+        // loader — D-WEAP — not from this swap. Pin that here so the doc claim
+        // can't silently drift back to "the equipment swap adds the +2 groups".
+        let mut tmd = Vec::new();
+        tmd.extend_from_slice(&0x8000_0002u32.to_le_bytes()); // magic
+        tmd.extend_from_slice(&1u32.to_le_bytes()); // flags
+        tmd.extend_from_slice(&12u32.to_le_bytes()); // group_count
+        for g in 0u8..12 {
+            tmd.extend_from_slice(&[g; GROUP_DESCRIPTOR_BYTES]);
+        }
+        let before_len = tmd.len();
+        let before_count = u32::from_le_bytes(tmd[0x08..0x0C].try_into().unwrap());
+
+        let out = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[0], 1);
+
+        // Buffer length unchanged, and the group_count word at +0x08 is untouched.
+        assert_eq!(out.len(), before_len, "swap must not resize the TMD");
+        let after_count = u32::from_le_bytes(out[0x08..0x0C].try_into().unwrap());
+        assert_eq!(
+            after_count, before_count,
+            "swap must not change the object/group count"
+        );
+        // Exactly one group descriptor's worth of bytes may differ (the patched
+        // group); everything outside it is byte-identical.
+        let diff_bytes = tmd.iter().zip(&out).filter(|(a, b)| a != b).count();
+        assert!(
+            diff_bytes <= GROUP_DESCRIPTOR_BYTES,
+            "swap touched {diff_bytes} bytes; should be within one 0x1C group descriptor"
+        );
+    }
 }
