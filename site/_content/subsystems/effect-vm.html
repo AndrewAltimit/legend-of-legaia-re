@@ -79,13 +79,13 @@
   </dl>
   <p>Streams two specific runtime-only files via <code>FUN_800558FC</code>:</p>
   <table>
-    <thead><tr><th>File</th><th>PROT</th><th>Trigger</th></tr></thead>
+    <thead><tr><th>File</th><th>Trigger</th></tr></thead>
     <tbody>
-      <tr><td><code>data\battle\summon.dat</code></td><td><code>0x37F</code></td><td>Selected when <code>_DAT_8007BD24[0x26B] &amp; 0x80 != 0</code></td></tr>
-      <tr><td><code>data\battle\readef.dat</code></td><td><code>0x380</code></td><td>Opposite branch</td></tr>
+      <tr><td><code>data\battle\summon.dat</code></td><td>Selected when <code>_DAT_8007BD24[0x26B] &amp; 0x80 != 0</code></td></tr>
+      <tr><td><code>data\battle\readef.dat</code></td><td>Opposite branch</td></tr>
     </tbody>
   </table>
-  <p class="hint">Format unverified; may share the 2-pack layout but not yet confirmed.</p>
+  <p class="hint">Format not yet decoded, and the PROT entry these dev paths map to is unpinned: the earlier "summon.dat = PROT <code>0x37F</code> / readef.dat = PROT <code>0x380</code>" reading is falsified (895/896 are the boot init pak and the contested mode-24 overlay; the <code>0879..=0890</code> band is all <code>VABp</code> sound banks). The real entry is resolved at runtime by the path builder feeding <code>0x801F17F8</code>.</p>
 </section>
 
 <section class="doc-section" id="effect-id-mapping">
