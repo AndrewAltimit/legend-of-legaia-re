@@ -30,9 +30,12 @@
 //! record** in the same format the player Seru-magic summons use
 //! (`legaia_asset::summon_overlay`, staged by `FUN_80021B04` → the ported move
 //! VM, with `model_sel` indexing the `DAT_8007C018` TMD pool). The `gp[0x754]`
-//! additive base for `model_sel` is live-captured = 3 in battle (a move-FX
-//! `FUN_80021B04` spawn), so a battle move-FX mesh is `DAT_8007C018[model_sel + 3]`
-//! — the resident PROT 0871 effect-model library. [`crate::world::World::spawn_move_fx`]
+//! additive base for `model_sel` is `party_count + 2` in battle (3 for the
+//! 1-member party, 5 for the full 3-member party; save-corpus-pinned by
+//! `crates/mednafen/tests/summon_model_base.rs`), and `model_sel` is
+//! library-relative — so a battle move-FX mesh is the resident PROT 0871
+//! effect-model library, which the engine registers at a fixed
+//! `DAT_8007C018[3..]` (the equivalent 1-member layout). [`crate::world::World::spawn_move_fx`]
 //! renders it: it parses a move's spawn records and stages them as a
 //! [`crate::summon::SummonScene`] at that base, driven through the move VM
 //! ([`crate::world::World::tick_move_fx`] / `active_move_fx_part_draws`). The

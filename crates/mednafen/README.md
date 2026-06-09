@@ -71,6 +71,12 @@ This crate exists to make that workflow scriptable.
 - CLI binary for the per-PR manual workflow.
 - Disc-gated integration tests under `tests/real_saves.rs` skip cleanly
   when `LEGAIA_MEDNAFEN_DIR` is unset.
+- Library-gated save oracles that pin a runtime invariant against the
+  content-hashed backup corpus (`saves/library/mednafen/`, resolved via each
+  scenario's `backup_fingerprint`) and skip-pass when the corpus is absent —
+  e.g. `tests/training_formation.rs` (the lone-Tetsu formation cell) and
+  `tests/summon_model_base.rs` (the battle effect-model-library base
+  `gp[0x754] = party_count + 2`).
 
 ## Sony-IP boundaries
 
