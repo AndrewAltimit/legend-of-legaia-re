@@ -191,19 +191,24 @@ Type-sequence variants (count=7 unless noted):
 
 Sizes ~60 KB to ~452 KB.
 
-Reading:
+### Slot→asset mapping (the runtime walk)
+
+The mapping is **positional + offset-based** — there is no separate indirection table; the descriptor's `data_offset` field *is* the indirection. The runtime walker `FUN_80020224` reads `count = *base`, then for each `slot` dispatches `asset_type_dispatch(base + descriptor[slot].data_offset, type_size, …)` with descriptors at `base + 8 + slot*8` (stride 8 bytes). So slot `i` is the `i`-th 8-byte descriptor; its payload starts at `base + data_offset` and its handler is keyed by `type_size >> 24`. The full three-function chain (buffer allocation at `FUN_8001E1B4` → file load at `FUN_8001F7C0` → walk at `FUN_80020224` → dispatch at `FUN_8001F05C`) is pinned under the [asset-loader subsystem](../subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224--the-slotasset-mapping).
+
+`scene_asset_table::resolve` returns the table plus the base it is relative to, covering **both** the bare variant (base 0) and the prescript-prefixed `scene_scripted_asset_table` variant (base at the post-prescript 0x800-aligned offset); `SceneAssetTable::slots` reproduces the positional walk and `payload_range(slot, base)` resolves a slot's payload span:
 
 ```rust
 use legaia_asset::scene_asset_table;
-if let Some(t) = scene_asset_table::detect(buf) {
-    for (i, d) in t.descriptors.iter().enumerate() {
-        println!("desc[{}]: type={:#04x} size={} off={:#x}",
-                 i, d.type_byte, d.size, d.data_offset);
+if let Some(r) = scene_asset_table::resolve(buf) {
+    for s in r.table.slots() {
+        let span = r.table.payload_range(s.slot, r.table_base).unwrap();
+        println!("slot {}: {} size={} payload@{:#x}..{:#x}",
+                 s.slot, s.asset_type.name(), s.size, span.start, span.end);
     }
 }
 ```
 
-The runtime consumer is the field-loader chain documented under the [asset-loader subsystem](../subsystems/asset-loader.md): `FUN_8001F7C0` + `FUN_800255B8` plus the dispatcher at `FUN_8001F05C` consumes each descriptor pair after LZS-decoding the payload region into a working buffer.
+A disc-gated corpus test (`scene_asset_table_walk_real`) verifies this walk against every classified entry (88 bare + 79 scripted): the first slot anchors at `base + header_end` and every slot's type is a legal dispatcher type. The relocation of the loaded file into the asset buffer (`_DAT_8007b85c`) and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static `resolve` reconstructs the base structurally.
 
 ## scene_scripted_asset_table - scripted prefix + canonical bundle
 

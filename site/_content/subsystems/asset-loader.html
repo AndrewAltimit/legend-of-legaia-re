@@ -69,9 +69,9 @@
 
   <p>Each scene reserves <strong>six file types</strong> in CDNAME's per-scene block, and the loader walks the scene asset table at the leading PROT entry to pull each file in turn. The on-disc form is the canonical 7-typed-asset bundle (<code>07 00 00 00</code> lead).</p>
 
-  <p>The descriptor offsets past the first are <strong>not file-relative</strong> - they index into the loader's runtime decompression buffer. For example, <code>0031_izumi.BIN</code> is 96&nbsp;KB but <code>desc[2].data_offset = 141&nbsp;KB</code> lands inside the <em>decompressed</em> working buffer, not the source file.</p>
+  <p>The descriptor offsets past the first are <strong>file-relative against the loaded raw footprint</strong> (= the bundle entry's extended on-disc footprint, <code>Archive::read_entry</code>), not relative to a decompressed working buffer: the walker hands <code>base + data_offset</code> to the dispatcher as the <em>source</em> of an independent LZS stream, which it then decompresses into a separate target. The offsets routinely run past the TOC-indexed end into the trailing-overlay sectors the per-PROT TOC crops off &mdash; e.g. <code>0588_juui1.BIN</code>'s indexed view is 67584&nbsp;B but <code>desc[4].data_offset</code> is 177413, valid against the 186368&nbsp;B extended footprint.</p>
 
-  <p>Per-scene reference resolution is partial - many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain shape is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher", but the precise indexing scheme is still under investigation for non-battle scenes.</p>
+  <p>The asset chain shape is "load the scene asset table, walk each descriptor, then load each typed sub-asset via the dispatcher". The slot&rarr;asset mapping itself is <strong>positional + offset-based</strong> and fully pinned (see the descriptor-walker section below); what remains partial is the runtime <em>cross-reference stitching</em> between already-loaded sub-assets (e.g. a placed actor in the MAN naming a TMD-pack index), which the loader resolves from live pointers.</p>
 </section>
 
 <section class="doc-section" id="warp-flow">
@@ -108,6 +108,15 @@
     <dt>Result stored at</dt><dd><code>0x80087AF8</code></dd>
   </dl>
   <p>Walks the asset descriptor format and calls the asset-type dispatcher per descriptor. So the walker IS exercised by retail gameplay, just not from a static call site inside <code>SCUS_942.54</code>.</p>
+
+  <p>The mapping is <strong>positional</strong> &mdash; there is no separate slot&rarr;asset indirection table; the descriptor's <code>data_offset</code> field <em>is</em> the indirection. The chain, traced from the field init at <code>FUN_801D6704</code>:</p>
+  <ol>
+    <li><strong><code>FUN_8001E1B4</code></strong> allocates a single 0x62C00-byte asset buffer once at boot and stores its base at <code>_DAT_8007b85c</code>.</li>
+    <li><strong><code>FUN_8001F7C0</code></strong> reads the per-scene field FILE into a 0x14000-byte scratch (<code>_DAT_1f8003ec</code>); the decoded table is relocated so its count word lands at the asset-buffer base.</li>
+    <li><strong><code>FUN_80020224</code></strong> reads <code>count = *base</code>, then for <code>slot in 0..count</code> calls <code>dispatch(base + descriptor[slot].data_offset, type_size, …)</code>, descriptors at <code>base + 8 + slot*8</code>, OR-ing the per-slot return codes into a status word.</li>
+    <li><strong><code>FUN_8001F05C</code></strong> splits <code>type = type_size &gt;&gt; 24</code> and <code>size = type_size &amp; 0x00FF_FFFF</code>, then jumps via the table at <code>0x80010638 + type*4</code> (type bound <code>&lt; 0x15</code>).</li>
+  </ol>
+  <p>So <strong>slot <code>i</code> &rArr; the <code>i</code>-th 8-byte descriptor; payload at <code>base + data_offset</code>; handler keyed by <code>type_size &gt;&gt; 24</code>.</strong> <code>scene_asset_table::resolve</code> returns the table plus the base it is relative to for both the bare variant (base 0) and the prescript-prefixed scripted variant (base at a 0x800-aligned offset past the event prescript); <code>SceneAssetTable::slots</code> reproduces the walk and <code>payload_range(slot, base)</code> resolves a slot's payload span. A disc-gated corpus test (<code>scene_asset_table_walk_real</code>) verifies the walk against every classified entry (88 bare + 79 scripted). The file relocation into <code>_DAT_8007b85c</code> and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static resolver reconstructs the base structurally.</p>
 </section>
 
 <section class="doc-section" id="clut-scattering">

@@ -73,6 +73,44 @@
 //! "named"; the strict 7-asset detector simply gives them a more accurate
 //! semantic class).
 //!
+//! ### Runtime walk - the slot to asset mapping
+//!
+//! The mapping is **positional + offset-based**; there is no separate
+//! slot-to-asset indirection table. The per-scene field init at
+//! `FUN_801D6704` drives a three-function chain:
+//!
+//! 1. `per_stage_init` (`FUN_8001E1B4`) allocates a single 0x62C00-byte asset
+//!    buffer once and stores its base at `_DAT_8007b85c`.
+//! 2. `field_asset_loader` (`FUN_8001F7C0`) reads the per-scene field FILE into
+//!    a 0x14000-byte scratch (`_DAT_1f8003ec`); the decoded table is relocated
+//!    so the count word lands at the asset-buffer base `_DAT_8007b85c`.
+//! 3. `descriptor_pair_walker` (`FUN_80020224`) walks the table:
+//!
+//!    ```text
+//!    base   = _DAT_8007b85c          ; table base (count word at +0)
+//!    count  = *base                  ; first u32
+//!    for slot in 0..count:
+//!        desc      = base + 8 + slot*8        ; stride 8 bytes (2 words)
+//!        type_size = desc[0]                  ; (type<<24)|size_24
+//!        data_off  = desc[1]                  ; relative to `base`
+//!        asset_type_dispatch(base + data_off, type_size, scene, 0)
+//!        status |= return
+//!    ```
+//!
+//! 4. `asset_type_dispatch` (`FUN_8001F05C`) splits `type = type_size >> 24`
+//!    and `size = type_size & 0x00FF_FFFF`, then jumps via the dispatch table
+//!    at `0x80010638 + type*4` (type bound: `< 0x15`).
+//!
+//! So **slot `i` is purely the `i`-th 8-byte descriptor**, its payload starts
+//! at `base + data_offset`, and its handler is selected by `type_size`'s high
+//! byte. [`SceneAssetTable::slots`] reproduces this walk and
+//! [`SceneAssetTable::payload_range`] resolves a slot's payload span against a
+//! caller-supplied base. The relocation into `_DAT_8007b85c` and the exact
+//! base handed to the walker for the prescript-prefixed
+//! [`crate::scene_scripted_asset_table`] variant are runtime values (the
+//! capture-blocked residual); [`resolve`] gives callers the same
+//! base-relative walk for both variants by computing the table base statically.
+//!
 //! See `docs/formats/scene-bundles.md` for the full byte-level spec.
 
 use serde::Serialize;
@@ -164,6 +202,100 @@ impl SceneAssetTable {
     pub fn descriptor_index(&self, ty: u8) -> Option<usize> {
         self.used().iter().position(|d| d.type_byte == ty)
     }
+
+    /// The positional slot-to-asset mapping exactly as the runtime walker
+    /// (`descriptor_pair_walker`, `FUN_80020224`) dispatches it: one
+    /// [`SlotMapping`] per populated descriptor, in declaration order. Slot
+    /// `i` is the `i`-th 8-byte descriptor; its handler is keyed by the
+    /// `type_byte` and its payload lives at `table_base + data_offset` (see
+    /// [`payload_range`](Self::payload_range)).
+    pub fn slots(&self) -> impl Iterator<Item = SlotMapping> + '_ {
+        self.used().iter().enumerate().map(|(slot, d)| SlotMapping {
+            slot,
+            type_byte: d.type_byte,
+            asset_type: d.asset_type(),
+            size: d.size,
+            data_offset: d.data_offset,
+        })
+    }
+
+    /// Byte span of slot `index`'s payload, relative to the table base the
+    /// runtime walks (the count word's address). This mirrors the walker's
+    /// `asset_type_dispatch(base + data_offset, size, ...)` call: the payload
+    /// starts at `table_base + data_offset` and is `size` bytes of declared
+    /// (decompressed) content.
+    ///
+    /// `size` is the *decompressed* byte count, so for an LZS-payload slot the
+    /// returned range is the logical asset size, not the compressed extent on
+    /// disc - use the range's start as the stream anchor and decode from there.
+    /// Returns `None` for an out-of-range slot.
+    pub fn payload_range(
+        &self,
+        index: usize,
+        table_base: usize,
+    ) -> Option<core::ops::Range<usize>> {
+        let d = self.used().get(index)?;
+        let start = table_base.checked_add(d.data_offset as usize)?;
+        let end = start.checked_add(d.size as usize)?;
+        Some(start..end)
+    }
+}
+
+/// One slot's positional mapping as walked by `descriptor_pair_walker`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SlotMapping {
+    /// Positional slot index (= descriptor index).
+    pub slot: usize,
+    /// Raw type byte (high byte of the descriptor's `type_size` word).
+    pub type_byte: u8,
+    /// Decoded asset type the dispatcher selects for this slot.
+    pub asset_type: AssetType,
+    /// Declared (decompressed) payload size in bytes.
+    pub size: u32,
+    /// Payload offset relative to the table base (`base + data_offset`).
+    pub data_offset: u32,
+}
+
+/// A scene asset table plus the byte offset of its table base inside the PROT
+/// entry buffer. Produced by [`resolve`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedAssetTable {
+    /// Offset of the count word inside the entry buffer. `0` for a bare
+    /// [`detect`] table; the post-prescript 0x800-aligned offset for the
+    /// [`crate::scene_scripted_asset_table`] variant.
+    pub table_base: usize,
+    /// The decoded table. Its `data_offset` fields are relative to
+    /// `table_base`, matching the runtime walk.
+    pub table: SceneAssetTable,
+}
+
+/// Resolve a PROT entry to the scene asset table the runtime would walk,
+/// covering **both** the bare table (count word at offset 0) and the
+/// prescript-prefixed [`crate::scene_scripted_asset_table`] variant (count
+/// word at a 0x800-aligned offset past the event prescript).
+///
+/// This is the single entry point that answers "given this scene bundle, what
+/// is the slot-to-asset mapping?" for the ~5% of PROT entries the
+/// `SceneAssetTable` / `SceneScriptedAssetTable` classifiers fire on. The
+/// returned [`ResolvedAssetTable::table_base`] is the base the positional
+/// walk ([`SceneAssetTable::slots`] / [`SceneAssetTable::payload_range`]) is
+/// relative to.
+pub fn resolve(buf: &[u8]) -> Option<ResolvedAssetTable> {
+    // Bare table at offset 0 (the common case).
+    if let Some(table) = detect(buf) {
+        return Some(ResolvedAssetTable {
+            table_base: 0,
+            table,
+        });
+    }
+    // Prescript-prefixed variant: the table sits at a 0x800-aligned offset.
+    let scripted = crate::scene_scripted_asset_table::detect(buf)?;
+    let base = scripted.asset_table_offset;
+    let table = detect(buf.get(base..)?)?;
+    Some(ResolvedAssetTable {
+        table_base: base,
+        table,
+    })
 }
 
 /// Encode a descriptor `(type<<24)|size` word from its parts. Companion to the
@@ -182,6 +314,14 @@ pub struct DescriptorRecord {
     pub size: u32,
     /// Byte offset within the file where the payload starts.
     pub data_offset: u32,
+}
+
+impl DescriptorRecord {
+    /// Decoded asset type the dispatcher (`FUN_8001F05C`) selects for this
+    /// descriptor's `type_byte`.
+    pub fn asset_type(&self) -> AssetType {
+        AssetType::from_byte(self.type_byte)
+    }
 }
 
 /// Try to detect a scene asset table. Returns `None` when the buffer doesn't
@@ -412,6 +552,77 @@ mod tests {
     fn rejects_random_bytes() {
         let buf: Vec<u8> = (0..=255u8).cycle().take(0x100).collect();
         assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn slots_reproduce_positional_walk() {
+        // The walk is positional: slot i is the i-th descriptor; payload at
+        // base + data_offset; type from the high byte. Mirror FUN_80020224.
+        let buf = synth([1, 2, 3, 4, 5, 6, 7], 0x10000);
+        let s = detect(&buf).expect("detect");
+        let slots: Vec<_> = s.slots().collect();
+        assert_eq!(slots.len(), 7);
+        // First descriptor's payload anchors at the byte past the header.
+        assert_eq!(slots[0].slot, 0);
+        assert_eq!(slots[0].data_offset, header_end(7));
+        assert_eq!(slots[0].asset_type, AssetType::TimList);
+        assert_eq!(slots[4].asset_type, AssetType::Move);
+        // Descriptor offsets advance by each declared size (synth uses 0x100).
+        assert_eq!(slots[1].data_offset, header_end(7) + 0x100);
+    }
+
+    #[test]
+    fn payload_range_is_base_relative() {
+        let buf = synth([1, 2, 3, 4, 5, 6, 7], 0x10000);
+        let s = detect(&buf).expect("detect");
+        // With table base 0, slot 0's payload is [0x40, 0x40+0x100).
+        let r0 = s.payload_range(0, 0).expect("slot 0");
+        assert_eq!(r0, 0x40..0x140);
+        // A non-zero base (the scripted variant) shifts every payload.
+        let r0b = s.payload_range(0, 0x800).expect("slot 0 @ base 0x800");
+        assert_eq!(r0b, 0x840..0x940);
+        // Out-of-range slot.
+        assert!(s.payload_range(7, 0).is_none());
+    }
+
+    #[test]
+    fn resolve_handles_bare_table_at_offset_zero() {
+        let buf = synth([1, 2, 3, 4, 5, 6, 7], 0x10000);
+        let r = resolve(&buf).expect("resolve bare");
+        assert_eq!(r.table_base, 0);
+        assert_eq!(r.table.count, 7);
+        // payload_range against the resolved base lands inside the entry.
+        let span = r.table.payload_range(0, r.table_base).unwrap();
+        assert_eq!(span.start, 0x40);
+    }
+
+    #[test]
+    fn resolve_handles_prescript_prefixed_variant() {
+        // Build a scripted scene-asset-table via the sibling module's synth
+        // path: prescript at 0, table at the next 0x800 boundary.
+        use crate::scene_scripted_asset_table;
+        let inner = synth([1, 2, 3, 4, 5, 6, 7], 0x200);
+        // Hand-assemble a [u16 count=1][u16 off=4][record...] prescript, pad
+        // to 0x800, then append the bare table.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&1u16.to_le_bytes()); // count
+        buf.extend_from_slice(&4u16.to_le_bytes()); // offsets[0] = 2 + 1*2
+        buf.extend_from_slice(&[0xFF, 0xFF, 0x00, 0x00]); // one record body
+        buf.resize(0x800, 0);
+        buf.extend_from_slice(&inner);
+
+        // The sibling detector must agree the table is at 0x800.
+        let scripted = scene_scripted_asset_table::detect(&buf).expect("scripted detect");
+        assert_eq!(scripted.asset_table_offset, 0x800);
+
+        let r = resolve(&buf).expect("resolve scripted");
+        assert_eq!(r.table_base, 0x800);
+        assert_eq!(r.table.count, 7);
+        // The first slot's payload is base-relative: 0x800 + 0x40.
+        let span = r.table.payload_range(0, r.table_base).unwrap();
+        assert_eq!(span.start, 0x840);
+        // And the byte at that offset is real table payload, not prescript.
+        assert!(span.start < buf.len());
     }
 
     #[test]
