@@ -233,6 +233,16 @@ is the tie-breaker when the two disagree:
   So the disc is the raw ground truth; the test pins all nine fields across 120+
   enemies. See [`monster-animation.md`](../formats/monster-animation.md) and
   `legaia_asset::monster_archive`.
+- `magic_vs_disc` — joins `magic.toml` to the static spell table in
+  `SCUS_942.54` (`legaia_asset::spell_names`) by spell name. All **21** Seru
+  spells (ids `0x81..=0x95`) and **7** of the 8 Ra-Seru summons (`0x9a..=0xa0`;
+  the hidden `Juggernaut` isn't in the contiguous named region) name-join, and
+  every one's **MP cost is byte-exact** against the disc `+2…+3` record. Target
+  shape (`+2` byte) agrees for all joins except the revive Ra-Seru `Horn` /
+  "Resurrector", whose byte is enemy-side though the effect revives all allies
+  (checked explicitly). The oracle pinned one curated target error — `Mushura` /
+  "Crazy Driver" is single-enemy, not all-enemies — corrected to the disc value.
+  See [`spell-table.md`](../formats/spell-table.md).
 
 ## Library API
 
