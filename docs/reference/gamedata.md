@@ -208,6 +208,22 @@ Run with `cargo test -p legaia-gamedata`. Enforced rules:
 - Every item `category` is one of `consumable` / `permanent_stat`
   / `key` / `art_book` / `fishing_lure`.
 
+### Disc-gated cross-checks (skip when `extracted/SCUS_942.54` is absent)
+
+These validate the curated tables against the real executable, so the disc
+is the tie-breaker when the two disagree:
+
+- `item_prices_vs_disc` — every priced weapon / armor / accessory whose name
+  resolves to a disc item id has a curated `price` equal to the authoritative
+  `SCUS` shop-price field (the `u16` at `+2` of the item-property record). 119+
+  cross-checks, **zero** mismatches. This oracle pinned three walkthrough price
+  errors that were corrected to the disc values (Forest / Magic Amulet
+  4000→2000, Evil Medallion 9998→9999).
+- `equip_slots_vs_disc` — the disc equip-stat table's four `+7` slot categories
+  map name-exactly to the four gamedata armour/weapon slots (body 20, head 15,
+  footwear 16), and none of the 77 accessories appear in that table (they are a
+  separate system). See [`equipment-table.md`](../formats/equipment-table.md).
+
 ## Library API
 
 ```rust

@@ -265,7 +265,9 @@ status = "venom_toxic"
 [[accessory]]
 key = "forest_amulet"
 name = "Forest Amulet"
-price = 4000
+# Disc-corrected: the SCUS item-property `+2` price field reads 2000 (the
+# walkthrough's 4000 is wrong). Pinned by `item_prices_vs_disc`.
+price = 2000
 effect = "Protects against Rot."
 effect_class = "protect_status"
 status = "rot"
@@ -273,7 +275,9 @@ status = "rot"
 [[accessory]]
 key = "magic_amulet"
 name = "Magic Amulet"
-price = 4000
+# Disc-corrected: the SCUS item-property `+2` price field reads 2000 (the
+# walkthrough's 4000 is wrong). Pinned by `item_prices_vs_disc`.
+price = 2000
 effect = "Protects against Curse."
 effect_class = "protect_status"
 status = "curse"
@@ -556,7 +560,9 @@ effect_class = "ignore_defense"
 [[accessory]]
 key = "evil_medallion"
 name = "Evil Medallion"
-price = 9998
+# Disc-corrected: the SCUS item-property `+2` price field reads 9999 (the
+# walkthrough's 9998 is an off-by-one). Pinned by `item_prices_vs_disc`.
+price = 9999
 effect = "Wearer enters berserk; multiple art attacks per turn."
 effect_class = "berserk"
 

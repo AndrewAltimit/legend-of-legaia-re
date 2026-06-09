@@ -114,6 +114,12 @@
     <li>Every armor <code>slot</code> &isin; {<code>armor</code>, <code>helmet</code>, <code>shoes</code>}; every <code>equip</code> &isin; {<code>Vahn</code>, <code>Noa</code>, <code>Gala</code>, <code>None</code>}.</li>
     <li>Every item <code>category</code> &isin; {<code>consumable</code>, <code>permanent_stat</code>, <code>key</code>, <code>art_book</code>, <code>fishing_lure</code>}.</li>
   </ul>
+  <h3>Disc-gated cross-checks (skip when <code>extracted/SCUS_942.54</code> is absent)</h3>
+  <p>These validate the curated tables against the real executable, so the disc is the tie-breaker when the two disagree:</p>
+  <ul class="bullets">
+    <li><code>item_prices_vs_disc</code> &mdash; every priced weapon / armor / accessory whose name resolves to a disc item id has a curated <code>price</code> equal to the authoritative <code>SCUS</code> shop-price field (the <code>u16</code> at <code>+2</code> of the item-property record). 119+ cross-checks, <strong>zero</strong> mismatches. This oracle pinned three walkthrough price errors, corrected to the disc values (Forest / Magic Amulet 4000&rarr;2000, Evil Medallion 9998&rarr;9999).</li>
+    <li><code>equip_slots_vs_disc</code> &mdash; the disc equip-stat table's four <code>+7</code> slot categories map name-exactly to the four gamedata armour/weapon slots (body 20, head 15, footwear 16), and none of the 77 accessories appear in that table (they are a separate system).</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="api">
