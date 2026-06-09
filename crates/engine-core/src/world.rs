@@ -5101,7 +5101,15 @@ impl World {
                 .rem_euclid(4096) as i16;
             self.actors[slot].move_state.render_26 = heading;
         }
-        let speed = self.world_map_player_speed.max(1) as i32;
+        let mut speed = self.world_map_player_speed.max(1) as i32;
+        // Diagonal normalise: when both axes are moving, x0.75 - mirroring the
+        // field controller (`FUN_801d01b0`) and the retail world-map walk
+        // overlay (`speed -= speed >> 2`). `advance_with_collision` steps both
+        // axes by the same amount, so without this a diagonal travels `speed` on
+        // each axis = ~1.41x the cardinal speed.
+        if dx != 0 && dz != 0 {
+            speed -= speed >> 2;
+        }
         self.advance_with_collision(slot, dir_bits, speed);
     }
 
