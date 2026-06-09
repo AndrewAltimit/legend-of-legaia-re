@@ -52,9 +52,12 @@
         <li>Other types are skipped silently (the loop advances without uploading).</li>
       </ul>
     </li>
-    <li>Returns once the terminator is hit. The <code>FUN_80026B4C</code> TMD register call that follows hooks the parsed TMD into the per-scene mesh pointer table at <code>0x8007C018 + idx*4</code>.</li>
+    <li>Returns once the terminator is hit. <strong>It returns <code>param_1 + 1</code></strong> &mdash; a pointer to the word just past the terminating header, i.e. the start of the <em>next</em> region. The <code>FUN_80026B4C</code> TMD register call that follows hooks the parsed TMD into the per-scene mesh pointer table at <code>0x8007C018 + idx*4</code>.</li>
   </ul>
   <p>This is the path that uploads field NPC palettes to VRAM row 479 - they're plain PSX TIMs wrapped in type-0x01 chunks, dispatched only during battle init. See <a href="../formats/npc-palette.html">npc-palette.html</a> for the cross-save corroboration and <a href="../formats/scene-bundles.html">scene-bundles.html</a> &rarr; "Streaming tail" for the type-byte table.</p>
+  <h3>Concatenated sub-streams (the &ldquo;two-list&rdquo; / continuation case)</h3>
+  <p>Some scene_tmd_stream entries hold <strong>more than one</strong> complete <code>[chunk0 TMD][type-0x01 TIM chunks][terminator]</code> sub-stream concatenated, each on a <code>0x800</code> (sector) boundary (<code>0006_town01</code>: sub-stream 0 at <code>0x0</code>, sub-stream 1 with its <strong>own</strong> leading TMD at <code>0x14000</code>; verified across the town01 / town0b / town0c clusters). The bytes earlier notes called a &ldquo;continuation TIM list&rdquo; are really the second sub-stream's TIM chunks &mdash; it is self-contained, not a bare tail of sub-stream 0.</p>
+  <p><code>FUN_8001FE70</code> walks exactly <strong>one</strong> sub-stream; its return (<code>param_1 + 1</code>, past the terminator) lands on the next sub-stream, so a sector/slot-indexed caller can walk the rest. The single static caller <code>FUN_800513F0</code> (battle init) calls it <strong>once</strong> (the <code>s3 &lt; 4</code> loop above the call is 4-party-member setup, not a sub-stream loop), so battle uploads only sub-stream 0. The multi-sub-stream caller is the per-scene field/town dispatch (<code>FUN_8001F7C0</code> &rarr; <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code>, overlay-resident, capture-blocked). <code>scene_tmd_stream::sub_streams</code> enumerates the blocks properly; the engine's field-mode loader already skips all these battle-only TIMs (row-479 palettes aren't field-resident).</p>
 </section>
 
 <section class="doc-section" id="field-loader">

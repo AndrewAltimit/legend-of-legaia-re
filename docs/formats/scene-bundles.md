@@ -46,21 +46,23 @@ Past the leading TMD, each chunk is `[u32 header][payload]` with header packed a
 
 The type-byte semantics differ from the standard `FUN_8001F05C` dispatcher: there `type = 0x01` means `TIM_LIST` (a `[count + offsets + TIMs]` pack), but here it means "single bare TIM". So although the chunk-header packing is identical, calling `FUN_8002541C` on a `scene_tmd_stream` entry would mis-dispatch and crash. The runtime knows to use `FUN_8001FE70` for these entries.
 
-### Two-list continuation
+### Concatenated sub-streams (the "two-list" shape)
 
-Some entries (e.g. `0006_town01.BIN`) carry a second set of type-0x01 chunks past the first terminator, separated by a zero-padded gap:
+Some entries (e.g. `0006_town01.BIN`) carry **two (or more) complete sub-streams** concatenated — each a full `[chunk0 TMD][type-0x01 TIM chunks][terminator]` block on a `0x800` (sector) boundary, zero-padding filling the gap. The second sub-stream has its **own** leading TMD; the "continuation" TIMs belong to it:
 
 ```text
-+0x3840   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
-+0xba64   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
-+0x13c88  terminator (zero-size header)
-+0x13c8c..0x16c23: zero padding
-+0x16c24  type=0x01 TIM chunk  (continuation - past terminator)
-+0x1ee48  type=0x01 TIM chunk  (continuation - past terminator)
-+0x2706c  terminator
++0x00000  chunk0 = TMD body 0x383c        ] sub-stream 0
++0x03840  type=0x01 TIM chunk             ]  (FUN_8001FE70's reach)
++0x0ba64  type=0x01 TIM chunk             ]
++0x13c88  terminator (zero-size header)   ]
++0x13c8c..0x13fff: zero padding to the next sector
++0x14000  chunk0 = TMD body 0x2c20        ] sub-stream 1
++0x16c24  type=0x01 TIM chunk             ]  (own TMD; the "continuation")
++0x1ee48  type=0x01 TIM chunk             ]
++0x2706c  terminator                      ]
 ```
 
-`FUN_8001FE70` exits at the first terminator (`0x13c88` here), so the continuation list isn't visited by the standard battle-init dispatch. The consumer for the continuation is not yet pinned; the bytes are reachable as `WalkSource::Continuation` in [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) and the in-tail chunks alone supply the same `(fb_y, fb_x)` regions, so the continuation may be a cold-loaded scenario variant.
+`FUN_8001FE70` walks one sub-stream and **returns `param_1 + 1`** (past the terminator) — the next sub-stream's region — so a sector/slot-indexed caller can walk the rest. The single static caller `FUN_800513F0` (battle init) calls it **once**, so battle uploads only sub-stream 0; the multi-sub-stream caller is the per-scene field/town dispatch (`FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`, overlay-resident, capture-blocked). Enumerate the blocks with [`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) (each a full sub-stream with its own TMD); [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports sub-stream 0's TIMs as `WalkSource::Tail` and the later ones as `WalkSource::Continuation`. The engine's field-mode loader uses both to **skip** these battle-only TIMs (the row-479 NPC palettes aren't field-resident — matching retail).
 
 Reading:
 

@@ -31,18 +31,32 @@
 //! for the format index and [`docs/subsystems/asset-loader.md`] for the
 //! caller chain.
 //!
-//! ### Two-list continuation
+//! ### Concatenated sub-streams (the "two-list" shape)
 //!
-//! Some scene_tmd_stream files (e.g. `0006_town01.BIN` at offsets
-//! `0x3840`, `0xba64`, `0x16c24`, `0x1ee48`) carry a *second* set of
-//! type-0x01 TIM chunks that sit past the first terminator separated by
-//! a zero-padded gap. `FUN_8001FE70` stops at the first terminator, so
-//! these post-terminator chunks are NOT processed by the standard
-//! battle-init walk; they're left for an alternate dispatch path whose
-//! caller is not yet pinned. [`battle_tim_chunks`] reports both
-//! `WalkSource::Tail` (inside `FUN_8001FE70`'s reach) and
-//! `WalkSource::Continuation` (post-terminator) hits so engine ports
-//! can choose whether to upload one or both halves.
+//! Some scene_tmd_stream entries hold **more than one complete sub-stream**
+//! concatenated: each is a full `[chunk0 TMD][type-0x01 TIM chunks][terminator]`
+//! block, and each starts on a **`0x800` (sector) boundary** with zero padding
+//! filling the gap. `0006_town01.BIN` is the canonical example — sub-stream 0
+//! at `0x0` (TMD `0x383C` + TIMs at `0x3840` / `0xBA64`) and sub-stream 1 at
+//! `0x14000` (its **own** leading TMD `0x2C20` + TIMs at `0x16C24` / `0x1EE48`).
+//! So the bytes earlier docs called a "continuation TIM list" are really the
+//! second sub-stream's TIM chunks; sub-stream 1 is a self-contained
+//! scene_tmd_stream with its own TMD, not a bare tail of sub-stream 0. Use
+//! [`sub_streams`] to enumerate them properly.
+//!
+//! `FUN_8001FE70` walks exactly one sub-stream and **returns a pointer just
+//! past its terminator** (`return param_1 + 1`), i.e. the start of the next
+//! sub-stream's region — so a sector/slot-indexed caller can walk the rest by
+//! re-invoking the walker on that boundary. The one static caller
+//! (`FUN_800513F0`, battle init) calls it **once** and consumes only
+//! sub-stream 0 (its `s3 < 4` loop above the call is the 4-party-member setup,
+//! not a sub-stream loop), so in battle the later sub-streams are not uploaded.
+//! The multi-sub-stream caller is the per-scene field/town dispatch (overlay-
+//! resident, descriptor-driven `FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`),
+//! still capture-blocked. [`battle_tim_chunks`] reports both `WalkSource::Tail`
+//! (sub-stream 0, inside `FUN_8001FE70`'s reach) and `WalkSource::Continuation`
+//! (the later sub-streams' TIM chunks) so engine ports can choose whether to
+//! upload one or all.
 //!
 //! This shape is dominant in scene-asset PROT entries (most `town*`, `dolk*`,
 //! `rugi*`, and similar named blocks). Pre-TOC-fix the bare-TMD prefix made
@@ -207,6 +221,56 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
 /// full streaming-tail walk in callers that just need a yes/no.
 pub fn is_scene_tmd_stream(buf: &[u8]) -> bool {
     detect(buf).is_some()
+}
+
+/// One concatenated sub-stream inside a scene_tmd_stream PROT entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct SubStream {
+    /// Byte offset of this sub-stream's `chunk0` header within the entry.
+    /// Always `0x800`-aligned in retail (sub-stream 0 is at `0`).
+    pub base: usize,
+    /// The parsed sub-stream. All of its offsets (`tmd_range`, `tail_end`,
+    /// …) are **relative to [`Self::base`]** — add `base` for an absolute
+    /// file offset.
+    pub stream: SceneTmdStream,
+}
+
+/// Maximum sub-streams to enumerate before giving up — a runaway guard far
+/// above the observed max (2).
+const MAX_SUB_STREAMS: usize = 16;
+
+/// Enumerate the concatenated `[chunk0 TMD][TIM chunks][terminator]`
+/// sub-streams in a scene_tmd_stream entry. Returns one [`SubStream`] per
+/// block; the first is the battle-init walk's reach (`FUN_8001FE70`), any
+/// further ones are the "continuation" sub-streams (each with its **own**
+/// leading TMD) that sit on the next `0x800` sector boundary after the
+/// previous terminator.
+///
+/// Returns an empty `Vec` if the buffer isn't a scene_tmd_stream. The walk
+/// stops at the first region that doesn't [`detect`] as a sub-stream (e.g.
+/// trailing sector padding or unrelated data), so it never over-reads into
+/// garbage.
+pub fn sub_streams(buf: &[u8]) -> Vec<SubStream> {
+    let mut out = Vec::new();
+    let mut base = 0usize;
+    while base + 8 <= buf.len() && out.len() < MAX_SUB_STREAMS {
+        let Some(stream) = detect(&buf[base..]) else {
+            break;
+        };
+        let end = base + stream.tail_end;
+        out.push(SubStream { base, stream });
+        // Next sub-stream begins after the terminator, past the zero padding
+        // that aligns it to the next sector. Skip word-aligned zeros.
+        let mut next = round_up_4(end);
+        while next + 4 <= buf.len() && read_u32_le(buf, next) == Some(0) {
+            next += 4;
+        }
+        if next <= base {
+            break; // no forward progress — defensive
+        }
+        base = next;
+    }
+    out
 }
 
 /// Where a battle TIM chunk was found relative to the
@@ -577,6 +641,53 @@ mod tests {
     fn battle_tim_chunks_empty_for_non_scene_stream() {
         let buf = vec![0u8; 1024];
         assert!(battle_tim_chunks(&buf).is_empty());
+    }
+
+    /// Concatenate two full `[TMD][TIM][TIM][terminator]` sub-streams with a
+    /// zero-padded gap — the real "two-list" shape (each sub-stream carries
+    /// its OWN leading TMD), distinct from the bare post-terminator TIM list
+    /// `synth_two_list` models.
+    fn synth_two_sub_streams(gap: usize) -> Vec<u8> {
+        let tim: &[u8] = &{
+            let mut v = vec![0u8; 64];
+            v[0..4].copy_from_slice(&0x0000_0010u32.to_le_bytes());
+            v
+        };
+        let mut buf = synth(2, 64, &[(0x01, tim), (0x01, tim)]);
+        buf.extend(std::iter::repeat_n(0u8, gap));
+        let second = synth(3, 32, &[(0x01, tim), (0x01, tim)]);
+        buf.extend_from_slice(&second);
+        buf
+    }
+
+    #[test]
+    fn sub_streams_enumerates_concatenated_blocks() {
+        let buf = synth_two_sub_streams(0x80);
+        let subs = sub_streams(&buf);
+        assert_eq!(subs.len(), 2, "should find both concatenated sub-streams");
+        // Each sub-stream carries its OWN leading TMD with the expected nobj.
+        assert_eq!(subs[0].base, 0);
+        assert_eq!(subs[0].stream.tmd_nobj, 2);
+        assert!(
+            subs[1].base >= subs[0].stream.tail_end,
+            "second block follows the first"
+        );
+        assert_eq!(subs[1].stream.tmd_nobj, 3);
+        // Offsets are sub-stream-relative: the TMD always sits at +4.
+        assert_eq!(subs[1].stream.tmd_range().start, 4);
+    }
+
+    #[test]
+    fn sub_streams_single_block_when_no_continuation() {
+        let buf = synth(2, 64, &[(0x01, &[0x10u8; 64])]);
+        let subs = sub_streams(&buf);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].base, 0);
+    }
+
+    #[test]
+    fn sub_streams_empty_for_non_scene_stream() {
+        assert!(sub_streams(&vec![0u8; 1024]).is_empty());
     }
 
     #[test]

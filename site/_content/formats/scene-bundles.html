@@ -35,16 +35,18 @@
   </table>
   <p>The type-byte semantics differ from the standard <code>FUN_8001F05C</code> dispatcher: there <code>type = 0x01</code> means <code>TIM_LIST</code> (a <code>[count + offsets + TIMs]</code> pack), but here it means "single bare TIM". So although the chunk-header packing is identical, calling <code>FUN_8002541C</code> on a <code>scene_tmd_stream</code> entry would mis-dispatch and crash. The runtime knows to use <code>FUN_8001FE70</code> for these entries.</p>
 
-  <h3>Two-list continuation</h3>
-  <p>Some entries (e.g. <code>0006_town01.BIN</code>) carry a second set of type-0x01 chunks past the first terminator, separated by a zero-padded gap:</p>
-<pre><code>+0x3840   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
-+0xba64   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
-+0x13c88  terminator (zero-size header)
-+0x13c8c..0x16c23: zero padding
-+0x16c24  type=0x01 TIM chunk  (continuation - past terminator)
-+0x1ee48  type=0x01 TIM chunk  (continuation - past terminator)
-+0x2706c  terminator</code></pre>
-  <p><code>FUN_8001FE70</code> exits at the first terminator, so the continuation list isn't visited by the standard battle-init dispatch. The consumer for the continuation is not yet pinned; the bytes are reachable as <code>WalkSource::Continuation</code> in <code>scene_tmd_stream::battle_tim_chunks</code> and the in-tail chunks alone supply the same <code>(fb_y, fb_x)</code> regions, so the continuation may be a cold-loaded scenario variant.</p>
+  <h3>Concatenated sub-streams (the &ldquo;two-list&rdquo; shape)</h3>
+  <p>Some entries (e.g. <code>0006_town01.BIN</code>) carry <strong>two (or more) complete sub-streams</strong> concatenated &mdash; each a full <code>[chunk0 TMD][type-0x01 TIM chunks][terminator]</code> block on a <code>0x800</code> (sector) boundary, zero-padding filling the gap. The second sub-stream has its <strong>own</strong> leading TMD; the &ldquo;continuation&rdquo; TIMs belong to it:</p>
+<pre><code>+0x00000  chunk0 = TMD body 0x383c        ] sub-stream 0
++0x03840  type=0x01 TIM chunk             ]  (FUN_8001FE70's reach)
++0x0ba64  type=0x01 TIM chunk             ]
++0x13c88  terminator (zero-size header)   ]
++0x13c8c..0x13fff: zero padding to the next sector
++0x14000  chunk0 = TMD body 0x2c20        ] sub-stream 1
++0x16c24  type=0x01 TIM chunk             ]  (own TMD; the "continuation")
++0x1ee48  type=0x01 TIM chunk             ]
++0x2706c  terminator                      ]</code></pre>
+  <p><code>FUN_8001FE70</code> walks one sub-stream and <strong>returns <code>param_1 + 1</code></strong> (past the terminator) &mdash; the next sub-stream's region &mdash; so a sector/slot-indexed caller can walk the rest. The single static caller <code>FUN_800513F0</code> (battle init) calls it <strong>once</strong>, so battle uploads only sub-stream 0; the multi-sub-stream caller is the per-scene field/town dispatch (<code>FUN_8001F7C0</code> &rarr; <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code>, overlay-resident, capture-blocked). Enumerate the blocks with <code>scene_tmd_stream::sub_streams</code> (each a full sub-stream with its own TMD); <code>battle_tim_chunks</code> reports sub-stream 0's TIMs as <code>WalkSource::Tail</code> and the later ones as <code>WalkSource::Continuation</code>. The engine's field-mode loader uses both to <strong>skip</strong> these battle-only TIMs (the row-479 NPC palettes aren't field-resident &mdash; matching retail).</p>
 
   <p>Reading:</p>
 <pre><code>use legaia_asset::scene_tmd_stream;
