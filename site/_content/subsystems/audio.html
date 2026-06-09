@@ -12,7 +12,7 @@
 
   <ul class="bullets">
     <li>A <strong>path-string cluster</strong> at <code>0x8007B380</code> holds the file extensions the sound subsystem appends to scene-asset paths: <code>.spk</code>, <code>.LZS</code>, <code>.dpk</code>, <code>.MAP</code>, <code>.PCH</code>, <code>.pac</code>, <code>STR</code>, plus the master file <code>bse.dat</code>.</li>
-    <li>Three <strong>SCUS-side consumers</strong> turn those paths into actual loads: a sound-init / <code>.dpk</code> loader, a streaming-asset loader for XA-family files, and a mode-aware extension dispatcher.</li>
+    <li>Two <strong>SCUS-side consumers</strong> turn those paths into actual loads: a sound-init / <code>.dpk</code> loader and a streaming-asset loader for XA-family files.</li>
     <li>Underneath that is Sony's PsyQ <strong>SsAPI sequencer</strong> (libsnd, statically linked) for SEQ playback, plus the PsyQ <strong>libspu</strong> primitives that actually move bytes into SPU RAM.</li>
   </ul>
 
@@ -27,15 +27,15 @@
 </section>
 
 <section class="doc-section" id="three-consumers">
-  <h2>Three SCUS consumers</h2>
+  <h2>SCUS consumers</h2>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td><code>FUN_8001FA88</code></td><td><strong>Sound subsystem init / <code>.dpk</code> loader.</strong> Loads <code>bse.dat</code> master bank, then per-scene <code>.dpk</code> from <code>h:\main\bg\domepack\&hellip;</code>.</td></tr>
       <tr><td><code>FUN_8001FC00</code></td><td><strong>Streaming-asset loader.</strong> Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer.</td></tr>
-      <tr><td><code>FUN_8001EBEC</code></td><td><strong>Mode-aware extension dispatcher.</strong> Reads <code>_DAT_8007B824</code> as a mode index, then uses small per-mode tables to pick which extension to hit.</td></tr>
     </tbody>
   </table>
+  <p><code>FUN_8001EBEC</code> was previously listed here as a third "mode-aware extension dispatcher" &mdash; a misread. The decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, the loaded battle-character TMD pointers), not a sound consumer. See <a href="../formats/character-mesh.html">character-mesh</a>.</p>
   <p>Both <code>FUN_8001FA88</code> and <code>FUN_8001FC00</code> carry a dev/retail split via <code>_DAT_8007B8C2</code>. The dev branch loads via PROT indices directly; the retail branch uses dev-style paths through <code>FUN_8003E6BC</code> (the path-based opener) which resolves <code>h:\main\bg\domepack\&hellip;</code> into the appropriate PROT entry through the <a href="../formats/index.html">CDNAME-driven name map</a>. Both paths land at the same files.</p>
 </section>
 

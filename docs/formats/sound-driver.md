@@ -10,7 +10,7 @@ The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the fi
 | `0x8007B38C` | `"sound\"` | Path prefix for streaming-asset loads. |
 | `0x8007B394` | `".spk"` | SPU sample bank. |
 | `0x8007B39C` | `".LZS"` | Compressed wrapper (per-file). |
-| `0x8007B3A4` | 8 bytes | Two 4-byte mode descriptors: `00 00 00 00` and `03 02 03 00 03 05 03 00`. Indexed by `FUN_8001EBEC` to pick which extension a given mode uses. |
+| `0x8007B3A4` | 8 bytes | **Not sound data.** This window holds the per-character equipment-swap selector bytes (3 equip-condition offsets at `0x8007B3A4` + 3 group indices at `0x8007B3A8`) consumed by the graphics-side `FUN_8001EBEC` - see [character-mesh.md § equipment-conditional group-transform swap](character-mesh.md#10-group-cap--equipment-conditional-swap). Adjacent to the path cluster in BSS but unrelated to it. |
 | `0x8007B3AC` | `"bse.dat"` | Master sound-bank file name (loaded once at sound-init). |
 | `0x8007B3B4` | `".dpk"` | Per-scene sound pack - the format `FUN_8001FA88` loads. |
 | `0x8007B3BC` | `".MAP"` | Sound bank map (PsyQ SoundArtist output). |
@@ -21,13 +21,14 @@ The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the fi
 
 ## Consumers
 
-Three SCUS functions touch the cluster (located via [`ghidra/scripts/find_sound_path_builders.py`](../../ghidra/scripts/find_sound_path_builders.py)):
+Two SCUS functions touch the cluster (located via [`ghidra/scripts/find_sound_path_builders.py`](../../ghidra/scripts/find_sound_path_builders.py); a third candidate the locator flagged, `FUN_8001EBEC`, turned out not to be a sound consumer - see the correction below):
 
 | Function | Role | Touch points |
 |---|---|---|
 | `FUN_8001FA88` | **Sound subsystem init / `.dpk` loader.** Allocates a 0x1800-byte buffer at `_DAT_8007B8D0`. Loads `bse.dat` via the path-based opener. Then assembles `h:\main\bg\domepack\<name>.dpk` (template at `0x800105C8` + extension at `0x8007B3B4`) and opens it. | `0x8007B3AC` (`bse.dat`), `0x8007B3B4` (`.dpk`) |
 | `FUN_8001FC00` | **Streaming-asset loader.** Builds paths under the `sound\` prefix; the XA / `.pac` / `STR` consumer. | `0x8007B38C` (`sound\`) |
-| `FUN_8001EBEC` | **Mode-aware extension dispatcher.** Reads `_DAT_8007B824` as a mode index, then uses the small per-mode tables at `0x8007B3A4` / `0x8007B3A8` to pick which file-extension entry to hit. | `0x8007B3A4`, `0x8007B3A8` |
+
+> **Correction:** `FUN_8001EBEC` was previously listed here as a "mode-aware extension dispatcher" reading `_DAT_8007B824` + tables at `0x8007B3A4`/`0x8007B3A8`. The decomp shows it is **not** part of the sound subsystem at all - it is the character-TMD equipment-conditional group-transform swap (it reads the loaded battle-character TMD pointers from `DAT_8007C018[_DAT_8007B824 + 0..2]`, where `_DAT_8007B824` is the party base index, and copies group transforms). The `0x8007B3A4`/`0x8007B3A8` bytes are its per-character selector tables, not sound-extension descriptors. See [character-mesh.md](character-mesh.md#10-group-cap--equipment-conditional-swap).
 
 ## Dev-build vs retail-build paths
 

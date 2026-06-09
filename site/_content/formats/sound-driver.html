@@ -36,7 +36,7 @@
 <tr>
 <td><code>0x8007B3A4</code></td>
 <td>8 bytes</td>
-<td>Two 4-byte mode descriptors: <code>00 00 00 00</code> and <code>03 02 03 00 03 05 03 00</code>. Indexed by <code>FUN_8001EBEC</code> to pick which extension a given mode uses.</td>
+<td><strong>Not sound data.</strong> The per-character equipment-swap selector bytes (3 equip-condition offsets at <code>0x8007B3A4</code> + 3 group indices at <code>0x8007B3A8</code>) read by the graphics-side <code>FUN_8001EBEC</code> &mdash; see <a href="character-mesh.html">character-mesh</a>. Adjacent to the path cluster in BSS but unrelated to it.</td>
 </tr>
 <tr>
 <td><code>0x8007B3AC</code></td>
@@ -79,7 +79,7 @@
 
 <section class="doc-section" id="consumers">
   <h2>Consumers</h2>
-  <p>Three SCUS functions touch the cluster (located via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_sound_path_builders.py"><code>ghidra/scripts/find_sound_path_builders.py</code></a>):</p>
+  <p>Two SCUS functions touch the cluster (located via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_sound_path_builders.py"><code>ghidra/scripts/find_sound_path_builders.py</code></a>; a third candidate the locator flagged, <code>FUN_8001EBEC</code>, turned out not to be a sound consumer &mdash; see the correction below):</p>
 <table>
 <thead><tr>
 <th>Function</th>
@@ -97,13 +97,9 @@
 <td><strong>Streaming-asset loader.</strong> Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer.</td>
 <td><code>0x8007B38C</code> (<code>sound\</code>)</td>
 </tr>
-<tr>
-<td><code>FUN_8001EBEC</code></td>
-<td><strong>Mode-aware extension dispatcher.</strong> Reads <code>_DAT_8007B824</code> as a mode index, then uses the small per-mode tables at <code>0x8007B3A4</code> / <code>0x8007B3A8</code> to pick which file-extension entry to hit.</td>
-<td><code>0x8007B3A4</code>, <code>0x8007B3A8</code></td>
-</tr>
 </tbody>
 </table>
+<p class="hint"><strong>Correction:</strong> <code>FUN_8001EBEC</code> was previously listed here as a "mode-aware extension dispatcher" reading <code>_DAT_8007B824</code> + tables at <code>0x8007B3A4</code>/<code>0x8007B3A8</code>. The decomp shows it is <strong>not</strong> a sound function at all &mdash; it is the character-TMD equipment-conditional group-transform swap (it reads the loaded battle-character TMD pointers from <code>DAT_8007C018[_DAT_8007B824 + 0..2]</code>, where <code>_DAT_8007B824</code> is the party base index, and copies group transforms). The <code>0x8007B3A4</code>/<code>0x8007B3A8</code> bytes are its per-character selector tables, not sound-extension descriptors. See <a href="character-mesh.html">character-mesh</a>.</p>
 </section>
 
 <section class="doc-section" id="dev-build-vs-retail-build-paths">
