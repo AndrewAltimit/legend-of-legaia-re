@@ -2497,9 +2497,9 @@ fn op_34_sub_1_packed24_and_position_decode() {
 #[test]
 fn op_34_sub_1_capture_path_uses_host_returned_delta() {
     // capture_flag = 0x40, payload_len = 3. The instruction is 13 base
-    // bytes + 2 (header bytes 0x40, len) + 3 (payload) = 18. Default
-    // host returns 13; we override to model the capture branch, which
-    // returns `13 + 2 + payload_len` = 18.
+    // bytes + 2 (header bytes 0x40, len) + 3 (payload) = 18. This TestHost
+    // injects the delta explicitly; the default impl computes the same 18 (see
+    // `op_34_sub_1_default_host_consumes_the_capture_extension`).
     let mut host = TestHost {
         op34_sub1_capture_delta: Some(18),
         ..Default::default()
@@ -2516,6 +2516,39 @@ fn op_34_sub_1_capture_path_uses_host_returned_delta() {
     let call = &host.op34_sub1_calls[0];
     assert_eq!(call.capture_flag, 0x40);
     assert_eq!(call.captured_payload, vec![0xAA, 0xBB, 0xCC]);
+}
+
+#[test]
+fn op_34_sub_1_default_host_consumes_the_capture_extension() {
+    // Drive the same 0x40 capture script through a host that uses the trait
+    // DEFAULT `op34_sub1_spawn_or_skip` (no injected delta). The default must
+    // consume the whole instruction (13 base + 2 + payload_len = 18); the old
+    // constant 13 landed the PC mid-payload and desynced the rest of the script.
+    struct DefaultHost;
+    impl FieldHost for DefaultHost {
+        fn global_flags(&self) -> u32 {
+            0
+        }
+        fn set_global_flags(&mut self, _value: u32) {}
+        fn frame_delta(&self) -> u16 {
+            1
+        }
+    }
+    let mut host = DefaultHost;
+    let mut ctx = FieldCtx::default();
+    let raw = [
+        0x34, 0x10, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 3, 0xAA, 0xBB, 0xCC,
+    ];
+    assert_eq!(
+        step(&mut host, &mut ctx, &raw, 0),
+        StepResult::Advance { next_pc: 18 }
+    );
+    // Without the 0x40 marker it is the bare 13-byte instruction.
+    let raw_no_cap = [0x34, 0x10, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x00];
+    assert_eq!(
+        step(&mut host, &mut ctx, &raw_no_cap, 0),
+        StepResult::Advance { next_pc: 13 }
+    );
 }
 
 #[test]
