@@ -224,8 +224,9 @@ ldf = 17
 equip = "Vahn"
 
 [[armor]]
+# disc item-name table (SCUS) reads "Power Earring" (singular).
 key = "power_earrings"
-name = "Power Earrings"
+name = "Power Earring"
 slot = "helmet"
 price = 780
 udf = 14

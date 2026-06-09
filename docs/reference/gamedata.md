@@ -243,6 +243,20 @@ is the tie-breaker when the two disagree:
   (checked explicitly). The oracle pinned one curated target error — `Mushura` /
   "Crazy Driver" is single-enemy, not all-enemies — corrected to the disc value.
   See [`spell-table.md`](../formats/spell-table.md).
+- `shop_inventory_vs_disc` — scans every PROT entry for the gold-shop stock
+  records embedded inline in each scene MAN (`legaia_asset::shop_stock`, op
+  `0x49` sub-op `0`), decodes each record's sellable item ids to names, and
+  joins disc shops to curated shops by the **item-name set** (order-independent;
+  the item set is far more distinctive than the shop title, which repeats as
+  "Arms Shop" / "Items Shop" across towns). Every located disc shop's stock
+  matches a curated inventory as an exact set, with one documented disc-only
+  exception — **Soru's Bakery**, which sells only the novelty "Soru Bread" and
+  has no curated counterpart (asserted explicitly). This oracle pinned a curated
+  item-name error: the Gala helmet the disc names **"Power Earring"** (singular)
+  was curated as "Power Earrings", which broke the Wind Cave and
+  Biron-after-mist joins until corrected to the disc spelling (the price oracle
+  missed it — a name-mismatch is a tolerated miss there). The shop-record format
+  is documented in `legaia_asset::shop_stock`.
 
 ## Library API
 
