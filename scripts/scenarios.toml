@@ -593,6 +593,30 @@ phase = "field"
 topics = ["field", "scene transition", "world map", "Drake", "scene-load", "nibble-7 paint"]
 
 # ----------------------------------------------------------------------
+# Sebucus + Karisto kingdom-warp pre-transition saves (PCSX-Redux),
+# the second + third kingdoms to complement drake_castle_to_worldmap.
+# Each is a town field scene one held-Down press away from warping to
+# that kingdom's overworld. Used to confirm the slot-4 in-place render
+# reads (world-map renderer 0x801F78D4 + cluster-A GTE prim path)
+# generalise across kingdoms; see docs/formats/world-map-overlay.md.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "octam_to_sebucus_worldmap"
+backup_fingerprint = "f126470502fe484356fa456d691269d9fd35c3a38491b88145e9b0ac3e535e78"
+description = "Octam field scene (Sebucus Islands); a ~1s Down press warps to the Sebucus world map (map02, PROT 0244). Pre-transition PCSX-Redux save for capturing the kingdom-warp scene-load + the slot-4 in-place render reads across a second kingdom."
+phase = "field"
+topics = ["field", "scene transition", "world map", "Sebucus", "map02", "slot-4", "scene-load"]
+
+[[scenarios]]
+slot = 255
+label = "sol_to_karisto_worldmap"
+backup_fingerprint = "3643191374fe98ae975d8f2b83806bf446a2693881dfeac362e76277541012ff"
+description = "Sol field scene (Karisto Kingdom); a ~1s Down press warps to the Karisto world map (map03, PROT 0391). Pre-transition PCSX-Redux save for capturing the kingdom-warp scene-load + the slot-4 in-place render reads across a third kingdom."
+phase = "field"
+topics = ["field", "scene transition", "world map", "Karisto", "map03", "slot-4", "scene-load"]
+
+# ----------------------------------------------------------------------
 # Rim Elm (town01) pre-transition save: a ~1s Up press walks into the
 # south exit and warps to the Drake Kingdom overworld (map01). Ground-
 # truth for the door (scene-transition) randomizer: town01's single exit
