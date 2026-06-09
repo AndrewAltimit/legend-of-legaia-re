@@ -607,6 +607,20 @@ uploads it and draws it as the ground, with the placed landmarks
 build dense (>10k-quad) heightfields with genuine elevation variation. The old
 `walk_terrain_tiles` per-cell pack-mesh sweep — which flooded ~97% of cells
 with pool-5 because the bulk-terrain records carry `+0x10 == 0` — is removed.
+
+**Slot-4 vertex-pool inspection overlay.** The kingdom bundle's slot 4 (the
+per-kingdom object-mesh library — confirmed object-local GTE vertex pools, see
+[`world-map-overlay.md`](../formats/world-map-overlay.md)) is decoded onto
+[`SceneResources::world_map_slot4`] for every `SceneLoadKind::WorldMap` scene
+(and only those). With `LEGAIA_WORLDMAP_SLOT4=1`, `play-window` builds a
+colour-by-`kind` `LineList` from
+[`legaia_asset::world_map_overlay::wireframe_segments_3d`] and merges it into the
+world-map overlay-lines buffer, so the decoded pool is visible in the live 3D
+view. It is an **inspection overlay, not faithful world geometry**: the segments
+use the group-polyline topology convention and the records render at their raw
+object-local coordinates, because the per-object placement transform and true
+triangle topology live in the unpinned cluster-A command stream. Off by default.
+
 ### Ground texturing
 
 The walk-view continent ground is drawn as a field of **`POLY_FT4` (cmd `0x2C`)
