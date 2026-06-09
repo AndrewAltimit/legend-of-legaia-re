@@ -16,7 +16,7 @@
     <li>Underneath that is Sony's PsyQ <strong>SsAPI sequencer</strong> (libsnd, statically linked) for SEQ playback, plus the PsyQ <strong>libspu</strong> primitives that actually move bytes into SPU RAM.</li>
   </ul>
 
-  <p>The format on disc that's <em>fully</em> documented is the VAB sound bank (Sony's standard <code>VABp</code>-magic instrument bank format). The <code>.dpk / .MAP / .PCH / .spk / .pac</code> family is still TBD - the dispatch chain into them is fully traced, but their byte-level layouts haven't been reversed yet.</p>
+  <p>The fully-documented formats on disc are the VAB sound bank (Sony's standard <code>VABp</code>-magic instrument bank) and the SEQ sequence. The per-scene <code>.dpk</code> / <code>sound_data2</code> pack is now decoded as a <a href="../formats/sound-driver.html">VAB + SEQ bundle</a> (type-0 VAB header + type-1 VAB samples + type-2 SEQ); the <code>.MAP / .PCH / .spk / .pac</code> PsyQ intermediates are dev-side inputs, not separate retail chunks here.</p>
 
   <p>BGM dispatch is genuinely surprising: there's no literal "BGM ID &rarr; file" table. A field-VM script writes a BGM ID, and a per-frame poller resolves it to a PROT index using the current scene's CDNAME block layout. So "the table" isn't in the executable - it's in the on-disc filesystem layout itself.</p>
 </section>
@@ -309,8 +309,7 @@
 
 <section class="doc-section" id="whats-left">
   <h2>What's left</h2>
-  <p>The byte-level layouts of <code>.MAP / .PCH / .spk / .dpk / .pac</code> are still TBD. The dispatch chain <em>into</em> them is fully traced; the next move is to read the body of <code>FUN_8001FA88</code> for the <code>.dpk</code> byte layout (specifically the field accesses on <code>_DAT_8007B8D0</code> after the path-based opener returns - <code>_DAT_8007B8D0 + 2</code> is read as a <code>ushort</code> and used as a divisor, almost certainly a record count).</p>
-  <p>Eventual home: a <code>crates/sound</code> companion to <code>crates/vab</code>.</p>
+  <p>The per-scene <code>.dpk</code> / <code>sound_data2</code> pack is decoded: it's a <a href="../formats/sound-driver.html">VAB + SEQ bundle</a> (type-0 VAB header + type-1 VAB samples reconstitute one VAB; type-2 = SEQ), parsed by <code>legaia_asset::sound_pack</code>. The <code>bse.dat</code> master bank header is also pinned (the <code>+2</code> <code>ushort</code> is an even byte-offset splitting it into two sections, not a record-count divisor). Residual: the <code>.MAP</code> / <code>.PCH</code> PsyQ SoundArtist intermediates are dev-side inputs that produce these VABs, not separate on-disc retail chunks.</p>
 </section>
 
 <section class="doc-section" id="see-also">

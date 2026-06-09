@@ -59,6 +59,7 @@ pub mod scene_v12_table;
 pub mod scene_vab_stream;
 pub mod sfx_table;
 pub mod shop_stock;
+pub mod sound_pack;
 pub mod spell_names;
 pub mod stage_geom;
 pub mod static_overlay;

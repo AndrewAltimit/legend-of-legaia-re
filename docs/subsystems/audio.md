@@ -1,6 +1,6 @@
 # Audio
 
-Three layers: the path-string cluster that builds audio file paths, the SCUS dispatchers that consume them, and the actual audio formats (VAB sound banks + the still-TBD `.dpk / .MAP / .PCH / .spk / .pac` family).
+Three layers: the path-string cluster that builds audio file paths, the SCUS dispatchers that consume them, and the actual audio formats (VAB sound banks + SEQ sequences; the per-scene `.dpk` / `sound_data2` pack is now decoded as a [VAB + SEQ bundle](../formats/sound-driver.md#the-dpk--sound_data2-payload-is-a-vab--seq-bundle), with the `.MAP` / `.PCH` / `.spk` / `.pac` PsyQ intermediates not present as separate retail chunks).
 
 ## Path-string cluster
 

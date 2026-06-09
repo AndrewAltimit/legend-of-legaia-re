@@ -25,3 +25,7 @@ legaia-tmd = { path = "../tmd" }
 png = "0.17"
 sha2 = "0.10"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
+
+[dev-dependencies]
+legaia-vab = { path = "../vab" }
+legaia-seq = { path = "../seq" }
