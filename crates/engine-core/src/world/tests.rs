@@ -217,6 +217,79 @@ fn field_grid_set_mask_selects_quadrant() {
     assert!(!world.field_tile_is_wall(64 + 10, 10));
 }
 
+/// Reference re-implementation of one `FUN_801cfe4c` static-wall probe:
+/// world point -> grid `(col, row, quad-mask)`, using retail's exact
+/// sub-cell derivation (`zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)-1`, quad mask
+/// `1 << ((zc&1)<<1 | (xc&1))`). Decoded from the field overlay
+/// (`0897` @ `0x801CE818`). See `docs/subsystems/field-locomotion.md`.
+fn retail_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
+    let iz2 = if iz < 0 { iz + 0x3f } else { iz };
+    let zc = (iz2 >> 6) + 2;
+    let xc = ((ix + 0x3f) >> 6) - 1;
+    let col = (xc / 2) & 0x7f;
+    let row = (zc - (zc >> 31)) >> 1; // (zc>>1) for zc>=0; row stride is 0x80
+    let mask = 1u8 << (((zc & 1) << 1 | (xc & 1)) as u32);
+    (col, row, mask)
+}
+
+#[test]
+fn retail_collision_subcell_indexing_differs_from_engine_by_a_z_tile() {
+    // Retail's `+2` Z bias and `ceil-1` X rounding map the SAME world point
+    // to a DIFFERENT grid cell than the engine's floor (`>>6`). At the
+    // half-tile-centred player position (320, 448) = (tile 2, tile 3) centre:
+    //   retail -> (col 2, row 4, quad 2)   [(448>>6)+2 = 9 -> row 4]
+    //   engine -> (col 2, row 3, quad 3)   [ 448>>6     = 7 -> row 3]
+    // i.e. retail reads ONE TILE further in Z (and the opposite X parity).
+    let (rcol, rrow, rmask) = retail_subcell(320, 448);
+    assert_eq!((rcol, rrow, rmask), (2, 4, 1 << 2));
+
+    let (esx, esz) = (320i32 >> 6, 448i32 >> 6);
+    let ecol = (esx >> 1) & 0x7f;
+    let erow = esz >> 1;
+    let emask = 1u8 << (((esz & 1) << 1 | (esx & 1)) as u32);
+    assert_eq!((ecol, erow, emask), (2, 3, 1 << 3));
+
+    // Build a grid carrying ONLY retail's cell (col 2, row 4, quad 2). The
+    // retail formula reads a wall there; the engine, reading (col 2, row 3),
+    // sees nothing. This pins the +1-tile-Z / X-parity sampling offset.
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    let idx = (rcol + rrow * (FIELD_GRID_STRIDE as i32)) as usize;
+    world.field_collision_grid[idx] = rmask << 4;
+    let (_, _, m) = retail_subcell(320, 448);
+    assert_eq!(
+        m, rmask,
+        "retail probe maps (320,448) onto the painted cell"
+    );
+    assert!(
+        !world.field_tile_is_wall(320, 448),
+        "engine floor-indexes a different (clear) cell for the same point - \
+         the sampling offset is real; whether it reads the WRONG wall in a \
+         live scene is the open, capture-gated question"
+    );
+
+    // The quadrant-MASK formula itself is identical: the engine's
+    // `1 << ((sz&1)<<1 | (sx&1))` equals retail's branchy `bVar5` for every
+    // parity. (So the earlier "inverted X parity" hypothesis is false - only
+    // the sub-cell INDEX derivation differs, not the mask selection.)
+    let retail_mask = |xc: i32, zc: i32| -> u8 {
+        let zpar = (zc & 1) != 0;
+        if (xc & 1) == 0 {
+            if zpar { 4 } else { 1 }
+        } else if zpar {
+            8
+        } else {
+            2
+        }
+    };
+    for xc in 0..4 {
+        for zc in 0..4 {
+            let engine_mask = 1u8 << (((zc & 1) << 1 | (xc & 1)) as u32);
+            assert_eq!(engine_mask, retail_mask(xc, zc));
+        }
+    }
+}
+
 #[test]
 fn sample_field_floor_height_unloaded_or_out_of_range_returns_zero() {
     let world = World::new();

@@ -6192,11 +6192,26 @@ impl World {
     ///
     /// PORT: FUN_801cfe4c
     ///
-    /// Mirrors `FUN_801cfe4c`'s grid
-    /// sample: world coords convert to 64-unit sub-cells (`>> 6`), the
-    /// 128-unit tile column/row is `sub_cell >> 1` (rows of `0x80` bytes),
-    /// and the wall bit is `byte >> 4 & quadrant_mask` where the quadrant
-    /// is selected by `(sub_cell_z & 1) * 2 + (sub_cell_x & 1)`.
+    /// Single candidate-centre wall test against the `+0x4000` grid: world
+    /// coords convert to 64-unit sub-cells (`>> 6`), the 128-unit tile
+    /// column/row is `sub_cell >> 1` (rows of `0x80` bytes), and the wall bit
+    /// is `byte >> 4 & quadrant_mask` where the quadrant is
+    /// `(sub_cell_z & 1) * 2 + (sub_cell_x & 1)`.
+    ///
+    /// This is a simplification of retail `FUN_801cfe4c`, which tests **three
+    /// leading-edge footprint probes** (~47 units ahead, ±16 lateral;
+    /// per-direction table `DAT_801f2214`) and derives the sub-cell index
+    /// differently (`zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)-1`). The
+    /// **quadrant-mask formula here is byte-identical to retail** (verified
+    /// against the decomp in `tests`); only the sub-cell *index* derivation
+    /// differs — the engine floors where retail adds `+2` to Z and rounds X
+    /// up, so for the same world point retail indexes one tile further in Z
+    /// and the opposite X parity. Whether that offset reads the wrong grid
+    /// cell in a live scene is an open, capture-gated question (it depends on
+    /// how the disc grid is authored relative to the world-tile origin); the
+    /// "inverted X parity" hypothesis itself is false. Do NOT realign blind —
+    /// town01 walks acceptably today. See
+    /// `docs/subsystems/field-locomotion.md` ("Collision").
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return false;
