@@ -138,9 +138,9 @@ pub fn parse_card(buf: &[u8]) -> Result<Vec<SaveBlock>> {
         let mut visited = 0;
         while cur != 0xFFFF && visited < DIR_FRAMES {
             visited += 1;
-            chain.push(cur as u8);
-            // Read the next directory frame (block index 1..=15 → frame
-            // index 0..=14).
+            // Validate the block index BEFORE recording it (block 1..=15 → frame
+            // index 0..=14), so a malformed `next_block` aborts the walk without
+            // leaving a bogus index in the reported chain.
             let frame_idx = cur as usize;
             if frame_idx == 0 || frame_idx > DIR_FRAMES {
                 break;
@@ -149,6 +149,7 @@ pub fn parse_card(buf: &[u8]) -> Result<Vec<SaveBlock>> {
             if frame_off + DIR_FRAME_SIZE > buf.len() {
                 break;
             }
+            chain.push(cur as u8);
             let frame = &buf[frame_off..frame_off + DIR_FRAME_SIZE];
             cur = u16::from_le_bytes([frame[8], frame[9]]);
         }
