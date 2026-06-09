@@ -1194,3 +1194,12 @@ topics = ["menu", "options", "config", "overlay PROT 0899", "static overlay", "t
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+[[scenarios]]
+slot = 255
+label = "battle_noa_miracle_art_combo"
+backup_fingerprint = "3cb1376abaf61f060c82c45aa1418cd82785ca8681d4586cbd4c52dd842a5d09"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Battle, Noa auto-executes a Miracle Art against an enemy on load (no input needed); she runs through the component arts over a few seconds before the find/replace finisher triggers. Capture point for the Super/Miracle Art action-queue builder (F-SUPER): the runtime emits the combo's interleaved queue + combo-specific connector bytes into the battle-action context at ctx[+0x274] (ctx = *(0x8007BD24)). Drives autorun_super_art_queue_builder.lua, which watches ctx+0x274/+0x276 for writes to pin the builder PC + the literal queue bytes."
+topics = ["battle", "RE", "miracle art", "super art", "arts", "Noa", "ctx queue", "FUN_801E295C"]
