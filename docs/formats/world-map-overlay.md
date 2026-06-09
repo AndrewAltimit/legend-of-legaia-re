@@ -174,8 +174,13 @@ transform.
 **Remaining open:** the exact runtime *consumer* of `kind` and `attr` — i.e. the
 code that reads the slot-4 pool + body header and builds the cluster-A command
 stream that indexes the pool (that command stream is **not** in the slot-4 body;
-the size math is exactly the vertex pool, so the builder is elsewhere — the
-candidate path is `FUN_8001ada4` → `FUN_80058490`, not yet cleanly attributed).
+the size math is exactly the vertex pool, so the builder is elsewhere). The
+`FUN_8001ada4` → `FUN_80058490` path is **not** it — `FUN_80058490` is a libgpu
+`MoveImage` (VRAM block transfer; its `+4`/`+6` reads are a MoveImage rect, not a
+slot-4 body header). Pinning the builder needs a Read-watchpoint on a body's
+`kind` field (`base + body_offset + 6`) or on an `attr` field during a kingdom
+warp — the per-kingdom bases are now known (see the RAM-layout table), so the
+watch address is computable.
 
 ## Per-kingdom body inventory
 
