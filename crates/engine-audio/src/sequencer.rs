@@ -582,7 +582,7 @@ impl Sequencer {
         }
     }
 
-    fn alloc_voice(&self, spu: &Spu) -> Option<u8> {
+    fn alloc_voice(&mut self, spu: &mut Spu) -> Option<u8> {
         // Skip voices currently bound to active notes; the SPU itself can
         // advertise a voice as "off" between key-off and tail-fade, but we
         // don't want to steal one we still own.
@@ -596,8 +596,20 @@ impl Sequencer {
                 return Some(i as u8);
             }
         }
-        // No idle voice available. Try stealing the oldest active note.
-        self.active.first().map(|n| n.voice)
+        // No idle voice available. Steal the oldest active note's voice - but
+        // FREE its `active` slot and key-off its voice first. Otherwise the
+        // stolen note lingers in `self.active` aliasing the reused voice: its
+        // later note-off would key-off the new note that took the voice over
+        // (cutting it short), and the voice would stay permanently "occupied"
+        // in the mask above, leaking it.
+        if self.active.is_empty() {
+            return None;
+        }
+        let stolen = self.active.remove(0);
+        if let Some(v) = spu.voices.get_mut(stolen.voice as usize) {
+            v.key_off();
+        }
+        Some(stolen.voice)
     }
 }
 
@@ -643,6 +655,42 @@ mod tests {
             samples: vec![],
             programs: vec![],
         }
+    }
+
+    /// When every voice is busy, stealing must FREE the stolen note's slot (and
+    /// key-off its voice), not leave a second `ActiveNote` aliasing the reused
+    /// voice - otherwise the stale note's later key-off cuts the new note and the
+    /// voice leaks (stays "occupied" forever).
+    #[test]
+    fn alloc_voice_steal_frees_the_stolen_note_slot() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        // One active note per voice (0..24): the occupied mask blocks every
+        // voice, so allocation must steal.
+        for v in 0..24u8 {
+            seq.active.push(ActiveNote {
+                channel: 0,
+                key: 60 + v,
+                voice: v,
+                base_pitch: 0x1000,
+                bend_range: (2, 2),
+                base_vol: (0x3FFF, 0x3FFF),
+            });
+        }
+        assert_eq!(seq.active.len(), 24);
+
+        let stolen = seq.alloc_voice(&mut spu);
+
+        assert_eq!(stolen, Some(0), "steals the oldest note's voice");
+        assert_eq!(
+            seq.active.len(),
+            23,
+            "the stolen note's slot is freed - no aliasing entry"
+        );
+        assert!(
+            !seq.active.iter().any(|n| n.voice == 0),
+            "no lingering ActiveNote still references the reused voice"
+        );
     }
 
     #[test]

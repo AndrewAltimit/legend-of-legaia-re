@@ -295,9 +295,18 @@ impl World {
                     )
                 };
                 if hit {
+                    // A petrified target (Stone) absorbs the hit - no HP loss
+                    // (Stone is invulnerable at every damage entry point). The
+                    // strike still counts as landed (it connected, then was
+                    // nullified), matching the basic-attack / spell paths.
+                    let applied = if self.actor_is_petrified(target as u8) {
+                        0
+                    } else {
+                        dmg
+                    };
                     let a = &mut self.actors[target].battle;
-                    a.hp = a.hp.saturating_sub(dmg);
-                    total = total.saturating_add(dmg as u32);
+                    a.hp = a.hp.saturating_sub(applied);
+                    total = total.saturating_add(applied as u32);
                     landed = landed.saturating_add(1);
                     if a.hp == 0 {
                         a.liveness = 0;
@@ -353,12 +362,20 @@ impl World {
             .get(caster as usize)
             .map(|a| a.battle.mp)
             .unwrap_or(0);
+        // Pass the caster's MP-saver ability bits so the menu greys rows by the
+        // effective (reduced) cost the cast charges, not the raw spell cost.
+        let ability_bits = self
+            .character_ability_bits
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
         Some(crate::battle_magic::BattleSpellSession::new(
             caster,
             caster,
             &learned,
             &self.spell_catalog,
             caster_mp,
+            ability_bits,
         ))
     }
 
@@ -476,7 +493,7 @@ impl World {
     /// once up front; each target folds through [`Self::fold_spell_outcome`].
     /// Returns `false` (no MP spent, nothing folded) when the caster can't
     /// afford the cost.
-    fn cast_spell_on_slots(
+    pub(super) fn cast_spell_on_slots(
         &mut self,
         caster: u8,
         def: &crate::spells::SpellDef,
@@ -544,12 +561,24 @@ impl World {
             };
             let mut outcome = cast_spell(def, t, &snap);
             // Override only the magnitude of a damaging monster special-attack;
-            // heals / buffs / non-table moves fall through unchanged.
+            // heals / buffs / non-table moves fall through unchanged. The
+            // arts/physical kernel already folds the enemy→party affinity in.
             if let Some(power) = move_power
                 && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome
                 && let Some(faithful) = self.enemy_move_predamage(caster, t, power)
             {
                 *amount = faithful;
+            } else if let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
+                // Player Seru-magic path: scale by the element affinity of the
+                // summon creature vs. the target (FUN_801dd864). Post-roll,
+                // gated on the affinity tables — neutral (100) otherwise — so
+                // disc-free battles keep an unchanged magnitude. The summon's
+                // placeholder base damage is unchanged; only the ±4% affinity
+                // nudge is applied.
+                let pct = self.cast_affinity_pct(def.id, t);
+                if pct != 100 {
+                    *amount = ((*amount as u32 * pct as u32) / 100).min(9999) as u16;
+                }
             }
             self.fold_spell_outcome(outcome);
         }
@@ -591,8 +620,14 @@ impl World {
     /// Element affinity comes from [`Self::enemy_affinity_pct`] when the
     /// affinity tables are installed (`matrix[enemy_element][party_element]`,
     /// `FUN_801dd864`), else 100 (neutral); status-weaken (`+0x16e`) and the
-    /// guard byte (`+0x1de`) default to none. The affinity multiply happens
-    /// after all the rolls, so it never changes the RNG stream.
+    /// guard byte (`+0x1de`) default to none. The affinity scale is applied
+    /// *during* the roll (inside [`arts_physical_predamage_lazy`], before the
+    /// conditional bonus-arm threshold, matching retail's scale→bonus order),
+    /// so a non-neutral affinity can change whether the lazy bonus pair is
+    /// drawn. What is invariant is the *gating*: an uninstalled table resolves
+    /// to 100% (no scaling), reproducing the no-affinity baseline — magnitude
+    /// and RNG stream bit-identical — so disc-free / synthetic battles are
+    /// unperturbed.
     ///
     /// The `rand()` draws are taken in retail call order: attacker ×2, defender
     /// ×1, then the bonus pair ×2 **lazily** — drawn only when the conditional
@@ -706,6 +741,68 @@ impl World {
         aff.affinity_pct(enemy_elem, party_elem).unwrap_or(100)
     }
 
+    /// Element id (`0..=7`) of a battle slot, resolved by slot the way the retail
+    /// affinity stage [`FUN_801dd864`] does: a party member (slot `< party_count`)
+    /// takes its per-character table element; any other slot — an enemy, or the
+    /// slot-7 summon body — takes its monster record's `+0x1D` element
+    /// ([`crate::monster_catalog::MonsterDef::element`]). Returns `None` when the
+    /// affinity tables aren't installed or no element resolves, so callers fall
+    /// back to neutral.
+    fn battle_slot_element(&self, slot: u8) -> Option<u8> {
+        let aff = self.element_affinity.as_ref()?;
+        if (slot as usize) < self.party_count as usize {
+            aff.character_element(slot + 1)
+        } else {
+            let id = self.actors.get(slot as usize)?.battle_monster_id?;
+            Some(self.monster_catalog.get(id)?.element)
+        }
+    }
+
+    /// Element id of the *summon creature* a player Seru-magic `spell_id` attacks
+    /// as. Retail resolves a player magic cast's attacker element by slot, and a
+    /// summon cast runs through the slot-7 summon body — its namesake
+    /// `battle_data` creature ([`crate::summon::summon_creature_id`]) — so the
+    /// attacker element is that creature's record `+0x1D`, *not* the casting
+    /// character's. Resolved off the loaded monster catalog by matching the
+    /// spell's display name ([`crate::retail_magic`]) to the lowest creature id
+    /// of that name (the `"$2"`/`"$3"` higher-level variants carry distinct names
+    /// and are excluded). `None` for a non-summon id or when the catalog / spell
+    /// name doesn't resolve.
+    fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
+        if !crate::summon::SERU_SUMMON_IDS.contains(&spell_id) {
+            return None;
+        }
+        let name = crate::retail_magic::get(spell_id)?.name;
+        self.monster_catalog
+            .by_id
+            .values()
+            .filter(|d| d.name == name)
+            .min_by_key(|d| d.id)
+            .map(|d| d.element)
+    }
+
+    /// Element-affinity multiplier (percent) for a player Seru-magic cast
+    /// (`spell_id`) landing on `target`: `matrix[summon-creature element][target
+    /// element]` ([`legaia_asset::element_affinity`], `FUN_801dd864`). The
+    /// attacker element is the summon creature's ([`Self::summon_attacker_element`]),
+    /// the defender element is resolved by slot ([`Self::battle_slot_element`]).
+    /// Returns `100` (neutral, no change) when the tables aren't installed, the id
+    /// isn't a summon, or either element fails to resolve — so disc-free /
+    /// synthetic battles and non-summon casts are unaffected. Applied post-roll,
+    /// so it never touches the RNG stream.
+    fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
+        let Some(aff) = self.element_affinity.as_ref() else {
+            return 100;
+        };
+        let Some(atk_elem) = self.summon_attacker_element(spell_id) else {
+            return 100;
+        };
+        let Some(def_elem) = self.battle_slot_element(target) else {
+            return 100;
+        };
+        aff.affinity_pct(atk_elem, def_elem).unwrap_or(100)
+    }
+
     /// Whether a monster caster's chosen move id resolves to a real per-move
     /// power record (so its damage should roll through [`Self::enemy_move_predamage`]
     /// rather than the MP-scaled spell placeholder). Only fires when the
@@ -729,18 +826,28 @@ impl World {
         use crate::spells::SpellOutcome as O;
         match outcome {
             O::Damage { target, amount, .. } => {
+                // The shared damage finisher fills the defender's spirit-art
+                // gauge from any hit (magic included), and it does so on the
+                // pre-nullify amount - retail charges the gauge before the
+                // absorb stage, so a Stone target's absorbed cast still charges.
+                self.accrue_spirit_gauge(target, amount);
+                // A petrified target (Stone) absorbs the hit - no HP loss, like
+                // the basic-attack path; Stone is invulnerable at every damage
+                // entry point.
+                let applied = if self.actor_is_petrified(target) {
+                    0
+                } else {
+                    amount
+                };
                 if let Some(a) = self.actors.get_mut(target as usize) {
-                    a.battle.hp = a.battle.hp.saturating_sub(amount);
+                    a.battle.hp = a.battle.hp.saturating_sub(applied);
                     if a.battle.hp == 0 {
                         a.battle.liveness = 0;
                     }
                 }
-                // The shared damage finisher fills the defender's spirit-art
-                // gauge from any hit, magic included.
-                self.accrue_spirit_gauge(target, amount);
                 self.battle_hit_fx.push(BattleHitFx {
                     target_slot: target,
-                    amount,
+                    amount: applied,
                     is_heal: false,
                     is_crit: false,
                 });
@@ -1374,8 +1481,30 @@ impl World {
         let n = self.actors.len() as u8;
         // A petrified actor counts as defeated (Stone), so it doesn't keep its
         // side "alive" - a fully-petrified party is a wipe, not a stuck loop.
-        let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
-        let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        let mut party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+        let mut monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+
+        // Round boundary: the SM idles at EndOfAction and no living actor still
+        // holds an initiative key, so a full round just completed. Tick every
+        // actor's status effects once here - DoT damage (Venom / Toxic) plus
+        // duration decay - mirroring the `BattleRound::end` tick the runner path
+        // uses, so poison actually drains HP and afflictions wear off in the
+        // live loop (this is the tick the skip-turn comment below relies on).
+        // RNG-free (DoT is deterministic), so the upcoming reseed's RNG stream
+        // is unchanged; gated on the SPD initiative path (a no-SPD synthetic
+        // battle has no round concept). A DoT can down the last member of a
+        // side, so re-evaluate the wipe flags afterward before arming a turn.
+        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            && party_alive
+            && monsters_alive
+            && self.any_battle_speed()
+            && !self.any_living_initiative_key()
+        {
+            self.tick_status_effects();
+            party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
+            monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
+        }
+
         if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             && party_alive
             && monsters_alive
@@ -1390,9 +1519,9 @@ impl World {
                 // initiative key was already consumed by the picker, so the
                 // next advance moves on; advancing `active_actor` also moves
                 // the no-speed round-robin past it. The status duration ticks
-                // independently (`tick_status_effects`), so the affliction
-                // still wears off. The SM stays at EndOfAction (no action
-                // armed) - exactly the "skipped turn" outcome.
+                // once per round at the boundary above (`tick_status_effects`),
+                // so the affliction still wears off. The SM stays at EndOfAction
+                // (no action armed) - exactly the "skipped turn" outcome.
                 self.battle_ctx.active_actor = next;
             } else if next_is_party && self.actor_is_confused(next) {
                 // Confused party member: it "acts uncontrollably", so the player
@@ -2155,6 +2284,20 @@ impl World {
     /// Seed every living battle slot's initiative key from its SPD; dead slots
     /// get `0`. Per-actor formula `init_key = speed + rand()%(speed/2 + 1) + 1`
     /// (`overlay_0897_801e23ec`), so every living actor's key is `>= 1`.
+    /// `true` while any *living* actor still holds an unspent initiative key.
+    /// When this goes false the round is over and the next
+    /// [`Self::next_combatant_by_initiative`] reseeds — the live loop uses this
+    /// as its once-per-round boundary for status ticking. Dead actors' stale
+    /// keys are ignored (only living actors count), so it agrees with the
+    /// reseed condition inside the selector.
+    fn any_living_initiative_key(&self) -> bool {
+        (0..BATTLE_SLOTS).any(|i| {
+            self.actors
+                .get(i)
+                .is_some_and(|a| a.battle.liveness != 0 && a.battle.init_key != 0)
+        })
+    }
+
     fn reseed_initiative(&mut self) {
         for i in 0..BATTLE_SLOTS {
             let alive = self.actors.get(i).is_some_and(|a| a.battle.liveness != 0);

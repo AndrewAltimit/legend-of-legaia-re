@@ -1029,9 +1029,13 @@ pub trait FieldHost {
     ///
     /// Returns the **PC delta from the opcode byte** - the VM applies it as
     /// `Advance { next_pc: pc + delta }`. Default impl emits the
-    /// "no actor pool" branch (always returns 13) which matches the
-    /// game-code path when the spawn pool is full and no slot was
-    /// available.
+    /// "no actor pool" branch (skips the spawn), but it must still consume the
+    /// whole instruction: the base is 13 bytes, and a `0x40` capture marker
+    /// appends a 1-byte payload-length field + the captured-PC payload, so the
+    /// delta grows by `2 + payload_len` (matching the disassembler's width and
+    /// step.rs's own slicing of `captured_pc_payload`). Returning a constant 13
+    /// when the capture extension is present under-advances the PC into the
+    /// middle of the payload and desyncs the rest of the script.
     fn op34_sub1_spawn_or_skip(
         &mut self,
         ctx: &FieldCtx,
@@ -1041,8 +1045,12 @@ pub trait FieldHost {
         capture_flag: u8,
         captured_pc_payload: &[u8],
     ) -> usize {
-        let _ = (ctx, op0, packed24, pos, capture_flag, captured_pc_payload);
-        13
+        let _ = (ctx, op0, packed24, pos);
+        13 + if capture_flag == 0x40 {
+            2 + captured_pc_payload.len()
+        } else {
+            0
+        }
     }
 
     /// Op 0x4C outer-nibble-4 ctx-slot ramp.

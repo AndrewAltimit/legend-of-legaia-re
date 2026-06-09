@@ -746,6 +746,9 @@ rather than the field `decode_field_direction`, `step_world_map_locomotion`
 records the heading into the actor's `render_26` field itself (the same field
 the field path stores), so the facing tick tracks the walk direction
 deterministically. The player + entity markers build into one Lines mesh.
+Diagonal movement applies the same `speed -= speed >> 2` normalise as the field
+controller (and the retail walk overlay): `advance_with_collision` steps both
+axes equally, so a diagonal would otherwise travel ~1.41x the cardinal speed.
 
 #### Auto-engage on walk-over
 

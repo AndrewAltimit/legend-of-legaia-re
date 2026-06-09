@@ -172,16 +172,23 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
     let Some(op) = MotionOp::from_byte(op_byte) else {
         return StepResult::Done;
     };
-    let speed = state.speed as i16;
+    // Compute displacements in i32: an i16 displacement can reach `i16::MIN`
+    // (e.g. target `i16::MIN`, world `> 0`), and `i16::MIN.abs()` overflow-panics
+    // in debug; widening also stops a `speed > 0x7FFF` from flipping the step's
+    // sign when cast to i16 (it is a u16, never negative).
+    let speed = state.speed as i32;
     // Retail keeps PC on the active opcode while the per-frame budget is
     // partially consumed (`Yield`); only `Done` / terminal arms move PC
     // past the body. Engines reset PC themselves when starting a new
     // script.
     match op {
         MotionOp::TranslateY => {
-            let dy = target.y.saturating_sub(state.world_y);
+            let cur = state.world_y as i32;
+            let dy = target.y as i32 - cur;
             let step = dy.signum() * speed.min(dy.abs());
-            state.world_y = state.world_y.wrapping_add(step);
+            // `cur + step` lies between `cur` and `target.y` (both i16), so it
+            // fits i16 without wrapping.
+            state.world_y = (cur + step) as i16;
             if state.world_y == target.y {
                 state.pc = body_off as u16;
                 StepResult::Done
@@ -190,9 +197,10 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             }
         }
         MotionOp::TranslateX => {
-            let dx = target.x.saturating_sub(state.world_x);
+            let cur = state.world_x as i32;
+            let dx = target.x as i32 - cur;
             let step = dx.signum() * speed.min(dx.abs());
-            state.world_x = state.world_x.wrapping_add(step);
+            state.world_x = (cur + step) as i16;
             if state.world_x == target.x {
                 state.pc = body_off as u16;
                 StepResult::Done
@@ -208,12 +216,14 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
             // Retail computes Manhattan-distance ratios + dispatches between
             // (X-dominant, Z-dominant, both) but the net effect is "move
             // both axes by `speed` clamped at the target".
-            let dx = target.x.saturating_sub(state.world_x);
-            let dz = target.z.saturating_sub(state.world_z);
+            let cur_x = state.world_x as i32;
+            let cur_z = state.world_z as i32;
+            let dx = target.x as i32 - cur_x;
+            let dz = target.z as i32 - cur_z;
             let step_x = dx.signum() * speed.min(dx.abs());
             let step_z = dz.signum() * speed.min(dz.abs());
-            state.world_x = state.world_x.wrapping_add(step_x);
-            state.world_z = state.world_z.wrapping_add(step_z);
+            state.world_x = (cur_x + step_x) as i16;
+            state.world_z = (cur_z + step_z) as i16;
             if state.world_x == target.x && state.world_z == target.z {
                 state.pc = body_off as u16;
                 StepResult::Done
@@ -356,6 +366,29 @@ mod tests {
         assert_eq!(step(&mut s, t, &bc), StepResult::Done);
         assert_eq!(s.world_x, 10);
         assert_eq!(s.pc, 2);
+    }
+
+    #[test]
+    fn step_translate_handles_extreme_coords_and_huge_speed() {
+        let bc = [0x41 | 0x80, 0xF8]; // TranslateX, self target
+
+        // Target at i16::MIN with the actor at a positive position: the i16
+        // displacement would be i16::MIN, whose `.abs()` overflow-panics in
+        // debug. The i32 path must move toward it without panicking.
+        let mut s = st(100, 0, 4);
+        let t = tgt(i16::MIN, 0, 0);
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        assert_eq!(s.world_x, 96, "moved 4 toward i16::MIN, no panic");
+
+        // A speed > 0x7FFF would flip the step's sign if cast to i16, sending the
+        // actor the WRONG way. It must still move toward the target and clamp.
+        let mut s2 = st(-100, 0, 0xFFFF);
+        let t2 = tgt(200, 0, 0);
+        assert_eq!(step(&mut s2, t2, &bc), StepResult::Done);
+        assert_eq!(
+            s2.world_x, 200,
+            "huge speed clamps at the target in the correct direction"
+        );
     }
 
     #[test]

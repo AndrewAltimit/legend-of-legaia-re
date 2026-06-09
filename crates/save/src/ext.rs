@@ -200,8 +200,14 @@ impl SaveFile {
         out.push(SAVE_FILE_VERSION);
         out.extend_from_slice(&self.ext.story_flags.to_le_bytes());
         out.extend_from_slice(&self.ext.money.to_le_bytes());
-        out.push(inv.len() as u8);
-        for &(id, count) in inv {
+        // Clamp the count byte AND the emitted pairs identically: the count is
+        // a single u8, so >255 entries would wrap (256 -> 0) while still writing
+        // every pair, misaligning the whole downstream parse. Every other
+        // length-prefixed field (party_count, spells, chains) clamps the same
+        // way; the v1 inventory loop must too.
+        let inv_count = inv.len().min(u8::MAX as usize);
+        out.push(inv_count as u8);
+        for &(id, count) in inv.iter().take(inv_count) {
             out.push(id);
             out.push(count);
         }
@@ -783,6 +789,36 @@ mod tests {
         let parsed = SaveFile::parse(&bytes).unwrap();
         assert_eq!(parsed, sf);
         assert_eq!(parsed.ext.story_flag_bits, bits);
+    }
+
+    /// An over-full inventory (>255 distinct ids) must clamp, not corrupt: the
+    /// count byte is a single u8, so without the clamp 256 entries would write a
+    /// `0` count while still emitting 512 pair bytes, misaligning the party parse
+    /// and bricking the save. The writer caps the count AND the pairs at 255 so
+    /// the file stays self-consistent and the party survives.
+    #[test]
+    fn over_full_inventory_clamps_instead_of_corrupting_the_save() {
+        let inventory: Vec<(u8, u8)> = (0u8..=255).map(|id| (id, 1)).collect();
+        assert_eq!(inventory.len(), 256);
+        let sf = SaveFile {
+            party: Party {
+                members: vec![CharacterRecord::zeroed()],
+            },
+            ext: SaveExt {
+                story_flags: 0x1234_5678,
+                money: 99,
+                inventory,
+                story_flag_bits: vec![],
+            },
+            ext_v2: SaveExtV2::default(),
+        };
+        let bytes = sf.write();
+        let parsed = SaveFile::parse(&bytes).expect("a clamped save still parses");
+        // The party + money parsed at the right offsets (not misaligned) and the
+        // inventory came back as the clamped 255 entries.
+        assert_eq!(parsed.party.members.len(), 1, "party survived the clamp");
+        assert_eq!(parsed.ext.money, 99);
+        assert_eq!(parsed.ext.inventory.len(), 255, "inventory clamped to 255");
     }
 
     #[test]

@@ -806,6 +806,46 @@ fn petrified_target_absorbs_art_strike_damage() {
     assert_eq!(r, Some((3, 200)));
 }
 
+/// Stone is invulnerable at the spell damage path too, not just the basic-attack
+/// / SM strike. A petrified party member is still targetable (target resolvers
+/// key on `liveness`, which Stone leaves non-zero), so an enemy damage spell can
+/// land on it - and it must absorb. The defender's spirit gauge still charges
+/// from the pre-nullify amount (matching the basic-attack / finisher order).
+#[test]
+fn stone_absorbs_a_damage_spell() {
+    use crate::spells::{SpellElement, SpellOutcome};
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    let mut world = World::new();
+    world.enter_battle(3, 1, 600);
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.liveness = 1;
+    world
+        .status_effects
+        .apply_with_duration(0, StatusKind::Stone, 255);
+
+    world.fold_spell_outcome(SpellOutcome::Damage {
+        target: 0,
+        amount: 150,
+        element: SpellElement::Neutral,
+        weakness: false,
+    });
+
+    assert_eq!(
+        world.actors[0].battle.hp, 200,
+        "a petrified target absorbs the damage spell"
+    );
+    assert_ne!(
+        world.actors[0].battle.liveness, 0,
+        "absorbing the cast must not down the petrified actor"
+    );
+    assert!(
+        world.spirit_gauge(0) > 0,
+        "the pre-nullify hit still charges the defender's spirit gauge"
+    );
+}
+
 #[test]
 fn asleep_monster_loses_its_turn_and_never_attacks() {
     use legaia_engine_vm::status_effects::StatusKind;
@@ -849,6 +889,86 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
     assert!(
         !party_took_damage(true),
         "an asleep monster must skip its turn and never attack"
+    );
+}
+
+/// A damage-over-time kill must down the actor: `tick_status_effects` pairs
+/// `hp == 0` with `liveness = 0` like every other damage entry point. Otherwise
+/// the poisoned corpse stays "alive" for the liveness-keyed wipe checks and turn
+/// / target resolvers (it would keep being armed and targeted).
+#[test]
+fn dot_kill_sets_liveness_zero() {
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    let mut world = World::new();
+    world.enter_battle(1, 1, 600);
+    // Toxic ticks max_hp/8 = 10, more than the monster's remaining 4 HP.
+    world.actors[1].battle.max_hp = 80;
+    world.actors[1].battle.hp = 4;
+    world.actors[1].battle.liveness = 1;
+    world.status_effects.apply(1, StatusKind::Toxic);
+
+    world.tick_status_effects();
+
+    assert_eq!(world.actors[1].battle.hp, 0, "Toxic DoT drains the last HP");
+    assert_eq!(
+        world.actors[1].battle.liveness, 0,
+        "a DoT kill downs the actor (liveness must not desync from HP)"
+    );
+}
+
+/// In the live battle loop a poison/toxic affliction must actually drain HP and
+/// expire: `tick_status_effects` is called once per round at the initiative
+/// boundary. A poisoned party member loses HP across rounds even when the enemy
+/// can never strike (asleep), so the only HP source is the DoT.
+#[test]
+fn live_loop_ticks_dot_at_the_round_boundary() {
+    use legaia_engine_vm::status_effects::StatusKind;
+
+    fn party_lost_hp(poisoned: bool) -> bool {
+        let mut world = World::new();
+        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.live_gameplay_loop = true;
+        world.battle_player_driven = false;
+        // Both sides carry SPD so the initiative round boundary engages (the DoT
+        // tick is gated on it); seed up front so battle start isn't mistaken for
+        // a round boundary.
+        world.battle_speed[0] = 10;
+        world.battle_speed[1] = 10;
+        world.seed_battle_initiative();
+        // The monster is asleep, so it never attacks - the party's only HP loss
+        // can come from the DoT.
+        world
+            .status_effects
+            .apply_with_duration(1, StatusKind::Sleep, 255);
+        world.actors[0].battle.max_hp = 800;
+        world.actors[0].battle.hp = 800;
+        world.actors[1].battle.max_hp = 9999;
+        world.actors[1].battle.hp = 9999;
+        if poisoned {
+            world
+                .status_effects
+                .apply_with_duration(0, StatusKind::Toxic, 255);
+        }
+        let start = world.actors[0].battle.hp;
+        for _ in 0..600 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                break;
+            }
+        }
+        world.actors[0].battle.hp < start
+    }
+
+    // Control: with no poison and an asleep enemy the party is never touched.
+    assert!(
+        !party_lost_hp(false),
+        "control: no DoT + asleep enemy must leave the party at full HP"
+    );
+    // The fix: the live loop ticks the DoT each round, so the party bleeds.
+    assert!(
+        party_lost_hp(true),
+        "a poisoned party member must lose HP to the DoT in the live loop"
     );
 }
 
@@ -4735,6 +4855,97 @@ fn element_affinity_scales_monster_special_attack_damage() {
     );
 }
 
+/// A player Seru-magic cast scales by the element affinity of its summon
+/// CREATURE vs the target — `matrix[summon-creature element][target element]`
+/// (`FUN_801dd864`), not the casting character's element. The Gimard spell
+/// (id `0x81`) summons the namesake "Gimard" creature, so the attacker element
+/// is that creature's record element; the multiply is post-roll and gated, so a
+/// `None` affinity table reproduces the neutral magnitude exactly.
+#[test]
+fn element_affinity_scales_player_summon_cast_by_creature_element() {
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    use legaia_asset::element_affinity::ElementAffinity;
+
+    const SUMMON_ELEM: usize = 2; // the "Gimard" creature's element
+    const ENEMY_ELEM: usize = 5; // the target enemy's element
+
+    // The Gimard summon spell. Damage placeholder is MP-scaled
+    // (caster_mag * base_power / 8 - mdef); base_power chosen so the affinity
+    // delta is well above the 1-HP clamp.
+    fn gimard_spell() -> SpellDef {
+        SpellDef {
+            id: 0x81,
+            name: "Gimard".into(),
+            mp_cost: 4,
+            element: SpellElement::Neutral,
+            target: SpellTarget::OneEnemy,
+            effect: SpellEffect::Damage {
+                base_power: 100,
+                element: SpellElement::Neutral,
+            },
+            anim_id: 0,
+        }
+    }
+
+    fn run(affinity_pct: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // Catalog: the summon creature (matched by the spell's display name) and
+        // the target enemy, each with a distinct element.
+        let mut catalog = MonsterCatalog::new();
+        let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
+        creature.element = SUMMON_ELEM as u8;
+        catalog.insert(creature);
+        let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);
+        enemy.element = ENEMY_ELEM as u8;
+        catalog.insert(enemy);
+        world.monster_catalog = catalog;
+
+        // Caster = party slot 0; enough MP to afford the cast.
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.mp = 40;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_magic(0, 40);
+        // Target = enemy slot 1, identified to the catalog by monster id.
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_defense[1] = 0;
+
+        if let Some(pct) = affinity_pct {
+            let mut matrix = [[100u8; 8]; 8];
+            matrix[SUMMON_ELEM][ENEMY_ELEM] = pct;
+            world.element_affinity = Some(ElementAffinity {
+                matrix,
+                character_elements: vec![3; 8],
+            });
+        }
+
+        let def = gimard_spell();
+        let before = world.actors[1].battle.hp;
+        world.cast_spell_on_slots(0, &def, &[1]);
+        before - world.actors[1].battle.hp
+    }
+
+    let neutral = run(Some(100));
+    let weakness = run(Some(200));
+    let resist = run(Some(50));
+    let gated_off = run(None);
+    assert!(neutral > 0, "neutral affinity still deals damage");
+    assert_eq!(
+        neutral, gated_off,
+        "no affinity table reproduces the neutral 100% multiplier exactly"
+    );
+    assert_eq!(weakness, neutral * 2, "200% affinity doubles the magnitude");
+    assert_eq!(resist, neutral / 2, "50% affinity halves the magnitude");
+}
+
 /// A monster with no castable spells always picks a physical strike: the
 /// action picker rolls `rand % (1 + 0) == 0`, so the magic branch is never
 /// taken regardless of the seed. It still targets a (single living) party
@@ -5483,6 +5694,7 @@ fn battle_magic_escape_returns_to_field() {
         &[0x41],
         &world.spell_catalog,
         20,
+        0,
     ));
 
     // SelfOnly target resolves immediately, so one Cross casts Warp.

@@ -379,20 +379,31 @@ special-attack path scales by `matrix[enemy_element][party_member_element]`
 (`World::enemy_affinity_pct` → `enemy_move_predamage`): the enemy element from
 `MonsterDef::element`, the defender from the active party member's element (the
 engine models `char_id == party slot`, so a defender at actor slot *s* is char id
-*s+1*). The multiply happens after all the rolls, so it never perturbs the RNG
-stream, and it's gated on the affinity table being installed (disc-free /
-synthetic battles keep the neutral 100% multiplier, bit-identical).
+*s+1*). The scale is applied *inside* the roll (`arts_physical_predamage_lazy`),
+before the conditional bonus-arm threshold — matching retail's scale→bonus order
+(`FUN_801dd864` scale precedes the `FUN_801dd0ac` second arm) — so a non-neutral
+affinity can change whether the lazy bonus pair is drawn. The gating is what's
+invariant: an uninstalled table resolves to the neutral 100% multiplier (no
+scaling), reproducing the no-affinity baseline bit-identically, so disc-free /
+synthetic battles keep an unchanged magnitude *and* RNG stream.
 
-The **player→enemy** direction is the same matrix the other way round —
-`matrix[summon-creature element][target element]` (attacker = the summon body's
-`+0x1d`, defender = the target monster's `+0x1d`). With the element source now
-resolved, the only thing left for byte-exactness is wiring it, which is
-deliberately deferred: the player summon's *base* damage is still the
-caster-state-derived stand-in (the faithful slot-7 summon roll is open), and the
-affinity is only a ±4% post-multiply on top, so layering it on a placeholder
-adds plumbing (spell → summon-creature → element) for a sub-rounding nudge. A
-party member's Tactical Art is *not* a move-power case (it uses the art-record
-power byte — see the note under the arts/physical kernel above).
+The **player→enemy** direction is **also wired** — the same matrix the other way
+round, `matrix[summon-creature element][target element]` (attacker = the summon
+body's `+0x1d`, defender = the target monster's `+0x1d`). `cast_spell_on_slots`
+applies it for a player Seru-magic cast through `World::cast_affinity_pct`: the
+attacker element resolves off the summon **creature** — the spell's display name
+matched to its namesake `battle_data` record (`World::summon_attacker_element`,
+the engine-side equivalent of resolving slot 7's `+0x1d`), *not* the casting
+character's element — and the defender element resolves by slot
+(`World::battle_slot_element`: party member → per-character table, enemy / summon
+body → monster record `+0x1d`). Like the enemy direction the multiply happens
+after the roll (so the RNG stream is untouched) and is gated on the affinity
+table being installed (neutral 100% otherwise). The summon's *base* damage is
+still the caster-state-derived stand-in (the faithful slot-7 summon roll is the
+open piece), so this is the ±4% affinity nudge layered on a placeholder
+magnitude, not yet a byte-exact summon roll. A party member's Tactical Art is
+*not* a move-power case (it uses the art-record power byte — see the note under
+the arts/physical kernel above) and does not route through this cast path.
 
 ## MP cost & ability-bit modifiers
 

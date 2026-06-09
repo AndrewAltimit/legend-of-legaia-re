@@ -196,13 +196,32 @@ pub fn apply_equip_outcome(
     world: &mut World,
 ) -> Option<EquipOutcome> {
     let outcome = session.outcome()?;
-    if let EquipOutcome::Committed { slot, added, .. } = outcome
+    if let EquipOutcome::Committed {
+        slot,
+        added,
+        removed,
+    } = outcome
         && let Some(member) = world.roster.members.get_mut(char_slot as usize)
     {
         let mut eq = member.equipment();
         if (slot as usize) < eq.slots.len() {
             eq.slots[slot as usize] = added;
             member.set_equipment(eq);
+            // Reconcile the bag with the swap the session computed on its own
+            // (cloned) copy: the newly-equipped item leaves inventory, the
+            // swapped-out item (if any) returns to it. Without this the equipped
+            // item stays in the bag (duplication) and the old one is lost.
+            if added != 0
+                && let Some(qty) = world.inventory.get_mut(&added)
+            {
+                *qty = qty.saturating_sub(1);
+                if *qty == 0 {
+                    world.inventory.remove(&added);
+                }
+            }
+            if removed != 0 {
+                *world.inventory.entry(removed).or_insert(0) += 1;
+            }
         }
     }
     Some(outcome)
@@ -690,8 +709,66 @@ mod tests {
             assert!(matches!(outcome, Some(EquipOutcome::Committed { .. })));
             // Roster member 0's slot 1 byte now matches the equipped id.
             assert_eq!(w.roster.members[0].equipment().slots[1], 0x25);
+            // ...and the equipped item LEFT the bag (no duplication). Slot 1 was
+            // empty, so nothing is returned.
+            assert_eq!(
+                w.inventory.get(&0x25),
+                None,
+                "equipped item must be removed from the bag (no duplication)"
+            );
         } else {
             panic!("expected Equip variant");
         }
+    }
+
+    /// Equipping over an occupied slot returns the swapped-out item to the bag
+    /// and removes the newly-equipped one — no item loss, no duplication.
+    #[test]
+    fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
+        let mut w = fresh_world();
+        w.inventory.clear();
+        w.inventory.insert(0x25, 1);
+        // Pre-equip a different slot-1 item (0x26 >> 5 == 1) on member 0.
+        let mut eq = w.roster.members[0].equipment();
+        eq.slots[1] = 0x26;
+        w.roster.members[0].set_equipment(eq);
+
+        let mut equip_table = EquipmentTable::new();
+        equip_table.set(0x25, crate::battle_stats::ItemModifier::default());
+        equip_table.set(0x26, crate::battle_stats::ItemModifier::default());
+        let mut s = FieldMenuSubsession::build(
+            FieldMenuRow::Equip,
+            &w,
+            &OptionsState::default(),
+            &fresh_save_slots(),
+            &ChainLibrary::new(),
+            &SpellCatalog::vanilla(),
+            &equip_table,
+        );
+        s.tick_pad_edge(PadButton::Down.mask());
+        for _ in 0..3 {
+            s.tick_pad_edge(PadButton::Cross.mask());
+        }
+        assert!(s.is_done());
+        let FieldMenuSubsession::Equip { session, char_slot } = &s else {
+            panic!("expected Equip variant");
+        };
+        let outcome = apply_equip_outcome(session, *char_slot, &mut w);
+        assert!(matches!(
+            outcome,
+            Some(EquipOutcome::Committed {
+                removed: 0x26,
+                added: 0x25,
+                ..
+            })
+        ));
+        assert_eq!(w.roster.members[0].equipment().slots[1], 0x25);
+        // 0x25 left the bag, 0x26 came back into it.
+        assert_eq!(w.inventory.get(&0x25), None, "equipped item left the bag");
+        assert_eq!(
+            w.inventory.get(&0x26),
+            Some(&1),
+            "swapped-out item returned to the bag"
+        );
     }
 }
