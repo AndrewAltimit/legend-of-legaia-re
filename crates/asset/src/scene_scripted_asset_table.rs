@@ -32,10 +32,13 @@
 //!
 //! ### Format meaning - partially understood
 //!
-//! The prescript is plausibly the **scene event-script bytecode** that the
-//! field VM (`FUN_801DE840`) executes when the scene loads. Per-record
-//! `0xFFFF 0x0000` markers strongly resemble field-VM frame-divider opcodes.
-//! The asset table after the boundary is a standard scene asset bundle.
+//! The prescript is the **word-aligned per-scene actor/event record structure**
+//! shared with [`crate::scene_event_scripts`] — NOT field-VM (`FUN_801DE840`)
+//! bytecode (it disassembles as field-VM with a 65–88 % error rate). The
+//! per-record `0xFFFF 0x0000` markers are 16-bit record header sentinels, not
+//! field-VM frame-divider opcodes. The real per-scene field-VM scripts live in
+//! the scene MAN sub-asset (see [`crate::man_section`]). The asset table after
+//! the boundary is a standard scene asset bundle.
 //!
 //! Detection is gated on the asset-table shape - that's a much stronger
 //! signal than the prescript alone, which can occasionally match arbitrary

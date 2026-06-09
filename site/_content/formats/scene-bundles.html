@@ -108,10 +108,10 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table relative to +0x800
-+0x800 + offsets[i]              ;   per-record field-VM bytecode</code></pre>
++0x800 + offsets[i]              ;   per-record word-aligned command bytes</code></pre>
   <p>The header's <code>u16[0]</code>, <code>u16[5]</code>, <code>u16[7]</code> are algebraically tied to a single per-scene constant <code>N</code>: <code>u16[0] = N + 4</code>, <code>u16[5] = N</code>, <code>u16[7] = N + 2</code>, and <code>N = 4 * param + 22</code> (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the <code>N/param</code> algebra. Across the entire 1234-entry PROT corpus this matches <strong>97</strong> entries with zero false positives — and <strong>every</strong> match parses cleanly as a scene-event-scripts prescript at <code>+0x800</code>.</p>
-  <p>The post-header dense data is the <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> prescript, parsed by the field VM (<code>FUN_801DE840</code>) at scene entry. The pre-header table at <code>+0x14</code> is per-scene runtime metadata: <code>param</code> records of 4 bytes each, grouped by the third byte (<code>b2</code>) into 1..N scene regions; the last byte is always <code>0x01</code> (probably a "live" flag). See <a href="scene-v12-table.html">scene-v12-table</a> for the per-byte semantics.</p>
-  <p>Each scene block on the disc carries <strong>both</strong> a v12 entry (this format, prescript at <code>+0x800</code>) and a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no v12 header). The two scripts likely serve different runtime phases — scene-enter triggers vs. per-actor / per-region triggers — though the exact split isn't pinned down yet; both are walked by the same field VM.</p>
+  <p>The post-header dense data is the <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> prescript — a word-aligned per-scene actor/event command structure, <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (see that section for the falsification). The pre-header table at <code>+0x14</code> is per-scene runtime metadata: <code>param</code> records of 4 bytes each, grouped by the third byte (<code>b2</code>) into 1..N scene regions; the last byte is always <code>0x01</code> (probably a "live" flag). See <a href="scene-v12-table.html">scene-v12-table</a> for the per-byte semantics.</p>
+  <p>Each scene block on the disc carries <strong>both</strong> a v12 entry (this format, prescript at <code>+0x800</code>) and a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no v12 header). Both carry the same word-aligned record structure. The genuine per-scene field-VM scripts live elsewhere — in the scene MAN sub-asset (<code>FUN_8003A1E4</code> → <code>FUN_801DE840</code>; see <a href="../subsystems/script-vm.html">script VM</a>).</p>
 </section>
 
 <section class="doc-section" id="scene-asset-table-count-prefixed-asset-bundle">
@@ -193,9 +193,10 @@ if let Some(r) = scene_asset_table::resolve(buf) {
 <pre><code>+0x00              u16  count             ; 1..=4096 - number of script records
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing
-+offsets[i]        record bytecode        ; per-record opcodes (typical
-                                          ; opener: 0xFFFF 0x0000 sentinel +
-                                          ; field-VM-shaped frame ops)
++offsets[i]        record               ; word-aligned (16-bit) command
+                                          ; record (opener: 0xFFFF 0x0000
+                                          ; header sentinel; NOT field-VM —
+                                          ; see scene_event_scripts below)
 +0x800-aligned     u32  count = 7         ; canonical scene-asset-table lead
 ...                                       ; same layout as scene_asset_table</code></pre>
   <p>Strict gate validates <strong>both</strong> the prescript and the inner asset table:</p>
@@ -206,7 +207,7 @@ if let Some(r) = scene_asset_table::resolve(buf) {
     <li>Past the last record offset, the next <code>0x800</code>-aligned position carries <code>u32 count = 7</code> plus a valid <code>scene_asset_table</code> header (first descriptor at <code>+0x40</code>, all type bytes <code>&lt;= 0x14</code>).</li>
   </ol>
   <p>The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary <code>[count][offsets]</code>-shaped data, but the asset-table check at the next sector boundary is a strong second signal.</p>
-  <p>The prescript is plausibly the <strong>scene event-script bytecode</strong> that the field VM (<code>FUN_801DE840</code>) executes when the scene loads. The 0xFFFF 0x0000 sentinels at record starts strongly resemble field-VM frame-divider opcodes. The runtime is presumed to walk the prescript first (loading scene-specific event scripts), then load the asset bundle from the sector-aligned position. The exact prescript opcode set is unconfirmed pending more reverse work.</p>
+  <p>The prescript is a <strong>word-aligned (16-bit) per-scene actor/event command structure</strong>, <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode — see the <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> section for the disc-gated falsification. The <code>0xFFFF 0x0000</code> lead is a per-record header sentinel, not a frame-divider opcode. The consuming command VM and per-opcode operand widths are not yet identified; the genuine per-scene field-VM scripts live in the scene MAN sub-asset.</p>
 </section>
 
 <section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">
@@ -236,10 +237,10 @@ if let Some(r) = scene_asset_table::resolve(buf) {
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing,
                                           ; all &lt;= file size
-+offsets[i]        record bytecode        ; per-record opcodes; the bulk
-                                          ; of records open with the
-                                          ; field-VM frame sentinel
-                                          ; `0xFFFF 0x0000`
++offsets[i]        record               ; word-aligned (16-bit) command
+                                          ; record; the bulk open with the
+                                          ; `0xFFFF 0x0000` header sentinel
+                                          ; and terminate with a `0x0008` word
 ...                                       ; bulk asset payload after the
                                           ; prescript (per-scene secondary
                                           ; header; format unconfirmed -
@@ -251,10 +252,10 @@ if let Some(r) = scene_asset_table::resolve(buf) {
   <p>Strict structural detection:</p>
   <ol class="bullets">
     <li>Prescript shape valid (count <code>3..=4096</code>, <code>offsets[0] == 2 + count*2</code>, monotonic, in-bounds).</li>
-    <li><strong>Frame-opener rate ≥ 50 %</strong> of records start with the field-VM <code>0xFFFF 0x0000</code> sentinel.</li>
+    <li><strong>Frame-opener rate ≥ 50 %</strong> of records start with the <code>0xFFFF 0x0000</code> record header sentinel.</li>
   </ol>
   <p>The frame-opener rate is what makes this detector zero-false-positive on its own. Random <code>[count][offsets]</code>-shaped data carries no <code>0xFFFF</code> opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).</p>
-  <p>The prescript records are field-VM (<code>FUN_801DE840</code>) event scripts - the same per-frame bytecode shape used by <code>scene_scripted_asset_table</code> (<code>0xFFFF 0x0000</code> is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.</p>
+  <p class="hint"><strong>These records are NOT field-VM (<code>FUN_801DE840</code>) bytecode</strong> (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88% decode-error rate; the bytes are 16-bit <strong>word-aligned</strong> (low byte = opcode, high byte 0 on ~83% of body words), framed records terminate with a <code>0x0008</code> word, and the opcodes sit mostly below the field VM's <code>0x22</code> opcode floor — a record like <code>FF FF 00 00 25 00 29 00 25 00 2A 00 08 00</code> reads cleanly word-aligned (<code>cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)</code>) but is garbage byte-by-byte. So <code>0xFFFF 0x0000</code> is a per-record header sentinel, not a field-VM frame divider, and record 0 is a fixed 768-byte dispatch table (96 × 8-byte slots), not a script. The records still encode per-scene structure (actor/NPC placement, event triggers, interaction hooks), but the <strong>consuming command VM and per-opcode operand widths are not yet identified</strong>. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>). Pinned by the disc-gated <code>scene_event_records_word_aligned_real</code> test; <code>legaia_asset::scene_event_scripts::record_words</code> surfaces the raw 16-bit word stream of a record.</p>
   <p>Detection runs after <code>scene_scripted_asset_table</code> and <code>scene_asset_table</code>, so any composite layouts those detectors recognize claim their entries first.</p>
 </section>
 

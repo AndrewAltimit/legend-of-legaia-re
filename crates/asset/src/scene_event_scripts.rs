@@ -34,14 +34,47 @@
 //! at the record positions; real scene-event-script bundles carry it on
 //! the majority of records (50–92 %).
 //!
-//! ### Format meaning
+//! ### Format meaning — a WORD-ALIGNED command structure, NOT field-VM bytecode
 //!
-//! The prescript records are field-VM (`FUN_801DE840`) event scripts - the
-//! same per-frame bytecode shape used by [`crate::scene_scripted_asset_table`]
-//! (the sentinel is the field VM's "frame divider" opcode). The records
-//! likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene
-//! sequences, pickup / interaction scripts. The per-scene asset payload
-//! that follows is loaded by these scripts at runtime.
+//! The prescript records were long assumed to be field-VM (`FUN_801DE840`)
+//! event scripts. **That is wrong.** Running the field-VM disassembler
+//! ([`crate::field_disasm`]) over these records yields a 65–88 % decode-error
+//! rate, and the record bytes are plainly **16-bit word-aligned**:
+//!
+//! ```text
+//! +0x00   u16  0xFFFF            ; record header sentinel ...
+//! +0x02   u16  0x0000            ; ... (the "frame opener", together a u32)
+//! +0x04   [u16 opcode][u16 operand...]   ; little-endian words: the low byte
+//!                                         ; is the opcode, the high byte is 0
+//!                                         ; for ~83 % of body words (the rest
+//!                                         ; are packed coordinate operands)
+//! ...     u16  0x0008            ; record terminator word (99.9 % of records)
+//! ```
+//!
+//! The opcodes seen (`0x01 0x06 0x09 0x0D 0x15 0x1D 0x25 0x2C 0x2F …`) sit
+//! mostly **below the field VM's valid opcode floor** (`FUN_801DE840`'s
+//! dispatch starts at `0x22`), and a record like
+//! `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned as
+//! `cmd(0x25, 0x29) cmd(0x25, 0x2A) term(0x08)` but is garbage byte-by-byte.
+//! So `0xFFFF 0x0000` is a **per-record header sentinel**, not "the field VM's
+//! frame divider opcode".
+//!
+//! Record `0` carries no sentinel and is a different shape again: a fixed
+//! 768-byte table of 96 × 8-byte slots (`[u16][u16][u16][u16]`), byte-identical
+//! across several town scenes — a shared default/dispatch table, not a script.
+//!
+//! The **real** per-scene field-VM (`FUN_801DE840`) scripts live in the scene's
+//! MAN sub-asset, not here: `FUN_8003A1E4` walks the MAN partition-1
+//! actor-placement records and runs the field VM on each actor's script
+//! (`actor[+0x90]`, body at `1 + N*2 + 4`). See [`crate::man_section`] and
+//! `docs/subsystems/script-vm.md`. The engine executes those MAN scripts; it
+//! never feeds these prescript bytes to its field VM.
+//!
+//! The records still encode per-scene structure (actor/NPC placement, event
+//! triggers, interaction hooks), but the **consuming command VM and the
+//! per-opcode operand widths are not yet identified** — that is the open
+//! residual. [`record_words`] surfaces the raw 16-bit word stream of a record
+//! up to its terminator without claiming opcode semantics.
 
 use serde::Serialize;
 
@@ -54,8 +87,14 @@ const MAX_PRESCRIPT_COUNT: u16 = 4096;
 /// arbitrary `[count][offsets]`-style data by chance.
 const MIN_PRESCRIPT_COUNT: u16 = 3;
 
-/// Field-VM frame divider opcode - `0xFFFF 0x0000` little-endian.
+/// Per-record header sentinel - `0xFFFF 0x0000` little-endian. (Historically
+/// mislabelled "the field VM's frame divider opcode"; it is neither field-VM
+/// nor an opcode — see the module-level "Format meaning" note.)
 const FRAME_OPENER: u32 = 0x0000_FFFF;
+
+/// The word-aligned record terminator (`0x0008`), present on 99.9 % of framed
+/// records across the retail corpus.
+pub const RECORD_TERMINATOR: u16 = 0x0008;
 
 /// Required minimum fraction of records that open with [`FRAME_OPENER`].
 /// Real scene-event-script bundles hit 45–92 %; this threshold separates
@@ -69,9 +108,9 @@ pub struct SceneEventScripts {
     pub records: u16,
     /// Byte offset of the last record (start of the last script).
     pub last_record_offset: u16,
-    /// How many records open with the field-VM frame sentinel.
+    /// How many records open with the `0xFFFF 0x0000` record header sentinel.
     pub frame_opener_count: u16,
-    /// Fraction of records opening with the sentinel.
+    /// Fraction of records opening with the header sentinel.
     pub frame_opener_rate: f32,
 }
 
@@ -138,6 +177,38 @@ pub fn record_ranges(buf: &[u8]) -> Option<Vec<(usize, usize)>> {
             return None;
         }
         out.push((start, end));
+    }
+    Some(out)
+}
+
+/// True when `record` opens with the `0xFFFF 0x0000` header sentinel.
+pub fn record_is_framed(record: &[u8]) -> bool {
+    record.len() >= 4 && u32::from_le_bytes(record[0..4].try_into().unwrap()) == FRAME_OPENER
+}
+
+/// Decode the raw 16-bit word stream of one framed record: the little-endian
+/// `u16`s after the `0xFFFF 0x0000` header, up to and **excluding** the
+/// [`RECORD_TERMINATOR`] (`0x0008`). Returns `None` if the record does not
+/// open with the header sentinel.
+///
+/// This is deliberately a *structural* view: it does not split the stream into
+/// `(opcode, operands)` because the per-opcode operand widths — and the
+/// consuming command VM — are not yet identified (see the module note). The
+/// low byte of each word is the opcode; the high byte is `0` for the bulk of
+/// words and non-zero only on packed coordinate operands.
+pub fn record_words(record: &[u8]) -> Option<Vec<u16>> {
+    if !record_is_framed(record) {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut i = 4;
+    while i + 2 <= record.len() {
+        let w = u16::from_le_bytes(record[i..i + 2].try_into().unwrap());
+        if w == RECORD_TERMINATOR {
+            break;
+        }
+        out.push(w);
+        i += 2;
     }
     Some(out)
 }
@@ -232,6 +303,29 @@ mod tests {
     fn rejects_zero_openers() {
         let buf = synth(10, 0);
         assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn record_words_reads_to_terminator() {
+        // Mirrors the real record `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00`.
+        let record = [
+            0xFF, 0xFF, 0x00, 0x00, // header sentinel
+            0x25, 0x00, 0x29, 0x00, // cmd(0x25, 0x29)
+            0x25, 0x00, 0x2A, 0x00, // cmd(0x25, 0x2A)
+            0x08, 0x00, // terminator (excluded)
+            0xDE, 0xAD, // trailing bytes past the terminator (ignored)
+        ];
+        assert!(record_is_framed(&record));
+        let words = record_words(&record).expect("framed");
+        assert_eq!(words, vec![0x0025, 0x0029, 0x0025, 0x002A]);
+    }
+
+    #[test]
+    fn record_words_rejects_unframed_record() {
+        // Record 0 (the fixed 96x8 table) carries no header sentinel.
+        let record = [0x00, 0x02, 0x3E, 0x03, 0x03, 0x00, 0x00, 0x00];
+        assert!(!record_is_framed(&record));
+        assert!(record_words(&record).is_none());
     }
 
     #[test]

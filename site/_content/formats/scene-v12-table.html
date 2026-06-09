@@ -29,9 +29,10 @@
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table (relative to +0x800)
-+0x800 + offsets[i]              ;   per-record field-VM bytecode
++0x800 + offsets[i]              ;   per-record word-aligned command bytes
                                  ;   (records typically open with the
-                                 ;   `0xFFFF 0x0000` frame divider).</code></pre>
+                                 ;   `0xFFFF 0x0000` header sentinel; NOT
+                                 ;   field-VM bytecode — see below).</code></pre>
 </section>
 
 <section class="doc-section" id="header-algebra">
@@ -81,7 +82,7 @@
 
 <section class="doc-section" id="event-script-prescript">
   <h2>Event-script prescript at +0x800</h2>
-  <p>Identical shape to the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format: <code>[u16 count][u16 offsets[count]]</code> followed by per-record field-VM bytecode. The field VM is <code>FUN_801DE840</code> (see <a href="../subsystems/script-vm.html">script VM</a>); the per-record <code>0xFFFF 0x0000</code> lead is the frame-divider opcode.</p>
+  <p>Identical shape to the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format: <code>[u16 count][u16 offsets[count]]</code> followed by per-record <strong>word-aligned (16-bit) command records</strong> — <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (it disassembles as field-VM with a 65–88% error rate; see the scene_event_scripts section for the falsification). The per-record <code>0xFFFF 0x0000</code> lead is a record header sentinel, not a frame-divider opcode. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>).</p>
   <p>Across the 97 v12 entries:</p>
   <table>
     <thead><tr><th>Metric</th><th>Value</th></tr></thead>
@@ -92,7 +93,7 @@
       <tr><td>Max records per entry</td><td>71 (<code>0119_keikoku.BIN</code>, <code>0154_retock.BIN</code>)</td></tr>
     </tbody>
   </table>
-  <p>The 22 entries with frame-opener rate below 50 % carry "init"-style first records that open with a different opcode, then transition into the standard frame-divider stream. Those entries are still field-VM scripts; the first record is just structured differently.</p>
+  <p>The 22 entries with frame-opener rate below 50 % carry "init"-style first records that open differently, then transition into the standard header-sentinel stream. Those entries carry the same word-aligned command structure; the first record is just shaped differently (record 0 is a fixed 768-byte dispatch table on the town scenes).</p>
 </section>
 
 <section class="doc-section" id="detection">

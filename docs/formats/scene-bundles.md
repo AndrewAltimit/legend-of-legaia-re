@@ -139,9 +139,9 @@ A scene-named container that bundles a small runtime-fixup header with a full ev
 
 The header's `u16[0]`, `u16[5]`, `u16[7]` are algebraically tied to a single per-scene constant `N`: `u16[0] = N + 4`, `u16[5] = N`, `u16[7] = N + 2`, and `N = 4 * param + 22` (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the `N/param` algebra. Across the entire 1234-entry PROT corpus this matches **97** entries with zero false positives — and **every** match parses cleanly as a scene-event-scripts prescript at `+0x800`.
 
-The post-header dense data is the [scene_event_scripts](#scene_event_scripts---prescript-only) prescript, parsed by the field VM (`FUN_801DE840`) at scene entry. The pre-header table at `+0x14` is per-scene runtime metadata: `param` records of 4 bytes each, grouped by the third byte (`b2`) into 1..N scene regions; the last byte is always `0x01` (probably a "live" flag). See [`scene-v12-table.md`](scene-v12-table.md) for the per-byte semantics.
+The post-header dense data is the [scene_event_scripts](#scene_event_scripts---prescript-only) prescript — a word-aligned per-scene actor/event command structure, **not** field-VM (`FUN_801DE840`) bytecode (see that section for the falsification). The pre-header table at `+0x14` is per-scene runtime metadata: `param` records of 4 bytes each, grouped by the third byte (`b2`) into 1..N scene regions; the last byte is always `0x01` (probably a "live" flag). See [`scene-v12-table.md`](scene-v12-table.md) for the per-byte semantics.
 
-Each scene block on the disc carries **both** a v12 entry (this format, prescript at `+0x800`) and a sister `scene_event_scripts` entry (prescript at offset 0, no v12 header). The two scripts likely serve different runtime phases — scene-enter triggers vs. per-actor / per-region triggers — though the exact split isn't pinned down yet; both are walked by the same field VM.
+Each scene block on the disc carries **both** a v12 entry (this format, prescript at `+0x800`) and a sister `scene_event_scripts` entry (prescript at offset 0, no v12 header). Both carry the same word-aligned record structure. The genuine per-scene field-VM scripts live elsewhere — in the scene MAN sub-asset (`FUN_8003A1E4` → `FUN_801DE840`; see [`subsystems/script-vm.md`](../subsystems/script-vm.md)).
 
 ## scene_asset_table - count-prefixed asset bundle
 
@@ -218,9 +218,10 @@ A composite shape that pairs a `[u16 count][u16 offsets[count]]` script prescrip
 +0x00              u16  count             ; 1..=4096 - number of script records
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing
-+offsets[i]        record bytecode        ; per-record opcodes (typical
-                                          ; opener: 0xFFFF 0x0000 sentinel +
-                                          ; field-VM-shaped frame ops)
++offsets[i]        record               ; word-aligned (16-bit) command
+                                          ; record (opener: 0xFFFF 0x0000
+                                          ; header sentinel; NOT field-VM —
+                                          ; see scene_event_scripts below)
 +0x800-aligned     u32  count = 7         ; canonical scene-asset-table lead
 ...                                       ; same layout as scene_asset_table
 ```
@@ -233,7 +234,7 @@ Strict gate validates **both** the prescript and the inner asset table:
 
 The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary `[count][offsets]`-shaped data, but the asset-table check at the next sector boundary is a strong second signal.
 
-The prescript is plausibly the **scene event-script bytecode** that the field VM (`FUN_801DE840`) executes when the scene loads. The 0xFFFF 0x0000 sentinels at record starts strongly resemble field-VM frame-divider opcodes. The runtime is presumed to walk the prescript first (loading scene-specific event scripts), then load the asset bundle from the sector-aligned position. The exact prescript opcode set is unconfirmed pending more reverse work.
+The prescript is a **word-aligned (16-bit) per-scene actor/event command structure**, **not** field-VM (`FUN_801DE840`) bytecode — see the [scene_event_scripts](#scene_event_scripts---prescript-only) section for the disc-gated falsification. The `0xFFFF 0x0000` lead is a per-record header sentinel, not a frame-divider opcode. The consuming command VM and per-opcode operand widths are not yet identified; the genuine per-scene field-VM scripts live in the scene MAN sub-asset.
 
 ## tmd_size_prefix - truncated TMD-prefix
 
@@ -267,10 +268,10 @@ Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing,
                                           ; all <= file size
-+offsets[i]        record bytecode        ; per-record opcodes; the bulk
-                                          ; of records open with the
-                                          ; field-VM frame sentinel
-                                          ; `0xFFFF 0x0000`
++offsets[i]        record               ; word-aligned (16-bit) command
+                                          ; record; the bulk open with the
+                                          ; `0xFFFF 0x0000` header sentinel
+                                          ; and terminate with a `0x0008` word
 ...                                       ; bulk asset payload after the
                                           ; prescript (per-scene secondary
                                           ; header; format unconfirmed -
@@ -283,11 +284,11 @@ Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][
 
 Strict structural detection:
 1. Prescript shape valid (count `3..=4096`, `offsets[0] == 2 + count*2`, monotonic, in-bounds).
-2. **Frame-opener rate ≥ 50 %** of records start with the field-VM `0xFFFF 0x0000` sentinel.
+2. **Frame-opener rate ≥ 50 %** of records start with the `0xFFFF 0x0000` record header sentinel.
 
 The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
 
-The prescript records are field-VM (`FUN_801DE840`) event scripts - the same per-frame bytecode shape used by `scene_scripted_asset_table` (`0xFFFF 0x0000` is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.
+**These records are NOT field-VM (`FUN_801DE840`) bytecode** (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88 % decode-error rate; the bytes are 16-bit **word-aligned** (low byte = opcode, high byte 0 on ~83 % of body words), framed records terminate with a `0x0008` word, and the opcodes sit mostly below the field VM's `0x22` opcode floor — a record like `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned (`cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)`) but is garbage byte-by-byte. So `0xFFFF 0x0000` is a per-record header sentinel, not a field-VM frame divider, and record 0 is a fixed 768-byte dispatch table (96 × 8-byte slots), not a script. The records still encode per-scene structure (actor/NPC placement, event triggers, interaction hooks), but the **consuming command VM and per-opcode operand widths are not yet identified**. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see [`subsystems/script-vm.md`](../subsystems/script-vm.md)). Pinned by the disc-gated `scene_event_records_word_aligned_real` test; `legaia_asset::scene_event_scripts::record_words` surfaces the raw 16-bit word stream of a record.
 
 Detection runs after `scene_scripted_asset_table` and `scene_asset_table`, so any composite layouts those detectors recognize claim their entries first.
 

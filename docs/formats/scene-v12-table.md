@@ -28,9 +28,10 @@ CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table (relative to +0x800)
-+0x800 + offsets[i]              ;   per-record field-VM bytecode
++0x800 + offsets[i]              ;   per-record word-aligned command bytes
                                  ;   (records typically open with the
-                                 ;   `0xFFFF 0x0000` frame divider).
+                                 ;   `0xFFFF 0x0000` header sentinel; NOT
+                                 ;   field-VM bytecode — see below).
 ```
 
 ## Confidence
@@ -112,10 +113,13 @@ on towns and dungeons the pair selects different runtime resources.
 ## Event-script prescript at `+0x800`
 
 Identical shape to the standalone [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)
-format: `[u16 count][u16 offsets[count]]` followed by per-record field-VM
-bytecode. The field VM is `FUN_801DE840` (see
-[`subsystems/script-vm.md`](../subsystems/script-vm.md)); the per-record
-`0xFFFF 0x0000` lead is the frame-divider opcode.
+format: `[u16 count][u16 offsets[count]]` followed by per-record **word-aligned
+(16-bit) command records** — **not** field-VM (`FUN_801DE840`) bytecode (it
+disassembles as field-VM with a 65–88 % error rate; see the scene_event_scripts
+section for the falsification). The per-record `0xFFFF 0x0000` lead is a record
+header sentinel, not a frame-divider opcode. The genuine per-scene field-VM
+scripts live in the scene MAN sub-asset (see
+[`subsystems/script-vm.md`](../subsystems/script-vm.md)).
 
 Across the 97 v12 entries:
 
@@ -127,9 +131,10 @@ Across the 97 v12 entries:
 | Max records per entry | 71 (`0119_keikoku.BIN`, `0154_retock.BIN`) |
 
 The 22 entries with frame-opener rate below 50 % carry "init"-style first
-records that open with a different opcode, then transition into the
-standard frame-divider stream. Those entries are still field-VM scripts;
-the first record is just structured differently.
+records that open differently, then transition into the standard
+header-sentinel stream. Those entries carry the same word-aligned command
+structure; the first record is just shaped differently (record 0 is a fixed
+768-byte dispatch table on the town scenes).
 
 ## Detection
 
