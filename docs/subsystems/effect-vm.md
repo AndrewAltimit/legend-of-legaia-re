@@ -91,10 +91,16 @@ This is distinct from the 2D billboard path here:
 
 Called from `FUN_800520F0` case `0xFF`. Streams two specific runtime-only files via `FUN_800558FC`:
 
-- `data\battle\summon.dat` (PROT `0x37F`) - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
-- `data\battle\readef.dat` (PROT `0x380`) - opposite branch.
+- `data\battle\summon.dat` - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
+- `data\battle\readef.dat` - opposite branch.
 
-Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 2-pack layout but not yet confirmed.
+The runtime buffer per slot is `0x10800` = 67584 bytes; the file format is not yet
+decoded, and **the PROT entry these dev paths map to is unpinned**. The earlier
+"summon.dat = PROT `0x37F` / readef.dat = PROT `0x380`" reading is falsified - 895 /
+896 are the boot init pak and the contested mode-24 overlay remnant, and the
+`0879..=0890` band that guess sat in is all `VABp` sound banks. See
+[`effect.md`](../formats/effect.md#side-band-streaming-effect-handler) for the full
+correction and how to pin the real entry.
 
 ## Effect-ID → human effect name mapping
 

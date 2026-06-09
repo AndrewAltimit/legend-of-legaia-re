@@ -1,10 +1,17 @@
-//! Slot-4 container parser (per-record semantic open).
+//! Slot-4 container parser. Each body is an **object-local GTE vertex pool**.
 //!
 //! Format reference: [`docs/formats/world-map-overlay.md`].
 //!
-//! Slot 4 of each kingdom bundle (PROT entries 0085 / 0244 / 0391) is the
-//! top-view data whose per-record semantic is open - it is not the ground
-//! tiles. Layout:
+//! Slot 4 of each kingdom bundle (PROT entries 0085 / 0244 / 0391) is a
+//! library of small object-local 3D meshes the world-map renderer draws (it
+//! is not the ground tiles, and not 2D coastline contours - both falsified).
+//! Each 8-byte record is one **vertex**: the cluster-A prim handler
+//! `FUN_80044c14` loads a record's two words straight into the GTE vertex
+//! registers (`VXYn` = `x | y<<16`, `VZn` = `z`) and `RTPT`-transforms them,
+//! so `x`/`y`/`z` are model-space coordinates and `attr` (the `VZn` word's
+//! high half) is not a coordinate. The triangle topology lives in a separate
+//! cluster-A command stream that indexes this pool by byte offset (`& 0x7ff8`).
+//! Layout:
 //!
 //! ```text
 //! [u32 count]
@@ -19,23 +26,36 @@
 //! NOTE: the historical reading - that each body's groups are polylines
 //! whose top-down (X-Z) projection traces continent coastlines / a world
 //! boundary frame - is **falsified** (no projection matches the in-game
-//! top-view in any kingdom). The working hypothesis is a runtime library
-//! of small object-local 3D meshes: bodies carry full X/Y/Z extents, not
-//! flat 2D contours. The consumer is pinned to two SCUS reader clusters;
-//! the per-record `attr` and per-body `kind` semantics are still open.
-//! The `top_down_*` / `Wireframe*` helpers below render record geometry
-//! for inspection only and do not assert the falsified interpretation.
+//! top-view in any kingdom). Bodies are object-local 3D meshes carrying full
+//! X/Y/Z extents, not flat 2D contours, and the consumer is pinned (the GTE
+//! vertex load above). The per-body `kind` (`1/2/4`) is a class/scope tag:
+//! `kind 1` bodies (0/1/2) are byte-identical across all three kingdoms (a
+//! shared universal mesh set), `kind 2` are full-3D kingdom objects, `kind 4`
+//! always carries `flag_a = 1` — so slot 4 is a per-kingdom assembly from a
+//! shared mesh library plus kingdom-specific bodies. The `kind`/`count`
+//! consumer is the cluster-A handler chain, which walks each body (header +
+//! indexed vertex records) **in place** (`ra 0x801F78D4`, no separate builder);
+//! `attr` is render-unused (a full sweep of the cluster-A handler family finds
+//! no read of the pool word's high half; loaded with `z` into the GTE `VZn`,
+//! only `z` used). See world-map-overlay.md. The `top_down_*` /
+//! `Wireframe*` helpers below render record geometry for inspection only.
 
-/// One slot-4 record: an (x, y, z) point plus an `attr` tag.
+/// One slot-4 record: a model-space GTE vertex `(x, y, z)` plus a 4th `i16`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Slot4Record {
+    /// Model-space X — loaded into the GTE `VXYn` register's low half.
     pub x: i16,
+    /// Model-space Y — GTE `VXYn` high half.
     pub y: i16,
+    /// Model-space Z — GTE `VZn` (low 16 bits).
     pub z: i16,
-    /// Per-record attribute byte. Always 0 for body 4; up to 214 distinct
-    /// values in Drake's body 12. The reader clusters are pinned, but this
-    /// field's meaning is not; candidates are a packed (tpage, clut) tag or
-    /// a zone id (see world-map-overlay.md).
+    /// 4th `i16`, the high half of the `VZn` word — **not** a coordinate (the
+    /// GTE vertex load ignores it). Characterized as a genuine per-vertex value
+    /// (not constant within a `count_a` group; not position-correlated,
+    /// `corr(attr, x/y/z) ≈ 0.1`; varies smoothly across the `count_b` groups;
+    /// 135 distinct in one Sebucus body, up to 214 in Drake body 12). Read by
+    /// some path other than the prim renderer; consumer unpinned (see
+    /// world-map-overlay.md).
     pub attr: i16,
 }
 

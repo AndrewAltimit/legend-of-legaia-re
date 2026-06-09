@@ -2209,11 +2209,18 @@ const PROT_EFFECT_MODEL_LIBRARY_ENTRY: u32 = 871;
 /// head (`[3]`, `[4]`) - exactly retail's temporal layout (the field head
 /// seeds `[0..=4]`; battle init reloads `[3..=32]`).
 ///
-/// This is also the **battle `gp[0x754]` value** — the additive base
-/// `FUN_80021B04` applies to a move-FX / summon part record's `model_sel`
-/// (`DAT_8007C018[model_sel + gp[0x754]]`). Live-captured = 3 during a battle
-/// move-FX spawn (see `docs/formats/move-power.md`), matching this independently
-/// chosen library base. `World::spawn_move_fx` uses it as the move-FX model base.
+/// This is the engine's analogue of the retail **battle `gp[0x754]` value** —
+/// the additive base `FUN_80021B04` applies to a move-FX / summon part record's
+/// `model_sel` (`DAT_8007C018[model_sel + gp[0x754]]`). In retail that base is
+/// *not* a constant: it is `party_count + 2` (the two fixed pool slots + the live
+/// party-character meshes precede the library), i.e. `3` for the 1-member
+/// training party and `5` for the full 3-member party — save-corpus-pinned by
+/// `crates/mednafen/tests/summon_model_base.rs` (see `docs/formats/move-power.md`).
+/// The engine instead registers the library at a *fixed* `[3..=32]` and keeps
+/// `model_sel` library-relative, so `model_sel + 3` lands on the same library
+/// model retail reaches via `model_sel + gp[0x754]` — the library content is
+/// identical, only its pool offset shifts with party size, so the two layouts are
+/// equivalent. `World::spawn_move_fx` uses this fixed base.
 pub(crate) const EFFECT_MODEL_LIBRARY_BASE: usize = 3;
 
 /// Number of TMDs in the PROT 0871 effect-model library (`word[0]`).

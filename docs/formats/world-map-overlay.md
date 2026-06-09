@@ -10,7 +10,11 @@
 > heterogeneous and the working interpretation is **a runtime library
 > of small object-local 3D meshes** the world-map renderer transforms
 > via the GTE and emits as GP0 primitive packets into the active scene
-> primitive pool.
+> primitive pool. A Drake warp capture pins this concretely: the slot-4
+> records are read **in place, per-frame**, by the world-map renderer
+> (`0x801F78D4`) + the SCUS cluster-A GTE prim path — there is **no
+> record → working-buffer transcode** (see
+> [Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture)).
 >
 > The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
 > tile the kingdom continent in the dev-menu top-view - is *not*
@@ -94,9 +98,103 @@ Drake decodes to 32304 bytes with `count = 15`. First entry is
 ```
 
 Total body size is always `8 + count_a * count_b * 8 + 8`. The math
-fits every body in all three kingdoms exactly. The container layout
-above is fully confirmed; what's **not** confirmed is how the runtime
-*interprets* the 8-byte records.
+fits every body in all three kingdoms exactly.
+
+### Per-record semantic — each record is a GTE vertex (decoded)
+
+The 8-byte records are an **object-local vertex pool**: each record is a
+3D vertex the cluster-A prim handlers transform through the GTE. Traced
+from the handler `FUN_80044c14` (one of the per-kind emitters the
+`0x8007657C` dispatch table reaches from `FUN_80043390`), which receives
+the body's record region as the **vertex pool** (`param_3`):
+
+```c
+// pool word pairs loaded straight into the GTE vertex registers:
+puVar = pool + (cmd_index & 0x7ff8);   // index = byte offset, 8-byte stride
+setCopReg(2, 0x0000, pool_word0);      // VXY0  = (i16 X | i16 Y << 16)
+setCopReg(2, 0x0800, pool_word1);      // VZ0   = (i16 Z) in the low half
+// ... V1, V2 the same ...
+copFunction(2, 0x280030);              // RTPT  — perspective-transform 3 verts
+copFunction(2, 0x1400006);             // NCLIP — backface cull
+```
+
+So a record's first word is the GTE `VXYn` register (`X` low, `Y` high)
+and its second word is `VZn` (`Z` in the low 16 bits). Mapping the 8
+bytes back to the parser's `i16` fields:
+
+| bytes | field | role |
+|---|---|---|
+| 0..1 | `x` | model-space X — GTE `VXYn` low half |
+| 2..3 | `y` | model-space Y — GTE `VXYn` high half |
+| 4..5 | `z` | model-space Z — GTE `VZn` |
+| 6..7 | `attr` | high half of the `VZn` word — **not** a coordinate; the GTE vertex load ignores it |
+
+The X/Y/Z ranges bear this out (e.g. Sebucus body 0: X∈[-20224,-3598],
+Y∈[-6416,4351], Z∈[-17649,20992] — object-local mesh extents). The
+**triangle topology is not in the body**: the per-kind handler reads its
+vertex indices (the `& 0x7ff8` byte offsets) from a *separate* cluster-A
+command stream and indexes them into this pool, then emits a `POLY` packet.
+
+### `kind` (1/2/4) — a body class/scope tag (characterized)
+
+`kind` is the body header's `+0x06` field and is **not** the dispatcher's
+prim-kind (`8..19`, computed from a separate command word). Hashing each body's
+bytes across the three kingdoms shows `kind` partitions bodies by **scope and
+class**:
+
+- **`kind = 1`** — the three leading bodies (0, 1, 2) are **byte-identical
+  across all three kingdoms** (sha256-matched): a shared, universal mesh set
+  present on every kingdom map.
+- **`kind = 2`** — full-3D kingdom objects. Some are kingdom-specific; a trailing
+  cluster (Drake bodies 9–11 ≡ Sebucus/Karisto bodies 12–14) is **byte-identical
+  across all three** — another globally shared set. Other kind-2 bodies are
+  shared between adjacent kingdom *pairs* (Drake↔Sebucus, Sebucus↔Karisto).
+- **`kind = 4`** — always carries `flag_a = 1` (the only `flag_a = 1` exception
+  in the corpus is one kind-2 body). Often the widest-extent meshes (Drake body
+  13 reaches the ±32 K world bounds); shared between kingdom pairs.
+
+So a kingdom's slot 4 is a per-kingdom **assembly** drawn from a shared mesh
+library (`kind 1` universal + shared `kind 2/4`) plus kingdom-specific bodies,
+with `kind` tagging each body's category. Degenerate bodies (`count_a = 1`,
+all-zero records) are empty placeholder slots.
+
+### `attr` — a per-vertex non-coordinate value (characterized)
+
+The 4th `i16` is genuinely **per-vertex** (not constant within a `count_a` group:
+0/20 groups have a uniform `attr`), is **not** a function of the vertex position
+(`corr(attr, x/y/z) ≈ 0.1`), and is not a copy of a neighbouring vertex's
+coordinate. It varies smoothly across the `count_b` groups (consecutive groups'
+`attr` at the same slot track closely — e.g. Drake body 0 group 0 vs 1:
+`29953→30465`, `1286→1286`). It rides in the high half of the `VZn` word, which
+the GTE vertex load discards, so its consumer is **not** the prim renderer
+(`FUN_80044c14`). Its meaning stays open — a real per-vertex attribute (135
+distinct values in one Sebucus body) read by some path other than the vertex
+transform.
+
+**`kind`/`count` consumer — pinned.** A Read-watchpoint on body 0's header
+(`0x8011A664`, the `count`/`kind` words) during the Drake warp catches the
+**cluster-A handler chain reading it in place**: `ra = 0x801F78D4` (the world-map
+overlay renderer), PC `0x8004568C` / `0x800456F4` inside `FUN_80045584`, with the
+record pointers in `a1`/`a2` also in slot-4 (`0x8011A674` / `0x8011A6C0`). The
+handler `lw`s header word 0 (`count`) and word 1 (`marker`/`kind`) and does an
+`andi 0x40` bit-test on a header field to gate a branch. So there is **no
+separate command-stream builder**: each slot-4 body is a self-contained render
+packet (8-byte header + indexed vertex records) that the renderer walks **in
+place**, dispatching per `count_b`-derived prim-kind and consuming the header in
+the same pass. (This is the same handler family as `FUN_80044c14`, whose tail
+reads the next body's header to chain — consistent with an in-place body walk.)
+
+**`attr` — render-unused (full handler sweep).** The prim handlers load a
+record's second word (`z | attr<<16`) into the GTE `VZn` register and use only
+the low 16 bits (`z`). Sweeping **every** cluster-A handler
+(`FUN_80043658`..`FUN_80045988`) confirms none extract the pool word's high half:
+every `>> 0x10` in the family is either a **vertex-index** extraction
+(`param_3 + (cmd_word >> 0x10)`, forming a pool pointer) or an output-packet /
+RTPT-screen-coordinate write — never a read of the pool `word1` high half. So
+`attr` is **not consumed by the world-map render path at all**. It is real
+per-vertex data (135 distinct in one Sebucus body) that the renderer ignores —
+either reserved/authoring data or consumed by some non-render subsystem; nothing
+in the (now fully swept) render family reads it.
 
 ## Per-kingdom body inventory
 
@@ -151,18 +249,30 @@ the corners.
 ## RAM layout (confirmed)
 
 Slot 4 is loaded **verbatim into RAM** with zero per-byte diffs vs
-disc. Drake's payload starts at `0x8011A624` (the outer pack header)
-and ends at `0x80122454` exclusive - exactly 32304 bytes, matching
-the disc-decoded length. Body 0's records start at `0x8011A664`
-(`0x40` past the base, after the 4-byte count and 15 × 4-byte
-offsets). No runtime fixup is applied.
+disc, and the **resident base varies per kingdom** — each is pinned by
+byte-matching the disc-decoded payload against a post-warp full-RAM dump
+(`scripts/pcsx-redux/locate_slot4_base.py`, all bodies agreeing
+unanimously):
 
-Verified by `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` against a
-PCSX-Redux save state: every byte of all 15 bodies matches the
-disc-side LZS-decoded payload. The load base was pinned by signature-
-searching the full 2 MiB main RAM for the 64-byte outer pack header
-(count = 15 followed by `byte_offsets[0..15]`) - see
-`scripts/pcsx-redux/autorun_dump_full_ram.lua` for the procedure.
+| Kingdom | bundle | resident base | end (excl.) | bytes | bodies matched |
+|---|---|---|---|---|---|
+| Drake   | `map01` / 0085 | `0x8011A624` | `0x80122454` | 32304 | 15/15 |
+| Sebucus | `map02` / 0244 | `0x80119CE4` | `0x80120638` | 26964 | 16/16 |
+| Karisto | `map03` / 0391 | `0x80108D84` | `0x8010ED00` | 24444 | 16/16 |
+
+Body 0's records start `0x40` past the base (after the 4-byte count and
+15-16 × 4-byte offsets). No runtime fixup is applied. Because the base
+is not constant, a probe that arms breakpoints on the slot-4 RAM window
+**must locate the base for that kingdom first** (the
+`octam_to_sebucus_worldmap` / `sol_to_karisto_worldmap` saves drive the
+Sebucus / Karisto warps; `drake_castle_to_worldmap` drives Drake).
+
+The Drake load was originally verified by
+`scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` (every byte of all 15
+bodies matches the LZS-decoded payload); the per-kingdom base table above
+extends that with `autorun_dump_full_ram_hold.lua` (drives the warp, then
+dumps post-warp RAM) + `locate_slot4_base.py` (the unanimous body-vote
+search).
 
 ## Consumer call sites
 
@@ -630,13 +740,54 @@ where cluster A reads the working buffer — NOT slot 4 directly. The
 high per-frame cluster-A hit counts (~2000 in 1800 frames) are
 procedural rendering volume, not slot-4 walks.
 
-The remaining open question is whether slot 4 ends up in
-`0x801BA000`-region (close to where cluster A reads per-frame, so
-maybe accessed via per-actor mesh-table indirection) or in some other
-region (so accessed via a different cluster-A entry path). A finer
-probe that arms Read bps on slot-4 RAM during the warp transition,
-plus Exec bps at `FUN_8001E54C`'s case-0 / case-1 / case-2 / case-12
-arms, would pin which chunks come from slot 4 and where they land.
+### Slot-4 is read IN PLACE — there is no transcode (Drake capture)
+
+The finer probe above was run: `scripts/pcsx-redux/autorun_slot4_source_map.lua`
+arms Read bps tiled across the Drake slot-4 RAM window
+(`0x8011A624 + k*0x800`) plus an Exec bp on the `FUN_8001E54C` streaming-chunk
+dispatcher, and drives the held-Up warp itself from the
+`drake_castle_to_worldmap` save. Result (365 captured rows):
+
+- **363 of the captured accesses are slot-4 reads by the renderer**, none a
+  copy. The faulting source addresses span almost the whole window
+  (`0x8011A624`..`0x80121E24`, 14 distinct tiled offsets, 8 of 16 read bps
+  hitting their per-bp cap — i.e. reads occur throughout the window, every
+  frame), and the live `a1`/`a2` registers at each read hold pointers *inside*
+  the slot-4 window (`0x8011A608`, `0x80121614`, `0x80121BF4`, …).
+- The read PCs are the SCUS cluster-A prim dispatcher's GTE mesh path
+  (`0x80044C70 = lw s5,0x10(a1); lhu s6,0xE(a1)` feeding `cop2`/GTE ops), and
+  the return addresses are **`0x801F78D4` (the world-map top-view overlay
+  renderer; 276 reads) and `0x8001BC8C` (the SCUS render path; 78 reads)**.
+- The `FUN_8001E54C` dispatcher fired only twice, and both times its data
+  pointer was `0x80184BD0` — **not** in the slot-4 window. So `FUN_8001E54C`
+  does not copy the slot-4 records.
+
+**So the slot-4 records are consumed in place as per-frame render geometry by
+the world-map renderer (`0x801F78D4` → cluster-A prim dispatcher `0x80043390`
+→ GTE mesh emit at `0x80044xxx`); there is no record → working-buffer
+transcode.** The working-buffer writes the earlier hunt saw (`FUN_80028158` at
+`0x801BA000`; `FUN_8001E54C` chunk copies) are *other* data streams — they
+never carried slot-4 pointers, exactly as that hunt already noted. This pins
+the long-open consumer and retires the "transcode" framing for slot 4. The
+in-place read is corroborated by the dispatcher capture itself: of 2153
+`FUN_80043390` calls during the Drake warp, **762 take their command pointer
+`a0` from inside the slot-4 window** (`0x8011A624`..`0x80122454`) — slot-4 is
+walked in place as command streams, not just as the vertex source — while the
+`0x801BA000` (615 calls) and `0x8014Dxxx` cluster are the *separate* procedural /
+non-slot-4 streams.
+
+**Cross-kingdom — confirmed.** The slot-4 resident base is now byte-pinned for
+all three kingdoms (see the RAM-layout table above: Drake `0x8011A624`, Sebucus
+`0x80119CE4`, Karisto `0x80108D84`). A Sebucus warp dispatcher capture confirms
+the world-map renderer drives cluster-A there too (1090 of 1698 `FUN_80043390`
+calls return into `0x801F7xxx`), and re-reading the Sebucus `slot4_source_map`
+reads against the *correct* base shows **171 of 177 reads land inside the
+byte-verified Sebucus window** (`0x80119CE4`..`0x80120638`), from the cluster-A
+render path (`ra 0x8001BB28`) — slot-4 is read in place for Sebucus exactly as
+for Drake; the earlier "no render reads" was purely the wrong-base assumption.
+Karisto's slot-4 is byte-verified resident at `0x80108D84` and driven by the same
+renderer. The remaining piece is the per-record `[x, y, z, attr]` field
+semantic — how each 8-byte record drives the GTE prim.
 
 ### Cluster-A caller (`FUN_8001ada4`)
 

@@ -200,7 +200,8 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 - reads the record's `+0x00` `model_sel` (`lh`/`lhu` at `80021b2c`/`b30`); `< 0`
   / `0x4000` / `0x4001` are transform-node / render-mode sentinels, else the mesh
   is `DAT_8007C018[model_sel + gp[0x754]]` (decomp `210..216`; in battle the base
-  `gp[0x754] = 3`, live-captured — see Open),
+  `gp[0x754] = party_count + 2` — `3` for a 1-member party, `5` for the full
+  3-member party, save-corpus-pinned — see Open),
 - allocates an actor (`jal 0x80020de0`), stores the record pointer as the actor's
   move-VM buffer base (`*(actor+0x48) = record`, `80021c80`), forces the move-VM
   PC to u16-index 2 (`*(actor+0x70) = 2`, `80021c78` → bytecode at `record+4`),
@@ -254,17 +255,28 @@ pool: `spawn_move_fx` calls `World::try_spawn_effect` (`spawn_by_ui_id`,
 This currently fires only on the scene-graph success path; a move whose lists hold
 *only* `AltEffect` entries (no `Spawn` prototype) is the documented edge case.
 
-**`gp[0x754] = 3` in battle (live-captured).** A PCSX-Redux exec-bp on
-`FUN_80021B04` during a battle move-FX spawn (probe `autorun_summon_model_base`)
-hit it once: `ra = 0x80050F08` (the `FUN_80050ed4` call), `a3 = 0x1000`, with the
-prototype-table base `0x801F6324` and the effect-list id `0x22` live in registers
-— the whole `FUN_801e09f8 → FUN_80050ed4 → FUN_80021B04` chain confirmed — and
-`gp` (`0x8007B318`) `+0x754` (global `0x8007BA6C`) read **3**. So a battle move-FX
-mesh is `DAT_8007C018[model_sel + 3]`, which lands `model_sel` exactly in the
-inferred `DAT_8007C018[3..=32]` effect-model window. (Single capture, battle
-move-FX context. The summon-part stage reads the *same* global but during its own
-library load, so the per-summon base is a separate capture — re-point the probe at
-a summon-part hit to pin it.)
+**`gp[0x754] = party_count + 2` in battle (save-corpus-pinned).** A PCSX-Redux
+exec-bp on `FUN_80021B04` during a battle move-FX spawn (probe
+`autorun_summon_model_base`) first pinned the chain
+`FUN_801e09f8 → FUN_80050ed4 → FUN_80021B04` (`ra = 0x80050F08`, `a3 = 0x1000`,
+prototype-table base `0x801F6324`, effect-list id `0x22` live in registers) and
+read `gp` (`0x8007B318`) `+0x754` (global `0x8007BA6C`) = **3**. Read across the
+whole mednafen save corpus, that `3` is **not** a constant: `gp[0x754]` is `0`
+whenever no battle effect-model library is resident (every field / town / menu /
+minigame / cutscene / battle-loading frame), and **`party_count + 2`** whenever a
+battle has installed the library — **3** for the 1-member training party (Vahn
+alone) and **5** for the 3-member party (Vahn / Noa / Gala). So the base **tracks
+party size**: the two fixed pool slots plus the live party-character meshes precede
+the effect-model library, and `gp[0x754]` is where that library starts. A battle
+move-FX mesh is therefore `DAT_8007C018[model_sel + gp[0x754]]`, and `model_sel` is
+*library-relative* — the same library model regardless of party size; only the
+library's pool offset shifts. (This resolves the old "per-summon base is a separate
+capture" residual: there is no per-summon base — it is one per-battle,
+party-size-derived value, the same for move-FX and summon-part spawns. The `+2`
+prefix is pinned across the two party sizes the corpus exercises; a 2-member-party
+capture could refine it if it is ever party-size-dependent rather than fixed.)
+Pinned by `crates/mednafen/tests/summon_model_base.rs`
+(`model_library_base_tracks_party_size`).
 
 The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
 *not* use this table — a summon's magnitude is derived from caster/summon battle

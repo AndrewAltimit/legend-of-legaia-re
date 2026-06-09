@@ -159,10 +159,10 @@ if let Some(eb) = effect_bundle::detect(&amp;buf) {
   <h3>Side-band streaming-effect handler</h3>
   <p><code>0x801F17F8</code>, called from <code>FUN_800520F0</code> case <code>0xFF</code>, streams two specific runtime-only files via <code>FUN_800558FC</code>:</p>
   <ul class="bullets">
-    <li><code>data\battle\summon.dat</code> (PROT <code>0x37F</code>) - selected when <code>_DAT_8007BD24[0x26B] &amp; 0x80 != 0</code>.</li>
-    <li><code>data\battle\readef.dat</code> (PROT <code>0x380</code>) - opposite branch.</li>
+    <li><code>data\battle\summon.dat</code> - selected when <code>_DAT_8007BD24[0x26B] &amp; 0x80 != 0</code>.</li>
+    <li><code>data\battle\readef.dat</code> - opposite branch.</li>
   </ul>
-  <p>Buffer size per slot: <code>0x10800</code> = 67584 bytes. Format unverified; may share the 2-pack layout but not yet confirmed.</p>
+  <p>The runtime buffer per slot is <code>0x10800</code> = 67584 bytes; the file format is not yet decoded. <strong>The PROT entry these dev paths map to is unpinned</strong> &mdash; the earlier "summon.dat = PROT <code>0x37F</code> / readef.dat = PROT <code>0x380</code>" reading is <em>falsified</em>: those indices (895 / 896) are the boot init pak and the contested mode-24 overlay remnant, and the <code>0879..=0890</code> band that guess sat in is all <code>VABp</code> sound banks. The real entry is resolved at runtime by the path builder feeding the streaming handler <code>0x801F17F8</code>.</p>
   <h3>Open questions</h3>
   <ul class="bullets">
     <li><strong>Effect-ID &rarr; human effect name.</strong> Effect IDs are anonymous; no string table maps id &rarr; "fireball / thunder / heal". Reachable by tracing call sites of <code>FUN_801DFDF8</code> in damage / battle-action code.</li>

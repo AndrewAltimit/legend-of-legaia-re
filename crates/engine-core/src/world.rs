@@ -4538,8 +4538,9 @@ impl World {
     /// `+0x02 flags`, `+0x04` bytecode) staged by the shared `FUN_80021B04`
     /// machinery. This parses those records out of the retained battle-action
     /// overlay (PROT 0898) and spawns them as a [`crate::summon::SummonScene`]
-    /// with model base [`crate::scene::EFFECT_MODEL_LIBRARY_BASE`] (the captured
-    /// battle `gp[0x754] = 3`), so each mesh part resolves to
+    /// with model base [`crate::scene::EFFECT_MODEL_LIBRARY_BASE`] (the engine's
+    /// fixed-library analogue of the retail `gp[0x754] = party_count + 2`; see
+    /// that constant's docs), so each mesh part resolves to
     /// `global_tmd_pool[model_sel + 3]` — the PROT 0871 effect-model library,
     /// already resident.
     ///
