@@ -662,10 +662,26 @@ the world-map renderer (`0x801F78D4` → cluster-A prim dispatcher `0x80043390`
 transcode.** The working-buffer writes the earlier hunt saw (`FUN_80028158` at
 `0x801BA000`; `FUN_8001E54C` chunk copies) are *other* data streams — they
 never carried slot-4 pointers, exactly as that hunt already noted. This pins
-the long-open consumer and retires the "transcode" framing for slot 4. (Single
-Drake capture; the per-record `[x, y, z, attr]` field semantic — how each
-8-byte record drives the GTE prim — is the remaining piece, and a second
-kingdom would confirm the in-place read generalises.)
+the long-open consumer and retires the "transcode" framing for slot 4. The
+in-place read is corroborated by the dispatcher capture itself: of 2153
+`FUN_80043390` calls during the Drake warp, **762 take their command pointer
+`a0` from inside the slot-4 window** (`0x8011A624`..`0x80122454`) — slot-4 is
+walked in place as command streams, not just as the vertex source — while the
+`0x801BA000` (615 calls) and `0x8014Dxxx` cluster are the *separate* procedural /
+non-slot-4 streams.
+
+**Cross-kingdom (partial):** a Sebucus warp dispatcher capture
+(`octam_to_sebucus_worldmap`) confirms the world-map renderer drives cluster-A
+there too — 1090 of 1698 `FUN_80043390` calls return into `0x801F7xxx` (the
+overlay renderer). But Sebucus's `a0` command pointers cluster at
+`0x800DE..0x8010D` with **no** cluster at Drake's `0x8011A624`: the slot-4
+*resident base varies per kingdom* (the documented per-build/per-save variance),
+so a Drake-based read-bp tiling misses it. Byte-locating Sebucus/Karisto's slot-4
+base (disc-decoded payload vs RAM, à la `verify_slot4_in_ram.py`) is the
+prerequisite to a byte-clean cross-kingdom in-place confirmation; the
+`octam_to_sebucus_worldmap` / `sol_to_karisto_worldmap` saves are catalogued for
+it. (The per-record `[x, y, z, attr]` field semantic — how each 8-byte record
+drives the GTE prim — is the other remaining piece.)
 
 ### Cluster-A caller (`FUN_8001ada4`)
 
