@@ -38,7 +38,9 @@ The **consumer is fully decoded** ([`world-map-overlay.md`](../formats/world-map
 
 **Cross-kingdom: confirmed.** The slot-4 resident base is byte-pinned for all three kingdoms (Drake `0x8011A624`, Sebucus `0x80119CE4`, Karisto `0x80108D84` — it varies per kingdom; `locate_slot4_base.py` matches the disc payload against a post-warp RAM dump, all bodies unanimous). Re-read against the correct Sebucus base, 171/177 of the Sebucus `slot4_source_map` reads land inside the verified window — in-place there too.
 
-**Residual:** only the per-record `[x, y, z, attr]` field semantic — how each 8-byte body word feeds the GTE prim. The transcode question is closed (there is none).
+**Per-record semantic — decoded.** Each 8-byte record is a **GTE vertex**: the per-kind handler `FUN_80044c14` loads a record's two words into the GTE vertex registers (`VXYn = x | y<<16`, `VZn = z`) and `RTPT`-transforms them, so `x/y/z` are model-space coordinates (the parser's field layout is confirmed) and `attr` (the `VZn` word's high half) is **not** a coordinate. Each body is an object-local vertex pool; the triangle topology lives in a separate cluster-A command stream that indexes the pool by byte offset (`& 0x7ff8`). The transcode question is closed (there is none — the pool is read in place).
+
+**Residual (narrow):** `attr`'s consumer (a real per-vertex value but unused by the vertex transform — candidate normal/colour index for the lighting arm), the body-header `kind` (`1/2/4`, distinct from the dispatcher prim-kind `8..19`), and where the indexing command stream is built (not in the slot-4 body).
 
 
 ### World-map walk-view continent ground render

@@ -98,9 +98,49 @@ Drake decodes to 32304 bytes with `count = 15`. First entry is
 ```
 
 Total body size is always `8 + count_a * count_b * 8 + 8`. The math
-fits every body in all three kingdoms exactly. The container layout
-above is fully confirmed; what's **not** confirmed is how the runtime
-*interprets* the 8-byte records.
+fits every body in all three kingdoms exactly.
+
+### Per-record semantic — each record is a GTE vertex (decoded)
+
+The 8-byte records are an **object-local vertex pool**: each record is a
+3D vertex the cluster-A prim handlers transform through the GTE. Traced
+from the handler `FUN_80044c14` (one of the per-kind emitters the
+`0x8007657C` dispatch table reaches from `FUN_80043390`), which receives
+the body's record region as the **vertex pool** (`param_3`):
+
+```c
+// pool word pairs loaded straight into the GTE vertex registers:
+puVar = pool + (cmd_index & 0x7ff8);   // index = byte offset, 8-byte stride
+setCopReg(2, 0x0000, pool_word0);      // VXY0  = (i16 X | i16 Y << 16)
+setCopReg(2, 0x0800, pool_word1);      // VZ0   = (i16 Z) in the low half
+// ... V1, V2 the same ...
+copFunction(2, 0x280030);              // RTPT  — perspective-transform 3 verts
+copFunction(2, 0x1400006);             // NCLIP — backface cull
+```
+
+So a record's first word is the GTE `VXYn` register (`X` low, `Y` high)
+and its second word is `VZn` (`Z` in the low 16 bits). Mapping the 8
+bytes back to the parser's `i16` fields:
+
+| bytes | field | role |
+|---|---|---|
+| 0..1 | `x` | model-space X — GTE `VXYn` low half |
+| 2..3 | `y` | model-space Y — GTE `VXYn` high half |
+| 4..5 | `z` | model-space Z — GTE `VZn` |
+| 6..7 | `attr` | high half of the `VZn` word — **not** a coordinate; the GTE vertex load ignores it |
+
+The X/Y/Z ranges bear this out (e.g. Sebucus body 0: X∈[-20224,-3598],
+Y∈[-6416,4351], Z∈[-17649,20992] — object-local mesh extents). The
+**triangle topology is not in the body**: the per-kind handler reads its
+vertex indices (the `& 0x7ff8` byte offsets) from a *separate* cluster-A
+command stream and indexes them into this pool, then emits a `POLY` packet.
+
+**Still open:** `attr`'s consumer (a real per-vertex value — 135 distinct
+in Sebucus body 0 — but unused by the vertex transform; candidate: a
+normal / colour index for the lighting arm); the body-header `kind`
+(`1/2/4`, distinct from the dispatcher's prim-kind `8..19`); and where the
+command stream that indexes this pool is built (it is not in the slot-4
+body — the size math is exactly the vertex pool).
 
 ## Per-kingdom body inventory
 
