@@ -1381,6 +1381,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-art",
+ "legaia-asset",
  "serde",
  "serde_json",
  "toml",
