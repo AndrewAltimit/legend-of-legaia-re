@@ -75,6 +75,18 @@
 //! per-opcode operand widths are not yet identified** — that is the open
 //! residual. [`record_words`] surfaces the raw 16-bit word stream of a record
 //! up to its terminator without claiming opcode semantics.
+//!
+//! **Falsified (don't re-walk): the operand widths are NOT a fixed per-opcode
+//! table.** Each command leads with a pure-opcode word (high byte `0` on
+//! 1508/1508 record leads) followed by operand words, but the operand *count*
+//! is not a constant function of the opcode. Inferring a per-opcode width table
+//! by the exact-terminator constraint (a width assignment must make the greedy
+//! walk land precisely on the `0x0008` word) caps at **~56 %** of 1508 framed
+//! records (40 random-restart hill-climbs; anchored-record consistency ~52 %).
+//! A genuine fixed-width opcode set would resolve to >90 %, so the operand
+//! structure is **data-dependent** (e.g. a length/flag word governing how many
+//! operands follow) and cannot be recovered structurally — it needs the
+//! consumer VM. Hence `record_words` returns the flat word stream only.
 
 use serde::Serialize;
 
