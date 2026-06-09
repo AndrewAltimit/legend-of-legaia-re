@@ -1203,3 +1203,12 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Battle, Noa auto-executes a Miracle Art against an enemy on load (no input needed); she runs through the component arts over a few seconds before the find/replace finisher triggers. Capture point for the Super/Miracle Art action-queue builder (F-SUPER): the runtime emits the combo's interleaved queue + combo-specific connector bytes into the battle-action context at ctx[+0x274] (ctx = *(0x8007BD24)). Drives autorun_super_art_queue_builder.lua, which watches ctx+0x274/+0x276 for writes to pin the builder PC + the literal queue bytes."
 topics = ["battle", "RE", "miracle art", "super art", "arts", "Noa", "ctx queue", "FUN_801E295C"]
+
+[[scenarios]]
+slot = 255
+label = "battle_vahn_tri_somersault_super"
+backup_fingerprint = "c2831f77f52da05ae709740853147f7ef49e8cd0e824b4650a98c3d1bf08b76c"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn auto-executes the Tri-Somersault Super Art during a counterattack ~2s after load (no input). The byte-exact Super action queue is resident at actor[+0x1DF]: 0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B = [Up Down][Starter Somersault 0x27 -> Up][Starter Cyclone 0x1F -> Down][SpecialStarter 0x1A][Tri-Somersault finisher 0x2B x3]. The tail matches super_art.rs's Tri-Somersault `replace` byte-exact, validating the combo-specific connectors (0x27->0F, 0x1F->0E). The dequeue site is pc 0x801D89D8 (consumes the queue head-first). Drives autorun_super_art_action_queue.lua."
+topics = ["battle", "RE", "super art", "arts", "Vahn", "Tri-Somersault", "ctx queue", "FUN_801E295C"]

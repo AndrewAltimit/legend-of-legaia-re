@@ -29,7 +29,16 @@ local probe = require("probe")
 
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate1")
-local FRAMES   = probe.getenv_num("LEGAIA_FRAMES", 1800)
+-- The snapshot is taken on the first post-load frame, so a small capture
+-- budget is enough; the harness self-quit waits `capture_frames + quit_delay`
+-- real vsyncs from capture-start, and the interpreter is slow (~a few fps), so
+-- keep this low. The `timeout` wrapper still bounds the run either way.
+local FRAMES   = probe.getenv_num("LEGAIA_FRAMES", 60)
+-- The combo queue is resident at load (the save is taken after the combo is
+-- committed), so the per-actor +0x1DF snapshot at arm time IS the answer. The
+-- `find_writer` dequeue trace arms ~30 write-breakpoints which slows the
+-- interpreter to a crawl, so it is opt-in (LEGAIA_TRACE_WRITES=1).
+local TRACE    = probe.getenv_num("LEGAIA_TRACE_WRITES", 0)
 local OUT_PATH = probe.out_path("super_art_action_queue.csv")
 
 local ACTOR_TABLE = 0x801C9370 -- 8 x u32 battle-actor pointers; 0..2 = party
@@ -54,6 +63,8 @@ local csv = probe.csv_open(OUT_PATH, "tick,slot,pc,actor,queue_1df_hex")
 local tick = 0
 local handles = {}
 local armed = false
+local _quiet_prev = 0
+local _quiet_frames = 0
 
 local function arm_all(_hctx)
     if armed then return end
@@ -71,19 +82,21 @@ local function arm_all(_hctx)
                 slot, p, snap))
             csv:row("0,%d,0x00000000,0x%08X,%s", slot, p, snap)
             local s = slot
-            handles[#handles + 1] = probe.step.find_writer(p + Q_OFF, Q_LEN, {
-                label = string.format("p%d", slot),
-                read_len = Q_LEN,
-                on_write = function(rg)
-                    tick = tick + 1
-                    local pc = (tonumber(rg.pc) or 0) % 0x100000000
-                    local now = probe.read_bytes(p + Q_OFF, Q_LEN)
-                    local hex = now and probe.bytes_to_hex(now):gsub("%s+", "") or "?"
-                    csv:row("%d,%d,0x%08X,0x%08X,%s", tick, s, pc, p, hex)
-                    PCSX.log(string.format("[aq] #%d slot%d pc=0x%08X actor+0x1DF=[%s]",
-                        tick, s, pc, hex))
-                end,
-            })
+            if TRACE ~= 0 then
+                handles[#handles + 1] = probe.step.find_writer(p + Q_OFF, Q_LEN, {
+                    label = string.format("p%d", slot),
+                    read_len = Q_LEN,
+                    on_write = function(rg)
+                        tick = tick + 1
+                        local pc = (tonumber(rg.pc) or 0) % 0x100000000
+                        local now = probe.read_bytes(p + Q_OFF, Q_LEN)
+                        local hex = now and probe.bytes_to_hex(now):gsub("%s+", "") or "?"
+                        csv:row("%d,%d,0x%08X,0x%08X,%s", tick, s, pc, p, hex)
+                        PCSX.log(string.format("[aq] #%d slot%d pc=0x%08X actor+0x1DF=[%s]",
+                            tick, s, pc, hex))
+                    end,
+                })
+            end
         end
     end
 end
@@ -99,8 +112,27 @@ probe.run({
         return {}
     end,
 
+    -- Early-quit so the run doesn't idle out the full frame budget (which
+    -- reads like a hang under the interpreter). Default (snapshot-only): the
+    -- resident queue is captured at arm time, so quit ~30 frames later. With
+    -- LEGAIA_TRACE_WRITES=1: keep running until the +0x1DF writes have stayed
+    -- stable for ~1s, then quit.
     on_capture = function(hctx, _elapsed)
         arm_all(hctx)
+        if not armed then return end
+        _quiet_frames = _quiet_frames + 1
+        if TRACE == 0 then
+            if _quiet_frames >= 30 then hctx.request_quit = true end
+            return
+        end
+        local total = 0
+        for _, h in ipairs(handles) do total = total + h:count() end
+        if total ~= _quiet_prev then
+            _quiet_prev = total
+            _quiet_frames = 0
+        elseif total > 0 and _quiet_frames >= 60 then
+            hctx.request_quit = true
+        end
     end,
 
     on_done = function()

@@ -63,25 +63,26 @@ Super/Miracle Art commit, so no player art queue is built.
 ## Running the probe
 
 ```bash
-LEGAIA_FRAMES=1800 \
-timeout --kill-after=20s 600s \
+xvfb-run -a timeout --kill-after=15s 240s \
 bash scripts/pcsx-redux/run_probe.sh \
-    --scenario battle_noa_miracle_art_combo \
+    --scenario battle_vahn_tri_somersault_super \
     --lua scripts/pcsx-redux/autorun_super_art_action_queue.lua
+# (or --scenario battle_noa_miracle_art_combo for the Miracle path)
 ```
 
-(The `timeout` wrapper is required — the probe does not always self-quit; see
-[`pcsx-redux-automation.md`](pcsx-redux-automation.md). `--scenario` resolves to
-the immutable library backup; `--sstate <path>` works for an ad-hoc state. Run
-under `xvfb-run -a` to keep the emulator window off the desktop.)
+(`--scenario` resolves to the immutable library backup; `--sstate <path>` works
+for an ad-hoc state. `xvfb-run -a` keeps the emulator window off the desktop.
+The `timeout` wrapper is required — see the run-time note below and
+[`pcsx-redux-automation.md`](pcsx-redux-automation.md).)
 
 ## Reading the result
 
 Output lands under `captures/super_art_action_queue/<run-ts>/`:
 
 - `super_art_action_queue.csv` — `tick=0` rows are the per-party-actor
-  `+0x1D8..+0x200` snapshots taken at arm time (the resident queue); `tick>0`
-  rows are `+0x1DF` range-watch writes (PC + post-write bytes).
+  `+0x1D8..+0x200` snapshots taken at arm time (the resident queue — this is the
+  byte-exact answer). `tick>0` rows are `+0x1DF` range-watch writes (PC +
+  post-write bytes) and appear only with `LEGAIA_TRACE_WRITES=1`.
 - the `pcsx.log` `[aq]` lines mirror the same, plus the active-actor index
   read from `ctx+0x274`.
 
@@ -102,8 +103,43 @@ sourced from a researcher spreadsheet). So the engine's Miracle queue and the
 `ActionConstant` byte encoding are now **runtime-validated** against retail RAM,
 and the queue location is pinned.
 
-**Still open (wants a Super capture):** the *Super* path tail-replaces with
-combo-specific connectors (e.g. Vahn's `0x27` → `0F` vs `0E`). The Miracle
-capture validates the shared mechanism (location + encoding + replacement
-form); a Vahn Tri-Somersault / Power Slash save run through the same probe would
-validate the Super tail connectors the same way.
+## Result — Super path validated (Vahn Tri-Somersault)
+
+The `battle_vahn_tri_somersault_super` capture (Vahn auto-casting Tri-Somersault
+during a counterattack) closes the Super side. Vahn's resident queue at
+`actor[+0x1DF]` is:
+
+```
+0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B
+= [Up Down] [Starter Somersault(0x27) Up] [Starter Cyclone(0x1F) Down]
+  [SpecialStarter Tri-Somersault(0x2B) ×3]
+```
+
+The matched/replaced tail `19 27 0F 19 1F 0E 1A 2B 2B 2B` is **byte-identical to
+`super_art.rs`'s `Tri-Somersault` `replace` field** — runtime-validating the
+combo-specific connectors the thread flagged (`Somersault 0x27 → 0F`,
+`Cyclone 0x1F → 0E`) and the finisher tail. The leading `0F 0E` is the residual
+direction input the tail-replace ran behind. The `find_writer` trace shows the
+dequeue at pc `0x801D89D8` (the action SM consuming the queue head-first, one
+entry per executed action).
+
+So both an in-the-wild Miracle (Noa) and Super (Vahn) now confirm the engine's
+modeled queues + `ActionConstant` encoding byte-exact. Remaining is only the
+long tail of the other 13 Supers' replace strings, each a one-capture check
+through the same probe if ever needed.
+
+## Note on run time
+
+The queue is **resident at load**, so the per-actor `+0x1DF` snapshot rows are
+written to the CSV on the first post-load frame (~a second in). Read the CSV as
+soon as the `[aq] party slot …` lines appear in the log — you do not need to
+wait for a clean exit. As with every probe here, **wrap the run in `timeout`**:
+self-exit under the `-interpreter -debugger` build is slow (the harness waits
+`capture_frames + quit_delay` real vsyncs and the interpreter runs at only a few
+fps), so the default `LEGAIA_FRAMES` is kept small and a kill after the snapshot
+loses nothing (CSV rows are flushed as they are written).
+
+The `+0x1DF` dequeue **write trace** is opt-in (`LEGAIA_TRACE_WRITES=1`): it arms
+~30 width-2 write-breakpoints across the three party actors' queue windows,
+which slows the interpreter to a crawl, so it is off by default — the snapshot
+alone gives the byte-exact queue.

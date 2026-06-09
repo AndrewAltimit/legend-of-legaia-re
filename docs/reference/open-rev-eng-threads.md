@@ -106,7 +106,7 @@ The find/replace matcher **is** ported (`legaia_art::{MiracleMatcher,SuperMatche
 The action queue is the per-actor **`actor[+0x1DF..+0x1F2]`** action-parameter byte stream (not `ctx[+0x274]` — a capture showed that is the turn-order active-actor index written by `recompute_battle_order` `FUN_801DABA4`).
 The directions/connectors encode as `0x0C/0x0D/0x0E/0x0F` = Left/Right/Down/Up, `0x1A` = `SpecialStarter`, `0x1B..0x32` = art constants.
 A `battle_noa_miracle_art_combo` capture (probe `autorun_super_art_action_queue.lua`, runbook [`docs/tooling/super-art-queue-capture.md`](../tooling/super-art-queue-capture.md)) read Noa's resident Miracle queue and it matches `crates/art/src/miracle.rs`'s modeled replacement string **byte-exact** — runtime-validating the queue + `ActionConstant` encoding that were previously spreadsheet-sourced.
-**Still open:** the *Super* tail-connector specifics (Vahn `0x27` → `0F` vs `0E`) want a Vahn Super-Art save run through the same probe; the shared mechanism (location + encoding) is now confirmed.
+**Super path also validated:** a `battle_vahn_tri_somersault_super` capture read Vahn's resident Tri-Somersault queue (`…19 27 0F 19 1F 0E 1A 2B 2B 2B`) whose matched/replaced tail is **byte-identical** to `super_art.rs`'s `Tri-Somersault` `replace` — confirming the combo-specific connectors (`Somersault 0x27 → 0F`, `Cyclone 0x1F → 0E`) and the finisher tail. The dequeue site is pc `0x801D89D8`. The only residue is the other 13 Supers' replace strings (each a one-capture check through the same probe).
 
 
 ### Seru-magic summon visual (e.g. Tail Fire)
