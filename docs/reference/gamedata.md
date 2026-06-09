@@ -257,6 +257,18 @@ is the tie-breaker when the two disagree:
   Biron-after-mist joins until corrected to the disc spelling (the price oracle
   missed it — a name-mismatch is a tolerated miss there). The shop-record format
   is documented in `legaia_asset::shop_stock`.
+- `casino_prizes_vs_disc` — joins `casino.toml` to the coin prize-exchange table
+  in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; the
+  canonical reader is `legaia_rando::casino::CasinoExchange`). Each prize is an
+  8-byte record `[u16 item_id][u16 story_gate][u32 coin_price]` in `0x60`-byte
+  blocks; block 1 is the Vidna casino counter, block 0 the Sol Tower Muscle Dome
+  counter (high-value prizes story-gated via the `+2` word), and blocks 2/3 are
+  short pre-progression states (one cheap healing item each). Every curated
+  prize joins a disc record byte-exact on **(item name, coin price)** across both
+  full lists, and every disc record in those lists is a curated prize — with one
+  documented exception, **Earth Egg @ 100000 coins** (the Muscle Paradise
+  "Chicken King" easter egg), a separate hidden exchange that is not in the
+  four-block table (asserted explicitly).
 
 ## Library API
 
