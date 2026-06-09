@@ -366,12 +366,19 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             }
             MenuState::StatusEquipment => {
                 let idx = *self.selected_char;
+                let mut removed = 0u8;
                 if let Some(record) = self.world.roster.members.get_mut(idx) {
                     let mut equip = record.equipment();
                     if (slot as usize) < equip.slots.len() {
+                        removed = equip.slots[slot as usize];
                         equip.slots[slot as usize] = 0;
                         record.set_equipment(equip);
                     }
+                }
+                // Return the unequipped item to the bag (retail puts it back);
+                // zeroing the slot without crediting it destroyed the item.
+                if removed != 0 {
+                    *self.world.inventory.entry(removed).or_insert(0) += 1;
                 }
             }
             MenuState::StatusInventory => {
@@ -592,6 +599,9 @@ mod tests {
         };
         world.roster.members[0].set_equipment(equip);
 
+        // Slot 2 holds item id 3; it must come back to the bag on unequip.
+        let before = world.inventory.get(&3).copied().unwrap_or(0);
+
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.selected_char = 0;
         runtime.ctx.state = MenuState::StatusEquipment.as_byte();
@@ -608,6 +618,12 @@ mod tests {
         assert_eq!(updated.slots[2], 0, "slot 2 unequipped");
         assert_eq!(updated.slots[0], 1, "other slots unchanged");
         assert_eq!(updated.slots[7], 8, "other slots unchanged");
+        // The unequipped item returned to the bag (not destroyed).
+        assert_eq!(
+            world.inventory.get(&3).copied().unwrap_or(0),
+            before + 1,
+            "unequipped item 3 returned to inventory"
+        );
     }
 
     #[test]

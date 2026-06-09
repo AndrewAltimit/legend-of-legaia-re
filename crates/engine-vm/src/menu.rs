@@ -346,7 +346,10 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
         Some(s) => {
             let count = host.screen_item_count(s).max(1);
             if input.up {
-                ctx.cursor = (ctx.cursor + count - 1) % count;
+                // Widen the wrap arithmetic: `cursor + count` can exceed 255
+                // (e.g. cursor 254, count 255) and overflow the u8 before the
+                // `% count`, panicking in debug builds.
+                ctx.cursor = ((ctx.cursor as u16 + count as u16 - 1) % count as u16) as u8;
             } else if input.down {
                 ctx.cursor = (ctx.cursor + 1) % count;
             }
