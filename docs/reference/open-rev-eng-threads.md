@@ -36,7 +36,9 @@ The **consumer is fully decoded** ([`world-map-overlay.md`](../formats/world-map
 
 **The handlers read the slot-4 RAM payload IN PLACE — there is no transcode.** A Drake warp capture (`scripts/pcsx-redux/autorun_slot4_source_map.lua`; 365 rows) shows 363 reads of the slot-4 window with the cluster-A GTE prim path (`0x80044C70 = lw …,0x10(a1); … andi …,0x7FF8`, the exact packed-vertex-index extraction) holding slot-4 pointers in `a1`/`a2` (`0x8011A608`, `0x80121614`, …), under return addresses `0x801F78D4` (the world-map top-view overlay renderer, 276 reads) and `0x8001BC8C` (SCUS render, 78). The streaming-chunk processor `FUN_8001E54C` fired only twice and on a non-slot-4 buffer (`0x80184BD0`). So the earlier "`FUN_8001E54C` distributes the slot-4 records into a working buffer the handlers walk" reading is **falsified**: the slot-4 sub-body payloads *are* the command stream + vertex pool, walked directly. (The working-buffer writers the prior hunt saw — `FUN_80028158` at `0x801BA000` — are unrelated procedural meshes, as that hunt already found.)
 
-**Residual:** the per-record `[x, y, z, attr]` field semantic — how each 8-byte body word feeds the GTE prim — and confirming the in-place read across a second kingdom. The transcode question is closed (there is none).
+**Cross-kingdom: confirmed.** The slot-4 resident base is byte-pinned for all three kingdoms (Drake `0x8011A624`, Sebucus `0x80119CE4`, Karisto `0x80108D84` — it varies per kingdom; `locate_slot4_base.py` matches the disc payload against a post-warp RAM dump, all bodies unanimous). Re-read against the correct Sebucus base, 171/177 of the Sebucus `slot4_source_map` reads land inside the verified window — in-place there too.
+
+**Residual:** only the per-record `[x, y, z, attr]` field semantic — how each 8-byte body word feeds the GTE prim. The transcode question is closed (there is none).
 
 
 ### World-map walk-view continent ground render

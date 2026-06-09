@@ -155,18 +155,30 @@ the corners.
 ## RAM layout (confirmed)
 
 Slot 4 is loaded **verbatim into RAM** with zero per-byte diffs vs
-disc. Drake's payload starts at `0x8011A624` (the outer pack header)
-and ends at `0x80122454` exclusive - exactly 32304 bytes, matching
-the disc-decoded length. Body 0's records start at `0x8011A664`
-(`0x40` past the base, after the 4-byte count and 15 × 4-byte
-offsets). No runtime fixup is applied.
+disc, and the **resident base varies per kingdom** — each is pinned by
+byte-matching the disc-decoded payload against a post-warp full-RAM dump
+(`scripts/pcsx-redux/locate_slot4_base.py`, all bodies agreeing
+unanimously):
 
-Verified by `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` against a
-PCSX-Redux save state: every byte of all 15 bodies matches the
-disc-side LZS-decoded payload. The load base was pinned by signature-
-searching the full 2 MiB main RAM for the 64-byte outer pack header
-(count = 15 followed by `byte_offsets[0..15]`) - see
-`scripts/pcsx-redux/autorun_dump_full_ram.lua` for the procedure.
+| Kingdom | bundle | resident base | end (excl.) | bytes | bodies matched |
+|---|---|---|---|---|---|
+| Drake   | `map01` / 0085 | `0x8011A624` | `0x80122454` | 32304 | 15/15 |
+| Sebucus | `map02` / 0244 | `0x80119CE4` | `0x80120638` | 26964 | 16/16 |
+| Karisto | `map03` / 0391 | `0x80108D84` | `0x8010ED00` | 24444 | 16/16 |
+
+Body 0's records start `0x40` past the base (after the 4-byte count and
+15-16 × 4-byte offsets). No runtime fixup is applied. Because the base
+is not constant, a probe that arms breakpoints on the slot-4 RAM window
+**must locate the base for that kingdom first** (the
+`octam_to_sebucus_worldmap` / `sol_to_karisto_worldmap` saves drive the
+Sebucus / Karisto warps; `drake_castle_to_worldmap` drives Drake).
+
+The Drake load was originally verified by
+`scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` (every byte of all 15
+bodies matches the LZS-decoded payload); the per-kingdom base table above
+extends that with `autorun_dump_full_ram_hold.lua` (drives the warp, then
+dumps post-warp RAM) + `locate_slot4_base.py` (the unanimous body-vote
+search).
 
 ## Consumer call sites
 
@@ -670,18 +682,18 @@ walked in place as command streams, not just as the vertex source — while the
 `0x801BA000` (615 calls) and `0x8014Dxxx` cluster are the *separate* procedural /
 non-slot-4 streams.
 
-**Cross-kingdom (partial):** a Sebucus warp dispatcher capture
-(`octam_to_sebucus_worldmap`) confirms the world-map renderer drives cluster-A
-there too — 1090 of 1698 `FUN_80043390` calls return into `0x801F7xxx` (the
-overlay renderer). But Sebucus's `a0` command pointers cluster at
-`0x800DE..0x8010D` with **no** cluster at Drake's `0x8011A624`: the slot-4
-*resident base varies per kingdom* (the documented per-build/per-save variance),
-so a Drake-based read-bp tiling misses it. Byte-locating Sebucus/Karisto's slot-4
-base (disc-decoded payload vs RAM, à la `verify_slot4_in_ram.py`) is the
-prerequisite to a byte-clean cross-kingdom in-place confirmation; the
-`octam_to_sebucus_worldmap` / `sol_to_karisto_worldmap` saves are catalogued for
-it. (The per-record `[x, y, z, attr]` field semantic — how each 8-byte record
-drives the GTE prim — is the other remaining piece.)
+**Cross-kingdom — confirmed.** The slot-4 resident base is now byte-pinned for
+all three kingdoms (see the RAM-layout table above: Drake `0x8011A624`, Sebucus
+`0x80119CE4`, Karisto `0x80108D84`). A Sebucus warp dispatcher capture confirms
+the world-map renderer drives cluster-A there too (1090 of 1698 `FUN_80043390`
+calls return into `0x801F7xxx`), and re-reading the Sebucus `slot4_source_map`
+reads against the *correct* base shows **171 of 177 reads land inside the
+byte-verified Sebucus window** (`0x80119CE4`..`0x80120638`), from the cluster-A
+render path (`ra 0x8001BB28`) — slot-4 is read in place for Sebucus exactly as
+for Drake; the earlier "no render reads" was purely the wrong-base assumption.
+Karisto's slot-4 is byte-verified resident at `0x80108D84` and driven by the same
+renderer. The remaining piece is the per-record `[x, y, z, attr]` field
+semantic — how each 8-byte record drives the GTE prim.
 
 ### Cluster-A caller (`FUN_8001ada4`)
 
