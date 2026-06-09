@@ -102,6 +102,28 @@ local function on_write(off, width)
     end
 end
 
+-- The harness calls on_arm BEFORE it loads the save state (lib/probe/sm.lua),
+-- so the ctx pointer `*(0x8007BD24)` reads 0 there (cold-boot RAM). A fixed
+-- watch address would be fine in on_arm, but this watch is pointer-derived, so
+-- we defer arming to on_capture (per-frame, post-load) and arm as soon as the
+-- ctx pointer resolves into RAM.
+local armed = false
+local function try_arm(hctx)
+    if armed then return end
+    local base = ctx_base()
+    if not probe.in_ram(base) then return end -- save not loaded / ctx not set yet
+    armed = true
+    PCSX.log(string.format(
+        "[superq] ctx base = 0x%08X; arming watch on +0x%X (w1) and +0x%X (w1)",
+        base, Q_OFF, FLAG_OFF))
+    probe.arm_breakpoint(base + Q_OFF, "Write", 1, "q274", on_write(Q_OFF, 1))
+    probe.arm_breakpoint(base + FLAG_OFF, "Write", 1, "q276", on_write(FLAG_OFF, 1))
+    hctx.descs = {
+        { addr = base + Q_OFF, name = "q274" },
+        { addr = base + FLAG_OFF, name = "q276" },
+    }
+end
+
 probe.run({
     sstate         = SSTATE_PATH,
     capture_frames = FRAMES,
@@ -109,32 +131,29 @@ probe.run({
     snapshot_path  = OUT_PATH:gsub("%.csv$", ".hits.txt"),
 
     on_arm = function()
-        local base = ctx_base()
-        if not probe.in_ram(base) then
-            PCSX.log(string.format(
-                "[superq] WARNING: ctx pointer *(0x%08X)=0x%08X is not in RAM -- "
-                .. "is this a battle save? Arming anyway from the current value.",
-                CTX_PTR, base))
-        end
-        PCSX.log(string.format("[superq] ctx base = 0x%08X; watching +0x%X (w1) and +0x%X (w1)",
-            base, Q_OFF, FLAG_OFF))
-        probe.arm_breakpoint(base + Q_OFF, "Write", 1, "q274", on_write(Q_OFF, 1))
-        probe.arm_breakpoint(base + FLAG_OFF, "Write", 1, "q276", on_write(FLAG_OFF, 1))
-        return {
-            { addr = base + Q_OFF, name = "q274" },
-            { addr = base + FLAG_OFF, name = "q276" },
-        }
+        -- Cannot resolve ctx yet (save not loaded). Arm nothing here; the
+        -- real arm happens in on_capture once *(0x8007BD24) is valid.
+        PCSX.log("[superq] deferring arm until the save state loads (on_capture)")
+        return {}
+    end,
+
+    on_capture = function(hctx, _elapsed)
+        try_arm(hctx)
     end,
 
     on_done = function()
         csv:close()
         PCSX.log(string.format(
-            "=== super-art queue-builder probe: writes logged=%d (cap %d) ctx=0x%08X ===",
-            logged, LOG_CAP, ctx_base()))
-        if logged == 0 then
-            PCSX.log("[superq] NO writes to ctx+0x274/+0x276 fired. Either the save "
-                .. "was not at a Super/Miracle combo commit, or ctx was not yet "
-                .. "allocated. Save the frame the combo resolves and re-run.")
+            "=== super-art queue-builder probe: armed=%s writes logged=%d (cap %d) ctx=0x%08X ===",
+            tostring(armed), logged, LOG_CAP, ctx_base()))
+        if not armed then
+            PCSX.log("[superq] ctx pointer *(0x8007BD24) never resolved into RAM -- "
+                .. "the save may not have loaded, or 0x8007BD24 is not the battle "
+                .. "context pointer in this build/overlay.")
+        elseif logged == 0 then
+            PCSX.log("[superq] armed but NO writes to ctx+0x274/+0x276 fired. Either "
+                .. "the save was not at a Super/Miracle combo commit, or the combo "
+                .. "finished before capture began. Save earlier in the combo + re-run.")
         end
     end,
 })
