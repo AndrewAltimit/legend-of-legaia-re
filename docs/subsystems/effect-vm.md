@@ -24,6 +24,20 @@ The cleaner port path: model the walker as a state-machine class and accept its 
 
 The retail per-state token algebra (`FUN_801E0088` pass 1) is inlined and not yet extracted, so `EffectHost::advance_state` models the lifecycle as a fixed-frame countdown: each work tick increments `master.field_14`, and the slot retires once it reaches `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`. Without this an effect terminated on its first work tick and never persisted to draw.
 
+The per-frame walker splits into two host hooks because retail runs two
+distinct passes at different cadences.
+`EffectHost::advance_state` is the `state == 0` *script* work and is gated on
+the state byte.
+`EffectHost::accumulate_child_motion` is the *per-child position integration*
+(`child+0xc/+0x10/+0x14 += velocity * accel * frame_delta`) and runs **every
+frame for every active slot regardless of `state`** - `FUN_801E0088` performs
+that accumulation in both its `state == 0` work loop and its `state != 0`
+wait-countdown branch, so a child billboard keeps drifting during a wait state.
+`Pool::tick` therefore calls `accumulate_child_motion` *before* the state-byte
+gate; gating it behind `advance_state` (the earlier shape) froze waiting
+effects. The hook's default is a no-op until the child-motion renderer lands,
+so the contract is faithful even though no host integrates motion yet.
+
 ### Catalog load
 
 The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `EffectCatalog::from_efect_dat_bytes` (the 2-pack parser - see [`formats/effect.md`](../formats/effect.md)), staying resident on `World::effect_catalog` across field/battle transitions. So the action SM's `ui_element` spawns (`FUN_801D8DE8 → FUN_801DFDF8`, ported as `World::try_spawn_effect`) resolve to real effect scripts. The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.

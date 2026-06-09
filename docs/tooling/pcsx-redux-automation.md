@@ -385,6 +385,8 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_title_overlay_writer_hunt.lua` | Pins the SCUS-side title-overlay loader. → [detail](#autorun_title_overlay_writer_huntlua) |
 | `autorun_monster_record_source.lua` | Pinned the monster stat archive to PROT entry `0867_battle_data`. → [detail](#autorun_monster_record_sourcelua) |
 | `autorun_battle_reward_source.lua` | Confirmed the victory reward path. → [detail](#autorun_battle_reward_sourcelua) |
+| `autorun_super_art_queue_builder.lua` | Watches `ctx[+0x274]` (`*(0x8007BD24)+0x274`); a capture showed this is the turn-order active-actor index (`FUN_801DABA4`), **not** the art queue. Kept as a turn-order diagnostic. See [super-art-queue-capture.md](super-art-queue-capture.md). |
+| `autorun_super_art_action_queue.lua` | Reads + range-watches the party actors' `actor[+0x1DF..+0x1F2]` action-parameter stream (the real Super/Miracle queue) via the `0x801C9370` table. Validated Noa's Miracle queue byte-exact vs `miracle.rs`. See [super-art-queue-capture.md](super-art-queue-capture.md). |
 | `autorun_title_staging_capture.lua` | Pins the PROT source of the title overlay. → [detail](#autorun_title_staging_capturelua) |
 | `autorun_battle_palette_source.lua` | Confirms the scene bundle is LZS-decompressed into the work arena at load; does NOT pin the party palette. → [detail](#autorun_battle_palette_sourcelua) |
 | `autorun_load_screen_dump.lua` | Ground-truth capture for the load-screen panel border + slot-pill source sprites. → [detail](#autorun_load_screen_dumplua) |
