@@ -545,13 +545,22 @@ walked as-is samples the authoring pages and renders incoherently.
 
 ### Equipment groups (battle only)
 
-A live battle character carries +2 `nobj` over the disc form (Vahn 15→17).
-The equipment swap (`FUN_8001EBEC`, the same mechanism the field pack uses)
-replaces several visible groups at battle setup; the replacement geometry
-(the equipped weapon/gear) is **not present in the 1204 TMD** — it is sourced
-externally (a separate weapon mesh), so the in-battle silhouette differs from
-both the unarmed disc form and the Baka Fighter form (a fist-fight, which
-keeps the unarmed mesh). The external weapon-mesh source is an open thread.
+A live battle character carries +2 `nobj` over the disc form (Vahn 15→17),
+so the in-battle silhouette differs from both the unarmed disc form and the
+Baka Fighter form (a fist-fight, which keeps the unarmed mesh). The
+equipped-weapon/gear geometry behind that `+2` is **not present in the 1204
+TMD** — it is sourced externally (a separate weapon mesh). That external
+source is an open thread.
+
+`FUN_8001EBEC` is **not** that loader. The decomp (see
+[§ 10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap))
+shows it only copies a transform between two *in-TMD* group templates
+(group 10 at `TMD+0x124` ↔ group 11 at `TMD+0x140`) into a visible group, per
+a per-character equipment-condition byte — a binary pose toggle on geometry
+already in the disc 1204 pack, not an external-mesh upload. So whatever loads
+the external `+2` weapon objects is a distinct, still-unpinned mechanism; the
+earlier "the equipment swap `FUN_8001EBEC` sources it externally" framing
+conflated the two.
 
 ### On-disc layout (PROT 1204)
 
