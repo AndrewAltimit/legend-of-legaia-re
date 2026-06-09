@@ -1,29 +1,34 @@
-//! Field-pack container - the most common shape under PROT entries that hold
-//! field/town/dungeon scene data.
+//! Field-pack container - a magic-stamped block carried by a handful of
+//! field/town scene PROT entries.
 //!
 //! ## Format
 //!
-//! 124 PROT entries (out of 1234) share an identical 388-byte schema block.
-//! The schema is preceded by a 4-byte magic and followed by packed PSX TIMs
-//! and Legaia TMDs:
+//! The magic `0x01059B84` appears **raw in exactly four PROT entries**
+//! (`0002_gameover_data`, `0003`/`0004`/`0005_town01`); the 97-entry schema
+//! *signature* appears in **eight** (the other four — `0020_town0b`,
+//! `0021`/`0022`/`0023_town0c` — carry it **without** the magic prefix). The
+//! magic is a build-tool stamp, not a runtime parser anchor (a SCUS + overlay
+//! scan finds zero references to it). Layout of a carrier:
 //!
 //! ```text
 //! [file start]
-//!   ...preamble (variable size, content shape currently unknown)...
-//!   [zero padding to 4-byte alignment]
-//!   [u32 LE = MAGIC = 0x01059B84]
-//!   [97 × u32 LE - schema table, identical across all 124 instances]
-//!   [packed TIMs - back-to-back, each TIM begins with 0x10000000 magic]
-//!   [packed TMDs - each preceded by a u32 LE size header]
+//!   ...preamble - the PER-SCENE payload (count + u16 offset table + records)...
+//!   [u32 LE = MAGIC = 0x01059B84]   (present in only 4 of the 8 carriers)
+//!   [97 × u32 LE - schema table, byte-identical everywhere]
+//!   [≈ 91 KB schema-indexed region - a byte-identical GLOBAL CONSTANT block]
+//!   [packed TIMs / TMDs - in some files]
 //! [file end]
 //! ```
 //!
-//! The 97 schema entries are ascending u32 LE values from `0x60` to `0x16651`.
-//! They are the *same offsets in every fieldpack* - i.e. the schema describes
-//! a static abstract sub-record layout, not file-relative offsets. The
-//! preamble bytes that fill those slots vary per-scene; the runtime mapping
-//! between preamble bytes and schema slots is not yet understood, so this
-//! parser only locates the schema and the packed asset regions after it.
+//! The 97 schema entries are ascending u32 LE values from `0x60` to `0x16651`,
+//! the same in every carrier. **The ≈ 91 KB region the schema indexes is a
+//! global constant** — byte-identical (FNV/SHA `c85d6a44d742…`) across town01
+//! AND town0c. So the schema slots are a fixed template, **not** filled
+//! per-scene; the per-scene field data is the preamble. (Corrected from a raw
+//! disc scan — the earlier "124 entries / preamble fills the slots" reading was
+//! wrong; see `docs/formats/field-pack.md` and `tests/field_pack_real.rs`.)
+//! This parser locates the magic-prefixed schema + the packed asset region
+//! after it.
 //!
 //! ## What this gives us
 //!
@@ -36,14 +41,16 @@
 //!   PROT entries through this parser and everything else through the older
 //!   detectors in [`crate::categorize`].
 //!
-//! ## What this doesn't (yet) do
+//! ## What this doesn't do
 //!
-//! - Map preamble bytes to schema slots. The schema offsets cover a 91 KB
-//!   range, but in many fieldpack files the preamble is only ~47 KB -
-//!   meaning the offsets cannot be plain file-relative byte offsets. They
-//!   may index into a runtime-reconstructed buffer (preamble decompressed
-//!   into a fixed-shape RAM region), but the reconstruction step has not
-//!   been traced yet.
+//! - Decode the **preamble** (the per-scene payload before the magic). It is a
+//!   count + `u16` offset table + records — the same shape the magic-less
+//!   town0b / town0c field files open with — i.e. a scene event/actor
+//!   structure, not yet fully decoded here. (There is no "map preamble bytes to
+//!   schema slots" step: the schema-indexed region is a global constant, so the
+//!   slots are a fixed template, not per-scene-filled. The earlier
+//!   "runtime-reconstructed projection" framing was based on the false premise
+//!   that the slots hold per-scene data.)
 //! - Walk the TIM region. [`crate::tim_scan`] already enumerates TIMs by
 //!   magic-scanning the raw bytes, which is sufficient for now.
 
@@ -108,11 +115,11 @@ pub const SCHEMA_FIRST: u32 = 0x60;
 /// Last value in the schema (= start of the 97th abstract record).
 pub const SCHEMA_LAST: u32 = 0x16651;
 
-/// The 97 schema slot offsets. Byte-identical across every retail
-/// field-pack file (MD5 `edcfdf1575889d63d2077c396089d7f3`); exposed as a
-/// static array so callers can interpret schema slots without parsing a
-/// concrete file. Sourced from `0005_town01.BIN` which has the schema
-/// table at byte offset 0x4 (preamble-less canonical layout).
+/// The 97 schema slot offsets. Byte-identical across every carrier (the 8
+/// schema-bearing PROT entries; MD5 `edcfdf1575889d63d2077c396089d7f3`);
+/// exposed as a static array so callers can interpret schema slots without
+/// parsing a concrete file. Sourced from `0005_town01.BIN` which has the
+/// schema table at byte offset 0x4 (preamble-less, template-only layout).
 #[rustfmt::skip]
 pub const CANONICAL_SCHEMA: [u32; RECORD_COUNT] = [
     0x00060, 0x00061, 0x020E9, 0x04171, 0x061F9, 0x06609, 0x06821, 0x06A39,
