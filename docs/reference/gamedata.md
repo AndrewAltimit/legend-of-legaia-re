@@ -223,6 +223,16 @@ is the tie-breaker when the two disagree:
   map name-exactly to the four gamedata armour/weapon slots (body 20, head 15,
   footwear 16), and none of the 77 accessories appear in that table (they are a
   separate system). See [`equipment-table.md`](../formats/equipment-table.md).
+- `enemy_stats_vs_disc` — joins `enemies.toml` to the monster-stat archive
+  (`PROT 0867`) by name (unambiguous names only — multi-form bosses like Gaza
+  are skipped). The curated bestiary stats are **scaled derivations** of the raw
+  disc record, not copies, by fixed factors: `hp`/`spd` ×1, `udf`/`ldf` ×2,
+  `atk` ×5/4, `exp` ×3/4, `gold` ×5/16 (all exact, ±1 on the fractional ones).
+  Two curated labels are disc stats in disguise: curated `agl` **is** the disc
+  *spirit* (SP) stat (×1), and curated `intel` is the disc *agility* stat ×9/8.
+  So the disc is the raw ground truth; the test pins all nine fields across 120+
+  enemies. See [`monster-animation.md`](../formats/monster-animation.md) and
+  `legaia_asset::monster_archive`.
 
 ## Library API
 
