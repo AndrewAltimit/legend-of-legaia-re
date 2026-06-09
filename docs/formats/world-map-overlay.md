@@ -135,12 +135,47 @@ Y∈[-6416,4351], Z∈[-17649,20992] — object-local mesh extents). The
 vertex indices (the `& 0x7ff8` byte offsets) from a *separate* cluster-A
 command stream and indexes them into this pool, then emits a `POLY` packet.
 
-**Still open:** `attr`'s consumer (a real per-vertex value — 135 distinct
-in Sebucus body 0 — but unused by the vertex transform; candidate: a
-normal / colour index for the lighting arm); the body-header `kind`
-(`1/2/4`, distinct from the dispatcher's prim-kind `8..19`); and where the
-command stream that indexes this pool is built (it is not in the slot-4
-body — the size math is exactly the vertex pool).
+### `kind` (1/2/4) — a body class/scope tag (characterized)
+
+`kind` is the body header's `+0x06` field and is **not** the dispatcher's
+prim-kind (`8..19`, computed from a separate command word). Hashing each body's
+bytes across the three kingdoms shows `kind` partitions bodies by **scope and
+class**:
+
+- **`kind = 1`** — the three leading bodies (0, 1, 2) are **byte-identical
+  across all three kingdoms** (sha256-matched): a shared, universal mesh set
+  present on every kingdom map.
+- **`kind = 2`** — full-3D kingdom objects. Some are kingdom-specific; a trailing
+  cluster (Drake bodies 9–11 ≡ Sebucus/Karisto bodies 12–14) is **byte-identical
+  across all three** — another globally shared set. Other kind-2 bodies are
+  shared between adjacent kingdom *pairs* (Drake↔Sebucus, Sebucus↔Karisto).
+- **`kind = 4`** — always carries `flag_a = 1` (the only `flag_a = 1` exception
+  in the corpus is one kind-2 body). Often the widest-extent meshes (Drake body
+  13 reaches the ±32 K world bounds); shared between kingdom pairs.
+
+So a kingdom's slot 4 is a per-kingdom **assembly** drawn from a shared mesh
+library (`kind 1` universal + shared `kind 2/4`) plus kingdom-specific bodies,
+with `kind` tagging each body's category. Degenerate bodies (`count_a = 1`,
+all-zero records) are empty placeholder slots.
+
+### `attr` — a per-vertex non-coordinate value (characterized)
+
+The 4th `i16` is genuinely **per-vertex** (not constant within a `count_a` group:
+0/20 groups have a uniform `attr`), is **not** a function of the vertex position
+(`corr(attr, x/y/z) ≈ 0.1`), and is not a copy of a neighbouring vertex's
+coordinate. It varies smoothly across the `count_b` groups (consecutive groups'
+`attr` at the same slot track closely — e.g. Drake body 0 group 0 vs 1:
+`29953→30465`, `1286→1286`). It rides in the high half of the `VZn` word, which
+the GTE vertex load discards, so its consumer is **not** the prim renderer
+(`FUN_80044c14`). Its meaning stays open — a real per-vertex attribute (135
+distinct values in one Sebucus body) read by some path other than the vertex
+transform.
+
+**Remaining open:** the exact runtime *consumer* of `kind` and `attr` — i.e. the
+code that reads the slot-4 pool + body header and builds the cluster-A command
+stream that indexes the pool (that command stream is **not** in the slot-4 body;
+the size math is exactly the vertex pool, so the builder is elsewhere — the
+candidate path is `FUN_8001ada4` → `FUN_80058490`, not yet cleanly attributed).
 
 ## Per-kingdom body inventory
 

@@ -28,9 +28,14 @@
 //! boundary frame - is **falsified** (no projection matches the in-game
 //! top-view in any kingdom). Bodies are object-local 3D meshes carrying full
 //! X/Y/Z extents, not flat 2D contours, and the consumer is pinned (the GTE
-//! vertex load above). Still open: the per-record `attr` consumer and the
-//! per-body `kind` (`1/2/4`) semantics. The `top_down_*` / `Wireframe*`
-//! helpers below render record geometry for inspection only.
+//! vertex load above). The per-body `kind` (`1/2/4`) is a class/scope tag:
+//! `kind 1` bodies (0/1/2) are byte-identical across all three kingdoms (a
+//! shared universal mesh set), `kind 2` are full-3D kingdom objects, `kind 4`
+//! always carries `flag_a = 1` — so slot 4 is a per-kingdom assembly from a
+//! shared mesh library plus kingdom-specific bodies. Still open: the runtime
+//! consumer of `kind` / `attr` (the command-stream builder; see
+//! world-map-overlay.md). The `top_down_*` / `Wireframe*` helpers below render
+//! record geometry for inspection only.
 
 /// One slot-4 record: a model-space GTE vertex `(x, y, z)` plus a 4th `i16`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -42,9 +47,11 @@ pub struct Slot4Record {
     /// Model-space Z — GTE `VZn` (low 16 bits).
     pub z: i16,
     /// 4th `i16`, the high half of the `VZn` word — **not** a coordinate (the
-    /// GTE vertex load ignores it). A real per-vertex value (135 distinct in
-    /// Sebucus body 0, up to 214 in Drake body 12) whose consumer is unpinned;
-    /// candidate is a normal / colour index for the lighting arm (see
+    /// GTE vertex load ignores it). Characterized as a genuine per-vertex value
+    /// (not constant within a `count_a` group; not position-correlated,
+    /// `corr(attr, x/y/z) ≈ 0.1`; varies smoothly across the `count_b` groups;
+    /// 135 distinct in one Sebucus body, up to 214 in Drake body 12). Read by
+    /// some path other than the prim renderer; consumer unpinned (see
     /// world-map-overlay.md).
     pub attr: i16,
 }
