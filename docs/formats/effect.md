@@ -262,10 +262,21 @@ Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 
 `0x801F17F8`, called from `FUN_800520F0` case `0xFF`, streams two specific runtime-only files via `FUN_800558FC`:
 
-- `data\battle\summon.dat` (PROT `0x37F`) - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
-- `data\battle\readef.dat` (PROT `0x380`) - opposite branch.
+- `data\battle\summon.dat` - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
+- `data\battle\readef.dat` - opposite branch.
 
-Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 2-pack layout but not yet confirmed.
+The runtime buffer per slot is `0x10800` = 67584 bytes; the file format is not yet
+decoded. **The PROT entry these dev paths map to is unpinned** - the earlier
+"summon.dat = PROT `0x37F`, readef.dat = PROT `0x380`" reading is *falsified*: those
+indices (895 / 896) are the boot init pak (`0895`, full of `h:\prot\field\init\init.pak`
+dev strings) and the contested mode-24 overlay remnant (`0896`), and the whole
+`0879..=0890` band the guess sat in is `VABp` sound banks (`sound_data2`), not effect
+containers. The `0x37F/0x380` figure was an inference off the sound-driver
+pathbuilder (`0x37A = 890 = sound_data2`, the loader reads `+5`/`+6` for variations)
+that landed in the sound range. The real entry comes from the runtime path builder
+that resolves `data\battle\summon.dat` for the streaming handler `0x801F17F8`; pin it
+by importing the battle overlay at its real base (`asset overlay ghidra`) and reading
+that resolver, or by an exec-bp on `FUN_800558FC` during a summon cast.
 
 ### Open questions
 
