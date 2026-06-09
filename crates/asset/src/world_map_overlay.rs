@@ -35,8 +35,9 @@
 //! shared mesh library plus kingdom-specific bodies. The `kind`/`count`
 //! consumer is the cluster-A handler chain, which walks each body (header +
 //! indexed vertex records) **in place** (`ra 0x801F78D4`, no separate builder);
-//! `attr` is render-unused in the traced path (loaded with `z` into the GTE
-//! `VZn`, only `z` used). See world-map-overlay.md. The `top_down_*` /
+//! `attr` is render-unused (a full sweep of the cluster-A handler family finds
+//! no read of the pool word's high half; loaded with `z` into the GTE `VZn`,
+//! only `z` used). See world-map-overlay.md. The `top_down_*` /
 //! `Wireframe*` helpers below render record geometry for inspection only.
 
 /// One slot-4 record: a model-space GTE vertex `(x, y, z)` plus a 4th `i16`.

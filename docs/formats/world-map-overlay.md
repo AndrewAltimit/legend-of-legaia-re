@@ -184,14 +184,17 @@ place**, dispatching per `count_b`-derived prim-kind and consuming the header in
 the same pass. (This is the same handler family as `FUN_80044c14`, whose tail
 reads the next body's header to chain — consistent with an in-place body walk.)
 
-**`attr` — render-unused in the traced path.** The prim handlers load a record's
-second word (`z | attr<<16`) into the GTE `VZn` register and use only the low 16
-bits (`z`); none of the traced cluster-A handlers extract the high half (`attr`)
-as a separate value. So `attr` is not consumed by the vertex/prim render. Whether
-any non-render path reads it (it is real per-vertex data) is the only open
-remnant; a watchpoint can't cleanly isolate it (the `z`-word `lw` covers the
-`attr` bytes), so this needs a static sweep of the remaining handlers, not a
-capture.
+**`attr` — render-unused (full handler sweep).** The prim handlers load a
+record's second word (`z | attr<<16`) into the GTE `VZn` register and use only
+the low 16 bits (`z`). Sweeping **every** cluster-A handler
+(`FUN_80043658`..`FUN_80045988`) confirms none extract the pool word's high half:
+every `>> 0x10` in the family is either a **vertex-index** extraction
+(`param_3 + (cmd_word >> 0x10)`, forming a pool pointer) or an output-packet /
+RTPT-screen-coordinate write — never a read of the pool `word1` high half. So
+`attr` is **not consumed by the world-map render path at all**. It is real
+per-vertex data (135 distinct in one Sebucus body) that the renderer ignores —
+either reserved/authoring data or consumed by some non-render subsystem; nothing
+in the (now fully swept) render family reads it.
 
 ## Per-kingdom body inventory
 
