@@ -171,16 +171,27 @@ the GTE vertex load discards, so its consumer is **not** the prim renderer
 distinct values in one Sebucus body) read by some path other than the vertex
 transform.
 
-**Remaining open:** the exact runtime *consumer* of `kind` and `attr` — i.e. the
-code that reads the slot-4 pool + body header and builds the cluster-A command
-stream that indexes the pool (that command stream is **not** in the slot-4 body;
-the size math is exactly the vertex pool, so the builder is elsewhere). The
-`FUN_8001ada4` → `FUN_80058490` path is **not** it — `FUN_80058490` is a libgpu
-`MoveImage` (VRAM block transfer; its `+4`/`+6` reads are a MoveImage rect, not a
-slot-4 body header). Pinning the builder needs a Read-watchpoint on a body's
-`kind` field (`base + body_offset + 6`) or on an `attr` field during a kingdom
-warp — the per-kingdom bases are now known (see the RAM-layout table), so the
-watch address is computable.
+**`kind`/`count` consumer — pinned.** A Read-watchpoint on body 0's header
+(`0x8011A664`, the `count`/`kind` words) during the Drake warp catches the
+**cluster-A handler chain reading it in place**: `ra = 0x801F78D4` (the world-map
+overlay renderer), PC `0x8004568C` / `0x800456F4` inside `FUN_80045584`, with the
+record pointers in `a1`/`a2` also in slot-4 (`0x8011A674` / `0x8011A6C0`). The
+handler `lw`s header word 0 (`count`) and word 1 (`marker`/`kind`) and does an
+`andi 0x40` bit-test on a header field to gate a branch. So there is **no
+separate command-stream builder**: each slot-4 body is a self-contained render
+packet (8-byte header + indexed vertex records) that the renderer walks **in
+place**, dispatching per `count_b`-derived prim-kind and consuming the header in
+the same pass. (This is the same handler family as `FUN_80044c14`, whose tail
+reads the next body's header to chain — consistent with an in-place body walk.)
+
+**`attr` — render-unused in the traced path.** The prim handlers load a record's
+second word (`z | attr<<16`) into the GTE `VZn` register and use only the low 16
+bits (`z`); none of the traced cluster-A handlers extract the high half (`attr`)
+as a separate value. So `attr` is not consumed by the vertex/prim render. Whether
+any non-render path reads it (it is real per-vertex data) is the only open
+remnant; a watchpoint can't cleanly isolate it (the `z`-word `lw` covers the
+`attr` bytes), so this needs a static sweep of the remaining handlers, not a
+capture.
 
 ## Per-kingdom body inventory
 

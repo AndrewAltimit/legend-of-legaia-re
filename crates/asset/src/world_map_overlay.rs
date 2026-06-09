@@ -32,10 +32,12 @@
 //! `kind 1` bodies (0/1/2) are byte-identical across all three kingdoms (a
 //! shared universal mesh set), `kind 2` are full-3D kingdom objects, `kind 4`
 //! always carries `flag_a = 1` — so slot 4 is a per-kingdom assembly from a
-//! shared mesh library plus kingdom-specific bodies. Still open: the runtime
-//! consumer of `kind` / `attr` (the command-stream builder; see
-//! world-map-overlay.md). The `top_down_*` / `Wireframe*` helpers below render
-//! record geometry for inspection only.
+//! shared mesh library plus kingdom-specific bodies. The `kind`/`count`
+//! consumer is the cluster-A handler chain, which walks each body (header +
+//! indexed vertex records) **in place** (`ra 0x801F78D4`, no separate builder);
+//! `attr` is render-unused in the traced path (loaded with `z` into the GTE
+//! `VZn`, only `z` used). See world-map-overlay.md. The `top_down_*` /
+//! `Wireframe*` helpers below render record geometry for inspection only.
 
 /// One slot-4 record: a model-space GTE vertex `(x, y, z)` plus a 4th `i16`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
