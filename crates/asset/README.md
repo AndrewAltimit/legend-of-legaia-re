@@ -57,9 +57,10 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `field_pack` | Field bundles - magic `0x01059B84`. |
 | `battle_data_pack` | `battle_data` pack: streaming preamble + 12-byte record table + per-record LZS streams. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
-| `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. |
+| `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. `sub_streams` enumerates the concatenated, `0x800`-aligned `[TMD][TIM chunks][terminator]` blocks (the entry holds N, not one continuation list). |
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`. |
-| `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). Plus `SceneAssetTable::size_word_offset` / `encode_size_word` for rewriting a descriptor's decompressed-size word after a variable-length asset edit. |
+| `sound_pack` | Per-scene `.dpk` / `sound_data2`: a VAB + SEQ bundle in the type-2-terminated streaming container (chunk 0 = VAB header, chunk 1 = VAB sample pool, chunk 2 = SEQ). `extract` reconstitutes the contiguous VAB + slices the SEQ. |
+| `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). `resolve` / `slots` / `payload_range` walk the positional slot->payload mapping (the descriptor's `data_offset` IS the indirection - no separate table), unifying the bare and prescript-prefixed variants. Plus `SceneAssetTable::size_word_offset` / `encode_size_word` for rewriting a descriptor's decompressed-size word after a variable-length asset edit. |
 | `scene_v12_table` | Variant of the per-scene table. |
 | `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_rando::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
 
