@@ -58,6 +58,16 @@ below the raw `+ 0x381`. Every content-anchored overlay confirms this: param 2 �
 and the seven mode-24 minigame slots whose init VAs land on prologues (see [script-vm.md § 0x3E
 WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
 
+The census is exhaustive for static `SCUS_942.54`: a full-image scan for both loaders' `jal`
+sites (with the `a0` setup decoded) finds 16 callsites. Constant params: 2 / 3 / 4 / 7 / 0x4B /
+0x4C / 0x53 / 0x54 / 0x56 plus the mode-24 `sub_id + 0x4D` band; computed params: the battle
+SM's special-attack (`+0x28`) and summon-stager (`id - 0x79`) bands, the battle stage band
+(`+0x47`), and the slot-B default `FUN_80025BA0` (param 5 or 6 by flag `DAT_8007B6A8` →
+extraction 0900/0901, the summon-render pair — agreeing with 0900's byte-residency in mid-cast
+saves). No site can produce param 0 or 1, so extraction entries 0895/0896 are unreachable from
+any static loader call (see the 0896 row in
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#prot-0896-bat_back_dat-identity)).
+
 | Mode | Init handler | Loader call | PROT idx | Content (verified) |
 |---|---|---|---|---|
 | 0 `CONFIG INIT` | `FUN_80025C68` | `FUN_8003EBE4(0x4C)` | 971 | **Debug-menu overlay** — "DEBUG MODE" header + FOG / WORK_TBL / SAVE DATA / MAP NAME / TMD NO / POLY / VERT dev-menu strings (the `overlay_debug_menu` capture family). The dev label "CONFIG" is a misnomer. (An earlier `+ 0x381`-arithmetic reading placed this at 973 and took the slot-machine text in 973's over-read tail for its content — 973 itself is the 1-sector `OTHER2` dev module at mode-24 warp sub-id 1; the casino slot machine is 975, sub-id 3.) |
@@ -65,6 +75,8 @@ WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
 | 8 `EFECT TEST` | `FUN_80025E68` | `FUN_8003EBE4(0x54)` | 979 | Effect-test dev mode — the entry's own strings are literally `"efect init"` / `"efect init end"` / `"battle bgm %d"`. |
 | 22 `CARD INIT` | `FUN_8002574C` | `FUN_8003EBE4(4)` | 899 | **Menu / memory-card overlay** (the in-field pause menu runs under this pair; see below). RAM-byte-verified as the menu overlay in the static overlay map. |
 | 24 `OTHER INIT` | `FUN_80025980` | `FUN_8003EBE4(sub_id + 0x4D)` (`+2` first when `sub_id >= 6`) | 972..977, 980 | Minigame door-warp entry (field-VM op `0x3E`, `sub_id = op0 - 100`). Backs up the active scene name `0x80084548` → `0x8007BAE8` (+ `_DAT_80084540` → `0x8007BAC4`), streams the per-sub-id minigame overlay into slot A over the field overlay, then calls its init entry; `FUN_80026018` restores both on exit and re-enters mode 2. Sub-id table: [script-vm.md § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). Live-confirmed (Baka Fighter capture, sub-id `0x8007BA34 = 4` → PROT 0976). The "mode-24 loads PROT 0896" association is **refuted**: 0896's bytes appear nowhere in RAM across the entry window nor in any parked library state. |
+| 12 `MAPDSIP INIT` | `FUN_80025DA0` | `FUN_8003EBE4(0x56)` | 981 | World-map display mode entry. Loads a small 3-sector module (head string `pointer %d`; too few jals for a static base vote) and calls its init entry `0x801CF4AC` (file `+0xC94`, which builds the scratchpad display list at `0x1F800314`). The world-map *controller* code itself lives in the field overlay 0897 (`FUN_801E76D4` = base`+0x18EBC`); this module's precise role is open. |
+| 18 `GAME OVER INIT` | `FUN_80025B30` | `FUN_8003EBE4(7)` | 902 | Game-over overlay — the loader census corroborates the static map's content pin (`gameover` row, entry 0902). |
 | 26 `STR INIT` | `FUN_80025FB4` | `FUN_8003EBE4(0x4B)` | 970 | Cutscene / STR FMV mode entry (the `cutscene_str` overlay in the static overlay map). Title-overlay tick writes `_DAT_8007B83C = 0x1A` (= 26) on attract underflow → enters this mode. |
 
 ##### Full handler map (recovered from the disc)

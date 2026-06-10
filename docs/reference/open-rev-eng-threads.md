@@ -687,7 +687,30 @@ So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace.
 | PROT 0896 (`bat_back_dat`) identity | open (mode-24-overlay hypothesis refuted; base was an over-read artifact) | [details ↓](#prot-0896-bat_back_dat-identity) | `project_static_overlay_pipeline.md` |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom — the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. | `project_static_overlay_pipeline.md` |
 | "world-map / save / shop" overlay PROT entries | resolved (they are NOT separate entries) | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) — each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. | `project_static_overlay_pipeline.md` |
-| Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` summon/dance/minigame blobs; static extraction at the link base is the clean path, each base cross-checked by in-file self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned: 0900 summon render, 0905 Gimard stager, 0902 GAME OVER, 0907/0924/0927 Disco King songs, 0957 summon-effect strings (**NOT** a dance song). The "summon `0905..=0915`" is the loader's arithmetic range, not a stager list (0907 is the dance song "Hell's Music"). **Still open:** the per-summon spell-id → stager-entry assignment for the binary stagers (needs a capture; over-read defeats a static census). | `project_static_overlay_pipeline.md` |
+| Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) | `project_static_overlay_pipeline.md` |
+
+
+### Slot-B overlay cluster (`0900..0969`) per-entry identity
+
+*Status:* mostly resolved
+
+The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` summon/dance/minigame
+blobs; static extraction at the link base is the clean path, each base cross-checked by in-file
+self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
+
+- **0900/0901** = the slot-B *default* pair — `FUN_80025BA0` loads param 5 or 6 by flag
+  `DAT_8007B6A8`, agreeing with 0900's byte-residency in mid-cast saves (the summon-render
+  overlay).
+- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived 38-spawn-call stager file is
+  extraction **0905** = the `0x83` slot. The summon arithmetic range is extraction
+  `0903..=0913` (raw `0x389..=0x393`); 0907 on the `0x85` slot is the dance song "Hell's
+  Music".
+- **0902** = GAME OVER (content pin, corroborated by the loader census: `FUN_8003EBE4(7)`
+  inside the mode-18 init).
+- **0907/0924/0927** Disco King songs; **0957** summon-effect strings (**NOT** a dance song).
+
+**Still open:** per-spell stager identity beyond the arithmetic (needs a capture; over-read
+defeats a static census).
 
 
 ### `title.pak` PROT entry
@@ -784,13 +807,26 @@ PROT 0896 is NOT the menu overlay (that is 0899). Three findings reframe it:
    reference exists in `SCUS_942.54`), and a large byte-map-like data block
    (rows of gradually shifting byte values). The CDNAME label
    `bat_back_dat` (battle background data?) may yet be honest — but no
-   captured battle state holds the data either.
+   captured battle state holds the data either. (Under the raw-TOC index
+   shift the CDNAME `#define` covering 0896's *extraction* slot may belong
+   to a neighbouring entry anyway — see the index-spaces thread.)
+4. **No static loader call can reach it.** A full-image scan of
+   `SCUS_942.54` for `jal FUN_8003EBE4`/`FUN_8003EC70` with the `a0` setup
+   decoded finds 16 sites; every constant param maps to extraction 897..902,
+   969..981, or the spell-/stage-driven bands (`id - 0x79` summon stagers,
+   `+0x28` special-attack, `+0x47` battle stage). Extraction 0896 would need
+   `param == 1`, which no site produces (the three computed-param sites have
+   `+0x74`/`+0x47`/`5-or-6` bases that cannot reach 1). A companion scan for
+   the raw indices `0x381`/`0x382` as immediates finds only the two loaders'
+   own internal `param + 0x381` adds — no direct `FUN_8003E8A8`/file-open
+   path either.
 
 What would close it: a consumer — any retail moment where the head bytes are
 resident (offline check:
 [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py)
-against new captures), or a static SCUS/overlay loader call resolving PROT
-index 896.
+against new captures), or an overlay-resident loader call with a computed
+param reaching 1 (the static SCUS census above rules out the constant-param
+sites).
 
 
 ### Overlay-loader index off-by-2 — remaining ripple
