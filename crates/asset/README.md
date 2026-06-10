@@ -13,15 +13,20 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 
 - [Core descriptor + decoder](#core-descriptor--decoder)
 - [Streaming + pack formats](#streaming--pack-formats)
+- [Field-VM disassembler (`field_disasm`)](#field-vm-disassembler-field_disasm)
 - [Structural detectors (for `categorize`)](#structural-detectors-for-categorize)
   - [Simple detectors (table)](#simple-detectors-table)
+  - [`static_overlay`](#static_overlay)
   - [`monster_archive`](#monster_archive)
   - [`move_power`](#move_power)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
-  - [SCUS static tables](#scus-static-tables) — `item_names`, `spell_names`, `steal_table`, `new_game`
-  - [Cutscene / summon](#cutscene--summon) — `cutscene_text`, `summon_overlay`
-  - [Scene + MAN editing](#scene--man-editing) — `man_edit`, scene tables
+  - [Character meshes, textures, animation](#character-meshes-textures-animation) — `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
+  - [World map](#world-map) — `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
+  - [Boot / title / menu UI](#boot--title--menu-ui) — `init_pak`, `title_pak`, `menu_glyph_atlas`
+  - [SCUS static tables](#scus-static-tables) — `item_names`, `item_effect`, `equip_stats`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
+  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`
+  - [Scene + MAN](#scene--man) — `man_section`, `man_edit`, scene tables
   - [TIM/TMD scan + catalog](#timtmd-scan--catalog)
 - [CLI](#cli)
 - [See also](#see-also)
@@ -39,6 +44,14 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   `u32 count` then `u32 word_offsets[count]`.
 - `parse_streaming` - DATA_FIELD streaming-chunk walker
   (entry point: `FUN_8002541c`).
+
+## Field-VM disassembler (`field_disasm`)
+
+Side-effect-free disassembler for the field/event-VM bytecode (the opcode
+stream `FUN_801DE840` executes): the per-opcode width/format decoder plus
+`LinearWalker`. Lives here (next to the MAN/scene parsers that carry the
+bytecode) so disc tooling can walk scripts without the engine; the executing
+VM re-exports it as `legaia_engine_vm::field_disasm`.
 
 ## Structural detectors (for `categorize`)
 
@@ -63,6 +76,13 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). `resolve` / `slots` / `payload_range` walk the positional slot->payload mapping (the descriptor's `data_offset` IS the indirection - no separate table), unifying the bare and prescript-prefixed variants. Plus `SceneAssetTable::size_word_offset` / `encode_size_word` for rewriting a descriptor's decompressed-size word after a variable-length asset edit. |
 | `scene_v12_table` | Variant of the per-scene table. |
 | `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_rando::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
+| `scene_scripted_asset_table` | Composite shape pairing a `[u16 count][u16 offsets[count]]` prescript with a canonical 7-asset table at the next sector boundary. |
+| `scene_event_scripts` | Sister detector: the prescript exists but no asset table follows. (The records are word-aligned actor/event commands, NOT field-VM bytecode.) |
+| `data_field_truncated` | Sister of `parse_streaming`: leading chunks decode cleanly but the last chunk's declared size walks past EOF. |
+| `tmd_size_prefix` | Sister of `scene_tmd_stream`: `[u32 prefix][TMD]` with no trailing stream. |
+| `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |
+| `vab_multi_bank` | Multi-bank VAB archive: `[u32 reserved][u32 count][u32 sector_nums[N]]` (PROT 0889-0891). |
+| `field_objects` | Per-scene static-object placement table (terrain segments / buildings / props in world space). |
 
 ### `static_overlay`
 
@@ -149,10 +169,42 @@ LZS-container entry into its sections, and classifies each part (the `efect.dat`
 CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 [`effect.md`](../../docs/formats/effect.md#battle-effect-cluster-befect_data-cdname-872).
 
+### Character meshes, textures, animation
+
+| Module | What it parses |
+|---|---|
+| `character_pack` | Field-form player-character mesh pack (PROT 0874 §0, 5 slots: Vahn/Noa/Gala + 2 auxiliary), incl. the `FUN_8001EBEC` equipment-swap pose patch (`equipment_swap::apply`). CLI `asset character-pack`. |
+| `battle_char_pack` | Battle-form character mesh pack (PROT 1204 `other5`): five `TMD2` streaming chunks + seven 256×256 4bpp atlases at `0x8224` stride. Baka Fighter reuses it. CLI `asset battle-char-pack`. |
+| `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (PROT 0861/0864/0865) — `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
+| `field_char_textures` | Field-character texture pack (PROT 0874 §2, "etim.dat"): eight TIM entries; 1/2/3 are the Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478). CLI `asset field-char-tex`. |
+| `player_anm` | Per-scene player ANM bundle (each scene bundle's type-0x05 "MOVE" section; battle-form at PROT 1203): per-(bone,frame) 8-byte entries, frame 0 of idle = rest pose. CLI `asset player-anm` / `player-anm-scan`. |
+
+See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
+[`anm.md`](../../docs/formats/anm.md).
+
+### World map
+
+| Module | What it parses |
+|---|---|
+| `kingdom_bundle` | Opens a kingdom PROT entry (`map01`/`map02`/`map03`) and decodes one slot of its 7-asset table. CLI `asset kingdom-slot`. |
+| `world_map_overlay` | Slot-4 container: per-body object-local GTE vertex pools (`(i16 x,y,z,attr)` records, read in place by the renderer). CLI `asset slot4-png` renders a top-down wireframe PNG. See [`world-map-overlay.md`](../../docs/formats/world-map-overlay.md). |
+| `ocean` | Ocean tile texture (4bpp 64×256) + its 13-frame CLUT animation from the kingdom bundles. |
+| `worldmap_menu` | The quick-travel landmark menu out of `SCUS_942.54`: 16-entry name table (`DAT_80073B18`) + 6-byte placement records (`DAT_80073A98`). CLI `asset worldmap-menu` (`--json` = the web-viewer shape). |
+
+### Boot / title / menu UI
+
+| Module | What it parses |
+|---|---|
+| `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). |
+| `title_pak` | The "Legend of Legaia" title-screen TIM + the system-UI sheet (load-screen panel / slot pills). |
+| `menu_glyph_atlas` | The small-caps menu font atlas (title menu rows + shared menu UI). |
+
 ### SCUS static tables
 
 | Module | Table |
 |---|---|
+| `sfx_table` | Sound-effect descriptor table (`DAT_8006F198`, 100 × 8-byte): `SfxTable::from_scus` → per-cue program/VAG, ADSR-region base, voice count + sustained bit, mixer channel. Feeds `SfxBank::from_descriptors`. See [`sfx-table.md`](../../docs/formats/sfx-table.md). |
+| `level_up_tables` | Level-up data: `xp_thresholds_from_scus` (the 98-entry XP increment table) + `xp_correction_divisors_from_scus` (the per-level slots-1/2 threshold-correction divisors at `0x80070A2C`) + `growth_tables_from_scus` (the `DAT_80076918` per-character 8-stat growth curves). |
 | `item_names` | `SCUS_942.54` item-name table (`PTR_DAT_8007436C[id*3]`, 256 ids): `ItemNameTable::from_scus` → `name(id)`. The id space a monster record's `drop_item` indexes; used by the web viewer's enemy table. See [`item-table.md`](../../docs/formats/item-table.md). |
 | `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability, plus the **literal restore amounts** — `heal_amounts()` / `restore_amount(id)` decode the static heal-amount table at `0x8007655C` (HP `[200,800,9999]` / MP `[50,200,20]`) the apply handler `FUN_800402F4` reads — and the **stat-up / buff taxonomy** — `stat_effect(id)` → `StatItemEffect` for the permanent stat-up *Water* line (class 6), the one-battle `×6/5` buff Elixirs (class 7), and Fury Boost (class 5). See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
 | `equip_stats` | `SCUS_942.54` equipment stat-bonus table (`DAT_80074F68`, 8-byte stride): `EquipStatTable::from_scus` → `bonus(id)` (equippable id → property `+1` byte → record). Attack/def-up/def-down (byte-exact vs gamedata) + equip-character mask + slot type + Ra-Seru flag. See [`equipment-table.md`](../../docs/formats/equipment-table.md). |
@@ -174,7 +226,7 @@ Seeds for the live `0x80084708 + n*0x414` records + the `0x80085958` bag;
 `OPENING_SCENE` = `town01`. See
 [`new-game-table.md`](../../docs/formats/new-game-table.md).
 
-### Cutscene / summon
+### Cutscene / FMV / summon
 
 `cutscene_text` — inline cutscene-narration text embedded in a field-VM
 cutscene-timeline record:
@@ -183,6 +235,14 @@ cutscene-timeline record:
   subtitle pages introduced by a `0x4C` op whose operand declares the page count
   (the `opdeene` opening-prologue narration). See
   [`cutscene.md`](../../docs/subsystems/cutscene.md#inline-narration-format).
+
+`str_fmv_table` — the compact in-RAM STR FMV file table (`0x801CAE40`,
+24-byte stride × 6: name + libcd BCD MSF + size) the cutscene overlay uses to
+resolve a movie without an ISO9660 walk. See
+[`str-fmv-table.md`](../../docs/formats/str-fmv-table.md).
+
+`fmv_dispatch` — the per-`fmv_id` movie + frame-range dispatch the STR/MDEC
+overlay's play loop selects from, decoded straight from the overlay bytes.
 
 `summon_overlay` — Seru-magic **summon scene-graph** part records:
 
@@ -196,7 +256,13 @@ CLI `asset summon-overlay <PROT 0905 .BIN>`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
 
-### Scene + MAN editing
+### Scene + MAN
+
+`man_section` — the per-scene MAN (asset type `0x03`) **multi-section header
+walker** (`PORT: FUN_8003AEB0 / FUN_8003A1E4 / FUN_8003A110`): partitions,
+per-section offset+length refs, the encounter section, and the world-map
+bulk-terrain flag. CLI `asset man` / `man-scan`. The engine's
+`encounter_table_from_man` builds on it.
 
 `man_edit` — **variable-length editing of a decompressed MAN.**
 
@@ -227,17 +293,28 @@ asset describe         <input>            # parse + print descriptor
 asset decode           <input> <output>   # apply the dispatcher
 asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
 asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
+asset overlay          list|extract|verify|ghidra|scan|find-sig|generate   # static overlay pipeline
 asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
 asset tim-catalog      <PROT.DAT>         # flat strict TIM catalog (--out f.tsv|f.json, --rollup)
 asset tim-deep-catalog <PROT.DAT>         # TIMs inside LZS-compressed sections (--out, --rollup)
 asset tim-render-distinct <PROT.DAT> --out <dir>  # decode each distinct TIM to PNG (local only; drives tim_labels)
 asset tmd-scan         <input>            # locate embedded TMDs
+asset clut-finder                         # which entry's TIM supplies a VRAM CLUT cell
 asset stage / stage-scan
 asset field-pack / field-pack-scan
 asset effect-bundle / effect-bundle-scan
 asset battle-data-pack / battle-data-pack-scan
+asset befect-cluster   <PROT.DAT> --cdname <CDNAME.TXT> --out <dir>
+asset monster-archive  [--id N --obj/--texture-png/--anim/--glb]
+asset character-pack / battle-char-pack / field-char-tex
+asset player-anm / player-anm-scan
+asset scene-v12 / scene-v12-scan
+asset man / man-scan                      # MAN multi-section walker (--with-encounter)
+asset kingdom-slot / slot4-png            # world-map kingdom bundles
+asset summon-overlay   <PROT 0905 .BIN>
+asset move-power / element-affinity       # PROT 0898 battle-overlay tables
+asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
 asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
-asset item-tables <SCUS_942.54>           # dump item-effect + equipment tables (--equipment-only / --consumables-only)
 asset validate                            # cross-check detector coverage
 ```
 
