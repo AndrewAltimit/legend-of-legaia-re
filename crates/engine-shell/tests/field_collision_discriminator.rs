@@ -21,8 +21,10 @@
 //!    different world-to-cell mappings by their two retail consumers.)
 //!
 //! Leading-edge probe layout per `docs/subsystems/field-locomotion.md`
-//! (`DAT_801f2214`, applied as `x+dx`, `z-dz`): dir 0 `Z-` probes
-//! `(x±16, z-47)`; dir 1 `X-` probes `(x-47, z±16)`.
+//! (`DAT_801f2214`, applied as `x+dx`, `z-dz`; disc-pinned from the field
+//! overlay file at `0x239FC`): dir 0 `Z-` probes `(x±16, z-48)`; dir 1 `X-`
+//! probes `(x-47, z±16)` — the crossing distance is 48 in the positive
+//! directions and 47 in the negative ones under the biased cell mapping.
 //!
 //! Ground truth is the RETAIL LIVE grid: the field buffer pointer is read
 //! from scratchpad `_DAT_1f8003ec` (`SaveState::scratch_ram`), and the
@@ -309,12 +311,12 @@ fn wall_press_down_discriminates_z_row_bias() {
     };
     let (px, pz) = (wp.px, wp.pz);
     // Screen-down walks TOWARD the camera = world Z- (dir 0): probes
-    // (x-16, z-47) (x, z-47) (x+16, z-47).
+    // (x-16, z-48) (x, z-48) (x+16, z-48).
     let probes = [
         ("stand", px, pz),
-        ("edge x-16", px - 16, pz - 47),
-        ("edge x+0", px, pz - 47),
-        ("edge x+16", px + 16, pz - 47),
+        ("edge x-16", px - 16, pz - 48),
+        ("edge x+0", px, pz - 48),
+        ("edge x+16", px + 16, pz - 48),
     ];
     let blocked = run_probes(&wp, &probes);
     assert!(blocked, "a leading-edge probe reads the blocking wall byte");
@@ -323,7 +325,7 @@ fn wall_press_down_discriminates_z_row_bias() {
         "the standing position reads clear under the biased derivation"
     );
     // Standoff: one 2-unit step shallower, all probes clear.
-    for (x, z) in [(px - 16, pz - 45), (px, pz - 45), (px + 16, pz - 45)] {
+    for (x, z) in [(px - 16, pz - 46), (px, pz - 46), (px + 16, pz - 46)] {
         assert!(
             !wp.world.field_tile_is_wall(x as i16, z as i16),
             "one 2-unit step shallower the probe at ({x},{z}) reads clear \
@@ -341,5 +343,75 @@ fn wall_press_down_discriminates_z_row_bias() {
         0,
         "the floor-indexed standing cell ({fc},{fr}) is a wall byte - \
          plain floor indexing is refuted by this capture"
+    );
+}
+
+/// Drive the REAL engine stepper (`World::advance_with_collision`) over the
+/// capture's live grid from a shallow start and return where it rests after
+/// pressing `dir_bits` for `frames` frames at the retail per-frame speed.
+fn engine_press_rest(
+    wp: &WallPress,
+    edge_probes: bool,
+    start: (i16, i16),
+    dir_bits: u16,
+) -> (i16, i16) {
+    let mut world = World::new();
+    world.install_field_player(0);
+    world.load_field_collision_grid(&wp.live_grid);
+    world.leading_edge_wall_probes = edge_probes;
+    world.actors[0].move_state.world_x = start.0;
+    world.actors[0].move_state.world_z = start.1;
+    for _ in 0..100 {
+        world.advance_with_collision(0, dir_bits, 8);
+    }
+    let ms = &world.actors[0].move_state;
+    (ms.world_x, ms.world_z)
+}
+
+/// With `leading_edge_wall_probes` set, the ENGINE pad stepper reproduces
+/// the captured retail rest position byte-exactly on the live grid - the
+/// wired three-probe footprint, not just the sampler geometry. The
+/// candidate-centre default demonstrably walks deeper (the standoff this
+/// flag exists to close).
+#[test]
+fn wall_press_left_engine_rest_matches_retail() {
+    let Some(wp) = load_wall_press("rimelm_wall_press_left") else {
+        return;
+    };
+    let (px, pz) = (wp.px as i16, wp.pz as i16);
+    // X- press (dir bits 0x8000) from 62 units shallower along the captured
+    // approach line (even offset keeps the live 2-unit step parity).
+    let rest = engine_press_rest(&wp, true, (px + 62, pz), 0x8000);
+    assert_eq!(
+        rest,
+        (px, pz),
+        "engine leading-edge press rests exactly at the captured retail position"
+    );
+    let centre = engine_press_rest(&wp, false, (px + 62, pz), 0x8000);
+    assert!(
+        centre.0 < px,
+        "the candidate-centre default walks deeper than retail ({} >= {px})",
+        centre.0
+    );
+}
+
+#[test]
+fn wall_press_down_engine_rest_matches_retail() {
+    let Some(wp) = load_wall_press("rimelm_wall_press_down") else {
+        return;
+    };
+    let (px, pz) = (wp.px as i16, wp.pz as i16);
+    // Z- press (dir bits 0x4000).
+    let rest = engine_press_rest(&wp, true, (px, pz + 62), 0x4000);
+    assert_eq!(
+        rest,
+        (px, pz),
+        "engine leading-edge press rests exactly at the captured retail position"
+    );
+    let centre = engine_press_rest(&wp, false, (px, pz + 62), 0x4000);
+    assert!(
+        centre.1 < pz,
+        "the candidate-centre default walks deeper than retail ({} >= {pz})",
+        centre.1
     );
 }

@@ -96,6 +96,27 @@ const FIELD_STEP_UNIT: i32 = 2;
 /// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
 const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 
+/// Retail static-wall leading-edge probe table `DAT_801f2214` (field overlay
+/// 0897, file offset `0x239FC`), decoded from the disc. Indexed by travel
+/// direction (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+; the `FUN_801cfe4c`
+/// `param_3` convention), three `(dx, dz)` pairs each, applied to the
+/// player's CURRENT position as `(x + dx, z - dz)` — note the Z delta is
+/// SUBTRACTED, exactly as the retail probe reads it. A direction is blocked
+/// when ANY of its three probes lands on a wall sub-cell.
+///
+/// The lookahead is asymmetric on purpose: the `+2`-biased Z mapping and the
+/// `ceil-1` X mapping ([`World::field_tile_is_wall`]) make 48 the crossing
+/// distance in the positive directions and 47 in the negative ones, so each
+/// edge sits one full tile ahead in cell space. (The on-disc rows are
+/// 16 bytes; the trailing fourth pair — a half-distance centre point — is
+/// never read by the wall probe and is omitted here.)
+const FIELD_WALL_PROBES: [[(i16, i16); 3]; 4] = [
+    [(-16, 48), (0, 48), (16, 48)], // dir 0: Z- (edge at z-48, ±16 in X)
+    [(-47, -16), (-47, 0), (-47, 16)], // dir 1: X- (edge at x-47, ±16 in Z)
+    [(-16, -47), (0, -47), (16, -47)], // dir 2: Z+ (edge at z+47, ±16 in X)
+    [(48, -16), (48, 0), (48, 16)], // dir 3: X+ (edge at x+48, ±16 in Z)
+];
+
 /// Cold field-entry player spawn coordinate (both X and Z).
 ///
 /// On a non-warp (cold) field scene entry, the per-scene initializer
@@ -749,6 +770,16 @@ pub struct World {
     /// model - and it no-ops harmlessly (height `0`) until a scene supplies a
     /// floor LUT + collision grid.
     pub follow_terrain_height: bool,
+    /// When set, pad locomotion blocks a direction with retail's
+    /// **three-probe leading-edge footprint** ([`FIELD_WALL_PROBES`], the
+    /// `DAT_801f2214` table `FUN_801cfe4c` walks) instead of a single
+    /// candidate-centre test: the player rests ~47 units off a wall plane
+    /// exactly like retail, instead of walking up to it. Off by default so
+    /// the existing locomotion oracles (and BFS nav drivers, which keep the
+    /// centre test regardless) are bit-identical; enable it for
+    /// retail-faithful wall standoff. Validated against the wall-press
+    /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
+    pub leading_edge_wall_probes: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -1913,6 +1944,7 @@ impl World {
             field_collision_grid: Vec::new(),
             field_floor_height_lut: [0i16; 16],
             follow_terrain_height: false,
+            leading_edge_wall_probes: false,
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -6238,10 +6270,13 @@ impl World {
     /// `docs/subsystems/field-locomotion.md` ("Collision") and the
     /// disc-gated `engine-shell/tests/field_collision_discriminator.rs`.
     ///
-    /// Remaining simplification vs retail: retail tests **three leading-edge
-    /// footprint probes** (~47 units ahead, ±16 lateral; per-direction table
-    /// `DAT_801f2214`) where this tests one candidate-centre point — a
-    /// standoff/feel difference, not an indexing one.
+    /// Retail tests **three leading-edge footprint probes** through this
+    /// sampler (47-48 units ahead, ±16 lateral; per-direction table
+    /// `DAT_801f2214` = [`FIELD_WALL_PROBES`]) — see
+    /// [`World::field_dir_blocked`], wired into pad locomotion behind
+    /// [`World::leading_edge_wall_probes`]. With the flag off, locomotion
+    /// tests one candidate-centre point — a standoff/feel difference, not an
+    /// indexing one.
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return false;
@@ -6259,6 +6294,27 @@ impl World {
         };
         let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
         (byte >> 4) & (1u8 << quad) != 0
+    }
+
+    /// Retail's static-wall direction test: from the CURRENT position
+    /// `(x, z)`, probe the three leading-edge points of [`FIELD_WALL_PROBES`]
+    /// row `dir` (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+) through
+    /// [`Self::field_tile_is_wall`]; the direction is blocked when any probe
+    /// lands on a wall sub-cell.
+    ///
+    /// PORT: FUN_801cfe4c
+    ///
+    /// This is the static-wall arm of `FUN_801cfe4c` (result bit `2`): the
+    /// probes are taken at the player's pre-step position, so a step commits
+    /// while the edge is still clear and the next step from the deeper
+    /// position blocks — the player rests 47-48 units off the wall plane,
+    /// step-exact (pinned by the `rimelm_wall_press_left`/`_down` captures).
+    /// The actor/edge probe siblings (`FUN_801cfc40`, result bits `1`/`4`,
+    /// table `DAT_801f21b4`) are not modelled here.
+    pub fn field_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+        FIELD_WALL_PROBES[dir & 3]
+            .iter()
+            .any(|&(dx, dz)| self.field_tile_is_wall(x.saturating_add(dx), z.saturating_sub(dz)))
     }
 
     /// Decode this frame's held d-pad into a camera-relative movement
@@ -6418,7 +6474,15 @@ impl World {
     /// [`Self::step_world_map_locomotion`]: retail `FUN_801d01b0` is the same
     /// routine in both the field and world-map-walk overlays, and both collide
     /// against the same `_DAT_1f8003ec + 0x4000` walkability grid.
-    fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
+    ///
+    /// With [`Self::leading_edge_wall_probes`] set, each axis instead blocks
+    /// on retail's three-probe leading-edge footprint taken at the CURRENT
+    /// position ([`Self::field_dir_blocked`]) — the retail standoff — and
+    /// commits the step whenever the edge is clear. The default candidate-
+    /// centre test is kept (off-flag) for the locomotion oracles and the
+    /// BFS nav drivers.
+    pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
+        let edge = self.leading_edge_wall_probes;
         let mut remaining = speed;
         while remaining > 0 {
             let ms = &self.actors[slot].move_state;
@@ -6426,12 +6490,22 @@ impl World {
             // Z axis.
             if dir_bits & 0x1000 != 0 {
                 let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(cx, nz) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz, 2)
+                } else {
+                    self.field_tile_is_wall(cx, nz)
+                };
+                if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(cx, nz) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz, 0)
+                } else {
+                    self.field_tile_is_wall(cx, nz)
+                };
+                if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
             }
@@ -6440,12 +6514,22 @@ impl World {
             let cz2 = self.actors[slot].move_state.world_z;
             if dir_bits & 0x2000 != 0 {
                 let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(nx, cz2) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz2, 3)
+                } else {
+                    self.field_tile_is_wall(nx, cz2)
+                };
+                if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(nx, cz2) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz2, 1)
+                } else {
+                    self.field_tile_is_wall(nx, cz2)
+                };
+                if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             }

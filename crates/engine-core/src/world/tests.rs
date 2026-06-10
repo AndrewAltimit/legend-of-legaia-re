@@ -292,6 +292,82 @@ fn field_tile_is_wall_matches_retail_subcell_derivation() {
 }
 
 #[test]
+fn leading_edge_wall_probes_rest_at_retail_standoff() {
+    // The three-probe leading-edge footprint (`FIELD_WALL_PROBES`, retail
+    // `DAT_801f2214`) makes the player rest 47-48 units off a wall plane
+    // where the candidate-centre test walks right up to it. Synthetic grids
+    // mirroring the two wall-press captures' geometry (the real-grid rest
+    // positions are pinned by the disc-gated
+    // `engine-shell/tests/field_collision_discriminator.rs`).
+
+    // X- press against a full-height wall column at grid col 13
+    // (world x in [1665, 1793) under the biased X mapping).
+    let press = |edge: bool, dir_bits: u16, start: (i16, i16), paint: &dyn Fn(&mut World)| {
+        let mut world = World::new();
+        world.install_field_player(0);
+        paint(&mut world);
+        world.leading_edge_wall_probes = edge;
+        world.actors[0].move_state.world_x = start.0;
+        world.actors[0].move_state.world_z = start.1;
+        for _ in 0..200 {
+            world.advance_with_collision(0, dir_bits, 8);
+        }
+        let ms = &world.actors[0].move_state;
+        (ms.world_x, ms.world_z)
+    };
+    let wall_col_13 = |world: &mut World| {
+        for row in 0..0x80usize {
+            world.field_collision_grid[13 + row * FIELD_GRID_STRIDE] = 0xF0;
+        }
+    };
+    // dir 1 (X-): edge at x-47. Probes hit while x <= 1839; rest = 1838
+    // (even step parity), exactly the rimelm_wall_press_left rest.
+    assert_eq!(
+        press(true, 0x8000, (1900, 2526), &wall_col_13),
+        (1838, 2526)
+    );
+    // Centre test walks to the wall plane: candidate 1792 is the first
+    // blocked step.
+    assert_eq!(
+        press(false, 0x8000, (1900, 2526), &wall_col_13),
+        (1794, 2526)
+    );
+
+    // Z- press against a full wall row at grid row 20 (biased band
+    // z in [2432, 2560)). dir 0's edge is z-48 (the positive-direction
+    // crossing distance); rest = 2606, the rimelm_wall_press_down rest.
+    let wall_row_20 = |world: &mut World| {
+        for col in 0..0x80usize {
+            world.field_collision_grid[col + 20 * FIELD_GRID_STRIDE] = 0xF0;
+        }
+    };
+    assert_eq!(
+        press(true, 0x4000, (3386, 2700), &wall_row_20),
+        (3386, 2606)
+    );
+    assert_eq!(
+        press(false, 0x4000, (3386, 2700), &wall_row_20),
+        (3386, 2560)
+    );
+
+    // The footprint is wide: a wall byte reachable only by a ±16 lateral
+    // probe still blocks. Wall on the single sub-cell the (x+16, z-48)
+    // probe of a Z- press reads (player x 3386 -> probe x 3402, xc 53),
+    // leaving the centre + x-16 columns clear.
+    let wall_lateral = |world: &mut World| {
+        let (c, r, m) = retail_subcell(3402, 2559);
+        world.field_collision_grid[(c + r * FIELD_GRID_STRIDE as i32) as usize] = m << 4;
+    };
+    assert_eq!(
+        press(true, 0x4000, (3386, 2700), &wall_lateral),
+        (3386, 2606)
+    );
+    // The centre-point test never sees that lateral byte and walks past.
+    let (_, z_off) = press(false, 0x4000, (3386, 2700), &wall_lateral);
+    assert!(z_off < 2500, "centre test walks past the lateral wall byte");
+}
+
+#[test]
 fn sample_field_floor_height_unloaded_or_out_of_range_returns_zero() {
     let world = World::new();
     // No grid loaded -> 0.
