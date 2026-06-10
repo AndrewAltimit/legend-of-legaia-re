@@ -344,6 +344,10 @@ high-value prizes carry a non-zero gate that locks them behind casino
 progression). `casino::CasinoExchange` shuffles / randoms the whole records (so a
 prize keeps its coin price and progression gate wherever it lands), a same-size
 raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-rando casino`.
+At runtime the prize-exchange UI is a menu-overlay session: it runs at
+`game_mode 0x17` (the CARD/menu pair) with PROT 0899 resident in slot A, the
+same hosting as the pause menu and the gold shop (see
+[`subsystems/shop.md`](../subsystems/shop.md)).
 
 ### Steal items (Evil God Icon)
 

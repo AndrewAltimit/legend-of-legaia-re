@@ -609,7 +609,7 @@ So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace.
 | Opening-prologue tail (`opdeene`) | partial | [details ↓](#opening-prologue-tail-opdeene) | `project_cold_boot_prologue.md` |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
 | Options/menu overlay PROT entry | resolved + RAM-verified (**PROT 0899** @ `0x801CE818`) | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A — the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. | `project_static_overlay_pipeline.md` |
-| PROT 0896 (`bat_back_dat`) overlay identity | open | PROT 0896 is NOT the menu overlay (that is 0899). 0896 recovers a self-consistent base `0x801C5818` and is most likely the **mode-24 OTHER overlay** (boot.md). Closes with a save state that captures it resident, byte-matched against the disc entry at `0x801C5818`. | `project_static_overlay_pipeline.md` |
+| PROT 0896 (`bat_back_dat`) overlay identity | open (base corroborated; residency still uncaptured) | [details ↓](#prot-0896-bat_back_dat-overlay-identity) | `project_static_overlay_pipeline.md` |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0973 slot_machine / 0976 baka_fighter / 0980 dance**, each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818`. Found via `asset overlay scan` + the leading dev string. | `project_static_overlay_pipeline.md` |
 | "world-map / save / shop" overlay PROT entries | resolved (they are NOT separate entries) | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) — each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. | `project_static_overlay_pipeline.md` |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` summon/dance/minigame blobs; static extraction at the link base is the clean path, each base cross-checked by in-file self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned: 0900 summon render, 0905 Gimard stager, 0902 GAME OVER, 0907/0924/0927 Disco King songs, 0957 summon-effect strings (**NOT** a dance song). The "summon `0905..=0915`" is the loader's arithmetic range, not a stager list (0907 is the dance song "Hell's Music"). **Still open:** the per-summon spell-id → stager-entry assignment for the binary stagers (needs a capture; over-read defeats a static census). | `project_static_overlay_pipeline.md` |
@@ -669,6 +669,31 @@ The **name-entry auto-open is pinned**: op `0x49` STATE_RESUME sub-op 3 at town0
 PSX overlays are clean copies of a fixed-VA-linked blob (FlushCache + jump, no per-load relocation), so each runtime overlay can be extracted **statically** from its `PROT.DAT` entry and disassembled at its load base — identity attached from the source entry, not a guessed label. This is the structural fix for the VA-aliasing identity problem (`0x801DD864` = battle-action in one overlay, muscle-dome in another). Proved: the battle overlay (PROT 0898 @ `0x801CE818`) is byte-identical to its resident RAM image over the full `.text`+`.rodata` (`0x28800` of `0x29800` bytes; only the trailing `.bss` diverges). The load base is recovered statically from the overlay's own internal `jal` call graph (`static_overlay::recover_base`); for entries with too sparse a call graph,
 the base is cross-checked instead by a documented function landing on a prologue (`anchor_va`, slot A) or by the fraction of internal absolute self-pointers that resolve in-file (`static_overlay::pointer_resolution`, slot B). The committed map now spans the whole slot-A scene family (field/battle/menu + the **cutscene/STR** overlay 0970 + the **minigame** overlays 0972/0973/0976/0980) and the pinned slot-B entries (summon render 0900, Gimard stager 0905, GAME OVER 0902, the Disco King dance songs 0907/0924/0927, summon-effect data 0957). Reconnaissance tooling: `asset overlay scan` (range sweep: base + leading dev string) and `asset overlay find-sig` (locate a function-head signature → infer the host overlay). Pipeline: `legaia_asset::static_overlay` + `asset overlay …`;
 committed map `crates/asset/data/static-overlays.toml`; see [`tooling/static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md). It **complements** the dynamic captures — it does not address runtime values (those still need live probes).
+
+### PROT 0896 (`bat_back_dat`) overlay identity
+
+*Status:* open (base corroborated; residency still uncaptured)
+
+PROT 0896 is NOT the menu overlay (that is 0899). It recovers a self-consistent
+base `0x801C5818` (60 jal votes) and is most likely the **mode-24 OTHER
+overlay** (boot.md). The base now has a structural corroboration beyond the
+votes: 0896's over-read tail carries the FIELD overlay's bytes at exactly file
+`+0x9000`, which under base `0x801C5818` lands them at the slot-A base
+`0x801CE818` — consecutive overlay entries are contiguous cuts of one link
+image.
+
+Residency itself is still uncaptured. In a minigame-entry save taken
+pre-transition (Vahn sitting down for Baka Fighter) the game is still mode 3,
+the `0x3E` sub-id at `0x8007BA34` is 0, and the 0896 unique head
+(`base..0x801CE818`) is neither at its base (0.0022 non-zero match) nor anywhere
+else in main RAM; the five parked mode-25 minigame states have each minigame's
+own overlay resident instead. The load window is the mode-24 entry itself —
+between the field VM's `0x3E` operand>=100 mode write and the individual
+minigame overlay taking over. Probe prepared:
+[`autorun_minigame_overlay_capture.lua`](../../scripts/pcsx-redux/autorun_minigame_overlay_capture.lua)
+(mode-write-triggered overlay-window dumps at +0/+10/+30 vsyncs) +
+[`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py) for the
+offline byte-match.
 
 ---
 

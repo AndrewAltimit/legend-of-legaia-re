@@ -1274,7 +1274,8 @@ slot = 255
 label = "casino_ticket_counter"
 backup_fingerprint = "68df0a5ca04ac334d07025fab777af85d95e0d9d8b3c5c62ed8dd2a9407cad2f"
 phase = "field"
-description = "Casino floor, Vahn standing at the prize-exchange ticket counter (pre-interaction). Brackets the prize-exchange flow entry; pairs with casino_ticket_counter_dialog and casino_prize_shop for the prize-exchange game-mode + 0x3E sub-id hunt."
+expected_game_mode = 0x03
+description = "Casino floor, Vahn standing at the prize-exchange ticket counter (pre-interaction). Brackets the prize-exchange flow entry; pairs with casino_ticket_counter_dialog and casino_prize_shop for the prize-exchange game-mode + 0x3E sub-id hunt. Measured: game_mode 0x03 (field), field overlay PROT 0897 resident in slot A (clean prefix 1.0000)."
 topics = ["casino", "prize exchange", "game mode", "RE"]
 
 [[scenarios]]
@@ -1282,7 +1283,8 @@ slot = 255
 label = "casino_ticket_counter_dialog"
 backup_fingerprint = "9e4fdec5c2e4ec77c92c5b87948c1ac3f8a9ac4f86cedad9518223ff31c8c318"
 phase = "field"
-description = "Casino floor, mid-dialog with the prize-exchange ticket-counter attendant. Middle of the prize-exchange flow bracket (see casino_ticket_counter)."
+expected_game_mode = 0x03
+description = "Casino floor, mid-dialog with the prize-exchange ticket-counter attendant. Middle of the prize-exchange flow bracket (see casino_ticket_counter). Measured: still game_mode 0x03 (field) — the dialog runs under the field overlay, not a menu session."
 topics = ["casino", "prize exchange", "dialog", "game mode", "RE"]
 
 [[scenarios]]
@@ -1290,7 +1292,8 @@ slot = 255
 label = "casino_prize_shop"
 backup_fingerprint = "231209cd8a981bf9b1d60d5410f2535546ba7546e240b28863be049376f70da4"
 phase = "menu"
-description = "Inside the casino ticket-counter prize-exchange shop UI (the PROT 0899 @0x15D00 prize table's consumer). End of the prize-exchange flow bracket; pins which game_mode the prize shop runs under."
+expected_game_mode = 0x17
+description = "Inside the casino ticket-counter prize-exchange shop UI (the PROT 0899 @0x15D00 prize table's consumer). FINDING: the prize shop runs at game_mode 0x17 (the CARD/menu pair, same as the pause menu) with the MENU overlay PROT 0899 resident in slot A (clean prefix 1.0000) and the field overlay swapped out — the prize exchange is a menu-overlay session, consistent with its table + debit kernel living in PROT 0899."
 topics = ["casino", "prize exchange", "shop", "PROT 0899", "game mode", "RE"]
 
 [[scenarios]]
@@ -1298,5 +1301,6 @@ slot = 255
 label = "baka_fighter_entry_pretransition"
 backup_fingerprint = "1ac2c3d37e24ff428fa89db0dff01b2e402b21b1a29fba765f0d505ee36e0965"
 phase = "field"
-description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair. Targets the minigame-entry window for the PROT 0896 (bat_back_dat) resident-identity hunt (statically recovered base 0x801C5818, believed the mode-24 OTHER overlay) and the 0x3E operand>=100 sub-id at 0x8007BA34."
+expected_game_mode = 0x03
+description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair. Targets the minigame-entry window for the PROT 0896 (bat_back_dat) resident-identity hunt (statically recovered base 0x801C5818, believed the mode-24 OTHER overlay) and the 0x3E operand>=100 sub-id at 0x8007BA34. NEGATIVE: still game_mode 0x03, sub-id 0, and the 0896 unique head (base..0x801CE818) is neither at its base (0.0022 match) nor anywhere else in main RAM — the capture pre-dates the overlay load. The 100%-matching over-read tail is the resident FIELD overlay (0897) bytes sitting at exactly base+0x9000 = 0x801CE818, which independently corroborates the 0x801C5818 base. Next: autorun_minigame_overlay_capture.lua (mode-write triggered window dumps)."
 topics = ["minigame", "baka fighter", "overlay PROT 0896", "game mode", "0x3E", "RE"]

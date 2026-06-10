@@ -22,8 +22,16 @@
 # overlay is **PROT 0899** at base 0x801CE818 (its `FUN_801CF650` equip
 # aggregator lands at base+0xe38; 101/139 menu-dump functions align; jal-recovery
 # agrees, 30 votes), NOT PROT 0896. PROT 0896 (CDNAME `bat_back_dat`) is the
-# mode-24 OTHER overlay (self-consistent base 0x801C5818) and is left out pending
-# its own identity-resolving capture. PROT 0899 and the field overlay (0897) are
+# mode-24 OTHER overlay (self-consistent base 0x801C5818, 60 votes) and is left
+# out pending its own identity-resolving capture. Its base has a structural
+# corroboration beyond the votes: 0896's over-read tail carries the FIELD
+# overlay's bytes at file +0x9000 -- exactly where base 0x801C5818 places the
+# slot-A base 0x801CE818 -- so consecutive overlay entries are contiguous cuts
+# of one link image. Residency is still uncaptured (a pre-transition
+# minigame-entry save is still mode 3 with the 0896 head absent from RAM; the
+# parked mode-25 states hold each minigame's own overlay instead); the capture
+# probe is scripts/pcsx-redux/autorun_minigame_overlay_capture.lua.
+# PROT 0899 and the field overlay (0897) are
 # VA-ALIAS siblings in slot A (both base 0x801CE818, resident at different times):
 # 0x801CF650 is a "Give" string in 0897 but the equip aggregator in 0899 -- the
 # exact aliasing this pipeline exists to disambiguate.
@@ -80,7 +88,7 @@ form = "raw"
 clean_copy_bytes = 0x15e8c
 eligibility = "verified"
 fingerprint_sha256 = "6ffd69a87fb351ff1c01cc9879276624c954801cd4d5353898882ca6e1a0f172"
-notes = "Options / pause / inventory-equipment-status / SAVE / SHOP menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38; menu functions span base+0x0db8..base+0x15b44. Also hosts the SAVE-slot select + write dispatcher FUN_801DC6B4 (base+0xDE9C, signature byte-matches PROT 0899 only; `asset overlay find-sig`) and the SHOP/buy session (FUN_801CF5D0 record-offset preload + the shared FUN_801CF650 aggregator) -- 'save' and 'shop' are SUBSYSTEMS of this overlay, not separate PROT entries. VA-alias sibling of the field overlay (0897) in slot A: the menu overlay REPLACES the field overlay at 0x801CE818 (in a menu-open capture the field VM at 0x801DE840 is not a prologue while FUN_801CF650 is). RAM-matched vs six menu-open saves (equipment/status/options x field map01 + town town01): the clean prefix 0x15e8c (89740 B of 0x25000) is byte-identical in all six (99.99% total; only runtime globals diverge). PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base also recovered statically (30 corroborating call targets)."
+notes = "Options / pause / inventory-equipment-status / SAVE / SHOP menu overlay (the real one; NOT PROT 0896). Equipment stat aggregator FUN_801CF650 at base+0x0e38; menu functions span base+0x0db8..base+0x15b44. Also hosts the SAVE-slot select + write dispatcher FUN_801DC6B4 (base+0xDE9C, signature byte-matches PROT 0899 only; `asset overlay find-sig`) and the SHOP/buy session (FUN_801CF5D0 record-offset preload + the shared FUN_801CF650 aggregator) -- 'save' and 'shop' are SUBSYSTEMS of this overlay, not separate PROT entries. The casino PRIZE-EXCHANGE session is hosted here too: a save inside the ticket-counter prize shop holds game_mode 0x17 with this overlay's clean prefix byte-identical at slot A (the prize table itself is in this entry's data segment at file 0x15D00 / VA 0x801E4518). VA-alias sibling of the field overlay (0897) in slot A: the menu overlay REPLACES the field overlay at 0x801CE818 (in a menu-open capture the field VM at 0x801DE840 is not a prologue while FUN_801CF650 is). RAM-matched vs six menu-open saves (equipment/status/options x field map01 + town town01): the clean prefix 0x15e8c (89740 B of 0x25000) is byte-identical in all six (99.99% total; only runtime globals diverge). PROT 0899's trailing footprint additionally carries the title-screen overlay code in its unindexed gap (a separate overlay at its own base; see boot.md). Base also recovered statically (30 corroborating call targets)."
 
 # --- More slot-A overlays (same swappable slot as field/battle/menu; base
 #     0x801CE818, *DAT_8001038C). These are the cutscene + minigame VA-alias
