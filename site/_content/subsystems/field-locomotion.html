@@ -75,6 +75,7 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
     <li>Direction-specific probe offsets come from tables <code>DAT_801f21b4</code> / <code>DAT_801f2214</code> (16-byte stride per direction); three nearby points are probed so the player footprint, not just its centre, is tested.</li>
   </ul>
   <p>The sibling sampler <code>FUN_801d5718</code> reads the same grid with the identical nibble-and-mask shape, confirming the layout.</p>
+  <p>The probe model is <strong>validated live at step granularity</strong> by a wall-press capture (Rim Elm, player holding <code>X&minus;</code> against a wall): the player rests at exactly the position whose leading-edge probe (47 units ahead) reads the last wall sub-cell &mdash; one 2-unit step shallower reads clear. The X sub-cell derivation matches the engine's floor indexing except at exact 64-multiples; the retail <code>+1 row</code> Z bias remains the open, capture-gated question (it needs a <code>Z+</code> wall press &mdash; an <code>X&minus;</code> press against a full-height wall column blocks both derivations).</p>
 </section>
 
 <section class="doc-section" id="grid-source">

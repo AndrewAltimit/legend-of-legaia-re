@@ -1266,7 +1266,7 @@ ram_fingerprint_sha256 = "d91f8609639e75e8b02efb30af6809a87097e5ea91c65740022b9f
 backup_fingerprint = "1430efb5defb2552b61e4d75dfc5c73bc25a896e0663f0b7bcdbe4e29abf82b7"
 phase = "field"
 expected_active_scene = "town01"
-description = "Rim Elm, player holding LEFT (-X) pressed against a wall mid-walk. The field-collision sub-cell-indexing discriminator: the wall byte that blocks the player must sit in the cell the retail derivation (zc=(z>>6)+2, xc=((x+0x3f)>>6)-1) reads at the leading-edge probes; resolves whether the engine's floor-derivation indexing of the walkability grid at *(_DAT_1F8003EC)+0x4000 is misaligned (FUN_801cfe4c / FUN_801d01b0)."
+description = "Rim Elm, player holding LEFT (-X) pressed against a wall mid-walk, resting at (1838,4528) against the full-height wall column at grid col 13. RESULT: validates the retail derivation + 47-unit leading edge byte-exact at step granularity (probe 1791 = last wall sub-cell; one 2-unit step shallower reads clear) and proves the live grid byte-identical to the engine's, but does NOT discriminate the Z +1-row bias - a full-height column blocks both derivations and the floor tiers match. The remaining discriminator is a Z+ (down) wall press. Consumed by engine-shell/tests/field_collision_discriminator.rs."
 topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
 
 [[scenarios]]
