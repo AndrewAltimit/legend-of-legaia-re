@@ -51,7 +51,7 @@
 <td>Options / config / all pause-menus (<code>0899</code>)</td>
 <td>✓</td>
 <td><code>overlay_menu.bin</code></td>
-<td>Items / magic / equipment / status / options UI; equipment stat aggregator (<code>FUN_801CF650</code> at base+0x0e38); all 129 functions dumped. <strong>Source pinned: PROT 0899 @ base <code>0x801CE818</code></strong> (RAM-byte-matched clean copy; see <a href="static-overlay-pipeline.html">static overlay pipeline</a>). VA-alias sibling of the town/field overlay (PROT 0897) in slot A &mdash; the menu overlay <em>replaces</em> the field overlay at <code>0x801CE818</code>. The earlier <code>0896</code> attribution was wrong (<code>0896</code>/<code>bat_back_dat</code> is the mode-24 OTHER overlay at <code>0x801C5818</code>).</td>
+<td>Items / magic / equipment / status / options UI; equipment stat aggregator (<code>FUN_801CF650</code> at base+0x0e38); all 129 functions dumped. <strong>Source pinned: PROT 0899 @ base <code>0x801CE818</code></strong> (RAM-byte-matched clean copy; see <a href="static-overlay-pipeline.html">static overlay pipeline</a>). VA-alias sibling of the town/field overlay (PROT 0897) in slot A &mdash; the menu overlay <em>replaces</em> the field overlay at <code>0x801CE818</code>. The earlier <code>0896</code> attribution was wrong (<code>0896</code>/<code>bat_back_dat</code> is not an overlay that loads here at all &mdash; its once-recovered <code>0x801C5818</code> base was an over-read artifact; see the static-overlay pipeline's cautionary tale).</td>
 </tr>
 <tr>
 <td>Save / load screen</td>

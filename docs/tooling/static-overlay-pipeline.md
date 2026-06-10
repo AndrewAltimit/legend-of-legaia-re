@@ -65,10 +65,11 @@ pair, the true base wins by a landslide (the field overlay recovers `0x801CE818`
 with 60 corroborating call targets; battle with 44).
 
 This is decisive enough to **catch and correct mislabelled overlays**. The
-historical "PROT 0896 = options/pause-menu overlay" label is wrong on two
-counts: PROT 0896 (CDNAME `bat_back_dat`) recovers a self-consistent base of
-`0x801C5818` and is the mode-24 OTHER overlay (the options-menu equipment
-aggregator `FUN_801CF650` lands in its *string* section there). The **real
+historical "PROT 0896 = options/pause-menu overlay" label is wrong: PROT 0896
+(CDNAME `bat_back_dat`) is not an options/menu overlay at all (the options-menu
+equipment aggregator `FUN_801CF650` lands in its over-read *string* section,
+not on code; see the cautionary tale below for what its recovered base really
+was). The **real
 options/menu overlay is PROT 0899** at base `0x801CE818` — found by byte-searching
 the corpus for `FUN_801CF650`'s instruction signature (`0x801CF650` ↔ PROT 0899
 file `0xe38`), corroborated by 101/139 captured menu-dump functions aligning as

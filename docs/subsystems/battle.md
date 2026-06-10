@@ -99,8 +99,10 @@ TMD walk:
 - These tiles are the **619 `POLY_GT4`** in the live pool. Because the grid is a
   *full* flat plane centred on the actors, it fills the foreground/ground at
   **every** orbit angle — there is no half-dome gap for the ground.
-  `overlay_0896` (`bat_back`, battle background) shares this grid renderer + the
-  `_DAT_8007b814` buffer.
+  The historical overlay capture filed under the `0896` label (a mislabeled
+  slot-A window image; PROT 0896 itself is neither the battle background nor
+  an overlay that loads here) shows the same grid renderer + `_DAT_8007b814`
+  buffer — it is battle-overlay code seen through that capture.
 
 > **Correction.** An earlier reading called the backdrop the *world-map continent
 > heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
