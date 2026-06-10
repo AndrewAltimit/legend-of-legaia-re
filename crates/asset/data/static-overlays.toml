@@ -21,16 +21,18 @@
 # function-signature byte-search corrected a historical label: the options/menu
 # overlay is **PROT 0899** at base 0x801CE818 (its `FUN_801CF650` equip
 # aggregator lands at base+0xe38; 101/139 menu-dump functions align; jal-recovery
-# agrees, 30 votes), NOT PROT 0896. PROT 0896 (CDNAME `bat_back_dat`) is the
-# mode-24 OTHER overlay (self-consistent base 0x801C5818, 60 votes) and is left
-# out pending its own identity-resolving capture. Its base has a structural
-# corroboration beyond the votes: 0896's over-read tail carries the FIELD
-# overlay's bytes at file +0x9000 -- exactly where base 0x801C5818 places the
-# slot-A base 0x801CE818 -- so consecutive overlay entries are contiguous cuts
-# of one link image. Residency is still uncaptured (a pre-transition
-# minigame-entry save is still mode 3 with the 0896 head absent from RAM; the
-# parked mode-25 states hold each minigame's own overlay instead); the capture
-# probe is scripts/pcsx-redux/autorun_minigame_overlay_capture.lua.
+# agrees, 30 votes), NOT PROT 0896. PROT 0896 (CDNAME `bat_back_dat`) stays out
+# of this map: its widely-cited base 0x801C5818 (60 whole-file votes) is an
+# OVER-READ ARTIFACT -- the file carries the field overlay's bytes from +0x9000
+# (consecutive entries' footprints over-read), and that code's self-consistency
+# at 0x801CE818 fixes the whole-file recovery to 0x801CE818 - 0x9000 by
+# construction; head-only recovery yields no landslide, so 0896's true link
+# base is unrecovered. The "0896 = mode-24 OTHER overlay" hypothesis is also
+# REFUTED by a live mode-24 entry capture (Baka Fighter): the SCUS-resident
+# OTHER INIT streams the per-minigame overlay directly into slot A and 0896's
+# bytes appear nowhere in RAM across the entry window or any parked library
+# state (probe scripts/pcsx-redux/autorun_minigame_overlay_capture.lua +
+# overlay_residency.py; see open-rev-eng-threads.md).
 # PROT 0899 and the field overlay (0897) are
 # VA-ALIAS siblings in slot A (both base 0x801CE818, resident at different times):
 # 0x801CF650 is a "Give" string in 0897 but the equip aggregator in 0899 -- the

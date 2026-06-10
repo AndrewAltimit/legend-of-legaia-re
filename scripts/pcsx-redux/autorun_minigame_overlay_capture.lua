@@ -26,11 +26,13 @@
 -- and play into any minigame by hand.
 --
 -- Env vars:
---   LEGAIA_SSTATE     save state path (default: sstate4, the live
---                     pre-transition Baka Fighter entry slot)
---   LEGAIA_NO_SSTATE  if "1", skip the save-state load (play by hand)
---   LEGAIA_OUT_DIR    output dir (default: captures/minigame_overlay)
---   LEGAIA_FRAMES     max vsyncs to wait for the mode write (default 3600)
+--   LEGAIA_SSTATE       save state path (default: sstate4, the live
+--                       pre-transition Baka Fighter entry slot)
+--   LEGAIA_NO_SSTATE    if "1", skip the save-state load (play by hand)
+--   LEGAIA_OUT_DIR      output dir (default: captures/minigame_overlay)
+--   LEGAIA_FRAMES       max vsyncs to wait for the mode write (default 3600)
+--   LEGAIA_DUMP_OFFSETS comma list of trigger-relative dump vsyncs
+--                       (default "0,10,30")
 --
 -- Output:
 --   <OUT_DIR>/window_plus<N>.bin   overlay window at trigger+N vsyncs
@@ -62,7 +64,10 @@ end
 
 os.execute(string.format("mkdir -p %q", OUT_DIR))
 
-local DUMP_OFFSETS = { 0, 10, 30 }
+local DUMP_OFFSETS = {}
+for n in string.gmatch(probe.getenv("LEGAIA_DUMP_OFFSETS", "0,10,30"), "[^,]+") do
+    DUMP_OFFSETS[#DUMP_OFFSETS + 1] = tonumber(n)
+end
 local trigger_vsync = nil  -- capture-relative vsync of the first 0x18/0x19 read
 local dumps_done    = 0
 local summary       = {}

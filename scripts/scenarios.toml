@@ -1302,7 +1302,7 @@ label = "baka_fighter_entry_pretransition"
 backup_fingerprint = "1ac2c3d37e24ff428fa89db0dff01b2e402b21b1a29fba765f0d505ee36e0965"
 phase = "field"
 expected_game_mode = 0x03
-description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair. Targets the minigame-entry window for the PROT 0896 (bat_back_dat) resident-identity hunt (statically recovered base 0x801C5818, believed the mode-24 OTHER overlay) and the 0x3E operand>=100 sub-id at 0x8007BA34. NEGATIVE: still game_mode 0x03, sub-id 0, and the 0896 unique head (base..0x801CE818) is neither at its base (0.0022 match) nor anywhere else in main RAM — the capture pre-dates the overlay load. The 100%-matching over-read tail is the resident FIELD overlay (0897) bytes sitting at exactly base+0x9000 = 0x801CE818, which independently corroborates the 0x801C5818 base. Next: autorun_minigame_overlay_capture.lua (mode-write triggered window dumps)."
+description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair (game_mode still 0x03, 0x3E sub-id 0). Drives autorun_minigame_overlay_capture.lua: the sit animation rolls into the mode-24 transition hands-free (~vsync 138 after load). RESULT of the live entry window: sub-id 0x8007BA34 = 4 (live-confirms the 0x3E operand-100 model), the SCUS-resident OTHER INIT ('other init end') streams the per-minigame overlay directly into slot A, and PROT 0896's bytes appear NOWHERE in RAM across the window or any parked library state - the '0896 = mode-24 OTHER overlay' hypothesis is refuted (its 0x801C5818 base was an over-read artifact of the field-overlay tail; see open-rev-eng-threads.md)."
 topics = ["minigame", "baka fighter", "overlay PROT 0896", "game mode", "0x3E", "RE"]
 
 [[scenarios]]

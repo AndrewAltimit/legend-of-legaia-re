@@ -76,19 +76,20 @@ prologues and by jal-recovery (30 votes). PROT 0899 and the field overlay
 (PROT 0897) are **VA-alias siblings in slot A** — both load at `0x801CE818` at
 different times, so `0x801CF650` is a `"Give"` string in 0897 but the equip
 aggregator in 0899. That is the exact aliasing this pipeline exists to
-disambiguate. (PROT 0896's own identity-resolving capture is still open — and the
-save catalog does NOT close it: the five library states sitting at game-mode 25
-(OTHER MODE) all have zero/garbage overlay-slot pointers and <11% byte match
-against the 0896 payload at `0x801C5818`, and a minigame-entry save taken
-pre-transition is still mode 3 with the 0896 unique head absent from all of main
-RAM. The base itself now has a structural corroboration: 0896's over-read tail
-carries the field overlay's bytes at file `+0x9000`, exactly where base
-`0x801C5818` places the slot-A base `0x801CE818` — consecutive overlay entries
-are contiguous cuts of one link image. Closing the residency question needs a
-state captured while mode 24 (OTHER) is entering or running with the overlay
-loaded — the probe is
+disambiguate. (PROT 0896 is the pipeline's **cautionary tale**: its
+whole-file recovery returns a convincing 60-vote base `0x801C5818`, but the
+votes come from the FIELD overlay's bytes carried in 0896's over-read tail
+from file `+0x9000` — that code's self-consistency at `0x801CE818` fixes the
+result to `0x801CE818 − 0x9000` *by construction*. Restricted to the head's
+own code the recovery yields no landslide, so 0896's true link base is
+unrecovered, and a live mode-24 entry capture refuted the old "mode-24 OTHER
+overlay" reading (the SCUS-resident OTHER INIT streams each minigame's own
+overlay directly into slot A; 0896's bytes appear nowhere in RAM across the
+window or in any parked library state — probe
 [`autorun_minigame_overlay_capture.lua`](../../scripts/pcsx-redux/autorun_minigame_overlay_capture.lua)
-+ [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py); see
++ [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py)).
+Moral: when an entry's footprint over-reads a KNOWN overlay, subtract the
+aliased region before trusting a recovered base. See
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
 
 ## The committed map
