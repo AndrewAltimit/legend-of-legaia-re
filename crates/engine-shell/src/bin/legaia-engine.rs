@@ -7865,7 +7865,39 @@ impl ApplicationHandler for PlayWindowApp {
                         log::info!("move-FX spawn (H) is battle-only");
                         return;
                     }
-                    const MOVE_FX_DEBUG_MOVE_ID: u8 = 0x06;
+                    // Enumerate every move the parsed move-power table can render
+                    // as a 3D scene-graph and cycle through them across presses
+                    // (data-driven, so the preview reflects the real overlay
+                    // rather than one hard-coded id). The 0x06 worked example -
+                    // library-mesh Spawn entries 0x27/0x28 resolving into
+                    // `global_tmd_pool[model_sel + 3]` - is the starting point
+                    // when present.
+                    let spawnable = self
+                        .session
+                        .host
+                        .world
+                        .move_power
+                        .as_ref()
+                        .map(|c| c.spawnable_move_ids())
+                        .unwrap_or_default();
+                    if spawnable.is_empty() {
+                        log::info!(
+                            "move-FX spawn (H): move-power table not installed / no spawnable moves"
+                        );
+                        return;
+                    }
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    static MOVE_FX_CYCLE: AtomicUsize = AtomicUsize::new(0);
+                    let start = spawnable.iter().position(|&id| id == 0x06).unwrap_or(0);
+                    let n = MOVE_FX_CYCLE.fetch_add(1, Ordering::Relaxed);
+                    let slot = (start + n) % spawnable.len();
+                    let move_fx_id = spawnable[slot];
+                    log::info!(
+                        "move-FX preview {}/{}: move {move_fx_id:#04x} (spawnable {:#04x?})",
+                        slot + 1,
+                        spawnable.len(),
+                        spawnable
+                    );
                     let origin = self
                         .session
                         .host
@@ -7881,14 +7913,9 @@ impl ApplicationHandler for PlayWindowApp {
                             ]
                         })
                         .unwrap_or([0, 0, 0]);
-                    if self
-                        .session
-                        .host
-                        .world
-                        .spawn_move_fx(MOVE_FX_DEBUG_MOVE_ID, origin)
-                    {
+                    if self.session.host.world.spawn_move_fx(move_fx_id, origin) {
                         log::info!(
-                            "spawned move-FX for move {MOVE_FX_DEBUG_MOVE_ID:#04x}: {} mesh parts at {origin:?}",
+                            "spawned move-FX for move {move_fx_id:#04x}: {} mesh parts at {origin:?}",
                             self.session.host.world.active_move_fx_part_draws().len()
                         );
                         // Consume the surfaced presentation fields: the trail
@@ -7906,7 +7933,7 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     } else {
                         log::info!(
-                            "move-FX spawn for move {MOVE_FX_DEBUG_MOVE_ID:#04x} produced no parts \
+                            "move-FX spawn for move {move_fx_id:#04x} produced no parts \
                              (table not installed / no spawnable entries)"
                         );
                     }

@@ -165,6 +165,38 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
 }
 
 #[test]
+fn spawnable_move_ids_match_what_actually_renders() {
+    let Some(bytes) = overlay_0898() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut world = world_with_move_power(&bytes);
+
+    let ids = world.move_power.as_ref().unwrap().spawnable_move_ids();
+
+    // The enumeration is non-empty, sorted + unique, and contains the 0x06
+    // worked example the debug previewer starts from.
+    assert!(!ids.is_empty(), "real overlay has spawnable move FX");
+    assert!(ids.windows(2).all(|w| w[0] < w[1]), "ids sorted + unique");
+    assert!(ids.contains(&0x06), "0x06 worked example is spawnable");
+
+    // The query is exactly the set spawn_move_fx can render: every enumerated
+    // id stages at least one mesh part.
+    for &id in &ids {
+        assert!(
+            world.spawn_move_fx(id, [0, 0, 0]),
+            "spawnable move {id:#04x} renders mesh parts"
+        );
+        assert!(
+            !world.active_move_fx_part_draws().is_empty(),
+            "spawnable move {id:#04x} stages parts"
+        );
+        world.active_move_fx = None;
+        world.active_move_fx_trail_texpage = None;
+    }
+}
+
+#[test]
 fn move_fx_guards_when_uninstalled_or_inert() {
     // No catalog / overlay installed -> no spawn, no panic.
     let mut bare = World::new();
