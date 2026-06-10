@@ -415,7 +415,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Town/field free-movement locomotion | resolved | [details ↓](#townfield-free-movement-locomotion) | `project_field_locomotion_integrator.md` |
 | Field collision-map source | resolved | [details ↓](#field-collision-map-source) | `project_field_locomotion_integrator.md` |
 | Tile-board grid mode | resolved (re-scoped) | The `_DAT_8007b450`/`DAT_801f35c0`/`801ef2b0` tile-grid walk is a puzzle / board minigame (procedural `rand`-filled board, per-cell drawn tiles), not town locomotion. Documented in `docs/subsystems/tile-board.md`. Open sub-questions: which minigames use it; whether any board is fixed (inline-script cells) vs. always procedural; the inline cell-array offset. | `project_tile_board_grid.md` |
-| game_mode 0x03 = field/town gameplay | resolved (mapping); model open | [details ↓](#game_mode-0x03--fieldtown-gameplay) | `project_mode_table_structure.md` |
+| game_mode 0x03 = field/town gameplay | resolved | [details ↓](#game_mode-0x03--fieldtown-gameplay) | `project_mode_table_structure.md` |
 | Engine VRAM byte-exactness for town01 | resolved (major source); minor residue | [details ↓](#engine-vram-byte-exactness-for-town01) | `project_town01_targeted_upload_fix.md` |
 
 | Scene-transition (`0x3F` door) destination indexing | resolved | [details ↓](#scene-transition-0x3f-door-destination-indexing) | `project_scene_destination_table_indexing.md` |
@@ -446,7 +446,7 @@ Residual sub-question: the `+0x4000` zero-init site (ruled out `FUN_8001f7c0` / 
 
 ### game_mode 0x03 = field/town gameplay
 
-*Status:* resolved (mapping); model open
+*Status:* resolved
 
 `_DAT_8007B83C` = 0x03 is the in-town / on-field gameplay mode. Pinned empirically by two independent retail captures: the `v0_1_pre_battle_tetsu` save (Vahn walking in Rim Elm / `town01`, before the Tetsu cutscene) and the runtime-pinned free-movement controller on `map03`, both at 0x03. `engine_core::mode::GameMode::scene_mode()` maps `MainMode (3) → SceneMode::Field` accordingly, and the `mode_trace_e3` + `v0_1_playthrough` oracles drive the engine into the field (`enter_field_live`) so they converge against the retail 0x03 snapshot.
 
@@ -454,7 +454,7 @@ Residual sub-question: the `+0x4000` zero-init site (ruled out `FUN_8001f7c0` / 
 
 It confirms the saves: field/town is modes 2/3 MAIN (`game_mode 0x03`), and `MAPDSIP` (12/13) is the **world-map display** mode, not the field — correcting an earlier `functions.md` label that called mode 12 "the actual gameplay-mode entry". Structural finding: 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map) and Mode 23 (memory card) carry their own. Full map in [`boot.md`](../subsystems/boot.md#full-handler-map-recovered-from-the-disc).
 
-**Residual (code, not RE):** the `engine_core::mode` model still runs `MainMode` via `TitleHandler` / labels index 3 "options menu"; reconciling the engine's `ModeHandler` wiring to this recovered map is the remaining work.
+**Engine model reconciled.** `engine_core::mode` holds `SceneMode::Field` for both modes 2/3 (the init mode holds its successor's scene mode, matching the Mapdisp/Battle/Str pairs), the reference handler that drives the pair is named for the field-entry path it exercises, and the table's name/param/next fields are cross-checked against the disc-recovered map by the disc-gated `mode_table_reconcile` test. The retail `+0x0A` next-mode field is decoded (`ModeEntry::next_mode`): `-1` = self-managed, `0` = fall back to mode 0 — the `0xFFFF0000` word previously read as a sentinel is just `-1` over a zero low half.
 
 
 ### Engine VRAM byte-exactness for town01

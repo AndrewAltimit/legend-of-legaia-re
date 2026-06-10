@@ -17,9 +17,12 @@
 //! transitioning to `next_mode` (init -> run pattern).
 //!
 //! In the clean-room port we map each mode to a [`GameMode`] enum variant,
-//! the handler to a [`ModeHandler`] trait, and the parameter to flag bits
-//! in [`ModeParam`]. The Sony function pointers are NOT used; engine
-//! integrations supply Rust closures that drive the [`super::world::World`].
+//! the handler to a [`ModeHandler`] trait, and the parameter to the
+//! [`ModeEntry::param`] flag bits. The Sony function pointers are NOT used;
+//! engine integrations supply Rust closures that drive the
+//! [`super::world::World`]. The table's name/param/next fields are
+//! reconciled against the disc-recovered map (`legaia_asset::mode_table`)
+//! by the disc-gated `mode_table_reconcile` test.
 
 use crate::input::InputState;
 use crate::world::{SceneMode, World};
@@ -168,10 +171,12 @@ impl GameMode {
             // `v0_1_pre_battle_tetsu` save (Vahn walking in Rim Elm / town01)
             // and the runtime-pinned free-movement controller on `map03`,
             // both at game_mode 0x03 (see docs/subsystems/field-locomotion.md).
-            // The dev mode-table label "MAIN MODE" / "options menu" reading is
-            // misleading here; the broader question of which handler the retail
-            // dispatcher runs for index 3 is a separate open RE thread.
-            GameMode::MainMode => SceneMode::Field,
+            // The disc-recovered handler map (legaia_asset::mode_table)
+            // confirms it structurally: mode 2's init handler FUN_80025B64
+            // loads the field overlay + per-scene initializer and hands off
+            // to mode 3. MainInit holds Field like the other init modes
+            // below hold their successors'.
+            GameMode::MainInit | GameMode::MainMode => SceneMode::Field,
             // MAPDISP (12/13) is the world-map DISPLAY mode, not the field —
             // pinned by the disc mode table (legaia_asset::mode_table): its
             // per-frame handler 0x80025F2C routes the world-map render tick
@@ -398,31 +403,32 @@ pub trait ModeHandler {
 pub struct NoopHandler;
 impl ModeHandler for NoopHandler {}
 
-/// Reference [`ModeHandler`] that drives the title-screen path end-to-end
-/// without any GPU / scene-asset dependencies. Useful as a smoke test for
-/// the World + ModeDriver wiring and as an example for engines integrating
-/// real scene loaders.
+/// Reference [`ModeHandler`] that drives the field-entry mode pair
+/// (`MainInit` → `MainMode`, the retail field/town init + per-frame
+/// handlers) end-to-end without any GPU / scene-asset dependencies. Useful
+/// as a smoke test for the World + ModeDriver wiring and as an example for
+/// engines integrating real scene loaders.
 ///
 /// Behaviour:
 ///
 /// - `MainInit`: spawn `actor_count` actors in the world via the actor VM
 ///   `SpawnAt` opcode, with positions arranged on a horizontal line. Returns
-///   `Done` so the driver advances to the table's next mode.
+///   `Done` so the driver advances to the table's next mode — mirroring the
+///   retail mode-2 handler's "load the scene, hand off to mode 3" shape.
 /// - `MainMode`: ticks the world (positions advance via the move VM). When
 ///   the host signals `Cross` (just-pressed), returns `GoTo(MapdispInit)` -
-///   the canonical "select party" → "enter map" transition. Otherwise
-///   `Continue`.
+///   the field → world-map exit transition. Otherwise `Continue`.
 /// - Other modes: no-op `Continue`.
 ///
 /// This is the smallest concrete demonstration that the World + ModeDriver
 /// stack ticks per-frame, advances actor state, and reacts to input.
 #[derive(Debug, Clone, Copy)]
-pub struct TitleHandler {
+pub struct FieldDemoHandler {
     pub actor_count: u8,
     initialised: bool,
 }
 
-impl TitleHandler {
+impl FieldDemoHandler {
     pub fn new(actor_count: u8) -> Self {
         Self {
             actor_count,
@@ -431,7 +437,7 @@ impl TitleHandler {
     }
 }
 
-impl ModeHandler for TitleHandler {
+impl ModeHandler for FieldDemoHandler {
     fn run(&mut self, mode: GameMode, world: &mut World, input: &InputState) -> HandlerResult {
         use crate::input::PadButton;
         match mode {
@@ -575,8 +581,10 @@ mod tests {
 
     #[test]
     fn scene_mode_field_is_main_mode_not_mapdisp() {
-        // Field/town gameplay is MainMode (game_mode 0x03); MAPDISP (12/13)
-        // is the world-map display mode.
+        // Field/town gameplay is MainInit/MainMode (modes 2/3, game_mode
+        // 0x03); MAPDISP (12/13) is the world-map display mode. The init
+        // mode holds its successor's scene mode, same as Mapdisp/Battle/Str.
+        assert_eq!(GameMode::MainInit.scene_mode(), SceneMode::Field);
         assert_eq!(GameMode::MainMode.scene_mode(), SceneMode::Field);
         assert_eq!(GameMode::MapdispInit.scene_mode(), SceneMode::WorldMap);
         assert_eq!(GameMode::MapdispMode.scene_mode(), SceneMode::WorldMap);
@@ -675,9 +683,9 @@ mod tests {
     }
 
     #[test]
-    fn title_handler_spawns_actors_then_advances() {
+    fn field_demo_handler_spawns_actors_then_advances() {
         let mut d = ModeDriver::new(GameMode::MainInit);
-        let mut h = TitleHandler::new(4);
+        let mut h = FieldDemoHandler::new(4);
         let mut w = World::default();
         let input = InputState::new();
         // First tick: MainInit spawns actors and reports Done - driver
@@ -693,9 +701,9 @@ mod tests {
     }
 
     #[test]
-    fn title_handler_main_mode_transitions_on_cross() {
+    fn field_demo_handler_main_mode_transitions_on_cross() {
         let mut d = ModeDriver::new(GameMode::MainMode);
-        let mut h = TitleHandler::new(0);
+        let mut h = FieldDemoHandler::new(0);
         let mut w = World::default();
         let mut input = InputState::new();
         // No press: stays.

@@ -27,7 +27,8 @@ The mode-dispatch table at `0x8007078C` is **28 entries × 24 bytes = 672 bytes*
 |---|---|---|
 | `+0x00` | u32 | Name-string pointer. Even modes (init) point at BSS labels in `0x8007B3DC..0x8007B408` (runtime-initialised). Odd modes (per-frame) point at static dev-mode-name strings in the `0x800109D0..0x80010AD8` pool. |
 | `+0x04` | u32 | Reserved / zero. |
-| `+0x08` | u32 | `0xFFFF0000` sentinel on most init modes; `0` on per-frame modes. |
+| `+0x08` | u16 | Reserved / zero (low half of the next-mode word). |
+| `+0x0A` | i16 | Next-mode index: `-1` = self-managed, `0` = return to mode 0 (CONFIG). The word at `+0x08` reads `0xFFFF0000` on self-managed modes — that is the `-1` over a zero low half, not a sentinel constant. Retail uses only those two values. |
 | `+0x0C` | u32 | Reserved / zero. |
 | `+0x10` | u32 | Handler function pointer (some land in the overlay window `0x801C0000+` when an overlay is resident, e.g. mode 6 TMD-TEST's `0x801CF730`). |
 | `+0x14` | u32 | Handler parameter. |

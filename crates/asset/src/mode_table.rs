@@ -15,10 +15,16 @@
 //! |---|---|---|
 //! | `+0x00` | u32 | dev name-string pointer |
 //! | `+0x04` | u32 | reserved / zero |
-//! | `+0x08` | u32 | `0xFFFF0000` sentinel on most init modes, `0` else |
+//! | `+0x08` | u16 | reserved / zero (low half of the next-mode word) |
+//! | `+0x0A` | i16 | next-mode index: `-1` = self-managed, `0` = return to mode 0 (CONFIG) |
 //! | `+0x0C` | u32 | reserved / zero |
 //! | `+0x10` | u32 | handler function pointer |
 //! | `+0x14` | u32 | handler parameter |
+//!
+//! The `+0x08` word reads `0xFFFF0000` on self-managed modes — that is not a
+//! sentinel constant but the `i16` next-mode field at `+0x0A` holding `-1`
+//! over a zero low half. Retail uses only two values: `-1` (the mode manages
+//! its own transitions) and `0` (on completion, fall back to mode 0).
 //!
 //! A key structural fact this recovers: 12 of the 14 per-frame (odd) modes
 //! share one generic per-frame handler `0x80025EEC`; only Mode 13 (MAPDISP
@@ -44,8 +50,10 @@ pub struct ModeEntry {
     /// Dev name string (e.g. `"MAIN INIT"` / `"MAIN MODE"`), as embedded in
     /// the executable. Empty if it couldn't be resolved.
     pub name: String,
-    /// `+0x08` sentinel word (`0xFFFF0000` on most init modes).
-    pub sentinel: u32,
+    /// Raw `+0x08` word. The high half is the `i16` next-mode field at
+    /// `+0x0A` (see [`ModeEntry::next_mode`]); the low half is always zero
+    /// in retail.
+    pub next_word: u32,
     /// `+0x10` handler function pointer (runtime VA). May land in the overlay
     /// window `0x801C0000+` when an overlay is resident for that mode.
     pub handler: u32,
@@ -57,6 +65,14 @@ impl ModeEntry {
     /// True for per-frame (odd-index) modes; false for init (even) modes.
     pub fn is_per_frame(&self) -> bool {
         self.index % 2 == 1
+    }
+
+    /// The `i16` next-mode field at `+0x0A`: the mode index the dispatcher
+    /// transitions to when the handler signals completion. `None` for the
+    /// retail `-1` sentinel (mode manages its own transitions).
+    pub fn next_mode(&self) -> Option<usize> {
+        let next = (self.next_word >> 16) as i16;
+        usize::try_from(next).ok()
     }
 
     /// True when this per-frame mode uses the shared generic handler
@@ -131,13 +147,13 @@ impl ModeTable {
         for index in 0..MODE_COUNT {
             let e = base + index * ENTRY_STRIDE;
             let name_ptr = read_u32(scus, e)?;
-            let sentinel = read_u32(scus, e + 0x08)?;
+            let next_word = read_u32(scus, e + 0x08)?;
             let handler = read_u32(scus, e + 0x10)?;
             let param = read_u32(scus, e + 0x14)?;
             entries.push(ModeEntry {
                 index,
                 name: read_name(scus, &map, name_ptr),
-                sentinel,
+                next_word,
                 handler,
                 param,
             });
@@ -194,8 +210,11 @@ mod tests {
         let e0 = t.entry(0).unwrap();
         assert_eq!(e0.handler, 0x8002_5C68);
         assert_eq!(e0.param, 2);
-        assert_eq!(e0.sentinel, 0xFFFF_0000);
+        assert_eq!(e0.next_word, 0xFFFF_0000);
+        assert_eq!(e0.next_mode(), None, "-1 = self-managed");
         assert!(!e0.is_per_frame());
+        // A zero next-word decodes as "fall back to mode 0".
+        assert_eq!(t.entry(1).unwrap().next_mode(), Some(0));
         let e3 = t.entry(3).unwrap();
         assert!(e3.is_per_frame());
         assert!(e3.uses_shared_handler());
