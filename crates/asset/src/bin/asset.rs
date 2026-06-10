@@ -1225,6 +1225,24 @@ fn element_affinity_cmd(input: &Path) -> Result<()> {
             label(elem as usize)
         );
     }
+    println!(
+        "\nper-character summon power-percent @ file {:#x} (runtime VA {:#010x}); \
+         pct = row[summon creature element], FUN_801ddb30 stage 5:",
+        legaia_asset::element_affinity::SUMMON_POWER_PCT_FILE_OFFSET,
+        legaia_asset::element_affinity::SUMMON_POWER_PCT_VA,
+    );
+    print!("        ");
+    for elem in 0..element_affinity::ELEMENT_COUNT {
+        print!("{:>8}", label(elem));
+    }
+    println!();
+    for (i, row) in aff.summon_power.iter().enumerate() {
+        print!("{:>7} ", names.get(i).copied().unwrap_or(""));
+        for pct in row {
+            print!("{pct:>8}");
+        }
+        println!();
+    }
     Ok(())
 }
 

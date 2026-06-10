@@ -116,4 +116,42 @@ fn element_affinity_tables_parse_with_pinned_values() {
         Some(98),
         "thunder attacks dark at 98"
     );
+
+    // Summon power-percent rows (FUN_801ddb30 stage 5, 0x801F5468): each
+    // caster summons their own element at 100% and their opposed element
+    // weakest. Full retail rows pinned byte-exact:
+    //   Vahn (fire):    [95, 40, 100, 70, 70, 85, 85, 80]
+    //   Noa (wind):     [40, 95, 70, 100, 70, 85, 85, 80]
+    //   Gala (thunder): [85, 85, 85, 85, 100, 95, 60, 80]
+    assert_eq!(
+        aff.summon_power[0],
+        [95, 40, 100, 70, 70, 85, 85, 80],
+        "Vahn"
+    );
+    assert_eq!(
+        aff.summon_power[1],
+        [40, 95, 70, 100, 70, 85, 85, 80],
+        "Noa"
+    );
+    assert_eq!(
+        aff.summon_power[2],
+        [85, 85, 85, 85, 100, 95, 60, 80],
+        "Gala"
+    );
+    assert_eq!(
+        aff.summon_power_pct(1, Element::Fire as u8),
+        Some(100),
+        "Vahn summons fire at full power"
+    );
+    assert_eq!(
+        aff.summon_power_pct(1, Element::Water as u8),
+        Some(40),
+        "Vahn summons his opposed element weakest"
+    );
+    assert_eq!(
+        aff.summon_power_pct(3, Element::Dark as u8),
+        Some(60),
+        "Gala's dark penalty"
+    );
+    assert_eq!(aff.summon_power_pct(0, 0), None, "char id is 1-based");
 }

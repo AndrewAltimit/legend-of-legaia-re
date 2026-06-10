@@ -52,6 +52,12 @@ pub struct MonsterDef {
     /// `docs/subsystems/battle-formulas.md`). `0` leaves the battle on the
     /// round-robin turn-order fallback.
     pub speed: u16,
+    /// Agility (record `stats[3]`, actor `+0x168`), unclamped. Seeds the
+    /// summon-damage roll when this creature is the spell's summon body
+    /// (`FUN_801dd0ac` summon branch reads the slot-7 actor's `+0x168`);
+    /// [`MonsterDef::accuracy`] / [`MonsterDef::evasion`] carry the same
+    /// stat clamped to a byte for the hit/evade paths.
+    pub agl: u16,
     pub accuracy: u8,
     pub evasion: u8,
     /// Experience awarded to the party on defeat.
@@ -91,6 +97,7 @@ impl MonsterDef {
             udf: attack / 2,
             ldf: attack / 2,
             speed: 0,
+            agl: 70,
             accuracy: 70,
             evasion: 10,
             exp: hp / 2,
@@ -175,6 +182,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.udf = rec.defense_high();
     def.ldf = rec.defense_low();
     def.speed = rec.speed();
+    def.agl = rec.agility();
     let agl = rec.agility().min(u8::MAX as u16) as u8;
     def.accuracy = agl;
     def.evasion = agl;
@@ -334,6 +342,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             // Real per-monster SPD comes from the disc archive via
             // `monster_def_from_record`.
             speed: 0,
+            agl: acc as u16,
             accuracy: acc,
             evasion: eva,
             exp,
