@@ -1,8 +1,11 @@
 //! One-off investigation sweep: for every mednafen scenario in the library,
-//! read the live field buffer (scratchpad `_DAT_1f8003ec` -> `+0x4000` grid)
-//! and classify it against candidate on-disc `.MAP` base grids (town01 =
-//! PROT 0010, town0c = PROT 0028). Answers which base map a session's field
-//! buffer actually holds — the cold-vs-variant `.MAP` streaming question.
+//! read the live field buffer (scratchpad `_DAT_1f8003ec`) and classify its
+//! `+0x4000` collision grid AND its `+0x8000` object-index grid against
+//! candidate on-disc `.MAP` base grids (town01 = PROT 0010, town0c = PROT
+//! 0028). Answers which base map a session's field buffer actually holds —
+//! the cold-vs-variant `.MAP` streaming question — and cross-validates the
+//! object-placement source (`Scene::field_object_placements`) the same way
+//! the collision grid was pinned.
 //!
 //! Run: `cargo run -p legaia-engine-shell --release --example field_grid_census`
 //! Requires `extracted/PROT.DAT`, `scripts/scenarios.toml`, `saves/library`.
@@ -26,9 +29,16 @@ fn main() {
         ("koin3/0559", 0x024B_B000usize),
         ("koin3/0568", 0x0253_6800usize),
     ];
-    let grids: Vec<(&str, &[u8])> = bases
+    // Per candidate: (collision grid +0x4000..0x8000, object grid +0x8000..0x10000).
+    let grids: Vec<(&str, &[u8], &[u8])> = bases
         .iter()
-        .map(|&(n, off)| (n, &prot[off + 0x4000..off + 0x8000]))
+        .map(|&(n, off)| {
+            (
+                n,
+                &prot[off + 0x4000..off + 0x8000],
+                &prot[off + 0x8000..off + 0x10000],
+            )
+        })
         .collect();
 
     let manifest = ScenarioManifest::from_path("scripts/scenarios.toml").expect("manifest");
@@ -55,15 +65,17 @@ fn main() {
             );
             continue;
         }
-        let off = (fb & 0x1F_FFFF) as usize + 0x4000;
-        if off + 0x4000 > ram.len() {
+        let base_off = (fb & 0x1F_FFFF) as usize;
+        if base_off + 0x10000 > ram.len() {
             continue;
         }
-        let live = &ram[off..off + 0x4000];
+        let live_coll = &ram[base_off + 0x4000..base_off + 0x8000];
+        let live_obj = &ram[base_off + 0x8000..base_off + 0x10000];
         let mut line = format!("{:38} scene {:8}", scn.label, scene);
-        for (name, base) in &grids {
-            let d = live.iter().zip(*base).filter(|(a, b)| a != b).count();
-            line.push_str(&format!("  vs {name}: {d:5}"));
+        for (name, coll, obj) in &grids {
+            let dc = live_coll.iter().zip(*coll).filter(|(a, b)| a != b).count();
+            let dobj = live_obj.iter().zip(*obj).filter(|(a, b)| a != b).count();
+            line.push_str(&format!("  vs {name}: c{dc:5} o{dobj:5}"));
         }
         println!("{line}");
     }

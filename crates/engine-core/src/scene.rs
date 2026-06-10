@@ -696,9 +696,15 @@ impl Scene {
     /// variants byte-copy (the Rim Elm pair `town01`/`town0b`/`town0c` share
     /// one identical map). Pinned by a save-library census: the live field
     /// buffer of a `keikoku` session matches entry `define-2` (PROT 0109)
-    /// with **zero** diffs (in-block entry 0118 diffs by thousands), same for
-    /// `koin3` (PROT 0559 exact), and the kingdom walk maps were already
-    /// live-verified at `start - 2`.
+    /// with **zero** collision-grid diffs (in-block entry 0118 diffs by
+    /// thousands), same for `koin3` (PROT 0559 exact), and the kingdom walk
+    /// maps were already live-verified at `start - 2`. The **object-index
+    /// grid** (`+0x8000`, the [`Self::field_object_placements`] source) is
+    /// live-validated the same way: residuals of 0..96 bytes against the
+    /// resolved entry across town01 / town0c / keikoku / koin3 sessions
+    /// (story-conditional cell mutations), thousands against every other
+    /// candidate (regression-guarded by the disc + save-library gated
+    /// `field_map_object_grid_live` test).
     ///
     /// The footprint matters: the TOC-indexed payload is only the first
     /// `0x4000` bytes (the object-record region); the collision grid at
