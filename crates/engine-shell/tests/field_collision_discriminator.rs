@@ -30,10 +30,10 @@
 //! from scratchpad `_DAT_1f8003ec` (`SaveState::scratch_ram`), and the
 //! `+0x4000` walkability region is lifted out of main RAM. The capture's
 //! scene is read from scene-bundle pool slot 0. NOTE: both captures park in
-//! the `town0c` Rim Elm variant whose live session still holds the
-//! `town01` field buffer (the variant switch does not reload the `.MAP`),
-//! so the engine-side grid cross-check enters the scene whose grid actually
-//! matches.
+//! the `town0c` Rim Elm variant, whose own `.MAP` (PROT 0019, the universal
+//! `define-2` resolution) is byte-identical to town01's - the Rim Elm
+//! variants share one map. The engine-side cross-check still tries both
+//! scene candidates and takes the best match.
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN`, `extracted/`, the scenario
 //! manifest, or the library save is missing - CI runs without disc data.

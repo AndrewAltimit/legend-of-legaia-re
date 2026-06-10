@@ -680,11 +680,25 @@ impl Scene {
 
     /// PROT index of the per-scene **field map file** - retail
     /// `DATA\FIELD\<scene>.MAP`, the first file `FUN_8001f7c0` streams into the
-    /// field-buffer base (`_DAT_1f8003ec`). It is the unique CDNAME-block entry
-    /// whose **extended on-disc footprint** is exactly [`FIELD_MAP_LEN`]
-    /// (`0x12000`) bytes - the field buffer's used region from the base through
-    /// the field-pack boundary. Every field/town scene has exactly one (101 of
-    /// 124 blocks; the rest are battle / pure-asset blocks with no field map).
+    /// field-buffer base (`_DAT_1f8003ec`).
+    ///
+    /// The runtime resolves it through `FUN_8003e8a8`'s `toc[idx+2]`, which
+    /// lands **two entries below the per-entry extractor's CDNAME block
+    /// start** - the scene PROT clusters overlap, so the extractor attributes
+    /// each scene's `.MAP` to the tail of the *previous* block. The entry is
+    /// identified by its **extended on-disc footprint** of exactly
+    /// [`FIELD_MAP_LEN`] (`0x12000`) bytes; scenes whose `start - 2` entry
+    /// isn't that size have no field map (cutscene / pure-asset blocks).
+    ///
+    /// The first `FIELD_MAP_LEN` entry *inside* a block is the **next**
+    /// scene's `.MAP`, not this scene's - an earlier in-block rule loaded the
+    /// wrong map for every field scene and was masked only where adjacent
+    /// variants byte-copy (the Rim Elm pair `town01`/`town0b`/`town0c` share
+    /// one identical map). Pinned by a save-library census: the live field
+    /// buffer of a `keikoku` session matches entry `define-2` (PROT 0109)
+    /// with **zero** diffs (in-block entry 0118 diffs by thousands), same for
+    /// `koin3` (PROT 0559 exact), and the kingdom walk maps were already
+    /// live-verified at `start - 2`.
     ///
     /// The footprint matters: the TOC-indexed payload is only the first
     /// `0x4000` bytes (the object-record region); the collision grid at
@@ -693,9 +707,9 @@ impl Scene {
     ///
     /// See [`docs/subsystems/field-locomotion.md`] for the load chain.
     pub fn field_map_index(&self, index: &ProtIndex) -> Option<u32> {
-        let entries = index.entries();
-        (self.start..self.end).find(|&idx| {
-            entries
+        self.start.checked_sub(2).filter(|&idx| {
+            index
+                .entries()
                 .get(idx as usize)
                 .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
         })
@@ -764,26 +778,14 @@ impl Scene {
 
     /// Resolve the **free-roam walk** view's field `.MAP` entry.
     ///
-    /// The runtime loads a scene's field `.MAP` from its CDNAME index through
-    /// `FUN_8003e8a8`'s `toc[idx + 2]`. For the overlapping PROT clusters the
-    /// kingdom overworld scenes live in, that resolves **two entries below**
-    /// the per-entry extractor's CDNAME block start — the real walk `.MAP`
-    /// (records + the `0x1000`-gated continent grid) sits in the preceding
-    /// "duplicate" cluster, while the first [`FIELD_MAP_LEN`] entry *inside*
-    /// the block ([`Self::field_map_index`]) is a different/decoy map (for the
-    /// kingdoms it has only a few `0x1000` cells; for towns the two are byte
-    /// copies, which is why the overview/town paths were unaffected).
-    /// Verified against live `map01` plus `town01`/`map02`/`map03`: the walk
-    /// `.MAP` is `block_start - 2`. Falls back to [`Self::field_map_index`]
-    /// when that slot isn't a [`FIELD_MAP_LEN`] entry.
+    /// Historical alias of [`Self::field_map_index`]: the `start - 2`
+    /// resolution was first pinned for the kingdom walk views (live `map01`
+    /// capture), and the save-library census later proved it is the
+    /// **universal** field-map rule (the in-block `FIELD_MAP_LEN` entry the
+    /// field path used to pick is the *next* scene's map). Both paths now
+    /// share one resolver.
     pub fn walk_field_map_index(&self, index: &ProtIndex) -> Option<u32> {
-        let preceding = self.start.checked_sub(2).filter(|&idx| {
-            index
-                .entries()
-                .get(idx as usize)
-                .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
-        });
-        preceding.or_else(|| self.field_map_index(index))
+        self.field_map_index(index)
     }
 
     /// The walk view's continent **ground** as a heightfield surface, built

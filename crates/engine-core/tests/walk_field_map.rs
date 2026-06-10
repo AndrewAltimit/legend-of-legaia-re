@@ -4,11 +4,12 @@
 //! surface ([`Scene::walk_heightfield`]).
 //!
 //! Background: the runtime loads a scene's field `.MAP` from its CDNAME index
-//! through `toc[idx+2]`, which for the overlapping kingdom PROT clusters
-//! resolves the entry two below the per-entry extractor's block start. The
-//! within-block [`FIELD_MAP_LEN`] entry that [`Scene::field_map_index`] picks
-//! is a decoy with the wrong continent (the old sparse-scatter bug). The walk
-//! resolver takes `block_start - 2`.
+//! through `toc[idx+2]`, which for the overlapping scene PROT clusters
+//! resolves the entry two below the per-entry extractor's block start - the
+//! universal field-map rule (census-pinned: live keikoku / koin3 field
+//! buffers match their `define-2` entries with zero diffs). The within-block
+//! [`FIELD_MAP_LEN`] entry is the *next* scene's map (for the kingdoms it
+//! reads as the wrong continent - the old sparse-scatter bug).
 //!
 //! The continent ground is a procedural heightfield (corner elevations from the
 //! `+0x4000` floor-nibble grid, gated on the object-grid `0x1000` bit — the
@@ -44,16 +45,31 @@ fn walk_map_resolves_real_continent_for_kingdoms() {
     }
     let index = ProtIndex::open_extracted(&extracted).expect("open index");
 
-    // The kingdom overworld walk scenes: each resolves its walk `.MAP` two
-    // entries below the within-block decoy, and the floor grid builds a dense
-    // heightfield continent (>10k quads) with real elevation variation.
+    // The kingdom overworld walk scenes: each resolves its `.MAP` two
+    // entries below the extractor's block start (the universal field-map
+    // rule; the first 0x12000 entry INSIDE the block is the next scene's
+    // map), and the floor grid builds a dense heightfield continent
+    // (>10k quads) with real elevation variation.
     for name in ["map01", "map02", "map03"] {
         let scene = Scene::load(&index, name).expect("load scene");
         let walk = scene.walk_field_map_index(&index).expect("walk .MAP index");
-        let decoy = scene.field_map_index(&index).expect("within-block index");
+        assert_eq!(
+            walk,
+            scene.field_map_index(&index).expect("field .MAP index"),
+            "{name}: walk + field paths share one resolver"
+        );
+        // Regression guard for the superseded in-block rule: the first
+        // FIELD_MAP_LEN entry inside the block is NOT this scene's map.
+        let in_block = (scene.start..scene.end).find(|&idx| {
+            index
+                .entries()
+                .get(idx as usize)
+                .is_some_and(|e| e.size_bytes as usize == legaia_engine_core::scene::FIELD_MAP_LEN)
+        });
         assert_ne!(
-            walk, decoy,
-            "{name}: walk resolver should differ from the within-block decoy"
+            Some(walk),
+            in_block,
+            "{name}: the in-block 0x12000 entry belongs to the next block"
         );
         assert_eq!(
             walk,
@@ -120,4 +136,56 @@ fn walk_map_resolves_real_continent_for_kingdoms() {
             ys.len()
         );
     }
+}
+
+/// The `define - 2` field-map rule is UNIVERSAL (not kingdom-specific), and
+/// the Rim Elm variants share one byte-identical map. Pins the save-library
+/// census findings structurally on the disc:
+///
+/// - every field scene's `.MAP` resolves at `block_start - 2`;
+/// - town01 / town0b / town0c resolve to byte-identical map content (which
+///   is why a town0c session's live grid byte-matches "town01's" map);
+/// - keikoku / koin3 resolve to the entries their live field buffers match
+///   with zero diffs in the census (PROT 0109 / 0559) - NOT the in-block
+///   entries the superseded rule picked (0118 / 0568).
+#[test]
+fn field_map_rule_is_universal_and_rim_elm_variants_share_one_map() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let index = ProtIndex::open_extracted(&extracted).expect("open index");
+
+    let map_bytes = |scene_name: &str| -> (u32, Vec<u8>) {
+        let scene = Scene::load(&index, scene_name).expect("load scene");
+        let idx = scene.field_map_index(&index).expect("field .MAP index");
+        assert_eq!(idx, scene.start - 2, "{scene_name}: .MAP is define - 2");
+        let bytes = index.entry_bytes_extended(idx).expect("read .MAP entry");
+        (idx, bytes)
+    };
+
+    // Census anchors: the entries the live field buffers match exactly.
+    let (keikoku_idx, _) = map_bytes("keikoku");
+    assert_eq!(keikoku_idx, 109, "keikoku .MAP = PROT 0109 (census-pinned)");
+    let (koin3_idx, _) = map_bytes("koin3");
+    assert_eq!(koin3_idx, 559, "koin3 .MAP = PROT 0559 (census-pinned)");
+
+    // The Rim Elm variant family shares one byte-identical map.
+    let (t01_idx, t01) = map_bytes("town01");
+    let (t0b_idx, t0b) = map_bytes("town0b");
+    let (t0c_idx, t0c) = map_bytes("town0c");
+    assert_eq!((t01_idx, t0b_idx, t0c_idx), (1, 10, 19));
+    assert_eq!(t01, t0b, "town01 and town0b maps are byte-identical");
+    assert_eq!(t01, t0c, "town01 and town0c maps are byte-identical");
+
+    // And the non-variant neighbour is NOT a copy: PROT 0028 is izumi's map
+    // (define 30 - 2), distinct from the Rim Elm family - the entry an
+    // earlier reading misattributed as "town0c's own different .MAP".
+    let (izumi_idx, izumi) = map_bytes("izumi");
+    assert_eq!(izumi_idx, 28, "izumi .MAP = PROT 0028");
+    assert_ne!(t0c, izumi, "town0c's map is not izumi's");
 }
