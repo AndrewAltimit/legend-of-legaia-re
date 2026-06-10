@@ -380,6 +380,14 @@ pub struct BattleActor {
     /// `+0x172` / `+0x174` - HP / max-HP (or current / max).
     pub hp: u16,
     pub max_hp: u16,
+    /// HP-bar **display** cursor. Retail keeps the authoritative current
+    /// HP at `+0x14C` and drains the on-screen bar value at `+0x172`
+    /// toward it over several frames; the fade-down settle check
+    /// (`FUN_801E7250`) compares the pair. The engine models the pair as
+    /// `hp` (authoritative) vs this display cursor: `Some(shown)` while a
+    /// drain animation runs, `None` when the host doesn't animate HP bars
+    /// (always settled).
+    pub hp_display: Option<u16>,
     /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
     pub last_mp_cost: u16,
     /// `+0x1A` - party-action queue counter. Incremented by `Begin`,
@@ -659,6 +667,16 @@ pub trait BattleActionHost {
     /// Equivalent of `FUN_801DABA4` - recompute battle ordering. Default
     /// no-op.
     fn recompute_battle_order(&mut self) {}
+
+    /// Capture-pose animation pick for the captured monster: retail
+    /// `FUN_80050E2C(record + 0x4C, 1, record[0x4A])` selects an anim id
+    /// from the monster archive record's action table
+    /// (`(&DAT_801C9348)[slot - 3]`). `None` keeps the actor's queued anim
+    /// unchanged (hosts that don't resolve monster records). Called by the
+    /// `FUN_801E7824` port during `CaptureStart`.
+    fn capture_anim(&mut self, _monster_slot: u8) -> Option<u8> {
+        None
+    }
 
     /// Equivalent of `func_0x80056798()` (PSX rand BIOS, `A0 0x2E`). Default
     /// returns 0 for deterministic tests.
@@ -1714,10 +1732,48 @@ fn done_cleanup<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::DoneFadeDown)
 }
 
+/// "Any HP-bar drain still animating?" settle check - PORT: FUN_801E7250
+/// (battle overlay 0898, `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`).
+///
+/// Retail dispatches on the active actor's target byte (`+0x1DD`):
+///
+/// - target `0..=2` (party slot): pending while that actor's live HP
+///   (`+0x14C`) differs from its HP-bar display value (`+0x172`);
+/// - target `3..=7` (monster slot): never pending (returns 0 immediately -
+///   the `2 < bVar1` early-out);
+/// - target `8` ("all"): scans every actor slot up to the battle actor
+///   count, pending if any pair differs;
+/// - target `> 8`: never pending.
+///
+/// The engine models the retail `+0x14C`-vs-`+0x172` pair as
+/// [`BattleActor::hp`] vs [`BattleActor::hp_display`] (`None` = settled).
+fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &BattleActionCtx) -> bool {
+    let pending = |slot: u8| -> bool {
+        host.actor(slot)
+            .map(|a| a.hp_display.is_some_and(|shown| shown != a.hp))
+            .unwrap_or(false)
+    };
+    let target = host
+        .actor(ctx.active_actor)
+        .map(|a| a.active_target)
+        .unwrap_or(8);
+    match target {
+        0..=2 => pending(target),
+        8 => (0..host.slot_count()).any(pending),
+        _ => false,
+    }
+}
+
 fn done_fade_down<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    // REF: FUN_801E7250 - retail's state-0x51 arm freezes the `+0x6D8`
+    // countdown while the HP-bar drain check reports a mismatch
+    // (`if (iVar11 == 0) { decrement }` at the `0x801E6044` callsite).
+    if hp_bar_drain_pending(host, ctx) {
+        return stay(ctx);
+    }
     if !tick_frame_timer(host, ctx) {
         return stay(ctx);
     }
@@ -1823,6 +1879,42 @@ fn run_escape<H: BattleActionHost + ?Sized>(
     StepOutcome::BattleComplete
 }
 
+/// Captured-monster takedown - PORT: FUN_801E7824 (battle overlay 0898,
+/// `ghidra/scripts/funcs/overlay_battle_action_801e7824.txt`).
+///
+/// Applied to the captured monster's slot (the state-0x68 arm calls it with
+/// `ctx[+0x13]`, the active actor). Per the dump:
+///
+/// - queued anim (`+0x1DA`) = the monster-record action-table pick
+///   (`FUN_80050E2C(rec + 0x4C, 1, rec[0x4A])` - surfaced as
+///   [`BattleActionHost::capture_anim`]);
+/// - the per-actor flag byte `+0x1DC` is **incremented** (raw `+1`, not a
+///   bit set);
+/// - HP-bar display (`+0x172`) and live HP (`+0x14C`) both zeroed - the
+///   monster leaves the battle;
+/// - facing angle (`+0x46`) zeroed; target byte (`+0x1DD`) set to `8`
+///   ("all");
+/// - the run-side banner takes over: retail bumps the capture counter
+///   `+0x227` (unmodeled), points `_DAT_8007726C` at the ctx name buffer,
+///   copies the monster's name into it (`FUN_8003CA78` / `FUN_8003CAC4` -
+///   host-side rendering concerns), and opens the run UI banner
+///   (`FUN_801D8DE8(0x43, 0)` - surfaced as `ui_element(0x43, 0)`).
+fn capture_takedown<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
+    let anim = host.capture_anim(slot);
+    if let Some(actor) = host.actor_mut(slot) {
+        if let Some(anim) = anim {
+            actor.queued_anim = anim;
+        }
+        actor.flag_bits.0 = actor.flag_bits.0.wrapping_add(1);
+        actor.hp = 0;
+        actor.hp_display = Some(0);
+        actor.liveness = 0;
+        actor.facing_angle = 0;
+        actor.active_target = 8;
+    }
+    host.ui_element(0x43, 0);
+}
+
 fn capture_start<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -1831,6 +1923,9 @@ fn capture_start<H: BattleActionHost + ?Sized>(
     let r = host.rng();
     ctx.combo_timer = ctx.combo_timer.wrapping_add(0x780 + (r % 2) as i16 * 0x80);
     host.pose(slot, Pose::Idle);
+    // REF: FUN_801E7824 - the state-0x68 arm removes the captured monster
+    // between the pose write and the battle-order recompute.
+    capture_takedown(host, slot);
     host.recompute_battle_order();
     ctx.frame_timer = 0x1E;
     transition(ctx, ActionState::CaptureWait)
@@ -2689,6 +2784,92 @@ mod tests {
         // combo_timer += 0x780 + 0x80 (since rng%2 == 1) = 0x800 (2048).
         assert_eq!(ctx.combo_timer, 0x780 + 0x80);
         assert_eq!(ctx.frame_timer, 0x1E);
+    }
+
+    #[test]
+    fn capture_start_takedown_removes_the_monster() {
+        // PORT: FUN_801E7824 - the state-0x68 arm zeroes the captured
+        // monster's HP pair (+0x172 / +0x14C) and facing (+0x46), bumps the
+        // +0x1DC flag byte by 1 (a raw increment, not a bit set), retargets
+        // to 8 ("all"), and opens the run-UI banner (FUN_801D8DE8(0x43, 0)).
+        let (mut ctx, mut host) = fresh(ActionCategory::Run, 5);
+        ctx.action_state = ActionState::CaptureStart.as_byte();
+        host.actors[5].hp = 120;
+        host.actors[5].hp_display = Some(120);
+        host.actors[5].facing_angle = 0x800;
+        host.actors[5].flag_bits = ActorFlags(0x02);
+        host.actors[5].active_target = 0;
+        step(&mut host, &mut ctx);
+        let a = &host.actors[5];
+        assert_eq!(a.hp, 0, "+0x172 zeroed");
+        assert_eq!(a.hp_display, Some(0));
+        assert_eq!(a.liveness, 0, "+0x14C zeroed");
+        assert_eq!(a.facing_angle, 0, "+0x46 zeroed");
+        assert_eq!(a.flag_bits.0, 0x03, "+0x1DC incremented by 1");
+        assert_eq!(a.active_target, 8, "+0x1DD = 8");
+        assert!(
+            host.take().contains(&Event::Ui(0x43, 0)),
+            "run banner opened"
+        );
+    }
+
+    #[test]
+    fn hp_bar_drain_freezes_done_fade_down() {
+        // PORT: FUN_801E7250 - the state-0x51 arm only decrements the
+        // +0x6D8 countdown when the settle check returns 0; a party target
+        // (+0x1DD < 3) with live HP (+0x14C) != bar display (+0x172) holds
+        // the timer.
+        let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+        ctx.action_state = ActionState::DoneFadeDown.as_byte();
+        ctx.frame_timer = 0;
+        host.actors[1].active_target = 0;
+        host.actors[0].hp = 50;
+        host.actors[0].hp_display = Some(80); // drain still animating
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+        assert_eq!(ctx.frame_timer, 0, "timer frozen while draining");
+        // Drain settles → the timer counts down and the state advances.
+        host.actors[0].hp_display = Some(50);
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(
+            out,
+            StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+        ));
+    }
+
+    #[test]
+    fn hp_bar_drain_monster_target_never_pends() {
+        // FUN_801E7250's `2 < bVar1` early-out: monster targets (3..=7)
+        // return 0 (settled) without inspecting the HP pair.
+        let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+        ctx.action_state = ActionState::DoneFadeDown.as_byte();
+        ctx.frame_timer = 0;
+        host.actors[1].active_target = 4;
+        host.actors[4].hp = 10;
+        host.actors[4].hp_display = Some(99);
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(
+            out,
+            StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+        ));
+    }
+
+    #[test]
+    fn hp_bar_drain_target_8_scans_all_slots() {
+        // FUN_801E7250's target-8 arm: walks every actor slot up to the
+        // battle actor count; any unsettled pair pends.
+        let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+        ctx.action_state = ActionState::DoneFadeDown.as_byte();
+        ctx.frame_timer = 0;
+        host.actors[1].active_target = 8;
+        host.actors[6].hp = 10;
+        host.actors[6].hp_display = Some(11);
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+        host.actors[6].hp_display = None; // host stops animating → settled
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(
+            out,
+            StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+        ));
     }
 
     #[test]

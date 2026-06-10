@@ -8226,3 +8226,54 @@ fn field_vm_op49_without_item_data_never_opens_a_shop() {
     assert!(!world.field_shop_armed);
     assert!(world.take_pending_field_shop().is_none());
 }
+
+#[test]
+fn field_tile_crossing_refreshes_region_state() {
+    // Wiring oracle for the per-tile region ports (FUN_80017FBC /
+    // FUN_800180EC / FUN_801DBA20 in `crate::field_regions`): install a
+    // synthetic `.MAP` region block + MAN zone table, cross a tile in a
+    // live field tick, and assert the op-0x42 mask (`extra_flags`) and the
+    // camera-zone record refresh.
+    use crate::field_regions::ZONE_RECORD_STRIDE;
+
+    // .MAP region block: one type-4 region covering tiles x [0,8), z [0,8),
+    // one type-5 region covering x [8,16), z [0,8).
+    let body_off = 0x20u16;
+    let mut block = vec![0u8; 0x20 + 2 * 8];
+    block[0xE..0x10].copy_from_slice(&body_off.to_le_bytes());
+    block[0x10..0x12].copy_from_slice(&2u16.to_le_bytes());
+    block[0x20..0x25].copy_from_slice(&[0, 0, 8, 8, 4]);
+    block[0x28..0x2D].copy_from_slice(&[8, 0, 16, 8, 5]);
+    // Zone table: a kind-5 record (matches while the type-5 region bit is
+    // set) with a payload marker byte.
+    let mut zone = vec![1u8];
+    let mut rec = [0u8; ZONE_RECORD_STRIDE];
+    rec[0] = 5;
+    rec[5] = 0xAB;
+    zone.extend_from_slice(&rec);
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.live_gameplay_loop = true;
+    world.install_field_player(0);
+    // Tile (5, 5): world = 0x40 + tile * 0x80 ((w - 0x40) >> 7 = tile).
+    world.actors[0].move_state.world_x = 0x40 + 5 * 0x80;
+    world.actors[0].move_state.world_z = 0x40 + 5 * 0x80;
+    world.load_field_region_tables(&block, &zone);
+
+    // Initial refresh: inside the type-4 region, no zone match.
+    assert_eq!(world.extra_flags, 1 << 4);
+    assert!(world.field_zone_record.is_none());
+
+    // Prime the tile latch, then cross into the type-5 region.
+    world.tick();
+    world.actors[0].move_state.world_x = 0x40 + 9 * 0x80;
+    world.tick();
+
+    assert_eq!(world.extra_flags, 1 << 5, "mask rebuilt on tile crossing");
+    let rec = world
+        .field_zone_record
+        .expect("kind-5 zone record selected");
+    assert_eq!(rec[0], 5);
+    assert_eq!(rec[5], 0xAB, "payload carried through");
+}

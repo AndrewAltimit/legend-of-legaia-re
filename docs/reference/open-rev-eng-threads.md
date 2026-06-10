@@ -95,7 +95,7 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 
 `FUN_8003AEB0` is fully decoded: it walks the MAN multi-section header (sections at MAN offsets `+0x22, +0x24, +0x26, +0x28`, signed 16-bit LE) and `legaia_engine_core::encounter_man::scene_encounter_from_man` reads the encounter section straight from disc bytes, wiring per-scene `EncounterTable`s for the standalone towns + kingdom-bundle scenes (the `count = 6` MAN form is now resolved by `find_bundle`). The region-table section is the per-scene control block `_DAT_801c6ea4 + 0x4` count-prefixed array of 18-byte records: `byte[0]` kind selector, `bytes[1..4]` tile-space bounding box `[minX, minZ, maxX, maxZ]` queried by `FUN_801dba20(tileX, tileZ)` (`tile = (player_pos - 0x40) >> 7`), `bytes[5..17]` payload (sub-split still open),
 
-consumed by the field camera arrival handler `FUN_801dbec4` + camera-config `FUN_801dbc20`. Residual: the world-overview actor-placement section `FUN_8003A1E4` consumes is decoded separately (see world-overview threads).
+consumed by the field camera arrival handler `FUN_801dbec4` + camera-config `FUN_801dbc20`. The query side is ported: `legaia_engine_core::field_regions::zone_query` (`FUN_801dba20`, with the `FUN_80017fbc` `.MAP` region scan + `FUN_800180ec` attribute refresh) drives `World::refresh_field_regions` per tile crossing, and the section-3 body is the table the boot walk installs at `_DAT_801c6ea4 + 0x4`. Residual: the `bytes[5..17]` camera-parameter sub-split (the `FUN_801dbc20` consumer side) and the world-overview actor-placement section `FUN_8003A1E4` consumes, decoded separately (see world-overview threads).
 
 
 ### Super / Miracle Arts trigger logic

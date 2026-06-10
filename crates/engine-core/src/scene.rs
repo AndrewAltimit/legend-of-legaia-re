@@ -741,6 +741,25 @@ impl Scene {
             .map(<[u8]>::to_vec))
     }
 
+    /// The per-scene `.MAP` **region-table block**: the file's
+    /// `+0x10000..+0x12000` region (retail `*(_DAT_1F8003EC) + 0x10000`),
+    /// holding the region-record table the shared point-in-AABB scan
+    /// (`FUN_80017FBC`) walks - body offset `s16` at block `+0xE`, count
+    /// `s16` at `+0x10`, 8-byte records `[x0, z0, x1, z1, type, 0, 0, 0]`.
+    /// Consumed by [`crate::field_regions::RegionTable`]. Returns
+    /// `Ok(None)` when the scene has no field map.
+    ///
+    /// REF: FUN_80017FBC, FUN_800180EC (ports in [`crate::field_regions`])
+    pub fn field_map_region_block(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(bytes
+            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..FIELD_MAP_LEN)
+            .map(<[u8]>::to_vec))
+    }
+
     /// The scene's static-object placements: one entry per placed tile of the
     /// field map file's object-index grid (`+0x8000`), positioned in world
     /// space from the `+0x0000` object-record table. This is the source for
@@ -998,6 +1017,26 @@ impl Scene {
         };
         let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
         crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
+    }
+
+    /// The scene's MAN **section-3 zone table** - the count-prefixed
+    /// 18-byte camera-region records the boot walk (`FUN_8003AEB0`)
+    /// installs at the control block `_DAT_801C6EA4 + 0x4` and the
+    /// per-tile zone query (`FUN_801DBA20`, ported as
+    /// [`crate::field_regions::zone_query`]) walks. Returns `Ok(None)` when
+    /// the scene has no MAN or the MAN's section 3 is the chain terminator.
+    pub fn field_zone_table(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        let Some(man_bytes) = self.field_man_payload(index)? else {
+            return Ok(None);
+        };
+        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+            return Ok(None);
+        };
+        let sec = &man.sections[3];
+        if sec.is_terminator() {
+            return Ok(None);
+        }
+        Ok(sec.body(&man_bytes).map(<[u8]>::to_vec))
     }
 }
 
@@ -1601,6 +1640,35 @@ impl SceneHost {
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
         }
+        // Per-scene region / zone tables: the `.MAP` `+0x10000` region-record
+        // block + the MAN section-3 camera-region table. Drives the per-tile
+        // region-type mask (`extra_flags`, field-VM op 0x42 mode 0) and the
+        // camera-zone selection via `World::refresh_field_regions` (the
+        // `FUN_80017FBC` / `FUN_800180EC` / `FUN_801DBA20` ports). Installed
+        // unconditionally (empty when absent) so stale tables never leak
+        // across a transition.
+        let region_block: Vec<u8> = match self.scene.as_ref() {
+            Some(scene) => match scene.field_map_region_block(&self.index) {
+                Ok(block) => block.unwrap_or_default(),
+                Err(err) => {
+                    eprintln!("[scene] field region-table load skipped: {err:#}");
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
+        let zone_table: Vec<u8> = match self.scene.as_ref() {
+            Some(scene) => match scene.field_zone_table(&self.index) {
+                Ok(table) => table.unwrap_or_default(),
+                Err(err) => {
+                    eprintln!("[scene] field zone-table load skipped: {err:#}");
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
+        self.world
+            .load_field_region_tables(&region_block, &zone_table);
         // Static prop colliders: one box centre per placed `.MAP` object
         // (spawn position + the record's collision-footprint offset — the
         // static-entity arm of the actor probe). Installed unconditionally
