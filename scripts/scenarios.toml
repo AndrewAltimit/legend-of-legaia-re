@@ -1258,3 +1258,45 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Vahn auto-executes the Tri-Somersault Super Art during a counterattack ~2s after load (no input). The byte-exact Super action queue is resident at actor[+0x1DF]: 0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B = [Up Down][Starter Somersault 0x27 -> Up][Starter Cyclone 0x1F -> Down][SpecialStarter 0x1A][Tri-Somersault finisher 0x2B x3]. The tail matches super_art.rs's Tri-Somersault `replace` byte-exact, validating the combo-specific connectors (0x27->0F, 0x1F->0E). The dequeue site is pc 0x801D89D8 (consumes the queue head-first). Drives autorun_super_art_action_queue.lua."
 topics = ["battle", "RE", "super art", "arts", "Vahn", "Tri-Somersault", "ctx queue", "FUN_801E295C"]
+
+[[scenarios]]
+slot = 255
+label = "rimelm_wall_press_left"
+ram_fingerprint_sha256 = "d91f8609639e75e8b02efb30af6809a87097e5ea91c65740022b9fa0ac0e942f"
+backup_fingerprint = "1430efb5defb2552b61e4d75dfc5c73bc25a896e0663f0b7bcdbe4e29abf82b7"
+phase = "field"
+expected_active_scene = "town01"
+description = "Rim Elm, player holding LEFT (-X) pressed against a wall mid-walk. The field-collision sub-cell-indexing discriminator: the wall byte that blocks the player must sit in the cell the retail derivation (zc=(z>>6)+2, xc=((x+0x3f)>>6)-1) reads at the leading-edge probes; resolves whether the engine's floor-derivation indexing of the walkability grid at *(_DAT_1F8003EC)+0x4000 is misaligned (FUN_801cfe4c / FUN_801d01b0)."
+topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "casino_ticket_counter"
+backup_fingerprint = "68df0a5ca04ac334d07025fab777af85d95e0d9d8b3c5c62ed8dd2a9407cad2f"
+phase = "field"
+description = "Casino floor, Vahn standing at the prize-exchange ticket counter (pre-interaction). Brackets the prize-exchange flow entry; pairs with casino_ticket_counter_dialog and casino_prize_shop for the prize-exchange game-mode + 0x3E sub-id hunt."
+topics = ["casino", "prize exchange", "game mode", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "casino_ticket_counter_dialog"
+backup_fingerprint = "9e4fdec5c2e4ec77c92c5b87948c1ac3f8a9ac4f86cedad9518223ff31c8c318"
+phase = "field"
+description = "Casino floor, mid-dialog with the prize-exchange ticket-counter attendant. Middle of the prize-exchange flow bracket (see casino_ticket_counter)."
+topics = ["casino", "prize exchange", "dialog", "game mode", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "casino_prize_shop"
+backup_fingerprint = "231209cd8a981bf9b1d60d5410f2535546ba7546e240b28863be049376f70da4"
+phase = "menu"
+description = "Inside the casino ticket-counter prize-exchange shop UI (the PROT 0899 @0x15D00 prize table's consumer). End of the prize-exchange flow bracket; pins which game_mode the prize shop runs under."
+topics = ["casino", "prize exchange", "shop", "PROT 0899", "game mode", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "baka_fighter_entry_pretransition"
+backup_fingerprint = "1ac2c3d37e24ff428fa89db0dff01b2e402b21b1a29fba765f0d505ee36e0965"
+phase = "field"
+description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair. Targets the minigame-entry window for the PROT 0896 (bat_back_dat) resident-identity hunt (statically recovered base 0x801C5818, believed the mode-24 OTHER overlay) and the 0x3E operand>=100 sub-id at 0x8007BA34."
+topics = ["minigame", "baka fighter", "overlay PROT 0896", "game mode", "0x3E", "RE"]
