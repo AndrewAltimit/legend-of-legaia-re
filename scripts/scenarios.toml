@@ -1262,11 +1262,11 @@ topics = ["battle", "RE", "super art", "arts", "Vahn", "Tri-Somersault", "ctx qu
 [[scenarios]]
 slot = 255
 label = "rimelm_wall_press_left"
-ram_fingerprint_sha256 = "d91f8609639e75e8b02efb30af6809a87097e5ea91c65740022b9fa0ac0e942f"
-backup_fingerprint = "1430efb5defb2552b61e4d75dfc5c73bc25a896e0663f0b7bcdbe4e29abf82b7"
+ram_fingerprint_sha256 = "1f5dfa67b5baff5b2b903859529c364f90626aedf76ad48e94768d59d407d24a"
+backup_fingerprint = "57657d067b1cbe91121f0f131683312d39d77070a0e86f1582f94a9ab2441050"
 phase = "field"
-expected_active_scene = "town01"
-description = "Rim Elm, player holding LEFT (-X) pressed against a wall mid-walk, resting at (1838,4528) against the full-height wall column at grid col 13. RESULT: validates the retail derivation + 47-unit leading edge byte-exact at step granularity (probe 1791 = last wall sub-cell; one 2-unit step shallower reads clear) and proves the live grid byte-identical to the engine's, but does NOT discriminate the Z +1-row bias - a full-height column blocks both derivations and the floor tiers match. The remaining discriminator is a Z+ (down) wall press. Consumed by engine-shell/tests/field_collision_discriminator.rs."
+expected_active_scene = "town0c"
+description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding LEFT (screen-left = world X-) pressed against a wall, resting at (1838,2526) against the full-height wall column at grid col 13. Cheat-free re-capture (an earlier take had a walk-through-walls GameShark code active). RESULT: validates the retail derivation + 47-unit leading edge at step granularity (probe 1791 = the column's last wall sub-cell; one 2-unit step shallower reads clear). Consumed by engine-shell/tests/field_collision_discriminator.rs."
 topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
 
 [[scenarios]]
@@ -1304,3 +1304,13 @@ phase = "field"
 expected_game_mode = 0x03
 description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair. Targets the minigame-entry window for the PROT 0896 (bat_back_dat) resident-identity hunt (statically recovered base 0x801C5818, believed the mode-24 OTHER overlay) and the 0x3E operand>=100 sub-id at 0x8007BA34. NEGATIVE: still game_mode 0x03, sub-id 0, and the 0896 unique head (base..0x801CE818) is neither at its base (0.0022 match) nor anywhere else in main RAM — the capture pre-dates the overlay load. The 100%-matching over-read tail is the resident FIELD overlay (0897) bytes sitting at exactly base+0x9000 = 0x801CE818, which independently corroborates the 0x801C5818 base. Next: autorun_minigame_overlay_capture.lua (mode-write triggered window dumps)."
 topics = ["minigame", "baka fighter", "overlay PROT 0896", "game mode", "0x3E", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "rimelm_wall_press_down"
+ram_fingerprint_sha256 = "37218ba4fa31810f9115a68fd740138fdf3ccf077334883d8f24531660203327"
+backup_fingerprint = "5461e7a0f28d55f805b298f5c97185fdf25d7b9fc1cc6571f5d50bee97065813"
+phase = "field"
+expected_active_scene = "town0c"
+description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding DOWN (screen-down = world Z-, toward the camera) pressed against a lower wall, resting at (3386,2606). THE DECISIVE Z-row discriminator, cheat-free: the plain floor-indexed standing cell (26,20) is an all-quads wall byte (the position would be unreachable under floor indexing) while the retail biased derivation reads it clear and blocks at the z-47 leading-edge probes with a step-exact standoff. PROVED the +2 Z bias is authored into the wall bits; World::field_tile_is_wall realigned on this evidence. Consumed by engine-shell/tests/field_collision_discriminator.rs."
+topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]

@@ -49,7 +49,10 @@ fn open_spawn(grid: &[u8]) -> (i16, i16) {
                 let open = (row - 2..=row + 2)
                     .all(|r| (col - 2..=col + 2).all(|c| grid[r * STRIDE + c] & 0xF0 == 0));
                 if open {
-                    return ((col * 128 + 64) as i16, (row * 128 + 64) as i16);
+                    // Cell (col,row) covers world x in (128c,128c+128],
+                    // z in [128r-128,128r) under the retail biased
+                    // derivation, so the centre is (128c+64, 128r-64).
+                    return ((col * 128 + 64) as i16, (row * 128 - 64) as i16);
                 }
             }
         }
@@ -64,13 +67,15 @@ fn wall_to_east(grid: &[u8]) -> Option<(i16, i16)> {
     if grid.len() < STRIDE * STRIDE {
         return None;
     }
-    for row in 0usize..STRIDE {
+    for row in 1usize..STRIDE {
         for col in 1usize..STRIDE - 2 {
             let walkable = grid[row * STRIDE + col] & 0xF0 == 0;
             let wall_east = grid[row * STRIDE + col + 1] & 0xF0 == 0xF0
                 && grid[row * STRIDE + col + 2] & 0xF0 == 0xF0;
             if walkable && wall_east {
-                return Some(((col * 128 + 64) as i16, (row * 128 + 64) as i16));
+                // World centre under the retail biased derivation (see
+                // open_spawn).
+                return Some(((col * 128 + 64) as i16, (row * 128 - 64) as i16));
             }
         }
     }

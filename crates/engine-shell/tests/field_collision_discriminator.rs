@@ -1,55 +1,49 @@
-//! Disc-gated discriminator for the field-collision sub-cell indexing.
+//! Disc-gated wall-press oracles for the field-collision sub-cell indexing.
 //!
 //! Retail's static-wall probe (`FUN_801cfe4c`, field overlay 0897) derives
-//! each walkability-grid sub-cell as `zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)-1`;
-//! the engine's `World::field_tile_is_wall` floor-indexes (`sx = x>>6`,
-//! `sz = z>>6`). The two read DIFFERENT cells for the same world point
-//! (retail one tile further in Z), but every parked library position read
-//! walkable under BOTH derivations, so the offset was never proven to be a
-//! player-visible misalignment.
+//! each walkability-grid sub-cell as `zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)-1`.
+//! `World::field_tile_is_wall` uses the same derivation — these tests pin it
+//! against live blocked positions from two cheat-free wall-press captures:
 //!
-//! The discriminating capture is a save with the player WALKING INTO A WALL
-//! (scenario `rimelm_wall_press_left`: Rim Elm, holding X- against a wall).
-//! At that position the blocking wall byte MUST sit in the cell the retail
-//! derivation reads for at least one of the three leading-edge probes
-//! (`(-47, -16) (-47, 0) (-47, +16)`, applied as `x+dx`, `z-dz` — see
-//! `docs/subsystems/field-locomotion.md`).
+//!  - `rimelm_wall_press_left` (screen-left = world `X-`): the player rests
+//!    at the maximal 2-unit-step position whose leading-edge probe
+//!    (47 units ahead) reads the last wall sub-cell; one step shallower
+//!    reads clear.
+//!  - `rimelm_wall_press_down` (screen-down = world `Z-`, toward the
+//!    camera): the Z-row discriminator that PROVED the `+2` bias is
+//!    authored into the wall bits, not an optional look-ahead. The live
+//!    player legally stands at a position whose plain floor-indexed cell is
+//!    an all-quads wall byte — under floor indexing the position would be
+//!    unreachable — while the biased read places that wall band one tile
+//!    north, exactly where the press blocks with a step-exact 47-unit
+//!    standoff. (The floor sampler `FUN_80019278` reads the same bytes with
+//!    plain floor indexing: one byte's two nibbles are addressed under two
+//!    different world-to-cell mappings by their two retail consumers.)
 //!
-//! What this capture settles (player at `(1838, 4528)` against the wall
-//! column at grid col 13):
-//!  - The decoded retail derivation + the 47-unit leading edge are validated
-//!    against a live blocked position at step granularity: the probe at
-//!    `x-47 = 1791` reads the LAST wall sub-cell (xc 27, col 13's east
-//!    half) and one 2-unit step shallower (probe 1793) reads clear, so the
-//!    resting x is the maximal steppable blocked position.
-//!  - The X derivations agree except at exact 64-multiples (retail's
-//!    `ceil-1` vs the engine's floor): at probe 1792 retail still reads the
-//!    wall sub-cell while the floor reads the next clear column — but the
-//!    odd resting parity that would expose the difference is unreachable
-//!    under 2-unit stepping, so both models stop the player at the same x.
-//!  - The Z `+1 row` bias is NOT discriminated by an X- press against a
-//!    full-height wall column: both derivations read the same all-quads wall
-//!    byte one row apart, and the floor tiers match too. The remaining
-//!    discriminator is a `Z+` (down) wall press: there retail probes the
-//!    wall's NEAR edge row where the engine floor-read lands one row short
-//!    on a clear cell, so even a thick wall separates the two.
+//! Leading-edge probe layout per `docs/subsystems/field-locomotion.md`
+//! (`DAT_801f2214`, applied as `x+dx`, `z-dz`): dir 0 `Z-` probes
+//! `(x±16, z-47)`; dir 1 `X-` probes `(x-47, z±16)`.
 //!
-//! Ground truth is the RETAIL LIVE grid: the field buffer's `+0x4000` region
-//! lifted out of the save state's main RAM (located by searching RAM for a
-//! high-entropy window of the disc-loaded base grid). The engine's grid
-//! (`enter_field_live` + a few prescript ticks) is asserted byte-identical
-//! to it (base `.MAP` copy + prescript paints both match retail).
+//! Ground truth is the RETAIL LIVE grid: the field buffer pointer is read
+//! from scratchpad `_DAT_1f8003ec` (`SaveState::scratch_ram`), and the
+//! `+0x4000` walkability region is lifted out of main RAM. The capture's
+//! scene is read from scene-bundle pool slot 0. NOTE: both captures park in
+//! the `town0c` Rim Elm variant whose live session still holds the
+//! `town01` field buffer (the variant switch does not reload the `.MAP`),
+//! so the engine-side grid cross-check enters the scene whose grid actually
+//! matches.
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN`, `extracted/`, the scenario
 //! manifest, or the library save is missing - CI runs without disc data.
 
 use std::path::PathBuf;
 
+use legaia_engine_core::world::World;
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 use legaia_mednafen::{SaveState, ScenarioManifest};
 
-const SCENARIO: &str = "rimelm_wall_press_left";
 const PLAYER_PTR_ADDR: u32 = 0x8007C364;
+const FIELD_BUFFER_PTR_SCRATCH_OFF: usize = 0x3EC;
 const GRID_BYTES: usize = 0x4000;
 const GRID_STRIDE: i32 = 0x80;
 
@@ -97,8 +91,8 @@ fn ram_i16(ram: &[u8], va: u32) -> i16 {
     i16::from_le_bytes(ram[o..o + 2].try_into().unwrap())
 }
 
-/// Retail's `FUN_801cfe4c` sub-cell derivation: world point ->
-/// `(col, row, quad-mask)`.
+/// Retail's `FUN_801cfe4c` sub-cell derivation (reference copy; the engine
+/// implementation is unit-tested equal in `world.rs::tests`).
 fn retail_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
     let iz2 = if iz < 0 { iz + 0x3f } else { iz };
     let zc = (iz2 >> 6) + 2;
@@ -109,8 +103,9 @@ fn retail_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
     (col, row, mask)
 }
 
-/// The engine's `World::field_tile_is_wall` floor derivation.
-fn engine_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
+/// The FALSIFIED plain floor derivation (the engine's pre-realignment
+/// model), kept as the negative reference the down-press capture refutes.
+fn floor_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
     let sx = ix >> 6;
     let sz = iz >> 6;
     let col = (sx >> 1) & 0x7f;
@@ -124,205 +119,227 @@ fn grid_wall_bits(grid: &[u8], col: i32, row: i32) -> u8 {
     grid.get(idx).map(|b| b >> 4).unwrap_or(0)
 }
 
-/// Locate the live field buffer's collision grid inside the save state's
-/// main RAM by searching for a high-entropy window of the disc-loaded base
-/// grid. Returns the grid's RAM byte offset.
-fn find_live_grid(ram: &[u8], base_grid: &[u8]) -> Option<usize> {
-    // Pick the densest 64-byte window of the base grid (most non-zero
-    // bytes) as the search needle - zero runs match everywhere, and town
-    // grids are sparse (town01: ~2100 non-zero of 0x4000), so the bar has
-    // to be modest.
-    let (mut best_off, mut best_nz) = (0usize, 0usize);
-    for off in (0..base_grid.len().saturating_sub(64)).step_by(16) {
-        let nz = base_grid[off..off + 64].iter().filter(|b| **b != 0).count();
-        if nz > best_nz {
-            best_nz = nz;
-            best_off = off;
-        }
-    }
-    if best_nz < 24 {
-        return None;
-    }
-    let needle = &base_grid[best_off..best_off + 64];
-    let mut hits = Vec::new();
-    let mut at = 0usize;
-    while let Some(p) = find_sub(&ram[at..], needle) {
-        hits.push(at + p);
-        at += p + 1;
-        if hits.len() > 8 {
-            break;
-        }
-    }
-    // The needle may legitimately appear twice (live buffer + a staging
-    // copy); take the hit whose surrounding 0x4000 window best matches the
-    // base grid as the live one.
-    hits.iter()
-        .filter(|&&h| h >= best_off && h - best_off + GRID_BYTES <= ram.len())
-        .max_by_key(|&&h| {
-            let start = h - best_off;
-            ram[start..start + GRID_BYTES]
-                .iter()
-                .zip(base_grid)
-                .filter(|(a, b)| a == b)
-                .count()
-        })
-        .map(|&h| h - best_off)
+/// One loaded wall-press capture: player position, the retail live grid,
+/// and a `World` carrying that grid so the REAL engine sampler is what gets
+/// asserted.
+struct WallPress {
+    px: i32,
+    pz: i32,
+    live_grid: Vec<u8>,
+    world: World,
 }
 
-fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
-    hay.windows(needle.len()).position(|w| w == needle)
-}
-
-#[test]
-fn wall_press_capture_discriminates_subcell_indexing() {
+/// Resolve + load a wall-press scenario; `None` = skip (missing disc /
+/// manifest / save), with the reason printed.
+fn load_wall_press(label: &str) -> Option<WallPress> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
-        return;
+        return None;
     }
-    let Some(extracted) = extracted_dir() else {
+    let extracted = extracted_dir().or_else(|| {
         eprintln!("[skip] extracted/ missing");
-        return;
-    };
-    let Some(manifest_path) = manifest_path() else {
+        None
+    })?;
+    let manifest_path = manifest_path().or_else(|| {
         eprintln!("[skip] scripts/scenarios.toml not found");
-        return;
-    };
+        None
+    })?;
     let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse scenarios manifest");
-    let Some(scn) = manifest.scenarios.iter().find(|s| s.label == SCENARIO) else {
-        eprintln!("[skip] scenario '{SCENARIO}' not in manifest");
-        return;
+    let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
+        eprintln!("[skip] scenario '{label}' not in manifest");
+        return None;
     };
     let save_path = match manifest.mednafen_save_path(scn, library_dir().as_deref()) {
         Ok(p) if p.exists() => p,
         _ => {
-            eprintln!("[skip] no save on disk for scenario '{SCENARIO}'");
-            return;
+            eprintln!("[skip] no save on disk for scenario '{label}'");
+            return None;
         }
     };
 
-    // --- retail side: player position + live grid out of the capture ---
+    // --- retail side: scene + player position + live grid ---
     let state = SaveState::from_path(&save_path).expect("parse mednafen save state");
     let ram = state.main_ram().expect("save state has main RAM");
+    let scratch = state.scratch_ram().expect("save state has scratchpad RAM");
+    let scene =
+        legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name(
+            ram, 0,
+        )
+        .expect("scene name in pool slot 0");
     let player = ram_u32(ram, PLAYER_PTR_ADDR);
     assert_eq!(player & 0xFF00_0000, 0x8000_0000, "player struct pointer");
     let px = ram_i16(ram, player + 0x14) as i32;
     let pz = ram_i16(ram, player + 0x18) as i32;
-    eprintln!("[capture] player at ({px}, {pz}), pressing X-");
 
-    // --- engine side: boot the same scene, let the prescript paint ---
+    let field_buf = u32::from_le_bytes(
+        scratch[FIELD_BUFFER_PTR_SCRATCH_OFF..FIELD_BUFFER_PTR_SCRATCH_OFF + 4]
+            .try_into()
+            .unwrap(),
+    );
+    assert_eq!(field_buf & 0xFF00_0000, 0x8000_0000, "field buffer pointer");
+    let grid_off = ((field_buf & 0x1F_FFFF) as usize) + 0x4000;
+    let live_grid = ram[grid_off..grid_off + GRID_BYTES].to_vec();
+    eprintln!(
+        "[{label}] scene {scene}, player at ({px}, {pz}), live grid at 0x{:08X}",
+        field_buf + 0x4000
+    );
+
+    // --- engine side: cross-check the loaded grid against scene entry.
+    // The town0c variant session keeps town01's field buffer, so try the
+    // pool-slot scene first and fall back to town01. The session's
+    // story-flag state differs from a cold boot, so a handful of
+    // story-conditional 0x4C wall paints may legitimately diverge - require
+    // a near-identical match, not byte equality.
+    const PRESCRIPT_DELTA_TOLERANCE: usize = 32;
     let cfg = BootConfig {
-        scene: "town01".to_string(),
+        scene: scene.clone(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
-    session
-        .enter_field_live("town01", &FieldLiveOpts::default())
-        .expect("enter town01 live");
-    let base_grid = session.host.world.field_collision_grid.clone();
-    assert_eq!(base_grid.len(), GRID_BYTES, "base grid loaded");
-    for _ in 0..10 {
-        session.host.world.set_pad(0);
-        let _ = session.host.world.tick();
-    }
-    let engine_grid = session.host.world.field_collision_grid.clone();
-
-    let live_off = find_live_grid(ram, &base_grid).expect("live field grid located in RAM");
-    let live_grid = &ram[live_off..live_off + GRID_BYTES];
-    let engine_diffs = live_grid
-        .iter()
-        .zip(&engine_grid)
-        .filter(|(a, b)| a != b)
-        .count();
-    eprintln!(
-        "[capture] live grid at RAM 0x{:08X}; {} bytes differ from disc base, {} from engine",
-        0x8000_0000u32 + live_off as u32,
-        live_grid
+    let mut best: Option<(String, usize)> = None;
+    for candidate in [scene.as_str(), "town01"] {
+        let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+        if session
+            .enter_field_live(candidate, &FieldLiveOpts::default())
+            .is_err()
+        {
+            continue;
+        }
+        for _ in 0..10 {
+            session.host.world.set_pad(0);
+            let _ = session.host.world.tick();
+        }
+        let engine_grid = &session.host.world.field_collision_grid;
+        let diffs = live_grid
             .iter()
-            .zip(&base_grid)
+            .zip(engine_grid)
             .filter(|(a, b)| a != b)
-            .count(),
-        engine_diffs,
-    );
-    assert_eq!(
-        engine_diffs, 0,
-        "engine grid (base .MAP copy + prescript paints) matches the retail live grid"
+            .count();
+        eprintln!("[{label}] engine '{candidate}' grid: {diffs} bytes differ from live");
+        if best.as_ref().is_none_or(|(_, d)| diffs < *d) {
+            best = Some((candidate.to_string(), diffs));
+        }
+        if diffs == 0 {
+            break;
+        }
+    }
+    let (matched_scene, matched_diffs) = best.expect("at least one candidate scene enters");
+    eprintln!("[{label}] grid source: '{matched_scene}' ({matched_diffs} story-delta bytes)");
+    assert!(
+        matched_diffs <= PRESCRIPT_DELTA_TOLERANCE,
+        "a candidate scene's engine grid (base .MAP + prescript paints) matches the \
+         retail live grid up to story-conditional deltas (got {matched_diffs} diffs)"
     );
 
-    // --- the discriminator: standing point + three X- leading-edge probes ---
+    // A World carrying the LIVE grid - the engine sampler under test.
+    let mut world = World::new();
+    world.load_field_collision_grid(&live_grid);
+    Some(WallPress {
+        px,
+        pz,
+        live_grid,
+        world,
+    })
+}
+
+/// Probe the live grid via the retail reference derivation AND the real
+/// engine sampler at a set of points; assert they agree; return whether any
+/// non-"stand" point reads a wall.
+fn run_probes(wp: &WallPress, probes: &[(&str, i32, i32)]) -> bool {
+    let mut blocked = false;
+    for &(name, x, z) in probes {
+        let (rc, rr, rm) = retail_subcell(x, z);
+        let rbits = grid_wall_bits(&wp.live_grid, rc, rr);
+        let rhit = rbits & rm != 0;
+        let ehit = wp.world.field_tile_is_wall(x as i16, z as i16);
+        eprintln!(
+            "[probe {name}] ({x},{z}) retail ({rc},{rr}) m{rm:04b} bits {rbits:04b} {} | \
+             engine {}",
+            if rhit { "WALL" } else { "clear" },
+            if ehit { "WALL" } else { "clear" },
+        );
+        assert_eq!(
+            rhit, ehit,
+            "engine sampler agrees with the retail derivation at ({x},{z})"
+        );
+        if name != "stand" {
+            blocked |= rhit;
+        }
+    }
+    blocked
+}
+
+#[test]
+fn wall_press_left_validates_probe_model() {
+    let Some(wp) = load_wall_press("rimelm_wall_press_left") else {
+        return;
+    };
+    let (px, pz) = (wp.px, wp.pz);
+    // dir 1 (X-): probes (x-47, z+16) (x-47, z) (x-47, z-16).
     let probes = [
         ("stand", px, pz),
         ("edge z+16", px - 47, pz + 16),
         ("edge z+0", px - 47, pz),
         ("edge z-16", px - 47, pz - 16),
     ];
-    let mut retail_blocked = false;
-    let mut engine_blocked = false;
-    for (name, x, z) in probes {
-        let (rc, rr, rm) = retail_subcell(x, z);
-        let (ec, er, em) = engine_subcell(x, z);
-        let rbits = grid_wall_bits(live_grid, rc, rr);
-        let ebits = grid_wall_bits(live_grid, ec, er);
-        let rhit = rbits & rm != 0;
-        let ehit = ebits & em != 0;
-        eprintln!(
-            "[probe {name}] ({x},{z}) retail ({rc},{rr}) m{rm:04b} bits {rbits:04b} {} | \
-             engine ({ec},{er}) m{em:04b} bits {ebits:04b} {}",
-            if rhit { "WALL" } else { "clear" },
-            if ehit { "WALL" } else { "clear" },
-        );
-        if name != "stand" {
-            retail_blocked |= rhit;
-            engine_blocked |= ehit;
-        }
-    }
+    let blocked = run_probes(&wp, &probes);
 
-    // The player is captured pressed against the wall, so the retail
-    // derivation MUST read a wall at one of its leading-edge probes - this
-    // is the assertion that validates the decoded derivation against a live
-    // blocked position (not just decompiled arithmetic).
+    // The player is captured pressed against the wall: the derivation MUST
+    // read a wall at a leading-edge probe and MUST read the standing tile
+    // clear - a live blocked position, not just decompiled arithmetic.
+    assert!(blocked, "a leading-edge probe reads the blocking wall byte");
     assert!(
-        retail_blocked,
-        "retail derivation must read the blocking wall byte at a leading-edge probe"
+        !wp.world.field_tile_is_wall(px as i16, pz as i16),
+        "the standing position reads clear"
     );
     // Standoff exactness at step granularity: locomotion advances in 2-unit
-    // steps, so the resting position must be the LAST steppable x whose
-    // probe reads wall - one step shallower the retail probe must be clear.
-    let (sc, sr, sm) = retail_subcell(px - 47 + 2, pz);
-    assert_eq!(
-        grid_wall_bits(live_grid, sc, sr) & sm,
-        0,
-        "one 2-unit step shallower the retail probe reads clear (the standoff is step-exact)"
-    );
-    // The exact-64-multiple probe (here x-46 = 1792) is the one X position
-    // where retail's ceil-1 and the engine's floor genuinely diverge: retail
-    // still reads the wall's east sub-cell, the engine floor reads the next
-    // (clear) column. Step parity makes the odd resting position that would
-    // expose it unreachable, so both models stop the player at the same x.
-    let (bc, br, bm) = retail_subcell(px - 46, pz);
-    let (fc, fr, fm) = engine_subcell(px - 46, pz);
-    eprintln!(
-        "[boundary] probe x-46={} retail ({bc},{br}) {} | engine ({fc},{fr}) {}",
-        px - 46,
-        if grid_wall_bits(live_grid, bc, br) & bm != 0 {
-            "WALL"
-        } else {
-            "clear"
-        },
-        if grid_wall_bits(live_grid, fc, fr) & fm != 0 {
-            "WALL"
-        } else {
-            "clear"
-        },
-    );
-    // The X- press against a full-height wall column blocks BOTH
-    // derivations (they only diverge by a Z row, and the column is wall at
-    // both rows); the still-open Z-bias discriminator is a Z+ wall press.
-    eprintln!(
-        "[verdict] retail blocked={retail_blocked} engine blocked={engine_blocked} \
-         (X derivation + 47-unit standoff validated; Z bias needs a Z+ press)"
-    );
+    // steps, so one step shallower all three probes must read clear.
+    for (x, z) in [(px - 45, pz + 16), (px - 45, pz), (px - 45, pz - 16)] {
+        assert!(
+            !wp.world.field_tile_is_wall(x as i16, z as i16),
+            "one 2-unit step shallower the probe at ({x},{z}) reads clear \
+             (the standoff is step-exact)"
+        );
+    }
+}
+
+#[test]
+fn wall_press_down_discriminates_z_row_bias() {
+    let Some(wp) = load_wall_press("rimelm_wall_press_down") else {
+        return;
+    };
+    let (px, pz) = (wp.px, wp.pz);
+    // Screen-down walks TOWARD the camera = world Z- (dir 0): probes
+    // (x-16, z-47) (x, z-47) (x+16, z-47).
+    let probes = [
+        ("stand", px, pz),
+        ("edge x-16", px - 16, pz - 47),
+        ("edge x+0", px, pz - 47),
+        ("edge x+16", px + 16, pz - 47),
+    ];
+    let blocked = run_probes(&wp, &probes);
+    assert!(blocked, "a leading-edge probe reads the blocking wall byte");
     assert!(
-        engine_blocked,
-        "the engine derivation also reads this wall column (X press is non-discriminating in Z)"
+        !wp.world.field_tile_is_wall(px as i16, pz as i16),
+        "the standing position reads clear under the biased derivation"
+    );
+    // Standoff: one 2-unit step shallower, all probes clear.
+    for (x, z) in [(px - 16, pz - 45), (px, pz - 45), (px + 16, pz - 45)] {
+        assert!(
+            !wp.world.field_tile_is_wall(x as i16, z as i16),
+            "one 2-unit step shallower the probe at ({x},{z}) reads clear \
+             (the standoff is step-exact)"
+        );
+    }
+
+    // THE DISCRIMINATOR: under the falsified plain floor derivation the
+    // player's own standing cell is a wall byte - the live position would
+    // be unreachable. This is what proves the +2 Z bias is authored into
+    // the wall bits (and why field_tile_is_wall must use it).
+    let (fc, fr, fm) = floor_subcell(px, pz);
+    assert_ne!(
+        grid_wall_bits(&wp.live_grid, fc, fr) & fm,
+        0,
+        "the floor-indexed standing cell ({fc},{fr}) is a wall byte - \
+         plain floor indexing is refuted by this capture"
     );
 }

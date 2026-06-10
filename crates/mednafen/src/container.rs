@@ -199,6 +199,37 @@ impl SaveState {
         }
         crate::extract::main_ram_via_anchor(&self.payload)
     }
+
+    /// 1 KiB of PSX scratchpad RAM - index `0` corresponds to
+    /// `0x1F800000`. Holds runtime pointers main RAM doesn't (e.g. the
+    /// field-buffer base `_DAT_1f8003ec` at offset `0x3EC`).
+    ///
+    /// The CPU sub-state that carries `ScratchRAM.data8` sits in a section
+    /// the structured walker doesn't index, so this locates the entry by
+    /// its key bytes (`[u8 keylen]"ScratchRAM.data8"[u32 len][data]`) and
+    /// validates the declared length.
+    pub fn scratch_ram(&self) -> Result<&[u8]> {
+        const KEY: &[u8] = b"ScratchRAM.data8";
+        const SCRATCH_LEN: usize = 0x400;
+        let p: &[u8] = &self.payload;
+        let mut at = 0usize;
+        while let Some(rel) = p[at..].windows(KEY.len()).position(|w| w == KEY) {
+            let k = at + rel;
+            let len_off = k + KEY.len();
+            // Validate the entry shape: keylen prefix + declared length.
+            if k >= 1
+                && p[k - 1] as usize == KEY.len()
+                && len_off + 4 + SCRATCH_LEN <= p.len()
+                && u32::from_le_bytes([p[len_off], p[len_off + 1], p[len_off + 2], p[len_off + 3]])
+                    as usize
+                    == SCRATCH_LEN
+            {
+                return Ok(&p[len_off + 4..len_off + 4 + SCRATCH_LEN]);
+            }
+            at = k + 1;
+        }
+        anyhow::bail!("ScratchRAM.data8 entry not found in save state")
+    }
 }
 
 fn walk_subentries(payload: &[u8], body_offset: usize, body_len: usize) -> Vec<SubEntry> {
