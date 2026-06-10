@@ -176,22 +176,69 @@ fn world_map_live_walk_reaches_battle() {
         .expect("enter_world_map_live");
 
     let world = &mut session.host.world;
-    // Place the player at the centre of the first rollable region so a walk
-    // stays in-region and the roll has a real formation to pick.
-    let pos = world.world_map_region_tracker.as_ref().and_then(|t| {
-        t.table()
-            .regions
-            .iter()
-            .find(|r| r.formation_count > 0 && r.rate_increment > 0)
-            .map(|r| {
-                (
-                    ((r.tile_x_min as i32 + r.tile_x_max as i32) / 2 * 128) as i16,
-                    ((r.tile_z_min as i32 + r.tile_z_max as i32) / 2 * 128) as i16,
-                )
-            })
-    });
+    // A held screen-Right is remapped through the overworld camera azimuth
+    // before it becomes a world direction (`world_map_camera_relative_bits`;
+    // azimuth 0 maps screen-right to world Z-), so resolve the actual world
+    // axis the walk will travel before picking a start tile.
+    let azimuth = world
+        .world_map_ctrl
+        .as_ref()
+        .map(|c| c.azimuth)
+        .unwrap_or(0);
+    let dir_bits = legaia_engine_core::world::world_map_camera_relative_bits(azimuth, 1, 0);
+    let dxs = (dir_bits & 0x2000 != 0) as i32 - (dir_bits & 0x8000 != 0) as i32;
+    let dzs = (dir_bits & 0x1000 != 0) as i32 - (dir_bits & 0x4000 != 0) as i32;
+    assert!(
+        dxs != 0 || dzs != 0,
+        "camera remap must yield a world direction for a held Right"
+    );
+
+    // Find a start tile inside a rollable region with a clear run along the
+    // walk direction. The walk must CROSS tiles to roll, and the real
+    // walkability grid has walls (a region's geometric centre can sit on or
+    // against one), so scan each rollable region's tile rect for consecutive
+    // walkable tiles rather than assuming the centre is clear. Walls live in
+    // 64-unit SUB-cells (4 per 128-unit tile): probe at 32-unit stride - a
+    // tile-stride scan skips alternate sub-cells and picks runs the 2-unit
+    // stepper blocks on immediately.
+    let rects: Vec<(u8, u8, u8, u8)> = world
+        .world_map_region_tracker
+        .as_ref()
+        .map(|t| {
+            t.table()
+                .regions
+                .iter()
+                .filter(|r| r.formation_count > 0 && r.rate_increment > 0)
+                .map(|r| (r.tile_x_min, r.tile_x_max, r.tile_z_min, r.tile_z_max))
+                .collect()
+        })
+        .unwrap_or_default();
+    const RUN_TILES: i32 = 6;
+    let mut pos = None;
+    'scan: for (x_min, x_max, z_min, z_max) in rects {
+        for zt in z_min as i32..=z_max as i32 {
+            for xt in x_min as i32..=x_max as i32 {
+                let x0 = xt * 128 + 64;
+                let z0 = zt * 128 + 64;
+                let end_x = x0 + dxs * RUN_TILES * 128;
+                let end_z = z0 + dzs * RUN_TILES * 128;
+                let in_rect = (x_min as i32 * 128..=(x_max as i32 + 1) * 128).contains(&end_x)
+                    && (z_min as i32 * 128..=(z_max as i32 + 1) * 128).contains(&end_z);
+                if !in_rect {
+                    continue;
+                }
+                if (0..=RUN_TILES * 4).all(|k| {
+                    !world
+                        .field_tile_is_wall((x0 + dxs * k * 32) as i16, (z0 + dzs * k * 32) as i16)
+                }) {
+                    pos = Some((x0 as i16, z0 as i16));
+                    break 'scan;
+                }
+            }
+        }
+    }
     let Some((px, pz)) = pos else {
-        eprintln!("[skip] map03 has no rollable region");
+        eprintln!("[skip] map03 has no rollable region with a walkable run");
         return;
     };
     if let Some(slot) = world.player_actor_slot {
@@ -202,30 +249,37 @@ fn world_map_live_walk_reaches_battle() {
     // Re-seed the step latch so the move above isn't counted as a crossing.
     world.world_map_last_tile = None;
 
-    // Walk +X; each 128-unit tile crossing rolls the region. A real region's
-    // rate is modest, so allow a generous budget.
+    // Hold Right; each 128-unit tile crossing rolls the region. A real
+    // region's rate is modest, so allow a generous budget.
     world.set_pad(PadButton::Right.mask());
     let mut reached = false;
+    let mut last_pos = (px, pz);
     for _ in 0..20_000 {
         let _ = world.tick();
         if world.mode == SceneMode::Battle {
             reached = true;
             break;
         }
-        // Stay in-region: if the player walked out of every region, recentre.
-        if world
+        let slot = world.player_actor_slot.unwrap() as usize;
+        // Restart the run when the player leaves every region OR hits a wall
+        // (position unchanged = blocked). Each pass over the run re-crosses
+        // its tiles, accumulating rolls.
+        let cur = {
+            let ms = &world.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
+        let out_of_region = world
             .world_map_region_tracker
             .as_ref()
-            .and_then(|t| {
-                let a = &world.actors[world.player_actor_slot.unwrap() as usize];
-                t.table()
-                    .region_at_world(a.move_state.world_x, a.move_state.world_z)
-            })
-            .is_none()
-        {
-            let slot = world.player_actor_slot.unwrap() as usize;
+            .and_then(|t| t.table().region_at_world(cur.0, cur.1))
+            .is_none();
+        if out_of_region || cur == last_pos {
             world.actors[slot].move_state.world_x = px;
             world.actors[slot].move_state.world_z = pz;
+            world.world_map_last_tile = None;
+            last_pos = (px, pz);
+        } else {
+            last_pos = cur;
         }
     }
     assert!(
