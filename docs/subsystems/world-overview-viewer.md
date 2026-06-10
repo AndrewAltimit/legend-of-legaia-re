@@ -68,10 +68,11 @@ has in hand (`legaia_web_viewer::build_walk_ground`), mirroring
 `Scene::walk_heightfield` without the full `ProtIndex` / CDNAME stack:
 
 - **Walk `.MAP`** is the entry two slots before the kingdom block start
-  (`prot_base - 2`), identified by its `0x12000` extended footprint. The
-  within-block `0x12000` entry is a decoy with the wrong continent (only a
-  handful of `0x1000` cells); the preceding "duplicate"-cluster entry is
-  the real grid.
+  (`prot_base - 2`), identified by its `0x12000` extended footprint — the
+  universal field-map resolution (the scene PROT clusters overlap by two
+  entries, so the within-block `0x12000` entry is the *next* scene's map;
+  for a kingdom it reads as the wrong continent with only a handful of
+  `0x1000` cells).
 - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the
   kingdom bundle's MAN slot (slot 2) — the same bytes
   `Scene::field_floor_height_lut` reads.

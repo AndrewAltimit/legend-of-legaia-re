@@ -680,11 +680,31 @@ impl Scene {
 
     /// PROT index of the per-scene **field map file** - retail
     /// `DATA\FIELD\<scene>.MAP`, the first file `FUN_8001f7c0` streams into the
-    /// field-buffer base (`_DAT_1f8003ec`). It is the unique CDNAME-block entry
-    /// whose **extended on-disc footprint** is exactly [`FIELD_MAP_LEN`]
-    /// (`0x12000`) bytes - the field buffer's used region from the base through
-    /// the field-pack boundary. Every field/town scene has exactly one (101 of
-    /// 124 blocks; the rest are battle / pure-asset blocks with no field map).
+    /// field-buffer base (`_DAT_1f8003ec`).
+    ///
+    /// The runtime resolves it through `FUN_8003e8a8`'s `toc[idx+2]`, which
+    /// lands **two entries below the per-entry extractor's CDNAME block
+    /// start** - the scene PROT clusters overlap, so the extractor attributes
+    /// each scene's `.MAP` to the tail of the *previous* block. The entry is
+    /// identified by its **extended on-disc footprint** of exactly
+    /// [`FIELD_MAP_LEN`] (`0x12000`) bytes; scenes whose `start - 2` entry
+    /// isn't that size have no field map (cutscene / pure-asset blocks).
+    ///
+    /// The first `FIELD_MAP_LEN` entry *inside* a block is the **next**
+    /// scene's `.MAP`, not this scene's - an earlier in-block rule loaded the
+    /// wrong map for every field scene and was masked only where adjacent
+    /// variants byte-copy (the Rim Elm pair `town01`/`town0b`/`town0c` share
+    /// one identical map). Pinned by a save-library census: the live field
+    /// buffer of a `keikoku` session matches entry `define-2` (PROT 0109)
+    /// with **zero** collision-grid diffs (in-block entry 0118 diffs by
+    /// thousands), same for `koin3` (PROT 0559 exact), and the kingdom walk
+    /// maps were already live-verified at `start - 2`. The **object-index
+    /// grid** (`+0x8000`, the [`Self::field_object_placements`] source) is
+    /// live-validated the same way: residuals of 0..96 bytes against the
+    /// resolved entry across town01 / town0c / keikoku / koin3 sessions
+    /// (story-conditional cell mutations), thousands against every other
+    /// candidate (regression-guarded by the disc + save-library gated
+    /// `field_map_object_grid_live` test).
     ///
     /// The footprint matters: the TOC-indexed payload is only the first
     /// `0x4000` bytes (the object-record region); the collision grid at
@@ -693,9 +713,9 @@ impl Scene {
     ///
     /// See [`docs/subsystems/field-locomotion.md`] for the load chain.
     pub fn field_map_index(&self, index: &ProtIndex) -> Option<u32> {
-        let entries = index.entries();
-        (self.start..self.end).find(|&idx| {
-            entries
+        self.start.checked_sub(2).filter(|&idx| {
+            index
+                .entries()
                 .get(idx as usize)
                 .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
         })
@@ -764,26 +784,14 @@ impl Scene {
 
     /// Resolve the **free-roam walk** view's field `.MAP` entry.
     ///
-    /// The runtime loads a scene's field `.MAP` from its CDNAME index through
-    /// `FUN_8003e8a8`'s `toc[idx + 2]`. For the overlapping PROT clusters the
-    /// kingdom overworld scenes live in, that resolves **two entries below**
-    /// the per-entry extractor's CDNAME block start — the real walk `.MAP`
-    /// (records + the `0x1000`-gated continent grid) sits in the preceding
-    /// "duplicate" cluster, while the first [`FIELD_MAP_LEN`] entry *inside*
-    /// the block ([`Self::field_map_index`]) is a different/decoy map (for the
-    /// kingdoms it has only a few `0x1000` cells; for towns the two are byte
-    /// copies, which is why the overview/town paths were unaffected).
-    /// Verified against live `map01` plus `town01`/`map02`/`map03`: the walk
-    /// `.MAP` is `block_start - 2`. Falls back to [`Self::field_map_index`]
-    /// when that slot isn't a [`FIELD_MAP_LEN`] entry.
+    /// Historical alias of [`Self::field_map_index`]: the `start - 2`
+    /// resolution was first pinned for the kingdom walk views (live `map01`
+    /// capture), and the save-library census later proved it is the
+    /// **universal** field-map rule (the in-block `FIELD_MAP_LEN` entry the
+    /// field path used to pick is the *next* scene's map). Both paths now
+    /// share one resolver.
     pub fn walk_field_map_index(&self, index: &ProtIndex) -> Option<u32> {
-        let preceding = self.start.checked_sub(2).filter(|&idx| {
-            index
-                .entries()
-                .get(idx as usize)
-                .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
-        });
-        preceding.or_else(|| self.field_map_index(index))
+        self.field_map_index(index)
     }
 
     /// The walk view's continent **ground** as a heightfield surface, built
@@ -1593,6 +1601,26 @@ impl SceneHost {
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
         }
+        // Static prop colliders: one box centre per placed `.MAP` object
+        // (spawn position + the record's collision-footprint offset — the
+        // static-entity arm of the actor probe). Installed unconditionally
+        // (empty for scenes with no field map) so a stale scene's props
+        // never leak across a transition; blocking stays behind the opt-in
+        // `World::solid_field_npcs` flag.
+        self.world.field_prop_colliders = match self.scene.as_ref() {
+            Some(scene) => match scene.field_object_placements(&self.index) {
+                Ok(Some(placements)) => placements
+                    .iter()
+                    .map(|p| (p.collider_x, p.collider_z))
+                    .collect(),
+                Ok(None) => Vec::new(),
+                Err(err) => {
+                    eprintln!("[scene] field prop-collider load skipped: {err:#}");
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
         // The 16-entry floor-height LUT (MAN header, negated `s16` tiers) the
         // collision grid's low nibble indexes - resident so the floor-height
         // sampler (`World::sample_field_floor_height`, port of `FUN_80019278`)
@@ -2425,19 +2453,7 @@ pub fn upload_effect_textures_into_vram(
     vram: &mut legaia_tim::Vram,
     upload_clut: bool,
 ) -> Result<usize> {
-    let raw = index
-        .entry_bytes(PROT_BEFECT_DATA_ENTRY)
-        .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
-    let container = legaia_asset::parse_player_lzs(&raw, 3)
-        .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
-    let section = container
-        .descriptors
-        .get(BEFECT_ETIM_SECTION)
-        .ok_or_else(|| {
-            anyhow::anyhow!("befect_data has no section {BEFECT_ETIM_SECTION} (etim)")
-        })?;
-    let decoded = legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)
-        .with_context(|| format!("LZS-decode befect_data section {BEFECT_ETIM_SECTION} (etim)"))?;
+    let decoded = befect_etim_section_bytes(index)?;
     let mut uploaded = 0;
     for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
         match legaia_tim::parse(&decoded[target.offset..]) {
@@ -2471,6 +2487,51 @@ pub fn upload_effect_textures_into_vram(
         anyhow::bail!("etim section carried no uploadable TIMs");
     }
     Ok(uploaded)
+}
+
+/// Decoded `befect_data` (PROT 874) etim-section bytes - the shared
+/// effect-texture TIM pool [`upload_effect_textures_into_vram`] and
+/// [`effect_texture_image_rects`] both walk.
+fn befect_etim_section_bytes(index: &ProtIndex) -> Result<Vec<u8>> {
+    let raw = index
+        .entry_bytes(PROT_BEFECT_DATA_ENTRY)
+        .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
+    let container = legaia_asset::parse_player_lzs(&raw, 3)
+        .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
+    let section = container
+        .descriptors
+        .get(BEFECT_ETIM_SECTION)
+        .ok_or_else(|| {
+            anyhow::anyhow!("befect_data has no section {BEFECT_ETIM_SECTION} (etim)")
+        })?;
+    legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)
+        .with_context(|| format!("LZS-decode befect_data section {BEFECT_ETIM_SECTION} (etim)"))
+}
+
+/// VRAM image rects `(fb_x, fb_y, width_in_words, height)` of the
+/// `befect_data` effect-texture TIMs - the upload set of
+/// [`upload_effect_textures_into_vram`].
+///
+/// The band is **global shared state**, not per-scene texture: one disc
+/// source is resident across every field scene, and retail re-uploads it at
+/// battle entry. A handful of its pixels are *history-dependent* - a freshly
+/// booted game holds a variant that differs from the disc copy until a battle
+/// re-uploads the disc bytes (pinned at `(853, 271)`: pre-battle and menu
+/// captures hold `0xFFFF` words where the disc TIM carries `0x3333`; a
+/// post-battle capture of the same scene holds the disc value). A per-scene
+/// static mask misclassifies those pixels as static whenever a scene's
+/// captures share battle history, so the VRAM parity oracle uses these rects
+/// to demand staticity across **all** scenes' captures instead.
+pub fn effect_texture_image_rects(index: &ProtIndex) -> Result<Vec<(u16, u16, u16, u16)>> {
+    let decoded = befect_etim_section_bytes(index)?;
+    let mut rects = Vec::new();
+    for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+        if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
+            let img = &tim.image;
+            rects.push((img.fb_x, img.fb_y, img.fb_w, img.h));
+        }
+    }
+    Ok(rects)
 }
 
 /// Upload the battle effect-texture atlas (PROT 870, the "flame atlas") into

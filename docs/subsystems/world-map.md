@@ -692,6 +692,17 @@ each frame's 16 entries into the CPU VRAM CLUT row at `(0, 506)` and
 re-uploading (`OceanAnim` / `advance_ocean_animation`). The exact retail DMA
 cadence isn't pinned, so the engine's frame interval is a tuned approximation.
 
+The cycling reaches beyond the row-506 head. Same-scene capture diffs (map01
+overworld vs field-menu states) show rows **508 and 509** each animate a few
+entries in place (shoreline shimmer inside the mountain/forest terrain
+palettes), row 508's entries 32..47 mirror the live frame of its own 0..15
+head, and row 506's **tail** (entries ~40..47) holds a runtime-*generated*
+pure-channel palette present in no disc bundle. Whether those ride the same
+13-frame DMA (a wider rect) or a sibling writer is open — see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md). The VRAM
+parity oracle excludes rows 506/508/509 for world-map scenes
+(`vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS`).
+
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:
 

@@ -96,6 +96,94 @@ const FIELD_STEP_UNIT: i32 = 2;
 /// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
 const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 
+/// Retail static-wall leading-edge probe table `DAT_801f2214` (field overlay
+/// 0897, file offset `0x239FC`), decoded from the disc. Indexed by travel
+/// direction (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+; the `FUN_801cfe4c`
+/// `param_3` convention), three `(dx, dz)` pairs each, applied to the
+/// player's CURRENT position as `(x + dx, z - dz)` — note the Z delta is
+/// SUBTRACTED, exactly as the retail probe reads it. A direction is blocked
+/// when ANY of its three probes lands on a wall sub-cell.
+///
+/// The lookahead is asymmetric on purpose: the `+2`-biased Z mapping and the
+/// `ceil-1` X mapping ([`World::field_tile_is_wall`]) make 48 the crossing
+/// distance in the positive directions and 47 in the negative ones, so each
+/// edge sits one full tile ahead in cell space. (The on-disc rows are
+/// 16 bytes; the trailing fourth pair — a half-distance centre point — is
+/// never read by the wall probe and is omitted here.)
+const FIELD_WALL_PROBES: [[(i16, i16); 3]; 4] = [
+    [(-16, 48), (0, 48), (16, 48)], // dir 0: Z- (edge at z-48, ±16 in X)
+    [(-47, -16), (-47, 0), (-47, 16)], // dir 1: X- (edge at x-47, ±16 in Z)
+    [(-16, -47), (0, -47), (16, -47)], // dir 2: Z+ (edge at z+47, ±16 in X)
+    [(48, -16), (48, 0), (48, 16)], // dir 3: X+ (edge at x+48, ±16 in Z)
+];
+
+/// Retail actor-collision probe table `DAT_801f21b4` (field overlay 0897,
+/// file offset `0x2399C`, the sibling 0x60 bytes before
+/// [`FIELD_WALL_PROBES`]'s `DAT_801f2214`), decoded from the disc. Same
+/// shape and `(x + dx, z - dz)` application as the wall table, but the
+/// probes feed the per-actor box test `FUN_801cfc40` instead of the
+/// walkability grid: a wider sweep (64/63 ahead, ±32 lateral vs the wall
+/// probes' 48/47, ±16) because actors block with a body box rather than a
+/// sub-cell edge. The trailing fourth on-disc pair (a half-distance centre
+/// point, `(0,32)`-class) is never read by `FUN_801cfe4c` and is omitted.
+const FIELD_ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
+    [(-32, 64), (0, 64), (32, 64)], // dir 0: Z- (probes at z-64, ±32 in X)
+    [(-63, -32), (-63, 0), (-63, 32)], // dir 1: X- (probes at x-63, ±32 in Z)
+    [(-32, -63), (0, -63), (32, -63)], // dir 2: Z+ (probes at z+63, ±32 in X)
+    [(64, -32), (64, 0), (64, 32)], // dir 3: X+ (probes at x+64, ±32 in Z)
+];
+
+/// Half-extent of the box a field NPC blocks with, around its live position:
+/// retail `FUN_801cfc40` classes village NPCs as **moving actors** (`flags &
+/// 0x1020000 != 0`) and tests `|probe - pos| < 0x40 + (ex - 0x18)` per axis
+/// with the locomotion's caller extents `ex = 0`, i.e. ±40 units.
+/// Capture-pinned by `rimelm_npc_press_tetsu`: the sparring partner's flags
+/// (`0x08020884`) carry the `0x20000` class bit, putting him on this arm
+/// (result bit `1`), with the mutual `+0x98` collision link live in-frame.
+/// (STATIC entities — props, `flags & 0x1020000 == 0` — use a wider
+/// `0x40 + 0x10` = 80-unit box around their MAN record anchor instead; the
+/// engine has no prop-collision list, so that arm is unmodelled.)
+const FIELD_NPC_BOX_HALF: i32 = 0x40 - 0x18;
+
+/// Retail interact facing-probe table `DAT_801f2254` (field overlay 0897,
+/// file offset `0x23A3C`, `0x40` bytes after [`FIELD_WALL_PROBES`]'s
+/// `DAT_801f2214`), decoded from the disc. One `(dx, dz)` displacement per
+/// 45° facing sector — a radius-64 compass point — applied to the player's
+/// position with the shared `(x + dx, z - dz)` convention, so every entry
+/// points 64 units *ahead* of the player along its sector's facing.
+/// Indexed by the retail sector `(facing & 0xfff) >> 9` where retail facing
+/// `0` looks along Z- (the engine's field heading stores `0` = Z+, a
+/// half-turn off — see [`World::field_interact_probe_slot`]).
+///
+/// Retail reads this table in `FUN_801d01b0`'s touch dispatch: when the
+/// configured interact button is just-pressed (`_DAT_8007b874 &
+/// _DAT_800846d0`) it probes this single point through `FUN_801cf9f4` with
+/// extents `0x20` and treats a result bit `1` (moving-class actor hit) as
+/// "talk to that actor".
+const FIELD_FACING_PROBES: [(i16, i16); 8] = [
+    (0, 64),    // sector 0: facing Z- -> probe (x, z-64)
+    (-64, 64),  // sector 1: Z- / X- diagonal
+    (-64, 0),   // sector 2: facing X- -> probe (x-64, z)
+    (-64, -64), // sector 3: X- / Z+ diagonal
+    (0, -64),   // sector 4: facing Z+ -> probe (x, z+64)
+    (64, -64),  // sector 5: Z+ / X+ diagonal
+    (64, 0),    // sector 6: facing X+ -> probe (x+64, z)
+    (64, 64),   // sector 7: X+ / Z- diagonal
+];
+
+/// Half-extent of the box a field NPC answers the *interact* probe with:
+/// the touch dispatch passes extents `0x20` into `FUN_801cf9f4`, whose
+/// moving-actor arm tests `|probe - pos| < 0x40 + (extent - 0x18)` per axis
+/// — ±72 units, wider than the ±40 the locomotion probe gets with its zero
+/// extents ([`FIELD_NPC_BOX_HALF`]).
+const FIELD_INTERACT_BOX_HALF: i32 = 0x40 + 0x20 - 0x18;
+
+/// Half-extent of a STATIC entity's (prop's) collision box: retail's
+/// static arm always tests `|probe - centre| < 0x40 + 0x10` per axis (the
+/// `0x10` is hard-coded, independent of the caller extents that widen the
+/// moving-actor box) — ±80 units around the record-derived footprint centre.
+const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
+
 /// Cold field-entry player spawn coordinate (both X and Z).
 ///
 /// On a non-warp (cold) field scene entry, the per-scene initializer
@@ -749,6 +837,28 @@ pub struct World {
     /// model - and it no-ops harmlessly (height `0`) until a scene supplies a
     /// floor LUT + collision grid.
     pub follow_terrain_height: bool,
+    /// When set, pad locomotion blocks a direction with retail's
+    /// **three-probe leading-edge footprint** ([`FIELD_WALL_PROBES`], the
+    /// `DAT_801f2214` table `FUN_801cfe4c` walks) instead of a single
+    /// candidate-centre test: the player rests ~47 units off a wall plane
+    /// exactly like retail, instead of walking up to it. Off by default so
+    /// the existing locomotion oracles (and BFS nav drivers, which keep the
+    /// centre test regardless) are bit-identical; enable it for
+    /// retail-faithful wall standoff. Validated against the wall-press
+    /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
+    pub leading_edge_wall_probes: bool,
+    /// When set, pad locomotion also blocks a direction when any of retail's
+    /// **actor-collision probes** ([`FIELD_ACTOR_PROBES`], the `DAT_801f21b4`
+    /// sibling table) lands inside a field NPC's body box or a placed prop's
+    /// static collision box ([`Self::field_actor_dir_blocked`]) - NPCs and
+    /// props become solid, as in retail, where `FUN_801cfe4c`'s actor bits
+    /// (`1`/`4`) gate a step exactly like the wall bit (`2`). Off by default
+    /// for the same oracle-stability reason as
+    /// [`Self::leading_edge_wall_probes`]. The locomotion-path touch
+    /// side-effects (event post `FUN_801d5b5c` on the `+0x98`-linked partner
+    /// for prop walk-touch) are not modelled; the button-press interact
+    /// dispatch is ([`Self::tick_field_interaction_probe`]).
+    pub solid_field_npcs: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -1082,6 +1192,19 @@ pub struct World {
     /// [`crate::vm::ActorMoveState::world_x`]. (Positions are the *spawn* tile;
     /// the engine does not yet walk field NPCs, so spawn == current.)
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
+
+    /// Static prop collision-box centres `(world_x, world_z)`, one per placed
+    /// object of the scene's field `.MAP` object grid — the engine's source
+    /// for the **static-entity arm** of the actor-collision probe (retail
+    /// `FUN_801cf9f4` result bit `4`; box half-extent
+    /// [`FIELD_PROP_BOX_HALF`]). Installed at field-scene entry from
+    /// [`crate::scene::Scene::field_object_placements`] (each placement's
+    /// [`collider_x`](legaia_asset::field_objects::Placement::collider_x) /
+    /// `collider_z` = spawn position + the record's collision-footprint
+    /// offset, live-verified against the spawned static actors of catalogued
+    /// captures). Gated by [`Self::solid_field_npcs`] alongside the
+    /// moving-NPC arm.
+    pub field_prop_colliders: Vec<(i32, i32)>,
 
     /// Per-tick guard: set when a Cross/Circle press is consumed by a field
     /// dialogue open or dismiss this tick, so the script's `0x4C` dialog poll
@@ -1913,6 +2036,8 @@ impl World {
             field_collision_grid: Vec::new(),
             field_floor_height_lut: [0i16; 16],
             follow_terrain_height: false,
+            leading_edge_wall_probes: false,
+            solid_field_npcs: false,
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -1967,6 +2092,7 @@ impl World {
             field_npc_dialog_prologue: std::collections::HashMap::new(),
             active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
+            field_prop_colliders: Vec::new(),
             dialog_input_consumed: false,
             party_leader_slot: None,
             money: 0,
@@ -5574,8 +5700,11 @@ impl World {
     ///
     /// - **Box up:** a just-pressed Cross / Circle dismisses it (and engages a
     ///   pending scripted-encounter carrier — the dialogue-accept).
-    /// - **No box:** a just-pressed Cross with a talkable NPC within ±1 tile of
-    ///   the player opens its dialogue via [`Self::trigger_field_interact`].
+    /// - **No box:** a just-pressed Cross runs the retail facing probe
+    ///   ([`Self::field_interact_probe_slot`]: the `DAT_801f2254` compass
+    ///   point 64 units ahead, ±72 box); a hit opens that NPC's dialogue via
+    ///   [`Self::trigger_field_interact`] and turns the player toward it
+    ///   ([`Self::face_field_npc`]).
     ///
     /// The [`Self::dialog_input_consumed`] per-tick guard keeps this and the
     /// field VM's `0x4C` dialog poll from both acting on the same button edge.
@@ -5606,33 +5735,17 @@ impl World {
         if self.dialog_input_consumed || !confirm || self.field_npc_positions.is_empty() {
             return;
         }
-        let Some(slot) = self.player_actor_slot else {
-            return;
-        };
-        let slot = slot as usize;
-        if slot >= self.actors.len() || !self.actors[slot].active {
-            return;
-        }
-        let (px, pz) = {
-            let ms = &self.actors[slot].move_state;
-            (ms.world_x as i32 >> 7, ms.world_z as i32 >> 7)
-        };
-        // Nearest talkable NPC within ±1 tile of the player (the retail box test
-        // is a ~0x50-unit footprint; ±1 tile is the same shape at tile
-        // granularity, matching the world-map probe).
-        let mut best: Option<(i32, u8)> = None;
-        for (&npc_slot, &(nx, nz)) in &self.field_npc_positions {
-            let (tx, tz) = (nx as i32 >> 7, nz as i32 >> 7);
-            if (tx - px).abs() <= 1 && (tz - pz).abs() <= 1 {
-                let d = (tx - px).pow(2) + (tz - pz).pow(2);
-                if best.is_none_or(|(bd, _)| d < bd) {
-                    best = Some((d, npc_slot));
-                }
-            }
-        }
-        if let Some((_, npc_slot)) = best {
+        // Retail geometry: a single facing-indexed compass probe 64 units
+        // ahead, box-tested at ±72 against each NPC
+        // ([`Self::field_interact_probe_slot`]). A hit posts the touch event
+        // on the matched actor and turns the player toward it — the
+        // face-the-NPC step retail applies to moving-class partners
+        // (`flags & 0x20010 == 0x20000`), which every talk NPC is
+        // (capture-pinned by `rimelm_npc_press_tetsu`).
+        if let Some(npc_slot) = self.field_interact_probe_slot() {
             self.dialog_input_consumed = true;
             self.trigger_field_interact(0, npc_slot);
+            self.face_field_npc(npc_slot);
         }
     }
 
@@ -6238,10 +6351,13 @@ impl World {
     /// `docs/subsystems/field-locomotion.md` ("Collision") and the
     /// disc-gated `engine-shell/tests/field_collision_discriminator.rs`.
     ///
-    /// Remaining simplification vs retail: retail tests **three leading-edge
-    /// footprint probes** (~47 units ahead, ±16 lateral; per-direction table
-    /// `DAT_801f2214`) where this tests one candidate-centre point — a
-    /// standoff/feel difference, not an indexing one.
+    /// Retail tests **three leading-edge footprint probes** through this
+    /// sampler (47-48 units ahead, ±16 lateral; per-direction table
+    /// `DAT_801f2214` = [`FIELD_WALL_PROBES`]) — see
+    /// [`World::field_dir_blocked`], wired into pad locomotion behind
+    /// [`World::leading_edge_wall_probes`]. With the flag off, locomotion
+    /// tests one candidate-centre point — a standoff/feel difference, not an
+    /// indexing one.
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return false;
@@ -6259,6 +6375,151 @@ impl World {
         };
         let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
         (byte >> 4) & (1u8 << quad) != 0
+    }
+
+    /// Retail's static-wall direction test: from the CURRENT position
+    /// `(x, z)`, probe the three leading-edge points of [`FIELD_WALL_PROBES`]
+    /// row `dir` (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+) through
+    /// [`Self::field_tile_is_wall`]; the direction is blocked when any probe
+    /// lands on a wall sub-cell.
+    ///
+    /// PORT: FUN_801cfe4c
+    /// REF: FUN_801cfc40
+    ///
+    /// This is the static-wall arm of `FUN_801cfe4c` (result bit `2`): the
+    /// probes are taken at the player's pre-step position, so a step commits
+    /// while the edge is still clear and the next step from the deeper
+    /// position blocks — the player rests 47-48 units off the wall plane,
+    /// step-exact (pinned by the `rimelm_wall_press_left`/`_down` captures).
+    /// The actor-collision arm (result bits `1`/`4`) is
+    /// [`Self::field_actor_dir_blocked`].
+    pub fn field_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+        FIELD_WALL_PROBES[dir & 3]
+            .iter()
+            .any(|&(dx, dz)| self.field_tile_is_wall(x.saturating_add(dx), z.saturating_sub(dz)))
+    }
+
+    /// Retail's actor-collision direction test: from the CURRENT position
+    /// `(x, z)`, take the three probe points of [`FIELD_ACTOR_PROBES`] row
+    /// `dir` (same `(x + dx, z - dz)` convention as the wall probes) and
+    /// box-test each against every field NPC's position
+    /// ([`Self::field_npc_positions`]); the direction is blocked when any
+    /// probe lands within [`FIELD_NPC_BOX_HALF`] (40 units) of an NPC on
+    /// both axes (strict).
+    ///
+    /// PORT: FUN_801cfc40
+    /// REF: FUN_801cfe4c
+    ///
+    /// Covers both entity classes of `FUN_801cfc40`:
+    ///
+    /// - the **moving-actor arm** (result bit `1`) — the class village NPCs
+    ///   belong to, capture-pinned by `rimelm_npc_press_tetsu` (the sparring
+    ///   partner's `flags+0x10 = 0x08020884` carries the `0x20000` class
+    ///   bit, and the mutual `+0x98` collision link is live in-frame). The
+    ///   engine's NPCs don't roam, so their live position equals their MAN
+    ///   placement anchor; box ±[`FIELD_NPC_BOX_HALF`] (40).
+    /// - the **static-entity arm** (result bit `4`) — placed `.MAP` props,
+    ///   box ±[`FIELD_PROP_BOX_HALF`] (80) around the record-derived
+    ///   footprint centre ([`Self::field_prop_colliders`]).
+    ///
+    /// Not modelled: the retail touch side-effects on the locomotion path
+    /// (mutual `+0x98` partner link; the prop walk-touch auto event post
+    /// `FUN_801d5b5c` — the engine has no prop event scripts), NPC motion,
+    /// and the `_DAT_8007b6b8 == 0x20` full-table delegation to
+    /// `FUN_801cf9f4`. The button-press interact dispatch (facing probe +
+    /// event + face-the-NPC) IS modelled —
+    /// [`Self::tick_field_interaction_probe`]. Faithful quirk kept: the
+    /// probe has no near-side clamp, so a position already deep inside a box
+    /// (past the probe reach) reads clear — exactly as retail's forward-only
+    /// probe behaves.
+    pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+        if self.field_npc_positions.is_empty() && self.field_prop_colliders.is_empty() {
+            return false;
+        }
+        FIELD_ACTOR_PROBES[dir & 3].iter().any(|&(dx, dz)| {
+            let px = x.saturating_add(dx) as i32;
+            let pz = z.saturating_sub(dz) as i32;
+            self.field_npc_positions.values().any(|&(ax, az)| {
+                (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
+                    && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
+            }) || self.field_prop_colliders.iter().any(|&(cx, cz)| {
+                (px - cx).abs() < FIELD_PROP_BOX_HALF && (pz - cz).abs() < FIELD_PROP_BOX_HALF
+            })
+        })
+    }
+
+    /// Retail's interact probe: from the player's position, take the single
+    /// [`FIELD_FACING_PROBES`] compass point 64 units ahead along the
+    /// current facing and return the NPC whose ±[`FIELD_INTERACT_BOX_HALF`]
+    /// (72-unit) box contains it, if any.
+    ///
+    /// PORT: FUN_801cf9f4
+    /// REF: FUN_801d01b0
+    ///
+    /// The engine's field heading ([`decode_field_direction`]
+    /// (Self::decode_field_direction)) stores `0` = Z+ while the retail
+    /// facing byte stores `0` = Z- (a Z+ walk writes `0x800` to `+0x26`), so
+    /// the sector index adds the half-turn before quantising. On overlapping
+    /// NPC boxes retail keeps the *last* actor-list hit (the `+0x98` link is
+    /// overwritten per match); the engine's NPC set is a hash map with no
+    /// list order, so it picks the hit nearest the probe point instead
+    /// (tie-break: lowest slot) — identical whenever NPCs stand more than
+    /// 144 units apart, which every authored placement does.
+    fn field_interact_probe_slot(&self) -> Option<u8> {
+        let slot = self.player_actor_slot? as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return None;
+        }
+        let ms = &self.actors[slot].move_state;
+        let (x, z) = (ms.world_x, ms.world_z);
+        let sector = (((ms.render_26 as i32 + 0x800) & 0xfff) >> 9) as usize;
+        let (dx, dz) = FIELD_FACING_PROBES[sector];
+        let px = x.saturating_add(dx) as i32;
+        let pz = z.saturating_sub(dz) as i32;
+        let mut best: Option<(i32, u8)> = None;
+        for (&npc_slot, &(ax, az)) in &self.field_npc_positions {
+            let (ex, ez) = ((px - ax as i32).abs(), (pz - az as i32).abs());
+            if ex < FIELD_INTERACT_BOX_HALF && ez < FIELD_INTERACT_BOX_HALF {
+                let d = ex * ex + ez * ez;
+                if best.is_none_or(|(bd, bs)| d < bd || (d == bd && npc_slot < bs)) {
+                    best = Some((d, npc_slot));
+                }
+            }
+        }
+        best.map(|(_, s)| s)
+    }
+
+    /// Turn the player toward field NPC `npc_slot` (retail's face-the-NPC
+    /// step after a successful interact probe: `func_0x80019b28` computes
+    /// the 12-bit angle from the touched actor to the player and stores it
+    /// in the player's `+0x26`). The engine computes the same angle with
+    /// float `atan2` in its own heading convention (`0` = Z+) rather than
+    /// retail's arctan LUT at `0x8006f4c8`, so it is shape-faithful, not
+    /// bit-exact — the value only feeds the heading marker and the next
+    /// probe's 45° sector quantisation.
+    ///
+    /// REF: FUN_80019b28
+    fn face_field_npc(&mut self, npc_slot: u8) {
+        let Some(&(nx, nz)) = self.field_npc_positions.get(&npc_slot) else {
+            return;
+        };
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() {
+            return;
+        }
+        let ms = &mut self.actors[slot].move_state;
+        let (dx, dz) = (
+            (nx as i32 - ms.world_x as i32) as f32,
+            (nz as i32 - ms.world_z as i32) as f32,
+        );
+        if dx == 0.0 && dz == 0.0 {
+            return;
+        }
+        ms.render_26 =
+            ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
     }
 
     /// Decode this frame's held d-pad into a camera-relative movement
@@ -6418,7 +6679,20 @@ impl World {
     /// [`Self::step_world_map_locomotion`]: retail `FUN_801d01b0` is the same
     /// routine in both the field and world-map-walk overlays, and both collide
     /// against the same `_DAT_1f8003ec + 0x4000` walkability grid.
-    fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
+    ///
+    /// With [`Self::leading_edge_wall_probes`] set, each axis instead blocks
+    /// on retail's three-probe leading-edge footprint taken at the CURRENT
+    /// position ([`Self::field_dir_blocked`]) — the retail standoff — and
+    /// commits the step whenever the edge is clear. The default candidate-
+    /// centre test is kept (off-flag) for the locomotion oracles and the
+    /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis
+    /// additionally blocks when the direction's actor-collision probes land
+    /// inside a field NPC's body box ([`Self::field_actor_dir_blocked`]) —
+    /// retail gates a step on the actor bits and the wall bit together
+    /// (`FUN_801cfe4c` returning any of `1`/`2`/`4` refuses the 2-unit step).
+    pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
+        let edge = self.leading_edge_wall_probes;
+        let solid_npcs = self.solid_field_npcs;
         let mut remaining = speed;
         while remaining > 0 {
             let ms = &self.actors[slot].move_state;
@@ -6426,12 +6700,22 @@ impl World {
             // Z axis.
             if dir_bits & 0x1000 != 0 {
                 let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(cx, nz) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz, 2)
+                } else {
+                    self.field_tile_is_wall(cx, nz)
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 2));
+                if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(cx, nz) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz, 0)
+                } else {
+                    self.field_tile_is_wall(cx, nz)
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 0));
+                if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
             }
@@ -6440,12 +6724,22 @@ impl World {
             let cz2 = self.actors[slot].move_state.world_z;
             if dir_bits & 0x2000 != 0 {
                 let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(nx, cz2) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz2, 3)
+                } else {
+                    self.field_tile_is_wall(nx, cz2)
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 3));
+                if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
-                if !self.field_tile_is_wall(nx, cz2) {
+                let blocked = if edge {
+                    self.field_dir_blocked(cx, cz2, 1)
+                } else {
+                    self.field_tile_is_wall(nx, cz2)
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 1));
+                if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             }
@@ -6479,17 +6773,30 @@ impl World {
             return true;
         }
         let mut dir = 0u16;
+        let (mut wx, mut wz) = (0i32, 0i32);
         if tz > cz {
             dir |= 0x1000; // Z+
+            wz = 1;
         } else if tz < cz {
             dir |= 0x4000; // Z-
+            wz = -1;
         }
         if tx > cx {
             dir |= 0x2000; // X+
+            wx = 1;
         } else if tx < cx {
             dir |= 0x8000; // X-
+            wx = -1;
         }
         if dir != 0 {
+            // Walking sets the heading, exactly as the pad path does (retail
+            // locomotion writes the facing every moved frame) — so a nav walk
+            // leaves the player facing its travel direction and the interact
+            // probe ([`Self::field_interact_probe_slot`]) sees the same state
+            // a pad walk would produce.
+            self.actors[slot].move_state.render_26 =
+                (((wx as f32).atan2(wz as f32) / std::f32::consts::TAU * 4096.0).round() as i32
+                    & 0x0FFF) as i16;
             self.advance_with_collision(slot, dir, FIELD_BASE_STEP);
         }
         false

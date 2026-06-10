@@ -731,6 +731,19 @@ enum Cmd {
         /// see slopes / steps. No effect on the world-map walk.
         #[arg(long, default_value_t = false)]
         terrain_y: bool,
+        /// Block field walking with retail's three-probe leading-edge wall
+        /// footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests
+        /// ~47 units off a wall plane exactly like retail instead of walking
+        /// up to it. Off by default (candidate-centre test).
+        #[arg(long, default_value_t = false)]
+        edge_collision: bool,
+        /// Make field NPCs solid with retail's actor-collision probes
+        /// (`FUN_801cfc40`'s `DAT_801f21b4` table): walking into an NPC's
+        /// body box blocks the step, as in retail. Off by default
+        /// (walk-through). The retail touch side-effects (touch event,
+        /// face-the-NPC turn) aren't modelled.
+        #[arg(long, default_value_t = false)]
+        solid_npcs: bool,
         /// Route live basic-attack damage through the retail damage finisher
         /// (`FUN_801ddb30`): adds the 9999 cap and the rand-based no-damage
         /// floor on top of the raw roll. Off by default (flat path, 0xFFFF cap,
@@ -1182,6 +1195,8 @@ fn main() -> Result<()> {
             player_battle,
             vm_dialogue,
             terrain_y,
+            edge_collision,
+            solid_npcs,
             damage_finish,
             battle_bgm,
         } => cmd_play_window(
@@ -1200,6 +1215,8 @@ fn main() -> Result<()> {
             player_battle,
             vm_dialogue,
             terrain_y,
+            edge_collision,
+            solid_npcs,
             damage_finish,
             battle_bgm,
         ),
@@ -2795,6 +2812,8 @@ fn cmd_record(
         save_dir,
         None,
         None,
+        false,
+        false,
         false,
         false,
         false,
@@ -9291,6 +9310,8 @@ fn cmd_play_window(
     player_battle: bool,
     vm_dialogue: bool,
     terrain_y: bool,
+    edge_collision: bool,
+    solid_npcs: bool,
     damage_finish: bool,
     battle_bgm: Option<u16>,
 ) -> Result<()> {
@@ -9310,6 +9331,8 @@ fn cmd_play_window(
         player_battle,
         vm_dialogue,
         terrain_y,
+        edge_collision,
+        solid_npcs,
         damage_finish,
         battle_bgm,
         None,
@@ -9333,6 +9356,8 @@ fn cmd_play_window_with_record(
     player_battle: bool,
     vm_dialogue: bool,
     terrain_y: bool,
+    edge_collision: bool,
+    solid_npcs: bool,
     damage_finish: bool,
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
@@ -9399,6 +9424,10 @@ fn cmd_play_window_with_record(
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
     session.host.world.follow_terrain_height = terrain_y;
+    // Opt-in: retail's three-probe leading-edge wall footprint (the
+    // `DAT_801f2214` standoff). Off by default → candidate-centre test.
+    session.host.world.leading_edge_wall_probes = edge_collision;
+    session.host.world.solid_field_npcs = solid_npcs;
     // Opt-in: route live basic-attack damage through the retail damage
     // finisher (9999 cap + no-damage floor). Off by default → flat path.
     session.host.world.use_damage_finish = damage_finish;
