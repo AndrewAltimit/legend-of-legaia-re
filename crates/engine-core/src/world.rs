@@ -478,6 +478,13 @@ pub enum SceneMode {
     Cutscene,
     /// World-map mode - `WorldMapController` drives camera and entity ticks.
     WorldMap,
+    /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
+    /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
+    /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
+    /// dispatch is suspended while the menu owns the frame; only the actor
+    /// VM and effect pool run, like `Title`. The hosting session preserves
+    /// the suspended scene state and restores its mode on close.
+    Menu,
 }
 
 /// One sprite frame on a sprite sheet. Equivalent in shape to
@@ -5036,6 +5043,10 @@ impl World {
                 self.tick_world_map();
                 None
             }
+            // The pause menu owns the frame (retail CARD mode 0x17): field /
+            // battle dispatch is suspended; the hosting session drives the
+            // menu state machine and restores the suspended mode on close.
+            SceneMode::Menu => None,
             SceneMode::Title => None,
         }
     }

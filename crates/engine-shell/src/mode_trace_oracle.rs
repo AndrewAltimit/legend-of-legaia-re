@@ -7,16 +7,18 @@
 //! mednafen save state; the engine side ticks a [`BootSession`] and
 //! samples each frame.
 //!
-//! **Asymmetry.** The engine port doesn't currently drive the 28-mode
+//! **Asymmetry.** The engine port doesn't drive the full 28-mode
 //! game-mode dispatcher (see `legaia_engine_core::mode::ModeDriver`) -
 //! [`BootSession::tick`] goes through `SceneHost::tick`, which keeps
 //! [`world.mode`](legaia_engine_core::world::SceneMode) up to date but
-//! not the master game-mode word `_DAT_8007B83C`. So engine-sampled
-//! [`ModeTraceFrame::game_mode`] is `None`; retail-sampled frames fill
-//! it from main RAM directly. [`first_mode_trace_divergence`] compares
-//! only the fields both sides emit (scene_mode + active_scene); a future
-//! engine port that models the dispatcher can populate game_mode and the
-//! comparison extends automatically.
+//! not the master game-mode word `_DAT_8007B83C`. Engine-sampled
+//! [`ModeTraceFrame::game_mode`] is therefore `None` for most frames;
+//! retail-sampled frames fill it from main RAM directly. The exception
+//! is the mode the session models explicitly: while the
+//! BootSession-hosted pause menu is open the engine emits `game_mode =
+//! 0x17` (`CARD MODE` - the retail menu / memory-card per-frame mode).
+//! [`first_mode_trace_divergence`] compares scene_mode + active_scene
+//! always, and game_mode whenever both sides emit it.
 //!
 //! JSONL is the wire format - one record per line, matching the
 //! Phase-E3 spec "engine emits JSONL of (frame, game_mode, scene_mode,
@@ -40,8 +42,9 @@ pub struct ModeTraceFrame {
     /// are single-frame).
     pub frame: u64,
     /// `_DAT_8007B83C` byte (an index into the 28-mode table). Retail:
-    /// read directly. Engine: `None` until the port models the
-    /// dispatcher.
+    /// read directly. Engine: `Some(0x17)` while the BootSession-hosted
+    /// pause menu is open (the modelled CARD per-frame mode); `None`
+    /// otherwise until the port models the rest of the dispatcher.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub game_mode: Option<u8>,
     /// Debug name from `mode::TABLE` (e.g. `"MAPDISP MODE"`).
@@ -254,10 +257,17 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
 }
 
 fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
+    // The engine doesn't run the full 28-mode dispatcher, but the mode the
+    // session models explicitly is reported: the BootSession-hosted pause
+    // menu runs under the retail CARD per-frame mode (game_mode 0x17,
+    // `GameMode::CardMode`).
+    let game_mode = session
+        .field_menu_is_open()
+        .then_some(legaia_engine_core::mode::GameMode::CardMode);
     ModeTraceFrame {
         frame: session.frames,
-        game_mode: None,
-        game_mode_name: None,
+        game_mode: game_mode.map(|gm| gm.as_index() as u8),
+        game_mode_name: game_mode.map(|gm| game_mode_label(gm).to_string()),
         scene_mode: scene_mode_name(session.host.world.mode).to_string(),
         active_scene: session.host.scene.as_ref().map(|s| s.name.clone()),
     }
@@ -271,6 +281,7 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
         SceneMode::Battle => "Battle",
         SceneMode::Cutscene => "Cutscene",
         SceneMode::WorldMap => "WorldMap",
+        SceneMode::Menu => "Menu",
     }
 }
 
@@ -377,11 +388,11 @@ pub fn parse_mode_trace_jsonl(s: &str) -> Result<Vec<ModeTraceFrame>> {
     Ok(out)
 }
 
-/// First field on which `engine` and `retail` disagree. Compares only
-/// the fields both emitters populate today (`scene_mode` +
-/// `active_scene`); `game_mode` is engine-side `None` so it can't drive
-/// a divergence yet. `frame` is informational - retail snapshots are
-/// always `frame=0`.
+/// First field on which `engine` and `retail` disagree. Compares
+/// `scene_mode` + `active_scene` always, and `game_mode` whenever both
+/// emitters populate it (the engine fills it for the modes it models,
+/// e.g. `0x17` while the pause menu is open). `frame` is informational -
+/// retail snapshots are always `frame=0`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeTraceDivergence {
     pub kind: DivergenceKind,
@@ -393,6 +404,9 @@ pub struct ModeTraceDivergence {
 pub enum DivergenceKind {
     SceneMode,
     ActiveScene,
+    /// Scene mode + active scene agree but the raw game-mode byte (emitted
+    /// by both sides) does not.
+    GameMode,
 }
 
 /// Walk `engine` left-to-right; return the first frame where the
@@ -415,8 +429,10 @@ pub fn first_mode_trace_divergence(
     let last = engine.last().unwrap();
     let kind = if last.scene_mode != retail.scene_mode {
         DivergenceKind::SceneMode
-    } else {
+    } else if !active_scene_matches(last, retail) {
         DivergenceKind::ActiveScene
+    } else {
+        DivergenceKind::GameMode
     };
     Some(ModeTraceDivergence {
         kind,
@@ -429,9 +445,20 @@ fn frame_matches(engine: &ModeTraceFrame, retail: &ModeTraceFrame) -> bool {
     if engine.scene_mode != retail.scene_mode {
         return false;
     }
-    // If retail has a name, the engine must have the same one. If retail
-    // didn't observe a name (unparseable pool slot), don't penalise the
-    // engine for filling it in.
+    // Compare the raw game-mode byte when both sides observed one (the
+    // engine emits it only for the modes it models; retail always does).
+    if let (Some(e), Some(r)) = (engine.game_mode, retail.game_mode)
+        && e != r
+    {
+        return false;
+    }
+    active_scene_matches(engine, retail)
+}
+
+/// If retail has a scene name, the engine must have the same one. If retail
+/// didn't observe a name (unparseable pool slot), don't penalise the engine
+/// for filling it in.
+fn active_scene_matches(engine: &ModeTraceFrame, retail: &ModeTraceFrame) -> bool {
     match (&engine.active_scene, &retail.active_scene) {
         (_, None) => true,
         (Some(e), Some(r)) => e == r,
@@ -522,6 +549,28 @@ mod tests {
         let retail = frame("Cutscene", Some("map01"));
         let d = first_mode_trace_divergence(&engine, &retail).unwrap();
         assert_eq!(d.kind, DivergenceKind::SceneMode);
+    }
+
+    #[test]
+    fn divergence_surfaces_game_mode_mismatch() {
+        // Both sides emit a game-mode byte and disagree while the derived
+        // scene mode + scene name agree (e.g. CARD INIT vs CARD MODE).
+        let mut e = frame("Menu", Some("town01"));
+        e.game_mode = Some(0x17);
+        let mut r = frame("Menu", Some("town01"));
+        r.game_mode = Some(0x16);
+        let d = first_mode_trace_divergence(&[e], &r).unwrap();
+        assert_eq!(d.kind, DivergenceKind::GameMode);
+    }
+
+    #[test]
+    fn game_mode_compared_only_when_both_sides_emit_it() {
+        // Engine-side None (an unmodelled mode) must not penalise an
+        // otherwise-matching frame against a retail byte.
+        let e = frame("Field", Some("town01"));
+        let mut r = frame("Field", Some("town01"));
+        r.game_mode = Some(0x03);
+        assert!(first_mode_trace_divergence(&[e], &r).is_none());
     }
 
     #[test]

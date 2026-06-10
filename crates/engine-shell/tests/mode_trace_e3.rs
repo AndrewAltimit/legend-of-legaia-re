@@ -6,14 +6,19 @@
 //!
 //!   1. Boots a [`BootSession`](legaia_engine_shell::BootSession) on
 //!      the resolved scene and ticks it `FRAMES` times, sampling
-//!      `(scene_mode, active_scene)` per frame.
+//!      `(scene_mode, active_scene)` per frame. `phase = "menu"`
+//!      scenarios additionally thread a scripted Start press so the
+//!      session opens the field pause menu headlessly
+//!      (`BootSession::open_field_menu`, the retail CARD pair).
 //!   2. Lifts a single `(game_mode, scene_mode, active_scene)` snapshot
 //!      out of the matching mednafen `.mc{slot}` save.
 //!   3. Asserts the engine's trace converges with the retail snapshot:
 //!      at least one engine frame must match
-//!      `(scene_mode, active_scene)`. The `game_mode` byte is engine-side
-//!      `None` today (the port doesn't drive the 28-mode dispatcher),
-//!      so it's informational, not assertional.
+//!      `(scene_mode, active_scene)` - and `game_mode` whenever both
+//!      sides emit it (the engine fills it for the modes it models,
+//!      e.g. `0x17` while the pause menu is open; retail menu saves
+//!      hold the same byte, so menu scenarios assert full menu-mode
+//!      convergence, not just the active scene).
 //!
 //! Skip-pass cases (CLAUDE.md disc-gated convention):
 //!   - `LEGAIA_DISC_BIN` unset.
@@ -39,6 +44,10 @@ use legaia_mednafen::ScenarioManifest;
 /// FMV-trigger ops fire within a handful of frames) but cheap enough
 /// to keep the test fast.
 const FRAMES: u64 = 60;
+
+/// PSX pad Start bit (`PadButton::Start`), threaded into the pad stream of
+/// `phase = "menu"` scenarios so the session opens the pause menu.
+const START_MASK: u16 = legaia_engine_core::input::PadButton::Start as u16;
 
 fn manifest_path() -> Option<PathBuf> {
     for candidate in [
@@ -158,49 +167,46 @@ fn mode_trace_e3_all_scenarios_converge() {
         // All `expected_active_scene` scenarios are field scenes, so drive the
         // engine into the field the way the windowed host does (cold boot ->
         // enter_field_live -> Field) rather than letting it sit in Title.
-        let trace = build_engine_mode_trace_field_live(scene_name, &extracted, None, FRAMES, &[])
-            .unwrap_or_else(|e| panic!("scenario {label:?}: build engine mode-trace: {e:#}"));
-        let retail = load_runtime_mode_trace_from_save(save_path)
-            .unwrap_or_else(|e| panic!("scenario {label:?}: load retail snapshot: {e:#}"));
         // `phase = "menu"` captures hold the field PAUSE MENU open, which
         // retail runs under game_mode 0x17 (CARD MODE, 23 — the menu/memory-
         // card overlay's per-frame mode; all six library menu saves read 0x17
-        // at 0x8007B83C). BootSession doesn't host the field-menu UI stack
-        // (it lives in the windowed host's BootUiState), so the engine trace
-        // can't reach a menu-open scene mode headlessly; these scenarios
-        // assert active-scene convergence only until the menu mode is
-        // modelled in BootSession.
+        // at 0x8007B83C). BootSession hosts the same field-menu runtime
+        // headlessly (Start-edge path in `BootSession::tick` →
+        // `open_field_menu`), so these scenarios drive a scripted Start press
+        // and must converge on the full menu state: SceneMode::Menu + the
+        // same active scene + game_mode 0x17 (compared whenever both sides
+        // emit the byte).
         let menu_scenario = phase.as_deref() == Some("menu");
-        let diverged = if menu_scenario {
-            let scene_matches = trace.iter().any(|f| f.active_scene == retail.active_scene);
-            (!scene_matches).then(|| {
-                first_mode_trace_divergence(&trace, &retail)
-                    .expect("no active-scene match implies a divergence")
-            })
+        let pad_stream: &[u16] = if menu_scenario {
+            // pad_stream[i] lands before tick i+1: tick 1 idles (pad 0),
+            // tick 2 sees the Start edge and opens the menu, the remaining
+            // frames hold it open at pad 0.
+            &[0, START_MASK]
         } else {
-            first_mode_trace_divergence(&trace, &retail)
+            &[]
         };
-        match diverged {
+        let trace =
+            build_engine_mode_trace_field_live(scene_name, &extracted, None, FRAMES, pad_stream)
+                .unwrap_or_else(|e| panic!("scenario {label:?}: build engine mode-trace: {e:#}"));
+        let retail = load_runtime_mode_trace_from_save(save_path)
+            .unwrap_or_else(|e| panic!("scenario {label:?}: load retail snapshot: {e:#}"));
+        match first_mode_trace_divergence(&trace, &retail) {
             None => {
                 eprintln!(
-                    "[ok]    {label:<32} scene={scene_name:<10} converged{} scene_mode={} active_scene={:?}",
-                    if menu_scenario {
-                        " (active-scene only; menu mode 0x17 unmodelled)"
-                    } else {
-                        ""
-                    },
-                    retail.scene_mode,
-                    retail.active_scene
+                    "[ok]    {label:<32} scene={scene_name:<10} converged scene_mode={} active_scene={:?} game_mode={:?}",
+                    retail.scene_mode, retail.active_scene, retail.game_mode
                 );
             }
             Some(d) => {
                 eprintln!(
-                    "[DRIFT] {label:<32} scene={scene_name:<10} {:?}: engine(scene_mode={}, active_scene={:?}) vs retail(scene_mode={}, active_scene={:?})",
+                    "[DRIFT] {label:<32} scene={scene_name:<10} {:?}: engine(scene_mode={}, active_scene={:?}, game_mode={:?}) vs retail(scene_mode={}, active_scene={:?}, game_mode={:?})",
                     d.kind,
                     d.engine.scene_mode,
                     d.engine.active_scene,
+                    d.engine.game_mode,
                     d.retail.scene_mode,
                     d.retail.active_scene,
+                    d.retail.game_mode,
                 );
                 failures.push(label.clone());
             }

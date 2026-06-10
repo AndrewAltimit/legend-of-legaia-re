@@ -21,6 +21,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
+use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuSession};
+use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, SceneTickEvent};
 use legaia_engine_core::world::SceneMode;
 
@@ -118,6 +120,18 @@ pub struct BootSession {
     /// battle spell catalog, so a randomized / translated disc is honoured;
     /// `None` on disc-free builds.
     pub spell_catalog: Option<legaia_engine_core::spells::SpellCatalog>,
+    /// In-field pause-menu session, when open. Retail runs the pause menu
+    /// under the CARD mode pair (`_DAT_8007B83C = 0x17`, `CARD MODE`, in
+    /// every menu-open capture); the session-hosted equivalent holds
+    /// [`World::mode`](legaia_engine_core::world::World::mode) at
+    /// [`SceneMode::Menu`] while `Some`, suspending field dispatch
+    /// underneath. Opened via [`BootSession::open_field_menu`] (or the
+    /// Start-edge path inside [`BootSession::tick`]); the windowed host
+    /// layers its sub-session UI stack on top of this same session.
+    pub field_menu: Option<FieldMenuSession>,
+    /// Scene mode the world ran before the pause menu opened, restored by
+    /// [`BootSession::close_field_menu`].
+    field_menu_resume: SceneMode,
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -451,6 +465,8 @@ impl BootSession {
             equip_modifier_table,
             equip_restrictions,
             spell_catalog,
+            field_menu: None,
+            field_menu_resume: SceneMode::Field,
         })
     }
 
@@ -475,10 +491,87 @@ impl BootSession {
         }
     }
 
+    /// Open the in-field pause menu (the retail Start-press path into the
+    /// CARD mode pair, `game_mode 0x17`). Builds a [`FieldMenuSession`]
+    /// seeded with the world's money + play time - the same construction the
+    /// windowed host uses - then remembers the current
+    /// [`SceneMode`] and switches the world into [`SceneMode::Menu`], so
+    /// field dispatch suspends while the menu owns the frame. Idempotent
+    /// while a menu is already open.
+    pub fn open_field_menu(&mut self) {
+        if self.field_menu.is_some() {
+            return;
+        }
+        let world = &mut self.host.world;
+        let mut session = FieldMenuSession::new();
+        session.money = world.money.max(0) as u32;
+        session.play_time_seconds = world.play_time_seconds;
+        self.field_menu_resume = world.mode;
+        world.mode = SceneMode::Menu;
+        self.field_menu = Some(session);
+    }
+
+    /// Close the pause menu and restore the suspended scene mode (the mode
+    /// the world ran when [`Self::open_field_menu`] fired). No-op when no
+    /// menu is open.
+    pub fn close_field_menu(&mut self) {
+        if self.field_menu.take().is_some() {
+            self.host.world.mode = self.field_menu_resume;
+        }
+    }
+
+    /// Whether the in-field pause menu is open (the engine equivalent of
+    /// retail `game_mode 0x17`; [`World::mode`](legaia_engine_core::world::World::mode)
+    /// is [`SceneMode::Menu`] while `true`).
+    pub fn field_menu_is_open(&self) -> bool {
+        self.field_menu.is_some()
+    }
+
     /// One per-frame step: tick the world, route field-VM camera + BGM
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // In-field pause menu (retail CARD pair, game_mode 0x17). Mirror the
+        // windowed host's Start-edge open from the field, then drive an open
+        // menu from the same pad edges; field dispatch is suspended
+        // (SceneMode::Menu) while the menu owns the frame. The windowed host
+        // never reaches this auto-path (it handles the Start edge itself and
+        // skips `tick` while its boot-UI owns the frame), so the two hosts
+        // can't double-drive the session.
+        let menu_opened_this_tick = if self.field_menu.is_none()
+            && matches!(self.host.world.mode, SceneMode::Field)
+            && self.host.world.input.just_pressed(PadButton::Start)
+        {
+            self.open_field_menu();
+            true
+        } else {
+            false
+        };
+        if !menu_opened_this_tick && self.field_menu.is_some() {
+            let pad = &self.host.world.input;
+            let input = FieldMenuInput {
+                up: pad.just_pressed(PadButton::Up),
+                down: pad.just_pressed(PadButton::Down),
+                cross: pad.just_pressed(PadButton::Cross),
+                circle: pad.just_pressed(PadButton::Circle),
+                start: pad.just_pressed(PadButton::Start),
+            };
+            let close = {
+                let menu = self.field_menu.as_mut().expect("field_menu is Some");
+                let _ = menu.tick(input);
+                // Headless hosting has no sub-session UI stack: a confirmed
+                // row suspends the menu awaiting one, so resume straight back
+                // into browsing. Windowed hosts drive the session themselves
+                // and push the real sub-session instead.
+                if menu.is_suspended() {
+                    let _ = menu.resume(false);
+                }
+                menu.outcome().is_some()
+            };
+            if close {
+                self.close_field_menu();
+            }
+        }
         // Feed the previous frame's camera azimuth into the world so the
         // field free-movement controller remaps the d-pad camera-relative
         // ("screen up" walks away from the camera). The follow camera's

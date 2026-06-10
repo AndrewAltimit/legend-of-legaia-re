@@ -2777,6 +2777,7 @@ fn synthetic_replay_scene_mode_name(m: legaia_engine_core::world::SceneMode) -> 
         SceneMode::Battle => "Battle",
         SceneMode::Cutscene => "Cutscene",
         SceneMode::WorldMap => "WorldMap",
+        SceneMode::Menu => "Menu",
     }
 }
 
@@ -3866,8 +3867,12 @@ enum BootUiState {
     SaveSelect(legaia_engine_core::save_select::SaveSelectSession),
     /// Options / config panel is active.
     Options(legaia_engine_core::options::OptionsSession),
-    /// Field (pause) menu is active. Wraps the live scene so dropping
-    /// out returns control to the field tick.
+    /// Field (pause) menu is active. The menu session itself is hosted by
+    /// the [`BootSession`](legaia_engine_shell::BootSession)
+    /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;
+    /// the world runs `SceneMode::Menu` while it is open). This arm only
+    /// routes the window's input + draws to it, so dropping out returns
+    /// control to the field tick.
     ///
     /// `sub` holds the active sub-session pushed by
     /// `FieldMenuOutcome::Confirmed(row)` (Status, Equip, Spells, Items,
@@ -3875,7 +3880,6 @@ enum BootUiState {
     /// sub instead of the menu and the menu sits in `Suspended`
     /// underneath.
     FieldMenu {
-        session: legaia_engine_core::field_menu::FieldMenuSession,
         sub: Option<legaia_engine_core::field_menu_dispatch::FieldMenuSubsession>,
     },
     /// Game-over panel is active after a party wipe.
@@ -4085,12 +4089,19 @@ impl PlayWindowApp {
                 }
                 true
             }
-            BootUiState::FieldMenu { session, sub } => {
+            BootUiState::FieldMenu { sub } => {
                 use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
                 use legaia_engine_core::field_menu_dispatch::{
                     FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
                     apply_inventory_outcome, apply_spell_outcome,
                 };
+                // The menu session is hosted by the BootSession (so headless
+                // drivers share it); if it vanished out from under the UI
+                // arm, drop back to the scene.
+                if self.session.field_menu.is_none() {
+                    self.boot_ui = BootUiState::Inactive;
+                    return true;
+                }
                 if let Some(active_sub) = sub.as_mut() {
                     // A sub-session is open - route input + check for done.
                     active_sub.tick_pad_edge(pressed);
@@ -4144,7 +4155,9 @@ impl PlayWindowApp {
                                 self.options_state = o.state().clone();
                             }
                         }
-                        let _ = session.resume(false);
+                        if let Some(menu) = self.session.field_menu.as_mut() {
+                            let _ = menu.resume(false);
+                        }
                     }
                     return true;
                 }
@@ -4155,13 +4168,21 @@ impl PlayWindowApp {
                     circle,
                     start,
                 };
-                let _ = session.tick(input);
                 // After Cross on a row the menu phase becomes Suspended.
                 // Build the matching sub-session and route control there.
-                if session.is_suspended()
-                    && let legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } =
-                        session.phase()
-                {
+                let suspended_row = match self.session.field_menu.as_mut() {
+                    Some(menu) => {
+                        let _ = menu.tick(input);
+                        match menu.phase() {
+                            legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } => {
+                                Some(row)
+                            }
+                            _ => None,
+                        }
+                    }
+                    None => None,
+                };
+                if let Some(row) = suspended_row {
                     let snapshots = scan_save_dir(&self.save_dir);
                     *sub = Some(FieldMenuSubsession::build(
                         row,
@@ -4173,14 +4194,15 @@ impl PlayWindowApp {
                         &legaia_engine_core::battle_stats::EquipmentTable::new(),
                     ));
                 }
-                if let Some(outcome) = session.outcome() {
+                let outcome = self.session.field_menu.as_ref().and_then(|m| m.outcome());
+                if let Some(outcome) = outcome {
                     match outcome {
-                        FieldMenuOutcome::Closed => {
-                            self.boot_ui = BootUiState::Inactive;
-                        }
-                        FieldMenuOutcome::Confirmed(_row) => {
-                            // Sub-session signaled "close menu entirely"
-                            // via resume(true). Drop straight to scene.
+                        FieldMenuOutcome::Closed | FieldMenuOutcome::Confirmed(_) => {
+                            // Closed = player backed out; Confirmed = a
+                            // sub-session signaled "close menu entirely" via
+                            // resume(true). Either way restore the suspended
+                            // scene mode and drop straight to the scene.
+                            self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
                         }
                     }
@@ -4382,14 +4404,19 @@ impl PlayWindowApp {
                     (96, 80),
                 )
             }
-            BootUiState::FieldMenu { session, sub } => {
+            BootUiState::FieldMenu { sub } => {
                 if let Some(active_sub) = sub {
                     // Render the active sub-session's overlay. Each branch
                     // builds the matching plain-data view + calls the
                     // shipped `*_draws_for` helper.
                     return self.field_menu_sub_draws(active_sub);
                 }
-                let view = session.view();
+                // The menu session lives on the BootSession (the headless
+                // host of the CARD/menu mode); the window only renders it.
+                let Some(menu) = self.session.field_menu.as_ref() else {
+                    return Vec::new();
+                };
+                let view = menu.view();
                 let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
                     .rows
                     .iter()
@@ -8129,15 +8156,12 @@ impl ApplicationHandler for PlayWindowApp {
                         continue;
                     }
                     if pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
-                        let view_money = self.session.host.world.money;
-                        let play_secs = self.session.host.world.play_time_seconds;
-                        let mut s = legaia_engine_core::field_menu::FieldMenuSession::new();
-                        s.money = view_money.max(0) as u32;
-                        s.play_time_seconds = play_secs;
-                        self.boot_ui = BootUiState::FieldMenu {
-                            session: s,
-                            sub: None,
-                        };
+                        // Start: open the BootSession-hosted pause menu (the
+                        // retail CARD pair, game_mode 0x17 - the world holds
+                        // SceneMode::Menu while it is open) and route the
+                        // window's input + draws to it via the boot-UI arm.
+                        self.session.open_field_menu();
+                        self.boot_ui = BootUiState::FieldMenu { sub: None };
                         self.prev_pad = self.pad;
                         continue;
                     }
