@@ -1314,3 +1314,12 @@ phase = "field"
 expected_active_scene = "town0c"
 description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding DOWN (screen-down = world Z-, toward the camera) pressed against a lower wall, resting at (3386,2606). THE DECISIVE Z-row discriminator, cheat-free: the plain floor-indexed standing cell (26,20) is an all-quads wall byte (the position would be unreachable under floor indexing) while the retail biased derivation reads it clear and blocks at the z-47 leading-edge probes with a step-exact standoff. PROVED the +2 Z bias is authored into the wall bits; World::field_tile_is_wall realigned on this evidence. Consumed by engine-shell/tests/field_collision_discriminator.rs."
 topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "rimelm_npc_press_tetsu"
+ram_fingerprint_sha256 = "aa2711168c6af4466b9894dedd80f53212d85c7c0a742d88adad30d955a7d250"
+backup_fingerprint = "05f218afdec9dd4d0c400f51ef3d1730219b1a7baf2c706f52b6d1f65f19d793"
+phase = "field"
+description = "Rim Elm tutorial area, player holding the d-pad pressed INTO the sparring partner Tetsu (player 0x80083794 at (2762,1782) facing 0x800, Tetsu actor 0x80083284 at (2752,1856)). The MUTUAL +0x98 collision link is LIVE in-frame both ways (player+0x98 = 0x80083284, actor+0x98 = 0x80083794) - direct evidence of FUN_801cfc40's hit path. Tetsu's flags+0x10 = 0x08020884 carry the 0x20000 class bit: the village NPC takes the MOVING-actor arm (result bit 1, +/-40-unit box around live position, caller extents 0), NOT the static record-anchor arm - the ground truth that re-classed the engine's NPC box. Active-actor table _DAT_8007b6b8 = 1 (Tetsu alone). Consumed by engine-shell/tests/field_collision_discriminator.rs (npc-press leg)."
+topics = ["field", "collision", "NPC", "FUN_801cfc40", "actor probe", "Tetsu", "RE"]

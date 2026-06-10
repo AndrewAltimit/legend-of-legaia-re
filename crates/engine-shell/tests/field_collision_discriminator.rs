@@ -516,3 +516,121 @@ fn wall_press_down_full_scene_rest_matches_retail() {
         "full-scene leading-edge press rests exactly at the captured retail position"
     );
 }
+
+/// NPC-press capture: the player holds the d-pad pressed into the sparring
+/// partner Tetsu. Pins the ACTOR arm of the collision check from live RAM:
+///
+/// - the mutual `+0x98` collision link is live in-frame BOTH ways
+///   (player -> actor, actor -> player) — `FUN_801cfc40`'s hit path;
+/// - the village NPC's flags carry the `0x20000` class bit, putting him on
+///   the MOVING-actor arm (result bit `1`, ±40-unit box around the live
+///   position with the locomotion's zero caller extents) — the ground truth
+///   for the engine's `FIELD_NPC_BOX_HALF`;
+/// - the engine's ported probe (`World::field_actor_dir_blocked`) must
+///   refuse the press direction at the captured configuration (the player
+///   rests against Tetsu) while leaving the opposite direction clear.
+#[test]
+fn npc_press_pins_moving_actor_arm() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(manifest_path) = manifest_path() else {
+        eprintln!("[skip] scripts/scenarios.toml not found");
+        return;
+    };
+    let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse scenarios manifest");
+    let Some(scn) = manifest
+        .scenarios
+        .iter()
+        .find(|s| s.label == "rimelm_npc_press_tetsu")
+    else {
+        eprintln!("[skip] scenario 'rimelm_npc_press_tetsu' not in manifest");
+        return;
+    };
+    let save_path = match manifest.mednafen_save_path(scn, library_dir().as_deref()) {
+        Ok(p) if p.exists() => p,
+        _ => {
+            eprintln!("[skip] no save on disk for 'rimelm_npc_press_tetsu'");
+            return;
+        }
+    };
+    let state = SaveState::from_path(&save_path).expect("parse mednafen save state");
+    let ram = state.main_ram().expect("save state has main RAM");
+
+    // Player.
+    let player = ram_u32(ram, PLAYER_PTR_ADDR);
+    assert_eq!(player & 0xFF00_0000, 0x8000_0000, "player struct pointer");
+    let (px, pz) = (ram_i16(ram, player + 0x14), ram_i16(ram, player + 0x18));
+    let player_link = ram_u32(ram, player + 0x98);
+
+    // Active-actor table: `DAT_801c93c8`, count `_DAT_8007b6b8`.
+    let count = ram_u32(ram, 0x8007_B6B8);
+    assert!(
+        count >= 1,
+        "at least one actor in the collision table (got {count})"
+    );
+    let actor = ram_u32(ram, 0x801C_93C8);
+    assert_eq!(actor & 0xFF00_0000, 0x8000_0000, "actor struct pointer");
+    let (ax, az) = (ram_i16(ram, actor + 0x14), ram_i16(ram, actor + 0x18));
+    let flags = ram_u32(ram, actor + 0x10);
+    let actor_link = ram_u32(ram, actor + 0x98);
+
+    // The mutual +0x98 collision link is live in-frame, both directions.
+    assert_eq!(player_link, actor, "player +0x98 links the pressed actor");
+    assert_eq!(actor_link, player, "actor +0x98 links the player back");
+
+    // The village NPC takes the MOVING-actor arm: classifier bit set, and
+    // the `0x40020000` test routes the hit to result bit 1 (not the static
+    // prop bit 4).
+    assert_ne!(
+        flags & 0x0102_0000,
+        0,
+        "NPC flags 0x{flags:08X} classify to the moving-actor branch"
+    );
+    assert_ne!(
+        flags & 0x4002_0000,
+        0,
+        "NPC flags 0x{flags:08X} route the hit to result bit 1"
+    );
+
+    // The press direction from the captured geometry (the actor sits on one
+    // axis-aligned side of the player; Tetsu is at +Z here).
+    let (dx, dz) = ((ax - px) as i32, (az - pz) as i32);
+    let dir = if dz.abs() >= dx.abs() {
+        if dz > 0 { 2 } else { 0 } // Z+ / Z-
+    } else if dx > 0 {
+        3 // X+
+    } else {
+        1 // X-
+    };
+    eprintln!("[npc-press] player ({px},{pz}) actor ({ax},{az}) flags 0x{flags:08X} dir {dir}");
+
+    // Engine: the ported moving-actor probe refuses the press direction at
+    // the captured rest configuration and leaves the opposite one clear.
+    let mut world = World::new();
+    world.install_field_player(0);
+    world.solid_field_npcs = true;
+    world.field_npc_positions.insert(1, (ax, az));
+    assert!(
+        world.field_actor_dir_blocked(px, pz, dir),
+        "the engine probe blocks the captured press direction"
+    );
+    assert!(
+        !world.field_actor_dir_blocked(px, pz, dir ^ 2),
+        "walking away from the NPC stays clear"
+    );
+    // And the stepper holds the player at the captured rest on that axis.
+    world.actors[0].move_state.world_x = px;
+    world.actors[0].move_state.world_z = pz;
+    let dir_bits = [0x4000u16, 0x8000, 0x1000, 0x2000][dir];
+    for _ in 0..50 {
+        world.advance_with_collision(0, dir_bits, 8);
+    }
+    let ms = &world.actors[0].move_state;
+    assert_eq!(
+        (ms.world_x, ms.world_z),
+        (px, pz),
+        "the engine stepper rests at the captured press position"
+    );
+}

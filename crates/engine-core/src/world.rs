@@ -133,12 +133,17 @@ const FIELD_ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
     [(64, -32), (64, 0), (64, 32)], // dir 3: X+ (probes at x+64, ±32 in Z)
 ];
 
-/// Half-extent of the box a STATIC field entity blocks with, around its MAN
-/// placement anchor: retail `FUN_801cfc40` tests `|probe - anchor| <
-/// 0x40 + 0x10` per axis (the `0x40` body core plus the static entity's
-/// `0x10` pad), so a probe point within 80 units of the anchor on both axes
-/// is a hit.
-const FIELD_ACTOR_BOX_HALF: i32 = 0x40 + 0x10;
+/// Half-extent of the box a field NPC blocks with, around its live position:
+/// retail `FUN_801cfc40` classes village NPCs as **moving actors** (`flags &
+/// 0x1020000 != 0`) and tests `|probe - pos| < 0x40 + (ex - 0x18)` per axis
+/// with the locomotion's caller extents `ex = 0`, i.e. ±40 units.
+/// Capture-pinned by `rimelm_npc_press_tetsu`: the sparring partner's flags
+/// (`0x08020884`) carry the `0x20000` class bit, putting him on this arm
+/// (result bit `1`), with the mutual `+0x98` collision link live in-frame.
+/// (STATIC entities — props, `flags & 0x1020000 == 0` — use a wider
+/// `0x40 + 0x10` = 80-unit box around their MAN record anchor instead; the
+/// engine has no prop-collision list, so that arm is unmodelled.)
+const FIELD_NPC_BOX_HALF: i32 = 0x40 - 0x18;
 
 /// Cold field-entry player spawn coordinate (both X and Z).
 ///
@@ -6355,24 +6360,28 @@ impl World {
     /// Retail's actor-collision direction test: from the CURRENT position
     /// `(x, z)`, take the three probe points of [`FIELD_ACTOR_PROBES`] row
     /// `dir` (same `(x + dx, z - dz)` convention as the wall probes) and
-    /// box-test each against every field NPC's placement anchor
+    /// box-test each against every field NPC's position
     /// ([`Self::field_npc_positions`]); the direction is blocked when any
-    /// probe lands within [`FIELD_ACTOR_BOX_HALF`] (80 units) of an anchor on
-    /// both axes.
+    /// probe lands within [`FIELD_NPC_BOX_HALF`] (40 units) of an NPC on
+    /// both axes (strict).
     ///
     /// PORT: FUN_801cfc40
     /// REF: FUN_801cfe4c
     ///
-    /// This is the static-entity arm of `FUN_801cfc40` (result bit `4`): a
-    /// static entity (`flags & 0x1020000 == 0`) anchors at its MAN object
-    /// record (`tile * 128 + sub * 16`, record bytes `+6`/`+7` and
-    /// `+0xE`/`+0xF`) with the `0x40 + 0x10` half-extent; the engine's
-    /// [`Self::field_npc_positions`] holds those anchors. The moving-actor
-    /// arm (result bit `1`, flags `0x40020000`, caller-supplied extents) and
-    /// the retail touch side-effects (mutual `+0x98` partner link, event
-    /// post `FUN_801d5b5c`, face-the-NPC turn via `func_0x80019b28`) are not
-    /// modelled. Retail's `_DAT_8007b6b8 == 0x20` full-table special case
-    /// delegates to the `FUN_801cf9f4` box-test variant; not modelled either.
+    /// This is the moving-actor arm of `FUN_801cfc40` (result bit `1`) — the
+    /// class village NPCs belong to, capture-pinned by
+    /// `rimelm_npc_press_tetsu` (the sparring partner's `flags+0x10 =
+    /// 0x08020884` carries the `0x20000` class bit, and the mutual `+0x98`
+    /// collision link is live in-frame). The engine's NPCs don't roam, so
+    /// their live position equals their MAN placement anchor. Not modelled:
+    /// the static-entity arm (result bit `4`, props anchored at the MAN
+    /// record with the wider `0x40 + 0x10` box — no engine prop list), the
+    /// retail touch side-effects (mutual `+0x98` partner link, event post
+    /// `FUN_801d5b5c`, face-the-NPC turn via `func_0x80019b28`), and the
+    /// `_DAT_8007b6b8 == 0x20` full-table delegation to `FUN_801cf9f4`.
+    /// Faithful quirk kept: the probe has no near-side clamp, so a position
+    /// already deep inside the box (within ~24 units past the probe reach)
+    /// reads clear — exactly as retail's forward-only probe behaves.
     pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         if self.field_npc_positions.is_empty() {
             return false;
@@ -6381,8 +6390,8 @@ impl World {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
             self.field_npc_positions.values().any(|&(ax, az)| {
-                (px - ax as i32).abs() < FIELD_ACTOR_BOX_HALF
-                    && (pz - az as i32).abs() < FIELD_ACTOR_BOX_HALF
+                (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
+                    && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
             })
         })
     }
