@@ -131,12 +131,13 @@ pub enum Class {
     /// cluster's multi-bank sound archive (206 VABp entries).
     /// See [`crate::vab_multi_bank`].
     VabMultiBank,
-    /// `battle_data` pack - `[u32 chunk0_header][...][u32 count][u32 reserved]
-    /// [Record[count]]` followed by a `0x800`-aligned data section of
-    /// `[u32 dec_size][LZS stream]` entries. Each decompressed entry holds
-    /// a 32-byte header, a Legaia TMD, and a texture/CLUT pool. Used by
-    /// the `battle_data` CDNAME block (PROT 0865) and some other character
-    /// bundles (e.g. `edstati3`). See [`crate::battle_data_pack`].
+    /// Player battle file (`data\battle\PLAYER1..4`) - head words + LZS
+    /// `record[0]` + a 12-byte `[id, offset, size]` descriptor table,
+    /// followed by a slot region of `[u32 dec_size][LZS stream]` entries.
+    /// Each decompressed slot holds a 32-byte header, a Legaia TMD, and a
+    /// texture/CLUT pool. The retail `battle_data` CDNAME block =
+    /// extraction entries 0863..0866 (the `0863/0864_edstati3` filename
+    /// labels are the +2 shift). See [`crate::battle_data_pack`].
     BattleDataPack,
     /// Monster / actor SPU sound bank - `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
     /// All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).

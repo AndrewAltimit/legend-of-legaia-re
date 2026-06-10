@@ -9,15 +9,21 @@
 //! entry into its sub-files, and classifies every resulting blob by content
 //! signature.
 //!
-//! The cluster (CDNAME `befect_data`, four entries ending at `player_data`)
-//! resolves to:
-//!   - a generic offset pack (effect billboard geometry),
+//! Identity note: the CDNAME symbol resolves in *define-number* space, so
+//! this walker's window is extraction entries 872..875 - which, under the
+//! raw-TOC −2 numbering correction (`docs/formats/cdname.md`), are retail
+//! `vdf.dat` (872), `efect.dat` (873), the `player_data` file `player.lzs`
+//! (874), and a `sound_data2` VAB stream (875). The retail `befect_data`
+//! block proper is extraction 870..873 (`etim`/`etmd`/`vdf`/`efect`). The
+//! window's parts classify as:
+//!   - a generic offset pack (`vdf.dat`),
 //!   - the effect-script 2-pack `efect.dat` (inline sprite atlas + pack0 anim
 //!     batches + pack1 effect scripts) - the first ~`0x2000` of "entry 873",
-//!   - an LZS container of three sub-files: effect 3D models (Legaia TMDs), a
-//!     generic offset pack, and the effect-texture TIMs (CLUTs in the high
-//!     VRAM rows 475..478, pixels at fb_y=256),
-//!   - a trailing data blob.
+//!   - the `player.lzs` LZS container of three sub-files: the field
+//!     character TMD pack, a generic offset pack, and the field-character
+//!     texture TIMs (CLUTs in the high VRAM rows 473..478, pixels at
+//!     fb_y=256; see `docs/formats/character-mesh.md`),
+//!   - a trailing VAB-prefixed streaming blob.
 //!
 //! See [`docs/formats/effect.md`](../../../docs/formats/effect.md).
 

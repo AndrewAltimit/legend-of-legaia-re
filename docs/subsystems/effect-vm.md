@@ -51,14 +51,27 @@ Two render-agnostic seams expose the live pool:
 
 The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-facing textured quad** through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`), plus a **tinted outline** through the `UploadedLines` pipeline so the billboard is visible regardless of VRAM contents, faded by age. `World::spawn_debug_effect` seats a synthetic effect by hand (the `E` key in `play-window`); it is not a retail path.
 
-**Two effect-texel systems - 3D-model textures pinned, 2D-sprite source open.** The `befect_data` cluster is cleanly extractable via `asset befect-cluster` (footprint-bounded entries + LZS-container expansion + content classification; see [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data-cdname-872)). Entry 874 is an LZS container of the effect 3D models (`etmd.dat`), a pack (`vdf.dat`), and the **effect-model textures** (`etim.dat`). `etim` is pixel-verified against a live battle VRAM capture (Gimard's *Tail Fire*, a 3D flame mesh): its tiles byte-match VRAM at `fb_x≥320`, and the `etmd` model primitives reference exactly its CLUT rows. `etim` is **field-resident** (its `fb(320,256)`/`fb(384,256)` pages match a `town01` field capture 256 rows byte-exact),
-not battle-only. The engine uploads `etim` into the scene VRAM at scene entry (`scene::upload_effect_textures_into_vram`), so those texels are resident for effect-model rendering; the field VRAM-parity oracle uploads them image-pages-only (`upload_clut = false`) since retail uploads their CLUTs at battle entry.
+**Two effect-texel pools, both pixel-verified.** The retail `befect_data` block (CDNAME defines `872..875` → extraction entries **870..873**) holds the four battle effect files — `etim.dat` (0870), `etmd.dat` (0871), `vdf.dat` (0872), `efect.dat` (0873) — pulled by `FUN_800520F0` at raw TOC indices `0x368..0x36B`; see the verified case→index→entry map in [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data). The texels effects sample come from two pools:
 
-The sibling **PROT 870 flame-texture atlas** (three 64×256 4bpp TIMs targeting VRAM `(320,0)`/`(384,0)`/`(448,0)`, CLUTs rows 474..476) is byte-verified loaded at battle and is **battle-only** - those columns hold town stage textures during a field scene, so uploading it at field entry would clobber field rendering. The engine uploads it on **battle entry** (`scene::upload_flame_atlas_into_vram`, called from the play-window battle-render setup into a throwaway VRAM copy that battle exit discards). See [`formats/effect.md`](../formats/effect.md#texel-source---etimdat-pixel-verified).
+- **`etim.dat` = extraction 0870** (three 64×256 4bpp TIMs targeting VRAM `(320,0)`/`(384,0)`/`(448,0)`, CLUTs rows 474..476) is byte-verified loaded at battle and is **battle-only** - those columns hold town stage textures during a field scene, so uploading it at field entry would clobber field rendering. The engine uploads it on **battle entry** (`scene::upload_flame_atlas_into_vram`, called from the play-window battle-render setup into a throwaway VRAM copy that battle exit discards).
+- **The `player_data` §2 band (extraction 0874 §2** — previously mislabeled "etim" here; it is `player.lzs` section 2, the field-character texture pack, see [`formats/character-mesh.md`](../formats/character-mesh.md#textures-field-form)**)**: eight TIMs at `fb_y=256+` whose pages are **field-resident** through battle (the `fb(320,256)`/`fb(384,256)` pages match a `town01` field capture 256 rows byte-exact, and a mid-cast battle capture byte-matches the `(832..880, 256+)` tiles). The Gimard flame model samples *this* band (page `(832,256)`, CLUT row 478). The engine uploads it at scene entry (`scene::upload_effect_textures_into_vram`); the field VRAM-parity oracle uploads image-pages-only (`upload_clut = false`) since retail uploads the CLUT rows at battle entry.
+
+Full byte evidence: [`formats/effect.md` § Effect texels in VRAM](../formats/effect.md#effect-texels-in-vram---pixel-verified).
 
 The **3D-model render path** is wired: `World::active_effect_models` snapshots each live effect that has a model assigned (`EffectModel` = global-TMD-pool index + world position + age), and the native host (`play-window`) builds a textured `legaia_tmd` VRAM mesh for it through the standard mesh pipeline, drawing it at the effect origin with the `etim` texels resident.
 
-**The real effect-model library (PROT 871) is loaded.** `engine-core::scene::seed_effect_model_library_from_etmd` reads PROT 871 (`etmd.dat`, an uncompressed 30-entry `asset::pack` of Legaia TMDs spanning the entry's *extended* footprint) at scene entry and registers all 30 into `World::global_tmd_pool[3..=32]` - the same `DAT_8007C018[3..=32]` window retail fills at battle init (`FUN_800520F0` → `FUN_80026B4C`), overwriting the two trailing slots of the §0 field head exactly as retail's load order does. Gimard's *Tail Fire* is `GIMARD_TAIL_FIRE_MODEL_INDEX = 26` (pack entry 23); the `F`-key dev spawn in `play-window` draws it from the loaded library, falling back to the §0 preview mesh (`ETMD_TAIL_FIRE_MODEL_INDEX`) only when the library isn't resident.
+**The real effect-model library (extraction 0871, `etmd.dat`, raw index `0x369`) is loaded.**
+`engine-core::scene::seed_effect_model_library_from_etmd` reads entry 0871 (an
+uncompressed 30-entry `asset::pack` of Legaia TMDs spanning the entry's
+*extended* footprint) at scene entry and registers all 30 into
+`World::global_tmd_pool[3..=32]` - the same `DAT_8007C018[3..=32]` window
+retail fills at battle init (`FUN_800520F0` → `FUN_80026B4C`), overwriting the
+two trailing slots of the field character pack exactly as retail's load order
+does. Gimard's *Tail Fire* is `GIMARD_TAIL_FIRE_MODEL_INDEX = 26` (pack entry
+23); the `F`-key dev spawn in `play-window` draws it from the loaded library,
+falling back to the field-character-pack preview mesh
+(`ETMD_TAIL_FIRE_MODEL_INDEX`, the flame-like auxiliary TMD of extraction
+0874 §0) only when the library isn't resident.
 
 **Summon animation — render path RESOLVED (live trace); CLUT cycling falsified.** The model geometry is retail-accurate and the static flame renders with the correct baked row-478 CLUT.
 
@@ -72,7 +85,7 @@ See [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch) an
 
 This is distinct from the 2D billboard path here:
 
-- `World::active_effect_sprites` builds billboards from the `efect.dat` atlas, whose `tpage = 0x7680` samples VRAM **page (0,0), 8bpp** (confirmed via `FUN_801E0088` pass 2).
+- `World::active_effect_sprites` builds billboards from the `efect.dat` atlas. An earlier reading held that its `0x7680` field was a tpage sampling VRAM **page (0,0), 8bpp** — falsified by the pass-2 consumer.
 - That `0x7680` is the atlas entry's **CLUT**, not its tpage — the `+4`/`+6` fields are CLUT (u16) / tpage (byte), the reverse of an earlier reading (the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field). `0x7680` decodes as CBA fb `(0,474)`, an effect-CLUT row, *not* page `(0,0)`.
 - Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
 - The engine's `SpriteAtlasEntry` now reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame token cadence (`FUN_801E0088` pass 1 state algebra) is also still inlined-only; the render loops each child's anim batch uniformly over the effect lifetime as a stand-in.

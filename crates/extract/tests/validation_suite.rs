@@ -33,10 +33,10 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 /// class as their trailing sectors changed the byte histogram or extended
 /// the data-shape past the previous detector boundaries.
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
-    // `battle_data_pack` claims PROT 0865 (`battle_data` block) plus the
-    // 0863 `edstati3` entry that shares the same trailer-table shape.
-    // Also picks up one entry with a trailing-overlay tail that completes
-    // the pack-shape detector (3 entries total now).
+    // `battle_data_pack` = the player battle files (retail `battle_data`
+    // block, extraction 0863..0866 = PLAYER1..4). The detector's shifted
+    // table framing claims 3 of the 4 (Terra's 0866 table is all-default
+    // `id = 0` entries, which the count-position heuristic rejects).
     ("battle_data_pack", 3),
     ("data_field_streaming", 34),
     // `field_pack` 2 → 1: one of the two entries (PROT 4) leads with a

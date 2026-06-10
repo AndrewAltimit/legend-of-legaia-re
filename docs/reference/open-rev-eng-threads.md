@@ -283,7 +283,9 @@ The per-character stat-grant source is **static `SCUS_942.54` tables read by the
 
 *Status:* resolved
 
-The monster archive is **PROT entry `0867_battle_data`** (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). `FUN_800542C8` streams per-monster `0x14000` LZS slots at `(id-1)*0x14000`, each `[u32 dec_size][LZS]` decoding to a block whose head is the `FUN_80054CB0` stat record (name `@0x00`, XP/drop `@0x04`, HP `@0x0C`, MP `@0x10`, stat u16s `@0x0E/0x12/0x14/0x16/0x18/0x1A`, magic count `@0x4A`, spell-ptr array `@0x4C`). Pinned by a live-battle PCSX-Redux watchpoint (`autorun_monster_record_source.lua`) — relative seek `(id-1)*40` sectors + `disc_read` CdlLOC → PROT.DAT `0x38AF000` = entry 867; three records match live actor stats byte-for-byte. The `monster_data` label (PROT 869) is a stub.
+The monster archive is **PROT entry `0867_battle_data`** (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). `FUN_800542C8` streams per-monster `0x14000` LZS slots at `(id-1)*0x14000`, each `[u32 dec_size][LZS]` decoding to a block whose head is the `FUN_80054CB0` stat record (name `@0x00`, XP/drop `@0x04`, HP `@0x0C`, MP `@0x10`, stat u16s `@0x0E/0x12/0x14/0x16/0x18/0x1A`, magic count `@0x4A`, spell-ptr array `@0x4C`).
+
+Pinned by a live-battle PCSX-Redux watchpoint (`autorun_monster_record_source.lua`) — relative seek `(id-1)*40` sectors + `disc_read` CdlLOC → PROT.DAT `0x38AF000` = entry 867; three records match live actor stats byte-for-byte. Retail-semantically the archive **is** the `monster_data` block: the define `monster_data 869` names extraction entry 867 under the raw-TOC −2 correction ([`cdname.md`](../formats/cdname.md#numbering-space)) — the earlier "misleading `monster_data` stub at 869" reading was the filename shift.
 
 Parser `legaia_asset::monster_archive`; bridge `legaia_engine_core::monster_catalog::catalog_from_monster_archive` wired into `enter_field_scene`. The record is now fully decoded: all six stats are named (ATK/DEF↑/DEF↓/AGL/SPD/SP), rewards are inline at `+0x44..0x49`, and `+0x04` is the monster's **battle-model TMD** offset (not XP/drop — see the mesh thread below).
 
@@ -390,7 +392,7 @@ So the battle-form Noa/Gala palettes are scene-resident/runtime-composed and not
 
 It is **never in main RAM** in any captured save (checked every 32-byte sub-CLUT window across all party rows) — a transient **decompress→DMA-to-VRAM→free** upload that completes *before* the "encounter triggered" frame, faster than manual save granularity. The battle scene is **map01** (world map; `*(0x80084540)=0x55`), party Vahn/Noa/Gala, so the non-Vahn CLUTs are pulled by the **battle-entry party-load path**, not the field scene. Per-scene row-49x 16×1 CLUTs (35 scenes incl. town01) are field-actor palettes (0% value match to battle Noa) — a red herring.
 
-**Battle-init disc reads are party-INDEPENDENT** (PCSX-Redux probe, sstate8 Vahn-only vs sstate2 full-party — byte-identical entry set: monster 0x365→867, befect 0x367/8/9=871/872/873, 0x36B=875, 0x380=896, 0x384=900, 0x37A=890, music 1016, field-scene re-read 0x5A).
+**Battle-init disc reads are party-INDEPENDENT** (PCSX-Redux probe, sstate8 Vahn-only vs sstate2 full-party — byte-identical raw-TOC index set; raw → extraction is −2: monster `0x365`→867, conditional stream + `etim` + `etmd` `0x367/8/9`→869/870/871, `efect` `0x36B`→873, `readef` `0x380`→894, overlay `0x384`→898, `0x37A`→888, music raw 1016, field-scene re-read `0x5A`→88).
 
 **No character-CLUT read fires at battle entry** — the party CLUTs are resident in VRAM before the fight. Proper-decode (validated: finds Vahn490 in map01 sec0) of 871/872/873/875 + 0865 battle_data + 1202-1206 + 0874 all empty for Noa/Gala.
 
@@ -524,7 +526,9 @@ It confirms the saves: field/town is modes 2/3 MAIN (`game_mode 0x03`), and `MAP
 
 *Status:* resolved (major source); minor residue
 
-Single-snapshot byte-exact VRAM is **physically unachievable** — ~40% of the texpage band is dynamic/residual (two town01 captures disagree on ~40%), so the oracle (`vram_oracle_e1`) is reframed to the **static mask** (words stable across same-scene captures), excluding the runtime NPC/character CLUT band. With the field pre-pass doing DMA-every-TIM (`BuildOptions.upload_all_tims`), town01 passes byte-exact on every static pixel it uploads. The dominant missing static block is the **`befect_data` (PROT 0874) section-2 effect-texture TIMs** (`etim.dat`, 4bpp pages at `fb(320/384,256)` etc.) — field-resident, pixel-matched 256 rows byte-exact; the live engine uploads them at field entry (`scene::upload_effect_textures_into_vram`),
+Single-snapshot byte-exact VRAM is **physically unachievable** — ~40% of the texpage band is dynamic/residual (two town01 captures disagree on ~40%), so the oracle (`vram_oracle_e1`) is reframed to the **static mask** (words stable across same-scene captures), excluding the runtime NPC/character CLUT band. With the field pre-pass doing DMA-every-TIM (`BuildOptions.upload_all_tims`), town01 passes byte-exact on every static pixel it uploads.
+
+The dominant missing static block is the **extraction-0874 section-2 TIMs** (retail `player_data` / `player.lzs` §2, the field-character texture band — historically mislabeled `etim.dat`, which is extraction 0870; 4bpp pages at `fb(320/384,256)` etc.) — field-resident, pixel-matched 256 rows byte-exact; the live engine uploads them at field entry (`scene::upload_effect_textures_into_vram`),
 
 and the gap was an oracle artifact (the lightweight pre-pass skipped that step; now fixed, image pages only, since retail uploads their CLUTs at battle entry).
 
@@ -532,7 +536,9 @@ and the gap was an oracle artifact (the lightweight pre-pass skipped that step; 
 
 **Minor residue (open):** `x=896..1024, y=256` (~12k) is the character/party-texture region uploaded by the battle/character targeted-CLUT pass the field pre-pass excludes by design (the CLUT-scattering thread), plus ~2.5k UI residue.
 
-**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the `befect_data` band is **global, history-dependent** state — a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes (pinned at `(853,271)`: pre-battle/menu captures hold `0xFFFF` words, the disc TIM and every post-battle capture hold `0x3333`), so same-lineage captures misclassify them as static; the oracle now demands cross-scene staticity inside `scene::effect_texture_image_rects`. (2) the world-map walk view **palette-cycles** the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS` excludes them for world-map scenes (see the two open threads below).
+**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the extraction-0874 §2 (`player.lzs`) texture band is **global, history-dependent** state — a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes (pinned at `(853,271)`: pre-battle/menu captures hold `0xFFFF` words, the disc TIM and every post-battle capture hold `0x3333`), so same-lineage captures misclassify them as static; the oracle now demands cross-scene staticity inside `scene::effect_texture_image_rects`.
+
+(2) the world-map walk view **palette-cycles** the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS` excludes them for world-map scenes (see the two open threads below).
 
 
 ### World-map CLUT cycling beyond the ocean head — rows 508/509 + generated row-506 tail
@@ -546,11 +552,11 @@ Row 506's tail (entries ~40..47) additionally holds a **runtime-generated palett
 Open: whether the 508/509 entries + the 32..47 mirror ride the same 13-frame ocean DMA (a wider rect?) or a sibling writer; and the writer + purpose of the generated tail palette (marker/route colours?). VRAM writes aren't RAM-watchable; needs a GPU `LoadImage`-level trace or an overlay sweep for CLUT-row rect constants (`y = 506/508/509`). Engine residue: `play-window` animates the row-506 ocean head only; the exact retail cadence is also still unpinned.
 
 
-### `befect_data` boot-variant pixels — who uploads the `0xFFFF` row?
+### Extraction-0874 §2 (`player.lzs`) boot-variant pixels — who uploads the `0xFFFF` row?
 
 *Status:* open
 
-A freshly booted game holds a variant of the `befect_data` effect-texture band whose row-271 pixels (fb_x 852 page) read `0xFFFF` where the disc TIM (PROT 0874 §2) carries `0x3333`; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the `F`-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the `F`-variant (a different disc copy? an effect rendering into the page?).
+A freshly booted game holds a variant of the extraction-0874 §2 texture band (retail `player_data`; the band the extraction label calls `befect_data`) whose row-271 pixels (fb_x 852 page) read `0xFFFF` where the disc TIM (PROT 0874 §2) carries `0x3333`; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the `F`-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the `F`-variant (a different disc copy? an effect rendering into the page?).
 
 
 ### Scene-transition (`0x3F` door) destination indexing

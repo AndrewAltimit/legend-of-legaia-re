@@ -281,12 +281,18 @@ impl ResolvedAnm {
 pub const FIELD_SHARED_BLOCKS: &[&str] = &["init_data", "player_data"];
 
 /// CDNAME blocks the retail engine pre-loads before any battle
-/// scene fires: the per-character TMDs + texture pools inside
-/// `battle_data` (PROT 865..869). Pair with
+/// scene fires: the four player battle files `PLAYER1..4` (retail
+/// block `battle_data` = raw TOC 865..868 = extraction entries
+/// 863..866; see `docs/formats/cdname.md` § numbering space). The
+/// extraction *labels* split that range across "edstati3"
+/// (Vahn/Noa, 863/864) and "battle_data" (Gala/Terra, 865/866),
+/// so both labels are listed; non-pack entries inside either block
+/// (1-sector stubs, the monster-archive head) fail
+/// `battle_data_pack::detect` and are skipped. Pair with
 /// [`SceneResources::build_battle_boot_vram`] (or pass through to
 /// [`SceneResources::build_targeted_with_options`] as a shared
 /// block) when an engine wants the boot VRAM populated.
-pub const BATTLE_BOOT_BLOCKS: &[&str] = &["battle_data"];
+pub const BATTLE_BOOT_BLOCKS: &[&str] = &["edstati3", "battle_data"];
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
 /// CDNAME block, plus a parsed TMD pool, plus a count of how many TIMs

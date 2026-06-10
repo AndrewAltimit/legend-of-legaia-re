@@ -172,7 +172,7 @@ parser `legaia_asset::item_effect::stat_item_effect` / `ItemEffectTable::stat_ef
 
 The post-battle EXP / gold / drop are inline in each monster record at
 `+0x44..+0x49` (the global archive head; see
-[`legaia_asset::monster_archive`](../formats/battle-data-pack.md) and
+[`legaia_asset::monster_archive`](../formats/monster-animation.md) and
 [battle.md](battle.md)). The spoils function `FUN_8004E568` walks the dead
 enemies through the per-enemy **record-pointer table at `0x801C9348`** (populated
 by the loader `FUN_800542C8`) and computes:
