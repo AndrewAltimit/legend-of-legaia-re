@@ -67,6 +67,24 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
   meshes pass texel/vertex colour straight through). Default mode keeps
   the ambient-biased shade so untextured silhouettes stay readable.
 
+- **Semi-transparency blend modes.** Per-prim PSX blending on the
+  VRAM-mesh path (see the `psx_blend` module). The TMD mode byte's ABE
+  bit travels in bit 15 of the per-vertex TSB attribute (packed by the
+  `legaia_tmd::mesh` builders); the blend equation is the texpage ABR
+  field (TSB bits 5..=6): mode 0 `0.5*B + 0.5*F`, 1 `B + F`, 2 `B - F`,
+  3 `B + 0.25*F`. Because the STP decision is *per texel* (a texel's
+  BGR555 bit 15 picks blend-vs-opaque inside one semi-transparent prim),
+  the renderer draws two passes: the opaque pass draws everything but
+  discards STP texels of semi-transparent prims, then a blend pass
+  re-draws only the semi-transparent triangles (a per-ABR-mode index
+  tail appended at upload time by `psx_blend::append_semi_tail`) keeping
+  only STP texels, with one fixed-function blend pipeline per mode
+  (mode 0 uses a 0.5 blend constant; mode 2 is reverse-subtract; mode 3
+  pre-scales F by 0.25 in its fragment entry point). Blend draws depth-
+  test (`LessEqual`) but don't write depth, and run after all opaque
+  scene draws. `blend_apply` is the CPU mirror the blend-state mapping
+  is unit-tested against.
+
 In the `legaia-engine play-window` binary this whole mode is opt-in via
 the `LEGAIA_PSX_RENDER=1` environment variable.
 

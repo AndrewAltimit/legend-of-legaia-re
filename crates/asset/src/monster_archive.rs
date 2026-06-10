@@ -666,11 +666,13 @@ pub fn relocate_cba(cba: u16, slot: u8) -> u16 {
 
 /// Relocate a prim's TSB to battle `slot`: a 4bpp page at tpage column
 /// `5 + slot`, `tpage_y = 256`, with the original abr (blend) bits preserved.
+/// Bit 15 (the engine-side semi-transparency enable packed by
+/// `legaia_tmd::mesh::pack_tsb_semi`) also survives the relocation.
 pub fn relocate_tsb(tsb: u16, slot: u8) -> u16 {
     let abr = (tsb >> 5) & 0x3;
     let tpage_x_field = (MONSTER_PAGE_TPAGE_BASE + slot as u16) & 0xF;
     // tpage column (bits 0..3); tpage_y=256 -> bit 4; depth bits 7..8 = 0 (4bpp).
-    tpage_x_field | (1 << 4) | (abr << 5)
+    tpage_x_field | (1 << 4) | (abr << 5) | (tsb & 0x8000)
 }
 
 /// Size of the CLUT region at the head of the texture pool: 15 sequential
@@ -1193,6 +1195,12 @@ mod tests {
                 assert_eq!(tpage_y, 256, "tpage_y = 256");
                 assert_eq!(depth, 0, "4bpp depth");
                 assert_eq!(abr_out, abr, "abr preserved");
+                // The engine-side semi-transparency enable (TSB bit 15,
+                // `legaia_tmd::mesh::pack_tsb_semi`) survives relocation.
+                let semi = relocate_tsb(on_disc | 0x8000, slot);
+                assert_eq!(semi & 0x8000, 0x8000, "bit 15 preserved");
+                assert_eq!(semi & 0x7FFF, relocated, "low bits unchanged");
+                assert_eq!(relocated & 0x8000, 0, "bit 15 not invented");
             }
         }
     }

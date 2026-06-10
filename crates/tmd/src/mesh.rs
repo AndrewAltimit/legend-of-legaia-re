@@ -135,6 +135,24 @@ pub fn tmd_to_textured_mesh(tmd: &Tmd, buf: &[u8]) -> TexturedMesh {
     }
 }
 
+/// Bit 15 of the per-vertex TSB attribute carries the prim's
+/// semi-transparency enable (the group mode byte's ABE bit; see
+/// [`legaia_prims::GroupHeader::abe`]). A TMD TSB word only uses bits
+/// 0..=8 (texture-page x/y, ABR blend mode, pixel depth), so bit 15 is
+/// free for this engine-side packing. The engine-render VRAM-mesh shader
+/// reads the bit per prim; consumers that decode the TSB
+/// ([`legaia_prims::Prim::tpage_xy`]-style masked reads) are unaffected.
+/// `legaia_engine_render::psx_blend::TSB_SEMI_TRANSPARENT_BIT` mirrors
+/// this constant and is kept in lockstep.
+pub const TSB_SEMI_TRANSPARENT_BIT: u16 = 0x8000;
+
+/// Pack the prim semi-transparency enable into bit 15 of a TSB word (see
+/// [`TSB_SEMI_TRANSPARENT_BIT`]). Clears the bit first so on-disc garbage
+/// in the unused high bits can't leak through as a phantom enable.
+pub fn pack_tsb_semi(tsb: u16, abe: bool) -> u16 {
+    (tsb & !TSB_SEMI_TRANSPARENT_BIT) | if abe { TSB_SEMI_TRANSPARENT_BIT } else { 0 }
+}
+
 /// VRAM-aware textured mesh: per-vertex `(u, v)` and per-vertex `(cba, tsb)`
 /// PSX VRAM addresses. Built by [`tmd_to_vram_mesh`]; consumed by the
 /// engine-render VRAM-mesh pipeline, which does the page+CLUT lookup in
@@ -145,6 +163,8 @@ pub fn tmd_to_textured_mesh(tmd: &Tmd, buf: &[u8]) -> TexturedMesh {
 pub struct VramMesh {
     pub positions: Vec<[f32; 3]>,
     pub uvs: Vec<[u8; 2]>,
+    /// Per-vertex `[cba, tsb]`. The TSB half additionally carries the prim's
+    /// semi-transparency enable in bit 15 (see [`TSB_SEMI_TRANSPARENT_BIT`]).
     pub cba_tsb: Vec<[u16; 2]>,
     pub indices: Vec<u32>,
     /// Per-vertex normals, one per entry in `positions`. Computed at
@@ -225,7 +245,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
                 if prim.uvs.is_empty() {
                     continue;
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -297,7 +317,7 @@ pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramM
                 if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
                     continue;
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -409,7 +429,7 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
                 if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
                     continue;
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let tex_flag = if is_textured { 1u8 } else { 0u8 };
                 let mut push_vert = |vidx: u16, uv_idx: usize, corner: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
@@ -586,7 +606,7 @@ where
                 if !keep_prim(prim.cba, prim.tsb, &prim.uvs) {
                     continue;
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -756,7 +776,7 @@ where
                         continue;
                     }
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -860,7 +880,7 @@ where
                     continue;
                 }
                 stats.kept += 1;
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -942,7 +962,7 @@ pub fn tmd_to_vram_mesh_posed(
                 if prim.uvs.is_empty() {
                     continue;
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -1066,7 +1086,7 @@ pub fn tmd_to_vram_mesh_posed_rot(
                 if prim.uvs.is_empty() {
                     continue;
                 }
-                let ct = [prim.cba, prim.tsb];
+                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let r = rot_zyx([v.x as f32, v.y as f32, v.z as f32], cx, sx, cy, sy, cz, sz);
@@ -1433,9 +1453,23 @@ mod tests {
         assert_eq!(vmesh.cba_tsb.len(), 12);
         assert_eq!(vmesh.indices.len(), 12);
         assert_eq!(vmesh.triangle_count(), 4);
+        // The fixture group's mode byte is 0x27 (ABE set), so the builder
+        // packs the semi-transparency enable into TSB bit 15 on top of the
+        // all-zero on-disc CBA/TSB.
         for ct in &vmesh.cba_tsb {
-            assert_eq!(*ct, [0, 0]);
+            assert_eq!(*ct, [0, TSB_SEMI_TRANSPARENT_BIT]);
         }
+    }
+
+    #[test]
+    fn pack_tsb_semi_packs_bit15_only() {
+        // Sets the bit when ABE is on, leaves decode fields alone.
+        assert_eq!(pack_tsb_semi(0x001A, true), 0x801A);
+        assert_eq!(pack_tsb_semi(0x001A, false), 0x001A);
+        // Clears on-disc garbage in bit 15 when ABE is off.
+        assert_eq!(pack_tsb_semi(0x801A, false), 0x001A);
+        // All used TSB fields (bits 0..=8) survive the round trip.
+        assert_eq!(pack_tsb_semi(0x01FF, true) & 0x01FF, 0x01FF);
     }
 
     #[test]
