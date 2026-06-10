@@ -1601,6 +1601,26 @@ impl SceneHost {
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
         }
+        // Static prop colliders: one box centre per placed `.MAP` object
+        // (spawn position + the record's collision-footprint offset — the
+        // static-entity arm of the actor probe). Installed unconditionally
+        // (empty for scenes with no field map) so a stale scene's props
+        // never leak across a transition; blocking stays behind the opt-in
+        // `World::solid_field_npcs` flag.
+        self.world.field_prop_colliders = match self.scene.as_ref() {
+            Some(scene) => match scene.field_object_placements(&self.index) {
+                Ok(Some(placements)) => placements
+                    .iter()
+                    .map(|p| (p.collider_x, p.collider_z))
+                    .collect(),
+                Ok(None) => Vec::new(),
+                Err(err) => {
+                    eprintln!("[scene] field prop-collider load skipped: {err:#}");
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
         // The 16-entry floor-height LUT (MAN header, negated `s16` tiers) the
         // collision grid's low nibble indexes - resident so the floor-height
         // sampler (`World::sample_field_floor_height`, port of `FUN_80019278`)

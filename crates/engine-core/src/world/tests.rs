@@ -399,6 +399,37 @@ fn solid_field_npcs_block_at_retail_actor_standoff() {
 }
 
 #[test]
+fn solid_field_props_block_at_retail_static_standoff() {
+    // The STATIC-entity arm of the same probe (retail result bit `4`): a
+    // placed prop blocks with the wider ±80 box (`FIELD_PROP_BOX_HALF`)
+    // around its record-derived footprint centre. Head-on X+ press: the
+    // probe 64 ahead reads clear at exactly 144 out (delta 80, strict), the
+    // 2-unit step commits, and the next probe blocks — resting 142 short of
+    // the centre, 40 units further out than the ±40 moving-NPC box (the
+    // same pre-step parity as the NPC arm's 102).
+    let press = |solid: bool, prop: (i32, i32), start: (i16, i16)| {
+        let mut world = World::new();
+        world.install_field_player(0);
+        world.solid_field_npcs = solid;
+        world.field_prop_colliders.push(prop);
+        world.actors[0].move_state.world_x = start.0;
+        world.actors[0].move_state.world_z = start.1;
+        for _ in 0..100 {
+            world.advance_with_collision(0, 0x2000, 8);
+        }
+        world.actors[0].move_state.world_x
+    };
+    // Head-on: rest at prop_x - 142.
+    assert_eq!(press(true, (2000, 2526), (1800, 2526)), 2000 - 142);
+    // Flag off: the player walks straight through the prop.
+    assert!(press(false, (2000, 2526), (1800, 2526)) > 2000);
+    // Lateral reach is 80 + 32 = 112: a prop 100 off the walk line still
+    // blocks, one 120 off does not.
+    assert_eq!(press(true, (2000, 2526 + 100), (1800, 2526)), 2000 - 142);
+    assert!(press(true, (2000, 2526 + 120), (1800, 2526)) > 2000);
+}
+
+#[test]
 fn sample_field_floor_height_unloaded_or_out_of_range_returns_zero() {
     let world = World::new();
     // No grid loaded -> 0.
@@ -3042,9 +3073,11 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
     );
 }
 
-/// The interaction probe (retail `FUN_801cf9f4`): a just-pressed action button
-/// talks to the NPC within ±1 tile of the player, and only that one — a distant
-/// NPC is not triggered.
+/// The interaction probe (retail `FUN_801cf9f4` via the `DAT_801f2254`
+/// facing compass): a just-pressed action button talks to the NPC the player
+/// is *facing* (probe point 64 ahead, ±72 box), and only that one — a
+/// distant NPC is not triggered, and after the talk the player has been
+/// turned toward the matched NPC (the face-the-NPC step).
 #[test]
 fn interaction_probe_talks_to_adjacent_npc_only() {
     use crate::input::PadButton;
@@ -3053,9 +3086,11 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     world.mode = SceneMode::Field;
     world.player_actor_slot = Some(0);
     world.actors[0].active = true;
-    // Player at tile 20 (world 20*128 + 0x40 = 2624).
+    // Player at tile 20 (world 20*128 + 0x40 = 2624), facing X+ (engine
+    // heading 0x400) toward the adjacent NPC one tile ahead.
     world.actors[0].move_state.world_x = 2624;
     world.actors[0].move_state.world_z = 2624;
+    world.actors[0].move_state.render_26 = 0x400;
     // Adjacent NPC at tile (21, 20); a far NPC at tile 40 that must not trigger.
     world
         .field_npc_dialog
@@ -3073,7 +3108,39 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     assert_eq!(
         req.inline,
         vec![0x1F, b'h', b'i', 0x00],
-        "the probe opened the adjacent NPC (slot 5), not the far one"
+        "the probe opened the faced NPC (slot 5), not the far one"
+    );
+    assert_eq!(
+        world.actors[0].move_state.render_26, 0x400,
+        "face-the-NPC: the player heading points at the matched NPC (X+)"
+    );
+}
+
+/// The probe is facing-indexed: the same adjacent NPC does NOT answer when
+/// the player looks away from it (retail probes a single compass point 64
+/// units ahead of the facing, not a radius around the player).
+#[test]
+fn interaction_probe_requires_facing_the_npc() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    // NPC one tile X+ ahead, but the player faces Z+ (engine heading 0).
+    world.actors[0].move_state.render_26 = 0;
+    world
+        .field_npc_dialog
+        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.field_npc_positions.insert(5, (2752, 2624));
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_none(),
+        "an NPC beside the player is not talked to while facing away"
     );
 }
 
@@ -3096,7 +3163,36 @@ fn interaction_probe_no_npc_in_range_opens_nothing() {
     let _ = world.tick();
     assert!(
         world.current_dialog.is_none(),
-        "no NPC within +-1 tile -> the action button opens no dialogue"
+        "no NPC near the facing probe point -> the action button opens no dialogue"
+    );
+}
+
+/// Capture-grounded probe geometry: the `rimelm_npc_press_tetsu` frame has
+/// the player at (2762, 1782) pressed Z+ into Tetsu at (2752, 1856). With
+/// the player facing Z+, the `DAT_801f2254` sector-4 probe point lands at
+/// (2762, 1846) — deltas (10, 10) from Tetsu, well inside the ±72 interact
+/// box — so the action button talks to him from the captured rest position.
+#[test]
+fn interaction_probe_matches_tetsu_capture_geometry() {
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2762;
+    world.actors[0].move_state.world_z = 1782;
+    world.actors[0].move_state.render_26 = 0; // engine heading 0 = facing Z+
+    world
+        .field_npc_dialog
+        .insert(4, vec![0x1F, b'y', b'o', 0x00]);
+    world.field_npc_positions.insert(4, (2752, 1856));
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.current_dialog.is_some(),
+        "the captured press-rest position talks to Tetsu through the facing probe"
     );
 }
 
@@ -3118,6 +3214,7 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
     world.actors[0].active = true;
     world.actors[0].move_state.world_x = 2624; // tile 20
     world.actors[0].move_state.world_z = 2624;
+    world.actors[0].move_state.render_26 = 0x400; // facing X+, toward the NPC
 
     // Carrier 0 = scripted encounter; its NPC (slot 5) stands at the adjacent
     // tile (21, 20) with the sparring dialogue.

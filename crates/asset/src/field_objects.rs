@@ -60,6 +60,13 @@ pub const OBJECT_GRID_OFFSET: usize = 0x8000;
 pub const OBJECT_INDEX_MASK: u16 = 0x1FF;
 /// Object-record `+0x12` flag bit marking the tile as a placed/visible object.
 pub const FLAG_PLACED: u16 = 0x4;
+/// Object-record `+0x12` flag bit selecting the collision-footprint offset
+/// **correction** (`-x_off`, `+z_off`) in the static-entity collision arm.
+/// At spawn the bit is mirrored into the actor's `+0x52`, which
+/// `FUN_801cf9f4` tests before applying the correction (live-verified:
+/// town01 record `137`, flags `0x101E`, is the only catalogued static
+/// collision actor with `+0x52 & 8` set).
+pub const FLAG_COLLIDER_CORRECTION: u16 = 0x8;
 /// Object-index-grid cell bit marking the tile as a **visible** terrain cell.
 /// The overhead continent sweep (`FUN_801F69D8`) renders every cell with this
 /// bit set (ground / trees / mountains) - the bulk continent, distinct from
@@ -105,6 +112,13 @@ pub struct ObjectRecord {
     pub col_delta: i8,
     /// `+0x07` signed row delta to the footprint anchor.
     pub row_delta: i8,
+    /// `+0x0E` signed sub-tile X delta (16-unit steps) to the collision
+    /// footprint anchor — only read by the static-entity collision arm
+    /// (`FUN_801cf9f4`; see [`collision_footprint_offset`]).
+    pub sub_anchor_x: i8,
+    /// `+0x0F` signed sub-tile Z delta (16-unit steps); pairs with
+    /// [`Self::sub_anchor_x`].
+    pub sub_anchor_z: i8,
     /// `+0x10` `u16`: scene_asset_table TMD pack index for the object's mesh
     /// (the geometry id), for objects outside [`FIELD_ACTOR_BAND`].
     pub pack_index_field: u16,
@@ -136,6 +150,8 @@ impl ObjectRecord {
             z_off: i16::from_le_bytes([r[0x04], r[0x05]]),
             col_delta: r[0x06] as i8,
             row_delta: r[0x07] as i8,
+            sub_anchor_x: r[0x0E] as i8,
+            sub_anchor_z: r[0x0F] as i8,
             pack_index_field: u16::from_le_bytes([r[0x10], r[0x11]]),
             flags: u16::from_le_bytes([r[0x12], r[0x13]]),
             terrain_tile: r[0x14],
@@ -148,6 +164,30 @@ impl ObjectRecord {
     pub fn is_placed(&self) -> bool {
         self.flags & FLAG_PLACED != 0
     }
+}
+
+/// The collision-footprint offset of a placed static object, relative to its
+/// spawn (placement) world position — what retail's static-entity collision
+/// arm adds to the spawned actor's live position to centre the ±80-unit
+/// blocking box (`FUN_801cf9f4`, result bit `4`):
+///
+/// ```text
+/// off_x = col_delta * 0x80 + sub_anchor_x * 0x10
+/// off_z = row_delta * 0x80 + sub_anchor_z * 0x10
+/// if flags & FLAG_COLLIDER_CORRECTION { off_x -= x_off; off_z += z_off }
+/// ```
+///
+/// Live-verified against the spawned static collision actors of catalogued
+/// captures: town01 records `315` (offset `(80, -48)`) and `137`
+/// (correction arm, `(-32, -40)`), town0c `331`/`332`, koin3 `116`.
+pub fn collision_footprint_offset(rec: &ObjectRecord) -> (i32, i32) {
+    let mut off_x = rec.col_delta as i32 * TILE + rec.sub_anchor_x as i32 * 0x10;
+    let mut off_z = rec.row_delta as i32 * TILE + rec.sub_anchor_z as i32 * 0x10;
+    if rec.flags & FLAG_COLLIDER_CORRECTION != 0 {
+        off_x -= rec.x_off as i32;
+        off_z += rec.z_off as i32;
+    }
+    (off_x, off_z)
 }
 
 /// The scene_asset_table TMD pack index this object draws, or `None` for
@@ -196,6 +236,13 @@ pub struct Placement {
     pub pack_index: Option<u16>,
     /// The record's flags (placed bit already confirmed set).
     pub flags: u16,
+    /// World X of the static collision-box centre
+    /// (`world_x + collision_footprint_offset`); see
+    /// [`collision_footprint_offset`].
+    pub collider_x: i32,
+    /// World Z of the static collision-box centre; pairs with
+    /// [`Self::collider_x`].
+    pub collider_z: i32,
 }
 
 /// World X for a tile column + record X offset (`col*0x80 + x_off + 0x40`).
@@ -257,6 +304,8 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 floor_nibble,
                 pack_index: pack_mesh_index(obj_idx, &rec),
                 flags: rec.flags,
+                collider_x: world_x(col as u8, rec.x_off) + collision_footprint_offset(&rec).0,
+                collider_z: world_z(row as u8, rec.z_off) + collision_footprint_offset(&rec).1,
             });
         }
     }
@@ -343,6 +392,8 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                     pack_mesh_index(obj_idx, &rec)
                 },
                 flags: rec.flags,
+                collider_x: world_x(col as u8, rec.x_off) + collision_footprint_offset(&rec).0,
+                collider_z: world_z(row as u8, rec.z_off) + collision_footprint_offset(&rec).1,
             });
         }
     }
@@ -707,6 +758,54 @@ mod tests {
         // (32, 64); first corner -> bottom row (32, 95), page 0x1B / CLUT 0x7F41.
         assert_eq!(hf.uvs[4], [32, 95]);
         assert_eq!(hf.cba_tsb[4], [0x7F41, 0x001B]);
+    }
+
+    #[test]
+    fn collision_footprint_offset_matches_live_verified_records() {
+        // town01 record 315 (live static actor, `v0_1_pre_battle_tetsu`):
+        // col_delta 1, sub (-3, -3), no correction flag -> (80, -48).
+        let mut rec = [0u8; OBJECT_RECORD_STRIDE];
+        rec[0x06] = 1;
+        rec[0x0E] = 0xFD;
+        rec[0x0F] = 0xFD;
+        rec[0x12] = 0x16;
+        let r = ObjectRecord::parse(&rec, 0).unwrap();
+        assert_eq!(collision_footprint_offset(&r), (80, -48));
+
+        // town01 record 137 (the correction arm: flag bit 0x8 -> the spawn
+        // mirrors it into actor +0x52, and the offset subtracts x_off /
+        // adds z_off): deltas (-1, -1), sub (2, 2), x_off -64, z_off 56
+        // -> (-96 + 64, -96 + 56) = (-32, -40).
+        let mut rec = [0u8; OBJECT_RECORD_STRIDE];
+        rec[0x00..0x02].copy_from_slice(&(-64i16).to_le_bytes());
+        rec[0x04..0x06].copy_from_slice(&56i16.to_le_bytes());
+        rec[0x06] = 0xFF;
+        rec[0x07] = 0xFF;
+        rec[0x0E] = 2;
+        rec[0x0F] = 2;
+        rec[0x12..0x14].copy_from_slice(&0x101Eu16.to_le_bytes());
+        let r = ObjectRecord::parse(&rec, 0).unwrap();
+        assert_eq!(collision_footprint_offset(&r), (-32, -40));
+    }
+
+    #[test]
+    fn placements_carry_collider_centres() {
+        // A placed record with a footprint offset: the placement's collider
+        // centre = its world position + the offset.
+        let mut map = vec![0u8; 0x12000];
+        let rec = OBJECT_RECORD_STRIDE; // record 1
+        map[rec + 0x06] = 1; // col_delta 1 -> +128
+        map[rec + 0x0E] = 0xFD; // sub X -3 -> -48
+        map[rec + 0x0F] = 0xFD; // sub Z -3 -> -48
+        map[rec + 0x12] = FLAG_PLACED as u8;
+        let cell = OBJECT_GRID_OFFSET + (3 * GRID_DIM + 5) * 2; // (col 5, row 3)
+        map[cell..cell + 2].copy_from_slice(&1u16.to_le_bytes());
+        let ps = parse_placements(&map);
+        assert_eq!(ps.len(), 1);
+        let p = &ps[0];
+        assert_eq!((p.world_x, p.world_z), (5 * 128 + 64, 3 * 128 + 64));
+        assert_eq!(p.collider_x, p.world_x + 128 - 48);
+        assert_eq!(p.collider_z, p.world_z - 48);
     }
 
     #[test]
