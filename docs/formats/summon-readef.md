@@ -150,6 +150,17 @@ groups (streamed as `base+1` but not VRAM-uploaded by the applier) — is
 **not yet decoded**; the bytes LZS-decode plausibly but no consumer is pinned
 (see [open threads](../reference/open-rev-eng-threads.md)).
 
+## Tooling
+
+`asset summon-readef <entry.BIN>` lists every slot's class (texture / actor
+record / payload), texture layout, and attack-name string; `--texture-png-dir`
+decodes each texture slot's 4bpp page through a CLUT-row window (`--clut-sub`)
+to PNG; `--action-id` resolves an action id to its `(file, slot)` stream
+target. The attack-name sequence across the `summon.dat` actor records follows
+the spell-id order exactly (slot group 0 = the `0x81` cast, group 1 = `0x82`,
+…), independently corroborating the case-`0x32` banding; `readef.DAT` slot 0's
+page decodes to a legible dev "back read test" texture.
+
 ## See also
 
 - [`effect.md`](effect.md) — the resident efect.dat 2-pack this side-band
