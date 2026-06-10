@@ -108,15 +108,28 @@ pub fn engine_spu_from_retail(psx_spu: &PsxSpu<'_>) -> Option<Spu> {
         spu.master_left = l;
         spu.master_right = r;
     }
-    if let Some(raw) = psx_spu.reverb_mode() {
-        spu.reverb_mode_raw = raw;
-        spu.set_reverb_mode(ReverbMode::from_byte((raw & 0xFF) as u8));
+    // Identify the reverb preset from the captured coefficient registers
+    // rather than mednafen's `Reverb_Mode` sub-entry — that field is actually
+    // the per-voice reverb-enable mask (EON), not a libspu mode byte, so
+    // `from_byte(reverb_mode())` previously mis-mapped the busy EON value to
+    // `Off` and the retail-side PCM never had reverb. Retail runs Studio C
+    // globally (see docs/subsystems/audio.md).
+    if let Some(mode) = psx_spu
+        .reverb_registers()
+        .and_then(|r| ReverbMode::identify(&r))
+    {
+        spu.reverb_mode_raw = psx_spu.reverb_mode().unwrap_or(0);
+        if psx_spu.reverb_master_enabled().unwrap_or(true) {
+            spu.set_reverb_mode(mode);
+        }
     }
+    let reverb_mask = psx_spu.voice_reverb_mask().unwrap_or(0);
 
     let retail_voices = psx_spu.voices();
     let mut key_on_mask = 0u32;
     for (i, rv) in retail_voices.iter().enumerate() {
         let v = &mut spu.voices[i];
+        v.set_reverb_send(reverb_mask & (1u32 << i) != 0);
         if let Some(addr) = rv.start_addr {
             v.start_addr = addr;
         }
@@ -537,6 +550,21 @@ mod tests {
         // Hand-roll a small mednafen save with the SPU section populated
         // for voice 3: start_addr, pitch, ADSR phase non-zero (active).
         use legaia_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
+        // Studio C reverb register block (public PSX hardware-reference
+        // preset; what retail actually installs) laid into the `Regs` shadow
+        // at the reverb-register window (SPU 0x1F801DC0 = Regs[224]), with the
+        // EON voice-reverb-enable register (Regs[204]) routing voice 3.
+        let studio_c: [u16; 32] = [
+            0x00E3, 0x00A9, 0x6F60, 0x4FA8, 0xBCE0, 0x4510, 0xBEF0, 0xA680, 0x5680, 0x52C0, 0x0DFB,
+            0x0B58, 0x0D09, 0x0A3C, 0x0BD9, 0x0973, 0x0B59, 0x08DA, 0x08D9, 0x05E9, 0x07EC, 0x04B0,
+            0x06EF, 0x03D2, 0x05EA, 0x031D, 0x031C, 0x0238, 0x0154, 0x00AA, 0x8000, 0x8000,
+        ];
+        let mut regs = vec![0u8; 512];
+        for (i, w) in studio_c.iter().enumerate() {
+            let off = (224 + i) * 2;
+            regs[off..off + 2].copy_from_slice(&w.to_le_bytes());
+        }
+        regs[204 * 2..204 * 2 + 2].copy_from_slice(&(1u16 << 3).to_le_bytes()); // EON: voice 3
         let entries: &[(&str, Vec<u8>)] = &[
             ("SPURAM", vec![0u8; 512 * 1024]),
             ("Voices[3].StartAddr", 0x1000u32.to_le_bytes().to_vec()),
@@ -552,7 +580,8 @@ mod tests {
             ),
             ("(GlobalSweep[0]).Current", 0x3F00i16.to_le_bytes().to_vec()),
             ("(GlobalSweep[1]).Current", 0x3F00i16.to_le_bytes().to_vec()),
-            ("Reverb_Mode", 5u32.to_le_bytes().to_vec()),
+            ("SPUControl", 0xC080u16.to_le_bytes().to_vec()), // SPU + reverb on
+            ("Regs", regs),
         ];
         let mut body = Vec::new();
         for (name, value) in entries {
@@ -576,10 +605,15 @@ mod tests {
 
         assert_eq!(spu.master_left, 0x3F00);
         assert_eq!(spu.master_right, 0x3F00);
-        assert_eq!(spu.reverb_mode_raw, 5);
-        assert_eq!(spu.reverb.mode, ReverbMode::Hall);
+        // Reverb mode is identified from the captured coefficient registers
+        // (Studio C), not mednafen's `Reverb_Mode` (which is the EON mask).
+        assert_eq!(spu.reverb.mode, ReverbMode::StudioC);
         assert_eq!(spu.voices[3].start_addr, 0x1000);
         assert_eq!(spu.voices[3].pitch, 0x1234);
+        // Voice 3 is in the EON mask → reverb-routed.
+        assert!(spu.voices[3].reverb_send);
+        // Voice 4 isn't in the EON mask → dry.
+        assert!(!spu.voices[4].reverb_send);
         // Voice 3 retail-active → key_on'd.
         assert!(!spu.voices[3].is_off());
         // Voice 4 wasn't programmed → off.

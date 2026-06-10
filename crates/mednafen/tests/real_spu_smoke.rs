@@ -79,6 +79,33 @@ fn real_save_state_exposes_spu_voice_fields() {
     assert!(spu.spu_control().is_some(), "SPUControl missing");
     assert!(spu.master_volume().is_some(), "GlobalSweep current missing");
 
+    // Reverb routing (the C7-REVERB finding): retail master-enables reverb
+    // and runs the Studio C preset globally, with most voices reverb-routed.
+    assert!(spu.regs().is_some(), "Regs shadow missing");
+    assert_eq!(
+        spu.reverb_master_enabled(),
+        Some(true),
+        "retail master-enables reverb in every captured state"
+    );
+    let rr = spu.reverb_registers().expect("reverb registers present");
+    // dAPF1/dAPF2 are the Studio C signature.
+    assert_eq!(
+        (rr[0], rr[1]),
+        (0x00E3, 0x00A9),
+        "retail reverb preset is Studio C (dAPF1/dAPF2)"
+    );
+    // mednafen's `Reverb_Mode` field mirrors the per-voice EON mask exactly.
+    assert_eq!(
+        spu.reverb_mode().map(|m| m & 0x00FF_FFFF),
+        spu.voice_reverb_mask(),
+        "Reverb_Mode field equals the EON voice-reverb-enable mask"
+    );
+    assert_ne!(
+        spu.voice_reverb_mask(),
+        Some(0),
+        "retail routes voices into reverb by default"
+    );
+
     // Diagnostic: count how many voices the save state captured as active.
     let active = voices.iter().filter(|v| v.is_active()).count();
     let mvol = spu.master_volume().unwrap();

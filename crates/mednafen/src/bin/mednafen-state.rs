@@ -23,7 +23,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use legaia_mednafen::{
-    PsxGpu, SaveState, ScenarioManifest, VRAM_HEIGHT, VRAM_WIDTH, bisect,
+    PsxGpu, PsxSpu, SaveState, ScenarioManifest, VRAM_HEIGHT, VRAM_WIDTH, bisect,
     diff::{DiffOptions, diff_ram, sort_by_size},
     extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE, ram_slice},
     gpu::{nonzero_rows, vram_to_rgba8},
@@ -141,6 +141,17 @@ enum Cmd {
         /// offset, texture window, texture page) alongside the dump.
         #[arg(long)]
         regs: bool,
+    },
+    /// Dump the SPU reverb-routing snapshot: master reverb enable (SPUCNT
+    /// bit 7), reverb mode, and the per-voice reverb-send mask (EON), plus a
+    /// per-voice line (active / reverb-on / volume). This is the read side of
+    /// the "which voices does retail reverb" question for the C7-REVERB live
+    /// routing hunt — pure-Rust over an existing save state, no live probe.
+    Spu {
+        save: PathBuf,
+        /// Print all 24 voices instead of only the audible ones.
+        #[arg(long)]
+        all: bool,
     },
     /// List the scenarios known to the manifest.
     Scenarios {
@@ -338,6 +349,7 @@ fn main() -> Result<()> {
             out_bin,
             regs,
         } => cmd_vram_dump(&save, &out, out_bin.as_deref(), regs),
+        Cmd::Spu { save, all } => cmd_spu(&save, all),
         Cmd::Scenarios { manifest } => cmd_scenarios(&manifest),
         Cmd::ClutTrace {
             pack,
@@ -912,6 +924,83 @@ fn write_png(out: &Path, rgba: &[u8], w: u32, h: u32) -> Result<()> {
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     enc.write_header()?.write_image_data(rgba)?;
+    Ok(())
+}
+
+fn cmd_spu(save: &Path, all: bool) -> Result<()> {
+    let s = SaveState::from_path(save)?;
+    let spu = PsxSpu::new(&s);
+    println!("[spu] {}", save.display());
+
+    match spu.reverb_master_enabled() {
+        Some(on) => println!(
+            "  reverb master (SPUCNT bit 7) : {}",
+            if on { "ENABLED" } else { "disabled" }
+        ),
+        None => println!("  reverb master (SPUCNT bit 7) : <not captured>"),
+    }
+    match spu.reverb_mode() {
+        Some(m) => println!("  reverb mode                  : {m}"),
+        None => println!("  reverb mode                  : <not captured>"),
+    }
+    let reverb_mask = spu.voice_reverb_mask();
+    match reverb_mask {
+        Some(m) => println!("  voice reverb mask (EON)      : 0x{m:06X}"),
+        None => println!("  voice reverb mask (EON)      : <not captured>"),
+    }
+    if let Some(m) = reverb_mask {
+        let reverbed: Vec<usize> = (0..legaia_mednafen::SPU_NUM_VOICES)
+            .filter(|i| m & (1 << i) != 0)
+            .collect();
+        println!("  reverb-routed voices         : {reverbed:?}");
+    }
+
+    if let Some(wa) = spu.reverb_work_area() {
+        // mednafen stores ReverbWA in 16-bit (halfword) units; the work-area
+        // byte base is wa*2 and the size = 0x80000 - wa*2.
+        let size = 0x8_0000u32.saturating_sub(wa.wrapping_mul(2));
+        println!(
+            "  reverb work area (mBASE)     : 0x{:05X}  (size 0x{size:05X} bytes)",
+            wa * 2
+        );
+    }
+    if let Some(rr) = spu.reverb_registers() {
+        // dAPF1/dAPF2 are the most distinctive per-preset; print the lead
+        // registers so the preset can be matched against the known libspu
+        // tables (engine_audio::ReverbMode presets).
+        println!(
+            "  reverb regs dAPF1/dAPF2/vIIR : 0x{:04X} 0x{:04X} 0x{:04X}",
+            rr[0], rr[1], rr[2]
+        );
+        print!("  reverb regs[0..16]           :");
+        for r in &rr[..16] {
+            print!(" {r:04X}");
+        }
+        println!();
+        print!("  reverb regs[16..32]          :");
+        for r in &rr[16..] {
+            print!(" {r:04X}");
+        }
+        println!();
+    }
+
+    println!("  voices (idx: active reverb vol_l vol_r pitch):");
+    let voices = spu.voices();
+    for (i, v) in voices.iter().enumerate() {
+        let active = v.is_active();
+        if !all && !active {
+            continue;
+        }
+        let rev = reverb_mask.map(|m| m & (1 << i) != 0).unwrap_or(false);
+        println!(
+            "    {i:>2}: {} {} vol=({:>6},{:>6}) pitch={}",
+            if active { "ON " } else { "off" },
+            if rev { "REV" } else { "—  " },
+            v.vol_left.unwrap_or(0),
+            v.vol_right.unwrap_or(0),
+            v.pitch.map(|p| format!("0x{p:04X}")).unwrap_or_default(),
+        );
+    }
     Ok(())
 }
 

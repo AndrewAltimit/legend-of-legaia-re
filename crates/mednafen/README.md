@@ -10,8 +10,11 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   `MAIN.MainRAM.data8` as 2 MiB of main RAM.
 - Typed accessors over the `GPU` section (`PsxGpu` - VRAM bytes + control
   registers) and the `SPU` section (`PsxSpu` - 512 KiB SPU RAM, per-voice
-  state snapshots, key-on/-off masks, master volume, reverb mode). The
-  SPU accessor backs the audio-trace parity oracle in `engine-shell`.
+  state snapshots, key-on/-off masks, master volume, reverb mode, the 32
+  reverb coefficient registers + work area, and the per-voice reverb-send
+  `EON` mask). The SPU accessor backs the audio-trace parity oracle in
+  `engine-shell`; the reverb-routing accessors pinned retail's global
+  Studio C reverb (the C7-REVERB hunt - see `docs/subsystems/audio.md`).
 - Diff main RAM between two snapshots - coalesce per-byte changes into
   contiguous "regions" with PSX virtual addresses, suitable for handing to
   Ghidra to look up writers.
@@ -35,6 +38,7 @@ mednafen-state bisect --addr ADDR SAVE...
 mednafen-state trace  --addr ADDR SAVE...
 mednafen-state watch LABEL [--manifest PATH]
 mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs]
+mednafen-state spu SAVE [--all]      # reverb routing: master enable, mode, EON mask, per-voice
 mednafen-state clut-trace --pack PROT_ENTRY SAVE... [--json PATH --include-tmd-body]
 mednafen-state prim-dispatch-table SAVE [--overlay-targets-only]
 mednafen-state scenarios [--manifest PATH]

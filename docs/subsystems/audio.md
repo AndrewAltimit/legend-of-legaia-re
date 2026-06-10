@@ -187,7 +187,17 @@ The retail SPU implements reverb as a same-side / different-side IIR reflection 
 
 The `engine-audio` clean-room port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants — the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
 
-Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`. Spirit Arts and echo-flagged sound effects opt in; everything else stays dry.
+Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`.
+
+#### Retail reverb routing — Studio C, always on (capture-confirmed)
+
+A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, reading the SPU register shadow via [`PsxSpu::reverb_registers`](../../crates/mednafen/src/spu.rs) / `voice_reverb_mask` / `reverb_master_enabled`) pins what retail actually runs, and it falsifies the earlier "Spirit-Arts / echo cues selectively opt in, everything else dry" reading:
+
+- **The reverb network is master-enabled in every captured state** (`SPUCNT` bit 7 set) — field, town, battle, summon, title, minigames. There is no scene or cue that toggles it on.
+- **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across all 45 mednafen states and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
+- **Per-voice reverb-send (`EON`) is broad and always populated** — typically 15–22 of the 24 voices in any given state, including BGM and SFX voices, not a handful of "echo" voices. So reverb is the *default* routing, applied to nearly every keyed-on voice, not a per-cue effect.
+
+So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) — it selects `ReverbMode::StudioC` and routes every voice into the reverb send. (Output depth — `vLIN`/`vROUT`, set separately by `SpuSetReverbDepth` — is the one piece not fixed by the preset; the engine applies a fixed half-scale depth, overridable via `Reverb::set_output_volume`. The EON mask's exact per-voice membership varies per frame with which voices happen to be sounding; the engine routes all voices, a faithful approximation of the broad mask.)
 
 Boundaries:
 - Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
@@ -286,9 +296,9 @@ carry the bulk; CC99 carries **only** the two loop-marker values 20 and 30
 emitted ~once per track (a fixed init the engine ignores — it varies nothing,
 so it is not a per-track parameter). Notably **absent**: expression (CC11)
 and reverb-depth (CC91). So per-channel volume swells and per-cue reverb
-sends are not encoded in the SEQ stream — whatever drives the live
-reverb-enable for BGM (see the reverb routing above) lives outside the
-sequence data.
+sends are not encoded in the SEQ stream — consistent with the capture
+finding above that reverb is a fixed global (Studio C, master-on, voices
+routed by default), not a per-cue or per-channel parameter the score drives.
 
 **Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
 the two most-used controllers, and both are **dynamic** — the score swells

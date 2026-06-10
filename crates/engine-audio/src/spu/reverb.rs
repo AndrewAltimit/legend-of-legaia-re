@@ -74,6 +74,51 @@ impl ReverbMode {
         }
     }
 
+    /// The nine non-`Off` reverb modes, in `preset()` index order.
+    pub const ALL: [ReverbMode; 9] = [
+        ReverbMode::Room,
+        ReverbMode::StudioA,
+        ReverbMode::StudioB,
+        ReverbMode::StudioC,
+        ReverbMode::Hall,
+        ReverbMode::Space,
+        ReverbMode::Echo,
+        ReverbMode::Delay,
+        ReverbMode::Pipe,
+    ];
+
+    /// Identify which standard preset a raw reverb-register block (the 32
+    /// SPU registers `0x1F801DC0..0x1F801DFF` in hardware order) corresponds
+    /// to. Returns the mode whose preset matches the identity registers
+    /// exactly, or `None` if the block matches no standard preset (a
+    /// custom/edited reverb or a non-reverb capture). The trailing
+    /// `vLIN`/`vRIN` input-volume registers (indices 30/31) are *not* part of
+    /// the preset identity — they are set separately by `SpuSetReverbDepth` —
+    /// so they are excluded from the comparison.
+    pub fn identify(regs: &[u16; 32]) -> Option<ReverbMode> {
+        Self::ALL
+            .into_iter()
+            .find(|m| m.preset().is_some_and(|p| p.regs[..30] == regs[..30]))
+    }
+
+    /// Per-register mismatch count to each preset, for diagnosing a near-miss
+    /// when [`Self::identify`] returns `None`. Returns `(mode,
+    /// mismatched_register_count)` for every standard preset, sorted
+    /// closest-first. Compares the 30 identity registers (excludes
+    /// `vLIN`/`vRIN`).
+    pub fn closest(regs: &[u16; 32]) -> Vec<(ReverbMode, usize)> {
+        let mut v: Vec<(ReverbMode, usize)> = Self::ALL
+            .into_iter()
+            .filter_map(|m| {
+                let p = m.preset()?;
+                let n = (0..30).filter(|&i| p.regs[i] != regs[i]).count();
+                Some((m, n))
+            })
+            .collect();
+        v.sort_by_key(|&(_, n)| n);
+        v
+    }
+
     /// Resolve the hardware preset: work-area byte size + the 32 reverb
     /// registers in SPU layout order. `None` for [`ReverbMode::Off`] (the
     /// network is bypassed).
@@ -465,6 +510,43 @@ mod tests {
             let mbase = (0x80000 - p.size) / 8;
             assert_eq!(mbase * 8, 0x80000 - p.size);
         }
+    }
+
+    /// `identify` round-trips every preset's own register block to its mode.
+    #[test]
+    fn identify_round_trips_every_preset() {
+        for m in ReverbMode::ALL {
+            let regs = m.preset().unwrap().regs;
+            assert_eq!(ReverbMode::identify(&regs), Some(m), "{m:?}");
+            // `closest` ranks the true preset first with zero mismatches.
+            let (best, n) = ReverbMode::closest(&regs)[0];
+            assert_eq!(best, m);
+            assert_eq!(n, 0);
+        }
+    }
+
+    /// A register block that matches no preset is unidentified, and `closest`
+    /// still ranks something. (Flip one identity register of Studio C.)
+    #[test]
+    fn identify_rejects_non_preset_block() {
+        let mut regs = ReverbMode::StudioC.preset().unwrap().regs;
+        regs[10] ^= 0x1; // perturb mLSAME
+        assert_eq!(ReverbMode::identify(&regs), None);
+        assert_eq!(ReverbMode::closest(&regs)[0], (ReverbMode::StudioC, 1));
+    }
+
+    /// The reverb-register block retail installs (captured from real
+    /// mednafen save states across field / battle / summon scenes — all
+    /// byte-identical) is the Studio C preset. This pins what the live engine
+    /// must select to match retail's global reverb. See the C7-REVERB hunt.
+    #[test]
+    fn retail_reverb_block_is_studio_c() {
+        let retail: [u16; 32] = [
+            0x00E3, 0x00A9, 0x6F60, 0x4FA8, 0xBCE0, 0x4510, 0xBEF0, 0xA680, 0x5680, 0x52C0, 0x0DFB,
+            0x0B58, 0x0D09, 0x0A3C, 0x0BD9, 0x0973, 0x0B59, 0x08DA, 0x08D9, 0x05E9, 0x07EC, 0x04B0,
+            0x06EF, 0x03D2, 0x05EA, 0x031D, 0x031C, 0x0238, 0x0154, 0x00AA, 0x8000, 0x8000,
+        ];
+        assert_eq!(ReverbMode::identify(&retail), Some(ReverbMode::StudioC));
     }
 
     /// A sustained send produces a non-zero wet tail that stays inside the

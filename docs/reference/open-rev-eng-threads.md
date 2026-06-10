@@ -450,7 +450,11 @@ Residual sub-question: the `+0x4000` zero-init site (ruled out `FUN_8001f7c0` / 
 
 `_DAT_8007B83C` = 0x03 is the in-town / on-field gameplay mode. Pinned empirically by two independent retail captures: the `v0_1_pre_battle_tetsu` save (Vahn walking in Rim Elm / `town01`, before the Tetsu cutscene) and the runtime-pinned free-movement controller on `map03`, both at 0x03. `engine_core::mode::GameMode::scene_mode()` maps `MainMode (3) → SceneMode::Field` accordingly, and the `mode_trace_e3` + `v0_1_playthrough` oracles drive the engine into the field (`enter_field_live`) so they converge against the retail 0x03 snapshot.
 
-**Open:** the broader `engine_core::mode` model still runs `MainMode` via `TitleHandler` and labels index 3 "options menu" / treats `MapdispMode` (12/13) as the field — contradicted by the saves. Reconciling which retail handler the dispatcher actually runs for each index (the dev mode-table names mislead, per `project_mode_table_structure.md`) is the remaining work.
+**Handler map RECOVERED.** The index → handler/param/name map is now read straight off the disc by [`legaia_asset::mode_table`](../../crates/asset/src/mode_table.rs) (`asset mode-table`; disc-gated `mode_table_real`), so the dispatch is no longer guessed from the misleading dev names.
+
+It confirms the saves: field/town is modes 2/3 MAIN (`game_mode 0x03`), and `MAPDSIP` (12/13) is the **world-map display** mode, not the field — correcting an earlier `functions.md` label that called mode 12 "the actual gameplay-mode entry". Structural finding: 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map) and Mode 23 (memory card) carry their own. Full map in [`boot.md`](../subsystems/boot.md#full-handler-map-recovered-from-the-disc).
+
+**Residual (code, not RE):** the `engine_core::mode` model still runs `MainMode` via `TitleHandler` / labels index 3 "options menu"; reconciling the engine's `ModeHandler` wiring to this recovered map is the remaining work.
 
 
 ### Engine VRAM byte-exactness for town01
@@ -568,6 +572,27 @@ The on-disc per-record body decodes byte-exact across **all 296 records** in the
 The piece poses `R·v + T` about its own object origin (no centroid subtraction); frame 0 of an idle clip is the rest pose. Decoder `legaia_asset::player_anm::BoneTransform::decode` mirrors the decompiled C, pinned by the byte-exact unit test `bone_transform_decode_signed_12bit` (town01 record 17). The site characters page applies the same `(t, r)` pipeline.
 
 **Distinct ANM kind (not this one):** `FUN_80021DF4`'s `+0x5A == 6` block uses a separate 24-byte-per-bone keyframe layout — see [`anm.md`](../formats/anm.md).
+
+## Audio
+
+| Thread | Status | What would close it | Memory |
+|---|---|---|---|
+| SPU reverb live routing (C7-REVERB) | resolved + WIRED (Studio C, global) | [details ↓](#spu-reverb-live-routing-c7-reverb) | `project_reverb_studio_c_global.md` |
+
+
+### SPU reverb live routing (C7-REVERB)
+
+*Status:* resolved — retail runs **`Studio C`, master-enabled, globally**; the "selective per-cue reverb-enable source" the hunt was looking for does not exist.
+
+A pure-Rust read of the save-state corpus (no live probe) settled it. `legaia_mednafen::PsxSpu` reads the SPU register shadow (`Regs` block): `reverb_master_enabled` (`SPUCNT` bit 7), `reverb_registers` (the 32 reverb coefficient/address registers at `0x1F801DC0..0x1F801DFF`), and `voice_reverb_mask` (the per-voice `EON` enable at `0x1F801D98`/`0x9A` — which mednafen also mirrors under its `Reverb_Mode` sub-entry, a byte-for-byte cross-check across every state). CLI: `mednafen-state spu <state>`.
+
+Across all 45 mednafen states (field / town / battle / summon / title / minigames):
+
+- **Master reverb is always enabled** (`SPUCNT` bit 7 set everywhere). No scene toggles it.
+- **The preset is `Studio C` everywhere** — the 32-register block is byte-identical in every state and matches the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`engine_audio::ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block → `StudioC`.
+- **Per-voice reverb-send (`EON`) is broad** — 15–22 of 24 voices in any state, BGM + SFX alike. Reverb is the default routing, not a per-cue effect.
+
+So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace. **WIRED:** the live engine calls `Spu::set_retail_reverb` once at SPU init (`StreamResampler::new`) — `ReverbMode::StudioC` + every voice routed. The PCM oracle's retail-side reverb is also fixed (it previously mis-read the EON mask as a mode byte and ran `Off`). Residual is only the output-depth tuning (`SpuSetReverbDepth`, `vLIN`/`vROUT`; the engine uses a fixed half-scale approximation). Falsifies the earlier "Spirit-Arts / echo cues opt in, everything else dry" reading in [`audio.md`](../subsystems/audio.md#retail-reverb-routing--studio-c-always-on-capture-confirmed).
 
 ## Title / boot / overlays
 

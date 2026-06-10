@@ -53,6 +53,29 @@ Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two 
 | 24 `OTHER INIT` | `FUN_80025980` | ? | 896 | Mode-24 OTHER overlay (cited by `dump_round8.py`'s `OVERLAY_0896_TARGETS`) — **not** "battle background" despite CDNAME `bat_back_dat`. |
 | 26 `STR INIT` | `FUN_80025FB4` | (FMV path) | — | Cutscene / STR FMV mode entry. Title-overlay tick writes `_DAT_8007B83C = 0x1A` (= 26) on attract underflow → enters this mode. |
 
+##### Full handler map (recovered from the disc)
+
+[`legaia_asset::mode_table`](https://github.com/altimit-mii/legend-of-legaia-re/tree/main/crates/asset/src/mode_table.rs) reads the whole table out of `SCUS_942.54` (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`). Init handlers (even index) and per-frame handlers (odd index):
+
+| Mode | Name (disc string) | Init handler | Per-frame handler |
+|---|---|---|---|
+| 0/1 | CONFIG | `0x80025C68` | `0x80025EEC` |
+| 2/3 | MAIN (field/town) | `0x80025B64` | `0x80025EEC` |
+| 4/5 | MONSTER TEST | `0x8002611C` | `0x80025EEC` |
+| 6/7 | TMD TEST | `0x801CF730` (overlay) | `0x80025EEC` |
+| 8/9 | EFECT TEST | `0x80025E68` | `0x80025EEC` |
+| 10/11 | TEST | `0x8002B97C` | `0x80025EEC` |
+| 12/13 | MAPDSIP (world-map display) | `0x80025DA0` | `0x80025F2C` |
+| 14/15 | MAP TEST | `0x8002B904` | `0x80025EEC` |
+| 16/17 | READ | `0x8002612C` | `0x80025EEC` |
+| 18/19 | GAME OVER | `0x80025B30` | `0x80025EEC` |
+| 20/21 | BATTLE | `0x800565D8` | `0x80025EEC` |
+| 22/23 | CARD (memory card) | `0x8002574C` | `0x80025F74` |
+| 24/25 | OTHER | `0x80025980` | `0x80025EEC` |
+| 26/27 | STR (FMV) | `0x80025FB4` | `0x80025EEC` |
+
+**Structural fact:** 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map display) and Mode 23 (memory card) carry their own. So the per-frame "MODE" half of the state machine is mostly one shared tick parameterised by `+0x14`, not 14 distinct handlers. (The `0x80025DA0` MAPDSIP-init dev string is misspelled on the disc — "MAPDSIP", not "MAPDISP".)
+
 **The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen — the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the slot-machine debug mode. The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
 
 #### New Game boot chain (title → field)

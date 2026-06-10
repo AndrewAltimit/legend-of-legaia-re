@@ -83,9 +83,11 @@ pub enum GameMode {
     TestTest,
     /// Mode 11 - generic test per-frame.
     TestMode,
-    /// Mode 12 - field/town init (MAPDISP MODE INIT).
+    /// Mode 12 - world-map display init (MAPDSIP MODE INIT, disc-misspelled).
+    /// NOT field/town: field/town is `MainMode` (2/3, `game_mode 0x03`). The
+    /// MAPDISP per-frame handler routes the world-map render tick.
     MapdispInit,
-    /// Mode 13 - field/town per-frame (MAPDISP MODE).
+    /// Mode 13 - world-map display per-frame (MAPDSIP MODE). See `MapdispInit`.
     MapdispMode,
     /// Mode 14 - map test init (debug).
     MapTest,
@@ -170,7 +172,11 @@ impl GameMode {
             // misleading here; the broader question of which handler the retail
             // dispatcher runs for index 3 is a separate open RE thread.
             GameMode::MainMode => SceneMode::Field,
-            GameMode::MapdispInit | GameMode::MapdispMode => SceneMode::Field,
+            // MAPDISP (12/13) is the world-map DISPLAY mode, not the field —
+            // pinned by the disc mode table (legaia_asset::mode_table): its
+            // per-frame handler 0x80025F2C routes the world-map render tick
+            // (docs/subsystems/world-map.md). Field/town is MainMode above.
+            GameMode::MapdispInit | GameMode::MapdispMode => SceneMode::WorldMap,
             GameMode::BattleInit | GameMode::BattleMode => SceneMode::Battle,
             GameMode::StrInit | GameMode::StrMode => SceneMode::Cutscene,
             // Title / config / debug-test modes don't drive a Field/Battle
@@ -568,9 +574,12 @@ mod tests {
     }
 
     #[test]
-    fn scene_mode_for_field_modes_is_field() {
-        assert_eq!(GameMode::MapdispInit.scene_mode(), SceneMode::Field);
-        assert_eq!(GameMode::MapdispMode.scene_mode(), SceneMode::Field);
+    fn scene_mode_field_is_main_mode_not_mapdisp() {
+        // Field/town gameplay is MainMode (game_mode 0x03); MAPDISP (12/13)
+        // is the world-map display mode.
+        assert_eq!(GameMode::MainMode.scene_mode(), SceneMode::Field);
+        assert_eq!(GameMode::MapdispInit.scene_mode(), SceneMode::WorldMap);
+        assert_eq!(GameMode::MapdispMode.scene_mode(), SceneMode::WorldMap);
     }
 
     #[test]
@@ -604,7 +613,7 @@ mod tests {
         assert_eq!(d.current(), GameMode::MapdispMode);
         assert_eq!(d.frames, 3);
         assert_eq!(d.frames_in_mode, 3);
-        assert_eq!(w.mode, SceneMode::Field);
+        assert_eq!(w.mode, SceneMode::WorldMap);
     }
 
     #[test]

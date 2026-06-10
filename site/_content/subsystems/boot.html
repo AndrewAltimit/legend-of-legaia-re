@@ -50,7 +50,30 @@
 
 <section class="doc-section" id="game-mode">
   <h2>Game-mode state machine</h2>
-  <p>The 28-mode state machine table at <code>0x8007078C</code> is the top-level "what is the game doing" dispatcher. Each entry is a <code>(handler_addr, &hellip;)</code> tuple corresponding to a major mode - boot, title, field, battle, world map, menu, cutscene, and so on.</p>
+  <p>The 28-mode state machine table at <code>0x8007078C</code> is the top-level "what is the game doing" dispatcher. Each 24-byte entry is a <code>(name_ptr, &hellip;, handler_ptr, param)</code> tuple corresponding to a major mode &mdash; boot, title, field, battle, world map, menu, cutscene, and so on. Modes come in init/per-frame pairs (even index = init, odd = per-frame).</p>
+
+  <h3>Handler map (recovered from the disc)</h3>
+  <p>The whole table is static executable data, so <code>legaia_asset::mode_table</code> reads the index &rarr; handler/param/name map straight out of <code>SCUS_942.54</code> (<code>asset mode-table</code>; disc-gated test). The dev names mislead &mdash; this is the ground-truth dispatch:</p>
+  <table>
+    <thead><tr><th>Mode</th><th>Name (disc)</th><th>Init handler</th><th>Per-frame handler</th></tr></thead>
+    <tbody>
+      <tr><td>0/1</td><td>CONFIG (slot-machine debug)</td><td><code>0x80025C68</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>2/3</td><td><strong>MAIN (field/town)</strong></td><td><code>0x80025B64</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>4/5</td><td>MONSTER TEST</td><td><code>0x8002611C</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>6/7</td><td>TMD TEST</td><td><code>0x801CF730</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>8/9</td><td>EFECT TEST</td><td><code>0x80025E68</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>10/11</td><td>TEST</td><td><code>0x8002B97C</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>12/13</td><td><strong>MAPDSIP (world-map display)</strong></td><td><code>0x80025DA0</code></td><td><code>0x80025F2C</code></td></tr>
+      <tr><td>14/15</td><td>MAP TEST</td><td><code>0x8002B904</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>16/17</td><td>READ</td><td><code>0x8002612C</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>18/19</td><td>GAME OVER</td><td><code>0x80025B30</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>20/21</td><td>BATTLE</td><td><code>0x800565D8</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>22/23</td><td>CARD (memory card)</td><td><code>0x8002574C</code></td><td><code>0x80025F74</code></td></tr>
+      <tr><td>24/25</td><td>OTHER</td><td><code>0x80025980</code></td><td><code>0x80025EEC</code></td></tr>
+      <tr><td>26/27</td><td>STR (FMV)</td><td><code>0x80025FB4</code></td><td><code>0x80025EEC</code></td></tr>
+    </tbody>
+  </table>
+  <p><strong>Two structural facts:</strong> (1) field/town gameplay is modes 2/3 MAIN (<code>game_mode 0x03</code>), <em>not</em> the world map &mdash; the "MAPDSIP" pair (12/13, misspelled on the disc) is the world-map <em>display</em> mode, whose per-frame handler routes the world-map render tick. (2) 12 of the 14 per-frame ("MODE") handlers share one generic per-frame tick <code>0x80025EEC</code>; only Mode 13 (world map) and Mode 23 (memory card) carry their own &mdash; so the per-frame half is mostly one shared handler parameterised by <code>+0x14</code>.</p>
 
   <p>The script VM that drives every running script is <strong>not</strong> in <code>SCUS_942.54</code>. It lives in RAM overlays at <code>0x801C0000+</code>, loaded on demand:</p>
 
