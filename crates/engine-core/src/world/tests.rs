@@ -368,6 +368,36 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
 }
 
 #[test]
+fn solid_field_npcs_block_at_retail_actor_standoff() {
+    // The actor-collision probes (`FIELD_ACTOR_PROBES`, retail
+    // `DAT_801f21b4` through `FUN_801cfc40`'s static-entity box test) make
+    // an NPC anchor block a walk: probe 64 ahead, hit when within
+    // `FIELD_ACTOR_BOX_HALF` (80) of the anchor on both axes (strict), so a
+    // head-on X+ press commits its last 2-unit step from exactly 144 units
+    // out (probe delta 80 reads clear) and rests 142 short of the anchor.
+    let press = |solid: bool, npc: (i16, i16), start: (i16, i16)| {
+        let mut world = World::new();
+        world.install_field_player(0);
+        world.solid_field_npcs = solid;
+        world.field_npc_positions.insert(1, npc);
+        world.actors[0].move_state.world_x = start.0;
+        world.actors[0].move_state.world_z = start.1;
+        for _ in 0..100 {
+            world.advance_with_collision(0, 0x2000, 8);
+        }
+        world.actors[0].move_state.world_x
+    };
+    // Head-on: rest at anchor_x - 142.
+    assert_eq!(press(true, (2000, 2526), (1800, 2526)), 2000 - 142);
+    // Flag off: the player walks straight through the NPC.
+    assert!(press(false, (2000, 2526), (1800, 2526)) > 2000);
+    // Lateral reach is 80 + 32 = 112: an anchor 100 off the walk line still
+    // blocks (the ±32 lateral probe gets within 68), one 120 off does not.
+    assert_eq!(press(true, (2000, 2526 + 100), (1800, 2526)), 2000 - 142);
+    assert!(press(true, (2000, 2526 + 120), (1800, 2526)) > 2000);
+}
+
+#[test]
 fn sample_field_floor_height_unloaded_or_out_of_range_returns_zero() {
     let world = World::new();
     // No grid loaded -> 0.

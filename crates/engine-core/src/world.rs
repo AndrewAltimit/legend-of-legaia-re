@@ -117,6 +117,29 @@ const FIELD_WALL_PROBES: [[(i16, i16); 3]; 4] = [
     [(48, -16), (48, 0), (48, 16)], // dir 3: X+ (edge at x+48, ±16 in Z)
 ];
 
+/// Retail actor-collision probe table `DAT_801f21b4` (field overlay 0897,
+/// file offset `0x2399C`, the sibling 0x60 bytes before
+/// [`FIELD_WALL_PROBES`]'s `DAT_801f2214`), decoded from the disc. Same
+/// shape and `(x + dx, z - dz)` application as the wall table, but the
+/// probes feed the per-actor box test `FUN_801cfc40` instead of the
+/// walkability grid: a wider sweep (64/63 ahead, ±32 lateral vs the wall
+/// probes' 48/47, ±16) because actors block with a body box rather than a
+/// sub-cell edge. The trailing fourth on-disc pair (a half-distance centre
+/// point, `(0,32)`-class) is never read by `FUN_801cfe4c` and is omitted.
+const FIELD_ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
+    [(-32, 64), (0, 64), (32, 64)], // dir 0: Z- (probes at z-64, ±32 in X)
+    [(-63, -32), (-63, 0), (-63, 32)], // dir 1: X- (probes at x-63, ±32 in Z)
+    [(-32, -63), (0, -63), (32, -63)], // dir 2: Z+ (probes at z+63, ±32 in X)
+    [(64, -32), (64, 0), (64, 32)], // dir 3: X+ (probes at x+64, ±32 in Z)
+];
+
+/// Half-extent of the box a STATIC field entity blocks with, around its MAN
+/// placement anchor: retail `FUN_801cfc40` tests `|probe - anchor| <
+/// 0x40 + 0x10` per axis (the `0x40` body core plus the static entity's
+/// `0x10` pad), so a probe point within 80 units of the anchor on both axes
+/// is a hit.
+const FIELD_ACTOR_BOX_HALF: i32 = 0x40 + 0x10;
+
 /// Cold field-entry player spawn coordinate (both X and Z).
 ///
 /// On a non-warp (cold) field scene entry, the per-scene initializer
@@ -780,6 +803,16 @@ pub struct World {
     /// retail-faithful wall standoff. Validated against the wall-press
     /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
     pub leading_edge_wall_probes: bool,
+    /// When set, pad locomotion also blocks a direction when any of retail's
+    /// **actor-collision probes** ([`FIELD_ACTOR_PROBES`], the `DAT_801f21b4`
+    /// sibling table) lands inside a field NPC's body box
+    /// ([`Self::field_actor_dir_blocked`]) - NPCs become solid, as in retail,
+    /// where `FUN_801cfe4c`'s actor bits (`1`/`4`) gate a step exactly like
+    /// the wall bit (`2`). Off by default for the same oracle-stability
+    /// reason as [`Self::leading_edge_wall_probes`]. The retail touch
+    /// side-effects (event post `FUN_801d5b5c` on the `+0x98`-linked partner,
+    /// face-the-NPC turn) are not modelled.
+    pub solid_field_npcs: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -1945,6 +1978,7 @@ impl World {
             field_floor_height_lut: [0i16; 16],
             follow_terrain_height: false,
             leading_edge_wall_probes: false,
+            solid_field_npcs: false,
             field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
@@ -6310,12 +6344,47 @@ impl World {
     /// while the edge is still clear and the next step from the deeper
     /// position blocks — the player rests 47-48 units off the wall plane,
     /// step-exact (pinned by the `rimelm_wall_press_left`/`_down` captures).
-    /// The actor/edge probe siblings (`FUN_801cfc40`, result bits `1`/`4`,
-    /// table `DAT_801f21b4`) are not modelled here.
+    /// The actor-collision arm (result bits `1`/`4`) is
+    /// [`Self::field_actor_dir_blocked`].
     pub fn field_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         FIELD_WALL_PROBES[dir & 3]
             .iter()
             .any(|&(dx, dz)| self.field_tile_is_wall(x.saturating_add(dx), z.saturating_sub(dz)))
+    }
+
+    /// Retail's actor-collision direction test: from the CURRENT position
+    /// `(x, z)`, take the three probe points of [`FIELD_ACTOR_PROBES`] row
+    /// `dir` (same `(x + dx, z - dz)` convention as the wall probes) and
+    /// box-test each against every field NPC's placement anchor
+    /// ([`Self::field_npc_positions`]); the direction is blocked when any
+    /// probe lands within [`FIELD_ACTOR_BOX_HALF`] (80 units) of an anchor on
+    /// both axes.
+    ///
+    /// PORT: FUN_801cfc40
+    /// REF: FUN_801cfe4c
+    ///
+    /// This is the static-entity arm of `FUN_801cfc40` (result bit `4`): a
+    /// static entity (`flags & 0x1020000 == 0`) anchors at its MAN object
+    /// record (`tile * 128 + sub * 16`, record bytes `+6`/`+7` and
+    /// `+0xE`/`+0xF`) with the `0x40 + 0x10` half-extent; the engine's
+    /// [`Self::field_npc_positions`] holds those anchors. The moving-actor
+    /// arm (result bit `1`, flags `0x40020000`, caller-supplied extents) and
+    /// the retail touch side-effects (mutual `+0x98` partner link, event
+    /// post `FUN_801d5b5c`, face-the-NPC turn via `func_0x80019b28`) are not
+    /// modelled. Retail's `_DAT_8007b6b8 == 0x20` full-table special case
+    /// delegates to the `FUN_801cf9f4` box-test variant; not modelled either.
+    pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+        if self.field_npc_positions.is_empty() {
+            return false;
+        }
+        FIELD_ACTOR_PROBES[dir & 3].iter().any(|&(dx, dz)| {
+            let px = x.saturating_add(dx) as i32;
+            let pz = z.saturating_sub(dz) as i32;
+            self.field_npc_positions.values().any(|&(ax, az)| {
+                (px - ax as i32).abs() < FIELD_ACTOR_BOX_HALF
+                    && (pz - az as i32).abs() < FIELD_ACTOR_BOX_HALF
+            })
+        })
     }
 
     /// Decode this frame's held d-pad into a camera-relative movement
@@ -6481,9 +6550,14 @@ impl World {
     /// position ([`Self::field_dir_blocked`]) — the retail standoff — and
     /// commits the step whenever the edge is clear. The default candidate-
     /// centre test is kept (off-flag) for the locomotion oracles and the
-    /// BFS nav drivers.
+    /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis
+    /// additionally blocks when the direction's actor-collision probes land
+    /// inside a field NPC's body box ([`Self::field_actor_dir_blocked`]) —
+    /// retail gates a step on the actor bits and the wall bit together
+    /// (`FUN_801cfe4c` returning any of `1`/`2`/`4` refuses the 2-unit step).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let edge = self.leading_edge_wall_probes;
+        let solid_npcs = self.solid_field_npcs;
         let mut remaining = speed;
         while remaining > 0 {
             let ms = &self.actors[slot].move_state;
@@ -6495,7 +6569,7 @@ impl World {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                };
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 2));
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
@@ -6505,7 +6579,7 @@ impl World {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                };
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 0));
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
@@ -6519,7 +6593,7 @@ impl World {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                };
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 3));
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
@@ -6529,7 +6603,7 @@ impl World {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                };
+                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 1));
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
