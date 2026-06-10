@@ -562,6 +562,16 @@ pub struct LevelUpTracker {
     /// Cumulative XP thresholds: `xp_table[current_level - 1]` = XP to reach
     /// `current_level + 1`. Length should be `MAX_LEVEL - 1`.
     pub xp_table: Vec<u32>,
+    /// Slots-1/2 per-level XP-threshold correction divisors
+    /// (`legaia_asset::level_up_tables::xp_correction_divisors_from_scus`,
+    /// indexed by the character's current level). When installed, slot 1
+    /// (Noa) reaches each level `threshold * 0x14 / divisor[level]` XP
+    /// *earlier* and slot 2 (Gala) that much *later*, mirroring the retail
+    /// threshold builder `FUN_801E9504` (slot 0 / Vahn is uncorrected; the
+    /// divisor table pointer `_DAT_8007B81C` is constant `0x80070A2C` across
+    /// the whole save corpus, so this is static SCUS data). `None` (the
+    /// default) keeps every slot on the uncorrected `xp_table`.
+    pub xp_corrections: Option<Vec<i16>>,
     /// HP / MP increments applied per level gained, indexed by party slot.
     /// Allows different growth rates per character (Vahn / Noa / Gala).
     pub stat_gains: [StatGain; MAX_PARTY],
@@ -589,6 +599,7 @@ impl Default for LevelUpTracker {
             xp: [0; MAX_PARTY],
             level: [1; MAX_PARTY],
             xp_table: retail_xp_table(),
+            xp_corrections: None,
             stat_gains: [StatGain::default(); MAX_PARTY],
             stat_curves: std::array::from_fn(|_| StatGrowthCurve::default()),
             growth_tables: None,
@@ -606,6 +617,35 @@ impl LevelUpTracker {
     pub fn with_xp_table(mut self, table: Vec<u32>) -> Self {
         self.xp_table = table;
         self
+    }
+
+    /// Install the slots-1/2 XP-threshold correction divisors (see
+    /// [`Self::xp_corrections`]).
+    pub fn with_xp_corrections(mut self, divisors: Vec<i16>) -> Self {
+        self.xp_corrections = Some(divisors);
+        self
+    }
+
+    /// The XP threshold for `slot` to advance from `level` to `level + 1`:
+    /// the base `xp_table` entry, with the retail slots-1/2 correction
+    /// applied when divisors are installed — slot 1 (Noa) subtracts
+    /// `threshold * 0x14 / divisor[level]`, slot 2 (Gala) adds it, every
+    /// other slot takes the base unchanged (`FUN_801E9504`).
+    ///
+    /// PORT: FUN_801E9504 (slots-1/2 threshold correction; base formula in
+    /// legaia_asset::level_up_tables::xp_threshold_for)
+    pub fn threshold_for(&self, slot: usize, level: u8) -> Option<u32> {
+        let base = self.xp_table.get(level as usize - 1).copied()?;
+        let Some(divs) = self.xp_corrections.as_ref() else {
+            return Some(base);
+        };
+        let divisor = divs.get(level as usize).copied().unwrap_or(0);
+        let corr = legaia_asset::level_up_tables::xp_threshold_correction(base, divisor);
+        Some(match slot {
+            1 => base.saturating_sub(corr),
+            2 => base.saturating_add(corr),
+            _ => base,
+        })
     }
 
     /// Apply the same stat gain to every party slot.
@@ -823,8 +863,9 @@ impl LevelUpTracker {
             if new_level >= MAX_LEVEL {
                 break;
             }
-            // xp_table[n - 1] = XP to reach level n + 1.
-            match self.xp_table.get(new_level as usize - 1).copied() {
+            // xp_table[n - 1] = XP to reach level n + 1, with the retail
+            // slots-1/2 correction folded in when divisors are installed.
+            match self.threshold_for(slot, new_level) {
                 Some(threshold) if self.xp[slot] >= threshold => new_level += 1,
                 _ => break,
             }
@@ -935,6 +976,36 @@ mod tests {
         assert_eq!(r.new_level, 3);
         assert_eq!(r.hp_gained, 20); // 2 × 10
         assert_eq!(r.mp_gained, 10); // 2 × 5
+    }
+
+    #[test]
+    fn xp_corrections_shift_slots_one_and_two_only() {
+        // Placeholder L2 threshold = 100; divisor 50 at level 1 gives a
+        // correction of 100*0x14/50 = 40. Slot 1 (Noa) levels at 60, slot 2
+        // (Gala) at 140, slots 0/3 at the uncorrected 100 (FUN_801E9504).
+        let divisors = vec![0i16, 50, 50, 50];
+        let make = || {
+            LevelUpTracker::new()
+                .with_xp_table(placeholder_xp_table())
+                .with_xp_corrections(divisors.clone())
+        };
+
+        assert_eq!(make().threshold_for(0, 1), Some(100), "Vahn uncorrected");
+        assert_eq!(make().threshold_for(1, 1), Some(60), "Noa earlier");
+        assert_eq!(make().threshold_for(2, 1), Some(140), "Gala later");
+        assert_eq!(make().threshold_for(3, 1), Some(100), "slot 3 uncorrected");
+
+        // grant_xp consumes the corrected threshold: 60 XP levels Noa but
+        // leaves Vahn and Gala at L1.
+        let mut t = make();
+        assert!(t.grant_xp(0, 60).is_none(), "Vahn needs 100");
+        assert!(t.grant_xp(1, 60).is_some(), "Noa levels at 60");
+        assert!(t.grant_xp(2, 60).is_none(), "Gala needs 140");
+
+        // Without divisors installed every slot takes the base threshold.
+        let mut bare = LevelUpTracker::new().with_xp_table(placeholder_xp_table());
+        assert_eq!(bare.threshold_for(1, 1), Some(100));
+        assert!(bare.grant_xp(1, 60).is_none());
     }
 
     #[test]

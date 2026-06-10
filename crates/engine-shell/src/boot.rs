@@ -165,7 +165,7 @@ fn read_starting_inventory(
 /// `SCUS_942.54` (the static `DAT_80076AF4` table + `FUN_801E9504`'s formula).
 /// Returns `None` (not an error) when the executable isn't reachable, so the
 /// tracker keeps its placeholder curve rather than failing the boot.
-fn read_retail_xp_curve(source: &SceneSource<'_>) -> Option<Vec<u32>> {
+fn read_retail_xp_curve(source: &SceneSource<'_>) -> Option<(Vec<u32>, Option<Vec<i16>>)> {
     use legaia_engine_core::Vfs;
     let scus = match source {
         SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
@@ -178,7 +178,12 @@ fn read_retail_xp_curve(source: &SceneSource<'_>) -> Option<Vec<u32>> {
             .read("SCUS_942.54")
             .ok()?,
     };
-    legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)
+    let curve = legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)?;
+    // The slots-1/2 threshold-correction divisor table rides along: its
+    // runtime pointer (_DAT_8007B81C) is constant across the whole save
+    // corpus, so the table is plain static SCUS data.
+    let corrections = legaia_asset::level_up_tables::xp_correction_divisors_from_scus(&scus);
+    Some((curve, corrections))
 }
 
 /// Read + parse the static-SCUS per-character stat-growth tables (`DAT_800769CC`
@@ -366,10 +371,13 @@ impl BootSession {
 
         // Install the real retail XP curve (static SCUS table + FUN_801E9504
         // formula) over the tracker's fabricated sin-LUT placeholder, when the
-        // executable is reachable. Set once at boot; begin_new_game doesn't
-        // reset the tracker, so it persists across New Game.
-        if let Some(curve) = read_retail_xp_curve(&source) {
+        // executable is reachable, together with the slots-1/2 threshold
+        // correction divisors (Noa levels slightly earlier, Gala slightly
+        // later). Set once at boot; begin_new_game doesn't reset the tracker,
+        // so it persists across New Game.
+        if let Some((curve, corrections)) = read_retail_xp_curve(&source) {
             host.world.level_up_tracker.xp_table = curve;
+            host.world.level_up_tracker.xp_corrections = corrections;
         }
 
         // Install the real per-character HP/MP growth curves (static SCUS
