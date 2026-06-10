@@ -22,24 +22,25 @@
 //!
 //! ## Two overlays, one buffer
 //!
-//! The Gimard cast uses **two** overlays that timeshare the buffer at
-//! `0x801F69D8`: **PROT 0905** is this *spawn stager* (38 `FUN_80021B04` calls);
+//! A summon cast uses **two** overlays that timeshare the buffer at
+//! `0x801F69D8`: a *spawn stager* (e.g. **PROT 0905**, the spell-`0x83` slot
+//! under the corrected loader index math — Gimard `0x81` arithmetics to 0903);
 //! **PROT 0900** is a resident *transform / GTE-render* overlay that animates and
 //! draws the spawned parts (`RotMatrixX/Y/Z` + prim emit) — it is the one byte-
 //! resident in a mid-cast save state, *after* the stager has run. So the part
-//! records live in the **PROT 0905 file**, addressed by absolute pointers
+//! records live in the **stager file itself**, addressed by absolute pointers
 //! (`lui 0x8020 / addiu`) that resolve in-file under the `0x801F69D8` link base.
 //! (This corrects an earlier reading that placed the records "beyond the 0x5800
-//! file" — that conflated the 905 stager with the 900 render overlay's base.)
+//! file" — that conflated the stager with the 900 render overlay's base.)
 //!
 //! ## The whole player-summon block
 //!
 //! The eleven player Seru-magic summons (`spell_id 0x81..=0x8B`) each ship a
-//! stager overlay in [`PLAYER_SUMMON_STAGER_PROT`] (PROT 0905..=0915, resolved
-//! retail-side by `FUN_8003EC70(id - 0x79)`). [`parse`] recovers a move-VM
-//! scene-graph from every one of them — Gimard (0905) is transform-node-dominated
-//! with a handful of small library-mesh indices; the larger summons (e.g. 0906,
-//! 0911, 0915) carry many more parts, a good fraction of which classify as
+//! stager overlay in [`PLAYER_SUMMON_STAGER_PROT`] (extraction PROT 0903..=0913,
+//! resolved retail-side by `FUN_8003EC70(id - 0x79)`). [`parse`] recovers a
+//! move-VM scene-graph from every one of them — 0905 is transform-node-dominated
+//! with a handful of small library-mesh indices; the larger stagers (e.g. 0906,
+//! 0911) carry many more parts, a good fraction of which classify as
 //! [`SummonPartKind::Sentinel`] (node-mode markers in the record's first word, not
 //! library indices). The structural recovery is pinned across the block by the
 //! disc-gated `summon_overlay_block` sweep; the per-summon model-library base
@@ -56,11 +57,12 @@
 //! This parser recovers the summon's *visual* scene-graph. The summon's combat
 //! **effect** (the HP delta) is applied by the same stager function that spawns
 //! the parts — each stager file carries exactly one `actor+0x14c` (HP) writer,
-//! and the block splits cleanly: **damage** summons (PROT 0904/0912/0914, plus
+//! and the stager files split cleanly: **damage** stagers (files 0904/0912/0914, plus
 //! 0915's second arm) compute the amount via the shared battle kernel
 //! `FUN_801dd0ac` (`a0` = a per-summon move-type constant `0x10..0x12`, `a1 = 7`,
 //! `a2` = target) and store `HP -= amount`; **heal** summons (PROT
-//! 0903/0905/0910/0911/0913, plus 0915's first arm) apply `(power_byte<<5)+0xe0`
+//! 0903/0905/0910/0911/0913, plus 0915's first arm — file-content classes; which
+//! spell id loads which file is re-pinned by the corrected loader math) apply `(power_byte<<5)+0xe0`
 //! inline (`power_byte` from a `0x80084140`-based per-character table searched by
 //! the cast spell-id `actor+0x1df`) and store `HP += amount`. For the summon path
 //! (`FUN_801dd0ac` `attacker_slot == 7`) the roll is built from the attacker's
@@ -77,20 +79,27 @@ pub const SPAWN_HELPER: u32 = 0x8002_1B04;
 
 /// CDNAME (`xxx_dat`) PROT entries that the retail summon path arithmetics over
 /// for the player Seru-magic block `spell_id 0x81..=0x8B`: `FUN_8003EC70(id -
-/// 0x79)` → PROT `(id - 0x81) + 905`, i.e. `905..=915` (Gimard *Tail Fire* =
-/// `0x81` → 905).
+/// 0x79)` resolves `FUN_8003E8A8(id - 0x79 + 0x381)` against the raw in-RAM
+/// TOC, which in extraction index space is entry `(id - 0x81) + 903`, i.e.
+/// `903..=913` (Gimard *Tail Fire* = `0x81` → 903). The historical `905..=915`
+/// range (Gimard → 905) carried the loader-math off-by-2 — the resolver indexes
+/// the raw `PROT.DAT` head, 2 entries above extraction indexing (see
+/// `docs/formats/prot.md` § In-RAM TOC).
 ///
 /// **This is the loader's arithmetic range, NOT a clean list of summon stagers.**
 /// The slot-B buffer (`SUMMON_OVERLAY_LINK_BASE`) is timeshared across the whole
 /// `0900..0969` cluster, which interleaves summon stagers with Disco King
-/// dance-song overlays — and **PROT 0907 (spell-id-0x83 slot) is the dance song
-/// "Hell's Music", not a summon** (ASCII title at file offset 0; see the static
-/// overlay map `crates/asset/data/static-overlays.toml`). It still [`parse`]s
-/// into a "scene-graph" only via the LZS-style parses-without-error trap. So
-/// when sweeping this range for real summons, exclude 0907 (and verify any new
-/// entry carries `FUN_80021B04` part-spawn calls). See the disc-gated
-/// `summon_overlay_block` sweep and `docs/reference/open-rev-eng-threads.md`.
-pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 905..=915;
+/// dance-song overlays — and **PROT 0907 (now the spell-id-0x85 slot) is the
+/// dance song "Hell's Music", not a summon** (ASCII title at file offset 0; see
+/// the static overlay map `crates/asset/data/static-overlays.toml`). It still
+/// [`parse`]s into a "scene-graph" only via the LZS-style parses-without-error
+/// trap. So when sweeping this range for real summons, exclude 0907 (and verify
+/// any new entry carries `FUN_80021B04` part-spawn calls). Which spell ids
+/// actually take the `id - 0x79` branch (vs the data-driven
+/// `spell_record[+1] + 0x28` capture-class branch) is unverified per id. See the
+/// disc-gated `summon_overlay_block` sweep and
+/// `docs/reference/open-rev-eng-threads.md`.
+pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 903..=913;
 
 /// Entries inside [`PLAYER_SUMMON_STAGER_PROT`] that are **not** summon stagers
 /// (the slot-B cluster is heterogeneous). PROT 0907 is the Disco King dance-song
@@ -107,7 +116,7 @@ pub const LIBRARY_MESH_SEL_MAX: i16 = 0x100;
 
 /// Link / load base of the per-summon overlay buffer (`*DAT_80010390`),
 /// empirically pinned by byte-matching the resident overlay in a mid-cast save
-/// state (`0x801F8000` ↔ file offset `0x1628`). Both the PROT 0905 stager and
+/// state (`0x801F8000` ↔ file offset `0x1628`). Both the stager files and
 /// the PROT 0900 render overlay are linked here.
 pub const SUMMON_OVERLAY_LINK_BASE: u32 = 0x801F_69D8;
 
@@ -117,9 +126,9 @@ pub const MODEL_SEL_TRANSFORM_NODE: i16 = -1;
 
 /// What the first word of a part record (`model_sel`) selects.
 ///
-/// Gimard *Tail Fire* (PROT 0905) is dominated by [`Self::TransformNode`] parts
+/// The PROT 0905 stager is dominated by [`Self::TransformNode`] parts
 /// with a handful of small [`Self::LibraryMesh`] indices, so its records read
-/// cleanly. The larger summons (e.g. PROT 0906/0911/0915) carry many records
+/// cleanly. The larger stagers (e.g. PROT 0906/0911) carry many records
 /// whose first word is a [`Self::Sentinel`] node-mode marker rather than a plain
 /// library index — the records are genuine (each is a statically-resolved
 /// `FUN_80021B04` `a2` pointer, an explicit `lui`/`addiu` immediate that cannot

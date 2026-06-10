@@ -48,6 +48,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`battle-data-pack.md`](docs/formats/battle-data-pack.md) | Custom 16MB container for `battle_data` (PROT 0865) + `edstati3`. Streaming preamble + 12-byte record table + per-record LZS streams that decompress to `[32-byte header + Legaia TMD + texture pool]`. |
 | [`npc-palette.md`](docs/formats/npc-palette.md) | Row-479 NPC CLUTs (`fb_x=0..256, fb_y=479`). Plain PSX TIMs in scene PROT entries; engine uploads them via the targeted-upload CLUT pass with merge-zeros semantics so multiple scene-pack TIMs targeting the same row can coexist (full slots 0..14 + partial slots 0..7). |
 | [`effect.md`](docs/formats/effect.md) | Magic `0x02018B0C` (efect.dat). 2-pack wrapper: sprite anims + effect scripts. |
+| [`summon-readef.md`](docs/formats/summon-readef.md) | `summon.dat` / `readef.DAT` battle side-band streaming slots (extraction PROT 893 / 894 = retail TOC `0x37F`/`0x380`; CDNAME `bat_back_dat`). `0x10800`-byte slots: per-special-attack CLUT rows + 4bpp texture pages + summon-creature actor records (TMD + texture pool via `FUN_80055468`). Action id → slot: `3*(id-1)` (`id<0x9A`) else `4*id+0x63`, bit 7 selects the file. Parser `legaia_asset::summon_readef`. |
 | **Sub-assets** | |
 | [`tim.md`](docs/formats/tim.md) | PSX TIM. |
 | [`tmd.md`](docs/formats/tmd.md) | Legaia TMD variant - magic `0x80000002`, custom primitive grouping (8-byte group header + `count × ilen*4` body), per-mode descriptor table at `DAT_8007326c`. |

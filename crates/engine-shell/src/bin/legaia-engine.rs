@@ -7836,8 +7836,8 @@ impl ApplicationHandler for PlayWindowApp {
                         .spawn_debug_effect_model(pos, model_index);
                     return;
                 }
-                // `G`: debug-spawn the Gimard *Tail Fire* summon scene-graph
-                // (PROT 0905). Loads the stager overlay, parses its part
+                // `G`: debug-spawn the Gimard *Burning Attack* summon scene-
+                // graph (extraction PROT 0903). Loads the stager overlay, parses
                 // records, and seats a `SummonScene` at the first active actor;
                 // it then animates each frame via `tick_summon` (the move VM)
                 // and renders through the summon-part draw block below. Not the
@@ -7853,7 +7853,7 @@ impl ApplicationHandler for PlayWindowApp {
                         self.spawn_summon_creature(0x81);
                         return;
                     }
-                    const PROT_GIMARD_SUMMON_STAGER: u32 = 905;
+                    const PROT_GIMARD_SUMMON_STAGER: u32 = 903;
                     let origin = self
                         .session
                         .host
@@ -7891,7 +7891,7 @@ impl ApplicationHandler for PlayWindowApp {
                                 overlay.parts.len()
                             );
                         }
-                        Err(e) => log::warn!("summon spawn: read PROT 0905: {e:#}"),
+                        Err(e) => log::warn!("summon spawn: read summon stager PROT entry: {e:#}"),
                     }
                     return;
                 }

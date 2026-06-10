@@ -1539,7 +1539,7 @@ pub struct World {
     /// equivalent of the retail cast band resolving the per-summon overlay
     /// (`FUN_8003EC70(id-0x79)`). The host (which has the PROT index) drains it
     /// via [`World::take_pending_summon_spawn`], loads the summon overlay
-    /// (`PROT 905 + (id - 0x81)`), and calls [`World::spawn_summon`]. Kept as a
+    /// (extraction `PROT 903 + (id - 0x81)`), and calls [`World::spawn_summon`]. Kept as a
     /// host-fulfilled request because `World` is index-agnostic (same pattern
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
@@ -4619,7 +4619,7 @@ impl World {
     }
 
     /// Spawn a Seru-magic summon scene-graph from a parsed stager overlay (e.g.
-    /// PROT 0905, Gimard *Burning Attack*) at `origin` (world units).
+    /// extraction PROT 0903, Gimard *Burning Attack*) at `origin` (world units).
     /// `record_bytes` is the overlay's raw bytes (the buffer `overlay` was parsed
     /// from); `model_base` is the pool index a part's `model_sel == 0` resolves to
     /// (the summon's mesh-set base, e.g. [`crate::scene::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
@@ -4840,7 +4840,7 @@ impl World {
 
     /// Take the pending production summon-spawn request, if a player Seru-magic
     /// cast set one this step. Returns `(spell_id, origin)`; the host maps
-    /// `spell_id` to the overlay PROT entry (`905 + (spell_id - 0x81)`), loads
+    /// `spell_id` to the overlay PROT entry (extraction `903 + (spell_id - 0x81)`), loads
     /// it, and calls [`Self::spawn_summon`]. See [`Self::pending_summon_spawn`].
     pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
         self.pending_summon_spawn.take()

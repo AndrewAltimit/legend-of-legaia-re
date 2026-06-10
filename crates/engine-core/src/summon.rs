@@ -1,7 +1,8 @@
 //! Seru-magic **summon scene-graph driver** (engine stand-in render — see the
 //! reconciliation note below; this is **not** the faithful player-summon path).
 //!
-//! The per-summon stager overlay (PROT 905..=915; Gimard *Burning Attack* = 905)
+//! The per-summon stager overlay (extraction PROT 903..=913 = raw TOC
+//! `0x389..=0x393`; Gimard *Burning Attack* = 903)
 //! carries real move-VM scene-graph part records, recovered by
 //! [`legaia_asset::summon_overlay`]. This module drives them: it seeds one
 //! move-VM [`ActorState`] per part from its record and ticks every part through
@@ -96,11 +97,14 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
 /// or `None` if `spell_id` is not a summon. Retail: `FUN_8003EC70(id - 0x79)`
-/// loads PROT `(id - 0x79) + 0x381`, i.e. `0x81..=0x8B → 905..=915`.
+/// loads raw-TOC index `(id - 0x79) + 0x381` — the in-RAM TOC at `0x801C70F0`
+/// is raw `PROT.DAT` from byte 0 (header included), so the extraction entry
+/// sits 2 below the raw index: `0x81..=0x8B → 903..=913` (see
+/// `docs/formats/prot.md` § index spaces).
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
     SERU_SUMMON_IDS
         .contains(&spell_id)
-        .then(|| 905 + (spell_id - 0x81) as u32)
+        .then(|| 903 + (spell_id - 0x81) as u32)
 }
 
 /// `battle_data` (PROT 867) creature id whose mesh + per-object animation the
@@ -192,7 +196,7 @@ impl SummonScene {
     /// Spawn every part of a parsed summon overlay at `origin`, seeding each
     /// part's move-VM state from its record (PC = 2 → bytecode at `record+4`,
     /// mirroring `FUN_80021B04`). `record_bytes` is the stager overlay's raw
-    /// bytes (e.g. PROT 0905), the same buffer [`SummonOverlay`] was parsed from.
+    /// bytes (e.g. PROT 0903), the same buffer [`SummonOverlay`] was parsed from.
     pub fn spawn(
         overlay: &SummonOverlay,
         record_bytes: &[u8],
@@ -645,8 +649,8 @@ mod tests {
 
     #[test]
     fn summon_prot_entry_maps_the_seru_block() {
-        assert_eq!(summon_stager_prot_entry(0x81), Some(905)); // Gimard Tail Fire
-        assert_eq!(summon_stager_prot_entry(0x8B), Some(915)); // last player summon
+        assert_eq!(summon_stager_prot_entry(0x81), Some(903)); // Gimard Burning Attack
+        assert_eq!(summon_stager_prot_entry(0x8B), Some(913)); // last player summon
         assert_eq!(summon_stager_prot_entry(0x80), None); // below the block
         assert_eq!(summon_stager_prot_entry(0x8C), None); // above the block
         assert_eq!(summon_stager_prot_entry(0x27), None); // a monster attack id

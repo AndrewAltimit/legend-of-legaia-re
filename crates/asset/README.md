@@ -25,7 +25,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [World map](#world-map) — `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
   - [Boot / title / menu UI](#boot--title--menu-ui) — `init_pak`, `title_pak`, `menu_glyph_atlas`
   - [SCUS static tables](#scus-static-tables) — `item_names`, `item_effect`, `equip_stats`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
-  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`
+  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`
   - [Scene + MAN](#scene--man) — `man_section`, `man_edit`, scene tables
   - [TIM/TMD scan + catalog](#timtmd-scan--catalog)
 - [CLI](#cli)
@@ -246,7 +246,8 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 
 `summon_overlay` — Seru-magic **summon scene-graph** part records:
 
-- A per-summon stager overlay (e.g. PROT 0905, Gimard *Tail Fire*) stages each
+- A per-summon stager overlay (extraction PROT 0903..=0913; Gimard *Tail Fire*
+  `0x81` arithmetics to 0903 under the corrected loader index math) stages each
   summon body part with a `FUN_80021B04` call passing a per-part record.
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
@@ -255,6 +256,14 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 CLI `asset summon-overlay <PROT 0905 .BIN>`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
+
+`summon_readef` — the battle side-band streaming files `summon.dat` /
+`readef.DAT` (extraction PROT 893 / 894 = retail TOC `0x37F` / `0x380`,
+CDNAME block `bat_back_dat`): `0x10800`-byte slots carrying per-special-attack
+CLUT rows + 4bpp texture pages plus summon-creature actor records (name + Legaia
+TMD + texture pool). `parse` classifies every slot; `stream_target(action_id)`
+mirrors the retail id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
+[`summon-readef.md`](../../docs/formats/summon-readef.md).
 
 ### Scene + MAN
 

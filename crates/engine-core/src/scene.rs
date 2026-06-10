@@ -2257,7 +2257,7 @@ const EFFECT_MODEL_LIBRARY_COUNT: usize = 30;
 /// Index in [`crate::world::World::global_tmd_pool`] of Gimard's *Tail Fire*
 /// flame model (`DAT_8007C018[26]`) - the model retail draws for the Gimard
 /// Seru cast. Equals [`EFFECT_MODEL_LIBRARY_BASE`]` + 23` (pack entry 23). Its
-/// fire flicker is CLUT/palette cycling driven by the PROT 0905 summon overlay
+/// fire flicker is CLUT/palette cycling driven by the summon stager overlay (extraction PROT 0903)
 /// (the model geometry is static). Supersedes the PROT 0874 §0 preview
 /// stand-in at [`ETMD_TAIL_FIRE_MODEL_INDEX`]. See `docs/formats/effect.md`.
 pub const GIMARD_TAIL_FIRE_MODEL_INDEX: usize = 26;

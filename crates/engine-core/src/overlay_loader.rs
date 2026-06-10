@@ -75,6 +75,12 @@ pub const OVERLAY_CACHE_EMPTY: i32 = -1;
 /// PROT-index offset retail adds to the caller-supplied `param` to land
 /// on the actual PROT entry: `prot_index = param + 0x381`. The offset
 /// is shared by both loaders.
+///
+/// Index space: the sum is a **raw in-RAM TOC index** — the TOC copy at
+/// `0x801C70F0` is raw `PROT.DAT` from byte 0 (header included), so the
+/// per-entry extraction index sits 2 below it (`extraction = param +
+/// 0x37F`; see `docs/formats/prot.md` § index spaces). Hosts resolving
+/// against extraction-numbered entries must apply that shift.
 pub const OVERLAY_PROT_BASE: i32 = 0x381;
 
 /// Mode-state word value (`_DAT_8007B83C`) that forces [`load_overlay_b`] to

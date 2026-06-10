@@ -1,5 +1,6 @@
-//! Disc-gated: the Gimard *Tail Fire* summon stager (PROT 0905) parses into a
-//! move-VM part-record scene-graph.
+//! Disc-gated: a player summon stager overlay (extraction PROT 0905, the
+//! spell-`0x83` slot under the corrected loader index math; Gimard `0x81`
+//! arithmetics to 0903) parses into a move-VM part-record scene-graph.
 //!
 //! Pins, on real disc bytes, that the per-summon stager overlay's
 //! `FUN_80021B04` spawn calls reference part records in-file (under the
@@ -12,8 +13,9 @@ use std::path::PathBuf;
 use legaia_asset::summon_overlay::{self, MODEL_SEL_TRANSFORM_NODE, SUMMON_OVERLAY_LINK_BASE};
 use legaia_prot::archive::Archive;
 
-/// CDNAME index of the Gimard Tail Fire summon stager overlay.
-const PROT_GIMARD_SUMMON_STAGER: usize = 905;
+/// Extraction index of the deep-dived summon stager overlay (the spell-`0x83`
+/// arithmetic slot; see `summon_overlay::PLAYER_SUMMON_STAGER_PROT`).
+const PROT_SUMMON_STAGER: usize = 905;
 
 fn extracted_prot() -> Option<PathBuf> {
     for base in ["extracted", "../../extracted"] {
@@ -26,7 +28,7 @@ fn extracted_prot() -> Option<PathBuf> {
 }
 
 #[test]
-fn gimard_summon_stager_parses_into_move_vm_part_records() {
+fn summon_stager_parses_into_move_vm_part_records() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
@@ -38,7 +40,7 @@ fn gimard_summon_stager_parses_into_move_vm_part_records() {
     let mut archive = Archive::open(&prot).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(PROT_GIMARD_SUMMON_STAGER)
+        .get(PROT_SUMMON_STAGER)
         .cloned()
         .expect("PROT 0905 entry exists");
     let mut bytes = Vec::new();
