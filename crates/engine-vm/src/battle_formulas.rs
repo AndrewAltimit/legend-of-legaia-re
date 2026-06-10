@@ -346,24 +346,58 @@ pub struct SummonPredamage {
 /// defender_roll)`; the engine's live battle context then applies the finisher
 /// (resistance bits / crit / 9999 cap / spirit-gauge / popup / MP drain).
 pub fn summon_predamage(i: &SummonPredamage) -> (u32, u32) {
+    let bonus = i.rng[2];
+    summon_predamage_lazy(
+        &i.summon,
+        i.caster_agl,
+        &i.target,
+        i.element_affinity_pct,
+        i.magic_power_byte,
+        [i.rng[0], i.rng[1]],
+        move || bonus,
+    )
+}
+
+/// As [`summon_predamage`], but the bonus-arm draw is produced lazily by
+/// `bonus_rng`, which is invoked **only when the conditional bonus re-roll
+/// actually fires**.
+///
+/// Retail (`FUN_801dd0ac` summon branch) draws that `rand()` *inside* the bonus
+/// arm — `func_0x80056798(7)` after the `local_24 + summon_hp <= local_28`
+/// check fails — so a caller pulling from a shared RNG cursor (e.g.
+/// `World::player_summon_predamage`) advances the cursor by exactly **two**
+/// draws on the no-bonus path and **three** on the bonus path, matching the
+/// retail call order. The eager [`summon_predamage`] wrapper passes a closure
+/// that just returns its pre-drawn value, so its observable behaviour is
+/// unchanged.
+pub fn summon_predamage_lazy(
+    summon: &SummonRollActor,
+    caster_agl: u16,
+    target: &SummonRollActor,
+    element_affinity_pct: u8,
+    magic_power_byte: u8,
+    rng2: [u16; 2],
+    bonus_rng: impl FnOnce() -> u16,
+) -> (u32, u32) {
     // Stage 1: rolls.
-    let mut attacker = summon_attacker_roll(i.summon.hp, i.summon.agl, i.caster_agl, i.rng[0]);
-    let mut defender = summon_defender_roll(&i.target, i.rng[1]);
+    let mut attacker = summon_attacker_roll(summon.hp, summon.agl, caster_agl, rng2[0]);
+    let mut defender = summon_defender_roll(target, rng2[1]);
 
     // Stage 2a: FUN_801dd864 scales the attacker roll.
-    attacker = apply_element_affinity(attacker, i.element_affinity_pct);
-    attacker = apply_status_weaken(attacker, i.summon.status);
-    attacker = apply_magic_power(attacker, i.magic_power_byte);
+    attacker = apply_element_affinity(attacker, element_affinity_pct);
+    attacker = apply_status_weaken(attacker, summon.status);
+    attacker = apply_magic_power(attacker, magic_power_byte);
 
     // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
-    if i.target.guard == 4 {
+    if target.guard == 4 {
         defender = defender.saturating_mul(2);
     }
-    defender = apply_status_weaken(defender, i.target.status);
+    defender = apply_status_weaken(defender, target.status);
 
-    // Stage 2c: conditional bonus re-roll (FUN_801dd0ac second arm).
-    if defender + i.summon.hp as u32 > attacker {
-        attacker = summon_bonus_roll(defender, i.summon.hp, i.summon.agl, i.rng[2]);
+    // Stage 2c: conditional bonus re-roll (FUN_801dd0ac second arm). The draw
+    // is pulled here, lazily, exactly as retail does.
+    if defender + summon.hp as u32 > attacker {
+        attacker = summon_bonus_roll(defender, summon.hp, summon.agl, bonus_rng());
     }
 
     (attacker, defender)
@@ -653,6 +687,15 @@ pub struct DamageFinish {
 /// `+0x16e` nullify status are not part of this value — they are caller concerns
 /// (see the module section comment).
 pub fn damage_finish(i: &DamageFinish) -> u32 {
+    damage_finish_lazy(i, || i.floor_rand)
+}
+
+/// As [`damage_finish`], but the stage-4 floor `rand()` is produced lazily by
+/// `floor_rand`, invoked **only when mitigation has reduced `over` to zero** —
+/// the single point retail's `FUN_801ddb30` draws RNG. A caller pulling from a
+/// shared RNG cursor advances it by zero or one draw, exactly as retail does;
+/// [`DamageFinish::floor_rand`] is ignored on this path.
+pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) -> u32 {
     let mut over = i.predamage;
 
     // Stage 1: party-defender elemental resistance.
@@ -680,7 +723,7 @@ pub fn damage_finish(i: &DamageFinish) -> u32 {
 
     // Stage 4: no-damage floor (the only RNG draw the finisher consumes).
     if over == 0 {
-        over = (i.floor_rand as u32) % 9 + 8;
+        over = (floor_rand() as u32) % 9 + 8;
     }
 
     // Stage 5: summon power-percent scale.
@@ -1081,6 +1124,106 @@ mod tests {
         // defender 53 * 2 = 106. 106 + 200 = 306 > 237 -> bonus:
         // 106 + (5 % 11 = 5) + 200 = 311.
         assert_eq!(summon_predamage(&i), (311, 106));
+    }
+
+    #[test]
+    fn summon_predamage_lazy_draws_bonus_only_when_arm_fires() {
+        use std::cell::Cell;
+
+        // (a) reproduce the eager result exactly and (b) invoke the bonus
+        // closure exactly when the bonus arm fires — zero times on the
+        // no-bonus path (shared RNG cursor advances by two, not three) and
+        // once on the bonus path, mirroring FUN_801dd0ac's in-arm rand().
+        let strong_summon = SummonRollActor {
+            hp: 500,
+            agl: 40,
+            ..Default::default()
+        };
+        let weak_target = SummonRollActor {
+            hp: 100,
+            agl: 4,
+            ..Default::default()
+        };
+        // attacker = 0%41 + 500 + 32 = 532; defender = 0%3 + 0 + 8 = 8.
+        // 8 + 500 = 508 <= 532 -> no bonus.
+        let calls = Cell::new(0u32);
+        let out = summon_predamage_lazy(&strong_summon, 16, &weak_target, 100, 1, [0, 0], || {
+            calls.set(calls.get() + 1);
+            0
+        });
+        assert_eq!(calls.get(), 0, "no-bonus path must not draw");
+        assert_eq!(
+            out,
+            summon_predamage(&SummonPredamage {
+                summon: strong_summon,
+                caster_agl: 16,
+                target: weak_target,
+                element_affinity_pct: 100,
+                magic_power_byte: 1,
+                rng: [0, 0, 0],
+            }),
+            "matches the eager result"
+        );
+
+        // Bonus path: the guard-doubled defender overwhelms the attacker
+        // (the summon_predamage_doubles_defender_on_guard setup).
+        let summon = SummonRollActor {
+            hp: 200,
+            agl: 20,
+            ..Default::default()
+        };
+        let target = SummonRollActor {
+            hp: 1000,
+            agl: 18,
+            stat_a: 64,
+            stat_b: 48,
+            guard: 4,
+            ..Default::default()
+        };
+        let calls = Cell::new(0u32);
+        let out = summon_predamage_lazy(&summon, 16, &target, 100, 1, [5, 7], || {
+            calls.set(calls.get() + 1);
+            5
+        });
+        assert_eq!(calls.get(), 1, "bonus path draws exactly once");
+        assert_eq!(out, (311, 106), "matches the eager bonus result");
+    }
+
+    #[test]
+    fn damage_finish_lazy_draws_floor_rand_only_when_zeroed() {
+        use std::cell::Cell;
+
+        // Non-zero damage: the floor closure must never run (retail draws no
+        // RNG in FUN_801ddb30 unless mitigation zeroed the hit).
+        let calls = Cell::new(0u32);
+        let i = DamageFinish {
+            predamage: 100,
+            attacker_slot: 3,
+            defender_slot: 4,
+            attacker_element: 7,
+            defender_resist: DefenderResist::default(),
+            defender_guarding: false,
+            enemy_defender_halve: false,
+            bypass_party_resist: false,
+            summon_power_pct: 100,
+            floor_rand: 0,
+        };
+        let out = damage_finish_lazy(&i, || {
+            calls.set(calls.get() + 1);
+            4
+        });
+        assert_eq!(out, 100);
+        assert_eq!(calls.get(), 0, "non-zero damage must not draw");
+
+        // Zeroed damage: exactly one draw, rand%9 + 8.
+        let calls = Cell::new(0u32);
+        let z = DamageFinish { predamage: 0, ..i };
+        let out = damage_finish_lazy(&z, || {
+            calls.set(calls.get() + 1);
+            13
+        });
+        assert_eq!(out, 13 % 9 + 8);
+        assert_eq!(calls.get(), 1, "zeroed damage draws exactly once");
     }
 
     #[test]

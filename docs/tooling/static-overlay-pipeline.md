@@ -76,8 +76,7 @@ prologues and by jal-recovery (30 votes). PROT 0899 and the field overlay
 (PROT 0897) are **VA-alias siblings in slot A** — both load at `0x801CE818` at
 different times, so `0x801CF650` is a `"Give"` string in 0897 but the equip
 aggregator in 0899. That is the exact aliasing this pipeline exists to
-disambiguate. (PROT 0896's own identity-resolving capture is still open; see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
+disambiguate. (PROT 0896's own identity-resolving capture is still open — and the save catalog does NOT close it: the five library states sitting at game-mode 25 (OTHER MODE) all have zero/garbage overlay-slot pointers and <11% byte match against the 0896 payload at `0x801C5818`, so the overlay is not resident in any existing capture. Closing it needs a state captured while mode 24 (OTHER) is entering or running with the overlay loaded; see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
 
 ## The committed map
 

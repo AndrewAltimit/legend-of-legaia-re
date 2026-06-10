@@ -569,15 +569,25 @@ impl World {
             {
                 *amount = faithful;
             } else if let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
-                // Player Seru-magic path: scale by the element affinity of the
-                // summon creature vs. the target (FUN_801dd864). Post-roll,
-                // gated on the affinity tables — neutral (100) otherwise — so
-                // disc-free battles keep an unchanged magnitude. The summon's
-                // placeholder base damage is unchanged; only the ±4% affinity
-                // nudge is applied.
-                let pct = self.cast_affinity_pct(def.id, t);
-                if pct != 100 {
-                    *amount = ((*amount as u32 * pct as u32) / 100).min(9999) as u16;
+                // Player Seru-magic path. When the monster catalog resolves
+                // the summon creature (disc-real battles), the magnitude
+                // rolls through the faithful summon branch of FUN_801dd0ac —
+                // summon-body HP/AGL + caster AGL + affinity + the caster's
+                // per-spell magic-power byte + the FUN_801ddb30 finisher
+                // (per-caster summon power-percent, 9999 cap) — replacing
+                // the MP-scaled placeholder entirely.
+                if let Some(faithful) = self.player_summon_predamage(caster, t, def.id) {
+                    *amount = faithful;
+                } else {
+                    // Fallback (creature unresolved): scale the placeholder
+                    // by the element affinity of the summon creature vs. the
+                    // target (FUN_801dd864). Post-roll, gated on the affinity
+                    // tables — neutral (100) otherwise — so disc-free battles
+                    // keep an unchanged magnitude and RNG stream.
+                    let pct = self.cast_affinity_pct(def.id, t);
+                    if pct != 100 {
+                        *amount = ((*amount as u32 * pct as u32) / 100).min(9999) as u16;
+                    }
                 }
             }
             self.fold_spell_outcome(outcome);
@@ -650,33 +660,7 @@ impl World {
                 .unwrap_or(0),
             ..Default::default()
         };
-        let t = self.actors.get(target as usize)?;
-        let (stat_a, stat_b) = self
-            .battle_defense_split
-            .get(target as usize)
-            .copied()
-            .flatten()
-            .unwrap_or_else(|| {
-                (
-                    self.battle_defense
-                        .get(target as usize)
-                        .copied()
-                        .unwrap_or(0),
-                    0,
-                )
-            });
-        let target_roll = SummonRollActor {
-            hp: t.battle.hp,
-            agl: self
-                .battle_accuracy
-                .get(target as usize)
-                .copied()
-                .unwrap_or(0),
-            stat_a,
-            stat_b,
-            status: 0,
-            guard: 0,
-        };
+        let target_roll = self.summon_roll_defender(target)?;
         // Retail rand() is 15-bit; mask to match its range. The attacker (×2) and
         // defender (×1) draws are always taken; the bonus pair is drawn lazily by
         // the closure below, only when the bonus arm fires, so the shared RNG
@@ -700,6 +684,166 @@ impl World {
             },
         );
         Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
+    }
+
+    /// Build the defender-side [`SummonRollActor`] for an actor slot — the
+    /// stat bridge shared by the monster special-attack roll
+    /// ([`Self::enemy_move_predamage`]) and the player summon roll
+    /// ([`Self::player_summon_predamage`]). AGL = `battle_accuracy` (the
+    /// `+0x168` AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
+    /// defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`];
+    /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
+    fn summon_roll_defender(&self, slot: u8) -> Option<vm::battle_formulas::SummonRollActor> {
+        let t = self.actors.get(slot as usize)?;
+        let (stat_a, stat_b) = self
+            .battle_defense_split
+            .get(slot as usize)
+            .copied()
+            .flatten()
+            .unwrap_or_else(|| {
+                (
+                    self.battle_defense.get(slot as usize).copied().unwrap_or(0),
+                    0,
+                )
+            });
+        Some(vm::battle_formulas::SummonRollActor {
+            hp: t.battle.hp,
+            agl: self
+                .battle_accuracy
+                .get(slot as usize)
+                .copied()
+                .unwrap_or(0),
+            stat_a,
+            stat_b,
+            status: 0,
+            guard: 0,
+        })
+    }
+
+    /// The caster's per-spell magic-power byte, read the way the scale stage
+    /// `FUN_801dd864` does: search the character record's 32-entry spell-id
+    /// list (record `+0x13D`, live `0x80084845 + char*0x414`) for the cast
+    /// spell id and take the parallel level byte (`+0x161`, live
+    /// `0x80084869`). The retail loop bounds the search at `0x20` entries even
+    /// though the record field holds 36; mirrored here. Returns `1` (the
+    /// [`vm::battle_formulas::apply_magic_power`] identity) when the roster
+    /// doesn't carry the spell — a fresh cast with no recorded level.
+    fn caster_magic_power_byte(&self, caster: u8, spell_id: u8) -> u8 {
+        const RETAIL_SEARCH_BOUND: usize = 0x20;
+        let Some(record) = self.roster.members.get(caster as usize) else {
+            return 1;
+        };
+        let list = record.spell_list();
+        list.ids
+            .iter()
+            .take(RETAIL_SEARCH_BOUND)
+            .position(|&id| id == spell_id)
+            .map(|i| list.levels[i])
+            .unwrap_or(1)
+    }
+
+    /// Roll a player Seru-magic summon's damage through the faithful summon
+    /// branch of the shared battle kernel (`FUN_801dd0ac` `attacker_slot ==
+    /// 7`) plus the closed-form finisher stages (`FUN_801ddb30`), replacing
+    /// the MP-scaled spell placeholder. Returns `None` when `spell_id` isn't
+    /// a summon or the monster catalog doesn't resolve the summon creature —
+    /// disc-free / synthetic battles keep the placeholder path with an
+    /// unchanged RNG stream.
+    ///
+    /// Faithful seeds:
+    /// - **Summon body** (the retail slot-7 actor): the namesake `battle_data`
+    ///   creature's record HP (`+0x0C`) and AGL — the battle loader installs
+    ///   the record stats on the freshly-spawned summon actor
+    ///   ([`Self::summon_creature_def`]).
+    /// - **Caster AGL** (`DAT_801C9370[ctx+0x13]` `+0x168`): the casting
+    ///   party member's `battle_accuracy`, doubled into the roll.
+    /// - **Scale stage** (`FUN_801dd864`): element affinity
+    ///   `matrix[summon element][target element]`, then the caster's
+    ///   per-spell magic-power byte ([`Self::caster_magic_power_byte`]).
+    /// - **Finisher** (`FUN_801ddb30`): no-damage floor (`rand()%9 + 8`,
+    ///   drawn lazily), the per-caster summon power-percent
+    ///   (`0x801F5468[(char_id-1)*8 + summon_element]`,
+    ///   [`legaia_asset::element_affinity::ElementAffinity::summon_power_pct`]),
+    ///   and the 9999 cap. The party-resist / guard stages don't apply to an
+    ///   enemy defender; the state-mutating tail (popup accumulator, MP
+    ///   drain, stat debuffs) stays in the live fold.
+    ///
+    /// RNG: draws attacker + defender eagerly, the bonus-arm and floor draws
+    /// lazily — the shared cursor advances exactly as retail's does (two,
+    /// three, or four draws).
+    ///
+    /// PORT: FUN_801dd0ac (summon branch, live wiring; pure kernel in
+    /// battle_formulas::summon_predamage_lazy)
+    pub(super) fn player_summon_predamage(
+        &mut self,
+        caster: u8,
+        target: u8,
+        spell_id: u8,
+    ) -> Option<u16> {
+        use vm::battle_formulas::{
+            DamageFinish, DefenderResist, SummonRollActor, damage_finish_lazy,
+            summon_predamage_lazy,
+        };
+
+        if (caster as usize) >= self.party_count as usize {
+            return None;
+        }
+        let creature = self.summon_creature_def(spell_id)?;
+        let summon = SummonRollActor {
+            hp: creature.hp,
+            agl: creature.agl,
+            ..Default::default()
+        };
+        let summon_element = creature.element;
+        let caster_agl = self
+            .battle_accuracy
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
+        let target_roll = self.summon_roll_defender(target)?;
+        let element_affinity_pct = self.cast_affinity_pct(spell_id, target);
+        let magic_power_byte = self.caster_magic_power_byte(caster, spell_id);
+
+        let rng2 = [
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+        ];
+        let (atk, def) = summon_predamage_lazy(
+            &summon,
+            caster_agl,
+            &target_roll,
+            element_affinity_pct,
+            magic_power_byte,
+            rng2,
+            || (self.next_rng() & 0x7fff) as u16,
+        );
+
+        // Closed-form finisher stages (FUN_801ddb30). The defender is an
+        // enemy (no party-resist stage); kernel slot convention is retail's
+        // (party 0..2, enemies 3+). The summon power-percent comes from the
+        // per-caster 0x801F5468 table when the affinity tables are installed
+        // (char id = slot + 1, same model as the element lookups), else 100.
+        let summon_power_pct = self
+            .element_affinity
+            .as_ref()
+            .and_then(|aff| aff.summon_power_pct(caster + 1, summon_element))
+            .unwrap_or(100);
+        let predamage = atk.saturating_sub(def);
+        let finish = DamageFinish {
+            predamage,
+            attacker_slot: 7,
+            defender_slot: 3 + target.saturating_sub(self.party_count),
+            attacker_element: summon_element,
+            defender_resist: DefenderResist::default(),
+            defender_guarding: false,
+            enemy_defender_halve: false,
+            bypass_party_resist: false,
+            summon_power_pct,
+            floor_rand: 0,
+        };
+        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        Some(over.min(9999) as u16)
     }
 
     /// Element-affinity multiplier (percent) for a monster (`attacker`) special
@@ -768,7 +912,14 @@ impl World {
     /// of that name (the `"$2"`/`"$3"` higher-level variants carry distinct names
     /// and are excluded). `None` for a non-summon id or when the catalog / spell
     /// name doesn't resolve.
-    fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
+    /// The `battle_data` creature def a player Seru-magic `spell_id` summons —
+    /// the namesake creature (Gimard spell → Gimard creature; see
+    /// [`crate::summon::summon_creature_id`]). Resolved by matching the
+    /// spell's display name against the loaded monster catalog, so the
+    /// `"$2"`/`"$3"` higher-level enemy variants are excluded. `None` when the
+    /// id isn't a summon or the catalog doesn't carry the creature (disc-free
+    /// / synthetic battles).
+    fn summon_creature_def(&self, spell_id: u8) -> Option<&crate::monster_catalog::MonsterDef> {
         if !crate::summon::SERU_SUMMON_IDS.contains(&spell_id) {
             return None;
         }
@@ -778,7 +929,10 @@ impl World {
             .values()
             .filter(|d| d.name == name)
             .min_by_key(|d| d.id)
-            .map(|d| d.element)
+    }
+
+    fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
+        self.summon_creature_def(spell_id).map(|d| d.element)
     }
 
     /// Element-affinity multiplier (percent) for a player Seru-magic cast

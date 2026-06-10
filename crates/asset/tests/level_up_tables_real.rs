@@ -44,6 +44,25 @@ fn decodes_the_xp_curve_or_skips() {
         thr.windows(2).all(|w| w[1] > w[0]),
         "thresholds strictly increasing"
     );
+
+    // The slots-1/2 threshold-correction divisor table (FUN_801E9504 reads
+    // i16s at 0x80070A2C + level*0x28 through the corpus-constant pointer
+    // _DAT_8007B81C; Noa subtracts threshold*0x14/divisor, Gala adds it).
+    let divs =
+        legaia_asset::level_up_tables::xp_correction_divisors_from_scus(&scus).expect("divisors");
+    assert_eq!(divs.len(), MAX_LEVEL);
+    assert_eq!(divs[0], 0, "level byte is never 0; entry 0 unused");
+    assert_eq!(&divs[1..6], &[125, 251, 376, 501, 625], "first divisors");
+    assert!(
+        divs[1..].iter().all(|&d| d > 0),
+        "every reachable level has a positive divisor"
+    );
+    // The correction magnitude at the captured L2->L3 threshold (365):
+    // 365*20/251 = 29 XP - Noa reaches L3 at 336, Gala at 394.
+    assert_eq!(
+        legaia_asset::level_up_tables::xp_threshold_correction(365, divs[2]),
+        29
+    );
 }
 
 #[test]

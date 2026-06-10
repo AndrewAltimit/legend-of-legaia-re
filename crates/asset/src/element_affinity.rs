@@ -66,6 +66,32 @@ pub const AFFINITY_MATRIX_FILE_OFFSET: usize = 0x26BD0;
 /// Element-id space size (matrix is `ELEMENT_COUNT × ELEMENT_COUNT`).
 pub const ELEMENT_COUNT: usize = 8;
 
+/// Runtime VA of the per-character **summon power-percent** table read by the
+/// damage finisher `FUN_801ddb30` for a summon attacker (`attacker_slot == 7`):
+///
+/// ```text
+/// 801de128  addiu a0,a0,0x5468       ; a0 = table base 0x801F5468
+/// 801de13c  lbu   v1,0x13(v1)        ; active actor idx (ctx+0x13)
+/// 801de148  lbu   v0,0x0(v1)         ; char id = DAT_8007bd10[idx] (1-based)
+/// 801de154  lbu   v1,0x1d(v1)        ; attacker element (record +0x1d)
+/// 801de158  sll   v0,v0,0x3          ; (char_id - 1) * 8
+/// 801de16c  lbu   v1,0x0(v1)         ; pct = table[(char_id-1)*8 + element]
+/// 801de174..801de194                 ; over = over * pct / 100  (then 9999 cap)
+/// ```
+///
+/// So each caster has an 8-entry row of percentages indexed by the **summon
+/// creature's element** — the per-character summon efficiency. Retail values
+/// (3 rows, Vahn / Noa / Gala): own element = 100, opposed element = 40
+/// (Vahn: water; Noa: earth), Gala's dark = 60, the rest 70–95. The table
+/// occupies exactly the 24 bytes before [`CHARACTER_ELEMENTS_VA`].
+pub const SUMMON_POWER_PCT_VA: u32 = 0x801F_5468;
+
+/// Raw PROT 0898 file offset of the summon power-percent table.
+pub const SUMMON_POWER_PCT_FILE_OFFSET: usize = 0x26C50;
+
+/// Rows in the summon power-percent table (casters: Vahn / Noa / Gala).
+pub const SUMMON_POWER_PCT_ROWS: usize = 3;
+
 /// Runtime VA of the per-character element table (1-based char id; char id 1 =
 /// first byte). Disasm: `lbu …,-0x1(char_id + 0x801F5480)`.
 pub const CHARACTER_ELEMENTS_VA: u32 = 0x801F_5480;
@@ -143,6 +169,10 @@ pub struct ElementAffinity {
     /// Per-character element ids; index 0 = char id 1 (Vahn). Length
     /// [`CHARACTER_ELEMENTS_LEN`].
     pub character_elements: Vec<u8>,
+    /// Per-character summon power-percent rows (`FUN_801ddb30` stage 5,
+    /// [`SUMMON_POWER_PCT_VA`]): `summon_power[char_id - 1][summon_element]`,
+    /// applied `over = over * pct / 100` on a summon hit.
+    pub summon_power: [[u8; ELEMENT_COUNT]; SUMMON_POWER_PCT_ROWS],
 }
 
 impl ElementAffinity {
@@ -161,9 +191,18 @@ impl ElementAffinity {
             row.copy_from_slice(&prot_0898[base..base + ELEMENT_COUNT]);
         }
         let character_elements = prot_0898[CHARACTER_ELEMENTS_FILE_OFFSET..cend].to_vec();
+        // The summon power-percent rows sit in the 24 bytes immediately before
+        // the character-element table, so the `cend` length check above covers
+        // them too.
+        let mut summon_power = [[0u8; ELEMENT_COUNT]; SUMMON_POWER_PCT_ROWS];
+        for (row, out) in summon_power.iter_mut().enumerate() {
+            let base = SUMMON_POWER_PCT_FILE_OFFSET + row * ELEMENT_COUNT;
+            out.copy_from_slice(&prot_0898[base..base + ELEMENT_COUNT]);
+        }
         Some(ElementAffinity {
             matrix,
             character_elements,
+            summon_power,
         })
     }
 
@@ -185,6 +224,19 @@ impl ElementAffinity {
         }
         self.character_elements
             .get(char_id_1based as usize - 1)
+            .copied()
+    }
+
+    /// Summon power-percent for a **1-based** caster char id summoning a
+    /// creature of `summon_element` (`FUN_801ddb30` stage 5:
+    /// `over = over * pct / 100`). `None` past either table bound.
+    pub fn summon_power_pct(&self, char_id_1based: u8, summon_element: u8) -> Option<u8> {
+        if char_id_1based == 0 {
+            return None;
+        }
+        self.summon_power
+            .get(char_id_1based as usize - 1)?
+            .get(summon_element as usize)
             .copied()
     }
 }
@@ -224,6 +276,23 @@ mod tests {
         assert_eq!(aff.character_element(0), None);
         assert_eq!(aff.character_element(1), Some(2));
         assert_eq!(aff.character_element(2), Some(3));
+    }
+
+    #[test]
+    fn summon_power_rows_parse_and_index_one_based() {
+        let mut buf = vec![0u8; CHARACTER_ELEMENTS_FILE_OFFSET + CHARACTER_ELEMENTS_LEN];
+        for row in 0..SUMMON_POWER_PCT_ROWS {
+            for elem in 0..ELEMENT_COUNT {
+                buf[SUMMON_POWER_PCT_FILE_OFFSET + row * ELEMENT_COUNT + elem] =
+                    (row * 100 + elem) as u8;
+            }
+        }
+        let aff = ElementAffinity::parse(&buf).expect("parses");
+        assert_eq!(aff.summon_power_pct(0, 0), None, "char id is 1-based");
+        assert_eq!(aff.summon_power_pct(1, 2), Some(2));
+        assert_eq!(aff.summon_power_pct(3, 6), Some(206));
+        assert_eq!(aff.summon_power_pct(4, 0), None, "only 3 caster rows");
+        assert_eq!(aff.summon_power_pct(1, 8), None, "element id past the row");
     }
 
     #[test]

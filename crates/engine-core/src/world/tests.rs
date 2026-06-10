@@ -4899,6 +4899,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
             world.element_affinity = Some(ElementAffinity {
                 matrix,
                 character_elements: vec![3; 8],
+                summon_power: [[100; 8]; 3],
             });
         }
         world.rng_state = 0;
@@ -4932,8 +4933,12 @@ fn element_affinity_scales_monster_special_attack_damage() {
 /// CREATURE vs the target — `matrix[summon-creature element][target element]`
 /// (`FUN_801dd864`), not the casting character's element. The Gimard spell
 /// (id `0x81`) summons the namesake "Gimard" creature, so the attacker element
-/// is that creature's record element; the multiply is post-roll and gated, so a
-/// `None` affinity table reproduces the neutral magnitude exactly.
+/// is that creature's record element. With the creature resolved, the
+/// magnitude rolls through the faithful summon kernel (the affinity scales
+/// the attacker roll *inside* the roll, before the bonus-arm threshold), so
+/// the affinity relation is monotonic rather than an exact post-roll
+/// multiply; a `None` affinity table reproduces the neutral magnitude
+/// exactly (the summon power-percent stage defaults to 100).
 #[test]
 fn element_affinity_scales_player_summon_cast_by_creature_element() {
     use crate::monster_catalog::{MonsterCatalog, MonsterDef};
@@ -4968,9 +4973,15 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         };
         world.mode = SceneMode::Battle;
         // Catalog: the summon creature (matched by the spell's display name) and
-        // the target enemy, each with a distinct element.
+        // the target enemy, each with a distinct element. The summon body's HP
+        // is kept SMALL and the caster's AGL large so the attacker roll
+        // dominates the bonus-arm threshold (`defender + summon_hp >
+        // attacker`) at every pct exercised here — the bonus re-roll rebuilds
+        // the roll WITHOUT the affinity scale (retail-faithful; covered by the
+        // kernel tests), which would break the monotonic relation this test
+        // pins.
         let mut catalog = MonsterCatalog::new();
-        let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
+        let mut creature = MonsterDef::new(10, "Gimard", 10, 10);
         creature.element = SUMMON_ELEM as u8;
         catalog.insert(creature);
         let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);
@@ -4984,6 +4995,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         world.actors[0].battle.mp = 40;
         world.actors[0].battle.liveness = 1;
         world.set_battle_magic(0, 40);
+        world.battle_accuracy[0] = 200;
         // Target = enemy slot 1, identified to the catalog by monster id.
         world.actors[1].battle.max_hp = 4000;
         world.actors[1].battle.hp = 4000;
@@ -4997,6 +5009,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
             world.element_affinity = Some(ElementAffinity {
                 matrix,
                 character_elements: vec![3; 8],
+                summon_power: [[100; 8]; 3],
             });
         }
 
@@ -5015,8 +5028,129 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         neutral, gated_off,
         "no affinity table reproduces the neutral 100% multiplier exactly"
     );
-    assert_eq!(weakness, neutral * 2, "200% affinity doubles the magnitude");
-    assert_eq!(resist, neutral / 2, "50% affinity halves the magnitude");
+    assert!(
+        weakness > neutral,
+        "a 200% affinity raises the faithful roll ({weakness} vs {neutral})"
+    );
+    assert!(
+        resist < neutral,
+        "a 50% affinity lowers the faithful roll ({resist} vs {neutral})"
+    );
+}
+
+/// The player Seru-magic cast path rolls the faithful summon kernel: the
+/// HP delta produced by `cast_spell_on_slots` equals the value built by
+/// composing `summon_predamage_lazy` + `damage_finish_lazy` directly with the
+/// same seeds — summon-body stats from the namesake creature's catalog def,
+/// caster AGL doubled, and the shared LCG drawn in retail call order.
+#[test]
+fn player_summon_cast_matches_the_summon_kernel_composition() {
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    use legaia_engine_vm::battle_formulas::{
+        DamageFinish, DefenderResist, SummonRollActor, damage_finish_lazy, summon_predamage_lazy,
+    };
+
+    const SEED: u32 = 0xC0FFEE;
+
+    fn build_world() -> World {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        let mut catalog = MonsterCatalog::new();
+        let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
+        creature.agl = 36;
+        creature.element = 2;
+        catalog.insert(creature);
+        let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);
+        enemy.element = 5;
+        catalog.insert(enemy);
+        world.monster_catalog = catalog;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.mp = 40;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_magic(0, 40);
+        world.battle_accuracy[0] = 25;
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_accuracy[1] = 12;
+        world.battle_defense[1] = 30;
+        world.rng_state = SEED;
+        world
+    }
+
+    // Expected value: the kernels composed directly, drawing from the same
+    // LCG in the same order (attacker, defender, lazy bonus, lazy floor).
+    struct Lcg(u32);
+    impl Lcg {
+        fn draw(&mut self) -> u16 {
+            self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (self.0 & 0x7fff) as u16
+        }
+    }
+    let mut lcg = Lcg(SEED);
+    let summon = SummonRollActor {
+        hp: 100,
+        agl: 36,
+        ..Default::default()
+    };
+    let target = SummonRollActor {
+        hp: 4000,
+        agl: 12,
+        stat_a: 30,
+        stat_b: 0,
+        ..Default::default()
+    };
+    let rng2 = [lcg.draw(), lcg.draw()];
+    let (atk, def) = summon_predamage_lazy(&summon, 25, &target, 100, 1, rng2, || lcg.draw());
+    let finish = DamageFinish {
+        predamage: atk.saturating_sub(def),
+        attacker_slot: 7,
+        defender_slot: 4,
+        attacker_element: 2,
+        defender_resist: DefenderResist::default(),
+        defender_guarding: false,
+        enemy_defender_halve: false,
+        bypass_party_resist: false,
+        summon_power_pct: 100,
+        floor_rand: 0,
+    };
+    let expected = damage_finish_lazy(&finish, || lcg.draw()).min(9999) as u16;
+
+    // Direct method call.
+    let mut world = build_world();
+    assert_eq!(
+        world.player_summon_predamage(0, 1, 0x81),
+        Some(expected),
+        "player_summon_predamage composes the kernels"
+    );
+
+    // Whole cast path: the HP delta is the same value.
+    let mut world = build_world();
+    let spell = SpellDef {
+        id: 0x81,
+        name: "Gimard".into(),
+        mp_cost: 4,
+        element: SpellElement::Neutral,
+        target: SpellTarget::OneEnemy,
+        effect: SpellEffect::Damage {
+            base_power: 100,
+            element: SpellElement::Neutral,
+        },
+        anim_id: 0,
+    };
+    let before = world.actors[1].battle.hp;
+    world.cast_spell_on_slots(0, &spell, &[1]);
+    assert_eq!(
+        before - world.actors[1].battle.hp,
+        expected,
+        "cast_spell_on_slots folds the faithful magnitude"
+    );
 }
 
 /// A monster with no castable spells always picks a physical strike: the

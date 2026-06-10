@@ -68,12 +68,13 @@
       <tr><td>16/17</td><td>READ</td><td><code>0x8002612C</code></td><td><code>0x80025EEC</code></td></tr>
       <tr><td>18/19</td><td>GAME OVER</td><td><code>0x80025B30</code></td><td><code>0x80025EEC</code></td></tr>
       <tr><td>20/21</td><td>BATTLE</td><td><code>0x800565D8</code></td><td><code>0x80025EEC</code></td></tr>
-      <tr><td>22/23</td><td>CARD (memory card)</td><td><code>0x8002574C</code></td><td><code>0x80025F74</code></td></tr>
+      <tr><td>22/23</td><td>CARD (menu / memory card)</td><td><code>0x8002574C</code></td><td><code>0x80025F74</code></td></tr>
       <tr><td>24/25</td><td>OTHER</td><td><code>0x80025980</code></td><td><code>0x80025EEC</code></td></tr>
       <tr><td>26/27</td><td>STR (FMV)</td><td><code>0x80025FB4</code></td><td><code>0x80025EEC</code></td></tr>
     </tbody>
   </table>
-  <p><strong>Two structural facts:</strong> (1) field/town gameplay is modes 2/3 MAIN (<code>game_mode 0x03</code>), <em>not</em> the world map &mdash; the "MAPDSIP" pair (12/13, misspelled on the disc) is the world-map <em>display</em> mode, whose per-frame handler routes the world-map render tick. (2) 12 of the 14 per-frame ("MODE") handlers share one generic per-frame tick <code>0x80025EEC</code>; only Mode 13 (world map) and Mode 23 (memory card) carry their own &mdash; so the per-frame half is mostly one shared handler parameterised by <code>+0x14</code>.</p>
+  <p><strong>Three structural facts:</strong> (1) field/town gameplay is modes 2/3 MAIN (<code>game_mode 0x03</code>), <em>not</em> the world map &mdash; the "MAPDSIP" pair (12/13, misspelled on the disc) is the world-map <em>display</em> mode, whose per-frame handler routes the world-map render tick. (2) 12 of the 14 per-frame ("MODE") handlers share one generic per-frame tick <code>0x80025EEC</code>; only Mode 13 (world map) and Mode 23 (menu / memory card) carry their own &mdash; so the per-frame half is mostly one shared handler parameterised by <code>+0x14</code>. (3) <strong>The in-field pause menu runs under the CARD pair (mode 23), not field mode 3</strong>: every menu-open capture in the save library (equipment / status / options, field and town) holds <code>game_mode = 0x17</code> &mdash; the "CARD" dev label covers the whole menu / memory-card overlay surface (the field menu carries the Save flow).</p>
+  <p>Each table entry also carries an <code>i16</code> <strong>next-mode</strong> field at <code>+0x0A</code>: <code>-1</code> = the mode manages its own transitions, <code>0</code> = fall back to mode 0 on completion (the only two retail values). The word at <code>+0x08</code> reads <code>0xFFFF0000</code> on self-managed modes &mdash; that is the <code>-1</code> over a zero low half, not a sentinel constant. <code>legaia_asset::mode_table::ModeEntry::next_mode</code> decodes it, and the engine's transcribed table is cross-checked field-by-field against the executable by the disc-gated <code>mode_table_reconcile</code> test.</p>
 
   <p>The script VM that drives every running script is <strong>not</strong> in <code>SCUS_942.54</code>. It lives in RAM overlays at <code>0x801C0000+</code>, loaded on demand:</p>
 

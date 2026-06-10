@@ -97,9 +97,19 @@ gain       = max(1, gain)                             ; +1 floor
 record[stat] += gain                                  ; then caps: HP ≤ 9999, MP ≤ 999, SP ≤ 0x118, others ≤ 999
 ```
 
-Slots 1/2 also apply a per-character XP-threshold correction before the loop
-(`±(threshold×0x14)/scalar`; Noa subtracts, Gala adds) read from a runtime
-struct at `_DAT_8007B81C` — left out of the engine until pinned.
+Slots 1/2 also apply a per-character XP-threshold correction
+(`±(threshold×0x14)/divisor`; Noa subtracts, Gala adds). The divisor is the
+`i16` at `table + level×0x28` (indexed by the character's *current* level)
+through the pointer global `_DAT_8007B81C` — which is **constant in retail**:
+a pure-Rust read across all 45 library save states finds `0x80070A2C` in every
+one, so the "runtime struct" is plain static `SCUS_942.54` data (the head of
+the GTE sin LUT sampled at a `0x28` stride — sin data doubling as a divisor
+curve: 125, 251, 376, … by level, so the correction shrinks from ~16% at L1
+toward ~0.5% mid-game). Parsed by
+`legaia_asset::level_up_tables::xp_correction_divisors_from_scus`, applied by
+`LevelUpTracker::threshold_for` (slot 1 earlier, slot 2 later), installed at
+boot alongside the XP curve; the disc-gated `level_up_tables_real` test pins
+the first divisors plus the captured-L3 example (365 ± 29).
 
 **The divisor `0x24C0` is the curve normalizer.** Each of the three growth
 curves sums to *exactly* `0x24C0` (= 9408), so the per-level term
@@ -155,10 +165,6 @@ replay/determinism oracle stays bit-identical. The *algorithm* is faithful; a
 bit-exact reproduction of a *specific* retail level-up additionally needs the
 BIOS-rand state at that moment (runtime, not recoverable from disc), so the
 default engine path stays jitter-free (the jitter mean is 0 ⇒ unbiased totals).
-
-**Remaining (not modeled):**
-- The slots-1/2 XP-threshold ± correction (`_DAT_8007B81C`) is still
-  runtime-sourced.
 
 **FALSIFIED (still): the "Seru struct `+0x74`" growth hypothesis.** An earlier
 reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"

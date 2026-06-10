@@ -57,6 +57,33 @@ pub const XP_LATE_MULT: u64 = 0x79;
 /// Level at/after which the formula switches from the scaled form to `× 0x79`.
 pub const XP_FORMULA_SWITCH_LEVEL: usize = 0x11;
 
+/// Runtime global holding the slots-1/2 XP-threshold correction table
+/// pointer, `_DAT_8007B81C`. **Constant in retail**: a pure-Rust read of all
+/// 45 library save states finds `0x80070A2C` in every one (boot through
+/// battle through menus), so the "runtime-sourced" value is statically
+/// derivable — it always points at [`XP_CORRECTION_TABLE_VA`].
+pub const XP_CORRECTION_PTR_GLOBAL: u32 = 0x8007_B81C;
+
+/// The slots-1/2 XP-threshold correction divisor table the
+/// [`XP_CORRECTION_PTR_GLOBAL`] pointer targets. `FUN_801E9504` reads
+/// `divisor = *(i16)(table + level * 0x28)` (the character's **current
+/// level**, record `+0x130`) and adjusts the level's XP threshold:
+/// slot 1 (Noa) `threshold -= threshold * 0x14 / divisor`, slot 2 (Gala)
+/// `threshold += threshold * 0x14 / divisor`; slot 0 (Vahn) is uncorrected.
+/// The bytes are the head of the GTE sin LUT (`0x80070A2C..0x80072A2C`)
+/// sampled at a 0x28-byte stride — sin-table data doubling as a divisor
+/// curve (divisors run 125, 251, 376, … peaking ~3800 around L48, so the
+/// correction shrinks from ~16% at L1 toward ~0.5% mid-game and back up at
+/// the top end). Dump: `overlay_magic_level_up_801e9504.txt` lines for
+/// `_DAT_8007b81c`.
+pub const XP_CORRECTION_TABLE_VA: u32 = 0x8007_0A2C;
+
+/// Byte stride between per-level entries of the correction divisor table.
+pub const XP_CORRECTION_STRIDE: u32 = 0x28;
+
+/// Numerator of the slots-1/2 correction: `threshold * 0x14 / divisor`.
+pub const XP_CORRECTION_NUMERATOR: u32 = 0x14;
+
 /// Per-stat growth-curve byte stride (`0x62 = MAX_LEVEL − 1`).
 pub const GROWTH_ROW_STRIDE: usize = 0x62;
 /// Number of distinct growth curves at [`GROWTH_CURVES_VA`].
@@ -143,6 +170,35 @@ pub fn xp_thresholds_from_scus(scus: &[u8]) -> Option<Vec<u32>> {
         thresholds.push(xp_threshold_for(level, cum));
     }
     Some(thresholds)
+}
+
+/// Parse the slots-1/2 XP-threshold correction divisors out of a
+/// `SCUS_942.54` image: `divisors[level]` for `level` in `0..=MAX_LEVEL - 1`
+/// is the `i16` at [`XP_CORRECTION_TABLE_VA`]` + level * `[`XP_CORRECTION_STRIDE`],
+/// indexed by the character's **current level** byte. `divisors[0]` is `0` in
+/// retail (the level byte is never 0; retail would trap on the divide).
+///
+/// `None` if the image isn't a `SCUS_942.54` or the table runs out of range.
+pub fn xp_correction_divisors_from_scus(scus: &[u8]) -> Option<Vec<i16>> {
+    let map = ExeMap::parse(scus)?;
+    let mut out = Vec::with_capacity(MAX_LEVEL);
+    for level in 0..MAX_LEVEL {
+        let va = XP_CORRECTION_TABLE_VA + (level as u32) * XP_CORRECTION_STRIDE;
+        out.push(read_u16(scus, &map, va)? as i16);
+    }
+    Some(out)
+}
+
+/// Apply the slots-1/2 XP-threshold correction (`FUN_801E9504`): the signed
+/// adjustment `threshold * 0x14 / divisor` that slot 1 (Noa) subtracts and
+/// slot 2 (Gala) adds. Returns `0` for a zero/negative divisor (retail traps
+/// on 0 and the table is positive for every reachable level; the guard keeps
+/// the engine total-ordered).
+pub fn xp_threshold_correction(threshold: u32, divisor: i16) -> u32 {
+    if divisor <= 0 {
+        return 0;
+    }
+    (threshold as u64 * XP_CORRECTION_NUMERATOR as u64 / divisor as u64) as u32
 }
 
 /// Raw per-level stat-growth tables (`DAT_800769CC` curves + `DAT_80076918`

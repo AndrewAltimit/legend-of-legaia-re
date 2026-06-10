@@ -47,11 +47,27 @@ fn decodes_the_mode_table_or_skips() {
         "mode 26 STR INIT"
     );
 
-    // Even modes are init, odd modes per-frame; the sentinel is present on
-    // most init modes.
+    // Even modes are init, odd modes per-frame.
     for e in &table.entries {
         assert_eq!(e.is_per_frame(), e.index % 2 == 1);
     }
+
+    // The +0x0A next-mode field only carries two retail values: -1
+    // (self-managed) or 0 (fall back to mode 0 / CONFIG); the low half of
+    // the +0x08 word is always zero.
+    for e in &table.entries {
+        assert_eq!(e.next_word & 0xFFFF, 0, "mode {} +0x08 low half", e.index);
+        assert!(
+            matches!(e.next_mode(), None | Some(0)),
+            "mode {} next_mode = {:?}",
+            e.index,
+            e.next_mode()
+        );
+    }
+    // Spot-pin both shapes: MAIN MODE (3) falls back to mode 0 on
+    // completion; BATTLE MODE (21) is self-managed.
+    assert_eq!(table.entry(3).unwrap().next_mode(), Some(0));
+    assert_eq!(table.entry(21).unwrap().next_mode(), None);
 
     // The structural finding: exactly 12 of the 14 per-frame modes route
     // through the shared generic per-frame handler; only Mode 13 (MAPDISP

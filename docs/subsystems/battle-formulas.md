@@ -247,8 +247,14 @@ if the defender's equipment sets the resist bit for the attacker's element,
 `over >>= 1` (the absorb bit `0x10` instead routes to a `over*3>>2` 3/4 scale);
 (2) **enemy-defender halve** (`_DAT_8007bd84`); (3) **guard halve** (defender
 `+0x1de == 4`); (4) the **no-damage floor** `over = rand()%9 + 8` when mitigation
-zeroed it; (5) the **summon power-% scale** (`attacker_slot == 7`); (6) the
-**9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
+zeroed it; (5) the **summon power-% scale** (`attacker_slot == 7`): `over =
+over * pct / 100` with `pct = table[(caster_char_id - 1) * 8 + summon_element]`
+from the per-caster table at `0x801F5468` (PROT 0898 file `0x26C50`, the 24
+bytes before the per-character element table; parsed as
+`legaia_asset::element_affinity::ElementAffinity::summon_power`). Each caster
+summons their own element at 100% and their opposed element weakest — Vahn
+fire 100 / water 40, Noa wind 100 / earth 40, Gala thunder 100 / dark 60, the
+rest 70–95 (`asset element-affinity` prints the rows); (6) the **9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
 over*100/maxHP)` plus the two "spirit gain up" equipment bits (`+0xF8 & 0x200`
 → `pct>>2`, `& 0x100` → `pct/10`), clamped to 100.
 
@@ -322,8 +328,25 @@ magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
 [its id→index map leaves the basic-attack / art id bands `0x08..=0x11` /
 `0x16..=0x18` unmapped, pinned by a live capture], so a character's art takes its
 power from the per-strike art-record power byte instead; only `apply_basic_attack`'s
-flat `art_strike_damage_default` for a no-art generic hit is a stand-in. The
-summon-branch live roll is its own remaining thread.)
+flat `art_strike_damage_default` for a no-art generic hit is a stand-in.)
+
+**The summon branch is wired the same way for player Seru-magic casts**
+(`World::player_summon_predamage`): when the monster catalog resolves the
+spell's namesake summon creature, `cast_spell_on_slots` replaces the MP-scaled
+placeholder with `summon_predamage_lazy` seeded faithfully — summon-body
+HP/AGL from the creature's `battle_data` record (the stats the loader installs
+on the freshly-spawned slot-7 actor), the caster's `battle_accuracy` AGL
+doubled, the affinity percent inside the roll, and the caster's per-spell
+**magic-power byte** searched the way `FUN_801dd864` does (the character
+record's 32-entry spell-id list at `+0x13D` with parallel level bytes at
+`+0x161`, live `0x80084845`/`0x80084869`; identity `1` when the roster doesn't
+carry the spell). The closed-form `FUN_801ddb30` finisher stages then apply —
+the lazily-drawn `rand()%9+8` floor, the per-caster summon power-percent
+(`0x801F5468`), and the 9999 cap. RNG draws follow retail call order:
+attacker + defender eager, the bonus arm and the floor lazy, so the cursor
+advances by two to four draws exactly as `FUN_801dd0ac`/`FUN_801ddb30` do.
+Gating mirrors the arts path: an unresolved creature (disc-free / synthetic
+battles) keeps the placeholder magnitude and an untouched RNG stream.
 
 ### Element-affinity matrix (`FUN_801dd864`, `0x801F53E8`)
 
@@ -399,14 +422,15 @@ matched to its namesake `battle_data` record (`World::summon_attacker_element`,
 the engine-side equivalent of resolving slot 7's `+0x1d`), *not* the casting
 character's element — and the defender element resolves by slot
 (`World::battle_slot_element`: party member → per-character table, enemy / summon
-body → monster record `+0x1d`). Like the enemy direction the multiply happens
-after the roll (so the RNG stream is untouched) and is gated on the affinity
-table being installed (neutral 100% otherwise). The summon's *base* damage is
-still the caster-state-derived stand-in (the faithful slot-7 summon roll is the
-open piece), so this is the ±4% affinity nudge layered on a placeholder
-magnitude, not yet a byte-exact summon roll. A party member's Tactical Art is
-*not* a move-power case (it uses the art-record power byte — see the note under
-the arts/physical kernel above) and does not route through this cast path.
+body → monster record `+0x1d`). When the catalog resolves the creature, the
+percent feeds the **faithful summon roll** (`World::player_summon_predamage`,
+see the summon-branch wiring above), applied *inside* the roll before the
+bonus-arm threshold exactly like the enemy direction; when only the affinity
+tables are present but the creature isn't resolvable, the cast falls back to
+the placeholder magnitude with the percent applied post-roll (RNG untouched).
+A party member's Tactical Art is *not* a move-power case (it uses the
+art-record power byte — see the note under the arts/physical kernel above) and
+does not route through this cast path.
 
 ## MP cost & ability-bit modifiers
 
