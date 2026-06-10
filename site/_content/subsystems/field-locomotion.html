@@ -61,7 +61,7 @@
 else if (dir &amp; 0x4000) and collide(player, scene, 0) == clear:  player.Z -= 2
 if (dir &amp; 0x2000) and collide(player, scene, 3) == clear:  player.X += 2
 else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 2</code></pre>
-      <code>collide</code> is <code>FUN_801cfe4c</code>; <code>dir</code>-codes are <code>0 = Z&minus;, 1 = X&minus;, 2 = Z+, 3 = X+</code>. The per-frame delta vector is stored at <code>_DAT_8007bde0</code> (X) / <code>_DAT_8007bde4</code> (Z) for the transform-commit + camera follow. Step SFX <code>func_0x80035b50(0x20)</code>; a fully-blocked move plays the bonk <code>func_0x80035bd0(0x23)</code>.</li>
+      <code>collide</code> is <code>FUN_801cfe4c</code>; <code>dir</code>-codes are <code>0 = Z&minus;, 1 = X&minus;, 2 = Z+, 3 = X+</code>. The per-frame delta vector is stored at <code>_DAT_8007bde0</code> (X) / <code>_DAT_8007bde4</code> (Z) for the transform-commit + camera follow. The step loop plays <strong>no SFX</strong> &mdash; walking and wall contact are silent; the controller's <code>0x20</code>/<code>0x23</code> cues fire in the pre-movement header (action-button / menu-open accept, and the deny buzz when the menu-open is locked out).</li>
   </ol>
 </section>
 

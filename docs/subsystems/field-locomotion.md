@@ -63,7 +63,7 @@ Provenance: `ghidra/scripts/funcs/overlay_0897_801d6704.txt` (the `func_0x80024c
    else if (dir & 0x8000) and collide(player, scene, 1) == clear:  player.X -= 2;  dX = -8
    ```
 
-   `collide` is `FUN_801cfe4c`; `dir`-codes are `0 = Z−, 1 = X−, 2 = Z+, 3 = X+`. The committed per-frame delta vector is stored at `_DAT_8007bde0` (X) / `_DAT_8007bde4` (Z) for the downstream transform-commit + camera follow. Step SFX is `func_0x80035b50(0x20)`; a fully-blocked move plays the bonk `func_0x80035bd0(0x23)`.
+   `collide` is `FUN_801cfe4c`; `dir`-codes are `0 = Z−, 1 = X−, 2 = Z+, 3 = X+`. The committed per-frame delta vector is stored at `_DAT_8007bde0` (X) / `_DAT_8007bde4` (Z) for the downstream transform-commit + camera follow. The step loop plays **no SFX** — walking and wall contact are silent. (An earlier note here read the controller's `0x20`/`0x23` cues as "step"/"bonk" sounds; they actually fire in the pre-movement header — `0x20` on the action-button accept and the menu-open accept, `0x23` as the deny buzz when the menu-open is refused under the `_DAT_1f800394 & 0x8000000` lock.)
 
 After movement, the same function runs an interaction probe (`FUN_801cf9f4`) to detect adjacency to talk-able actors when the action button is pressed. It walks the active-actor list, computes each actor's footprint box from its object record, and box-tests the point just ahead of the player against it (half-extent ≈ `0x40` + box + margin); on a hit it stores that actor in `player[+0x98]` (the interaction target) for the dispatch that runs the actor's interaction script.
 

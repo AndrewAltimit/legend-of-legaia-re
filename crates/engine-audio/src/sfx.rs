@@ -346,8 +346,9 @@ impl SfxScheduler {
     // head; this models the same "queue a one-shot SFX" contract with an
     // unbounded queue + per-cue countdown instead of the 4-slot ring.
     // REF: FUN_80035BD0 - the retail "overwrite current slot" variant (replace
-    // an in-flight cue without advancing the head, e.g. bonk overriding a
-    // pending step) is not separately modeled; cues simply queue here.
+    // an in-flight cue without advancing the head, e.g. the deny buzz 0x23
+    // replacing a queued accept when a menu-open is refused) is not separately
+    // modeled; cues simply queue here.
     pub fn enqueue(&mut self, cue: PendingCue) {
         self.queue.push(cue);
     }
