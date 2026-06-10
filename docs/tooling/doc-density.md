@@ -23,7 +23,8 @@ convention: same information, more navigable structure.
 
 Cells are split naively on `|`; a pipe inside an inline code span only ever
 splits a cell into smaller fragments, so the word count can under-report but
-never false-positive — the safe direction for a warn-only nudge.
+never false-positive — the safe direction for a commit gate (it never wrongly
+blocks a within-budget cell).
 
 ## Usage
 
@@ -37,18 +38,19 @@ scripts/check-doc-density.py --max-cell-words 120 --max-line 700
 Output is one `path:line: message` per violation. The checker **exits non-zero
 when it finds violations**, so it can gate CI if wanted.
 
-## Pre-commit wiring (warn-only)
+## Pre-commit wiring (hard gate)
 
 The pre-commit hook (`scripts/git-hooks/pre-commit`, installed once per clone by
-`scripts/install-hooks.sh`) runs it warn-only on the staged doc set:
+`scripts/install-hooks.sh`) runs it on the staged doc set and aborts the commit
+on a violation:
 
 ```bash
-python3 scripts/check-doc-density.py --staged --quiet || true
+python3 scripts/check-doc-density.py --staged --quiet || exit 1
 ```
 
-This matches the [`check-port-tags.py`](port-catalog.md) pattern: it nudges at
-commit time without blocking unrelated work, and it runs before the hook's
-Rust-only early-exit so docs-only commits are covered too. Set
-`LEGAIA_SKIP_PRECOMMIT=1` to bypass the whole hook in an emergency.
+Unlike the warn-only [`check-port-tags.py`](port-catalog.md), a density
+violation blocks the commit. The check runs before the hook's Rust-only
+early-exit so docs-only commits are covered too. Set `LEGAIA_SKIP_PRECOMMIT=1`
+to bypass the whole hook in an emergency.
 
 Pure standard library; ASCII-only; no external dependencies.

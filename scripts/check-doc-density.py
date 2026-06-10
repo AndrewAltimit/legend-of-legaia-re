@@ -15,9 +15,10 @@ Scope: every `docs/**/*.md` plus every `crates/*/README.md`. The generated
 `crates/web-viewer/pkg/README.md` is skipped. Lines inside fenced code blocks
 (```...```) are skipped -- CLI examples and code are allowed to be wide.
 
-The checker **exits non-zero when it finds violations**, so it can gate CI if
-wanted. The pre-commit hook runs it warn-only (`|| true`), matching the
-`check-port-tags.py` pattern, so it nudges without blocking unrelated commits.
+The checker **exits non-zero when it finds violations**. The pre-commit hook
+runs it on the staged doc set and aborts the commit on a violation (unlike the
+warn-only `check-port-tags.py`); bypass an individual commit with
+`LEGAIA_SKIP_PRECOMMIT=1`.
 
 Usage:
     scripts/check-doc-density.py                 # scan the whole corpus
@@ -83,8 +84,8 @@ def split_cells(line):
     """Split a table row into cell strings. Drops the leading/trailing empties
     produced by the bordering pipes. Naive split on '|' -- a pipe inside an
     inline code span only ever splits a cell into smaller fragments, which can
-    under-count but never false-positive, which is the safe direction for a
-    warn-only linter."""
+    under-count but never false-positive -- the safe direction for a commit
+    gate (it never wrongly blocks a within-budget cell)."""
     raw = line.split("|")
     # A bordered row "| a | b |" splits to ['', ' a ', ' b ', ''].
     if raw and raw[0].strip() == "":
