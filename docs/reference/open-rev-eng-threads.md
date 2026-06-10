@@ -573,7 +573,7 @@ The piece poses `R·v + T` about its own object origin (no centroid subtraction)
 
 | Thread | Status | What would close it | Memory |
 |---|---|---|---|
-| SPU reverb live routing (C7-REVERB) | resolved (Studio C, global) — engine wiring is the only residual | [details ↓](#spu-reverb-live-routing-c7-reverb) | `project_seq_sequencer.md` |
+| SPU reverb live routing (C7-REVERB) | resolved + WIRED (Studio C, global) | [details ↓](#spu-reverb-live-routing-c7-reverb) | `project_reverb_studio_c_global.md` |
 
 
 ### SPU reverb live routing (C7-REVERB)
@@ -588,7 +588,7 @@ Across all 45 mednafen states (field / town / battle / summon / title / minigame
 - **The preset is `Studio C` everywhere** — the 32-register block is byte-identical in every state and matches the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`engine_audio::ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block → `StudioC`.
 - **Per-voice reverb-send (`EON`) is broad** — 15–22 of 24 voices in any state, BGM + SFX alike. Reverb is the default routing, not a per-cue effect.
 
-So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace. The engine matches retail by selecting `ReverbMode::StudioC` once at SPU init and routing voices into reverb by default. The only residual is the live engine wiring (mode select + default `reverb_send`) and the separately-set output depth (`SpuSetReverbDepth`, `vLIN`/`vROUT`). Falsifies the earlier "Spirit-Arts / echo cues opt in, everything else dry" reading in [`audio.md`](../subsystems/audio.md#retail-reverb-routing--studio-c-always-on-capture-confirmed).
+So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace. **WIRED:** the live engine calls `Spu::set_retail_reverb` once at SPU init (`StreamResampler::new`) — `ReverbMode::StudioC` + every voice routed. The PCM oracle's retail-side reverb is also fixed (it previously mis-read the EON mask as a mode byte and ran `Off`). Residual is only the output-depth tuning (`SpuSetReverbDepth`, `vLIN`/`vROUT`; the engine uses a fixed half-scale approximation). Falsifies the earlier "Spirit-Arts / echo cues opt in, everything else dry" reading in [`audio.md`](../subsystems/audio.md#retail-reverb-routing--studio-c-always-on-capture-confirmed).
 
 ## Title / boot / overlays
 

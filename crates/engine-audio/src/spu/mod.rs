@@ -113,6 +113,23 @@ impl Spu {
         self.set_reverb_mode(ReverbMode::from_byte(raw));
     }
 
+    /// Install the global reverb configuration retail actually runs: the
+    /// `Studio C` preset, with every voice routed into the reverb send.
+    /// Pinned from the save-state corpus (the SPU reverb network is master-on
+    /// in every captured state, the coefficient registers are byte-identical
+    /// Studio C everywhere, and the per-voice `EON` mask routes nearly all
+    /// voices). See `docs/subsystems/audio.md`. Reverb is a fixed global in
+    /// this game, not a per-cue effect, so the engine selects it once. (Output
+    /// depth — `SpuSetReverbDepth` — is a fixed approximation; tune with
+    /// [`Reverb::set_output_volume`] if needed.)
+    pub fn set_retail_reverb(&mut self) {
+        self.reverb_mode_raw = 4; // libspu SPU_REV_MODE_STUDIO_C
+        self.set_reverb_mode(ReverbMode::StudioC);
+        for v in &mut self.voices {
+            v.set_reverb_send(true);
+        }
+    }
+
     /// Advance every voice by one sample tick at the SPU internal rate
     /// (44.1 kHz). Returns the (left, right) sample, master-volume scaled
     /// and clamped to i16.
@@ -244,6 +261,17 @@ mod tests {
         // Out-of-range falls back to Off.
         spu.write_reverb_mode_byte(0xFE);
         assert_eq!(spu.reverb.mode, ReverbMode::Off);
+    }
+
+    /// `set_retail_reverb` selects Studio C and routes every voice.
+    #[test]
+    fn set_retail_reverb_routes_all_voices_studio_c() {
+        let mut spu = Spu::new();
+        assert_eq!(spu.reverb.mode, ReverbMode::Off);
+        assert!(spu.voices.iter().all(|v| !v.reverb_send));
+        spu.set_retail_reverb();
+        assert_eq!(spu.reverb.mode, ReverbMode::StudioC);
+        assert!(spu.voices.iter().all(|v| v.reverb_send));
     }
 
     /// A voice with `reverb_send` set produces an echo tail past the

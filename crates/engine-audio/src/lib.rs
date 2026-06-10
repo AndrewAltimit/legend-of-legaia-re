@@ -226,8 +226,12 @@ struct StreamResampler {
 impl StreamResampler {
     fn new(device_rate: u32) -> Self {
         let step = SPU_INTERNAL_RATE as f64 / device_rate as f64;
+        // Match retail: the SPU runs Studio C reverb globally with most voices
+        // routed (see Spu::set_retail_reverb / docs/subsystems/audio.md).
+        let mut spu = Spu::new();
+        spu.set_retail_reverb();
         Self {
-            spu: Spu::new(),
+            spu,
             sequencer: None,
             sequencer_paused: false,
             pending_seq: None,
