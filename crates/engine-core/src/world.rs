@@ -6218,26 +6218,30 @@ impl World {
     ///
     /// PORT: FUN_801cfe4c
     ///
-    /// Single candidate-centre wall test against the `+0x4000` grid: world
-    /// coords convert to 64-unit sub-cells (`>> 6`), the 128-unit tile
-    /// column/row is `sub_cell >> 1` (rows of `0x80` bytes), and the wall bit
-    /// is `byte >> 4 & quadrant_mask` where the quadrant is
-    /// `(sub_cell_z & 1) * 2 + (sub_cell_x & 1)`.
+    /// Single candidate-centre wall test against the `+0x4000` grid, using
+    /// retail's exact sub-cell derivation: `zc = (z>>6)+2`,
+    /// `xc = ((x+0x3f)>>6)-1`, tile column/row = `sub_cell >> 1` (rows of
+    /// `0x80` bytes), wall bit = `byte >> 4 & quadrant_mask` with quadrant
+    /// `(zc & 1) * 2 + (xc & 1)`.
     ///
-    /// This is a simplification of retail `FUN_801cfe4c`, which tests **three
-    /// leading-edge footprint probes** (~47 units ahead, ±16 lateral;
-    /// per-direction table `DAT_801f2214`) and derives the sub-cell index
-    /// differently (`zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)-1`). The
-    /// **quadrant-mask formula here is byte-identical to retail** (verified
-    /// against the decomp in `tests`); only the sub-cell *index* derivation
-    /// differs — the engine floors where retail adds `+2` to Z and rounds X
-    /// up, so for the same world point retail indexes one tile further in Z
-    /// and the opposite X parity. Whether that offset reads the wrong grid
-    /// cell in a live scene is an open, capture-gated question (it depends on
-    /// how the disc grid is authored relative to the world-tile origin); the
-    /// "inverted X parity" hypothesis itself is false. Do NOT realign blind —
-    /// town01 walks acceptably today. See
-    /// `docs/subsystems/field-locomotion.md` ("Collision").
+    /// The `+2` Z bias and `ceil-1` X rounding are NOT optional look-ahead:
+    /// the wall bits are authored with the bias baked in. This is proven by
+    /// the `rimelm_wall_press_down` capture: the live player rests pressed
+    /// against a wall at a position whose plain floor-indexed cell is an
+    /// all-quads wall byte (the player could never legally stand there under
+    /// floor indexing) while the biased read places that wall band one tile
+    /// north, exactly where the on-screen wall blocks. The floor sampler
+    /// ([`Self::sample_field_floor_height`], `FUN_80019278`) reads the SAME
+    /// grid bytes with plain floor indexing — the low (elevation) and high
+    /// (wall) nibbles of one byte are addressed under two different
+    /// world-to-cell mappings by their two retail consumers. See
+    /// `docs/subsystems/field-locomotion.md` ("Collision") and the
+    /// disc-gated `engine-shell/tests/field_collision_discriminator.rs`.
+    ///
+    /// Remaining simplification vs retail: retail tests **three leading-edge
+    /// footprint probes** (~47 units ahead, ±16 lateral; per-direction table
+    /// `DAT_801f2214`) where this tests one candidate-centre point — a
+    /// standoff/feel difference, not an indexing one.
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return false;
@@ -6245,15 +6249,15 @@ impl World {
         if x < 0 || z < 0 {
             return true; // off the grid origin reads as a wall (clamp inside)
         }
-        let sx = (x as i32) >> 6;
-        let sz = (z as i32) >> 6;
-        let col = (sx >> 1) & 0x7F;
-        let row = (sz >> 1) & 0x7F;
+        let zc = ((z as i32) >> 6) + 2;
+        let xc = (((x as i32) + 0x3F) >> 6) - 1;
+        let col = (xc / 2) & 0x7F;
+        let row = (zc - (zc >> 31)) >> 1;
         let idx = (col + row * FIELD_GRID_STRIDE as i32) as usize;
         let Some(&byte) = self.field_collision_grid.get(idx) else {
             return false;
         };
-        let quad = ((sz & 1) << 1 | (sx & 1)) as u32;
+        let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
         (byte >> 4) & (1u8 << quad) != 0
     }
 

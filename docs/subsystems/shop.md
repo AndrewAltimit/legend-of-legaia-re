@@ -173,7 +173,12 @@ carried the padding). Validated against the Rim Elm Variety Store's 10 pinned id
 > gate][u32 price]` records in `0x60`-byte blocks) is a different thing — its buy
 > handler (`overlay_shop_save_801dc1cc.txt`) debits `_DAT_800845A4` (the **casino
 > coin bank**, not party gold), so it is already parsed by the randomizer's
-> `casino::CasinoExchange`.
+> `casino::CasinoExchange`. The prize-exchange UI is a **menu-overlay session**
+> like the gold shop: a save state taken inside the ticket-counter prize shop
+> holds `game_mode 0x17` (the CARD/menu pair, same as the pause menu) with the
+> menu overlay PROT 0899 resident in slot A and the field overlay swapped out —
+> while talking to the counter attendant the game is still field mode 3 under
+> the field overlay (the dialog itself is not a menu session).
 
 ## Open items
 

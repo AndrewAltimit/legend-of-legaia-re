@@ -269,7 +269,7 @@ The runtime buffer per slot is `0x10800` = 67584 bytes; the file format is not y
 decoded. **The PROT entry these dev paths map to is unpinned** - the earlier
 "summon.dat = PROT `0x37F`, readef.dat = PROT `0x380`" reading is *falsified*: those
 indices (895 / 896) are the boot init pak (`0895`, full of `h:\prot\field\init\init.pak`
-dev strings) and the contested mode-24 overlay remnant (`0896`), and the whole
+dev strings) and the unidentified code+data blob `0896` (its old "mode-24 overlay" reading is refuted), and the whole
 `0879..=0890` band the guess sat in is `VABp` sound banks (`sound_data2`), not effect
 containers. The `0x37F/0x380` figure was an inference off the sound-driver
 pathbuilder (`0x37A = 890 = sound_data2`, the loader reads `+5`/`+6` for variations)

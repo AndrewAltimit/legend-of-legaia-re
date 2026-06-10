@@ -1258,3 +1258,59 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Vahn auto-executes the Tri-Somersault Super Art during a counterattack ~2s after load (no input). The byte-exact Super action queue is resident at actor[+0x1DF]: 0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B = [Up Down][Starter Somersault 0x27 -> Up][Starter Cyclone 0x1F -> Down][SpecialStarter 0x1A][Tri-Somersault finisher 0x2B x3]. The tail matches super_art.rs's Tri-Somersault `replace` byte-exact, validating the combo-specific connectors (0x27->0F, 0x1F->0E). The dequeue site is pc 0x801D89D8 (consumes the queue head-first). Drives autorun_super_art_action_queue.lua."
 topics = ["battle", "RE", "super art", "arts", "Vahn", "Tri-Somersault", "ctx queue", "FUN_801E295C"]
+
+[[scenarios]]
+slot = 255
+label = "rimelm_wall_press_left"
+ram_fingerprint_sha256 = "1f5dfa67b5baff5b2b903859529c364f90626aedf76ad48e94768d59d407d24a"
+backup_fingerprint = "57657d067b1cbe91121f0f131683312d39d77070a0e86f1582f94a9ab2441050"
+phase = "field"
+expected_active_scene = "town0c"
+description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding LEFT (screen-left = world X-) pressed against a wall, resting at (1838,2526) against the full-height wall column at grid col 13. Cheat-free re-capture (an earlier take had a walk-through-walls GameShark code active). RESULT: validates the retail derivation + 47-unit leading edge at step granularity (probe 1791 = the column's last wall sub-cell; one 2-unit step shallower reads clear). Consumed by engine-shell/tests/field_collision_discriminator.rs."
+topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "casino_ticket_counter"
+backup_fingerprint = "68df0a5ca04ac334d07025fab777af85d95e0d9d8b3c5c62ed8dd2a9407cad2f"
+phase = "field"
+expected_game_mode = 0x03
+description = "Casino floor, Vahn standing at the prize-exchange ticket counter (pre-interaction). Brackets the prize-exchange flow entry; pairs with casino_ticket_counter_dialog and casino_prize_shop for the prize-exchange game-mode + 0x3E sub-id hunt. Measured: game_mode 0x03 (field), field overlay PROT 0897 resident in slot A (clean prefix 1.0000)."
+topics = ["casino", "prize exchange", "game mode", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "casino_ticket_counter_dialog"
+backup_fingerprint = "9e4fdec5c2e4ec77c92c5b87948c1ac3f8a9ac4f86cedad9518223ff31c8c318"
+phase = "field"
+expected_game_mode = 0x03
+description = "Casino floor, mid-dialog with the prize-exchange ticket-counter attendant. Middle of the prize-exchange flow bracket (see casino_ticket_counter). Measured: still game_mode 0x03 (field) — the dialog runs under the field overlay, not a menu session."
+topics = ["casino", "prize exchange", "dialog", "game mode", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "casino_prize_shop"
+backup_fingerprint = "231209cd8a981bf9b1d60d5410f2535546ba7546e240b28863be049376f70da4"
+phase = "menu"
+expected_game_mode = 0x17
+description = "Inside the casino ticket-counter prize-exchange shop UI (the PROT 0899 @0x15D00 prize table's consumer). FINDING: the prize shop runs at game_mode 0x17 (the CARD/menu pair, same as the pause menu) with the MENU overlay PROT 0899 resident in slot A (clean prefix 1.0000) and the field overlay swapped out — the prize exchange is a menu-overlay session, consistent with its table + debit kernel living in PROT 0899."
+topics = ["casino", "prize exchange", "shop", "PROT 0899", "game mode", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "baka_fighter_entry_pretransition"
+backup_fingerprint = "1ac2c3d37e24ff428fa89db0dff01b2e402b21b1a29fba765f0d505ee36e0965"
+phase = "field"
+expected_game_mode = 0x03
+description = "Starting the Baka Fighter minigame: pre-transition, Vahn taking a seat at the chair (game_mode still 0x03, 0x3E sub-id 0). Drives autorun_minigame_overlay_capture.lua: the sit animation rolls into the mode-24 transition hands-free (~vsync 138 after load). RESULT of the live entry window: sub-id 0x8007BA34 = 4 (live-confirms the 0x3E operand-100 model), the SCUS-resident OTHER INIT ('other init end') streams the per-minigame overlay directly into slot A, and PROT 0896's bytes appear NOWHERE in RAM across the window or any parked library state - the '0896 = mode-24 OTHER overlay' hypothesis is refuted (its 0x801C5818 base was an over-read artifact of the field-overlay tail; see open-rev-eng-threads.md)."
+topics = ["minigame", "baka fighter", "overlay PROT 0896", "game mode", "0x3E", "RE"]
+
+[[scenarios]]
+slot = 255
+label = "rimelm_wall_press_down"
+ram_fingerprint_sha256 = "37218ba4fa31810f9115a68fd740138fdf3ccf077334883d8f24531660203327"
+backup_fingerprint = "5461e7a0f28d55f805b298f5c97185fdf25d7b9fc1cc6571f5d50bee97065813"
+phase = "field"
+expected_active_scene = "town0c"
+description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding DOWN (screen-down = world Z-, toward the camera) pressed against a lower wall, resting at (3386,2606). THE DECISIVE Z-row discriminator, cheat-free: the plain floor-indexed standing cell (26,20) is an all-quads wall byte (the position would be unreachable under floor indexing) while the retail biased derivation reads it clear and blocks at the z-47 leading-edge probes with a step-exact standoff. PROVED the +2 Z bias is authored into the wall bits; World::field_tile_is_wall realigned on this evidence. Consumed by engine-shell/tests/field_collision_discriminator.rs."
+topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]

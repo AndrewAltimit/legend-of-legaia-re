@@ -194,15 +194,16 @@ fn world_tick_field_mode_no_bytecode_is_noop() {
 fn field_grid_block_all_then_clear() {
     let mut world = World::new();
     world.reset_field_collision_grid();
-    // Block tile (col=2, row=3) - covers world x in [256,384), z in
-    // [384,512).
+    // Block tile (col=2, row=3). Under retail's biased derivation
+    // (`zc=(z>>6)+2`, `xc=((x+0x3f)>>6)-1`) that cell covers world
+    // x in (256,384], z in [256,384).
     world.paint_field_collision(1, (2, 3), (3, 4), 0);
-    assert!(world.field_tile_is_wall(320, 448), "painted tile is a wall");
+    assert!(world.field_tile_is_wall(320, 320), "painted tile is a wall");
     // Neighbour tile (col=1) stays walkable.
-    assert!(!world.field_tile_is_wall(160, 448));
+    assert!(!world.field_tile_is_wall(160, 320));
     // Clearing the same rectangle makes it walkable again.
     world.paint_field_collision(0, (2, 3), (3, 4), 0);
-    assert!(!world.field_tile_is_wall(320, 448));
+    assert!(!world.field_tile_is_wall(320, 320));
 }
 
 #[test]
@@ -210,8 +211,9 @@ fn field_grid_set_mask_selects_quadrant() {
     let mut world = World::new();
     world.reset_field_collision_grid();
     // Set wall bit for quadrant 0 (sub-cell x even, z even) of tile
-    // (0,0) only.
-    world.paint_field_collision(3, (0, 1), (0, 1), 0b0001);
+    // (0,1) only. Row 1 covers world z in [0,128) under the retail +2
+    // Z bias (row 0 is only reachable for negative z).
+    world.paint_field_collision(3, (0, 1), (1, 2), 0b0001);
     assert!(world.field_tile_is_wall(10, 10), "quadrant 0 is a wall");
     // Quadrant 1 (sub-cell x odd) of the same tile is untouched.
     assert!(!world.field_tile_is_wall(64 + 10, 10));
@@ -233,45 +235,44 @@ fn retail_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
 }
 
 #[test]
-fn retail_collision_subcell_indexing_differs_from_engine_by_a_z_tile() {
-    // Retail's `+2` Z bias and `ceil-1` X rounding map the SAME world point
-    // to a DIFFERENT grid cell than the engine's floor (`>>6`). At the
-    // half-tile-centred player position (320, 448) = (tile 2, tile 3) centre:
-    //   retail -> (col 2, row 4, quad 2)   [(448>>6)+2 = 9 -> row 4]
-    //   engine -> (col 2, row 3, quad 3)   [ 448>>6     = 7 -> row 3]
-    // i.e. retail reads ONE TILE further in Z (and the opposite X parity).
-    let (rcol, rrow, rmask) = retail_subcell(320, 448);
-    assert_eq!((rcol, rrow, rmask), (2, 4, 1 << 2));
-
-    let (esx, esz) = (320i32 >> 6, 448i32 >> 6);
-    let ecol = (esx >> 1) & 0x7f;
-    let erow = esz >> 1;
-    let emask = 1u8 << (((esz & 1) << 1 | (esx & 1)) as u32);
-    assert_eq!((ecol, erow, emask), (2, 3, 1 << 3));
-
-    // Build a grid carrying ONLY retail's cell (col 2, row 4, quad 2). The
-    // retail formula reads a wall there; the engine, reading (col 2, row 3),
-    // sees nothing. This pins the +1-tile-Z / X-parity sampling offset.
+fn field_tile_is_wall_matches_retail_subcell_derivation() {
+    // `World::field_tile_is_wall` uses retail's exact biased derivation
+    // (`zc=(z>>6)+2`, `xc=((x+0x3f)>>6)-1`). The bias is authored into the
+    // wall bits — proven by the `rimelm_wall_press_down` capture, where the
+    // live player legally stands at a position whose plain floor-indexed
+    // cell is an all-quads wall byte (see
+    // `engine-shell/tests/field_collision_discriminator.rs`). Sweep a span
+    // of world points and assert the engine reads exactly the cell+quad the
+    // reference derivation names.
     let mut world = World::new();
     world.reset_field_collision_grid();
-    let idx = (rcol + rrow * (FIELD_GRID_STRIDE as i32)) as usize;
-    world.field_collision_grid[idx] = rmask << 4;
-    let (_, _, m) = retail_subcell(320, 448);
-    assert_eq!(
-        m, rmask,
-        "retail probe maps (320,448) onto the painted cell"
-    );
-    assert!(
-        !world.field_tile_is_wall(320, 448),
-        "engine floor-indexes a different (clear) cell for the same point - \
-         the sampling offset is real; whether it reads the WRONG wall in a \
-         live scene is the open, capture-gated question"
-    );
+    for &(x, z) in &[
+        (320i32, 448i32),
+        (10, 10),
+        (64, 64),
+        (63, 63),
+        (1838, 2526),
+        (3386, 2606),
+        (127, 200),
+        (128, 200),
+    ] {
+        let (rc, rr, rm) = retail_subcell(x, z);
+        let idx = (rc + rr * (FIELD_GRID_STRIDE as i32)) as usize;
+        world.field_collision_grid[idx] = rm << 4;
+        assert!(
+            world.field_tile_is_wall(x as i16, z as i16),
+            "engine reads the retail cell at ({x},{z}) -> ({rc},{rr}) m{rm:04b}"
+        );
+        world.field_collision_grid[idx] = (!rm & 0xF) << 4;
+        assert!(
+            !world.field_tile_is_wall(x as i16, z as i16),
+            "engine reads the retail QUAD at ({x},{z}) (other quads of the byte don't block)"
+        );
+        world.field_collision_grid[idx] = 0;
+    }
 
-    // The quadrant-MASK formula itself is identical: the engine's
-    // `1 << ((sz&1)<<1 | (sx&1))` equals retail's branchy `bVar5` for every
-    // parity. (So the earlier "inverted X parity" hypothesis is false - only
-    // the sub-cell INDEX derivation differs, not the mask selection.)
+    // The quadrant-MASK formula is retail's branchy `bVar5` for every
+    // parity (the historical "inverted X parity" worry is false).
     let retail_mask = |xc: i32, zc: i32| -> u8 {
         let zpar = (zc & 1) != 0;
         if (xc & 1) == 0 {
@@ -354,10 +355,10 @@ fn field_vm_nibble7_paints_collision_grid() {
     world.load_field_script(vec![0x4C, 0x71, 2, 3, 2, 3, 0x00]);
     let _ = world.tick();
     // The hook routed the paint into the grid: tile (col 2, row 4) ->
-    // world x in [256, 384), z in [512, 640).
-    assert!(world.field_tile_is_wall(320, 576));
+    // world x in (256, 384], z in [384, 512) (retail biased derivation).
+    assert!(world.field_tile_is_wall(320, 448));
     // The unshifted tile (col 2, row 3) is NOT painted.
-    assert!(!world.field_tile_is_wall(320, 448));
+    assert!(!world.field_tile_is_wall(320, 320));
 }
 
 #[test]
@@ -370,26 +371,31 @@ fn load_field_collision_grid_copies_map_region_and_nibble7_layers_on_top() {
     let mut grid = vec![0u8; FIELD_GRID_LEN];
     grid[6 * FIELD_GRID_STRIDE + 5] = 0xF2;
     world.load_field_collision_grid(&grid);
-    // tile (5,6) -> world x in [640,768), z in [768,896).
-    assert!(world.field_tile_is_wall(700, 800), "base grid wall loaded");
+    // tile (5,6) -> world x in (640,768], z in [640,768) (retail biased
+    // derivation).
+    assert!(world.field_tile_is_wall(700, 700), "base grid wall loaded");
     assert!(!world.field_tile_is_wall(700, 600), "other tiles walkable");
     // Low nibble (floor tier) is preserved, not treated as a wall bit.
     assert_eq!(world.field_collision_grid[6 * FIELD_GRID_STRIDE + 5], 0xF2);
     // A nibble-7 paint layers a delta on top of the loaded base.
     world.paint_field_collision(1, (8, 9), (8, 9), 0);
-    assert!(world.field_tile_is_wall(8 * 128 + 10, 8 * 128 + 10));
+    assert!(world.field_tile_is_wall(8 * 128 + 10, 8 * 128 - 10));
     // The base wall is still present after the delta.
-    assert!(world.field_tile_is_wall(700, 800));
+    assert!(world.field_tile_is_wall(700, 700));
 }
 
 #[test]
 fn load_field_collision_grid_pads_short_input() {
     let mut world = World::new();
-    world.load_field_collision_grid(&[0xF0, 0x00]);
+    // (10,10) reads cell (col 0, row 1) under the retail biased
+    // derivation, i.e. grid index 0x80.
+    let mut short = vec![0u8; 0x81];
+    short[0x80] = 0xF0;
+    world.load_field_collision_grid(&short);
     assert_eq!(world.field_collision_grid.len(), FIELD_GRID_LEN);
     assert!(
         world.field_tile_is_wall(10, 10),
-        "first tile wall from input"
+        "row-1 wall from the short input"
     );
 }
 
@@ -428,9 +434,10 @@ fn locomotion_stops_at_wall() {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 200;
     world.actors[0].move_state.world_z = 250;
-    // Block tile (col=1, row=2) - the tile the +Z walk crosses into at
+    // Block tile (col=1, row=3) - covers world z in [256,384) under the
+    // retail biased derivation, the band the +Z walk crosses into at
     // z=256.
-    world.paint_field_collision(1, (1, 2), (2, 3), 0);
+    world.paint_field_collision(1, (1, 2), (3, 4), 0);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     // Player advances 250 -> 254, then the candidate 256 lands in the
