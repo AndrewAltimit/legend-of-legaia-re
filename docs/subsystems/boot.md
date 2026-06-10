@@ -71,11 +71,13 @@ Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two 
 | 16/17 | READ | `0x8002612C` | `0x80025EEC` |
 | 18/19 | GAME OVER | `0x80025B30` | `0x80025EEC` |
 | 20/21 | BATTLE | `0x800565D8` | `0x80025EEC` |
-| 22/23 | CARD (memory card) | `0x8002574C` | `0x80025F74` |
+| 22/23 | CARD (menu / memory card) | `0x8002574C` | `0x80025F74` |
 | 24/25 | OTHER | `0x80025980` | `0x80025EEC` |
 | 26/27 | STR (FMV) | `0x80025FB4` | `0x80025EEC` |
 
-**Structural fact:** 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map display) and Mode 23 (memory card) carry their own. So the per-frame "MODE" half of the state machine is mostly one shared tick parameterised by `+0x14`, not 14 distinct handlers. (The `0x80025DA0` MAPDSIP-init dev string is misspelled on the disc — "MAPDSIP", not "MAPDISP".)
+**Structural fact:** 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map display) and Mode 23 (menu / memory card) carry their own. So the per-frame "MODE" half of the state machine is mostly one shared tick parameterised by `+0x14`, not 14 distinct handlers. (The `0x80025DA0` MAPDSIP-init dev string is misspelled on the disc — "MAPDSIP", not "MAPDISP".)
+
+**The in-field pause menu runs under the CARD pair (mode 23), not field mode 3.** Every menu-open capture in the save library — equipment / status / options, opened from both the field (`map01`) and town (`town01`) — holds `_DAT_8007B83C = 0x17` (23). So the "CARD" dev label covers the whole menu / memory-card overlay surface (the field menu carries the Save flow), which is also why mode 23 is one of the two per-frame modes with its own handler. The mode-trace oracle (`mode_trace_e3`) asserts menu-open scenarios on active-scene convergence only, until the engine's `BootSession` models a menu mode.
 
 **The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen — the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the slot-machine debug mode. The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
 

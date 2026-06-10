@@ -632,7 +632,11 @@ backup_fingerprint = "7ada4ac83d183d7cd5ed55f6c8aae96e6cae00b9016a3194a92b066f34
 description = "Rim Elm (town01) field; a ~1s Up press walks into the south exit and warps to the Drake Kingdom overworld (map01). Pre-transition save pinning town01's single exit = the 0x3F named-scene-change at MAN op 0x6f95 (-> map01, index 85). Ground-truth for the door randomizer + its runtime oracle."
 phase = "field"
 topics = ["field", "scene transition", "door randomizer", "0x3F", "town01", "map01"]
-expected_active_scene = "town01"
+# The capture session's Rim Elm is the later-story `town0c` scene variant
+# (the save's pool slot 0 reads "town0c", same as the Mei-house captures
+# from the same session) -- not the pre-Tetsu `town01` variant the label
+# implies. The mode-trace oracle boots the scene actually in the capture.
+expected_active_scene = "town0c"
 
 # ----------------------------------------------------------------------
 # Rim Elm Mei's-house door RE set. Entering a house here is an INTRA-SCENE
@@ -1141,7 +1145,10 @@ label = "menu_equipment_field"
 backup_fingerprint = "9b0e7a6a4498c06e618d05fb1a1f9fa1d9d7d9101c5ed1e65d6175a6bcf24d98"
 phase = "menu"
 expected_active_scene = "map01"
-expected_game_mode = 0x03
+# The menu-open captures all hold game_mode 0x17 (23, the CARD/menu-overlay
+# per-frame mode): the in-field pause menu runs under the CARD mode pair,
+# not field mode 3 (read directly off the six library saves at 0x8007B83C).
+expected_game_mode = 0x17
 description = "Equipment menu open from the field (map01, Drake Kingdom approach), party = Vahn. Menu overlay PROT 0899 resident at 0x801CE818 (field overlay 0897 swapped out). Source for the menu-overlay clean-copy RAM byte-match."
 topics = ["menu", "equipment", "overlay PROT 0899", "static overlay", "map01"]
 
@@ -1155,7 +1162,10 @@ label = "menu_status_field"
 backup_fingerprint = "904f3ae91fc5601f46403e93c88cea818db5d7e64345efbfa47e50c1096dab67"
 phase = "menu"
 expected_active_scene = "map01"
-expected_game_mode = 0x03
+# The menu-open captures all hold game_mode 0x17 (23, the CARD/menu-overlay
+# per-frame mode): the in-field pause menu runs under the CARD mode pair,
+# not field mode 3 (read directly off the six library saves at 0x8007B83C).
+expected_game_mode = 0x17
 description = "Status menu open from the field (map01), party = Vahn. Menu overlay PROT 0899 resident at 0x801CE818."
 topics = ["menu", "status", "overlay PROT 0899", "static overlay", "map01"]
 
@@ -1169,7 +1179,10 @@ label = "menu_options_field"
 backup_fingerprint = "169eade7dfe4e646a39f99d855fa99da73f427747520a8572ddda57fcbb83378"
 phase = "menu"
 expected_active_scene = "map01"
-expected_game_mode = 0x03
+# The menu-open captures all hold game_mode 0x17 (23, the CARD/menu-overlay
+# per-frame mode): the in-field pause menu runs under the CARD mode pair,
+# not field mode 3 (read directly off the six library saves at 0x8007B83C).
+expected_game_mode = 0x17
 description = "Options/config menu open from the field (map01), party = Vahn. Menu overlay PROT 0899 resident at 0x801CE818 (the options-menu config bundle boot.md attributes to PROT 0899)."
 topics = ["menu", "options", "config", "overlay PROT 0899", "static overlay", "map01"]
 
@@ -1183,7 +1196,10 @@ label = "menu_equipment_town"
 backup_fingerprint = "016b9175ec42d85514e0a7ad5fb0414c81a152d0f6701934713f08b869ed92c9"
 phase = "menu"
 expected_active_scene = "town01"
-expected_game_mode = 0x03
+# The menu-open captures all hold game_mode 0x17 (23, the CARD/menu-overlay
+# per-frame mode): the in-field pause menu runs under the CARD mode pair,
+# not field mode 3 (read directly off the six library saves at 0x8007B83C).
+expected_game_mode = 0x17
 description = "Equipment menu open in town (town01, Rim Elm), party = Vahn. Menu overlay PROT 0899 resident at 0x801CE818. Town sibling of menu_equipment_field (the overlay is identical in town and field)."
 topics = ["menu", "equipment", "overlay PROT 0899", "static overlay", "town01"]
 
@@ -1197,7 +1213,10 @@ label = "menu_status_town"
 backup_fingerprint = "fd818b998623f3733ead6aa8337606efd25747c4fd4433cba0e427982c6f0784"
 phase = "menu"
 expected_active_scene = "town01"
-expected_game_mode = 0x03
+# The menu-open captures all hold game_mode 0x17 (23, the CARD/menu-overlay
+# per-frame mode): the in-field pause menu runs under the CARD mode pair,
+# not field mode 3 (read directly off the six library saves at 0x8007B83C).
+expected_game_mode = 0x17
 description = "Status menu open in town (town01, Rim Elm), party = Vahn. Menu overlay PROT 0899 resident at 0x801CE818."
 topics = ["menu", "status", "overlay PROT 0899", "static overlay", "town01"]
 
@@ -1211,7 +1230,10 @@ label = "menu_options_town"
 backup_fingerprint = "e79b212a6284b03a3471a6cd4e69c0f39ac47d67b85452c764835ff6601c6eb3"
 phase = "menu"
 expected_active_scene = "town01"
-expected_game_mode = 0x03
+# The menu-open captures all hold game_mode 0x17 (23, the CARD/menu-overlay
+# per-frame mode): the in-field pause menu runs under the CARD mode pair,
+# not field mode 3 (read directly off the six library saves at 0x8007B83C).
+expected_game_mode = 0x17
 description = "Options/config menu open in town (town01, Rim Elm), party = Vahn. Menu overlay PROT 0899 resident at 0x801CE818."
 topics = ["menu", "options", "config", "overlay PROT 0899", "static overlay", "town01"]
 

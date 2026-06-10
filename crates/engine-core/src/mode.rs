@@ -108,9 +108,15 @@ pub enum GameMode {
     BattleInit,
     /// Mode 21 - battle per-frame.
     BattleMode,
-    /// Mode 22 - card-game init.
+    /// Mode 22 - "CARD" init: the menu / memory-card overlay mode pair's
+    /// init handler (`FUN_8002574C`).
     CardInit,
-    /// Mode 23 - card-game per-frame.
+    /// Mode 23 - "CARD MODE" per-frame: one of only two per-frame modes with
+    /// its own handler (`0x80025F74`). Hosts the memory-card UI AND the
+    /// in-field pause menu: every menu-open capture in the save library
+    /// (equipment / status / options, field and town) holds
+    /// `_DAT_8007B83C = 0x17` (23) — the pause menu runs under this mode,
+    /// not field mode 3.
     CardMode,
     /// Mode 24 - other init.
     OtherInit,
