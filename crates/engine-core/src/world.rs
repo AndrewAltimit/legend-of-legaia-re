@@ -886,6 +886,13 @@ pub struct World {
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
 
+    /// Active full-screen fade, staged by the battle SM's escape teardown
+    /// (retail state `0x66` spawns the `DAT_801C9070` black→white ramp via
+    /// the fade-primitive spawner `FUN_80024E80`). Stepped once per
+    /// [`World::tick`]; dropped when the ramp completes. Hosts draw an
+    /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
+    pub screen_fade: Option<crate::fade::FadeState>,
+
     /// Persistent per-character roster - populated by [`World::load_party`]
     /// and written back by [`World::save_party`]. Each record is the
     /// 0x414-byte struct documented in `docs/subsystems/battle.md`. The
@@ -1936,6 +1943,7 @@ impl World {
             sound_bank_ready: true,
             party_count: 3,
             battle_end: None,
+            screen_fade: None,
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
@@ -3013,6 +3021,17 @@ impl World {
             // id, request the summon spawn (the host resolves the overlay PROT
             // entry + spawns). Origin = the caster party slot's position when
             // available, else a default forward cast point.
+            BattleEvent::BattleEnd {
+                cause: BattleEndCause::Escaped,
+            } => {
+                // Retail escape teardown (battle SM state 0x66): stage the
+                // 0x40-frame black→white screen fade the SM spawns through
+                // the fade primitive before the battle unloads.
+                self.screen_fade = Some(crate::fade::FadeState::load(
+                    &crate::fade::escape_fade_template(),
+                ));
+                None
+            }
             BattleEvent::SpellAnimTrigger {
                 party_slot,
                 spell_id,
@@ -4786,6 +4805,13 @@ impl World {
     ///     - `Title`      → no further VM.
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Step the active full-screen fade (escape teardown ramp); drop it
+        // once the ramp lands on its target so hosts stop drawing the overlay.
+        if let Some(fade) = &mut self.screen_fade
+            && !fade.step()
+        {
+            self.screen_fade = None;
+        }
         // Consume a pending FMV transition the field VM signalled last frame
         // (op `0x4C 0xE2`). Retail's main mode dispatcher reads the
         // next-game-mode global one frame after the op writes it, so the flip

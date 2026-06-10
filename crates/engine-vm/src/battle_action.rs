@@ -185,10 +185,20 @@ pub enum ActionState {
 
     /// Run - flee anim begin.
     RunBegin = 0x64,
-    /// Run - wait.
+    /// Run - wait. On timer expiry the retail 0x65 case branches on the
+    /// run outcome: a FAILED run routes back to `0x50` (Done band — the
+    /// action is consumed, the battle continues), a SUCCESSFUL escape
+    /// routes to `0x66`.
     RunWait = 0x65,
-    /// Run - failed (battle continues).
-    RunFailed = 0x66,
+    /// Run - successful-escape teardown. The retail 0x66 case stages a
+    /// 0x40-frame `(0xFF,0xFF,0xFF) → (0,0,0)` screen fade through the
+    /// fade-primitive spawner (`FUN_80024E80`, template at `DAT_801C9070`),
+    /// sets the battle-end signal `DAT_8007BD71 = 0xFE` (the same byte the
+    /// `0x5A` wipe gate sets), and parks in the `0x67` terminal hold — the
+    /// party leaves the battle. (An earlier reading labelled this state
+    /// "run failed, battle continues"; the battle-end signal byte falsifies
+    /// that — the failed-run path is the `0x65 → 0x50` branch above.)
+    RunEscape = 0x66,
     /// Capture - start.
     CaptureStart = 0x68,
     /// Capture - wait.
@@ -267,7 +277,7 @@ impl ActionState {
 
             0x64 => Self::RunBegin,
             0x65 => Self::RunWait,
-            0x66 => Self::RunFailed,
+            0x66 => Self::RunEscape,
             0x68 => Self::CaptureStart,
             0x69 => Self::CaptureWait,
             0x6A => Self::CaptureSustain,
@@ -595,6 +605,10 @@ pub enum BattleEndCause {
     PartyWipe,
     /// Monster wipe (all monsters `liveness == 0`). `_DAT_8007BD2C = 0`.
     MonsterWipe,
+    /// Party escaped (the `0x66` run teardown). Sets the same battle-end
+    /// signal byte (`DAT_8007BD71 = 0xFE`) as the wipe gate but neither
+    /// wipe cause - the battle ends with no loot and no defeat.
+    Escaped,
 }
 
 /// Engine-side callbacks the battle action state machine dispatches into.
@@ -886,7 +900,7 @@ pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
 
         ActionState::RunBegin => run_begin(host, ctx),
         ActionState::RunWait => run_wait(host, ctx),
-        ActionState::RunFailed => run_failed(host, ctx),
+        ActionState::RunEscape => run_escape(host, ctx),
         ActionState::CaptureStart => capture_start(host, ctx),
         ActionState::CaptureWait => capture_wait(host, ctx),
         ActionState::CaptureSustain => capture_sustain(host, ctx),
@@ -1788,20 +1802,24 @@ fn run_wait<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
     if !tick_frame_timer(host, ctx) {
         return stay(ctx);
     }
-    // Successful run: route to DoneCleanup. Failure path uses RunFailed.
-    // The retail driver decides via a global; for the port we leave the
-    // gate to `multi_cast_gate` (used as "run-failed" sentinel here).
+    // Retail 0x65 branches on the run outcome: a successful escape routes to
+    // the 0x66 teardown (fade out + battle-end signal), a failed run routes
+    // back to the Done band - the action is consumed and the battle
+    // continues. The retail driver decides via a global the run roll set;
+    // the port carries the outcome on `multi_cast_gate` (non-zero = the
+    // escape succeeded).
     if ctx.multi_cast_gate != 0 {
-        return transition(ctx, ActionState::RunFailed);
+        ctx.multi_cast_gate = 0;
+        return transition(ctx, ActionState::RunEscape);
     }
     transition(ctx, ActionState::DoneCleanup)
 }
 
-fn run_failed<H: BattleActionHost + ?Sized>(
+fn run_escape<H: BattleActionHost + ?Sized>(
     host: &mut H,
     _ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    host.battle_end(BattleEndCause::PartyWipe);
+    host.battle_end(BattleEndCause::Escaped);
     StepOutcome::BattleComplete
 }
 
@@ -2619,10 +2637,13 @@ mod tests {
     }
 
     #[test]
-    fn run_wait_success_routes_to_done_cleanup() {
+    fn run_wait_failed_run_routes_to_done_cleanup_and_battle_continues() {
+        // Retail 0x65 failure branch: the action is consumed (Done band),
+        // the battle continues - no battle-end signal.
         let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
         ctx.action_state = ActionState::RunWait.as_byte();
         ctx.frame_timer = 0;
+        ctx.multi_cast_gate = 0; // run roll failed
         let out = step(&mut host, &mut ctx);
         assert!(matches!(
             out,
@@ -2631,6 +2652,32 @@ mod tests {
                 ..
             } if to == ActionState::DoneCleanup.as_byte()
         ));
+    }
+
+    #[test]
+    fn run_wait_escape_routes_to_run_escape_teardown() {
+        // Retail 0x65 success branch -> 0x66: the escape teardown ends the
+        // battle with the typed Escaped cause (DAT_8007BD71 = 0xFE, no wipe
+        // cause byte).
+        let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+        ctx.action_state = ActionState::RunWait.as_byte();
+        ctx.frame_timer = 0;
+        ctx.multi_cast_gate = 1; // run roll succeeded
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(
+            out,
+            StepOutcome::Transition {
+                to,
+                ..
+            } if to == ActionState::RunEscape.as_byte()
+        ));
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(out, StepOutcome::BattleComplete));
+        assert!(
+            host.take()
+                .contains(&Event::BattleEnd(BattleEndCause::Escaped)),
+            "escape teardown signals the typed Escaped cause"
+        );
     }
 
     #[test]

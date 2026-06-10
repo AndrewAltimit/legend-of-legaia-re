@@ -32,6 +32,7 @@ pub mod encounter_record;
 pub mod encounter_registry;
 pub mod equip_session;
 pub mod equipment;
+pub mod fade;
 pub mod field_events;
 pub mod field_menu;
 pub mod field_menu_dispatch;

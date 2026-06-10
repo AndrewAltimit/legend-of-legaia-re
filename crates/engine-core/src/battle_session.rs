@@ -1003,15 +1003,18 @@ impl BattleSession {
         let next = match cause {
             BattleEndCause::PartyWipe => BattlePhase::Defeat,
             BattleEndCause::MonsterWipe => BattlePhase::Victory,
+            BattleEndCause::Escaped => BattlePhase::Escaped,
         };
         out.push(SessionEvent::BattleEnded { cause });
         self.transition_emit(next, out);
     }
 
     /// Manually transition to the `Escaped` terminal phase - engines call
-    /// this when the player picks "Escape" from the menu and the dice come
-    /// up favourable. The retail SM doesn't surface a typed cause for this
-    /// path; engines drive it from their own escape-roll resolver.
+    /// this when an escape resolves outside the SM run band (the Escape
+    /// spell / smoke-item paths roll in `World` rather than through the
+    /// `0x64..0x67` states). The SM-driven Run command surfaces the typed
+    /// [`BattleEndCause::Escaped`] through the battle-end handler instead
+    /// (the retail `0x66` teardown).
     pub fn flag_escape(&mut self) {
         let mut sink = Vec::new();
         self.transition_emit(BattlePhase::Escaped, &mut sink);
