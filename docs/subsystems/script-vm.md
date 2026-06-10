@@ -6,33 +6,38 @@ The bytecode interpreter that drives Legaia's overworld scripting - NPC movement
 
 The decompiled source is at `ghidra/scripts/funcs/overlay_0897_801de840.txt`. References to `func_0x80xxxxxx` are calls into `SCUS_942.54`; `FUN_801xxxxx` are sister functions inside the 0897 overlay.
 
-## On-disc form: `scene_event_scripts`
+## On-disc form: the scene MAN — NOT `scene_event_scripts`
 
-The on-disc carrier for field-VM bytecode is the `scene_event_scripts` /
-`scene_scripted_asset_table` PROT-entry shape (see
-[`formats/scene-bundles.md`](../formats/scene-bundles.md)). Both share a
-`[u16 count][u16 offsets[count]]` prescript at offset 0; each offset points
-to one record's bytecode, and most records open with the four-byte
-`0xFFFF 0x0000` frame-divider sentinel.
+The on-disc carrier for field-VM bytecode is the **scene MAN** sub-asset
+(asset type `0x03`, the third descriptor in each scene's asset-table bundle;
+see [`formats/man-relocation.md`](../formats/man-relocation.md) and
+`legaia_asset::man_section`). `FUN_8003A1E4` walks the MAN's partition-1
+actor-placement records, derives each actor's script pointer, installs it at
+`actor[+0x90]`, and runs the field VM (`FUN_801DE840`) on the body that begins
+`1 + N*2 + 4` bytes into the record (after the `[u8 N][N*2 locals][4-byte
+header]` prefix). Partition-1 record 0 is the scene-entry **system script**;
+records `1..` are per-actor interaction scripts. The engine mirrors this:
+`Scene::field_man_entry_script` → `man_section::ManFile::scene_entry_script` →
+`World::load_field_script_at`. These MAN scripts disassemble cleanly as
+field-VM (~8% linear-walk error on the retail town MANs).
 
-99 of 124 CDNAME scenes carry an event-script entry (~80% of the disc's
-scenes). Per-scene record counts run from 1 to 71+ records.
-
-The Rust API for walking these records lives in `legaia-asset`:
-
-```rust
-use legaia_asset::scene_event_scripts;
-let ranges = scene_event_scripts::record_ranges(buf)?;
-for (start, end) in ranges {
-    let record_bytes = &buf[start..end];
-    // record_bytes opens with the frame divider 0xFFFF 0x0000 in most cases
-}
-```
-
-`legaia-engine-core::scene::Scene::find_event_scripts()` resolves the
-correct entry within a loaded `Scene` and exposes per-record byte ranges.
-`legaia-engine-core::world::World::load_field_record()` skips the leading
-frame-divider sentinel and resets the VM cursor.
+> **The `scene_event_scripts` / `scene_v12_table` prescript is a DIFFERENT
+> structure — not field-VM bytecode.** The `[u16 count][u16 offsets[count]]`
+> prescript (offset 0, or `+0x800` behind the v12 header) was long assumed to
+> carry field-VM scripts because its records open with `0xFFFF 0x0000`. It does
+> not: running the field-VM disassembler over those records yields a 65–88 %
+> decode-error rate, the bytes are 16-bit **word-aligned** (low byte = opcode,
+> high byte 0 on ~83 % of body words), records terminate with a `0x0008` word,
+> and the opcodes sit mostly below the field VM's `0x22` opcode floor. The
+> `0xFFFF 0x0000` lead is a per-record **header sentinel**, not a frame-divider
+> opcode, and record 0 is a fixed 768-byte dispatch table. The consuming
+> command VM is not yet identified. See `legaia_asset::scene_event_scripts`
+> (module note + `record_words`) and the disc-gated falsification test
+> `scene_event_records_word_aligned_real`. The engine never feeds these
+> prescript bytes to its field VM; the vestigial `Scene::find_event_scripts()`
+> / `World::load_field_record()` diagnostic path that does is why ticking a
+> prescript record as field-VM "halts at pc 0 / yields immediately" rather than
+> running scene logic (see [`field-locomotion.md`](field-locomotion.md)).
 
 The `asset-viewer field <scene>` subcommand drives this end-to-end -
 it loads a scene, finds the event-script entry, ticks the VM frame-by-frame
@@ -511,7 +516,17 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 
 The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
-The frame-sentinel `0xFFFF 0x0000` that opens many scene-event-scripts records is **not** itself an opcode - the `scene-event-scripts` mode skips past it before walking the opcode stream of each record.
+> **CAVEAT — `scene-event-scripts` / `scan-prot` walk a NON-field-VM
+> structure.** The `0xFFFF 0x0000` lead is a per-record header sentinel, and
+> the `scene-event-scripts` mode skips it before walking the record body — but
+> those records are the word-aligned actor/event structure, not field-VM
+> bytecode (see the "On-disc form" note above), so the disassembly is mostly
+> `decode error` with coincidental matches. Any `0x4C 0xE2` FMV trigger these
+> modes report inside a prescript record is a **false positive** (a word-table
+> byte that equals `0x4C` followed by one equal to `0xE2`). The genuine FMV
+> triggers are pinned structurally instead — see the exhaustive sweep below and
+> the disc-decoded `fmv_dispatch` table — and the per-scene FMV-id remains
+> capture-blocked.
 
 ## FMV-trigger sites — exhaustive backward sweep
 

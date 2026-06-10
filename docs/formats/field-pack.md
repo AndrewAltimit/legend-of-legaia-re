@@ -1,28 +1,55 @@
 # Field-pack format
 
-Magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. 124 PROT entries share the byte-identical 388-byte schema block. Detector + dispatch: `crates/asset/src/field_pack.rs`.
+Magic `0x01059B84` followed by a 97-entry strict schema and a **byte-identical, globally-constant ≈ 91 KB block**. Detector + dispatch: `crates/asset/src/field_pack.rs`.
+
+> **Corrected from disc (raw PROT scan).** The earlier reading — "124 PROT
+> entries share the schema, the preamble fills the slots per-scene" — does not
+> survive a byte scan of the corpus. The magic appears **raw in exactly four
+> PROT entries** (`0002_gameover_data`, `0003`/`0004`/`0005_town01`); the 97-entry
+> schema *signature* appears in **eight** (the other four — `0020_town0b`,
+> `0021`/`0022`/`0023_town0c` — carry it **without** the magic prefix). And the
+> ≈ 91 KB region the schema indexes is a **global constant**: byte-identical
+> (FNV/SHA `c85d6a44d742…`) across town01 **and** town0c. So the slots are **not**
+> filled per-scene — they are a shared template. The per-scene payload is the
+> **preamble** that precedes the block. See [Corrected structure](#corrected-structure).
 
 ## Layout
 
 ```
-[preamble - variable size, content shape unknown]
-[u32 LE = 0x01059B84]                  <- MAGIC
-[97 × u32 LE - schema table, 388 bytes - byte-identical across all field-packs]
+[preamble - per-scene payload (count + u16 offset table + records; scene-structure shaped)]
+[u32 LE = 0x01059B84]                  <- MAGIC (present in only 4 of the 8 carriers)
+[97 × u32 LE - schema table, 388 bytes - byte-identical everywhere]
+[≈ 91 KB schema-indexed region - byte-identical GLOBAL CONSTANT block]
 [asset region - packed TIMs / TMDs, in some files]
 ```
 
-The schema slot offsets cover `[0x60..0x16651]` (≈ 91 KB of logical layout). They are anchored on `slots[0] == 0x60` and `slots[96] == 0x16651` and are byte-identical across every field-pack file (MD5 `edcfdf1575889d63d2077c396089d7f3`). The schema is therefore a STATIC abstract layout, not per-file metadata.
+The schema slot offsets cover `[0x60..0x16651]` (≈ 91 KB of logical layout). They are anchored on `slots[0] == 0x60` and `slots[96] == 0x16651` and are byte-identical across every carrier (MD5 `edcfdf1575889d63d2077c396089d7f3`). The schema is a STATIC abstract layout, and the region it indexes is likewise a fixed shared blob — not per-file metadata.
 
-## What the four entries look like
+## Corrected structure
 
-| PROT | preamble | schema | asset region | TIMs / TMDs in tim_scan / tmd_scan |
-|---|---|---|---|---|
-| `0002_gameover_data` | 234 KB | 388 B | 5.7 KB | 2 TIMs + several TMDs |
-| `0003_town01` | 233 KB | 388 B | 362 KB | 5 TIMs + 2 TMDs |
-| `0004_town01` | 227 KB | 388 B | 226 KB | 5 TIMs + 1 TMD |
-| `0005_town01` | 0 B | 388 B | 166 KB | none - schema-indexed data only |
+The four magic-bearing entries and their preamble/region/asset split:
 
-`0005_town01` is the odd one out: the magic sits at offset 0 and there are no packed TIMs/TMDs after the schema. The simplest explanation is that this entry holds the canonical schema-indexed data block on its own - likely a default template that scene-specific entries override piecewise.
+| PROT | magic? | preamble | schema | region (≈91 KB) | asset region | TIMs / TMDs |
+|---|---|---|---|---|---|---|
+| `0002_gameover_data` | yes | 234 KB | 388 B | **5.7 KB (truncated)** | — | 2 TIMs + TMDs |
+| `0003_town01` | yes | 233 KB | 388 B | full, `c85d6a44…` | 250 KB | 5 TIMs + 2 TMDs |
+| `0004_town01` | yes | 227 KB | 388 B | full, `c85d6a44…` | 226 KB | 5 TIMs + 1 TMD |
+| `0005_town01` | yes | 0 B | 388 B | full, `c85d6a44…` | trailing | none |
+| `0020_town0b` | **no** | 222 KB | 388 B | 5.8 KB (truncated) | — | — |
+| `0021_town0c` | **no** | 222 KB | 388 B | full, `c85d6a44…` | … | — |
+| `0022_town0c` | **no** | 213 KB | 388 B | full, `c85d6a44…` | … | — |
+| `0023_town0c` | **no** | 0 B | 388 B | full, `c85d6a44…` | trailing | — |
+
+Two facts fall out:
+
+- **The ≈ 91 KB region is a global constant.** Every full-length carrier (town01 + town0c) hashes identically. A block that is byte-identical across unrelated scenes is a **shared template / default asset**, not the scene's own field data. (`0002` and `0020` carry only a ~5.7 KB head of it.)
+- **The magic is decorative.** The identical block ships with the magic in town01 and **without** it in town0c. Combined with [the magic having zero runtime references](#why-the-magic-isnt-load-bearing), the `0x01059B84` word is a build-tool stamp, not a parser anchor — `0005`/`0023` are the same "template-only" entry (region at file offset 0), one stamped and one not.
+
+`0005_town01` / `0023_town0c` are the template-only carriers: the block sits at offset 0 with no preamble. Disc-gated coverage: `crates/asset/tests/field_pack_real.rs`.
+
+### The per-scene payload is the preamble
+
+What actually varies per scene is the **preamble** before the block. In `0003_town01` it begins with a record count (`0x3F` = 63) and an ascending `u16` offset table (`0x80, 0x380, 0x3c2, 0x42a, …`) followed by variable-length records — this is exactly the [`scene_event_scripts`](scene-bundles.md#scene_event_scripts---prescript-only) prescript shape (`[u16 count][u16 offsets[count]][records]`). Record 0 is a fixed 768-byte dispatch table; records `1..` are word-aligned (16-bit) actor/event command records (`0xFFFF 0x0000` header sentinel, `0x0008` terminator) — **not** field-VM bytecode. The town0b / town0c field files that carry **no** field-pack block at all (`0012_town0b`, …) **open with the same prescript**, confirming the preamble — not the constant block — is the scene's field data. So the long-open "preamble → schema-slot mapping" question (backlog D-FP) rests on a false premise: the slots are a fixed template; there is nothing per-scene to project into them, and the per-scene structure is the already-parsed `scene_event_scripts` prescript.
 
 ## Slot-size clusters
 
@@ -128,7 +155,19 @@ The 75 KB region between the field-pack base and `_DAT_8007B8D0` (`base..base + 
 
 ## Runtime layout differs from on-disc schema
 
-Reading the `mc2` save at `base + 0x60` (where on-disc slot 0 sits) yields **post-processed GP0 GPU primitive packets**, not the raw NPC / event-trigger / collision records the disc bytes encode. The 91 KB schema describes the **on-disc** logical layout; a loader transforms the on-disc preamble into a runtime structure that mixes:
+> **Re-check needed (see [Corrected structure](#corrected-structure)).** This
+> section concluded that the loader *transforms* per-scene preamble bytes into
+> the runtime slots. That premise is now doubtful: the schema-indexed region is
+> a **disc-side global constant** (identical across town01 / town0c), so there
+> is no per-scene content to project into it. Also, `base` here is
+> `_DAT_8007B8D0 − 0x12800` = the **field-file buffer base**, but the loader
+> places the field-asset region at `buffer + 0x12000` (efect.dat at `+0x12800`),
+> so `base + 0x60` is the field file's `+0x0000` object/primitive region, **not**
+> field-pack schema slot 0 (which would be near `buffer + 0x12000 + 0x60`). The
+> GP0 packets observed below are therefore most likely the scene's primitive
+> scratch, not a transformed slot 0. Treat the runtime-projection claim as open.
+
+Reading the `mc2` save at `base + 0x60` (where on-disc slot 0 was *assumed* to sit) yields **post-processed GP0 GPU primitive packets**, not the raw NPC / event-trigger / collision records the disc bytes encode. The 91 KB schema describes a fixed **on-disc** logical layout; the observed runtime structure mixes:
 
 - GP0-shaped primitive packets (visible at `base + 0x60`)
 - The 400 KB shared scene-asset pool at `0x800C505C..0x80139527` (mc2 vs mc0 diff) the loader fills before / alongside the field-pack region - sibling buffers for TIM atlases, primitive scratch, descriptor-driven data

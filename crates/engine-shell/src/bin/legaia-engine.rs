@@ -49,6 +49,11 @@ use legaia_engine_shell::vram_oracle::{
 };
 use legaia_engine_shell::{BootConfig, BootSession};
 use legaia_font::Font;
+
+/// Raw `LineList` geometry: `(positions, per-vertex colours, line indices)`.
+/// The geometry helpers (`world_map_*_line_geometry`) emit this shape; it is
+/// uploaded via `Renderer::upload_lines`.
+type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 use legaia_prot::cdname;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -3698,6 +3703,16 @@ struct PlayWindowApp {
     /// the sparse placed landmarks on top. Kept out of `meshes` (it has no
     /// `Tmd` / actor binding); drawn directly with a constant Y-flip model.
     world_map_heightfield: Option<UploadedVramMesh>,
+    /// Kingdom slot-4 vertex-pool inspection wireframe, as raw line geometry
+    /// `(positions, colors, line-indices)` in world space. `Some` only on a
+    /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
+    /// otherwise. Merged into the per-frame world-map `overlay_lines` buffer
+    /// alongside the entity/player markers. This visualises the decoded
+    /// per-kingdom object-mesh library (`SceneResources::world_map_slot4`);
+    /// the segments use the group-polyline inspection convention because the
+    /// faithful triangle topology + per-object placement transform live in an
+    /// unpinned cluster-A command stream (see docs/formats/world-map-overlay.md).
+    world_map_slot4_lines: Option<LineGeometry>,
     /// World-map ocean CLUT animation. `Some` for a world-map kingdom scene that
     /// ships the ocean tile; drives the 13-frame rolling-wave by overwriting the
     /// first 16 CLUT entries at VRAM `(0, 506)` each animation step (the retail
@@ -5524,6 +5539,26 @@ impl PlayWindowApp {
                 world_map_hf,
             )
         };
+        // Kingdom slot-4 inspection wireframe (env-gated). Build the
+        // world-space line geometry once at scene load; the per-frame
+        // world-map render merges it into the overlay-lines buffer.
+        let world_map_slot4_lines = if std::env::var_os("LEGAIA_WORLDMAP_SLOT4").is_some() {
+            res.world_map_slot4.as_ref().and_then(|slot| {
+                let (p, c, i) = world_map_slot4_line_geometry(slot);
+                if i.is_empty() {
+                    None
+                } else {
+                    log::info!(
+                        "play-window: world-map slot-4 wireframe {} bodies, {} segments",
+                        slot.bodies.len(),
+                        i.len() / 2
+                    );
+                    Some((p, c, i))
+                }
+            })
+        } else {
+            None
+        };
         // Resolve the field static-geometry placement draws: each placed
         // environment object -> its scene-pack mesh -> a world transform.
         // Built here (not per-frame) because the placement table + pack are
@@ -5645,6 +5680,7 @@ impl PlayWindowApp {
         self.field_placement_color_draws = field_placement_color_draws;
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.world_map_heightfield = world_map_hf;
+        self.world_map_slot4_lines = world_map_slot4_lines;
         // World-map ocean: recover the 13-frame CLUT animation for the kingdom
         // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
         // pass). `None` off the world map, so the per-tick advance self-gates.
@@ -8706,6 +8742,14 @@ impl ApplicationHandler for PlayWindowApp {
                             col.extend(c);
                             idx.extend(i.into_iter().map(|v| v + base));
                         }
+                        // Merge the env-gated slot-4 inspection wireframe (built
+                        // once at scene load) into the same overlay-lines buffer.
+                        if let Some((p, c, i)) = self.world_map_slot4_lines.as_ref() {
+                            let base = pos.len() as u32;
+                            pos.extend_from_slice(p);
+                            col.extend_from_slice(c);
+                            idx.extend(i.iter().map(|v| v + base));
+                        }
                         if idx.is_empty() {
                             None
                         } else {
@@ -9085,6 +9129,46 @@ fn world_map_player_line_geometry(
     }
     // Post + base-cross (X/Z arms) + facing tick.
     let idx = vec![0, 1, 2, 3, 4, 5, 0, 6];
+    (pos, col, idx)
+}
+
+/// Build a LineList wireframe of a kingdom's decoded slot-4 vertex pool
+/// (`SceneResources::world_map_slot4`), as world-space `(positions, colors,
+/// indices)`. Each body's records are emitted at their raw object-local
+/// coordinates (no per-object placement transform — the cluster-A command
+/// stream that supplies those is unpinned), Y-negated to match the
+/// heightfield's `cam * yflip` frame. Colour is keyed by body `kind`
+/// (`1` = the shared universal mesh set, `2` = kingdom-specific objects,
+/// `4` = wide-extent bodies) so the per-kingdom assembly structure reads
+/// at a glance. Returns empty geometry when no body yields a segment.
+///
+/// This is an env-gated inspection overlay (`LEGAIA_WORLDMAP_SLOT4=1`); the
+/// group-polyline segment topology is the documented inspection convention,
+/// not the faithful triangle topology (see
+/// `legaia_asset::world_map_overlay::wireframe_segments_3d`).
+fn world_map_slot4_line_geometry(
+    slot: &legaia_asset::world_map_overlay::KingdomSlot4,
+) -> LineGeometry {
+    let opts = legaia_asset::world_map_overlay::WireframeOptions::default();
+    let segs = legaia_asset::world_map_overlay::wireframe_segments_3d(slot, &opts);
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(segs.len() * 2);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(segs.len() * 2);
+    let mut idx: Vec<u32> = Vec::with_capacity(segs.len() * 2);
+    for s in &segs {
+        let c = match s.kind {
+            1 => [120u8, 200, 255, 255], // shared universal bodies (cyan)
+            2 => [255u8, 160, 90, 255],  // kingdom-specific objects (orange)
+            4 => [200u8, 120, 255, 255], // wide-extent bodies (violet)
+            _ => [180u8, 180, 180, 255],
+        };
+        let base = pos.len() as u32;
+        for v in [s.a, s.b] {
+            pos.push([v[0] as f32, -(v[1] as f32), v[2] as f32]);
+            col.push(c);
+        }
+        idx.push(base);
+        idx.push(base + 1);
+    }
     (pos, col, idx)
 }
 
@@ -9645,6 +9729,7 @@ fn cmd_play_window_with_record(
         field_placement_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_heightfield: None,
+        world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,
         battle_vram: None,

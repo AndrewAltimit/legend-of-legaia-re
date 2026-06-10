@@ -208,6 +208,68 @@ Run with `cargo test -p legaia-gamedata`. Enforced rules:
 - Every item `category` is one of `consumable` / `permanent_stat`
   / `key` / `art_book` / `fishing_lure`.
 
+### Disc-gated cross-checks (skip when `extracted/SCUS_942.54` is absent)
+
+These validate the curated tables against the real executable, so the disc
+is the tie-breaker when the two disagree:
+
+- `item_prices_vs_disc` — every priced weapon / armor / accessory whose name
+  resolves to a disc item id has a curated `price` equal to the authoritative
+  `SCUS` shop-price field (the `u16` at `+2` of the item-property record). 119+
+  cross-checks, **zero** mismatches. This oracle pinned three walkthrough price
+  errors that were corrected to the disc values (Forest / Magic Amulet
+  4000→2000, Evil Medallion 9998→9999).
+- `equip_slots_vs_disc` — the disc equip-stat table's four `+7` slot categories
+  map name-exactly to the four gamedata armour/weapon slots (body 20, head 15,
+  footwear 16), and none of the 77 accessories appear in that table (they are a
+  separate system). See [`equipment-table.md`](../formats/equipment-table.md).
+- `enemy_stats_vs_disc` — joins `enemies.toml` to the monster-stat archive
+  (`PROT 0867`) by name (unambiguous names only — multi-form bosses like Gaza
+  are skipped). The curated bestiary stats are **scaled derivations** of the raw
+  disc record, not copies, by fixed factors: `hp`/`spd` ×1, `udf`/`ldf` ×2,
+  `atk` ×5/4, `exp` ×3/4, `gold` ×5/16 (all exact, ±1 on the fractional ones).
+  Two curated labels are disc stats in disguise: curated `agl` **is** the disc
+  *spirit* (SP) stat (×1), and curated `intel` is the disc *agility* stat ×9/8.
+  So the disc is the raw ground truth; the test pins all nine fields across 120+
+  enemies. See [`monster-animation.md`](../formats/monster-animation.md) and
+  `legaia_asset::monster_archive`.
+- `magic_vs_disc` — joins `magic.toml` to the static spell table in
+  `SCUS_942.54` (`legaia_asset::spell_names`) by spell name. All **21** Seru
+  spells (ids `0x81..=0x95`) and **7** of the 8 Ra-Seru summons (`0x9a..=0xa0`;
+  the hidden `Juggernaut` isn't in the contiguous named region) name-join, and
+  every one's **MP cost is byte-exact** against the disc `+2…+3` record. Target
+  shape (`+2` byte) agrees for all joins except the revive Ra-Seru `Horn` /
+  "Resurrector", whose byte is enemy-side though the effect revives all allies
+  (checked explicitly). The oracle pinned one curated target error — `Mushura` /
+  "Crazy Driver" is single-enemy, not all-enemies — corrected to the disc value.
+  See [`spell-table.md`](../formats/spell-table.md).
+- `shop_inventory_vs_disc` — scans every PROT entry for the gold-shop stock
+  records embedded inline in each scene MAN (`legaia_asset::shop_stock`, op
+  `0x49` sub-op `0`), decodes each record's sellable item ids to names, and
+  joins disc shops to curated shops by the **item-name set** (order-independent;
+  the item set is far more distinctive than the shop title, which repeats as
+  "Arms Shop" / "Items Shop" across towns). Every located disc shop's stock
+  matches a curated inventory as an exact set, with one documented disc-only
+  exception — **Soru's Bakery**, which sells only the novelty "Soru Bread" and
+  has no curated counterpart (asserted explicitly). This oracle pinned a curated
+  item-name error: the Gala helmet the disc names **"Power Earring"** (singular)
+  was curated as "Power Earrings", which broke the Wind Cave and
+  Biron-after-mist joins until corrected to the disc spelling (the price oracle
+  missed it — a name-mismatch is a tolerated miss there). The shop-record format
+  is documented in `legaia_asset::shop_stock`.
+- `casino_prizes_vs_disc` — joins `casino.toml` to the coin prize-exchange table
+  in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; the
+  canonical reader is `legaia_rando::casino::CasinoExchange`). Each prize is an
+  8-byte record `[u16 item_id][u16 story_gate][u32 coin_price]` in `0x60`-byte
+  blocks; block 1 is the Vidna casino counter, block 0 the Sol Tower Muscle Dome
+  counter (high-value prizes story-gated via the `+2` word), and blocks 2/3 are
+  short pre-progression states (one cheap healing item each). Every curated
+  prize joins a disc record byte-exact on **(item name, coin price)** across both
+  full lists, and every disc record in those lists is a curated prize — with one
+  documented exception, **Earth Egg @ 100000 coins** (the Muscle Paradise
+  "Chicken King" easter egg), a separate hidden exchange that is not in the
+  four-block table (asserted explicitly).
+
 ## Library API
 
 ```rust

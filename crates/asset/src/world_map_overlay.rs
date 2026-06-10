@@ -522,6 +522,69 @@ pub fn record_points(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<(u8, u
     out
 }
 
+/// One 3D wireframe segment: both endpoints in the body's object-local
+/// model space, tagged with the source `body_index` and `kind` so a
+/// renderer can colour by body class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Segment3d {
+    pub body_index: u8,
+    pub kind: u16,
+    pub a: [i16; 3],
+    pub b: [i16; 3],
+}
+
+/// Emit a full-3D wireframe segment list from a parsed slot 4, preserving
+/// the model-space `(x, y, z)` of every endpoint (unlike [`top_down_lines`],
+/// which flattens to a 2D axis pair).
+///
+/// Topology is the same group-polyline convention the dev top-view / WebGL
+/// inspector uses ([`PolylineMode::RowMajor`]): consecutive records within a
+/// group form a polyline. The true triangle topology lives in a separate
+/// cluster-A command stream (unpinned), so these segments are an inspection
+/// wireframe of the decoded vertex pool, not the faithful object surface.
+/// Honors [`WireframeOptions::strip_zero_records`],
+/// [`WireframeOptions::skip_identical_group_bodies`], and
+/// [`WireframeOptions::close_polylines`]; [`WireframeOptions::axes`] and
+/// [`WireframeOptions::mode`] are ignored (the full 3D coordinate is always
+/// kept and the layout is always row-major).
+pub fn wireframe_segments_3d(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Segment3d> {
+    let is_zero = |r: &Slot4Record| r.x == 0 && r.y == 0 && r.z == 0;
+    let mut out = Vec::new();
+    for body in &slot.bodies {
+        if opts.skip_identical_group_bodies && body_groups_identical(body) {
+            continue;
+        }
+        if (body.count_a as usize) < 2 {
+            continue;
+        }
+        for group in body.groups() {
+            let mut pts: Vec<[i16; 3]> = group
+                .iter()
+                .filter(|r| !(opts.strip_zero_records && is_zero(r)))
+                .map(|r| [r.x, r.y, r.z])
+                .collect();
+            if pts.len() < 2 {
+                continue;
+            }
+            if opts.close_polylines && pts.first() != pts.last() {
+                pts.push(pts[0]);
+            }
+            for w in pts.windows(2) {
+                if w[0] == w[1] {
+                    continue;
+                }
+                out.push(Segment3d {
+                    body_index: body.index as u8,
+                    kind: body.kind,
+                    a: w[0],
+                    b: w[1],
+                });
+            }
+        }
+    }
+    out
+}
+
 fn body_groups_identical(body: &Slot4Body) -> bool {
     let cb = body.count_b as usize;
     let ca = body.count_a as usize;
@@ -908,5 +971,32 @@ mod tests {
         let slot = parse(&buf).unwrap();
         let b = xz_bounds(&slot).unwrap();
         assert_eq!(b, (50, 200, 100, 300));
+    }
+
+    #[test]
+    fn wireframe_segments_3d_keep_full_coords() {
+        let buf = synthetic_one_body();
+        let slot = parse(&buf).unwrap();
+        // 3 records → strip the (0,0,0) record → 2 vertices → 1 segment.
+        let segs = wireframe_segments_3d(&slot, &WireframeOptions::default());
+        assert_eq!(segs.len(), 1);
+        let s = segs[0];
+        assert_eq!(s.body_index, 0);
+        assert_eq!(s.kind, 2);
+        // Full 3D endpoints are preserved (top_down_lines would flatten Y).
+        assert_eq!(s.a, [100, 0, 200]);
+        assert_eq!(s.b, [50, 0, 300]);
+
+        // Closing the polyline adds the back-edge in 3D too.
+        let closed = wireframe_segments_3d(
+            &slot,
+            &WireframeOptions {
+                close_polylines: true,
+                ..WireframeOptions::default()
+            },
+        );
+        assert_eq!(closed.len(), 2);
+        assert_eq!(closed[1].a, [50, 0, 300]);
+        assert_eq!(closed[1].b, [100, 0, 200]);
     }
 }

@@ -35,16 +35,18 @@
   </table>
   <p>The type-byte semantics differ from the standard <code>FUN_8001F05C</code> dispatcher: there <code>type = 0x01</code> means <code>TIM_LIST</code> (a <code>[count + offsets + TIMs]</code> pack), but here it means "single bare TIM". So although the chunk-header packing is identical, calling <code>FUN_8002541C</code> on a <code>scene_tmd_stream</code> entry would mis-dispatch and crash. The runtime knows to use <code>FUN_8001FE70</code> for these entries.</p>
 
-  <h3>Two-list continuation</h3>
-  <p>Some entries (e.g. <code>0006_town01.BIN</code>) carry a second set of type-0x01 chunks past the first terminator, separated by a zero-padded gap:</p>
-<pre><code>+0x3840   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
-+0xba64   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
-+0x13c88  terminator (zero-size header)
-+0x13c8c..0x16c23: zero padding
-+0x16c24  type=0x01 TIM chunk  (continuation - past terminator)
-+0x1ee48  type=0x01 TIM chunk  (continuation - past terminator)
-+0x2706c  terminator</code></pre>
-  <p><code>FUN_8001FE70</code> exits at the first terminator, so the continuation list isn't visited by the standard battle-init dispatch. The consumer for the continuation is not yet pinned; the bytes are reachable as <code>WalkSource::Continuation</code> in <code>scene_tmd_stream::battle_tim_chunks</code> and the in-tail chunks alone supply the same <code>(fb_y, fb_x)</code> regions, so the continuation may be a cold-loaded scenario variant.</p>
+  <h3>Concatenated sub-streams (the &ldquo;two-list&rdquo; shape)</h3>
+  <p>Some entries (e.g. <code>0006_town01.BIN</code>) carry <strong>two (or more) complete sub-streams</strong> concatenated &mdash; each a full <code>[chunk0 TMD][type-0x01 TIM chunks][terminator]</code> block on a <code>0x800</code> (sector) boundary, zero-padding filling the gap. The second sub-stream has its <strong>own</strong> leading TMD; the &ldquo;continuation&rdquo; TIMs belong to it:</p>
+<pre><code>+0x00000  chunk0 = TMD body 0x383c        ] sub-stream 0
++0x03840  type=0x01 TIM chunk             ]  (FUN_8001FE70's reach)
++0x0ba64  type=0x01 TIM chunk             ]
++0x13c88  terminator (zero-size header)   ]
++0x13c8c..0x13fff: zero padding to the next sector
++0x14000  chunk0 = TMD body 0x2c20        ] sub-stream 1
++0x16c24  type=0x01 TIM chunk             ]  (own TMD; the "continuation")
++0x1ee48  type=0x01 TIM chunk             ]
++0x2706c  terminator                      ]</code></pre>
+  <p><code>FUN_8001FE70</code> walks one sub-stream and <strong>returns <code>param_1 + 1</code></strong> (past the terminator) &mdash; the next sub-stream's region &mdash; so a sector/slot-indexed caller can walk the rest. The single static caller <code>FUN_800513F0</code> (battle init) calls it <strong>once</strong>, so battle uploads only sub-stream 0; the multi-sub-stream caller is the per-scene field/town dispatch (<code>FUN_8001F7C0</code> &rarr; <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code>, overlay-resident, capture-blocked). Enumerate the blocks with <code>scene_tmd_stream::sub_streams</code> (each a full sub-stream with its own TMD); <code>battle_tim_chunks</code> reports sub-stream 0's TIMs as <code>WalkSource::Tail</code> and the later ones as <code>WalkSource::Continuation</code>. The engine's field-mode loader uses both to <strong>skip</strong> these battle-only TIMs (the row-479 NPC palettes aren't field-resident &mdash; matching retail).</p>
 
   <p>Reading:</p>
 <pre><code>use legaia_asset::scene_tmd_stream;
@@ -106,10 +108,10 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table relative to +0x800
-+0x800 + offsets[i]              ;   per-record field-VM bytecode</code></pre>
++0x800 + offsets[i]              ;   per-record word-aligned command bytes</code></pre>
   <p>The header's <code>u16[0]</code>, <code>u16[5]</code>, <code>u16[7]</code> are algebraically tied to a single per-scene constant <code>N</code>: <code>u16[0] = N + 4</code>, <code>u16[5] = N</code>, <code>u16[7] = N + 2</code>, and <code>N = 4 * param + 22</code> (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the <code>N/param</code> algebra. Across the entire 1234-entry PROT corpus this matches <strong>97</strong> entries with zero false positives — and <strong>every</strong> match parses cleanly as a scene-event-scripts prescript at <code>+0x800</code>.</p>
-  <p>The post-header dense data is the <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> prescript, parsed by the field VM (<code>FUN_801DE840</code>) at scene entry. The pre-header table at <code>+0x14</code> is per-scene runtime metadata: <code>param</code> records of 4 bytes each, grouped by the third byte (<code>b2</code>) into 1..N scene regions; the last byte is always <code>0x01</code> (probably a "live" flag). See <a href="scene-v12-table.html">scene-v12-table</a> for the per-byte semantics.</p>
-  <p>Each scene block on the disc carries <strong>both</strong> a v12 entry (this format, prescript at <code>+0x800</code>) and a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no v12 header). The two scripts likely serve different runtime phases — scene-enter triggers vs. per-actor / per-region triggers — though the exact split isn't pinned down yet; both are walked by the same field VM.</p>
+  <p>The post-header dense data is the <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> prescript — a word-aligned per-scene actor/event command structure, <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (see that section for the falsification). The pre-header table at <code>+0x14</code> is per-scene runtime metadata: <code>param</code> records of 4 bytes each, grouped by the third byte (<code>b2</code>) into 1..N scene regions; the last byte is always <code>0x01</code> (probably a "live" flag). See <a href="scene-v12-table.html">scene-v12-table</a> for the per-byte semantics.</p>
+  <p>Each scene block on the disc carries <strong>both</strong> a v12 entry (this format, prescript at <code>+0x800</code>) and a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no v12 header). Both carry the same word-aligned record structure. The genuine per-scene field-VM scripts live elsewhere — in the scene MAN sub-asset (<code>FUN_8003A1E4</code> → <code>FUN_801DE840</code>; see <a href="../subsystems/script-vm.html">script VM</a>).</p>
 </section>
 
 <section class="doc-section" id="scene-asset-table-count-prefixed-asset-bundle">
@@ -171,15 +173,18 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 </tbody>
 </table>
   <p>All scene-named (<code>izumi</code>, <code>cave01</code>, <code>bylon</code>, <code>dolk</code>, <code>vell</code>, <code>urudre1</code>, <code>chitei2</code>, <code>nilboa</code>, <code>keikoku</code>, <code>concnow</code>, <code>jouina/b/c/e</code>, …). Sizes ~60 KB to ~452 KB.</p>
-  <p>Reading:</p>
+  <h3>Slot&rarr;asset mapping (the runtime walk)</h3>
+  <p>The mapping is <strong>positional + offset-based</strong> &mdash; there is no separate indirection table; the descriptor's <code>data_offset</code> field <em>is</em> the indirection. The runtime walker <code>FUN_80020224</code> reads <code>count = *base</code>, then for each <code>slot</code> dispatches <code>asset_type_dispatch(base + descriptor[slot].data_offset, type_size, …)</code> with descriptors at <code>base + 8 + slot*8</code>. So slot <code>i</code> is the <code>i</code>-th 8-byte descriptor; its payload starts at <code>base + data_offset</code> and its handler is keyed by <code>type_size &gt;&gt; 24</code>. The full chain (buffer alloc at <code>FUN_8001E1B4</code> &rarr; file load at <code>FUN_8001F7C0</code> &rarr; walk at <code>FUN_80020224</code> &rarr; dispatch at <code>FUN_8001F05C</code>) is pinned under the <a href="../subsystems/asset-loader.html">asset-loader subsystem</a>.</p>
+  <p><code>scene_asset_table::resolve</code> returns the table plus the base it is relative to, covering <strong>both</strong> the bare variant (base 0) and the prescript-prefixed scripted variant (base at the post-prescript 0x800-aligned offset); <code>SceneAssetTable::slots</code> reproduces the positional walk and <code>payload_range(slot, base)</code> resolves a slot's payload span:</p>
 <pre><code>use legaia_asset::scene_asset_table;
-if let Some(t) = scene_asset_table::detect(buf) {
-    for (i, d) in t.descriptors.iter().enumerate() {
-        println!("desc[{}]: type={:#04x} size={} off={:#x}",
-                 i, d.type_byte, d.size, d.data_offset);
+if let Some(r) = scene_asset_table::resolve(buf) {
+    for s in r.table.slots() {
+        let span = r.table.payload_range(s.slot, r.table_base).unwrap();
+        println!("slot {}: {} size={} payload@{:#x}..{:#x}",
+                 s.slot, s.asset_type.name(), s.size, span.start, span.end);
     }
 }</code></pre>
-  <p>The runtime consumer is the field-loader chain documented under the <a href="../subsystems/asset-loader.html">asset-loader subsystem</a>: <code>FUN_8001F7C0</code> + <code>FUN_800255B8</code> plus the dispatcher at <code>FUN_8001F05C</code> consumes each descriptor pair after LZS-decoding the payload region into a working buffer.</p>
+  <p>A disc-gated corpus test (<code>scene_asset_table_walk_real</code>) verifies this walk against every classified entry (88 bare + 79 scripted): the first slot anchors at <code>base + header_end</code> and every slot's type is a legal dispatcher type. The file relocation into the asset buffer (<code>_DAT_8007b85c</code>) and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static <code>resolve</code> reconstructs the base structurally.</p>
 </section>
 
 <section class="doc-section" id="scene-scripted-asset-table-scripted-prefix-canonical-bundle">
@@ -188,9 +193,10 @@ if let Some(t) = scene_asset_table::detect(buf) {
 <pre><code>+0x00              u16  count             ; 1..=4096 - number of script records
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing
-+offsets[i]        record bytecode        ; per-record opcodes (typical
-                                          ; opener: 0xFFFF 0x0000 sentinel +
-                                          ; field-VM-shaped frame ops)
++offsets[i]        record               ; word-aligned (16-bit) command
+                                          ; record (opener: 0xFFFF 0x0000
+                                          ; header sentinel; NOT field-VM —
+                                          ; see scene_event_scripts below)
 +0x800-aligned     u32  count = 7         ; canonical scene-asset-table lead
 ...                                       ; same layout as scene_asset_table</code></pre>
   <p>Strict gate validates <strong>both</strong> the prescript and the inner asset table:</p>
@@ -201,7 +207,7 @@ if let Some(t) = scene_asset_table::detect(buf) {
     <li>Past the last record offset, the next <code>0x800</code>-aligned position carries <code>u32 count = 7</code> plus a valid <code>scene_asset_table</code> header (first descriptor at <code>+0x40</code>, all type bytes <code>&lt;= 0x14</code>).</li>
   </ol>
   <p>The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary <code>[count][offsets]</code>-shaped data, but the asset-table check at the next sector boundary is a strong second signal.</p>
-  <p>The prescript is plausibly the <strong>scene event-script bytecode</strong> that the field VM (<code>FUN_801DE840</code>) executes when the scene loads. The 0xFFFF 0x0000 sentinels at record starts strongly resemble field-VM frame-divider opcodes. The runtime is presumed to walk the prescript first (loading scene-specific event scripts), then load the asset bundle from the sector-aligned position. The exact prescript opcode set is unconfirmed pending more reverse work.</p>
+  <p>The prescript is a <strong>word-aligned (16-bit) per-scene actor/event command structure</strong>, <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode — see the <a href="#scene-event-scripts-prescript-only">scene_event_scripts</a> section for the disc-gated falsification. The <code>0xFFFF 0x0000</code> lead is a per-record header sentinel, not a frame-divider opcode. The consuming command VM and per-opcode operand widths are not yet identified; the genuine per-scene field-VM scripts live in the scene MAN sub-asset.</p>
 </section>
 
 <section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">
@@ -231,10 +237,10 @@ if let Some(t) = scene_asset_table::detect(buf) {
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing,
                                           ; all &lt;= file size
-+offsets[i]        record bytecode        ; per-record opcodes; the bulk
-                                          ; of records open with the
-                                          ; field-VM frame sentinel
-                                          ; `0xFFFF 0x0000`
++offsets[i]        record               ; word-aligned (16-bit) command
+                                          ; record; the bulk open with the
+                                          ; `0xFFFF 0x0000` header sentinel
+                                          ; and terminate with a `0x0008` word
 ...                                       ; bulk asset payload after the
                                           ; prescript (per-scene secondary
                                           ; header; format unconfirmed -
@@ -246,10 +252,10 @@ if let Some(t) = scene_asset_table::detect(buf) {
   <p>Strict structural detection:</p>
   <ol class="bullets">
     <li>Prescript shape valid (count <code>3..=4096</code>, <code>offsets[0] == 2 + count*2</code>, monotonic, in-bounds).</li>
-    <li><strong>Frame-opener rate ≥ 50 %</strong> of records start with the field-VM <code>0xFFFF 0x0000</code> sentinel.</li>
+    <li><strong>Frame-opener rate ≥ 50 %</strong> of records start with the <code>0xFFFF 0x0000</code> record header sentinel.</li>
   </ol>
   <p>The frame-opener rate is what makes this detector zero-false-positive on its own. Random <code>[count][offsets]</code>-shaped data carries no <code>0xFFFF</code> opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).</p>
-  <p>The prescript records are field-VM (<code>FUN_801DE840</code>) event scripts - the same per-frame bytecode shape used by <code>scene_scripted_asset_table</code> (<code>0xFFFF 0x0000</code> is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.</p>
+  <p class="hint"><strong>These records are NOT field-VM (<code>FUN_801DE840</code>) bytecode</strong> (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88% decode-error rate; the bytes are 16-bit <strong>word-aligned</strong> (low byte = opcode, high byte 0 on ~83% of body words), framed records terminate with a <code>0x0008</code> word, and the opcodes sit mostly below the field VM's <code>0x22</code> opcode floor — a record like <code>FF FF 00 00 25 00 29 00 25 00 2A 00 08 00</code> reads cleanly word-aligned (<code>cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)</code>) but is garbage byte-by-byte. So <code>0xFFFF 0x0000</code> is a per-record header sentinel, not a field-VM frame divider, and record 0 is a fixed 768-byte dispatch table (96 × 8-byte slots), not a script. The records still encode per-scene structure (actor/NPC placement, event triggers, interaction hooks), but the <strong>consuming command VM and per-opcode operand widths are not yet identified</strong>. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>). Pinned by the disc-gated <code>scene_event_records_word_aligned_real</code> test; <code>legaia_asset::scene_event_scripts::record_words</code> surfaces the raw 16-bit word stream of a record.</p>
   <p>Detection runs after <code>scene_scripted_asset_table</code> and <code>scene_asset_table</code>, so any composite layouts those detectors recognize claim their entries first.</p>
 </section>
 

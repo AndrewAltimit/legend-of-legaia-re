@@ -77,15 +77,27 @@ The engine ports the probe as `World::tick_field_interaction_probe` (`engine-cor
 
 ## Collision — `FUN_801cfe4c`
 
-`FUN_801cfe4c(player, scene, dir)` returns `0` when the move is clear and `2` when a static wall blocks it (plus bits `1`/`4` contributed by the finer `FUN_801cfc40` actor/edge probe). It samples a **per-scene collision tile map** through the base pointer `_DAT_1f8003ec`:
+`FUN_801cfe4c(player, scene, dir)` returns `0` when the move is clear and `2` when a static wall blocks it (plus bits `1`/`4` contributed by the finer `FUN_801cfc40` actor/edge probe). It samples a **per-scene collision tile map** through the base pointer `_DAT_1f8003ec`. The walkability grid lives at `*(_DAT_1f8003ec) + 0x4000`: **one byte per `128×128` world tile**, `0x80`-byte rows (up to `0x80` rows), the **high nibble** holding 4 sub-cell wall bits (the tile split into four `64×64` quadrants). A set bit = wall.
 
-- The walkability grid lives at `*(_DAT_1f8003ec) + 0x4000`.
-- The player world position is converted to tile space by `(coord + bias) >> 6`, then the byte index is `(tileX / 2 & 0x7f) + ((tileZ) * 0x40 & 0x3f80)` — i.e. rows of `0x40` bytes, up to `0x80` rows.
-- Each map **byte's high nibble holds 4 sub-cell walkability bits**: the tile is split into a 2×2 quadrant grid, and `byte >> 4 & quadrant_mask` selects the relevant quadrant (`quadrant_mask` ∈ `{1,2,4,8}` from `tileX&1`, `tileZ&1`). A set bit = wall.
-- So one map byte covers a `0x80 × 0x80` (128×128) world tile, divided into four `64×64` sub-cells.
-- Direction-specific probe offsets come from the tables `DAT_801f21b4` / `DAT_801f2214` (16-byte stride per direction); the function probes three nearby points so the player's footprint (not just its centre) is tested against walls.
+**Leading-edge footprint, not a centre point.** A direction is blocked if **any** of three probe points along the player's leading edge hits a wall sub-cell. The probe offsets are the per-direction table `DAT_801f2214` (16-byte stride; `dir` ∈ `{0=Z−, 1=X−, 2=Z+, 3=X+}`), three `(Δx, Δz)` pairs each. Decoded from the disc (overlay `0897` @ `0x801CE818`), the static-wall footprint is a row of three points **~47–48 units ahead** of the player centre in the travel direction, **spread ±16 laterally**:
 
-The sibling sampler `FUN_801d5718` reads the same `*(_DAT_1f8003ec) + 0x4000` grid with the identical nibble-and-mask shape, confirming the map layout.
+| `dir` | leading-edge probes `(Δx, Δz)` (applied as `x+Δx`, `z−Δz`) |
+|---|---|
+| `0` Z− | `(−16,+48) (0,+48) (+16,+48)` → edge at `z−48`, ±16 in X |
+| `1` X− | `(−47,−16) (−47,0) (−47,+16)` → edge at `x−47`, ±16 in Z |
+| `2` Z+ | `(−16,−47) (0,−47) (+16,−47)` → edge at `z+47`, ±16 in X |
+| `3` X+ | `(+48,−16) (+48,0) (+48,+16)` → edge at `x+48`, ±16 in Z |
+
+For each probe the byte/sub-cell is derived as: `zc = (z>>6) + 2`, `xc = ((x + 0x3f) >> 6) − 1` (i.e. Z floored then **+2**, X **rounded up then −1**, with negative-coordinate corrections); byte index `= (xc/2 & 0x7f) + ((zc>>1) * 0x80) + 0x4000`; quadrant mask `= 1 << ((zc & 1)<<1 | (xc & 1))`. The `+2` (Z) and round-up/`−1` (X) push the half-tile-centred player (positions are `tile*128 + 64`) onto the **forward** tile, which is how the ~47-unit lateral lookahead lands a full tile ahead.
+
+The finer actor/edge probe `FUN_801cfc40` uses a sibling table at `DAT_801f21b4` (64-unit lookahead + a 4th `±32` point) and contributes the `1`/`4` result bits. The sibling sampler `FUN_801d5718` reads the same `*(_DAT_1f8003ec) + 0x4000` grid with the identical nibble-and-mask shape, confirming the map layout.
+
+**Engine model (clean-room).** [`World::field_tile_is_wall`] / [`World::advance_with_collision`] use a **single candidate-centre** point test (`sx = x>>6`, `sz = z>>6`, then `byte>>4 & (1<<((sz&1)<<1|(sx&1)))`) stepped incrementally, rather than retail's three leading-edge probes with the `+2`/`−1` sub-cell biases. Two facts are pinned from the disc, two are open:
+
+- **The quadrant-mask formula is identical** to retail (verified byte-for-byte against the decomp's branchy `bVar5` for all four parities, `world.rs::tests`). The earlier "inverted X parity" worry is therefore **false** — the mask *selection* matches.
+- **The sub-cell INDEX derivation differs.** Retail computes `zc = (z>>6)+2` and `xc = ((x+0x3f)>>6)−1`; the engine floors both (`z>>6`, `x>>6`). The `+2` applies to *every* sample (not just a look-ahead), so for the same world point retail indexes **one tile further in Z** and the **opposite X parity**: a half-tile-centred player at `(320, 448)` (tile-2/tile-3 centre) maps to retail `(col 2, row 4, quad 2)` but engine `(col 2, row 3, quad 3)`.
+- **Open (capture-gated): whether that offset reads the WRONG wall in a live scene.** It depends on how the disc grid is authored relative to the world-tile origin (e.g. a 1-tile border row would mean the engine's floor indexing is off by a tile). town01 walks acceptably under coarse observation and the disc test only checks that the player stops at *some* base wall, so the offset is not yet proven to be a player-visible bug. Pinning it needs a town01 capture of the live player position against the `+0x4000` grid byte that blocks it (compare retail's `(col,row,quad)` to the engine's for the same position) **before** changing the working derivation.
+- **Open (fidelity): the three-probe leading-edge footprint.** retail blocks when any of three body-edge points (~47 ahead, ±16 lateral) hits a wall; the engine tests one candidate centre. This is a standoff/feel difference layered on top of the indexing question.
 
 ## Where the collision grid comes from
 

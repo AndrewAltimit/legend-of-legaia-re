@@ -35,6 +35,7 @@
 use anyhow::Result;
 use legaia_asset::{
     anm_detect, battle_data_pack, kingdom_bundle, pack, scene_tmd_stream, tim_scan, tmd_scan,
+    world_map_overlay,
 };
 use legaia_tim::Vram;
 
@@ -325,6 +326,40 @@ pub struct SceneResources {
     /// emit through the overlay variant (distance-cue fog), every
     /// other scene class uses the SCUS variant.
     pub render_policy: legaia_engine_vm::prim_dispatch::SceneRenderPolicy,
+    /// Parsed kingdom slot-4 vertex pool (the per-kingdom object-mesh
+    /// library), present only for `SceneLoadKind::WorldMap` scenes whose
+    /// primary entry is a kingdom bundle (PROT 0085/0244/0391). `None`
+    /// for every other scene class. The records are object-local GTE
+    /// vertices; the faithful triangle topology lives in an unpinned
+    /// cluster-A command stream, so a consumer can render them as an
+    /// inspection wireframe (see `world_map_overlay::wireframe_segments_3d`)
+    /// but not yet as placed solid meshes.
+    pub world_map_slot4: Option<legaia_asset::world_map_overlay::KingdomSlot4>,
+}
+
+/// Resolve a world-map scene's kingdom slot-4 vertex pool. Returns `None`
+/// for any non-`WorldMap` scene class, and for a WorldMap scene whose
+/// primary entry isn't a parseable kingdom bundle (decode/parse failures
+/// fall through to `None` rather than erroring — the wireframe overlay is
+/// an optional inspection layer). Accepts the first entry whose slot 4
+/// decodes and parses, mirroring `parse_scene_tmds_anms`'s "first kingdom
+/// bundle per scene" rule.
+fn parse_world_map_slot4(
+    scene: &Scene,
+    kind: SceneLoadKind,
+) -> Option<world_map_overlay::KingdomSlot4> {
+    if !matches!(kind, SceneLoadKind::WorldMap) {
+        return None;
+    }
+    for entry in &scene.entries {
+        let Ok(slot4) = kingdom_bundle::decode_slot(&entry.bytes, 4) else {
+            continue;
+        };
+        if let Ok(parsed) = world_map_overlay::parse(&slot4) {
+            return Some(parsed);
+        }
+    }
+    None
 }
 
 impl SceneResources {
@@ -771,6 +806,7 @@ impl SceneResources {
                 render_policy: legaia_engine_vm::prim_dispatch::SceneRenderPolicy::from_scene_kind(
                     options.kind.render_hint(),
                 ),
+                world_map_slot4: parse_world_map_slot4(scene, options.kind),
             },
             upload_stats,
         ))
@@ -923,6 +959,9 @@ impl SceneResources {
             // variant should go through `build_targeted_with_options`
             // instead.
             render_policy: legaia_engine_vm::prim_dispatch::SceneRenderPolicy::default(),
+            // No scene-kind hint here; the world-map slot-4 pool is only
+            // resolved on the `build_targeted_with_options` WorldMap path.
+            world_map_slot4: None,
         })
     }
 

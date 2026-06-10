@@ -94,16 +94,18 @@ pub enum Class {
     SceneAssetTable,
     /// Composite shape: `[u16 count][u16 offsets[count]][record bodies]
     /// [zero pad to next 0x800 sector][canonical scene_asset_table]`. The
-    /// leading prescript carries scene-event-script bytecode (likely
-    /// field-VM frames) and the asset table at the next sector boundary
-    /// holds the standard 7-asset scene bundle. 77 PROT entries match.
+    /// leading prescript carries the word-aligned per-scene actor/event
+    /// record structure (NOT field-VM bytecode — see
+    /// [`crate::scene_event_scripts`]) and the asset table at the next sector
+    /// boundary holds the standard 7-asset scene bundle. 77 PROT entries match.
     /// See [`crate::scene_scripted_asset_table`].
     SceneScriptedAssetTable,
     /// `[u16 count][u16 offsets[count]][record bodies]` - same prescript
     /// shape as [`Class::SceneScriptedAssetTable`] but the post-prescript
     /// payload is **not** a canonical scene-asset-table. Detected when at
-    /// least 50 % of records open with the field-VM frame sentinel
-    /// `0xFFFF 0x0000`. ~20 PROT entries match. See
+    /// least 50 % of records open with the `0xFFFF 0x0000` record header
+    /// sentinel. The records are a word-aligned (16-bit) actor/event command
+    /// structure, NOT field-VM bytecode. ~20 PROT entries match. See
     /// [`crate::scene_event_scripts`].
     SceneEventScripts,
     /// MIPS code blob - the static disc copy of a runtime overlay. Leads
@@ -451,7 +453,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // `scene_scripted_asset_table` but with no canonical asset table after.
     // Runs after both scripted-and-asset-table and plain asset-table so the
     // more specific layouts claim their entries first. Frame-opener-rate gate
-    // (>= 50% of records start with the field-VM `0xFFFF 0x0000` sentinel)
+    // (>= 50% of records start with the `0xFFFF 0x0000` record header sentinel)
     // keeps this zero-false-positive against random `[count][offsets]`-shaped
     // data.
     if crate::scene_event_scripts::detect(buf).is_some() {

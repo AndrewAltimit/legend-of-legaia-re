@@ -113,6 +113,25 @@ fn slot4_parses_for_every_kingdom() {
             lines.len()
         );
 
+        // The 3D segment emitter (the live-engine inspection overlay's
+        // geometry source) uses the same row-major group-polyline topology,
+        // so it yields the same segment count as the (X, Z)-projected
+        // RowMajor path — but preserves the full 3D coordinate, so at least
+        // one segment must carry a non-zero Y endpoint (the bodies are
+        // object-local 3D meshes, not flat top-down contours).
+        let segs = world_map_overlay::wireframe_segments_3d(&parsed, &opts);
+        assert_eq!(
+            segs.len(),
+            lines.len(),
+            "{label}: 3D segment count {} != top-down line count {}",
+            segs.len(),
+            lines.len()
+        );
+        assert!(
+            segs.iter().any(|s| s.a[1] != 0 || s.b[1] != 0),
+            "{label}: every 3D segment is Y=0 (expected real elevation)"
+        );
+
         // Sanity-bound the X-Z extent. Drake reaches ±32K via its
         // full-extent kind-4 body; Sebucus / Karisto have similar extents
         // (every kingdom carries at least one such full-span body).

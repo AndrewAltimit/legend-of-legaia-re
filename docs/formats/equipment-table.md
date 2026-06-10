@@ -110,10 +110,28 @@ the helmet/ring/accessory/hand-guard slots collapse to the disc "head" category
 `equip_modifiers_disc::disc_equip_restrictions_gate_equip_session_item_list`
 test drives the whole chain on the real executable.
 
-**Slot-category limitation (still open):** the `+7` byte only distinguishes the
-four categories above, so it cannot drive an 8-slot UI that separates helmet vs.
-ring vs. accessory - all read as "head". The disambiguation source is unpinned
-(see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+**Slot model (resolved):** the four `+7` categories *are* Legaia's four
+armour/weapon equip slots — there is no missing "8-slot" disambiguation. Cross-
+referencing the parsed table against the curated [gamedata](../reference/gamedata.md)
+by item name pins it exactly:
+
+| `+7` category | gamedata slot | count (disc = gamedata) | example items |
+|---|---|---|---|
+| `0x40` Weapon | weapon | 50 (incl. Ra-Seru tiers) ≥ 27 curated | Survival Knife, Mace |
+| `0x00` Body | armor | **20 = 20** | (every body armour) |
+| `0x20` Head | helmet | **15 = 15** | Warrior Seal, Royal Crown, Ra-Seru Helmet |
+| `0x60` Footwear | shoes | **16 = 16** | (every greave / shoe) |
+
+The disc "Head" bucket is *exactly* the 15 gamedata helmets (Legaia's
+seals / clips / crowns / bands / earring / helmet / plume), not a helmet +
+accessory mix — so there is no "helmet vs. ring vs. accessory" collision to
+resolve. (Weapon is the only non-1:1 category, because the disc enumerates the
+upgradeable Ra-Seru weapon as ~24 per-tier entries that the curated table
+collapses; every disc Weapon-slot item is still a weapon.) **None of the 77
+accessories ("Goods") appear in this table at all** — they are a separate
+system, so the `+7` byte was never meant to classify them; where the accessory
+records live is a distinct open thread, not a `+7` disambiguation problem.
+Pinned by the disc-gated `legaia-gamedata` test `equip_slots_vs_disc`.
 
 ## See also
 

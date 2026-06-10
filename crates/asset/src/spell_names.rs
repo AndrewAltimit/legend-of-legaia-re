@@ -90,6 +90,14 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
 /// So `0x44` = single enemy, `0x64` = all enemies, `0x06` = single ally,
 /// `0x26` = all allies. (Empty / internal-tier slots read `0x00`/`0x04`,
 /// decoding to single-enemy.) See [`docs/formats/spell-table.md`].
+///
+/// The model holds across the whole named player block and the six offensive
+/// Ra-Seru summons, with one documented exception: the revive Ra-Seru
+/// **Horn / "Resurrector"** (`0x9c`) carries an *enemy-side* `+2` byte (`0x24`,
+/// decoding to all-enemies) even though its effect revives all allies - the
+/// summon's projection plays toward the enemy field and the revive is
+/// special-cased by spell id. (Cross-checked in
+/// `legaia-gamedata::magic_vs_disc`.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpellTargetShape {
     /// Single enemy (bit `0x02` clear, `0x20` clear).

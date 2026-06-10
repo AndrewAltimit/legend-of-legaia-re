@@ -19,17 +19,23 @@ One battle-scene state (in `FUN_800513F0`, around `0x80051a50`) calls `FUN_8001F
   - If `(header >> 24) == 0x01` -> call `FUN_800198E0(payload_ptr)` (LoadImage).
   - If `(header >> 24) == 0x02` -> exit (explicit terminator).
   - Other types are skipped silently (the loop advances without uploading).
-- Returns once the terminator is hit. The `FUN_80026B4C` TMD register call that follows hooks the parsed TMD into the per-scene mesh pointer table at `0x8007C018 + idx*4`.
+- Returns once the terminator is hit. **It returns `param_1 + 1`** — a pointer to the word just past the terminating header, i.e. the start of the *next* region. The `FUN_80026B4C` TMD register call that follows hooks the parsed TMD into the per-scene mesh pointer table at `0x8007C018 + idx*4`.
 
 This is the path that uploads field NPC palettes to VRAM row 479 - they're plain PSX TIMs wrapped in type-0x01 chunks, dispatched only during battle init. See [`docs/formats/npc-palette.md`](../formats/npc-palette.md) for the cross-save corroboration and [`docs/formats/scene-bundles.md`](../formats/scene-bundles.md#streaming-tail---fun_8001fe70-walker) for the type-byte table.
+
+### Concatenated sub-streams (the "two-list" / continuation case)
+
+Some scene_tmd_stream entries hold **more than one** complete `[chunk0 TMD][type-0x01 TIM chunks][terminator]` sub-stream concatenated, each starting on a `0x800` (sector) boundary with zero padding filling the gap (`0006_town01`: sub-stream 0 at `0x0`, sub-stream 1 with its **own** leading TMD at `0x14000`; verified across the town01 / town0b / town0c clusters). The bytes earlier notes called a "continuation TIM list" are really the second sub-stream's TIM chunks — sub-stream 1 is self-contained, not a bare tail of sub-stream 0.
+
+`FUN_8001FE70` walks exactly **one** sub-stream. Its return value (`param_1 + 1`, past the terminator) lands on the next sub-stream's region, so a sector/slot-indexed caller can walk the rest by re-invoking the walker on that boundary. The single static caller `FUN_800513F0` (battle init) calls it **once** (the `s3 < 4` loop above the call is the 4-party-member setup, not a sub-stream loop), so in battle only sub-stream 0 is uploaded. The multi-sub-stream caller is the per-scene field/town dispatch (`FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`, overlay-resident / descriptor-driven), still capture-blocked. `legaia_asset::scene_tmd_stream::sub_streams` enumerates the blocks properly (each a full sub-stream with its own TMD); `battle_tim_chunks` reports sub-stream 0's TIMs as `Tail` and the later sub-streams' as `Continuation`. The engine's field-mode loader uses both to **skip** these battle-only TIMs (row-479 palettes aren't field-resident — matching retail).
 
 ## Field / town scene loader (`FUN_8001F7C0` + `FUN_800255B8`)
 
 The town/field scene-init chain. Builds paths under `DATA\FIELD\` and `h:\PROT\FIELD\<scene>\`. Each scene reserves **six file types** in CDNAME's per-scene block, and the loader walks the [scene asset table](../formats/scene-bundles.md) at the leading PROT entry to pull each file in turn.
 
-The on-disc form of the scene asset table is the canonical 7-typed-asset bundle (`07 00 00 00` lead). The descriptor offsets past the first are NOT file-relative - they index into the loader's runtime decompression buffer (e.g. `0031_izumi.BIN` is 96 KB but `desc[2].data_offset = 141 KB` lands inside the *decompressed* working buffer, not the source file).
+The on-disc form of the scene asset table is the canonical 7-typed-asset bundle (`07 00 00 00` lead). The descriptor offsets past the first are **file-relative against the loaded raw footprint** (= the bundle entry's extended on-disc footprint, `Archive::read_entry`), not relative to a decompressed working buffer: the walker hands `base + data_offset` to the dispatcher as the *source* of an independent LZS stream, which it then decompresses into a separate malloc'd target. The offsets routinely run past the TOC-indexed end into the trailing-overlay sectors the per-PROT TOC crops off (e.g. `0588_juui1.BIN`'s indexed view is 67584 B but `desc[4].data_offset` is 177413, valid against the 186368 B extended footprint). See [scene-bundles.md](../formats/scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) for the byte-level layout.
 
-Per-scene reference resolution is partial - many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain for any given scene is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher" but the precise indexing scheme is still under investigation for non-battle scenes.
+The asset chain for any given scene is "load the scene asset table, walk each descriptor, then load each typed sub-asset via the dispatcher." The slot-to-asset mapping itself is **positional + offset-based** and fully pinned (see the walker section below); what remains partial is the runtime *cross-reference stitching* between already-loaded sub-assets (e.g. a placed actor in the MAN naming a TMD-pack index), which the loader resolves from live pointers.
 
 ### WARP opcode → scene transition flow (map_id)
 
@@ -55,9 +61,18 @@ Distinct from the map-id door-warp above, the engine has a **name-based scene-ch
 
 The field VM reaches this packet through **opcode `0x3F`** (named scene-change), which carries the destination name *inline in the bytecode* (`[0x3F][i16 index][u8 name_len][name][entry_x][entry_z][dir]`) and calls `FUN_8001FD44(name, index)`. So most in-game scene transitions — including overworld town/dungeon entry, which a scene's controller script lists as a table of `0x3F` ops — carry a recoverable destination name; see [`world-map.md` → scene destinations](world-map.md#scene-destinations) and [`script-vm.md`](script-vm.md). (`0x3F` is not a dialog opcode, despite an older mislabel.)
 
-## Asset descriptor walker (`FUN_80020224`)
+## Asset descriptor walker (`FUN_80020224`) — the slot→asset mapping
 
 Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls the asset-type dispatcher per descriptor. Its sole runtime caller in retail is the town overlay's `FUN_801D6704` (MAIN_INIT) at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the walker IS exercised by retail gameplay, just not from a static call site inside `SCUS_942.54`.
+
+The mapping a scene loads is **positional** — there is no separate slot→asset indirection table; the descriptor's `data_offset` field *is* the indirection. The full chain, traced from the field init at `FUN_801D6704`:
+
+1. **`per_stage_init` (`FUN_8001E1B4`)** allocates a single 0x62C00-byte asset buffer once at boot and stores its base at `_DAT_8007b85c` (`FUN_80017888(0, 0x62c00)`).
+2. **`field_asset_loader` (`FUN_8001F7C0`)** reads the per-scene field FILE into a 0x14000-byte scratch (`_DAT_1f8003ec`); the decoded table is relocated so its count word lands at the asset-buffer base `_DAT_8007b85c`. (The efect bundle lands at `_DAT_1f8003ec + 0x12000` / `+0x12800`.)
+3. **`descriptor_pair_walker` (`FUN_80020224`)** reads `count = *base`, then for `slot in 0..count` it advances an 8-byte (2-word) cursor and calls `asset_type_dispatch(base + descriptor[slot].data_offset, descriptor[slot].type_size, scene, 0)`, OR-ing the per-slot return codes into a status word. Descriptors live at `base + 8 + slot*8`.
+4. **`asset_type_dispatch` (`FUN_8001F05C`)** splits `type = type_size >> 24` and `size = type_size & 0x00FF_FFFF`, then jumps via the dispatch table at `0x80010638 + type*4` (type bound: `< 0x15`). For LZS-payload types it `FUN_8001A55C`-decompresses from the `base + data_offset` source into a fresh malloc'd target.
+
+So **slot `i` ⇒ the `i`-th 8-byte descriptor; payload at `base + data_offset`; handler keyed by `type_size >> 24`.** `legaia_asset::scene_asset_table::resolve` returns the table plus the base it is relative to for **both** the bare variant (count word at offset 0) and the prescript-prefixed [`SceneScriptedAssetTable`](../formats/scene-bundles.md) variant (count word at a 0x800-aligned offset past the event prescript); `SceneAssetTable::slots` reproduces the positional walk and `SceneAssetTable::payload_range(slot, base)` resolves a slot's payload span. A disc-gated corpus test (`scene_asset_table_walk_real`) verifies the walk against every classified entry (88 bare + 79 scripted): the first slot anchors at `base + header_end` and every slot's type is a legal dispatcher type. The relocation into `_DAT_8007b85c` and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static resolver reconstructs the base structurally.
 
 ## CLUT-data scattering
 

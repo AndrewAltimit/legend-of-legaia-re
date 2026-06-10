@@ -228,9 +228,14 @@ against a battle RAM dump; the disc-only distinctness (battle Vahn geometry is
 absent from the field pack) is pinned by the disc-gated
 `battle_char_pack_real::battle_pack_is_distinct_from_field_pack`.
 
-Runtime `nobj` is +2 over disc (15/16/15 → 17/18/17): the same
-`FUN_8001EBEC` equipment-group patch the field form uses adds visible groups at
-battle setup.
+Runtime `nobj` is +2 over disc (15/16/15 → 17/18/17). **The source of the +2
+is not `FUN_8001EBEC`** (an earlier reading attributed it there; the decomp
+shows `FUN_8001EBEC` only *toggles* a transform, it adds no objects — see
+[10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap)).
+The mechanism that grows the object count by two at battle setup is a distinct,
+still-unpinned loader (the open **D-WEAP** thread: the external equipped-weapon
+mesh source); trace the battle-init obj-add path or exec-bp it under a battle
+capture.
 
 **The Baka Fighter minigame reuses this same pack.** Baka Fighter lets you play
 *as* Vahn / Noa / Gala, so it borrows the battle character models — its
@@ -319,7 +324,9 @@ files: `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
 
 At battle entry the party-setup overlay does three things to each party
 character: registers the 1204 mesh (`flags` 0→1, object-table pointers fixed to
-absolute RAM), patches in the equipment groups (`nobj` +2), and — crucially —
+absolute RAM), grows the visible object count by two (`nobj` +2; the source of
+those two objects is the unpinned **D-WEAP** loader — *not* `FUN_8001EBEC`,
+which only toggles a transform on an existing group), and — crucially —
 **rewrites every primitive's TSB (texpage) and CBA (CLUT) fields** to a packed
 per-party-slot runtime VRAM band. The TSB/CBA stored on disc are an **authoring
 layout** (the one the Baka Fighter minigame renders directly, with the bundled
@@ -545,13 +552,28 @@ walked as-is samples the authoring pages and renders incoherently.
 
 ### Equipment groups (battle only)
 
-A live battle character carries +2 `nobj` over the disc form (Vahn 15→17).
-The equipment swap (`FUN_8001EBEC`, the same mechanism the field pack uses)
-replaces several visible groups at battle setup; the replacement geometry
-(the equipped weapon/gear) is **not present in the 1204 TMD** — it is sourced
-externally (a separate weapon mesh), so the in-battle silhouette differs from
-both the unarmed disc form and the Baka Fighter form (a fist-fight, which
-keeps the unarmed mesh). The external weapon-mesh source is an open thread.
+A live battle character carries +2 `nobj` over the disc form (Vahn 15→17),
+so the in-battle silhouette differs from both the unarmed disc form and the
+Baka Fighter form (a fist-fight, which keeps the unarmed mesh). The
+equipped-weapon/gear geometry behind that `+2` is **not present in the 1204
+TMD** — it is sourced externally (a separate weapon mesh). That external
+source is an open thread.
+
+`FUN_8001EBEC` is **not** that loader, and it does **not** grow `nobj`. The
+decomp ([`8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt); see also
+[§ 10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap))
+shows it loops over the three party slots and, per a per-character
+equipment-condition byte, copies a **28-byte (7 × u32) transform** from one of
+two *in-TMD* group templates (group 10 at `TMD+0x124` for "equipped" ↔ group 11
+at `TMD+0x140` for "unequipped") **into an existing visible group descriptor**
+(`group[selector] = base + 0xC + sel*0x1C`, `sel ∈ {0,3,5}`). It writes seven
+words (`puVar1[0..6]`) and **never touches the object/group count** — a binary
+pose toggle on geometry already in the disc 1204 pack, not an object add and not
+an external-mesh upload. So the runtime `nobj` +2 and the external `+2` weapon
+objects come from a distinct, still-unpinned mechanism; the earlier "the
+equipment swap `FUN_8001EBEC` sources it / adds the groups" framing conflated
+the two. Next disc-doable step: trace the battle-init obj-add path (a sibling of
+`FUN_8001E890`) that raises the count, or exec-bp it under a clean battle capture.
 
 ### On-disc layout (PROT 1204)
 

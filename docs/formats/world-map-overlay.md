@@ -652,7 +652,7 @@ purpose ("render the world-map wireframe") is no longer valid:
 |---|---|
 | `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Container PNG renderer. `--style row\|col\|pairs\|grid\|points` toggles between topology interpretations; `--axes xz\|xy\|zy` switches projection plane; `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <bin>` renders a previously-dumped slot-4 payload. |
 | `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4` | Per-body inventory dump (counts, ranges, kind / flag_a). |
-| `legaia_asset::world_map_overlay::{parse, top_down_lines, record_points, body_axis_range}` | Rust API. |
+| `legaia_asset::world_map_overlay::{parse, top_down_lines, wireframe_segments_3d, record_points, body_axis_range}` | Rust API. `wireframe_segments_3d` emits the full-3D segment list (group-polyline topology, all three model-space coordinates kept) the live-engine inspection overlay consumes. |
 | `scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_dump_slot4.lua` | PCSX-Redux closed-loop dumper: loads a save state, dumps the live slot-4 RAM region, quits. |
 | `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Full 2 MiB main RAM dump. Use when the load base is unknown for a new build / state - signature-scan the dump for the 64-byte outer pack prefix. |
 | `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare a RAM dump against the disc-decoded payload. |
@@ -662,6 +662,19 @@ interpretation is falsified). The WASM exports
 (`slot4_wireframe_lines` / `slot4_wireframe_points` /
 `slot4_wireframe_bounds`) remain available to re-enable a slot-4 draw
 if a future RE pass identifies the correct interpretation.
+
+**Live-engine inspection overlay.** The clean-room engine decodes slot 4
+for every world-map scene onto `SceneResources::world_map_slot4` (resolved
+only for `SceneLoadKind::WorldMap`; `None` everywhere else). When
+`LEGAIA_WORLDMAP_SLOT4=1` is set, `legaia-engine play-window` builds a
+`LineList` from `wireframe_segments_3d` and merges it into the world-map
+overlay-lines buffer (colour-keyed by body `kind`), so the decoded
+vertex pool can be inspected in the live 3D view under the real camera /
+fog. This is an inspection overlay, not faithful geometry: the segments
+use the group-polyline topology convention, and the records are drawn at
+their raw object-local coordinates because the per-object placement
+transform (and the true triangle topology) lives in the unpinned
+cluster-A command stream described above. Off by default.
 
 ### Slot-4 loader (loader-hunt probe)
 

@@ -48,6 +48,17 @@ byte is `0x04`: that has `0x40` clear yet they are enemy-targeting monster
 attacks. The `0x02` / low-nibble reading classifies `0x04` as enemy-side,
 matching their role.)
 
+The model holds across the whole named player block and the six offensive
+Ra-Seru summons. One documented exception: the revive Ra-Seru **Horn /
+"Resurrector"** (`0x9c`) carries an *enemy-side* `+2` byte (`0x24` → all
+enemies) even though its effect revives all allies — the summon's projection
+plays toward the enemy field, and the revive is special-cased by spell id. The
+`legaia-gamedata::magic_vs_disc` oracle joins the curated magic chart to this
+table by name and verifies MP (byte-exact for all 21 Seru + 7 Ra-Seru joins;
+it pinned and corrected one curated target error, Mushura / "Crazy Driver" =
+single-enemy) plus target shape (agreeing everywhere except the Horn
+exception, which it checks explicitly).
+
 Decoded by `legaia_asset::spell_names::SpellEntry::target_shape`
 (`SpellTargetShape`). The engine sources the player Seru-magic catalog's MP +
 target from the user's `SCUS_942.54` via
@@ -63,7 +74,9 @@ to the pinned `retail_seru_magic_catalog` on a disc-free build); the disc-gated
 | `0x00..=0x24` | internal enemy-attack tiers; **empty inline name pointers** (see below) |
 | `0x25..=0x7f` | **named monster attacks** (`Fire Breath` `0x25`, `Tail Fire` `0x27`, …) + capture-class spells (`'c'` at `+0`) |
 | `0x80` | "Flip Frog" — boundary entry below the player block (`mp`/`anim` both 0), not part of the sequential set |
-| `0x81..=0x8b` | **player Seru-magic** — 11 named summon spells, `anim` ids `0x25..=0x2f` |
+| `0x81..=0x8b` | first 11 **player Seru-magic** spells — the engine-pinned block (`retail_magic::SERU_MAGIC`), `anim` ids `0x25..=0x2f` |
+| `0x8c..=0x95` | the rest of the player Seru-magic spells: the named block actually runs `0x81..=0x95`, the **21** curated `seru`-family entries (`Gimard` … `Gilium`), every MP byte-exact |
+| `0x9a..=0xa0` | **Ra-Seru summons** — `Palma`, `Mule`, `Horn`, `Jedo`, `Meta`, `Terra`, `Ozma` (egg-derived; the hidden 8th, `Juggernaut`, is not in this contiguous named region) |
 
 The `0x00..=0x24` records carry MP / element / target but their `name_ptr` is an
 empty string. These are **not** the ids a monster's archive spell entries store

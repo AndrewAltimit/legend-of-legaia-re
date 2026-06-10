@@ -10,7 +10,20 @@
 //! - `scan-prot --disc <PATH> [--cdname <PATH>]`: walk every PROT.DAT entry,
 //!   detect scene-event-scripts containers, and print every FMV trigger
 //!   (`0x4C 0xE2`) found, annotated with the CDNAME label of the enclosing
-//!   PROT entry. This is the "lift the per-scene MV index" workflow.
+//!   PROT entry.
+//!
+//! CAVEAT (`scene-event-scripts` / `scan-prot`): the prescript records are NOT
+//! field-VM (`FUN_801DE840`) bytecode — they are a word-aligned (16-bit)
+//! per-scene actor/event command structure (see
+//! `legaia_asset::scene_event_scripts`). Walking them as field-VM yields a
+//! 65–88 % `decode error` rate with only COINCIDENTAL opcode matches: a
+//! word-table byte that happens to equal `0x3F`/`0x3E`/`0x4C` reads as a
+//! phantom SceneChange / Interact / MenuCtrl, so any FMV trigger (`0x4C 0xE2`)
+//! reported inside a prescript record is a FALSE POSITIVE. The genuine
+//! per-scene field-VM scripts live in the scene MAN sub-asset
+//! (`legaia_asset::man_section`); see `docs/subsystems/script-vm.md`. These
+//! modes are retained as a diagnostic that the records do not decode as
+//! field-VM, not as a per-scene MV-index lift (that remains capture-blocked).
 //!
 //! In any mode, `--fmv-only` filters the output to FMV trigger lines only.
 

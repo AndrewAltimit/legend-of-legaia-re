@@ -104,7 +104,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B38C` | Path prefix `"sound\"` for streaming-asset loads. |
 | `0x8007B394` | `".spk"` extension. |
 | `0x8007B39C` | `".LZS"`. |
-| `0x8007B3A4` | Two 4-byte mode descriptors used by `FUN_8001EBEC`. |
+| `0x8007B3A4` | Equipment-swap selector tables for `FUN_8001EBEC` (3 equip-condition byte-offsets at `+0x00` + 3 patched-group indices at `+0x04`); adjacent to the sound path-string cluster in BSS but not sound data. See [character-mesh.md](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap). |
 | `0x8007B3AC` | `"bse.dat"` master file name. |
 | `0x8007B3B4` | `".dpk"`. |
 | `0x8007B3BC` | `".MAP"`. |
@@ -113,7 +113,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B3DC` | `"STR"`. |
 | `0x8007B7F8` | sin lookup table. |
 | `0x8007B81C` | cos lookup table. |
-| `0x8007B824` | u32 | Mode index read by `FUN_8001EBEC`. |
+| `0x8007B824` | u32 | Party base index into `DAT_8007C018` (see the fuller entry below); read by `FUN_8001EBEC` to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]`. (Earlier "sound mode index" reading was wrong.) |
 | `0x8007B840` | MOVE2 buffer base. |
 | `0x8007B888` | MOVE buffer base. |
 | `0x8007B8D0` | u32 | `bse.dat` master bank pointer (0x1800-byte buffer). |

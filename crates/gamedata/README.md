@@ -27,7 +27,12 @@ and surfaces them through a stable API.
 Data is mined from two public GameFAQs walkthroughs (Tan Yong Hua 1999,
 Psycho Penguin 2001) and cross-validated. See
 [`data/gamedata/README.md`](../../data/gamedata/README.md) for full
-provenance and the cross-validation invariants the test suite enforces.
+provenance. The curated tables are checked against the user's disc by a set
+of disc-gated oracles (item prices, equipment slots, enemy stats, magic,
+shop inventories, casino prizes) - each joins a curated table to its
+authoritative on-disc source and asserts the numeric fields byte-exact; the
+enumerated invariants are in
+[`docs/reference/gamedata.md`](../../docs/reference/gamedata.md).
 
 ## Library API
 

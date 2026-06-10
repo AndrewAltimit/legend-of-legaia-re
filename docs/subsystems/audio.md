@@ -1,18 +1,19 @@
 # Audio
 
-Three layers: the path-string cluster that builds audio file paths, the SCUS dispatchers that consume them, and the actual audio formats (VAB sound banks + the still-TBD `.dpk / .MAP / .PCH / .spk / .pac` family).
+Three layers: the path-string cluster that builds audio file paths, the SCUS dispatchers that consume them, and the actual audio formats (VAB sound banks + SEQ sequences; the per-scene `.dpk` / `sound_data2` pack is now decoded as a [VAB + SEQ bundle](../formats/sound-driver.md#the-dpk--sound_data2-payload-is-a-vab--seq-bundle), with the `.MAP` / `.PCH` / `.spk` / `.pac` PsyQ intermediates not present as separate retail chunks).
 
 ## Path-string cluster
 
 The string cluster at `0x8007B380` holds the file extensions the sound subsystem appends to scene-asset paths. Full layout in [`formats/sound-driver.md`](../formats/sound-driver.md). Eight extensions in the cluster: `.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat` (master file).
 
-## Three SCUS consumers
+## SCUS consumers
 
 | Function | Role |
 |---|---|
 | `FUN_8001FA88` | **Sound subsystem init / `.dpk` loader.** Loads `bse.dat` master bank, then per-scene `.dpk` from `h:\main\bg\domepack\…`. |
 | `FUN_8001FC00` | **Streaming-asset loader.** Builds paths under the `sound\` prefix; the XA / `.pac` / `STR` consumer. |
-| `FUN_8001EBEC` | **Mode-aware extension dispatcher.** Reads `_DAT_8007B824` as a mode index, then uses small per-mode tables to pick which extension to hit. |
+
+`FUN_8001EBEC` was previously listed here as a third "mode-aware extension dispatcher"; that is a misread. The decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads `DAT_8007C018[_DAT_8007B824 + 0..2]`, the loaded battle-character TMD pointers), not a sound consumer - see [`formats/sound-driver.md`](../formats/sound-driver.md#consumers) and [`formats/character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap).
 
 Both `FUN_8001FA88` and `FUN_8001FC00` carry a dev/retail split via `_DAT_8007B8C2`. The dev branch loads via PROT indices directly; the retail branch uses dev-style paths through `FUN_8003E6BC` (the path-based opener that resolves `h:\main\bg\domepack\…` into the appropriate PROT entry through the [CDNAME-driven name map](../formats/cdname.md)). Both paths land at the same files.
 

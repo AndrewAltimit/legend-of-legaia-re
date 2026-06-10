@@ -108,3 +108,54 @@ fn town01_slot6_single_list_only() {
         assert_eq!(c.source, WalkSource::Tail);
     }
 }
+
+#[test]
+fn town01_two_substreams_each_with_own_tmd() {
+    // The corrected structural model: `0006_town01` is not "one list + a
+    // continuation TIM tail" but TWO complete `[chunk0 TMD][TIMs][terminator]`
+    // sub-streams concatenated, each 0x800-sector-aligned and carrying its
+    // OWN leading TMD. (The "continuation" TIMs at 0x16c24/0x1ee48 belong to
+    // sub-stream 1, which starts with its own TMD at 0x14000.)
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    let path = prot_dir.join("0006_town01.BIN");
+    if !path.exists() {
+        eprintln!("[skip] {} missing", path.display());
+        return;
+    }
+    let raw = std::fs::read(&path).expect("read 0006_town01");
+
+    let subs = scene_tmd_stream::sub_streams(&raw);
+    assert_eq!(
+        subs.len(),
+        2,
+        "0006_town01 holds two concatenated sub-streams"
+    );
+
+    // Sub-stream 0 at offset 0, leading TMD body 0x383c.
+    assert_eq!(subs[0].base, 0);
+    assert_eq!(subs[0].stream.tmd_size, 0x383c);
+
+    // Sub-stream 1 starts on the next sector boundary (0x14000) with its OWN
+    // TMD (body 0x2c20) — proving it is a self-contained scene_tmd_stream,
+    // not a bare TIM tail of sub-stream 0.
+    assert_eq!(subs[1].base, 0x14000, "second sub-stream is sector-aligned");
+    assert_eq!(subs[1].base % 0x800, 0, "sub-streams are 0x800-aligned");
+    assert_eq!(subs[1].stream.tmd_size, 0x2c20);
+
+    // The leading TMD of each sub-stream parses as a real Legaia TMD.
+    for s in &subs {
+        let tmd_abs = s.base + 4;
+        let magic = u32::from_le_bytes(raw[tmd_abs..tmd_abs + 4].try_into().unwrap());
+        assert_eq!(
+            magic, 0x8000_0002,
+            "each sub-stream opens with a Legaia TMD"
+        );
+    }
+}
