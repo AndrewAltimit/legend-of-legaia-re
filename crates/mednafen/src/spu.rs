@@ -166,8 +166,13 @@ impl<'a> PsxSpu<'a> {
         self.u32_entry("BlockEnd")
     }
 
-    /// Reverb mode register (libspu `SpuCommonAttr.reverb` width). Mednafen
-    /// stores this as a u32 even though the libspu API takes a u8.
+    /// Mednafen's `Reverb_Mode` sub-entry. **Despite the name this is not a
+    /// libspu mode byte (0..9)** — it is the 24-bit per-voice reverb-enable
+    /// register (`EON`), byte-for-byte equal to [`Self::voice_reverb_mask`]
+    /// across every captured state (mednafen mirrors `EON` here as well as in
+    /// the `Regs` shadow). Prefer [`Self::voice_reverb_mask`]; this accessor
+    /// is kept for callers reading the named field directly. The actual reverb
+    /// *preset* is identified from [`Self::reverb_registers`].
     pub fn reverb_mode(&self) -> Option<u32> {
         self.u32_entry("Reverb_Mode")
     }
@@ -176,6 +181,74 @@ impl<'a> PsxSpu<'a> {
     /// the PSX hardware spec.
     pub fn spu_control(&self) -> Option<u16> {
         self.u16_entry("SPUControl")
+    }
+
+    /// Master reverb enable (`SPUCNT` bit 7). When clear the SPU mutes the
+    /// reverb network entirely regardless of per-voice routing, so a voice
+    /// can carry a `reverb_send` bit ([`Self::voice_reverb_mask`]) yet
+    /// produce no echo. `None` if the control register wasn't captured.
+    pub fn reverb_master_enabled(&self) -> Option<bool> {
+        Some(self.spu_control()? & 0x0080 != 0)
+    }
+
+    /// Raw SPU register shadow file. Mednafen stores the 0x1F801C00..0x1F801E00
+    /// register window as 256 `u16` (512 bytes) under the `Regs` sub-entry,
+    /// indexed `Regs[(addr & 0x1FF) >> 1]`. Most named globals
+    /// ([`Self::spu_control`], voice on/off) are mirrored here; a few
+    /// registers (the per-voice reverb-enable mask `EON`) are *only* here.
+    pub fn regs(&self) -> Option<&'a [u8]> {
+        let b = self.entry_bytes("Regs")?;
+        if b.len() < 512 { None } else { Some(b) }
+    }
+
+    /// Read one 16-bit SPU register by its hardware address (e.g. `0x1F801D98`
+    /// for `EON` low). Returns `None` if `Regs` is absent.
+    fn reg_u16_at(&self, hw_addr: u32) -> Option<u16> {
+        let regs = self.regs()?;
+        let idx = ((hw_addr & 0x1FF) >> 1) as usize;
+        let off = idx * 2;
+        Some(u16::from_le_bytes([regs[off], regs[off + 1]]))
+    }
+
+    /// The 32 reverb coefficient/address registers (SPU `0x1F801DC0..0x1F801DFF`,
+    /// `Regs[224..256]`) in hardware order: `[dAPF1, dAPF2, vIIR, vCOMB1..4,
+    /// vWALL, vAPF1, vAPF2, mLSAME, mRSAME, mLCOMB1, mRCOMB1, mLCOMB2,
+    /// mRCOMB2, dLSAME, dRSAME, mLDIFF, mRDIFF, mLCOMB3, mRCOMB3, mLCOMB4,
+    /// mRCOMB4, dLDIFF, dRDIFF, mLAPF1, mRAPF1, mLAPF2, mRAPF2, vLIN, vRIN]`.
+    /// This is exactly the layout the engine's reverb presets store, so the
+    /// block can be matched directly against a known libspu preset to recover
+    /// which reverb *mode* a capture was running. `None` if `Regs` is absent.
+    pub fn reverb_registers(&self) -> Option<[u16; 32]> {
+        let regs = self.regs()?;
+        let mut out = [0u16; 32];
+        let base = 224 * 2; // SPU 0x1F801DC0
+        for (i, slot) in out.iter_mut().enumerate() {
+            let off = base + i * 2;
+            *slot = u16::from_le_bytes([regs[off], regs[off + 1]]);
+        }
+        Some(out)
+    }
+
+    /// Reverb work-area base address (`mBASE`, SPU `0x1F801DA2`), the SPU-RAM
+    /// offset where the reverb buffer starts. The work-area *size* is
+    /// `0x80000 - mBASE*8`; matching it against a preset's `size` corroborates
+    /// the coefficient-register preset match. Read from the named `ReverbWA`
+    /// entry. `None` if not captured.
+    pub fn reverb_work_area(&self) -> Option<u32> {
+        self.u32_entry("ReverbWA")
+    }
+
+    /// Per-voice reverb-send enable mask (`EON`, SPU registers
+    /// `0x1F801D98`/`0x1F801D9A`). Bit `n` set ⇒ voice `n`'s output is fed
+    /// into the reverb network (libspu `SpuSetVoiceReverb` / the engine's
+    /// [`engine_audio::spu::voice::Voice::set_reverb_send`]). This is the
+    /// routing the live engine never sets; reading it from a real cast tells
+    /// us which voices retail actually reverbs. Only the low 24 bits are
+    /// meaningful. `None` if the register shadow wasn't captured.
+    pub fn voice_reverb_mask(&self) -> Option<u32> {
+        let lo = self.reg_u16_at(0x1F80_1D98)? as u32;
+        let hi = self.reg_u16_at(0x1F80_1D9A)? as u32;
+        Some((lo | (hi << 16)) & 0x00FF_FFFF)
     }
 
     /// Master volume `(left, right)` as the current accumulated output of
@@ -391,6 +464,42 @@ mod tests {
         assert_eq!(spu.reverb_mode(), Some(7));
         assert_eq!(spu.spu_control(), Some(0xC000));
         assert_eq!(spu.master_volume(), Some((0x3F00, 0x3F00)));
+    }
+
+    #[test]
+    fn voice_reverb_mask_reads_eon_from_regs() {
+        // EON low (0x1F801D98) = Regs[204], high (0x1F801D9A) = Regs[205].
+        // SPUControl shadow (0x1F801DAA) = Regs[213]; verify the index math
+        // by also checking reverb_master_enabled (SPUCNT bit 7).
+        let mut regs = vec![0u8; 512];
+        // voices 1 and 3 reverb-enabled (low half), voice 16 (high half).
+        regs[204 * 2..204 * 2 + 2].copy_from_slice(&0x000Au16.to_le_bytes());
+        regs[205 * 2..205 * 2 + 2].copy_from_slice(&0x0001u16.to_le_bytes());
+        let payload = build_save_with_spu(&[
+            ("Regs", regs),
+            ("SPUControl", 0xC080u16.to_le_bytes().to_vec()),
+        ]);
+        let save = SaveState::from_decompressed(payload).unwrap();
+        let spu = PsxSpu::new(&save);
+        assert_eq!(
+            spu.voice_reverb_mask(),
+            Some((1 << 1) | (1 << 3) | (1 << 16))
+        );
+        assert_eq!(spu.reverb_master_enabled(), Some(true));
+    }
+
+    #[test]
+    fn reverb_master_disabled_when_bit_clear() {
+        let payload = build_save_with_spu(&[("SPUControl", 0x4000u16.to_le_bytes().to_vec())]);
+        let save = SaveState::from_decompressed(payload).unwrap();
+        assert_eq!(PsxSpu::new(&save).reverb_master_enabled(), Some(false));
+    }
+
+    #[test]
+    fn voice_reverb_mask_absent_regs_returns_none() {
+        let payload = build_save_with_spu(&[("SPUControl", 0xC080u16.to_le_bytes().to_vec())]);
+        let save = SaveState::from_decompressed(payload).unwrap();
+        assert!(PsxSpu::new(&save).voice_reverb_mask().is_none());
     }
 
     #[test]

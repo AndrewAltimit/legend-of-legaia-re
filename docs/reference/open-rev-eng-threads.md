@@ -569,6 +569,27 @@ The piece poses `R·v + T` about its own object origin (no centroid subtraction)
 
 **Distinct ANM kind (not this one):** `FUN_80021DF4`'s `+0x5A == 6` block uses a separate 24-byte-per-bone keyframe layout — see [`anm.md`](../formats/anm.md).
 
+## Audio
+
+| Thread | Status | What would close it | Memory |
+|---|---|---|---|
+| SPU reverb live routing (C7-REVERB) | resolved (Studio C, global) — engine wiring is the only residual | [details ↓](#spu-reverb-live-routing-c7-reverb) | `project_seq_sequencer.md` |
+
+
+### SPU reverb live routing (C7-REVERB)
+
+*Status:* resolved — retail runs **`Studio C`, master-enabled, globally**; the "selective per-cue reverb-enable source" the hunt was looking for does not exist.
+
+A pure-Rust read of the save-state corpus (no live probe) settled it. `legaia_mednafen::PsxSpu` reads the SPU register shadow (`Regs` block): `reverb_master_enabled` (`SPUCNT` bit 7), `reverb_registers` (the 32 reverb coefficient/address registers at `0x1F801DC0..0x1F801DFF`), and `voice_reverb_mask` (the per-voice `EON` enable at `0x1F801D98`/`0x9A` — which mednafen also mirrors under its `Reverb_Mode` sub-entry, a byte-for-byte cross-check across every state). CLI: `mednafen-state spu <state>`.
+
+Across all 45 mednafen states (field / town / battle / summon / title / minigames):
+
+- **Master reverb is always enabled** (`SPUCNT` bit 7 set everywhere). No scene toggles it.
+- **The preset is `Studio C` everywhere** — the 32-register block is byte-identical in every state and matches the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`engine_audio::ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block → `StudioC`.
+- **Per-voice reverb-send (`EON`) is broad** — 15–22 of 24 voices in any state, BGM + SFX alike. Reverb is the default routing, not a per-cue effect.
+
+So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace. The engine matches retail by selecting `ReverbMode::StudioC` once at SPU init and routing voices into reverb by default. The only residual is the live engine wiring (mode select + default `reverb_send`) and the separately-set output depth (`SpuSetReverbDepth`, `vLIN`/`vROUT`). Falsifies the earlier "Spirit-Arts / echo cues opt in, everything else dry" reading in [`audio.md`](../subsystems/audio.md#retail-reverb-routing--studio-c-always-on-capture-confirmed).
+
 ## Title / boot / overlays
 
 | Thread | Status | What would close it | Memory |
