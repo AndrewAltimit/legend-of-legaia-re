@@ -34,7 +34,8 @@ use std::path::PathBuf;
 
 use legaia_engine_shell::vram_oracle::{
     NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
-    compute_static_mask, first_static_upload_divergence, load_runtime_vram_from_save,
+    clear_world_map_clut_cycle_rows, compute_static_mask, first_static_upload_divergence,
+    load_runtime_vram_from_save, refine_mask_with_shared_band,
 };
 use legaia_mednafen::ScenarioManifest;
 
@@ -132,6 +133,32 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
         return;
     }
 
+    // The shared effect-texture band (befect_data) is one global disc source
+    // resident across every field scene, with a few history-dependent pixels
+    // (battle entry re-uploads the disc bytes over a boot-resident variant).
+    // A per-scene mask misclassifies those as static when a scene's captures
+    // share battle history, so pool EVERY capture - across all scenes, the
+    // single-capture ones included - as cross-scene dynamism evidence for
+    // cells inside the band's rects.
+    let all_runtimes: Vec<Vec<u8>> = by_scene
+        .values()
+        .flatten()
+        .map(|(label, path)| {
+            load_runtime_vram_from_save(path)
+                .unwrap_or_else(|e| panic!("({label:?}): load VRAM: {e:#}"))
+        })
+        .collect();
+    let all_refs: Vec<&[u8]> = all_runtimes.iter().map(|v| v.as_slice()).collect();
+    let shared_band_rects = {
+        let prot = std::fs::read(extracted.join("PROT.DAT")).expect("read PROT.DAT");
+        let cdname =
+            std::fs::read_to_string(extracted.join("CDNAME.TXT")).expect("read CDNAME.TXT");
+        let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))
+            .expect("build ProtIndex");
+        legaia_engine_core::scene::effect_texture_image_rects(&index)
+            .expect("befect effect-texture rects")
+    };
+
     let mut failures = Vec::new();
     for (scene_name, captures) in &multi {
         let engine_bytes = build_engine_vram_bytes_prepass(scene_name, &extracted, None)
@@ -145,7 +172,14 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
             })
             .collect();
         let refs: Vec<&[u8]> = runtimes.iter().map(|v| v.as_slice()).collect();
-        let mask = compute_static_mask(&refs);
+        let mut mask = compute_static_mask(&refs);
+        refine_mask_with_shared_band(&mut mask, &shared_band_rects, &all_refs);
+        // World-map scenes: the walk-view runtime animates segments of the
+        // kingdom terrain CLUT rows (palette cycling), so their resident
+        // words are animation phase, not static texture.
+        if legaia_engine_core::scene::is_world_map_scene(scene_name) {
+            clear_world_map_clut_cycle_rows(&mut mask);
+        }
 
         // The static mask is only trustworthy when the captures are genuinely
         // DIFFERENT same-scene states (town01 pre/post-battle differs ~40% of

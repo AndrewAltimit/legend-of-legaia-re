@@ -2427,19 +2427,7 @@ pub fn upload_effect_textures_into_vram(
     vram: &mut legaia_tim::Vram,
     upload_clut: bool,
 ) -> Result<usize> {
-    let raw = index
-        .entry_bytes(PROT_BEFECT_DATA_ENTRY)
-        .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
-    let container = legaia_asset::parse_player_lzs(&raw, 3)
-        .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
-    let section = container
-        .descriptors
-        .get(BEFECT_ETIM_SECTION)
-        .ok_or_else(|| {
-            anyhow::anyhow!("befect_data has no section {BEFECT_ETIM_SECTION} (etim)")
-        })?;
-    let decoded = legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)
-        .with_context(|| format!("LZS-decode befect_data section {BEFECT_ETIM_SECTION} (etim)"))?;
+    let decoded = befect_etim_section_bytes(index)?;
     let mut uploaded = 0;
     for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
         match legaia_tim::parse(&decoded[target.offset..]) {
@@ -2473,6 +2461,51 @@ pub fn upload_effect_textures_into_vram(
         anyhow::bail!("etim section carried no uploadable TIMs");
     }
     Ok(uploaded)
+}
+
+/// Decoded `befect_data` (PROT 874) etim-section bytes - the shared
+/// effect-texture TIM pool [`upload_effect_textures_into_vram`] and
+/// [`effect_texture_image_rects`] both walk.
+fn befect_etim_section_bytes(index: &ProtIndex) -> Result<Vec<u8>> {
+    let raw = index
+        .entry_bytes(PROT_BEFECT_DATA_ENTRY)
+        .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
+    let container = legaia_asset::parse_player_lzs(&raw, 3)
+        .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
+    let section = container
+        .descriptors
+        .get(BEFECT_ETIM_SECTION)
+        .ok_or_else(|| {
+            anyhow::anyhow!("befect_data has no section {BEFECT_ETIM_SECTION} (etim)")
+        })?;
+    legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)
+        .with_context(|| format!("LZS-decode befect_data section {BEFECT_ETIM_SECTION} (etim)"))
+}
+
+/// VRAM image rects `(fb_x, fb_y, width_in_words, height)` of the
+/// `befect_data` effect-texture TIMs - the upload set of
+/// [`upload_effect_textures_into_vram`].
+///
+/// The band is **global shared state**, not per-scene texture: one disc
+/// source is resident across every field scene, and retail re-uploads it at
+/// battle entry. A handful of its pixels are *history-dependent* - a freshly
+/// booted game holds a variant that differs from the disc copy until a battle
+/// re-uploads the disc bytes (pinned at `(853, 271)`: pre-battle and menu
+/// captures hold `0xFFFF` words where the disc TIM carries `0x3333`; a
+/// post-battle capture of the same scene holds the disc value). A per-scene
+/// static mask misclassifies those pixels as static whenever a scene's
+/// captures share battle history, so the VRAM parity oracle uses these rects
+/// to demand staticity across **all** scenes' captures instead.
+pub fn effect_texture_image_rects(index: &ProtIndex) -> Result<Vec<(u16, u16, u16, u16)>> {
+    let decoded = befect_etim_section_bytes(index)?;
+    let mut rects = Vec::new();
+    for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+        if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
+            let img = &tim.image;
+            rects.push((img.fb_x, img.fb_y, img.fb_w, img.h));
+        }
+    }
+    Ok(rects)
 }
 
 /// Upload the battle effect-texture atlas (PROT 870, the "flame atlas") into

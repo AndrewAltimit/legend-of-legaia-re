@@ -484,6 +484,26 @@ and the gap was an oracle artifact (the lightweight pre-pass skipped that step; 
 
 **Minor residue (open):** `x=896..1024, y=256` (~12k) is the character/party-texture region uploaded by the battle/character targeted-CLUT pass the field pre-pass excludes by design (the CLUT-scattering thread), plus ~2.5k UI residue.
 
+**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the `befect_data` band is **global, history-dependent** state — a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes (pinned at `(853,271)`: pre-battle/menu captures hold `0xFFFF` words, the disc TIM and every post-battle capture hold `0x3333`), so same-lineage captures misclassify them as static; the oracle now demands cross-scene staticity inside `scene::effect_texture_image_rects`. (2) the world-map walk view **palette-cycles** the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS` excludes them for world-map scenes (see the two open threads below).
+
+
+### World-map CLUT cycling beyond the ocean head — rows 508/509 + generated row-506 tail
+
+*Status:* open (effects pinned from captures; sources unlocated)
+
+The row-506 **head** (entries 0..15) is the documented 13-frame ocean CLUT animation (`legaia_asset::ocean`, engine-implemented — see [`world-map.md`](../subsystems/world-map.md) "Ocean animation"); a capture holds an arbitrary phase, never the disc base CLUT.
+Capture evidence (map01 overworld vs field-menu states) shows the runtime rewrites **more** than that head: rows 508 and 509 each cycle a few entries in place (shoreline shimmer inside the mountain/forest terrain palettes), and row 508's entries 32..47 mirror the live frame of its own 0..15 head.
+Row 506's tail (entries ~40..47) additionally holds a **runtime-generated palette** — pure-channel BGR555 combos (B/G/BG/R/BR/GR at intensity `0x11`) present in **no** disc bundle (all 7 kingdom-bundle slots of PROT 0085 + the PROT 0093 overview pack swept).
+
+Open: whether the 508/509 entries + the 32..47 mirror ride the same 13-frame ocean DMA (a wider rect?) or a sibling writer; and the writer + purpose of the generated tail palette (marker/route colours?). VRAM writes aren't RAM-watchable; needs a GPU `LoadImage`-level trace or an overlay sweep for CLUT-row rect constants (`y = 506/508/509`). Engine residue: `play-window` animates the row-506 ocean head only; the exact retail cadence is also still unpinned.
+
+
+### `befect_data` boot-variant pixels — who uploads the `0xFFFF` row?
+
+*Status:* open
+
+A freshly booted game holds a variant of the `befect_data` effect-texture band whose row-271 pixels (fb_x 852 page) read `0xFFFF` where the disc TIM (PROT 0874 §2) carries `0x3333`; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the `F`-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the `F`-variant (a different disc copy? an effect rendering into the page?).
+
 
 ### Scene-transition (`0x3F` door) destination indexing
 

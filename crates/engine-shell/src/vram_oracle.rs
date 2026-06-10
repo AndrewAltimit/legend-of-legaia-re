@@ -216,6 +216,65 @@ pub fn first_texpage_divergence(engine: &[u8], runtime: &[u8]) -> Option<Texpage
 /// band; the bulk texture region is byte-exact on every uploaded static pixel.
 pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 
+/// CLUT rows the **world-map walk-view runtime rewrites** (water / shoreline
+/// palette cycling). The kingdom bundle's slot-0 terrain atlas declares its
+/// CLUTs on rows 506..=509. Row 506's 16-entry head is the documented
+/// **13-frame ocean CLUT animation** (`legaia_asset::ocean`,
+/// `docs/subsystems/world-map.md` "Ocean animation") - retail DMAs a
+/// precomputed frame over it each step, so a capture holds an arbitrary
+/// animation phase, never the disc base CLUT. Capture evidence shows the
+/// cycling reaches beyond that head: rows 508 / 509 each carry a few animated
+/// entries (shoreline shimmer inside the terrain palettes), row 508's entries
+/// 32..47 mirror the live frame of its own 0..15 head, and row 506's tail
+/// (entries ~40..47) holds a runtime-*generated* palette (pure-channel
+/// colours present in no disc bundle - writer unidentified, see
+/// `docs/reference/open-rev-eng-threads.md`). The resident words are
+/// animation phase, not static scene texture, so the static-mask oracle
+/// excludes these rows for world-map scenes - same reasoning as
+/// [`NPC_CLUT_BAND_ROWS`]. Row 507 (a non-animated terrain-page CLUT) stays
+/// asserted.
+pub const WORLD_MAP_CLUT_CYCLE_ROWS: [usize; 3] = [506, 508, 509];
+
+/// Clear `mask` on every cell of [`WORLD_MAP_CLUT_CYCLE_ROWS`]. Apply to a
+/// world-map scene's static mask before asserting upload parity; field/town
+/// scenes keep the rows asserted (their content there is scene-owned).
+pub fn clear_world_map_clut_cycle_rows(mask: &mut [bool]) {
+    for &y in &WORLD_MAP_CLUT_CYCLE_ROWS {
+        mask[y * VRAM_WIDTH..(y + 1) * VRAM_WIDTH].fill(false);
+    }
+}
+
+/// Refine a per-scene static mask with **cross-scene** evidence for the
+/// global shared effect-texture band (`befect_data`, see
+/// [`legaia_engine_core::scene::effect_texture_image_rects`]): a cell inside
+/// those rects stays static only if every capture of **every** scene holds
+/// the same word there. The band is one global disc source uploaded
+/// identically for all field scenes, but a few of its pixels are
+/// history-dependent (battle entry re-uploads the disc bytes over a
+/// boot-resident variant), so same-scene captures that share battle history
+/// misclassify them as static; any same-band disagreement anywhere in the
+/// capture corpus proves the cell dynamic.
+pub fn refine_mask_with_shared_band(
+    mask: &mut [bool],
+    rects: &[(u16, u16, u16, u16)],
+    all_snapshots: &[&[u8]],
+) {
+    let Some(first) = all_snapshots.first() else {
+        return;
+    };
+    for &(fb_x, fb_y, w, h) in rects {
+        for y in fb_y as usize..(fb_y as usize + h as usize).min(VRAM_HEIGHT) {
+            for x in fb_x as usize..(fb_x as usize + w as usize).min(VRAM_WIDTH) {
+                let off = (y * VRAM_WIDTH + x) * 2;
+                let f = &first[off..off + 2];
+                if all_snapshots[1..].iter().any(|s| &s[off..off + 2] != f) {
+                    mask[y * VRAM_WIDTH + x] = false;
+                }
+            }
+        }
+    }
+}
+
 /// Per-word "static" mask across a set of same-scene runtime VRAM snapshots:
 /// `mask[i] == true` where every snapshot holds the **same** 16-bit word, i.e.
 /// the pixel is part of the scene's static VRAM rather than dynamic /
