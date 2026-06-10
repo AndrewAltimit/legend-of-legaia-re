@@ -459,7 +459,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 
 ##### `autorun_battle_reward_source.lua`
 
-- **Probes:** Write breakpoints on the XP accumulator `0x80084440`, party gold `0x8008459C`, party XP bank `0x800845A4`, and a candidate gold accumulator; each hit logs the writing PC + all GPRs + the new value, and the staged totals are snapshotted each second. Exec bps at the commit `FUN_80026018` and monster-init `FUN_80054CB0`.
+- **Probes:** Write breakpoints on the staged accumulator `0x80084440` (the minigame-winnings stage; at the time read as an "XP accumulator"), party gold `0x8008459C`, the casino-coin bank `0x800845A4`, and a candidate gold accumulator; each hit logs the writing PC + all GPRs + the new value, and the staged totals are snapshotted each second. Exec bps at `FUN_80026018` (then believed a battle commit — actually the mode-24 minigame exit handler, which a battle never calls) and monster-init `FUN_80054CB0`.
 - **What it answered: Confirmed the victory reward path.** Run against the `rim_elm_gimard_victory` scenario (a lone-enemy fight captured mid-combo so it resolves without input). Gimard's gold went `500 → 515` (+15) via a write at `FUN_8004E568`, matching the record's base gold (`+0x44`=60) through the lone-enemy `floor((gold>>1)/2)` formula. Pinned the reward fields to record `+0x44..+0x49` (gold / EXP / drop id / drop %). See [`subsystems/battle-formulas.md` § Victory spoils](../subsystems/battle-formulas.md#victory-spoils-rewards).
 
 ##### `autorun_title_staging_capture.lua`

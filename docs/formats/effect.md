@@ -187,7 +187,7 @@ There are **two independent effect-texel systems** here:
 
    **Where the battle flame model comes from (corrected).** It is **not** in `befect_data`.
 
-   - A player Seru-magic cast pages in a **per-summon code overlay** (`FUN_8003EC70(id - 0x79)` → PROT 905..915; Gimard *Tail Fire* `0x81` → PROT 905), and that overlay supplies the summon's 3D models.
+   - A player Seru-magic cast pages in a **per-summon code overlay** (`FUN_8003EC70(id - 0x79)` → extraction PROT 903..913 under the corrected loader index math; Gimard *Tail Fire* `0x81` → PROT 903), and that overlay supplies the summon's spawn logic.
    - Confirmed against the live Tail-Fire RAM: `etim` (874 §2) is resident in VRAM (the cluster was loaded), yet **none of 874 §0's five "etmd" TMDs are resident in main RAM**, and the registered models are a 30-entry small-TMD library from the overlay - not the 874 §0 pack. See [`subsystems/battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch).
 
    The 874 §0 pack is therefore mislabeled "etmd" here (its real role is a separate global-TMD-pool head).
@@ -199,7 +199,7 @@ There are **two independent effect-texel systems** here:
 
    - PROT 871 is a 30-entry `asset::pack` of Legaia TMDs (`word[0]=30`, 30 TMD magics), loaded verbatim at `0x800CA25C`, and all 30 register into `DAT_8007C018[3..32]` via `FUN_80026B4C`.
    - The battle scene loader `FUN_800520F0` pulls it at battle init (debug index `0x367`=871, or `0x36d`=877 for battle-type `DAT_8007bd11 == 4`; retail dev path `h:\prot\battle\etmd.dat`).
-   - Gimard's flame is `DAT_8007C018[26]` (see [`subsystems/battle-action.md`](../subsystems/battle-action.md#inside-a-summon-overlay-prot-905-decoded)); its animation is **geometric** (the PROT 905 overlay spawns 8 flame part-actors via `FUN_80021B04` and the actor system ticks them — **not** the move VM, and **not** CLUT cycling), see "Animation is geometric" below.
+   - Gimard's flame is `DAT_8007C018[26]` (see [`subsystems/battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch)); its animation is **geometric** (the summon stager overlay spawns 8 flame part-actors via `FUN_80021B04` and the actor system ticks them — **not** the move VM, and **not** CLUT cycling), see "Animation is geometric" below. (The "8 parts" phase loop is decoded from the extraction-905 stager file — the spell-`0x83` slot under the corrected loader math; Gimard's own file is 903.)
    - PROT 871 (and its texture sibling PROT 870, the **flame-texture atlas**) carry the CDNAME label `sound_data`.
 
    **PROT 870 - the flame-texture atlas (load path + VRAM target pinned).**
@@ -221,7 +221,7 @@ There are **two independent effect-texel systems** here:
    - Two animation-distinct Tail Fire capture frames (catalogued `battle_gimard_tail_fire_a`/`_b`) have a **byte-identical CLUT band** (VRAM rows 470..499) while their framebuffers differ ~21% - so *no* per-frame CLUT/CBA cycling occurs. The visible flame motion is **geometric**.
    - A live PCSX-Redux trace of a player Gimard *Burning Attack* cast pins the render path: the **battle per-actor draw `FUN_80048A08` fires 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`, while `FUN_801F7088` fires **0×** and the move VM `FUN_80023070` only **2-3×** (noise).
    - So the **player** summon is posed like an enemy monster body (per-object rigid TRS keyframes), and the faithful render is the battle TRS-keyframe draw ported in `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`).
-   - The PROT 905 stager overlay *does* carry real move-VM part records — recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay`, which supersedes the earlier wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading (the `jal` is in the SCUS stager `FUN_80021B04`, not inside the overlay); the engine drives them as a stand-in (`summon::SummonScene`), but the trace shows that scene-graph is not the player summon's per-frame render path.
+   - The summon stager overlays (extraction 903..913) *do* carry real move-VM part records — recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay`, which supersedes the earlier wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading (the `jal` is in the SCUS stager `FUN_80021B04`, not inside the overlay); the engine drives them as a stand-in (`summon::SummonScene`), but the trace shows that scene-graph is not the player summon's per-frame render path.
    - The overlay's 3 conditional `LoadImage` (`0x800583C8`) CLUT uploads — `RECT = {x=0, y=481+s5, w=240, h=1}`, source `a2 + s5*480 + 0x894` — target VRAM row **481+** (the character/party-CLUT region), not the flame's row 478, and that region is byte-identical across the two frames.
    - SCOPE: the trace covers the **player** "Burning Attack"; the **enemy** Gimard *Fire Tail* boss move is untraced. The engine renders the static flame mesh with the correct row-478 CLUT.
 
@@ -265,18 +265,20 @@ Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 - `data\battle\summon.dat` - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
 - `data\battle\readef.dat` - opposite branch.
 
-The runtime buffer per slot is `0x10800` = 67584 bytes; the file format is not yet
-decoded. **The PROT entry these dev paths map to is unpinned** - the earlier
-"summon.dat = PROT `0x37F`, readef.dat = PROT `0x380`" reading is *falsified*: those
-indices (895 / 896) are the boot init pak (`0895`, full of `h:\prot\field\init\init.pak`
-dev strings) and the unidentified code+data blob `0896` (its old "mode-24 overlay" reading is refuted), and the whole
-`0879..=0890` band the guess sat in is `VABp` sound banks (`sound_data2`), not effect
-containers. The `0x37F/0x380` figure was an inference off the sound-driver
-pathbuilder (`0x37A = 890 = sound_data2`, the loader reads `+5`/`+6` for variations)
-that landed in the sound range. The real entry comes from the runtime path builder
-that resolves `data\battle\summon.dat` for the streaming handler `0x801F17F8`; pin it
-by importing the battle overlay at its real base (`asset overlay ghidra`) and reading
-that resolver, or by an exec-bp on `FUN_800558FC` during a summon cast.
+**Resolved** — both entries are pinned and the format is decoded; full reference
+in [`summon-readef.md`](summon-readef.md). In retail `FUN_800558FC` ignores the
+path string (the ISO9660 open is a trap stub) and consumes its fourth argument
+as a **retail TOC index** directly: `summon.dat` = `0x37F`, `readef.DAT` =
+`0x380`. The retail index space includes the PROT.DAT 8-byte header in the
+in-RAM TOC copy, so those map to **extraction entries 893 / 894** (retail
+index − 2) — exactly 103 / 78 slots of `0x10800` bytes. Byte-verified in the
+`battle_gimard_tail_fire_a` save state (stream buffer ↔ disc slot, slot-0
+CLUT + texture page ↔ VRAM `(0,488)` / `(512,0)`). The slots carry
+per-special-attack CLUT rows + 4bpp texture pages and summon-creature actor
+records (TMD + texture pool installed via `FUN_80055468`); parser
+`legaia_asset::summon_readef`. The earlier reading that placed `0x37F/0x380`
+at extraction entries 895 / 896 (init pak / `0896` blob) failed because it
+compared against the extraction numbering — the two index spaces differ by 2.
 
 ### Open questions
 
@@ -285,7 +287,7 @@ that resolver, or by an exec-bp on `FUN_800558FC` during a summon cast.
   - The atlas entry's `+4`/`+6` fields are CLUT/tpage, not tpage/CLUT (see the Field order note): `0x7680` is the CLUT (CBA → fb `(0,474)`), and the real tpage is the byte at `+6`.
   - A melee hit-spark capture confirms it — the spark draws as textured quads sampling the **PROT 870 flame atlas at `(320,0)`/`(448,0)`** (effect-band CLUTs), with no prim anywhere sampling page (0,0)/8bpp.
   - The engine now reads the atlas in the right order, so the billboards sample the resident PROT 870 / `etim` texels.
-- **summon.dat / readef.dat formats.** Not yet decoded.
+- **summon.dat / readef.dat formats — RESOLVED.** Pinned to extraction PROT entries 893 / 894 and decoded; see [`summon-readef.md`](summon-readef.md). Still open there: the consumer of the low-band `readef.DAT` aux slots.
 
 ## Field-pack format (magic `0x01059B84`)
 

@@ -117,16 +117,19 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
 
 - **Slot A** (`~0x801CE818`) holds the big scene overlays — field (0897), battle
   (0898), menu (0899), the STR/MDEC **cutscene** overlay (0970), and the
-  **minigame** overlays (fishing 0972, slot machine 0973, baka fighter 0976,
-  dance 0980). These are VA-alias siblings (same base, resident at different
+  **minigame** overlays (fishing 0972, slot machine 0975, baka fighter 0976,
+  dance 0980 — the mode-24 door-warp sub-id slots, see
+  [`script-vm.md § 0x3E WARP`](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
+  These are VA-alias siblings (same base, resident at different
   times). The field/battle/menu/cutscene rows have dense internal call graphs
   (`base_source = jal`); the minigame rows are cross-checked instead by a
   documented minigame function landing on a prologue at the base (`anchor_va`),
   since their footprints over-read each other (one minigame's code is duplicated
   across consecutive entries at `base + N×0x800`, so jal-recovery can latch a
-  phantom base — the canonical entry is the one recovering `0x801CE818`; the slot
-  machine is the lone exception, carried with a `0x4000` over-read prefix at
-  `0x801CA818`). Note: the "world-map", "save", and "shop" UIs are **not**
+  phantom base — the canonical entry is the one recovering `0x801CE818`, which is
+  also the entry the warp actually streams; the historical "slot machine = 0973
+  with a `0x4000` over-read prefix at `0x801CA818`" row was that phantom — the
+  same image matched inside 0973's over-read tail). Note: the "world-map", "save", and "shop" UIs are **not**
   separate entries — the overworld controller `FUN_801E76D4` lives in the field
   overlay (0897) and the save + shop sessions live in the menu overlay (0899);
   `asset overlay find-sig` confirms each function's signature byte-matches only
@@ -135,7 +138,7 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   `summon_overlay::SUMMON_OVERLAY_LINK_BASE`) holds the player-summon / effect /
   minigame-data blobs from the `0900..0969` PROT cluster. These **timeshare one
   buffer**, so a save state catches an inseparable *mix* of two overlays (e.g. in
-  a mid-cast Gimard save the 0900 render overlay has overwritten the 0905
+  a mid-cast Gimard save the 0900 render overlay has overwritten the
   stager) — there is no clean whole-overlay RAM prefix, and most have too sparse
   an internal call graph to jal-recover. Their base comes from a capture anchor
   (`base_source = capture`; the 0900 render region `0x801F79D8..0x801F8DD8`
@@ -148,14 +151,19 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   extraction earns its keep: the *disc* entry disassembles cleanly at the link
   base even though the *runtime* buffer is unusable.
 
-  **The slot-B cluster is heterogeneous.** It interleaves summon stagers (0905
-  Gimard) with Disco King **dance-song** overlays (0907 "Hell's Music", 0924
-  "Ultimate Rave", 0927 "Dark Eclipse"), the **GAME OVER** overlay (0902), and
-  summon-effect data (0957) — so the historical contiguous "summon `0905..=0915`"
-  range is over-broad: **0907 inside that range is a dance song, not a summon**
-  (it only parsed as a scene-graph because its over-read footprint bled into the
-  neighbouring real stagers' `FUN_80021B04` spawn calls;
-  `summon_overlay::NON_SUMMON_IN_STAGER_RANGE` records the exception). **0957 is
+  **The slot-B cluster is heterogeneous.** It interleaves summon stagers (e.g.
+  0903 = Gimard's `0x81` slot and 0905 = the `0x83` slot under the corrected
+  loader index math `param + 0x37F` in extraction space — the historical
+  "Gimard = 0905" label was the `+ 0x381` off-by-2) with Disco King
+  **dance-song** overlays (0907 "Hell's Music", 0924 "Ultimate Rave", 0927
+  "Dark Eclipse"), the **GAME OVER** overlay (0902), and
+  summon-effect data (0957) — so the contiguous "summon stager" arithmetic
+  range `0903..=0913` is over-broad: **0907 inside that range is a dance song,
+  not a summon** (it only parsed as a scene-graph because its over-read
+  footprint bled into the neighbouring real stagers' `FUN_80021B04` spawn
+  calls; `summon_overlay::NON_SUMMON_IN_STAGER_RANGE` records the exception;
+  which spell ids actually dispatch through the `id - 0x79` branch is
+  unverified per id). **0957 is
   NOT a dance song** (correcting an earlier `overlay-ptr-table` reading) — its
   head is a summon string table (`Puera` + `Damage`/`Recover`/`Both` effect
   labels). The mapped slot-B rows now carry pinned identity; the remaining

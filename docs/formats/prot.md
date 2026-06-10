@@ -56,7 +56,18 @@ end_lba      = TABLE[(idx + 3) * 4 + 0x801C70F0]
 size_sectors = end_lba - start_lba
 ```
 
-Different stride from the on-disc TOC. The on-disc-to-in-RAM transformation runs once at boot (`FUN_8003E4E8` reads the first three sectors of `PROT.DAT` into `0x801C70F0`).
+The in-RAM copy is **raw `PROT.DAT` from byte 0** — `FUN_8003E4E8` reads the first three sectors of `PROT.DAT` into `0x801C70F0` at boot, header words included (byte-verified against a live save state's RAM). There is no transformation; but the **index space differs by 2** from the extraction's:
+the extraction (`crates/prot`, and the `NNNN` in `extracted/PROT/NNNN_*.BIN`) builds its
+`toc[]` array *after* the two file-header words, so extraction entry `p`'s `start_lba`
+sits at file word `p + 4`, while the resolver's `TABLE[(idx + 2)]` is file word `idx + 2`.
+Hence `resolver idx = extraction index + 2` — any PROT index recovered from a
+`FUN_8003E8A8` argument must subtract 2 to land in extraction space (byte-verified for
+the battle side-band files: TOC indices `0x37F`/`0x380` resolve to extraction entries
+893/894, see [`summon-readef.md`](summon-readef.md)). Raw-TOC entries 0 and 1 cover the
+pre-`init_data` boot-UI region (LBA 3..120) that extraction indexing leaves unindexed.
+Whether [`CDNAME.TXT`](cdname.md)'s `#define` numbers were authored in raw-TOC or
+extraction space is an open thread — see
+[`cdname.md` § index space](cdname.md#which-index-space-are-the-define-numbers-in-open).
 
 ## Resolving entries by name vs by index
 
@@ -69,7 +80,7 @@ Names come from [`CDNAME.TXT`](cdname.md), which lives at the top level of the d
 
 ## Overlay loaders (parallel slots)
 
-Two paired wrappers on top of `FUN_8003E8A8` + `FUN_8003E800` (async LBA-based loader) manage two **independently swappable** overlay slots. Both compute `prot_index = param + 0x381`:
+Two paired wrappers on top of `FUN_8003E8A8` + `FUN_8003E800` (async LBA-based loader) manage two **independently swappable** overlay slots. Both call `FUN_8003E8A8(param + 0x381)` — which, per the index-space note above, is **extraction entry `param + 0x37F`** (e.g. param 2 → 0897 field, 3 → 0898 battle, 4 → 0899 menu):
 
 | Loader | Destination buffer ptr | Current-id tracker |
 |---|---|---|

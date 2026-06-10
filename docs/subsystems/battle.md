@@ -60,7 +60,7 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   ([character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--prot-1204)).
   The field pack 0874 §0 is field-only.
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
-- **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
+- **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.DAT` (extraction PROT 893 / 894; format + verification in [`formats/summon-readef.md`](../formats/summon-readef.md)).
 
 A paired stage pack loads at PROT `0x367`/`0x36d` (871/877) in states 2/4/6.
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
@@ -319,7 +319,7 @@ All six stat names are pinned by the consumers of those actor slots - see [battl
 - **EXP** (`+0x46`, u16): summed `* 3/4`, then split evenly among living party members.
 - **drop** (`+0x48` item id, `+0x49` chance %): per dead enemy, `rand() % 100 < chance` grants the item (id added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`).
 
-The reward **commit** side: `FUN_80026018` adds an accumulator (`0x80084440` = SC + `0x300`) into the party XP bank (`0x800845A4`); it's generic (the minigames share it). Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
+(`FUN_80026018` is **not** part of this commit path — it is the mode-24 **minigame exit / return-warp** handler, whose `_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank, not battle XP; no battle-path caller exists in the dump corpus. See [`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).) Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
 
 ### Monster archive (PROT entry 867)
 

@@ -65,7 +65,7 @@ The **3D-model render path** is wired: `World::active_effect_models` snapshots e
 - **The flame motion is geometric, not palette.** Two animation-distinct Tail Fire frames have a **byte-identical** CLUT band (VRAM rows 470..499) while the framebuffer differs ~21% (this **falsifies** the earlier "fire flicker = CLUT cycling" reading).
 - **A live PCSX-Redux trace of a player Gimard *Burning Attack* cast pinned what draws the summon.** Across all three phases `FUN_801F7088` fired **0×**, the move VM `FUN_80023070` fired only **2-3×** (noise), and the **battle per-actor draw `FUN_80048A08` fired 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`.
 - **So the player summon is posed exactly like an enemy monster body** (per-object rigid TRS keyframes), and the faithful render is the **battle TRS-keyframe draw already ported in `engine-vm/anim_vm.rs`** (`FUN_80048A08` / `FUN_8004998C`) — *not* a move-VM scene-graph and *not* `FUN_801F7088` (which is the world-map top-view tile renderer aliasing the same `0x801Fxxxx` band).
-- **The PROT 905 stager overlay *does* contain real move-VM part records** (recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay` — superseding the wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading, where the `jal` actually lives in the SCUS stager `FUN_80021B04`, not inside the overlay), and the engine drives them as a **stand-in** (`summon::SummonScene`); but the live trace shows that scene-graph is not the player summon's per-frame render path.
+- **The summon stager overlays (extraction PROT 903..913) *do* contain real move-VM part records** (recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay` — superseding the wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading, where the `jal` actually lives in the SCUS stager `FUN_80021B04`, not inside the overlay), and the engine drives them as a **stand-in** (`summon::SummonScene`); but the live trace shows that scene-graph is not the player summon's per-frame render path.
 - **SCOPE:** the trace covers the **player** "Burning Attack" only — the **enemy** Gimard *Fire Tail* boss move is untraced and may still use the overlay/move-VM path.
 
 See [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch) and the open-rev-eng-threads "Seru-magic summon visual" row for the full reconciliation.
@@ -95,13 +95,15 @@ Called from `FUN_800520F0` case `0xFF`. Streams two specific runtime-only files 
 - `data\battle\summon.dat` - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
 - `data\battle\readef.dat` - opposite branch.
 
-The runtime buffer per slot is `0x10800` = 67584 bytes; the file format is not yet
-decoded, and **the PROT entry these dev paths map to is unpinned**. The earlier
-"summon.dat = PROT `0x37F` / readef.dat = PROT `0x380`" reading is falsified - 895 /
-896 are the boot init pak and the contested mode-24 overlay remnant, and the
-`0879..=0890` band that guess sat in is all `VABp` sound banks. See
-[`effect.md`](../formats/effect.md#side-band-streaming-effect-handler) for the full
-correction and how to pin the real entry.
+**Resolved**: in retail `FUN_800558FC` ignores the path string and consumes its
+fourth argument as a retail TOC index — `summon.dat` = `0x37F`, `readef.DAT` =
+`0x380`, which are **extraction entries 893 / 894** (the retail in-RAM TOC keeps
+the PROT.DAT 8-byte header, so retail index = extraction index + 2). Each file
+is an exact array of `0x10800`-byte slots (103 / 78) carrying per-special-attack
+CLUT rows + 4bpp texture pages and summon-creature actor records. Byte-verified
+RAM↔disc and VRAM↔disc in a mid-cast save state. Full format + verification:
+[`summon-readef.md`](../formats/summon-readef.md); parser
+`legaia_asset::summon_readef`.
 
 ## Effect-ID → human effect name mapping
 

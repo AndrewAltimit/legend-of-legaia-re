@@ -101,10 +101,12 @@ notes = "Options / pause / inventory-equipment-status / SAVE / SHOP menu overlay
 #     entries' PROT footprints over-read each other, so one minigame's code is
 #     physically duplicated across several consecutive entries at base_va +
 #     (multiple of 0x800). The CANONICAL entry is the one whose base recovers to
-#     0x801CE818 (no over-read prefix); the slot machine is the lone exception
-#     (its clean copy carries a 0x4000 over-read prefix, so base_va is
-#     0x801CA818 -- loading the entry there still places its functions at their
-#     real VAs). Re-run `asset overlay scan` to see the full cluster. ---
+#     0x801CE818 (no over-read prefix) -- which is also the entry the mode-24
+#     door-warp actually streams (runtime slice = [entry start, next entry
+#     start); the historical slot-machine row at 0973 with a 0x4000 prefix
+#     base 0x801CA818 was the same image matched inside 0973's over-read tail;
+#     the canonical slot-machine entry is 0975). Re-run `asset overlay scan` to
+#     see the full cluster. ---
 
 [[overlays]]
 prot_index = 970
@@ -126,14 +128,15 @@ fingerprint_sha256 = "1949cd5f6aa4a711572fc38199ca7212cc7a6e037263a8134594cb6b54
 notes = "Fishing minigame overlay (docs/subsystems/minigame-fishing.md). State machine FUN_801cf3bc (base+0xBA4, the anchor), reel tug-of-war FUN_801d4004, catch scoring FUN_801d5298 -- 15 of 20 documented fishing functions land on prologues at this base. Leading strings are the 'How to Fish' help text ('button while turning the reel', 'your line will snap', 'Continue Fishing'). Base recovered statically (29 corroborating call targets)."
 
 [[overlays]]
-prot_index = 973
+prot_index = 975
 label = "slot_machine"
-base_va = 0x801CA818
+base_va = 0x801CE818
 form = "raw"
 eligibility = "static"
+base_source = "capture"
 anchor_va = 0x801CF0D8
-fingerprint_sha256 = "fcce87931513434245c0d6d9a3dea91891750a1f2e806bc416ba623b80a05809"
-notes = "Casino slot-machine minigame overlay (docs/subsystems/minigame-slot-machine.md). Reel SM FUN_801cf0d8 (the anchor), payout/jackpot FUN_801d13e8, LCG FUN_801d30cc -- documented slot functions land on prologues at this base. Externally confirmed: boot.md maps mode-0 CONFIG INIT (FUN_8003EBE4(0x4C) -> 0x4C+0x381 = 973) to the 'slot-machine debug' overlay (the dev 'CONFIG' label is a misnomer). NOTE base_va is 0x801CA818, NOT the canonical 0x801CE818: this entry's PROT footprint carries a 0x4000-byte over-read prefix, so its first byte maps 0x4000 below the slot-A base; loading the blob at 0x801CA818 still places every function at its real VA (FUN_801cf0d8 -> 0x801CE818-region). Base recovered statically (13 corroborating call targets)."
+fingerprint_sha256 = "d1f588055f5205b93072cae23714a91ca2f6cc9ab976397defefa4b69e0cd558"
+notes = "Casino slot-machine minigame overlay (docs/subsystems/minigame-slot-machine.md), dev module 'other4', loaded by the mode-24 door-warp as sub-id 3 (field-VM op 0x3E; FUN_80025980 -> FUN_8003EBE4(0x50), init entry 0x801CEC94). Reel SM FUN_801cf0d8 (the anchor), payout/jackpot FUN_801d13e8, LCG FUN_801d30cc -- documented slot functions land on prologues at the canonical slot-A base in THIS entry; the slot help text ('insert 3 coins', 'game_coin %d') sits inside the runtime slice. HISTORY: this row previously pointed at PROT 0973 with a 0x4000 over-read-prefix base 0x801CA818 -- that was the same image matched inside 0973's over-read TAIL (0973's footprint covers 974/975); 0973 itself is the 1-sector dev module 'OTHER2' (mode-24 sub-id 1), and the 'mode-0 CONFIG loads the slot overlay' cross-ref dissolved with the loader-math off-by-2 (mode 0 loads the debug-menu overlay 0971; prot_index = param + 0x37F in extraction space, see docs/formats/prot.md)."
 
 [[overlays]]
 prot_index = 976
@@ -186,14 +189,24 @@ fingerprint_sha256 = "05d8d68e3471efe33edd78afefe270031e4fccdcde7143fa210140a8e8
 notes = "Player-summon render / GTE-transform overlay (RotMatrixX/Y/Z x6 + prim emit; animates + draws the parts the 0905 stager spawned). Byte-resident in a mid-cast Gimard save: file 0x1000..0x2400 (RAM 0x801F79D8..0x801F8DD8) is byte-identical, pinning base 0x801F69D8 (anchor file 0x1628 <-> 0x801F8000). Not a clean whole-overlay copy -- the slot-B buffer timeshares two overlays at runtime. See summon_overlay.rs + docs/reference/open-rev-eng-threads.md."
 
 [[overlays]]
-prot_index = 905
+prot_index = 903
 label = "summon_gimard"
 base_va = 0x801F69D8
 form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
+fingerprint_sha256 = "1d9501e3aebada61ce8ceba3942d1cf4522e8e827d5563bebf6368d3726b8eeb"
+notes = "Summon spawn stager on the Gimard 'Burning Attack' arithmetic slot (the player summon; the enemy boss 'Fire Tail' is a distinct move): spell id 0x81 -> FUN_8003EC70(0x81 - 0x79) -> extraction entry 8 + 0x37F = 903 (the corrected loader index math; the historical 'Gimard = 0905' was the +0x381 off-by-2). 40 FUN_80021B04 part-spawn calls / 32 records, head is an addiu sp prologue at the link base; record pointers resolve in-file under summon_overlay::SUMMON_OVERLAY_LINK_BASE. Per-spell file identity is arithmetic-derived, not yet live-pinned (the stager is overwritten by the 0900 render overlay mid-cast); a loader-B current-id watch (0x8007BC4C) during one cast would close it."
+
+[[overlays]]
+prot_index = 905
+label = "summon_stager_x83"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
 fingerprint_sha256 = "7e0740575be7f7798c053e675903d465ebdcc4fe7a954fa153df5470989c6f4a"
-notes = "Gimard 'Tail Fire' summon spawn stager (spell id 0x81; 38 FUN_80021B04 part-spawn calls). First function at base 0x801F69D8 (head is an addiu sp prologue). Base cross-referenced from summon_overlay::SUMMON_OVERLAY_LINK_BASE: the record pointers (lui 0x8020/addiu immediates) resolve in-file only under this base (disc-gated summon_overlay_real). Overwritten by the 0900 render overlay mid-cast, so not byte-resident in the capture."
+notes = "Summon spawn stager on the spell-0x83 arithmetic slot (38 FUN_80021B04 part-spawn calls; the deep-dived file in docs/subsystems/battle-action.md -- previously labelled 'summon_gimard' via the +0x381 off-by-2). First function at base 0x801F69D8 (head is an addiu sp prologue). Base cross-referenced from summon_overlay::SUMMON_OVERLAY_LINK_BASE: the record pointers (lui 0x8020/addiu immediates) resolve in-file only under this base (disc-gated summon_overlay_real). Overwritten by the 0900 render overlay mid-cast, so not byte-resident in the capture."
 
 [[overlays]]
 prot_index = 902

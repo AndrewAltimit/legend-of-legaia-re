@@ -123,7 +123,7 @@ enum Cmd {
         #[arg(long, default_value = "32768,65536,98304,131072,196608,262144")]
         lzs_sizes: String,
     },
-    /// Parse a per-summon stager overlay (e.g. PROT 0905, Gimard Tail Fire) into
+    /// Parse a per-summon stager overlay (extraction PROT 0903..=0913) into
     /// its move-VM part-record scene-graph: scan the `FUN_80021B04` spawn calls
     /// and print each part's record offset, mesh selector, flags, and bytecode
     /// span. Input is the raw overlay `.BIN`.

@@ -184,9 +184,15 @@ by the loader `FUN_800542C8`) and computes:
 | `+0x48` u8 | drop item id | `0` = no drop. |
 | `+0x49` u8 | drop chance % | per dead enemy, `rand() % 100 < (chance + bonus)` grants the item (added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`). |
 
-Gold commits to party gold `0x8008459C` (clamp `99,999,999`); EXP commits via
-the generic `FUN_80026018` (accumulator `0x80084440` → party XP bank
-`0x800845A4`, clamp `9,999,999`), which the minigames share. Runtime-confirmed:
+Gold commits to party gold `0x8008459C` (clamp `99,999,999`); EXP is divided
+among the living members inside `FUN_8004E568` itself (`divu` by the alive
+count) and applied per member via the level-up applier `FUN_801E9504`. (The
+earlier "EXP commits via the generic `FUN_80026018`" reading is wrong:
+`FUN_80026018` is the mode-24 **minigame exit / return-warp** handler and its
+`_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank — no
+battle-path caller exists in the dump corpus; see
+[`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).)
+Runtime-confirmed:
 the Gimard fight (`+0x44`=60) credited exactly `+15` gold
 (`60>>1=30`, `30-(30>>1)=15`) via a write-watchpoint on `0x8008459C`. Drop ids
 cross-check against `legaia-gamedata` (Gimard `+0x48`=119 @ 10% drops Healing
