@@ -6303,6 +6303,7 @@ impl World {
     /// lands on a wall sub-cell.
     ///
     /// PORT: FUN_801cfe4c
+    /// REF: FUN_801cfc40
     ///
     /// This is the static-wall arm of `FUN_801cfe4c` (result bit `2`): the
     /// probes are taken at the player's pre-step position, so a step commits
