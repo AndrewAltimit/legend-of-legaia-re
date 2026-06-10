@@ -40,6 +40,7 @@
 
 use std::path::PathBuf;
 
+use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::World;
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 use legaia_mednafen::{SaveState, ScenarioManifest};
@@ -129,6 +130,10 @@ struct WallPress {
     pz: i32,
     live_grid: Vec<u8>,
     world: World,
+    /// A fresh full `BootSession` entered on the grid-matched scene - the
+    /// engine's own scene context (resolver-loaded `.MAP` + prescript
+    /// paints), for the full-stack press legs.
+    session: BootSession,
 }
 
 /// Resolve + load a wall-press scenario; `None` = skip (missing disc /
@@ -232,6 +237,16 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
          retail live grid up to story-conditional deltas (got {matched_diffs} diffs)"
     );
 
+    // A fresh full session on the matched scene for the full-stack legs.
+    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+    session
+        .enter_field_live(&matched_scene, &FieldLiveOpts::default())
+        .expect("re-enter matched scene");
+    for _ in 0..10 {
+        session.host.world.set_pad(0);
+        let _ = session.host.world.tick();
+    }
+
     // A World carrying the LIVE grid - the engine sampler under test.
     let mut world = World::new();
     world.load_field_collision_grid(&live_grid);
@@ -240,6 +255,7 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
         pz,
         live_grid,
         world,
+        session,
     })
 }
 
@@ -413,5 +429,90 @@ fn wall_press_down_engine_rest_matches_retail() {
         centre.1 < pz,
         "the candidate-centre default walks deeper than retail ({} >= {pz})",
         centre.1
+    );
+}
+
+/// Press a d-pad direction inside the FULL scene session (resolver-loaded
+/// `.MAP`, prescript paints, real pad -> camera-remapped locomotion via
+/// `World::tick`) and return where the player rests.
+fn full_scene_press_rest(
+    session: &mut BootSession,
+    edge_probes: bool,
+    start: (i16, i16),
+    pad_mask: u16,
+    frames: usize,
+) -> (i16, i16) {
+    let world = &mut session.host.world;
+    world.leading_edge_wall_probes = edge_probes;
+    let slot = world.player_actor_slot.expect("player actor installed") as usize;
+    world.actors[slot].move_state.world_x = start.0;
+    world.actors[slot].move_state.world_z = start.1;
+    world.set_pad(pad_mask);
+    for _ in 0..frames {
+        let _ = world.tick();
+    }
+    world.set_pad(0);
+    let ms = &session.host.world.actors[slot].move_state;
+    (ms.world_x, ms.world_z)
+}
+
+/// Full-stack standoff: with the flag on, a held d-pad press inside a REAL
+/// scene entry (`BootSession::enter_field_live` - the resolver-loaded `.MAP`
+/// grid plus the engine-executed prescript paints, walked through the pad ->
+/// camera-remap -> `step_field_locomotion` path) rests at the captured retail
+/// wall standoff byte-exactly. The unit-level legs above isolate the stepper
+/// on the raw captured grid; this leg proves the whole scene context
+/// reproduces it.
+#[test]
+fn wall_press_left_full_scene_rest_matches_retail() {
+    let Some(mut wp) = load_wall_press("rimelm_wall_press_left") else {
+        return;
+    };
+    let (px, pz) = (wp.px as i16, wp.pz as i16);
+    // A cold field camera has azimuth 0 (quadrant 0: screen-left = world X-).
+    let rest = full_scene_press_rest(
+        &mut wp.session,
+        true,
+        (px + 62, pz),
+        PadButton::Left.mask(),
+        100,
+    );
+    assert!(
+        rest.0 < px + 62,
+        "the held pad must move the player (start {} -> rest {})",
+        px + 62,
+        rest.0
+    );
+    assert_eq!(
+        rest,
+        (px, pz),
+        "full-scene leading-edge press rests exactly at the captured retail position"
+    );
+}
+
+#[test]
+fn wall_press_down_full_scene_rest_matches_retail() {
+    let Some(mut wp) = load_wall_press("rimelm_wall_press_down") else {
+        return;
+    };
+    let (px, pz) = (wp.px as i16, wp.pz as i16);
+    // Azimuth 0, quadrant 0: screen-down = world Z-.
+    let rest = full_scene_press_rest(
+        &mut wp.session,
+        true,
+        (px, pz + 62),
+        PadButton::Down.mask(),
+        100,
+    );
+    assert!(
+        rest.1 < pz + 62,
+        "the held pad must move the player (start {} -> rest {})",
+        pz + 62,
+        rest.1
+    );
+    assert_eq!(
+        rest,
+        (px, pz),
+        "full-scene leading-edge press rests exactly at the captured retail position"
     );
 }
