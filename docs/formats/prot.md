@@ -65,9 +65,10 @@ Hence `resolver idx = extraction index + 2` — any PROT index recovered from a
 the battle side-band files: TOC indices `0x37F`/`0x380` resolve to extraction entries
 893/894, see [`summon-readef.md`](summon-readef.md)). Raw-TOC entries 0 and 1 cover the
 pre-`init_data` boot-UI region (LBA 3..120) that extraction indexing leaves unindexed.
-Whether [`CDNAME.TXT`](cdname.md)'s `#define` numbers were authored in raw-TOC or
-extraction space is an open thread — see
-[`cdname.md` § index space](cdname.md#which-index-space-are-the-define-numbers-in-open).
+[`CDNAME.TXT`](cdname.md)'s `#define` numbers are authored in this raw-TOC space — the
+extractor's filename labels are shifted +2 relative to the content the defines name; see
+[`cdname.md` § numbering space](cdname.md#numbering-space) for the evidence and the
+consequential relabelings.
 
 ## Resolving entries by name vs by index
 

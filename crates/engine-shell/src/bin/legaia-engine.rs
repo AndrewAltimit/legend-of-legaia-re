@@ -6298,7 +6298,9 @@ impl PlayWindowApp {
                 });
             // Per-character: build the assembled mesh, overlay its battle palette
             // onto the CLUT rows the mesh samples, upload, bind to the party actor.
-            // char slot 0/1/2 = Vahn/Noa/Gala; palette source PROT 861/864/865.
+            // char slot 0/1/2 = Vahn/Noa/Gala; palette source = the per-character
+            // battle files, extraction PROT 863/864/865 (raw TOC 0x361-0x363;
+            // see docs/formats/cdname.md numbering space).
             for member in 0..party_count.min(3) {
                 let cslot = member; // actor slot i -> char slot i (Vahn/Noa/Gala)
                 let Some(slot) = pack.slot(cslot) else {
@@ -6346,14 +6348,14 @@ impl PlayWindowApp {
                 let mut cols: Vec<u16> = vmesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
                 cols.sort_unstable();
                 cols.dedup();
-                // Decode + overlay the battle palette. Vahn (861) = byte-exact
+                // Decode + overlay the battle palette. Vahn (863) = byte-exact
                 // parse_record; Noa (864) / Gala (865) = equipment-robust collect.
                 let pal = match cslot {
                     0 => self
                         .session
                         .host
                         .index
-                        .entry_bytes_extended(861)
+                        .entry_bytes_extended(863)
                         .ok()
                         .and_then(|f| {
                             let rec0 = legaia_asset::battle_char_palette::find_record0(&f)?;
