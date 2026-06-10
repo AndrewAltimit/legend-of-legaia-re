@@ -54,7 +54,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
 | `0x19` | Attack - short-step (party slot < 3 only) | Idle pose + facing + range recheck. While range > 0 → stays. Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
-| `0x1E` | **Attack chain - strike loop** | Counters `actor[+0x15]` (per-strike index) + `actor[+0x16]` (combo bit). Reads the per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step writes `actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. Counter-attack handling: if `_DAT_801F6970 != 0` and the *target's* sub-state byte at `s8[+0x1DE] == 3` (was attacking), redirects active actor to the counterattacker - sets `s_Counterattack_successful_801CED18` text, fires effect `FUN_801D8DE8(0x66, 0)`, swaps `actor[+0x13]`. Per-frame physics: target/attacker drift along bearing scaled by `actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]` until terminator `-1` is hit. | `0x1F` once the strike-script terminator is hit. |
+| `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
 | `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
 | `0x20` | Attack - return | Decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
 | `0x28` | **Magic / Item - cast begin** | Resolves bearing + facing, sets the cast timer, looks up the spell-name HUD label, and deducts the (ability-bit-scaled) MP cost; capture-class spells route to `0x6E`. Full step body: [Magic / Item - cast begin (`0x28`)](#magic--item---cast-begin-0x28). | `0x29` (or `0x6E` for capture). |
@@ -98,6 +98,12 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0xFF` | **Battle complete** | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (battle-count?), calls `func_0x801F45A4` (battle teardown). | (terminal - exits the battle overlay). |
 
 States `0x67` (post-fade hold), `0x07` (unused?), and several gaps in the table are not present as case labels - they fall into the `default` no-op arm (the dispatcher's `sltiu v0, v1, 0x100` bound is 256 and the JT slot for unhandled values points at the function epilogue at `0x801E6814`).
+
+#### Attack chain - strike loop (`0x1E`)
+
+The full step body for state `0x1E`:
+
+Counters `actor[+0x15]` (per-strike index) + `actor[+0x16]` (combo bit). Reads the per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step writes `actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. Counter-attack handling: if `_DAT_801F6970 != 0` and the *target's* sub-state byte at `s8[+0x1DE] == 3` (was attacking), redirects active actor to the counterattacker - sets `s_Counterattack_successful_801CED18` text, fires effect `FUN_801D8DE8(0x66, 0)`, swaps `actor[+0x13]`. Per-frame physics: target/attacker drift along bearing scaled by `actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]` until terminator `-1` is hit.
 
 #### Magic / Item - cast begin (`0x28`)
 
