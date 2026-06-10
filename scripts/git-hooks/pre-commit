@@ -33,14 +33,17 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# Doc legibility-density check (warn-only). Surfaces over-800-char lines and
-# over-150-word markdown table cells in staged docs / crate READMEs so density
-# creep gets flagged at commit time. Non-fatal by design (mirrors the port-tag
-# check below); it runs before the Rust-only early-exit so docs-only commits
-# are covered too. Run scripts/check-doc-density.py for a full-corpus audit.
+# Doc legibility-density gate. Fails the commit on over-800-char lines or
+# over-150-word markdown table cells in staged docs / crate READMEs, so density
+# creep can't land. Runs before the Rust-only early-exit so docs-only commits
+# are covered too. Bypass with LEGAIA_SKIP_PRECOMMIT=1 (handled above); run
+# scripts/check-doc-density.py for a full-corpus audit.
 if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/check-doc-density.py" ]]; then
-    printf '[pre-commit] doc legibility-density check (warn-only)\n'
-    python3 scripts/check-doc-density.py --staged --quiet || true
+    printf '[pre-commit] doc legibility-density check\n'
+    if ! python3 scripts/check-doc-density.py --staged --quiet; then
+        printf '[pre-commit] doc density violations above -- reflow long lines or move over-budget table cells into sections (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
 fi
 
 # If the commit only touches files outside the Rust workspace (e.g. docs,

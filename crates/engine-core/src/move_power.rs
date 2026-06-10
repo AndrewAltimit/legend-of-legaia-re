@@ -191,6 +191,30 @@ impl MovePowerCatalog {
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
+
+    /// Battle move ids whose on-contact (`+0x12`) / launch (`+0x16`) effect
+    /// lists hold at least one library-mesh [`EffectListEntry::Spawn`] entry
+    /// with a resolved `0x801F6324` prototype pointer — i.e. the moves
+    /// [`crate::world::World::spawn_move_fx`] can render as a 3D ETMD
+    /// scene-graph (the same Spawn-with-proto predicate that function selects
+    /// records by). Sorted ascending; empty when the aux tables weren't in the
+    /// parsed overlay slice. Lets a previewer enumerate renderable moves
+    /// instead of hard-coding a single worked example.
+    pub fn spawnable_move_ids(&self) -> Vec<u8> {
+        if self.aux.is_none() {
+            return Vec::new();
+        }
+        (0u8..=u8::MAX)
+            .filter(|&id| {
+                self.fx_for_move_id(id).is_some_and(|fx| {
+                    fx.contact_effects
+                        .iter()
+                        .chain(fx.launch_effects.iter())
+                        .any(|e| matches!(e.entry, EffectListEntry::Spawn(_)) && e.proto.is_some())
+                })
+            })
+            .collect()
+    }
 }
 
 /// One resolved entry of a move's `+0x12` / `+0x16` effect-id list: the raw

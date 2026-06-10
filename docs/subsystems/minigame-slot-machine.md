@@ -52,7 +52,8 @@ When a reel is told to stop, `FUN_801d2114(reel)` (`overlay_slot_machine_801d211
 
 ### Feature roll — `FUN_801d258c`
 
-`FUN_801d258c` (`overlay_slot_machine_801d258c.txt`) runs once at spin start. It seeds `DAT_801d4134` (`rand%5` landing jitter) and `DAT_801d3cb8` (`rand%6 + 2` normal-mode target), then — only when no feature is already active (`DAT_801d3cac == 0`) — rolls several `rand % N == 0` probabilities to *enter* a feature mode. The probability denominators are **bucketed by the current balance** `DAT_801d3d40`: tighter odds for a fat balance, looser for a thin one (the `< 1000`, `1001..1999`, `> 2000` brackets with denominators like `700`/`500`, `0x15e`/`0xfa`, `0xaf`/`0x7d`, and a final `+600` roll for mode 3). When the optional richer-odds flag `DAT_801d3790` is set, every denominator is widened by `rand%100 + 200`. **Confirmed** arithmetic; this is the house-edge / "make the player feel lucky when poor" tuning.
+`FUN_801d258c` (`overlay_slot_machine_801d258c.txt`) runs once at spin start. It seeds `DAT_801d4134` (`rand%5` landing jitter) and `DAT_801d3cb8` (`rand%6 + 2` normal-mode target), then — only when no feature is already active (`DAT_801d3cac == 0`) — rolls several `rand % N == 0` probabilities to *enter* a feature mode. The probability denominators are **bucketed by the current balance** `DAT_801d3d40`: tighter odds for a fat balance, looser for a thin one (the `< 1000`, `1001..1999`, `> 2000` brackets with denominators like `700`/`500`, `0x15e`/`0xfa`, `0xaf`/`0x7d`, and a final `+600` roll for mode 3). When the optional richer-odds flag `DAT_801d3790` is set, every denominator is widened by `rand%100 + 200`. **Confirmed** arithmetic;
+this is the house-edge / "make the player feel lucky when poor" tuning.
 
 ## Payout / win evaluation
 

@@ -228,7 +228,10 @@ scene-graph**: `World::spawn_move_fx(move_id, origin)` parses a move's
 `SummonScene` with model base 3 (so `model_sel` resolves into the resident PROT
 0871 effect-model library `global_tmd_pool[3..=32]`), and drives each part's
 `+0x04` bytecode through the ported move VM (`World::tick_move_fx` /
-`active_move_fx_part_draws`; `play-window` `H` debug-spawns it in battle). This
+`active_move_fx_part_draws`; `play-window` `H` cycles through the renderable
+moves, enumerated by `MovePowerCatalog::spawnable_move_ids()` — the ids whose
+effect lists hold a `Spawn` entry with a resolved prototype, i.e. exactly the
+set `spawn_move_fx` can stage). This
 reuses the summon machinery wholesale, so it inherits the same faithful-tick /
 interpreted-transform boundary (the exact per-part transform composition is the
 shared open `FUN_801F811C`/PROT-0900 piece). The base 3 is the captured
