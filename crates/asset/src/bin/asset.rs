@@ -142,6 +142,14 @@ enum Cmd {
         /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
         input: PathBuf,
     },
+    /// Parse the 28-entry game-mode dispatch table (runtime VA `0x8007078C`)
+    /// out of `SCUS_942.54`. Prints each mode's dev name, handler function
+    /// pointer, parameter, and whether it routes through the shared per-frame
+    /// handler. Recovers the index → retail-handler map from the disc.
+    ModeTable {
+        /// `SCUS_942.54` executable image.
+        input: PathBuf,
+    },
     /// Parse the battle element-affinity matrix (runtime VA `0x801F53E8`, read
     /// by `FUN_801dd864`) and the per-character element table (`0x801F5480`) out
     /// of the raw PROT 0898 (battle-action overlay) `.BIN`. Prints the 8×8
@@ -1003,6 +1011,7 @@ fn main() -> Result<()> {
         } => find_overlay(&dir, top, &lzs_sizes),
         Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
         Cmd::MovePower { input } => move_power_cmd(&input),
+        Cmd::ModeTable { input } => mode_table_cmd(&input),
         Cmd::ElementAffinity { input } => element_affinity_cmd(&input),
         Cmd::Overlay { cmd } => match cmd {
             OverlayCmd::List { json } => overlay_list_cmd(json),
@@ -1038,6 +1047,48 @@ fn main() -> Result<()> {
 }
 
 /// Parse the battle-action per-move power table and print its records.
+fn mode_table_cmd(input: &Path) -> Result<()> {
+    let bytes = std::fs::read(input)?;
+    let Some(table) = legaia_asset::mode_table::ModeTable::from_scus(&bytes) else {
+        anyhow::bail!(
+            "no game-mode table at VA {:#x} in {} - is this SCUS_942.54?",
+            legaia_asset::mode_table::MODE_TABLE_VA,
+            input.display(),
+        );
+    };
+    println!(
+        "game-mode table @ VA {:#010x} ({} entries)",
+        legaia_asset::mode_table::MODE_TABLE_VA,
+        table.entries.len()
+    );
+    println!(
+        "{:>3}  {:<14}  {:<10}  {:<10}  kind",
+        "idx", "name", "handler", "param"
+    );
+    for e in &table.entries {
+        let kind = if e.is_per_frame() {
+            if e.uses_shared_handler() {
+                "per-frame (shared)"
+            } else {
+                "per-frame"
+            }
+        } else {
+            "init"
+        };
+        println!(
+            "{:>3}  {:<14}  {:#010x}  {:#010x}  {kind}",
+            e.index, e.name, e.handler, e.param
+        );
+    }
+    println!(
+        "{} of {} per-frame modes share handler {:#010x}",
+        table.shared_handler_count(),
+        table.entries.iter().filter(|e| e.is_per_frame()).count(),
+        legaia_asset::mode_table::SHARED_PER_FRAME_HANDLER,
+    );
+    Ok(())
+}
+
 fn move_power_cmd(input: &Path) -> Result<()> {
     let bytes = std::fs::read(input)?;
     let Some(table) = legaia_asset::move_power::parse(&bytes) else {

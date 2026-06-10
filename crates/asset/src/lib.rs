@@ -43,6 +43,7 @@ pub mod man_edit;
 pub mod man_section;
 pub mod menu_glyph_atlas;
 pub mod mips_overlay;
+pub mod mode_table;
 pub mod monster_archive;
 pub mod monster_gltf;
 pub mod move_power;

@@ -165,7 +165,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 
 ## Game-mode state machine
 
-The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § Game-mode state machine](../subsystems/boot.md#game-mode-state-machine).
+The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § Game-mode state machine](../subsystems/boot.md#game-mode-state-machine). The full index → handler/param/name map is recovered from the disc by [`legaia_asset::mode_table`](../../crates/asset/src/mode_table.rs) (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`).
 
 | Address | Role |
 |---|---|
@@ -175,14 +175,20 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 | `800179C0` | Dev mode-transition writer. Reads input mask, advances current mode. Gated on `_DAT_8007B98C != 0`. |
 | `8001DAF8` | **Display-environment + GTE screen-setup.** `(width_selector)`. Builds the two double-buffered DISPENV/DRAWENV structs at `0x8007BF30` / `0x8007BFA4` (via the libgpu env fillers `FUN_8005731C` / `FUN_8005724C`) and the framebuffer-rect globals at `0x1F800388`. `0x400` selects the 640x480 (`0x280`x`0x1E0`) wide mode; any other value (retail passes `0x140` = 320) selects the default-width / `0xE0`-height mode. Stores the active width at `0x8007B810`, then primes the GTE projection via `FUN_8005B818` (`SetGeomScreen`, H=0x78) and `FUN_8005B7F8` (`SetGeomOffset`, OFX=width/2). Called from the mode-init handlers (`FUN_8002574C`, `FUN_80025FB4`, `FUN_80055B6C`) and the field initializer `FUN_801D6704`. `see ghidra/scripts/funcs/8001daf8.txt`. |
 | `8001E3B8` | **Primitive-packet + ordering-table allocator.** `(packet_size)`. Allocates the GPU primitive-packet buffer (base/end at `0x8007B728` / `0x8007B72C`, mirrored to `0x8007B908` / `0x8007B90C`) via the malloc wrapper `FUN_80017888` (`size << 1` bytes; `size == 0` borrows the static region `0x8007B85C`); a dev flag at `gp+0x704` swaps in fixed buffer addresses. Then calls `FUN_8001F690` to allocate the ordering table (`1 << depth` entries, depth from `DAT_1F8003A5`, default 10) into the same display-env struct at `0x8007BF30 + 0x70` / `+0xE4`. When `_DAT_8007B83C == 0x14` it allocates an extra `0x1000`-byte buffer at `0x8007B814`. Paired with `FUN_8001DAF8` at every game-mode display init. `see ghidra/scripts/funcs/8001e3b8.txt`. |
-| `80025EEC` | Default per-frame mode handler - used by all 14 odd-indexed (per-frame) modes. Pipeline: `FUN_8001698C → FUN_80016444(1) → FUN_80016B6C`. |
+| `80025EEC` | Default per-frame mode handler - used by **12 of the 14** odd-indexed (per-frame) modes; the exceptions are Mode 13 (MAPDISP MODE, `0x80025F2C`) and Mode 23 (CARD MODE, `0x80025F74`), which carry their own. Pipeline: `FUN_8001698C → FUN_80016444(1) → FUN_80016B6C`. (Disc-confirmed by `legaia_asset::mode_table`.) |
 | `80025C68` | Mode 0 (CONFIG INIT) handler - **loads PROT 973 (slot-machine debug overlay)** via `FUN_8003EBE4(0x4C)`. Despite the dev name "CONFIG", this is a slot-machine debug mode, not a game-config init. |
 | `80025B64` | Mode 2 (MAIN INIT) handler - **field/town gameplay INIT.** Loads the field overlay via `FUN_8003EBE4(2)` (PROT 899) then calls the per-scene initializer `FUN_801D6704`, which hands off to mode 3 (field per-frame). The title screen's NEW GAME path launches this mode (`_DAT_8007B83C = 2` at `0x801DFC00`). Despite the dev name "MAIN" / older "options menu" notes, this is the field entry; the options strings in PROT 899 belong to the in-game options submenu carried by the same overlay. |
 | `80034A6C` | **New-game data-init.** Establishes the fresh-game world state: writes party gold `_DAT_8008459C = 500` (hardcoded), zeroes a ~`0x200`-byte story-flag region, sets assorted party-default globals, and calls `FUN_800560B4` to expand the starting-party stat template. Does **not** set the opening scene, prompt for a name, or trigger the opening cutscene. Reached via the boot mode initializer `FUN_8001DCF8` (and `FUN_8001FFA4`). Engine mirror: `World::begin_new_game` + `NEW_GAME_STARTING_GOLD`. |
 | `800560B4` | **Starting-party stat seed.** Expands the static `SCUS_942.54` starting-party template at `0x80078C4C` (`[8×u16 stats][10-byte name]`, stride `0x1A`, 4 records Vahn/Noa/Gala/Terra) into the live per-character records (stride `0x414`), copying stats + the template's **default name** (via `FUN_80056758`). Called by `FUN_80034A6C`. Parser: [`legaia_asset::new_game`](../formats/new-game-table.md); engine mirror `World::seed_starting_party`. |
-| `80025DA0` | Mode 12 (MAPDISP INIT) handler - field/town init - this is the actual gameplay-mode entry. |
-| `80025F2C` | Mode 13 (MAPDISP MODE) handler - field-display per-frame. |
+| `80025DA0` | Mode 12 (MAPDSIP INIT — disc spelling) handler - the **world-map display** init, *not* field/town. (The earlier "field/town init / the actual gameplay-mode entry" label was wrong: field/town gameplay is modes 2/3 MAIN, pinned by saves to `game_mode 0x03`. MAPDISP 12/13 is the map-display mode whose per-frame handler routes the world-map render tick — see [`world-map.md`](../subsystems/world-map.md#per-frame-dispatch-scus-resident).) |
+| `80025F2C` | Mode 13 (MAPDISP MODE) handler - world-map display per-frame; routes the world-map render tick. |
 | `80025E68` | Mode 8 (EFECT TEST INIT) handler - effect-bundle test mode. |
+| `8002611C` | Mode 4 (MONSTER TEST INIT) handler. |
+| `8002612C` | Mode 16 (READ INIT) handler. |
+| `80025B30` | Mode 18 (GAME OVER INIT) handler. |
+| `800565D8` | Mode 20 (BATTLE INIT) handler - battle-scene setup entry. |
+| `8002574C` | Mode 22 (CARD INIT) handler - memory-card save/load mode entry (calls the screen-setup `FUN_8001DAF8`). |
+| `80025F74` | Mode 23 (CARD MODE) handler - memory-card per-frame (one of the two non-shared per-frame handlers). |
 | `80025980` | Mode 24 (OTHER INIT) handler - loads PROT 896 (cited by `ghidra/scripts/dump_round8.py` `OVERLAY_0896_TARGETS`). |
 | `80025FB4` | Mode 26 (STR INIT) handler - cutscene / STR FMV mode entry. This is the mode the title-overlay attract-loop underflow falls through to (`_DAT_8007B83C = 0x1A`). |
 | `8001DCF8` | Boot-time mode initializer. 1212-byte function. NOT the per-frame dispatcher. |
