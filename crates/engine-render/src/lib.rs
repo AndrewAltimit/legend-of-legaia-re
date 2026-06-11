@@ -29,6 +29,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 pub mod afterimage;
+pub mod billboard;
 pub mod gte;
 pub mod gte_trace;
 pub mod window;

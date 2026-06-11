@@ -823,7 +823,12 @@ The install counterpart of the SEQ-slot release `FUN_8001FF58`; reused by the fl
 
 ### `800195A8`
 
-**Billboard / screen-space textured-quad projector.** `(center_vec, half_w: i16, half_h: i16, angle12, sxy0_out..sxy3_out)`. Projects a sprite quad about a center point: `FUN_8003D344` transforms the center vector to screen XY, then four corner SXY entries are built as `center +/- half_w` (X) and `center +/- half_h` (Y); `FUN_8003D178` resets the GTE rotation matrix to identity, and when `angle12 != 0` `FUN_8004638C` (`RotMatrixZ`, masked to 12 bits) rotates the quad in-plane. `FUN_8005BAC8` projects the four corners into the caller's four out-pointers; `FUN_8003D1A4` restores the saved GTE control words from `&DAT_1F8003C8`. Returns the projected depth (`OTZ >> DAT_1F8003A4`). Reached from the battle / cutscene / world-map quad emitters (e.g. `FUN_800485BC`).
+**Billboard / screen-space textured-quad projector.** `(center_vec, half_w: i16, half_h: i16, angle12, sxy0_out..sxy3_out)`. Projects a sprite quad about a center point: `FUN_8003D344` runs one `MVMVA` (rotation × V0 + TR, sf=1) taking the center vector to **view space** (the caller reads MAC1..3 back with `lhu`, so the position wraps to i16); four corners are built in view space as `center ± half_w` (X) / `center ± half_h` (Y), all sharing the view Z.
+`FUN_8003D178` resets the GTE rotation to identity **and zeroes TRX/TRY/TRZ**, and when `angle12 != 0` `FUN_8004638C` (`RotMatrixZ` compose, masked to 12 bits) spins the corners in-plane about the **camera axis** (the corner vectors include the view-space center).
+`FUN_8005BAC8` then projects — `RTPT` on corners 0..2 plus one `RTPS` on corner 3 — into the caller's four out-pointers (the order `FUN_801E1AB0` writes straight into `POLY_FT4.xy0..xy3`), and `FUN_8003D1A4` restores the saved GTE control words from `&DAT_1F8003C8`. Returns the projected depth (`SZ3 >> 2`, shifted by the scratchpad OT-resolution byte `DAT_1F8003A4`).
+Reached from the battle / cutscene / world-map quad emitters (e.g. `FUN_800485BC`); the afterimage caller passes a **dynamic half-width** (fx-state halfword `+0x6C6` − `0x200`) with constant half-height `0x100`.
+
+Ported as `legaia_engine_render::billboard::project_billboard` (the afterimage call shape: `afterimage::project_streak_corners`). The `RotMatrix*` trig source is the in-image q3.12 LUT pair — sine at `0x80070A2C + 2*angle`, cosine read from the same table `0x400` entries (90°) ahead at `0x8007122C` — generated as `4096*sin(2π·angle/4096)` **truncated toward zero**, pinned entry-for-entry by the disc-gated oracle `engine-shell/tests/gte_sin_lut_real.rs` against `billboard::psx_sin`/`psx_cos`.
 
 `see ghidra/scripts/funcs/800195a8.txt`.
 

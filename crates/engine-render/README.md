@@ -108,8 +108,20 @@ screen corners + the move's trail-texture id, reproducing the per-corner
 `rand` wobble, the random brightness band that picks a texture sub-column,
 and the exact UV / CLUT / texpage layout. It takes an injected rng (the
 retail source is the BIOS `rand`) so the construction is pure and
-unit-tested; the camera-coupled GTE projection of the corners stays with
-the caller.
+unit-tested.
+
+The corner projection itself is ported in [`billboard`](src/billboard.rs)
+(`FUN_800195a8`): `project_billboard` transforms a center point to view
+space under the ambient camera (MVMVA, low-halfword wrap), fans out the
+four ±half-size corners, optionally spins them in-plane (`Rz` from the
+12-bit PSX angle space), and perspective-divides each (RTPT×3 + RTPS),
+returning the screen corners in the exact order the retail `POLY_FT4`
+packet consumes plus the OT-bucket depth. `afterimage::
+project_streak_corners` reproduces the streak caller's invocation
+(`+0x120` Y push, dynamic half-width, half-height `0x100`). `psx_sin` /
+`psx_cos` reproduce the retail `RotMatrix*` trig LUT —
+`trunc(4096·sin(2π·a/4096))`, pinned entry-for-entry by the disc-gated
+`gte_sin_lut_real` oracle in `engine-shell`.
 
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
 live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu

@@ -15,10 +15,12 @@
 //! * **`FUN_80056798`** is the BIOS `rand()` thunk (`li t1,0x2f; jr 0xa0`);
 //!   this kernel takes an injected `rng` so the *consumption* of the random
 //!   draws is what is ported (and unit-testable), not the BIOS LCG itself.
-//! * **`FUN_800195a8`** is the GTE billboard projection (object-space quad
-//!   corners ±half-size, optional Z-rotation, then `RotTransPers`); it depends
-//!   on the live battle-camera matrix, so the caller supplies the four already
-//!   projected screen corners.
+//! * **`FUN_800195a8`** is the GTE billboard projection (view-space quad
+//!   corners ±half-size, optional Z-rotation, then a perspective divide). It
+//!   is ported as [`crate::billboard::project_billboard`];
+//!   [`project_streak_corners`] reproduces this caller's exact invocation of
+//!   it. `build_afterimage_quad` still accepts pre-projected corners so a
+//!   capture replay can feed recorded SXYs directly.
 //!
 //! What this module ports is the genuinely move-FX-specific arithmetic: the
 //! per-corner positional jitter, the random brightness band that selects a
@@ -28,15 +30,58 @@
 //! is the retail software OT, which engine-render replaces with its own draw
 //! ordering.
 
-/// Pixels the source point is pushed down the screen before projection
+/// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied
-/// projection-side, so a caller that builds the screen corners itself should
-/// fold this in; recorded here for provenance.
+/// projection-side; [`project_streak_corners`] folds it in.
 pub const SCREEN_Y_OFFSET: i16 = 0x120;
 
-/// Billboard half-size handed to the GTE projection (`0x100`). Projection-side;
-/// recorded for provenance.
+/// Billboard half-HEIGHT handed to the GTE projection (`0x100`, the constant
+/// third argument of the `FUN_800195a8` call). The half-WIDTH is dynamic:
+/// the move-FX state halfword at `+0x6c6` minus `0x200` — see
+/// [`streak_half_width`].
 pub const PROJECTION_HALF_SIZE: i16 = 0x100;
+
+/// Derive the streak's billboard half-width from the move-FX state halfword
+/// at `+0x6c6` (retail passes `*(short*)(state + 0x6c6) - 0x200` as the
+/// projector's half-width argument, 16-bit wrapping).
+pub fn streak_half_width(state_word: i16) -> i16 {
+    state_word.wrapping_sub(0x200)
+}
+
+/// Project the four streak-quad corners exactly as `FUN_801e1ab0` does:
+/// center = the move actor's point with [`SCREEN_Y_OFFSET`] added to Y,
+/// half-height [`PROJECTION_HALF_SIZE`], no in-plane spin. The returned
+/// corner order feeds [`build_afterimage_quad`] (and the retail packet's
+/// `xy0..xy3`) directly; the returned `depth` is the OT bucket the retail
+/// caller links the packet at.
+#[allow(clippy::too_many_arguments)]
+pub fn project_streak_corners(
+    rot: &crate::gte::GteMat3,
+    trans: crate::gte::GteVec3,
+    actor_point: (i16, i16, i16),
+    half_w: i16,
+    h: i32,
+    ofx: i32,
+    ofy: i32,
+    ot_shift: u32,
+) -> crate::billboard::BillboardCorners {
+    crate::billboard::project_billboard(
+        rot,
+        trans,
+        crate::gte::GteVec3::new(
+            actor_point.0 as i32,
+            actor_point.1.wrapping_add(SCREEN_Y_OFFSET) as i32,
+            actor_point.2 as i32,
+        ),
+        half_w,
+        PROJECTION_HALF_SIZE,
+        0,
+        h,
+        ofx,
+        ofy,
+        ot_shift,
+    )
+}
 
 /// 24-bit modulation colour baked into the command word `0x2e808080` — a
 /// neutral 50%-grey so the texel passes through the semi-transparency blend
