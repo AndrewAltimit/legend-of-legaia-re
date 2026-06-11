@@ -82,7 +82,7 @@ u32 size     ; slot allocation in bytes (sector-aligned)</code></pre>
 <pre><code>57 56 55 54 53 | 00 | 42 41 40 3f | 00 | 21 20 27 26 25 24 23 22
 2b 2a 29 28 33 32 31 30 2f 2e | 00 | 19 18 17 16 15 14 13 | 00 |
 69 68 67 66 | 00</code></pre>
-  <p>Terra (0866) carries only five <code>id = 0</code> entries &mdash; no variant slots. Per the runtime palette consumer (<code>FUN_80052770</code> case 4), each section ships one record per <strong>equipment id</strong> plus the <code>id = 0</code> default, and the loader picks the equipment-id-matched entry or the default per section. The mapping from these ids to item-table ids is not yet pinned (open question).</p>
+  <p>Terra (0866) carries only five <code>id = 0</code> entries &mdash; no variant slots. <strong>The slot ids are equippable item ids</strong> (the item-name table id space): the five sections are the character's five equipment slots, and <code>FUN_80052770</code> case 4 walks the table matching each entry's <code>id</code> against the character record's equipped-item bytes (<code>+0x196..+0x19A</code>), taking the <code>id = 0</code> default when nothing matches. Vahn's file carries body (<code>0x43</code> Hunter Clothes &hellip;), head, weapon (<code>0x22</code> Survival Knife &hellip;), Ra-Seru weapon (<code>0x01..0x09</code> Meta tiers) and footwear sections. Live proof: the assembled battle mesh's vertex pools byte-match exactly the equipped sections &mdash; see <a href="character-mesh.html">character mesh packs</a>.</p>
 </section>
 
 <section class="doc-section" id="slot-region">
@@ -163,7 +163,7 @@ mednafen-state clut-trace \
   <h2>Open questions</h2>
   <ul>
     <li><strong>Per-texture descriptor</strong> (<code>u32[4]..u32[7]</code>): slots sharing an identical signature land at different VRAM coords, so the placement is runtime-resolved &mdash; trace the battle-init upload path that consumes the header.</li>
-    <li><strong>Slot id &harr; equipment id mapping</strong>: the section ids plausibly index the equipment tables (each section = one equip slot's variants, per the <code>FUN_80052770</code> case-4 picker); pinning id &rarr; item-table id needs a capture with a known equipment change.</li>
+    <li><strong>Slot id &harr; equipment id mapping &mdash; resolved</strong>: the section ids ARE item-table ids, matched against the character record's equipped-item bytes by the <code>FUN_80052770</code> case-4 picker; the battle <code>nobj</code> +2 weapon objects source from these sections (byte-verified).</li>
     <li><strong><code>data_base</code> derivation</strong>: observed <code>0x8000</code> in all four files; the header/table &rarr; <code>0x8000</code> rule is unconfirmed.</li>
     <li><strong>Sub-object end offsets</strong> (<code>u32[1]</code>, <code>u32[2]</code>): multi-mesh slots hold several TMDs back-to-back; the stride isn't validated across every variant.</li>
     <li><strong>Parser realignment</strong>: move <code>legaia_asset::battle_data_pack</code> onto the <code>[id, offset, size]</code> frame (see Parser status).</li>

@@ -360,9 +360,10 @@ state, mc7):
 
 The field-form bundles all have 69-72 records (the full player-locomotion
 + interaction anim set). PROT `1203_other5` is the **battle-form** player
-animation set, sitting alongside the [battle-form character mesh pack](character-mesh.md#battle-form--prot-1204)
-at PROT 1204 — the same `other5` family the engine installs for turn-based
-battles (and that the Baka Fighter minigame reuses). Other scenes either share
+animation set — the rig the [assembled battle meshes](character-mesh.md#battle-form--assembled-from-the-player-files)
+pose against (its banks' bone counts match the player-file skeletons), sitting
+alongside the default-equipment mesh pack at PROT 1204 that the Baka Fighter
+minigame loads. Other scenes either share
 an ANM blob with one of these via runtime caching, or have a smaller per-scene
 player-ANM section.
 

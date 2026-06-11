@@ -7,15 +7,24 @@ The player characters have **two distinct mesh packs**, one per game form:
   [`cdname.md` § numbering space](cdname.md#numbering-space)): the low-poly walk/talk models
   the engine keeps resident across every field scene at `DAT_8007C018[0..=4]`.
   Parser [`legaia_asset::character_pack`](../../crates/asset/src/character_pack.rs).
-- **Battle form — PROT 1204** (`other5`): the higher-detail party models the
-  engine installs into `DAT_8007C018[0..=2]` for every turn-based battle. Parser
+- **Battle form — assembled per character from the player battle files**
+  (`data\battle\PLAYER1..4`, extraction 0863..0866 — see
+  [`battle-data-pack.md`](battle-data-pack.md)): at battle setup the engine
+  **builds** each party member's higher-detail TMD by splicing together the
+  five equipment-selected sections of that character's file, and installs
+  the result into `DAT_8007C018[0..=2]` (see
+  [§ Battle form](#battle-form--assembled-from-the-player-files)).
+  **PROT 1204** (`other5`) is a sibling pack carrying pre-assembled copies of
+  the same characters with default equipment — it is what the **Baka
+  Fighter** fist-fight minigame loads, and most default-section geometry is
+  byte-shared between the two sources. Parser
   [`legaia_asset::battle_char_pack`](../../crates/asset/src/battle_char_pack.rs).
-  The **Baka Fighter** fist-fight minigame reuses this same pack (see
-  [§ Battle form](#battle-form--prot-1204)).
 
-The field form is field-only; battle uses the battle form. (An earlier reading
-held that battle reused the field pack — falsified by direct save-state
-byte-comparison; see the provenance note in § Battle form.)
+The field form is field-only; battle uses the battle form. (Two earlier
+readings — "battle reuses the field pack" and "battle renders PROT 1204
+directly" — are both superseded by the assembly chain in § Battle form; the
+1204 attribution rested on the default-section geometry the two sources
+share.)
 
 ## Contents
 
@@ -25,7 +34,7 @@ byte-comparison; see the provenance note in § Battle form.)
 - [Textures (field form)](#textures-field-form)
   - [CLUT upload semantic (`FUN_800198e0`)](#clut-upload-semantic-fun_800198e0)
   - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
-- [Battle form — PROT 1204](#battle-form--prot-1204)
+- [Battle form — assembled from the player files](#battle-form--assembled-from-the-player-files)
   - [Assembly — object-local pieces posed by the battle ANM](#assembly--object-local-pieces-posed-by-the-battle-anm)
   - [Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)
   - [Equipment groups (battle only)](#equipment-groups-battle-only)
@@ -207,49 +216,74 @@ renders all three party members in their real colours (blue-haired Vahn, auburn
 green-eyed Noa, orange-haired Gala). Field TMDs are model-space, so the pieces
 assemble without an ANM rest pose.
 
-## Battle form — PROT 1204
+## Battle form — assembled from the player files
 
-A real main-game battle renders the party from PROT entry `1204` (`other5`),
-**not** the field pack. These are higher-detail Vahn / Noa / Gala meshes plus
-two extra fighter slots; the engine installs the active party into
-`DAT_8007C018[0..=2]` for the battle.
+A real main-game battle does not render any disc TMD directly: at battle
+setup the engine **assembles** each active party member's mesh from that
+character's player battle file (`data\battle\PLAYER<n>`, extraction
+0863..0866 — format: [`battle-data-pack.md`](battle-data-pack.md)), picking
+one section per equipment slot by the character's **equipped item ids**, and
+installs the merged TMD into `DAT_8007C018[0..=2]`.
 
-**Empirical provenance (decisive).** Reading the live party mesh pointers
-`DAT_8007C018[0..=2]` out of real-battle save states and byte-comparing each
-runtime TMD's (pose-independent) vertex pool against the two candidate disc
-packs shows the party meshes byte-match PROT 1204 and **never** the field pack
-0874:
+**The assembly chain** (all static SCUS; decomps in `ghidra/scripts/funcs/`):
 
-| Real battle | slot 0 (Vahn) | slot 1 (Noa) | slot 2 (Gala) |
-|---|---|---|---|
-| Tetsu tutorial | `nobj=17` → 1204 | (Vahn-only) | (Vahn-only) |
-| Gimard Seru-boss (turn-based) | `nobj=17` → 1204 | enemy/aux | enemy/aux |
-| Gobu Gobu (full party) | 1204 (12/17) | 1204 (16/18) | 1204 (17/17) |
+1. **`FUN_80052770`** — player-file streaming state machine. Case 1 opens
+   `data\battle\PLAYER<n>` by raw TOC index `member_id + 0x360`
+   (= extraction 863..866) and reads the head; **case 4 selects the five
+   sections** by matching descriptor ids against the character record's
+   equipped-item bytes (`+0x196..+0x19A`, `id = 0` defaults — see
+   [`battle-data-pack.md` § Descriptor table](battle-data-pack.md#descriptor-table));
+   later cases stream the selected sections into RAM (per-slot context
+   `0x801C92F0 + slot*0x1C`).
+2. **`FUN_80052FA0`** — per-character assembler. LZS-decodes `record[0]`
+   (the palette chain) plus the five selected sections, then builds the
+   merged TMD at `ctx + 0x50` (`ctx = *(0x801C9360 + slot*4)`): writes magic
+   `0x80000002` at `blob+0x18`, `nobj = 0` at `blob+0x20`, and splices each
+   section in with `FUN_800536BC`.
+3. **`FUN_800536BC`** — the object splice (**the thing that grows `nobj`**).
+   Appends the section's 7-word TMD object entries (relocating vertex /
+   normal / primitive offsets into the merged pool), copies the section's
+   data words, accumulates `nobj += section_nobj`, and writes one bone-id
+   byte per object at `blob+0` from the section's attach list
+   ([`battle-data-pack.md` § Decompressed slot layout](battle-data-pack.md#decompressed-slot-layout));
+   objects past the attach list get tag `0xFF` / `0xFE` — these are the
+   **equipment visual meshes** (weapon, Ra-Seru).
+4. **`FUN_80053898`** — post-pass: retags `0xFF` → 200/201 and `0xFE` → 100+,
+   records each extra's attach bone at `blob + nobj`, and selection-sorts the
+   object table by tag so the extras land at indices `nobj-2`, `nobj-1`.
+5. **`FUN_800513F0`** — battle init registers `blob + 0x18` into
+   `DAT_8007C018[slot]` (the watchpoint-pinned `*(actor+0x50)+0x18` install
+   below), runs the CLUT-row TSB/CBA rewrite, and caches the two extras'
+   vertex-pool pointers (battle ctx `+0x1030..0x103C`) + attach bones
+   (`+0x23A/0x23B`).
 
-Gimard is an unambiguous turn-based boss fight, so this is not a minigame
-artifact. Reproduce with
-[`scripts/verify_battle_char_pack.py`](../../scripts/verify_battle_char_pack.py)
-against a battle RAM dump; the disc-only distinctness (battle Vahn geometry is
-absent from the field pack) is pinned by the disc-gated
-`battle_char_pack_real::battle_pack_is_distinct_from_field_pack`.
+So runtime `nobj` = skeleton bone count + equipment extras — Vahn's 15 bones
++ weapon + Ra-Seru = the observed 17. (**Not** `FUN_8001EBEC`, which only
+toggles a pose transform on the *field* mesh — see
+[10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap).)
 
-Runtime `nobj` is +2 over disc (15/16/15 → 17/18/17). **The source of the +2
-is not `FUN_8001EBEC`** (an earlier reading attributed it there; the decomp
-shows `FUN_8001EBEC` only *toggles* a transform, it adds no objects — see
-[10-group cap + equipment-conditional swap](#10-group-cap--equipment-conditional-swap)).
-The mechanism that grows the object count by two at battle setup is a distinct,
-still-unpinned loader (the open **D-WEAP** thread: the external equipped-weapon
-mesh source); trace the battle-init obj-add path or exec-bp it under a battle
-capture.
+**Empirical provenance (byte-verified, full-party Gobu Gobu save).**
+`DAT_8007C018[0] = 0x80165E38` = the assembler's `ctx+0x50` blob + 0x18
+exactly; the assembled TMD reads `nobj = 17`, bone-id bytes `[0..14, 200,
+201]`, attach array `[5, 8]` at `blob+17`. With Vahn equipped `[0x43 Hunter
+Clothes, —, 0x22 Survival Knife, 0x01 Ra-Seru Meta, —]`, **every one of the
+17 object vertex pools byte-matches a PLAYER1 section**, selectively: the
+body objects match only the `id = 0x43` section, the weapon objects (bone 5
++ extra 200) only the `id = 0x22` section, the Ra-Seru extra the Meta-tier
+sections, and the unequipped slots match their `id = 0` defaults.
 
-**The Baka Fighter minigame reuses this same pack.** Baka Fighter lets you play
-*as* Vahn / Noa / Gala, so it borrows the battle character models — its
-`overlay_baka_fighter` loads `data\field\other5.lzs` + PROT 1205/1206 (debug
-string `"OTHER5 %d %d"`). This is why save states captured *during a Baka
-Fighter match* also show `DAT_8007C018[0..=2]` pointing at this archive; it is a
-shared battle/minigame pack, not a minigame-exclusive roster. (An earlier
-session had this backwards — concluding 1204 was Baka-Fighter-only and that
-battle reused the field pack.) Parser: `legaia_asset::battle_char_pack`.
+**PROT 1204 (`other5`) is the Baka Fighter pack, not the battle source.**
+The five equipped-variant objects (Hunter Clothes body, Survival Knife
+piece + extra, the equipped Meta piece) appear **nowhere** in PROT 1204;
+the remaining 12 default-section objects are byte-shared between the player
+files and 1204 — which is what the earlier "battle party byte-matches
+PROT 1204 (12/17)" partial-match table was actually seeing. Baka Fighter
+loads 1204 explicitly (`overlay_baka_fighter` loads `data\field\other5.lzs`
++ PROT 1205/1206, debug string `"OTHER5 %d %d"`), and its bundled meshes are
+the same characters with default equipment. The field-pack distinctness
+finding stands (battle geometry is absent from the field pack 0874;
+disc-gated `battle_char_pack_real::battle_pack_is_distinct_from_field_pack`).
+Parser for the 1204 pack: `legaia_asset::battle_char_pack`.
 
 ### Assembly — object-local pieces posed by the battle ANM
 
@@ -330,13 +364,12 @@ files, raw indices → extraction entries: `etim.dat` `0x368` → 0870,
 
 ### Battle render: load-time TSB/CBA relocation
 
-At battle entry the party-setup overlay does three things to each party
-character: registers the 1204 mesh (`flags` 0→1, object-table pointers fixed to
-absolute RAM), grows the visible object count by two (`nobj` +2; the source of
-those two objects is the unpinned **D-WEAP** loader — *not* `FUN_8001EBEC`,
-which only toggles a transform on an existing group), and — crucially —
-**rewrites every primitive's TSB (texpage) and CBA (CLUT) fields** to a packed
-per-party-slot runtime VRAM band. The TSB/CBA stored on disc are an **authoring
+At battle entry the party setup does three things to each party character:
+registers the assembled mesh (`flags` 0→1, object-table pointers fixed to
+absolute RAM — see [§ Battle form](#battle-form--assembled-from-the-player-files)
+for the assembly that produces it, including the two equipment extras), and —
+crucially — **rewrites every primitive's TSB (texpage) and CBA (CLUT)
+fields** to a packed per-party-slot runtime VRAM band. The TSB/CBA stored on disc are an **authoring
 layout** (the one the Baka Fighter minigame renders directly, with the bundled
 CLUTs); a normal battle relocates them. The remap is fixed and scene-independent
 (byte-identical across a town battle and a world-map battle):
@@ -568,12 +601,13 @@ walked as-is samples the authoring pages and renders incoherently.
 
 ### Equipment groups (battle only)
 
-A live battle character carries +2 `nobj` over the disc form (Vahn 15→17),
-so the in-battle silhouette differs from both the unarmed disc form and the
-Baka Fighter form (a fist-fight, which keeps the unarmed mesh). The
+A live battle character carries +2 `nobj` over the 1204 disc form (Vahn
+15→17), so the in-battle silhouette differs from both the unarmed disc form
+and the Baka Fighter form (a fist-fight, which keeps the unarmed mesh). The
 equipped-weapon/gear geometry behind that `+2` is **not present in the 1204
-TMD** — it is sourced externally (a separate weapon mesh). That external
-source is an open thread.
+TMD** — it is the per-equipment-id section of the character's player battle
+file, spliced in by the assembler (resolved; see
+[§ Battle form](#battle-form--assembled-from-the-player-files)).
 
 `FUN_8001EBEC` is **not** that loader, and it does **not** grow `nobj`. The
 decomp ([`8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt); see also
@@ -584,12 +618,12 @@ two *in-TMD* group templates (group 10 at `TMD+0x124` for "equipped" ↔ group 1
 at `TMD+0x140` for "unequipped") **into an existing visible group descriptor**
 (`group[selector] = base + 0xC + sel*0x1C`, `sel ∈ {0,3,5}`). It writes seven
 words (`puVar1[0..6]`) and **never touches the object/group count** — a binary
-pose toggle on geometry already in the disc 1204 pack, not an object add and not
-an external-mesh upload. So the runtime `nobj` +2 and the external `+2` weapon
-objects come from a distinct, still-unpinned mechanism; the earlier "the
-equipment swap `FUN_8001EBEC` sources it / adds the groups" framing conflated
-the two. Next disc-doable step: trace the battle-init obj-add path (a sibling of
-`FUN_8001E890`) that raises the count, or exec-bp it under a clean battle capture.
+pose toggle on geometry already in the field mesh, not an object add and not
+an external-mesh upload. The mechanism that actually raises the battle object
+count is the player-file section splice `FUN_800536BC` (see
+[§ Battle form](#battle-form--assembled-from-the-player-files)); the earlier
+"the equipment swap `FUN_8001EBEC` sources it / adds the groups" framing
+conflated the two.
 
 ### On-disc layout (PROT 1204)
 
