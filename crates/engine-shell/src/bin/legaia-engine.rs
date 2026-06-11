@@ -730,6 +730,15 @@ enum Cmd {
         /// the Attack command.
         #[arg(long, default_value_t = false)]
         player_battle: bool,
+        /// Present-party composition: comma-separated character names
+        /// (vahn/noa/gala/terra) or 0-based roster indices, in battle
+        /// order - e.g. `--party noa,terra`. Battle ordinal i renders in
+        /// VRAM texture band i with member i's own player-file mesh /
+        /// palette / spells (the live-verified retail banding rule).
+        /// Caps at the 3 on-screen positions. Default: the save's
+        /// composition (identity Vahn/Noa/Gala when none is recorded).
+        #[arg(long)]
+        party: Option<String>,
         /// Route field NPC dialogue through the inline-script field-VM runner
         /// (branch handlers execute their flag-sets / scene-changes) instead of
         /// the simplified typewriter. Up/Down navigate a menu, Cross confirms.
@@ -1203,6 +1212,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            party,
             vm_dialogue,
             terrain_y,
             edge_collision,
@@ -1223,6 +1233,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            party.as_deref(),
             vm_dialogue,
             terrain_y,
             edge_collision,
@@ -2826,6 +2837,7 @@ fn cmd_record(
         false,
         false,
         false,
+        None,
         false,
         false,
         false,
@@ -6344,18 +6356,19 @@ impl PlayWindowApp {
                             .next()
                     })
                 });
-            // Per-character: assemble the battle mesh from the player file
-            // (fallback: the static PROT 1204 slot), overlay its battle palette
-            // onto the CLUT rows the mesh samples, upload, bind to the party actor.
-            // char slot 0/1/2 = Vahn/Noa/Gala; player files + palette source =
-            // extraction PROT 863/864/865 (raw TOC 0x361-0x363; see
-            // docs/formats/cdname.md numbering space). Slot 3 (Terra, file 866)
-            // is not rendered: the runtime texture band + CLUT rows cover
-            // party slots 0..=2 only (`relocate_tsb_cba` / the row-481+ band),
-            // so a 4th member has no relocation target. (Her idle stream
-            // decodes fine - 17 parts - if a 4th band is ever pinned.)
+            // Per-member: assemble the battle mesh from the occupying
+            // character's player file (fallback: the static PROT 1204 slot),
+            // overlay its battle palette onto the CLUT rows the mesh samples,
+            // upload, bind to the party actor. The retail rule (live-verified
+            // for all four characters, incl. Terra): the CHARACTER picks the
+            // content - player file + palette = extraction PROT `863 +
+            // char_slot` (raw TOC 0x361-0x364; see docs/formats/cdname.md
+            // numbering space) - while the present-party ORDINAL picks the
+            // runtime texture band (`relocate_tsb_cba` x = 0x200 + i*0x80,
+            // CLUT row 481 + i). `World::active_party` supplies the mapping;
+            // empty = the identity Vahn/Noa/Gala default.
             for member in 0..party_count.min(3) {
-                let cslot = member; // actor slot i -> char slot i (Vahn/Noa/Gala)
+                let cslot = self.session.host.world.party_roster_slot(member);
                 // (tmd, raw bytes, per-object idle clip). The assembled path
                 // poses from the player file's own idle stream (already
                 // expanded so channel i drives object i, extras included);
@@ -6371,7 +6384,9 @@ impl PlayWindowApp {
                 let mut action_clips: Option<
                     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
                 > = None;
-                if let Some((asm, uploads, idle, clips)) = self.assembled_party_battle_mesh(cslot) {
+                if let Some((asm, uploads, idle, clips)) =
+                    self.assembled_party_battle_mesh(cslot, member)
+                {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
                     match legaia_tmd::parse(&asm.tmd) {
@@ -6399,13 +6414,15 @@ impl PlayWindowApp {
                 // meshes sample the authoring rects uploaded above instead.
                 if assembled {
                     if tex_uploads.is_empty() {
-                        for k in [cslot * 2, cslot * 2 + 1] {
-                            if let Some(atlas) = pack.atlases.get(k)
+                        // Approximation content = the CHARACTER's atlas pair;
+                        // destination = the MEMBER ordinal's runtime band.
+                        for half in 0..2usize {
+                            if let Some(atlas) = pack.atlases.get(cslot * 2 + half)
                                 && let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes)
                             {
                                 let img = &tim.image;
                                 vram.write_block(
-                                    512 + k as u16 * 64,
+                                    512 + (member * 2 + half) as u16 * 64,
                                     256,
                                     img.fb_w,
                                     img.h,
@@ -6442,16 +6459,21 @@ impl PlayWindowApp {
                         })
                         .unwrap_or_default(),
                     (None, Some(b)) => {
-                        let rec = [0usize, 9, 18][cslot]; // idle record per bank
-                        (0..tmd.objects.len())
-                            .map(|o| match b.bone_transform(rec, 0, o) {
-                                Some(t) => (
-                                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                                ),
-                                None => ([0; 3], [0; 3]),
-                            })
-                            .collect()
+                        // Idle record per 1203 bank. The banks cover the
+                        // Vahn/Noa/Gala trio only - a Terra fallback mesh
+                        // (no bank) renders unposed.
+                        match [0usize, 9, 18].get(cslot) {
+                            Some(&rec) => (0..tmd.objects.len())
+                                .map(|o| match b.bone_transform(rec, 0, o) {
+                                    Some(t) => (
+                                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                                    ),
+                                    None => ([0; 3], [0; 3]),
+                                })
+                                .collect(),
+                            None => Vec::new(),
+                        }
                     }
                     (None, None) => Vec::new(),
                 };
@@ -6471,8 +6493,9 @@ impl PlayWindowApp {
                 let mut cols: Vec<u16> = vmesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
                 cols.sort_unstable();
                 cols.dedup();
-                // Decode + overlay the battle palette. Vahn (863) = byte-exact
-                // parse_record; Noa (864) / Gala (865) = equipment-robust collect.
+                // Decode + overlay the battle palette from the character's own
+                // player file. Vahn (863) = byte-exact parse_record; the other
+                // characters (864..866, incl. Terra) = equipment-robust collect.
                 let pal = match cslot {
                     0 => self
                         .session
@@ -6484,18 +6507,15 @@ impl PlayWindowApp {
                             let rec0 = legaia_asset::battle_char_palette::find_record0(&f)?;
                             legaia_asset::battle_char_palette::parse_record(&f, rec0).ok()
                         }),
-                    1 | 2 => {
-                        let prot = if cslot == 1 { 864 } else { 865 };
-                        self.session
-                            .host
-                            .index
-                            .entry_bytes_extended(prot)
-                            .ok()
-                            .and_then(|f| {
-                                legaia_asset::battle_char_palette::collect_palette(&f, 0, &cols)
-                                    .ok()
-                            })
-                    }
+                    1..=3 => self
+                        .session
+                        .host
+                        .index
+                        .entry_bytes_extended(863 + cslot as u32)
+                        .ok()
+                        .and_then(|f| {
+                            legaia_asset::battle_char_palette::collect_palette(&f, 0, &cols).ok()
+                        }),
                     _ => None,
                 };
                 if let Some(pal) = pal {
@@ -6571,13 +6591,16 @@ impl PlayWindowApp {
 
     /// Assemble one party member's battle mesh the way the retail battle
     /// loader does: read the character's player battle file (extraction PROT
-    /// `863 + slot`, the `data\battle\PLAYER<n>` files), select its five
+    /// `863 + cslot`, the `data\battle\PLAYER<n>` files), select its five
     /// equipment sections by the roster record's equipped item ids
     /// (`+0x196..+0x19A`), splice them into the merged TMD
     /// (`legaia_asset::battle_char_assembly`), then apply the
-    /// registration-time TSB/CBA relocation into the slot's runtime VRAM
-    /// band (`relocate_tsb_cba`; texpages `512 + 128*slot` / `+64` at
-    /// `y = 256`, CLUT row `481 + slot`). Also decodes the matching band
+    /// registration-time TSB/CBA relocation into the present-party
+    /// ORDINAL's runtime VRAM band (`relocate_tsb_cba` over `band`;
+    /// texpages `512 + 128*band` / `+64` at `y = 256`, CLUT row
+    /// `481 + band` - the live-verified retail rule: the band follows the
+    /// party position, the content follows the character). Also decodes
+    /// the matching band
     /// *pixels* - the equipped sections' texture pools + record[0] image
     /// blocks at the pinned placement (`character_texture_uploads`; empty
     /// with a warning when that decode fails, so the caller can fall back
@@ -6590,7 +6613,7 @@ impl PlayWindowApp {
     /// mesh assembly or the idle-stream decode fails - the caller falls
     /// back to the slot's static PROT 1204 mesh, whose rest pose
     /// (PROT 1203, identity object->bone) is known-correct.
-    fn assembled_party_battle_mesh(&self, cslot: usize) -> Option<AssembledPartyMesh> {
+    fn assembled_party_battle_mesh(&self, cslot: usize, band: usize) -> Option<AssembledPartyMesh> {
         let prot = 863 + cslot as u32;
         let raw = match self.session.host.index.entry_bytes_extended(prot) {
             Ok(raw) => raw,
@@ -6632,7 +6655,7 @@ impl PlayWindowApp {
                 }
             };
         if let Err(e) =
-            legaia_asset::battle_char_assembly::relocate_tsb_cba(&mut asm.tmd, cslot as u8)
+            legaia_asset::battle_char_assembly::relocate_tsb_cba(&mut asm.tmd, band as u8)
         {
             log::warn!("play-window: party {cslot} TSB/CBA relocation: {e:#}");
             return None;
@@ -6656,10 +6679,7 @@ impl PlayWindowApp {
         // Band pixels at the pinned FUN_80052FA0 placement. A failure here
         // degrades to the 1204 atlas approximation, not to a mesh fallback.
         let uploads = legaia_asset::battle_char_assembly::character_texture_uploads(
-            &raw,
-            &pack,
-            &equipped,
-            cslot as u8,
+            &raw, &pack, &equipped, band as u8,
         )
         .unwrap_or_else(|e| {
             log::warn!("play-window: party {cslot} texture-pool decode: {e:#}");
@@ -7565,8 +7585,17 @@ impl PlayWindowApp {
             // loop skips empty slots.
             let mut row_y: [Option<i32>; 8] = [None; 8];
             let mut y = 60i32;
+            // Row label = the occupying character's roster name (the
+            // present-party composition maps battle ordinal -> character);
+            // "P<n>" when the roster has no record for the slot.
+            let party_names = legaia_engine_core::field_menu_dispatch::roster_names(bw);
             for (i, a) in bw.actors.iter().take(pc).enumerate() {
-                let line = format!("P{}  HP {:>4}/{:<4}", i + 1, a.battle.hp, a.battle.max_hp);
+                let name = party_names
+                    .get(bw.party_roster_slot(i))
+                    .filter(|n| !n.is_empty())
+                    .map(|n| format!("{n:<8}"))
+                    .unwrap_or_else(|| format!("P{:<7}", i + 1));
+                let line = format!("{name}HP {:>4}/{:<4}", a.battle.hp, a.battle.max_hp);
                 let color = if a.battle.liveness != 0 {
                     white
                 } else {
@@ -9632,6 +9661,27 @@ fn apply_cheat_file(
     Ok(())
 }
 
+/// Parse a `--party` composition spec: comma-separated character names
+/// (case-insensitive `vahn`/`noa`/`gala`/`terra`) or 0-based roster
+/// indices, in battle order.
+fn parse_party_spec(spec: &str) -> Result<Vec<u8>> {
+    spec.split(',')
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(|t| match t.to_ascii_lowercase().as_str() {
+            "vahn" => Ok(0u8),
+            "noa" => Ok(1),
+            "gala" => Ok(2),
+            "terra" => Ok(3),
+            other => other.parse::<u8>().map_err(|_| {
+                anyhow::anyhow!(
+                    "unknown party member '{t}' (use vahn/noa/gala/terra or a roster index)"
+                )
+            }),
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_play_window(
     scene: &str,
@@ -9647,6 +9697,7 @@ fn cmd_play_window(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    party: Option<&str>,
     vm_dialogue: bool,
     terrain_y: bool,
     edge_collision: bool,
@@ -9668,6 +9719,7 @@ fn cmd_play_window(
         cheat_strict,
         live_loop,
         player_battle,
+        party,
         vm_dialogue,
         terrain_y,
         edge_collision,
@@ -9693,6 +9745,7 @@ fn cmd_play_window_with_record(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    party: Option<&str>,
     vm_dialogue: bool,
     terrain_y: bool,
     edge_collision: bool,
@@ -9876,6 +9929,26 @@ fn cmd_play_window_with_record(
     // ram_map registry.
     if let Some(path) = cheat_file {
         apply_cheat_file(&mut session.host.world, path, cheat_strict)?;
+    }
+
+    // Install the requested present-party composition (after the roster +
+    // cheats have settled, so the actor reseed reads final records). The
+    // flag overrides whatever composition the boot save carried.
+    if let Some(spec) = party {
+        let slots = parse_party_spec(spec)?;
+        let world = &mut session.host.world;
+        world.set_active_party(slots.clone());
+        if world.active_party.len() != slots.len() {
+            log::warn!(
+                "play-window: --party {spec}: kept the first {} of {slots:?} \
+                 (3 on-screen positions)",
+                world.active_party.len()
+            );
+        }
+        log::info!(
+            "play-window: present party = {:?} (roster slots, battle order)",
+            world.active_party
+        );
     }
 
     let scene_res = {

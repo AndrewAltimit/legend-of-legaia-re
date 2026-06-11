@@ -1042,6 +1042,20 @@ pub struct World {
     /// Number of party slots (default 3).
     pub party_count: u8,
 
+    /// Present-party composition: `active_party[i]` = the **roster slot**
+    /// (index into [`Self::roster`]) occupying battle ordinal `i`. The
+    /// engine mirror of retail's present-party list at `0x8007BD10`
+    /// (1-based char ids there; 0-based roster slots here). Battle actor
+    /// slot `i`, HUD row `i`, and the runtime VRAM texture band `i`
+    /// (`relocate_tsb_cba` row `481 + i`) all key on the ORDINAL; the
+    /// character content (player battle file `863 + roster_slot`,
+    /// equipment, spell list, XP recipient) keys on the roster slot —
+    /// the live-verified retail banding rule (band = ordinal, file =
+    /// 862 + char_id). Empty = identity mapping (slot `i` = roster `i`,
+    /// the Vahn/Noa/Gala default). Resolve through
+    /// [`Self::party_roster_slot`]; install via [`Self::set_active_party`].
+    pub active_party: Vec<u8>,
+
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
 
@@ -2149,6 +2163,7 @@ impl World {
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,
+            active_party: Vec::new(),
             battle_end: None,
             screen_fade: None,
             roster: legaia_save::Party::zeroed(0),
@@ -3381,10 +3396,13 @@ impl World {
             ArtRow, chain_matches_record, miracle_for_chain, power_from_record, super_for_chain,
             synthetic_power,
         };
-        let character = self.caster_character(caster);
+        // `caster` is the battle ordinal; chains + art catalog belong to the
+        // occupying CHARACTER (roster slot per the present-party composition).
+        let char_slot = self.party_roster_slot(caster as usize) as u8;
+        let character = self.caster_character(char_slot);
         self.saved_chains
             .iter()
-            .filter(|c| c.char_slot == caster)
+            .filter(|c| c.char_slot == char_slot)
             .map(|c| {
                 // Miracle Arts win over a plain art-record match: a chain whose
                 // directional string is the caster's Miracle Art replaces the
@@ -4018,16 +4036,22 @@ impl World {
             return Vec::new();
         }
         let mut results = Vec::new();
-        for char_id in alive {
+        for member in alive {
+            // XP / level state belongs to the CHARACTER (roster slot), while
+            // the live HP/MP resync targets the battle ordinal's actor mirror.
+            let char_id = self.party_roster_slot(member as usize) as u8;
             let Some(result) = self.level_up_tracker.grant_xp(char_id, per_member_xp) else {
                 continue;
             };
-            let slot = char_id as usize;
-            if let Some(rec) = self.roster.members.get_mut(slot) {
+            if let Some(rec) = self.roster.members.get_mut(char_id as usize) {
                 LevelUpTracker::apply_to_record(&result, rec);
             }
-            let new_hms = self.roster.members.get(slot).map(|r| r.hp_mp_sp());
-            if let (Some(actor), Some(hms)) = (self.actors.get_mut(slot), new_hms) {
+            let new_hms = self
+                .roster
+                .members
+                .get(char_id as usize)
+                .map(|r| r.hp_mp_sp());
+            if let (Some(actor), Some(hms)) = (self.actors.get_mut(member as usize), new_hms) {
                 actor.battle.max_hp = hms.hp_max;
                 actor.battle.hp = hms.hp_cur;
                 actor.battle.mp = hms.mp_cur;
@@ -4109,7 +4133,7 @@ impl World {
                 && self
                     .roster
                     .members
-                    .get(i)
+                    .get(self.party_roster_slot(i))
                     .is_some_and(|rec| rec.ability_bits()[6] & 0x01 != 0)
         });
         let gold_credited = vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold);
@@ -6203,6 +6227,54 @@ impl World {
             }
         }
         outcome
+    }
+
+    /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
+    /// band) to the **roster slot** of the character occupying it, per
+    /// [`Self::active_party`]. Identity when no composition is installed
+    /// or the ordinal runs past it — the historical slot-`i`-is-character-`i`
+    /// behaviour every synthetic test relies on.
+    pub fn party_roster_slot(&self, member: usize) -> usize {
+        self.active_party
+            .get(member)
+            .map(|&s| s as usize)
+            .unwrap_or(member)
+    }
+
+    /// Install a present-party composition: `slots[i]` = roster slot for
+    /// battle ordinal `i` (the engine mirror of retail's present-party
+    /// list at `0x8007BD10`). The list caps at the 3 on-screen party
+    /// positions (the runtime texture-band count). Sets
+    /// [`Self::party_count`] to the resulting length and, for each ordinal
+    /// whose mapped roster record exists, reseeds the party actor's HP /
+    /// MP / liveness / SPD mirror from it — the same projection
+    /// [`Self::load_party`] performs for the identity mapping. Ordinals
+    /// past the roster keep their live mirrors (zeroed-roster / synthetic
+    /// setups render the character with default equipment, exactly like
+    /// the identity default).
+    pub fn set_active_party(&mut self, slots: Vec<u8>) {
+        let mut active = slots;
+        active.truncate(3);
+        for (member, &rslot) in active.iter().enumerate() {
+            let Some(rec) = self.roster.members.get(rslot as usize) else {
+                continue;
+            };
+            let hms = rec.hp_mp_sp();
+            if let Some(a) = self.actors.get_mut(member) {
+                a.active = true;
+                a.battle.hp = hms.hp_cur;
+                a.battle.max_hp = hms.hp_max;
+                a.battle.mp = hms.mp_cur;
+                a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
+            }
+            if let Some(s) = self.battle_speed.get_mut(member) {
+                *s = rec.live_stats().spd;
+            }
+        }
+        if !active.is_empty() {
+            self.party_count = active.len() as u8;
+        }
+        self.active_party = active;
     }
 
     /// Place the world into [`SceneMode::Battle`] and populate the actor

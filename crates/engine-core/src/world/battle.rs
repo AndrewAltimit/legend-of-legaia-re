@@ -345,14 +345,18 @@ impl World {
         if self.actor_blocked_from_magic(caster) {
             return None;
         }
-        let member = self.roster.members.get(caster as usize)?;
+        // `caster` is the battle ordinal; the spell list belongs to the
+        // CHARACTER occupying it (roster slot per the present-party
+        // composition). Live mirrors (MP, ability bits) stay ordinal-keyed.
+        let char_slot = self.party_roster_slot(caster as usize) as u8;
+        let member = self.roster.members.get(char_slot as usize)?;
         let list = member.spell_list();
         let n = (list.count as usize).min(list.ids.len());
         // Union the roster's saved spell list with anything learned via Seru
         // capture this session, so a freshly-learned spell is immediately
         // castable without waiting for a save/load round-trip.
         let mut learned: Vec<u8> = list.ids[..n].to_vec();
-        for &sid in self.seru_log.learned_spells(caster) {
+        for &sid in self.seru_log.learned_spells(char_slot) {
             if !learned.contains(&sid) {
                 learned.push(sid);
             }
@@ -765,7 +769,12 @@ impl World {
     /// doesn't carry the spell — a fresh cast with no recorded level.
     pub(super) fn caster_magic_power_byte(&self, caster: u8, spell_id: u8) -> u8 {
         const RETAIL_SEARCH_BOUND: usize = 0x20;
-        let Some(record) = self.roster.members.get(caster as usize) else {
+        // Battle ordinal -> the occupying character's record.
+        let Some(record) = self
+            .roster
+            .members
+            .get(self.party_roster_slot(caster as usize))
+        else {
             return 1;
         };
         let list = record.spell_list();
@@ -1340,7 +1349,9 @@ impl World {
     /// per-battle no-reward flag `_DAT_8007BAC0` (scripted fights) and the
     /// unidentified accrual gate `_DAT_8007BDB8`.
     pub(super) fn accrue_summon_spell_xp(&mut self, caster: u8, spell_id: u8, gain: u32) {
-        let Some(record) = self.roster.members.get_mut(caster as usize) else {
+        // Battle ordinal -> the occupying character's record (the XP holder).
+        let char_slot = self.party_roster_slot(caster as usize);
+        let Some(record) = self.roster.members.get_mut(char_slot) else {
             return;
         };
         let Some(slot) = crate::magic_xp::spell_slot(record, spell_id) else {
@@ -1381,7 +1392,11 @@ impl World {
         if captures.is_empty() || self.seru_registry.is_empty() {
             return;
         }
-        let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3)).collect();
+        // Capture progress banks against CHARACTERS, not battle ordinals -
+        // resolve the present party to roster slots before recording.
+        let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3))
+            .map(|i| self.party_roster_slot(i as usize) as u8)
+            .collect();
         let seru_ids: Vec<u16> = captures
             .iter()
             .filter_map(|&mid| self.monster_catalog.get(mid).and_then(|d| d.seru_id))
@@ -1456,8 +1471,10 @@ impl World {
                     return None;
                 }
                 let mp_max = self.character_max_mp.get(i).copied().unwrap_or(0);
+                // Row label = the occupying character's name (roster_names is
+                // roster-slot keyed; `i` is the battle ordinal).
                 let name = names
-                    .get(i)
+                    .get(self.party_roster_slot(i))
                     .cloned()
                     .unwrap_or_else(|| format!("P{}", i + 1));
                 let mut row = TargetRow::new(i as u8, name)
@@ -1672,7 +1689,10 @@ impl World {
             if !down {
                 continue;
             }
-            let Some(record) = self.roster.members.get_mut(slot) else {
+            // The Lost Grail + ability bit live on the occupying character's
+            // record; the revive itself targets the battle ordinal's mirrors.
+            let char_slot = self.party_roster_slot(slot);
+            let Some(record) = self.roster.members.get_mut(char_slot) else {
                 continue;
             };
             let mut bits = record.ability_bits();

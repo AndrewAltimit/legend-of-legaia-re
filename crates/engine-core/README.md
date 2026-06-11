@@ -75,6 +75,18 @@ struct. `World::tick` runs:
 Engines that want a different storage layout (ECS, custom parallelism)
 implement the per-VM `Host` traits themselves; `World` is the default.
 
+`World::active_party` holds the present-party composition - the engine
+mirror of retail's present-party list at `0x8007BD10`: `active_party[i]`
+is the **roster slot** occupying battle ordinal `i`, so battle actor
+slot / HUD row / VRAM texture band all key on the ordinal while the
+character content (player battle file `863 + roster_slot`, equipment,
+spell list, arts chains, XP / capture recipients) keys on the roster
+slot - the live-verified retail banding rule (band = ordinal, file =
+862 + char_id). Empty = the identity Vahn/Noa/Gala default. Install via
+`set_active_party` (caps at the 3 on-screen positions, reseeds the actor
+HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
+`SaveExtV2::active_party` by `save_full` / `load_full`.
+
 ### Battle helpers
 
 - `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`

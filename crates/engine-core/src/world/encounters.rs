@@ -134,7 +134,13 @@ impl World {
         let mut own = [[0u32; ABILITY_WORDS]; 3];
         let mut global = [0u32; ABILITY_WORDS];
         for (slot, own_words) in own.iter_mut().enumerate().take(pc) {
-            let equip = self.roster.members[slot].equipment().slots;
+            // `slot` is the battle ordinal; the equipment that sources the
+            // bits belongs to the character occupying it.
+            let rslot = self.party_roster_slot(slot);
+            let Some(member) = self.roster.members.get(rslot) else {
+                continue;
+            };
+            let equip = member.equipment().slots;
             let words = self.accessory_passives.bits_for_equipment(&equip);
             // Rebuild the record-side bitfield (retail zeroes `+0xF4..+0x103`
             // and re-derives it from equipment on every pass). Bytes past the
@@ -143,7 +149,7 @@ impl World {
             for (w, word) in words.iter().enumerate() {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
             }
-            self.roster.members[slot].set_ability_bits(bytes);
+            self.roster.members[rslot].set_ability_bits(bytes);
             for (g, w) in global.iter_mut().zip(words.iter()) {
                 *g |= *w;
             }
@@ -203,7 +209,9 @@ impl World {
         self.refresh_party_ability_bits();
         let pc = self.party_count.min(3) as usize;
         for slot in 0..pc {
-            let Some(rec) = self.roster.members.get(slot) else {
+            // `slot` stays the battle ordinal for every live mirror written
+            // below; the stats are read off the occupying character's record.
+            let Some(rec) = self.roster.members.get(self.party_roster_slot(slot)) else {
                 continue;
             };
             let live = rec.live_stats();
