@@ -69,6 +69,7 @@ pub mod scene;
 pub mod scene_assets;
 pub mod scene_bundle;
 pub mod scene_resources;
+pub mod screen_fx;
 pub mod seru_learning;
 pub mod seru_stats;
 pub mod shop;

@@ -206,48 +206,85 @@ After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_8
 > [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch). The
 > move-VM stager records (extraction PROT 903..913) are real on-disc data and this driver
 > runs them faithfully opcode-for-opcode, but they aren't the player render
-> path. The piece below (`FUN_801F811C` translation interpolation) is itself a
-> genuine, byte-exact port regardless.
+> path.
+>
+> **Provenance correction (`FUN_801F811C`):** a full static decode of PROT 0900
+> at the slot-B link base `0x801F69D8` resolves `FUN_801F811C` as the per-frame
+> handler of the 2D **screen-mask (iris) widget** — kind 1 of the
+> [screen-effect widget family](#screen-effect-widget-family-prot-0900) below —
+> **not** a summon-part position update. Its four tweened channels
+> (`+0x3c/3e/40/42` targets vs `+0x14/16/18/1a` current) are the left / top /
+> right / bottom edges of a screen rectangle, and the "4 render quads" are the
+> black border bands framing that rectangle. The engine's
+> `summon::apply_translation_update` keeps the tween *shape* as an interpreted
+> per-part translation glide (documented as such in `summon.rs`); the faithful
+> port of the retail function is `engine-core::screen_fx::MaskWidget`.
 
 The summon scene-graph driver (`crates/engine-core/src/summon.rs`) ticks each
-part through this move VM, then applies the render-side position update
-`FUN_801F811C` (the per-frame summon-part position update; present byte-identical
-in the dance / baka-fighter overlay images at the same RAM address —
-`ghidra/scripts/funcs/overlay_dance_801f811c.txt`). The whole update is decoded
-and **ported** as `summon::apply_translation_update`.
+part through this move VM, then applies an interpreted render-side translation
+glide shaped like the `FUN_801F811C` tween: snap to `origin + anim banks` when
+no tween is active (`+0x9E == 0`); otherwise advance `+0x9C += frame_delta`
+(clamp to `+0x9E`), lerp each axis with the `FUN_801DE4C8` mode-1 arm, and
+latch exactly on `+0x9C == +0x9E` (clearing `+0x9E`). The engine models anim
+banks as summon-local offsets, so `summon::SummonScene` adds the cast-target
+`origin` to each axis's endpoint.
 
-`FUN_801F811C(actor)` per frame:
+## Screen-effect widget family (PROT 0900)
 
-- **No active tween (`+0x9E == 0`).** Snap world pos `+0x14/16/18/1a` to the
-  anim-bank target `+0x3c/3e/40/42`.
-- **Active tween (`+0x9E != 0`).** Advance the keyframe cursor
-  `+0x9C += DAT_1F800393` and clamp it to `+0x9E`. Then for each axis
-  (`x:3c↔14, y:3e↔16, z:40↔18, w:42↔1a`), if `target != cur`, lerp
-  `cur = FUN_801DE4C8(target, cur, +0x9C, +0x9E, 1)` and store the result via
-  `FUN_801DE648(value, &cur, 4)`. **Phase A (the `+0x9C == +0x9E` latch arm at
-  `0x801F82A0`)** — not a separate function but the terminal branch of this same
-  body — then latches the world pos exactly to the anim-bank target and clears
-  `+0x9E`. The function finally emits 4 render quads.
+The resident slot-B overlay PROT 0900 (link base `0x801F69D8`) hosts a
+four-kind family of 2D screen widgets — the cutscene-style presentation layer
+(iris mask, scripted sprites, image panel, letterbox bands). Engine port:
+`crates/engine-core/src/screen_fx.rs`; layout pinned on disc bytes by the
+disc-gated `screen_fx_disc` test.
 
-The two helpers (overlay-resident at the field-VM RAM band, dumped):
+Widgets are actors on the generic effect-actor list (`_DAT_8007C34C`).
+SCUS `FUN_80020DE0(descriptor, list)` allocates one and binds the per-frame
+handler from `descriptor+8` at `actor+0xc`; `FUN_8003CF04(list, handler)` finds
+a live widget by handler. The four 0x18-byte handler-binding descriptors sit at
+`0x801F8FE4/8FFC/9014/902C` (`[u32 0][u16 0][u16 0xFFFF][u32 handler][u32 0]…`):
 
-- `FUN_801DE4C8(a, b, t, D, mode)` — `if (a == b || D <= t) return a;`. Mode 1
-  (the only mode the summon caller uses) is plain linear interp
-  `(a - b) * t / D + b` with integer truncating division (no rounding). Modes
-  2/3/4 add ease curve segments. See
-  `ghidra/scripts/funcs/overlay_dance_801de4c8.txt`. Ported as
-  `summon::lerp_axis` (the mode-1 arm).
-- `FUN_801DE648(value, *dst, size)` — a sized store (`size` 1/2/4 → `sb`/`sh`/`sw`).
-  The summon caller always passes `size = 4`. See
-  `ghidra/scripts/funcs/overlay_baka_fighter_801de648.txt`. Collapses to a plain
-  `i16` field write in the engine.
+| kind | handler | per-frame behaviour | spawn / control API |
+|---|---|---|---|
+| sprite | `FUN_801F7A9C` | widget-script-driven tweened 2D sprite: GP0 `0x64` SPRT (pos `+0x14/16`, size `+0xa8/aa`, UV `+0xa4/a6`, CLUT `+0xa2`, RGB `+0x74`), texpage packet from `+0xa0`, OT `+0xc` | `FUN_801F8004(record)` — record `[x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24, script at `+0x13`; derives `texpage = (tex_x>>6) + ((tex_y & ~0xff)>>4)`, `u = (tex_x & 0x3f)<<2`, `v = tex_y & 0xff`, `clut = (clut_y<<6) + (clut_x>>4)` |
+| mask | `FUN_801F811C` | 4-edge rect tween + **4 black border quads** (GP0 `0x28`, colour 0, OT `+0x1c`): top `(x0,0)-(0x140,T)`, bottom `(x0,B)-(0x140,H-1)`, left `(x0,T)-(L-1,B)`, right `(R,T)-(0x140,B)` — `x0`/`H` from render scratch `0x1F800388`/`0x1F80038E` | `FUN_801F8D4C(l,t,r,b,dur)` — `-1` per edge selects the full-open default; fresh spawn starts fully open `[x0, 0, 0x140, H-1]` |
+| panel | `FUN_801F849C` | **five**-channel tween (x, y, w, h, first-page width `+0x24↔+0x26`) + 1–2 textured quads (GP0 `0x2C`, colour `0x888888`, OT `+0x10`) over **15bpp** texpages (spawn ORs `0x100` into the page selector — no CLUT); a panel wider than 256px splits across two pages | `FUN_801F88FC(rec)` spawn (`[x][y][w][h][tex_x][tex_y]` from operand `+1`; `w > 0x100` computes the second page + clamps the first-page width); `FUN_801F8E6C(x, y, scale, dur)` move/scale — `scale` is 4.12 fixed against the `+0xb8/ba/bc` base sizes |
+| letterbox | `FUN_801F8A34` | no tween: two solid black bands (`-y_off..y0`, `y3..H`) + two gradient feather strips (`y0`→`y1` white→black, `y2`→`y3` black→white; GP0 `0x3B` shaded semi-transparent behind a **subtractive**-blend draw-mode packet `FUN_80059010(…, 0x55, …)`), OT `+0x4` | `FUN_801F8F28(block)` — six i16s `[x_left][x_right][y0][y1][y2][y3]` |
 
-The engine models anim banks as summon-local offsets, so `summon::SummonScene`
-adds the cast-target `origin` to each axis's lerp endpoint (retail places the
-whole summon via the camera/parent). `frame_delta` is the engine's analog of
-`DAT_1F800393`: the same per-frame delta drives both the wait-timer drain and the
-`+0x9C` interpolation advance. The summon part now glides to its keyframe target
-instead of snapping on completion.
+The **sprite widget script** (cursor at `actor+0x90`) is byte-coded: opcode
+`0x40`, sub-op at `+2` dispatched through the 5-entry table at the overlay head
+(`0x801F7B14/7B28/7B54/7B8C/7D90`; the same table the overlay-resident
+dispatcher `FUN_801F2D68` consumes via `jr *(0x801F69D8 + sub*4)`):
+
+| sub | operands | semantics |
+|---|---|---|
+| 0 | — | kill: set actor flag bit 8 (suppresses the draw; `FUN_8003CF04` skips it) |
+| 1 | `flag:i16@3` | wait until story flag set (`FUN_8003CE64`, bank `0x80085758`); then `cursor += 5` and continue same-frame |
+| 2 | `flag:i16@3` | wait until story flag **clear**; then `cursor += 5` |
+| 3 | `x:i16@3, y:i16@5, rgb:u24@7, mode:u8@0xA, dur:i16@0xB` | tween position + colour; `cursor += 0xD` on completion |
+| 4 | `rgb:u24@3, mode:u8@6, dur:i16@7` | tween colour only; `cursor += 9` on completion |
+
+All tweens share `FUN_801DE4C8(a, b, t, D, mode)` — `if (a == b || D <= t)
+return a;` mode 1 = linear `(a-b)*t/D + b`, mode 2 = quadratic ease-out,
+mode 3 = quadratic ease-in, mode 4 = two-segment ease-in-out (integer
+truncating division throughout; `overlay_dance_801de4c8.txt`; ported as
+`screen_fx::interp`, all four modes). Results store via the sized-store
+`FUN_801DE648(value, *dst, size)` (`overlay_baka_fighter_801de648.txt`).
+Crucially, a tween **re-interpolates from a captured start value each frame**
+(mask: the latched `+0x14..` edges; sprite: the `+0x3c/3e` / `+0x7c` start
+slots written when `+0x9C == 0`) — not iteratively from the moving current
+value — and latches exactly on `+0x9C == +0x9E`.
+
+**Consumers.** The spawn/control APIs are called by field/event-VM sub-ops in
+the field overlay — `jal` sites inside `FUN_801DE840` at `0x801DF918` (sprite,
+inline record), `0x801DF974` (mask, operands `[L][T][R][B][dur]` i16s),
+`0x801DFA70` (panel), `0x801DFABC` (panel move/scale), `0x801DFACC`
+(letterbox). The earlier reading that the summon stagers 0910..0915 reference
+these handlers was **VA aliasing**: those hits are in-file `FUN_80021B04` part
+records whose addresses coincide with the handler VAs under the shared slot-B
+base. PROT 0900 file `0x0640..0x2660` (the whole family) is byte-resident at
+`0x801F7018..0x801F9038` in the fingerprinted `battle_gimard_tail_fire_a`
+save, and the function bodies are byte-identical to the dance / baka-fighter
+overlay images (`overlay_dance_801f811c.txt` etc.).
 
 ## Connection to other crates
 
