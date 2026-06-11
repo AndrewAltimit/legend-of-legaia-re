@@ -863,7 +863,21 @@ sites).
 
 The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x381)`) resolve against the in-RAM TOC at `0x801C70F0`, which is **raw `PROT.DAT` from byte 0** (byte-verified vs the `door_warp_town01_to_map01` state); the extraction index space slices entry starts 2 words higher, so the loaded entry is **extraction `param + 0x37F`** — every historical `param + 0x381` PROT attribution is 2 high. Slot A is fully reconciled (field 0897 = mode 2, battle 0898, menu 0899 = mode 22, STR-path 0969, cutscene 0970, debug menu 0971 = mode 0, the seven `0x3E` minigame slots, efect-test 0979 = mode 8 — each content/prologue-anchored; see [`boot.md`](../subsystems/boot.md)). Open:
 
-1. **Per-spell summon-stager identity (slot B).** Arithmetic now maps spell `0x81..0x8b` → extraction 0903..0913 (Gimard `0x81` → 0903, a clean stager: 40 spawn sites / 32 records). But no live capture has pinned which *file* a given cast loads (the stager is overwritten by the 0900 render overlay mid-cast), and 0907 — content-pinned as the "Hell's Music" dance song — falls on the spell-`0x85` slot. What would close it: a load-watch on `gp+0x934` (`0x8007BC4C`, loader-B current-id) or a CD-read LBA trace during one cast of each spell id; plus the dance overlay's own loader-B call sites (params for 0907/0924/0927) in `overlay_dance` dumps.
+1. **Per-spell summon-stager identity (slot B) — Gimard leg PINNED from existing states; other ids open.**
+   The loader-B current-id (`gp+0x934` = `0x8007BC4C`) read straight out of the catalogued PCSX save
+   states (no live probe — `scripts/pcsx-redux/match_prim_groups_to_disc.py::extract_ram` walks the
+   gzipped-protobuf `.sstate` to the RAM blob): all three player-Gimard cast states
+   (`gimard_summon_start` / `_visible` / `_burning_attack`) hold `id = 8` → **extraction 0903**,
+   byte-confirming the `spell − 0x79` arithmetic for `0x81` across the whole cast (spawn window,
+   steady-state render, attack move). The "0900 overwrites the stager mid-cast" concern does **not**
+   ride loader-B on the player path (the id never moves off 8). The **enemy** Gimard "Fire Tail"
+   frames (`battle_gimard_tail_fire_a/_b`, mednafen) instead hold loader-B `id = 5` → **extraction
+   0900** — the enemy special pages the move-FX module, not a stager. Caveat: the id is a
+   *last-load* tracker (an idle Begin/Run-menu state holds a stale `6`), so only in-cast states are
+   evidential. Still open: the other spell ids — especially `0x85`, whose arithmetic slot 0907 is
+   content-pinned as the "Hell's Music" dance song — need one mid-cast state per spell (same
+   pure-Rust read closes each); plus the dance overlay's own loader-B call sites (params for
+   0907/0924/0927) in `overlay_dance` dumps.
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
 3. **Engine mirrors still carry the raw `+ 0x381`.** `crates/engine-core/src/overlay_loader.rs` (`OVERLAY_PROT_BASE`), `crates/engine-core/src/summon.rs` (905..=915 comment), and `crates/engine-core/src/cd_dma.rs` feed extraction-indexed PROT reads with resolver-space indices — loading entries 2 high (e.g. menu 0899 where retail mode 2 loads field 0897). Needs an engine-side `- 2` (or a `param + 0x37F` constant) plus oracle re-runs; left untouched here (parallel engine work in flight).
 
