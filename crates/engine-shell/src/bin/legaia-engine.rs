@@ -5317,6 +5317,15 @@ impl PlayWindowApp {
     /// No-op when no ocean animation is loaded. Cheap: the whole-VRAM re-upload
     /// fires only on a frame change (~10x/s), not every render frame.
     fn advance_ocean_animation(&mut self) {
+        // While a battle is up the GPU texture holds the BATTLE VRAM (party
+        // band + palettes + monster pages); the ocean cells aren't visible
+        // under the battle stage, and re-uploading the field snapshot here
+        // would clobber that texture so every battle mesh samples field
+        // bytes (white speckle on the party band). Hold the shimmer until
+        // the field VRAM is restored at battle exit.
+        if self.session.host.world.mode == SceneMode::Battle {
+            return;
+        }
         let frame: [u8; 32] = {
             let Some(anim) = self.ocean_anim.as_mut() else {
                 return;
