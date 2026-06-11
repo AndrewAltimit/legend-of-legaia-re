@@ -37,7 +37,7 @@ record      = (&DAT_80074F68)[bonus_index * 8]   ; stride-8 record
 | `+2` | u8 | **defense-up** (`UDF`) bonus (body armor + head accessories) |
 | `+3` | u8 | **defense-down** (`LDF`) bonus (body armor + boots) |
 | `+4` | u8 | **speed** (`SPD`) bonus (only boots/shoes set it) |
-| `+5` | u8 | constant `0x40` |
+| `+5` | u8 | **passive-effect index** slot - `0x40` (the no-passive sentinel) on every retail row; the `kind == 1` arm of the passive aggregator `FUN_80042558` reads it (see [accessory-passive-table.md](accessory-passive-table.md)) |
 | `+6` | u8 | **equip character mask**: bit `1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` = any |
 | `+7` | u8 | **slot type** (`& 0x60`: `0x00` body, `0x20` head, `0x40` weapon, `0x60` footwear) + bit `0x01` = Ra-Seru |
 
@@ -129,12 +129,15 @@ resolve. (Weapon is the only non-1:1 category, because the disc enumerates the
 upgradeable Ra-Seru weapon as ~24 per-tier entries that the curated table
 collapses; every disc Weapon-slot item is still a weapon.) **None of the 77
 accessories ("Goods") appear in this table at all** — they are a separate
-system, so the `+7` byte was never meant to classify them; where the accessory
-records live is a distinct open thread, not a `+7` disambiguation problem.
-Pinned by the disc-gated `legaia-gamedata` test `equip_slots_vs_disc`.
+system, so the `+7` byte was never meant to classify them. The accessory
+system is resolved in [accessory-passive-table.md](accessory-passive-table.md):
+accessories are `kind == 2` items whose descriptor `+3` byte indexes the
+64-slot passive-effect space. Pinned by the disc-gated `legaia-gamedata`
+test `equip_slots_vs_disc`.
 
 ## See also
 
 - [Item property / name table](item-table.md) - the shared table this indexes through.
 - [Item-effect descriptor table](item-effect-table.md) - the consumable sibling reached through the same `+1` byte.
+- [Accessory passive-effect table](accessory-passive-table.md) - the passive index space the `+5` byte feeds (sentinel-only in retail).
 - [`reference/gamedata.md`](../reference/gamedata.md) - curated weapon/armor/accessory stat tables.
