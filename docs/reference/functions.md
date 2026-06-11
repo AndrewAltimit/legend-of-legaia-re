@@ -206,19 +206,21 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 
 | Address | Role |
 |---|---|
-| `80052FA0` | Party-character CLUT decode + assembly — [details ↓](#80052fa0) |
+| `80052FA0` / `800536BC` / `80053898` | Party battle-mesh assembler (equipment-section splice) + CLUT decode — [details ↓](#80052fa0) |
 | `80052770` / `800558fc` / `8003e8a8` | Player-file loader (Vahn/Noa/Gala/Terra battle records) — [details ↓](#80052770--800558fc--8003e8a8) |
 | `800520F0` | Battle scene loader (SCUS) — [details ↓](#800520f0) |
 | `800513F0` / `800542C8` | Battle-form party-mesh install — [details ↓](#800513f0--800542c8) |
 | `80020050` | Flame / effect-texture atlas loader (SCUS) — [details ↓](#80020050) |
 | `0x801C9370` (data) | **Battle actor pointer table** - 8 entries × 4 bytes. Slots 0..2 = party, 3..7 = monsters. Resolved by `FUN_8004E2F0` and `FUN_80054CB0`. |
-| `0x80074358..0x80074368` (data) | Global 4×u32 "active abilities" bitmask. `FUN_80042558` ORs each party member's `+0xF4..0x100` block into it every frame. |
+| `0x80074358..0x80074368` (data) | Global 4×u32 "active abilities" bitmask. `FUN_80042558` ORs each party member's `+0xF4..0x100` block into it every frame. The bit ids are the accessory passive-effect indices (descriptor `+3` byte); see [`formats/accessory-passive-table.md`](../formats/accessory-passive-table.md). |
 | `800431D0` | Global ability bit-test: `(bit_id) -> bool`. The read-side primitive for the bitmask above - `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. Cited heavily across battle code. |
 | `800349EC` | HP / threshold UI classifier: `(char_idx) -> color_idx`. Reads `[char_base + 0x0E]` (current HP) and `[char_base + 0x0C]` (max HP), returns `2`/`6`/`7`/`9` keyed on dead / quarter / half / healthy thresholds. Drives dialog HP-color tinting. |
 | `80035EA8` | MP-side variant of `FUN_800349EC`. Reads `[char_base + 0x10]` / `[char_base + 0x12]`. |
 | `8003FB10` | Action / ability validator. Sub-dispatches on `actor[+0x9A8]` byte; checks the global ability bitmask (`FUN_800431D0`) and per-actor flag bits to decide whether a queued action can proceed. |
 | `0x80084708` (data) | Character record table base. Stride `0x414` per character. See [`subsystems/battle.md`](../subsystems/battle.md) → "Character record layout". |
-| `80042558` | Per-frame stat aggregator. Walks the 3 active party members, caps stats at `0x3E7`, OR-aggregates `+0xF4..0x100` ability flags into the global bitmask. Calls `FUN_800432BC` / `FUN_80042DBC` to maintain the active-spell slot list at `[char + 0x2B0..]`. |
+| `80042558` | Per-frame stat aggregator + **accessory-passive assembler**. Walks the 3 active party members' 8 equip-slot bytes (`char +0x196`): each equipped item's passive index (`kind==1` → equip-bonus `+5`, `kind==2` → descriptor `+3`; `< 0x40`) becomes a bit in `char +0xF4..0x103`, then the percent boosts (HP/MP `+10%`/`+25%`, stat `+20%`) are applied inline rebuilding the effective stat block (`+0x104..`) from the base block (`+0x11C..`) with caps (HP `9999`, AGL `280`, else `999`). OR-aggregates the bitfields into the global mask; a separate arm grants/revokes the Talisman + top-Ra-Seru-weapon summon spells by item id (`FUN_800432BC` / `FUN_80042DBC`, spell list at `[char + 0x13D]`). See [`formats/accessory-passive-table.md`](../formats/accessory-passive-table.md). |
+| `80034250` | Goods description resolver (static): item id → descriptor `+3` passive index → `0x8007625C` record `+8` description pointer; the menu overlay's detail panel `FUN_801D0F1C` reads the same table's `+4` name pointer. |
+| `0x8007625C` (data) | Passive-effect name/description table: 64 × 12-byte `[u32 scope][u32 name_ptr][u32 desc_ptr]`, indexed by the passive-effect index. Scope `1` = party-wide. |
 | `80043048` | **Inventory consume-by-slot:** `(slot: i16, amount, prev) -> remaining`. The stride-2 array at `_DAT_80085958` (= `0x80084140 + 0x1818` = SC `+0x1818`) is the **item inventory**: byte 0 = item id, byte 1 = stack count. Bounds-checked (`slot < gp[+0x2D4]`); subtracts `amount` from the count, clamps at 0, zeroes the id when the count reaches 0. (Previously mis-documented as a "status-effect timer decrementer" — the `0x80085958` table is the item bag the `Have 99 Items` / `Item Modifier` GameShark codes target, not a timer table, and its sibling helpers id-match + cap stacks at 99.) |
 | `80042310` | **Inventory consume-by-id:** `(id, amount) -> slot`. Scans the active window `gp[+0x2D2]..gp[+0x2D4]` of `_DAT_80085958` for `id`, then decrements that slot's count (same clamp-at-0 / zero-id-at-0 as `FUN_80043048`). Bounds-checked. |
 | `80042EE0` | **Inventory find-slot-by-id:** `(id) -> slot \| 0x100`. Scans `gp[+0x2D2]..gp[+0x2D4]` of `_DAT_80085958`, returns the first matching slot index or `0x100` (not found). |
@@ -632,7 +634,14 @@ High fan-in across the debug-menu / world-map dev overlays. `see ghidra/scripts/
 
 ### `80052FA0`
 
-**Party-character CLUT decode + assembly** (SCUS). For each active party member (`DAT_8007bd10[char] != 0`) allocates a `0x19000` work buffer, LZS-decodes `record[0]` + 5 sub-records into it, and STP-copies the embedded CLUT structs to VRAM rows `481 + slot` via `FUN_80053B9C`. The CLUTs are `[u16 base][u16 count][BGR555]` at `record[0]+4`/`+8` and each flagged sub-record's trailing offset. Clean-room port `legaia_asset::battle_char_palette` reproduces all three party palettes (Vahn/Noa/Gala) byte-exact / ~98 % / 100 % from the disc. The archive walk uses `FUN_800536BC` (record copy + offset fixup, stride `0x1C`), `FUN_80053898` (bubble sort), `FUN_80053B9C` (per-colour CLUT→VRAM copy at `+0x894 + slot*0x1E0`, **OR-ing STP bit 15 onto non-zero colours**).
+**Party-character battle-mesh assembler + CLUT decode** (SCUS). For each active party member (`DAT_8007bd10[char] != 0`) allocates a `0x19000` work buffer and LZS-decodes `record[0]` + the 5 equipment-selected player-file sections into it.
+
+- **Palette half**: STP-copies the embedded CLUT structs to VRAM rows `481 + slot` via `FUN_80053B9C` (CLUTs are `[u16 base][u16 count][BGR555]` at `record[0]+4`/`+8` and each flagged sub-record's trailing offset; clean-room port `legaia_asset::battle_char_palette`, byte-exact vs live battle VRAM).
+- **Mesh half**: builds the character's **merged battle TMD** at `ctx+0x50` (`ctx = *(0x801C9360 + slot*4)`) — writes magic `0x80000002` at `blob+0x18`, `nobj = 0` at `blob+0x20`, then calls `FUN_800536BC` once per section.
+- **`FUN_800536BC` (the object splice)**: appends the section's 7-word TMD object entries with vertex/normal/prim offsets relocated into the merged pool, copies the data words, `nobj += section_nobj`, and writes one bone-id byte per object at `blob+0` from the section's attach list — surplus objects tagged `0xFF`/`0xFE` = the equipment visual meshes.
+- **`FUN_80053898` (post-pass)**: retags `0xFF`→200/201, `0xFE`→100+, records each extra's attach bone at `blob+nobj`, selection-sorts the object table so extras land last. `FUN_800513F0` then registers `blob+0x18` into `DAT_8007C018[slot]`.
+
+Byte-verified against the full-party battle save (`nobj=17`, bone bytes `[0..14,200,201]`, attach `[5,8]`; every vertex pool matches its equipment section). See [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files).
 
 See [`formats/character-mesh.md` § Palette](../formats/character-mesh.md).
 
@@ -644,7 +653,7 @@ See [`formats/character-mesh.md` § Palette](../formats/character-mesh.md).
 
 Battle scene loader (SCUS). Sequential state machine (sub-state at `gp+0xa59`) that pulls the `befect_data` cluster (CDNAME 872) via the dual-mode loader (retail dev-path string / debug PROT index): case 0x8 loads `h:\prot\battle\etim.dat` (the **effect sprite texels**), case 0xB loads `etmd.dat` = PROT `0x36a` (**874**, the `befect_data` §0 pack) + `vdf.dat`, case 0xC walks that pack and registers every entry via `FUN_80026B4C` (asserts magic `0x80000002`) into the **effect/model window `DAT_8007C018[3..]`** (a running base index, NOT the party `[0..=2]`), then loads `efect.dat` (PROT `0x36b`/875) into `_DAT_8007BD5C`, case 0xE calls effect-bundle init `0x801DE914(0x1000, 0xA00)`.
 
-**This loader does NOT install the party battle meshes** — those come from PROT 1204 (`other5`, the battle-form character pack; empirically pinned, see [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#battle-form--prot-1204)) and are registered into `DAT_8007C018[0..=2]` by `FUN_800513F0` + `FUN_800542C8` (below), **not** an overlay. State `9` (`LAB_800526C8`) dispatches the just-loaded `etim.dat` pack to VRAM by calling `FUN_800198E0` (→ `LoadImage`) per pack entry. See [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data-cdname-872).
+**This loader does NOT install the party battle meshes** — those are assembled per character from the player battle files (equipment-id-selected sections; `FUN_80052770` case 4 → `FUN_80052FA0` → `FUN_800536BC`, see [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files)) and are registered into `DAT_8007C018[0..=2]` by `FUN_800513F0` + `FUN_800542C8` (below), **not** an overlay. State `9` (`LAB_800526C8`) dispatches the just-loaded `etim.dat` pack to VRAM by calling `FUN_800198E0` (→ `LoadImage`) per pack entry. See [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data-cdname-872).
 
 ### `800513F0` / `800542C8`
 
@@ -791,7 +800,7 @@ Dev printf strings `"tmd"`/`"otbl"`/`"vdf_n"` (preserved in the cutscene_dialogu
 
 ### `8001EBEC`
 
-Equipment-conditional per-character TMD group-descriptor patch (the OBJECT 10/11 swap): for each of the three active party slots (indexed by the slot-4 freeze flag `_DAT_8007B824`) it picks one of two pre-built `0x1C`-byte group descriptors (`TMD+0x124` = group 10 vs `TMD+0x140` = group 11) per an equipment byte and overwrites the indexed live group (copying 7 × u32 = 28 bytes), toggling the equipped/unequipped pose. It writes **no** object/group count, so it does **not** add the runtime `nobj` +2 (15→17) — that comes from a separate, still-unpinned loader (the open D-WEAP thread), not this swap. (The earlier "Also:
+Equipment-conditional per-character TMD group-descriptor patch (the OBJECT 10/11 swap): for each of the three active party slots (indexed by the slot-4 freeze flag `_DAT_8007B824`) it picks one of two pre-built `0x1C`-byte group descriptors (`TMD+0x124` = group 10 vs `TMD+0x140` = group 11) per an equipment byte and overwrites the indexed live group (copying 7 × u32 = 28 bytes), toggling the equipped/unequipped pose. It writes **no** object/group count, so it does **not** add the runtime `nobj` +2 (15→17) — that comes from the player-file equipment-section splice (`FUN_800536BC`, see `80052FA0`), not this swap. (The earlier "Also:
 mode-aware sound-driver extension dispatcher" reading is false — the dump has no sound-driver / dispatch path.) See [`character-mesh.md`](../formats/character-mesh.md) and the `FUN_8001EBEC` reader row in [`world-map-overlay.md`](../formats/world-map-overlay.md#dat_8007c018--global-tmd-pointer-table-the-actual-cluster-a-source).
 
 ### `8001E890`

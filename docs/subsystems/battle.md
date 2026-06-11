@@ -55,10 +55,12 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   by a write-watchpoint at battle entry ([`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua),
   installed pointers byte-match the battle form — e.g. Vahn at `0x80165f48`). The
   party actors' mesh pointer `actor[+0x230]` resolves
-  to those `[0..=2]` entries. Pinned empirically by byte-matching the live party
-  vertex pools to PROT 1204 across the Tetsu / Gimard-boss / Gobu-Gobu battles
-  ([character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--prot-1204)).
-  The field pack 0874 §0 is field-only.
+  to those `[0..=2]` entries. The installed meshes are **assembled per
+  character from the player battle files** (equipment-id-selected sections,
+  spliced by `FUN_80052FA0`/`FUN_800536BC`; byte-verified against the live
+  party vertex pools — [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files)).
+  The field pack 0874 §0 is field-only; PROT 1204 is the Baka Fighter
+  default-equipment sibling pack.
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
 - **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.DAT` (extraction PROT 893 / 894; format + verification in [`formats/summon-readef.md`](../formats/summon-readef.md)).
 

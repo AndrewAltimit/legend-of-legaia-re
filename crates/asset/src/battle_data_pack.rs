@@ -10,10 +10,11 @@
 //! [u32 budget]` + the `record[0]` LZS stream (the battle-palette chain,
 //! parsed by [`crate::battle_char_palette`]). At `desc_off` sits a chained
 //! 12-byte descriptor table `[u32 id][u32 offset][u32 size]`
-//! (`offset[i+1] == offset[i] + size[i]`; `id = 0` marks section
-//! boundaries / default-variant slots; an all-zero entry terminates), and
-//! the slot region at `data_base` (0x8000 in all four retail files) holds
-//! per-slot `[u32 dec_size][LZS]` streams decoding to:
+//! (`offset[i+1] == offset[i] + size[i]`; sizes are sector-aligned;
+//! `id = 0` marks section boundaries / default-variant slots; an all-zero
+//! entry terminates), and the slot region at `data_base` (0x8000 in all
+//! four retail files) holds per-slot `[u32 dec_size][LZS]` streams
+//! decoding to:
 //!
 //! ```text
 //!   +0x00  u32 magic_or_count  ; 0x14 (=20) in every observed slot
@@ -25,17 +26,16 @@
 //!   +tmd_body_end              ; texture/CLUT pool (layout partially TBD)
 //! ```
 //!
-//! ### Framing note (pending realignment)
+//! ### Framing
 //!
-//! This walker predates the runtime pin of the descriptor table and reads it
-//! through a 4-byte-shifted frame: entry 0's `id` as a "record count"
-//! (`record_count`), entry 0's `offset` (always 0) as a "reserved" word, and
-//! each `(id, data_offset)` pair with the *previous* entry's `size` as
-//! `on_disc_size`. The `(id, data_offset)` pairs come out correct, so every
-//! slot decodes with the right id attached - except entry 0 itself, which
-//! surfaces as the `offset = 0` "filler" record with id 0 (its real id is
-//! the value reported as `record_count`). The off-by-one `on_disc_size` is
-//! harmless because the LZS decode is output-bounded.
+//! The walker reads the descriptor table in its runtime-pinned frame:
+//! entries start at `desc_off` itself (the header's first word doubles as a
+//! type-0 streaming chunk header, which is how streaming-format walkers skip
+//! the head cleanly). Detection validates the chain invariant
+//! (`offset[i+1] == offset[i] + size[i]`, entry 0 at offset 0) plus
+//! sector-aligned sizes, which is strict enough to accept all four retail
+//! player files - including Terra's 0866, whose table is all-default
+//! (`id = 0`) entries - while rejecting random input.
 //!
 //! ### What this is NOT
 //!
@@ -49,23 +49,30 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
-/// Maximum plausible record count we'll accept from the header.
-const MAX_RECORDS: u32 = 256;
+/// Maximum plausible record count we'll accept before giving up on
+/// finding the table terminator.
+const MAX_RECORDS: usize = 256;
 
-/// Alignment for the LZS-data section base (sector boundary).
+/// Alignment for the LZS-data section base and every slot size (sector
+/// boundary).
 const DATA_BASE_ALIGN: usize = 0x800;
 
-/// One record in the trailer table.
+/// One 12-byte `[id, offset, size]` entry of the descriptor table.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Record {
-    /// Index in the record table (0..count).
+    /// Index in the descriptor table (0..count).
     pub index: usize,
-    /// Compressed size on disc (bytes), including the u32 dec_size prefix.
-    pub on_disc_size: u32,
-    /// Slot id (0..0x7F observed). `0` marks an empty/filler slot.
+    /// Slot id (0..0xBA observed). `0` marks a section boundary /
+    /// default-variant slot - still a real, decodable slot.
     pub id: u32,
     /// Byte offset from `data_base` where the compressed entry lives.
+    /// Entry 0 sits at offset 0; the chain invariant
+    /// `offset[i+1] == offset[i] + size[i]` holds across the table.
     pub data_offset: u32,
+    /// Slot allocation footprint in bytes (sector-aligned). This is the
+    /// slot's *region* size, not the LZS stream length - the stream may
+    /// end short of it (zero padding) and the decoder is output-bounded.
+    pub size: u32,
 }
 
 impl Record {
@@ -75,15 +82,14 @@ impl Record {
     }
 }
 
-/// Parsed pack header (record table + data base).
+/// Parsed pack header (descriptor table + data base).
 #[derive(Debug, Clone, Serialize)]
 pub struct BattleDataPack {
-    /// Byte offset where the trailer record table starts.
+    /// Byte offset where the descriptor table starts (= the header's
+    /// `desc_off` word).
     pub table_offset: usize,
-    /// Total record count declared in the header.
-    pub record_count: u32,
-    /// Records that have non-zero size. Records past the first zero-size
-    /// entry are treated as table padding and excluded.
+    /// Every real descriptor entry, in table order. The terminating
+    /// all-zero entry is excluded.
     pub records: Vec<Record>,
     /// Byte offset where the compressed-data section begins.
     pub data_base: usize,
@@ -102,119 +108,86 @@ pub struct DecodedEntry {
 
 /// Cheap presence check: does `buf` look like a battle_data pack?
 pub fn is_battle_data_pack(buf: &[u8]) -> bool {
-    detect_header(buf).is_some()
+    detect(buf).is_some()
 }
 
-/// Locate the trailer record table without parsing every record. The
-/// streaming preamble runs from offset 0 to `chunk0_size + 4`, terminator
-/// included; the count u32 lives right after the terminator, at
-/// `chunk0_size + 4` (the terminator itself sits at `chunk0_size + 0`).
-fn detect_header(buf: &[u8]) -> Option<(usize, u32)> {
+/// Parse the descriptor table. Returns `None` when the buffer doesn't
+/// match the battle-data pack shape.
+pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
     if buf.len() < 32 {
         return None;
     }
-    let chunk0_header = read_u32_le(buf, 0)?;
-    let type_byte = (chunk0_header >> 24) & 0xFF;
-    let chunk0_size = (chunk0_header & 0x00FF_FFFF) as usize;
-    // First chunk must be a TIM-typed dispatcher chunk by the streaming
-    // convention; battle_data's streaming preamble uses type=0.
-    if type_byte != 0 {
+    // Header word 0 = desc_off. It doubles as a type-0 streaming chunk
+    // header ((0x00 << 24) | size), so the high byte must be zero.
+    let desc_off_word = read_u32_le(buf, 0)?;
+    if (desc_off_word >> 24) != 0 {
         return None;
     }
-    // The record table sits right after the chunk payload + terminator.
-    // chunk_payload spans [4, 4 + chunk0_size); terminator at +chunk0_size,
-    // and the count u32 starts at +chunk0_size + 4. (For 0865 this is
-    // exactly 0x6C68 + 4 = 0x6C6C ... wait, the count is at 0x6C68 in 0865
-    // because the streaming "size = chunk0_size = 0x6C68" includes the
-    // chunk's own header byte. Empirically the count lives at chunk0_size
-    // exactly, not chunk0_size + 4.)
-    //
-    // Read both candidate positions and prefer the one with a sane count.
-    for cand in [chunk0_size, chunk0_size + 4] {
-        if cand + 8 > buf.len() {
-            continue;
-        }
-        let count = read_u32_le(buf, cand)?;
-        let reserved = read_u32_le(buf, cand + 4)?;
-        if reserved != 0 {
-            continue;
-        }
-        if count == 0 || count > MAX_RECORDS {
-            continue;
-        }
-        // Sanity check: first record's offset should be small and size plausible.
-        let table = cand + 8;
-        if table + 12 > buf.len() {
-            continue;
-        }
-        let sz0 = read_u32_le(buf, table)?;
-        let id0 = read_u32_le(buf, table + 4)?;
-        let off0 = read_u32_le(buf, table + 8)?;
-        if sz0 == 0 || sz0 > 0x40_0000 {
-            continue;
-        }
-        if id0 > 0xFF {
-            continue;
-        }
-        if off0 == 0 || off0 > 0x100_0000 {
-            continue;
-        }
-        return Some((cand, count));
+    let table_offset = desc_off_word as usize;
+    // The header + record[0] LZS stream precede the table; require room
+    // for at least the 0x10-byte header plus one table entry.
+    if table_offset < 0x10 || table_offset + 12 > buf.len() {
+        return None;
     }
-    None
-}
-
-/// Parse the trailer record table. Returns `None` when the buffer doesn't
-/// match the battle-data pack shape.
-pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
-    let (count_off, count) = detect_header(buf)?;
-    let table_offset = count_off + 8;
-    let mut records = Vec::with_capacity(count as usize);
-    let mut max_extent = table_offset + (count as usize) * 12;
-    for i in 0..count as usize {
-        let p = table_offset + i * 12;
-        if p + 12 > buf.len() {
+    // Header words 1..3: record[0]'s CLUT offsets + decoded-size budget.
+    // All four retail files order them clut_a < clut_b < budget.
+    let clut_a = read_u32_le(buf, 4)?;
+    let clut_b = read_u32_le(buf, 8)?;
+    let budget = read_u32_le(buf, 12)?;
+    if clut_a == 0 || clut_a >= clut_b || clut_b >= budget {
+        return None;
+    }
+    // Walk the 12-byte [id, offset, size] entries. The chain invariant
+    // (entry 0 at offset 0, each entry starting where the previous ends,
+    // sector-aligned sizes) is the structural signature; an all-zero
+    // entry terminates the table.
+    let mut records = Vec::new();
+    let mut expected_offset: u32 = 0;
+    let mut terminated = false;
+    let mut p = table_offset;
+    while p + 12 <= buf.len() && records.len() < MAX_RECORDS {
+        let id = read_u32_le(buf, p)?;
+        let offset = read_u32_le(buf, p + 4)?;
+        let size = read_u32_le(buf, p + 8)?;
+        if size == 0 {
+            // Only the canonical all-zero terminator is accepted; a
+            // zero-size entry with a residual id/offset is a shape
+            // mismatch.
+            terminated = id == 0 && offset == 0;
             break;
         }
-        let on_disc_size = read_u32_le(buf, p)?;
-        let id = read_u32_le(buf, p + 4)?;
-        let data_offset = read_u32_le(buf, p + 8)?;
-        if on_disc_size == 0 {
-            // Table tail is zero-padded; stop here.
-            break;
+        if id > 0xFF
+            || offset != expected_offset
+            || size > 0x40_0000
+            || !(size as usize).is_multiple_of(DATA_BASE_ALIGN)
+        {
+            return None;
         }
         records.push(Record {
-            index: i,
-            on_disc_size,
+            index: records.len(),
             id,
-            data_offset,
+            data_offset: offset,
+            size,
         });
-        // Track the largest table coverage so we can align data_base above it.
-        max_extent = max_extent.max(p + 12);
+        expected_offset = offset.checked_add(size)?;
+        p += 12;
     }
-    if records.is_empty() {
+    if !terminated || records.is_empty() {
         return None;
     }
-    // Align data_base up to the next DATA_BASE_ALIGN boundary past the table.
-    let want_base = max_extent.div_ceil(DATA_BASE_ALIGN) * DATA_BASE_ALIGN;
     // Self-correct data_base: pick the first sector boundary at or past
-    // `want_base` where every record's `dec_size` u32 prefix reads as a
-    // plausible decompressed size (1 .. 4 MiB). Slots with offset=0 are
-    // sentinel/filler entries that point back into the table region and
-    // are excluded from this check.
+    // the table end where every record's `dec_size` u32 prefix reads as
+    // a plausible decompressed size (1 .. 4 MiB). All four retail files
+    // land at 0x8000 (the gap between table end and 0x8000 is
+    // zero-padded, which the dec_size check skips past).
+    let table_end = p + 12;
+    let want_base = table_end.div_ceil(DATA_BASE_ALIGN) * DATA_BASE_ALIGN;
     let mut data_base = want_base;
     let mut chose = false;
     let probe_limit = (want_base + 0x4_0000).min(buf.len().saturating_sub(8));
     while data_base <= probe_limit {
         let mut all_ok = true;
         for r in &records {
-            if r.data_offset == 0 {
-                // Sentinel/filler slot - retail rec 42 has offset 0 and
-                // points back into the table region. Skip the dec_size
-                // sanity check; decode_record will reject it later if
-                // the caller tries to decode this slot.
-                continue;
-            }
             let start = data_base + r.data_offset as usize;
             if start + 4 > buf.len() {
                 all_ok = false;
@@ -240,7 +213,6 @@ pub fn detect(buf: &[u8]) -> Option<BattleDataPack> {
     }
     Some(BattleDataPack {
         table_offset,
-        record_count: count,
         records,
         data_base,
     })
@@ -267,12 +239,11 @@ pub fn decode_record(buf: &[u8], pack: &BattleDataPack, idx: usize) -> Result<De
     if dec_size == 0 || dec_size > 0x40_0000 {
         bail!("record {} has implausible dec_size 0x{:x}", idx, dec_size);
     }
-    // `on_disc_size` declares the slot's *allocation* footprint, not the
-    // LZS stream length. The retail decoder reads tokens until enough
-    // output bytes (`dec_size`) are produced; records often run their
-    // LZS source past `on_disc_size` into the next slot's region.
-    // Hand the decompressor everything from the dec_size prefix to the
-    // end of file - it stops based on output count, not input count.
+    // `size` declares the slot's *allocation* footprint, not the LZS
+    // stream length. The retail decoder reads tokens until enough
+    // output bytes (`dec_size`) are produced; hand the decompressor
+    // everything from the dec_size prefix to the end of file - it
+    // stops based on output count, not input count.
     let lzs_input = &buf[file_off + 4..];
     let bytes = legaia_lzs::decompress(lzs_input, dec_size)?;
     let tmd_range = locate_embedded_tmd(&bytes);
@@ -620,9 +591,8 @@ mod tests {
 
     /// Build a synthetic pack with one record carrying a recognizable
     /// payload through the LZS round-trip. Mirrors the retail layout:
-    /// the count u32 lives at the last 4 bytes of the chunk0 payload
-    /// (i.e. at offset `chunk0_size`), with the streaming terminator
-    /// immediately after.
+    /// 0x10-byte header, descriptor table at `desc_off` with the
+    /// all-zero terminator, sector-aligned slot region past the table.
     fn synth(payload: &[u8]) -> Vec<u8> {
         // Encode the payload as a trivial LZS stream of literals.
         let mut lzs = Vec::new();
@@ -644,46 +614,33 @@ mod tests {
         }
 
         let dec_size = payload.len() as u32;
-        let on_disc_size = 4 + lzs.len() as u32;
+        // Slot allocation footprint: dec_size prefix + stream, rounded up
+        // to a sector like retail.
+        let slot_size = ((4 + lzs.len()).div_ceil(0x800) * 0x800) as u32;
 
+        let desc_off: u32 = 0x40; // arbitrary - past the 0x10-byte header
         let mut buf = Vec::new();
-        // Streaming preamble: one type-0 chunk whose payload ends with
-        // the (count, reserved) header pair. The detector reads the
-        // count at `chunk0_size` and the records at `chunk0_size + 8`.
-        // Pick chunk0_payload_size such that the last u32 of payload is
-        // the count u32.
-        let count_u32_position: usize = 0x40; // arbitrary - aligned multiple of 4
-        let chunk0_size: u32 = count_u32_position as u32;
-        let chunk_header = chunk0_size; // type=0, size=chunk0_size
-        buf.extend_from_slice(&chunk_header.to_le_bytes());
-        // Chunk payload: zero-fill up to count_u32_position, then count.
-        while buf.len() < count_u32_position {
-            buf.push(0);
-        }
-        // count u32 lives at offset `chunk0_size` = count_u32_position.
-        buf.extend_from_slice(&1u32.to_le_bytes()); // count = 1
-        // reserved u32 at chunk0_size + 4
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        // Record table starts at chunk0_size + 8
-        // Empirically retail records always start at a non-zero offset
-        // (the retail pack leaves the first 0x1800 bytes after data_base
-        // unused). Mirror that here so the detector's sanity bounds pass.
-        let record_data_offset: u32 = 0x100;
-        buf.extend_from_slice(&on_disc_size.to_le_bytes()); // record.on_disc_size
-        buf.extend_from_slice(&0x42u32.to_le_bytes()); // record.id
-        buf.extend_from_slice(&record_data_offset.to_le_bytes());
+        buf.extend_from_slice(&desc_off.to_le_bytes());
+        // clut_a < clut_b < budget (record[0] palette-chain words).
+        buf.extend_from_slice(&0x14u32.to_le_bytes());
+        buf.extend_from_slice(&0x20u32.to_le_bytes());
+        buf.extend_from_slice(&0x30u32.to_le_bytes());
+        // record[0] stream region - zero-fill up to the table.
+        buf.resize(desc_off as usize, 0);
+        // Descriptor table: one [id, offset, size] entry + terminator.
+        buf.extend_from_slice(&0x42u32.to_le_bytes()); // id
+        buf.extend_from_slice(&0u32.to_le_bytes()); // offset (entry 0 = 0)
+        buf.extend_from_slice(&slot_size.to_le_bytes()); // size
+        buf.extend_from_slice(&[0u8; 12]); // all-zero terminator
         // Pad to next 0x800 boundary - data_base.
         while !buf.len().is_multiple_of(0x800) {
             buf.push(0);
         }
         let data_base = buf.len();
-        // Pad to record's data_offset within the data section.
-        buf.resize(data_base + record_data_offset as usize, 0);
-        // Record entry: u32 dec_size + LZS bytes
+        // Slot entry: u32 dec_size + LZS bytes, padded to the slot size.
         buf.extend_from_slice(&dec_size.to_le_bytes());
         buf.extend_from_slice(&lzs);
-        let want_end = data_base + record_data_offset as usize + on_disc_size as usize;
-        buf.resize(want_end, 0);
+        buf.resize(data_base + slot_size as usize, 0);
         buf
     }
 
@@ -760,9 +717,9 @@ mod tests {
         let entry = DecodedEntry {
             record: Record {
                 index: 0,
-                on_disc_size: 0,
                 id: 0,
                 data_offset: 0,
+                size: 0,
             },
             bytes,
             tmd_range: Some(0x20..0x40),
@@ -792,9 +749,9 @@ mod tests {
         let entry = DecodedEntry {
             record: Record {
                 index: 0,
-                on_disc_size: 0,
                 id: 0,
                 data_offset: 0,
+                size: 0,
             },
             bytes: vec![0u8; 0x80],
             tmd_range: Some(0x20..0x40),
@@ -812,9 +769,9 @@ mod tests {
         let entry = DecodedEntry {
             record: Record {
                 index: 0,
-                on_disc_size: 0,
                 id: 0x42,
                 data_offset: 0,
+                size: 0,
             },
             bytes: vec![0u8; 0x80],
             tmd_range: Some(0x20..0x40),
@@ -832,9 +789,9 @@ mod tests {
         let entry = DecodedEntry {
             record: Record {
                 index: 0,
-                on_disc_size: 0,
                 id: 0,
                 data_offset: 0,
+                size: 0,
             },
             bytes,
             tmd_range: None,

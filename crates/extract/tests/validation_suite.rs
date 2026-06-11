@@ -34,10 +34,10 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 /// the data-shape past the previous detector boundaries.
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `battle_data_pack` = the player battle files (retail `battle_data`
-    // block, extraction 0863..0866 = PLAYER1..4). The detector's shifted
-    // table framing claims 3 of the 4 (Terra's 0866 table is all-default
-    // `id = 0` entries, which the count-position heuristic rejects).
-    ("battle_data_pack", 3),
+    // block, extraction 0863..0866 = PLAYER1..4). The realigned
+    // `[id, offset, size]` table frame accepts all four, including
+    // Terra's 0866 all-default (`id = 0`) table.
+    ("battle_data_pack", 4),
     ("data_field_streaming", 34),
     // `field_pack` 2 → 1: one of the two entries (PROT 4) leads with a
     // count=6 scene-asset table at offset 0 and only carries a field-pack
@@ -49,7 +49,10 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `lzs_container` 42 → 35: the count=6 scene-asset-table variant
     // (town01/town0c-class MAN bundles) now claims 7 entries that were
     // coincidental strict-LZS matches before the more specific schema ran.
-    ("lzs_container", 35),
+    // 35 → 34: Terra's player file (extraction 0866) moved to
+    // `battle_data_pack` once the realigned table frame accepted its
+    // all-default descriptor table.
+    ("lzs_container", 34),
     ("mips_overlay", 22),
     ("monster_sound_bank", 1),
     // `mostly_zeros` dropped (101 → 70) because many zero-padded entries

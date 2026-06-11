@@ -469,12 +469,14 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // Battle-data pack - `[chunk0 header][...][count + records][data section]`
-    // with LZS-compressed records carrying TMDs. The detector is strict
-    // (count fits, every non-sentinel record's dec_size prefix is in range,
-    // data_base self-corrects to the right sector boundary) so it claims
-    // entries before weaker shape heuristics fire on them. Multi-megabyte
-    // files only - skip the detector for small entries to avoid wasted work.
+    // Battle-data pack - `[header][record[0] LZS][descriptor table][slot
+    // region]`. The detector is strict (chained `[id, offset, size]`
+    // entries from offset 0 with sector-aligned sizes, all-zero
+    // terminator, every slot's dec_size prefix in range, data_base
+    // self-corrects to the right sector boundary) so it claims entries
+    // before weaker shape heuristics fire on them. The four player files
+    // are all > 0x10000 - skip the detector for small entries to avoid
+    // wasted work.
     if buf.len() >= 0x10000 && crate::battle_data_pack::detect(buf).is_some() {
         return mk(
             Class::BattleDataPack,

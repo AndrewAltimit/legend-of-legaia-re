@@ -31,7 +31,7 @@
 //! | `+2` | u8 | **defense-up** (`UDF`) bonus (body armor + head accessories) |
 //! | `+3` | u8 | **defense-down** (`LDF`) bonus (body armor + boots) |
 //! | `+4` | u8 | **speed** (`SPD`) bonus (only boots/shoes set it) |
-//! | `+5` | u8 | constant `0x40` |
+//! | `+5` | u8 | passive-effect index slot - `0x40` no-passive sentinel on every retail row (see [`crate::accessory_passive`]) |
 //! | `+6` | u8 | **equip character mask** (`1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` = anyone) |
 //! | `+7` | u8 | **slot type** (`0x00` body, `0x20` head, `0x40` weapon, `0x60` footwear) + bit `0x01` = Ra-Seru |
 //!

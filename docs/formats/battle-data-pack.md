@@ -27,7 +27,7 @@ Implementations:
 [`crates/asset/src/battle_char_palette.rs`](../../crates/asset/src/battle_char_palette.rs)
 (the runtime-pinned `record[0]` + CLUT chain) and
 [`crates/asset/src/battle_data_pack.rs`](../../crates/asset/src/battle_data_pack.rs)
-(the TMD-slot walker; see [parser status](#parser-status) for its table framing).
+(the TMD-slot walker over the `[id, offset, size]` descriptor table).
 
 ## Contents
 
@@ -62,15 +62,19 @@ stub on this build, so the load always resolves through `FUN_8003E8A8` with the
 | Terra | `0x364` | `0x3897800` |  47 sectors (`0x17800`) | 0866 |
 
 The offsets are the live-traced `FUN_800558FC` reads (see
-[`character-mesh.md` § Battle form](character-mesh.md#battle-form--prot-1204))
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files))
 and equal the TOC `start_lba × 0x800` of extraction 863..866 exactly. The
 historical "Vahn = PROT 0861" attribution matched the same bytes through the
 1-sector stub entries 0859..0862 that precede the true file — entry 0861's
 *extended* window reaches Vahn's file at window offset `0x1000`.
 
-`FUN_80052FA0` then decodes `record[0]` + its sub-records into the battle
-party palette (rows 481..483); the TMD slots install through the battle
-loaders. Full palette chain: [`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation).
+`FUN_80052FA0` is the per-character **assembler**: it LZS-decodes
+`record[0]` + its sub-records into the battle party palette (rows 481..483)
+*and* decodes the five equipment-selected sections, then builds each
+character's merged battle TMD from them (`FUN_800536BC` splice ×5 +
+`FUN_80053898` post-pass; `FUN_800513F0` registers the result). Full chain:
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files);
+palette half: [`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation).
 
 ## TOC geometry (the 16 MB misreading)
 
@@ -157,12 +161,27 @@ of descending ids separated by `id = 0` entries** — e.g. Gala (0865):
 69 68 67 66 | 00
 ```
 
-Terra (0866) carries only five `id = 0` entries — no variant slots. Per the
-runtime palette consumer (`FUN_80052770` case 4, see
-[`character-mesh.md`](character-mesh.md#battle-form--prot-1204)), each section
-ships one record per **equipment id** plus the `id = 0` default, and the
-loader picks the equipment-id-matched entry or the default per section. The
-mapping from these ids to item-table ids is not yet pinned (open question).
+Terra (0866) carries only five `id = 0` entries — no variant slots.
+
+**The slot ids are equippable item ids** (the
+[item-name table](item-table.md) id space — the same ids the
+[equipment stat table](equipment-table.md) indexes). The five sections are
+the character's five equipment slots, in the order of the character record's
+equipped-item bytes at `+0x196..+0x19A` (live record base `0x80084708`,
+stride `0x414`). `FUN_80052770` case 4 walks the table sequentially with a
+section counter: each entry's `id` is compared against the current slot's
+equipped-item byte (`(offset, size)` captured on match), an `id = 0` entry
+supplies the section's **default** when nothing matched and advances the
+section counter (decomp `ghidra/scripts/funcs/80052770.txt`, the
+`*0x414 + -0x7ff7b762` read = record `+0x196`). Vahn's file (0863), for
+example, carries a body section (`0x43` Hunter Clothes … `0x4A`), a head
+section, a weapon section (`0x22` Survival Knife … plus `0xBA`), a Ra-Seru
+weapon section (`0x01..0x09` Meta tiers), and a footwear section — each with
+its `id = 0` fallback. Live proof: in a full-party battle save with Vahn
+wearing Hunter Clothes / Survival Knife / Ra-Seru Meta, the assembled battle
+mesh's vertex pools byte-match exactly the `id = 0x43`, `0x22`, and `0x01`
+sections (and the defaults for the unequipped slots) — see
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files).
 
 ## Slot region
 
@@ -179,26 +198,39 @@ generous source slice rather than truncating to `entry.size`.
 ## Decompressed slot layout
 
 ```
-+0x00  u32 magic_or_count    ; 0x14 (= 20) in every observed slot
++0x00  u32 frame_off         ; 0x14 in every observed slot: offset of the
+                             ; loader frame the assembler reads (below)
 +0x04  u32 sub_obj0_end      ; nested-section end offset; often 0
 +0x08  u32 sub_obj1_end      ; nested-section end; non-zero in multi-mesh slots
 +0x0C  u32 tmd_body_end      ; offset where the embedded Legaia TMD ends
-+0x10  u32                   ; per-texture flag (typically 0x010000 / 0x010002)
-+0x14  u32                   ; texture format tag
-+0x18  u32                   ; sometimes 0; sometimes a packed (slot, bpp) tag
-+0x1C  u32                   ; offset to start of CLUT/texture pool (~= tmd_body_end - 0x20)
-+0x20  Legaia TMD            ; magic 0x80000002 (see tmd.md)
++0x10  u32                   ; flag word (typically 0x010000 / 0x010002)
++0x14  loader frame          ; = decoded + frame_off, consumed by FUN_800536BC:
+       +0x00 u8  attach_count    ; objects that bind to skeleton bones
+       +0x01 u8  bone_ids[]      ; one bone id per attached object (padded)
+       +0x08 u32 data_size       ; section data extent (word-copied span)
+       +0x0C Legaia TMD          ; magic 0x80000002 (= absolute +0x20)
+       +0x14 u32 nobj            ; (= the TMD's own object count)
+       +0x18 object table        ; 7-word TMD object entries
 +tmd_body_end                ; texture / CLUT pool
 ```
 
-The 32-byte header is a layout descriptor for the post-TMD texture pool. The
-pool has no PSX TIM image-block headers: it is raw 4bpp pixel pages
-interleaved with 32-byte CLUT rows. Flagged slots additionally carry a
+The assembler `FUN_800536BC` reads the section through the **loader frame**
+at `decoded + frame_off`: one bone-id byte per object while
+`obj_index < attach_count`, then `0xFF` / `0xFE` tags for the surplus
+objects (the equipment's visual meshes — see
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files)).
+The byte runs the earlier byte-match corpus read as "texture format tags" at
+`u32[5..6]` (e.g. `0x0b0a0906`, `0x000e0d0c`) are these attach-count +
+bone-id bytes (`06 09 0a 0b | 0c 0d 0e 00` = 6 attached objects on bones
+9..14 — a footwear section).
+
+The post-TMD pool has no PSX TIM image-block headers: it is raw 4bpp pixel
+pages interleaved with 32-byte CLUT rows. Flagged slots additionally carry a
 trailing CLUT struct (`[u16 base][u16 count][count × BGR555]`) that the
 palette chain STP-copies to VRAM rows 481..483 — that path is fully decoded in
 [`character-mesh.md`](character-mesh.md#battle-render-load-time-tsbcba-relocation)
-and ported as `legaia_asset::battle_char_palette`. The header's
-`u32[4..7]` texture-placement encoding is **not** pinned (see
+and ported as `legaia_asset::battle_char_palette`. The pool's per-page VRAM
+placement is **not** pinned (see
 [VRAM byte-match corpus](#vram-byte-match-corpus)).
 
 ## Parser status
@@ -210,20 +242,19 @@ Two parsers read these files:
   chain, `record[0]` + sub-record palette assembly; byte-exact vs live battle
   VRAM).
 - [`legaia_asset::battle_data_pack`](../../crates/asset/src/battle_data_pack.rs)
-  (the TMD-slot walker) predates the framing pin and walks the same descriptor
-  table through a **4-byte-shifted frame**: it reads entry 0's `id` as a
-  "record count" (e.g. Gala's `0x57`), entry 0's `offset` (always 0) as a
-  "reserved" word, and pairs each subsequent `(id, offset)` with the
-  *previous* entry's `size`. The `(id, offset)` pairs it yields are correct
-  (so every slot decodes, ids attached), but entry 0's id is misreported as 0
-  (its "filler rec" with `offset = 0` *is* entry 0) and the per-slot
-  `on_disc_size` is off by one slot — harmless in practice because the LZS
-  decode is output-bounded, but realigning the walker to the
-  `[id, offset, size]` frame is a pending cleanup. Its earlier observations
-  "the table is sized to a maximum and zero-padded", "0866 has a zero count
-  in the canonical position" and "the last 0865 slot over-runs the footprint"
-  were all artifacts of the shifted frame; under the correct frame 0866
-  parses like its siblings and all four files tile their footprints exactly.
+  (the TMD-slot walker) reads the same descriptor table in the
+  `[id, offset, size]` frame above. Detection validates the chain invariant
+  (entry 0 at offset 0, `offset[i+1] == offset[i] + size[i]`, sector-aligned
+  sizes, all-zero terminator) plus the header-word ordering
+  (`clut_a < clut_b < budget`), which accepts all four retail player files —
+  including Terra's 0866, whose table is all-default (`id = 0`) entries —
+  and rejects every other PROT entry. An earlier revision of this walker
+  read the table through a 4-byte-shifted frame (entry 0's `id` as a "record
+  count", sizes paired off by one slot); its observations "the table is
+  sized to a maximum and zero-padded", "0866 has a zero count in the
+  canonical position" and "the last 0865 slot over-runs the footprint" were
+  all artifacts of that shifted frame. Under the correct frame 0866 parses
+  like its siblings and all four files tile their footprints exactly.
 
 ## VRAM byte-match corpus
 
@@ -289,19 +320,17 @@ on the player files.)
   signature land at different VRAM coords, so the placement is
   runtime-resolved — trace the battle-init upload path that consumes the
   header.
-- **Slot id ↔ equipment id mapping**: the section ids plausibly index the
-  equipment tables (each section = one equip slot's variants, per the
-  `FUN_80052770` case-4 picker); pinning id → item-table id needs a capture
-  with a known equipment change. Related open thread: the battle `nobj +2`
-  weapon objects (**D-WEAP**, [`character-mesh.md`](character-mesh.md#equipment-groups-battle-only))
-  plausibly source from these slots — unverified.
+- ~~**Slot id ↔ equipment id mapping**~~ **resolved**: the section ids ARE
+  item-table ids and the `FUN_80052770` case-4 picker matches them against
+  the character record's equipped-item bytes (see
+  [Descriptor table](#descriptor-table)). The battle `nobj +2` weapon
+  objects source from these sections too — byte-verified, see
+  [`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files).
 - **`data_base` derivation**: observed `0x8000` in all four files; the
   header/table → `0x8000` rule is unconfirmed.
 - **Sub-object end offsets** (`u32[1]`, `u32[2]`): multi-mesh slots (e.g. a
   Gala slot with `u32[1] = 0x3310`) hold several TMDs back-to-back; the
   stride isn't validated across every variant.
-- **Parser realignment**: move `legaia_asset::battle_data_pack` onto the
-  `[id, offset, size]` frame (see [Parser status](#parser-status)).
 
 ## See also
 

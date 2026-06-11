@@ -38,7 +38,7 @@ overlay-resident apply handler, not in the dumped corpus" reading.)
 | `+0` | u8 | effect **class** (action-validator arm) |
 | `+1` | u8 | **tier** / sub-case (per-class selector; e.g. heal-HP `0/1/2` = `200/800/max`) |
 | `+2` | u8 | **flags** (see below) |
-| `+3` | u8 | constant `0x41` (`'A'`) marker across consumable-effect rows |
+| `+3` | u8 | **passive-effect index** (`0x00..=0x3F`) for accessory / quest-item rows; `0x41` = no-passive sentinel on consumable rows (see [accessory-passive-table.md](accessory-passive-table.md)) |
 
 ### Flag byte (`+2`)
 
@@ -239,5 +239,6 @@ apply / idempotent / revert lifecycle.
 ## See also
 
 - [Item-name table](item-table.md) - the sibling name/price table this indexes through.
+- [Accessory passive-effect table](accessory-passive-table.md) - the `+3` byte's index space (accessory "Goods" passives).
 - [Spell table](spell-table.md) - the static table immediately after this one.
 - [`reference/gamedata.md`](../reference/gamedata.md) - curated item effect *amounts* (the numbers this table does not carry).

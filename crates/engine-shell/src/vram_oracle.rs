@@ -216,31 +216,40 @@ pub fn first_texpage_divergence(engine: &[u8], runtime: &[u8]) -> Option<Texpage
 /// band; the bulk texture region is byte-exact on every uploaded static pixel.
 pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 
-/// CLUT rows the **world-map walk-view runtime rewrites** (water / shoreline
+/// CLUT cells the **world-map walk-view runtime rewrites** (water / shoreline
 /// palette cycling). The kingdom bundle's slot-0 terrain atlas declares its
 /// CLUTs on rows 506..=509. Row 506's 16-entry head is the documented
 /// **13-frame ocean CLUT animation** (`legaia_asset::ocean`,
 /// `docs/subsystems/world-map.md` "Ocean animation") - retail DMAs a
 /// precomputed frame over it each step, so a capture holds an arbitrary
-/// animation phase, never the disc base CLUT. Capture evidence shows the
-/// cycling reaches beyond that head: rows 508 / 509 each carry a few animated
-/// entries (shoreline shimmer inside the terrain palettes), row 508's entries
-/// 32..47 mirror the live frame of its own 0..15 head, and row 506's tail
-/// (entries ~40..47) holds a runtime-*generated* palette (pure-channel
-/// colours present in no disc bundle - writer unidentified, see
-/// `docs/reference/open-rev-eng-threads.md`). The resident words are
-/// animation phase, not static scene texture, so the static-mask oracle
-/// excludes these rows for world-map scenes - same reasoning as
-/// [`NPC_CLUT_BAND_ROWS`]. Row 507 (a non-animated terrain-page CLUT) stays
-/// asserted.
-pub const WORLD_MAP_CLUT_CYCLE_ROWS: [usize; 3] = [506, 508, 509];
+/// animation phase, never the disc base CLUT. A ten-state capture census
+/// (per-column variance across the map01-resident catalog states) pins the
+/// runtime-touched columns precisely:
+///
+/// - **row 506, cols 0..48**: the ocean head (0..15), a second block head
+///   (16..31), a rotating ring of STP-set near-copies of the ocean colours
+///   (32..39, phase-locked to the ocean), and the runtime-*generated*
+///   pure-channel tail (40..47) whose intensity animates with the same
+///   phase - one coupled animator, no disc source.
+/// - **row 508, cols 0..48**: animated head entries ({1, 14, 15, 26, 27})
+///   plus a live-maintained mirror at 32..47 (`[32..47] == [0..15]` at every
+///   captured phase - the disc base there is a different palette the runtime
+///   overwrites).
+/// - **row 509, cols 42..44**: exactly two animated entries; the rest of the
+///   row is byte-exact vs the disc build in every capture.
+///
+/// Row 507 is fully static (256/256 byte-exact) and stays asserted, as do
+/// the remaining columns of 506/508/509 - the census lets the oracle assert
+/// them instead of excluding the whole rows.
+pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 3] =
+    [(506, 0..48), (508, 0..48), (509, 42..44)];
 
-/// Clear `mask` on every cell of [`WORLD_MAP_CLUT_CYCLE_ROWS`]. Apply to a
+/// Clear `mask` on every cell of [`WORLD_MAP_CLUT_CYCLE_CELLS`]. Apply to a
 /// world-map scene's static mask before asserting upload parity; field/town
-/// scenes keep the rows asserted (their content there is scene-owned).
+/// scenes keep the cells asserted (their content there is scene-owned).
 pub fn clear_world_map_clut_cycle_rows(mask: &mut [bool]) {
-    for &y in &WORLD_MAP_CLUT_CYCLE_ROWS {
-        mask[y * VRAM_WIDTH..(y + 1) * VRAM_WIDTH].fill(false);
+    for (y, cols) in WORLD_MAP_CLUT_CYCLE_CELLS {
+        mask[y * VRAM_WIDTH + cols.start..y * VRAM_WIDTH + cols.end].fill(false);
     }
 }
 
@@ -250,8 +259,9 @@ pub fn clear_world_map_clut_cycle_rows(mask: &mut [bool]) {
 /// those rects stays static only if every capture of **every** scene holds
 /// the same word there. The band is one global disc source uploaded
 /// identically for all field scenes, but a few of its pixels are
-/// history-dependent (battle entry re-uploads the disc bytes over a
-/// boot-resident variant), so same-scene captures that share battle history
+/// history-dependent (the pause-menu entry path writes a 3-word F-variant
+/// onto row 271 that the first battle effect use overwrites with the disc
+/// bytes again), so same-scene captures that share menu/battle history
 /// misclassify them as static; any same-band disagreement anywhere in the
 /// capture corpus proves the cell dynamic.
 pub fn refine_mask_with_shared_band(

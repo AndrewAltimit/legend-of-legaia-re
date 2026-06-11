@@ -3935,12 +3935,14 @@ fn battle_data_pack_one(input: &Path, out: Option<&Path>) -> Result<()> {
     println!("file       : {}", input.display());
     println!("file size  : {} bytes (0x{:x})", raw.len(), raw.len());
     println!(
-        "table_offset: 0x{:x}, record_count: {}, data_base: 0x{:x}",
-        pack.table_offset, pack.record_count, pack.data_base
+        "table_offset: 0x{:x}, records: {}, data_base: 0x{:x}",
+        pack.table_offset,
+        pack.records.len(),
+        pack.data_base
     );
     println!(
         "{:>3} {:>4} {:>10} {:>10} {:>10} {:>6}",
-        "rec", "id", "on_disc_sz", "data_off", "dec_size", "tmd"
+        "rec", "id", "slot_size", "data_off", "dec_size", "tmd"
     );
     let mut tmds = 0usize;
     let mut total_decoded = 0usize;
@@ -3961,7 +3963,7 @@ fn battle_data_pack_one(input: &Path, out: Option<&Path>) -> Result<()> {
                 };
                 println!(
                     "{:>3} 0x{:02x} 0x{:08x} 0x{:08x} {:>10} {:>6}",
-                    r.index, r.id, r.on_disc_size, r.data_offset, dec_size, tmd_tag
+                    r.index, r.id, r.size, r.data_offset, dec_size, tmd_tag
                 );
                 total_decoded += dec_size;
                 if let Some(out_dir) = out {
@@ -3972,7 +3974,7 @@ fn battle_data_pack_one(input: &Path, out: Option<&Path>) -> Result<()> {
             Err(err) => {
                 println!(
                     "{:>3} 0x{:02x} 0x{:08x} 0x{:08x} FAIL: {}",
-                    r.index, r.id, r.on_disc_size, r.data_offset, err
+                    r.index, r.id, r.size, r.data_offset, err
                 );
             }
         }

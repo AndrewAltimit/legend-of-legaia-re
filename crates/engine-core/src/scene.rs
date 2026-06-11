@@ -2581,15 +2581,15 @@ fn befect_etim_section_bytes(index: &ProtIndex) -> Result<Vec<u8>> {
 /// [`upload_effect_textures_into_vram`].
 ///
 /// The band is **global shared state**, not per-scene texture: one disc
-/// source is resident across every field scene, and retail re-uploads it at
-/// battle entry. A handful of its pixels are *history-dependent* - a freshly
-/// booted game holds a variant that differs from the disc copy until a battle
-/// re-uploads the disc bytes (pinned at `(853, 271)`: pre-battle and menu
-/// captures hold `0xFFFF` words where the disc TIM carries `0x3333`; a
-/// post-battle capture of the same scene holds the disc value). A per-scene
-/// static mask misclassifies those pixels as static whenever a scene's
-/// captures share battle history, so the VRAM parity oracle uses these rects
-/// to demand staticity across **all** scenes' captures instead.
+/// source is resident across every field scene. A handful of its pixels are
+/// *history-dependent* - the pause-menu entry path writes an F-variant of
+/// three row-271 words (pinned at `(853, 271)`: pause-menu-lineage captures
+/// hold `0xFFFF` where the disc TIM carries `0x3333`; each variant word
+/// equals the same TIM's row-273 value), and the first battle effect use
+/// restores the disc bytes. A per-scene static mask misclassifies those
+/// pixels as static whenever a scene's captures share menu/battle history,
+/// so the VRAM parity oracle uses these rects to demand staticity across
+/// **all** scenes' captures instead.
 pub fn effect_texture_image_rects(index: &ProtIndex) -> Result<Vec<(u16, u16, u16, u16)>> {
     let decoded = befect_etim_section_bytes(index)?;
     let mut rects = Vec::new();

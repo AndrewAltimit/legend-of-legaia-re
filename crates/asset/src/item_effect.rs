@@ -33,7 +33,7 @@
 //! arm        = descriptor[+0]   // effect class / action-validator arm
 //! tier       = descriptor[+1]   // per-class sub-case selector
 //! flags      = descriptor[+2]   // 0x80 base | 0x20 all-party | 0x04 battle | 0x02 field
-//! marker     = descriptor[+3]   // 0x41 ('A') consumable-effect marker
+//! marker     = descriptor[+3]   // passive index (accessories); 0x41 = no-passive sentinel
 //! ```
 //!
 //! The same subtype byte feeds the field item-menu list builder
@@ -49,7 +49,7 @@
 //! | `+0` | u8 | effect **class** (action-validator arm) - see [`ItemEffectCategory`] |
 //! | `+1` | u8 | **tier** / sub-case (per-class selector; e.g. heal-HP 0/1/2 = 200/800/max) |
 //! | `+2` | u8 | **flags**: `0x80` base, `0x20` all-party, `0x04` battle-usable, `0x02` field-usable |
-//! | `+3` | u8 | constant `0x41` (`'A'`) marker across consumable-effect rows |
+//! | `+3` | u8 | **passive-effect index** (`< 0x40`) on accessory / quest-item rows; `0x41` no-passive sentinel on consumable rows (see [`crate::accessory_passive`]) |
 //!
 //! The table spans subtypes `0x00..=0x81` (130 records, `0x208` bytes) and
 //! ends exactly at the spell table (`0x800754C8`).
@@ -191,7 +191,9 @@ pub struct ItemEffect {
     pub tier: u8,
     /// `+2` flag byte (`0x80` base | `0x20` all-party | `0x04` battle | `0x02` field).
     pub flags: u8,
-    /// `+3` marker byte (`0x41` `'A'` on consumable-effect rows).
+    /// `+3` byte: the accessory passive-effect index (`< 0x40`) on accessory /
+    /// quest-item rows, `0x41` no-passive sentinel on consumable rows (see
+    /// [`crate::accessory_passive`]).
     pub marker: u8,
 }
 

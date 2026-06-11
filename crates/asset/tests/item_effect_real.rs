@@ -27,12 +27,13 @@ fn decodes_the_item_effect_table_or_skips() {
     // 0x00..=0x81). This is a stable invariant of the executable's data layout.
     assert_eq!(table.record_count(), 130, "descriptor row count");
 
-    // Every populated descriptor carries the 0x80 base flag and the 'A'
-    // consumable marker at +3 across the validated consumable subtypes.
+    // Every populated descriptor carries the 0x80 base flag, and the +3 byte
+    // on consumable rows is the 0x41 no-passive sentinel (the same byte is a
+    // live passive-effect index on accessory rows - see accessory_passive).
     for st in [0u8, 1, 2, 5, 8, 16, 19] {
         let d = table.descriptor(st).expect("descriptor in range");
         assert_eq!(d.flags & 0x80, 0x80, "subtype {st} base flag");
-        assert_eq!(d.marker, 0x41, "subtype {st} marker 'A'");
+        assert_eq!(d.marker, 0x41, "subtype {st} no-passive sentinel");
     }
 
     // Byte-exact (class, tier, flags) for pinned consumables, keyed by their

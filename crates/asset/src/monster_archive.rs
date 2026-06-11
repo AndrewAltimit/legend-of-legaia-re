@@ -934,8 +934,10 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
 
 /// Short, display-ready labels for a monster's decoded animations, parallel to
 /// the slice returned by [`animations`]. Index 0 is the idle loop; `action_id`
-/// `1` is the basic attack; the rest are the monster's spell / special actions
-/// (`Action 0xNN`). When two entries would share a label (some monsters carry
+/// `1` is the locomotion cycle the battle engine plays while the monster
+/// advances on a target (a walk for grounded enemies, a flight cycle for
+/// fliers - hence "Move", not "Attack"); the rest are the monster's spell /
+/// special actions (`Action 0xNN`). When two entries would share a label (some monsters carry
 /// several actions with the same `action_id`), a ` #N` suffix disambiguates so
 /// every label is unique — handy for toggle buttons and glTF animation names.
 pub fn action_labels(anims: &[MonsterAnimation]) -> Vec<String> {
@@ -947,7 +949,7 @@ pub fn action_labels(anims: &[MonsterAnimation]) -> Vec<String> {
             if i == 0 {
                 "Idle".to_string()
             } else if a.action_id == 1 {
-                "Attack".to_string()
+                "Move".to_string()
             } else {
                 format!("Action 0x{:02X}", a.action_id)
             }

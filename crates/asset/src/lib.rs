@@ -17,7 +17,9 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+pub mod accessory_passive;
 pub mod anm_detect;
+pub mod battle_char_assembly;
 pub mod battle_char_pack;
 pub mod battle_char_palette;
 pub mod battle_data_pack;
