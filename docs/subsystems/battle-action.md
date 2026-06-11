@@ -48,7 +48,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0A` | Pre-action wait | Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). | `0x0C` when ready, else stays. |
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (party setup; slot < 3 unconditionally) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
-| `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Else looks up swing-arc table at `(&DAT_801C9348)[party_id - 3]+0x4C` (per-character attack-anim-frame table) via `func_0x80050E2C`. | `0x15` if attack records exist; `0x19` if party slot < 3; `0x1E` if out of range. |
+| `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party); `0x1E` (out of range). |
 | `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
 | `0x16` | Attack - advance | Same pose; rechecks range with `FUN_8004E2F0`. While out of range, advances `actor[+0x38/+0x34]` along bearing using sin/cos LUTs `_DAT_8007B7F8` / `_DAT_8007B81C` (steps both attacker and target s8 by `>> 9`); re-tests every iteration. When in range, queries the next entry from the per-character swing table. | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
@@ -103,7 +103,23 @@ States `0x67` (post-fade hold), `0x07` (unused?), and several gaps in the table 
 
 The full step body for state `0x1E`:
 
-Counters `actor[+0x15]` (per-strike index) + `actor[+0x16]` (combo bit). Reads the per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step writes `actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. Counter-attack handling: if `_DAT_801F6970 != 0` and the *target's* sub-state byte at `s8[+0x1DE] == 3` (was attacking), redirects active actor to the counterattacker - sets `s_Counterattack_successful_801CED18` text, fires effect `FUN_801D8DE8(0x66, 0)`, swaps `actor[+0x13]`. Per-frame physics: target/attacker drift along bearing scaled by `actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]` until terminator `-1` is hit.
+Counters `actor[+0x15]` (per-strike index) + `actor[+0x16]` (combo bit). Reads the
+per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step writes
+`actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. Counter-attack handling: if
+`_DAT_801F6970 != 0` and the *target's* sub-state byte at `s8[+0x1DE] == 3` (was
+attacking), redirects active actor to the counterattacker - sets
+`s_Counterattack_successful_801CED18` text, fires effect `FUN_801D8DE8(0x66, 0)`, swaps
+`actor[+0x13]`. Per-frame physics: target/attacker drift along bearing scaled by
+`actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the
+character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]`
+until the `0x00` terminator is hit (the magic band is the band that uses `-1`; the
+earlier `0xFF` note here was wrong). The stream alphabet for a party attack is direction
+swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (see
+[art-data.md](../formats/art-data.md)); the Miracle-Art continuation refills consumed
+slots with `0x19` before re-walking. Staged ids `>= 0x10` are remapped to the dynamic
+art slots `0x10`/`0x11` by the anim commit `FUN_8004AD80` at install (see
+[battle-data-pack.md § Battle
+animations](../formats/battle-data-pack.md#battle-animations-record0)).
 
 #### Magic / Item - cast begin (`0x28`)
 
@@ -144,7 +160,7 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x1DC` | u8 | Per-actor flag bits. `0x01` = "windup done", `0x02` = "advance done", `0x04` = "exit". Set by the strike/spell loops. |
 | `+0x1DD` | u8 | Active-target slot index (used by Magic / Item to retarget mid-chain). |
 | `+0x1DE` | u8 | **Action category** (the inner-dispatch key - see above). |
-| `+0x1DF..+0x1F2` | u8 × N | Per-action parameter byte stream (item ID / spell ID / strike-anim list, terminated by `0xFF`). Read sequentially via `actor[+0x1DF + actor[+0x15]]`. |
+| `+0x1DF..+0x1F2` | u8 × N | Per-action parameter byte stream (item ID / spell ID / strike-anim list). The **attack band terminates on `0x00`**, the magic band on `0xFF` (`-1`). Read sequentially via `actor[+0x1DF + actor[+0x15]]`. For a party attack the bytes are direction-command swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (seeded by `FUN_801EED1C`); for a monster they are entry indices from the AI picker. |
 | `+0x1F5` | u8 | Anim-cue flag (read at state `0x33` for fade-in trigger). |
 | `+0x1F9` | u8 | "Spirit shield" flag - gates spirit-arts variant path. |
 | `+0x1FA` | u8 | Spell-cast iteration counter. |
@@ -276,6 +292,8 @@ The single most-cited helper inside `FUN_801E295C` (~30 call sites). Signature `
 - `8` = action-end / hit-recovery
 - `9` = defeat / down
 
+It is a **camera/presentation program driver**, not the animation system: its body dispatches `pose_id` 0..9 through a jump table at `0x801CEA00` computing three i16[3] tween-target vectors handed to `0x801D7130` (with a secondary dispatch on `actor[+0x1DB]` values `0x11..0x18` — per-art camera variants for the dynamically-installed art anims). It never writes `+0x1D9/+0x1DA`; the same-numbered **anim** ids 7/8/9 are staged separately (by the SM's own `+0x1DA` stores and the `FUN_8004AD80` end-of-clip chains), and the anim system's idle id is `0` — pose 6 has no anim counterpart (record[0] entry 6 is empty in every player file). The two id spaces are designed to align numerically at 7/8/9, which is what made the conflated reading stick.
+
 Note that `FUN_801D5854` for `param_2 == 9 && param_1 == 7` (the only path that calls the special-case) writes pose 9 unconditionally and triggers the run-side animation lookup `FUN_801DB9C4`.
 
 ### `FUN_801EED1C` / `FUN_801E7320` - party / monster setup hooks
@@ -293,7 +311,7 @@ Called from state `0x0C` for non-flee actions. Walks the 8-slot actor table comp
 
 - The state graph is **flat** within each band: `0x14 → 0x15 → 0x16 → 0x17 → 0x18 → 0x1E` is the attack-strike chain. There are no jumps backward except from `0x5A` (which restarts at `0x0A` for the next actor).
 - `ctx[+0x6D8]` is a 16-bit signed countdown. Most states that wait do `*(short*)(ctx + 0x6D8) -= DAT_1F800393` and check sign-flip. Engine port: model as `i16` ticks-per-frame counter.
-- The state machine does **not** own the animation. It writes `actor[+0x1DA]` (queued anim) and waits on `actor[+0x1D9]` (current anim) to converge. The animation tween is run by `FUN_801D5854` and the per-frame actor tick (`FUN_80021DF4`).
+- The state machine does **not** own the animation. It writes `actor[+0x1DA]` (queued anim) and waits on `actor[+0x1D9]` (current anim) to converge. The convergence is performed by the SCUS anim trio — the per-frame anim-node tick `FUN_80047430` (cursor advance + end-of-clip detect) calls the commit `FUN_8004AD80` (id → action-record install, `+0x1D9 = +0x1DA` snap, reaction/end chains), and the decoder `FUN_8004998C` cross-blends the last frame toward the queued clip's frame 0. `FUN_801D5854` never touches the anim fields (see [pose driver](#fun_801d5854---per-actor-pose-driver)); the earlier note attributing the tween to it and to `FUN_80021DF4` was wrong.
 - Actions are **interruptible** only at `0x1E` (counter-attack steal). Every other transition is unconditional once the precondition fires.
 - Battle-end (`DAT_8007BD71 = 0xFE`) is set from `0x5A` (post-cleanup count of survivors, with `_DAT_8007BD2C` carrying the wipe cause) or `0x66` (the successful-escape teardown — no wipe cause byte). The mode-state-machine then unloads the battle overlay.
 

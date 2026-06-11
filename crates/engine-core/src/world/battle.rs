@@ -328,6 +328,8 @@ impl World {
                 is_heal: false,
                 is_crit: landed > 1,
             });
+            let survives = self.actors[target].battle.hp > 0;
+            self.queue_battle_reaction(target, survives);
         }
     }
 
@@ -1048,6 +1050,14 @@ impl World {
                     is_heal: false,
                     is_crit: false,
                 });
+                if applied > 0 {
+                    let survives = self
+                        .actors
+                        .get(target as usize)
+                        .map(|a| a.battle.hp > 0)
+                        .unwrap_or(false);
+                    self.queue_battle_reaction(target as usize, survives);
+                }
             }
             O::Heal { target, amount } => {
                 if let Some(a) = self.actors.get_mut(target as usize) {
@@ -2010,6 +2020,10 @@ impl World {
             is_heal: false,
             is_crit: false,
         });
+        if dmg > 0 {
+            let survives = self.actors[target].battle.hp > 0;
+            self.queue_battle_reaction(target, survives);
+        }
     }
 
     /// Resolve the slot a strike from `attacker` should land on. Honors a

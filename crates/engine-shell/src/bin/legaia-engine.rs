@@ -6289,6 +6289,22 @@ impl PlayWindowApp {
                             log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
                         }
                     }
+                    // Install the full archive-order action-clip set so the
+                    // hit-reaction family (action tags 2..5, the retail
+                    // `+0x1EF` map) can play when this monster takes damage.
+                    match legaia_asset::monster_archive::animations(&archive, monster_id) {
+                        Ok(Some(anims)) if !anims.is_empty() => {
+                            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+                            self.session.host.world.set_actor_battle_action_clips(
+                                actor_idx,
+                                std::sync::Arc::new(clips),
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            log::warn!("play-window: monster {monster_id} action clips: {e:#}")
+                        }
+                    }
                     bound += 1;
                 }
                 Err(e) => log::warn!("play-window: monster {monster_id} mesh upload: {e:#}"),

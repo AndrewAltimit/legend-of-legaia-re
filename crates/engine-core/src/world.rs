@@ -641,11 +641,25 @@ pub struct Actor {
     /// idle-only behavior.
     pub battle_action_clips: Option<std::sync::Arc<Vec<Option<MonsterAnimation>>>>,
 
-    /// Pose id the current `battle_animation` was selected for, in the retail
-    /// `FUN_801D5854` pose-id space the battle-action SM emits (`6` idle /
-    /// `7` ready / `8` recover / `9` defeat). Lets a repeated request for the
-    /// same pose keep the playing clip instead of restarting it.
+    /// Pose id the current `battle_animation` was selected for, in the pose-id
+    /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
+    /// `9` defeat). Lets a repeated request for the same pose keep the playing
+    /// clip instead of restarting it. (Retail mechanism note: the SM's
+    /// `FUN_801D5854(actor, 6..9)` calls are camera/presentation programs - the
+    /// anim ids retail stages into `actor+0x1DA` are entry indices, with idle
+    /// = id `0`; ids `7`/`8`/`9` are real entries staged by the SM and the
+    /// anim commit `FUN_8004AD80`. The engine folds both spaces into this one
+    /// hook; pose `6` plays entry 0's idle loop, which matches the frames
+    /// retail shows.)
     pub battle_pose: Option<u8>,
+
+    /// Hit-reaction action tag currently playing on `battle_animation`
+    /// (the retail `actor+0x1EF..+0x1F3` key space: `2`/`3` light flinch,
+    /// `4` knockdown, `5` get-up, `0x0B` block). Set by
+    /// [`World::queue_battle_reaction`]; cleared when the reaction chain
+    /// finishes and idle resumes. Takes precedence over `battle_pose` while
+    /// active.
+    pub battle_reaction: Option<u8>,
 
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot
@@ -6086,11 +6100,39 @@ impl World {
     /// `.active` flag.
     pub fn tick_battle_animations(&mut self) {
         for i in 0..self.actors.len() {
+            // Hit-reaction chaining first (the FUN_8004AD80 record-type-4 arm):
+            // a finished knockdown re-stages the get-up entry while the actor
+            // lives, and holds its final downed keyframe otherwise. Other
+            // finished reactions fall through to the idle restore below.
+            let reaction = {
+                let a = &self.actors[i];
+                match (a.battle_reaction, &a.battle_animation) {
+                    (Some(key), Some(p)) if p.finished() => Some((key, a.battle.hp > 0)),
+                    _ => None,
+                }
+            };
+            match reaction {
+                Some((4, true)) => {
+                    // Knockdown finished on a living actor: play get-up (key 5).
+                    if !self.queue_battle_reaction_key(i, 5) {
+                        self.actors[i].battle_reaction = None;
+                    }
+                }
+                Some((4, false)) => {
+                    // Knockdown finished on a dead actor: hold the downed pose.
+                }
+                Some((_, _)) => {
+                    // Flinch / get-up / block finished: resume idle.
+                    self.actors[i].battle_reaction = None;
+                }
+                None => {}
+            }
             // A finished one-shot action clip falls back to the idle loop -
             // except defeat, which holds its final (downed) keyframe.
             let restore_idle = {
                 let a = &self.actors[i];
                 a.battle_action_clips.is_some()
+                    && a.battle_reaction.is_none()
                     && a.battle_pose != Some(vm::battle_action::Pose::Defeat as u8)
                     && matches!(&a.battle_animation, Some(p) if p.finished())
             };
@@ -6102,6 +6144,62 @@ impl World {
                 actor.pose_frame = Some(player.tick());
             }
         }
+    }
+
+    /// Queue the retail hit reaction on a damaged battle actor, mirroring the
+    /// damage primitive `FUN_800402F4`: a surviving target with no get-up
+    /// entry (action tag `5`) plays the light flinch (tag `2`, then straight
+    /// back to idle); any other hit plays the knockdown (tag `4`), whose
+    /// end-of-clip chain ([`Self::tick_battle_animations`], the
+    /// `FUN_8004AD80` record-type-4 arm) re-stages the get-up while the actor
+    /// lives and holds the downed keyframe when it dies. No-op for actors
+    /// without installed action clips (or without the needed entries).
+    // PORT: FUN_800402F4 (damage-arm reaction staging: `+0x1DA = +0x1EF` for
+    // a surviving no-get-up target, else `+0x1DA = +0x1F1`; the `+0x1EF..
+    // +0x1F3` tag->entry map is built by FUN_80054CB0 / FUN_80053CB8).
+    pub fn queue_battle_reaction(&mut self, slot: usize, survives: bool) {
+        let has_getup = self
+            .battle_reaction_clip(slot, 5)
+            .map(|c| c.frame_count > 0)
+            .unwrap_or(false);
+        let key = if survives && !has_getup { 2 } else { 4 };
+        self.queue_battle_reaction_key(slot, key);
+    }
+
+    /// Look up actor `slot`'s action clip carrying action tag `key` (the
+    /// retail `+0x1EF` map: tag -> entry, with the loader's tag-4 -> tag-2
+    /// fallback applied by the caller). Player files store the reaction
+    /// family identity-ordered; monster archives at arbitrary indices - so
+    /// the lookup is by each clip's `action_id`, exactly like
+    /// `FUN_80054CB0`'s first-byte scan.
+    fn battle_reaction_clip(&self, slot: usize, key: u8) -> Option<MonsterAnimation> {
+        let clips = self.actors.get(slot)?.battle_action_clips.as_ref()?;
+        clips.iter().flatten().find(|c| c.action_id == key).cloned()
+    }
+
+    /// Start the reaction clip for `key` on actor `slot` (one-shot). Applies
+    /// the retail tag-4 -> tag-2 fallback (`FUN_80054CB0` seeds `+0x1F1` from
+    /// `+0x1EF` when no tag-4 entry exists). Returns `false` when no usable
+    /// clip exists.
+    fn queue_battle_reaction_key(&mut self, slot: usize, key: u8) -> bool {
+        let clip = self.battle_reaction_clip(slot, key).or_else(|| {
+            (key == 4)
+                .then(|| self.battle_reaction_clip(slot, 2))
+                .flatten()
+        });
+        let Some(clip) = clip else {
+            return false;
+        };
+        let Some(player) = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip) else {
+            return false;
+        };
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        actor.battle_animation = Some(player);
+        actor.battle_reaction = Some(key);
+        actor.battle_pose = None;
+        true
     }
 
     /// Install the per-slot battle action clips for actor `slot` (see
@@ -6140,6 +6238,19 @@ impl World {
         let Some(clips) = actor.battle_action_clips.clone() else {
             return;
         };
+        // An in-flight hit reaction outranks the SM's per-frame pose calls
+        // (retail's pose driver never touches the anim-id fields; the
+        // reaction chain owns them until it completes).
+        if actor.battle_reaction.is_some() {
+            return;
+        }
+        // Monster clip vectors are archive-order (retail resolves monster
+        // actions by first-byte search, not by pose id), so only the idle
+        // request maps for monster slots; party tables are identity-ordered
+        // and accept the full pose set.
+        if slot >= 3 && pose_id != vm::battle_action::Pose::Idle as u8 {
+            return;
+        }
         if actor.battle_pose == Some(pose_id) {
             return;
         }

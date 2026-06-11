@@ -423,8 +423,10 @@ pub struct BattleActor {
     /// `+0x1DE` - action category. See [`ActionCategory`].
     pub action_category: u8,
     /// `+0x1DF..+0x1F2` - per-action parameter byte stream (item ID / spell
-    /// ID / strike-anim list, terminated by `0xFF`). Read sequentially via
-    /// `params[strike_index]`. Pre-sized to [`ACTION_PARAM_BYTES`].
+    /// ID / strike-anim list). The attack band terminates on `0x00`, the
+    /// magic band on `0xFF` (`-1`) - retail uses different sentinels per
+    /// band. Read sequentially via `params[strike_index]`. Pre-sized to
+    /// [`ACTION_PARAM_BYTES`].
     pub params: [u8; ACTION_PARAM_BYTES],
     /// `+0x15` - per-strike index used to walk `params` during attack-chain
     /// and magic-anim-chain. Each strike bumps it.
@@ -1077,6 +1079,12 @@ fn attack_face<H: BattleActionHost + ?Sized>(
     let next = if range == 0 {
         ActionState::AttackChain
     } else if actor_slot < party_count {
+        // Retail stages the approach anim for the party short-step: literal
+        // anim id 1 (record[0] entry 1, the walk clip) into `+0x1DA`
+        // (overlay_battle_action_801e295c, the state-0x14 party arm).
+        if let Some(actor) = host.actor_mut(actor_slot) {
+            actor.queued_anim = 1;
+        }
         ActionState::AttackShortStep
     } else {
         ActionState::AttackWindup
@@ -1160,6 +1168,8 @@ fn attack_short_step<H: BattleActionHost + ?Sized>(
     if let Some(actor) = host.actor_mut(slot) {
         actor.flag_bits.set(ActorFlags::WINDUP_DONE);
         actor.combo_bit = 0;
+        // Retail clears the queued approach anim on arrival (`+0x1DA = 0`).
+        actor.queued_anim = 0;
     }
     transition(ctx, ActionState::AttackChain)
 }
@@ -1168,11 +1178,14 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    // Walk the per-actor strike-script byte stream. On terminator (`-1` = `0xFF`),
-    // transition to recovery; otherwise stage next anim and fire damage.
+    // Walk the per-actor strike-script byte stream. The retail attack band
+    // terminates on a `0x00` byte (the magic band is the one that uses `-1`;
+    // overlay_battle_action_801e295c, strike-loop arm); `0xFF` additionally
+    // terminates as this port's out-of-range sentinel. Otherwise stage the
+    // byte as the queued anim and fire damage.
     let slot = ctx.active_actor;
     let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
-    if next_byte == 0xFF {
+    if next_byte == 0x00 || next_byte == 0xFF {
         if let Some(actor) = host.actor_mut(slot) {
             actor.strike_index = 0;
             actor.flag_bits.clear(ActorFlags::ADVANCE_DONE);
@@ -1188,9 +1201,12 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
         actor.strike_index = actor.strike_index.saturating_add(1);
     }
-    // Fire swing-apex damage for this strike. The retail engine calls
-    // FUN_801eed1c (the HP-deduction kernel) at the corresponding point in
-    // the attack chain dispatch block (overlay_0898_801e295c ~0x801e3620+).
+    // Fire swing-apex damage for this strike. (Retail seeds this byte stream
+    // at action start via FUN_801eed1c - the party action-stream setup hook
+    // that copies the entered direction commands, strips status-sealed
+    // directions, and rewrites matched arts into action constants; the
+    // stream bytes here are direction swings `0x0C..0x0F`, art starters
+    // `0x19`/`0x1A`, and art constants `0x1B+`.)
     //
     // When the actor has a `chosen_art` set and the host returns an
     // [`legaia_art::ArtRecord`] for it, also dispatch

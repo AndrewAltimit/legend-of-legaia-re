@@ -18,9 +18,12 @@
 //! Interpolation matches the retail decoder + the visually-validated site
 //! animator (`monsters.html` `_frameTransforms`): translation lerps linearly,
 //! rotation takes the shortest-path 12-bit-angle step. The per-tick phase
-//! advance (`step`) is **not** pinned to retail's exact `actor[+0x68]` delta —
-//! it's a display-rate default (~14 keyframes/sec at a 60 Hz tick), adjustable
-//! per player.
+//! advance is retail-pinned when the clip carries its entry's rate byte:
+//! `FUN_80047430` advances the node's 12.4 cursor by
+//! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame, which with the
+//! normal `+0x21D == 4` and a 1-frame delta is `rate / 8` keyframes per tick
+//! ([`step_for_rate`]). A zero rate (clip built without entry context) keeps
+//! the historical display default.
 
 use legaia_anm::PoseFrame;
 use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
@@ -39,8 +42,9 @@ pub struct MonsterAnimPlayer {
     part_count: usize,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
-    /// Phase units added per [`tick`](Self::tick). Default `64` ≈ a quarter
-    /// keyframe per tick (≈15 keyframes/sec at 60 Hz). Not retail-pinned.
+    /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
+    /// entry rate byte via [`step_for_rate`] (retail: `rate * 2` units of
+    /// 1/16 keyframe per frame); still adjustable per player.
     pub step: u32,
     /// `true` (default) loops the clip forever (idle). `false` plays the clip
     /// once: the cursor clamps at the last keyframe and [`Self::finished`]
@@ -50,9 +54,23 @@ pub struct MonsterAnimPlayer {
     finished: bool,
 }
 
+/// Retail-pinned per-tick phase advance for an entry rate byte: the
+/// `FUN_80047430` cursor delta `(1 * 4 * rate) >> 1` = `2 * rate` units of
+/// 1/16 keyframe, scaled to this player's 8.8 phase (`rate * 32`). A zero
+/// rate (no entry context) falls back to the historical display default
+/// (`64`, which equals rate `2` - the faster of the two retail values).
+// PORT: FUN_80047430 - the per-frame anim-node cursor advance
+// (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`),
+// reduced to the normal case `frame_dt = 1`, `actor[+0x21D] = 4`.
+pub fn step_for_rate(rate: u8) -> u32 {
+    if rate == 0 { 64 } else { rate as u32 * 32 }
+}
+
 impl MonsterAnimPlayer {
     /// Build a player around one decoded animation (typically action 0 = idle).
     /// Returns `None` for a degenerate animation (no parts or no frames).
+    /// The playback step comes from the clip's entry rate byte
+    /// ([`step_for_rate`]).
     pub fn new(anim: &MonsterAnimation) -> Option<Self> {
         if anim.frame_count == 0 || anim.part_count == 0 {
             return None;
@@ -62,7 +80,7 @@ impl MonsterAnimPlayer {
             frame_count: anim.frame_count as u32,
             part_count: anim.part_count,
             phase: 0,
-            step: 64,
+            step: step_for_rate(anim.rate),
             looping: true,
             finished: false,
         })
@@ -166,6 +184,7 @@ mod tests {
         // rotated a quarter turn (1024 = 4096/4) about Z.
         MonsterAnimation {
             action_id: 0,
+            rate: 2,
             part_count: 1,
             frame_count: 2,
             frames: vec![
@@ -193,6 +212,7 @@ mod tests {
     fn new_rejects_degenerate() {
         let a = MonsterAnimation {
             action_id: 0,
+            rate: 2,
             part_count: 0,
             frame_count: 0,
             frames: vec![],
@@ -232,6 +252,7 @@ mod tests {
         // should land near the wrap midpoint (4096/0), not near 2048.
         let anim = MonsterAnimation {
             action_id: 0,
+            rate: 2,
             part_count: 1,
             frame_count: 2,
             frames: vec![
@@ -270,6 +291,7 @@ mod one_shot_tests {
     fn clip(frames: usize) -> MonsterAnimation {
         MonsterAnimation {
             action_id: 8,
+            rate: 2,
             part_count: 1,
             frame_count: frames,
             frames: (0..frames)

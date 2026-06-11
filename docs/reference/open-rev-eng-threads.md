@@ -692,6 +692,9 @@ Decoded by `legaia_mes::dialog_box` (`pack_box` / `pack_boxes`, `LINES_PER_BOX =
 | Thread | Status | What would close it | Memory |
 |---|---|---|---|
 | Player ANM per-record layout | resolved (container + per-`(bone, frame)` semantic) | [details ↓](#player-anm-per-record-layout) | `project_player_anm_source_pinned.md` |
+| Battle anim-id space + record[0] "strike family" | resolved | Anim ids ARE entry indices (commit `FUN_8004AD80`; idle id = `0`; `FUN_801D5854` ids 6..9 = a camera program space). Tags `2/3/4/5/0xB` = the hit-reaction family (`+0x1EF..+0x1F3` map; `FUN_800402F4` stages flinch/knockdown). Swings = the equipment-section splice (slots `0xC..0xF`) + dynamic art slots `0x10`/`0x11` from the `+0x58` art bank. Capture-pinned + disc census. See [monster-animation.md](../formats/monster-animation.md) / [battle-data-pack.md](../formats/battle-data-pack.md). | `project_battle_anim_id_space_resolved.md` |
+| `FUN_80047430` caller | open | The per-frame anim-node tick has no `jal` in the dump corpus (likely a function-pointer dispatch). One exec-breakpoint capture on `0x80047430` reading `$ra` closes it. | `project_battle_anim_id_space_resolved.md` |
+| Record[0] `+0x5C` pointer + art-anim bank stream source | open | `FUN_80052FA0` rebases a second record[0] word (`+0x5C`) with no traced consumer, and the dynamic art records' keyframe streams load through `FUN_8002B28C` into a `gp+0xA24` scratch buffer - the backing source (in-record bank vs side-band stream) is unpinned. A write-watch on the scratch buffer during one art swing closes both. | `project_battle_anim_id_space_resolved.md` |
 
 
 ### Player ANM per-record layout

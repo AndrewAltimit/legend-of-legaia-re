@@ -285,16 +285,26 @@ pub fn assemble_character(
 // Battle animation (record[0] per-action TRS streams)
 // ---------------------------------------------------------------------------
 
-/// Number of action slots in record[0]'s head offset table (`u32` offsets
-/// at decoded `+0x00..+0x58`; the two words at `+0x58`/`+0x5C` are the
-/// record[0] texture-block offsets, mirroring the file header's
-/// `clut_a`/`clut_b`).
+/// Number of action slots scanned in record[0]'s head offset table. On disc
+/// only `+0x00..+0x2C` (slots 0..0xB) are populated; the runtime table is
+/// wider: the battle loader `FUN_80052FA0` rebases the 12 disc words, fills
+/// slots `0xC..0xF` (offsets `0x30..0x3C`) with swing records spliced from
+/// the equipped-item sections, and the anim commit `FUN_8004AD80` installs
+/// dynamically-materialized art records at slots `0x10`/`0x11`. The word at
+/// `+0x58` is the **art-animation record bank** pointer (`0xD0`-stride
+/// records the dynamic slots are built from; also the art matcher's table),
+/// and `+0x5C` a sibling pointer (rebased at load; consumer untraced) - not
+/// texture-block offsets as earlier noted.
 pub const ACTION_SLOT_COUNT: usize = 22;
 
 /// Offset of the packed `[u8 parts][u8 frames][9-byte TRS records]` stream
 /// inside a record[0] action entry (the monster archive's sibling entries
 /// keep theirs at `+0x8C`). The runtime loader points the entry's `+0x88`
-/// stream pointer here (`FUN_80047430` / `FUN_8004AD80` consume it).
+/// stream pointer here (`FUN_80047430` / `FUN_8004AD80` consume it). The
+/// entry's first byte is its **action tag** (identity with the slot index in
+/// the player files: `0` idle, `1` walk/approach, `2`/`3` light flinches,
+/// `4` knockdown, `5` get-up, `7`/`8`/`9` ready/recover/defeat poses, `0x0B`
+/// block) - the key space of the actor `+0x1EF..+0x1F3` reaction map.
 pub const PLAYER_ANIM_STREAM_OFFSET: usize = 0xAC;
 
 /// LZS-decode a player file's `record[0]` (header
@@ -351,9 +361,14 @@ pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::Mons
         if entry_off == 0 || entry_off >= block.len() {
             continue;
         }
+        let rate = block
+            .get(entry_off + crate::monster_archive::ANIM_RATE_OFFSET)
+            .copied()
+            .unwrap_or(0);
         if let Some(anim) = crate::monster_archive::parse_animation_stream(
             &block,
             slot as u8,
+            rate,
             entry_off + PLAYER_ANIM_STREAM_OFFSET,
         ) {
             out.push(anim);
@@ -374,9 +389,14 @@ pub fn idle_battle_animation(
     if entry_off == 0 || entry_off >= block.len() {
         return Ok(None);
     }
+    let rate = block
+        .get(entry_off + crate::monster_archive::ANIM_RATE_OFFSET)
+        .copied()
+        .unwrap_or(0);
     Ok(crate::monster_archive::parse_animation_stream(
         &block,
         0,
+        rate,
         entry_off + PLAYER_ANIM_STREAM_OFFSET,
     ))
 }
@@ -403,6 +423,7 @@ pub fn expand_animation_for_objects(
         .collect();
     crate::monster_archive::MonsterAnimation {
         action_id: anim.action_id,
+        rate: anim.rate,
         part_count: anm_bones.len(),
         frame_count: anim.frame_count,
         frames,

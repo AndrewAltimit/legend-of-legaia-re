@@ -8623,6 +8623,7 @@ fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
     use legaia_asset::monster_archive::PartPose;
     MonsterAnimation {
         action_id,
+        rate: 2,
         part_count: 1,
         frame_count: frames,
         frames: (0..frames)
@@ -8881,4 +8882,117 @@ fn identity_save_keeps_legacy_party_semantics() {
         "identity order restores as the identity default"
     );
     assert_eq!(fresh.party_count, 4, "legacy party_count preserved");
+}
+
+// --- battle hit reactions (retail +0x1EF tag map) ----------------------------
+
+/// Clip set carrying the full party reaction family at identity indices
+/// (action tags 2..5 + 0x0B), like a player battle file's record[0].
+fn reaction_test_world(with_getup: bool) -> World {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.max_hp = 100;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 12];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[2] = Some(pose_test_clip(2, 2, 20));
+    clips[4] = Some(pose_test_clip(4, 2, 40));
+    if with_getup {
+        clips[5] = Some(pose_test_clip(5, 2, 50));
+    }
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world
+}
+
+/// Run the active one-shot to completion and let the chain advance once.
+fn finish_reaction_clip(world: &mut World) {
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    world.tick_battle_animations(); // finishes the clip
+    world.tick_battle_animations(); // chain reacts to `finished`
+}
+
+#[test]
+fn hit_reaction_knockdown_then_getup_then_idle() {
+    // An actor WITH a get-up entry plays knockdown (tag 4) on any hit,
+    // then get-up (tag 5), then resumes idle - the FUN_800402F4 staging +
+    // FUN_8004AD80 record-type-4 chain.
+    let mut world = reaction_test_world(true);
+    world.queue_battle_reaction(0, true);
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    finish_reaction_clip(&mut world);
+    assert_eq!(
+        world.actors[0].battle_reaction,
+        Some(5),
+        "living actor chains knockdown into get-up"
+    );
+    finish_reaction_clip(&mut world);
+    assert_eq!(world.actors[0].battle_reaction, None);
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Idle as u8),
+        "reaction chain ends in the idle loop"
+    );
+}
+
+#[test]
+fn hit_reaction_light_flinch_without_getup() {
+    // A surviving target with no get-up entry plays the light flinch
+    // (tag 2) and falls straight back to idle.
+    let mut world = reaction_test_world(false);
+    world.queue_battle_reaction(0, true);
+    assert_eq!(world.actors[0].battle_reaction, Some(2));
+    finish_reaction_clip(&mut world);
+    assert_eq!(world.actors[0].battle_reaction, None);
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Idle as u8)
+    );
+}
+
+#[test]
+fn hit_reaction_lethal_knockdown_holds_downed_frame() {
+    let mut world = reaction_test_world(true);
+    world.actors[0].battle.hp = 0;
+    world.queue_battle_reaction(0, false);
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    for _ in 0..5 {
+        world.tick_battle_animations();
+    }
+    // Dead: the knockdown holds its final keyframe; no get-up, no idle.
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    assert!(
+        world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished()
+    );
+}
+
+#[test]
+fn reaction_outranks_pose_requests_until_done() {
+    let mut world = reaction_test_world(true);
+    world.queue_battle_reaction(0, true);
+    // The SM keeps requesting poses every frame; an in-flight reaction wins.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    assert_eq!(world.actors[0].battle_pose, None);
+}
+
+#[test]
+fn monster_slots_only_honor_idle_pose() {
+    // Monster clip vectors are archive-order, not pose-indexed: a Defeat
+    // pose request on a monster slot must not start clip index 9 (an
+    // arbitrary spell action). Idle still maps to clip 0.
+    let mut world = World::new();
+    world.actors[3].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 12];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[9] = Some(pose_test_clip(0x0C, 2, 90));
+    world.set_actor_battle_action_clips(3, std::sync::Arc::new(clips));
+    world.apply_battle_pose(3, vm::battle_action::Pose::Defeat as u8);
+    assert_eq!(world.actors[3].battle_pose, None, "non-idle pose ignored");
+    world.apply_battle_pose(3, vm::battle_action::Pose::Idle as u8);
+    assert_eq!(world.actors[3].battle_pose, Some(6), "idle still maps");
 }
