@@ -293,7 +293,12 @@ battle_animations, idle_battle_animation, expand_animation_for_objects}`
 
 The battle-init texture upload is fully pinned. `FUN_80052FA0` runs once per
 **present** party member; `p` below is the member's 0-based ordinal among the
-present battle party (the band selector — *not* the character id). Per
+present battle party (the band selector — *not* the character id). The
+ordinal rule is live-verified for **all four playable characters**: a
+Noa + Terra party capture (`terra_party_battle`) byte-matches both bands at
+100% with Terra (char id 4, player file 0866) banding at her ordinal like
+any other member — there is no special "4th band"
+(`crates/engine-shell/tests/battle_char_texture_live.rs`). Per
 member it issues up to seven upload blocks through `FUN_80053B9C`
 (decomp `ghidra/scripts/funcs/80052fa0.txt` / `80053b9c.txt`):
 
