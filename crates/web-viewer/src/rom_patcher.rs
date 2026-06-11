@@ -290,7 +290,7 @@ pub fn patch_rom(
             )
             .map_err(|e| err(format!("house-doors: {e}")))?;
             summary.push_str(&format!(
-                "house-doors: {} of {} MOVE_TO targets shuffled across {} scenes\n",
+                "house-doors: {} of {} door-warp targets shuffled across {} scenes\n",
                 rep.sites_changed, rep.sites_total, rep.scenes_changed
             ));
         }

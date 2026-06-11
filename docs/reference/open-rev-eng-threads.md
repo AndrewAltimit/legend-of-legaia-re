@@ -606,7 +606,12 @@ This made **variable-length** door editing safe (resizing a destination name is 
 
 Entering a house in a town is **not** a scene change — it's an **intra-scene reposition**: the field VM runs a **`0x23 MOVE_TO`** op that teleports the player to an interior sub-area tile within the *same* loaded scene (the scene-name buffers `0x8007050C`/`0x80084548` stay put across the transition; only the player struct position jumps). Pinned at the instruction level by the new `probe.step.find_writer` Lua primitive (a width-correct range write-watch over the player position block): the writer lands in the field-VM dispatcher `FUN_801de840` **`case 0x23`** (`0x801debc4 sh v0,0x14(s5)`), converting the tile operand to world (`tile*128 + 0x40`).
 
-Earlier write-watchpoints missed it (a width-2 watch at `+0x14` caught only a 2-byte no-op re-store in the ledge-hop `FUN_801d1878`, a red herring). Captures: `door_warp_rim_elm_to_mei_house`/`mei_house_inside` (mednafen), `mei_house_door_pcsx`/`mei_house_inside_pcsx` (PCSX). The `0x23 MOVE_TO` op is shared with NPC/cutscene movement (no clean door marker), so the randomizer (`legaia_rando::house_door`) does a per-scene multiset-preserving shuffle of the non-sentinel target tiles.
+Earlier write-watchpoints missed it (a width-2 watch at `+0x14` caught only a 2-byte no-op re-store in the ledge-hop `FUN_801d1878`, a red herring). Captures: `door_warp_rim_elm_to_mei_house`/`mei_house_inside` (mednafen), `mei_house_door_pcsx`/`mei_house_inside_pcsx` (PCSX).
+
+**A clean door marker exists after all** (the earlier "shared with NPC/cutscene movement, no marker" reading is superseded): house-door warps use the **cross-context form `0xA3 0xF8 xb zb`** — opcode `0x23 | 0x80` dispatched into the player system channel `0xF8` ("make the *player* MOVE_TO this tile"), while plain `0x23` moves the executing actor (NPC/prop positioning).
+The carrying partition-0 records have their own header form (`[u8 n][n×2 SJIS name][u8 attr]`, distinct from partition 1) and an explicit naming convention pairing entries with exits (fullwidth `ＩＮ`/`ＯＵＴ`, `入口`/`出口` gates, `Ａ`/`Ｂ` elevator endpoints; optional digit suffixes).
+The captured Mei's-house warp is byte-for-byte the `0xA3 0xF8 0x61 0x36` in town01 partition-0 record 34 (an `ＩＮ` record).
+The randomizer (`legaia_rando::house_door`) shuffles only these classified door warps, class-preserving (ＩＮ among ＩＮ, ＯＵＴ among ＯＵＴ) so every exit still lands outside; see [`randomizer.md`](../tooling/randomizer.md).
 
 
 ### Field/town environment-geometry placement

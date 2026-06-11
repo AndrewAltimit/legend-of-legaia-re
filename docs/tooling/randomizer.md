@@ -58,8 +58,8 @@ preservation track never had (it only ever *read* the disc):
 
 ## Editing model: same-size in place, except doors
 
-Drops / encounters / chests / steals / **house doors** (the `0x23 MOVE_TO` tile
-shuffle) overwrite bytes **in place** and never change a byte count, so no LBA,
+Drops / encounters / chests / steals / **house doors** (the player door-warp
+tile shuffle) overwrite bytes **in place** and never change a byte count, so no LBA,
 PROT TOC, or ISO 9660 directory record ever moves. **Scene-transition doors are
 the one exception**: a scene-transition destination carries its
 target scene's name inline, so re-pointing a door at a differently-named scene
@@ -100,7 +100,7 @@ legaia-rando drops     --input DISC.bin                       # read-only: monst
 legaia-rando chests    --input DISC.bin                       # read-only: chest contents
 legaia-rando steals    --input DISC.bin                       # read-only: steal items
 legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
-legaia-rando house-doors --input DISC.bin                     # read-only: intra-town MOVE_TO targets
+legaia-rando house-doors --input DISC.bin                     # read-only: intra-town door warps
 legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
 legaia-rando shops     --input DISC.bin                       # read-only: what town stores sell
 legaia-rando casino    --input DISC.bin                       # read-only: casino prize exchange
@@ -445,34 +445,54 @@ rather than half-applying.)
 ### House doors (intra-town)
 
 Entering a house/interior within a town is **not** a scene change — it's an
-**intra-scene reposition**: the field VM runs a **`0x23 MOVE_TO`** op that
-teleports the player to an interior sub-area tile in the *same* scene (pinned at
-the instruction level by `probe.step.find_writer`; the writer is `FUN_801de840`
-`case 0x23` — see [pcsx-redux-automation.md](pcsx-redux-automation.md)). So the
-door "record" is the op's two operand bytes `[0x23][xb][zb]` (`tile = byte &
-0x7F`). `legaia_rando::house_door::SceneHouseDoors` enumerates a scene's
-non-sentinel MOVE_TO sites and `--house-doors shuffle` does a **per-scene,
-multiset-preserving shuffle** of their target tiles — every target stays a tile
-the scene already uses (no off-map placement), a same-size 2-byte operand edit
-recompressed in place (no relocation). On retail: 220 shuffleable targets across
-28 scenes.
+**intra-scene reposition**: the field VM runs a `MOVE_TO` that teleports the
+player to an interior sub-area tile in the *same* scene (pinned at the
+instruction level by `probe.step.find_writer`; the writer is `FUN_801de840`
+`case 0x23` — see [pcsx-redux-automation.md](pcsx-redux-automation.md)).
 
-**Experimental — the op is shared, and enumeration is partial.** `0x23 MOVE_TO`
-is also how NPC / cutscene scripts move actors, and there's no clean structural
-marker separating door warps from those, so the shuffle also scrambles some actor
-positions within each town. It is opt-in, `shuffle`-only (a `random` draw would
-place actors off-map), and excludes the `(0x7F, 0x7F)` "here" sentinel. The
-read-only `house-doors` listing shows the touched population per scene.
+**The door warp has a clean structural signature.** A house-door reposition is
+not a plain `0x23 xb zb` (that form moves the *executing actor* — it's how NPC
+/ prop / cutscene scripts position things). It is the **cross-context form
+`0xA3 0xF8 xb zb`**: opcode `0x23 | 0x80` dispatched into the system/player
+script channel `0xF8`, i.e. "make the *player* MOVE_TO this tile"
+(`tile = byte & 0x7F`). These ops live in the scene MAN's **partition-0
+interaction records** — whose header is `[u8 n][n*2 SJIS name][u8 attr]`, *not*
+partition 1's `[n][n*2][4-byte header]` shape — and the records carry an
+explicit door-pairing convention in their SJIS names: fullwidth `ＩＮ`/`ＯＵＴ`
+(optionally digit-suffixed — the Ratayu inn is one `ＩＮ` with three numbered
+`ＯＵＴ`s), the 入口/出口 entrance/exit kanji (the Sol city gates), or trailing
+`Ａ`/`Ｂ` endpoint letters (the tower elevators). The runtime-pinned Mei's-house
+entry (`town01`) is exactly the `0xA3 0xF8 0x61 0x36` (interior tile `(97, 54)`)
+in the record named `…ＩＮ`.
 
-Enumeration finds only the `MOVE_TO` ops a **clean** field-VM walk reaches (it
-stops at the first byte that doesn't decode as a valid op, so it never mistakes
-arbitrary data for a `0x23`). In some towns the interior-*entry* warps target
-high interior tiles and sit past such a desync, so the sites found there are the
-lower-coordinate doorstep / NPC repositions rather than the "enter the house"
-warps — meaning a small town's house entries may not actually change. Closing
-that gap needs a more aggressive walk-past-desync enumeration (with a way to
-reject data false positives) or a per-town runtime trace of the entry op; both
-remain open, which is why the feature is experimental.
+`legaia_rando::house_door::SceneHouseDoors` enumerates these classified door
+warps (the record walk skips inline-dialogue `0x1F` segments, the same
+ground-truthed rule as the chest walk) and `--house-doors shuffle` does a
+**per-scene, class-preserving shuffle**: `ＩＮ`-class targets (interior landing
+tiles) permute among the scene's entry warps, `ＯＵＴ`-class targets (exterior
+doorsteps) among its exit warps. Every target stays a tile the scene's door
+system already uses, NPC / prop / cutscene positions never move (plain
+actor-context `MOVE_TO`s are untouched), and every exit still lands outside —
+no interior-to-interior cycle (no softlock) is constructible. Each edit is a
+same-size 2-byte operand swap recompressed in place (no relocation). On retail:
+56 classified door warps (27 entries + 29 exits) across 12 scenes; a handful of
+class-less partition-0 story warps (e.g. the town01 intro "inside the house"
+reposition) are detected but deliberately left vanilla.
+
+The feature is opt-in and `shuffle`-only (a `random` draw would place the
+player off-map). The read-only `house-doors` listing shows the population per
+scene. The disc-gated `house_door_classifier_real` test pins the per-scene
+ＩＮ/ＯＵＴ census, the `0xA3 0xF8` signature of every site, and the captured
+Mei's-house anchor; `house_door_patch_real` round-trips the shuffle off a
+patched image and asserts the per-scene, per-class target multisets, EDC/ECC
+validity, and seed determinism; and the engine-side
+`house_door_randomizer_runtime_e2e` drives the patched warp op through the real
+field VM, asserting the runtime lands on the patched interior tile (baseline =
+the live-captured Mei's-house world coords).
+
+Towns whose interiors are separate scenes (e.g. `retock` → `retockin`) reach
+them through `0x3F` scene-change doors — those are the [door
+randomizer](#doors-scene-transitions)'s population, not this one's.
 
 ### Starting items
 
@@ -649,7 +669,8 @@ bit-for-bit.
 | `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
 | `crates/rando` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
 | `crates/rando` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
-| `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene `0x23 MOVE_TO` target-tile multiset preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
+| `crates/rando` `house_door_classifier_real` | disc-gated | house-door warp census: every classified site carries the `0xA3 0xF8` cross-context player-MOVE_TO signature, the per-scene ＩＮ/ＯＵＴ class counts match the audited population (12 scenes, 27 + 29 sites), targets non-sentinel, and the runtime-captured Mei's-house interior `(97, 54)` is among town01's ＩＮ targets |
+| `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene ＩＮ-class and ＯＵＴ-class door-warp target multisets each preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equipment_drops_real` | disc-gated | build the equipment pool from `SCUS_942.54`, plan an every-monster equipment drop, re-decode every monster's drop off the patched `battle_data`, assert each is a pool equipment id at a tiered 1..=3% chance; deterministic |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
@@ -661,6 +682,7 @@ bit-for-bit.
 | `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
 | `crates/engine-core` `arts_randomizer_runtime_e2e` | disc-gated | runtime oracle: shuffle the arts combos (in-place glyph-byte edits), re-decode them off the patched image, and drive the real combo-recognition kernel (`battle_arts::chain_matches_record`) — assert every changed art fires on the new combo bytes and no longer on the old one (baseline: each art fires on its original combo) |
 | `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
+| `crates/engine-core` `house_door_randomizer_runtime_e2e` | disc-gated | runtime oracle: baseline town01's Mei's-house entry warp (`0xA3 0xF8`) through the real field VM at the live-captured world coords `(0x30C0, 0x1B40)`, shuffle the house doors on a scratch copy, re-decode the patched MAN, drive the same op offset and assert the runtime warps to the patched interior tile (not Mei's) |
 | `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
 | `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
 | `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
