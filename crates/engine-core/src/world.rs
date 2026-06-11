@@ -1513,6 +1513,22 @@ pub struct World {
     /// party combatant's attack / defense at battle entry.
     pub equipment_table: crate::battle_stats::EquipmentTable,
 
+    /// Accessory ("Goods") passive-effect catalog: item id → passive index +
+    /// per-index party-wide scope, decoded from the executable. Empty by
+    /// default; install via [`World::set_accessory_passives`].
+    /// [`World::refresh_party_ability_bits`] derives each member's ability
+    /// bitfield from it, and
+    /// [`crate::battle_stats::compute_battle_stats_with_passives`] applies the
+    /// percent stat boosts inside [`World::seed_party_battle_stats`].
+    pub accessory_passives: crate::accessory_passives::AccessoryPassives,
+
+    /// Party-global 4×u32 ability mask - the engine mirror of retail
+    /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
+    /// together each rebuild). Bit-tested via [`World::party_has_ability`]
+    /// (the `FUN_800431D0` port); rebuilt by
+    /// [`World::refresh_party_ability_bits`].
+    pub party_ability_mask: [u32; crate::accessory_passives::ABILITY_WORDS],
+
     /// Battle-scoped monster-AI state (cooldowns / phase counter / recent-target
     /// ring) read & written by the per-monster-id scripted-cast picker
     /// ([`crate::monster_ai::decide`]). Reset on each battle enter.
@@ -2178,6 +2194,8 @@ impl World {
             field_shop_armed: false,
             field_shop_open: false,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
+            accessory_passives: Default::default(),
+            party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
             vdf_buffer: None,
@@ -4042,10 +4060,13 @@ impl World {
                 }
             }
         }
-        // The +25% gold bonus fires when a living party member carries ability
-        // bit `0x10000` (`FUN_8004E568` `8004e568.txt:425`). Bit 16 = byte 2,
-        // mask 0x01 of the `+0xF4` ability bitfield. "Living" = post-battle
-        // battle HP > 0, the same set `apply_battle_xp` divides EXP among.
+        // The +25% gold bonus fires when a living party member carries bit
+        // `0x10000` of the SECOND ability word (`FUN_8004E568` tests the u32
+        // at record `+0xF8`): overall bit 48 of the `+0xF4` bitfield = byte 6,
+        // mask 0x01 = accessory passive index 0x30 ("Gold Boost", the Golden
+        // Book - see `docs/formats/accessory-passive-table.md`). "Living" =
+        // post-battle battle HP > 0, the same set `apply_battle_xp` divides
+        // EXP among.
         let party_count = self.party_count as usize;
         let more_gold = (0..party_count).any(|i| {
             self.actors.get(i).is_some_and(|a| a.battle.hp > 0)
@@ -4053,7 +4074,7 @@ impl World {
                     .roster
                     .members
                     .get(i)
-                    .is_some_and(|rec| rec.ability_bits()[2] & 0x01 != 0)
+                    .is_some_and(|rec| rec.ability_bits()[6] & 0x01 != 0)
         });
         let gold_credited = vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold);
 

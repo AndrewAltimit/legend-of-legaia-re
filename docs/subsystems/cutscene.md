@@ -22,8 +22,9 @@ handler lives in a dedicated overlay (game modes 26/27). Its **source is now pin
 `MV*.STR` movie paths + the MDEC decoder strings (`MDEC_in_sync` / `MDEC_out_sync` /
 `MDEC_rest:bad option`); see [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
 So the overlay code is now Ghidra-importable straight from the disc (`asset overlay ghidra`) —
-the master-dispatch + mode-26/27 handler can be decompiled without a live capture; only runtime
-values (e.g. the per-scene `fmv_id` the field VM writes) still need one. The two
+the master-dispatch + mode-26/27 handler can be decompiled without a live capture; the per-scene
+`fmv_id` assignment is disc-sourced too (literal operands in the scene MAN scripts — see
+"per-scene trigger assignment" below). The two
 script-cutscene captures (`overlay_cutscene_dialogue.bin`, `overlay_cutscene_mapview.bin`) in the
 Ghidra project are a different overlay — they cover the actor-scripted dialogue sequences (op*/ed*
 CDNAME labels) and share the town field-VM overlay binary, not the FMV decoder. Capture pipeline:
@@ -299,7 +300,7 @@ The FMV overlay's data section carries the CDNAME labels of seven field scenes -
 town0b  map01  chitei2  map02  jou  uru2  town0e
 ```
 
-These scenes have FMV trigger points in their field-VM scripts. The exact `MV*.STR` each plays is encoded in the per-scene script as the operand of the field-VM FMV-trigger op (decoded below). The heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order; `FMV_TRIGGER_FIELD_SCENES` (sibling constant) lists the mid-game scenes; and the per-scene MV index resolves through [`cutscene::fmv_index_to_str_filename`](../../crates/engine-core/src/cutscene.rs) once the scene's bytecode is disassembled.
+These labels are the scenes the overlay itself references (e.g. for the post-playback scene restore) — **not** the trigger-op scene list: the disc-walked trigger table (below) finds the `0x4C 0xE2` ops in a different scene set, with only `chitei2` overlapping. The heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order; `FMV_TRIGGER_FIELD_SCENES` (sibling constant) records this overlay label list; the per-scene MV index resolves through [`cutscene::fmv_index_to_str_filename`](../../crates/engine-core/src/cutscene.rs).
 
 ## Field-VM FMV-trigger op
 
@@ -348,11 +349,12 @@ Both title-side sites live in the same outer function `FUN_801DD35C` (the per-fr
 
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine — Ghidra promotes it to a `FUN_` symbol because the JT at `0x801CF008[2]` resolves to that address. The actual control flow is `outer 0x4C dispatcher → 0x801E0C3C → 0x801E3040 → jump-table indirect to 0x801E30E4`.
 
-### Why the seven mid-game scenes don't surface in a bytewise PROT scan
+### The per-scene trigger assignment is disc-sourced (the "runtime-reconstructed" reading is falsified)
 
-`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e` all kick off mid-game STR FMVs. Since `field_vm_op_4c_e2` is the only field-VM-driven trigger and the title-screen attract path is hardcoded to `fmv_id = 0`, those seven scenes **must** trigger via the same `0x4C 0xE2` op. The byte sequence is not statically present in their on-disc PROT entries, however — the disassembler's `--bytewise` mode (which scans every byte of every PROT entry) surfaces only one in-range trigger across the corpus (`PROT[371] taiku`, `fmv_id=5`).
+A raw bytewise PROT scan can't see the trigger ops because the scene scripts live **LZS-compressed** inside each scene's MAN. Decompressing every scene MAN and walking its partition-1 scripts with the field-VM disassembler (`man_field_scripts::scene_fmv_triggers`, the `0x3F`-destination walk's sibling) recovers the full assignment statically — `town01 → 1`, `garmel → 2`, `deroa / chitei2 → 3`, `dohaty → 4`, `town0d → 6`, `uru → 7`, `jouine → 8`; one op per scene, no other scene MAN carries one.
+Pinned by the disc-gated `scene_fmv_triggers_disc` test; full table in [`str-fmv-table.md` § Per-scene trigger assignment](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced). The earlier conclusion that the trigger bytecode is "reconstructed at scene-load from the field-pack preamble's runtime-projected slot" is **falsified** — the ops were simply compressed on disc.
 
-The conclusion is that the seven scenes' field-VM bytecode is **reconstructed at scene-load time** from the field-pack preamble's runtime-projected slot. The lift is therefore blocked on the same intra-transition byte-level capture that gates the [field-pack runtime projection](../formats/field-pack.md) — once the loader's preamble → runtime-RAM-cell projection is mapped, the `0x4C 0xE2` op-byte sequence becomes scannable in RAM and the per-scene MV index falls out of a single-frame disassembly.
+The overlay's seven-label list above is therefore *not* the trigger-scene set (only `chitei2` appears in both). Outside the MAN-carried scripts, a raw sweep also finds in-range `4C E2` byte candidates in `taiku` (`fmv_id 5`, the cut `MOV15.STR` slot) and `opmap01` / `koin1b` (`fmv_id 7`) in uncompressed regions of non-MAN scene structures — uncontextualized byte matches (the same sweep "finds" triggers inside VAB sample data), kept as candidates rather than pins.
 
 ### Per-STR FMV trigger corpus
 

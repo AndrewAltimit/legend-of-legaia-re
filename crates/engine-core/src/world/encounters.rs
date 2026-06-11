@@ -92,6 +92,94 @@ impl World {
         self.equipment_table = table;
     }
 
+    /// Install the accessory ("Goods") passive-effect catalog (item id →
+    /// passive index + party-wide scope flags, decoded from the executable -
+    /// see [`crate::accessory_passives::AccessoryPassives::from_disc`]).
+    /// Boot wires this once; [`Self::refresh_party_ability_bits`] derives the
+    /// per-character ability bitfields from it and
+    /// [`Self::seed_party_battle_stats`] applies the percent stat boosts.
+    pub fn set_accessory_passives(&mut self, p: crate::accessory_passives::AccessoryPassives) {
+        self.accessory_passives = p;
+    }
+
+    /// Rebuild every party member's ability bitfield from their equipped
+    /// items, plus the party-global mask.
+    ///
+    /// PORT: FUN_80042558 (ability-bit rebuild + global-mask OR arms)
+    ///
+    /// Mirrors the retail aggregator's bitfield pass: each member's record
+    /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
+    /// slots ([`crate::accessory_passives::AccessoryPassives::bits_for_equipment`]),
+    /// then all members' words OR into the global mask (the engine's
+    /// [`Self::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
+    /// word 0 also lands in [`Self::character_ability_bits`] - the mask the
+    /// MP-cost consumers read ([`Self::build_battle_spell_session`] /
+    /// `cast_spell_on_slots` / the battle-action VM host) - together with the
+    /// party-wide-scoped bits any member contributes, so a party-wide passive
+    /// is visible through every member's effective mask.
+    ///
+    /// No-op while [`Self::accessory_passives`] is empty (the disc-free
+    /// default), so synthetic setups that write `character_ability_bits`
+    /// directly keep their values.
+    ///
+    /// Called from [`Self::seed_party_battle_stats`] (battle entry / stat
+    /// refresh) and from the equip-commit paths, mirroring retail's
+    /// rebuild-on-every-aggregator-pass behaviour.
+    pub fn refresh_party_ability_bits(&mut self) {
+        use crate::accessory_passives::ABILITY_WORDS;
+        if self.accessory_passives.is_empty() {
+            return;
+        }
+        let pc = (self.party_count.min(3) as usize).min(self.roster.members.len());
+        let mut own = [[0u32; ABILITY_WORDS]; 3];
+        let mut global = [0u32; ABILITY_WORDS];
+        for (slot, own_words) in own.iter_mut().enumerate().take(pc) {
+            let equip = self.roster.members[slot].equipment().slots;
+            let words = self.accessory_passives.bits_for_equipment(&equip);
+            // Rebuild the record-side bitfield (retail zeroes `+0xF4..+0x103`
+            // and re-derives it from equipment on every pass). Bytes past the
+            // four words stay zero - passive indices live below 0x40.
+            let mut bytes = [0u8; legaia_save::ABILITY_BITS_LEN];
+            for (w, word) in words.iter().enumerate() {
+                bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
+            }
+            self.roster.members[slot].set_ability_bits(bytes);
+            for (g, w) in global.iter_mut().zip(words.iter()) {
+                *g |= *w;
+            }
+            *own_words = words;
+        }
+        self.party_ability_mask = global;
+        // Effective per-member mask for the u32 consumers: own bits plus the
+        // party-wide-scoped bits any member contributes (the engine shape of
+        // "consumers test the global mask for party-wide passives").
+        let pw = self.accessory_passives.party_wide_mask();
+        for (bits, own_words) in self
+            .character_ability_bits
+            .iter_mut()
+            .zip(own.iter())
+            .take(pc)
+        {
+            *bits = own_words[0] | (global[0] & pw[0]);
+        }
+    }
+
+    /// `true` when any party member's rebuilt ability bitfield carries
+    /// passive bit `index` (0..=127; retail uses 0..=0x3F).
+    ///
+    /// PORT: FUN_800431D0
+    ///
+    /// The port of retail's global-mask bit test
+    /// (`DAT_80074358[index >> 5] & 1 << (index & 0x1F)`), against the
+    /// engine's [`Self::party_ability_mask`]. Point-of-use consumers of the
+    /// party-wide passives (encounter rate, escape, battle-end rewards) call
+    /// this.
+    pub fn party_has_ability(&self, index: u8) -> bool {
+        self.party_ability_mask
+            .get((index >> 5) as usize)
+            .is_some_and(|w| w & (1u32 << (index & 0x1F)) != 0)
+    }
+
     /// Seed each party combatant's battle attack / defense from the roster's
     /// live stats plus equipped-gear bonuses.
     ///
@@ -109,6 +197,10 @@ impl World {
     /// host can refresh stats after an equipment change without re-entering the
     /// battle.
     pub fn seed_party_battle_stats(&mut self) {
+        // Rebuild the per-member ability bitfields (accessory passives) first
+        // so both the stat fold below and the MP-cost consumers read fresh
+        // equipment-derived bits, mirroring retail's single-pass aggregator.
+        self.refresh_party_ability_bits();
         let pc = self.party_count.min(3) as usize;
         for slot in 0..pc {
             let Some(rec) = self.roster.members.get(slot) else {
@@ -125,21 +217,68 @@ impl World {
             // mutable borrow below; `rec` still owns the immutable roster borrow
             // through the stat fold.
             let ap_base = crate::ap_gauge::ap_base_for_level(rec.level());
+            // Aggregator base stats: prefer the record-side base window
+            // (`+0x11C..`, [`legaia_save::RecordStats`]) - the window retail's
+            // `FUN_80042558` rebuilds the live stats FROM - so the accessory
+            // percent boosts compute from the true base (a record imported
+            // from a retail save carries the last rebuilt, already-boosted
+            // values in its live window). Fall back to the live window for
+            // synthetic records that only populate live stats. Only taken
+            // when a passives catalog is installed: without one no percent
+            // boost is re-applied, so the live window (which may carry them)
+            // remains the better effective source.
+            let recs = rec.record_stats();
+            let (agl, atk, udf, ldf, spd, int) =
+                if !self.accessory_passives.is_empty() && recs.atk != 0 {
+                    (recs.agl, recs.atk, recs.udf, recs.ldf, recs.spd, recs.int)
+                } else {
+                    (live.agl, live.atk, live.udf, live.ldf, live.spd, live.int)
+                };
+            let base_max_hp = if recs.hp_max != 0 {
+                recs.hp_max
+            } else {
+                rec.hp_mp_sp().hp_max
+            };
             let record = crate::battle_stats::StatRecord {
-                base_attack: live.atk,
-                base_udf: live.udf,
-                base_ldf: live.ldf,
-                base_accuracy: live.agl,
-                base_evasion: live.agl,
-                base_spd: live.spd,
-                base_int: live.int,
+                base_attack: atk,
+                base_udf: udf,
+                base_ldf: ldf,
+                base_accuracy: agl,
+                base_evasion: agl,
+                base_spd: spd,
+                base_int: int,
                 equip: rec.equipment().slots,
             };
-            let stats = crate::battle_stats::compute_battle_stats_default(
+            let stats = crate::battle_stats::compute_battle_stats_with_passives(
                 &record,
                 &self.equipment_table,
+                &self.accessory_passives,
                 &[],
+                &crate::battle_stats::StatusModifiers::default(),
             );
+            // Max-HP percent passives (indices 0x00 / 0x01) rebuild the
+            // effective max HP from the base, capped at 9999 - applied to the
+            // live battle actor, the engine's effective-max-HP holder. Only
+            // touched when a boost bit is present so synthetic max-HP setups
+            // keep their values. (Retail's max-MP boosts, indices 0x02/0x03,
+            // have no engine consumer yet: the battle actor carries current
+            // MP only, no max-MP mirror.)
+            let pwords = self.accessory_passives.bits_for_equipment(&record.equip);
+            if pwords[0] & 0x3 != 0 {
+                let mut max_hp = base_max_hp;
+                if pwords[0] & 0x1 != 0 {
+                    max_hp = max_hp.saturating_add(base_max_hp / 10);
+                }
+                if pwords[0] & 0x2 != 0 {
+                    max_hp = max_hp.saturating_add(base_max_hp / 4);
+                }
+                let max_hp = max_hp.min(9999);
+                if let Some(a) = self.actors.get_mut(slot) {
+                    a.battle.max_hp = max_hp;
+                    // Retail clamps current HP to the rebuilt max.
+                    a.battle.hp = a.battle.hp.min(max_hp);
+                }
+            }
             if let Some(s) = self.battle_attack.get_mut(slot) {
                 *s = stats.atk;
             }

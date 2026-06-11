@@ -5933,6 +5933,114 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
 }
 
 #[test]
+fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
+    use crate::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party_count: 2,
+        ..World::default()
+    };
+    // Synthetic catalog: item 0x50 grants wearer-only passive 0x05 (the
+    // MP-half bit 0x20); item 0x51 grants party-wide passive 0x0E.
+    world.set_accessory_passives(AccessoryPassives::from_entries(
+        [(0x50, 0x05), (0x51, 0x0E)],
+        [0x0E],
+    ));
+    let mut party = legaia_save::Party::zeroed(2);
+    let mut eq = party.members[0].equipment();
+    eq.slots[7] = 0x50;
+    party.members[0].set_equipment(eq);
+    let mut eq = party.members[1].equipment();
+    eq.slots[5] = 0x51;
+    party.members[1].set_equipment(eq);
+    world.roster = party;
+
+    world.refresh_party_ability_bits();
+
+    // Wearer-only bit lands on member 0 only.
+    assert_eq!(world.character_ability_bits[0] & 0x20, 0x20);
+    assert_eq!(world.character_ability_bits[1] & 0x20, 0);
+    // Party-wide bit (index 0x0E) propagates into every member's effective
+    // mask, and into the global mask (the FUN_800431D0 port).
+    assert_eq!(world.character_ability_bits[0] & (1 << 0x0E), 1 << 0x0E);
+    assert_eq!(world.character_ability_bits[1] & (1 << 0x0E), 1 << 0x0E);
+    assert!(world.party_has_ability(0x0E));
+    assert!(!world.party_has_ability(0x06));
+    // The record-side bitfield is rebuilt with each wearer's OWN bits.
+    assert_eq!(world.roster.members[0].ability_bits()[0], 0x20);
+    assert_eq!(world.roster.members[1].ability_bits()[1], 0x40); // bit 14
+}
+
+#[test]
+fn refresh_party_ability_bits_noops_without_a_catalog() {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.roster = legaia_save::Party::zeroed(1);
+    // Synthetic setups write the bits directly; an empty catalog must not
+    // clobber them.
+    world.character_ability_bits[0] = 0x20;
+    world.refresh_party_ability_bits();
+    assert_eq!(world.character_ability_bits[0], 0x20);
+}
+
+#[test]
+fn seed_party_battle_stats_applies_accessory_stat_and_hp_boosts() {
+    use crate::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    // Item 0x52 grants passive 0x06 (ATK +20%); item 0x53 grants passive
+    // 0x00 (max HP +10%).
+    world.set_accessory_passives(AccessoryPassives::from_entries(
+        [(0x52, 0x06), (0x53, 0x00)],
+        [],
+    ));
+    let mut party = legaia_save::Party::zeroed(1);
+    let rec = &mut party.members[0];
+    rec.set_record_stats(legaia_save::character::RecordStats {
+        hp_max: 100,
+        mp_max: 30,
+        cap_constant: 100,
+        agl: 40,
+        atk: 100,
+        udf: 50,
+        ldf: 60,
+        spd: 35,
+        int: 20,
+    });
+    rec.set_live_stats(legaia_save::character::LiveStats {
+        agl: 40,
+        atk: 100,
+        udf: 50,
+        ldf: 60,
+        spd: 35,
+        int: 20,
+    });
+    let mut eq = rec.equipment();
+    eq.slots[6] = 0x52;
+    eq.slots[7] = 0x53;
+    rec.set_equipment(eq);
+    let mut hms = rec.hp_mp_sp();
+    hms.hp_cur = 100;
+    hms.hp_max = 100;
+    rec.set_hp_mp_sp(hms);
+    world.load_party(party);
+
+    world.seed_party_battle_stats();
+
+    // ATK +20% of the base: 100 + 100/5 = 120.
+    assert_eq!(world.battle_attack[0], 120);
+    // Max HP +10% of the base, applied to the live battle actor.
+    assert_eq!(world.actors[0].battle.max_hp, 110);
+    // The ability bits are populated for the MP-cost consumers.
+    assert_eq!(world.character_ability_bits[0] & 0x41, 0x41); // bits 0 + 6
+}
+
+#[test]
 fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
     use crate::spells::{BuffStat, SpellOutcome};
 

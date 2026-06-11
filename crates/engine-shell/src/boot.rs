@@ -292,6 +292,33 @@ fn read_retail_item_effects(
     legaia_asset::item_effect::ItemEffectTable::from_scus(&scus)
 }
 
+/// Read + parse the accessory ("Goods") passive-effect tables (the
+/// descriptor-`+3` / equip-`+5` index bytes + the `0x8007625C` scope records,
+/// see `accessory-passive-table.md`) from a boot source's `SCUS_942.54` and
+/// build the engine catalog
+/// ([`legaia_engine_core::accessory_passives::AccessoryPassives`]). Returns
+/// `None` when the executable isn't reachable or the tables don't parse, so a
+/// boot never fails on missing passive data - the engine then grants no
+/// accessory passives (the disc-free default).
+fn read_accessory_passives(
+    source: &SceneSource<'_>,
+) -> Option<legaia_engine_core::accessory_passives::AccessoryPassives> {
+    use legaia_engine_core::Vfs;
+    let scus = match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok()?,
+    };
+    let table = legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(&scus)?;
+    Some(legaia_engine_core::accessory_passives::AccessoryPassives::from_disc(&table))
+}
+
 /// Read the static equipment stat-bonus table (`DAT_80074F68`, see
 /// `equipment-table.md`) from a boot source's `SCUS_942.54` and build both the
 /// disc-accurate equipment modifier table (stat bonuses keyed by real item ids)
@@ -417,6 +444,15 @@ impl BootSession {
         // catalog keeps its curated usability flags.
         if let Some(effects) = read_retail_item_effects(&source) {
             host.world.set_item_effects(effects);
+        }
+
+        // Install the accessory ("Goods") passive-effect catalog so equipped
+        // accessories grant their ability bits (MP savers, guards, party-wide
+        // reward/encounter modifiers) and percent stat boosts through
+        // `World::refresh_party_ability_bits` / `seed_party_battle_stats`.
+        // Best-effort: absent on disc-free builds, where no passives fire.
+        if let Some(passives) = read_accessory_passives(&source) {
+            host.world.set_accessory_passives(passives);
         }
 
         host.load_scene(&cfg.scene)

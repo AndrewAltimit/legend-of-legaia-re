@@ -223,6 +223,11 @@ pub fn apply_equip_outcome(
                 *world.inventory.entry(removed).or_insert(0) += 1;
             }
         }
+        // An equipment change can add / remove an accessory passive; rebuild
+        // the ability bitfields immediately (retail re-derives them every
+        // aggregator pass) so menu + battle consumers see the new bits
+        // without waiting for the next battle entry.
+        world.refresh_party_ability_bits();
     }
     Some(outcome)
 }

@@ -206,7 +206,7 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 
 | Address | Role |
 |---|---|
-| `80052FA0` / `800536BC` / `80053898` | Party battle-mesh assembler (equipment-section splice) + CLUT decode — [details ↓](#80052fa0) |
+| `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation — [details ↓](#80052fa0) |
 | `80052770` / `800558fc` / `8003e8a8` | Player-file loader (Vahn/Noa/Gala/Terra battle records) — [details ↓](#80052770--800558fc--8003e8a8) |
 | `800520F0` | Battle scene loader (SCUS) — [details ↓](#800520f0) |
 | `800513F0` / `800542C8` | Battle-form party-mesh install — [details ↓](#800513f0--800542c8) |
@@ -363,7 +363,8 @@ These are the SCUS-callee leaves the field-VM dispatcher reaches via per-opcode 
 | `801DE084` | Camera apply / commit (op `0x45` CAMERA CONFIGURE apply path) — [details ↓](#801de084) |
 | `801DE2B0` | Op `0x34` sub-1 "capture-PC for existing actor" allocator. 51 instructions. `(operand_table_ptr, packed24)`. Allocates an actor from pool `0x801F2888` via `func_0x80020DE0`; copies 9 u16 fields from the operand table into `actor[+0xB8..+0xC6]` / `actor[+0xD2..+0xD4]` and writes the packed-24 value to `actor[+0xD6]`. The trailing actor returned by `FUN_801DE2B0` is what the field-VM stamps a captured-PC payload onto. |
 | `801DE3E0` | Sub-tile broadcast helper. 6-instruction wrapper. Calls `func_0x80035A4C(0x37)` (sound trigger id `0x37`), writes `*(active_ctx + 0x54) = 2` (move-substate), then tail-calls `FUN_801ECCAC`. Invoked by field-VM op `0x4C` sub-3 sub-8 / sub-D / sub-C4 (player subtile refresh + sub-tile broadcast). |
-| `801E4C58` | Op `0x4C n6 sub-0x61` 16-byte halt-acquire emitter — [details ↓](#801e4c58) |
+| `801E4C58` | Op `0x4C n6 sub-0x61` emitter = one-shot CLUT-cell write (`MoveImage` copy / flat-colour fill) — [details ↓](#801e4c58) |
+| `801E4794` | CLUT cross-fade effect SM (StoreImage ×2 → per-channel step interpolation → LoadImage per tick); world-map palette cycling — [details ↓](#801e4794) |
 | `801E573C` | Op `0x4C n8 sub-6` actor allocator with 6-axis rotation matrix (baka_fighter dump: 45 instructions). `(captured_pc, ctx_ptr, x, y, z, rx, ry, rz)`. Allocates an actor from pool `0x801F2948` via `func_0x80020DE0`; stores `captured_pc` at `+0x90`, `ctx_ptr` at `+0x94`, and the six i16 position+rotation values at `+0x80..+0x8A`. Returns silently when the pool is exhausted. |
 
 ## Field-locomotion math helpers
@@ -640,6 +641,7 @@ High fan-in across the debug-menu / world-map dev overlays. `see ghidra/scripts/
 - **Mesh half**: builds the character's **merged battle TMD** at `ctx+0x50` (`ctx = *(0x801C9360 + slot*4)`) — writes magic `0x80000002` at `blob+0x18`, `nobj = 0` at `blob+0x20`, then calls `FUN_800536BC` once per section.
 - **`FUN_800536BC` (the object splice)**: appends the section's 7-word TMD object entries with vertex/normal/prim offsets relocated into the merged pool, copies the data words, `nobj += section_nobj`, and writes one bone-id byte per object at `blob+0` from the section's attach list — surplus objects tagged `0xFF`/`0xFE` = the equipment visual meshes.
 - **`FUN_80053898` (post-pass)**: retags `0xFF`→200/201, `0xFE`→100+, records each extra's attach bone at `blob+nobj`, selection-sorts the object table so extras land last. `FUN_800513F0` then registers `blob+0x18` into `DAT_8007C018[slot]`.
+- **`FUN_80053a28` (TSB/CBA relocation)**: called by `FUN_800513F0` per party slot right after the registration — rewrites every textured prim's CLUT row to `481 + slot` (column preserved) and texpage index to `0x18/0x19 + 2*slot` (the runtime band `x ∈ [512, 896), y = 256`). Clean-room port `legaia_asset::battle_char_assembly::relocate_tsb_cba`; see [`formats/character-mesh.md` § Battle render](../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation).
 
 Byte-verified against the full-party battle save (`nobj=17`, bone bytes `[0..14,200,201]`, attach `[5,8]`; every vertex pool matches its equipment section). See [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files).
 
@@ -762,9 +764,19 @@ The `FUN_801DAB90` build path is the inverse (camera-actor state + globals → t
 
 ### `801E4C58`
 
-**Op `0x4C n6 sub-0x61` 16-byte halt-acquire emitter.** Invoked by the field/event VM's `0x4C` sub-dispatcher for sub-byte `0x61` (the `0x60..0x6F` "6-word emitter + halt-acquire" band, see [`subsystems/script-vm.md`](../subsystems/script-vm.md)). The VM first routes the instruction through the halt-acquire predicate (`which = 0x61`: `saved_pc != 0 \|\| ctx == player`, AND `!(flags & 0x400) \|\| scene_busy`), mutates the ctx (`saved_pc`, `wait_accum = 0`, `flags \|= 0x400`, system-channel mirror when ctx is the player), then calls this emitter with the 14-byte operand slice (instruction bytes +1..+15, including the gating word at +0xD..+0xE); PC advances by 16. Overlay-resident (no standalone `funcs/` dump; present in every scripting-cluster overlay as `overlay_*_801e4c58.txt`).
+**Op `0x4C n6 sub-0x61` 16-byte halt-acquire emitter = one-shot CLUT-cell write.** Invoked by the field/event VM's `0x4C` sub-dispatcher for sub-byte `0x61` (the `0x60..0x6F` "6-word emitter + halt-acquire" band, see [`subsystems/script-vm.md`](../subsystems/script-vm.md)). The VM first routes the instruction through the halt-acquire predicate (`which = 0x61`: `saved_pc != 0 \|\| ctx == player`, AND `!(flags & 0x400) \|\| scene_busy`), mutates the ctx (`saved_pc`, `wait_accum = 0`, `flags \|= 0x400`, system-channel mirror when ctx is the player), then calls this emitter with the 14-byte operand slice; PC advances by 16.
+
+**Payload** (decoded live from the map01-resident field overlay; the historical `overlay_*_801e4c58.txt` dumps are bad-base data, not this function): writes one 16×1 VRAM CLUT cell whose coordinates are the script operands, read via the misaligned-u16 helper `FUN_8003CE9C` — bail when `+0xD != 0`; source `(x, y)` at `+5`/`+7`, destination `(x, y)` at `+9`/`+0xB`. Non-zero source-y → libgpu `MoveImage` VRAM→VRAM copy of the cell; zero source-y → replicate the `+5` halfword as a flat BGR555 colour across all 16 entries, `DrawSync`, then `LoadImage`. One of the two emitters behind the world-map CLUT cycling (rows 506/508/509 + the `(48, 500)` cell); the multi-frame cross-fade sibling is `FUN_801E4794`. See [`world-map.md`](../subsystems/world-map.md) "Ocean animation".
 
 Ported as the `op4c_n6_sub_61_emitter` host hook in `crates/engine-vm/src/field.rs`.
+
+### `801E4794`
+
+**CLUT cross-fade effect state machine** (field overlay; reached via the `[0xFFFF0000][handler]` effect-descriptor records at `0x801F291C+`, pointer slot `0x801F2920`). `(ctx)` with the parameter record at `ctx+0x90` (operand fields read via `FUN_8003CE9C` at `+1/+3` = CLUT A `(x, y)`, `+5/+7` = CLUT B, `+9/+0xB` = destination, `+0xD` = frame count).
+First tick (`ctx+0x54 == 0`): allocates an `0xE0`-byte scratch into `ctx+0x98` (`FUN_80017888`), `StoreImage`s both 16×1 source cells, precomputes per-entry per-channel signed step deltas `(B−A)/frames` (R/G/B isolated via the `0x7C00` mask family).
+Each tick: advances `ctx+0x54` by the scratchpad frame-delta byte `0x1F800393`, accumulates `delta × step` per channel, repacks BGR555 into scratch `+0xC0`, and `LoadImage`s the cell to the destination.
+On completion: either `MoveImage`s the final source cell or uploads the captured CLUT B (`+0x7 == 0` arm), frees the scratch (`FUN_80017B94`), clears the `0x400` bit on the linked prim at `ctx+0x94`, sets `ctx+0x10 |= 8`.
+The cross-fade half of the world-map CLUT cycling — see [`world-map.md`](../subsystems/world-map.md) "Ocean animation". Decoded live from the map01-resident field overlay (`keikoku_chest_preload` capture RAM).
 
 ### `80059BD4`
 
@@ -823,7 +835,12 @@ The install counterpart of the SEQ-slot release `FUN_8001FF58`; reused by the fl
 
 ### `800195A8`
 
-**Billboard / screen-space textured-quad projector.** `(center_vec, half_w: i16, half_h: i16, angle12, sxy0_out..sxy3_out)`. Projects a sprite quad about a center point: `FUN_8003D344` transforms the center vector to screen XY, then four corner SXY entries are built as `center +/- half_w` (X) and `center +/- half_h` (Y); `FUN_8003D178` resets the GTE rotation matrix to identity, and when `angle12 != 0` `FUN_8004638C` (`RotMatrixZ`, masked to 12 bits) rotates the quad in-plane. `FUN_8005BAC8` projects the four corners into the caller's four out-pointers; `FUN_8003D1A4` restores the saved GTE control words from `&DAT_1F8003C8`. Returns the projected depth (`OTZ >> DAT_1F8003A4`). Reached from the battle / cutscene / world-map quad emitters (e.g. `FUN_800485BC`).
+**Billboard / screen-space textured-quad projector.** `(center_vec, half_w: i16, half_h: i16, angle12, sxy0_out..sxy3_out)`. Projects a sprite quad about a center point: `FUN_8003D344` runs one `MVMVA` (rotation × V0 + TR, sf=1) taking the center vector to **view space** (the caller reads MAC1..3 back with `lhu`, so the position wraps to i16); four corners are built in view space as `center ± half_w` (X) / `center ± half_h` (Y), all sharing the view Z.
+`FUN_8003D178` resets the GTE rotation to identity **and zeroes TRX/TRY/TRZ**, and when `angle12 != 0` `FUN_8004638C` (`RotMatrixZ` compose, masked to 12 bits) spins the corners in-plane about the **camera axis** (the corner vectors include the view-space center).
+`FUN_8005BAC8` then projects — `RTPT` on corners 0..2 plus one `RTPS` on corner 3 — into the caller's four out-pointers (the order `FUN_801E1AB0` writes straight into `POLY_FT4.xy0..xy3`), and `FUN_8003D1A4` restores the saved GTE control words from `&DAT_1F8003C8`. Returns the projected depth (`SZ3 >> 2`, shifted by the scratchpad OT-resolution byte `DAT_1F8003A4`).
+Reached from the battle / cutscene / world-map quad emitters (e.g. `FUN_800485BC`); the afterimage caller passes a **dynamic half-width** (fx-state halfword `+0x6C6` − `0x200`) with constant half-height `0x100`.
+
+Ported as `legaia_engine_render::billboard::project_billboard` (the afterimage call shape: `afterimage::project_streak_corners`). The `RotMatrix*` trig source is the in-image q3.12 LUT pair — sine at `0x80070A2C + 2*angle`, cosine read from the same table `0x400` entries (90°) ahead at `0x8007122C` — generated as `4096*sin(2π·angle/4096)` **truncated toward zero**, pinned entry-for-entry by the disc-gated oracle `engine-shell/tests/gte_sin_lut_real.rs` against `billboard::psx_sin`/`psx_cos`.
 
 `see ghidra/scripts/funcs/800195a8.txt`.
 

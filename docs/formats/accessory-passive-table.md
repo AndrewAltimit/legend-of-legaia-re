@@ -197,6 +197,23 @@ table text, the scope flags, and the retail equip `+5` sentinel invariant;
 `legaia-gamedata`'s `accessory_passives_vs_disc` cross-validates every
 curated accessory effect class against its decoded index.
 
+## Engine consumers
+
+The clean-room engine consumes the table through
+`legaia_engine_core::accessory_passives::AccessoryPassives` (item id →
+passive index + party-wide scope flags, built from the same parse at boot).
+`World::refresh_party_ability_bits` is the port of the aggregator's bitfield
+pass: each party member's record `+0xF4` field is rebuilt from the eight
+equipment slots, all members OR into the engine's global-mask mirror
+(`World::party_ability_mask`, bit-tested by `World::party_has_ability` - the
+`FUN_800431D0` port), and the per-member word 0 feeds the MP-cost consumers
+(`MpCostModifier::from_ability_flags`), so an equipped MP-saver halves /
+quarter-shaves the live cast cost. The percent stat boosts apply inside
+`compute_battle_stats_with_passives` (percent of the **base** stat window,
+truncating division, retail clamp block) and the max-HP boost lands on the
+live battle actor in `World::seed_party_battle_stats`. Disc-gated coverage:
+`engine-core/tests/accessory_passives_disc.rs`.
+
 ## See also
 
 - [Item property / name table](item-table.md) - the shared table this indexes through.

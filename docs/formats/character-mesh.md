@@ -253,9 +253,10 @@ installs the merged TMD into `DAT_8007C018[0..=2]`.
    object table by tag so the extras land at indices `nobj-2`, `nobj-1`.
 5. **`FUN_800513F0`** — battle init registers `blob + 0x18` into
    `DAT_8007C018[slot]` (the watchpoint-pinned `*(actor+0x50)+0x18` install
-   below), runs the CLUT-row TSB/CBA rewrite, and caches the two extras'
-   vertex-pool pointers (battle ctx `+0x1030..0x103C`) + attach bones
-   (`+0x23A/0x23B`).
+   below), runs the per-slot TSB/CBA rewrite (`FUN_80053a28` — see
+   [§ Battle render](#battle-render-load-time-tsbcba-relocation)), and caches
+   the two extras' vertex-pool pointers (battle ctx `+0x1030..0x103C`) +
+   attach bones (`+0x23A/0x23B`).
 
 So runtime `nobj` = skeleton bone count + equipment extras — Vahn's 15 bones
 + weapon + Ra-Seru = the observed 17. (**Not** `FUN_8001EBEC`, which only
@@ -312,8 +313,13 @@ Vahn set, 9–17 the 16-bone Noa set, 18–26 the 15-bone Gala set, 27–29 a 10
 simplified rig. The first record of each bank is that character's idle. The site
 `/characters.html` viewer assembles all three party meshes this way (the
 `BattleMeshView` pose path mirrors the GTE pipeline above), and the clean-room
-engine does the same in a live battle — `legaia-engine play-window` poses each
-party mesh with `tmd_to_vram_mesh_posed_rot` against its bank-idle frame 0 (see
+engine does the same in a live battle — `legaia-engine play-window` assembles
+each party member from their player file (`battle_char_assembly`, equipped ids
+from the roster record), applies the registration-time TSB/CBA relocation
+(`relocate_tsb_cba`), and poses each object with
+`tmd_to_vram_mesh_posed_rot` against its bank-idle frame 0 through the
+assembler's tag tables: a skeleton object uses its `bone_tags` bone, a `200+`
+equipment extra uses its recorded attach bone's transform (see
 [`subsystems/battle.md` § Battle party meshes](../subsystems/battle.md#battle-party-meshes-assembled)).
 
 **Loader provenance — pinned (write-watchpoint).** The party meshes are
@@ -385,6 +391,21 @@ change. Both disc CBA rows of a character collapse to a single runtime row, so
 each character ends up with **one 256-colour palette** at its runtime row. The
 party textures pack into the band `x ∈ [512, 896), y = 256` (one 128-px,
 two-page slot each).
+
+The rewrite itself is **`FUN_80053a28`**, called by the battle scene-loader
+state `FUN_800513F0` per party slot right after registering the assembled
+blob: it walks each object's primitive groups (gated on the group mode byte's
+TME bit), and per textured prim sets the CBA word's CLUT row to `0x1E1 + slot`
+(`& 0x803fffff | (0x1e1+slot) << 22` — column + high bit preserved) and the
+TSB word's 5-bit texpage index to `0x18 + 2*slot` when the authoring page is
+`0x15`, else `0x19 + 2*slot` (`& 0xffe0ffff` — ABR / depth bits preserved).
+The **assembled player-file meshes** all author at texpages `0x15`/`0x16` =
+`(320, 256)`/`(384, 256)` and CLUT row 480, so on them the pass is a uniform
+`+3` texpage / `+0x40` CLUT-id rewrite — exactly the residual delta between
+the disc assembly and the live registered blob. Clean-room port:
+[`legaia_asset::battle_char_assembly::relocate_tsb_cba`](../../crates/asset/src/battle_char_assembly.rs)
+(dump [`ghidra/scripts/funcs/80053a28.txt`](../../ghidra/scripts/funcs/80053a28.txt);
+disc-gated `battle_char_assembly_real::relocates_each_character_into_its_runtime_band`).
 
 There is no involvement of the `0x8007BEC0` texpage→row table for party
 characters — that table (`FUN_800198E0`: `table[image_texpage] = clut_y`) is the

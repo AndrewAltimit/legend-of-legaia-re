@@ -86,6 +86,16 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
   status-effect modifiers (Toxic -ATK/-DEF, Confuse halves accuracy,
   Numb / Sleep / Stone / Faint zero evasion, Curse / Faint block Magic).
+  `compute_battle_stats_with_passives` adds the accessory passive arms:
+  ability-bit derivation + percent-of-base stat boosts + the retail clamp
+  block.
+- `accessory_passives` - accessory ("Goods") passive-effect catalog
+  (item id → 64-slot passive index + party-wide scope, decoded from
+  `SCUS_942.54` via `legaia_asset::accessory_passive`). Feeds
+  `World::refresh_party_ability_bits` (per-member `+0xF4` bitfield rebuild +
+  the `DAT_80074358` global-mask mirror, bit-tested by
+  `World::party_has_ability`), so an equipped MP-saver reaches the MP-cost
+  consumers and a Gold Boost reaches the battle-end reward path.
 - `items` - typed inventory item-effect catalog, keyed by **real**
   retail item ids (the `SCUS_942.54` item table - e.g. Healing Leaf is
   `0x77`), so a live granted / shop / dropped id resolves to its effect.

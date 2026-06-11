@@ -230,7 +230,7 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 ///   (16..31), a rotating ring of STP-set near-copies of the ocean colours
 ///   (32..39, phase-locked to the ocean), and the runtime-*generated*
 ///   pure-channel tail (40..47) whose intensity animates with the same
-///   phase - one coupled animator, no disc source.
+///   phase.
 /// - **row 508, cols 0..48**: animated head entries ({1, 14, 15, 26, 27})
 ///   plus a live-maintained mirror at 32..47 (`[32..47] == [0..15]` at every
 ///   captured phase - the disc base there is a different palette the runtime
@@ -241,6 +241,15 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// Row 507 is fully static (256/256 byte-exact) and stays asserted, as do
 /// the remaining columns of 506/508/509 - the census lets the oracle assert
 /// them instead of excluding the whole rows.
+///
+/// The writer is the field overlay's script-driven CLUT-cell effect family,
+/// not one hardcoded DMA: `FUN_801E4C58` (field-VM `0x4C` n6 sub-`0x61`,
+/// one-shot 16x1 `MoveImage` cell copy / flat-colour fill with the
+/// coordinates as script operands) and `FUN_801E4794` (multi-frame CLUT
+/// cross-fade via StoreImage + per-channel interpolation + LoadImage); the
+/// copies source 13-frame palette strips parked at VRAM rows 498/501..505.
+/// The lockstep phase coupling = sibling script ops sharing the frame
+/// counter. See `docs/subsystems/world-map.md` "Ocean animation".
 pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 3] =
     [(506, 0..48), (508, 0..48), (509, 42..44)];
 
