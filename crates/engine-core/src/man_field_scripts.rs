@@ -50,7 +50,7 @@
 
 use legaia_asset::man_section::{ActorPlacement, ManFile};
 use legaia_engine_vm::field_disasm::{
-    FlagKind, InsnInfo, LinearWalker, YieldKind, scene_change_name,
+    FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
 
 use crate::encounter_record::EncounterRecord;
@@ -422,6 +422,74 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
                 index,
                 entry_x,
                 entry_z,
+            });
+        }
+    }
+    out
+}
+
+/// One inline FMV trigger decoded from a `0x4C 0xE2` op in a scene's scripts.
+///
+/// The field-VM FMV trigger carries its `fmv_id` as a literal `i16` operand
+/// (`[4C, E2, lo, hi, _, _, _]` — it writes `_DAT_8007BA78` and pokes the
+/// next game mode to `StrInit`), so the per-scene movie assignment is
+/// disc-sourced script data, not a runtime value. See
+/// [`docs/formats/str-fmv-table.md`] and the `MenuCtrlKind::FmvTrigger`
+/// decoder in `legaia_asset::field_disasm`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneFmvTrigger {
+    /// Partition-1 record index whose script carries the op.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The literal `fmv_id` operand (the value written to `_DAT_8007BA78`).
+    pub fmv_id: i16,
+}
+
+/// Recover every inline `0x4C 0xE2` FMV trigger from a scene's MAN by walking
+/// its partition-1 scripts — the same record walk (and the same
+/// over-approximation caveats) as [`scene_destinations`].
+///
+/// Phantom guard: a literal `4C E2` inside message text can desync-decode a
+/// bogus trigger, so ops whose `fmv_id` falls outside the runtime FMV-state
+/// table's 12 slots (`0..=11`; observed retail range `0..=8`) are dropped,
+/// and `(record, fmv_id)` pairs re-seen from an earlier over-walk start are
+/// deduped. Returns first-seen order.
+pub fn scene_fmv_triggers(man_file: &ManFile, man: &[u8]) -> Vec<SceneFmvTrigger> {
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    let mut starts: Vec<usize> = (0..n1)
+        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
+        .collect();
+    starts.sort_unstable();
+    let mut out: Vec<SceneFmvTrigger> = Vec::new();
+    for (k, &start) in starts.iter().enumerate() {
+        let end = starts.get(k + 1).copied().unwrap_or(man.len());
+        let pc0 = {
+            let locals = *man.get(start).unwrap_or(&0) as usize;
+            1 + locals * 2 + 4
+        };
+        if start + pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            let InsnInfo::MenuCtrl {
+                kind: MenuCtrlKind::FmvTrigger { fmv_id },
+                ..
+            } = insn.info
+            else {
+                continue;
+            };
+            if !(0..=11).contains(&fmv_id) {
+                continue;
+            }
+            if out.iter().any(|t| t.record == k && t.fmv_id == fmv_id) {
+                continue;
+            }
+            out.push(SceneFmvTrigger {
+                record: k,
+                pc: insn.pc,
+                fmv_id,
             });
         }
     }

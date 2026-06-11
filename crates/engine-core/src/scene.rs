@@ -413,19 +413,24 @@ pub const FMV_CUTSCENE_SCENES: [(&str, &str); 6] = [
 ];
 
 /// Field scenes the FMV cutscene overlay knows about by name (it carries
-/// their CDNAME labels in its data section). These are mid-game scenes
-/// with FMV trigger points - distinct from the `op*` opening / `ed*`
-/// ending scenes covered by [`FMV_CUTSCENE_SCENES`]. The exact MV file
-/// each plays isn't pinned by the heuristic; the field-VM script for
-/// each scene calls a "play STR" op with the MV index.
+/// their CDNAME labels in its data section) - distinct from the `op*`
+/// opening / `ed*` ending scenes covered by [`FMV_CUTSCENE_SCENES`].
+///
+/// NOT the trigger-op scene list: the disc-walked per-scene trigger table
+/// (`man_field_scripts::scene_fmv_triggers`, pinned by the
+/// `scene_fmv_triggers_disc` test) finds the `0x4C 0xE2` ops in `town01`,
+/// `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru` and `jouine` -
+/// only `chitei2` overlaps this list. These labels are the scenes the
+/// overlay itself references (e.g. for the post-playback scene
+/// restore), recorded as found in its data section.
 pub const FMV_TRIGGER_FIELD_SCENES: [&str; 7] = [
     "town0b", "map01", "chitei2", "map02", "jou", "uru2", "town0e",
 ];
 
 /// Return `true` if a CDNAME label is a field scene the FMV overlay
-/// knows about (i.e. carries a mid-game FMV trigger). Distinct from
-/// [`is_cutscene_label`] (which covers the `op*` / `ed*` engine cutscene
-/// scenes).
+/// carries in its data section (see [`FMV_TRIGGER_FIELD_SCENES`] - not
+/// the trigger-op scene set). Distinct from [`is_cutscene_label`] (which
+/// covers the `op*` / `ed*` engine cutscene scenes).
 pub fn is_fmv_trigger_field_scene(label: &str) -> bool {
     FMV_TRIGGER_FIELD_SCENES.contains(&label)
 }
