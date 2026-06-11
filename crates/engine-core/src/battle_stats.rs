@@ -234,6 +234,59 @@ pub fn compute_battle_stats(
     statuses: &[StatusKind],
     modifiers: &StatusModifiers,
 ) -> BattleStats {
+    compute_battle_stats_inner(record, table, None, statuses, modifiers)
+}
+
+/// [`compute_battle_stats`] plus the accessory ("Goods") passive-effect arms
+/// of the retail aggregator.
+///
+/// PORT: FUN_80042558
+///
+/// Mirrors the two passive arms of `FUN_80042558`
+/// (`ghidra/scripts/funcs/80042558.txt`) exactly:
+///
+/// 1. **Bit resolution** — every equipped item's passive index (`< 0x40`)
+///    becomes a bit in the resolved ability mask
+///    ([`crate::accessory_passives::AccessoryPassives::bits_for_equipment`]),
+///    OR'd into [`BattleStats::abilities`] bytes `0..16` (the engine mirror of
+///    the record `+0xF4` 4×u32 bitfield).
+/// 2. **Percent stat rebuild** — for each set boost index the matching stat
+///    line gains `base / divisor` (`legaia_asset::accessory_passive::stat_boosts`:
+///    divisor `10` = +10%, `4` = +25%, `5` = +20%), where `base` is the
+///    **base** stat (`StatRecord::base_*` — retail reads the `+0x11C..` base
+///    window, *not* the post-equipment value, so the percent magnitude is
+///    independent of flat equipment bonuses) with unsigned truncating
+///    division (retail's `mulhi 0xCCCCCCCD >> 3` = `/10`, `>> 2` = `/4`,
+///    `mulhi >> 2` = `/5`). The Agility boost (`0x0C`) feeds both AGL-derived
+///    lines (`acc` / `eva`), matching the retail effective-AGL slot serving
+///    both rolls.
+///
+/// After the boosts the retail clamp block applies: ATK / UDF / LDF / SPD /
+/// INT cap at `999`, the AGL-derived lines at `0x118` (= 280). (Retail also
+/// caps max HP at 9999 / max MP at 999; [`BattleStats`] carries no HP / MP
+/// lines — `World::seed_party_battle_stats` applies the max-HP boost + cap to
+/// the live battle actor.)
+///
+/// The boosts derive from the **wearer's own** equipment bits only, exactly
+/// as retail (the global party mask at `DAT_80074358` is OR'd *after* the
+/// stat rebuild and only feeds point-of-use party-wide consumers).
+pub fn compute_battle_stats_with_passives(
+    record: &StatRecord,
+    table: &EquipmentTable,
+    passives: &crate::accessory_passives::AccessoryPassives,
+    statuses: &[StatusKind],
+    modifiers: &StatusModifiers,
+) -> BattleStats {
+    compute_battle_stats_inner(record, table, Some(passives), statuses, modifiers)
+}
+
+fn compute_battle_stats_inner(
+    record: &StatRecord,
+    table: &EquipmentTable,
+    passives: Option<&crate::accessory_passives::AccessoryPassives>,
+    statuses: &[StatusKind],
+    modifiers: &StatusModifiers,
+) -> BattleStats {
     let mut stats = BattleStats {
         atk: record.base_attack,
         udf: record.base_udf,
@@ -246,6 +299,16 @@ pub fn compute_battle_stats(
         magic_blocked: false,
         action_blocked: false,
     };
+    // Resolve the accessory passive bits up front (retail zeroes the +0xF4
+    // bitfield and re-derives it inside the same equipment walk).
+    let passive_words = passives.map(|p| p.bits_for_equipment(&record.equip));
+    if let Some(words) = &passive_words {
+        for (w, word) in words.iter().enumerate() {
+            for b in 0..4 {
+                stats.abilities[w * 4 + b] |= (word >> (8 * b)) as u8;
+            }
+        }
+    }
     // Walk equipment slots, sum the five equipment-fed stats (ATK/UDF/LDF/SPD/
     // INT) + OR ability bits. Accuracy/evasion are derived from AGL and are not
     // touched by equipment.
@@ -261,6 +324,59 @@ pub fn compute_battle_stats(
             stats.int = add_clamped(stats.int, m.int);
             or_assign_bits(&mut stats.abilities, &m.ability_bits);
         }
+    }
+    // Percent stat boosts from the wearer's own passive bits, then the retail
+    // clamp block. The magnitude reads the BASE stat (truncating unsigned
+    // division), exactly as `FUN_80042558` — see
+    // [`compute_battle_stats_with_passives`].
+    if let Some(words) = &passive_words {
+        use legaia_asset::accessory_passive::{BoostedStat, stat_boosts};
+        for idx in 0u8..legaia_asset::accessory_passive::NO_PASSIVE {
+            let (w, mask) = legaia_asset::accessory_passive::bit_location(idx);
+            if words[w] & mask == 0 {
+                continue;
+            }
+            for &(stat, div) in stat_boosts(idx) {
+                let div = div as u16;
+                match stat {
+                    BoostedStat::Attack => {
+                        stats.atk = stats.atk.saturating_add(record.base_attack / div);
+                    }
+                    BoostedStat::DefenseUp => {
+                        stats.udf = stats.udf.saturating_add(record.base_udf / div);
+                    }
+                    BoostedStat::DefenseDown => {
+                        stats.ldf = stats.ldf.saturating_add(record.base_ldf / div);
+                    }
+                    BoostedStat::Speed => {
+                        stats.spd = stats.spd.saturating_add(record.base_spd / div);
+                    }
+                    BoostedStat::Intelligence => {
+                        stats.int = stats.int.saturating_add(record.base_int / div);
+                    }
+                    // The retail effective-AGL slot (+0x110) serves both the
+                    // hit and dodge rolls; the engine splits it into acc/eva,
+                    // so the AGL boost feeds both lines.
+                    BoostedStat::Agility => {
+                        stats.acc = stats.acc.saturating_add(record.base_accuracy / div);
+                        stats.eva = stats.eva.saturating_add(record.base_evasion / div);
+                    }
+                    // No HP / MP lines on BattleStats; the max-HP boost is
+                    // applied to the live battle actor by
+                    // `World::seed_party_battle_stats`.
+                    BoostedStat::MaxHp | BoostedStat::MaxMp => {}
+                }
+            }
+        }
+        // Retail clamp block (`FUN_80042558` tail): the five equipment-fed
+        // lines cap at 999; the AGL-derived lines at 0x118 = 280.
+        stats.atk = stats.atk.min(999);
+        stats.udf = stats.udf.min(999);
+        stats.ldf = stats.ldf.min(999);
+        stats.spd = stats.spd.min(999);
+        stats.int = stats.int.min(999);
+        stats.acc = stats.acc.min(280);
+        stats.eva = stats.eva.min(280);
     }
     // Fold status-effect modifiers.
     for &k in statuses {
@@ -497,6 +613,140 @@ mod tests {
         // Atk + accuracy still applied.
         assert_eq!(s.atk, 88);
         assert_eq!(s.acc, 45);
+    }
+
+    #[test]
+    fn passive_boost_is_percent_of_base_and_composes_with_equipment() {
+        use crate::accessory_passives::AccessoryPassives;
+        // Item 0xC6 grants passive 0x06 (ATK +20%) and also has a flat
+        // equipment bonus; the percent reads the BASE attack, not the
+        // post-equipment value.
+        let passives = AccessoryPassives::from_entries([(0xC6, 0x06)], []);
+        let mut t = EquipmentTable::new();
+        t.set(0xC6, weapon(40));
+        let mut r = record();
+        r.base_attack = 103; // 103 / 5 = 20 (truncating)
+        r.equip = [0xC6, 0, 0, 0, 0, 0, 0, 0];
+        let s =
+            compute_battle_stats_with_passives(&r, &t, &passives, &[], &StatusModifiers::default());
+        // 103 (base) + 40 (flat equipment) + 103/5 = 163, NOT (143)/5.
+        assert_eq!(s.atk, 163);
+        // The passive bit lands in the resolved ability mask (index 0x06).
+        assert!(s.has_ability(6));
+    }
+
+    #[test]
+    fn passive_division_truncates_like_retail() {
+        use crate::accessory_passives::AccessoryPassives;
+        // Index 0x07 = UDF +20% (`/5`), index 0x01 = max HP +25% (`>>2`,
+        // no UDF effect). 49 / 5 = 9 truncating (not 9.8 rounded).
+        let passives = AccessoryPassives::from_entries([(0xC9, 0x07)], []);
+        let mut r = record();
+        r.base_udf = 49;
+        r.equip = [0xC9, 0, 0, 0, 0, 0, 0, 0];
+        let s = compute_battle_stats_with_passives(
+            &r,
+            &EquipmentTable::new(),
+            &passives,
+            &[],
+            &StatusModifiers::default(),
+        );
+        assert_eq!(s.udf, 49 + 9);
+    }
+
+    #[test]
+    fn passive_dual_defense_boost_applies_both_lines() {
+        use crate::accessory_passives::AccessoryPassives;
+        // Index 0x09 = UDF & LDF +20% each (Guardian Ring family).
+        let passives = AccessoryPassives::from_entries([(0xC9, 0x09)], []);
+        let mut r = record();
+        r.base_udf = 50;
+        r.base_ldf = 60;
+        r.equip = [0, 0, 0, 0, 0, 0, 0, 0xC9];
+        let s = compute_battle_stats_with_passives(
+            &r,
+            &EquipmentTable::new(),
+            &passives,
+            &[],
+            &StatusModifiers::default(),
+        );
+        assert_eq!(s.udf, 50 + 10);
+        assert_eq!(s.ldf, 60 + 12);
+    }
+
+    #[test]
+    fn agility_passive_feeds_both_acc_and_eva_with_retail_cap() {
+        use crate::accessory_passives::AccessoryPassives;
+        // Index 0x0C = AGL +20%; the AGL-derived lines cap at 0x118 = 280.
+        let passives = AccessoryPassives::from_entries([(0xCC, 0x0C)], []);
+        let mut r = record();
+        r.base_accuracy = 250;
+        r.base_evasion = 250;
+        r.equip = [0xCC, 0, 0, 0, 0, 0, 0, 0];
+        let s = compute_battle_stats_with_passives(
+            &r,
+            &EquipmentTable::new(),
+            &passives,
+            &[],
+            &StatusModifiers::default(),
+        );
+        // 250 + 250/5 = 300 -> capped at 280.
+        assert_eq!(s.acc, 280);
+        assert_eq!(s.eva, 280);
+    }
+
+    #[test]
+    fn passive_boost_caps_stat_lines_at_999() {
+        use crate::accessory_passives::AccessoryPassives;
+        let passives = AccessoryPassives::from_entries([(0xC6, 0x06)], []);
+        let mut r = record();
+        r.base_attack = 990;
+        r.equip = [0xC6, 0, 0, 0, 0, 0, 0, 0];
+        let s = compute_battle_stats_with_passives(
+            &r,
+            &EquipmentTable::new(),
+            &passives,
+            &[],
+            &StatusModifiers::default(),
+        );
+        // 990 + 990/5 = 1188 -> retail cap 999.
+        assert_eq!(s.atk, 999);
+    }
+
+    #[test]
+    fn mp_saver_passive_sets_ability_bit_without_stat_change() {
+        use crate::accessory_passives::AccessoryPassives;
+        // Index 0x05 = "MP Used Down 2" (the Half-cost bit 0x20): a
+        // point-of-use flag, no aggregator stat change.
+        let passives = AccessoryPassives::from_entries([(0xC5, 0x05)], []);
+        let mut r = record();
+        r.equip = [0, 0, 0, 0, 0, 0, 0, 0xC5];
+        let s = compute_battle_stats_with_passives(
+            &r,
+            &EquipmentTable::new(),
+            &passives,
+            &[],
+            &StatusModifiers::default(),
+        );
+        assert!(s.has_ability(5));
+        assert_eq!(s.abilities[0], 0x20);
+        assert_eq!(s.atk, 100);
+        assert_eq!(s.udf, 50);
+    }
+
+    #[test]
+    fn empty_passives_keep_legacy_behaviour() {
+        use crate::accessory_passives::AccessoryPassives;
+        let passives = AccessoryPassives::default();
+        let s = compute_battle_stats_with_passives(
+            &record(),
+            &EquipmentTable::new(),
+            &passives,
+            &[],
+            &StatusModifiers::default(),
+        );
+        let legacy = compute_battle_stats_default(&record(), &EquipmentTable::new(), &[]);
+        assert_eq!(s, legacy);
     }
 
     #[test]

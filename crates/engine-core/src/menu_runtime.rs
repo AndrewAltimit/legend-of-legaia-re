@@ -380,6 +380,10 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 if removed != 0 {
                     *self.world.inventory.entry(removed).or_insert(0) += 1;
                 }
+                // Unequipping can remove an accessory passive; rebuild the
+                // ability bitfields so the bit (and any party-wide grant)
+                // disappears immediately.
+                self.world.refresh_party_ability_bits();
             }
             MenuState::StatusInventory => {
                 let mut items: Vec<(u8, u8)> = self

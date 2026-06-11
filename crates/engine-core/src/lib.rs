@@ -5,6 +5,7 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies - the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
+pub mod accessory_passives;
 pub mod actor_alloc_host;
 pub mod ap_gauge;
 pub mod art_strike;
