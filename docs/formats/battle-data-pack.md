@@ -27,7 +27,7 @@ Implementations:
 [`crates/asset/src/battle_char_palette.rs`](../../crates/asset/src/battle_char_palette.rs)
 (the runtime-pinned `record[0]` + CLUT chain) and
 [`crates/asset/src/battle_data_pack.rs`](../../crates/asset/src/battle_data_pack.rs)
-(the TMD-slot walker; see [parser status](#parser-status) for its table framing).
+(the TMD-slot walker over the `[id, offset, size]` descriptor table).
 
 ## Contents
 
@@ -210,20 +210,19 @@ Two parsers read these files:
   chain, `record[0]` + sub-record palette assembly; byte-exact vs live battle
   VRAM).
 - [`legaia_asset::battle_data_pack`](../../crates/asset/src/battle_data_pack.rs)
-  (the TMD-slot walker) predates the framing pin and walks the same descriptor
-  table through a **4-byte-shifted frame**: it reads entry 0's `id` as a
-  "record count" (e.g. Gala's `0x57`), entry 0's `offset` (always 0) as a
-  "reserved" word, and pairs each subsequent `(id, offset)` with the
-  *previous* entry's `size`. The `(id, offset)` pairs it yields are correct
-  (so every slot decodes, ids attached), but entry 0's id is misreported as 0
-  (its "filler rec" with `offset = 0` *is* entry 0) and the per-slot
-  `on_disc_size` is off by one slot — harmless in practice because the LZS
-  decode is output-bounded, but realigning the walker to the
-  `[id, offset, size]` frame is a pending cleanup. Its earlier observations
-  "the table is sized to a maximum and zero-padded", "0866 has a zero count
-  in the canonical position" and "the last 0865 slot over-runs the footprint"
-  were all artifacts of the shifted frame; under the correct frame 0866
-  parses like its siblings and all four files tile their footprints exactly.
+  (the TMD-slot walker) reads the same descriptor table in the
+  `[id, offset, size]` frame above. Detection validates the chain invariant
+  (entry 0 at offset 0, `offset[i+1] == offset[i] + size[i]`, sector-aligned
+  sizes, all-zero terminator) plus the header-word ordering
+  (`clut_a < clut_b < budget`), which accepts all four retail player files —
+  including Terra's 0866, whose table is all-default (`id = 0`) entries —
+  and rejects every other PROT entry. An earlier revision of this walker
+  read the table through a 4-byte-shifted frame (entry 0's `id` as a "record
+  count", sizes paired off by one slot); its observations "the table is
+  sized to a maximum and zero-padded", "0866 has a zero count in the
+  canonical position" and "the last 0865 slot over-runs the footprint" were
+  all artifacts of that shifted frame. Under the correct frame 0866 parses
+  like its siblings and all four files tile their footprints exactly.
 
 ## VRAM byte-match corpus
 
@@ -300,8 +299,6 @@ on the player files.)
 - **Sub-object end offsets** (`u32[1]`, `u32[2]`): multi-mesh slots (e.g. a
   Gala slot with `u32[1] = 0x3310`) hold several TMDs back-to-back; the
   stride isn't validated across every variant.
-- **Parser realignment**: move `legaia_asset::battle_data_pack` onto the
-  `[id, offset, size]` frame (see [Parser status](#parser-status)).
 
 ## See also
 
