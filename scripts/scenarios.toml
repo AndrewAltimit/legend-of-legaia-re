@@ -1458,3 +1458,25 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Vahn wearing the Evil Medallion, about to attack an enemy Gimard variant (full trio party). The Rage passive bit 0x2000 is SET at actor+0xF8 (0x0000FCC7) and the AI-delegated action pick is RESOLVED in the actor: +0x1DE category = 3 (physical attack), +0x1DF action stream = 22 26 25 22 21, ctx action_state = 0x0A pre-action. Values support the auto-physical reading; the pick WRITER (and whether Rage ever picks arts/magic) still needs a write-watch probe or more pick samples."
 topics = ["battle", "status", "Evil Medallion", "Rage", "delegated action", "actor +0x1DE", "RE"]
+
+[[scenarios]]
+slot = 4
+label = "sebucus_overworld_resident"
+ram_fingerprint_sha256 = "4530537ebfa4d573a31c929c80f47effa52bcbd63b9591d7d4dedcde4fa41c68"
+backup_fingerprint = "690167160fcb7f83311a286467e04d9c488b6c34898d43be6daec786cb33ed20"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map02"
+description = "Standing resident on the Sebucus Islands overworld outside Jeremi (scene-bundle pool slot 0 = 244 = map02 kingdom bundle). The Sebucus leg of the world-map CLUT-cycle verification: the ocean-head CLUT row and cycle strips live in VRAM on a kingdom other than Drake."
+topics = ["world map", "map02", "Sebucus", "CLUT cycle", "ocean", "VRAM"]
+
+[[scenarios]]
+slot = 5
+label = "karisto_overworld_resident"
+ram_fingerprint_sha256 = "9a34e30d321db69d4ce6ef066b31bbbfd56ddb3334f8360d082fd43f2ceb85c0"
+backup_fingerprint = "7039bd6626c5cfd7305d726b933e22aa8b7b592be841fdc8c980c14e621ce289"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map03"
+description = "Standing resident on the Karisto Kingdom overworld outside Sol (scene-bundle pool slot 0 = 391 = map03 kingdom bundle). The Karisto leg of the world-map CLUT-cycle verification."
+topics = ["world map", "map03", "Karisto", "CLUT cycle", "ocean", "VRAM"]

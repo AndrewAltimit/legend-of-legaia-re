@@ -691,6 +691,9 @@ map01's verts carry CBA `0x7E80`), so `play-window` animates the sea by writing
 each frame's 16 entries into the CPU VRAM CLUT row at `(0, 506)` and
 re-uploading (`OceanAnim` / `advance_ocean_animation`). The exact retail DMA
 cadence isn't pinned, so the engine's frame interval is a tuned approximation.
+The cycle is live-verified on **all three kingdoms**: resident Sebucus /
+Karisto captures hold a mid-cycle frame of their own bundle's 13-frame strip
+at the `(0, 506)` head (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`).
 
 The cycling reaches beyond the row-506 head, on a precisely censused column
 set (per-column variance across the ten map01-CLUT-resident capture states):
