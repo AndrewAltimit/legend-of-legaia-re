@@ -73,9 +73,10 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
-    /// Read-only: list the intra-town (house / interior) MOVE_TO target tiles
-    /// the house-door shuffle would touch, grouped by scene. NOTE: this set
-    /// includes some NPC / cutscene movement, not only house-door warps.
+    /// Read-only: list the intra-town (house / interior) door-warp target
+    /// tiles the house-door shuffle would touch, grouped by scene — the
+    /// cross-context player MOVE_TOs in named partition-0 door records (NPC /
+    /// cutscene movement is excluded by construction).
     HouseDoors {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
         #[arg(long)]
@@ -188,9 +189,9 @@ struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = CouplingArg::Coupled)]
     door_coupling: CouplingArg,
     /// How intra-town (house / interior) doors are reassigned. Only `shuffle`
-    /// is meaningful (a per-scene, multiset-preserving shuffle of the `0x23`
-    /// MOVE_TO target tiles); `random` is treated as `none`. Experimental:
-    /// the shuffled set includes some NPC / cutscene movement, not only doors.
+    /// is meaningful (a per-scene, class-preserving shuffle of the player
+    /// door-warp target tiles: interior landings permute among house entries,
+    /// exterior doorsteps among exits); `random` is treated as `none`.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     house_doors: DropArg,
     /// Number of random starting items the new game begins with (`0` = leave the
@@ -472,11 +473,10 @@ fn cmd_house_doors(input: &Path) -> Result<()> {
             scenes += 1;
             println!("[{idx:>4}] {}", scene_of(*idx));
         }
-        println!("    MOVE_TO tile ({tx:>3}, {tz:>3})");
+        println!("    door warp -> tile ({tx:>3}, {tz:>3})");
     }
     println!(
-        "\n{} intra-town MOVE_TO targets across {scenes} scenes \
-         (includes some NPC / cutscene movement, not only house doors)",
+        "\n{} intra-town door-warp targets across {scenes} scenes",
         sites.len()
     );
     Ok(())
@@ -990,7 +990,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         let report = apply::randomize_house_doors(&mut patcher, seed, hd_mode)?;
         if hd_mode == DropMode::Shuffle {
             println!(
-                "house-doors: {} of {} MOVE_TO targets shuffled across {} scenes",
+                "house-doors: {} of {} door-warp targets shuffled across {} scenes",
                 report.sites_changed, report.sites_total, report.scenes_changed
             );
             manifest.push("house_doors = \"shuffle\"".to_string());
@@ -1006,7 +1006,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             }
         } else {
             println!(
-                "house-doors: only `shuffle` is supported (random would place actors off-map); untouched"
+                "house-doors: only `shuffle` is supported (random would place the player off-map); untouched"
             );
             manifest.push("house_doors = \"none\"".to_string());
         }

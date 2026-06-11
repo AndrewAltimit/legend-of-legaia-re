@@ -254,20 +254,23 @@ mod tests {
     }
 
     #[test]
-    fn end_round_counts_deaths_from_tick_damage() {
+    fn end_round_tick_damage_never_kills() {
+        // The retail DoT ticker (FUN_801E752C) clamps each tick to
+        // `current_hp - 1`, so Toxic / Venom drain to 1 HP but never kill -
+        // a low-HP poisoned actor survives the round at 1 HP and `end`
+        // reports no deaths.
         let mut world = world_with_party();
         if let Some(a) = world.actors.get_mut(0) {
             a.battle.hp = 5;
             a.battle.max_hp = 100;
         }
-        // Toxic drains max_hp / 8 = 100/8 = 12 per tick → kills the 5-HP actor
-        // (Toxic bites a fraction of max HP, so it can deplete the target).
+        // Toxic raw tick = max_hp/16 = 6 >= the 5 HP left → clamped to 4.
         world
             .status_effects
             .apply_from_enemy_effect(0, EnemyEffect::Toxic);
         let deaths = BattleRound::end(&mut world);
-        assert_eq!(deaths, 1);
-        assert_eq!(world.actors[0].battle.hp, 0);
+        assert_eq!(deaths, 0);
+        assert_eq!(world.actors[0].battle.hp, 1);
     }
 
     #[test]

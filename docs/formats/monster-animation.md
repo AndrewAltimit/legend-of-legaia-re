@@ -30,6 +30,12 @@ cycle played while the monster advances on a target (a walk for grounded
 enemies, a flight cycle for fliers), and the rest correspond to the
 monster's spell / special actions.
 
+The **player battle files** carry the same per-action entry family for the
+party's assembled meshes — action-offset table at the head of `record[0]`,
+packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
+character's skeleton bone count. See
+[`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
+
 ## Packed stream (entry `+0x8c`)
 
 ```

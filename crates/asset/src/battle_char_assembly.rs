@@ -114,6 +114,28 @@ pub struct AssembledCharacter {
     /// Attach bone for each `200+`-tagged equipment mesh, in tag order:
     /// the bone id of the object that preceded it in its section.
     pub attach_bones: Vec<u8>,
+    /// Per-object **animation part index**, post-sort: the index of the
+    /// pose channel that drives this object in the character's own battle
+    /// animation streams ([`battle_animations`] - the `[parts][frames]
+    /// [9-byte TRS]` streams in record[0] of the same player file, whose
+    /// `parts` count equals the skeleton bone count).
+    ///
+    /// Skeleton objects are driven by their own bone channel (`= tag`,
+    /// which post-sort is also the object index); equipment extras (tags
+    /// `100+`/`200+`, sorted last, past `parts`) ride the channel of the
+    /// bone object that precedes them in their section - their attach
+    /// piece (for `200+` extras this equals
+    /// `attach_bones[tag - 200]`).
+    ///
+    /// NOTE: the **PROT 1203 ANM bundle is NOT the battle-anim source for
+    /// the assembled mesh** - its banks are authored against the
+    /// PROT 1204 pack's own object order (which differs from the
+    /// assembled tag order per character), so posing the assembled blob
+    /// from 1203 mis-sockets the rig. Verified live: a mid-battle capture
+    /// has no 1203 record resident, and the party render-node's anim
+    /// context points at record[0]'s idle stream (parts = skeleton bone
+    /// count) inside the loaded player file.
+    pub anm_bones: Vec<u8>,
     /// The descriptor entries the five sections came from.
     pub sections: [Record; SECTION_COUNT],
 }
@@ -152,6 +174,12 @@ pub fn assemble_character(
     let mut obj_table = Vec::with_capacity(obj_table_bytes);
     let mut data = Vec::new();
     let mut tags: Vec<u8> = Vec::with_capacity(total_nobj);
+    // Animation part index per object (see
+    // [`AssembledCharacter::anm_bones`]): a skeleton object is driven by
+    // its own bone channel; a section's surplus (equipment-visual) objects
+    // ride the channel of the bone object that precedes them.
+    let mut anm_bones: Vec<u8> = Vec::with_capacity(total_nobj);
+    let mut last_bone: u8 = 0;
     // PORT: FUN_800536BC - the object splice. Per section: append the
     // 7-word object entries with vert/normal/prim offsets relocated into
     // the merged pool, copy the data words, accumulate nobj, and write one
@@ -177,13 +205,14 @@ pub fn assemble_character(
                 };
                 obj_table.extend_from_slice(&v.to_le_bytes());
             }
-            tags.push(if k < s.bone_ids.len() {
-                s.bone_ids[k]
-            } else if k == s.bone_ids.len() {
-                0xFF
+            if k < s.bone_ids.len() {
+                tags.push(s.bone_ids[k]);
+                last_bone = s.bone_ids[k];
+                anm_bones.push(last_bone);
             } else {
-                0xFE
-            });
+                tags.push(if k == s.bone_ids.len() { 0xFF } else { 0xFE });
+                anm_bones.push(last_bone);
+            }
         }
         data.extend_from_slice(&s.data);
     }
@@ -222,6 +251,7 @@ pub fn assemble_character(
         }
         if min != i {
             tags.swap(i, min);
+            anm_bones.swap(i, min);
             for w in 0..7 {
                 let a = i * OBJ_ENTRY_BYTES + w * 4;
                 let b = min * OBJ_ENTRY_BYTES + w * 4;
@@ -246,8 +276,137 @@ pub fn assemble_character(
         tmd,
         bone_tags: tags,
         attach_bones,
+        anm_bones,
         sections: records,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Battle animation (record[0] per-action TRS streams)
+// ---------------------------------------------------------------------------
+
+/// Number of action slots in record[0]'s head offset table (`u32` offsets
+/// at decoded `+0x00..+0x58`; the two words at `+0x58`/`+0x5C` are the
+/// record[0] texture-block offsets, mirroring the file header's
+/// `clut_a`/`clut_b`).
+pub const ACTION_SLOT_COUNT: usize = 22;
+
+/// Offset of the packed `[u8 parts][u8 frames][9-byte TRS records]` stream
+/// inside a record[0] action entry (the monster archive's sibling entries
+/// keep theirs at `+0x8C`). The runtime loader points the entry's `+0x88`
+/// stream pointer here (`FUN_80047430` / `FUN_8004AD80` consume it).
+pub const PLAYER_ANIM_STREAM_OFFSET: usize = 0xAC;
+
+/// LZS-decode a player file's `record[0]` (header
+/// `[desc_off][clut_a][clut_b][budget]`, LZS stream at `+0x10`). Scans
+/// 4-byte-aligned offsets for a plausible header (skipping any `"pochi"`
+/// filler prefix on the historical over-read copies) and accepts the first
+/// whose stream decompresses to its declared budget. Unlike
+/// [`crate::battle_char_palette::find_record0`] this does **not** require
+/// the fixed-stride palette-chain assembly to succeed (it overflows for
+/// Noa / Gala - see [`crate::battle_char_palette::collect_palette`]).
+pub fn decode_record0(file: &[u8]) -> Result<Vec<u8>> {
+    let mut o = 0;
+    while o + 0x10 <= file.len() {
+        let desc_off = read_u32(file, o)? as usize;
+        let clut_a = read_u32(file, o + 4)? as usize;
+        let clut_b = read_u32(file, o + 8)? as usize;
+        let budget = read_u32(file, o + 0xC)? as usize;
+        let plausible = (0x100..file.len() - o).contains(&desc_off)
+            && (0x1000..=0x4_0000).contains(&budget)
+            && (0x10..budget).contains(&clut_a)
+            && (0x10..budget).contains(&clut_b);
+        if plausible && let Ok(decoded) = legaia_lzs::decompress(&file[o + 0x10..], budget) {
+            return Ok(decoded);
+        }
+        o += 4;
+    }
+    bail!("no record[0] header found")
+}
+
+/// Decode the character's **battle action animations** from `record[0]` of
+/// their player file: per populated action slot, the packed
+/// `[u8 parts][u8 frames][9-byte TRS records]` stream at entry
+/// `+`[`PLAYER_ANIM_STREAM_OFFSET`] - the same rigid-transform keyframe
+/// format as the monster archive's per-action streams
+/// (`docs/formats/monster-animation.md`), with `parts` = the character's
+/// **skeleton bone count** (equipment extras carry no channel of their own
+/// and ride their attach bone - see [`AssembledCharacter::anm_bones`]).
+/// Slot 0 is the neutral idle loop; its frame 0 is the combat-stance rest
+/// pose that sockets the assembled mesh.
+///
+/// `action_id` on the returned animations is the slot index.
+// PORT: FUN_80047430 (anim-context consumer) - the battle party render
+// node's +0x4C anim context is a record[0] action entry; its +0x88 stream
+// pointer (loader-reconstructed, entry+0xAC) feeds the FUN_8004AD80 /
+// FUN_8004998C keyframe decode chain shared with battle monsters.
+pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::MonsterAnimation>> {
+    let block = decode_record0(file)?;
+    let mut out = Vec::new();
+    for slot in 0..ACTION_SLOT_COUNT {
+        let Ok(entry_off) = read_u32(&block, slot * 4) else {
+            break;
+        };
+        let entry_off = entry_off as usize;
+        if entry_off == 0 || entry_off >= block.len() {
+            continue;
+        }
+        if let Some(anim) = crate::monster_archive::parse_animation_stream(
+            &block,
+            slot as u8,
+            entry_off + PLAYER_ANIM_STREAM_OFFSET,
+        ) {
+            out.push(anim);
+        }
+    }
+    Ok(out)
+}
+
+/// Decode just the **idle** animation (action slot 0) of a player file -
+/// the loop the battle engine plays while the character awaits commands.
+/// Frame 0 is the rest pose that sockets the assembled battle mesh.
+/// `Ok(None)` when slot 0 is absent or its stream doesn't decode.
+pub fn idle_battle_animation(
+    file: &[u8],
+) -> Result<Option<crate::monster_archive::MonsterAnimation>> {
+    let block = decode_record0(file)?;
+    let entry_off = read_u32(&block, 0)? as usize;
+    if entry_off == 0 || entry_off >= block.len() {
+        return Ok(None);
+    }
+    Ok(crate::monster_archive::parse_animation_stream(
+        &block,
+        0,
+        entry_off + PLAYER_ANIM_STREAM_OFFSET,
+    ))
+}
+
+/// Re-index an animation's pose channels **per assembled object**: output
+/// part `i` is input part `anm_bones[i]` (each equipment extra duplicates
+/// its attach bone's channel), so `frames[f][obj]` can drive TMD object
+/// `obj` directly through the engine's posed-mesh builders. Channels
+/// referencing a part the stream doesn't carry come out as the identity
+/// pose.
+pub fn expand_animation_for_objects(
+    anim: &crate::monster_archive::MonsterAnimation,
+    anm_bones: &[u8],
+) -> crate::monster_archive::MonsterAnimation {
+    let frames: Vec<Vec<crate::monster_archive::PartPose>> = anim
+        .frames
+        .iter()
+        .map(|frame| {
+            anm_bones
+                .iter()
+                .map(|&b| frame.get(b as usize).copied().unwrap_or_default())
+                .collect()
+        })
+        .collect();
+    crate::monster_archive::MonsterAnimation {
+        action_id: anim.action_id,
+        part_count: anm_bones.len(),
+        frame_count: anim.frame_count,
+        frames,
+    }
 }
 
 /// VRAM CLUT row of party slot 0's runtime palette (rows `481 + slot`,
@@ -339,6 +498,303 @@ pub fn relocate_tsb_cba(tmd_bytes: &mut [u8], slot: u8) -> Result<usize> {
         block[6..8].copy_from_slice(&new_tsb.to_le_bytes());
     }
     Ok(blocks.len())
+}
+
+/// VRAM x base (in halfwords / 16bpp pixels) of party slot 0's battle
+/// texture band; slot `s` starts at `BAND_X_BASE + s * BAND_X_STRIDE`.
+pub const BAND_X_BASE: u16 = 0x200;
+
+/// Per-party-slot x stride of the battle texture band (= two 64-halfword
+/// texpages, the pages `relocate_tsb_cba` retargets).
+pub const BAND_X_STRIDE: u16 = 0x80;
+
+/// VRAM y base every battle-character image rect offsets from.
+pub const BAND_Y_BASE: u16 = 0x100;
+
+/// One image rect of the battle-texture placement, in the pre-band frame
+/// the retail tables author: the upload lands at
+/// `(BAND_X_BASE + party_slot * BAND_X_STRIDE + x0, BAND_Y_BASE + y0)`.
+/// `w` is in VRAM halfwords (32 halfwords = 128 px at 4bpp).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextureRect {
+    /// Band-relative x (halfwords).
+    pub x0: u16,
+    /// Band-relative y (rows).
+    pub y0: u16,
+    /// Width in halfwords.
+    pub w: u16,
+    /// Height in rows.
+    pub h: u16,
+}
+
+impl TextureRect {
+    /// Absolute VRAM x of the upload for party slot `party_slot`.
+    pub fn fb_x(&self, party_slot: u8) -> u16 {
+        self.x0 + BAND_X_BASE + party_slot as u16 * BAND_X_STRIDE
+    }
+
+    /// Absolute VRAM y of the upload.
+    pub fn fb_y(&self) -> u16 {
+        self.y0 + BAND_Y_BASE
+    }
+
+    /// Byte size of the rect's pixel payload (`w * h` halfwords).
+    pub fn pixel_bytes(&self) -> usize {
+        self.w as usize * self.h as usize * 2
+    }
+}
+
+/// Per-section texture-pool placement rects - mirror of the static
+/// `SCUS_942.54` table at `0x800775B8` (4 u16 per equip section, read by
+/// `FUN_80052FA0`'s per-section decode loop and handed to `FUN_80053B9C`).
+/// Together with [`RECORD0_TEXTURE_RECTS`] the seven rects tile each party
+/// slot's 128-halfword x 256-row band exactly.
+pub const SECTION_TEXTURE_RECTS: [TextureRect; SECTION_COUNT] = [
+    TextureRect {
+        x0: 0x00,
+        y0: 0x80,
+        w: 0x20,
+        h: 0x80,
+    },
+    TextureRect {
+        x0: 0x00,
+        y0: 0x00,
+        w: 0x40,
+        h: 0x80,
+    },
+    TextureRect {
+        x0: 0x40,
+        y0: 0x00,
+        w: 0x20,
+        h: 0x80,
+    },
+    TextureRect {
+        x0: 0x40,
+        y0: 0x80,
+        w: 0x20,
+        h: 0x80,
+    },
+    TextureRect {
+        x0: 0x60,
+        y0: 0x80,
+        w: 0x20,
+        h: 0x80,
+    },
+];
+
+/// Placement rects of the two `record[0]` image blocks (the blocks at the
+/// file header's `clut_a_off` / `clut_b_off` within record[0]'s decoded
+/// output). Inline constants of `FUN_80052FA0` (`0x800020` / `0x60` +
+/// `0x800020` packed `(x0,y0)` / `(w,h)` pairs).
+pub const RECORD0_TEXTURE_RECTS: [TextureRect; 2] = [
+    TextureRect {
+        x0: 0x20,
+        y0: 0x80,
+        w: 0x20,
+        h: 0x80,
+    },
+    TextureRect {
+        x0: 0x60,
+        y0: 0x00,
+        w: 0x20,
+        h: 0x80,
+    },
+];
+
+/// One decoded battle-texture upload block in the `FUN_80053B9C` frame:
+/// `[u16 clut_x][u16 clut_n][clut_n x u16 BGR555][w*h halfwords pixels]`.
+/// The CLUT half LoadImages to `(clut_x, 0x1E1 + party_slot, clut_n, 1)`
+/// with the STP bit forced on every non-zero entry; the pixel half
+/// LoadImages to the rect's banded `(fb_x, fb_y, w, h)`.
+#[derive(Debug, Clone)]
+pub struct TextureUpload {
+    /// Placement rect (pre-band frame; see [`TextureRect`]).
+    pub rect: TextureRect,
+    /// Party slot the block was decoded for (0..=2).
+    pub party_slot: u8,
+    /// VRAM x (halfwords) of the CLUT run on row `0x1E1 + party_slot`.
+    pub clut_x: u16,
+    /// CLUT entries with the retail STP pass applied (`e |= 0x8000` on
+    /// every non-zero entry). Empty in both `record[0]` blocks.
+    pub clut: Vec<u16>,
+    /// Pixel payload (`rect.w * rect.h` halfwords, row-major).
+    pub pixels: Vec<u8>,
+}
+
+impl TextureUpload {
+    /// Absolute VRAM x of the pixel upload.
+    pub fn fb_x(&self) -> u16 {
+        self.rect.fb_x(self.party_slot)
+    }
+
+    /// Absolute VRAM y of the pixel upload.
+    pub fn fb_y(&self) -> u16 {
+        self.rect.fb_y()
+    }
+
+    /// VRAM row of the CLUT run (`0x1E1 + party_slot` - the same rows the
+    /// `relocate_tsb_cba` CBA rewrite targets).
+    pub fn clut_row(&self) -> u16 {
+        RUNTIME_CLUT_ROW_BASE + self.party_slot as u16
+    }
+
+    /// CLUT entries as little-endian bytes (ready for a VRAM row write).
+    pub fn clut_bytes(&self) -> Vec<u8> {
+        self.clut.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+}
+
+/// Decode one battle-texture upload block (the `FUN_80053B9C` source
+/// frame) out of `block`, placing it at `rect` for `party_slot`.
+// PORT: FUN_80053b9c - the battle-texture upload helper: reads the
+// [clut_x, clut_n, entries] prefix, ORs STP onto non-zero entries,
+// LoadImages the CLUT run to (clut_x, 0x1E1+slot, clut_n, 1) and the
+// pixels to (x0 + 0x200 + slot*0x80, y0 + 0x100, w, h). (The shadow CLUT
+// copy into the battle context at +0x894 is engine-context, not VRAM.)
+// REF: FUN_800583c8 - the LoadImage wrapper it issues both rects through.
+pub fn parse_upload_block(
+    block: &[u8],
+    rect: TextureRect,
+    party_slot: u8,
+) -> Result<TextureUpload> {
+    if party_slot > 2 {
+        bail!("party slot {party_slot} out of the 0..=2 battle band");
+    }
+    let clut_x = u16::from_le_bytes(
+        block
+            .get(0..2)
+            .ok_or_else(|| anyhow::anyhow!("upload block shorter than its clut_x word"))?
+            .try_into()
+            .unwrap(),
+    );
+    let clut_n = u16::from_le_bytes(
+        block
+            .get(2..4)
+            .ok_or_else(|| anyhow::anyhow!("upload block shorter than its clut_n word"))?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    if clut_n > 0x400 {
+        bail!("implausible CLUT run length {clut_n}");
+    }
+    let clut_bytes = block
+        .get(4..4 + clut_n * 2)
+        .ok_or_else(|| anyhow::anyhow!("CLUT run past block end"))?;
+    let clut = clut_bytes
+        .chunks_exact(2)
+        .map(|c| {
+            let e = u16::from_le_bytes([c[0], c[1]]);
+            if e != 0 { e | 0x8000 } else { e }
+        })
+        .collect();
+    let pix_off = 4 + clut_n * 2;
+    let pixels = block
+        .get(pix_off..pix_off + rect.pixel_bytes())
+        .ok_or_else(|| anyhow::anyhow!("pixel payload past block end"))?
+        .to_vec();
+    Ok(TextureUpload {
+        rect,
+        party_slot,
+        clut_x,
+        clut,
+        pixels,
+    })
+}
+
+/// The two `record[0]` texture uploads of a player file: LZS-decode
+/// `record[0]` (header `budget` at `+0x0C`, stream at `+0x10`) and frame
+/// the blocks at the header's `clut_a_off` / `clut_b_off` with the
+/// [`RECORD0_TEXTURE_RECTS`] placement.
+// PORT: FUN_80052FA0 (record[0] texture half) - the two FUN_80053b9c
+// calls right after the record[0] decode, before the per-section loop.
+pub fn record0_texture_uploads(file: &[u8], party_slot: u8) -> Result<Vec<TextureUpload>> {
+    let clut_a = read_u32(file, 4)? as usize;
+    let clut_b = read_u32(file, 8)? as usize;
+    let budget = read_u32(file, 0xC)? as usize;
+    if budget == 0 || budget > 0x40_0000 || clut_a >= clut_b || clut_b >= budget {
+        bail!(
+            "implausible player-file header (clut_a {clut_a:#x} clut_b {clut_b:#x} budget {budget:#x})"
+        );
+    }
+    let stream = file
+        .get(0x10..)
+        .ok_or_else(|| anyhow::anyhow!("file shorter than its record[0] stream"))?;
+    let decoded = legaia_lzs::decompress(stream, budget)?;
+    let mut out = Vec::with_capacity(2);
+    for (off, rect) in [
+        (clut_a, RECORD0_TEXTURE_RECTS[0]),
+        (clut_b, RECORD0_TEXTURE_RECTS[1]),
+    ] {
+        let block = decoded
+            .get(off..)
+            .ok_or_else(|| anyhow::anyhow!("record[0] block at {off:#x} past decoded end"))?;
+        out.push(
+            parse_upload_block(block, rect, party_slot)
+                .with_context(|| format!("record[0] block at {off:#x}"))?,
+        );
+    }
+    Ok(out)
+}
+
+/// The texture upload of one decoded equipment section, when the section
+/// is flagged for upload (`u16` at `+0x12` non-zero): the block at
+/// `decoded + tmd_body_end` placed at [`SECTION_TEXTURE_RECTS`]`[section]`.
+/// `Ok(None)` for unflagged sections (their pool bytes are dead - retail
+/// overwrites them with the next section's decode without uploading).
+// PORT: FUN_80052FA0 (per-section texture half) - the `lh 0x12(s2)` gate
+// + the FUN_80053b9c call at decoded+tmd_body_end with the DAT_800775b8
+// per-section rect.
+pub fn section_texture_upload(
+    decoded: &[u8],
+    section: usize,
+    party_slot: u8,
+) -> Result<Option<TextureUpload>> {
+    if section >= SECTION_COUNT {
+        bail!("section index {section} out of the 5-slot table");
+    }
+    let flag = u16::from_le_bytes(
+        decoded
+            .get(0x12..0x14)
+            .ok_or_else(|| anyhow::anyhow!("decoded section shorter than its header"))?
+            .try_into()
+            .unwrap(),
+    );
+    if flag == 0 {
+        return Ok(None);
+    }
+    let pool = read_u32(decoded, 0xC)? as usize;
+    let block = decoded
+        .get(pool..)
+        .ok_or_else(|| anyhow::anyhow!("texture pool at {pool:#x} past decoded end"))?;
+    Ok(Some(
+        parse_upload_block(block, SECTION_TEXTURE_RECTS[section], party_slot)
+            .with_context(|| format!("section {section} pool at {pool:#x}"))?,
+    ))
+}
+
+/// Every battle-texture upload of one character, in retail order: the two
+/// `record[0]` blocks, then the five equipped sections' flagged pools.
+/// `equipped` is the char record's `+0x196..+0x19A` bytes; `party_slot`
+/// is the character's 0-based ordinal among the *present* battle party
+/// (the band selector - not the character id).
+pub fn character_texture_uploads(
+    file: &[u8],
+    pack: &BattleDataPack,
+    equipped: &[u8; SECTION_COUNT],
+    party_slot: u8,
+) -> Result<Vec<TextureUpload>> {
+    let mut out = record0_texture_uploads(file, party_slot)?;
+    let records = select_sections(pack, equipped)?;
+    for (i, rec) in records.iter().enumerate() {
+        let entry = decode_record(file, pack, rec.index)
+            .with_context(|| format!("decode section {i} (id {:#x})", rec.id))?;
+        if let Some(upload) = section_texture_upload(&entry.bytes, i, party_slot)
+            .with_context(|| format!("section {i} (id {:#x})", rec.id))?
+        {
+            out.push(upload);
+        }
+    }
+    Ok(out)
 }
 
 /// Decode one selected section through the loader frame at
@@ -549,6 +1005,83 @@ mod tests {
                 assert_eq!((cba >> 6) & 0x1FF, row, "slot {slot} CLUT row");
             }
         }
+    }
+
+    #[test]
+    fn upload_block_applies_stp_and_band_math() {
+        // Block: clut_x=8, clut_n=2, entries [0x1D40, 0x0000], 2x1 pixels.
+        let rect = TextureRect {
+            x0: 0x40,
+            y0: 0x80,
+            w: 2,
+            h: 1,
+        };
+        let mut block = Vec::new();
+        block.extend_from_slice(&8u16.to_le_bytes());
+        block.extend_from_slice(&2u16.to_le_bytes());
+        block.extend_from_slice(&0x1D40u16.to_le_bytes());
+        block.extend_from_slice(&0u16.to_le_bytes());
+        block.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+        let u = parse_upload_block(&block, rect, 2).expect("parse");
+        // STP forced on non-zero entries only.
+        assert_eq!(u.clut, vec![0x9D40, 0x0000]);
+        assert_eq!(u.clut_x, 8);
+        assert_eq!(u.clut_row(), 0x1E3); // row 483 for party slot 2
+        assert_eq!(u.pixels, vec![0xAA, 0xBB, 0xCC, 0xDD]);
+        // Band math: x = x0 + 0x200 + slot*0x80, y = y0 + 0x100.
+        assert_eq!(u.fb_x(), 0x40 + 0x200 + 2 * 0x80);
+        assert_eq!(u.fb_y(), 0x80 + 0x100);
+    }
+
+    #[test]
+    fn upload_block_rejects_short_payload() {
+        let rect = TextureRect {
+            x0: 0,
+            y0: 0,
+            w: 0x20,
+            h: 0x80,
+        };
+        // clut_n = 0 but only 8 pixel bytes follow - far short of w*h*2.
+        let mut block = vec![0u8; 4];
+        block.extend_from_slice(&[0u8; 8]);
+        assert!(parse_upload_block(&block, rect, 0).is_err());
+    }
+
+    #[test]
+    fn section_upload_gates_on_the_flag_halfword() {
+        // Decoded slot: header with tmd_body_end = 0x20, flag clear.
+        let mut decoded = vec![0u8; 0x20];
+        decoded[0xC..0x10].copy_from_slice(&0x20u32.to_le_bytes());
+        // Pool block: clut_n = 0 + 0x20*0x80 halfwords of pixels.
+        decoded.extend_from_slice(&[0u8; 4]);
+        decoded.extend_from_slice(&vec![0x55u8; 0x20 * 0x80 * 2]);
+        assert!(
+            section_texture_upload(&decoded, 0, 0)
+                .expect("unflagged ok")
+                .is_none(),
+            "flag @ +0x12 clear: no upload"
+        );
+        decoded[0x12] = 1;
+        let u = section_texture_upload(&decoded, 0, 0)
+            .expect("flagged ok")
+            .expect("upload present");
+        assert_eq!(u.rect, SECTION_TEXTURE_RECTS[0]);
+        assert_eq!(u.pixels.len(), 0x20 * 0x80 * 2);
+    }
+
+    #[test]
+    fn placement_rects_tile_each_band_exactly() {
+        // The 5 section rects + 2 record[0] rects cover the 128x256
+        // halfword band exactly once (no gaps, no overlaps).
+        let mut cover = vec![0u32; 0x80 * 0x100];
+        for r in SECTION_TEXTURE_RECTS.iter().chain(&RECORD0_TEXTURE_RECTS) {
+            for y in r.y0..r.y0 + r.h {
+                for x in r.x0..r.x0 + r.w {
+                    cover[y as usize * 0x80 + x as usize] += 1;
+                }
+            }
+        }
+        assert!(cover.iter().all(|&c| c == 1), "band tiled exactly once");
     }
 
     #[test]

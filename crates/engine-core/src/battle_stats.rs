@@ -110,19 +110,31 @@ impl EquipmentTable {
 
 /// Status-effect modifiers folded into the resolved stats.
 ///
-/// The retail engine applies a per-status delta to the stat lines in
-/// the same `FUN_80042558` pass - Toxic reduces ATK by 1/8, Confuse
-/// drops accuracy in half, etc. These values are baked into the
-/// resolver and exposed for engines that want to override them. (Per the
-/// Legaia wiki, Toxic lowers both ATK and DEFENSE.)
+/// Retail scales the per-strike combat *rolls* by the poison status bits in
+/// `FUN_801DD864` (bit 1 Venom → ×9/10, then bit 2 Toxic → ×7/10; the exact
+/// kernel is `legaia_engine_vm::battle_formulas::apply_status_weaken`). This
+/// resolver mirrors those magnitudes at the stat line instead, which is
+/// equivalent for the linear roll terms. The other entries (Confuse accuracy,
+/// immobilised evasion, Curse) are engine models, exposed for override.
+///
+/// REF: FUN_801DD864 (the bit-1 / bit-2 roll scales this resolver mirrors;
+/// the exact kernel port is `legaia_engine_vm::battle_formulas::apply_status_weaken`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatusModifiers {
-    /// Multiplier applied to ATK when the actor is Toxic. Default `0.875`.
+    /// Multiplier applied to ATK when the actor is Toxic. Default `0.7`
+    /// (the `FUN_801DD864` bit-2 roll scale).
     pub toxic_atk_mult: f32,
-    /// Multiplier applied to both defenses (UDF + LDF) when the actor is Toxic -
-    /// the wiki notes the deadly poison drops attack *and* defense. Default
-    /// `0.875` (the exact retail magnitude isn't pinned; mirrors the ATK drop).
+    /// Multiplier applied to both defenses (UDF + LDF) when the actor is
+    /// Toxic - retail scales the defender's roll by the same status bits, so
+    /// the deadly poison weakens defense too. Default `0.7`.
     pub toxic_def_mult: f32,
+    /// Multiplier applied to ATK when the actor is Venomed. Default `0.9`
+    /// (the `FUN_801DD864` bit-1 roll scale). Stacks with Toxic when both
+    /// are set, matching the sequential retail scale (×9/10 then ×7/10).
+    pub venom_atk_mult: f32,
+    /// Multiplier applied to both defenses (UDF + LDF) when the actor is
+    /// Venomed. Default `0.9`.
+    pub venom_def_mult: f32,
     /// Multiplier applied to accuracy when the actor is Confuse. `0.5`.
     pub confuse_acc_mult: f32,
     /// Multiplier applied to evasion when Numb / Sleep / Stone / Faint.
@@ -138,8 +150,10 @@ pub struct StatusModifiers {
 impl Default for StatusModifiers {
     fn default() -> Self {
         Self {
-            toxic_atk_mult: 0.875,
-            toxic_def_mult: 0.875,
+            toxic_atk_mult: 0.7,
+            toxic_def_mult: 0.7,
+            venom_atk_mult: 0.9,
+            venom_def_mult: 0.9,
             confuse_acc_mult: 0.5,
             immobilised_eva_mult: 0.0,
             curse_mp_mult: f32::INFINITY,
@@ -387,6 +401,11 @@ fn compute_battle_stats_inner(
                 stats.udf = mul_clamp(stats.udf, modifiers.toxic_def_mult);
                 stats.ldf = mul_clamp(stats.ldf, modifiers.toxic_def_mult);
             }
+            StatusKind::Venom => {
+                stats.atk = mul_clamp(stats.atk, modifiers.venom_atk_mult);
+                stats.udf = mul_clamp(stats.udf, modifiers.venom_def_mult);
+                stats.ldf = mul_clamp(stats.ldf, modifiers.venom_def_mult);
+            }
             StatusKind::Confuse => {
                 stats.acc = mul_clamp(stats.acc, modifiers.confuse_acc_mult);
             }
@@ -397,7 +416,6 @@ fn compute_battle_stats_inner(
             StatusKind::Curse => {
                 stats.magic_blocked = true;
             }
-            _ => {}
         }
     }
     if statuses.iter().any(|s| matches!(s, StatusKind::Faint)) {
@@ -535,10 +553,10 @@ mod tests {
     }
 
     #[test]
-    fn burn_reduces_attack() {
+    fn toxic_reduces_attack() {
         let s =
             compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Toxic]);
-        assert_eq!(s.atk, 88); // 100 * 0.875 = 87.5 -> 88 (rounded)
+        assert_eq!(s.atk, 70); // 100 * 0.7 (the FUN_801DD864 bit-2 scale)
     }
 
     #[test]
@@ -578,12 +596,13 @@ mod tests {
         t.set(1, weapon(40));
         t.set(2, armor(20, 25));
         let s = compute_battle_stats_default(&record(), &t, &[StatusKind::Toxic]);
-        // Atk: 100 + 40 = 140; Toxic -> 140 * 0.875 = 122.5 -> 123 (rounded).
-        assert_eq!(s.atk, 123);
-        // Toxic also drops defense by 0.875:
-        // UDF: (50 + 20) * 0.875 = 61.25 -> 61; LDF: (60 + 25) * 0.875 = 74.375 -> 74.
-        assert_eq!(s.udf, 61);
-        assert_eq!(s.ldf, 74);
+        // Atk: 100 + 40 = 140; Toxic -> 140 * 0.7 = 98 (the FUN_801DD864
+        // bit-2 roll scale mirrored at the stat line).
+        assert_eq!(s.atk, 98);
+        // Toxic also drops defense by 0.7:
+        // UDF: (50 + 20) * 0.7 = 49; LDF: (60 + 25) * 0.7 = 59.5 -> 60 (rounded).
+        assert_eq!(s.udf, 49);
+        assert_eq!(s.ldf, 60);
     }
 
     #[test]
@@ -611,7 +630,7 @@ mod tests {
         assert!(s.action_blocked);
         assert_eq!(s.eva, 0);
         // Atk + accuracy still applied.
-        assert_eq!(s.atk, 88);
+        assert_eq!(s.atk, 70);
         assert_eq!(s.acc, 45);
     }
 

@@ -1223,18 +1223,19 @@ pub fn randomize_doors(
 pub struct HouseDoorApplyReport {
     /// Scene bundles whose MAN was rewritten + written back.
     pub scenes_changed: usize,
-    /// Total MOVE_TO target tiles whose operand changed.
+    /// Total door-warp target tiles whose operand changed.
     pub sites_changed: usize,
-    /// Total shuffleable (non-sentinel) MOVE_TO sites found.
+    /// Total classified door-warp sites found (IN + OUT classes).
     pub sites_total: usize,
     /// Scene PROT-entry indices whose recompressed MAN overflowed (kept original).
     pub skipped: Vec<usize>,
 }
 
-/// Read every shuffleable intra-town MOVE_TO site on the disc (the house-door
-/// population), in PROT-entry order. Purely read-only audit surface; see
-/// [`crate::house_door`] for the caveat that this set includes some NPC /
-/// cutscene movement, not only house-door warps.
+/// Read every classified intra-town door warp on the disc (the house-door
+/// population), in PROT-entry order: the cross-context player `MOVE_TO`s
+/// (`0xA3 0xF8`) in named partition-0 door records (see
+/// [`crate::house_door`]). NPC / prop / cutscene movement is excluded by
+/// construction. Purely read-only audit surface.
 pub fn current_house_doors(patcher: &DiscPatcher) -> Result<Vec<(usize, u8, u8)>> {
     let mut out = Vec::new();
     for idx in 0..patcher.entry_count() {
@@ -1252,11 +1253,14 @@ pub fn current_house_doors(patcher: &DiscPatcher) -> Result<Vec<(usize, u8, u8)>
 }
 
 /// Randomize intra-town (house / interior) doors by a **per-scene,
-/// multiset-preserving shuffle** of the `0x23 MOVE_TO` target tiles (see
-/// [`crate::house_door`]). Each scene's MAN is recompressed (same-size operand
-/// edits) and written back when it fits; a scene that overflows keeps its
-/// original tiles. Only [`DropMode::Shuffle`] is meaningful (a random draw would
-/// place actors off-map), so a non-shuffle mode is a no-op.
+/// class-preserving shuffle** of the player door-warp target tiles: `IN`-class
+/// (interior landing) targets permute among `IN` sites, `OUT`-class (exterior
+/// doorstep) targets among `OUT` sites (see [`crate::house_door`] — exiting
+/// any interior always lands back outside, so no softlock is constructible).
+/// Each scene's MAN is recompressed (same-size operand edits) and written back
+/// when it fits; a scene that overflows keeps its original tiles. Only
+/// [`DropMode::Shuffle`] is meaningful (a random draw would place the player
+/// off-map), so a non-shuffle mode is a no-op.
 pub fn randomize_house_doors(
     patcher: &mut DiscPatcher,
     seed: u64,

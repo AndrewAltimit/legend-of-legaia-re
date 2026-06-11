@@ -492,6 +492,14 @@ pub struct ColorMesh {
     pub colors: Vec<[u8; 3]>,
     /// Triangle indices into `positions` (quads emitted as two triangles).
     pub indices: Vec<u32>,
+    /// Per-vertex PSX blend word, index-aligned with `positions`: the group
+    /// mode byte's ABE bit packed into bit 15 (the same
+    /// [`TSB_SEMI_TRANSPARENT_BIT`] convention the textured path rides on
+    /// TSB), ABR blend mode in bits 5..=6. Legaia's untextured prims carry
+    /// no texpage/ABR field, so ABR is 0 (B/2+F/2, the PSX draw-env
+    /// default); only the ABE enable varies. All corners of a prim share
+    /// one word.
+    pub blend: Vec<u16>,
 }
 
 impl ColorMesh {
@@ -526,6 +534,7 @@ pub fn tmd_to_color_mesh(tmd: &Tmd, buf: &[u8]) -> ColorMesh {
             if desc.is_none_or(|d| d.packet_shape.is_textured()) {
                 continue;
             }
+            let blend_word = pack_tsb_semi(0, g.header.abe());
             for prim in &g.prims {
                 let raw_idx = prim.vertex_indices();
                 if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
@@ -537,6 +546,7 @@ pub fn tmd_to_color_mesh(tmd: &Tmd, buf: &[u8]) -> ColorMesh {
                     out.positions.push([v.x as f32, v.y as f32, v.z as f32]);
                     out.colors
                         .push(prim.colors.get(corner).copied().unwrap_or([128, 128, 128]));
+                    out.blend.push(blend_word);
                     i
                 };
                 match raw_idx.len() {

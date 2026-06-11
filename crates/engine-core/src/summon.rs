@@ -55,24 +55,21 @@
 //!   opcode handlers, wait-timer gate, and tween/anim-bank state the retail move
 //!   VM produces. (Validated: every Gimard *Tail Fire* part record runs without
 //!   hitting an unimplemented opcode.)
-//! - **Faithful (translation):** the per-part *position* is decoded from the
-//!   summon render overlay `FUN_801F811C` (the per-frame part-position update;
-//!   present byte-identical in the dance and baka-fighter overlay images at the
-//!   same RAM address — see `ghidra/scripts/funcs/overlay_dance_801f811c.txt`).
-//!   Each frame the world position (`+0x14/16/18`) **LERPs** toward the move-VM
-//!   anim-bank target (`anim_3c/3e/40`, op `0x00`, `v << 3`) over the time ratio
-//!   `+0x9C / +0x9E`, advancing `+0x9C` by the per-frame delta `DAT_1F800393`
-//!   and clamping it to `+0x9E`. The per-axis interpolation is the generic
-//!   `FUN_801DE4C8(target, cur, t, D, 1)` (mode 1 = plain linear interp:
-//!   `cur + (target - cur)*t/D`, integer truncating div; returns `target` when
-//!   `t >= D`) whose result is stored via `FUN_801DE648` (a sized store). When
-//!   `+0x9C` reaches `+0x9E` the position **latches** exactly to the anim-bank
-//!   target and `+0x9E` is cleared (`+0x9E == 0` then means "no active tween →
-//!   snap to target"). [`tick`](SummonScene::tick) ports this whole sequence;
-//!   the anim banks are summon-local, so [`SummonScene::origin`] (the cast
-//!   target) is added to the lerp endpoint. This is why a summon part animates
-//!   off the spawn point with no `WORLD_ADD` op — its motion lives in the anim
-//!   banks, and it now glides there instead of snapping on completion.
+//! - **Interpreted (translation glide):** each frame the world position
+//!   (`+0x14/16/18`) glides toward the move-VM anim-bank target
+//!   (`anim_3c/3e/40`, op `0x00`, `v << 3`) over the time ratio
+//!   `+0x9C / +0x9E`, latching exactly on completion. The lerp *shape* reuses
+//!   `FUN_801F811C` / `FUN_801DE4C8` mode 1 — but the retail `FUN_801F811C` is
+//!   **not a summon-part position update**: a full static decode of PROT 0900
+//!   at the correct link base resolved it as the per-frame handler of the 2D
+//!   **screen-mask (iris) widget**, whose four tweened channels are screen-rect
+//!   edges and whose "4 render quads" are the black border bands
+//!   (see [`crate::screen_fx`], the faithful port). Two deviations of this
+//!   glide from the retail tween math, kept deliberately for the stand-in:
+//!   the engine applies it to move-VM part positions (retail does not), and it
+//!   re-lerps **iteratively from the updated current value** each frame,
+//!   whereas the retail widget tween re-interpolates from a start value that
+//!   stays fixed until the latch.
 //! - **Interpreted (rotation):** the part's *orientation*. Within this stand-in
 //!   model [`SummonScene::part_draws`] derives Euler angles from the move-VM
 //!   rotation banks. This is the engine's interpretation of the scene-graph
@@ -237,8 +234,10 @@ impl SummonScene {
     /// the wait-timer drain (retail's per-actor anim-speed × frame-rate scalar
     /// product); a typical value keeps the parts on their authored timing.
     ///
-    /// After the move-VM step, applies the **render-side translation update**
-    /// ported from the summon render overlay `FUN_801F811C`: the part's world
+    /// After the move-VM step, applies the **render-side translation glide**
+    /// (interpreted — see [`apply_translation_update`]'s provenance note; the
+    /// retail `FUN_801F811C` is the screen-mask widget handler, faithfully
+    /// ported as [`crate::screen_fx::MaskWidget`]): the part's world
     /// position LERPs toward the move-VM anim-bank target (`anim_3c/3e/40`, set
     /// by op `0x00 ANIM_BANK_SET` as `v << 3`) over the time ratio
     /// `+0x9C / +0x9E`, with `+0x9C` advanced by `frame_delta` each frame (the
@@ -334,56 +333,35 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     })
 }
 
-/// Per-axis linear interpolation, port of `FUN_801DE4C8(a, b, t, D, 1)` for the
-/// `mode == 1` path the summon render overlay always uses:
-///
-/// ```text
-///   if (a == b || D <= t) return a;          // at/past the endpoint → target
-///   return (a - b) * t / D + b;              // integer truncating division
-/// ```
-///
-/// `a` = target, `b` = current, `t` = current time, `D` = duration. The full
-/// `FUN_801DE4C8` is a multi-mode interpolator (modes 2/3/4 add ease curves);
-/// `FUN_801F811C` only ever calls it with `mode = 1` (plain linear), so only
-/// that arm is ported. Retail divides `i32`s with truncation toward zero, which
-/// is exactly Rust's `/` on `i32`.
-// PORT: FUN_801DE4C8
+/// Per-axis linear interpolation — the `mode == 1` arm of `FUN_801DE4C8`
+/// (`(a - b) * t / D + b` with truncating division; returns `a` when `a == b`
+/// or `t >= D`). The full multi-mode interpolator (ease modes 2/3/4 included)
+/// is ported as [`crate::screen_fx::interp`]; this delegates to it.
+// REF: FUN_801DE4C8 (full port: screen_fx::interp)
 fn lerp_axis(target: i32, cur: i32, t: i32, d: i32) -> i32 {
-    if target == cur || d <= t {
-        return target;
-    }
-    (target - cur) * t / d + cur
+    crate::screen_fx::interp(target, cur, t, d, crate::screen_fx::InterpMode::Linear)
 }
 
-/// Render-side translation update — port of the summon render overlay
-/// `FUN_801F811C` (per-frame part-position update; byte-identical in the dance
-/// and baka-fighter overlay images, see
-/// `ghidra/scripts/funcs/overlay_dance_801f811c.txt`).
+/// Render-side translation glide for the stand-in scene-graph: each axis
+/// tweens toward `origin + anim bank` over `+0x9C / +0x9E`, snapping when no
+/// tween is active (`+0x9E == 0`) and latching exactly on completion.
 ///
-/// ```text
-///   if (actor[+0x9e] == 0) { actor[+0x14..1a] = actor[+0x3c..42]; }   // snap
-///   else {
-///     actor[+0x9c] += DAT_1f800393;                                   // advance
-///     if (actor[+0x9e] < actor[+0x9c]) actor[+0x9c] = actor[+0x9e];   // clamp
-///     for axis in {x:3c↔14, y:3e↔16, z:40↔18, w:42↔1a}:
-///       if (target != cur) cur = FUN_801de4c8(target, cur, +0x9c, +0x9e, 1);
-///     if (actor[+0x9c] == actor[+0x9e]) {                             // reached
-///       actor[+0x9e] = 0; actor[+0x14..1a] = actor[+0x3c..42];        // latch
-///     }
-///   }
-/// ```
+/// Provenance note: this glide **reuses the tween shape of `FUN_801F811C`**
+/// (advance-clamp-lerp-latch over the `+0x9C/+0x9E` clock with the
+/// `FUN_801DE4C8` mode-1 lerp + `FUN_801DE648` sized store), but the retail
+/// function is **not** a summon-part position update — it is the screen-mask
+/// (iris) widget handler of the PROT-0900 screen-effect family, whose four
+/// channels are 2D rect edges and whose quads are the black border bands. The
+/// faithful port lives in [`crate::screen_fx::MaskWidget`]. As an engine
+/// interpretation this glide also diverges from the retail tween math in one
+/// respect: it re-lerps from the **updated** current position each frame
+/// (a slightly eased trajectory), where the retail widget re-interpolates
+/// from a start value held fixed until the latch.
 ///
 /// The anim banks are summon-local offsets, so the engine adds `origin` (the
-/// cast target) to the lerp endpoint to seat the part in world space — the
-/// engine renders parts directly (no parent transform), where retail places the
-/// whole summon via the camera/parent. The engine models the world `w` axis
-/// (`+0x1a`, only consumed by the render quad emit) implicitly and tracks just
-/// the x/y/z it renders.
-///
-/// `frame_delta` is the engine's analog of retail's per-frame `DAT_1F800393`:
-/// the `+0x9C` interpolation cursor advances by it each frame, exactly as the
-/// overlay advances the keyframe time.
-// PORT: FUN_801F811C
+/// cast target) to the lerp endpoint to seat the part in world space.
+/// `frame_delta` plays the role of retail's per-frame `DAT_1F800393`.
+// REF: FUN_801F811C (faithful port: screen_fx::MaskWidget)
 // REF: FUN_801DE648 (sized store of the lerp result; here a plain field write)
 fn apply_translation_update(state: &mut ActorState, origin: [i16; 3], frame_delta: u16) {
     // Retail reads `*(i16)(actor+0x9C)` (low half of the i32 field_9c) and
@@ -567,7 +545,7 @@ mod tests {
 
     #[test]
     fn lerp_update_glides_toward_target_and_lands_exactly_on_completion() {
-        // Drive `apply_translation_update` (the ported FUN_801F811C) across
+        // Drive `apply_translation_update` (the FUN_801F811C-shaped glide) across
         // several frames with an active interpolation window (+0x9E = duration)
         // and assert the world position moves monotonically toward the
         // (origin + anim-bank) target and reaches it exactly on completion.

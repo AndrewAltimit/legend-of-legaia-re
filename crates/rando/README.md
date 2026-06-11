@@ -202,16 +202,24 @@ for the `Coupled` / `Decoupled` semantics.
 
 Intra-town ("house / interior") door randomizer (`house_door` module).
 
-Entering a house is a field-VM `0x23 MOVE_TO` to an interior tile within the
+Entering a house is a field-VM MOVE_TO to an interior tile within the
 **same** scene (intra-scene reposition, pinned via `probe.step.find_writer`; writer
-in `FUN_801de840` `case 0x23`).
+in `FUN_801de840` `case 0x23`). The door warp has a clean structural signature:
+the **cross-context player form `0xA3 0xF8 xb zb`** (opcode `0x23 | 0x80`
+dispatched into the system/player channel `0xF8`) inside a **named partition-0
+door record** — record names pair fullwidth ＩＮ/ＯＵＴ, the 入口/出口 kanji,
+or trailing Ａ/Ｂ endpoint letters. Plain `0x23` MOVE_TOs are actor (NPC /
+prop / cutscene) positioning and are never touched.
 
-- `SceneHouseDoors::locate` enumerates a scene's non-sentinel MOVE_TO sites
-  (`legaia_asset::man_edit::move_to_sites`).
-- `shuffle` does a per-scene, multiset-preserving shuffle of the target tiles
-  (same-size 2-byte operand edit).
+- `SceneHouseDoors::locate` enumerates a scene's classified door warps
+  (partition-0 record walk with the chest module's inline-dialogue skip).
+- `shuffle` does a per-scene, **class-preserving** shuffle: interior landing
+  tiles permute among ＩＮ sites, exterior doorsteps among ＯＵＴ sites
+  (same-size 2-byte operand edits) — every exit still lands outside, so no
+  interior-to-interior softlock is constructible.
 
-Shuffle-only + experimental (the op is shared with NPC/cutscene movement).
+Shuffle-only. Census + signature + the runtime-captured Mei's-house anchor are
+pinned by the disc-gated `house_door_classifier_real` test.
 
 ## Shops
 
@@ -329,7 +337,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Steals | `current_steals` | `randomize_steals` | the steal table (`StealApplyReport`). |
 | Arts | `current_arts` | `randomize_arts` | Tactical-Arts button combos (`ArtsApplyReport`; same-size `+8` pointer reassignment, input count + within-character uniqueness preserved). |
 | Doors | `current_doors` | `randomize_doors` | scene transitions (`DoorApplyReport`; takes a `DoorCoupling` = `Coupled` re-pairs doors into genuinely two-way connections / `Decoupled` reassigns each independently). |
-| House doors | `current_house_doors` | `randomize_house_doors` | intra-town house doors (`HouseDoorApplyReport`; per-scene MOVE_TO tile shuffle, shuffle-only). |
+| House doors | `current_house_doors` | `randomize_house_doors` | intra-town house doors (`HouseDoorApplyReport`; per-scene class-preserving shuffle of the player door warps, shuffle-only). |
 | Starting items | `current_starting_items` | `randomize_starting_items` | the new game's starting inventory (`StartingItemsApplyReport`; rewrites the SCUS seed code with `n` random consumables). |
 | Name injection | — | `inject_seru_bell_name` | names the unnamed accessory. |
 
@@ -391,10 +399,10 @@ legaia-rando steals --input DISC.bin
 # Read-only: list every scene-transition door/exit (home scene -> destination).
 legaia-rando doors --input DISC.bin
 
-# Read-only: list the intra-town (house) MOVE_TO target tiles per scene.
+# Read-only: list the intra-town (house) door-warp target tiles per scene.
 legaia-rando house-doors --input DISC.bin
 
-# Experimental: shuffle intra-town house doors (per-scene MOVE_TO tile shuffle).
+# Shuffle intra-town house doors (per-scene class-preserving warp shuffle).
 legaia-rando randomize --input DISC.bin --seed myrun --house-doors shuffle
 
 # Bidirectional door shuffle (walk back the way you came).

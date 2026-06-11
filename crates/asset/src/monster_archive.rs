@@ -874,7 +874,19 @@ fn unpack_part(b: &[u8]) -> PartPose {
 /// `entry_off`. Returns `None` when the stream head or frame data falls outside
 /// the block, or the part/frame counts are zero.
 fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<MonsterAnimation> {
-    let s = entry_off + ANIM_STREAM_OFFSET;
+    parse_animation_stream(block, action_id, entry_off + ANIM_STREAM_OFFSET)
+}
+
+/// Parse a packed `[u8 parts][u8 frames][9-byte TRS records]` stream starting
+/// at block offset `s`. Shared between the monster archive's per-action
+/// entries (stream at entry `+0x8c`) and the player battle files' record[0]
+/// action entries (stream at entry `+0xAC`;
+/// see [`crate::battle_char_assembly::battle_animations`]).
+pub(crate) fn parse_animation_stream(
+    block: &[u8],
+    action_id: u8,
+    s: usize,
+) -> Option<MonsterAnimation> {
     let part_count = *block.get(s)? as usize;
     let frame_count = *block.get(s + 1)? as usize;
     if part_count == 0 || frame_count == 0 {

@@ -185,6 +185,13 @@ pub struct UploadedColorMesh {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     index_count: u32,
+    /// `[(first_index, index_count); 4]` ranges of the per-ABR-mode
+    /// semi-transparent "tail" appended past `index_count` in `index_buf`
+    /// (see [`psx_blend::append_semi_tail_words`]). Drawn by the
+    /// PSX-faithful blend pass; all-zero counts when the mesh has no semi
+    /// prims (always the case via [`Renderer::upload_color_mesh`] - blend
+    /// words come in through [`Renderer::upload_color_mesh_blended`]).
+    semi_ranges: [(u32, u32); 4],
 }
 
 impl UploadedColorMesh {
@@ -194,6 +201,17 @@ impl UploadedColorMesh {
 
     pub fn triangle_count(&self) -> u32 {
         self.index_count / 3
+    }
+
+    /// Per-ABR-mode index ranges of the semi-transparent tail (see
+    /// [`psx_blend::append_semi_tail_words`]).
+    pub fn semi_ranges(&self) -> [(u32, u32); 4] {
+        self.semi_ranges
+    }
+
+    /// True when any prim in this mesh carries the semi-transparency enable.
+    pub fn has_semi_prims(&self) -> bool {
+        self.semi_ranges.iter().any(|&(_, n)| n > 0)
     }
 }
 
@@ -3476,6 +3494,13 @@ pub struct Renderer {
     /// scene-uniforms dynamic-offset layout, no VRAM group). Draws a `Scene`'s
     /// `color_draws` (`F*`/`G*` props).
     scene_color_mesh_pipeline: wgpu::RenderPipeline,
+    /// PSX semi-transparency blend pipelines for
+    /// [`Self::scene_color_mesh_pipeline`], one per ABR mode 0..=3 (see
+    /// [`psx_blend`]). Unlike the textured blend pass there is no per-texel
+    /// STP gate: an untextured ABE prim blends *all* its pixels, so the
+    /// fragment entries just emit the interpolated vertex colour (mode 3
+    /// pre-scaled by 0.25) and the fixed-function blend state does the rest.
+    scene_color_mesh_blend_pipelines: [wgpu::RenderPipeline; 4],
     scene_uniforms_bgl: wgpu::BindGroupLayout,
     scene_uniforms_bg: std::cell::RefCell<wgpu::BindGroup>,
     scene_uniforms_buf: std::cell::RefCell<wgpu::Buffer>,
@@ -4233,7 +4258,9 @@ impl Renderer {
 
         // Vertex-colour mesh pipeline (untextured F*/G* props): same scene-
         // uniforms dynamic-offset layout as the lines pipeline (group 0 only,
-        // no VRAM), TriangleList, position(12) + Unorm8x4 colour(4) = 16 bytes.
+        // no VRAM), TriangleList, position(12) + Unorm8x4 colour(4) +
+        // Uint32 blend word(4) = 20 bytes. The blend word carries the prim's
+        // ABE/ABR state in the low 16 bits ([`psx_blend::pack_blend_word`]).
         let color_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia color mesh shader"),
             source: wgpu::ShaderSource::Wgsl(compose_psx_shader(COLOR_MESH_SHADER_SRC).into()),
@@ -4244,6 +4271,28 @@ impl Renderer {
                 bind_group_layouts: &[&scene_uniforms_bgl],
                 push_constant_ranges: &[],
             });
+        let color_mesh_attributes = [
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+            wgpu::VertexAttribute {
+                offset: 12,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Unorm8x4,
+            },
+            wgpu::VertexAttribute {
+                offset: 16,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Uint32,
+            },
+        ];
+        let color_mesh_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: 20,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &color_mesh_attributes,
+        };
         let scene_color_mesh_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("legaia scene color mesh pipeline"),
@@ -4251,22 +4300,7 @@ impl Renderer {
                 vertex: wgpu::VertexState {
                     module: &color_mesh_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 16,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 0,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 12,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Unorm8x4,
-                            },
-                        ],
-                    }],
+                    buffers: std::slice::from_ref(&color_mesh_vertex_layout),
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -4293,6 +4327,58 @@ impl Renderer {
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
                 cache: None,
+            });
+        // PSX semi-transparency blend pipelines for the colour-mesh path,
+        // one per ABR mode. Same shader module + vertex layout as the opaque
+        // colour pipeline; the blend-pass fragment entries emit the prim
+        // colour (mode 3 pre-scales by 0.25) and the per-mode fixed-function
+        // [`psx_blend::blend_state`] applies the PSX equation. Unlike the
+        // VRAM-mesh blend pass there is no STP discard - an untextured ABE
+        // prim blends every pixel. Depth: LessEqual without writing, like
+        // the textured blend pass.
+        let scene_color_mesh_blend_pipelines: [wgpu::RenderPipeline; 4] =
+            std::array::from_fn(|m| {
+                let mode = m as u8;
+                let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
+                    "fs_blend"
+                } else {
+                    "fs_blend_quarter"
+                };
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("legaia scene color mesh blend pipeline"),
+                    layout: Some(&scene_color_mesh_layout),
+                    vertex: wgpu::VertexState {
+                        module: &color_mesh_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: std::slice::from_ref(&color_mesh_vertex_layout),
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &color_mesh_shader,
+                        entry_point: Some(entry),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: config.format,
+                            blend: Some(psx_blend::blend_state(mode)),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        cull_mode: None,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: DEPTH_FORMAT,
+                        depth_write_enabled: false,
+                        depth_compare: wgpu::CompareFunction::LessEqual,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
+                    }),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                })
             });
 
         // Text pipeline: 2D textured quads in NDC, alpha blended, no depth.
@@ -4430,6 +4516,7 @@ impl Renderer {
             scene_vram_mesh_blend_pipelines,
             scene_lines_pipeline,
             scene_color_mesh_pipeline,
+            scene_color_mesh_blend_pipelines,
             scene_uniforms_bgl,
             scene_uniforms_bg: std::cell::RefCell::new(scene_uniforms_bg),
             scene_uniforms_buf: std::cell::RefCell::new(scene_uniforms_buf),
@@ -4727,18 +4814,53 @@ impl Renderer {
     /// Upload an untextured vertex-colour triangle mesh: position + per-vertex
     /// `[r, g, b]` (each 0..255, alpha forced opaque) + triangle indices. The
     /// inverse of [`Self::upload_vram_mesh`] for the `F*`/`G*` props that carry
-    /// colours instead of UVs ([`legaia_tmd::mesh::ColorMesh`]).
+    /// colours instead of UVs ([`legaia_tmd::mesh::ColorMesh`]). Every prim is
+    /// treated as opaque; use [`Self::upload_color_mesh_blended`] when the
+    /// source prims carry semi-transparency (ABE) state.
     pub fn upload_color_mesh(
         &self,
         positions: &[[f32; 3]],
         colors: &[[u8; 3]],
         indices: &[u32],
     ) -> Result<UploadedColorMesh> {
+        self.upload_color_mesh_blended(positions, colors, indices, &[])
+    }
+
+    /// [`Self::upload_color_mesh`] plus per-vertex PSX semi-transparency
+    /// state. `blend` is index-aligned with `positions`: each entry is a
+    /// blend word packing the prim's ABE enable into bit 15 and its ABR
+    /// blend mode into bits 5..=6 ([`psx_blend::pack_blend_word`] - the
+    /// same packing the textured path rides on the TSB attribute). All
+    /// corners of a triangle must share one word (the mesh builders emit
+    /// fresh per-corner vertices per prim). An empty slice means "all
+    /// opaque" and is what [`Self::upload_color_mesh`] passes.
+    ///
+    /// Semi-transparent triangles are duplicated into a per-ABR-mode index
+    /// tail ([`psx_blend::append_semi_tail_words`]) drawn by the
+    /// PSX-faithful blend pass; on real hardware an untextured ABE prim
+    /// blends **all** its pixels (there is no per-texel STP gate), so in
+    /// PSX mode the opaque pass discards those prims entirely and the
+    /// blend pass owns them. The default (non-PSX) path still draws
+    /// everything opaque, unchanged.
+    pub fn upload_color_mesh_blended(
+        &self,
+        positions: &[[f32; 3]],
+        colors: &[[u8; 3]],
+        indices: &[u32],
+        blend: &[u16],
+    ) -> Result<UploadedColorMesh> {
         if positions.len() != colors.len() {
             anyhow::bail!(
                 "color mesh: positions ({}) and colors ({}) length mismatch",
                 positions.len(),
                 colors.len()
+            );
+        }
+        if !blend.is_empty() && blend.len() != positions.len() {
+            anyhow::bail!(
+                "color mesh: positions ({}) and blend words ({}) length mismatch",
+                positions.len(),
+                blend.len()
             );
         }
         if !indices.len().is_multiple_of(3) {
@@ -4756,13 +4878,15 @@ impl Renderer {
                 positions.len()
             );
         }
-        let mut bytes = Vec::with_capacity(positions.len() * 16);
-        for (pos, c) in positions.iter().zip(colors.iter()) {
+        let mut bytes = Vec::with_capacity(positions.len() * 20);
+        for (i, (pos, c)) in positions.iter().zip(colors.iter()).enumerate() {
             bytes.extend_from_slice(bytemuck::cast_slice(pos));
             bytes.push(c[0]);
             bytes.push(c[1]);
             bytes.push(c[2]);
             bytes.push(0xFF); // opaque alpha (Unorm8x4)
+            let word = blend.get(i).copied().unwrap_or(0) as u32;
+            bytes.extend_from_slice(&word.to_le_bytes());
         }
         let vertex_buf = self
             .device
@@ -4771,17 +4895,26 @@ impl Renderer {
                 contents: &bytes,
                 usage: wgpu::BufferUsages::VERTEX,
             });
+        // Append the per-ABR-mode semi-transparent tail for the PSX-faithful
+        // blend pass. The opaque pass still draws `0..indices.len()`
+        // (`index_count` below), so the default path is unchanged.
+        let (indices_with_tail, semi_ranges) = if blend.is_empty() {
+            (indices.to_vec(), [(0u32, 0u32); 4])
+        } else {
+            psx_blend::append_semi_tail_words(indices, blend)
+        };
         let index_buf = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("color mesh index buffer"),
-                contents: bytemuck::cast_slice(indices),
+                contents: bytemuck::cast_slice(&indices_with_tail),
                 usage: wgpu::BufferUsages::INDEX,
             });
         Ok(UploadedColorMesh {
             vertex_buf,
             index_buf,
             index_count: indices.len() as u32,
+            semi_ranges,
         })
     }
 
@@ -5272,6 +5405,46 @@ impl Renderer {
                             }
                         }
                     }
+                    // Untextured (colour-mesh) semi-transparency blend pass:
+                    // the opaque colour pass discarded every ABE prim (an
+                    // untextured semi prim blends ALL its pixels - no STP
+                    // gate), so re-draw each colour draw's per-ABR-mode
+                    // index tail with the matching blend pipeline. Same
+                    // ordering rationale as the textured blend pass above.
+                    if self.psx_mode.get()
+                        && scene.color_draws.iter().any(|d| d.mesh.has_semi_prims())
+                    {
+                        let c = psx_blend::MODE0_BLEND_CONSTANT;
+                        rp.set_blend_constant(wgpu::Color {
+                            r: c,
+                            g: c,
+                            b: c,
+                            a: c,
+                        });
+                        let color_base =
+                            scene.draws.len() as u32 + scene.overlay_lines.is_some() as u32;
+                        for (i, draw) in scene.color_draws.iter().enumerate() {
+                            if !draw.mesh.has_semi_prims() {
+                                continue;
+                            }
+                            let off = (color_base + i as u32) * stride;
+                            rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
+                            rp.set_index_buffer(
+                                draw.mesh.index_buf.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+                            for (mode, &(start, count)) in
+                                draw.mesh.semi_ranges().iter().enumerate()
+                            {
+                                if count == 0 {
+                                    continue;
+                                }
+                                rp.set_pipeline(&self.scene_color_mesh_blend_pipelines[mode]);
+                                rp.set_bind_group(0, bg, &[off]);
+                                rp.draw_indexed(start..start + count, 0, 0..1);
+                            }
+                        }
+                    }
                     let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                     if let Some(s) = scene.overlay_sprites {
                         overlays.push(s);
@@ -5729,6 +5902,19 @@ pub mod psx_blend {
         ((tsb >> 5) & 0x3) as u8
     }
 
+    /// Pack a prim's semi-transparency state into a blend word using the
+    /// same bit positions the textured path rides on the TSB attribute:
+    /// ABE → bit 15 ([`TSB_SEMI_TRANSPARENT_BIT`]), ABR → bits 5..=6.
+    /// The inverse of [`prim_semi_transparent`] + [`abr_mode`]. This is
+    /// the per-vertex word [`crate::Renderer::upload_color_mesh_blended`]
+    /// consumes for untextured prims (which carry no real TSB - their ABE
+    /// comes from the TMD group mode byte, and the blend mode from
+    /// whatever texpage/draw-env state the caller resolves; mode 0 is the
+    /// PSX draw-env default).
+    pub fn pack_blend_word(abe: bool, abr: u8) -> u16 {
+        (if abe { TSB_SEMI_TRANSPARENT_BIT } else { 0 }) | (((abr & 0x3) as u16) << 5)
+    }
+
     /// Foreground pre-scale applied in the blend-pass fragment shader for
     /// the given ABR mode. Only mode 3 (`B + 0.25*F`) scales; the other
     /// modes get their factors from the fixed-function blend state.
@@ -5796,11 +5982,27 @@ pub mod psx_blend {
     /// builders emit fresh per-corner vertices per prim, so all corners
     /// share one `(cba, tsb)`.
     pub fn append_semi_tail(indices: &[u32], cba_tsb: &[[u16; 2]]) -> (Vec<u32>, [(u32, u32); 4]) {
+        append_semi_tail_by(indices, |v| cba_tsb[v][1])
+    }
+
+    /// [`append_semi_tail`] for the untextured colour-mesh path, whose
+    /// vertices carry a bare per-vertex blend word ([`pack_blend_word`])
+    /// instead of a `(cba, tsb)` pair. Same bucketing semantics.
+    pub fn append_semi_tail_words(indices: &[u32], blend: &[u16]) -> (Vec<u32>, [(u32, u32); 4]) {
+        append_semi_tail_by(indices, |v| blend[v])
+    }
+
+    /// Shared bucketing core: `word_of` maps a vertex index to its packed
+    /// blend word (ABE bit 15, ABR bits 5..=6).
+    fn append_semi_tail_by(
+        indices: &[u32],
+        word_of: impl Fn(usize) -> u16,
+    ) -> (Vec<u32>, [(u32, u32); 4]) {
         let mut buckets: [Vec<u32>; 4] = Default::default();
         for tri in indices.chunks_exact(3) {
-            let tsb = cba_tsb[tri[0] as usize][1];
-            if prim_semi_transparent(tsb) {
-                buckets[abr_mode(tsb) as usize].extend_from_slice(tri);
+            let word = word_of(tri[0] as usize);
+            if prim_semi_transparent(word) {
+                buckets[abr_mode(word) as usize].extend_from_slice(tri);
             }
         }
         let mut out = indices.to_vec();
@@ -6159,10 +6361,17 @@ fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 /// Vertex-colour mesh shader: untextured `F*`/`G*` props. Each vertex carries a
-/// position and an RGB colour, flat face-shaded (screen-space-derivative normal
-/// times a Lambert term, the same ambient-biased shade as the textured / VRAM
-/// paths) so the silhouette reads. No VRAM lookup - the colour comes straight
-/// from the TMD's per-prim colour block (`legaia_tmd::mesh::ColorMesh`).
+/// position, an RGB colour, and a blend word (ABE bit 15 + ABR bits 5..=6,
+/// see `psx_blend::pack_blend_word`), flat face-shaded (screen-space-derivative
+/// normal times a Lambert term, the same ambient-biased shade as the textured /
+/// VRAM paths) so the silhouette reads. No VRAM lookup - the colour comes
+/// straight from the TMD's per-prim colour block (`legaia_tmd::mesh::ColorMesh`).
+///
+/// PSX semi-transparency (`psx_params.z >= 0.5`): an untextured ABE prim
+/// blends **all** its pixels on retail hardware (no per-texel STP gate), so
+/// the opaque entry discards those prims entirely and the `fs_blend` /
+/// `fs_blend_quarter` entries re-draw them through the per-ABR-mode
+/// fixed-function blend pipelines.
 const COLOR_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
@@ -6176,19 +6385,32 @@ struct VsOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) @interpolate(flat) blend: u32,
 };
 
 @vertex
-fn vs_main(@location(0) position: vec3<f32>, @location(1) color: vec4<f32>) -> VsOut {
+fn vs_main(
+    @location(0) position: vec3<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) blend: u32,
+) -> VsOut {
     var out: VsOut;
     out.clip_pos = u.mvp * vec4<f32>(position, 1.0);
     out.world_pos = position;
     out.color = color;
+    out.blend = blend;
     return out;
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    // PSX-faithful mode: a semi-transparent (ABE) untextured prim blends
+    // every pixel, so nothing of it belongs in the opaque pass - the blend
+    // pass re-draws it from the per-ABR-mode index tail. Mirrors the
+    // textured opaque pass discarding STP texels of semi prims.
+    if (u.psx_params.z >= 0.5 && (in.blend & 0x8000u) != 0u) {
+        discard;
+    }
     let dx = dpdx(in.world_pos);
     let dy = dpdy(in.world_pos);
     let n = normalize(cross(dx, dy));
@@ -6202,6 +6424,25 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
     let rgb = psx_dither(in.color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
+}
+
+// Blend-pass entries: emit the prim colour as the foreground term F; the
+// per-mode fixed-function blend state combines it with the framebuffer.
+// Only runs in PSX-faithful mode, where the synthetic Lambert is off
+// (shade = 1.0), and skips the dither stage like the textured blend pass
+// (retail dithers the post-blend value during the VRAM write).
+fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
+    return vec4<f32>(in.color.rgb * f_scale, 1.0);
+}
+
+@fragment
+fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, 1.0);
+}
+
+@fragment
+fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, 0.25);
 }
 "#;
 
@@ -7887,14 +8128,18 @@ mod tests {
         }
     }
 
-    /// The VRAM-mesh shader must expose the blend-pass entry points the
-    /// semi-transparency pipelines compile against.
+    /// The VRAM-mesh and colour-mesh shaders must expose the blend-pass
+    /// entry points the semi-transparency pipelines compile against.
     #[test]
     fn vram_shader_has_blend_entry_points() {
         for entry in ["fs_main", "fs_blend", "fs_blend_quarter"] {
             assert!(
                 VRAM_MESH_SHADER_SRC.contains(&format!("fn {entry}(")),
-                "missing entry point {entry}"
+                "vram shader missing entry point {entry}"
+            );
+            assert!(
+                COLOR_MESH_SHADER_SRC.contains(&format!("fn {entry}(")),
+                "color mesh shader missing entry point {entry}"
             );
         }
     }
@@ -8013,6 +8258,63 @@ mod tests {
         let cba_tsb = vec![[0u16, 0x001Au16]; 6];
         let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5];
         let (out, ranges) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        assert_eq!(out, indices);
+        assert_eq!(ranges, [(6, 0); 4]);
+    }
+
+    /// `pack_blend_word` must round-trip through the extractors the blend
+    /// pass uses, and must agree bit-for-bit with the TSB packing the
+    /// textured path rides (ABE bit 15, ABR bits 5..=6).
+    #[test]
+    fn psx_blend_pack_blend_word_round_trips() {
+        for abr in 0u8..4 {
+            let semi = psx_blend::pack_blend_word(true, abr);
+            assert!(psx_blend::prim_semi_transparent(semi));
+            assert_eq!(psx_blend::abr_mode(semi), abr);
+            assert_eq!(semi, 0x8000 | ((abr as u16) << 5));
+            let opaque = psx_blend::pack_blend_word(false, abr);
+            assert!(!psx_blend::prim_semi_transparent(opaque));
+            assert_eq!(psx_blend::abr_mode(opaque), abr);
+        }
+        // Out-of-range ABR is masked to 2 bits.
+        assert_eq!(psx_blend::abr_mode(psx_blend::pack_blend_word(true, 7)), 3);
+    }
+
+    /// The word-slice variant (untextured colour-mesh path) must bucket
+    /// identically to `append_semi_tail` given equivalent per-vertex words.
+    #[test]
+    fn psx_blend_append_semi_tail_words_buckets_per_mode() {
+        // 4 prims x 3 per-corner verts: opaque, semi ABR 0, semi ABR 2,
+        // semi ABR 3 (in that order) - the colour-mesh packing of the
+        // textured test's TSB values.
+        let mut blend = Vec::new();
+        for (abe, abr) in [(false, 0u8), (true, 0), (true, 2), (true, 3)] {
+            blend.extend_from_slice(&[psx_blend::pack_blend_word(abe, abr); 3]);
+        }
+        let indices: Vec<u32> = (0..12).collect();
+        let (out, ranges) = psx_blend::append_semi_tail_words(&indices, &blend);
+        // Original indices untouched at the front (the opaque pass range).
+        assert_eq!(&out[..12], indices.as_slice());
+        assert_eq!(ranges[0], (12, 3));
+        assert_eq!(ranges[1], (15, 0));
+        assert_eq!(ranges[2], (15, 3));
+        assert_eq!(ranges[3], (18, 3));
+        assert_eq!(&out[12..15], &[3, 4, 5]);
+        assert_eq!(&out[15..18], &[6, 7, 8]);
+        assert_eq!(&out[18..21], &[9, 10, 11]);
+
+        // Cross-check against the textured-path partitioner on the same data.
+        let cba_tsb: Vec<[u16; 2]> = blend.iter().map(|&w| [0u16, w]).collect();
+        let (out_tsb, ranges_tsb) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        assert_eq!(out, out_tsb);
+        assert_eq!(ranges, ranges_tsb);
+    }
+
+    #[test]
+    fn psx_blend_append_semi_tail_words_all_opaque_is_identity() {
+        let blend = vec![psx_blend::pack_blend_word(false, 1); 6];
+        let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5];
+        let (out, ranges) = psx_blend::append_semi_tail_words(&indices, &blend);
         assert_eq!(out, indices);
         assert_eq!(ranges, [(6, 0); 4]);
     }

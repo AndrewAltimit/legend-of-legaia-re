@@ -539,6 +539,21 @@ impl World {
         // (disc-free / synthetic battles never install the table).
         let move_power = self.enemy_move_power(caster, def.id);
 
+        // A party member's Seru-magic cast trains the spell: each damaged
+        // target contributes spell XP (the `FUN_801ddb30` accrual tail runs
+        // once per finisher call, i.e. per hit — kernel
+        // `battle_formulas::summon_spell_xp_gain`), summed here and banked
+        // after the cast with the level-up check (`FUN_801e70bc`,
+        // [`Self::accrue_summon_spell_xp`]). Retail keys on "attacker slot 7"
+        // (the summon body); the engine's summon coverage is the
+        // [`crate::summon::SERU_SUMMON_IDS`] block, so those are the ids that
+        // accrue. `group_target` mirrors the summon's target byte (`+0x1DD`
+        // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
+        let is_party_summon_cast = (caster as usize) < self.party_count as usize
+            && crate::summon::SERU_SUMMON_IDS.contains(&def.id);
+        let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
+        let mut summon_xp_gain: u32 = 0;
+
         for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
                 continue;
@@ -590,7 +605,26 @@ impl World {
                     }
                 }
             }
+            // Per-hit spell-XP gain (FUN_801ddb30 tail): the final damage
+            // delta against the target's live/max HP at the moment of the hit
+            // (the snapshot taken above, before the fold applies the damage).
+            if is_party_summon_cast
+                && let crate::spells::SpellOutcome::Damage { amount, .. } = &outcome
+            {
+                summon_xp_gain =
+                    summon_xp_gain.saturating_add(vm::battle_formulas::summon_spell_xp_gain(
+                        *amount as u32,
+                        snap.target_hp,
+                        snap.target_hp_max,
+                        group_target,
+                    ));
+            }
             self.fold_spell_outcome(outcome);
+        }
+        // Bank the accrued XP and run the once-per-cast level-up check
+        // (FUN_801e70bc fires at summon return, state 0x36).
+        if is_party_summon_cast {
+            self.accrue_summon_spell_xp(caster, def.id, summon_xp_gain);
         }
         // Cast band (live-loop path): a player Seru-magic id resolves to a
         // per-summon overlay. Request the spawn at the first real target's
@@ -729,7 +763,7 @@ impl World {
     /// though the record field holds 36; mirrored here. Returns `1` (the
     /// [`vm::battle_formulas::apply_magic_power`] identity) when the roster
     /// doesn't carry the spell — a fresh cast with no recorded level.
-    fn caster_magic_power_byte(&self, caster: u8, spell_id: u8) -> u8 {
+    pub(super) fn caster_magic_power_byte(&self, caster: u8, spell_id: u8) -> u8 {
         const RETAIL_SEARCH_BOUND: usize = 0x20;
         let Some(record) = self.roster.members.get(caster as usize) else {
             return 1;
@@ -1261,6 +1295,74 @@ impl World {
         self.seru_registry = registry;
     }
 
+    /// Install the magic-XP threshold table from `SCUS_942.54` bytes
+    /// ([`crate::magic_xp::thresholds_from_scus`], the static table at
+    /// `0x8007656C`). Boot wires this once; without it summon casts accrue
+    /// spell XP but never level the spell up. Returns whether the table
+    /// decoded.
+    pub fn install_magic_xp_thresholds(&mut self, scus: &[u8]) -> bool {
+        self.magic_xp_thresholds = crate::magic_xp::thresholds_from_scus(scus);
+        self.magic_xp_thresholds.is_some()
+    }
+
+    /// Drain the summon-magic level-up events (`(party_slot, spell_id,
+    /// new_level)`) resolved since the last drain — the engine analogue of
+    /// the retail level-up banner (`FUN_801e70bc` fires UI element `0x65`).
+    pub fn drain_magic_level_ups(&mut self) -> Vec<(u8, u8, u8)> {
+        std::mem::take(&mut self.magic_level_ups)
+    }
+
+    /// Accrue summon spell-XP for `caster`'s cast of `spell_id` and resolve a
+    /// level-up.
+    ///
+    /// PORT: FUN_801e70bc (summon-magic level-up check, battle overlay 0898;
+    /// `ghidra/scripts/funcs/overlay_battle_action_801e70bc.txt`) — find the
+    /// cast spell id in the caster record's spell-id list (`+0x13D`, bound
+    /// `0x20`), compare the accrued XP (`+0x8` u32 array) against the
+    /// threshold table at `0x8007656C` indexed by the spell's level byte
+    /// (`+0x161` array), and bump the level (strict `threshold < xp`, level
+    /// capped below 9 — kernel
+    /// [`vm::battle_formulas::summon_magic_levels_up`]).
+    ///
+    /// `gain` is the summed per-target accrual from the damage finisher's
+    /// spell-XP tail (`FUN_801ddb30`, kernel
+    /// [`vm::battle_formulas::summon_spell_xp_gain`]) — the caller computes it
+    /// per target hit, mirroring retail's one-finisher-call-per-hit shape.
+    ///
+    /// Retail re-checks the threshold once per summon return (state `0x36`),
+    /// so at most one level is gained per cast — mirrored here. The leveled
+    /// byte is what the next cast's magic-power stage reads
+    /// ([`Self::caster_magic_power_byte`]). A level-up is recorded in
+    /// [`Self::magic_level_ups`] (the banner the retail check fires as UI
+    /// element `0x65`).
+    ///
+    /// Unmodelled retail gates (skips the engine doesn't reproduce): the
+    /// per-battle no-reward flag `_DAT_8007BAC0` (scripted fights) and the
+    /// unidentified accrual gate `_DAT_8007BDB8`.
+    pub(super) fn accrue_summon_spell_xp(&mut self, caster: u8, spell_id: u8, gain: u32) {
+        let Some(record) = self.roster.members.get_mut(caster as usize) else {
+            return;
+        };
+        let Some(slot) = crate::magic_xp::spell_slot(record, spell_id) else {
+            // Retail falls through with slot 0x20 and touches bytes past the
+            // arrays; the engine skips a spell the roster doesn't carry.
+            return;
+        };
+        crate::magic_xp::add_spell_xp(record, slot, gain);
+
+        let Some(thresholds) = self.magic_xp_thresholds else {
+            return;
+        };
+        let mut list = record.spell_list();
+        let level = list.levels[slot];
+        let xp = crate::magic_xp::spell_xp(record, slot);
+        if vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, &thresholds) {
+            list.levels[slot] = level + 1;
+            record.set_spell_list(list);
+            self.magic_level_ups.push((caster, spell_id, level + 1));
+        }
+    }
+
     /// Resolve this battle's captured monsters into Seru-learning progress.
     ///
     /// Drains [`Self::battle_captures`] (so the list is always cleared), maps
@@ -1527,6 +1629,87 @@ impl World {
     ///
     /// On [`StepOutcome::BattleComplete`] it runs [`Self::finish_battle`] to
     /// apply loot and return to the field.
+    /// The Lost Grail "Final Heal" auto-revive sweep.
+    ///
+    /// PORT: FUN_801e6968 (battle overlay 0898;
+    /// `ghidra/scripts/funcs/overlay_battle_action_801e6968.txt`) — the
+    /// action-cleanup helper state `0x50` of `FUN_801E295C` calls before its
+    /// liveness count. For each party member in scope that is **down** (live
+    /// HP `+0x14C` == 0) and carries ability bit `0x27` — *Final Heal*, the
+    /// Lost Grail passive, record `+0xF8 & 0x80` (bit 39 = word 1 bit 7 of
+    /// the `+0xF4` bitfield) — retail:
+    ///
+    /// - revives at **full max HP** via `FUN_800402F4(4, 1, slot)` (the
+    ///   item-effect apply handler's revive class with the non-zero tier:
+    ///   `uVar13 = max_hp`, statuses cleared — `800402f4.txt` case 4);
+    /// - **consumes one equipped Lost Grail** (item id `0xE7`): zeroes the
+    ///   first accessory slot (record `+0x19B..+0x19D`, equipment array
+    ///   indices 5..8) holding `0xE7` and clears the ability bit;
+    /// - re-sets the bit when another Lost Grail is still equipped (the
+    ///   second slot scan).
+    ///
+    /// Retail dispatches on the acting summon's target byte (`+0x1DD` `< 3`
+    /// = the single party target, `== 8` = sweep all party slots); the
+    /// engine sweeps the whole party after each step — equivalent, since a
+    /// member without the bit stays down and a member with it is revived by
+    /// the first sweep after death. Item id `0xE7` = "Lost Grail"
+    /// (disc-decoded `SCUS_942.54` item table); passive `0x27` mapping per
+    /// `docs/formats/accessory-passive-table.md`. The dump's tail (first
+    /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm) is
+    /// scripted-fight glue and is not modelled here.
+    ///
+    /// REF: FUN_800402F4 (the revive arm this calls — case 4, tier 1 = full
+    /// max HP + status clear)
+    pub(super) fn apply_final_heal_revives(&mut self) {
+        const LOST_GRAIL: u8 = 0xE7;
+        const FINAL_HEAL_WORD1_BIT: u32 = 0x80; // ability bit 0x27 (39)
+        let pc = (self.party_count.min(3) as usize).min(self.actors.len());
+        for slot in 0..pc {
+            let (max_hp, down) = {
+                let a = &self.actors[slot].battle;
+                (a.max_hp, a.max_hp > 0 && a.hp == 0)
+            };
+            if !down {
+                continue;
+            }
+            let Some(record) = self.roster.members.get_mut(slot) else {
+                continue;
+            };
+            let mut bits = record.ability_bits();
+            let word1 = u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]);
+            if word1 & FINAL_HEAL_WORD1_BIT == 0 {
+                continue;
+            }
+            // Consume the first equipped Lost Grail (accessory slots 5..8).
+            let mut eq = record.equipment();
+            if let Some(i) = (5..8).find(|&i| eq.slots[i] == LOST_GRAIL) {
+                eq.slots[i] = 0;
+                record.set_equipment(eq);
+            }
+            // Clear the bit; re-set it when another Lost Grail remains.
+            let still_equipped = (5..8).any(|i| eq.slots[i] == LOST_GRAIL);
+            let word1 = if still_equipped {
+                word1
+            } else {
+                word1 & !FINAL_HEAL_WORD1_BIT
+            };
+            bits[4..8].copy_from_slice(&word1.to_le_bytes());
+            record.set_ability_bits(bits);
+            // Full revive (FUN_800402F4 class 4, tier 1): max HP + statuses
+            // cleared; liveness restored so the SM's scans see them alive.
+            self.status_effects.cure_all(slot as u8);
+            let a = &mut self.actors[slot].battle;
+            a.hp = max_hp;
+            a.liveness = 1;
+            self.battle_hit_fx.push(BattleHitFx {
+                target_slot: slot as u8,
+                amount: max_hp,
+                is_heal: true,
+                is_crit: false,
+            });
+        }
+    }
+
     pub(super) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
@@ -1561,6 +1744,13 @@ impl World {
             self.tick_battle_command();
             return None;
         }
+
+        // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup
+        // state 0x50 *before* the liveness count resolves a wipe. Run it
+        // before the SM step so a party member downed late last tick (a
+        // monster cast / DoT) is revived before this step's wipe scan, and
+        // again after this tick's damage lands (below).
+        self.apply_final_heal_revives();
 
         let outcome = self.step_battle();
 
@@ -1608,6 +1798,11 @@ impl World {
                 a.battle.liveness = 0;
             }
         }
+
+        // Final Heal sweep (FUN_801e6968) over this step's casualties — the
+        // engine point closest to retail's state-0x50 "cleanup before the
+        // liveness count" placement.
+        self.apply_final_heal_revives();
 
         // Recovery-edge ADVANCE_DONE clear (retail clears this when the
         // recovery animation finishes; we simulate the same edge inline).
