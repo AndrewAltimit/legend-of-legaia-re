@@ -5393,49 +5393,23 @@ impl Renderer {
                     }
                     // PSX-faithful semi-transparency blend pass (see
                     // [`psx_blend`]): after every opaque draw, re-draw each
-                    // actor's per-ABR-mode semi-transparent index tail with
+                    // draw's per-ABR-mode semi-transparent index tail with
                     // the matching blend pipeline. Runs last among the 3D
                     // draws so blended fragments (which don't write depth)
                     // can't be overwritten by later opaque geometry.
-                    if self.psx_mode.get() && scene.draws.iter().any(|d| d.mesh.has_semi_prims()) {
-                        let c = psx_blend::MODE0_BLEND_CONSTANT;
-                        rp.set_blend_constant(wgpu::Color {
-                            r: c,
-                            g: c,
-                            b: c,
-                            a: c,
-                        });
-                        for (i, draw) in scene.draws.iter().enumerate() {
-                            if !draw.mesh.has_semi_prims() {
-                                continue;
-                            }
-                            let off = (i as u32) * stride;
-                            rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
-                            rp.set_index_buffer(
-                                draw.mesh.index_buf.slice(..),
-                                wgpu::IndexFormat::Uint32,
-                            );
-                            for (mode, &(start, count)) in
-                                draw.mesh.semi_ranges().iter().enumerate()
-                            {
-                                if count == 0 {
-                                    continue;
-                                }
-                                rp.set_pipeline(&self.scene_vram_mesh_blend_pipelines[mode]);
-                                rp.set_bind_group(0, bg, &[off]);
-                                rp.draw_indexed(start..start + count, 0, 0..1);
-                            }
-                        }
-                    }
-                    // Untextured (colour-mesh) semi-transparency blend pass:
-                    // the opaque colour pass discarded every ABE prim (an
-                    // untextured semi prim blends ALL its pixels - no STP
-                    // gate), so re-draw each colour draw's per-ABR-mode
-                    // index tail with the matching blend pipeline. Same
-                    // ordering rationale as the textured blend pass above.
-                    if self.psx_mode.get()
-                        && scene.color_draws.iter().any(|d| d.mesh.has_semi_prims())
-                    {
+                    //
+                    // Ordering: retail inserts each semi prim into the
+                    // depth-bucketed ordering table and blends back-to-front,
+                    // interleaved across actors. The engine approximates
+                    // that OT ordering at per-draw granularity - every
+                    // semi-carrying draw (textured + untextured alike)
+                    // blends in far-to-near order of its model origin's
+                    // clip-space depth (`mvp.w_axis.w` = the origin's clip
+                    // `w` = view depth), not scene-list order. Per-prim
+                    // bucketing within one draw stays in tail order.
+                    let any_semi = scene.draws.iter().any(|d| d.mesh.has_semi_prims())
+                        || scene.color_draws.iter().any(|d| d.mesh.has_semi_prims());
+                    if self.psx_mode.get() && any_semi {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
                             r: c,
@@ -5445,23 +5419,49 @@ impl Renderer {
                         });
                         let color_base =
                             scene.draws.len() as u32 + scene.overlay_lines.is_some() as u32;
-                        for (i, draw) in scene.color_draws.iter().enumerate() {
-                            if !draw.mesh.has_semi_prims() {
-                                continue;
+                        // (untextured?, draw index, uniform offset, far key)
+                        let mut order: Vec<(bool, usize, u32, f32)> = Vec::new();
+                        for (i, draw) in scene.draws.iter().enumerate() {
+                            if draw.mesh.has_semi_prims() {
+                                order.push((false, i, i as u32 * stride, draw.mvp.w_axis.w));
                             }
-                            let off = (color_base + i as u32) * stride;
-                            rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
-                            rp.set_index_buffer(
-                                draw.mesh.index_buf.slice(..),
-                                wgpu::IndexFormat::Uint32,
-                            );
-                            for (mode, &(start, count)) in
-                                draw.mesh.semi_ranges().iter().enumerate()
-                            {
+                        }
+                        for (i, draw) in scene.color_draws.iter().enumerate() {
+                            if draw.mesh.has_semi_prims() {
+                                order.push((
+                                    true,
+                                    i,
+                                    (color_base + i as u32) * stride,
+                                    draw.mvp.w_axis.w,
+                                ));
+                            }
+                        }
+                        psx_blend::sort_far_to_near(&mut order);
+                        for (untextured, i, off, _) in order {
+                            let (vbuf, ibuf, ranges, pipelines) = if untextured {
+                                let m = scene.color_draws[i].mesh;
+                                (
+                                    &m.vertex_buf,
+                                    &m.index_buf,
+                                    m.semi_ranges(),
+                                    &self.scene_color_mesh_blend_pipelines,
+                                )
+                            } else {
+                                let m = scene.draws[i].mesh;
+                                (
+                                    &m.vertex_buf,
+                                    &m.index_buf,
+                                    m.semi_ranges(),
+                                    &self.scene_vram_mesh_blend_pipelines,
+                                )
+                            };
+                            rp.set_vertex_buffer(0, vbuf.slice(..));
+                            rp.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                            for (mode, &(start, count)) in ranges.iter().enumerate() {
                                 if count == 0 {
                                     continue;
                                 }
-                                rp.set_pipeline(&self.scene_color_mesh_blend_pipelines[mode]);
+                                rp.set_pipeline(&pipelines[mode]);
                                 rp.set_bind_group(0, bg, &[off]);
                                 rp.draw_indexed(start..start + count, 0, 0..1);
                             }
@@ -5937,6 +5937,15 @@ pub mod psx_blend {
         (if abe { TSB_SEMI_TRANSPARENT_BIT } else { 0 }) | (((abr & 0x3) as u16) << 5)
     }
 
+    /// Far-to-near (descending key) stable sort of the blend-pass draw
+    /// order, the per-draw approximation of the retail ordering table's
+    /// back-to-front blend. The last tuple element is the depth key (the
+    /// draw origin's clip-space `w`). Uses IEEE `total_cmp` so degenerate
+    /// keys still give a deterministic order (positive NaN sorts farthest).
+    pub fn sort_far_to_near<A, B, C>(order: &mut [(A, B, C, f32)]) {
+        order.sort_by(|a, b| b.3.total_cmp(&a.3));
+    }
+
     /// Foreground pre-scale applied in the blend-pass fragment shader for
     /// the given ABR mode. Only mode 3 (`B + 0.25*F`) scales; the other
     /// modes get their factors from the fixed-function blend state.
@@ -6356,8 +6365,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 // the foreground for ABR mode 3 (`B + 0.25*F`); the rest of the equation is
 // fixed-function blend state. Runs only in PSX-faithful mode, so the colour
 // is unlit (matching the opaque pass's faithful branch). No dither here:
-// the PSX dithers the post-blend value during the VRAM write, which a
-// fixed-function blend can't reproduce without a destination read-back.
+// this pass's foreground is a raw 15bpp texel - retail dithers only
+// shading-arithmetic results (gouraud / texture blending), never raw
+// texels, and the 5-bit blend math itself is not dithered (PSX-SPX
+// "GPU - Dithering/Color-Depth").
 fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
@@ -6451,10 +6462,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 // Blend-pass entries: emit the prim colour as the foreground term F; the
 // per-mode fixed-function blend state combines it with the framebuffer.
 // Only runs in PSX-faithful mode, where the synthetic Lambert is off
-// (shade = 1.0), and skips the dither stage like the textured blend pass
-// (retail dithers the post-blend value during the VRAM write).
+// (shade = 1.0). Unlike the textured blend pass (raw texels - never
+// dithered on retail), an untextured ABE prim's foreground IS shading
+// arithmetic output, which retail dithers down to 15-bit before the blend
+// math - so the dither stage applies to F here, before mode 3's 0.25
+// pre-scale (retail folds that scale into the blend itself).
 fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
-    return vec4<f32>(in.color.rgb * f_scale, 1.0);
+    let rgb = psx_dither(in.color.rgb, in.clip_pos.xy, u.psx_params.w);
+    return vec4<f32>(rgb * f_scale, 1.0);
 }
 
 @fragment
@@ -8249,6 +8264,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn psx_blend_sort_far_to_near_orders_by_descending_depth() {
+        // Mixed textured/untextured draws at shuffled depths; the blend pass
+        // must run them far-to-near regardless of list position or kind.
+        let mut order = vec![
+            (false, 0usize, 0u32, 10.0f32),
+            (true, 0, 100, 30.0),
+            (false, 1, 1, 20.0),
+            (true, 1, 101, f32::NAN), // +NaN = farthest under total_cmp
+            (false, 2, 2, 25.0),
+        ];
+        psx_blend::sort_far_to_near(&mut order);
+        let keys: Vec<u32> = order.iter().map(|e| e.2).collect();
+        // +NaN (color 1), 30 (color 0), 25 (tex 2), 20 (tex 1), 10 (tex 0).
+        assert_eq!(keys, vec![101, 100, 2, 1, 0]);
     }
 
     #[test]

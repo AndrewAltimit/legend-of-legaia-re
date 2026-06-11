@@ -96,6 +96,14 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
   the prim colour as `F`. Untextured TMD prims carry no texpage, so the
   caller resolves ABR from draw-env state (mode 0 = the PSX default);
   plain `upload_color_mesh` keeps every prim opaque.
+  Blend-draw *ordering* approximates the retail ordering table at
+  per-draw granularity: all semi-carrying draws (textured + untextured
+  in one sequence) blend far-to-near by their model origin's clip-space
+  depth (`psx_blend::sort_far_to_near`), not scene-list order. Dither
+  parity in the blend pass follows retail's rule that only shading
+  arithmetic is dithered: the untextured blend entries dither `F` (a
+  gouraud result) before the blend; the textured blend pass draws raw
+  texels and stays undithered.
 
 In the `legaia-engine play-window` binary this whole mode is opt-in via
 the `LEGAIA_PSX_RENDER=1` environment variable.
