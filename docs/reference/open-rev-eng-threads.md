@@ -539,27 +539,36 @@ and the gap was an oracle artifact (the lightweight pre-pass skipped that step; 
 
 **Minor residue (open):** `x=896..1024, y=256` (~12k) is the character/party-texture region uploaded by the battle/character targeted-CLUT pass the field pre-pass excludes by design (the CLUT-scattering thread), plus ~2.5k UI residue.
 
-**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the extraction-0874 §2 (`player.lzs`) texture band is **global, history-dependent** state — a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes (pinned at `(853,271)`: pre-battle/menu captures hold `0xFFFF` words, the disc TIM and every post-battle capture hold `0x3333`), so same-lineage captures misclassify them as static; the oracle now demands cross-scene staticity inside `scene::effect_texture_image_rects`.
+**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the extraction-0874 §2 (`player.lzs`) texture band is **global, history-dependent** state — the pause-menu entry path writes a 3-word F-variant onto row 271 that the first battle effect use overwrites with the disc bytes again (pinned at `(853,271)`: menu-lineage captures hold `0xFFFF` words, the disc TIM and effect-lineage captures hold `0x3333`), so same-lineage captures misclassify them as static; the oracle demands cross-scene staticity inside `scene::effect_texture_image_rects`.
 
-(2) the world-map walk view **palette-cycles** the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS` excludes them for world-map scenes (see the two open threads below).
+(2) the world-map walk view **palette-cycles** specific columns of the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS` excludes exactly those columns for world-map scenes (per-column census below) — row 507 and the static columns of 506/508/509 are asserted.
 
 
-### World-map CLUT cycling beyond the ocean head — rows 508/509 + generated row-506 tail
+### World-map CLUT cycling beyond the ocean head — column census pinned; writer unlocated
 
-*Status:* open (effects pinned from captures; sources unlocated)
+*Status:* effects fully pinned from a ten-state capture census; the writer (one coupled animator) is unlocated
 
 The row-506 **head** (entries 0..15) is the documented 13-frame ocean CLUT animation (`legaia_asset::ocean`, engine-implemented — see [`world-map.md`](../subsystems/world-map.md) "Ocean animation"); a capture holds an arbitrary phase, never the disc base CLUT.
-Capture evidence (map01 overworld vs field-menu states) shows the runtime rewrites **more** than that head: rows 508 and 509 each cycle a few entries in place (shoreline shimmer inside the mountain/forest terrain palettes), and row 508's entries 32..47 mirror the live frame of its own 0..15 head.
-Row 506's tail (entries ~40..47) additionally holds a **runtime-generated palette** — pure-channel BGR555 combos (B/G/BG/R/BR/GR at intensity `0x11`) present in **no** disc bundle (all 7 kingdom-bundle slots of PROT 0085 + the PROT 0093 overview pack swept).
 
-Open: whether the 508/509 entries + the 32..47 mirror ride the same 13-frame ocean DMA (a wider rect?) or a sibling writer; and the writer + purpose of the generated tail palette (marker/route colours?). VRAM writes aren't RAM-watchable; needs a GPU `LoadImage`-level trace or an overlay sweep for CLUT-row rect constants (`y = 506/508/509`). Engine residue: `play-window` animates the row-506 ocean head only; the exact retail cadence is also still unpinned.
+A per-column variance census across all ten map01-CLUT-resident catalog states pins the runtime-touched columns exactly:
+
+- **row 506** cols `{1, 4..10, 16..20, 33..39, 41..47}`: the ocean head, a second block head, a rotating ring at 32..39 of STP-set near-copies of the ocean colours (`ring & 0x7fff` ≈ head, rotating in lockstep with the ocean phase), and the generated pure-channel tail at 40..47 whose intensity is itself phase-animated (`0x11/0x0d/0x0c/0x0b` across captures).
+- **row 507**: none — fully static, 256/256 byte-exact vs the disc build.
+- **row 508** cols `{1, 14, 15, 26, 27, 33, 46, 47}` plus the live-maintained mirror `[32..47] == [0..15]` (verified at every captured phase; the disc base there is a different blue-ramp palette the runtime overwrites).
+- **row 509** cols `{42, 43}` only.
+
+The four overworld-battle angle states are byte-identical on these rows (the cycle parks during battle); cycling shows across capture groups instead (menu / into-town / level-up lineages = distinct phases).
+
+The lockstep phase coupling (ring + tail + head all move together) says **one coupled animator** — very likely the ocean DMA writer with a wider/sibling rect — but the writer itself is still unlocated. VRAM writes aren't RAM-watchable; needs a GPU `LoadImage`-level trace or an overlay sweep for CLUT-row rect constants (`y = 506/508/509`). Engine residue: `play-window` animates the row-506 ocean head only; the exact retail cadence is also still unpinned. Census verified for map01/Drake only (no map02/map03-resident capture exists). The VRAM oracle now excludes only the censused columns (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`) and asserts the rest.
 
 
-### Extraction-0874 §2 (`player.lzs`) boot-variant pixels — who uploads the `0xFFFF` row?
+### Extraction-0874 §2 (`player.lzs`) F-variant pixels — pause-menu-lineage, not boot
 
-*Status:* open
+*Status:* mostly resolved (corpus-pinned; exact writer PC needs a GPU trace)
 
-A freshly booted game holds a variant of the extraction-0874 §2 texture band (retail `player_data`; the band the extraction label calls `befect_data`) whose row-271 pixels (fb_x 852 page) read `0xFFFF` where the disc TIM (PROT 0874 §2) carries `0x3333`; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the `F`-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the `F`-variant (a different disc copy? an effect rendering into the page?).
+The earlier "a freshly booted game holds the `0xFFFF` variant" premise is **refuted** by a full save-catalog bisect: the title screen holds the band all-zero (not yet uploaded), and the new-game field-entry load (the mode-2 `FUN_80025B64` → `FUN_801D6704` stage) uploads the **disc** bytes — the whole intro chain through name entry holds `0x3333`. The F-variant is **pause-menu-lineage** instead: every pause-menu capture (CARD-mode init from field, six of six) holds it, the casino prize shop (also mode `0x17`, but hosted via the dialog/door path rather than the pause-menu init) holds the disc bytes, and the first battle **effect use** (not battle entry itself) restores the disc value.
+
+The variant is exactly **3 words** of row 271 (`(853, 271)` `3333→ffff`, `(856, 271)` `3333→fff3`, `(857, 271)` `1e33→1e3f`), each equal to the disc word two rows down at `(x, 273)` — both row variants are consecutive rows of the *same* disc TIM (no sibling copy involved). Remaining residue: the exact pause-menu-path writer (a `LoadImage`/draw trace would pin the PC — low value; the oracle handles the band via the cross-scene shared-band refinement).
 
 
 ### Scene-transition (`0x3F` door) destination indexing

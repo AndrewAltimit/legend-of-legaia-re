@@ -440,7 +440,11 @@ hint = "_DAT_8007BA78 = `07 00` (fmv_id = 7). Slot[7] points at \\DATA\\MOV.STR;
 [[scenarios]]
 slot = 255
 label = "cold_boot_pre_init"
-description = "Save state taken pre-BIOS-init; cold-boot the title overlay LZS decode + countdown trigger from here."
+# STALE POINTER: the live sstate7 slot has rotated since this entry was
+# written - it now holds a mid-game state (befect band resident), not a
+# pre-BIOS-init boot state. No library backup_fingerprint exists for the
+# original capture. Re-capture before relying on this scenario.
+description = "Save state taken pre-BIOS-init; cold-boot the title overlay LZS decode + countdown trigger from here. (Pointer stale - see comment.)"
 phase = "boot"
 pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate7"
 topics = ["boot path", "title overlay load", "countdown trigger"]
