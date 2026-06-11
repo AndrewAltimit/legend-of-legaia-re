@@ -5489,7 +5489,12 @@ impl PlayWindowApp {
                             }
                         }
                     }
-                    match r.upload_color_mesh(&cmesh.positions, &cmesh.colors, &cmesh.indices) {
+                    match r.upload_color_mesh_blended(
+                        &cmesh.positions,
+                        &cmesh.colors,
+                        &cmesh.indices,
+                        &cmesh.blend,
+                    ) {
                         Ok(m) => {
                             color_meshes.push(m);
                             color_tmd_src_index.push(src_i);
