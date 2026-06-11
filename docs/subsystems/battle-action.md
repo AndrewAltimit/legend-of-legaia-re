@@ -239,17 +239,17 @@ value sits in the save-state RAM, no live probe needed), and stays `8` through t
 cast; the **enemy** "Fire Tail" frames instead hold `5` → extraction **PROT 0900** (the
 move-FX module — the enemy special path, distinct from the player stager). The
 capture-class (`'c'`) spell branch loads from a different base:
-`FUN_8003EC70(spell_record[+1] + 0x28)`. **Caveat:** `903..913` is the loader's *arithmetic*
-range, not a clean list of summon stagers — the slot-B buffer is shared, and **PROT 0907
-("Hell's Music", a Disco King dance-song overlay by its head string) now falls on the
-spell-`0x85` slot**; which spell ids actually take this `id - 0x79` branch (vs the data-driven
-`spell_record[+1] + 0x28` branch) per id is unverified beyond `0x81` (one mid-cast state per
-remaining spell id closes each the same way). See
+`FUN_8003EC70(spell_record[+1] + 0x28)`. **The whole block is capture-pinned**: every spell
+id `0x81..=0x8B` was observed mid-cast loading its arithmetic slot (`903..=913`), with zero
+exceptions. PROT 0907 on the spell-`0x85` slot is **Nighto's stager** — its head title
+"Hell's Music" is the attack's display name (the SCUS spell table carries the same string),
+not a Disco King dance song (that reading is refuted: the dance overlay, 0980, contains no
+slot-B loader callsite — its music is sequenced BGM). See
 [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
 
 #### Inside a summon overlay (extraction PROT 905, decoded)
 
-> The deep-dive below analyzes the **extraction-905 file** — under the corrected loader arithmetic that is the spell-`0x83` slot, *not* Gimard's (`0x81` → 903, which parses identically as a stager: 40 spawn sites / 32 part records under the same link base, and is now capture-pinned as the Gimard load via the loader-B current-id in the catalogued cast states). The file-level findings stand for the 905 file itself; the live-capture findings (flame mesh `DAT_8007C018[26]`, part-actor motion) are capture-derived and independent. The remaining per-spell file attributions (`0x82..0x8b`) each need one mid-cast state.
+> The deep-dive below analyzes the **extraction-905 file** — under the corrected loader arithmetic that is the spell-`0x83` slot, *not* Gimard's (`0x81` → 903, which parses identically as a stager: 40 spawn sites / 32 part records under the same link base, and is now capture-pinned as the Gimard load via the loader-B current-id in the catalogued cast states). The file-level findings stand for the 905 file itself; the live-capture findings (flame mesh `DAT_8007C018[26]`, part-actor motion) are capture-derived and independent. The per-spell file attributions for the whole block (`0x81..=0x8B` → `903..=913`) are capture-pinned from per-spell mid-cast states.
 
 The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic). The summon's meshes are the separately-loaded `DAT_8007C018` model library: **PROT entry 871** (`etmd.dat`), a 30-entry `asset::pack` of Legaia TMDs that the battle scene loader `FUN_800520F0` pulls at battle init (debug index `0x367`, retail dev path `h:\prot\battle\etmd.dat`) and registers via `FUN_80026B4C`, populating `DAT_8007C018[3..32]` (`[0..2]` are the party battle meshes). Despite its CDNAME label `sound_data`, PROT 871 is the effect-model library; its texture sibling PROT 870 (a 256×256 flame-frame atlas, also `sound_data`) is loaded by a separate path. The overlay spawns and animates part-actors over those meshes. **Decompiled** (PROT 905 imported raw at base `0x801F0000`,
 `ghidra/scripts/dump_summon_overlay.py`):

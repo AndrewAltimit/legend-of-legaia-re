@@ -86,25 +86,21 @@ pub const SPAWN_HELPER: u32 = 0x8002_1B04;
 /// the raw `PROT.DAT` head, 2 entries above extraction indexing (see
 /// `docs/formats/prot.md` § In-RAM TOC).
 ///
-/// **This is the loader's arithmetic range, NOT a clean list of summon stagers.**
-/// The slot-B buffer (`SUMMON_OVERLAY_LINK_BASE`) is timeshared across the whole
-/// `0900..0969` cluster, which interleaves summon stagers with Disco King
-/// dance-song overlays — and **PROT 0907 (now the spell-id-0x85 slot) is the
-/// dance song "Hell's Music", not a summon** (ASCII title at file offset 0; see
-/// the static overlay map `crates/asset/data/static-overlays.toml`). It still
-/// [`parse`]s into a "scene-graph" only via the LZS-style parses-without-error
-/// trap. So when sweeping this range for real summons, exclude 0907 (and verify
-/// any new entry carries `FUN_80021B04` part-spawn calls). Which spell ids
-/// actually take the `id - 0x79` branch (vs the data-driven
-/// `spell_record[+1] + 0x28` capture-class branch) is unverified per id. See the
-/// disc-gated `summon_overlay_block` sweep and
-/// `docs/reference/open-rev-eng-threads.md`.
+/// **The whole block is capture-pinned**: every spell id `0x81..=0x8B` was
+/// observed mid-cast loading its arithmetic slot (loader-B current id at
+/// `0x8007BC4C`), with zero exceptions. PROT 0907 (the spell-`0x85` slot) is
+/// **Nighto's stager** - its ASCII head title `Hell's Music` is the attack's
+/// display name (the SCUS spell table carries the same string, and
+/// `summon.dat`'s attack-name records list it exactly parallel to Gimard's
+/// `Burning Attack`); the historical "Disco King dance-song" reading is
+/// refuted (the dance overlay, PROT 0980, contains no slot-B loader
+/// callsite; its music is sequenced BGM). The slot-B buffer
+/// (`SUMMON_OVERLAY_LINK_BASE`) is still timeshared across the wider
+/// `0900..0969` cluster (move-FX module, GAME OVER, summon-effect data), so
+/// verify any entry OUTSIDE this range by its `FUN_80021B04` part-spawn calls
+/// before treating it as a stager. See the disc-gated `summon_overlay_block`
+/// sweep and `docs/reference/open-rev-eng-threads.md`.
 pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 903..=913;
-
-/// Entries inside [`PLAYER_SUMMON_STAGER_PROT`] that are **not** summon stagers
-/// (the slot-B cluster is heterogeneous). PROT 0907 is the Disco King dance-song
-/// overlay "Hell's Music". A sweep for real player summons should skip these.
-pub const NON_SUMMON_IN_STAGER_RANGE: &[u32] = &[907];
 
 /// Upper bound (exclusive) on a `model_sel` that indexes the small effect-model
 /// library (`DAT_8007C018[model_sel + gp[0x754]]`; ~30 entries). A `model_sel`

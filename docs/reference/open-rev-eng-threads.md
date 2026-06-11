@@ -165,9 +165,13 @@ spell (the `gimard_summon_*` + `<seru>_summon_mid_cast` scenarios in `scripts/sc
 holds the battle overlay's loader-B current-id `0x8007BC4C` at exactly `spell_id - 0x79` for all
 eleven ids: `0x81` Gimard→903 through `0x8B` Nova→913, every leg on the linear arithmetic.
 Entry 0907 (Nighto) heads with the ASCII title `Hell's Music` + a normal MIPS prologue — the
-spell's musical-attack payload rides inside its stager module, which also explains the entry's
-earlier dance-song content reading as likely dual use (open residue: the dance overlay's own
-loader-B call sites).
+title is the ATTACK's display name (the SCUS spell table carries the same string, `Hell's
+Music|Kill or confuse enemy.`; `summon.dat` lists it among the attack-name records, parallel to
+Gimard's `Burning Attack`). The earlier "dance-song / dual-use" reading is **refuted**: an
+exhaustive static loader scan of the dance overlay (0980 — jal/tail-call/pointer-word/lui+addiu,
+all four mechanisms) finds **zero** slot-B loader callsites; the dance minigame's only
+loader-reaching call is the SCUS `FUN_80025BA0` wrapper (ids 5/6 → the 0900/0901 move-FX pair),
+and its music is sequenced BGM via the sound streaming loader. Single use: summon stager.
 
 **PROT 0900 RESOLVED — the slot-B *screen-effect + top-view-grid* overlay; `FUN_801F811C` is a 2D screen-mask widget, not a part transform.** A full static decode of the file at the link base `0x801F69D8` (function bodies instruction-diffed identical against the dance / baka-fighter dumps; file `0x0640..0x2660` byte-resident at `0x801F7018..0x801F9038` in the fingerprinted `battle_gimard_tail_fire_a` save) closes the long-open "quad-emit / matrix half" question. Two subsystems coexist in the file:
 
@@ -754,14 +758,14 @@ self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
   overlay).
 - **0903** = the Gimard `0x81` arithmetic slot; the deep-dived 38-spawn-call stager file is
   extraction **0905** = the `0x83` slot. The summon arithmetic range is extraction
-  `0903..=0913` (raw `0x389..=0x393`); 0907 on the `0x85` slot is the dance song "Hell's
-  Music".
+  `0903..=0913` (raw `0x389..=0x393`) — **fully capture-pinned per spell id**, incl. 0907 =
+  Nighto on the `0x85` slot (head title "Hell's Music" = the attack's display name; the
+  dance-song reading is refuted).
 - **0902** = GAME OVER (content pin, corroborated by the loader census: `FUN_8003EBE4(7)`
   inside the mode-18 init).
-- **0907/0924/0927** Disco King songs; **0957** summon-effect strings (**NOT** a dance song).
-
-**Still open:** per-spell stager identity beyond the arithmetic (needs a capture; over-read
-defeats a static census).
+- **0924/0927** = attack-titled stager-shaped overlays ("Ultimate Rave" / "Dark Eclipse");
+  loader callsites computed, action-id assignment open. **0957** summon-effect strings
+  (**NOT** a dance song).
 
 
 ### `title.pak` PROT entry
@@ -822,7 +826,8 @@ slot A) or by the fraction of internal absolute self-pointers that resolve in-fi
 scene family (field/battle/menu + the **cutscene/STR** overlay 0970 + the **minigame** overlays
 0972/0973/0976/0980) and the pinned slot-B entries (summon render 0900, the spell-`0x83` summon
 stager 0905 — Gimard `0x81` arithmetics to 0903 under the corrected loader index math — GAME
-OVER 0902, the Disco King dance songs 0907/0924/0927, summon-effect data 0957). Reconnaissance
+OVER 0902, the Nighto stager 0907 "Hell's Music" + the attack-titled stager-shaped
+0924/0927, summon-effect data 0957). Reconnaissance
 tooling: `asset overlay scan` (range sweep: base + leading dev string) and `asset overlay
 find-sig` (locate a function-head signature → infer the host overlay). Pipeline:
 `legaia_asset::static_overlay` + `asset overlay …`;
@@ -897,10 +902,11 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    frames (`battle_gimard_tail_fire_a/_b`, mednafen) instead hold loader-B `id = 5` → **extraction
    0900** — the enemy special pages the move-FX module, not a stager. Caveat: the id is a
    *last-load* tracker (an idle Begin/Run-menu state holds a stale `6`), so only in-cast states are
-   evidential. Still open: the other spell ids — especially `0x85`, whose arithmetic slot 0907 is
-   content-pinned as the "Hell's Music" dance song — need one mid-cast state per spell (same
-   pure-Rust read closes each); plus the dance overlay's own loader-B call sites (params for
-   0907/0924/0927) in `overlay_dance` dumps.
+   evidential. The whole spell block `0x81..=0x8B` is now capture-pinned to `903..=913` (one mid-cast
+   state per spell, zero exceptions; 0907 = Nighto, whose "Hell's Music" head title is the
+   attack's display name — the dance-song / dual-use reading is refuted, the dance overlay has
+   no slot-B loader callsite). Still open: the high-id summons (`0x8C..` and the ultimate
+   block) and the computed loads behind the attack-titled 0924/0927.
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
 3. **Engine mirrors — resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain — `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 — consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 

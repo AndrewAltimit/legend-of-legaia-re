@@ -19,8 +19,7 @@ use std::path::PathBuf;
 
 use legaia_asset::static_overlay;
 use legaia_asset::summon_overlay::{
-    self, NON_SUMMON_IN_STAGER_RANGE, PLAYER_SUMMON_STAGER_PROT, SUMMON_OVERLAY_LINK_BASE,
-    SummonPartKind,
+    self, PLAYER_SUMMON_STAGER_PROT, SUMMON_OVERLAY_LINK_BASE, SummonPartKind,
 };
 use legaia_prot::archive::Archive;
 
@@ -57,19 +56,18 @@ fn player_summon_block_parses_into_move_vm_scene_graphs() {
             .read_entry(&entry, &mut bytes)
             .unwrap_or_else(|_| panic!("read PROT {entry_idx}"));
 
-        // The summon-loader arithmetic range is over-broad: PROT 0907 inside it
-        // is the Disco King dance song "Hell's Music", not a summon. It only
-        // "parses" as a scene-graph because its over-read footprint bleeds into
-        // the neighbouring real stagers' FUN_80021B04 calls. Assert its true
-        // identity (ASCII title at file offset 0) and skip the stager checks.
-        if NON_SUMMON_IN_STAGER_RANGE.contains(&entry_idx) {
+        // PROT 0907 (the spell-0x85 slot) is Nighto's stager; its ASCII head
+        // is the attack's display title "Hell's Music" (the SCUS spell table
+        // carries the same name - parallel to Gimard's "Burning Attack" in
+        // summon.dat). Capture-pinned mid-cast; the stager checks below apply
+        // to it like every other slot in the block.
+        if entry_idx == 907 {
             let head = static_overlay::head_string(&bytes, 0x40, 4);
             assert_eq!(
                 head.as_deref(),
                 Some("Hell's Music"),
-                "PROT {entry_idx}: expected the dance-song title at offset 0"
+                "PROT {entry_idx}: expected the attack-name title at offset 0"
             );
-            continue;
         }
 
         let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);

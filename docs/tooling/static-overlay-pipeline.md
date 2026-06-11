@@ -151,24 +151,25 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   extraction earns its keep: the *disc* entry disassembles cleanly at the link
   base even though the *runtime* buffer is unusable.
 
-  **The slot-B cluster is heterogeneous.** It interleaves summon stagers (e.g.
-  0903 = Gimard's `0x81` slot and 0905 = the `0x83` slot under the corrected
-  loader index math `param + 0x37F` in extraction space — the historical
-  "Gimard = 0905" label was the `+ 0x381` off-by-2) with Disco King
-  **dance-song** overlays (0907 "Hell's Music", 0924 "Ultimate Rave", 0927
-  "Dark Eclipse"), the **GAME OVER** overlay (0902), and
-  summon-effect data (0957) — so the contiguous "summon stager" arithmetic
-  range `0903..=0913` is over-broad: **0907 inside that range is a dance song,
-  not a summon** (it only parsed as a scene-graph because its over-read
-  footprint bled into the neighbouring real stagers' `FUN_80021B04` spawn
-  calls; `summon_overlay::NON_SUMMON_IN_STAGER_RANGE` records the exception;
-  which spell ids actually dispatch through the `id - 0x79` branch is
-  unverified per id). **0957 is
-  NOT a dance song** (correcting an earlier `overlay-ptr-table` reading) — its
-  head is a summon string table (`Puera` + `Damage`/`Recover`/`Both` effect
-  labels). The mapped slot-B rows now carry pinned identity; the remaining
-  binary stagers' per-summon spell-id assignment is the open piece
-  ([`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+  **The slot-B cluster is heterogeneous.** The summon-stager arithmetic range
+  `0903..=0913` (spell ids `0x81..=0x8B` under the corrected loader index math
+  `param + 0x37F` in extraction space — the historical "Gimard = 0905" label
+  was the `+ 0x381` off-by-2) is **fully capture-pinned, with zero
+  exceptions**: every spell id in the block was observed mid-cast loading its
+  arithmetic slot (loader-B current id at `0x8007BC4C`). 0907 inside the range
+  is **Nighto's stager** — its ASCII head title "Hell's Music" is the attack's
+  display name (the SCUS spell table carries the same string; `summon.dat`
+  lists it among the attack-name records, parallel to Gimard's "Burning
+  Attack"); the earlier "Disco King dance-song" identity is **refuted** (the
+  dance overlay, 0980, contains no slot-B loader callsite — its music is
+  sequenced BGM via the sound streaming loader). The same correction reframes
+  0924 "Ultimate Rave" / 0927 "Dark Eclipse": attack-titled, stager-shaped
+  (`FUN_80021B04` part-spawn census), loader callsites computed — which action
+  ids drive them is the open piece. The cluster also holds the **GAME OVER**
+  overlay (0902) and summon-effect data (0957 — its head is a summon string
+  table, `Puera` + `Damage`/`Recover`/`Both` effect labels, NOT a dance song;
+  correcting an earlier `overlay-ptr-table` reading). See
+  [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## CLI
 

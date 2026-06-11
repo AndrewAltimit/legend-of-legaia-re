@@ -169,14 +169,16 @@ notes = "Noa dance rhythm minigame overlay (docs/subsystems/minigame-dance.md). 
 #     (`lui 0x801f/0x8020 ; addiu`) resolve in-file ONLY under this base -- the
 #     base cross-check `static_overlay::pointer_resolution` (the slot-B analog of
 #     the slot-A prologue anchor; 80..100% for the rows below). The cluster is
-#     HETEROGENEOUS: it interleaves summon stagers (0905 Gimard) with Disco King
-#     dance-song overlays (0907 "Hell's Music", 0924 "Ultimate Rave", 0927 "Dark
-#     Eclipse"), the GAME OVER overlay (0902), and summon-effect data (0957). So
-#     the historical contiguous "summon 0905..=0915" range is over-broad: 0907
-#     inside that range is a dance song, not a summon. NOTE 0957 is NOT a dance
-#     song (an earlier overlay-ptr-table reading) -- its head is a summon string
-#     table ("Puera" + Damage/Recover/Both effect labels). Identity is from the
-#     leading dev string + the in-file pointer-resolution base check. ---
+#     HETEROGENEOUS: summon stagers (903..913 = the capture-pinned spell block
+#     0x81..0x8B, incl. 0907 = Nighto whose head title "Hell's Music" is the
+#     ATTACK's display name -- the historical "Disco King dance-song" reading is
+#     refuted: the dance overlay 0980 has no slot-B loader callsite, its music
+#     is sequenced BGM), further attack-titled stager-shaped entries whose
+#     loader callsites are computed (0924 "Ultimate Rave", 0927 "Dark Eclipse"),
+#     the GAME OVER overlay (0902), and summon-effect data (0957 -- head is a
+#     summon string table, "Puera" + Damage/Recover/Both effect labels).
+#     Identity is from the leading dev string + capture pinning + the in-file
+#     pointer-resolution base check. ---
 
 [[overlays]]
 prot_index = 900
@@ -196,7 +198,7 @@ form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "1d9501e3aebada61ce8ceba3942d1cf4522e8e827d5563bebf6368d3726b8eeb"
-notes = "Summon spawn stager on the Gimard 'Burning Attack' arithmetic slot (the player summon; the enemy boss 'Fire Tail' is a distinct move): spell id 0x81 -> FUN_8003EC70(0x81 - 0x79) -> extraction entry 8 + 0x37F = 903 (the corrected loader index math; the historical 'Gimard = 0905' was the +0x381 off-by-2). 40 FUN_80021B04 part-spawn calls / 32 records, head is an addiu sp prologue at the link base; record pointers resolve in-file under summon_overlay::SUMMON_OVERLAY_LINK_BASE. Per-spell file identity is arithmetic-derived, not yet live-pinned (the stager is overwritten by the 0900 render overlay mid-cast); a loader-B current-id watch (0x8007BC4C) during one cast would close it."
+notes = "Summon spawn stager on the Gimard 'Burning Attack' arithmetic slot (the player summon; the enemy boss 'Fire Tail' is a distinct move): spell id 0x81 -> FUN_8003EC70(0x81 - 0x79) -> extraction entry 8 + 0x37F = 903 (the corrected loader index math; the historical 'Gimard = 0905' was the +0x381 off-by-2). 40 FUN_80021B04 part-spawn calls / 32 records, head is an addiu sp prologue at the link base; record pointers resolve in-file under summon_overlay::SUMMON_OVERLAY_LINK_BASE. Per-spell file identity is CAPTURE-PINNED: the loader-B current id (0x8007BC4C) reads 8 in the mid-cast Gimard save, and the whole spell block 0x81..=0x8B pins linearly to 903..=913 across the per-spell mid-cast corpus with zero exceptions."
 
 [[overlays]]
 prot_index = 905
@@ -220,33 +222,33 @@ notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE). Head string is 
 
 [[overlays]]
 prot_index = 907
-label = "dance_hells_music"
+label = "summon_nighto"
 base_va = 0x801F69D8
 form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "d619f9818e2d1582b63b1214dfd1a8574160d34e302a68d5d94d57126a35a832"
-notes = "Disco King dance-song overlay 'Hell's Music' (ASCII title at file offset 0, then code). This is the entry that makes the contiguous summon range 0905..=0915 over-broad: spell id 0x83 arithmetics to 0907 (FUN_8003EC70), but 0907 is a dance song, not a summon stager. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (80%)."
+notes = "Summon spawn stager on the Nighto arithmetic slot (spell id 0x85 -> FUN_8003EC70(0x85 - 0x79) -> extraction 903 + 4 = 907; capture-pinned mid-cast via the loader-B current id 0x8007BC4C). Heads with the ASCII attack title 'Hell's Music' (the SCUS spell table carries the same name -- 'Kill or confuse enemy'; summon.dat lists it among the attack-name records, parallel to Gimard's 'Burning Attack'), then 40 FUN_80021B04 part-spawn calls -- the same census as the Gimard stager. The historical 'Disco King dance-song' identity is REFUTED: the dance overlay (0980) contains zero slot-B loader callsites; its music is sequenced BGM. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (80%)."
 
 [[overlays]]
 prot_index = 924
-label = "dance_ultimate_rave"
+label = "stager_ultimate_rave"
 base_va = 0x801F69D8
 form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "a80f6d33eba463d7d5874439762bb23aa37955f62752d10f2c87e5e2c75b9e45"
-notes = "Disco King dance-song overlay 'Ultimate Rave' (ASCII title at file offset 0). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
+notes = "Attack-titled stager-shaped overlay 'Ultimate Rave' (ASCII title at file offset 0, then code with FUN_80021B04 part-spawn calls -- the summon-stager shape; the 'dance-song' reading is refuted with 0907's). Which action id loads it is OPEN: no constant loader argument in SCUS or the mapped overlays resolves to 924; the load is computed (likely an enemy-special / high-id summon path). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
 
 [[overlays]]
 prot_index = 927
-label = "dance_dark_eclipse"
+label = "stager_dark_eclipse"
 base_va = 0x801F69D8
 form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "0cff56036607ced1111829e3a3fb683833ac7ce6fcfeb0ba8abb118a14d1d233"
-notes = "Disco King dance-song overlay 'Dark Eclipse' (ASCII title at file offset 0). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (97%)."
+notes = "Attack-titled stager-shaped overlay 'Dark Eclipse' (ASCII title at file offset 0, then code with FUN_80021B04 part-spawn calls -- the summon-stager shape; the 'dance-song' reading is refuted with 0907's). Which action id loads it is OPEN: no constant loader argument in SCUS or the mapped overlays resolves to 927; the load is computed (likely an enemy-special / high-id summon path). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (97%)."
 
 [[overlays]]
 prot_index = 957
