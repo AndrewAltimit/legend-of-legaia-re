@@ -179,7 +179,8 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | Module | What it parses |
 |---|---|
 | `character_pack` | Field-form player-character mesh pack (PROT 0874 §0, 5 slots: Vahn/Noa/Gala + 2 auxiliary), incl. the `FUN_8001EBEC` equipment-swap pose patch (`equipment_swap::apply`). CLI `asset character-pack`. |
-| `battle_char_pack` | Battle-form character mesh pack (PROT 1204 `other5`): five `TMD2` streaming chunks + seven 256×256 4bpp atlases at `0x8224` stride. Baka Fighter reuses it. CLI `asset battle-char-pack`. |
+| `battle_char_pack` | The PROT 1204 `other5` mesh pack (five `TMD2` streaming chunks + seven 256×256 4bpp atlases at `0x8224` stride): the Baka Fighter / default-equipment sibling of the assembled battle meshes. CLI `asset battle-char-pack`. |
+| `battle_char_assembly` | Battle character-mesh assembler: selects a player file's five equipment sections by equipped item ids and splices them into the merged battle TMD (bone tags + attach bones; `PORT: FUN_80052770` case 4 / `FUN_800536BC` / `FUN_80053898`). Byte-exact vs the live runtime blob up to the TSB/CBA relocation pass. |
 | `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) — `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
 | `field_char_textures` | Field-character texture pack (PROT 0874 §2, "etim.dat"): eight TIM entries; 1/2/3 are the Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478). CLI `asset field-char-tex`. |
 | `player_anm` | Per-scene player ANM bundle (each scene bundle's type-0x05 "MOVE" section; battle-form at PROT 1203): per-(bone,frame) 8-byte entries, frame 0 of idle = rest pose. CLI `asset player-anm` / `player-anm-scan`. |
