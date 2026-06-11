@@ -359,11 +359,16 @@ state, mc7):
 | `1203`     | other5      | 2       | 30      | 87 684 (battle form) |
 
 The field-form bundles all have 69-72 records (the full player-locomotion
-+ interaction anim set). PROT `1203_other5` is the **battle-form** player
-animation set — the rig the [assembled battle meshes](character-mesh.md#battle-form--assembled-from-the-player-files)
-pose against (its banks' bone counts match the player-file skeletons), sitting
-alongside the default-equipment mesh pack at PROT 1204 that the Baka Fighter
-minigame loads. Other scenes either share
++ interaction anim set). PROT `1203_other5` is the battle-form player
+animation set **for the PROT 1204 pack's own object order** (its banks'
+bone counts match the player skeletons, bone `i` driving 1204 object `i` —
+the Baka Fighter / viewer configuration). It is **not** what a real battle
+poses the [assembled battle meshes](character-mesh.md#battle-form--assembled-from-the-player-files)
+with: 1204's object order differs from the assembled blob's sorted bone-tag
+order per character, and the in-battle pose source is the character's own
+TRS streams in `record[0]` of their player file
+([`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0);
+no 1203 record is resident in a mid-battle capture). Other scenes either share
 an ANM blob with one of these via runtime caching, or have a smaller per-scene
 player-ANM section.
 

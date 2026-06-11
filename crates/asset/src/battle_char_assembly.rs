@@ -114,6 +114,28 @@ pub struct AssembledCharacter {
     /// Attach bone for each `200+`-tagged equipment mesh, in tag order:
     /// the bone id of the object that preceded it in its section.
     pub attach_bones: Vec<u8>,
+    /// Per-object **animation part index**, post-sort: the index of the
+    /// pose channel that drives this object in the character's own battle
+    /// animation streams ([`battle_animations`] - the `[parts][frames]
+    /// [9-byte TRS]` streams in record[0] of the same player file, whose
+    /// `parts` count equals the skeleton bone count).
+    ///
+    /// Skeleton objects are driven by their own bone channel (`= tag`,
+    /// which post-sort is also the object index); equipment extras (tags
+    /// `100+`/`200+`, sorted last, past `parts`) ride the channel of the
+    /// bone object that precedes them in their section - their attach
+    /// piece (for `200+` extras this equals
+    /// `attach_bones[tag - 200]`).
+    ///
+    /// NOTE: the **PROT 1203 ANM bundle is NOT the battle-anim source for
+    /// the assembled mesh** - its banks are authored against the
+    /// PROT 1204 pack's own object order (which differs from the
+    /// assembled tag order per character), so posing the assembled blob
+    /// from 1203 mis-sockets the rig. Verified live: a mid-battle capture
+    /// has no 1203 record resident, and the party render-node's anim
+    /// context points at record[0]'s idle stream (parts = skeleton bone
+    /// count) inside the loaded player file.
+    pub anm_bones: Vec<u8>,
     /// The descriptor entries the five sections came from.
     pub sections: [Record; SECTION_COUNT],
 }
@@ -152,6 +174,12 @@ pub fn assemble_character(
     let mut obj_table = Vec::with_capacity(obj_table_bytes);
     let mut data = Vec::new();
     let mut tags: Vec<u8> = Vec::with_capacity(total_nobj);
+    // Animation part index per object (see
+    // [`AssembledCharacter::anm_bones`]): a skeleton object is driven by
+    // its own bone channel; a section's surplus (equipment-visual) objects
+    // ride the channel of the bone object that precedes them.
+    let mut anm_bones: Vec<u8> = Vec::with_capacity(total_nobj);
+    let mut last_bone: u8 = 0;
     // PORT: FUN_800536BC - the object splice. Per section: append the
     // 7-word object entries with vert/normal/prim offsets relocated into
     // the merged pool, copy the data words, accumulate nobj, and write one
@@ -177,13 +205,14 @@ pub fn assemble_character(
                 };
                 obj_table.extend_from_slice(&v.to_le_bytes());
             }
-            tags.push(if k < s.bone_ids.len() {
-                s.bone_ids[k]
-            } else if k == s.bone_ids.len() {
-                0xFF
+            if k < s.bone_ids.len() {
+                tags.push(s.bone_ids[k]);
+                last_bone = s.bone_ids[k];
+                anm_bones.push(last_bone);
             } else {
-                0xFE
-            });
+                tags.push(if k == s.bone_ids.len() { 0xFF } else { 0xFE });
+                anm_bones.push(last_bone);
+            }
         }
         data.extend_from_slice(&s.data);
     }
@@ -222,6 +251,7 @@ pub fn assemble_character(
         }
         if min != i {
             tags.swap(i, min);
+            anm_bones.swap(i, min);
             for w in 0..7 {
                 let a = i * OBJ_ENTRY_BYTES + w * 4;
                 let b = min * OBJ_ENTRY_BYTES + w * 4;
@@ -246,8 +276,137 @@ pub fn assemble_character(
         tmd,
         bone_tags: tags,
         attach_bones,
+        anm_bones,
         sections: records,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Battle animation (record[0] per-action TRS streams)
+// ---------------------------------------------------------------------------
+
+/// Number of action slots in record[0]'s head offset table (`u32` offsets
+/// at decoded `+0x00..+0x58`; the two words at `+0x58`/`+0x5C` are the
+/// record[0] texture-block offsets, mirroring the file header's
+/// `clut_a`/`clut_b`).
+pub const ACTION_SLOT_COUNT: usize = 22;
+
+/// Offset of the packed `[u8 parts][u8 frames][9-byte TRS records]` stream
+/// inside a record[0] action entry (the monster archive's sibling entries
+/// keep theirs at `+0x8C`). The runtime loader points the entry's `+0x88`
+/// stream pointer here (`FUN_80047430` / `FUN_8004AD80` consume it).
+pub const PLAYER_ANIM_STREAM_OFFSET: usize = 0xAC;
+
+/// LZS-decode a player file's `record[0]` (header
+/// `[desc_off][clut_a][clut_b][budget]`, LZS stream at `+0x10`). Scans
+/// 4-byte-aligned offsets for a plausible header (skipping any `"pochi"`
+/// filler prefix on the historical over-read copies) and accepts the first
+/// whose stream decompresses to its declared budget. Unlike
+/// [`crate::battle_char_palette::find_record0`] this does **not** require
+/// the fixed-stride palette-chain assembly to succeed (it overflows for
+/// Noa / Gala - see [`crate::battle_char_palette::collect_palette`]).
+pub fn decode_record0(file: &[u8]) -> Result<Vec<u8>> {
+    let mut o = 0;
+    while o + 0x10 <= file.len() {
+        let desc_off = read_u32(file, o)? as usize;
+        let clut_a = read_u32(file, o + 4)? as usize;
+        let clut_b = read_u32(file, o + 8)? as usize;
+        let budget = read_u32(file, o + 0xC)? as usize;
+        let plausible = (0x100..file.len() - o).contains(&desc_off)
+            && (0x1000..=0x4_0000).contains(&budget)
+            && (0x10..budget).contains(&clut_a)
+            && (0x10..budget).contains(&clut_b);
+        if plausible && let Ok(decoded) = legaia_lzs::decompress(&file[o + 0x10..], budget) {
+            return Ok(decoded);
+        }
+        o += 4;
+    }
+    bail!("no record[0] header found")
+}
+
+/// Decode the character's **battle action animations** from `record[0]` of
+/// their player file: per populated action slot, the packed
+/// `[u8 parts][u8 frames][9-byte TRS records]` stream at entry
+/// `+`[`PLAYER_ANIM_STREAM_OFFSET`] - the same rigid-transform keyframe
+/// format as the monster archive's per-action streams
+/// (`docs/formats/monster-animation.md`), with `parts` = the character's
+/// **skeleton bone count** (equipment extras carry no channel of their own
+/// and ride their attach bone - see [`AssembledCharacter::anm_bones`]).
+/// Slot 0 is the neutral idle loop; its frame 0 is the combat-stance rest
+/// pose that sockets the assembled mesh.
+///
+/// `action_id` on the returned animations is the slot index.
+// PORT: FUN_80047430 (anim-context consumer) - the battle party render
+// node's +0x4C anim context is a record[0] action entry; its +0x88 stream
+// pointer (loader-reconstructed, entry+0xAC) feeds the FUN_8004AD80 /
+// FUN_8004998C keyframe decode chain shared with battle monsters.
+pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::MonsterAnimation>> {
+    let block = decode_record0(file)?;
+    let mut out = Vec::new();
+    for slot in 0..ACTION_SLOT_COUNT {
+        let Ok(entry_off) = read_u32(&block, slot * 4) else {
+            break;
+        };
+        let entry_off = entry_off as usize;
+        if entry_off == 0 || entry_off >= block.len() {
+            continue;
+        }
+        if let Some(anim) = crate::monster_archive::parse_animation_stream(
+            &block,
+            slot as u8,
+            entry_off + PLAYER_ANIM_STREAM_OFFSET,
+        ) {
+            out.push(anim);
+        }
+    }
+    Ok(out)
+}
+
+/// Decode just the **idle** animation (action slot 0) of a player file -
+/// the loop the battle engine plays while the character awaits commands.
+/// Frame 0 is the rest pose that sockets the assembled battle mesh.
+/// `Ok(None)` when slot 0 is absent or its stream doesn't decode.
+pub fn idle_battle_animation(
+    file: &[u8],
+) -> Result<Option<crate::monster_archive::MonsterAnimation>> {
+    let block = decode_record0(file)?;
+    let entry_off = read_u32(&block, 0)? as usize;
+    if entry_off == 0 || entry_off >= block.len() {
+        return Ok(None);
+    }
+    Ok(crate::monster_archive::parse_animation_stream(
+        &block,
+        0,
+        entry_off + PLAYER_ANIM_STREAM_OFFSET,
+    ))
+}
+
+/// Re-index an animation's pose channels **per assembled object**: output
+/// part `i` is input part `anm_bones[i]` (each equipment extra duplicates
+/// its attach bone's channel), so `frames[f][obj]` can drive TMD object
+/// `obj` directly through the engine's posed-mesh builders. Channels
+/// referencing a part the stream doesn't carry come out as the identity
+/// pose.
+pub fn expand_animation_for_objects(
+    anim: &crate::monster_archive::MonsterAnimation,
+    anm_bones: &[u8],
+) -> crate::monster_archive::MonsterAnimation {
+    let frames: Vec<Vec<crate::monster_archive::PartPose>> = anim
+        .frames
+        .iter()
+        .map(|frame| {
+            anm_bones
+                .iter()
+                .map(|&b| frame.get(b as usize).copied().unwrap_or_default())
+                .collect()
+        })
+        .collect();
+    crate::monster_archive::MonsterAnimation {
+        action_id: anim.action_id,
+        part_count: anm_bones.len(),
+        frame_count: anim.frame_count,
+        frames,
+    }
 }
 
 /// VRAM CLUT row of party slot 0's runtime palette (rows `481 + slot`,

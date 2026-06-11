@@ -205,21 +205,33 @@ written into the runtime band the relocated meshes sample.
 
 The battle char TMD is a set of object-local pieces (head/torso/limbs),
 **not** a single pre-assembled mesh, so the engine sockets them with the
-**battle ANM (PROT 1203 `other5`)**: frame 0 of each character's idle record
-is the combat-stance rest pose, applied `R*v + T` per object
-(`tmd_to_vram_mesh_posed_rot`). The 30 records are 3 banks of 10 (Vahn @ 0 /
-Noa @ 10 / Gala @ 20). The assembled mesh's objects map to ANM bones through
-the assembler's tag tables: a skeleton object poses by its `bone_tags` bone
-id, a `200+` equipment extra by its recorded attach bone. Palette: each
+**character's own idle keyframe stream from `record[0]` of the same player
+file** (`battle_char_assembly::idle_battle_animation` — the monster-format
+`[parts][frames][9-byte TRS]` stream at action entry `+0xAC`, `parts` =
+skeleton bones; see
+[`battle-data-pack.md` § Battle animations](../formats/battle-data-pack.md#battle-animations-record0)).
+Frame 0 is the combat-stance rest pose, applied `R*v + T` per object
+(`tmd_to_vram_mesh_posed_rot`); the clip then loops through the same
+`MonsterAnimPlayer` the enemies use. Channel `i` drives object `i` directly
+(post-sort object index == bone tag); the `expand_animation_for_objects`
+pass duplicates each `200+` equipment extra's **attach-bone** channel onto
+it (the assembler's `anm_bones` map), which is what makes the duplicate
+weapon/Ra-Seru pieces coincide with their attach piece instead of floating
+apart. The **PROT 1203 ANM (`other5`) is NOT this pose source** — its banks
+(Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own
+object order, which differs from the assembled tag order per character, so
+it stays the rest-pose source for the **1204 fallback mesh only** (identity
+object→bone). Pinned live + cross-pipeline in
+`crates/engine-shell/tests/battle_party_pose_live.rs`. Palette: each
 character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
 `collect_palette` 0864/0865 — the `PLAYER1..3` files) overlays the CLUT rows
 its mesh samples (`481 + slot` after relocation), so the party reads in its
 real colours (blue Vahn / pink Noa / Gala). A stage battle draws **only
 active actors** — the scene-init actors are bound but inactive and parked at
 the world origin, so without that gate they pile their meshes at `(0,0,0)`.
-A 4th party slot is not rendered: the battle ANM's 10-bone bank (records
-27–29) has no pinned character attribution, so Terra (player file 866) has no
-verified idle rest pose.
+A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
+party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
+has no relocation target.
 
 ## Battle action state machine (`FUN_801E295C`)
 

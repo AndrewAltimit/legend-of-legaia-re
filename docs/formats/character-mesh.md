@@ -35,7 +35,7 @@ share.)
   - [CLUT upload semantic (`FUN_800198e0`)](#clut-upload-semantic-fun_800198e0)
   - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
 - [Battle form — assembled from the player files](#battle-form--assembled-from-the-player-files)
-  - [Assembly — object-local pieces posed by the battle ANM](#assembly--object-local-pieces-posed-by-the-battle-anm)
+  - [Assembly — object-local pieces posed by the character's own battle streams](#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams)
   - [Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)
   - [Equipment groups (battle only)](#equipment-groups-battle-only)
   - [On-disc layout (PROT 1204)](#on-disc-layout-prot-1204)
@@ -286,7 +286,7 @@ finding stands (battle geometry is absent from the field pack 0874;
 disc-gated `battle_char_pack_real::battle_pack_is_distinct_from_field_pack`).
 Parser for the 1204 pack: `legaia_asset::battle_char_pack`.
 
-### Assembly — object-local pieces posed by the battle ANM
+### Assembly — object-local pieces posed by the character's own battle streams
 
 Each battle TMD is a set of **object-local** pieces (head, torso, limbs), not a
 pre-assembled mesh. Every object authors its vertices relative to its own joint
@@ -297,29 +297,55 @@ no skeleton hierarchy:
 v_world = R_bone · v_local + T_bone        (rotation about the object's local origin)
 ```
 
-The `(T, R)` come from the battle-form player ANM at **PROT 1203** (`other5`),
-decoded per [`anm.md`](anm.md#per-bone-frame-8-byte-encoding). The retail draw
-path is `FUN_8001B964` (loads the actor base matrix, walks the record one object
-at a time) → `FUN_8001BE80` (decodes the bone's 12-bit `T`, pushes it through the
-GTE's `MVMVA` = `matrix · V0 + TR` to land the per-object world translation, and
-composes the bone's `Rz·Ry·Rx` onto the matrix) → `FUN_8002735C` (draws the
-object's object-local vertices as `M·v + TR`). Frame 0 of the idle clip is the
-combat-stance rest pose. There is **no pivot/centroid subtraction** — placing a
-piece anywhere other than its local origin pulls the joints apart.
+In a real battle the `(T, R)` come from the **character's own action-animation
+streams in `record[0]` of the same player file** — the monster-format packed
+keyframe stream `[u8 parts][u8 frames][9-byte TRS records]`
+([`monster-animation.md`](monster-animation.md), shared decoder), reached
+through the u32 action-offset table at the head of the decoded `record[0]`
+(slot 0 = the idle loop) with the stream at **entry `+0xAC`** (the monster
+archive's sibling entries keep theirs at `+0x8C`). `parts` equals the
+**skeleton bone count** (15 Vahn / 16 Noa / 15 Gala / 17 Terra): channel `i`
+drives assembled object `i` (post-sort, object index == bone tag), and the
+equipment extras past `parts` ride their **attach bone's** channel via the
+blob-header side tables — which is why the duplicate weapon/Ra-Seru pieces
+coincide exactly with their attach piece instead of rendering as second
+copies. Frame 0 of the idle is the combat-stance rest pose. There is **no
+pivot/centroid subtraction** — placing a piece anywhere other than its local
+origin pulls the joints apart. Live-pinned against a full-party capture: each
+party render node's anim context (`node +0x4C`, consumed by `FUN_80047430` →
+`FUN_8004AD80`) points its `+0x88` stream pointer at
+`record0_image + action_table[0] + 0xAC`, and the whole stream byte-matches
+the disc decode (`crates/engine-shell/tests/battle_party_pose_live.rs`); no
+PROT 1203 record is resident in battle RAM.
 
-PROT 1203's 30 records are organised in **per-character banks** by bone count
-(the retail loader requires `bone_count == nobj`): records 0–8 are the 15-bone
-Vahn set, 9–17 the 16-bone Noa set, 18–26 the 15-bone Gala set, 27–29 a 10-bone
-simplified rig. The first record of each bank is that character's idle. The site
-`/characters.html` viewer assembles all three party meshes this way (the
-`BattleMeshView` pose path mirrors the GTE pipeline above), and the clean-room
-engine does the same in a live battle — `legaia-engine play-window` assembles
-each party member from their player file (`battle_char_assembly`, equipped ids
-from the roster record), applies the registration-time TSB/CBA relocation
-(`relocate_tsb_cba`), and poses each object with
-`tmd_to_vram_mesh_posed_rot` against its bank-idle frame 0 through the
-assembler's tag tables: a skeleton object uses its `bone_tags` bone, a `200+`
-equipment extra uses its recorded attach bone's transform (see
+The **PROT 1203** ANM bundle (`other5`, decoded per
+[`anm.md`](anm.md#per-bone-frame-8-byte-encoding)) is the rig for the
+**PROT 1204 pack's own object order** — the Baka Fighter / viewer
+configuration, drawn by `FUN_8001B964` → `FUN_8001BE80` → `FUN_8002735C`
+(same `Rz·Ry·Rx · v + T` composition, ANM bone `i` → model object `i`,
+gated on `bone_count == nobj`). Its 30 records form per-character banks:
+records 0–8 the 15-bone Vahn set, 9–17 the 16-bone Noa set, 18–26 the
+15-bone Gala set, 27–29 a 10-bone simplified rig; the first record of each
+bank is that character's idle, and its frame 0 agrees with the player-file
+idle's frame 0 up to rotation quantisation (1203 stores `u8 << 4` angles,
+the player streams full 12-bit). **1204's object order differs from the
+assembled blob's sorted bone-tag order per character** (Vahn/Gala permute
+their head/torso and limb-chain triples; Noa happens to coincide), so posing
+the *assembled* mesh from 1203 — or the 1204 mesh from a player-file stream —
+mis-sockets the rig.
+
+The site `/characters.html` viewer poses the 1204 meshes from the 1203 banks
+(the `BattleMeshView` path). The clean-room engine assembles the real thing:
+`legaia-engine play-window` splices each party member from their player file
+(`battle_char_assembly`, equipped ids from the roster record), applies the
+registration-time TSB/CBA relocation (`relocate_tsb_cba`), decodes the same
+file's idle stream (`idle_battle_animation`), expands it per object
+(`expand_animation_for_objects` over the assembler's `anm_bones` channel
+map — skeleton objects on their own bone, extras on their attach bone), poses
+the rest mesh with `tmd_to_vram_mesh_posed_rot`, and loops the clip through
+the same `MonsterAnimPlayer` the enemy meshes use. The PROT 1204 mesh stays
+as the per-member fallback, posed from its 1203 bank idle with the identity
+object→bone mapping (see
 [`subsystems/battle.md` § Battle party meshes](../subsystems/battle.md#battle-party-meshes-assembled)).
 
 **Loader provenance — pinned (write-watchpoint).** The party meshes are
@@ -696,7 +722,7 @@ state offsets.
 | Function | Role |
 |---|---|
 | `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Single descriptor-walk that installs PROT 0874 §0's 5 **field-form** TMDs into `DAT_8007C018[0..=4]` (the engine routes this through [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs)). The field caller is `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. |
-| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after the party-palette decode `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry — full trace in [§ Battle form, Loader provenance](#assembly--object-local-pieces-posed-by-the-battle-anm). |
+| `FUN_800513F0` → `FUN_80026B4C` | **Battle-form party install (lead/active actors).** Battle scene-loader state handler; `while (i<3)` loop registering `*(actor+0x50)+0x18` (`actor = *(0x801C9360 + i*4)`) into `DAT_8007C018[0..]`, after the party-palette decode `FUN_80052FA0`. Pinned by a `DAT_8007C018[0..2]` write-watchpoint at battle entry — full trace in [§ Battle form, Loader provenance](#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams). |
 | `FUN_800542C8` → `FUN_80026B4C` | **Battle-form party install (additional members).** Battle archive loader; per-member loop bounded by `*(rec+0x4a)`, registering `*(*rec+4)`. Dispatched indirectly (no static `0x8007C018` xref). `FUN_800520F0` state `0xc` separately `tmd_register`s PROT `0x36a` into the *effect* window `[3..]`, not the party. |
 | `FUN_8001E890` | "DATA_FIELD player loader" — post-install, caps `entry[+0x08] = 10` for the three active-party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, then dispatches the per-character equipment-conditional patch to `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Per-frame group-descriptor patch. Reads the equipment toggle byte and copies one of the two templates over the visible group descriptor. The full asm trace is decoded in [`ghidra/scripts/funcs/8001ebec.txt`](../../ghidra/scripts/funcs/8001ebec.txt). |

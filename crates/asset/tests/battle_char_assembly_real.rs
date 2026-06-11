@@ -162,6 +162,87 @@ fn textured_prim_addresses(tmd_bytes: &[u8]) -> Vec<(u16, u16)> {
     out
 }
 
+/// Every player file carries the character's own battle animations in
+/// record[0] (the retail pose source for the assembled mesh - see
+/// `docs/formats/battle-data-pack.md` § Battle animations), and the
+/// assembler's per-object channel map (`anm_bones`) is consistent with the
+/// stream: the idle's `parts` equals the skeleton bone count, skeleton
+/// objects ride their own bone channel, and every `200+` equipment extra
+/// rides its recorded attach bone - which is what makes the duplicate
+/// equipment pieces land exactly on their attach piece instead of
+/// rendering as a second floating copy.
+#[test]
+fn idle_stream_drives_every_assembled_object() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    for file in [
+        "0863_edstati3.BIN",
+        "0864_edstati3.BIN",
+        "0865_battle_data.BIN",
+        "0866_battle_data.BIN",
+    ] {
+        let Some((raw, pack)) = load(&prot_dir, file) else {
+            return;
+        };
+        let anims = battle_char_assembly::battle_animations(&raw)
+            .unwrap_or_else(|e| panic!("{file}: battle animations: {e:#}"));
+        assert!(!anims.is_empty(), "{file}: no battle animations decoded");
+        let idle = battle_char_assembly::idle_battle_animation(&raw)
+            .unwrap_or_else(|e| panic!("{file}: idle decode: {e:#}"))
+            .unwrap_or_else(|| panic!("{file}: no idle stream"));
+        assert!(idle.frame_count >= 2, "{file}: idle is not a clip");
+
+        let asm = battle_char_assembly::assemble_character(&raw, &pack, &[0; 5])
+            .unwrap_or_else(|e| panic!("{file}: assemble defaults: {e:#}"));
+        let skeleton = asm.bone_tags.iter().filter(|&&t| t < 100).count();
+        assert_eq!(
+            idle.part_count, skeleton,
+            "{file}: idle parts == skeleton bone count"
+        );
+        assert_eq!(asm.anm_bones.len(), asm.bone_tags.len(), "{file}: map len");
+        for (i, (&tag, &ch)) in asm.bone_tags.iter().zip(&asm.anm_bones).enumerate() {
+            assert!(
+                (ch as usize) < idle.part_count,
+                "{file}: object {i} channel {ch} out of the {} parts",
+                idle.part_count
+            );
+            if tag < 100 {
+                assert_eq!(ch, tag, "{file}: skeleton object {i} rides its own bone");
+            } else if tag >= 200 {
+                assert_eq!(
+                    ch,
+                    asm.attach_bones[(tag - 200) as usize],
+                    "{file}: extra {i} rides its attach bone"
+                );
+            }
+        }
+        // Expansion: channel i drives object i, extras duplicating their
+        // attach channel.
+        let expanded = battle_char_assembly::expand_animation_for_objects(&idle, &asm.anm_bones);
+        assert_eq!(expanded.part_count, asm.bone_tags.len());
+        assert_eq!(expanded.frame_count, idle.frame_count);
+        for (i, &ch) in asm.anm_bones.iter().enumerate() {
+            assert_eq!(
+                expanded.frames[0][i], idle.frames[0][ch as usize],
+                "{file}: expanded channel {i}"
+            );
+        }
+        eprintln!(
+            "{file}: {} actions, idle parts={} frames={}, nobj={}",
+            anims.len(),
+            idle.part_count,
+            idle.frame_count,
+            asm.bone_tags.len()
+        );
+    }
+}
+
 /// Every character assembles with all-default equipment, and the merged
 /// TMD parses with `nobj` = skeleton bones + the default sections' extras.
 #[test]

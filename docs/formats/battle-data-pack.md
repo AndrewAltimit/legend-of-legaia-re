@@ -38,6 +38,7 @@ Implementations:
 - [Descriptor table](#descriptor-table)
 - [Slot region](#slot-region)
 - [Decompressed slot layout](#decompressed-slot-layout)
+- [Battle animations (record[0])](#battle-animations-record0)
 - [Texture-pool VRAM placement](#texture-pool-vram-placement)
 - [Parser status](#parser-status)
 - [VRAM byte-match corpus](#vram-byte-match-corpus)
@@ -239,6 +240,40 @@ chain STP-copies to VRAM rows 481..483; that RAM-side path is decoded in
 and ported as `legaia_asset::battle_char_palette`). The pool's VRAM
 placement is pinned — see
 [Texture-pool VRAM placement](#texture-pool-vram-placement).
+
+## Battle animations (record[0])
+
+`record[0]` (the LZS stream at file `+0x10`, decoded to `budget` bytes) is
+not just the battle-palette chain: its head is a **u32 action-offset table**
+(22 slots at `+0x00..+0x58`, zero = empty; the two words at `+0x58`/`+0x5C`
+point at further blocks inside the same record) whose entries are the
+character's **battle action-animation records** — the same per-action entry
+family as the monster archive's (`docs/formats/monster-animation.md`), with
+the packed `[u8 part_count][u8 frame_count][9-byte TRS records]` keyframe
+stream at **entry `+0xAC`** (the monster entries keep theirs at `+0x8C`).
+Slot 0 is the neutral **idle** loop; its frame 0 is the combat-stance rest
+pose that sockets the assembled battle mesh.
+
+`part_count` equals the character's **skeleton bone count** (15 Vahn /
+16 Noa / 15 Gala / 17 Terra — the assembled mesh's `nobj` minus its
+equipment extras): channel `i` drives assembled object `i` (post-sort,
+object index == bone tag), and the extras ride their attach bone's channel
+via the assembled blob's side tables. The retail consumers are the battle
+render node's update `FUN_80047430` → `FUN_8004AD80` (the node's `+0x4C`
+anim context is one of these entries; the loader rewrites the in-RAM action
+table to absolute pointers and points the entry's `+0x88` stream pointer at
+`entry +0xAC`). Live-verified: in a full-party capture every party slot's
+anim context sits at `record0_image + action_table[0]` and the whole idle
+stream byte-matches the disc decode
+(`crates/engine-shell/tests/battle_party_pose_live.rs`). The **PROT 1203
+ANM bundle is not the battle pose source** — no 1203 record is resident in
+battle RAM, and its banks are authored against PROT 1204's own object
+order (see
+[`character-mesh.md` § Assembly](character-mesh.md#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams)).
+
+Parsers: `legaia_asset::battle_char_assembly::{decode_record0,
+battle_animations, idle_battle_animation, expand_animation_for_objects}`
+(the stream decode is shared with `legaia_asset::monster_archive`).
 
 ## Texture-pool VRAM placement
 
