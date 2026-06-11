@@ -38,6 +38,7 @@ Implementations:
 - [Descriptor table](#descriptor-table)
 - [Slot region](#slot-region)
 - [Decompressed slot layout](#decompressed-slot-layout)
+- [Texture-pool VRAM placement](#texture-pool-vram-placement)
 - [Parser status](#parser-status)
 - [VRAM byte-match corpus](#vram-byte-match-corpus)
 - [CLI](#cli)
@@ -203,7 +204,12 @@ generous source slice rather than truncating to `entry.size`.
 +0x04  u32 sub_obj0_end      ; nested-section end offset; often 0
 +0x08  u32 sub_obj1_end      ; nested-section end; non-zero in multi-mesh slots
 +0x0C  u32 tmd_body_end      ; offset where the embedded Legaia TMD ends
-+0x10  u32                   ; flag word (typically 0x010000 / 0x010002)
+                             ; (= where the texture-pool upload block starts)
++0x10  u16                   ; low half of the flag word (0x0000 / 0x0002)
++0x12  u16 upload_flag       ; non-zero = the post-TMD pool is uploaded to
+                             ; VRAM at battle init (the `lh 0x12(s2)` gate in
+                             ; FUN_80052FA0); zero = the pool bytes are dead
+                             ; (overwritten by the next section's decode)
 +0x14  loader frame          ; = decoded + frame_off, consumed by FUN_800536BC:
        +0x00 u8  attach_count    ; objects that bind to skeleton bones
        +0x01 u8  bone_ids[]      ; one bone id per attached object (padded)
@@ -224,14 +230,76 @@ The byte runs the earlier byte-match corpus read as "texture format tags" at
 bone-id bytes (`06 09 0a 0b | 0c 0d 0e 00` = 6 attached objects on bones
 9..14 — a footwear section).
 
-The post-TMD pool has no PSX TIM image-block headers: it is raw 4bpp pixel
-pages interleaved with 32-byte CLUT rows. Flagged slots additionally carry a
-trailing CLUT struct (`[u16 base][u16 count][count × BGR555]`) that the
-palette chain STP-copies to VRAM rows 481..483 — that path is fully decoded in
+The post-TMD pool has no PSX TIM image-block headers: it is one upload block
+in the `FUN_80053B9C` frame —
+`[u16 clut_x][u16 clut_n][clut_n × u16 BGR555][w*h halfwords 4bpp pixels]`
+(the CLUT struct is the same `[base][count][colours]` shape the palette
+chain STP-copies to VRAM rows 481..483; that RAM-side path is decoded in
 [`character-mesh.md`](character-mesh.md#battle-render-load-time-tsbcba-relocation)
-and ported as `legaia_asset::battle_char_palette`. The pool's per-page VRAM
-placement is **not** pinned (see
-[VRAM byte-match corpus](#vram-byte-match-corpus)).
+and ported as `legaia_asset::battle_char_palette`). The pool's VRAM
+placement is pinned — see
+[Texture-pool VRAM placement](#texture-pool-vram-placement).
+
+## Texture-pool VRAM placement
+
+The battle-init texture upload is fully pinned. `FUN_80052FA0` runs once per
+**present** party member; `p` below is the member's 0-based ordinal among the
+present battle party (the band selector — *not* the character id). Per
+member it issues up to seven upload blocks through `FUN_80053B9C`
+(decomp `ghidra/scripts/funcs/80052fa0.txt` / `80053b9c.txt`):
+
+1. **Two `record[0]` image blocks**, at the file header's `clut_a_off` /
+   `clut_b_off` inside record[0]'s decoded output, with inline rects
+   `(x0, y0, w, h)` = `(0x20, 0x80, 0x20, 0x80)` and `(0x60, 0x00, 0x20,
+   0x80)` (both carry `clut_n = 0` in retail).
+2. **One block per flagged equipment section** (the decoded slot's
+   `upload_flag` at `+0x12`), at `decoded + tmd_body_end`, with the rect
+   taken from the static `SCUS_942.54` table at **`0x800775B8`**
+   (4 × u16 per section, indexed by equip-section 0..4):
+
+   | section | `x0` | `y0` | `w` | `h` |
+   |---|---|---|---|---|
+   | 0 | `0x00` | `0x80` | `0x20` | `0x80` |
+   | 1 | `0x00` | `0x00` | `0x40` | `0x80` |
+   | 2 | `0x40` | `0x00` | `0x20` | `0x80` |
+   | 3 | `0x40` | `0x80` | `0x20` | `0x80` |
+   | 4 | `0x60` | `0x80` | `0x20` | `0x80` |
+
+`FUN_80053B9C` reads the block's `[u16 clut_x][u16 clut_n]` prefix and issues
+two `LoadImage`s (wrapper `FUN_800583C8`, literal `"LoadImage"` debug string):
+
+- **CLUT**: rect `(clut_x, 0x1E1 + p, clut_n, 1)` from the `clut_n` entries,
+  with the STP bit OR'd onto every non-zero colour (the same pass that fills
+  the RAM palette block at `ctx + p*0x1E0 + 0x894`).
+- **Pixels**: rect `(x0 + 0x200 + p*0x80, y0 + 0x100, w, h)` from the bytes
+  after the CLUT run (`w` in VRAM halfwords).
+
+The seven rects **tile the member's band exactly** — 128 halfwords × 256
+rows at `x ∈ [0x200 + p*0x80, +0x80)`, `y ∈ [0x100, 0x200)`, i.e. texpages
+`0x18 + 2p` / `0x19 + 2p` — precisely the pages + CLUT row the
+registration-time mesh relocation `FUN_80053A28` retargets
+([`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation)).
+Unflagged sections upload nothing; their band area keeps whatever the other
+blocks wrote (their pool bytes are overwritten in RAM by the next section's
+decode without ever reaching VRAM).
+
+**Validation** (disc + save-library gated
+`engine-shell/tests/battle_char_texture_live.rs`): decoding the player files
+with the live party ids (`DAT_8007BD10`) + equipped item ids (char record
+`+0x196`) and comparing every block against captured battle VRAM reproduces
+the bands at **99.7–100 %** per member across the `party_battle_gobu_gobu`
+and `noa_levelup_fight_pre` captures (most blocks byte-exact). The residual
+is a single ~220-byte cluster in section 1's rect (face rows), identical
+across captures — a small post-load facial-texel overwrite, not a placement
+error. (`v0_1_battle_first_frame_tetsu` is captured before the upload pass
+runs and still shows field texels in the band.)
+
+Typed port: `legaia_asset::battle_char_assembly` —
+`SECTION_TEXTURE_RECTS` / `RECORD0_TEXTURE_RECTS` /
+`parse_upload_block` / `section_texture_upload` /
+`record0_texture_uploads` / `character_texture_uploads`. The engine
+play-window battle path uploads these blocks for each assembled member
+(PROT 1204's atlases remain the fallback approximation).
 
 ## Parser status
 
@@ -241,6 +309,12 @@ Two parsers read these files:
   implements the runtime-pinned framing above (header words, descriptor
   chain, `record[0]` + sub-record palette assembly; byte-exact vs live battle
   VRAM).
+- [`legaia_asset::battle_char_assembly`](../../crates/asset/src/battle_char_assembly.rs)
+  ports the battle-init consumer chain: equipment-section selection
+  (`select_sections`), mesh splice (`assemble_character`), the TSB/CBA
+  relocation (`relocate_tsb_cba`), and the texture-pool uploads at the
+  pinned placement (`character_texture_uploads` and friends — see
+  [Texture-pool VRAM placement](#texture-pool-vram-placement)).
 - [`legaia_asset::battle_data_pack`](../../crates/asset/src/battle_data_pack.rs)
   (the TMD-slot walker) reads the same descriptor table in the
   `[id, offset, size]` frame above. Detection validates the chain invariant
@@ -278,10 +352,13 @@ Izumi town, pre-battle, active battle):
 | id 0x00 (second section default) | `..., 0x010000, 0x000201, 0x000000, ...` | (768, 272..331) — battle |
 
 Consecutive slot offsets step by `0x40` per `+1` in `fb_y`: the post-TMD pool
-uploads as a 32-halfword-wide (128 px @ 4bpp) contiguous block. Within a
-header-signature cluster the per-slot `(fb_x, fb_y)` is *not* recoverable
-from the on-disc bytes — the placement is runtime-resolved; tracing that
-resolver is the open step.
+uploads as a 32-halfword-wide (128 px @ 4bpp) contiguous block. The corpus
+could not recover per-slot `(fb_x, fb_y)` from the on-disc bytes because the
+placement is **per-section, not per-slot** — every slot of a section shares
+the section's static rect, banded by the party ordinal (resolved in
+[Texture-pool VRAM placement](#texture-pool-vram-placement); the corpus rows
+above are exactly those rects for Gala in band `p = 2`, with overlapping
+hits where equipment variants share texels).
 
 **Not in these files: the row-479 NPC palettes.** The town NPC CLUTs at
 row 479 byte-match no decoded slot of any player file (nor any raw PROT entry
@@ -316,10 +393,12 @@ on the player files.)
 
 ## Open questions
 
-- **Per-texture descriptor** (`u32[4]..u32[7]`): slots sharing an identical
-  signature land at different VRAM coords, so the placement is
-  runtime-resolved — trace the battle-init upload path that consumes the
-  header.
+- ~~**Per-texture descriptor / placement**~~ **resolved**: the placement is
+  per-*section*, from the static rect table at `0x800775B8` + the
+  party-ordinal band — see
+  [Texture-pool VRAM placement](#texture-pool-vram-placement). Still open
+  within it: the source of the small (~220-byte) post-load facial-texel
+  overwrite the live captures show inside section 1's rect.
 - ~~**Slot id ↔ equipment id mapping**~~ **resolved**: the section ids ARE
   item-table ids and the `FUN_80052770` case-4 picker matches them against
   the character record's equipped-item bytes (see

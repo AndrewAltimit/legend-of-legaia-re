@@ -327,7 +327,7 @@ The **Baka Fighter minigame loads PROT 1204** (`overlay_baka_fighter` loads `dat
 
 Pinned by a `DAT_8007C018[0..2]` write-watchpoint across the auto-starting Queen Bee field→battle transition ([`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua)): all three installs fire at `game_mode 0x15`, and the installed pointers byte-match the battle form (Vahn → `0x80165F48`, the value a battle save holds in `DAT_8007C018[0]`). Dumps `funcs/800513f0.txt` / `800542c8.txt`.
 
-**Still valid:** the 1204 atlases ARE the real battle character textures (confirmed byte-match 73–98% vs a clean full-party battle, shortfall = equipment overlays).
+**Superseded on the texel source:** the runtime battle bands are uploaded from the **player battle files' per-section texture pools** at the static rect table `0x800775B8` (`FUN_80052FA0` → `FUN_80053B9C` LoadImage front-end; ≥99.6% band reproduction vs clean full-party battles). The 1204 atlases hold the same default-equipment content — which is why they matched 73–98% — but the shortfall was the equipped-variant texels; 1204 is the default-equipment sibling/fallback, not the runtime source. See [`battle-data-pack.md`](../formats/battle-data-pack.md) § "Texture-pool VRAM placement".
 
 **BATTLE RENDER = LOAD-TIME TSB/CBA RELOCATION (this supersedes the "nominal CBA / no-relocation / VRAM-residue palette" model below, which is FALSIFIED).** At battle entry the party-setup overlay rewrites every prim's TSB+CBA into a packed per-slot runtime band:
 

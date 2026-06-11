@@ -6258,15 +6258,17 @@ impl PlayWindowApp {
         // equipment-id sections (`legaia_asset::battle_char_assembly`, extraction
         // PROT 863..865) and relocated into the slot's runtime VRAM band
         // (`relocate_tsb_cba`, the registration-time TSB/CBA pass of
-        // FUN_800513F0). PROT 1204 (the Baka Fighter / default-equipment sibling
-        // pack) stays as the per-member fallback when assembly fails, and always
-        // supplies the atlas pixel data (the player files' texture-pool VRAM
-        // placement is not pinned; the 1204 atlases byte-match the runtime band
-        // at 73-98%, shortfall = equipment overlays). Each character's decoded
-        // battle palette overlays the rows its mesh CBA samples (= 481 + slot
-        // after relocation).
+        // FUN_800513F0). The band's PIXELS come from the same player file: the
+        // equipped sections' texture pools + the two record[0] image blocks,
+        // uploaded at the pinned `FUN_80052FA0`/`FUN_80053B9C` placement
+        // (`character_texture_uploads`; byte-exact vs live battle VRAM - see
+        // docs/formats/battle-data-pack.md § Texture-pool VRAM placement).
+        // PROT 1204 (the Baka Fighter / default-equipment sibling pack) stays
+        // as the per-member fallback: its meshes when assembly fails, its
+        // atlases (a 73-98% approximation of the band) when the texture-pool
+        // decode fails. Each character's decoded battle palette overlays the
+        // rows its mesh CBA samples (= 481 + slot after relocation).
         let mut party_bound = 0usize;
-        let mut party_assembled = false;
         let party_count = self.session.host.world.party_count as usize;
         if party_count > 0
             && let Ok(pack_raw) = self
@@ -6318,7 +6320,10 @@ impl PlayWindowApp {
                 // path poses objects by the assembler's tag tables; the
                 // fallback 1204 mesh keeps the identity object->bone mapping.
                 let mut source: Option<(legaia_tmd::Tmd, Vec<u8>, Vec<Option<usize>>)> = None;
-                if let Some(asm) = self.assembled_party_battle_mesh(cslot) {
+                let mut tex_uploads: Vec<legaia_asset::battle_char_assembly::TextureUpload> =
+                    Vec::new();
+                if let Some((asm, uploads)) = self.assembled_party_battle_mesh(cslot) {
+                    tex_uploads = uploads;
                     match legaia_tmd::parse(&asm.tmd) {
                         Ok(tmd) => {
                             // Skeleton objects carry their bone id; 200+
@@ -6359,7 +6364,36 @@ impl PlayWindowApp {
                 let Some((tmd, tmd_bytes, bone_for_object)) = source else {
                     continue;
                 };
-                party_assembled |= assembled;
+                // Band pixels for the relocated mesh: the equipped sections'
+                // texture pools + record[0] image blocks at the pinned
+                // FUN_80052FA0 placement; the 1204 atlas pair approximates
+                // the band only when the pool decode failed. Fallback 1204
+                // meshes sample the authoring rects uploaded above instead.
+                if assembled {
+                    if tex_uploads.is_empty() {
+                        for k in [cslot * 2, cslot * 2 + 1] {
+                            if let Some(atlas) = pack.atlases.get(k)
+                                && let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes)
+                            {
+                                let img = &tim.image;
+                                vram.write_block(
+                                    512 + k as u16 * 64,
+                                    256,
+                                    img.fb_w,
+                                    img.h,
+                                    &img.data,
+                                );
+                            }
+                        }
+                    } else {
+                        for u in &tex_uploads {
+                            vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
+                            if !u.clut.is_empty() {
+                                vram.write_clut_row(u.clut_x, u.clut_row(), &u.clut_bytes());
+                            }
+                        }
+                    }
+                }
                 // Pose: frame-0 (T,R) per object from this char's idle record.
                 // PROT 1203 banks (per docs/formats/character-mesh.md): records
                 // 0-8 = Vahn (15-bone), 9-17 = Noa (16), 18-26 = Gala (15); the
@@ -6455,20 +6489,6 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("play-window: party {cslot} mesh upload: {e:#}"),
                 }
             }
-            // Place the atlas pixel pages into the runtime band the relocated
-            // meshes sample (x in [512, 896), y = 256; atlas k -> page
-            // 512 + k*64): retail's battle textures are the same atlas pages
-            // relocated alongside the meshes. Only when an assembled mesh is
-            // actually bound - the fallback 1204 meshes keep sampling the
-            // authoring rects uploaded above.
-            if party_assembled {
-                for (k, atlas) in pack.atlases.iter().take(6).enumerate() {
-                    if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
-                        let img = &tim.image;
-                        vram.write_block(512 + k as u16 * 64, 256, img.fb_w, img.h, &img.data);
-                    }
-                }
-            }
         }
 
         if bound > 0 || party_bound > 0 {
@@ -6494,13 +6514,20 @@ impl PlayWindowApp {
     /// (`legaia_asset::battle_char_assembly`), then apply the
     /// registration-time TSB/CBA relocation into the slot's runtime VRAM
     /// band (`relocate_tsb_cba`; texpages `512 + 128*slot` / `+64` at
-    /// `y = 256`, CLUT row `481 + slot`). `None` (with a warning) when any
-    /// stage fails - the caller falls back to the slot's static PROT 1204
-    /// mesh.
+    /// `y = 256`, CLUT row `481 + slot`). Also decodes the matching band
+    /// *pixels* - the equipped sections' texture pools + record[0] image
+    /// blocks at the pinned placement (`character_texture_uploads`; empty
+    /// with a warning when that decode fails, so the caller can fall back
+    /// to the 1204 atlas approximation). `None` (with a warning) when the
+    /// mesh assembly itself fails - the caller falls back to the slot's
+    /// static PROT 1204 mesh.
     fn assembled_party_battle_mesh(
         &self,
         cslot: usize,
-    ) -> Option<legaia_asset::battle_char_assembly::AssembledCharacter> {
+    ) -> Option<(
+        legaia_asset::battle_char_assembly::AssembledCharacter,
+        Vec<legaia_asset::battle_char_assembly::TextureUpload>,
+    )> {
         let prot = 863 + cslot as u32;
         let raw = match self.session.host.index.entry_bytes_extended(prot) {
             Ok(raw) => raw,
@@ -6547,7 +6574,19 @@ impl PlayWindowApp {
             log::warn!("play-window: party {cslot} TSB/CBA relocation: {e:#}");
             return None;
         }
-        Some(asm)
+        // Band pixels at the pinned FUN_80052FA0 placement. A failure here
+        // degrades to the 1204 atlas approximation, not to a mesh fallback.
+        let uploads = legaia_asset::battle_char_assembly::character_texture_uploads(
+            &raw,
+            &pack,
+            &equipped,
+            cslot as u8,
+        )
+        .unwrap_or_else(|e| {
+            log::warn!("play-window: party {cslot} texture-pool decode: {e:#}");
+            Vec::new()
+        });
+        Some((asm, uploads))
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful

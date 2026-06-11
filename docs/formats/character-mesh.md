@@ -418,12 +418,16 @@ inherited as residue. Both prior errors came from reading the disc mesh's
 authoring TSB/CBA, or from a world-map save whose authoring pages happen to hold
 terrain.)
 
-**Textures** are the 1204 atlases themselves, relocated into the band:
-atlas 0/1 → Vahn, atlas 2/3 → Noa, atlas 4/5 → Gala (atlas dest → runtime page
-follows the table above). Against a clean full-party battle (Drake Castle) the
-band pages byte-match the atlases at **73–98 %** — the shortfall is the
-equipment groups overlaying parts. So the battle textures are fully
-disc-reproducible.
+**Textures** come from the **player files themselves**: the equipped
+sections' post-TMD texture pools + the two `record[0]` image blocks, each
+LoadImaged into the band at a static per-section rect
+(`SCUS_942.54` table `0x800775B8`, banded by the party ordinal) — the
+placement is fully pinned and reproduces live battle VRAM at 99.7–100 % per
+member; see
+[`battle-data-pack.md` § Texture-pool VRAM placement](battle-data-pack.md#texture-pool-vram-placement).
+The 1204 atlases byte-match the band only at **73–98 %** (they carry the
+default-equipment texels; the shortfall is the equipped-variant texels), so
+they serve as the engine's fallback approximation, not the source.
 
 **Palette** is a resident party-palette block in main RAM that the loader DMAs
 to VRAM rows 481/482/483. In a clean full-party battle save the blocks are
