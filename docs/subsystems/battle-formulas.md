@@ -283,6 +283,13 @@ byte map onto the target's `+0x16E`:
 | `5` | `\|= 1 << (rand%3 + 3)` (**Rot** - disables one random strike command; bits `8`/`0x10`/`0x20` gray the matching arrow in the command menu, `== 0x38` blocks Attack entirely) | always (party target) | char `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
 | `6` | `\|= 0x1000` (**Curse** - the magic block the menu + AI affordability checks read) | `rand & 3 == 0` (1/4) | - |
 
+**Stone = `+0x16E` bit `0x04`** — capture-pinned from a before/after pair
+around an enemy Glare cast (the petrify lands as `+0x16E: 0 → 4` with HP
+untouched; the victim's queued action category at `+0x1DE` clears, and the
+`+0x220` flag near the lingering-status visual marker drops). Bit `0x04` is
+exactly the hole the applier byte map above leaves unassigned; the petrify
+applier itself (Glare's effect path) is not in the dumped corpus.
+
 Note this conflicts with the engine's inherited byte naming (`4` = Sleep, `5` =
 Confuse, from external notes - see `legaia_engine_vm::status_effects`); the
 remap is held open until a capture pins what bytes `1`/`2` do mechanically.

@@ -1550,3 +1550,23 @@ phase = "field"
 expected_game_mode = 0x03
 description = "End credits: Biron Monastery vignette (scene pool slot0 = 785). Live mask widget at the border rect (0,16,320,204) on a second vignette scene."
 topics = ["ending", "screen widgets", "mask"]
+
+[[scenarios]]
+slot = 8
+label = "zora_glare_petrify_pre"
+ram_fingerprint_sha256 = "f7d9913a34c8005cc5c8426126ae5a362973bf2284dcd504791421f2d2d36be8"
+backup_fingerprint = "201feab882893d03effd6abe4c5660d1acb9599d96d9a15998234454cd3b9ca1"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Zora about to cast Glare on Vahn (full trio party). The BEFORE leg of the petrify pair: Vahn's +0x16E status halfword = 0, action category 4 queued at +0x1DE."
+topics = ["battle", "status", "Stone", "petrify", "Glare", "capture pair"]
+
+[[scenarios]]
+slot = 9
+label = "zora_glare_petrify_post"
+ram_fingerprint_sha256 = "23f4a658aa6d6c3ee40a93691eaef4f7c1663a4dbb8c0242a02bffadddbed13f"
+backup_fingerprint = "accace3d146cdc230ed56859c35b8404bacfbf9c26996bfdc0284cf7847c9450"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Right after Zora's Glare petrified Vahn. The AFTER leg: +0x16E = 0x04 (Stone's runtime bit, the previously-unassigned hole in the applier byte map), HP untouched, queued action category cleared, +0x220 visual flag dropped. Diff vs zora_glare_petrify_pre pins Stone's representation."
+topics = ["battle", "status", "Stone", "petrify", "Glare", "capture pair", "+0x16E bit 0x04"]
