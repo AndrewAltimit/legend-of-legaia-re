@@ -1448,3 +1448,13 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Noa + Terra in the active battle party vs a Theeder + mushroom-type enemy formation. The Terra-in-party capture: pins the 4th playable character's runtime texture band / CLUT row (the band selector is the member's present-party ordinal, not the character id) and live-validates her player-file record[0] idle stream."
 topics = ["battle", "Terra", "party", "texture band", "CLUT row", "record[0]", "battle_char_assembly"]
+
+[[scenarios]]
+slot = 4
+label = "evil_medallion_rage_battle"
+ram_fingerprint_sha256 = "bdac6719c35274edf4ef6623ff7f5b6e00cbcd5f163b34119f29566775041591"
+backup_fingerprint = "1bc733225aae105a430cbefab2ee472ff51520ec69f0a9dfdbe21d81a299bc06"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn wearing the Evil Medallion, about to attack an enemy Gimard variant (full trio party). The Rage passive bit 0x2000 is SET at actor+0xF8 (0x0000FCC7) and the AI-delegated action pick is RESOLVED in the actor: +0x1DE category = 3 (physical attack), +0x1DF action stream = 22 26 25 22 21, ctx action_state = 0x0A pre-action. Values support the auto-physical reading; the pick WRITER (and whether Rage ever picks arts/magic) still needs a write-watch probe or more pick samples."
+topics = ["battle", "status", "Evil Medallion", "Rage", "delegated action", "actor +0x1DE", "RE"]
