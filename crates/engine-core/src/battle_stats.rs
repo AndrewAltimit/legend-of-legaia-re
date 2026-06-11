@@ -116,6 +116,9 @@ impl EquipmentTable {
 /// resolver mirrors those magnitudes at the stat line instead, which is
 /// equivalent for the linear roll terms. The other entries (Confuse accuracy,
 /// immobilised evasion, Curse) are engine models, exposed for override.
+///
+/// REF: FUN_801DD864 (the bit-1 / bit-2 roll scales this resolver mirrors;
+/// the exact kernel port is `legaia_engine_vm::battle_formulas::apply_status_weaken`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatusModifiers {
     /// Multiplier applied to ATK when the actor is Toxic. Default `0.7`

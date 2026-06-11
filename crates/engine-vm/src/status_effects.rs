@@ -5,6 +5,10 @@
 //!       tick arithmetic in [`toxic_tick_damage`] / [`venom_tick_damage`])
 //! REF: FUN_801E7320 (Confuse retarget; ported as
 //!      `legaia_engine_core::world` `resolve_monster_target`)
+//! REF: FUN_801DD864 (the x9/10 / x7/10 combat-roll status scales - ported as
+//! `battle_formulas::apply_status_weaken`; cited here for the table).
+//! REF: FUN_801D0748 (round driver - its state `0x14` calls the DoT ticker
+//! once per round, gated on the round counter).
 //! REF: FUN_80047430 (sets the `+0x16E` `0x380` AI-delegation bits on party
 //!      slots whose char record carries accessory-passive bit 45 - Rage /
 //!      Evil Medallion)
@@ -27,7 +31,7 @@
 //!
 //! | Status    | byte | Retail effect                                               | Engine |
 //! |-----------|------|-------------------------------------------------------------|--------|
-//! | `Toxic`   | `1`  | DoT `min(max_hp/16, 256)` per round, never lethal (clamps to `current_hp - 1`); suppresses Venom's tick; outgoing damage and guard rolls scale x7/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`toxic_tick_damage`); the roll scaling is `battle_formulas::apply_status_weaken` bit 2 (engine-core's HUD-stat x0.875 is a separate stand-in) |
+//! | `Toxic`   | `1`  | DoT `min(max_hp/16, 256)` per round, never lethal (clamps to `current_hp - 1`); suppresses Venom's tick; outgoing damage and guard rolls scale x7/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`toxic_tick_damage`); the roll scaling is `battle_formulas::apply_status_weaken` bit 2 (engine-core's stat resolver mirrors the same x7/10 at the stat line) |
 //! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns (wiki; the enforcement site is not in the dumped corpus) | full block + clear-on-hit (same shape as Sleep) |
 //! | `Venom`   | `3`  | DoT `min(max_hp/32, 128)` per round, never lethal; skipped while Toxic is active; rolls scale x9/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`venom_tick_damage`) |
 //! | `Sleep`   | `4`  | Asleep; wakes when hit (wiki)                               | block + clear-on-hit |
