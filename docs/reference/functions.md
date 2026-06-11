@@ -363,7 +363,8 @@ These are the SCUS-callee leaves the field-VM dispatcher reaches via per-opcode 
 | `801DE084` | Camera apply / commit (op `0x45` CAMERA CONFIGURE apply path) — [details ↓](#801de084) |
 | `801DE2B0` | Op `0x34` sub-1 "capture-PC for existing actor" allocator. 51 instructions. `(operand_table_ptr, packed24)`. Allocates an actor from pool `0x801F2888` via `func_0x80020DE0`; copies 9 u16 fields from the operand table into `actor[+0xB8..+0xC6]` / `actor[+0xD2..+0xD4]` and writes the packed-24 value to `actor[+0xD6]`. The trailing actor returned by `FUN_801DE2B0` is what the field-VM stamps a captured-PC payload onto. |
 | `801DE3E0` | Sub-tile broadcast helper. 6-instruction wrapper. Calls `func_0x80035A4C(0x37)` (sound trigger id `0x37`), writes `*(active_ctx + 0x54) = 2` (move-substate), then tail-calls `FUN_801ECCAC`. Invoked by field-VM op `0x4C` sub-3 sub-8 / sub-D / sub-C4 (player subtile refresh + sub-tile broadcast). |
-| `801E4C58` | Op `0x4C n6 sub-0x61` 16-byte halt-acquire emitter — [details ↓](#801e4c58) |
+| `801E4C58` | Op `0x4C n6 sub-0x61` emitter = one-shot CLUT-cell write (`MoveImage` copy / flat-colour fill) — [details ↓](#801e4c58) |
+| `801E4794` | CLUT cross-fade effect SM (StoreImage ×2 → per-channel step interpolation → LoadImage per tick); world-map palette cycling — [details ↓](#801e4794) |
 | `801E573C` | Op `0x4C n8 sub-6` actor allocator with 6-axis rotation matrix (baka_fighter dump: 45 instructions). `(captured_pc, ctx_ptr, x, y, z, rx, ry, rz)`. Allocates an actor from pool `0x801F2948` via `func_0x80020DE0`; stores `captured_pc` at `+0x90`, `ctx_ptr` at `+0x94`, and the six i16 position+rotation values at `+0x80..+0x8A`. Returns silently when the pool is exhausted. |
 
 ## Field-locomotion math helpers
@@ -763,9 +764,19 @@ The `FUN_801DAB90` build path is the inverse (camera-actor state + globals → t
 
 ### `801E4C58`
 
-**Op `0x4C n6 sub-0x61` 16-byte halt-acquire emitter.** Invoked by the field/event VM's `0x4C` sub-dispatcher for sub-byte `0x61` (the `0x60..0x6F` "6-word emitter + halt-acquire" band, see [`subsystems/script-vm.md`](../subsystems/script-vm.md)). The VM first routes the instruction through the halt-acquire predicate (`which = 0x61`: `saved_pc != 0 \|\| ctx == player`, AND `!(flags & 0x400) \|\| scene_busy`), mutates the ctx (`saved_pc`, `wait_accum = 0`, `flags \|= 0x400`, system-channel mirror when ctx is the player), then calls this emitter with the 14-byte operand slice (instruction bytes +1..+15, including the gating word at +0xD..+0xE); PC advances by 16. Overlay-resident (no standalone `funcs/` dump; present in every scripting-cluster overlay as `overlay_*_801e4c58.txt`).
+**Op `0x4C n6 sub-0x61` 16-byte halt-acquire emitter = one-shot CLUT-cell write.** Invoked by the field/event VM's `0x4C` sub-dispatcher for sub-byte `0x61` (the `0x60..0x6F` "6-word emitter + halt-acquire" band, see [`subsystems/script-vm.md`](../subsystems/script-vm.md)). The VM first routes the instruction through the halt-acquire predicate (`which = 0x61`: `saved_pc != 0 \|\| ctx == player`, AND `!(flags & 0x400) \|\| scene_busy`), mutates the ctx (`saved_pc`, `wait_accum = 0`, `flags \|= 0x400`, system-channel mirror when ctx is the player), then calls this emitter with the 14-byte operand slice; PC advances by 16.
+
+**Payload** (decoded live from the map01-resident field overlay; the historical `overlay_*_801e4c58.txt` dumps are bad-base data, not this function): writes one 16×1 VRAM CLUT cell whose coordinates are the script operands, read via the misaligned-u16 helper `FUN_8003CE9C` — bail when `+0xD != 0`; source `(x, y)` at `+5`/`+7`, destination `(x, y)` at `+9`/`+0xB`. Non-zero source-y → libgpu `MoveImage` VRAM→VRAM copy of the cell; zero source-y → replicate the `+5` halfword as a flat BGR555 colour across all 16 entries, `DrawSync`, then `LoadImage`. One of the two emitters behind the world-map CLUT cycling (rows 506/508/509 + the `(48, 500)` cell); the multi-frame cross-fade sibling is `FUN_801E4794`. See [`world-map.md`](../subsystems/world-map.md) "Ocean animation".
 
 Ported as the `op4c_n6_sub_61_emitter` host hook in `crates/engine-vm/src/field.rs`.
+
+### `801E4794`
+
+**CLUT cross-fade effect state machine** (field overlay; reached via the `[0xFFFF0000][handler]` effect-descriptor records at `0x801F291C+`, pointer slot `0x801F2920`). `(ctx)` with the parameter record at `ctx+0x90` (operand fields read via `FUN_8003CE9C` at `+1/+3` = CLUT A `(x, y)`, `+5/+7` = CLUT B, `+9/+0xB` = destination, `+0xD` = frame count).
+First tick (`ctx+0x54 == 0`): allocates an `0xE0`-byte scratch into `ctx+0x98` (`FUN_80017888`), `StoreImage`s both 16×1 source cells, precomputes per-entry per-channel signed step deltas `(B−A)/frames` (R/G/B isolated via the `0x7C00` mask family).
+Each tick: advances `ctx+0x54` by the scratchpad frame-delta byte `0x1F800393`, accumulates `delta × step` per channel, repacks BGR555 into scratch `+0xC0`, and `LoadImage`s the cell to the destination.
+On completion: either `MoveImage`s the final source cell or uploads the captured CLUT B (`+0x7 == 0` arm), frees the scratch (`FUN_80017B94`), clears the `0x400` bit on the linked prim at `ctx+0x94`, sets `ctx+0x10 |= 8`.
+The cross-fade half of the world-map CLUT cycling — see [`world-map.md`](../subsystems/world-map.md) "Ocean animation". Decoded live from the map01-resident field overlay (`keikoku_chest_preload` capture RAM).
 
 ### `80059BD4`
 

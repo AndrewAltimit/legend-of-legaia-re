@@ -561,7 +561,10 @@ A per-column variance census across all ten map01-CLUT-resident catalog states p
 
 The four overworld-battle angle states are byte-identical on these rows (the cycle parks during battle); cycling shows across capture groups instead (menu / into-town / level-up lineages = distinct phases).
 
-The lockstep phase coupling (ring + tail + head all move together) says **one coupled animator** — very likely the ocean DMA writer with a wider/sibling rect — but the writer itself is still unlocated. VRAM writes aren't RAM-watchable; needs a GPU `LoadImage`-level trace or an overlay sweep for CLUT-row rect constants (`y = 506/508/509`). Engine residue: `play-window` animates the row-506 ocean head only; the exact retail cadence is also still unpinned. Census verified for map01/Drake only (no map02/map03-resident capture exists). The VRAM oracle now excludes only the censused columns (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`) and asserts the rest.
+**The writer is LOCATED** — resolved from the `keikoku_chest_preload` capture's RAM alone (no live probe): the map01 libgpu command queue holds 16×1 GP0 `0x80` cell copies whose destinations are exactly the censused cells (plus a `(48, 500)` sibling) and whose sources walk the 13-frame palette strips parked at VRAM rows 498/501..505.
+The emitters are the field overlay's script-driven CLUT-cell effect family — `FUN_801E4C58` (field-VM `0x4C` n6 sub-`0x61`: one-shot `MoveImage` cell copy or flat-colour `LoadImage`, coordinates = script operands at `+5/+7` → `+9/+0xB`) and `FUN_801E4794` (multi-frame cross-fade SM via the `[0xFFFF0000][handler]` records at `0x801F291C+`) — bottoming out in statically-linked libgpu `MoveImage`/`LoadImage`/`StoreImage`.
+No rect constant exists in any code image because the rows live in scene-script operands; the lockstep coupling = sibling ops sharing the frame counter, not one wider rect. See [`world-map.md`](../subsystems/world-map.md) "Ocean animation".
+Remaining residue: the exact retail cadence (the scratchpad frame-delta byte `0x1F800393` feeds the fade SM) is still unpinned, `play-window` animates the row-506 ocean head only, and the census is map01/Drake-only (no map02/map03-resident capture exists).
 
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels — pause-menu-lineage, not boot

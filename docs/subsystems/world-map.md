@@ -699,12 +699,38 @@ of STP-set ocean near-copies at 32..39 + the runtime-generated pure-channel
 tail at 40..47, all phase-locked to the ocean), row **508** animates head
 entries `{1, 14, 15, 26, 27}` and live-maintains a mirror `[32..47] ==
 [0..15]` over a disc-base palette it overwrites, and row **509** animates
-exactly cols `{42, 43}`. Row 507 is fully static. The lockstep coupling says
-one animator (likely the ocean DMA with a wider/sibling rect); the writer is
-unlocated — see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md). The VRAM
-parity oracle excludes exactly the censused columns for world-map scenes and
-asserts the rest (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
+exactly cols `{42, 43}`. Row 507 is fully static. The VRAM parity oracle
+excludes exactly the censused columns for world-map scenes and asserts the
+rest (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
+
+**The writer is the script-driven CLUT-cell effect family**, not a single
+hardcoded DMA. A map01-resident capture's libgpu command queue holds the
+smoking gun: 16×1 GP0 `0x80` VRAM→VRAM copy packets whose destinations are
+exactly the censused cells — `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`
+plus a `(48, 500)` sibling — and whose sources walk frame strips parked in
+VRAM rows 498 / 501..505 in 16-px steps (the 13-frame palette banks). Two
+field-overlay handlers emit them:
+
+- `FUN_801E4C58` — the field-VM `0x4C` n6 sub-`0x61` emitter: a one-shot
+  16×1 CLUT-cell write whose **coordinates are script operands** (source
+  `(x, y)` at instruction `+5`/`+7`, destination at `+9`/`+0xB`, read via the
+  misaligned-u16 helper `FUN_8003CE9C`). Non-zero source-y enqueues a libgpu
+  `MoveImage` cell copy; zero source-y replicates the `+5` halfword as a flat
+  BGR555 colour across all 16 entries and `LoadImage`s it.
+- `FUN_801E4794` — the multi-frame **cross-fade** state machine (installed
+  via the `[0xFFFF0000][handler]` descriptor records at `0x801F291C+`):
+  captures two 16-colour cells (`StoreImage` of `+1`/`+3` and `+5`/`+7`),
+  precomputes per-entry per-channel step deltas `(B−A)/frames` (`+0xD`),
+  accumulates them each tick against the scratchpad frame-delta byte
+  `0x1F800393`, and `LoadImage`s the repacked cell to `+9`/`+0xB`.
+
+Both bottom out in the statically-linked libgpu (`MoveImage FUN_80058490`,
+which patches the static 5-word GP0 packet template at `0x80078DFC`;
+`LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) — which is why no
+`y = 506/508/509` rect constant exists in any code image: the rows live in
+the scene's field-VM bytecode operands. The lockstep phase coupling across
+rows comes from sibling script ops sharing the frame counter, not from one
+wider rect.
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:

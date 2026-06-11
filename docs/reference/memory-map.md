@@ -158,6 +158,8 @@ chain. End-to-end walkthrough in [`subsystems/world-map.md`](../subsystems/world
 | `0x801F3520` | u32 | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. Used both as `local_3c` and `local_3c / 5`. |
 | `0x801F3524` | u32 | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
 | `0x801F3528` | u32 | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |
+| `0x80078DFC..0x80078E0F` | u32[5] | Statically-linked libgpu `MoveImage` packet template: `[tag 0x04FFFFFF][GP0 0x80000000][src yx][dst yx][wh]`. `FUN_80058490` (MoveImage) patches src/dst/wh in place per call, then submits through the driver vtable at `*(0x80078D4C)+8`. The frame-clear fill template (`x=0, y=4`, 320×224) sits just above at `0x80078DC0`. |
+| `0x801F291C+` | records | Field-overlay effect-descriptor records `[0xFFFF0000][handler ptr][4 param words]` (persistent `0x801F0000+` region). Slot `0x801F2920` holds the CLUT cross-fade SM `FUN_801E4794` (the world-map palette-cycling writer); sibling slots point at `FUN_801E4D8C` / `FUN_801E5154` / `FUN_801E5338`. |
 
 ## World-map TMD and actor tables
 
