@@ -1480,3 +1480,73 @@ expected_game_mode = 0x03
 expected_active_scene = "map03"
 description = "Standing resident on the Karisto Kingdom overworld outside Sol (scene-bundle pool slot 0 = 391 = map03 kingdom bundle). The Karisto leg of the world-map CLUT-cycle verification."
 topics = ["world map", "map03", "Karisto", "CLUT cycle", "ocean", "VRAM"]
+
+# ----------------------------------------------------------------
+# Ending-sequence screen-widget corpus: six states through the end
+# credits, the only retail consumer of the PROT-0900 widget family
+# (field-VM op 0x43 sub-ops). Each holds live widget actors on the
+# effect-actor list (_DAT_8007C34C family; handler at node+0xC in
+# {801F7A9C sprite, 801F811C mask, 801F849C panel, 801F8A34
+# letterbox}) whose field values byte-match the disc operand census
+# + the screen_fx model (masks at the census rects; panel at the
+# move-record position with base sizes x 0x700/4096 applied).
+
+[[scenarios]]
+slot = 3
+label = "ending_vignette_rimelm_walkaway"
+ram_fingerprint_sha256 = "1e9925bd6440746e83e388ac085eacdc20c2183c4fb2520773b7b74df0600e32"
+backup_fingerprint = "103c0d4c31da5773fd42f0a13bb6e8d54ae0ee1f99fba1182c8f8b978487430f"
+phase = "field"
+expected_game_mode = 0x03
+description = "End credits: Vahn walking away from Rim Elm (scene pool slot0 = 85). No widget actors live in this moment."
+topics = ["ending", "cutscene", "screen widgets"]
+
+[[scenarios]]
+slot = 4
+label = "ending_banner_mask_closed"
+ram_fingerprint_sha256 = "b26ab2feb1551eaa52d4d8783845f9463c81acba899c41241caa8d5d655a3d4b"
+backup_fingerprint = "17552e64acb105d8c9f732f1144a5dd02b88bdadf13702cd23dd34b097b928a1"
+phase = "field"
+expected_game_mode = 0x03
+description = "End credits: title banner over black (scene pool slot0 = 780). Live mask widget parked at the degenerate mask-to-black rect (32,32,32,32) + two banner sprite widgets at (92,80)/(133,112)."
+topics = ["ending", "screen widgets", "mask", "sprite"]
+
+[[scenarios]]
+slot = 5
+label = "ending_vignette_fullscreen"
+ram_fingerprint_sha256 = "4435c6cc81a95c2ff3cee192f0b27f80c46782ed77d8b00953a9113aafb7a04b"
+backup_fingerprint = "5c45bfd7578eb8654272313e04d93b5490d85eb11aae768071e09659b7d4a44b"
+phase = "field"
+expected_game_mode = 0x03
+description = "End credits: fullscreen location vignette (scene pool slot0 = 780). Live mask widget at the top/bottom-border rect (0,16,320,204) - the census record [0,0x10,0x140,0xCC]."
+topics = ["ending", "screen widgets", "mask"]
+
+[[scenarios]]
+slot = 6
+label = "ending_panel_corner"
+ram_fingerprint_sha256 = "cdc829b952298d6f349a13a20de258cfbc346bf15a4b0b300bc7a05f2c48bf3d"
+backup_fingerprint = "9915fc3d7746d4386aadcd4530fc32a739874de7354183a72aeec2759ab50571"
+phase = "field"
+expected_game_mode = 0x03
+description = "End credits: vignette photo panel shrunk to the corner with credit names (scene pool slot0 = 780). Live panel widget at (16,112) sized 140x98 = base (320,224) x scale 0x700 (4.12 fixed), base sizes intact at +0xb8; mask-to-black + two credit sprites at x=184."
+topics = ["ending", "screen widgets", "panel", "scale 0x700", "sprite"]
+
+[[scenarios]]
+slot = 7
+label = "ending_scene_load_gap"
+ram_fingerprint_sha256 = "f421c0a52a637cf46aeb3b7ad405d9fa129c6528801e5d62f510fad165f97aa0"
+backup_fingerprint = "2286e018049076f693e1710ab2594d4e4eb635b339ddd7eaa84f67d3639c1d0c"
+phase = "field"
+expected_game_mode = 0x02
+description = "End credits: black screen between vignettes (mode 0x02 scene init, scene pool slot0 = 785). Widget list empty - clean per-scene teardown."
+topics = ["ending", "screen widgets", "scene transition"]
+
+[[scenarios]]
+slot = 8
+label = "ending_vignette_biron"
+ram_fingerprint_sha256 = "a96c041e6ef0308b53ddd23aebc1cc722d4826ac5e7f145d2035c0065743b4c8"
+backup_fingerprint = "885a10acf52b8792e4c3e47155d8435a87e9c58e579cf4aba2a3a8d8a45c0b68"
+phase = "field"
+expected_game_mode = 0x03
+description = "End credits: Biron Monastery vignette (scene pool slot0 = 785). Live mask widget at the border rect (0,16,320,204) on a second vignette scene."
+topics = ["ending", "screen widgets", "mask"]
