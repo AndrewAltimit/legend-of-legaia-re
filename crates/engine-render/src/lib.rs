@@ -138,6 +138,18 @@ impl UploadedTexturedMesh {
 /// per-vertex CBA + TSB.
 pub struct UploadedVram {
     bind_group: wgpu::BindGroup,
+    /// Monotonic per-[`Renderer`] upload stamp. Lets a host that expects a
+    /// specific VRAM upload to stay GPU-resident (e.g. the battle texture
+    /// across battle frames) detect that another path re-uploaded over it.
+    generation: u64,
+}
+
+impl UploadedVram {
+    /// The renderer-wide upload stamp this texture was created under.
+    /// Strictly increasing across [`Renderer::upload_vram`] calls.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
 }
 
 /// VRAM-mesh: position + per-vertex UV (u8) + per-vertex CBA + TSB (u16).
@@ -3543,6 +3555,10 @@ pub struct Renderer {
     /// positions to reproduce the GTE's per-vertex sub-pixel-truncation
     /// "vertex jitter." Default `false` for clean smooth rendering.
     psx_mode: std::cell::Cell<bool>,
+    /// Count of [`Self::upload_vram`] calls; stamps each [`UploadedVram`]
+    /// with a strictly-increasing generation (see
+    /// [`UploadedVram::generation`]).
+    vram_upload_counter: std::cell::Cell<u64>,
     /// GP0(0xE2) "Texture Window setting" - `(mask_x, mask_y, off_x, off_y)`
     /// each in 8-pixel steps (0..=31). Applied per-fragment in the
     /// VRAM-mesh shader. Defaults to all-zero (no-op), which matches
@@ -4533,6 +4549,7 @@ impl Renderer {
             scene_quad_ranges: std::cell::RefCell::new(Vec::new()),
             depth_view,
             psx_mode: std::cell::Cell::new(false),
+            vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
         })
     }
@@ -4727,7 +4744,12 @@ impl Renderer {
                 resource: wgpu::BindingResource::TextureView(&view),
             }],
         });
-        Ok(UploadedVram { bind_group })
+        let generation = self.vram_upload_counter.get() + 1;
+        self.vram_upload_counter.set(generation);
+        Ok(UploadedVram {
+            bind_group,
+            generation,
+        })
     }
 
     /// Upload a VRAM mesh: position + per-vertex `(u, v)` (each 0..255) +

@@ -3756,6 +3756,13 @@ struct PlayWindowApp {
     /// `enter_battle_render`, so a mid-battle player-summon spawn can inject its
     /// own creature texture into a clone and re-upload.
     battle_vram: Option<legaia_tim::Vram>,
+    /// Upload generation (see [`legaia_engine_render::UploadedVram::generation`])
+    /// of the battle VRAM currently expected to be GPU-resident. `Some` only
+    /// while a battle texture is uploaded; any other upload path bumping the
+    /// renderer's generation mid-battle is a residency violation (the
+    /// white-speckle class of bug), caught + self-healed by
+    /// `check_battle_vram_residency`.
+    battle_vram_generation: Option<u64>,
     /// Number of monster texture slots in use this battle (0..=4). A player
     /// summon reuses the next free slot for its creature texture.
     battle_tex_slots_used: u8,
@@ -6524,7 +6531,10 @@ impl PlayWindowApp {
 
         if bound > 0 || party_bound > 0 {
             match r.upload_vram(&vram) {
-                Ok(v) => self.uploaded_vram = Some(v),
+                Ok(v) => {
+                    self.battle_vram_generation = Some(v.generation());
+                    self.uploaded_vram = Some(v);
+                }
                 Err(e) => log::error!("play-window: battle VRAM re-upload: {e:#}"),
             }
             log::info!(
@@ -6699,7 +6709,12 @@ impl PlayWindowApp {
         self.meshes.push(uploaded);
         self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
         match r.upload_vram(&vram) {
-            Ok(v) => self.uploaded_vram = Some(v),
+            Ok(v) => {
+                // A mid-battle summon spawn is a legitimate battle-VRAM
+                // refresh: re-stamp the expected resident generation.
+                self.battle_vram_generation = Some(v.generation());
+                self.uploaded_vram = Some(v);
+            }
             Err(e) => log::error!("play-window: summon VRAM re-upload: {e:#}"),
         }
 
@@ -6759,9 +6774,48 @@ impl PlayWindowApp {
             a.pose_frame = None;
         }
         self.battle_vram = None;
+        self.battle_vram_generation = None;
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
         self.battle_ground_mesh = None;
+    }
+
+    /// Residency guard: while a battle texture is expected to be GPU-resident,
+    /// verify no other path re-uploaded VRAM over it this frame. The
+    /// white-speckle party bug (a background CLUT animator re-uploading the
+    /// field snapshot mid-battle) was invisible to every CPU-side VRAM oracle
+    /// because they never check *which* upload the draw samples. On a
+    /// violation: log loudly, fail debug builds, and self-heal by re-uploading
+    /// the stashed battle VRAM.
+    fn check_battle_vram_residency(&mut self) {
+        if self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let Some(expected) = self.battle_vram_generation else {
+            return;
+        };
+        let current = self.uploaded_vram.as_ref().map(|v| v.generation());
+        if current == Some(expected) {
+            return;
+        }
+        log::error!(
+            "play-window: battle VRAM clobbered mid-battle (expected upload \
+             generation {expected}, GPU holds {current:?}); re-uploading the \
+             battle texture"
+        );
+        debug_assert!(
+            false,
+            "battle VRAM residency violated: expected generation {expected}, found {current:?}"
+        );
+        if let (Some(r), Some(vram)) = (self.win.renderer.as_ref(), self.battle_vram.as_ref()) {
+            match r.upload_vram(vram) {
+                Ok(v) => {
+                    self.battle_vram_generation = Some(v.generation());
+                    self.uploaded_vram = Some(v);
+                }
+                Err(e) => log::error!("play-window: battle VRAM re-upload (heal): {e:#}"),
+            }
+        }
     }
 
     /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
@@ -8439,6 +8493,9 @@ impl ApplicationHandler for PlayWindowApp {
                     // World-map ocean shimmer: cycle the 13-frame CLUT animation
                     // (self-gates to None off the world map).
                     self.advance_ocean_animation();
+                    // Catch any path that re-uploaded VRAM over the battle
+                    // texture this frame (and restore it).
+                    self.check_battle_vram_residency();
                     if self.menu_runtime.is_open() {
                         let p = self.pad;
                         let input = MenuInput {
@@ -10036,6 +10093,7 @@ fn cmd_play_window_with_record(
         ocean_anim: None,
         cpu_vram_base: None,
         battle_vram: None,
+        battle_vram_generation: None,
         battle_tex_slots_used: 0,
         summon_actor_slot: None,
         battle_stage_mesh: None,
