@@ -156,11 +156,18 @@ now requests the summon at the cast point in both engine cast paths — the acti
 `spell_anim_trigger` (`World::fold_battle_event` on `BattleEvent::SpellAnimTrigger`) and the
 live-loop `cast_spell_on_slots` — via `World::request_summon_spawn`. The host drains
 `World::take_pending_summon_spawn`, maps the id to its overlay PROT entry
-(`summon::summon_stager_prot_entry`: `0x81..=0x8b → 905..=915` — the engine mirror still carries
-the raw `+0x381` arithmetic; corrected extraction range is `903..=913`, see the overlay-loader
-off-by-2 row below — retail `FUN_8003EC70(id-0x79)`), loads + parses it, and seats the
-scene-graph (`play-window`). So a real Gimard *Tail Fire* cast spawns the animated summon, no
-debug key.
+(`summon::summon_stager_prot_entry`: `0x81..=0x8b → 903..=913`, extraction space — retail
+`FUN_8003EC70(id-0x79)`), loads + parses it, and seats the scene-graph (`play-window`). So a
+real Gimard *Burning Attack* cast spawns the animated summon, no debug key.
+
+**Per-spell stager assignment CAPTURE-PINNED for the whole block.** One mid-cast save state per
+spell (the `gimard_summon_*` + `<seru>_summon_mid_cast` scenarios in `scripts/scenarios.toml`)
+holds the battle overlay's loader-B current-id `0x8007BC4C` at exactly `spell_id - 0x79` for all
+eleven ids: `0x81` Gimard→903 through `0x8B` Nova→913, every leg on the linear arithmetic.
+Entry 0907 (Nighto) heads with the ASCII title `Hell's Music` + a normal MIPS prologue — the
+spell's musical-attack payload rides inside its stager module, which also explains the entry's
+earlier dance-song content reading as likely dual use (open residue: the dance overlay's own
+loader-B call sites).
 
 **PROT 0900 RESOLVED — the slot-B *screen-effect + top-view-grid* overlay; `FUN_801F811C` is a 2D screen-mask widget, not a part transform.** A full static decode of the file at the link base `0x801F69D8` (function bodies instruction-diffed identical against the dance / baka-fighter dumps; file `0x0640..0x2660` byte-resident at `0x801F7018..0x801F9038` in the fingerprinted `battle_gimard_tail_fire_a` save) closes the long-open "quad-emit / matrix half" question. Two subsystems coexist in the file:
 

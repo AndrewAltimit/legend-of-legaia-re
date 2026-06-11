@@ -1398,3 +1398,43 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Gala casting Viguro (spell 0x87) mid-summon. Loader-B current-id 0x8007BC4C = 14 -> stager extraction 0909."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x87"]
+
+[[scenarios]]
+slot = 2
+label = "swordie_summon_mid_cast"
+ram_fingerprint_sha256 = "0dcd865e05e60a4875bd119bced7abe25ddaae22a7b23e169eb917d8652bc175"
+backup_fingerprint = "6d877c409b1b82138f3200fbd0db1527f533635ffdf58e6031d81a1bcbd665c0"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Swordie (spell 0x88) mid-summon. Loader-B current-id 0x8007BC4C = 15 -> stager extraction 0910."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x88"]
+
+[[scenarios]]
+slot = 4
+label = "orb_summon_mid_cast"
+ram_fingerprint_sha256 = "56011a5847a8fe007f9d4a3b226b1160c5bb46fa93ca1bcfa80012e845bb576d"
+backup_fingerprint = "b60d9e367758c05dfc15ab0220b60ae8454bb1262f9805b7499bd2d5d16d6f16"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Orb (spell 0x89) mid-summon. Loader-B current-id 0x8007BC4C = 16 -> stager extraction 0911."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x89"]
+
+[[scenarios]]
+slot = 3
+label = "freed_summon_mid_cast"
+ram_fingerprint_sha256 = "26e3375d44a3794569fc84dc78721ac21a820d4dd1f244bafdf78475ae0d7089"
+backup_fingerprint = "677e2b12242689966f4f5a1f21682b9de8c1f8bb5094ecdfe9f7437ce6981e5b"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Freed (spell 0x8A) mid-summon. Loader-B current-id 0x8007BC4C = 17 -> stager extraction 0912."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8A"]
+
+[[scenarios]]
+slot = 5
+label = "nova_summon_mid_cast"
+ram_fingerprint_sha256 = "a458136e6863f7bf95adb8143453053afcd0554218c000ddaa7f72c71c45354a"
+backup_fingerprint = "c2c46b5f0a23b6f6737d6d6be499e0f11dc0be10b8a4ef10c75a2e0f9ee548ab"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Nova (spell 0x8B) mid-summon. Loader-B current-id 0x8007BC4C = 18 -> stager extraction 0913. Completes the capture-pinned player Seru-magic block: 0x81..0x8B -> 903..913, every leg on the linear arithmetic."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8B"]

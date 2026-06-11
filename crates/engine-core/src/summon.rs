@@ -89,7 +89,8 @@ pub const SUMMON_PART_BUDGET: usize = 256;
 
 /// Player Seru-magic spell-id range that resolves to a per-summon overlay at
 /// the battle-action cast band (`FUN_801E295C` state `0x29`: `actor[+0x1DF] >=
-/// 0x81`). Gimard *Tail Fire* = `0x81`.
+/// 0x81`). Gimard *Burning Attack* = `0x81` (the enemy boss *Fire Tail* is a
+/// different, non-stager path).
 pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
@@ -98,6 +99,13 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 /// is raw `PROT.DAT` from byte 0 (header included), so the extraction entry
 /// sits 2 below the raw index: `0x81..=0x8B → 903..=913` (see
 /// `docs/formats/prot.md` § index spaces).
+///
+/// Capture-pinned for **every id in the block**: one mid-cast save state per
+/// spell holds the battle overlay's loader-B current-id (`0x8007BC4C`) at
+/// exactly `spell_id - 0x79` (the `<seru>_summon_mid_cast` +
+/// `gimard_summon_*` scenarios in `scripts/scenarios.toml`). Entry 0907
+/// (Nighto) heads with the ASCII title "Hell's Music" — the spell's musical
+/// attack payload rides inside its stager module.
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
     SERU_SUMMON_IDS
         .contains(&spell_id)
