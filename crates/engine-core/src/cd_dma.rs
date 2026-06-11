@@ -918,9 +918,10 @@ mod tests {
         let mut host = make_synthetic_host();
         host.set_overlay_destinations(0x8010_0000, 0x8011_0000);
         // The synthetic PROT only has 2 entries; the overlay loaders' real
-        // call site uses param values whose `+0x381` resolves to a real
-        // overlay PROT index. For the smoke test we accept the synthetic
-        // PROT's "garbage size" return - the wiring is what we verify.
+        // call site uses param values whose `+ OVERLAY_PROT_BASE` resolves
+        // to a real overlay PROT index. For the smoke test we accept the
+        // synthetic PROT's "garbage size" return - the wiring is what we
+        // verify.
         let param = -(OVERLAY_PROT_BASE); // → prot_idx 0
         let result = load_overlay_a(&mut host, param);
         assert_eq!(result, param, "fresh load returns param");
@@ -936,10 +937,10 @@ mod tests {
 
     #[test]
     fn overlay_loader_b_drives_prot_cd_dma_host_end_to_end() {
-        use crate::overlay_loader::{OverlayCacheSlot, load_overlay_b};
+        use crate::overlay_loader::{OVERLAY_PROT_BASE, OverlayCacheSlot, load_overlay_b};
         let mut host = make_synthetic_host();
         host.set_overlay_destinations(0x8010_0000, 0x8011_0000);
-        let param = -0x381; // → prot_idx 0
+        let param = -(OVERLAY_PROT_BASE); // → prot_idx 0
         let result = load_overlay_b(&mut host, param);
         assert_eq!(result, param);
         assert_eq!(host.overlay_slot(OverlayCacheSlot::B), param);

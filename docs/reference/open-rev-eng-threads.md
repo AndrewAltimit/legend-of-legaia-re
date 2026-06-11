@@ -879,7 +879,7 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    pure-Rust read closes each); plus the dance overlay's own loader-B call sites (params for
    0907/0924/0927) in `overlay_dance` dumps.
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
-3. **Engine mirrors still carry the raw `+ 0x381`.** `crates/engine-core/src/overlay_loader.rs` (`OVERLAY_PROT_BASE`), `crates/engine-core/src/summon.rs` (905..=915 comment), and `crates/engine-core/src/cd_dma.rs` feed extraction-indexed PROT reads with resolver-space indices — loading entries 2 high (e.g. menu 0899 where retail mode 2 loads field 0897). Needs an engine-side `- 2` (or a `param + 0x37F` constant) plus oracle re-runs; left untouched here (parallel engine work in flight).
+3. **Engine mirrors — resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain — `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 — consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 
 A thread belongs here when:
 

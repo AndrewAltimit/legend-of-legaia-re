@@ -4,7 +4,8 @@
 //!
 //! Two SCUS-resident wrappers around [`crate::cd_dma::CdDmaHost::prot_one_shot_load`]
 //! that the mode-table dispatcher uses to stream the active scene's pair of
-//! 0x381-offset overlay PROT entries into RAM. Each loader carries its own
+//! overlay PROT entries (extraction `param + 0x37F`; retail raw-TOC
+//! `param + 0x381`) into RAM. Each loader carries its own
 //! cache slot, destination buffer, and sister-cache invalidation so the
 //! mode-table machinery can hold two distinct overlays resident in parallel
 //! (one read from `*DAT_8001038C`, the other from `*DAT_80010390`).
@@ -23,7 +24,9 @@
 //!    early - the actual streaming load is skipped.
 //! 2. Otherwise, compare `param` against the cache slot. A match short-
 //!    circuits ("already loaded"); a miss issues an
-//!    [`CdDmaHost::prot_one_shot_load`] of PROT entry `param + 0x381`
+//!    [`CdDmaHost::prot_one_shot_load`] of extraction PROT entry
+//!    `param + 0x37F` (retail raw-TOC `param + 0x381` over the
+//!    header-included in-RAM TOC - same entry, see [`OVERLAY_PROT_BASE`])
 //!    into the loader's destination buffer with [`LoadFlags::ISSUE`] only
 //!    (async; the caller polls completion through the read-wait helpers).
 //! 3. Update the cache slots: the loader writes its own slot to `param`,
@@ -72,16 +75,21 @@ pub enum OverlayCacheSlot {
 /// host impls and tests share a single source of truth.
 pub const OVERLAY_CACHE_EMPTY: i32 = -1;
 
-/// PROT-index offset retail adds to the caller-supplied `param` to land
-/// on the actual PROT entry: `prot_index = param + 0x381`. The offset
-/// is shared by both loaders.
+/// PROT-index offset added to the caller-supplied `param` to land on
+/// the loaded PROT entry, in **extraction index space**. The offset is
+/// shared by both loaders.
 ///
-/// Index space: the sum is a **raw in-RAM TOC index** — the TOC copy at
-/// `0x801C70F0` is raw `PROT.DAT` from byte 0 (header included), so the
-/// per-entry extraction index sits 2 below it (`extraction = param +
-/// 0x37F`; see `docs/formats/prot.md` § index spaces). Hosts resolving
-/// against extraction-numbered entries must apply that shift.
-pub const OVERLAY_PROT_BASE: i32 = 0x381;
+/// Index space: retail computes `raw_idx = param + 0x381` against the
+/// in-RAM TOC at `0x801C70F0`, which is raw `PROT.DAT` from byte 0
+/// (header included); the per-entry extraction index sits 2 below the
+/// raw one, so the loaded entry is `extraction = param + 0x37F` (see
+/// `docs/formats/prot.md` § index spaces; capture-pinned, e.g. mode 2
+/// loads field 0897 and the Gimard cast loads stager 0903). The engine
+/// host chain ([`CdDmaHost::prot_one_shot_load`] →
+/// `ProtIndex::entry_start_lba_retail`, whose `toc` array starts at raw
+/// dword 2) consumes extraction-space indices, so this constant carries
+/// the shift already applied.
+pub const OVERLAY_PROT_BASE: i32 = 0x37F;
 
 /// Mode-state word value (`_DAT_8007B83C`) that forces [`load_overlay_b`] to
 /// invalidate its cache before checking. Retail compares against `0x15`
@@ -127,13 +135,13 @@ pub trait OverlayLoaderHost: CdDmaHost {
 ///
 /// PORT: FUN_8003EBE4
 ///
-/// Caches PROT entry `param + 0x381` in slot A. Behaviour matrix:
+/// Caches extraction PROT entry `param + 0x37F` in slot A. Behaviour matrix:
 ///
 /// | Branch                                | Effect                                                                                          | Return     |
 /// |---------------------------------------|-------------------------------------------------------------------------------------------------|------------|
 /// | dev (`dev_branch_flag != 0`)          | Stash `param` in slot A; no PROT load.                                                          | dev flag   |
 /// | retail, slot A == `param`             | Already-resident short-circuit; no PROT load.                                                   | `-1`       |
-/// | retail, slot A != `param` (fresh load)| `prot_one_shot_load(param + 0x381, dst_A, ISSUE)`; invalidate slot B (`= -1`); update slot A.   | `param`    |
+/// | retail, slot A != `param` (fresh load)| `prot_one_shot_load(param + 0x37F, dst_A, ISSUE)`; invalidate slot B (`= -1`); update slot A.   | `param`    |
 pub fn load_overlay_a<H: OverlayLoaderHost + ?Sized>(host: &mut H, param: i32) -> i32 {
     let dev = host.dev_branch_flag();
     if dev != 0 {
@@ -159,7 +167,7 @@ pub fn load_overlay_a<H: OverlayLoaderHost + ?Sized>(host: &mut H, param: i32) -
 ///
 /// PORT: FUN_8003EC70
 ///
-/// Caches PROT entry `param + 0x381` in slot B. Mirrors [`load_overlay_a`]
+/// Caches extraction PROT entry `param + 0x37F` in slot B. Mirrors [`load_overlay_a`]
 /// except:
 ///
 /// - Uses [`OverlayCacheSlot::B`] for the cache slot and destination.
@@ -364,7 +372,11 @@ mod tests {
 
     #[test]
     fn prot_base_offset_matches_retail_dump() {
-        // The PROT offset literal in both functions is `_addiu a0,a0,0x381`.
-        assert_eq!(OVERLAY_PROT_BASE, 0x381);
+        // The PROT offset literal in both functions is `_addiu a0,a0,0x381`,
+        // a RAW in-RAM TOC index (header-included). The engine host chain
+        // consumes extraction-space indices, which sit 2 below raw - the
+        // constant carries the shift (capture-pinned: mode 2 loads field
+        // 0897; the Gimard cast loads stager 0903).
+        assert_eq!(OVERLAY_PROT_BASE, 0x381 - 2);
     }
 }
