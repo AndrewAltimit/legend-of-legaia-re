@@ -23,7 +23,7 @@ reference textures across multiple VRAM pages render correctly.
 
 Useful flags:
 
-- `--bundle battle` - overlay the correct PROT 865–890 set traced from
+- `--bundle battle` - overlay the empirically-tuned extraction 865–890 `tim_scan` set traced from
   `FUN_800520f0`. Field/town/level_up bundles live in uncaptured
   overlays, so for those you may need `--vram-extra-dir` until the
   runtime asset chain is fully traced.

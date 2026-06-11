@@ -27,7 +27,7 @@
     </a>
     <a class="card" id="cdname" href="cdname.html">
       <div class="card-title"><span>CDNAME.TXT name map</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. Some labels are misleading (vab_01, move_program_no) - verify against the loader-call constant or magic bytes.</div>
+      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. The define numbers are raw in-RAM TOC indices &mdash; extraction filename labels are shifted +2 (the historical vab_01 / move_program_no &ldquo;mislabels&rdquo; were this shift). Verify against the loader-call constant or magic bytes.</div>
     </a>
     <a class="card" href="dmy.html">
       <div class="card-title"><span>DMY.DAT (dev fixtures)</span> <span class="tag tag-done">Confirmed</span></div>
@@ -64,8 +64,8 @@
       <div class="card-body">Magic <code>0x01059B84</code>. 4 PROT entries share a byte-identical 97-entry static schema. Consumer is <code>FUN_801D6704</code> (overlay 0897); slots are read at hard-coded offsets.</div>
     </a>
     <a class="card" href="battle-data-pack.html">
-      <div class="card-title"><span>Battle-data pack</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">Custom 16 MB-ish container for the <code>battle_data</code> block (PROT 0865 + sister <code>edstati3</code>). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>.</div>
+      <div class="card-title"><span>Player battle files</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The per-character player battle files <code>data\battle\PLAYER1..4</code> (retail <code>battle_data</code>, extraction 0863..0866): header + LZS palette chain + 12-byte descriptor table + per-slot LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>. The old &ldquo;16 MB container at 0865&rdquo; was an over-read window into the monster archive (0867).</div>
     </a>
     <a class="card" href="npc-palette.html">
       <div class="card-title"><span>Row-479 NPC CLUTs</span> <span class="tag tag-done">Confirmed</span></div>
@@ -87,7 +87,7 @@
     </a>
     <a class="card" id="vab" href="vab.html">
       <div class="card-title"><span>VAB sound bank</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live in battle_data / level_up - vab_01 is misleading.</div>
+      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live across the sound blocks; the retail <code>vab_01</code> block (extraction 1070..1192) is wall-to-wall VAB &mdash; the old &ldquo;vab_01 is misleading&rdquo; was the +2 filename shift.</div>
     </a>
     <a class="card" id="seq" href="seq.html">
       <div class="card-title"><span>PsyQ SEQ</span> <span class="tag tag-done">Confirmed</span></div>

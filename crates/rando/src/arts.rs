@@ -254,12 +254,15 @@ impl ArtsEdits {
     }
 }
 
-/// Player-data PROT entry index per character (the `edstati3`/PLAYERn file whose
-/// `record0` holds the matcher's art records). Vahn `0861`, Noa `0864`, Gala
-/// `0865`.
+/// Player battle-file PROT entry index per character, in extraction space
+/// (`PLAYERn`, raw TOC `0x361..0x363`; see `docs/formats/cdname.md` § numbering
+/// space): Vahn `0863`, Noa `0864`, Gala `0865`. The historical Vahn `0861`
+/// window aliased the same absolute disc bytes through the two 1-sector stubs
+/// preceding the true entry, so patches through either window land on the same
+/// sectors; `0863` is the canonical entry (its `record0` leads the file).
 pub fn player_entry_index(ch: Character) -> usize {
     match ch {
-        Character::Vahn => 861,
+        Character::Vahn => 863,
         Character::Noa => 864,
         Character::Gala => 865,
     }

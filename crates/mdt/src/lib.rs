@@ -38,6 +38,17 @@
 //!
 //! ## What's actually in the named PROT entries
 //!
+//! CORRECTION (CDNAME numbering space): the extraction files *named*
+//! `0972/0973_move_program_no` carry the +2 filename shift (see
+//! `docs/formats/cdname.md` § numbering space) — they are actually
+//! `other_game` minigame overlays (0972 = the fishing minigame overlay,
+//! 0973 = the 1-sector `OTHER2` dev module). The `move_program_no` define
+//! covers extraction 0970..0971, a `\DATA\MOV*.STR` FMV program/path table
+//! ("MOVie program numbers"), not Tactical-Arts moves. The "flat 128-byte
+//! record array" reading below is therefore a loose parse of overlay
+//! code/data; it is kept because `classify` still usefully reports that
+//! these files do not match the runtime Move-buffer layout.
+//!
 //! `0972_move_program_no.BIN` (24576 B) and `0973_move_program_no.BIN` (47104 B)
 //! are CDNAME-named "move_program_no" but their byte layout does **not** match
 //! the consumer-derived offset-table format. Instead they look like a flat

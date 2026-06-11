@@ -1,153 +1,172 @@
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; battle-data pack</div>
-  <h1>Battle-data pack <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">The custom container used by PROT entries in the <code>battle_data</code> CDNAME block (PROT 0865) and a small number of sister blocks (e.g. <code>edstati3</code> at PROT 0863). Each pack holds 30-90 character / monster TMDs with their texture pools, all wrapped in per-record LZS streams. Detector + dispatch: <code>crates/asset/src/battle_data_pack.rs</code>.</p>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; player battle files</div>
+  <h1>Player battle files (<code>data\battle\PLAYER1..4</code>) <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">The per-character battle asset files for Vahn / Noa / Gala / Terra &mdash; the retail <code>battle_data</code> CDNAME block (defines <code>865..868</code>, extraction entries <strong>0863..0866</strong>; the extraction filename labels <code>0863/0864_edstati3</code> are the <a href="cdname.html#numbering-space">+2 label shift</a>). Each file is a self-contained container: a header + LZS <code>record[0]</code> (the battle-palette chain), a 12-byte descriptor table, and a region of per-slot LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>. Parsers: <code>crates/asset/src/battle_char_palette.rs</code> + <code>crates/asset/src/battle_data_pack.rs</code>.</p>
 </header>
 
-<section class="doc-section" id="distinction-from-other-packs">
-  <h2>Distinction from other pack formats</h2>
+<section class="doc-section" id="identity-note">
+  <h2>Identity note</h2>
+  <p><strong>Supersedes the earlier &ldquo;battle_data pack&rdquo; reading.</strong> This page previously described a &ldquo;custom 16 MB container at PROT 0865&rdquo;. The 16 MB figure was extraction 0865's TOC-<em>indexed</em> window (7811 sectors), which over-reads across 0866 into the <a href="#not-the-monster-archive">monster archive</a>'s sectors; every structure documented here actually sits inside each player file's own footprint (0865 = Gala, 222 sectors). The monster archive is a <strong>different container</strong> at extraction 0867.</p>
   <p>This format is distinct from:</p>
   <ul>
-    <li>the standalone <a href="tim-pack.html">TIM-pack</a> used by some PROT entries,</li>
+    <li>the <a href="#not-the-monster-archive">monster stat archive</a> (extraction 0867, retail <code>monster_data</code>),</li>
+    <li>the standalone <a href="tim-pack.html">TIM-pack</a> used by some other PROT entries,</li>
     <li>the <a href="data-field.html">DATA_FIELD streaming format</a> used by scene bundles,</li>
     <li>the <a href="field-pack.html">field-pack</a> and <a href="effect.html">effect-bundle</a> containers.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="outer-layout">
-  <h2>Outer layout</h2>
-<pre><code>+0x0000  u32 chunk0_header     ; (type=0x00 &lt;&lt; 24) | first_chunk_size
-+0x0004  ...chunk0 payload...  ; opaque streaming data
-                                ; (chunk0 payload's last u32 holds the trailer record count)
-+chunk0_size + 4   u32         ; streaming-format terminator (low24=0)
-
-+chunk0_size       u32 record_count       ; e.g. 0x57 = 87 slots
-+chunk0_size + 4   u32 reserved           ; always 0
-+chunk0_size + 8   Record[record_count]   ; 12 bytes each
-
-data_base  ; next 0x800-aligned offset that satisfies the per-record dec_size sanity check
-data_base + Record[i].data_offset  ; compressed entry for record i</code></pre>
-  <p>The chunk0 header at offset 0 carries the trailer record count in its last u32 - the count is simultaneously the streaming chunk's final payload word and the trailer-table count. The chunk-stream terminator at <code>chunk0_size + 4</code> lets the runtime's streaming walker stop cleanly without ever inspecting the trailer.</p>
+<section class="doc-section" id="load-chain-index-space">
+  <h2>Load chain + index space</h2>
+  <p><code>FUN_80052770</code> points each party character's asset-table entry at the dev path <code>data\battle\PLAYER&lt;n&gt;</code> and opens it through the dual-mode wrapper <code>FUN_800558FC(path, &hellip;, char_id + 0x360)</code>. The retail ISO9660 branch is a trap stub on this build, so the load always resolves through <code>FUN_8003E8A8</code> with the <strong>raw in-RAM TOC index</strong> <code>char_id + 0x360</code> &mdash; extraction entry <code>char_id + 0x360 &minus; 2</code> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>):</p>
+  <table>
+    <thead><tr><th>Player</th><th>Raw TOC index</th><th>PROT.DAT offset</th><th>Footprint</th><th>Extraction entry</th></tr></thead>
+    <tbody>
+      <tr><td>Vahn</td><td><code>0x361</code></td><td><code>0x36E8000</code></td><td>338 sectors</td><td>0863 (<code>edstati3</code> label)</td></tr>
+      <tr><td>Noa</td><td><code>0x362</code></td><td><code>0x3791000</code></td><td>303 sectors</td><td>0864 (<code>edstati3</code> label)</td></tr>
+      <tr><td>Gala</td><td><code>0x363</code></td><td><code>0x3828800</code></td><td>222 sectors</td><td>0865</td></tr>
+      <tr><td>Terra</td><td><code>0x364</code></td><td><code>0x3897800</code></td><td>47 sectors</td><td>0866</td></tr>
+    </tbody>
+  </table>
+  <p>The offsets are the live-traced <code>FUN_800558FC</code> reads and equal the TOC <code>start_lba &times; 0x800</code> of extraction 863..866 exactly. The historical &ldquo;Vahn = PROT 0861&rdquo; attribution matched the same bytes through the 1-sector stub entries 0859..0862 that precede the true file &mdash; entry 0861's <em>extended</em> window reaches Vahn's file at window offset <code>0x1000</code>.</p>
+  <p><code>FUN_80052FA0</code> then decodes <code>record[0]</code> + its sub-records into the battle party palette (rows 481..483); the TMD slots install through the battle loaders. Full palette chain: <a href="character-mesh.html">character-mesh &sect; battle render</a>.</p>
 </section>
 
-<section class="doc-section" id="record-12-bytes">
-  <h2>Record (12 bytes)</h2>
-<pre><code>u32 on_disc_size  ; allocation footprint of the compressed entry (NOT the LZS stream length)
-u32 id            ; slot id (0..0x7F observed); 0 marks an empty/filler slot
-u32 data_offset   ; byte offset from data_base</code></pre>
-  <p><code>on_disc_size</code> is the slot's reservation, not the LZS stream length. The LZS decoder stops based on its output count (<code>dec_size</code>), so the compressed input often spills past <code>on_disc_size</code> into the next slot's region. Decoders MUST hand the decompressor a generous source slice (e.g. the entire remainder of the file from <code>data_base + data_offset + 4</code>) rather than truncating to <code>on_disc_size - 4</code>.</p>
-  <p>The table is sized to the maximum slot count the engine ever loads. Real files use only the first 30-50 records and zero-pad the rest. The parser stops at the first zero-<code>on_disc_size</code> row.</p>
-  <p>A slot with <code>id = 0</code> and <code>data_offset = 0</code> is a <strong>filler</strong> entry. Retail 0865 has one such entry (rec 42) that points back into the table-padding region. Don't decode filler slots.</p>
+<section class="doc-section" id="toc-geometry">
+  <h2>TOC geometry (the 16 MB misreading)</h2>
+  <p>The TOC declares extraction 0865 with <code>indexed_size = 7811</code> sectors (<code>0xF41800</code> &asymp; 16.0 MB) against a 222-sector footprint. That extended window covers Gala's own file (<code>0x0..0x6F000</code>), all of Terra's (<code>0x6F000..0x86800</code>), and 7542 of the monster archive's 7760 sectors (<code>0x86800..</code>). The extractor's <code>0865_battle_data.BIN</code> is therefore a 16 MB file whose first 222 sectors are the actual player file &mdash; the earlier &ldquo;16 MB battle_data container&rdquo; reading analyzed that window without noticing the boundary. The format structures below all live inside the footprint, and the slot region <strong>tiles each file's footprint exactly</strong> (<code>data_base + last_offset + last_size = footprint</code> in all four retail files), confirming the footprint is the true file size.</p>
 </section>
 
-<section class="doc-section" id="compressed-entry">
-  <h2>Compressed entry</h2>
-  <p>At file offset <code>data_base + record.data_offset</code>:</p>
-<pre><code>u32 decompressed_size       ; output byte count
-LZS stream                  ; legaia LZS; see lzs.html</code></pre>
-  <p>The LZS stream is the standard <a href="lzs.html">Legaia LZS</a> as used everywhere else, with the same 4 KB zero-initialised ring buffer.</p>
+<section class="doc-section" id="not-the-monster-archive">
+  <h2>Not the monster archive</h2>
+  <p>The monster stat archive (<code>legaia_asset::monster_archive</code>, retail-space <code>monster_data</code> = define 869 &rarr; extraction <strong>0867</strong>) shares the <code>[u32 dec_size][LZS] &rarr; mesh + texture pool</code> general shape but is a different container with no shared structures:</p>
+  <ul>
+    <li>Archive slots are <strong>fixed-stride</strong> <code>0x14000</code> bytes keyed by 1-based monster id (<code>slot = (id&minus;1) &times; 0x14000</code>), with no descriptor table; player-file slots are variable-size, reached through the 12-byte descriptor table.</li>
+    <li>The archive's decoded head is the monster <strong>stat record</strong> (<code>+0x00 name_offset</code>, <code>+0x0C</code> HP, <code>+0x4C</code> action-offset array &mdash; see <a href="monster-animation.html">monster-animation</a>); the player-file slot head is the 32-byte texture-layout header below, with the TMD at <code>+0x20</code>.</li>
+    <li>Within extraction 0865's extended window the archive begins at byte <code>0x86800</code>; the player-file descriptor table (<code>0x6C68</code>) and slot region (<code>0x8000..0x6F000</code>) sit entirely before it.</li>
+  </ul>
+  <p>The old conflation (&ldquo;battle_data 0865 vs monster archive 0867&rdquo;) came from the overlapping extraction windows; the <a href="cdname.html#numbering-space">CDNAME &minus;2 correction</a> resolves it &mdash; the dev names say exactly what each entry is.</p>
 </section>
 
-<section class="doc-section" id="decompressed-entry-layout">
-  <h2>Decompressed entry layout</h2>
-<pre><code>+0x00  u32 magic_or_count    ; 0x14 (= 20) in every observed 0865 record
-+0x04  u32 sub_obj0_end      ; nested-section end offset within decoded buffer; often 0
-+0x08  u32 sub_obj1_end      ; nested-section end; non-zero in records with multiple sub-meshes
+<section class="doc-section" id="file-layout">
+  <h2>File layout</h2>
+<pre><code>+0x00  u32 desc_off     ; descriptor-table offset. Also reads as a type-0
+                        ; streaming chunk header ((0x00&lt;&lt;24)|size), which is
+                        ; how streaming-format walkers skip the head cleanly.
++0x04  u32 clut_a_off   ; CLUT A offset within record[0]'s DECODED output
++0x08  u32 clut_b_off   ; CLUT B offset within record[0]'s DECODED output
++0x0C  u32 budget       ; record[0] decoded size (LZS output-byte budget)
++0x10  record[0] LZS stream
++desc_off               ; descriptor table (12-byte entries, see below)
++0x8000 (data_base)     ; slot region: per-slot [u32 dec_size][LZS stream]</code></pre>
+  <p>Measured per file:</p>
+  <table>
+    <thead><tr><th>File</th><th><code>desc_off</code></th><th><code>clut_a</code></th><th><code>clut_b</code></th><th><code>budget</code></th><th>entries</th><th>footprint</th></tr></thead>
+    <tbody>
+      <tr><td>0863 Vahn</td><td><code>0x55F4</code></td><td><code>0x5E00</code></td><td><code>0x7E04</code></td><td><code>0x9E48</code></td><td>54</td><td><code>0xA9000</code></td></tr>
+      <tr><td>0864 Noa</td><td><code>0x75C4</code></td><td><code>0x76A8</code></td><td><code>0x970C</code></td><td><code>0xB750</code></td><td>50</td><td><code>0x97800</code></td></tr>
+      <tr><td>0865 Gala</td><td><code>0x6C68</code></td><td><code>0x7464</code></td><td><code>0x9488</code></td><td><code>0xB4AC</code></td><td>43</td><td><code>0x6F000</code></td></tr>
+      <tr><td>0866 Terra</td><td><code>0x6CAC</code></td><td><code>0x83E0</code></td><td><code>0xA5C4</code></td><td><code>0xC7A8</code></td><td>5</td><td><code>0x17800</code></td></tr>
+    </tbody>
+  </table>
+  <p><code>data_base = 0x8000</code> in all four retail files (the gap between the table end and <code>0x8000</code> is zero-padded). The exact derivation of <code>data_base</code> from the header is not pinned; <code>legaia_asset::battle_data_pack</code> self-corrects it by probing sector boundaries until every slot's <code>dec_size</code> prefix reads sane.</p>
+</section>
+
+<section class="doc-section" id="descriptor-table">
+  <h2>Descriptor table</h2>
+  <p>At <code>desc_off</code>, a chained array of 12-byte entries:</p>
+<pre><code>u32 id       ; slot id; 0 marks a section boundary / default-variant slot
+u32 offset   ; byte offset of the slot from data_base
+u32 size     ; slot allocation in bytes (sector-aligned)</code></pre>
+  <p>The chain invariant <code>offset[i+1] == offset[i] + size[i]</code> holds across every entry; an all-zero entry terminates the table. Entries group into <strong>sections of descending ids separated by <code>id = 0</code> entries</strong> &mdash; e.g. Gala (0865):</p>
+<pre><code>57 56 55 54 53 | 00 | 42 41 40 3f | 00 | 21 20 27 26 25 24 23 22
+2b 2a 29 28 33 32 31 30 2f 2e | 00 | 19 18 17 16 15 14 13 | 00 |
+69 68 67 66 | 00</code></pre>
+  <p>Terra (0866) carries only five <code>id = 0</code> entries &mdash; no variant slots. Per the runtime palette consumer (<code>FUN_80052770</code> case 4), each section ships one record per <strong>equipment id</strong> plus the <code>id = 0</code> default, and the loader picks the equipment-id-matched entry or the default per section. The mapping from these ids to item-table ids is not yet pinned (open question).</p>
+</section>
+
+<section class="doc-section" id="slot-region">
+  <h2>Slot region</h2>
+  <p>At <code>data_base + entry.offset</code>:</p>
+<pre><code>u32 decompressed_size       ; LZS output-byte budget
+LZS stream                  ; standard Legaia LZS (see lzs.html)</code></pre>
+  <p>The decoder stops on the output count, not the input length &mdash; hand it a generous source slice rather than truncating to <code>entry.size</code>.</p>
+</section>
+
+<section class="doc-section" id="decompressed-slot-layout">
+  <h2>Decompressed slot layout</h2>
+<pre><code>+0x00  u32 magic_or_count    ; 0x14 (= 20) in every observed slot
++0x04  u32 sub_obj0_end      ; nested-section end offset; often 0
++0x08  u32 sub_obj1_end      ; nested-section end; non-zero in multi-mesh slots
 +0x0C  u32 tmd_body_end      ; offset where the embedded Legaia TMD ends
 +0x10  u32                   ; per-texture flag (typically 0x010000 / 0x010002)
-+0x14  u32                   ; texture format tag (typically 0x010002 / 0x05040303)
++0x14  u32                   ; texture format tag
 +0x18  u32                   ; sometimes 0; sometimes a packed (slot, bpp) tag
 +0x1C  u32                   ; offset to start of CLUT/texture pool (~= tmd_body_end - 0x20)
-+0x20  Legaia TMD            ; magic 0x80000002, custom Legaia variant (see tmd.html)
++0x20  Legaia TMD            ; magic 0x80000002 (see tmd.html)
 +tmd_body_end                ; texture / CLUT pool</code></pre>
-  <p>The 32-byte header acts as a layout descriptor for the post-TMD texture pool. Fields at <code>+0x10..0x20</code> correlate with the slot ids the TMD's primitives reference, but the exact semantics aren't fully pinned.</p>
+  <p>The 32-byte header is a layout descriptor for the post-TMD texture pool. The pool has no PSX TIM image-block headers: it is raw 4bpp pixel pages interleaved with 32-byte CLUT rows. Flagged slots additionally carry a trailing CLUT struct (<code>[u16 base][u16 count][count &times; BGR555]</code>) that the palette chain STP-copies to VRAM rows 481..483 &mdash; that path is fully decoded in <a href="character-mesh.html">character-mesh</a> and ported as <code>legaia_asset::battle_char_palette</code>. The header's <code>u32[4..7]</code> texture-placement encoding is <strong>not</strong> pinned (see the byte-match corpus below).</p>
+</section>
 
-  <h3>TMD location</h3>
-  <p>The TMD is at <code>+0x20</code> for every simple-shape record. Some records have nested sub-meshes and the TMD shifts later in the buffer; the locator in <code>legaia_asset::battle_data_pack</code> first tries <code>+0x20</code> and then falls back to a word-aligned magic scan.</p>
-
-  <h3>Post-TMD texture pool</h3>
-  <p>The bytes after the TMD hold packed texture and palette data. Empirically:</p>
+<section class="doc-section" id="parser-status">
+  <h2>Parser status</h2>
+  <p>Two parsers read these files:</p>
   <ul>
-    <li>The first 32 bytes after the TMD form a valid 16-color RGB1555 CLUT row (verified by checking the high-transparency bit on every halfword).</li>
-    <li>Larger 4bpp pixel regions follow, interspersed with more 32-byte CLUT-shaped runs.</li>
+    <li><code>legaia_asset::battle_char_palette</code> implements the runtime-pinned framing above (header words, descriptor chain, <code>record[0]</code> + sub-record palette assembly; byte-exact vs live battle VRAM).</li>
+    <li><code>legaia_asset::battle_data_pack</code> (the TMD-slot walker) predates the framing pin and walks the same descriptor table through a <strong>4-byte-shifted frame</strong>: it reads entry 0's <code>id</code> as a &ldquo;record count&rdquo;, entry 0's <code>offset</code> (always 0) as a &ldquo;reserved&rdquo; word, and pairs each subsequent <code>(id, offset)</code> with the <em>previous</em> entry's <code>size</code>. The <code>(id, offset)</code> pairs it yields are correct (every slot decodes, ids attached), but the per-slot <code>on_disc_size</code> is off by one slot &mdash; harmless in practice because the LZS decode is output-bounded; realigning the walker to the <code>[id, offset, size]</code> frame is a pending cleanup. Its earlier observations (&ldquo;the table is sized to a maximum and zero-padded&rdquo;, &ldquo;0866 has a zero count in the canonical position&rdquo;, &ldquo;the last 0865 slot over-runs the footprint&rdquo;) were all artifacts of the shifted frame; under the correct frame 0866 parses like its siblings and all four files tile their footprints exactly.</li>
   </ul>
-  <p>The pool layout doesn't use standard PSX TIM image-block headers. The runtime presumably uses the descriptor at <code>u32[3..0x20]</code> of the entry header to know where to DMA each slot into VRAM, but the descriptor <em>encoding</em> has not been pinned by the on-disc bytes alone. Until that encoding (or its runtime resolver) is reverse-engineered, <code>legaia_asset::battle_data_pack::probe_first_clut_run</code> locates the first CLUT-shaped run by structural heuristic and <code>legaia_asset::battle_data_pack::clut_uploads</code> is a documented no-op stub that the engine wires into its CLUT pass so future descriptor decoding lights up VRAM uploads automatically.</p>
 </section>
 
 <section class="doc-section" id="pinning-the-descriptor">
-  <h2>Pinning the descriptor: VRAM byte-match corpus</h2>
-  <p>The principled tool for pinning the descriptor is byte-matching: take each decoded record's post-TMD bytes, slide a 32-byte halfword-aligned window over them, and search a mednafen-captured VRAM blob for an exact match. Each hit yields a <code>(record_idx, record_offset, fb_x, fb_y)</code> tuple - a corpus of those tuples narrows the encoding.</p>
-<pre><code>// Analysis API
-let pack = battle_data_pack::parse(&amp;prot_entry_bytes)?;
-let decoded = battle_data_pack::decode_record(&amp;prot_entry_bytes, &amp;pack, idx)?;
-let hits = battle_data_pack::find_clut_in_vram(&amp;decoded, &amp;mednafen_vram_bytes);</code></pre>
-  <p>CLI driver:</p>
-<pre><code>mednafen-state clut-trace \
-  --pack extracted/PROT/0865_battle_data.BIN \
-  --json /tmp/clut_corpus.json \
-  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc2 \
-  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc6</code></pre>
-
-  <h3>Findings from a four-save corpus</h3>
-  <p>Sliding the byte-match across PROT 0865 against four save states (<code>mc2</code> = Rim Elm town01, <code>mc3</code> = Izumi town, <code>mc4</code> = pre-battle, <code>mc6</code> = active battle) yields:</p>
+  <h2>VRAM byte-match corpus</h2>
+  <p>The principled tool for pinning the texture-pool descriptor is byte-matching: slide a 32-byte halfword-aligned window over each decoded slot's post-TMD bytes and search a mednafen-captured VRAM blob for exact matches; each hit yields <code>(slot, slot_offset, fb_x, fb_y)</code>. Driver: <code>mednafen-state clut-trace</code>; analysis API <code>battle_data_pack::find_clut_in_vram</code>.</p>
+  <p>Findings from a four-save corpus over Gala's file (0865; saves: Rim Elm town, Izumi town, pre-battle, active battle):</p>
   <table>
-    <thead><tr><th>Record</th><th>Header signature</th><th>VRAM placement (fb_x, fb_y range)</th></tr></thead>
+    <thead><tr><th>Slot (table entry)</th><th>Header signature</th><th>VRAM placement (fb_x, fb_y range)</th></tr></thead>
     <tbody>
-      <tr><td>40 (id 0x66)</td><td><code>..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...</code></td><td>(864, 426..433) — town only</td></tr>
-      <tr><td>41 (id 0x00)</td><td><code>..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...</code></td><td>(864, 388..507) — town only</td></tr>
-      <tr><td>2 (id 0x54)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 441) — battle only</td></tr>
-      <tr><td>3 (id 0x53)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 393..441) — battle</td></tr>
-      <tr><td>4 (id 0x00)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 385..496) — battle</td></tr>
-      <tr><td>5-8 (id 0x42..0x3f)</td><td><code>..., 0x010000, 0x000201, 0x000000, ...</code></td><td>(768, 272..310) — battle</td></tr>
-      <tr><td>9 (id 0x00)</td><td><code>..., 0x010000, 0x000201, 0x000000, ...</code></td><td>(768, 272..331) — battle</td></tr>
+      <tr><td>id 0x66</td><td><code>..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...</code></td><td>(864, 426..433) &mdash; town only</td></tr>
+      <tr><td>id 0x00 (last section default)</td><td><code>..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...</code></td><td>(864, 388..507) &mdash; town only</td></tr>
+      <tr><td>id 0x54</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 441) &mdash; battle only</td></tr>
+      <tr><td>id 0x53</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 393..441) &mdash; battle</td></tr>
+      <tr><td>id 0x00 (first section default)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 385..496) &mdash; battle</td></tr>
+      <tr><td>ids 0x42..0x3f</td><td><code>..., 0x010000, 0x000201, 0x000000, ...</code></td><td>(768, 272..310) &mdash; battle</td></tr>
+      <tr><td>id 0x00 (second section default)</td><td><code>..., 0x010000, 0x000201, 0x000000, ...</code></td><td>(768, 272..331) &mdash; battle</td></tr>
     </tbody>
   </table>
-  <p>Consecutive record offsets step by <code>0x40</code> for each <code>+1</code> in <code>fb_y</code>, confirming the post-TMD pool is uploaded as a 32-halfword-wide (128-pixel-wide @ 4bpp) contiguous block at <code>(fb_x, fb_y_base)</code>. Within each header-signature cluster the per-record (fb_x, fb_y) placement is <em>not</em> recoverable from the on-disc bytes alone - the encoding of <code>u32[5..7]</code> doesn't appear to be a direct <code>(fb_x, fb_y)</code> packing.</p>
+  <p>Consecutive slot offsets step by <code>0x40</code> per <code>+1</code> in <code>fb_y</code>: the post-TMD pool uploads as a 32-halfword-wide (128 px @ 4bpp) contiguous block. Within a header-signature cluster the per-slot <code>(fb_x, fb_y)</code> is <em>not</em> recoverable from the on-disc bytes &mdash; the placement is runtime-resolved; tracing that resolver is the open step.</p>
 
-  <h3>What's <em>not</em> in the pack: the NPC palettes at row 479</h3>
-  <p>The four town01 NPC TMDs sample CLUTs at CBAs <code>0x77C8..0x77CF</code>, which decode to fb_x=128..240 at row 479. The actual 32-byte palette payloads at those VRAM positions are <strong>not present verbatim</strong> in any decoded battle_data record:</p>
-  <ul>
-    <li>A direct byte-match of each row-479 slot's 32 bytes against every decoded record in PROT 0865 returns zero hits.</li>
-    <li>An 8-byte prefix of the same slot bytes is not present in any raw PROT entry (0865-0868 inclusive) or in <code>SCUS_942.54</code>.</li>
-    <li>The CLUT halfwords themselves form a structured hue cycle (HSV-style rainbow at constant value) - consistent with a runtime <em>palette generator</em> rather than an on-disc payload.</li>
-  </ul>
-  <p>The full picture is documented in <a href="npc-palette.html">npc-palette.html</a>: row 479 is populated by plain PSX TIMs that live inside the scene's <a href="scene-bundles.html">scene_tmd_stream</a> PROT entries (e.g. <code>0006_town01.BIN @ 0x1ee4c</code> for town01), wrapped in a type-0x01 chunk header and uploaded by <code>FUN_8001FE70</code> during battle init. The engine's targeted-upload CLUT pass picks them up via merge-zeros semantics so multiple scene-pack TIMs targeting the same row coexist.</p>
-</section>
-
-<section class="doc-section" id="why-this-matters">
-  <h2>Why this matters</h2>
-  <p>Town01's four NPC TMDs reference CLUT row y=479 slots x=128..240 (CBA <code>0x77C8..0x77CF</code>). Earlier engine work assumed those palettes live inside the post-TMD pool of one or more <code>battle_data</code> records; the byte-match corpus above shows they don't. The real source is the matching <code>scene_tmd_stream</code> entries in town01's own CDNAME block, dispatched only at battle init (see <a href="npc-palette.html">row-479 NPC CLUTs</a>). Retail field saves carry row 479 = zero, so the prims that drop as <code>MissingClut</code> under a "battle-style upload everything" build are prims for meshes retail field mode wouldn't render either.</p>
-  <p>The engine port models this via <code>SceneResources::SceneLoadKind</code>: <code>Field</code> excludes both the leading TMD and the type-0x01 TIMs from every <code>scene_tmd_stream</code> entry plus all <code>battle_data</code> records (the pack is battle-init resident, not part of field VRAM). The pack parser remains the entry point for CLUTs in <em>battle</em> scenes (where on-disc palettes do drive the renderer) once the descriptor is pinned; <code>SceneResources::build_battle_boot_vram</code> exposes the wired API and surfaces any standard-TIM textures the pack does carry today.</p>
+  <h3>What's <em>not</em> in these files: the NPC palettes at row 479</h3>
+  <p>The town NPC CLUTs at row 479 byte-match no decoded slot of any player file (nor any raw PROT entry or <code>SCUS_942.54</code> as an 8-byte prefix). They are plain PSX TIMs in each scene's own <a href="scene-bundles.html">scene_tmd_stream</a> entries, uploaded by <code>FUN_8001FE70</code> at battle init &mdash; see <a href="npc-palette.html">npc-palette.html</a>. The engine consequence (field scene-loads exclude these packs from VRAM entirely) is wired through <code>SceneResources::SceneLoadKind</code>.</p>
 </section>
 
 <section class="doc-section" id="cli">
   <h2>CLI</h2>
-<pre><code># Inspect one pack-shaped PROT entry.
+<pre><code># Inspect one player file's TMD-slot table.
 asset battle-data-pack extracted/PROT/0865_battle_data.BIN
 
-# Dump every decoded record to a directory.
+# Dump every decoded slot to a directory.
 asset battle-data-pack extracted/PROT/0865_battle_data.BIN --out /tmp/0865_records
 
-# Bulk-scan a directory of PROT entries for this format.
+# Bulk-scan a directory of PROT entries for this shape.
 asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT
 
-# Byte-match decoded records against PSX VRAM in mednafen save states.
+# Byte-match decoded slots against PSX VRAM in mednafen save states.
 mednafen-state clut-trace \
   --pack extracted/PROT/0865_battle_data.BIN \
   --json /tmp/clut_corpus.json \
   ~/.mednafen/mcs/Legend\ of\ Legaia*.&lt;TOWN_SLOT&gt; \
   ~/.mednafen/mcs/Legend\ of\ Legaia*.&lt;BATTLE_SLOT&gt;</code></pre>
+  <p>(The CLI names keep the historical &ldquo;battle-data-pack&rdquo; spelling; they operate on the player files.)</p>
 </section>
 
 <section class="doc-section" id="open-layout-questions">
-  <h2>Open layout questions</h2>
+  <h2>Open questions</h2>
   <ul>
-    <li><strong>Sub-object end offsets</strong> (<code>u32[1]</code>, <code>u32[2]</code>): meaning of the nested section pointers in records with multiple sub-meshes.</li>
-    <li><strong>Per-texture descriptor</strong> (<code>u32[4]..u32[7]</code>): the byte-match corpus above shows the descriptor <em>encoding</em> doesn't map directly onto the empirical <code>(fb_x, fb_y)</code> placements - records that share an identical <code>u32[5..7]</code> signature still land at different VRAM coords. Likely <em>runtime-resolved</em>: a separate dispatch table or asset-loader function consults the descriptor bytes plus the record id, the current scene mode, or both.</li>
-    <li><strong>Texture-pool block format</strong>: image blocks in the pool don't carry PSX TIM headers (no leading <code>0x00000010</code> magic). The byte-match corpus shows the pool is uploaded as a contiguous 128-pixel-wide @ 4bpp block (stride = 64 record bytes per VRAM row), but the per-block subdivision inside that span is still TBD.</li>
-    <li><strong>0866 / 0867 / 0868 / 0869 layouts</strong>: PROT 0866 has the same outer shape as 0865 but the count u32 is zero in the canonical position - records appear to start directly at <code>chunk0_size + 8</code> without the count + reserved preamble. 0867 / 0868 carry VAB sound banks. Only 0865 (and the sister 0863 <code>edstati3</code> entry) match the format documented here.</li>
-    <li><strong>Town01 NPC palette source</strong>: not in the battle_data pack &mdash; the CLUTs are plain PSX TIMs in town01's own <a href="scene-bundles.html">scene_tmd_stream</a> PROT entries (e.g. <code>0006_town01.BIN @ 0x1ee4c</code>). Each is wrapped in a type-0x01 chunk header that <code>FUN_8001FE70</code> dispatches during battle init (no field-load upload). The engine's targeted-upload CLUT pass picks them up via <code>legaia_asset::tim_scan</code> and uploads them with merge-zeros semantics so the "full" (slots 0..14) and "partial" (slots 0..7) variants coexist. See <a href="npc-palette.html">npc-palette.html</a>.</li>
-    <li><strong>Runtime asset-loader chain</strong>: <code>FUN_8001E890</code> is misleadingly named &ldquo;DATA_FIELD player loader&rdquo; &mdash; its retail-PROT branch targets PROT 876 (<code>player_data</code>) but those bytes are a streaming-format VAB + TIM_LIST + SEQ payload with <strong>no TMDs</strong>. The 5 character TMDs that end up at <code>DAT_8007C018[0..4]</code> actually originate from <strong>PROT 0874</strong> (<code>befect_data</code>) section 0 &mdash; see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay &sect; Disc-side source of [0..4]</a> for the byte-equality proof against a live RAM dump. What <code>FUN_8001E890</code> <em>does</em> do that&apos;s visible at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>. The exact dispatch site that routes PROT 0874 section 0 through <code>FUN_8001F05C case 2</code> &rarr; <code>FUN_80026B4C</code> is open work (item 4 in <code>world-map-overlay</code> &sect; Open work).</li>
+    <li><strong>Per-texture descriptor</strong> (<code>u32[4]..u32[7]</code>): slots sharing an identical signature land at different VRAM coords, so the placement is runtime-resolved &mdash; trace the battle-init upload path that consumes the header.</li>
+    <li><strong>Slot id &harr; equipment id mapping</strong>: the section ids plausibly index the equipment tables (each section = one equip slot's variants, per the <code>FUN_80052770</code> case-4 picker); pinning id &rarr; item-table id needs a capture with a known equipment change.</li>
+    <li><strong><code>data_base</code> derivation</strong>: observed <code>0x8000</code> in all four files; the header/table &rarr; <code>0x8000</code> rule is unconfirmed.</li>
+    <li><strong>Sub-object end offsets</strong> (<code>u32[1]</code>, <code>u32[2]</code>): multi-mesh slots hold several TMDs back-to-back; the stride isn't validated across every variant.</li>
+    <li><strong>Parser realignment</strong>: move <code>legaia_asset::battle_data_pack</code> onto the <code>[id, offset, size]</code> frame (see Parser status).</li>
   </ul>
 </section>
 
@@ -155,9 +174,11 @@ mednafen-state clut-trace \
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="character-mesh.html">Character meshes</a>
+    <a href="monster-animation.html">Monster archive / animation</a>
     <a href="tmd.html">Legaia TMD</a>
-    <a href="tim.html">PSX TIM</a>
     <a href="lzs.html">LZS compression</a>
+    <a href="cdname.html#numbering-space">CDNAME numbering space</a>
     <a href="../subsystems/battle.html">Battle scene</a>
   </div>
 </section>

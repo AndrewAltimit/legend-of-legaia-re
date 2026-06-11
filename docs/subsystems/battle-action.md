@@ -188,7 +188,7 @@ So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801
 
 ### Seru-magic summon-overlay dispatch
 
-The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh - e.g. Gimard's *Tail Fire* flame) is **not** spawned by an opcode and does **not** live in `befect_data`. It is a **per-summon code overlay** paged in on demand. In outer state **case `0x29`**, when the queued action's spell id `actor[+0x1df]` is in the player Seru-magic block `0x81..0x8b`:
+The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh - e.g. Gimard's *Burning Attack* flame) is **not** spawned by an opcode and does **not** live in `befect_data`. It is a **per-summon code overlay** paged in on demand. In outer state **case `0x29`**, when the queued action's spell id `actor[+0x1df]` is in the player Seru-magic block `0x81..0x8b`:
 
 ```c
 _DAT_8007bd24[7] = 0x32;                                   // advance to the cast band
@@ -201,7 +201,7 @@ FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: 
 index space is PROT entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT`
 head, 2 entries above extraction indexing; see [formats/prot.md § In-RAM
 TOC](../formats/prot.md#in-ram-toc)). So the summons map to extraction **PROT 903..913** (Gimard
-*Tail Fire* `0x81` → param `8` → **PROT 903**; the earlier "905..915 / Gimard → 905" reading was
+*Burning Attack* `0x81` → param `8` → **PROT 903**; the earlier "905..915 / Gimard → 905" reading was
 this off-by-2 — the per-spell attribution below it was arithmetic-derived, never
 content-pinned). The capture-class (`'c'`) spell branch loads from a different base:
 `FUN_8003EC70(spell_record[+1] + 0x28)`. **Caveat:** `903..913` is the loader's *arithmetic*
