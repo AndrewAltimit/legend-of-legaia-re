@@ -553,10 +553,10 @@ mod tests {
     }
 
     #[test]
-    fn burn_reduces_attack() {
+    fn toxic_reduces_attack() {
         let s =
             compute_battle_stats_default(&record(), &EquipmentTable::new(), &[StatusKind::Toxic]);
-        assert_eq!(s.atk, 88); // 100 * 0.875 = 87.5 -> 88 (rounded)
+        assert_eq!(s.atk, 70); // 100 * 0.7 (the FUN_801DD864 bit-2 scale)
     }
 
     #[test]
@@ -596,12 +596,13 @@ mod tests {
         t.set(1, weapon(40));
         t.set(2, armor(20, 25));
         let s = compute_battle_stats_default(&record(), &t, &[StatusKind::Toxic]);
-        // Atk: 100 + 40 = 140; Toxic -> 140 * 0.875 = 122.5 -> 123 (rounded).
-        assert_eq!(s.atk, 123);
-        // Toxic also drops defense by 0.875:
-        // UDF: (50 + 20) * 0.875 = 61.25 -> 61; LDF: (60 + 25) * 0.875 = 74.375 -> 74.
-        assert_eq!(s.udf, 61);
-        assert_eq!(s.ldf, 74);
+        // Atk: 100 + 40 = 140; Toxic -> 140 * 0.7 = 98 (the FUN_801DD864
+        // bit-2 roll scale mirrored at the stat line).
+        assert_eq!(s.atk, 98);
+        // Toxic also drops defense by 0.7:
+        // UDF: (50 + 20) * 0.7 = 49; LDF: (60 + 25) * 0.7 = 59.5 -> 60 (rounded).
+        assert_eq!(s.udf, 49);
+        assert_eq!(s.ldf, 60);
     }
 
     #[test]
@@ -629,7 +630,7 @@ mod tests {
         assert!(s.action_blocked);
         assert_eq!(s.eva, 0);
         // Atk + accuracy still applied.
-        assert_eq!(s.atk, 88);
+        assert_eq!(s.atk, 70);
         assert_eq!(s.acc, 45);
     }
 
