@@ -308,6 +308,13 @@ impl ActionState {
 /// - `7` = ready / pre-action
 /// - `8` = action-end / hit-recovery
 /// - `9` = defeat / down
+///
+/// Retail-side these select **camera/presentation programs** (the driver
+/// never writes the anim fields; anim ids are entry indices with idle = 0,
+/// aligned with this space at 7/8/9 by design - see
+/// `docs/subsystems/battle-action.md`). The engine's pose host hook also
+/// drives the same-numbered action clips, which matches the frames retail
+/// shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Pose {
