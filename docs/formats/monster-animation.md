@@ -25,8 +25,10 @@ at entry `+0x04`/`+0x08` and the self-pointer at `+0x88` are zero on disc; the
 loader reconstructs them, with `+0x88` pointing at the `+0x8c` stream.)
 
 Action **index 0** (id `0x00`) is the neutral **idle** animation the engine
-loops when the monster isn't acting; index 1 (id `0x01`) is the basic attack,
-and the rest correspond to the monster's spell / special actions.
+loops when the monster isn't acting; index 1 (id `0x01`) is the **move**
+cycle played while the monster advances on a target (a walk for grounded
+enemies, a flight cycle for fliers), and the rest correspond to the
+monster's spell / special actions.
 
 ## Packed stream (entry `+0x8c`)
 

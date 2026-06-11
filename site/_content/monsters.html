@@ -153,7 +153,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>Animations</h2>
-  <p>The model isn't static. Every action an enemy can play — its <strong>idle</strong> resting loop, its <strong>attack</strong>, and each <strong>spell / special</strong> — ships as its own transform-keyframe stream in the same archive. The viewer opens on the idle loop; when a monster carries more than one animation, a row of toggle buttons appears beside the model so you can switch between them. Each one re-poses the body parts frame to frame exactly as the battle renderer does.</p>
+  <p>The model isn't static. Every action an enemy can play — its <strong>idle</strong> resting loop, its <strong>move</strong> cycle (the approach it plays advancing on a target — a walk for grounded enemies, a flight cycle for fliers), and each <strong>spell / special</strong> — ships as its own transform-keyframe stream in the same archive. The viewer opens on the idle loop; when a monster carries more than one animation, a row of toggle buttons appears beside the model so you can switch between them. Each one re-poses the body parts frame to frame exactly as the battle renderer does.</p>
   <div class="cli"><code>asset monster-archive … --id N --anim</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -809,7 +809,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       ? { idx: Uint8Array.from(texIdx), pal: Uint8Array.from(texPal), w: dims[0], h: dims[1] }
       : null;
     // Animations: every action the enemy can play sits in the same archive as
-    // a per-object transform-keyframe stream (action 0 = idle, then attack /
+    // a per-object transform-keyframe stream (action 0 = idle, then move /
     // spell / special). The per-vertex object id maps each vertex to the part
     // whose transform poses it. See formats/monster-animation.html.
     const objIds = viewer.monster_mesh_object_ids(id);
@@ -858,12 +858,12 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
 
   // A short label for an animation entry. The decoder hands one down
-  // (`meta.label`: Idle / Attack / Action 0xNN, disambiguated on collision);
+  // (`meta.label`: Idle / Move / Action 0xNN, disambiguated on collision);
   // the local fallback keeps the UI working if an older WASM build is cached.
   function actionLabel(meta, idx) {
     if (meta && meta.label) return meta.label;
     if (idx === 0) return 'Idle';
-    if (meta.action_id === 1) return 'Attack';
+    if (meta.action_id === 1) return 'Move';
     return 'Action 0x' + meta.action_id.toString(16).toUpperCase().padStart(2, '0');
   }
 
