@@ -66,6 +66,102 @@ fn assembles_vahn_to_the_live_save_shape() {
     assert_eq!(tmd.objects.len(), 17, "assembled nobj");
 }
 
+/// The registration-time TSB/CBA relocation moves each party character's
+/// assembled mesh into the documented runtime VRAM band
+/// (`docs/formats/character-mesh.md` § Battle render): after
+/// `relocate_tsb_cba(slot)` every textured prim's CLUT row is exactly
+/// `481 + slot` and its texpage is one of the slot's two runtime pages
+/// (Vahn `(512,256)+(576,256)`, Noa `(640,256)+(704,256)`,
+/// Gala `(768,256)+(832,256)`), with the CLUT column preserved from the
+/// authoring layout.
+#[test]
+fn relocates_each_character_into_its_runtime_band() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    let files = [
+        ("0863_edstati3.BIN", 0usize),
+        ("0864_edstati3.BIN", 1),
+        ("0865_battle_data.BIN", 2),
+    ];
+    for (file, slot) in files {
+        let Some((raw, pack)) = load(&prot_dir, file) else {
+            return;
+        };
+        let mut asm = battle_char_assembly::assemble_character(&raw, &pack, &[0; 5])
+            .unwrap_or_else(|e| panic!("{file}: assemble defaults: {e:#}"));
+
+        // Authoring layout: all textured prims sample pages 0x15/0x16 and
+        // CLUT row 480, with per-prim columns.
+        let authoring_cols = textured_prim_addresses(&asm.tmd)
+            .into_iter()
+            .map(|(cba, tsb)| {
+                assert_eq!((cba >> 6) & 0x1FF, 480, "{file}: authoring CLUT row");
+                assert!(
+                    matches!(tsb & 0x1F, 0x15 | 0x16),
+                    "{file}: authoring texpage {:#x}",
+                    tsb & 0x1F
+                );
+                cba & 0x3F
+            })
+            .collect::<Vec<_>>();
+
+        let n = battle_char_assembly::relocate_tsb_cba(&mut asm.tmd, slot as u8)
+            .unwrap_or_else(|e| panic!("{file}: relocate: {e:#}"));
+        assert!(n > 0, "{file}: no textured prims relocated");
+
+        // The slot's two runtime texpage indices; both sit on the y = 256
+        // page row (bit 4 set), decoded x = 512 + 64 * (page - 0x18).
+        let runtime_pages = [0x18 + 2 * slot as u16, 0x19 + 2 * slot as u16];
+        let relocated = textured_prim_addresses(&asm.tmd);
+        assert_eq!(relocated.len(), authoring_cols.len(), "{file}: prim count");
+        for ((cba, tsb), authoring_col) in relocated.into_iter().zip(authoring_cols) {
+            assert_eq!(
+                (cba >> 6) & 0x1FF,
+                481 + slot as u16,
+                "{file}: runtime CLUT row"
+            );
+            assert_eq!(cba & 0x3F, authoring_col, "{file}: CLUT column preserved");
+            let page = tsb & 0x1F;
+            assert!(
+                runtime_pages.contains(&page),
+                "{file}: runtime texpage {page:#x} outside the slot band"
+            );
+            assert_eq!((tsb >> 4) & 1, 1, "{file}: runtime page y");
+        }
+        eprintln!("{file}: relocated {n} textured prims into slot {slot}'s band");
+    }
+}
+
+/// Collect `(cba, tsb)` of every textured prim in a relative-offset Legaia
+/// TMD, in walk order.
+fn textured_prim_addresses(tmd_bytes: &[u8]) -> Vec<(u16, u16)> {
+    let tmd = legaia_tmd::parse(tmd_bytes).expect("parse TMD");
+    let mut out = Vec::new();
+    for obj in &tmd.objects {
+        let groups = legaia_tmd::legaia_prims::iter_groups(
+            tmd_bytes,
+            obj.primitives_byte_offset,
+            obj.primitives_byte_size,
+        )
+        .expect("walk groups");
+        for group in groups {
+            if group.header.mode & 0x04 == 0 {
+                continue;
+            }
+            for prim in &group.prims {
+                out.push((prim.cba, prim.tsb));
+            }
+        }
+    }
+    out
+}
+
 /// Every character assembles with all-default equipment, and the merged
 /// TMD parses with `nobj` = skeleton bones + the default sections' extras.
 #[test]

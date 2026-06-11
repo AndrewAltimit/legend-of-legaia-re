@@ -206,7 +206,7 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 
 | Address | Role |
 |---|---|
-| `80052FA0` / `800536BC` / `80053898` | Party battle-mesh assembler (equipment-section splice) + CLUT decode — [details ↓](#80052fa0) |
+| `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation — [details ↓](#80052fa0) |
 | `80052770` / `800558fc` / `8003e8a8` | Player-file loader (Vahn/Noa/Gala/Terra battle records) — [details ↓](#80052770--800558fc--8003e8a8) |
 | `800520F0` | Battle scene loader (SCUS) — [details ↓](#800520f0) |
 | `800513F0` / `800542C8` | Battle-form party-mesh install — [details ↓](#800513f0--800542c8) |
@@ -640,6 +640,7 @@ High fan-in across the debug-menu / world-map dev overlays. `see ghidra/scripts/
 - **Mesh half**: builds the character's **merged battle TMD** at `ctx+0x50` (`ctx = *(0x801C9360 + slot*4)`) — writes magic `0x80000002` at `blob+0x18`, `nobj = 0` at `blob+0x20`, then calls `FUN_800536BC` once per section.
 - **`FUN_800536BC` (the object splice)**: appends the section's 7-word TMD object entries with vertex/normal/prim offsets relocated into the merged pool, copies the data words, `nobj += section_nobj`, and writes one bone-id byte per object at `blob+0` from the section's attach list — surplus objects tagged `0xFF`/`0xFE` = the equipment visual meshes.
 - **`FUN_80053898` (post-pass)**: retags `0xFF`→200/201, `0xFE`→100+, records each extra's attach bone at `blob+nobj`, selection-sorts the object table so extras land last. `FUN_800513F0` then registers `blob+0x18` into `DAT_8007C018[slot]`.
+- **`FUN_80053a28` (TSB/CBA relocation)**: called by `FUN_800513F0` per party slot right after the registration — rewrites every textured prim's CLUT row to `481 + slot` (column preserved) and texpage index to `0x18/0x19 + 2*slot` (the runtime band `x ∈ [512, 896), y = 256`). Clean-room port `legaia_asset::battle_char_assembly::relocate_tsb_cba`; see [`formats/character-mesh.md` § Battle render](../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation).
 
 Byte-verified against the full-party battle save (`nobj=17`, bone bytes `[0..14,200,201]`, attach `[5,8]`; every vertex pool matches its equipment section). See [`formats/character-mesh.md` § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files).
 

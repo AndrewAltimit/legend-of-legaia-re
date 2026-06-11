@@ -189,20 +189,37 @@ on-screen size comes from the mesh, not a scale), and the dome registered at
 
 ### Battle party meshes (assembled)
 
-The party renders the real **battle-form meshes** (PROT 1204 — Vahn/Noa/Gala),
-installed into `DAT_8007C018[0..=2]`. The battle char TMD is a set of
-object-local pieces (head/torso/limbs), **not** a single pre-assembled mesh, so
-the engine sockets them with the **battle ANM (PROT 1203 `other5`)**: frame 0 of
-each character's idle record is the combat-stance rest pose, applied `R*v + T`
-per object (`tmd_to_vram_mesh_posed_rot`). The 30 records are 3 banks of 10
-(Vahn @ 0 / Noa @ 10 / Gala @ 20). Textures: the pack's 7 atlases upload to VRAM
-and each character's decoded battle palette (Vahn `parse_record` PROT 0863;
-Noa/Gala `collect_palette` 0864/0865 — the `PLAYER1..3` files, see
-[`character-mesh.md`](../formats/character-mesh.md)) overlays the CLUT rows its
-mesh samples, so the party reads in its real colours (blue Vahn / pink Noa /
-Gala). A stage battle draws **only active actors** — the scene-init actors are
-bound but inactive and parked at the world origin, so without that gate they
-pile their meshes at `(0,0,0)`.
+The party renders the real **battle-form meshes**, assembled per character the
+way the retail loader builds the blobs it installs into `DAT_8007C018[0..=2]`:
+each member's mesh is spliced from their player battle file's equipment-id
+sections (`legaia_asset::battle_char_assembly`, extraction PROT 863..865,
+equipped ids from the roster record's `+0x196..+0x19A` bytes) and relocated
+into the slot's runtime VRAM band by
+`battle_char_assembly::relocate_tsb_cba` (the registration-time TSB/CBA pass,
+`FUN_80053a28` — texpages `x ∈ [512, 896), y = 256`, CLUT row `481 + slot`;
+see [`character-mesh.md` § Battle render](../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation)).
+PROT 1204 (the Baka Fighter / default-equipment sibling pack) is the
+per-member fallback when assembly fails, and supplies the atlas pixel pages —
+uploaded at their authoring rects and, when an assembled mesh is bound, also
+written into the runtime band the relocated meshes sample.
+
+The battle char TMD is a set of object-local pieces (head/torso/limbs),
+**not** a single pre-assembled mesh, so the engine sockets them with the
+**battle ANM (PROT 1203 `other5`)**: frame 0 of each character's idle record
+is the combat-stance rest pose, applied `R*v + T` per object
+(`tmd_to_vram_mesh_posed_rot`). The 30 records are 3 banks of 10 (Vahn @ 0 /
+Noa @ 10 / Gala @ 20). The assembled mesh's objects map to ANM bones through
+the assembler's tag tables: a skeleton object poses by its `bone_tags` bone
+id, a `200+` equipment extra by its recorded attach bone. Palette: each
+character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
+`collect_palette` 0864/0865 — the `PLAYER1..3` files) overlays the CLUT rows
+its mesh samples (`481 + slot` after relocation), so the party reads in its
+real colours (blue Vahn / pink Noa / Gala). A stage battle draws **only
+active actors** — the scene-init actors are bound but inactive and parked at
+the world origin, so without that gate they pile their meshes at `(0,0,0)`.
+A 4th party slot is not rendered: the battle ANM's 10-bone bank (records
+27–29) has no pinned character attribution, so Terra (player file 866) has no
+verified idle rest pose.
 
 ## Battle action state machine (`FUN_801E295C`)
 
