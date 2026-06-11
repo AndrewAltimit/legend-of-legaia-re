@@ -147,6 +147,11 @@ pub struct UploadedVramMesh {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     index_count: u32,
+    /// `[(first_index, index_count); 4]` ranges of the per-ABR-mode
+    /// semi-transparent "tail" appended past `index_count` in `index_buf`
+    /// (see [`psx_blend::append_semi_tail`]). Drawn by the PSX-faithful
+    /// blend pass; all-zero counts when the mesh has no semi prims.
+    semi_ranges: [(u32, u32); 4],
 }
 
 impl UploadedVramMesh {
@@ -156,6 +161,17 @@ impl UploadedVramMesh {
 
     pub fn triangle_count(&self) -> u32 {
         self.index_count / 3
+    }
+
+    /// Per-ABR-mode index ranges of the semi-transparent tail (see
+    /// [`psx_blend::append_semi_tail`]).
+    pub fn semi_ranges(&self) -> [(u32, u32); 4] {
+        self.semi_ranges
+    }
+
+    /// True when any prim in this mesh carries the semi-transparency enable.
+    pub fn has_semi_prims(&self) -> bool {
+        self.semi_ranges.iter().any(|&(_, n)| n > 0)
     }
 }
 
@@ -3438,12 +3454,19 @@ pub struct Renderer {
     textured_mesh_pipeline: wgpu::RenderPipeline,
     /// VRAM-mesh pipeline: per-vertex CBA/TSB + R16Uint VRAM texture lookup.
     vram_mesh_pipeline: wgpu::RenderPipeline,
+    /// PSX semi-transparency blend pipelines for [`Self::vram_mesh_pipeline`],
+    /// one per ABR mode 0..=3 (see [`psx_blend`]). Drawn as a second pass
+    /// over each mesh's semi-transparent index tail when PSX-faithful mode
+    /// is on ([`Self::set_psx_mode`]).
+    vram_mesh_blend_pipelines: [wgpu::RenderPipeline; 4],
     vram_bgl: wgpu::BindGroupLayout,
     /// Multi-actor "scene" VRAM-mesh pipeline. Identical to
     /// [`Self::vram_mesh_pipeline`] but binds [`Self::scene_uniforms_bgl`]
     /// at group 0 (with `has_dynamic_offset = true`) so a single render
     /// pass can draw N actors with one bind group + N dynamic offsets.
     scene_vram_mesh_pipeline: wgpu::RenderPipeline,
+    /// Scene-layout twins of [`Self::vram_mesh_blend_pipelines`].
+    scene_vram_mesh_blend_pipelines: [wgpu::RenderPipeline; 4],
     /// Lines pipeline shadowing the scene path (uses the scene-uniforms
     /// dynamic-offset layout). Used by [`Self::render`] when a `Scene`
     /// carries `overlay_lines`.
@@ -3879,7 +3902,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &vram_mesh_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[vram_vertex_layout],
+                buffers: std::slice::from_ref(&vram_vertex_layout),
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -4081,6 +4104,76 @@ impl Renderer {
                 multiview: None,
                 cache: None,
             });
+
+        // PSX semi-transparency blend pipelines: one per ABR mode, for both
+        // the single-mesh layout and the scene (dynamic-offset) layout. Same
+        // shader module + vertex state as the opaque VRAM-mesh pipelines;
+        // the blend-pass fragment entry keeps only STP texels and the
+        // per-mode fixed-function [`psx_blend::blend_state`] applies the PSX
+        // equation (mode 3 pre-scales F by 0.25 via its own entry point).
+        // Depth: test against the opaque pass but don't write (the PSX has
+        // no depth buffer and blended fragments must not occlude later
+        // draws); LessEqual so decal prims coplanar with already-drawn
+        // geometry aren't z-rejected.
+        let make_blend_pipeline = |label: &'static str,
+                                   layout: &wgpu::PipelineLayout,
+                                   mode: u8|
+         -> wgpu::RenderPipeline {
+            let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
+                "fs_blend"
+            } else {
+                "fs_blend_quarter"
+            };
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(layout),
+                vertex: wgpu::VertexState {
+                    module: &vram_mesh_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: std::slice::from_ref(&vram_vertex_layout),
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &vram_mesh_shader,
+                    entry_point: Some(entry),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(psx_blend::blend_state(mode)),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let vram_mesh_blend_pipelines: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
+            make_blend_pipeline(
+                "legaia vram mesh blend pipeline",
+                &vram_mesh_layout,
+                m as u8,
+            )
+        });
+        let scene_vram_mesh_blend_pipelines: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
+            make_blend_pipeline(
+                "legaia scene vram mesh blend pipeline",
+                &scene_vram_mesh_layout,
+                m as u8,
+            )
+        });
 
         let scene_lines_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("legaia scene lines pipeline layout"),
@@ -4330,8 +4423,10 @@ impl Renderer {
             mesh_uniforms_bg,
             textured_mesh_pipeline,
             vram_mesh_pipeline,
+            vram_mesh_blend_pipelines,
             vram_bgl,
             scene_vram_mesh_pipeline,
+            scene_vram_mesh_blend_pipelines,
             scene_lines_pipeline,
             scene_color_mesh_pipeline,
             scene_uniforms_bgl,
@@ -4609,17 +4704,22 @@ impl Renderer {
                 contents: &bytes,
                 usage: wgpu::BufferUsages::VERTEX,
             });
+        // Append the per-ABR-mode semi-transparent tail for the PSX-faithful
+        // blend pass. The opaque pass still draws `0..indices.len()`
+        // (`index_count` below), so the default path is unchanged.
+        let (indices_with_tail, semi_ranges) = psx_blend::append_semi_tail(indices, cba_tsb);
         let index_buf = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("vram mesh index buffer"),
-                contents: bytemuck::cast_slice(indices),
+                contents: bytemuck::cast_slice(&indices_with_tail),
                 usage: wgpu::BufferUsages::INDEX,
             });
         Ok(UploadedVramMesh {
             vertex_buf,
             index_buf,
             index_count: indices.len() as u32,
+            semi_ranges,
         })
     }
 
@@ -5064,6 +5164,26 @@ impl Renderer {
                     rp.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
                     rp.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                     rp.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    // PSX-faithful semi-transparency blend pass (see
+                    // [`psx_blend`]): re-draw the per-ABR-mode index tail
+                    // with the matching blend pipeline. Gated like the rest
+                    // of the faithful extras.
+                    if self.psx_mode.get() && mesh.has_semi_prims() {
+                        let c = psx_blend::MODE0_BLEND_CONSTANT;
+                        rp.set_blend_constant(wgpu::Color {
+                            r: c,
+                            g: c,
+                            b: c,
+                            a: c,
+                        });
+                        for (mode, &(start, count)) in mesh.semi_ranges().iter().enumerate() {
+                            if count == 0 {
+                                continue;
+                            }
+                            rp.set_pipeline(&self.vram_mesh_blend_pipelines[mode]);
+                            rp.draw_indexed(start..start + count, 0, 0..1);
+                        }
+                    }
                 }
                 RenderTarget::Lines { mesh, .. } => {
                     rp.set_pipeline(&self.lines_pipeline);
@@ -5113,6 +5233,42 @@ impl Renderer {
                                 wgpu::IndexFormat::Uint32,
                             );
                             rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
+                        }
+                    }
+                    // PSX-faithful semi-transparency blend pass (see
+                    // [`psx_blend`]): after every opaque draw, re-draw each
+                    // actor's per-ABR-mode semi-transparent index tail with
+                    // the matching blend pipeline. Runs last among the 3D
+                    // draws so blended fragments (which don't write depth)
+                    // can't be overwritten by later opaque geometry.
+                    if self.psx_mode.get() && scene.draws.iter().any(|d| d.mesh.has_semi_prims()) {
+                        let c = psx_blend::MODE0_BLEND_CONSTANT;
+                        rp.set_blend_constant(wgpu::Color {
+                            r: c,
+                            g: c,
+                            b: c,
+                            a: c,
+                        });
+                        for (i, draw) in scene.draws.iter().enumerate() {
+                            if !draw.mesh.has_semi_prims() {
+                                continue;
+                            }
+                            let off = (i as u32) * stride;
+                            rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
+                            rp.set_index_buffer(
+                                draw.mesh.index_buf.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+                            for (mode, &(start, count)) in
+                                draw.mesh.semi_ranges().iter().enumerate()
+                            {
+                                if count == 0 {
+                                    continue;
+                                }
+                                rp.set_pipeline(&self.scene_vram_mesh_blend_pipelines[mode]);
+                                rp.set_bind_group(0, bg, &[off]);
+                                rp.draw_indexed(start..start + count, 0, 0..1);
+                            }
                         }
                     }
                     let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
@@ -5521,6 +5677,141 @@ pub mod psx_dither {
     }
 }
 
+/// PSX GPU semi-transparency (per-prim blend modes) for the VRAM-mesh path.
+///
+/// A PSX primitive is semi-transparent when its packet's ABE bit is set; for
+/// textured prims the texel's own BGR555 STP bit (bit 15) then decides *per
+/// pixel*: STP=1 texels blend, STP=0 texels draw opaque even inside a
+/// semi-transparent prim (texel `0x0000` is never drawn at all, and `0x8000`
+/// — black with STP — blends). The blend equation comes from texpage (TSB)
+/// bits 5..=6 ("ABR"):
+///
+/// | ABR | equation            | wgpu mapping                                  |
+/// |-----|---------------------|-----------------------------------------------|
+/// | 0   | `0.5*B + 0.5*F`     | src=Constant, dst=Constant, Add (constant 0.5)|
+/// | 1   | `B + F`             | src=One, dst=One, Add                         |
+/// | 2   | `B - F`             | src=One, dst=One, ReverseSubtract             |
+/// | 3   | `B + 0.25*F`        | src=One, dst=One, Add; F pre-scaled 0.25      |
+///
+/// (`B` = destination/background, `F` = source/foreground.) Mode 3's `0.25*F`
+/// has no fixed-function factor, so the blend-pass fragment shader pre-scales
+/// the output by [`src_shader_scale`] and the pipeline stays plain-additive.
+///
+/// The mesh builders (`legaia_tmd::mesh`) pack the per-prim ABE bit into bit
+/// 15 of the per-vertex TSB attribute ([`TSB_SEMI_TRANSPARENT_BIT`]), which
+/// is unused by the TMD TSB encoding. With one fixed blend state per
+/// pipeline, per-texel STP inside one prim is handled with **two passes**:
+/// the opaque pass draws every triangle and discards STP texels of
+/// semi-transparent prims in the shader, then a blend pass re-draws only the
+/// semi-transparent triangles (grouped per ABR mode by
+/// [`append_semi_tail`]) and discards everything *except* STP texels. Both
+/// the shader discard and the blend pass are gated on the PSX-faithful mode
+/// flag ([`Renderer::set_psx_mode`]), so the default path is unchanged.
+pub mod psx_blend {
+    /// Bit 15 of the per-vertex TSB attribute = "prim is semi-transparent"
+    /// (the TMD mode byte's ABE bit). Engine-side packing; kept in lockstep
+    /// with `legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`.
+    pub const TSB_SEMI_TRANSPARENT_BIT: u16 = 0x8000;
+
+    /// Blend constant bound while drawing ABR mode 0 (`0.5*B + 0.5*F`):
+    /// both factors are `BlendFactor::Constant`.
+    pub const MODE0_BLEND_CONSTANT: f64 = 0.5;
+
+    /// True when the prim that produced this TSB attribute had its ABE
+    /// (semi-transparency) bit set.
+    pub fn prim_semi_transparent(tsb: u16) -> bool {
+        tsb & TSB_SEMI_TRANSPARENT_BIT != 0
+    }
+
+    /// ABR blend mode from TSB bits 5..=6 (0..=3).
+    pub fn abr_mode(tsb: u16) -> u8 {
+        ((tsb >> 5) & 0x3) as u8
+    }
+
+    /// Foreground pre-scale applied in the blend-pass fragment shader for
+    /// the given ABR mode. Only mode 3 (`B + 0.25*F`) scales; the other
+    /// modes get their factors from the fixed-function blend state.
+    pub fn src_shader_scale(mode: u8) -> f32 {
+        if mode == 3 { 0.25 } else { 1.0 }
+    }
+
+    /// wgpu blend state for one ABR mode (see the module table). The alpha
+    /// component always replaces (the surface alpha is unused).
+    pub fn blend_state(mode: u8) -> wgpu::BlendState {
+        use wgpu::{BlendComponent, BlendFactor, BlendOperation};
+        let color = match mode {
+            0 => BlendComponent {
+                src_factor: BlendFactor::Constant,
+                dst_factor: BlendFactor::Constant,
+                operation: BlendOperation::Add,
+            },
+            2 => BlendComponent {
+                // ReverseSubtract = dst - src = B - F.
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::One,
+                operation: BlendOperation::ReverseSubtract,
+            },
+            // Modes 1 and 3 are both plain additive; mode 3's 0.25 factor
+            // is pre-applied in the shader (`src_shader_scale`).
+            _ => BlendComponent {
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::One,
+                operation: BlendOperation::Add,
+            },
+        };
+        wgpu::BlendState {
+            color,
+            alpha: wgpu::BlendComponent {
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::Zero,
+                operation: BlendOperation::Add,
+            },
+        }
+    }
+
+    /// Reference PSX blend arithmetic for one colour channel (`b` =
+    /// background, `f` = foreground, both `[0, 1]`). The GPU clamps the
+    /// 5-bit result; so does every wgpu blend op on a normalized target.
+    /// Unit tests evaluate [`blend_state`] + [`src_shader_scale`] against
+    /// this to keep the pipeline mapping honest.
+    pub fn blend_apply(mode: u8, b: f32, f: f32) -> f32 {
+        let v = match mode {
+            0 => 0.5 * b + 0.5 * f,
+            1 => b + f,
+            2 => b - f,
+            _ => b + 0.25 * f,
+        };
+        v.clamp(0.0, 1.0)
+    }
+
+    /// Append a per-ABR-mode "semi tail" to a triangle index list: the
+    /// original indices stay untouched at the front (the opaque pass draws
+    /// `0..indices.len()` exactly as before), and every semi-transparent
+    /// triangle is *duplicated* into one of four contiguous tail buckets,
+    /// one per ABR mode. Returns the extended index list plus
+    /// `[(first_index, index_count); 4]` tail ranges for the blend pass.
+    ///
+    /// A triangle's prim flags are read from its first vertex - the mesh
+    /// builders emit fresh per-corner vertices per prim, so all corners
+    /// share one `(cba, tsb)`.
+    pub fn append_semi_tail(indices: &[u32], cba_tsb: &[[u16; 2]]) -> (Vec<u32>, [(u32, u32); 4]) {
+        let mut buckets: [Vec<u32>; 4] = Default::default();
+        for tri in indices.chunks_exact(3) {
+            let tsb = cba_tsb[tri[0] as usize][1];
+            if prim_semi_transparent(tsb) {
+                buckets[abr_mode(tsb) as usize].extend_from_slice(tri);
+            }
+        }
+        let mut out = indices.to_vec();
+        let mut ranges = [(0u32, 0u32); 4];
+        for (mode, bucket) in buckets.iter().enumerate() {
+            ranges[mode] = (out.len() as u32, bucket.len() as u32);
+            out.extend_from_slice(bucket);
+        }
+        (out, ranges)
+    }
+}
+
 /// Mesh shader: transforms positions by the host-supplied MVP, computes a
 /// per-fragment normal from screen-space derivatives, lights with a single
 /// directional light, and outputs a flat-shaded result. With `psx_mode`
@@ -5736,16 +6027,15 @@ fn bgr555_to_rgba(c: u32) -> vec4<f32> {
     return vec4<f32>(r, g, b, alpha);
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let tsb = in.cba_tsb.y;
-    let cba = in.cba_tsb.x;
+// Fetch the raw BGR555+STP VRAM word for one fragment: texture-window
+// remap, texture-page origin, 4/8/15bpp decode + CLUT lookup.
+fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
     // Convert linearly-interpolated affine UV float -> integer texel.
     // Truncate (PSX behaviour: GP0 G3 commands transmit signed 8-bit UV
     // bytes; the rasterizer takes the integer part of the interpolated
     // position).
-    var u_pix = u32(max(in.uv_affine.x, 0.0)) & 0xFFu;
-    var v_pix = u32(max(in.uv_affine.y, 0.0)) & 0xFFu;
+    var u_pix = u32(max(uv_affine.x, 0.0)) & 0xFFu;
+    var v_pix = u32(max(uv_affine.y, 0.0)) & 0xFFu;
     // Apply GP0(0xE2) texture-window register, in pixel space:
     //   coord = (coord & ~(mask*8)) | ((offset & mask) * 8)
     // No-op when mask == 0 (the all-zero default) since the AND-NOT is
@@ -5762,7 +6052,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let tpage_y = ((tsb >> 4u) & 1u) * 256u;
     let depth = (tsb >> 7u) & 0x3u; // 0=4bpp, 1=8bpp, 2=15bpp
 
-    var color: vec4<f32>;
     if depth == 0u {
         // 4bpp: 4 nibbles per VRAM word.
         let vx = i32(tpage_x + (u_pix >> 2u));
@@ -5772,8 +6061,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let pal_idx = (word >> (nibble * 4u)) & 0xFu;
         let cx = i32((cba & 0x3Fu) * 16u + pal_idx);
         let cy = i32((cba >> 6u) & 0x1FFu);
-        let pal = textureLoad(t_vram, vec2<i32>(cx, cy), 0).r;
-        color = bgr555_to_rgba(pal);
+        return textureLoad(t_vram, vec2<i32>(cx, cy), 0).r;
     } else if depth == 1u {
         // 8bpp: 2 bytes per VRAM word.
         let vx = i32(tpage_x + (u_pix >> 1u));
@@ -5783,19 +6071,32 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let pal_idx = (word >> (byte_sel * 8u)) & 0xFFu;
         let cx = i32((cba & 0x3Fu) * 16u + pal_idx);
         let cy = i32((cba >> 6u) & 0x1FFu);
-        let pal = textureLoad(t_vram, vec2<i32>(cx, cy), 0).r;
-        color = bgr555_to_rgba(pal);
-    } else {
-        // 15/16 bpp direct: one VRAM word per texel.
-        let vx = i32(tpage_x + u_pix);
-        let vy = i32(tpage_y + v_pix);
-        let word = textureLoad(t_vram, vec2<i32>(vx, vy), 0).r;
-        color = bgr555_to_rgba(word);
+        return textureLoad(t_vram, vec2<i32>(cx, cy), 0).r;
     }
+    // 15/16 bpp direct: one VRAM word per texel.
+    let vx = i32(tpage_x + u_pix);
+    let vy = i32(tpage_y + v_pix);
+    return textureLoad(t_vram, vec2<i32>(vx, vy), 0).r;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let tsb = in.cba_tsb.y;
+    let cba = in.cba_tsb.x;
+    let word = fetch_vram_word(in.uv_affine, cba, tsb);
+    let color = bgr555_to_rgba(word);
 
     // Discard fully transparent texels (PSX STP=0 with all-zero pixel) so
     // characters with cutout textures don't render solid black quads.
     if color.a <= 0.0 {
+        discard;
+    }
+
+    // PSX-faithful semi-transparency, opaque pass: STP texels of a
+    // semi-transparent prim (TSB bit 15 = the engine-packed ABE enable)
+    // belong to the blend pass - defer them. Gated on the same faithful
+    // flag as the blend pass so the default path draws everything opaque.
+    if u.psx_params.z >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
         discard;
     }
 
@@ -5822,6 +6123,37 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
     let rgb = psx_dither(color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
+}
+
+// PSX semi-transparency blend pass: re-draws the semi-transparent prims
+// (the per-ABR-mode index tail) keeping ONLY texels whose STP bit is set -
+// the exact complement of the opaque pass's deferral. `f_scale` pre-scales
+// the foreground for ABR mode 3 (`B + 0.25*F`); the rest of the equation is
+// fixed-function blend state. Runs only in PSX-faithful mode, so the colour
+// is unlit (matching the opaque pass's faithful branch). No dither here:
+// the PSX dithers the post-blend value during the VRAM write, which a
+// fixed-function blend can't reproduce without a destination read-back.
+fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
+    let tsb = in.cba_tsb.y;
+    let cba = in.cba_tsb.x;
+    let word = fetch_vram_word(in.uv_affine, cba, tsb);
+    // Texel 0x0000 never draws; STP=0 texels were already drawn opaque by
+    // the first pass. 0x8000 (black + STP) correctly blends.
+    if word == 0u || ((word >> 15u) & 1u) == 0u {
+        discard;
+    }
+    let color = bgr555_to_rgba(word);
+    return vec4<f32>(color.rgb * f_scale, 1.0);
+}
+
+@fragment
+fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, 1.0);
+}
+
+@fragment
+fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, 0.25);
 }
 "#;
 
@@ -7552,5 +7884,135 @@ mod tests {
                 .validate(&module)
                 .unwrap_or_else(|e| panic!("{name} shader failed to validate: {e:?}"));
         }
+    }
+
+    /// The VRAM-mesh shader must expose the blend-pass entry points the
+    /// semi-transparency pipelines compile against.
+    #[test]
+    fn vram_shader_has_blend_entry_points() {
+        for entry in ["fs_main", "fs_blend", "fs_blend_quarter"] {
+            assert!(
+                VRAM_MESH_SHADER_SRC.contains(&format!("fn {entry}(")),
+                "missing entry point {entry}"
+            );
+        }
+    }
+
+    #[test]
+    fn psx_blend_semi_bit_matches_tmd_packing() {
+        // `legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT` packs the prim ABE
+        // flag into TSB bit 15; the renderer-side mirror must agree (the
+        // crates deliberately don't depend on each other).
+        assert_eq!(psx_blend::TSB_SEMI_TRANSPARENT_BIT, 0x8000);
+        assert!(psx_blend::prim_semi_transparent(0x8000));
+        assert!(psx_blend::prim_semi_transparent(0x801A));
+        assert!(!psx_blend::prim_semi_transparent(0x001A));
+        assert!(!psx_blend::prim_semi_transparent(0x7FFF));
+    }
+
+    #[test]
+    fn psx_blend_abr_mode_extracts_tsb_bits_5_6() {
+        for mode in 0u16..4 {
+            // ABR sits in bits 5..=6, independent of page / depth bits.
+            assert_eq!(psx_blend::abr_mode(mode << 5), mode as u8);
+            assert_eq!(psx_blend::abr_mode(0x8F1F | (mode << 5)), mode as u8);
+        }
+    }
+
+    #[test]
+    fn psx_blend_src_scale_only_quarters_mode_3() {
+        assert_eq!(psx_blend::src_shader_scale(0), 1.0);
+        assert_eq!(psx_blend::src_shader_scale(1), 1.0);
+        assert_eq!(psx_blend::src_shader_scale(2), 1.0);
+        assert_eq!(psx_blend::src_shader_scale(3), 0.25);
+    }
+
+    /// Evaluate one wgpu blend factor as used by [`psx_blend::blend_state`]
+    /// (none of the selected factors depend on the source/dest colour).
+    fn eval_factor(f: wgpu::BlendFactor) -> f32 {
+        match f {
+            wgpu::BlendFactor::One => 1.0,
+            wgpu::BlendFactor::Zero => 0.0,
+            wgpu::BlendFactor::Constant => psx_blend::MODE0_BLEND_CONSTANT as f32,
+            other => panic!("unexpected blend factor {other:?}"),
+        }
+    }
+
+    /// Fixed-function blend evaluator: `op(src*src_factor, dst*dst_factor)`
+    /// clamped to the normalized target range, exactly what the GPU ROP does.
+    fn eval_blend(comp: wgpu::BlendComponent, dst: f32, src: f32) -> f32 {
+        let s = src * eval_factor(comp.src_factor);
+        let d = dst * eval_factor(comp.dst_factor);
+        let v = match comp.operation {
+            wgpu::BlendOperation::Add => d + s,
+            wgpu::BlendOperation::ReverseSubtract => d - s,
+            other => panic!("unexpected blend op {other:?}"),
+        };
+        v.clamp(0.0, 1.0)
+    }
+
+    /// blend_state(mode) + the shader-side foreground pre-scale must
+    /// reproduce the PSX equations (0.5B+0.5F / B+F / B-F / B+0.25F)
+    /// for every ABR mode, including the clamped corners.
+    #[test]
+    fn psx_blend_states_reproduce_psx_equations() {
+        let samples = [
+            (0.0f32, 0.0f32),
+            (0.25, 0.5),
+            (0.5, 0.25),
+            (1.0, 1.0), // clamps modes 1 and 0's unclamped sum
+            (0.1, 0.9), // clamps mode 2 (B - F < 0)
+            (0.75, 0.75),
+        ];
+        for mode in 0u8..4 {
+            let state = psx_blend::blend_state(mode);
+            // Alpha always replaces - the surface alpha is unused.
+            assert_eq!(state.alpha.src_factor, wgpu::BlendFactor::One);
+            assert_eq!(state.alpha.dst_factor, wgpu::BlendFactor::Zero);
+            assert_eq!(state.alpha.operation, wgpu::BlendOperation::Add);
+            for (b, f) in samples {
+                // The blend-pass fragment shader outputs F * src_shader_scale.
+                let shader_out = f * psx_blend::src_shader_scale(mode);
+                let got = eval_blend(state.color, b, shader_out);
+                let want = psx_blend::blend_apply(mode, b, f);
+                assert!(
+                    (got - want).abs() < 1e-6,
+                    "mode {mode} B={b} F={f}: pipeline gives {got}, PSX wants {want}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn psx_blend_append_semi_tail_buckets_per_mode() {
+        // 4 prims x 3 per-corner verts: opaque, semi ABR 0, semi ABR 2,
+        // semi ABR 3 (in that order).
+        let semi = psx_blend::TSB_SEMI_TRANSPARENT_BIT;
+        let mut cba_tsb = Vec::new();
+        for tsb in [0x001Au16, semi, semi | (2 << 5), semi | (3 << 5)] {
+            cba_tsb.extend_from_slice(&[[0u16, tsb]; 3]);
+        }
+        let indices: Vec<u32> = (0..12).collect();
+        let (out, ranges) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        // Original indices untouched at the front (the opaque pass range).
+        assert_eq!(&out[..12], indices.as_slice());
+        // Tail: 3 semi triangles bucketed per ABR mode, mode 1 empty.
+        assert_eq!(ranges[0], (12, 3));
+        assert_eq!(ranges[1], (15, 0));
+        assert_eq!(ranges[2], (15, 3));
+        assert_eq!(ranges[3], (18, 3));
+        assert_eq!(&out[12..15], &[3, 4, 5]);
+        assert_eq!(&out[15..18], &[6, 7, 8]);
+        assert_eq!(&out[18..21], &[9, 10, 11]);
+        assert_eq!(out.len(), 21);
+    }
+
+    #[test]
+    fn psx_blend_append_semi_tail_all_opaque_is_identity() {
+        let cba_tsb = vec![[0u16, 0x001Au16]; 6];
+        let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5];
+        let (out, ranges) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        assert_eq!(out, indices);
+        assert_eq!(ranges, [(6, 0); 4]);
     }
 }

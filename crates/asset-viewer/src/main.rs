@@ -316,14 +316,17 @@ impl Bundle {
     /// Skips entries that don't exist on disk.
     fn dirs(self, root: &Path) -> Vec<PathBuf> {
         let entries: &[&str] = match self {
-            // CDNAME blocks 865-890. FUN_800520f0 explicitly loads PROT
-            // 0x367-0x36B (sound_data + befect_data) via etim.dat/etmd.dat/
-            // vdf.dat dev paths and 0x36C (player_data) via the player
-            // loader. battle_data (865-868) and monster_data (869) are
-            // adjacent character-facing blocks that share the same VRAM
-            // CLUT/sprite slots - observed empirically that level_up hero
-            // meshes need CLUTs from both 0866_battle_data (row 490) and
-            // 0873_befect_data (row 484, x=144).
+            // Extraction entries 865..890 (directory names carry the
+            // extractor's CDNAME-derived labels, which sit +2 from the
+            // retail-semantic blocks - docs/formats/cdname.md numbering
+            // space). FUN_800520f0 loads raw indices 0x367-0x36B =
+            // extraction 869..873 (the befect cluster: etim/etmd/vdf/
+            // efect) plus the player files (extraction 863..866). This
+            // list is the empirically-tuned VRAM overlay set the battle
+            // preset needs - observed that level_up hero meshes pull
+            // CLUTs from both extraction 0866 (row 490) and 0873
+            // (row 484, x=144); resist renumbering it without a visual
+            // re-check.
             Bundle::Battle => &[
                 "0865_battle_data",
                 "0866_battle_data",

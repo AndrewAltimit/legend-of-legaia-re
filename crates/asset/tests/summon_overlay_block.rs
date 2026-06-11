@@ -1,6 +1,7 @@
 //! Disc-gated: the summon-overlay parser generalizes across the **whole player
-//! Seru-magic summon block** (PROT 0905..=0915), not just Gimard's *Tail Fire*
-//! (PROT 0905, covered byte-for-byte by `summon_overlay_real`).
+//! Seru-magic summon block** (extraction PROT 0903..=0913, the corrected
+//! loader-arithmetic range), not just the deep-dived stager (PROT 0905, covered
+//! byte-for-byte by `summon_overlay_real`).
 //!
 //! Each entry in [`PLAYER_SUMMON_STAGER_PROT`] is a per-summon stager overlay:
 //! [`summon_overlay::parse`] scans its `FUN_80021B04` spawn calls and recovers a
@@ -8,7 +9,7 @@
 //! invariants that hold for every player summon — many spawn sites, a non-trivial
 //! contiguous record table, all records in-file, every bytecode range in bounds —
 //! so a regression in the spawn-site scan or the a2 resolver is caught across the
-//! block. (Record *header semantics* beyond Gimard — which `model_sel` sentinels
+//! block. (Record *header semantics* beyond 0905 — which `model_sel` sentinels
 //! mean what, and the per-summon `gp[0x754]` model-library base — need a live
 //! cast trace and are out of scope here; this only asserts the table shape.)
 //!

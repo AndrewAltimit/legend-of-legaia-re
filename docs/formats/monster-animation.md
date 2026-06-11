@@ -2,8 +2,13 @@
 
 Per-object rigid-transform keyframe animation for battle monsters. Distinct
 from the [ANM container](anm.md) (which drives player / field actors): monster
-animation lives **inside the monster's archive block** (PROT entry 867, see
+animation lives **inside the monster's archive block** (extraction PROT entry
+867 — retail-space CDNAME block `monster_data` under the
+[−2 numbering correction](cdname.md#numbering-space); see
 [monster stat archive](../subsystems/battle.md) and `legaia_asset::monster_archive`).
+The archive is **not** the [player battle files](battle-data-pack.md)
+(extraction 863..866, retail `battle_data`) whose extended extraction windows
+historically over-read into it.
 
 Implementation: `legaia_asset::monster_archive` (`MonsterAnimation`, `PartPose`,
 `animations`, `idle_animation`).
@@ -114,5 +119,5 @@ enemy-table web page exposes the same export as a download button.
 
 - [Legaia TMD](tmd.md) - the mesh whose vertices these keyframes morph.
 - [ANM animation](anm.md) - the player/field-actor animation container.
-- [Battle-data pack](battle-data-pack.md) - the archive carrying the monster meshes.
+- [Player battle files](battle-data-pack.md) - the sibling `battle_data` block (party-character containers, a distinct format from this archive).
 - [`subsystems/battle.md`](../subsystems/battle.md) - the battle scene that drives the playback.

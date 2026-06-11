@@ -90,6 +90,16 @@ impl GroupHeader {
     pub fn n_vertices(&self) -> usize {
         if (self.flags >> 1) & 1 == 0 { 3 } else { 4 }
     }
+
+    /// Semi-transparency enable (the PSX SDK mode byte's ABE bit, bit 1).
+    /// The mode byte is the GP0 polygon command byte the renderer emits for
+    /// the group's prims, so ABE here means "the GPU blends texels whose
+    /// BGR555 STP bit (bit 15) is set". Legaia character meshes commonly
+    /// carry ABE (mode `0x26`/`0x27`); the per-texel STP bit decides which
+    /// pixels actually blend.
+    pub fn abe(&self) -> bool {
+        self.mode & 0x02 != 0
+    }
 }
 
 /// Look up the byte offset within a primitive where vertex indices begin,
@@ -613,6 +623,23 @@ mod tests {
             mode: 0,
         };
         assert_eq!(h2.n_vertices(), 4);
+    }
+
+    #[test]
+    fn abe_is_mode_bit_1() {
+        let mut h = GroupHeader {
+            count: 1,
+            flags: 0x20,
+            olen: 7,
+            ilen: 5,
+            flag: 0,
+            mode: 0x27, // textured tri with ABE (the common Legaia mode)
+        };
+        assert!(h.abe());
+        h.mode = 0x25; // same shape, ABE clear
+        assert!(!h.abe());
+        h.mode = 0x02; // only the ABE bit
+        assert!(h.abe());
     }
 
     #[test]

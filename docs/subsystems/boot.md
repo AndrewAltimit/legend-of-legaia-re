@@ -45,14 +45,39 @@ Dev mode-name strings (12-byte stride in the static pool):
 | `10/11` | `TEST TEST` / `TEST MODE` | `24/25` | `OTHER INIT` / `OTHER MODE` |
 | `12/13` | `MAPDISP INIT` / `MAPDISP MODE` | `26/27` | `STR INIT` / `STR MODE` |
 
-Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two parallel overlay loaders; both resolve `prot_index = param + 0x381` via `FUN_8003E8A8`, with destination buffer pointers `*DAT_8001038C` / `*DAT_80010390` respectively):
+Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two parallel overlay
+loaders, destination buffer pointers `*DAT_8001038C` / `*DAT_80010390` respectively; both call
+`FUN_8003E8A8(param + 0x381)`). **Index spaces:** the resolver indexes the in-RAM TOC at
+`0x801C70F0`, which is raw `PROT.DAT` from byte 0 (byte-verified against the
+`door_warp_town01_to_map01` save state), reading `start = toc[idx+2]`; the extraction index
+space (`crates/prot`, `extracted/PROT/NNNN_*.BIN`) slices entry `p`'s start from file word
+`p+4`. So in extraction index space the loaded entry is **`prot_index = param + 0x37F`** — two
+below the raw `+ 0x381`. Every content-anchored overlay confirms this: param 2 → 0897 field, 3 →
+0898 battle (RAM-byte-verified), 4 → 0899 menu (RAM-byte-verified), 0x4A → 0969 STR-path table,
+0x4B → 0970 cutscene/STR, 0x4C → 0971 debug menu, 0x54 → 0979 (literal `"efect init"` strings),
+and the seven mode-24 minigame slots whose init VAs land on prologues (see [script-vm.md § 0x3E
+WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
+
+The census is exhaustive for static `SCUS_942.54`: a full-image scan for both loaders' `jal`
+sites (with the `a0` setup decoded) finds 16 callsites. Constant params: 2 / 3 / 4 / 7 / 0x4B /
+0x4C / 0x53 / 0x54 / 0x56 plus the mode-24 `sub_id + 0x4D` band; computed params: the battle
+SM's special-attack (`+0x28`) and summon-stager (`id - 0x79`) bands, the battle stage band
+(`+0x47`), and the slot-B default `FUN_80025BA0` (param 5 or 6 by flag `DAT_8007B6A8` →
+extraction 0900/0901, the summon-render pair — agreeing with 0900's byte-residency in mid-cast
+saves). No site can produce param 0 or 1, so extraction entries 0895/0896 are unreachable from
+any static loader call (see the 0896 row in
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#prot-0896-bat_back_dat-identity)).
 
 | Mode | Init handler | Loader call | PROT idx | Content (verified) |
 |---|---|---|---|---|
-| 0 `CONFIG INIT` | `FUN_80025C68` | `FUN_8003EBE4(0x4C)` | 973 | Slot-machine debug overlay — "OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16" strings + slot-game text. **The dev label "CONFIG" is a misnomer for the slot-machine debug mode.** |
-| 2 `MAIN INIT` | `FUN_80025B64` | `FUN_8003EBE4(2)` | 899 | **Field/town gameplay INIT.** Loads the field/town/menu overlay, then calls the per-scene initializer `FUN_801D6704` (map + MAN + camera + fog + BGM load; game-mode work buffer alloc), which hands off to mode 3 by writing `_DAT_8007B83C = 3`. The title screen's NEW GAME path launches this mode. The "Display Off / Vibration On / Voices On" strings in PROT 899 belong to the **in-game options submenu** carried by this same overlay (reached through the field menu) — they do not make mode 2 a standalone options mode. |
-| 24 `OTHER INIT` | `FUN_80025980` | ? | 972..980 | Minigame entry. A live mode-24 window capture (Baka Fighter, sub-id `0x8007BA34 = 4`) shows the handler running from SCUS (its `"other init end"` debug print is SCUS-resident) and streaming the **per-minigame overlay** directly into slot A over the field overlay. The earlier "mode-24 loads PROT 0896" association is **refuted**: 0896's bytes appear nowhere in RAM across the whole entry window (+0/+10/+30 vsyncs spanning init completion) nor in any parked library state. |
-| 26 `STR INIT` | `FUN_80025FB4` | (FMV path) | — | Cutscene / STR FMV mode entry. Title-overlay tick writes `_DAT_8007B83C = 0x1A` (= 26) on attract underflow → enters this mode. |
+| 0 `CONFIG INIT` | `FUN_80025C68` | `FUN_8003EBE4(0x4C)` | 971 | **Debug-menu overlay** — "DEBUG MODE" header + FOG / WORK_TBL / SAVE DATA / MAP NAME / TMD NO / POLY / VERT dev-menu strings (the `overlay_debug_menu` capture family). The dev label "CONFIG" is a misnomer. (An earlier `+ 0x381`-arithmetic reading placed this at 973 and took the slot-machine text in 973's over-read tail for its content — 973 itself is the 1-sector `OTHER2` dev module at mode-24 warp sub-id 1; the casino slot machine is 975, sub-id 3.) |
+| 2 `MAIN INIT` | `FUN_80025B64` | `FUN_8003EBE4(2)` | 897 | **Field/town gameplay INIT.** Loads the field overlay (PROT 0897, the entry the static overlay map pins at slot-A base `0x801CE818`), then calls the per-scene initializer `FUN_801D6704` (map + MAN + camera + fog + BGM load; game-mode work buffer alloc), which hands off to mode 3 by writing `_DAT_8007B83C = 3`. The title screen's NEW GAME path launches this mode. (The earlier "loads 899, the field/town/menu overlay" reading was the same off-by-2: the "Display Off / Vibration On / Voices On" options strings live in the **menu** overlay 0899, which mode 22 loads.) |
+| 8 `EFECT TEST` | `FUN_80025E68` | `FUN_8003EBE4(0x54)` | 979 | Effect-test dev mode — the entry's own strings are literally `"efect init"` / `"efect init end"` / `"battle bgm %d"`. |
+| 22 `CARD INIT` | `FUN_8002574C` | `FUN_8003EBE4(4)` | 899 | **Menu / memory-card overlay** (the in-field pause menu runs under this pair; see below). RAM-byte-verified as the menu overlay in the static overlay map. |
+| 24 `OTHER INIT` | `FUN_80025980` | `FUN_8003EBE4(sub_id + 0x4D)` (`+2` first when `sub_id >= 6`) | 972..977, 980 | Minigame door-warp entry (field-VM op `0x3E`, `sub_id = op0 - 100`). Backs up the active scene name `0x80084548` → `0x8007BAE8` (+ `_DAT_80084540` → `0x8007BAC4`), streams the per-sub-id minigame overlay into slot A over the field overlay, then calls its init entry; `FUN_80026018` restores both on exit and re-enters mode 2. Sub-id table: [script-vm.md § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). Live-confirmed (Baka Fighter capture, sub-id `0x8007BA34 = 4` → PROT 0976). The "mode-24 loads PROT 0896" association is **refuted**: 0896's bytes appear nowhere in RAM across the entry window nor in any parked library state. |
+| 12 `MAPDSIP INIT` | `FUN_80025DA0` | `FUN_8003EBE4(0x56)` | 981 | World-map display mode entry. Loads a small 3-sector module (head string `pointer %d`; too few jals for a static base vote) and calls its init entry `0x801CF4AC` (file `+0xC94`, which builds the scratchpad display list at `0x1F800314`). The world-map *controller* code itself lives in the field overlay 0897 (`FUN_801E76D4` = base`+0x18EBC`); this module's precise role is open. |
+| 18 `GAME OVER INIT` | `FUN_80025B30` | `FUN_8003EBE4(7)` | 902 | Game-over overlay — the loader census corroborates the static map's content pin (`gameover` row, entry 0902). |
+| 26 `STR INIT` | `FUN_80025FB4` | `FUN_8003EBE4(0x4B)` | 970 | Cutscene / STR FMV mode entry (the `cutscene_str` overlay in the static overlay map). Title-overlay tick writes `_DAT_8007B83C = 0x1A` (= 26) on attract underflow → enters this mode. |
 
 ##### Full handler map (recovered from the disc)
 
@@ -77,9 +102,11 @@ Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two 
 
 **Structural fact:** 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map display) and Mode 23 (menu / memory card) carry their own. So the per-frame "MODE" half of the state machine is mostly one shared tick parameterised by `+0x14`, not 14 distinct handlers. (The `0x80025DA0` MAPDSIP-init dev string is misspelled on the disc — "MAPDSIP", not "MAPDISP".)
 
-**The in-field pause menu runs under the CARD pair (mode 23), not field mode 3.** Every menu-open capture in the save library — equipment / status / options, opened from both the field (`map01`) and town (`town01`) — holds `_DAT_8007B83C = 0x17` (23). So the "CARD" dev label covers the whole menu / memory-card overlay surface (the field menu carries the Save flow), which is also why mode 23 is one of the two per-frame modes with its own handler. The mode-trace oracle (`mode_trace_e3`) asserts menu-open scenarios on active-scene convergence only, until the engine's `BootSession` models a menu mode.
+**The in-field pause menu runs under the CARD pair (mode 23), not field mode 3.** Every menu-open capture in the save library — equipment / status / options, opened from both the field (`map01`) and town (`town01`) — holds `_DAT_8007B83C = 0x17` (23). So the "CARD" dev label covers the whole menu / memory-card overlay surface (the field menu carries the Save flow), which is also why mode 23 is one of the two per-frame modes with its own handler.
 
-**The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen — the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the slot-machine debug mode. The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
+The engine mirrors this: `BootSession` hosts the pause-menu session headlessly (`open_field_menu` / the Start-edge path in `BootSession::tick`), holding the world in `SceneMode::Menu` while the menu is open — `engine_core::mode` maps the CARD pair (`CardInit`/`CardMode`) to that scene mode — and the mode-trace oracle (`mode_trace_e3`) drives menu-open scenarios with a scripted Start press and asserts full menu-mode convergence (scene mode + active scene + the `game_mode` byte, engine `0x17` vs the retail snapshot).
+
+**The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen — the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the dev debug-menu mode (PROT 0971). The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
 
 #### New Game boot chain (title → field)
 
@@ -125,7 +152,7 @@ The SCUS-side CD I/O is layered. Bottom-up:
 | `FUN_8003E4E8` | Boot-time TOC loader: `(filename_str, do_read_flag)`. Hardcoded for `"PROT.DAT"` from `FUN_8003F08C(0)`. Reads 3 sectors (= 6 KB) into `0x801C70F0`. |
 | `FUN_8003E800` | Async LBA-based loader: `(dest, lba, flags)`. Queues a load via globals `gp+0x97c` (lba) / `gp+0x894` (dest), kicks via `FUN_8003F128`. Used by both overlay loaders. |
 | `FUN_8003E8A8` | PROT TOC index resolver: `(prot_index, flag)` → LBA. Reads `*(0x801C70F0 + (index+2)*4)` matching the [PROT TOC math](../formats/prot.md). |
-| `FUN_8003EBE4` / `FUN_8003EC70` | Parallel overlay loaders A/B (see Game-mode state machine section). Both: `prot_index = param + 0x381`. Differ only in destination buffer pointer (`*DAT_8001038C` vs `*DAT_80010390`) and current-id tracker (`gp+0x924` vs `gp+0x934`). |
+| `FUN_8003EBE4` / `FUN_8003EC70` | Parallel overlay loaders A/B (see Game-mode state machine section). Both call `FUN_8003E8A8(param + 0x381)`; in extraction index space that is **entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT` head, 2 entries above the extraction indexing — see the index-spaces note above the mode table). Differ only in destination buffer pointer (`*DAT_8001038C` vs `*DAT_80010390`) and current-id tracker (`gp+0x924` vs `gp+0x934`; `gp = 0x8007B318`, so `0x8007BC3C` / `0x8007BC4C`). |
 
 `FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`: retail branch uses ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read), debug branch uses PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). The two branches load the same data from different on-disc locations.
 
@@ -450,7 +477,7 @@ A **town/field subsystem** uses a separate format-string pool at `0x80011079..0x
 
 ## Boot init.pak (PROT 0895)
 
-PROT entry `0895_bat_back_dat` is the **boot-time `init.pak` bundle** — despite the misleading CDNAME label. The first 16 bytes are a small pack header; the rest is a string pool followed by four uncompressed PSX TIMs:
+PROT entry `0895_bat_back_dat` is the **boot-time `init.pak` bundle** — the `bat_back_dat` label is a CDNAME block-inheritance artifact (in raw-TOC index space the `bat_back_dat 895` define lands on the `summon.dat`/`readef.DAT` battle-backdrop streaming files = extraction 893/894; see [`formats/summon-readef.md`](../formats/summon-readef.md)). The first 16 bytes are a small pack header; the rest is a string pool followed by four uncompressed PSX TIMs:
 
 ```
 +0x0000  16 bytes  pack header (4 × u32 LE)

@@ -73,6 +73,7 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 | Encounter MAN sub-section layout | resolved | [details ↓](#encounter-man-sub-section-layout) | `project_man_section_decoded.md` |
 | Super / Miracle Arts trigger logic | partial | [details ↓](#super--miracle-arts-trigger-logic) | `project_arts_system.md` |
 | Seru-magic summon visual (e.g. Tail Fire) | **player visual RESOLVED + WIRED** | [details ↓](#seru-magic-summon-visual-eg-tail-fire) | `project_effect_pool_draw_bridge.md` |
+| `summon.dat` / `readef.DAT` side-band streaming | **RESOLVED (entries + format)** | [details ↓](#summondat--readefdat-side-band-streaming) | `project_effect_pool_draw_bridge.md` |
 | Monster steal item (Evil God Icon) | RESOLVED | [details ↓](#monster-steal-item-evil-god-icon) | `project_steal_item_field.md` |
 | Per-spell magic power / multiplier | **mechanism RESOLVED + roll PORTED** | [details ↓](#per-spell-magic-power--multiplier) | `project_spell_table_pinned.md`, `project_move_power_special_attack_only.md` |
 | Arts command sequence — independent source | resolved | The SCUS arts-name table (`DAT_80075EC4`) glyph string is byte-exact ground truth for every art's directional command; `legaia_art::ArtsOracle` exposes it, and disc-gated contract tests validate both the best-effort PROT `0x05C4` `parse_record` command-decode and the curated gamedata `directions`/`ap` columns against it (one documented walkthrough error: Hyper Elbow). | `project_arts_name_table_pinned.md` |
@@ -94,7 +95,7 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 
 `FUN_8003AEB0` is fully decoded: it walks the MAN multi-section header (sections at MAN offsets `+0x22, +0x24, +0x26, +0x28`, signed 16-bit LE) and `legaia_engine_core::encounter_man::scene_encounter_from_man` reads the encounter section straight from disc bytes, wiring per-scene `EncounterTable`s for the standalone towns + kingdom-bundle scenes (the `count = 6` MAN form is now resolved by `find_bundle`). The region-table section is the per-scene control block `_DAT_801c6ea4 + 0x4` count-prefixed array of 18-byte records: `byte[0]` kind selector, `bytes[1..4]` tile-space bounding box `[minX, minZ, maxX, maxZ]` queried by `FUN_801dba20(tileX, tileZ)` (`tile = (player_pos - 0x40) >> 7`), `bytes[5..17]` payload (sub-split still open),
 
-consumed by the field camera arrival handler `FUN_801dbec4` + camera-config `FUN_801dbc20`. Residual: the world-overview actor-placement section `FUN_8003A1E4` consumes is decoded separately (see world-overview threads).
+consumed by the field camera arrival handler `FUN_801dbec4` + camera-config `FUN_801dbc20`. The query side is ported: `legaia_engine_core::field_regions::zone_query` (`FUN_801dba20`, with the `FUN_80017fbc` `.MAP` region scan + `FUN_800180ec` attribute refresh) drives `World::refresh_field_regions` per tile crossing, and the section-3 body is the table the boot walk installs at `_DAT_801c6ea4 + 0x4`. Residual: the `bytes[5..17]` camera-parameter sub-split (the `FUN_801dbc20` consumer side) and the world-overview actor-placement section `FUN_8003A1E4` consumes, decoded separately (see world-overview threads).
 
 
 ### Super / Miracle Arts trigger logic
@@ -124,11 +125,23 @@ The summon visual is a **per-summon code overlay**, not an opcode or `befect_dat
 
 **Two overlays timeshare the shared buffer at link base `0x801F69D8`** (`*DAT_80010390`):
 
-**PROT 0905** is the Gimard *Tail Fire* **spawn stager** (38 `FUN_80021B04` calls) and **PROT 0900** is a resident **transform / GTE-render** overlay (`RotMatrixX/Y/Z` ×6 + prim emit) that animates and draws the spawned parts. PROT 0900 is the one **byte-resident** in a mid-cast save state (`battle_gimard_tail_fire_a/_b`: `0x801F8000` ↔ PROT 0900 file `0x1628`) — *after* the 0905 stager has run and been overwritten — which is why a "905 head in RAM" search comes up empty. The stager spawns each part via the SCUS part-stager **`FUN_80021B04`** (`a1` = world pos, `a2` = a part record, `a3 = 0x1000`); `FUN_80021B04` stages it as an actor (`actor[+0x48]` = record move-buffer base, `actor[+0x70] = 2` PC) then `jal FUN_80023070` ticks the **move VM** on `record+4`.
+**PROT 0905** is a **spawn stager** (38 `FUN_80021B04` calls) — under the corrected loader index
+math (`FUN_8003EC70(param)` → extraction entry `param + 0x37F`, see [`formats/prot.md § In-RAM
+TOC`](../formats/prot.md#in-ram-toc)) it is the **spell-`0x83` slot**, while Gimard `0x81`
+arithmetics to **extraction 0903** (also a clean stager: 40 spawn sites / 32 records; the
+historical "0905 = Gimard" label was the `+ 0x381` off-by-2, never content-pinned) — and **PROT
+0900** is a resident **transform / GTE-render** overlay (`RotMatrixX/Y/Z` ×6 + prim emit) that
+animates and draws the spawned parts. PROT 0900 is the one **byte-resident** in a mid-cast save
+state (`battle_gimard_tail_fire_a/_b`: `0x801F8000` ↔ PROT 0900 file `0x1628`) — *after* the
+stager has run and been overwritten — which is why a "stager head in RAM" search comes up empty.
+The stager spawns each part via the SCUS part-stager **`FUN_80021B04`** (`a1` = world pos, `a2`
+= a part record, `a3 = 0x1000`); `FUN_80021B04` stages it as an actor (`actor[+0x48]` = record
+move-buffer base, `actor[+0x70] = 2` PC) then `jal FUN_80023070` ticks the **move VM** on
+`record+4`.
 
 **RECORDS RESOLVED — in-file, parsed.** Each `FUN_80021B04` call passes its record by absolute pointer (`lui 0x8020 / addiu`); under the correct link base `0x801F69D8` those resolve to PROT 0905 **file `0x180C..0x1E00`** (runtime `0x801F81E4..`), a contiguous table of variable-length records `[i16 model_sel][u16 flags][move-VM bytecode @+4]`, `model_sel == -1` = transform/pivot node (dominant; mesh bound by the move-VM anim-bank ops), `>= 0` = `DAT_8007C018[model_sel + gp[0x754]]`. `legaia_asset::summon_overlay::parse` recovers them by scanning the spawn calls (disc-gated `summon_overlay_real`: 38 sites → 23 part records, 17 transform nodes; CLI `asset summon-overlay`).
 
-**Generalizes across the whole player-summon block:** every overlay in PROT 0905..=0915 (`spell_id 0x81..=0x8b`, `summon_overlay::PLAYER_SUMMON_STAGER_PROT`) recovers a move-VM scene-graph (disc-gated `summon_overlay_block` sweep — 20..73 spawn sites, 10..43 contiguous in-file records each). Gimard (0905) reads cleanest (transform-node-dominated + small library indices); the larger summons (0906/0911/0915) carry many `SummonPartKind::Sentinel` first-words — node-mode `0x1000`/`0x4000`/`0x8000`-class markers, **not** library indices — so the CLI labels those `sentinel 0xNNNN`. The model-library base (`gp[0x754]`) is **resolved** (see the summon-render block below): it is **not per-summon** but one per-battle, party-size-derived value (`party_count + 2`). Open across the block:
+**Generalizes across the whole player-summon block:** every overlay in extraction PROT 0903..=0913 (`spell_id 0x81..=0x8b`, `summon_overlay::PLAYER_SUMMON_STAGER_PROT`) recovers a move-VM scene-graph (disc-gated `summon_overlay_block` sweep — 20..73 spawn sites, 10..43 contiguous in-file records each). 0905 reads cleanest (transform-node-dominated + small library indices); the larger stagers carry many `SummonPartKind::Sentinel` first-words — node-mode `0x1000`/`0x4000`/`0x8000`-class markers, **not** library indices — so the CLI labels those `sentinel 0xNNNN`. The model-library base (`gp[0x754]`) is **resolved** (see the summon-render block below): it is **not per-summon** but one per-battle, party-size-derived value (`party_count + 2`). Open across the block:
 the precise sentinel semantics.
 
 **This CORRECTS the earlier "records beyond the `0x5800` file / `0x180C` only coincidentally record-shaped / parser reverted" reading — that was the wrong link base (`0x801F0000` instead of `0x801F69D8`), which pushed the runtime record addresses past the file.** **Still pinned:** the CLUT band is byte-identical across the two animation-distinct frames (motion is geometric, not palette cycling); flame texture is **PROT 870** (three 64x256 4bpp TIMs → battle VRAM `(320/384/448,0)`, CLUTs rows 474..476); the bound flame mesh comes from **PROT 871** (`etmd.dat`, 30-TMD pack) at `DAT_8007C018[26]`.
@@ -137,7 +150,16 @@ the precise sentinel semantics.
 
 **Animation driver LANDED.** `engine_core::summon::SummonScene` seeds one move-VM `ActorState` per parsed part (PC=2 → `record+4`, mirroring `FUN_80021B04`) and ticks every part through the already-ported move VM each frame (`World::spawn_summon` / `tick_summon` / `active_summon_part_draws`; `play-window` `G` debug-spawns the Gimard summon and renders one textured TMD per mesh part). The per-part animation *computation* is faithful (verified: every Gimard part runs the move VM without an unimplemented opcode; disc-gated `summon_scene_real`).
 
-**Production cast-band trigger WIRED.** A player Seru-magic cast (`spell_id` in `0x81..=0x8b`) now requests the summon at the cast point in both engine cast paths — the action-SM `spell_anim_trigger` (`World::fold_battle_event` on `BattleEvent::SpellAnimTrigger`) and the live-loop `cast_spell_on_slots` — via `World::request_summon_spawn`. The host drains `World::take_pending_summon_spawn`, maps the id to its overlay PROT entry (`summon::summon_stager_prot_entry`: `0x81..=0x8b → 905..=915`, retail `FUN_8003EC70(id-0x79)`), loads + parses it, and seats the scene-graph (`play-window`). So a real Gimard *Tail Fire* cast spawns the animated summon, no debug key.
+**Production cast-band trigger WIRED.** A player Seru-magic cast (`spell_id` in `0x81..=0x8b`)
+now requests the summon at the cast point in both engine cast paths — the action-SM
+`spell_anim_trigger` (`World::fold_battle_event` on `BattleEvent::SpellAnimTrigger`) and the
+live-loop `cast_spell_on_slots` — via `World::request_summon_spawn`. The host drains
+`World::take_pending_summon_spawn`, maps the id to its overlay PROT entry
+(`summon::summon_stager_prot_entry`: `0x81..=0x8b → 905..=915` — the engine mirror still carries
+the raw `+0x381` arithmetic; corrected extraction range is `903..=913`, see the overlay-loader
+off-by-2 row below — retail `FUN_8003EC70(id-0x79)`), loads + parses it, and seats the
+scene-graph (`play-window`). So a real Gimard *Tail Fire* cast spawns the animated summon, no
+debug key.
 
 **PROT 0900 transform PARTIALLY DECODED.** The resident render overlay (link base `0x801F69D8`) composes each part's transform.
 
@@ -175,6 +197,24 @@ and a **distinct 11-part / 2-action** entity. That 11-part idle (`0x800BBB20`, 1
 
 **`FUN_80020050`** (SCUS `0x80020050`) uploads PROT entry `0x366` into VRAM twice via `FUN_8001fc00` (→ `FUN_8003e8a8`, the PROT-index loader), with the VRAM region set up by `FUN_80017888` / `FUN_8001e54c` (param `0xf000`); it is gated on `_DAT_8007b868 == 0` (the same field-camera / mode gate `FUN_801dbe9c` reads) and is independent of the `FUN_800520F0` battle-bundle path (which pulls `0x367..0x36d`).
 
+
+### `summon.dat` / `readef.DAT` side-band streaming
+
+*Status:* **RESOLVED (entries + format)** — the two `0x10800`-slot battle streaming files are pinned and decoded; full reference [`formats/summon-readef.md`](../formats/summon-readef.md), parser `legaia_asset::summon_readef`, disc-gated `summon_readef_real`.
+
+- **Entries pinned by arithmetic + bytes.** `FUN_800558FC` in retail ignores its path string (`_DAT_8007B8C2 != 0` verified live) and consumes the 4th argument as a raw-TOC index: `summon.dat` = `0x37F`, `readef.DAT` = `0x380` → **extraction PROT 893 / 894** (the −2 raw-TOC offset, same as the overlay loaders' `param + 0x381`). Both footprints divide into exactly 103 / 78 slots of `0x10800`. Byte-verified in `battle_gimard_tail_fire_a`: the stream buffer at `*0x8007BD74` equals entry 894 slot 1; slot 0's CLUT row / texture page match VRAM `(0,488)` / `(512,0)` byte-for-byte.
+- **Format decoded.** Action id → base slot byte (`FUN_801E295C` case `0x32`): `3*(id-1)` for `id < 0x9A`, else `4*id + 0x63`; bit 7 selects the file. The applier `FUN_801F12D0` streams slots `base..base+3` and uploads CLUT rows + 4bpp texture pages (rows 486/488/490, pages `(512,0)`/`(640,0)`/`(448,256)`); `FUN_801F19EC` installs the final slot as the summon creature (name + Legaia TMD + texture pool through `FUN_80055468`). Summon group 0 (spell `0x81`) carries the "Burning Attack" record — consistent with the pinned Gimard spell id.
+
+Open residue:
+
+- **Low-band `readef.DAT` aux-slot consumer.** Readef groups end after 2 slots; the streamed-but-not-uploaded aux slots are high-entropy (LZS-decode plausibly but no decoded-magic gate passes) and no consumer is pinned. An exec-bp sweep over readers of `*0x8007BD74` outside `FUN_801F12D0`/`FUN_801F19EC` during a non-summon special attack would close it.
+- **Readef id ↔ named attack table.** The Tail Fire capture is consistent with action id 1 → readef group 0; the full `actor+0x1DF` id ↔ enemy-special mapping (the `map[actor+0x1df]` 128-byte band) is unenumerated.
+- **CDNAME `#define` number space — RESOLVED: raw-TOC space, uniform −2 to extraction.** Quantified by `scripts/cdname_shift_analysis.py`:
+  1. Every byte-pinned loader constant for a dev-named file *equals* the same-named define — `PLAYER1..4` `0x361..0x364` = `battle_data 865..868` (extraction 863..866 start at the traced PROT.DAT offsets), `monster.snd` `0x37D` = `monster_se 893` (extraction 891 = 206-bank multi-VAB), `summon.dat`/`readef.DAT` `0x37F`/`0x380` = `bat_back_dat 895/896`, overlay slots `0x381+` = `xxx_dat 897+`.
+  2. Scene block lengths vary, so the per-scene v12 table's slot position is shift-sensitive after all — all 96 scene-region v12 tables sit at slot 1 under −2 vs scattered over slots 4..10 at shift 0 (constancy alone admits −1/−2/−3; the identities pin −2).
+  3. Semantic scoring over decidable blocks: 217/225 at −2 vs 209/225 at 0 (`vab_01` → extraction 1070..1192 = 121/121 VAB-headed; `other_game` banners `OTHER2`/`OTHER3` at extraction 973/974; `move_program_no` → extraction 970, a `\DATA\MOV*.STR` table — MOVie program numbers, dissolving the old `move.mdt` mismatch).
+
+  Extractor filenames stay as-is; `legaia_prot::cdname::block_for_extraction_index` gives the retail-space name. Full table + exceptions: [`cdname.md` § numbering space](../formats/cdname.md#numbering-space).
 
 ### Monster steal item (Evil God Icon)
 
@@ -243,7 +283,9 @@ The per-character stat-grant source is **static `SCUS_942.54` tables read by the
 
 *Status:* resolved
 
-The monster archive is **PROT entry `0867_battle_data`** (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). `FUN_800542C8` streams per-monster `0x14000` LZS slots at `(id-1)*0x14000`, each `[u32 dec_size][LZS]` decoding to a block whose head is the `FUN_80054CB0` stat record (name `@0x00`, XP/drop `@0x04`, HP `@0x0C`, MP `@0x10`, stat u16s `@0x0E/0x12/0x14/0x16/0x18/0x1A`, magic count `@0x4A`, spell-ptr array `@0x4C`). Pinned by a live-battle PCSX-Redux watchpoint (`autorun_monster_record_source.lua`) — relative seek `(id-1)*40` sectors + `disc_read` CdlLOC → PROT.DAT `0x38AF000` = entry 867; three records match live actor stats byte-for-byte. The `monster_data` label (PROT 869) is a stub.
+The monster archive is **PROT entry `0867_battle_data`** (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). `FUN_800542C8` streams per-monster `0x14000` LZS slots at `(id-1)*0x14000`, each `[u32 dec_size][LZS]` decoding to a block whose head is the `FUN_80054CB0` stat record (name `@0x00`, XP/drop `@0x04`, HP `@0x0C`, MP `@0x10`, stat u16s `@0x0E/0x12/0x14/0x16/0x18/0x1A`, magic count `@0x4A`, spell-ptr array `@0x4C`).
+
+Pinned by a live-battle PCSX-Redux watchpoint (`autorun_monster_record_source.lua`) — relative seek `(id-1)*40` sectors + `disc_read` CdlLOC → PROT.DAT `0x38AF000` = entry 867; three records match live actor stats byte-for-byte. Retail-semantically the archive **is** the `monster_data` block: the define `monster_data 869` names extraction entry 867 under the raw-TOC −2 correction ([`cdname.md`](../formats/cdname.md#numbering-space)) — the earlier "misleading `monster_data` stub at 869" reading was the filename shift.
 
 Parser `legaia_asset::monster_archive`; bridge `legaia_engine_core::monster_catalog::catalog_from_monster_archive` wired into `enter_field_scene`. The record is now fully decoded: all six stats are named (ATK/DEF↑/DEF↓/AGL/SPD/SP), rewards are inline at `+0x44..0x49`, and `+0x04` is the monster's **battle-model TMD** offset (not XP/drop — see the mesh thread below).
 
@@ -298,13 +340,13 @@ It is ≠ the field char palette (set test: only 10 of Vahn's 130 battle-novel c
 
 Since it is deterministic yet stored nowhere verbatim, it is **assembled at battle entry.** **ASSEMBLER PINNED (write-watchpoint, `autorun_battle_palette_writer.lua`, clean Tetsu fight):** `FUN_80053B9C` (per-colour store `sh a0, 0x894(v0)` at `0x80053C6C`) copies a source CLUT struct `[u16 base][u16 count][BGR555]` into the per-char block at `dst = arena + slot*0x1E0 + (base+idx)*2`, **OR-ing `0xFFFF8000` (STP/bit-15) onto every non-zero colour**. So the runtime palette is bit-15-**set** (`0x9D40…`) and the disc source is bit-15-**clear** (`0x1D40…`) — which is why all prior brutes (bit-15-set needle) missed. Source pointer `s0 = *(*(0x801C92F0)+8) + per-char-off` → a transient `0x800Dxxxx` buffer.
 
-**SOLVED — source = PROT `0861_edstati3`, LZS-compressed (bit-15-clear).** A write-watchpoint on the source struct header `0x800D6C98` shows it is filled by `FUN_8001A55C` (LZS decoder); the decoder's input buffer byte-matches **PROT `0861`** (237-window match, fixed delta — `0861` loads raw, a stream inside it decompresses).
+**SOLVED — source = the Vahn player battle file, extraction PROT `0863` (raw TOC `0x361` = `PLAYER1`), LZS-compressed (bit-15-clear).** A write-watchpoint on the source struct header `0x800D6C98` shows it is filled by `FUN_8001A55C` (LZS decoder); the decoder's input buffer byte-matched the extraction `0861` window at a fixed delta (237-window match) — the same data: `0861`/`0862` are 1-sector stubs whose over-read tail begins Vahn's file `0x1000` in, and the TOC pins extraction `0863`'s start at exactly the live-traced `0x36E8000` (see [`cdname.md` § numbering space](../formats/cdname.md#numbering-space)).
 
 **PALETTE NOW SOLVED byte-exact (all 3 bands).** Running `FUN_80052FA0`'s decode+assembly *as a unit* (decode `record[0]` + the 5 staged sub-records into one work buffer, read CLUTs at the header offsets) reproduces the live Vahn battle palette **byte-exact, all 3 bands** — `base=0x00` = `record[0]`'s CLUT B, `base=0x40` = sub#0's trailing CLUT, `base=0x70` = sub#4's trailing CLUT. The earlier "29/32, 3 diffs = equipment patches" was a **budget-less scratch decoder**, not a data problem: `FUN_8001A55C`'s first arg is an **output-byte budget** (decremented per literal AND per match-copied byte; loop `while budget>0`); ignoring it runs off the stream into the next record. `legaia_lzs::decompress` already honors this, so the port is one `decompress(stream, budget)` per record.
 
-**Source = PROT `0861` (`edstati3`)** — `"data\battle\PLAYER1"` is a dev-tree label that resolves (disc index `char+0x360`, `FUN_8003e8a8`) to the `edstati3` PROT cluster, NOT an ISO9660 file. The record is self-describing relative to `record[0]` (`+0`=desc-table off, `+4`/`+8`=CLUT A/B *decoded* offsets, `+0xC`=budget; descriptor entries `[id, running_a, size]` run while `a[i+1]==a[i]+size[i]`, `id==0` = section separator). On disc the 5 sub-records are **scattered** (Vahn: `0x1C000/0x28800/0x66000/0x85800/0xA2000`), located by `sec_base=align_up(recbase,0x1000)`; sub0..3 = `sec_base + a[entry after each internal separator]`; sub4 = `rec0 + (a_last+size_last)`.
+**Source = extraction PROT `0863`** — `"data\battle\PLAYER1"` is a dev-tree label that resolves (raw TOC index `char+0x360`, `FUN_8003e8a8`) to the per-character battle-file cluster, NOT an ISO9660 file. The record is self-describing relative to `record[0]` (`+0`=desc-table off, `+4`/`+8`=CLUT A/B *decoded* offsets, `+0xC`=budget; descriptor entries `[id, running_a, size]` run while `a[i+1]==a[i]+size[i]`, `id==0` = section separator). On disc the 5 sub-records are **scattered** (Vahn: `0x1C000/0x28800/0x66000/0x85800/0xA2000`), located by `sec_base=align_up(recbase,0x1000)`; sub0..3 = `sec_base + a[entry after each internal separator]`; sub4 = `rec0 + (a_last+size_last)`.
 
-The `0x2000` stride is only the RAM buffer the loader stages — the parser derives the scattered disc offsets directly, **no capture needed**. Every prior byte-brute missed only because it used the bit-15-**set** runtime needle, not the disc bit-15-**clear** form. Clean-room parser **`legaia_asset::battle_char_palette`** (`find_record0` + `parse_record`; synthetic unit test + disc-gated `battle_char_palette_real` which passes byte-exact against PROT `0861`, pinned by an FNV digest so no palette bytes are committed; STP bit-15 set on upload). Tetsu fight is Vahn-only so Vahn (0861) is byte-exact-validated + wired.
+The `0x2000` stride is only the RAM buffer the loader stages — the parser derives the scattered disc offsets directly, **no capture needed**. Every prior byte-brute missed only because it used the bit-15-**set** runtime needle, not the disc bit-15-**clear** form. Clean-room parser **`legaia_asset::battle_char_palette`** (`find_record0` + `parse_record`; synthetic unit test + disc-gated `battle_char_palette_real` which passes byte-exact against extraction PROT `0863` with `record0` at file offset 0 — the identical digest the historical `0861`-window run produced; STP bit-15 set on upload). Tetsu fight is Vahn-only so Vahn (863) is byte-exact-validated + wired.
 
 **Noa = PROT 0864, Gala = PROT 0865** — pinned by matching each `record0` CLUT (header-read, no derivation) against a full-party battle VRAM capture (mednafen mc1/mc7/mc9 have rows 481/482/483 all populated): Noa→row482 98%, Gala→row483 100% (1-2% misses = equipment patches in the late-game captures).
 
@@ -312,7 +354,7 @@ The `0x2000` stride is only the RAM buffer the loader stages — the parser deri
 
 **Gala WIRED — all three party palettes now decode from disc.** Party order confirmed (mc7 char names ASCII at `0x80084708+n*0x414+0x2A7` = Vahn/Noa/Gala → row 483 = Gala).
 
-**Player-file load traced:** the retail ISO9660 open `FUN_800608f0` is a `trap` stub, so `FUN_800558fc` always takes its debug branch → `FUN_8003e8a8(char+0x360)` reads `toc[idx+2]` (in-RAM PROT TOC `0x801C70F0`) as a **sector offset into PROT.DAT**: Vahn(0x361)=PROT.DAT 0x36E8000, Noa(0x362)=0x3791000, Gala(0x363)=0x3828800 (222 sec=0x6F000), Terra(0x364)=0x3897800 — four contiguous player files; extractor entries 0861/0864/0865 begin at those regions.
+**Player-file load traced:** the retail ISO9660 open `FUN_800608f0` is a `trap` stub, so `FUN_800558fc` always takes its debug branch → `FUN_8003e8a8(char+0x360)` reads `toc[idx+2]` (in-RAM PROT TOC `0x801C70F0`) as a **sector offset into PROT.DAT**: Vahn(0x361)=PROT.DAT 0x36E8000, Noa(0x362)=0x3791000, Gala(0x363)=0x3828800 (222 sec=0x6F000), Terra(0x364)=0x3897800 — four contiguous player files = extraction entries **0863/0864/0865/0866**, whose TOC starts equal those offsets exactly (raw index − 2; the historical "Vahn = 0861" matched the same bytes through the preceding 1-sector stubs' over-read window).
 
 **The bug:** `sec_base` is `rec0 + align_up(recbase - rec0, 0x2000)` — the `0x1000` alignment matches Vahn/Noa but lands Gala's subs on a zero-padded `0x7000` block (his data starts at `0x8000`). Fixed → Gala's subs decode, bands @0x00/@0x30/@0x50/@0x80 cover all mesh cols at **100%** vs row 483. Wired (slot 2, PROT 865, rows 494/495); disc-gated `noa_gala_collected_palettes_cover_mesh_columns`. Probe `autorun_clut_decode_capture.lua` captured the 5 sub-record streams that pinned this.
 
@@ -350,7 +392,7 @@ So the battle-form Noa/Gala palettes are scene-resident/runtime-composed and not
 
 It is **never in main RAM** in any captured save (checked every 32-byte sub-CLUT window across all party rows) — a transient **decompress→DMA-to-VRAM→free** upload that completes *before* the "encounter triggered" frame, faster than manual save granularity. The battle scene is **map01** (world map; `*(0x80084540)=0x55`), party Vahn/Noa/Gala, so the non-Vahn CLUTs are pulled by the **battle-entry party-load path**, not the field scene. Per-scene row-49x 16×1 CLUTs (35 scenes incl. town01) are field-actor palettes (0% value match to battle Noa) — a red herring.
 
-**Battle-init disc reads are party-INDEPENDENT** (PCSX-Redux probe, sstate8 Vahn-only vs sstate2 full-party — byte-identical entry set: monster 0x365→867, befect 0x367/8/9=871/872/873, 0x36B=875, 0x380=896, 0x384=900, 0x37A=890, music 1016, field-scene re-read 0x5A).
+**Battle-init disc reads are party-INDEPENDENT** (PCSX-Redux probe, sstate8 Vahn-only vs sstate2 full-party — byte-identical raw-TOC index set; raw → extraction is −2: monster `0x365`→867, conditional stream + `etim` + `etmd` `0x367/8/9`→869/870/871, `efect` `0x36B`→873, `readef` `0x380`→894, overlay `0x384`→898, `0x37A`→888, music raw 1016, field-scene re-read `0x5A`→88).
 
 **No character-CLUT read fires at battle entry** — the party CLUTs are resident in VRAM before the fight. Proper-decode (validated: finds Vahn490 in map01 sec0) of 871/872/873/875 + 0865 battle_data + 1202-1206 + 0874 all empty for Noa/Gala.
 
@@ -475,7 +517,7 @@ Consequences: (a) `Scene::field_map_index` now resolves `define − 2` (it previ
 
 It confirms the saves: field/town is modes 2/3 MAIN (`game_mode 0x03`), and `MAPDSIP` (12/13) is the **world-map display** mode, not the field — correcting an earlier `functions.md` label that called mode 12 "the actual gameplay-mode entry". Structural finding: 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map) and Mode 23 (memory card) carry their own. Full map in [`boot.md`](../subsystems/boot.md#full-handler-map-recovered-from-the-disc).
 
-**The in-field pause menu = mode 23 (CARD pair).** All six menu-open library captures (equipment / status / options, field `map01` + town `town01`) hold `_DAT_8007B83C = 0x17` — the pause menu runs under the CARD (menu / memory-card overlay) per-frame mode, not field mode 3 (the manifest's earlier `expected_game_mode = 0x03` rows were stale; corrected). Open residue: `BootSession` doesn't host the field-menu UI stack (it lives in the windowed host), so the `mode_trace_e3` oracle asserts menu scenarios on active-scene convergence only until a menu mode is modelled headlessly.
+**The in-field pause menu = mode 23 (CARD pair).** All six menu-open library captures (equipment / status / options, field `map01` + town `town01`) hold `_DAT_8007B83C = 0x17` — the pause menu runs under the CARD (menu / memory-card overlay) per-frame mode, not field mode 3 (the manifest's earlier `expected_game_mode = 0x03` rows were stale; corrected). Residue resolved: `BootSession` hosts the field-menu session headlessly (`open_field_menu` / the Start-edge path in `tick`; the windowed host layers its sub-session UI on the same session), `engine_core::mode` maps the CARD pair to `SceneMode::Menu`, and the `mode_trace_e3` oracle drives menu scenarios with a scripted Start press and asserts full menu-mode convergence (scene mode + active scene + the engine-emitted `game_mode = 0x17`).
 
 **Engine model reconciled.** `engine_core::mode` holds `SceneMode::Field` for both modes 2/3 (the init mode holds its successor's scene mode, matching the Mapdisp/Battle/Str pairs), the reference handler that drives the pair is named for the field-entry path it exercises, and the table's name/param/next fields are cross-checked against the disc-recovered map by the disc-gated `mode_table_reconcile` test. The retail `+0x0A` next-mode field is decoded (`ModeEntry::next_mode`): `-1` = self-managed, `0` = fall back to mode 0 — the `0xFFFF0000` word previously read as a sentinel is just `-1` over a zero low half.
 
@@ -484,7 +526,9 @@ It confirms the saves: field/town is modes 2/3 MAIN (`game_mode 0x03`), and `MAP
 
 *Status:* resolved (major source); minor residue
 
-Single-snapshot byte-exact VRAM is **physically unachievable** — ~40% of the texpage band is dynamic/residual (two town01 captures disagree on ~40%), so the oracle (`vram_oracle_e1`) is reframed to the **static mask** (words stable across same-scene captures), excluding the runtime NPC/character CLUT band. With the field pre-pass doing DMA-every-TIM (`BuildOptions.upload_all_tims`), town01 passes byte-exact on every static pixel it uploads. The dominant missing static block is the **`befect_data` (PROT 0874) section-2 effect-texture TIMs** (`etim.dat`, 4bpp pages at `fb(320/384,256)` etc.) — field-resident, pixel-matched 256 rows byte-exact; the live engine uploads them at field entry (`scene::upload_effect_textures_into_vram`),
+Single-snapshot byte-exact VRAM is **physically unachievable** — ~40% of the texpage band is dynamic/residual (two town01 captures disagree on ~40%), so the oracle (`vram_oracle_e1`) is reframed to the **static mask** (words stable across same-scene captures), excluding the runtime NPC/character CLUT band. With the field pre-pass doing DMA-every-TIM (`BuildOptions.upload_all_tims`), town01 passes byte-exact on every static pixel it uploads.
+
+The dominant missing static block is the **extraction-0874 section-2 TIMs** (retail `player_data` / `player.lzs` §2, the field-character texture band — historically mislabeled `etim.dat`, which is extraction 0870; 4bpp pages at `fb(320/384,256)` etc.) — field-resident, pixel-matched 256 rows byte-exact; the live engine uploads them at field entry (`scene::upload_effect_textures_into_vram`),
 
 and the gap was an oracle artifact (the lightweight pre-pass skipped that step; now fixed, image pages only, since retail uploads their CLUTs at battle entry).
 
@@ -492,7 +536,9 @@ and the gap was an oracle artifact (the lightweight pre-pass skipped that step; 
 
 **Minor residue (open):** `x=896..1024, y=256` (~12k) is the character/party-texture region uploaded by the battle/character targeted-CLUT pass the field pre-pass excludes by design (the CLUT-scattering thread), plus ~2.5k UI residue.
 
-**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the `befect_data` band is **global, history-dependent** state — a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes (pinned at `(853,271)`: pre-battle/menu captures hold `0xFFFF` words, the disc TIM and every post-battle capture hold `0x3333`), so same-lineage captures misclassify them as static; the oracle now demands cross-scene staticity inside `scene::effect_texture_image_rects`. (2) the world-map walk view **palette-cycles** the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS` excludes them for world-map scenes (see the two open threads below).
+**Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the extraction-0874 §2 (`player.lzs`) texture band is **global, history-dependent** state — a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes (pinned at `(853,271)`: pre-battle/menu captures hold `0xFFFF` words, the disc TIM and every post-battle capture hold `0x3333`), so same-lineage captures misclassify them as static; the oracle now demands cross-scene staticity inside `scene::effect_texture_image_rects`.
+
+(2) the world-map walk view **palette-cycles** the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS` excludes them for world-map scenes (see the two open threads below).
 
 
 ### World-map CLUT cycling beyond the ocean head — rows 508/509 + generated row-506 tail
@@ -506,11 +552,11 @@ Row 506's tail (entries ~40..47) additionally holds a **runtime-generated palett
 Open: whether the 508/509 entries + the 32..47 mirror ride the same 13-frame ocean DMA (a wider rect?) or a sibling writer; and the writer + purpose of the generated tail palette (marker/route colours?). VRAM writes aren't RAM-watchable; needs a GPU `LoadImage`-level trace or an overlay sweep for CLUT-row rect constants (`y = 506/508/509`). Engine residue: `play-window` animates the row-506 ocean head only; the exact retail cadence is also still unpinned.
 
 
-### `befect_data` boot-variant pixels — who uploads the `0xFFFF` row?
+### Extraction-0874 §2 (`player.lzs`) boot-variant pixels — who uploads the `0xFFFF` row?
 
 *Status:* open
 
-A freshly booted game holds a variant of the `befect_data` effect-texture band whose row-271 pixels (fb_x 852 page) read `0xFFFF` where the disc TIM (PROT 0874 §2) carries `0x3333`; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the `F`-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the `F`-variant (a different disc copy? an effect rendering into the page?).
+A freshly booted game holds a variant of the extraction-0874 §2 texture band (retail `player_data`; the band the extraction label calls `befect_data`) whose row-271 pixels (fb_x 852 page) read `0xFFFF` where the disc TIM (PROT 0874 §2) carries `0x3333`; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the `F`-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the `F`-variant (a different disc copy? an effect rendering into the page?).
 
 
 ### Scene-transition (`0x3F` door) destination indexing
@@ -523,7 +569,7 @@ A field scene reaches another scene through the field-VM **`0x3F` named-scene-ch
 
 This made **variable-length** door editing safe (resizing a destination name is a partition-table + section-offset + intra-record-jump-delta + descriptor-size fixup), implemented in `legaia_asset::man_edit` and shipped as the door randomizer. See [`man-relocation.md`](../formats/man-relocation.md).
 
-**Still separate (untouched):** the `0x3E` door-warp (7-id scene-*type* `map_id`) name resolution lives in an uncaptured handler.
+**The `0x3E` door-warp (7-id `map_id`) is now also resolved — and the "uncaptured handler" framing was wrong:** the whole chain is **SCUS-resident** (`FUN_80025980` mode-24 OTHER INIT entry, `FUN_80026018` exit). There is **no destination name** — the sub-id selects a minigame overlay (extraction PROT 972..977, 980 via the corrected loader math `param + 0x37F`), and the "name handling" is a backup/restore of the *current* scene name (`0x80084548` ↔ `0x8007BAE8`, plus `_DAT_80084540` ↔ `0x8007BAC4`) so the exit re-enters mode 2 on the original scene. Full decode in [`script-vm.md § 0x3E WARP`](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp).
 
 
 ### Intra-town (house / interior) door mechanism
@@ -650,9 +696,32 @@ So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace.
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
 | Options/menu overlay PROT entry | resolved + RAM-verified (**PROT 0899** @ `0x801CE818`) | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A — the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. | `project_static_overlay_pipeline.md` |
 | PROT 0896 (`bat_back_dat`) identity | open (mode-24-overlay hypothesis refuted; base was an over-read artifact) | [details ↓](#prot-0896-bat_back_dat-identity) | `project_static_overlay_pipeline.md` |
-| Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0973 slot_machine / 0976 baka_fighter / 0980 dance**, each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818`. Found via `asset overlay scan` + the leading dev string. | `project_static_overlay_pipeline.md` |
+| Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom — the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. | `project_static_overlay_pipeline.md` |
 | "world-map / save / shop" overlay PROT entries | resolved (they are NOT separate entries) | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) — each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. | `project_static_overlay_pipeline.md` |
-| Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` summon/dance/minigame blobs; static extraction at the link base is the clean path, each base cross-checked by in-file self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned: 0900 summon render, 0905 Gimard stager, 0902 GAME OVER, 0907/0924/0927 Disco King songs, 0957 summon-effect strings (**NOT** a dance song). The "summon `0905..=0915`" is the loader's arithmetic range, not a stager list (0907 is the dance song "Hell's Music"). **Still open:** the per-summon spell-id → stager-entry assignment for the binary stagers (needs a capture; over-read defeats a static census). | `project_static_overlay_pipeline.md` |
+| Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) | `project_static_overlay_pipeline.md` |
+
+
+### Slot-B overlay cluster (`0900..0969`) per-entry identity
+
+*Status:* mostly resolved
+
+The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` summon/dance/minigame
+blobs; static extraction at the link base is the clean path, each base cross-checked by in-file
+self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
+
+- **0900/0901** = the slot-B *default* pair — `FUN_80025BA0` loads param 5 or 6 by flag
+  `DAT_8007B6A8`, agreeing with 0900's byte-residency in mid-cast saves (the summon-render
+  overlay).
+- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived 38-spawn-call stager file is
+  extraction **0905** = the `0x83` slot. The summon arithmetic range is extraction
+  `0903..=0913` (raw `0x389..=0x393`); 0907 on the `0x85` slot is the dance song "Hell's
+  Music".
+- **0902** = GAME OVER (content pin, corroborated by the loader census: `FUN_8003EBE4(7)`
+  inside the mode-18 init).
+- **0907/0924/0927** Disco King songs; **0957** summon-effect strings (**NOT** a dance song).
+
+**Still open:** per-spell stager identity beyond the arithmetic (needs a capture; over-read
+defeats a static census).
 
 
 ### `title.pak` PROT entry
@@ -707,7 +776,16 @@ The **name-entry auto-open is pinned**: op `0x49` STATE_RESUME sub-op 3 at town0
 *Status:* resolved (pipeline landed)
 
 PSX overlays are clean copies of a fixed-VA-linked blob (FlushCache + jump, no per-load relocation), so each runtime overlay can be extracted **statically** from its `PROT.DAT` entry and disassembled at its load base — identity attached from the source entry, not a guessed label. This is the structural fix for the VA-aliasing identity problem (`0x801DD864` = battle-action in one overlay, muscle-dome in another). Proved: the battle overlay (PROT 0898 @ `0x801CE818`) is byte-identical to its resident RAM image over the full `.text`+`.rodata` (`0x28800` of `0x29800` bytes; only the trailing `.bss` diverges). The load base is recovered statically from the overlay's own internal `jal` call graph (`static_overlay::recover_base`); for entries with too sparse a call graph,
-the base is cross-checked instead by a documented function landing on a prologue (`anchor_va`, slot A) or by the fraction of internal absolute self-pointers that resolve in-file (`static_overlay::pointer_resolution`, slot B). The committed map now spans the whole slot-A scene family (field/battle/menu + the **cutscene/STR** overlay 0970 + the **minigame** overlays 0972/0973/0976/0980) and the pinned slot-B entries (summon render 0900, Gimard stager 0905, GAME OVER 0902, the Disco King dance songs 0907/0924/0927, summon-effect data 0957). Reconnaissance tooling: `asset overlay scan` (range sweep: base + leading dev string) and `asset overlay find-sig` (locate a function-head signature → infer the host overlay). Pipeline: `legaia_asset::static_overlay` + `asset overlay …`;
+the base is cross-checked instead by a documented function landing on a prologue (`anchor_va`,
+slot A) or by the fraction of internal absolute self-pointers that resolve in-file
+(`static_overlay::pointer_resolution`, slot B). The committed map now spans the whole slot-A
+scene family (field/battle/menu + the **cutscene/STR** overlay 0970 + the **minigame** overlays
+0972/0973/0976/0980) and the pinned slot-B entries (summon render 0900, the spell-`0x83` summon
+stager 0905 — Gimard `0x81` arithmetics to 0903 under the corrected loader index math — GAME
+OVER 0902, the Disco King dance songs 0907/0924/0927, summon-effect data 0957). Reconnaissance
+tooling: `asset overlay scan` (range sweep: base + leading dev string) and `asset overlay
+find-sig` (locate a function-head signature → infer the host overlay). Pipeline:
+`legaia_asset::static_overlay` + `asset overlay …`;
 committed map `crates/asset/data/static-overlays.toml`; see [`tooling/static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md). It **complements** the dynamic captures — it does not address runtime values (those still need live probes).
 
 ### PROT 0896 (`bat_back_dat`) identity
@@ -740,17 +818,37 @@ PROT 0896 is NOT the menu overlay (that is 0899). Three findings reframe it:
    reference exists in `SCUS_942.54`), and a large byte-map-like data block
    (rows of gradually shifting byte values). The CDNAME label
    `bat_back_dat` (battle background data?) may yet be honest — but no
-   captured battle state holds the data either.
+   captured battle state holds the data either. (Under the raw-TOC index
+   shift the CDNAME `#define` covering 0896's *extraction* slot may belong
+   to a neighbouring entry anyway — see the index-spaces thread.)
+4. **No static loader call can reach it.** A full-image scan of
+   `SCUS_942.54` for `jal FUN_8003EBE4`/`FUN_8003EC70` with the `a0` setup
+   decoded finds 16 sites; every constant param maps to extraction 897..902,
+   969..981, or the spell-/stage-driven bands (`id - 0x79` summon stagers,
+   `+0x28` special-attack, `+0x47` battle stage). Extraction 0896 would need
+   `param == 1`, which no site produces (the three computed-param sites have
+   `+0x74`/`+0x47`/`5-or-6` bases that cannot reach 1). A companion scan for
+   the raw indices `0x381`/`0x382` as immediates finds only the two loaders'
+   own internal `param + 0x381` adds — no direct `FUN_8003E8A8`/file-open
+   path either.
 
 What would close it: a consumer — any retail moment where the head bytes are
 resident (offline check:
 [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py)
-against new captures), or a static SCUS/overlay loader call resolving PROT
-index 896.
+against new captures), or an overlay-resident loader call with a computed
+param reaching 1 (the static SCUS census above rules out the constant-param
+sites).
 
----
 
-## When to add a row
+### Overlay-loader index off-by-2 — remaining ripple
+
+*Status:* core finding resolved; per-spell summon identity + engine mirrors open
+
+The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x381)`) resolve against the in-RAM TOC at `0x801C70F0`, which is **raw `PROT.DAT` from byte 0** (byte-verified vs the `door_warp_town01_to_map01` state); the extraction index space slices entry starts 2 words higher, so the loaded entry is **extraction `param + 0x37F`** — every historical `param + 0x381` PROT attribution is 2 high. Slot A is fully reconciled (field 0897 = mode 2, battle 0898, menu 0899 = mode 22, STR-path 0969, cutscene 0970, debug menu 0971 = mode 0, the seven `0x3E` minigame slots, efect-test 0979 = mode 8 — each content/prologue-anchored; see [`boot.md`](../subsystems/boot.md)). Open:
+
+1. **Per-spell summon-stager identity (slot B).** Arithmetic now maps spell `0x81..0x8b` → extraction 0903..0913 (Gimard `0x81` → 0903, a clean stager: 40 spawn sites / 32 records). But no live capture has pinned which *file* a given cast loads (the stager is overwritten by the 0900 render overlay mid-cast), and 0907 — content-pinned as the "Hell's Music" dance song — falls on the spell-`0x85` slot. What would close it: a load-watch on `gp+0x934` (`0x8007BC4C`, loader-B current-id) or a CD-read LBA trace during one cast of each spell id; plus the dance overlay's own loader-B call sites (params for 0907/0924/0927) in `overlay_dance` dumps.
+2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
+3. **Engine mirrors still carry the raw `+ 0x381`.** `crates/engine-core/src/overlay_loader.rs` (`OVERLAY_PROT_BASE`), `crates/engine-core/src/summon.rs` (905..=915 comment), and `crates/engine-core/src/cd_dma.rs` feed extraction-indexed PROT reads with resolver-space indices — loading entries 2 high (e.g. menu 0899 where retail mode 2 loads field 0897). Needs an engine-side `- 2` (or a `param + 0x37F` constant) plus oracle re-runs; left untouched here (parallel engine work in flight).
 
 A thread belongs here when:
 

@@ -189,6 +189,12 @@ impl GameMode {
             // (docs/subsystems/world-map.md). Field/town is MainMode above.
             GameMode::MapdispInit | GameMode::MapdispMode => SceneMode::WorldMap,
             GameMode::BattleInit | GameMode::BattleMode => SceneMode::Battle,
+            // CARD (22/23) hosts the memory-card UI AND the in-field pause
+            // menu: every menu-open capture in the save library holds
+            // `_DAT_8007B83C = 0x17` (see [`GameMode::CardMode`]). The world
+            // suspends field dispatch while the menu owns the frame; the
+            // hosting session restores the suspended mode on close.
+            GameMode::CardInit | GameMode::CardMode => SceneMode::Menu,
             GameMode::StrInit | GameMode::StrMode => SceneMode::Cutscene,
             // Title / config / debug-test modes don't drive a Field/Battle
             // scene tick. The actor VM and effect pool still run via the
@@ -606,6 +612,17 @@ mod tests {
     fn scene_mode_for_str_modes_is_cutscene() {
         assert_eq!(GameMode::StrInit.scene_mode(), SceneMode::Cutscene);
         assert_eq!(GameMode::StrMode.scene_mode(), SceneMode::Cutscene);
+    }
+
+    #[test]
+    fn scene_mode_for_card_modes_is_menu() {
+        // The in-field pause menu runs under the CARD pair (game_mode 0x17 =
+        // 23, CARD MODE): all six menu-open library captures hold
+        // `_DAT_8007B83C = 0x17`. The init mode holds its successor's scene
+        // mode like the other pairs.
+        assert_eq!(GameMode::CardInit.scene_mode(), SceneMode::Menu);
+        assert_eq!(GameMode::CardMode.scene_mode(), SceneMode::Menu);
+        assert_eq!(GameMode::CardMode.as_index(), 0x17);
     }
 
     #[test]

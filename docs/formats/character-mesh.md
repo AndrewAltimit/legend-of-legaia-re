@@ -2,7 +2,9 @@
 
 The player characters have **two distinct mesh packs**, one per game form:
 
-- **Field form — PROT 0874 §0** (`befect_data`): the low-poly walk/talk models
+- **Field form — PROT 0874 §0** (extraction label `befect_data`; retail-space
+  the entry is the `player_data` define's `player.lzs`, see
+  [`cdname.md` § numbering space](cdname.md#numbering-space)): the low-poly walk/talk models
   the engine keeps resident across every field scene at `DAT_8007C018[0..=4]`.
   Parser [`legaia_asset::character_pack`](../../crates/asset/src/character_pack.rs).
 - **Battle form — PROT 1204** (`other5`): the higher-detail party models the
@@ -125,8 +127,11 @@ character's equipment toggle byte, it returns the patched TMD buffer.
 The field-form character textures live in **PROT 0874 section 2** — the third
 LZS descriptor of the `player.lzs` container (the "etim.dat" texture section),
 parser [`legaia_asset::field_char_textures`](../../crates/asset/src/field_char_textures.rs).
-They are **not** in PROT 0876 (`player_data` is VAB + an empty TIM_LIST + SEQ,
-and carries neither the atlas nor the CLUTs, raw or LZS).
+They are **not** in extraction PROT 0876 (a VAB + empty TIM_LIST + SEQ stream
+carrying neither the atlas nor the CLUTs, raw or LZS) — that entry was only
+searched because its *filename label* says `player_data`; the retail
+`player_data` define (876) names extraction 0874 itself under the
+[−2 numbering correction](cdname.md#numbering-space).
 
 `FUN_8001E890` (the field player loader) loads `player.lzs` (disc index `0x36c`,
 the same 3-descriptor container the extractor labels PROT 0874) and LZS-decodes
@@ -318,7 +323,10 @@ slots. Probe:
 [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua);
 dumps [`ghidra/scripts/funcs/800513f0.txt`](../../ghidra/scripts/funcs/800513f0.txt)
 + [`800542c8.txt`](../../ghidra/scripts/funcs/800542c8.txt). (Sibling battle
-files: `etim.dat` = `0x368`, `efect.dat` = `0x36b`, stage pack `0x367`/`0x36d`.)
+files, raw indices → extraction entries: `etim.dat` `0x368` → 0870,
+`efect.dat` `0x36b` → 0873, and the battle-type-conditional pair
+`0x367`/`0x36d` → 0869/0875, both VAB-prefixed streaming files — see
+[`effect.md` § Battle effect cluster](effect.md#battle-effect-cluster-befect_data).)
 
 ### Battle render: load-time TSB/CBA relocation
 
@@ -398,10 +406,13 @@ The source pointer derives from the battle overlay context:
 
 **The source CLUTs are LZS-compressed inside the PLAYER file — SOLVED.** A second
 write-watchpoint, on the source struct header `0x800D6C98`, shows it is written by
-`FUN_8001A55C` (the LZS decoder). The loaded `data\battle\PLAYER1` buffer
-content-matches a region of **PROT entry `0861` (`edstati3`)** (the PROT label is
-incidental, and `0861`'s copy is *un-staged* — see the note below), so early
-`lzs-decode find` probes located the streams there. Running the full
+`FUN_8001A55C` (the LZS decoder). The loaded `data\battle\PLAYER1` buffer is
+**extraction PROT entry `0863`** (`edstati3` filename label = the
+[+2 label shift](cdname.md#numbering-space); raw TOC index `0x361`). Early
+`lzs-decode find` probes located the streams through entry `0861`'s
+*extended* window — the 1-sector stub entries `0859..0862` precede the true
+file, so `0861`'s over-read copy holds the same record at window offset
+`0x1000`. Running the full
 `FUN_80052FA0` decode+assembly, the decompressed records hold the party CLUT
 structs `[u16 base][u16 count][BGR555]`,
 and running the full `FUN_80052FA0` decode+assembly then applying the runtime
@@ -417,7 +428,8 @@ bit-15-clear) → `FUN_80053B9C` per-CLUT copy with STP-set (→ palette block
 > **Retraction.** An earlier reading ("LZS-decompressed from the `town0c` scene
 > bundle at `0x23430`") was wrong: that write-watchpoint caught the **scene
 > bundle's** decompression into the *shared* work-arena (its `0x800ebee8` value
-> `0x7965481F` ≠ the Vahn palette). The real source is `PROT 0861`, above.
+> `0x7965481F` ≠ the Vahn palette). The real source is the `PLAYER1` file
+> (extraction PROT `0863`), above.
 
 **Per-character structure (Exec-BP on `FUN_80053B9C`, `autorun_clut_copy_calls.lua`).**
 The copy routine is called **once per CLUT struct, several times per character**,
@@ -434,8 +446,8 @@ resolves them from the descriptor table — see the on-disc layout below.
 character's 28-byte entry at the player files **`data\battle\PLAYER1..4`**
 (Vahn/Noa/Gala/Terra), and loads each via the disc resolver at index
 `char_id + 0x360` (`FUN_8003e8a8`). The loaded PLAYER1 buffer **byte-matches
-`0861`**, so `0861`'s content *is* Vahn's player data (the PROT label is
-incidental). `FUN_80052FA0` then LZS-decodes `record[0]` (`len@+0xC`,
+extraction entry `0863`** (raw index `0x361` − 2; the historical `0861`
+attribution matched the same bytes through that entry's over-read window). `FUN_80052FA0` then LZS-decodes `record[0]` (`len@+0xC`,
 `data@+0x10`) into a `0x19000` work buffer, decodes 5 sub-records into it at
 advancing offsets, and STP-copies CLUTs from offsets *within* the decoded buffer
 (`buf + *(record[0]+4)` / `+8`, plus each flagged sub-record) to VRAM row
@@ -470,10 +482,14 @@ contiguous in `PROT.DAT`:
 | Gala  | `0x363` | `0x3828800` | 222 sec (`0x6F000`) |
 | Terra | `0x364` | `0x3897800` | 47 sec |
 
-The PROT-extractor's overlapping slices `0861`/`0864`/`0865` happen to *begin* at
-the Vahn/Noa/Gala player-file regions, so the parser can read them by PROT index.
+The TOC start offsets of extraction entries `0863`/`0864`/`0865`/`0866` equal
+those four player-file offsets exactly, so the parser reads them by extraction
+index. (The historical Vahn label `0861` was the over-read window of a
+preceding 1-sector stub entry, not the file's own slot.)
 
-**On-disc record layout (self-describing relative to `record[0]`):**
+**On-disc record layout (self-describing relative to `record[0]`):** (the
+whole-file container — header words, descriptor table, TMD slot region — is
+documented in [`battle-data-pack.md`](battle-data-pack.md))
 
 ```text
 rec0+0x00  u32  desc_off    descriptor-table offset (rec0-relative)
@@ -531,7 +547,7 @@ it depends on equipment. Two parser entry points in
 
 **All three party palettes decode from the disc** (`FUN_80052FA0` ported as a
 unit), validated against a full-party battle VRAM capture (mednafen mc1/mc7/mc9,
-rows 481/482/483 all populated): **Vahn (PROT `0861`) byte-exact, Noa (PROT `0864`)
+rows 481/482/483 all populated): **Vahn (PROT `0863`) byte-exact, Noa (PROT `0864`)
 ~98%, Gala (PROT `0865`) 100%** (the 1-2 % misses on Noa are equipment patches in
 the late-game reference). Each is overlaid onto the VRAM rows its mesh's CBA
 samples (Vahn 490/491, Noa 492/493, Gala 494/495 — runtime collapses each pair to

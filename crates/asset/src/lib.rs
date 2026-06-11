@@ -67,6 +67,7 @@ pub mod static_overlay;
 pub mod steal_table;
 pub mod str_fmv_table;
 pub mod summon_overlay;
+pub mod summon_readef;
 pub mod tim_catalog;
 pub mod tim_deep_catalog;
 pub mod tim_labels;

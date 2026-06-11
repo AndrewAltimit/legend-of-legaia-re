@@ -25,7 +25,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [World map](#world-map) — `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
   - [Boot / title / menu UI](#boot--title--menu-ui) — `init_pak`, `title_pak`, `menu_glyph_atlas`
   - [SCUS static tables](#scus-static-tables) — `item_names`, `item_effect`, `equip_stats`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
-  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`
+  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`
   - [Scene + MAN](#scene--man) — `man_section`, `man_edit`, scene tables
   - [TIM/TMD scan + catalog](#timtmd-scan--catalog)
 - [CLI](#cli)
@@ -68,7 +68,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `overlay_ptr_table` | Sister format: pointer tables that index into overlays. |
 | `effect_bundle` | `efect.dat` and friends - magic `0x02018B0C`. |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
-| `battle_data_pack` | `battle_data` pack: streaming preamble + 12-byte record table + per-record LZS streams. |
+| `battle_data_pack` | Player battle files (`PLAYER1..4`, extraction 863..866 = retail `battle_data` block): header + 12-byte descriptor table + per-slot LZS streams of `[header + TMD + texture pool]`. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. `sub_streams` enumerates the concatenated, `0x800`-aligned `[TMD][TIM chunks][terminator]` blocks (the entry holds N, not one continuation list). |
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`. |
@@ -160,14 +160,19 @@ PROT 0898, same link base as `move_power`. CLI `asset element-affinity <PROT 089
 
 ### `befect_cluster`
 
-Cluster-aware extraction of the battle-effect `befect_data` cluster (CDNAME 872,
-PROT 872..875). The naive per-entry extractor over-reads it (the entries overlap on
-disc), so `extract(archive, cdname)` footprint-bounds each entry, expands the
-LZS-container entry into its sections, and classifies each part (the `efect.dat`
-2-pack / effect-model TMDs / effect-texture TIMs / packs).
+Footprint-bounded extraction of the four-entry window the CDNAME symbol
+`befect_data` resolves to in define-number space (extraction PROT 872..875 —
+retail-semantically `vdf.dat` / `efect.dat` / the `player_data` file
+`player.lzs` / a `sound_data2` VAB stream; the retail befect block proper is
+extraction 870..873, see `docs/formats/cdname.md`). The naive per-entry
+extractor over-reads these entries (they overlap on disc), so
+`extract(archive, cdname)` footprint-bounds each one, expands the
+LZS-container entry into its sections, and classifies each part (the
+`efect.dat` 2-pack / the field-character TMD pack / the field-character
+texture TIMs / packs).
 
 CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
-[`effect.md`](../../docs/formats/effect.md#battle-effect-cluster-befect_data-cdname-872).
+[`effect.md`](../../docs/formats/effect.md#battle-effect-cluster-befect_data).
 
 ### Character meshes, textures, animation
 
@@ -175,7 +180,7 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 |---|---|
 | `character_pack` | Field-form player-character mesh pack (PROT 0874 §0, 5 slots: Vahn/Noa/Gala + 2 auxiliary), incl. the `FUN_8001EBEC` equipment-swap pose patch (`equipment_swap::apply`). CLI `asset character-pack`. |
 | `battle_char_pack` | Battle-form character mesh pack (PROT 1204 `other5`): five `TMD2` streaming chunks + seven 256×256 4bpp atlases at `0x8224` stride. Baka Fighter reuses it. CLI `asset battle-char-pack`. |
-| `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (PROT 0861/0864/0865) — `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
+| `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) — `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
 | `field_char_textures` | Field-character texture pack (PROT 0874 §2, "etim.dat"): eight TIM entries; 1/2/3 are the Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478). CLI `asset field-char-tex`. |
 | `player_anm` | Per-scene player ANM bundle (each scene bundle's type-0x05 "MOVE" section; battle-form at PROT 1203): per-(bone,frame) 8-byte entries, frame 0 of idle = rest pose. CLI `asset player-anm` / `player-anm-scan`. |
 
@@ -246,7 +251,8 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 
 `summon_overlay` — Seru-magic **summon scene-graph** part records:
 
-- A per-summon stager overlay (e.g. PROT 0905, Gimard *Tail Fire*) stages each
+- A per-summon stager overlay (extraction PROT 0903..=0913; Gimard *Tail Fire*
+  `0x81` arithmetics to 0903 under the corrected loader index math) stages each
   summon body part with a `FUN_80021B04` call passing a per-part record.
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
@@ -255,6 +261,14 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 CLI `asset summon-overlay <PROT 0905 .BIN>`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
+
+`summon_readef` — the battle side-band streaming files `summon.dat` /
+`readef.DAT` (extraction PROT 893 / 894 = retail TOC `0x37F` / `0x380`,
+CDNAME block `bat_back_dat`): `0x10800`-byte slots carrying per-special-attack
+CLUT rows + 4bpp texture pages plus summon-creature actor records (name + Legaia
+TMD + texture pool). `parse` classifies every slot; `stream_target(action_id)`
+mirrors the retail id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
+[`summon-readef.md`](../../docs/formats/summon-readef.md).
 
 ### Scene + MAN
 

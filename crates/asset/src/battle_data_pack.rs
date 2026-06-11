@@ -1,30 +1,22 @@
-//! `battle_data` pack format - the multi-megabyte container used by
-//! PROT entries in the `battle_data` CDNAME block (0865-0868).
+//! TMD-slot walker for the per-character player battle files
+//! `data\battle\PLAYER1..4` (extraction PROT entries 0863..0866 = the retail
+//! `battle_data` CDNAME block; Vahn / Noa / Gala / Terra. The extraction
+//! filename labels `0863/0864_edstati3` are the +2 label shift - see
+//! `docs/formats/cdname.md`).
 //!
-//! ### Layout (empirically verified against retail PROT 0865)
+//! ### Layout (see `docs/formats/battle-data-pack.md` for the full format)
+//!
+//! The file head is `[u32 desc_off][u32 clut_a_off][u32 clut_b_off]
+//! [u32 budget]` + the `record[0]` LZS stream (the battle-palette chain,
+//! parsed by [`crate::battle_char_palette`]). At `desc_off` sits a chained
+//! 12-byte descriptor table `[u32 id][u32 offset][u32 size]`
+//! (`offset[i+1] == offset[i] + size[i]`; `id = 0` marks section
+//! boundaries / default-variant slots; an all-zero entry terminates), and
+//! the slot region at `data_base` (0x8000 in all four retail files) holds
+//! per-slot `[u32 dec_size][LZS]` streams decoding to:
 //!
 //! ```text
-//! +0x0000   u32 chunk0_header        ; (type=0x00 << 24) | first_chunk_size
-//! +0x0004   ...chunk0 payload...     ; opaque streaming data
-//! +0x0004 + first_chunk_size         ; chunk-stream terminator (low24=0)
-//!
-//! +chunk0_size + 4   u32 record_count   ; e.g. 0x57 = 87 slots
-//! +chunk0_size + 8   u32 reserved       ; always 0
-//! +chunk0_size + 12  Record[record_count]
-//!
-//! data_base = next 0x800-aligned offset after the record table
-//!
-//! Record (12 bytes):
-//!   u32 on_disc_size      ; compressed size in bytes (incl. u32 dec_size prefix)
-//!   u32 id                ; slot id (0..0x7F observed); 0 marks empty/filler
-//!   u32 data_offset       ; offset from data_base
-//!
-//! Compressed entry (at data_base + record.data_offset):
-//!   u32 decompressed_size
-//!   LZS-compressed stream (size = on_disc_size - 4)
-//!
-//! Decompressed entry payload:
-//!   +0x00  u32 magic_or_count  ; 0x14 (=20) in 0865; meaning still TBD
+//!   +0x00  u32 magic_or_count  ; 0x14 (=20) in every observed slot
 //!   +0x04  u32 sub_obj0_end    ; nested-section end offset (often 0)
 //!   +0x08  u32 sub_obj1_end    ; nested-section end offset (often 0)
 //!   +0x0C  u32 tmd_body_end    ; offset where the Legaia TMD body ends
@@ -33,19 +25,26 @@
 //!   +tmd_body_end              ; texture/CLUT pool (layout partially TBD)
 //! ```
 //!
-//! The container holds packed character TMDs with their textures. The TMDs
-//! and post-TMD texture pool are co-located - the retail engine sources its
-//! field/town NPC textures from this pack via the player-loader chain
-//! (`FUN_8001E890` → LZS decode → register TMDs via `FUN_80026B4C`).
+//! ### Framing note (pending realignment)
 //!
-//! ### Why this matters
+//! This walker predates the runtime pin of the descriptor table and reads it
+//! through a 4-byte-shifted frame: entry 0's `id` as a "record count"
+//! (`record_count`), entry 0's `offset` (always 0) as a "reserved" word, and
+//! each `(id, data_offset)` pair with the *previous* entry's `size` as
+//! `on_disc_size`. The `(id, data_offset)` pairs come out correct, so every
+//! slot decodes with the right id attached - except entry 0 itself, which
+//! surfaces as the `offset = 0` "filler" record with id 0 (its real id is
+//! the value reported as `record_count`). The off-by-one `on_disc_size` is
+//! harmless because the LZS decode is output-bounded.
 //!
-//! Town01's four NPC TMDs reference CLUT row y=479 slots x=128..240 (CBA
-//! `0x77C8..0x77CF`). Those palettes live inside the post-TMD pool of one
-//! or more `battle_data` records. Without descending into this pack, the
-//! raw TIM scanner finds 0 TIMs in 0865 (the data is wrapped in this
-//! custom format) and the targeted-upload path leaves those rows
-//! unsupplied, dropping ~388 prims as MissingClut.
+//! ### What this is NOT
+//!
+//! Not the monster stat archive (extraction 0867, fixed `0x14000`-stride
+//! slots - [`crate::monster_archive`]); the historical "16 MB battle_data
+//! container at 0865" reading analyzed extraction 0865's *extended* TOC
+//! window, which over-reads across 0866 into the archive. It also does NOT
+//! carry the row-479 town NPC palettes (byte-match corpus negative; those
+//! are scene-pack TIMs - see `docs/formats/npc-palette.md`).
 
 use anyhow::{Result, bail};
 use serde::Serialize;

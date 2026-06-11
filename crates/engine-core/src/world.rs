@@ -478,6 +478,13 @@ pub enum SceneMode {
     Cutscene,
     /// World-map mode - `WorldMapController` drives camera and entity ticks.
     WorldMap,
+    /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
+    /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
+    /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
+    /// dispatch is suspended while the menu owns the frame; only the actor
+    /// VM and effect pool run, like `Title`. The hosting session preserves
+    /// the suspended scene state and restores its mode on close.
+    Menu,
 }
 
 /// One sprite frame on a sprite sheet. Equivalent in shape to
@@ -821,6 +828,27 @@ pub struct World {
     /// walkable) at field entry via [`World::reset_field_collision_grid`].
     /// Empty until the first field scene is entered.
     pub field_collision_grid: Vec<u8>,
+    /// Per-scene `.MAP` region-table block (the file's `+0x10000..+0x12000`
+    /// region - retail `*(_DAT_1F8003EC) + 0x10000`). Scanned per tile by
+    /// the [`crate::field_regions`] ports to rebuild [`World::extra_flags`]
+    /// (the `_DAT_8007B8F4` mirror) and the scratch attribute box. Empty for
+    /// scenes without a field map.
+    pub field_map_region_block: Vec<u8>,
+    /// Per-scene MAN section-3 zone table (the camera-region records the
+    /// boot walk installs at the control block `_DAT_801C6EA4 + 0x4`):
+    /// a count byte + 18-byte records, queried per tile by
+    /// [`crate::field_regions::zone_query`]. Empty for scenes whose MAN has
+    /// no section 3.
+    pub field_zone_table: Vec<u8>,
+    /// The scratchpad region-attribute block (`0x1F800384..87` +
+    /// `0x1F80037C`) latched by the per-tile refresh; read by the zone
+    /// query's kind-0 arm.
+    pub field_region_attributes: crate::field_regions::RegionAttributes,
+    /// The 18-byte zone record the player currently stands in (the camera-
+    /// region payload `FUN_801DBC20` consumes), refreshed on tile crossing.
+    /// `None` when no zone record matches (retail loads the default camera
+    /// parameter set).
+    pub field_zone_record: Option<[u8; crate::field_regions::ZONE_RECORD_STRIDE]>,
     /// The 16-entry floor-height LUT the collision grid's low nibble indexes
     /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
     /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
@@ -892,8 +920,13 @@ pub struct World {
     /// Lazily grown on write - the field VM's opcode-encoded idx ranges over
     /// `0..=0x87FF`, so a fixed 256-bit array is too small.
     pub system_flags: Vec<u8>,
-    /// Field-VM `extra_flags` register read by op 0x42 mode 0 - a 32-bit
-    /// auxiliary flag word (origin TBD; treated as scene-local state).
+    /// Field-VM `extra_flags` register read by op 0x42 mode 0 - the
+    /// `_DAT_8007B8F4` **region-type mask**: bit `n` set when the player's
+    /// tile sits inside a type-`n` region of the scene `.MAP` region table.
+    /// Rebuilt per tile crossing by [`World::refresh_field_regions`] (the
+    /// `FUN_800180EC` / `FUN_801DBA20` ports in [`crate::field_regions`])
+    /// when the per-scene tables are installed; otherwise host-owned
+    /// scene-local state.
     pub extra_flags: u32,
     /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
@@ -1532,7 +1565,7 @@ pub struct World {
     /// equivalent of the retail cast band resolving the per-summon overlay
     /// (`FUN_8003EC70(id-0x79)`). The host (which has the PROT index) drains it
     /// via [`World::take_pending_summon_spawn`], loads the summon overlay
-    /// (`PROT 905 + (id - 0x81)`), and calls [`World::spawn_summon`]. Kept as a
+    /// (extraction `PROT 903 + (id - 0x81)`), and calls [`World::spawn_summon`]. Kept as a
     /// host-fulfilled request because `World` is index-agnostic (same pattern
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
@@ -2034,6 +2067,10 @@ impl World {
             map_origin_xz: (0, 0),
             player_actor_slot: None,
             field_collision_grid: Vec::new(),
+            field_map_region_block: Vec::new(),
+            field_zone_table: Vec::new(),
+            field_region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
+            field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
             follow_terrain_height: false,
             leading_edge_wall_probes: false,
@@ -4612,7 +4649,7 @@ impl World {
     }
 
     /// Spawn a Seru-magic summon scene-graph from a parsed stager overlay (e.g.
-    /// PROT 0905, Gimard *Burning Attack*) at `origin` (world units).
+    /// extraction PROT 0903, Gimard *Burning Attack*) at `origin` (world units).
     /// `record_bytes` is the overlay's raw bytes (the buffer `overlay` was parsed
     /// from); `model_base` is the pool index a part's `model_sel == 0` resolves to
     /// (the summon's mesh-set base, e.g. [`crate::scene::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
@@ -4833,7 +4870,7 @@ impl World {
 
     /// Take the pending production summon-spawn request, if a player Seru-magic
     /// cast set one this step. Returns `(spell_id, origin)`; the host maps
-    /// `spell_id` to the overlay PROT entry (`905 + (spell_id - 0x81)`), loads
+    /// `spell_id` to the overlay PROT entry (extraction `903 + (spell_id - 0x81)`), loads
     /// it, and calls [`Self::spawn_summon`]. See [`Self::pending_summon_spawn`].
     pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
         self.pending_summon_spawn.take()
@@ -5036,6 +5073,10 @@ impl World {
                 self.tick_world_map();
                 None
             }
+            // The pause menu owns the frame (retail CARD mode 0x17): field /
+            // battle dispatch is suspended; the hosting session drives the
+            // menu state machine and restores the suspended mode on close.
+            SceneMode::Menu => None,
             SceneMode::Title => None,
         }
     }
@@ -6226,6 +6267,67 @@ impl World {
         self.field_collision_grid[..n].copy_from_slice(&grid[..n]);
     }
 
+    /// Install the per-scene region / zone tables (the `.MAP` `+0x10000`
+    /// block + the MAN section-3 camera-region table) and run the initial
+    /// per-tile refresh. Pass empty slices for scenes without the data -
+    /// the refresh then clears [`Self::extra_flags`] and resets the
+    /// attribute block to the default fill, so stale tables never leak
+    /// across a transition.
+    pub fn load_field_region_tables(&mut self, map_region_block: &[u8], zone_table: &[u8]) {
+        self.field_map_region_block = map_region_block.to_vec();
+        self.field_zone_table = zone_table.to_vec();
+        self.refresh_field_regions();
+    }
+
+    /// Per-tile region refresh - drives the [`crate::field_regions`] ports
+    /// (`FUN_800180EC` + `FUN_801DBA20`) against the player's current tile.
+    ///
+    /// Quantises `tile = (world - 0x40) >> 7` (the retail locomotion-cluster
+    /// convention for `FUN_801DBA20`'s arguments), rebuilds
+    /// [`Self::extra_flags`] (the `_DAT_8007B8F4` region-type mask the
+    /// field-VM op `0x42` mode 0 tests), latches the scratch attribute
+    /// block, and re-selects the current camera-zone record. Called on
+    /// scene entry and on every player tile crossing
+    /// ([`Self::live_field_tick`]).
+    ///
+    /// REF: FUN_800180EC, FUN_801DBA20 (ports in [`crate::field_regions`])
+    pub fn refresh_field_regions(&mut self) {
+        if self.field_map_region_block.is_empty() && self.field_zone_table.is_empty() {
+            // No per-scene tables installed - leave `extra_flags` to the
+            // host (e.g. tests that drive op 0x42 directly).
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (wx, wz) = match self.actors.get(slot as usize) {
+            Some(a) => (a.move_state.world_x, a.move_state.world_z),
+            None => return,
+        };
+        let tx = (wx as i32 - 0x40) >> 7;
+        let tz = (wz as i32 - 0x40) >> 7;
+        let table = crate::field_regions::RegionTable::parse(&self.field_map_region_block);
+        let world_map_mode = self.mode == SceneMode::WorldMap;
+        let (mask, attrs) =
+            crate::field_regions::refresh_region_attributes(table.as_ref(), tx, tz, world_map_mode);
+        self.extra_flags = mask;
+        self.field_region_attributes = attrs;
+        if let Some(result) =
+            crate::field_regions::zone_query(&self.field_zone_table, table.as_ref(), &attrs, tx, tz)
+        {
+            // Retail rewrites `_DAT_8007B8F4` from the zone query's own
+            // rebuild too (identical recomputation).
+            self.extra_flags = result.region_mask;
+            self.field_zone_record = result.record.map(|r| {
+                let mut rec = [0u8; crate::field_regions::ZONE_RECORD_STRIDE];
+                rec.copy_from_slice(r);
+                rec
+            });
+        } else {
+            self.field_zone_record = None;
+        }
+    }
+
     /// Apply one field-VM `0x4C` outer-nibble-7 rectangular wall paint to
     /// the collision grid. `x_range` / `z_range` are the half-open tile
     /// spans the VM dispatcher already computed from the op operands; `sub`
@@ -6830,6 +6932,10 @@ impl World {
             match self.field_last_tile {
                 Some(prev) if prev != tile => {
                     self.field_last_tile = Some(tile);
+                    // Per-tile region refresh (the `FUN_800180EC` /
+                    // `FUN_801DBA20` grain - retail re-runs the region scan
+                    // when the player tile changes).
+                    self.refresh_field_regions();
                     self.on_field_step();
                 }
                 None => self.field_last_tile = Some(tile),

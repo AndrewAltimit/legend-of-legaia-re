@@ -139,7 +139,16 @@ Symbol-art and payout tables (overlay rodata, **Inferred**, not reproduced):
 | `FUN_801d2cc0` | symbol/HUD sprite-quad rasteriser (descriptor table `DAT_801d347c`) — `overlay_slot_machine_801d2cc0.txt` |
 | `FUN_801e6f70` | coin HUD render: reads `_DAT_800845A4` + record — `overlay_slot_machine_801e6f70.txt` |
 
-The overlay itself is loaded by the Mode-0 (config-init) handler at `80025C68` via `FUN_8003EBE4(0x4C)` (PROT 973); see [`functions.md`](../reference/functions.md).
+The overlay is **extraction PROT 975** (dev module `other4`), loaded by the **mode-24 minigame
+door-warp** as sub-id 3 (field-VM op `0x3E` with `op0 = 103`; `FUN_80025980` →
+`FUN_8003EBE4(0x50)`, init entry `0x801CEC94`): the documented reel SM `FUN_801CF0D8` and payout
+`FUN_801D13E8` land on function prologues in that entry at the canonical slot-A base
+`0x801CE818`, and the `"insert 3 coins"` / `"game_coin %d"` strings sit inside its runtime
+slice. Two sibling dev modules occupy sub-ids 1/2 (PROT 973 `OTHER2`, a 1-sector module; PROT
+974 `OTHER3` — identities open). The earlier "PROT 973, loaded by the Mode-0 config-init
+handler" note carried the loader-math off-by-2 *and* matched this overlay's image inside 973's
+over-read tail — mode 0 actually loads the debug-menu overlay PROT 971. See [`script-vm.md §
+0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).
 
 ## Open
 

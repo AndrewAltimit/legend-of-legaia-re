@@ -1,6 +1,7 @@
 //! Disc-gated regression test for the [`battle_data_pack`] detector
-//! against retail PROT 0865. Skips silently when `LEGAIA_DISC_BIN` is
-//! unset (CI without disc data).
+//! against the retail player battle files (extraction 0865 = Gala's
+//! `PLAYER3`, 0863 = Vahn's `PLAYER1`; retail `battle_data` block).
+//! Skips silently when `LEGAIA_DISC_BIN` is unset (CI without disc data).
 
 use std::path::PathBuf;
 

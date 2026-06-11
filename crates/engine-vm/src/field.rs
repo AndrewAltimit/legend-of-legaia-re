@@ -313,8 +313,10 @@ pub trait FieldHost {
 
     /// Read the secondary global-flag bank `_DAT_8007B8F4` (op 0x42 mode 0).
     /// Distinct from the main `_DAT_1F800394` flag bank in scratchpad -
-    /// `_DAT_8007B8F4` is in main RAM and tracks a different set of game
-    /// states (likely "scene-already-visited" or similar bookkeeping).
+    /// `_DAT_8007B8F4` is the per-tile **region-type mask**: bit `n` set
+    /// when the player tile sits inside a type-`n` region of the scene
+    /// `.MAP` region table. Rebuilt by `FUN_800180EC` / `FUN_801DBA20`
+    /// (ports: `legaia_engine_core::field_regions`).
     fn extra_flags(&self) -> u32 {
         0
     }

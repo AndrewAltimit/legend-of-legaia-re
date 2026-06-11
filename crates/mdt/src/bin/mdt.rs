@@ -3,8 +3,14 @@
 //! `mdt classify <file>` runs both the consumer-expected offset-table parser and
 //! the flat 128-byte-record parser, prints which one fits.
 //!
-//! `mdt records <file>` dumps the flat record table view (the structure
-//! 0972/0973 actually have).
+//! `mdt records <file>` dumps the flat record table view (the loose shape the
+//! extraction files named 0972/0973 parse as).
+//!
+//! NOTE: under the CDNAME +2 filename shift (`docs/formats/cdname.md`
+//! § numbering space) the files named `0972/0973_move_program_no` are really
+//! `other_game` minigame overlays (fishing + the `OTHER2` dev module); the
+//! `move_program_no` define covers extraction 0970..0971, a `\DATA\MOV*.STR`
+//! FMV program table. Neither is move-table data.
 //!
 //! `mdt slots <file>` dumps the offset-table view (what the runtime consumer
 //! `FUN_800204f8` expects to read).

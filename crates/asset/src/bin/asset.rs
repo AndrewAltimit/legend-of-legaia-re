@@ -123,7 +123,7 @@ enum Cmd {
         #[arg(long, default_value = "32768,65536,98304,131072,196608,262144")]
         lzs_sizes: String,
     },
-    /// Parse a per-summon stager overlay (e.g. PROT 0905, Gimard Tail Fire) into
+    /// Parse a per-summon stager overlay (extraction PROT 0903..=0913) into
     /// its move-VM part-record scene-graph: scan the `FUN_80021B04` spawn calls
     /// and print each part's record offset, mesh selector, flags, and bytecode
     /// span. Input is the raw overlay `.BIN`.
@@ -133,6 +133,26 @@ enum Cmd {
         /// shared summon-overlay buffer base.
         #[arg(long, value_parser = parse_hex_u32, default_value = "0x801F69D8")]
         base: u32,
+    },
+    /// Parse a battle side-band streaming file — `summon.dat` (extraction PROT
+    /// 0893) or `readef.DAT` (0894) — into its `0x10800`-byte slots and print
+    /// each slot's class (texture / actor record / payload), texture layout,
+    /// and attack-name string. `--texture-png-dir` additionally decodes every
+    /// texture slot's 4bpp page through its first CLUT row to
+    /// `slot_NNN.png`; `--action-id` prints which file + slot an action id
+    /// streams from (the `FUN_801E295C` case-`0x32` banding).
+    SummonReadef {
+        /// Raw PROT 0893/0894 entry `.BIN`.
+        input: PathBuf,
+        /// Export texture slots as PNGs into this directory.
+        #[arg(long)]
+        texture_png_dir: Option<PathBuf>,
+        /// CLUT sub-palette (16-color window) for 4bpp decode, 0..=15.
+        #[arg(long, default_value_t = 0)]
+        clut_sub: u8,
+        /// Resolve an action id to its stream target and exit.
+        #[arg(long)]
+        action_id: Option<u8>,
     },
     /// Parse the battle-action per-move power table (runtime VA `0x801F4F5C`,
     /// read by `FUN_801dd0ac` for the arts/physical attacker roll) out of the
@@ -1010,6 +1030,12 @@ fn main() -> Result<()> {
             lzs_sizes,
         } => find_overlay(&dir, top, &lzs_sizes),
         Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
+        Cmd::SummonReadef {
+            input,
+            texture_png_dir,
+            clut_sub,
+            action_id,
+        } => summon_readef_cmd(&input, texture_png_dir.as_deref(), clut_sub, action_id),
         Cmd::MovePower { input } => move_power_cmd(&input),
         Cmd::ModeTable { input } => mode_table_cmd(&input),
         Cmd::ElementAffinity { input } => element_affinity_cmd(&input),
@@ -1277,6 +1303,96 @@ fn summon_overlay_cmd(input: &Path, base: u32) -> Result<()> {
             p.bytecode.end,
             p.bytecode.len(),
         );
+    }
+    Ok(())
+}
+
+fn summon_readef_cmd(
+    input: &Path,
+    texture_png_dir: Option<&Path>,
+    clut_sub: u8,
+    action_id: Option<u8>,
+) -> Result<()> {
+    use legaia_asset::summon_readef::{self, SLOT_BYTES, SlotKind, StreamFile};
+
+    if let Some(id) = action_id {
+        let (file, slot) = summon_readef::stream_target(id);
+        let (name, prot) = match file {
+            StreamFile::Summon => ("summon.dat", summon_readef::SUMMON_PROT_INDEX),
+            StreamFile::Readef => ("readef.DAT", summon_readef::READEF_PROT_INDEX),
+        };
+        println!(
+            "action id {id:#04x}: base byte {:#04x} -> {name} (extraction PROT {prot:04}) slot {slot}",
+            summon_readef::base_byte_for_action(id),
+        );
+        return Ok(());
+    }
+
+    let bytes = std::fs::read(input)?;
+    let file = summon_readef::parse(&bytes)?;
+    println!(
+        "side-band file {}: {} bytes, {} slot(s) of {SLOT_BYTES:#x}",
+        input.display(),
+        bytes.len(),
+        file.slots.len()
+    );
+    if let Some(dir) = texture_png_dir {
+        std::fs::create_dir_all(dir)?;
+    }
+    if clut_sub > 15 {
+        anyhow::bail!("--clut-sub must be 0..=15");
+    }
+    for slot in &file.slots {
+        let raw = &bytes[slot.index * SLOT_BYTES..(slot.index + 1) * SLOT_BYTES];
+        match &slot.kind {
+            SlotKind::Texture(t) => {
+                println!(
+                    "  slot {:3}: texture  mode {}  {} CLUT row(s)  page {}x256 (4bpp)",
+                    slot.index,
+                    t.mode,
+                    t.clut_rows,
+                    t.texture_width_halfwords * 4,
+                );
+                if let Some(dir) = texture_png_dir {
+                    let path = dir.join(format!("slot_{:03}.png", slot.index));
+                    let (w, h) = (t.texture_width_halfwords * 4, 256usize);
+                    // 16-color window of the first CLUT row (BGR555 at +4).
+                    let clut_base = 4 + clut_sub as usize * 32;
+                    let pal: Vec<[u8; 4]> = (0..16)
+                        .map(|i| {
+                            let off = clut_base + i * 2;
+                            legaia_tim::bgr555_to_rgba8(u16::from_le_bytes([
+                                raw[off],
+                                raw[off + 1],
+                            ]))
+                        })
+                        .collect();
+                    let mut rgba = vec![0u8; w * h * 4];
+                    for (texel, px) in rgba.chunks_exact_mut(4).enumerate() {
+                        let byte = raw[t.texture_offset + texel / 2];
+                        let idx = if texel % 2 == 0 {
+                            byte & 0xF
+                        } else {
+                            byte >> 4
+                        };
+                        px.copy_from_slice(&pal[idx as usize]);
+                    }
+                    write_rgba_png(&path, w as u32, h as u32, &rgba)?;
+                    println!("           -> {}", path.display());
+                }
+            }
+            SlotKind::ActorRecord(r) => {
+                println!(
+                    "  slot {:3}: actor record  name {:?}  TMD @ +{:#06x}  pool @ +{:#06x}  {} part(s)",
+                    slot.index,
+                    r.name.as_deref().unwrap_or("-"),
+                    r.tmd_offset,
+                    r.texture_pool_offset,
+                    r.part_count,
+                );
+            }
+            SlotKind::Payload => println!("  slot {:3}: payload / raw", slot.index),
+        }
     }
     Ok(())
 }

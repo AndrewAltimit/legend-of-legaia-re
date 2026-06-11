@@ -68,7 +68,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1F5] != 0` (anim cue): writes a 16-byte BG fade descriptor (`DAT_801C9070..0x9086`: time `0x14`, RGB `(0xFF,0xFF,0xFF)`, alpha 0→`0x14`); calls `func_0x80024E80` (push fade primitive). | `0x34`. |
 | `0x34` | Summon - actor freeze | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1D9] == 0`: OR's the fade primitive bit `8`, clears `ctx[+0x278/+0x279]`, sets `ctx[+0x6D8] = 0x78` (timer), calls `func_0x801F1ED4` (?), iterates the 8-actor table to clear `actor[+0x4]` and set `+0x21C = 0xFF` (actor-hidden marker). Writes a second fade descriptor (`0x78` time, alpha `0xFF→0`). | `0x35`. |
 | `0x35` | Summon - sustain | Decrements `ctx[+0x6D8]`; ramps screen brightness `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75%) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`. | `0x36` when timer expires. |
-| `0x36` | Summon - return-from-fade | Waits on `func_0x801F1ED4` returning 0. Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (?). | `0x37`. |
+| `0x36` | Summon - return-from-fade | Waits on `func_0x801F1ED4` returning 0. Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md)). | `0x37`. |
 | `0x37` | Summon - verify all alive | `FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`). | `0x38`. |
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
 | `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). For `+0x1DE == 1` (Item): looks up item record at `ctx[+0x1DF]*0xC + -0x7FF8BC97` for label/icon; writes `actor[+0x1E8/+0x1E9]` (icon page/x); writes HUD via `_DAT_80077332..+0x35C`. Special case: `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. For non-Item (Magic/Spirit, `+0x1DE != 1`): does the same write of `+0x1E8/+0x1E9` from the spell table at `actor[+0x1DF]*0xC + -0x7FF8AB38`, computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
@@ -188,7 +188,7 @@ So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801
 
 ### Seru-magic summon-overlay dispatch
 
-The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh - e.g. Gimard's *Tail Fire* flame) is **not** spawned by an opcode and does **not** live in `befect_data`. It is a **per-summon code overlay** paged in on demand. In outer state **case `0x29`**, when the queued action's spell id `actor[+0x1df]` is in the player Seru-magic block `0x81..0x8b`:
+The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh - e.g. Gimard's *Burning Attack* flame) is **not** spawned by an opcode and does **not** live in `befect_data`. It is a **per-summon code overlay** paged in on demand. In outer state **case `0x29`**, when the queued action's spell id `actor[+0x1df]` is in the player Seru-magic block `0x81..0x8b`:
 
 ```c
 _DAT_8007bd24[7] = 0x32;                                   // advance to the cast band
@@ -196,9 +196,24 @@ _DAT_8007ba2c = (&PTR_s_re_check_801f6734)[id - 0x81];     // per-summon effect-
 FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: PROT (id - 0x79 + 0x381)
 ```
 
-`FUN_8003EC70(param)` (overlay loader B) loads PROT index `param + 0x381` into `*DAT_80010390` (= `0x801F69D8`, above the resident battle overlay), so the summons map to **PROT 905..915** (Gimard *Tail Fire* `0x81` → param `8` → **PROT 905**; byte-verified MIPS-code overlays). The capture-class (`'c'`) spell branch loads from a different base: `FUN_8003EC70(spell_record[+1] + 0x28)`. **Caveat:** `905..915` is the loader's *arithmetic* range, not a clean list of summon stagers — the slot-B buffer is shared, and **PROT 0907 (the `0x83` slot) is the Disco King dance song "Hell's Music", not a summon** (it only parses as a stager via over-read bleed; `summon_overlay::NON_SUMMON_IN_STAGER_RANGE`). See [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
+`FUN_8003EC70(param)` (overlay loader B) loads `FUN_8003E8A8(param + 0x381)` into
+`*DAT_80010390` (= `0x801F69D8`, above the resident battle overlay) — which in **extraction
+index space is PROT entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT`
+head, 2 entries above extraction indexing; see [formats/prot.md § In-RAM
+TOC](../formats/prot.md#in-ram-toc)). So the summons map to extraction **PROT 903..913** (Gimard
+*Burning Attack* `0x81` → param `8` → **PROT 903**; the earlier "905..915 / Gimard → 905" reading was
+this off-by-2 — the per-spell attribution below it was arithmetic-derived, never
+content-pinned). The capture-class (`'c'`) spell branch loads from a different base:
+`FUN_8003EC70(spell_record[+1] + 0x28)`. **Caveat:** `903..913` is the loader's *arithmetic*
+range, not a clean list of summon stagers — the slot-B buffer is shared, and **PROT 0907
+("Hell's Music", a Disco King dance-song overlay by its head string) now falls on the
+spell-`0x85` slot**; which spell ids actually take this `id - 0x79` branch (vs the data-driven
+`spell_record[+1] + 0x28` branch) per id is unverified. See
+[`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
 
-#### Inside a summon overlay (PROT 905, decoded)
+#### Inside a summon overlay (extraction PROT 905, decoded)
+
+> The deep-dive below analyzes the **extraction-905 file** — under the corrected loader arithmetic that is the spell-`0x83` slot, *not* Gimard's (`0x81` → 903, which parses identically as a stager: 40 spawn sites / 32 part records under the same link base). The file-level findings stand for the 905 file itself; the live-capture findings (flame mesh `DAT_8007C018[26]`, part-actor motion) are capture-derived and independent. The per-spell file attribution needs a live load-watch to re-pin.
 
 The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic). The summon's meshes are the separately-loaded `DAT_8007C018` model library: **PROT entry 871** (`etmd.dat`), a 30-entry `asset::pack` of Legaia TMDs that the battle scene loader `FUN_800520F0` pulls at battle init (debug index `0x367`, retail dev path `h:\prot\battle\etmd.dat`) and registers via `FUN_80026B4C`, populating `DAT_8007C018[3..32]` (`[0..2]` are the party battle meshes). Despite its CDNAME label `sound_data`, PROT 871 is the effect-model library; its texture sibling PROT 870 (a 256×256 flame-frame atlas, also `sound_data`) is loaded by a separate path. The overlay spawns and animates part-actors over those meshes. **Decompiled** (PROT 905 imported raw at base `0x801F0000`,
 `ghidra/scripts/dump_summon_overlay.py`):
@@ -328,7 +343,8 @@ The engine-side translator at `crates/engine-core/src/art_strike.rs` (`apply_art
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.
 - States `0x32..0x38` (summon flow): the `func_0x801F1ED4` call inside `0x34`/`0x35`/`0x36` is opaque; its dump is needed to resolve the summon-creature spawn path.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch and its interaction with the HP-bar at `ctx[+0x1074]` needs cross-referencing with the spirit definitions table to identify exactly which spirit triggers it.
-- `FUN_801E791C` (`0x64`), `FUN_801E7824` (`0x68`), `FUN_801E7250` (`0x51`), `FUN_801F0348` (`0x0C`/`0x71`), `FUN_801F3990` (`0x3D`), `FUN_801F45A4` (`0xFF`) are all opaque battle helpers - their semantics here are inferred from caller context, not their own decompile.
+- `FUN_801E791C` (`0x64`), `FUN_801F0348` (`0x0C`/`0x71`), `FUN_801F3990` (`0x3D`), `FUN_801F45A4` (`0xFF`) are opaque battle helpers - their semantics here are inferred from caller context, not their own decompile.
+- `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also
 

@@ -36,6 +36,7 @@ pub mod fade;
 pub mod field_events;
 pub mod field_menu;
 pub mod field_menu_dispatch;
+pub mod field_regions;
 pub mod game_over;
 pub mod inline_dialogue;
 pub mod inn;

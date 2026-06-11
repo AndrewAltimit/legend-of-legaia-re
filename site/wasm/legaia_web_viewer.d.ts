@@ -316,18 +316,20 @@ export class LegaiaViewer {
      * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
      * mesh's nominal CBA samples.
      *
-     * Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
-     * VRAM capture (his tutorial-equipped state via
-     * [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
-     * `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
-     * [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
-     * section separators' unequipped-default CLUTs, filtered to the columns each
-     * mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
-     * All three player files load by `char + 0x360` → `FUN_8003e8a8` →
-     * `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
-     * the start of `0865` begin exactly at those player-file regions. The Baka
-     * Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
-     * the correct minigame colouring).
+     * Vahn (slot 0, extraction PROT `0863` — the `PLAYER1` file, raw TOC
+     * `0x361`; see `docs/formats/cdname.md` § numbering space) is validated
+     * byte-exact against a live battle VRAM capture (his tutorial-equipped
+     * state via [`legaia_asset::battle_char_palette::parse_record`]). Noa
+     * (slot 1, extraction `0864`) and Gala (slot 2, extraction `0865`) use the
+     * equipment-robust [`legaia_asset::battle_char_palette::collect_palette`]
+     * — record0 + the section separators' unequipped-default CLUTs, filtered
+     * to the columns each mesh samples (validated against a full-party
+     * capture: Noa ~98%, Gala 100%). All three player files load by
+     * `char + 0x360` → `FUN_8003e8a8` → `toc[idx+2]` (a sector offset into
+     * PROT.DAT); extraction entries `0863`/`0864`/`0865` begin exactly at
+     * those player-file offsets. The Baka Fighter form keeps
+     * [`Self::battle_char_vram_bytes`] (the bundled palette is the correct
+     * minigame colouring).
      */
     battle_char_vram_bytes_battle(): Uint8Array;
     /**
@@ -598,6 +600,7 @@ export class LegaiaViewer {
      * ```json
      * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
      *                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
+     *                  "element": u8, "element_name": "fire"|null,
      *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
      *                  "steal_item": u8, "steal_item_name": "Incense"|null,
      *                  "steal_chance_pct": u8,
@@ -1262,7 +1265,7 @@ export interface InitOutput {
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
-    readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

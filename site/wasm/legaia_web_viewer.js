@@ -665,18 +665,20 @@ export class LegaiaViewer {
      * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
      * mesh's nominal CBA samples.
      *
-     * Vahn (slot 0, PROT `0861`) is validated byte-exact against a live battle
-     * VRAM capture (his tutorial-equipped state via
-     * [`legaia_asset::battle_char_palette::parse_record`]). Noa (slot 1, PROT
-     * `0864`) and Gala (slot 2, PROT `0865`) use the equipment-robust
-     * [`legaia_asset::battle_char_palette::collect_palette`] — record0 + the
-     * section separators' unequipped-default CLUTs, filtered to the columns each
-     * mesh samples (validated against a full-party capture: Noa ~98%, Gala 100%).
-     * All three player files load by `char + 0x360` → `FUN_8003e8a8` →
-     * `toc[idx+2]` (a sector offset into PROT.DAT); PROT entries `0861`/`0864` and
-     * the start of `0865` begin exactly at those player-file regions. The Baka
-     * Fighter form keeps [`Self::battle_char_vram_bytes`] (the bundled palette is
-     * the correct minigame colouring).
+     * Vahn (slot 0, extraction PROT `0863` — the `PLAYER1` file, raw TOC
+     * `0x361`; see `docs/formats/cdname.md` § numbering space) is validated
+     * byte-exact against a live battle VRAM capture (his tutorial-equipped
+     * state via [`legaia_asset::battle_char_palette::parse_record`]). Noa
+     * (slot 1, extraction `0864`) and Gala (slot 2, extraction `0865`) use the
+     * equipment-robust [`legaia_asset::battle_char_palette::collect_palette`]
+     * — record0 + the section separators' unequipped-default CLUTs, filtered
+     * to the columns each mesh samples (validated against a full-party
+     * capture: Noa ~98%, Gala 100%). All three player files load by
+     * `char + 0x360` → `FUN_8003e8a8` → `toc[idx+2]` (a sector offset into
+     * PROT.DAT); extraction entries `0863`/`0864`/`0865` begin exactly at
+     * those player-file offsets. The Baka Fighter form keeps
+     * [`Self::battle_char_vram_bytes`] (the bundled palette is the correct
+     * minigame colouring).
      * @returns {Uint8Array}
      */
     battle_char_vram_bytes_battle() {
@@ -1299,6 +1301,7 @@ export class LegaiaViewer {
      * ```json
      * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
      *                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
+     *                  "element": u8, "element_name": "fire"|null,
      *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
      *                  "steal_item": u8, "steal_item_name": "Incense"|null,
      *                  "steal_chance_pct": u8,
@@ -2542,7 +2545,7 @@ function __wbg_get_imports() {
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 254, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
@@ -2567,8 +2570,8 @@ function __wbg_get_imports() {
 }
 
 const lAudioContext = (typeof AudioContext !== 'undefined' ? AudioContext : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : undefined));
-function wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67(arg0, arg1, arg2) {
-    wasm.wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67(arg0, arg1, arg2);
+function wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23(arg0, arg1, arg2) {
+    wasm.wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23(arg0, arg1, arg2);
 }
 
 const LegaiaAudioFinalization = (typeof FinalizationRegistry === 'undefined')

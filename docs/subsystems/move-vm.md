@@ -204,7 +204,7 @@ After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_8
 > actor via the per-object TRS-keyframe decoder `FUN_8004998C` (ported in
 > `engine-vm/anim_vm.rs`), with the move VM firing only as noise — see
 > [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch). The
-> move-VM stager records (PROT 905..915) are real on-disc data and this driver
+> move-VM stager records (extraction PROT 903..913) are real on-disc data and this driver
 > runs them faithfully opcode-for-opcode, but they aren't the player render
 > path. The piece below (`FUN_801F811C` translation interpolation) is itself a
 > genuine, byte-exact port regardless.

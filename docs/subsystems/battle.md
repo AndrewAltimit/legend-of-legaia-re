@@ -60,7 +60,7 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   ([character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--prot-1204)).
   The field pack 0874 §0 is field-only.
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
-- **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
+- **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.DAT` (extraction PROT 893 / 894; format + verification in [`formats/summon-readef.md`](../formats/summon-readef.md)).
 
 A paired stage pack loads at PROT `0x367`/`0x36d` (871/877) in states 2/4/6.
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
@@ -194,8 +194,8 @@ the engine sockets them with the **battle ANM (PROT 1203 `other5`)**: frame 0 of
 each character's idle record is the combat-stance rest pose, applied `R*v + T`
 per object (`tmd_to_vram_mesh_posed_rot`). The 30 records are 3 banks of 10
 (Vahn @ 0 / Noa @ 10 / Gala @ 20). Textures: the pack's 7 atlases upload to VRAM
-and each character's decoded battle palette (Vahn `parse_record` PROT 0861;
-Noa/Gala `collect_palette` 0864/0865 — see
+and each character's decoded battle palette (Vahn `parse_record` PROT 0863;
+Noa/Gala `collect_palette` 0864/0865 — the `PLAYER1..3` files, see
 [`character-mesh.md`](../formats/character-mesh.md)) overlays the CLUT rows its
 mesh samples, so the party reads in its real colours (blue Vahn / pink Noa /
 Gala). A stage battle draws **only active actors** — the scene-init actors are
@@ -319,13 +319,15 @@ All six stat names are pinned by the consumers of those actor slots - see [battl
 - **EXP** (`+0x46`, u16): summed `* 3/4`, then split evenly among living party members.
 - **drop** (`+0x48` item id, `+0x49` chance %): per dead enemy, `rand() % 100 < chance` grants the item (id added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`).
 
-The reward **commit** side: `FUN_80026018` adds an accumulator (`0x80084440` = SC + `0x300`) into the party XP bank (`0x800845A4`); it's generic (the minigames share it). Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
+(`FUN_80026018` is **not** part of this commit path — it is the mode-24 **minigame exit / return-warp** handler, whose `_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank, not battle XP; no battle-path caller exists in the dump corpus. See [`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).) Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
 
 ### Monster archive (PROT entry 867)
 
 `FUN_800542C8` streams the records as **per-monster `0x14000`-byte LZS slots** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~194 fixed slots). Each slot is `[u32 decompressed_size][Legaia LZS stream]`; the decoded block's head is the stat record above, with the name and spell-entry payloads at the block-relative offsets the loader fixes up.
 
-The archive is **PROT entry `0867_battle_data`** (the EXTENDED footprint — the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). The CDNAME label `monster_data` (PROT 869) is a misleading stub: it's only `0x30000` bytes and its `(id-1)*0x14000` slots don't decode. The shipped retail build takes the debug `FUN_8003E8A8(0x365)` PROT-index path (`_DAT_8007B8C2 != 0`); the alternate `data\battle\<name>` open via the `break 0x103` host trap (`FUN_800608F0`) is a build-time dev-host artifact with no matching ISO9660 file on the disc.
+The archive is **extraction PROT entry `0867_battle_data`** (the EXTENDED footprint — the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). Retail-semantically it **is** the `monster_data` block: the define `monster_data 869` names extraction 867 under the raw-TOC −2 correction ([`cdname.md`](../formats/cdname.md#numbering-space)), and the loader index `0x365` = define-space 869 resolves there directly (the earlier "misleading `monster_data` stub at extraction 869" reading was the filename shift; extraction 869 is a `sound_data` VAB stream).
+
+The shipped retail build takes the debug `FUN_8003E8A8(0x365)` PROT-index path (`_DAT_8007B8C2 != 0`); the alternate `data\battle\<name>` open via the `break 0x103` host trap (`FUN_800608F0`) is a build-time dev-host artifact with no matching ISO9660 file on the disc.
 
 Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the loader's relative seek `(id-1)*40` sectors + the `disc_read` CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actor stats byte-for-byte (Gimard id 10 = HP 99 / MP 20, Killer Bee id 62 = 288 / 288, Queen Bee id 63 = 888 / 888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu id 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 — Tetsu being the 999/999 tutorial sparring partner).
 
@@ -1130,4 +1132,4 @@ Disc-gated variants skip silently when `extracted/PROT.DAT` / the mednafen card 
 [Battle action SM](battle-action.md) ·
 [Damage / accuracy formulas](battle-formulas.md) ·
 [Encounter record](../formats/encounter.md) ·
-[battle_data pack](../formats/battle-data-pack.md)
+[Player battle files](../formats/battle-data-pack.md)
