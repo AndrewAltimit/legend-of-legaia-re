@@ -9,6 +9,7 @@ Damage, MP-cost, and stat-cap math used by the [battle action state machine](bat
 - [Victory spoils (rewards)](#victory-spoils-rewards) · [spirit damage formula](#spirit-damage-formula)
 - [Per-round status DoT ticker — `FUN_801E752C`](#per-round-status-dot-ticker---fun_801e752c) · [status application byte map](#status-application-the-art--move-record-status-byte)
 - [Summon-magic damage roll — `FUN_801dd0ac`](#summon-magic-damage-roll---fun_801dd0ac) — [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8)
+- [Summon spell XP + magic level-up](#summon-spell-xp--magic-level-up)
 - [MP cost & ability-bit modifiers](#mp-cost--ability-bit-modifiers) · [RNG primitive](#rng-primitive)
 - [Engine-side mirror — `engine-vm::battle_formulas`](#engine-side-mirror---engine-vmbattle_formulas) · [what's still open](#whats-still-open)
 
@@ -506,6 +507,55 @@ A party member's Tactical Art is *not* a move-power case (it uses the
 art-record power byte — see the note under the arts/physical kernel above) and
 does not route through this cast path.
 
+## Summon spell XP + magic level-up
+
+Casting Seru magic trains the spell itself. The character record carries a
+per-spell-slot u32 **XP array at `+0x8`** (parallel to the spell-id list at
+`+0x13D` and the level bytes at `+0x161`), and two retail pieces drive it:
+
+**Accrual — the `FUN_801ddb30` tail** (`overlay_battle_action_801ddb30.txt:1037..1084`,
+summon attacker `param_1 == 7` only). Per finisher call (= per hit), with
+`damage = *atk - *def` (the final committed delta) against the defender's live
+HP (`+0x14C`) and max HP (`+0x14E`), keyed on the summon's target byte
+(`+0x1DD`: `< 8` single-target, `8`/`9` group):
+
+```text
+if (target_hp < 2)            gain = 0;                       // both branches gate
+else if (damage < target_hp)  gain = damage * (single ? 12 : 4) / target_max_hp;
+else                          gain = single ? 12 : 4;          // killing hit: flat
+xp[spell_slot] += gain;
+```
+
+Gates: the per-battle no-reward flag `_DAT_8007BAC0` (the same scripted-fight
+flag as the gold gate above) and an unidentified skip `_DAT_8007BDB8`. The
+heal-spell arms of `FUN_800402F4` (case-0 tiers 3/4/5: spell ids `0x83`/`0x89`)
+accrue into the same array inline.
+
+**Level-up — `FUN_801E70BC`** (`overlay_battle_action_801e70bc.txt`), fired
+once per cast at summon return (state `0x36`): finds the cast spell id
+(`actor[+0x1DF]`) in the record's id list (search bound `0x20`), then
+
+```text
+mult      = (id in {0x86,0x88,0x8D,0x99,0x9B,0xA0}) ? 3 : 2;
+threshold = (u16_table[level - 1] * mult) >> 1;     // table at SCUS 0x8007656C
+if (level < 9 && threshold < xp)  level += 1;        // strict compare, cap 9
+```
+
+The threshold table is 8 ascending u16 steps (levels 1..=8; level 9 is the
+cap). The leveled `+0x161` byte is exactly the **magic-power** input of the
+next cast's scale stage (`FUN_801dd864`, `apply_magic_power` above) — so the
+loop is cast → XP → level → stronger cast.
+
+Engine: kernels `battle_formulas::summon_spell_xp_gain` /
+`summon_magic_levels_up`; threshold loader
+`engine-core::magic_xp::thresholds_from_scus` (decoded off the user's
+`SCUS_942.54`, disc-gated `magic_xp_disc`); live wiring
+`World::cast_spell_on_slots` → `World::accrue_summon_spell_xp` (XP persists in
+the record's `+0x8` bytes, so it round-trips through saves). The engine
+narrows "summon attacker" to the Seru-magic id block its summon path covers
+(`0x81..=0x8B`); the evolved-spell ids above that block accrue nothing until
+the summon coverage widens.
+
 ## MP cost & ability-bit modifiers
 
 From battle-action.md state `0x28` (Magic / Item - cast begin):
@@ -567,6 +617,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |
 | `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
 | `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
+| `summon_spell_xp_gain` / `summon_magic_levels_up` (+ `summon_magic_level_threshold`) | this doc, [summon spell XP + magic level-up](#summon-spell-xp--magic-level-up) (`FUN_801ddb30` tail / `FUN_801E70BC`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 | `status_effects::toxic_tick_damage` / `venom_tick_damage` (module `engine-vm::status_effects`) | this doc, [per-round status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`) |

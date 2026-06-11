@@ -8390,3 +8390,228 @@ fn field_tile_crossing_refreshes_region_state() {
     assert_eq!(rec[0], 5);
     assert_eq!(rec[5], 0xAB, "payload carried through");
 }
+
+// ---------------------------------------------------------------------------
+// Summon spell XP + level-up (FUN_801ddb30 tail / FUN_801e70bc) and the
+// Lost Grail Final Heal revive (FUN_801e6968).
+// ---------------------------------------------------------------------------
+
+/// World with one party member (slot 0), a roster record carrying summon
+/// spell `0x81` at level 1, and an enemy in slot 1.
+fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
+    use legaia_save::Party;
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.roster = Party::zeroed(1);
+    let rec = &mut world.roster.members[0];
+    let mut list = rec.spell_list();
+    list.count = 1;
+    list.ids[0] = 0x81;
+    list.levels[0] = 1;
+    rec.set_spell_list(list);
+
+    world.actors[0].battle.max_hp = 400;
+    world.actors[0].battle.hp = 400;
+    world.actors[0].battle.mp = 200;
+    world.actors[0].battle.liveness = 1;
+    world.set_battle_magic(0, 40);
+    world.actors[1].battle.max_hp = enemy_max_hp;
+    world.actors[1].battle.hp = enemy_hp;
+    world.actors[1].battle.liveness = 1;
+    world.battle_defense[1] = 0;
+    world
+}
+
+fn gimard_spell_def() -> crate::spells::SpellDef {
+    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    SpellDef {
+        id: 0x81,
+        name: "Gimard".into(),
+        mp_cost: 4,
+        element: SpellElement::Neutral,
+        target: SpellTarget::OneEnemy,
+        effect: SpellEffect::Damage {
+            base_power: 100,
+            element: SpellElement::Neutral,
+        },
+        anim_id: 0,
+    }
+}
+
+#[test]
+fn summon_cast_accrues_spell_xp_from_dealt_damage() {
+    let mut world = summon_xp_world(4000, 4000);
+    let def = gimard_spell_def();
+    let before = world.actors[1].battle.hp;
+    world.cast_spell_on_slots(0, &def, &[1]);
+    let damage = (before - world.actors[1].battle.hp) as u32;
+    assert!(damage > 0, "the placeholder cast deals damage");
+    // Non-kill single-target accrual: damage * 12 / max_hp
+    // (FUN_801ddb30 tail; kernel summon_spell_xp_gain).
+    let expected = vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
+    let slot = crate::magic_xp::spell_slot(&world.roster.members[0], 0x81).unwrap();
+    assert_eq!(
+        crate::magic_xp::spell_xp(&world.roster.members[0], slot),
+        expected
+    );
+    // No thresholds installed: XP accrues but the spell never levels.
+    assert_eq!(world.roster.members[0].spell_list().levels[0], 1);
+    assert!(world.drain_magic_level_ups().is_empty());
+}
+
+#[test]
+fn summon_kill_accrues_flat_unit_and_levels_up_past_threshold() {
+    let mut world = summon_xp_world(50, 4000);
+    // Tiny live HP: the cast kills -> flat 12 XP (single-target).
+    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    // Pre-bank XP just below the level-1 threshold: 6 + 12 = 18 > 17.
+    let slot = crate::magic_xp::spell_slot(&world.roster.members[0], 0x81).unwrap();
+    crate::magic_xp::add_spell_xp(&mut world.roster.members[0], slot, 6);
+
+    let def = gimard_spell_def();
+    world.cast_spell_on_slots(0, &def, &[1]);
+    assert_eq!(world.actors[1].battle.hp, 0, "the cast kills the target");
+    assert_eq!(
+        crate::magic_xp::spell_xp(&world.roster.members[0], slot),
+        18,
+        "kill grants the flat 12-XP unit"
+    );
+    assert_eq!(
+        world.roster.members[0].spell_list().levels[0],
+        2,
+        "18 XP > threshold 17 levels the spell (strict greater)"
+    );
+    assert_eq!(world.drain_magic_level_ups(), vec![(0, 0x81, 2)]);
+    // The leveled byte is what the next cast's magic-power stage reads.
+    assert_eq!(world.caster_magic_power_byte(0, 0x81), 2);
+}
+
+#[test]
+fn summon_xp_threshold_compare_is_strict() {
+    let mut world = summon_xp_world(50, 4000);
+    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    // 5 + 12 = 17 == threshold: strict compare -> no level.
+    let slot = crate::magic_xp::spell_slot(&world.roster.members[0], 0x81).unwrap();
+    crate::magic_xp::add_spell_xp(&mut world.roster.members[0], slot, 5);
+    let def = gimard_spell_def();
+    world.cast_spell_on_slots(0, &def, &[1]);
+    assert_eq!(
+        crate::magic_xp::spell_xp(&world.roster.members[0], slot),
+        17
+    );
+    assert_eq!(world.roster.members[0].spell_list().levels[0], 1);
+    assert!(world.drain_magic_level_ups().is_empty());
+}
+
+#[test]
+fn non_summon_spell_accrues_no_spell_xp() {
+    let mut world = summon_xp_world(4000, 4000);
+    // Same shape but a non-Seru-magic id (outside 0x81..=0x8B).
+    let mut def = gimard_spell_def();
+    def.id = 0x27;
+    let mut list = world.roster.members[0].spell_list();
+    list.ids[0] = 0x27;
+    world.roster.members[0].set_spell_list(list);
+    world.cast_spell_on_slots(0, &def, &[1]);
+    let slot = crate::magic_xp::spell_slot(&world.roster.members[0], 0x27).unwrap();
+    assert_eq!(crate::magic_xp::spell_xp(&world.roster.members[0], slot), 0);
+}
+
+#[test]
+fn final_heal_revives_and_consumes_one_lost_grail() {
+    use legaia_save::Party;
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.roster = Party::zeroed(1);
+    // Down at 0 HP with the Final Heal bit (word 1 bit 7 = ability 0x27) and
+    // one equipped Lost Grail (0xE7) in the first accessory slot (+0x19B).
+    world.actors[0].battle.max_hp = 250;
+    world.actors[0].battle.hp = 0;
+    world.actors[0].battle.liveness = 0;
+    let rec = &mut world.roster.members[0];
+    let mut bits = rec.ability_bits();
+    bits[4] = 0x80;
+    rec.set_ability_bits(bits);
+    let mut eq = rec.equipment();
+    eq.slots[5] = 0xE7;
+    rec.set_equipment(eq);
+
+    world.apply_final_heal_revives();
+
+    assert_eq!(
+        world.actors[0].battle.hp, 250,
+        "full max-HP revive (tier 1)"
+    );
+    assert_eq!(world.actors[0].battle.liveness, 1);
+    let rec = &world.roster.members[0];
+    assert_eq!(rec.equipment().slots[5], 0, "the Lost Grail is consumed");
+    assert_eq!(
+        rec.ability_bits()[4] & 0x80,
+        0,
+        "the Final Heal bit clears with no second Grail equipped"
+    );
+    assert!(
+        world
+            .battle_hit_fx
+            .iter()
+            .any(|fx| fx.target_slot == 0 && fx.is_heal && fx.amount == 250),
+        "heal popup recorded"
+    );
+}
+
+#[test]
+fn final_heal_keeps_bit_when_second_grail_is_equipped() {
+    use legaia_save::Party;
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.roster = Party::zeroed(1);
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 0;
+    let rec = &mut world.roster.members[0];
+    let mut bits = rec.ability_bits();
+    bits[4] = 0x80;
+    rec.set_ability_bits(bits);
+    let mut eq = rec.equipment();
+    eq.slots[5] = 0xE7;
+    eq.slots[7] = 0xE7;
+    rec.set_equipment(eq);
+
+    world.apply_final_heal_revives();
+
+    let rec = &world.roster.members[0];
+    assert_eq!(rec.equipment().slots[5], 0, "first Grail consumed");
+    assert_eq!(rec.equipment().slots[7], 0xE7, "second Grail kept");
+    assert_eq!(
+        rec.ability_bits()[4] & 0x80,
+        0x80,
+        "bit re-set while another Grail is equipped (the second slot scan)"
+    );
+}
+
+#[test]
+fn final_heal_ignores_members_without_the_bit() {
+    use legaia_save::Party;
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.roster = Party::zeroed(1);
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 0;
+    world.actors[0].battle.liveness = 0;
+
+    world.apply_final_heal_revives();
+
+    assert_eq!(world.actors[0].battle.hp, 0, "stays down without the bit");
+    assert_eq!(world.actors[0].battle.liveness, 0);
+}

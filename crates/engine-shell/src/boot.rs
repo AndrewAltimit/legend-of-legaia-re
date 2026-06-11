@@ -222,6 +222,23 @@ fn read_retail_growth_tables(
     legaia_asset::level_up_tables::growth_tables_from_scus(&scus)
 }
 
+/// Read the raw `SCUS_942.54` bytes from a boot source. Returns `None`
+/// (not an error) when the executable isn't reachable.
+fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
+    use legaia_engine_core::Vfs;
+    match source {
+        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok(),
+        #[cfg(not(target_arch = "wasm32"))]
+        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()?
+            .read("SCUS_942.54")
+            .ok(),
+    }
+}
+
 /// Read + decode the sound-effect descriptor bank from a boot source's
 /// `SCUS_942.54` (`DAT_8006F198`, see `sfx-table.md`). Returns `None` when the
 /// executable isn't reachable or the table doesn't decode, so a boot never
@@ -428,6 +445,15 @@ impl BootSession {
         if let Some(tables) = read_retail_growth_tables(&source) {
             let tracker = std::mem::take(&mut host.world.level_up_tracker);
             host.world.level_up_tracker = tracker.with_growth_tables(&tables);
+        }
+
+        // Install the summon-magic spell-XP level-up thresholds (the static
+        // SCUS table the battle overlay's level-up check reads) so Seru-magic
+        // casts accrue spell XP against the retail curve and level the
+        // record's spell-level byte. Best-effort: absent on disc-free builds,
+        // where no spell XP accrues. Persists across New Game.
+        if let Some(scus) = read_scus(&source) {
+            host.world.install_magic_xp_thresholds(&scus);
         }
 
         // Install the gold-shop item data (per-id buy price + name mask) from the

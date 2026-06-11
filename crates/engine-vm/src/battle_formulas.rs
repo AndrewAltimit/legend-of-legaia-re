@@ -839,6 +839,116 @@ pub fn victory_exp_per_member(exp_sum: u32, alive: u32) -> u32 {
     scaled.div_ceil(alive)
 }
 
+// ---------------------------------------------------------------------------
+// Summon-magic spell XP + level-up (FUN_801DDB30 tail / FUN_801E70BC)
+// ---------------------------------------------------------------------------
+//
+// Casting Seru magic trains the spell itself. Two coupled retail pieces:
+//
+// - The damage finisher `FUN_801ddb30` ends with a spell-XP accrual tail that
+//   only runs for the summon attacker (`param_1 == 7`): it finds the cast
+//   spell id (`caster_actor + 0x1DF`) in the caster's character-record
+//   spell-id list (record `+0x13D`, search bound `0x20`) and adds a
+//   damage-proportional gain into the parallel per-spell u32 XP array at
+//   record `+0x8` (`overlay_battle_action_801ddb30.txt:1037..1084`).
+// - After the summon returns (state `0x36` of `FUN_801E295C`), `FUN_801e70bc`
+//   re-finds the slot, reads the spell-level byte (`+0x161` array) and the
+//   accrued XP, and levels the spell up when the XP clears a threshold from
+//   the static SCUS table at `0x8007656C`
+//   (`overlay_battle_action_801e70bc.txt`).
+//
+// The leveled byte is the **magic-power** stage input of the next cast
+// (`FUN_801dd864` reads the same `+0x161` byte — see [`apply_magic_power`]),
+// so the loop is: cast → XP → level → stronger cast.
+//
+// Unmodelled retail gates (documented, intentionally not reproduced): the
+// per-battle no-reward flag `_DAT_8007BAC0` (scripted fights skip the accrual,
+// same flag battle-formulas.md notes as the unmodelled gold gate) and the
+// unidentified accrual skip `_DAT_8007BDB8`.
+
+/// One target's spell-XP gain from a summon hit — PORT: FUN_801ddb30
+/// (spell-XP accrual tail, `attacker_slot == 7` only; decompiled block
+/// `overlay_battle_action_801ddb30.txt:1049..1084`).
+///
+/// `damage` is the finisher's final damage delta (`*param_3 - *param_4`),
+/// `target_hp`/`target_max_hp` are the defender's live and max HP (actor
+/// `+0x14C`/`+0x14E`), `group_target` mirrors the summon actor's target byte
+/// (`+0x1DD`): `false` for a single-target cast (`< 8`), `true` for a
+/// group-target cast (`8`/`9`).
+///
+/// Retail arithmetic, exactly:
+///
+/// - a target with fewer than 2 HP grants nothing (both branches gate on
+///   `target_hp >= 2`);
+/// - non-killing hit (`damage < target_hp`): gain = `damage * 12 /
+///   target_max_hp` single-target, `damage * 4 / target_max_hp` group;
+/// - killing hit (`damage >= target_hp`): flat `12` single-target, `4` group.
+///
+/// A zero `target_max_hp` divides-by-zero in retail (`trap(0x1c00)`); the
+/// engine returns 0 instead.
+pub fn summon_spell_xp_gain(
+    damage: u32,
+    target_hp: u16,
+    target_max_hp: u16,
+    group_target: bool,
+) -> u32 {
+    if target_hp < 2 {
+        return 0;
+    }
+    let unit: u32 = if group_target { 4 } else { 12 };
+    if damage < target_hp as u32 {
+        if target_max_hp == 0 {
+            return 0;
+        }
+        (damage * unit) / target_max_hp as u32
+    } else {
+        unit
+    }
+}
+
+/// The six spell ids whose level-up threshold is scaled ×1.5 — the explicit
+/// `switch` cases of `FUN_801e70bc` (`iVar1 = 3` instead of `2`, halved into
+/// `(threshold * mult) >> 1`).
+pub const SUMMON_XP_TRIPLE_THRESHOLD_IDS: [u8; 6] = [0x86, 0x88, 0x8D, 0x99, 0x9B, 0xA0];
+
+/// The spell-XP total a spell at `level` must **exceed** to level up —
+/// PORT: FUN_801e70bc (battle overlay 0898,
+/// `overlay_battle_action_801e70bc.txt`).
+///
+/// `table` is the static SCUS u16 threshold table at `0x8007656C`, indexed
+/// `[level - 1]` (8 ascending entries for levels 1..=8; level 9 is the cap).
+/// The retail comparison is `((table[level-1] * mult) >> 1) < xp` with
+/// `mult = 3` for the [`SUMMON_XP_TRIPLE_THRESHOLD_IDS`] and `2` otherwise
+/// (so the default multiplier is the raw table value — the same compare the
+/// heal-spell inline copy in `FUN_800402F4` case-0 tier-4 uses).
+///
+/// Returns `None` when no level-up is possible: level already at the cap
+/// (`level >= 9`, the retail pre-increment guard), level `0` (retail would
+/// read `table[-1]`; the engine guards), or `table` too short.
+pub fn summon_magic_level_threshold(spell_id: u8, level: u8, table: &[u16]) -> Option<u32> {
+    if level == 0 || level >= 9 {
+        return None;
+    }
+    let base = *table.get((level - 1) as usize)? as u32;
+    let mult: u32 = if SUMMON_XP_TRIPLE_THRESHOLD_IDS.contains(&spell_id) {
+        3
+    } else {
+        2
+    };
+    Some((base * mult) >> 1)
+}
+
+/// `true` when a spell at `level` with accrued `xp` levels up — the
+/// strict-greater compare of `FUN_801e70bc` (`threshold < xp`). The caller
+/// applies the level increment (`level += 1`, cap 9) and the UI banner.
+/// REF: FUN_801e70bc
+pub fn summon_magic_levels_up(spell_id: u8, level: u8, xp: u32, table: &[u16]) -> bool {
+    match summon_magic_level_threshold(spell_id, level, table) {
+        Some(threshold) => threshold < xp,
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1574,5 +1684,66 @@ mod tests {
             spirit_gauge_fill(100, 0, 73, DefenderResist::default(), true),
             73
         );
+    }
+
+    // --- summon spell XP + level-up (FUN_801ddb30 tail / FUN_801e70bc) -----
+
+    #[test]
+    fn summon_spell_xp_gain_non_kill_is_damage_proportional() {
+        // damage * 12 / max_hp single-target; * 4 group-target.
+        assert_eq!(summon_spell_xp_gain(100, 500, 600, false), 2); // 1200/600
+        assert_eq!(summon_spell_xp_gain(100, 500, 600, true), 0); // 400/600
+        assert_eq!(summon_spell_xp_gain(300, 500, 600, true), 2); // 1200/600
+        // Integer floor, exactly as the MIPS divide.
+        assert_eq!(summon_spell_xp_gain(149, 500, 600, false), 2); // 1788/600
+    }
+
+    #[test]
+    fn summon_spell_xp_gain_kill_is_flat_unit() {
+        // damage >= target_hp -> flat 12 (single) / 4 (group), no division.
+        assert_eq!(summon_spell_xp_gain(500, 500, 600, false), 12);
+        assert_eq!(summon_spell_xp_gain(9999, 2, 600, true), 4);
+    }
+
+    #[test]
+    fn summon_spell_xp_gain_low_hp_target_grants_nothing() {
+        // Both retail branches gate on target_hp >= 2.
+        assert_eq!(summon_spell_xp_gain(1, 1, 600, false), 0);
+        assert_eq!(summon_spell_xp_gain(9999, 1, 600, false), 0);
+        assert_eq!(summon_spell_xp_gain(9999, 0, 600, true), 0);
+        // Zero max HP on a non-kill: retail traps, engine returns 0.
+        assert_eq!(summon_spell_xp_gain(1, 500, 0, false), 0);
+    }
+
+    #[test]
+    fn summon_magic_level_threshold_default_mult_is_raw_table() {
+        // mult = 2 -> (t * 2) >> 1 == t.
+        let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
+        assert_eq!(summon_magic_level_threshold(0x81, 1, &table), Some(17));
+        assert_eq!(summon_magic_level_threshold(0x81, 8, &table), Some(536));
+    }
+
+    #[test]
+    fn summon_magic_level_threshold_triple_ids_scale_1_5x() {
+        // mult = 3 -> (t * 3) >> 1.
+        let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
+        for id in SUMMON_XP_TRIPLE_THRESHOLD_IDS {
+            assert_eq!(summon_magic_level_threshold(id, 1, &table), Some(25)); // 51 >> 1
+            assert_eq!(summon_magic_level_threshold(id, 2, &table), Some(75)); // 150 >> 1
+        }
+    }
+
+    #[test]
+    fn summon_magic_level_up_is_strict_greater_and_caps_at_9() {
+        let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
+        // Strict: xp == threshold does NOT level.
+        assert!(!summon_magic_levels_up(0x81, 1, 17, &table));
+        assert!(summon_magic_levels_up(0x81, 1, 18, &table));
+        // Level cap: 9 never levels (retail pre-increment `< 9` guard).
+        assert!(!summon_magic_levels_up(0x81, 9, 99999, &table));
+        // Level 0 guarded (retail would read table[-1]).
+        assert!(!summon_magic_levels_up(0x81, 0, 99999, &table));
+        // Short table: level 8 needs table[7].
+        assert!(!summon_magic_levels_up(0x81, 8, 99999, &table[..7]));
     }
 }

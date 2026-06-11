@@ -1717,6 +1717,19 @@ pub struct World {
     /// registry, so the learn step itself lives outside the battle tick).
     pub battle_captures: Vec<u16>,
 
+    /// Magic-XP threshold table from `SCUS_942.54` (`0x8007656C`, 8 ascending
+    /// u16 steps). Installed at boot via
+    /// [`World::install_magic_xp_thresholds`]; while `None` (disc-free) summon
+    /// casts still accrue spell XP but never level the spell up.
+    pub magic_xp_thresholds: Option<[u16; crate::magic_xp::THRESHOLD_STEPS]>,
+
+    /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
+    /// new_level)` per event, in resolution order. The engine analogue of the
+    /// retail level-up banner (the level-up check fires UI element `0x65` —
+    /// REF: FUN_801e70bc, ported in `world::battle::accrue_summon_spell_xp`);
+    /// hosts drain via [`World::drain_magic_level_ups`].
+    pub magic_level_ups: Vec<(u8, u8, u8)>,
+
     /// Set when an escape spell (`SpellEffect::Escape`) resolves. The live
     /// battle tick returns to the field on the next pass (no loot, no
     /// game-over). Cleared by [`World::finish_battle`].
@@ -2171,6 +2184,8 @@ impl World {
             art_records: std::collections::HashMap::new(),
             battle_buffs: Vec::new(),
             battle_captures: Vec::new(),
+            magic_xp_thresholds: None,
+            magic_level_ups: Vec::new(),
             battle_escaped: false,
             character_max_mp: Vec::new(),
             encounter: None,
