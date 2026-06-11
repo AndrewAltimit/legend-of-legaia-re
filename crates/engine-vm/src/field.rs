@@ -790,31 +790,34 @@ pub trait FieldHost {
         let _ = (ctx, x, y, z, ticks);
     }
 
-    /// Op 0x43 sub-0x10 (emitter setup, FUN_801F8004).
+    /// Op 0x43 sub-0x10 (sprite-widget spawn, FUN_801F8004).
     ///
     /// 21-byte instruction. The original calls `FUN_801F8004(operand + 1)` -
-    /// likely a particle/emitter init taking a 19-byte struct. PC += 21.
-    fn op43_emitter_init(&mut self, payload: &[u8]) {
+    /// the PROT-0900 sprite-widget spawner with its inline 19-byte record
+    /// (`engine-core::screen_fx::SpriteRecord`). PC += 21.
+    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
         let _ = payload;
     }
 
-    /// Op 0x43 sub-0x11 (emitter setup, FUN_801F8D4C).
+    /// Op 0x43 sub-0x11 (screen-mask rect tween, FUN_801F8D4C).
     ///
     /// 12-byte instruction; reads 5 u16s and calls
-    /// `FUN_801F8D4C(u0, u1, u2, u3, u4)`. PC += 12.
-    fn op43_emitter_5_words(&mut self, words: [u16; 5]) {
+    /// `FUN_801F8D4C(l, t, r, b, dur)` - the PROT-0900 mask (iris) widget
+    /// control API (`engine-core::screen_fx::MaskWidget`). PC += 12.
+    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
         let _ = words;
     }
 
-    /// Op 0x43 sub-0x15 (emitter setup, FUN_801F8F28).
+    /// Op 0x43 sub-0x15 (letterbox config, FUN_801F8F28).
     ///
     /// 14-byte instruction. The original calls `FUN_801F8F28(operand + 1)` -
-    /// a 12-byte struct. PC += 14.
-    fn op43_emitter_struct_12(&mut self, payload: &[u8]) {
+    /// the PROT-0900 letterbox widget's six-i16 config
+    /// (`engine-core::screen_fx::Letterbox`). PC += 14.
+    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
         let _ = payload;
     }
 
-    /// Op 0x43 sub-0x12 (twin emitter call with 0x100 clamp + offset shift).
+    /// Op 0x43 sub-0x12 (VRAM rect copy with 0x100 clamp + offset shift).
     ///
     /// 14-byte instruction `[43, 0x12, lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3,
     /// lo4, hi4, lo5, hi5]`. Reads six signed-16-bit words. The original:
@@ -831,30 +834,32 @@ pub trait FieldHost {
     /// func_0x800468a4(6, words[0], words[1], c, words[3], words[4], words[5]);
     /// ```
     ///
-    /// `func_0x800468a4(6, …)` is an SCUS particle/light helper not yet
-    /// reversed; the VM passes the six raw words plus a `did_split` boolean
-    /// (set when the `c > 0xFF` branch fired). PC += 14.
-    fn op43_emitter_split_call(&mut self, words: [i16; 6], did_split: bool) {
+    /// `func_0x800468a4(6, …)` enqueues a GP0 `0x80` VRAM->VRAM rectangle
+    /// copy into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0`
+    /// under the back-buffer flag) - the >256-wide dual call is the same
+    /// two-page split the panel widget does. The VM passes the six raw words
+    /// plus a `did_split` boolean (set when the `c > 0xFF` branch fired).
+    /// No on-disc scene script uses this sub-op. PC += 14.
+    fn op43_vram_rect_copy(&mut self, words: [i16; 6], did_split: bool) {
         let _ = (words, did_split);
     }
 
-    /// Op 0x43 sub-0x13 (opaque emitter call, FUN_801F88FC).
+    /// Op 0x43 sub-0x13 (image-panel spawn, FUN_801F88FC).
     ///
     /// 14-byte instruction `[43, 0x13, ...12 bytes]`. The original calls
-    /// `FUN_801F88FC(operand)` - i.e. passes a pointer to the sub-op byte plus
-    /// the 12 trailing data bytes (13 bytes total). FUN_801F88FC isn't yet
-    /// reversed; treating the payload as opaque is correct until then.
-    /// PC += 14.
-    fn op43_emitter_func13(&mut self, payload: &[u8; 13]) {
+    /// `FUN_801F88FC(operand)` - the PROT-0900 image-panel widget spawner,
+    /// reading its `[x][y][w][h][tex_x][tex_y]` record past the sub-op byte
+    /// (`engine-core::screen_fx::PanelWidget`). PC += 14.
+    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
         let _ = payload;
     }
 
-    /// Op 0x43 sub-0x14 (emitter setup, FUN_801F8E6C with 4 signed words).
+    /// Op 0x43 sub-0x14 (panel move/scale, FUN_801F8E6C).
     ///
     /// 10-byte instruction `[43, 0x14, lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3]`.
-    /// The original calls `FUN_801F8E6C(s0, s1, s2, s3)` with four signed-16-bit
-    /// values. PC += 10.
-    fn op43_emitter_4_words(&mut self, words: [i16; 4]) {
+    /// The original calls `FUN_801F8E6C(x, y, scale, dur)` - the PROT-0900
+    /// panel widget's move/scale API (`scale` is 4.12 fixed). PC += 10.
+    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
         let _ = words;
     }
 

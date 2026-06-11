@@ -42,10 +42,13 @@
 //!
 //! ## Consumers
 //!
-//! The spawn/control APIs are called by **field/event-VM sub-ops** in the
-//! field overlay (`jal` sites inside `FUN_801DE840` at `0x801DF918` sprite,
-//! `0x801DF974` mask, `0x801DFA70` panel, `0x801DFABC` panel-move,
-//! `0x801DFACC` letterbox). The earlier reading that the summon stagers
+//! The spawn/control APIs are called by **field-VM op `0x43` sub-ops** -
+//! sub-`0x10` sprite / `0x11` mask / `0x13` panel / `0x14` panel-move /
+//! `0x15` letterbox, via the 0x43 sub-op JT at `0x801CEDA8` (`jal` sites
+//! inside `FUN_801DE840` at `0x801DF918`, `0x801DF974`, `0x801DFA70`,
+//! `0x801DFABC`, `0x801DFACC`). On disc only the eight ending-sequence
+//! scenes' partition-2 cutscene scripts invoke them.
+//! The earlier reading that the summon stagers
 //! (0910..0915) reference these functions was **VA aliasing**: those hits are
 //! in-file `FUN_80021B04` part records whose addresses coincide with the 0900
 //! handler VAs under the shared slot-B base.

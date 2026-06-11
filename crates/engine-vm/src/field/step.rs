@@ -3001,7 +3001,7 @@ pub fn step<H: FieldHost>(
                     if operand + 20 > bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }
-                    host.op43_emitter_init(&bytecode[operand + 1..operand + 20]);
+                    host.op43_widget_sprite_spawn(&bytecode[operand + 1..operand + 20]);
                     StepResult::Advance {
                         next_pc: pc + header_size + 20,
                     }
@@ -3017,7 +3017,7 @@ pub fn step<H: FieldHost>(
                             bytecode[operand + 2 + i * 2],
                         ]);
                     }
-                    host.op43_emitter_5_words(words);
+                    host.op43_widget_mask_rect(words);
                     StepResult::Advance {
                         next_pc: pc + header_size + 11,
                     }
@@ -3034,7 +3034,7 @@ pub fn step<H: FieldHost>(
                         ]) as i16;
                     }
                     let did_split = words[2] > 0xFF;
-                    host.op43_emitter_split_call(words, did_split);
+                    host.op43_vram_rect_copy(words, did_split);
                     StepResult::Advance {
                         next_pc: pc + header_size + 13,
                     }
@@ -3045,7 +3045,7 @@ pub fn step<H: FieldHost>(
                     }
                     let mut payload = [0u8; 13];
                     payload.copy_from_slice(&bytecode[operand..operand + 13]);
-                    host.op43_emitter_func13(&payload);
+                    host.op43_widget_panel_spawn(&payload);
                     StepResult::Advance {
                         next_pc: pc + header_size + 13,
                     }
@@ -3061,7 +3061,7 @@ pub fn step<H: FieldHost>(
                             bytecode[operand + 2 + i * 2],
                         ]) as i16;
                     }
-                    host.op43_emitter_4_words(words);
+                    host.op43_widget_panel_move(words);
                     StepResult::Advance {
                         next_pc: pc + header_size + 9,
                     }
@@ -3070,7 +3070,7 @@ pub fn step<H: FieldHost>(
                     if operand + 13 > bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }
-                    host.op43_emitter_struct_12(&bytecode[operand + 1..operand + 13]);
+                    host.op43_widget_letterbox(&bytecode[operand + 1..operand + 13]);
                     StepResult::Advance {
                         next_pc: pc + header_size + 13,
                     }

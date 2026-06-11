@@ -6107,6 +6107,8 @@ impl World {
     /// same-numbered slot as a one-shot (defeat holds its last frame via
     /// [`Self::tick_battle_animations`]); a missing slot falls back to idle.
     /// Re-requesting the actor's current pose keeps the playing clip.
+    // REF: FUN_801D5854 - the SM's pose dispatch this hook answers; the
+    // id->slot mapping is an engine interpretation, not a port of its body.
     pub fn apply_battle_pose(&mut self, slot: usize, pose_id: u8) {
         let Some(actor) = self.actors.get_mut(slot) else {
             return;

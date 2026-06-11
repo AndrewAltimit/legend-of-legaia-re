@@ -274,11 +274,15 @@ Crucially, a tween **re-interpolates from a captured start value each frame**
 slots written when `+0x9C == 0`) — not iteratively from the moving current
 value — and latches exactly on `+0x9C == +0x9E`.
 
-**Consumers.** The spawn/control APIs are called by field/event-VM sub-ops in
-the field overlay — `jal` sites inside `FUN_801DE840` at `0x801DF918` (sprite,
-inline record), `0x801DF974` (mask, operands `[L][T][R][B][dur]` i16s),
-`0x801DFA70` (panel), `0x801DFABC` (panel move/scale), `0x801DFACC`
-(letterbox). The earlier reading that the summon stagers 0910..0915 reference
+**Consumers.** The spawn/control APIs are called by **field-VM op `0x43`
+sub-ops `0x10`/`0x11`/`0x13`/`0x14`/`0x15`**
+([script-vm.md § 0x43 sub-0x10..0x15](script-vm.md)), dispatched through the
+0x43 sub-op JT at `0x801CEDA8` — `jal` sites inside `FUN_801DE840` at
+`0x801DF918` (sub-`0x10` sprite, inline record), `0x801DF974` (sub-`0x11`
+mask, operands `[L][T][R][B][dur]` i16s), `0x801DFA70` (sub-`0x13` panel),
+`0x801DFABC` (sub-`0x14` panel move/scale), `0x801DFACC` (sub-`0x15`
+letterbox); on disc only the eight ending-sequence scenes' cutscene-timeline
+(partition-2) scripts invoke them. The earlier reading that the summon stagers 0910..0915 reference
 these handlers was **VA aliasing**: those hits are in-file `FUN_80021B04` part
 records whose addresses coincide with the handler VAs under the shared slot-B
 base. PROT 0900 file `0x0640..0x2660` (the whole family) is byte-resident at

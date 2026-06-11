@@ -302,18 +302,36 @@ If halt was *not* acquired: falls through to a generic skip-and-return path.
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
 
-#### 0x43 sub-0x10..0x15 - emitter setup family
+#### 0x43 sub-0x10..0x15 - screen-widget family + VRAM blit
 
-Each dispatches into the `FUN_801F8xxx` particle/emitter cluster:
+These sub-ops are the script-side drivers of the PROT-0900 **screen-effect
+widget family** ([move-vm.md § consumers](move-vm.md); engine port
+`engine-core::screen_fx`) plus one VRAM rect-copy op. Dispatch: the op-0x43
+arm (`0x801DF354`, main-JT slot for opcode 0x43 at `0x801CECC0`)
+bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
+`0x801CEDA8` (PROT 0897 file `0x590`, base `0x801CE818`); entries
+0x10..0x15 land on the arms below.
 
-| Sub-op | Encoding | SCUS call | PC delta |
+| Sub-op | Encoding | Callee (PROT 0900 unless noted) | PC delta |
 |---|---|---|---|
-| 0x10 | `[43, 0x10, 19 bytes]` | `FUN_801F8004(operand+1)` (19-byte struct) | +21 |
-| 0x11 | `[43, 0x11, 5 × u16]` | `FUN_801F8D4C(u0..u4)` | +12 |
-| 0x12 | `[43, 0x12, 6 × s16]` | `func_0x800468A4(6, …)` - **dual call** when `words[2] > 0xFF`, with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp | +14 |
-| 0x13 | `[43, 0x13, 12 bytes]` | `FUN_801F88FC(operand)` - passes the whole 13-byte slice | +14 |
-| 0x14 | `[43, 0x14, 4 × s16]` | `FUN_801F8E6C(s0..s3)` | +10 |
-| 0x15 | `[43, 0x15, 12 bytes]` | `FUN_801F8F28(operand+1)` (12-byte struct) | +14 |
+| 0x10 | `[43, 0x10][x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24 | `FUN_801F8004(operand+1)` - **sprite-widget spawn** (inline 19-byte record) | +21 |
+| 0x11 | `[43, 0x11][l][t][r][b][dur]` u16s | `FUN_801F8D4C(l,t,r,b,dur)` - **screen-mask (iris) rect tween** | +12 |
+| 0x12 | `[43, 0x12][src_x][src_y][w][h][dst_x][dst_y]` s16s | `FUN_800468A4(6, …)` (SCUS) - **GP0 `0x80` VRAM→VRAM rect copy** into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0` under the back-buffer flag `DAT_8007B74C`); **dual call** when `w > 0xFF` with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp - the same >256-wide two-page split as the panel widget. No on-disc scene script uses it. | +14 |
+| 0x13 | `[43, 0x13][x][y][w][h][tex_x][tex_y]` i16s | `FUN_801F88FC(operand)` - **image-panel spawn** (record read from operand+1) | +14 |
+| 0x14 | `[43, 0x14][x][y][scale][dur]` s16s | `FUN_801F8E6C(x, y, scale, dur)` - **panel move/scale** (`scale` 4.12 fixed) | +10 |
+| 0x15 | `[43, 0x15][x_left][x_right][y0][y1][y2][y3]` i16s | `FUN_801F8F28(operand+1)` - **letterbox config** | +14 |
+
+On disc the family is exclusive to the eight ending-sequence scenes
+(`edteien`, `edbylon`, `edbalden`, `edlast`, `edretoin`, `edkorout`,
+`edson`, `edstati3`), always in partition-2 (cutscene-timeline) records:
+mask-to-black (`0x11` with the degenerate rect `[0x20,0x20,0x20,0x20]`) →
+fullscreen photo panel (`0x13`, every retail record `[0,0,0x140,0xE0,
+0x200,0]` - the >0x100-wide two-page split is exercised by every use) →
+shrink-to-corner (`0x14`, scale `0x700`) → credit-name sprite strips
+(`0x10`, all 218 records CLUT row 475); `edlast` is the credits crawl and
+the only letterbox consumer. Sub-0x12 never appears in on-disc scene
+bytecode (which leaves its natural reading - staging the panel's source
+image - an inference).
 
 Sub-0x12 detail (the only one with non-trivial logic):
 

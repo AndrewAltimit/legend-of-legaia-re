@@ -405,22 +405,22 @@ impl FieldHost for TestHost {
     fn op43_sub9_tween(&mut self, _ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
         self.sub9_tweens.push((x, y, z, ticks));
     }
-    fn op43_emitter_init(&mut self, payload: &[u8]) {
+    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
         self.emitter_init_payloads.push(payload.to_vec());
     }
-    fn op43_emitter_5_words(&mut self, words: [u16; 5]) {
+    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
         self.emitter_5_words.push(words);
     }
-    fn op43_emitter_struct_12(&mut self, payload: &[u8]) {
+    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
         self.emitter_struct12_payloads.push(payload.to_vec());
     }
-    fn op43_emitter_split_call(&mut self, words: [i16; 6], did_split: bool) {
+    fn op43_vram_rect_copy(&mut self, words: [i16; 6], did_split: bool) {
         self.emitter_split_calls.push((words, did_split));
     }
-    fn op43_emitter_func13(&mut self, payload: &[u8; 13]) {
+    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
         self.emitter_func13_payloads.push(*payload);
     }
-    fn op43_emitter_4_words(&mut self, words: [i16; 4]) {
+    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
         self.emitter_4_words.push(words);
     }
     fn player_position_refresh_with_collision_y(&mut self, _ctx: &mut FieldCtx) {
