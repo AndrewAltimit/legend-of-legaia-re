@@ -1327,3 +1327,74 @@ backup_fingerprint = "05f218afdec9dd4d0c400f51ef3d1730219b1a7baf2c706f52b6d1f65f
 phase = "field"
 description = "Rim Elm tutorial area, player holding the d-pad pressed INTO the sparring partner Tetsu (player 0x80083794 at (2762,1782) facing 0x800, Tetsu actor 0x80083284 at (2752,1856)). The MUTUAL +0x98 collision link is LIVE in-frame both ways (player+0x98 = 0x80083284, actor+0x98 = 0x80083794) - direct evidence of FUN_801cfc40's hit path. Tetsu's flags+0x10 = 0x08020884 carry the 0x20000 class bit: the village NPC takes the MOVING-actor arm (result bit 1, +/-40-unit box around live position, caller extents 0), NOT the static record-anchor arm - the ground truth that re-classed the engine's NPC box. Active-actor table _DAT_8007b6b8 = 1 (Tetsu alone). Consumed by engine-shell/tests/field_collision_discriminator.rs (npc-press leg)."
 topics = ["field", "collision", "NPC", "FUN_801cfc40", "actor probe", "Tetsu", "RE"]
+
+# ----------------------------------------------------------------
+# Per-spell summon mid-cast corpus: one battle state per player
+# Seru-magic spell, captured mid-cast (summon creature on screen,
+# pre-attack). Each pins the battle overlay loader-B current-id
+# 0x8007BC4C for its spell id (the id is a last-load tracker, so
+# only mid-cast states are evidential). Verified linear arithmetic:
+# extraction = loader_id + 895, loader_id = spell_id - 0x79.
+# Notably Nighto (0x85) holds id 12 -> extraction 0907 even though
+# 0907 was content-pinned as the Disco King dance song - the stager
+# attribution and that content pin now need reconciling.
+
+[[scenarios]]
+slot = 4
+label = "theeder_summon_mid_cast"
+ram_fingerprint_sha256 = "5cf235e8a581aa965572762bb132c876ec63d5e01fa873210a85e6b49129fc3a"
+backup_fingerprint = "696ec5e27394d7fee7de65f5875db88f757888a1f60a873a8036cfbaf4ab258a"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Theeder (spell 0x82) mid-summon. Loader-B current-id 0x8007BC4C = 9 -> stager extraction 0904."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x82"]
+
+[[scenarios]]
+slot = 3
+label = "vera_summon_mid_cast"
+ram_fingerprint_sha256 = "7efe17be4b742c67bb7ac8704f23c04d6268c657d247472b4bb7186d287b6654"
+backup_fingerprint = "6a640a54d1573134e21cc224e0ca5f07d567596db443e06806fb05db17633a53"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Vera (spell 0x83) mid-summon. Loader-B current-id 0x8007BC4C = 10 -> stager extraction 0905."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x83"]
+
+[[scenarios]]
+slot = 2
+label = "gizam_summon_mid_cast"
+ram_fingerprint_sha256 = "da21ab0b1c14afa1dd5205fd57a0778a69d16ae17b10fe7158d0f21361999240"
+backup_fingerprint = "f7917d0f784c58760806d7fc52ff8f7b0a761a6f3b01a262e1398061ec337a66"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Gizam (spell 0x84) mid-summon. Loader-B current-id 0x8007BC4C = 11 -> stager extraction 0906."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x84"]
+
+[[scenarios]]
+slot = 7
+label = "nighto_summon_mid_cast"
+ram_fingerprint_sha256 = "47436f3945a7b87c94b53a51e7f1c9ba3d850fc96b8fbc193be08f5279f82117"
+backup_fingerprint = "3b43a70e0eaebe65bceb86d50168dde80225815ade000bae5456cd1edb7aa820"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Nighto (spell 0x85) mid-summon. Loader-B current-id 0x8007BC4C = 12 -> stager extraction 0907 - the linear arithmetic HOLDS despite 0907's dance-song content pin; reconcile the two attributions."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x85", "extraction 0907"]
+
+[[scenarios]]
+slot = 5
+label = "zenoir_summon_mid_cast"
+ram_fingerprint_sha256 = "b9e2bbd8312f06652ba0251304ba89705079e3a81689a4673a41d1d70fd26671"
+backup_fingerprint = "529a43d0320d655ec7689438dae9703ded35ea667409586f6c786a3843c0c2ad"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Zenoir (spell 0x86) mid-summon. Loader-B current-id 0x8007BC4C = 13 -> stager extraction 0908."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x86"]
+
+[[scenarios]]
+slot = 6
+label = "viguro_summon_mid_cast"
+ram_fingerprint_sha256 = "bb9dc1a909fb684f795408da38dacb2488e99708c51e5e03ba38c365f7a7b50e"
+backup_fingerprint = "8905ddd367835da6d7a22c59201c44efbeecc16d9401e6777f0b2345b91d4b6a"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Viguro (spell 0x87) mid-summon. Loader-B current-id 0x8007BC4C = 14 -> stager extraction 0909."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x87"]
