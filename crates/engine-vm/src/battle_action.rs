@@ -1851,6 +1851,24 @@ fn end_of_action<H: BattleActionHost + ?Sized>(
 fn run_begin<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) -> StepOutcome {
     ctx.frame_timer = 0x3C;
     host.ui_element(0x43, 0);
+    // PORT: FUN_801E295C case 0x64 (successful-escape branch). When the run
+    // roll succeeded (retail tests `_DAT_8007726C != ctx + 0x189`; the port
+    // carries the outcome on `multi_cast_gate`, consumed later by RunWait),
+    // retail walks the party slots (`i < ctx[+0]`) and floors every actor's
+    // live HP `+0x14C` at 1 - downed (and, per the published behaviour,
+    // petrified) members leave the battle alive. `+0x14C` maps to
+    // `BattleActor::liveness` here. Engines additionally clear the Stone
+    // status via `status_effects::StatusEffectTracker::cure_stone_on_escape`
+    // when the battle ends `Escaped`.
+    if ctx.multi_cast_gate != 0 {
+        for slot in 0..host.party_count() {
+            if let Some(actor) = host.actor_mut(slot)
+                && actor.liveness == 0
+            {
+                actor.liveness = 1;
+            }
+        }
+    }
     transition(ctx, ActionState::RunWait)
 }
 
@@ -2729,6 +2747,37 @@ mod tests {
         step(&mut host, &mut ctx);
         assert_eq!(ctx.frame_timer, 0x3C);
         assert!(host.take().contains(&Event::Ui(0x43, 0)));
+    }
+
+    #[test]
+    fn run_begin_successful_escape_floors_downed_party_at_1() {
+        // PORT: FUN_801E295C case 0x64 success branch - every party actor
+        // with +0x14C == 0 is set to 1 (downed / petrified members leave the
+        // battle alive). Monsters are untouched (the retail loop bound is
+        // the party count ctx[+0]).
+        let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+        ctx.action_state = ActionState::RunBegin.as_byte();
+        ctx.multi_cast_gate = 1; // run roll succeeded
+        host.actors[0].liveness = 0;
+        host.actors[2].liveness = 0;
+        host.actors[4].liveness = 0; // monster stays down
+        step(&mut host, &mut ctx);
+        assert_eq!(host.actors[0].liveness, 1);
+        assert_eq!(host.actors[2].liveness, 1);
+        assert_eq!(host.actors[4].liveness, 0, "monsters are not revived");
+        assert_eq!(ctx.multi_cast_gate, 1, "outcome gate left for RunWait");
+    }
+
+    #[test]
+    fn run_begin_failed_run_leaves_downed_party_down() {
+        // The retail revive loop lives only in the success branch of case
+        // 0x64; a failed run changes no HP.
+        let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+        ctx.action_state = ActionState::RunBegin.as_byte();
+        ctx.multi_cast_gate = 0; // run roll failed
+        host.actors[0].liveness = 0;
+        step(&mut host, &mut ctx);
+        assert_eq!(host.actors[0].liveness, 0);
     }
 
     #[test]

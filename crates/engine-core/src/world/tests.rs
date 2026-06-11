@@ -1110,17 +1110,19 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
     );
 }
 
-/// A damage-over-time kill must down the actor: `tick_status_effects` pairs
-/// `hp == 0` with `liveness = 0` like every other damage entry point. Otherwise
-/// the poisoned corpse stays "alive" for the liveness-keyed wipe checks and turn
-/// / target resolvers (it would keep being armed and targeted).
+/// The retail DoT ticker (FUN_801E752C) never kills: each tick is clamped to
+/// `current_hp - 1`, so a poisoned actor bottoms out at 1 HP and stays alive
+/// (`liveness` untouched). The `hp == 0 → liveness = 0` pairing in
+/// `tick_status_effects` remains as a safety net for other damage entry
+/// points - this pins the never-kill clamp end to end.
 #[test]
-fn dot_kill_sets_liveness_zero() {
+fn dot_never_kills_actor_bottoms_out_at_one_hp() {
     use legaia_engine_vm::status_effects::StatusKind;
 
     let mut world = World::new();
     world.enter_battle(1, 1, 600);
-    // Toxic ticks max_hp/8 = 10, more than the monster's remaining 4 HP.
+    // Toxic raw tick = max_hp/16 = 5, more than the monster's remaining 4 HP
+    // → clamped to current_hp - 1 = 3.
     world.actors[1].battle.max_hp = 80;
     world.actors[1].battle.hp = 4;
     world.actors[1].battle.liveness = 1;
@@ -1128,10 +1130,13 @@ fn dot_kill_sets_liveness_zero() {
 
     world.tick_status_effects();
 
-    assert_eq!(world.actors[1].battle.hp, 0, "Toxic DoT drains the last HP");
     assert_eq!(
-        world.actors[1].battle.liveness, 0,
-        "a DoT kill downs the actor (liveness must not desync from HP)"
+        world.actors[1].battle.hp, 1,
+        "Toxic DoT clamps to current_hp - 1 (never lethal)"
+    );
+    assert_eq!(
+        world.actors[1].battle.liveness, 1,
+        "a DoT tick never downs the actor"
     );
 }
 
@@ -7521,8 +7526,8 @@ fn tick_status_effects_drains_hp() {
     world.actors[0].battle.max_hp = 160;
     world.status_effects.apply(0, StatusKind::Toxic);
     world.tick_status_effects();
-    // Toxic drains max_hp / 8 = 160 / 8 = 20.
-    assert_eq!(world.actors[0].battle.hp, 80);
+    // Toxic drains max_hp / 16 = 160 / 16 = 10 (FUN_801E752C).
+    assert_eq!(world.actors[0].battle.hp, 90);
 }
 
 #[test]

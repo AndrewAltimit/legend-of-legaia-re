@@ -1,37 +1,53 @@
 //! Per-actor status-effect tracker.
 //!
 //! PORT: FUN_801E295C
+//! PORT: FUN_801E752C (per-round Venom / Toxic DoT ticker - the exact
+//!       tick arithmetic in [`toxic_tick_damage`] / [`venom_tick_damage`])
 //! REF: FUN_801E7320 (Confuse retarget; ported as
 //!      `legaia_engine_core::world` `resolve_monster_target`)
+//! REF: FUN_80047430 (sets the `+0x16E` `0x380` AI-delegation bits on party
+//!      slots whose char record carries accessory-passive bit 45 - Rage /
+//!      Evil Medallion)
 //!
 //! Tracks the set of status conditions afflicting each battle actor and
-//! folds them down into per-turn ticks. The retail engine stores status
-//! flags as a packed bitfield on the battle-actor struct (`+0x130` per
-//! `ghidra/scripts/funcs/801E295C.txt` strain analysis) plus per-flag
-//! turn counters and tick-damage values; the layout is per-flag and not
-//! captured in any single overlay dump. This module mirrors the observed
-//! semantics rather than reproducing the byte layout.
+//! folds them down into per-turn ticks. The retail engine stores battle
+//! status flags as the packed `u16` at battle-actor `+0x16E` (mirrored to
+//! char record `+0x12E` for party slots by `FUN_80047430`): bit `1` =
+//! Venom, bit `2` = Toxic, bits `8/0x10/0x20` = Rot (per-limb command
+//! disable), bits `0x380` = AI-delegation (Rage / charm), bit `0x1000` =
+//! Curse. This module mirrors the observed semantics on a per-kind
+//! instance list rather than reproducing the byte layout.
 //!
-//! The eight conditions the runtime distinguishes, named with the game's
+//! The conditions the runtime distinguishes, named with the game's
 //! in-game ailment terms. `byte` is the on-disc art-record `enemy_effect`
-//! value. `Retail effect` is the published behaviour (the Legaia wiki status
-//! pages, the project's ground-truth label source - see
-//! [`docs/reference/gamedata.md`]); `Engine` flags where this clean-room model
-//! diverges. **The wiki gives the qualitative mechanics + cure methods but
-//! NOT the exact turn counts or HP-per-turn formulas, so the durations
-//! ([`StatusKind::default_duration`]) and tick formulas below stay clean-room
-//! approximations.**
+//! value as the engine currently labels it. `Retail effect` is the pinned
+//! behaviour where a dump pins it, else the published behaviour (the Legaia
+//! wiki status pages - see [`docs/reference/gamedata.md`]); `Engine` flags
+//! where this clean-room model diverges.
 //!
-//! | Status    | byte | Retail effect (wiki)                                        | Engine |
+//! | Status    | byte | Retail effect                                               | Engine |
 //! |-----------|------|-------------------------------------------------------------|--------|
-//! | `Toxic`   | `1`  | "Deadly Poison": HP drains faster than Venom AND ATK/DEF drop | DoT `max_hp/8` (>= Venom, ~2x once below half HP) + ATK & DEF x0.875 |
-//! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns | full block + clear-on-hit (matches; same shape as Sleep) |
-//! | `Venom`   | `3`  | "Poison": HP drains (lesser than Toxic)                      | DoT `current_hp/8` |
-//! | `Sleep`   | `4`  | Asleep; wakes when hit                                       | block + clear-on-hit (matches) |
-//! | `Confuse` | `5`  | Acts uncontrollably / random target                         | physical (monster or party) + monster casts retarget to a random living opposite-side member (FUN_801E7320); a confused party member auto-acts (no menu, physical) |
-//! | `Curse`   | `6`  | Blocks Magic (Magic Amulet protects)                        | blocks Magic (matches) |
-//! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability (core strikes) + counts-as-defeated; the escape-restore nicety isn't modelled |
+//! | `Toxic`   | `1`  | DoT `min(max_hp/16, 256)` per round, never lethal (clamps to `current_hp - 1`); suppresses Venom's tick; outgoing damage and guard rolls scale x7/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`toxic_tick_damage`); the roll scaling is `battle_formulas::apply_status_weaken` bit 2 (engine-core's HUD-stat x0.875 is a separate stand-in) |
+//! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns (wiki; the enforcement site is not in the dumped corpus) | full block + clear-on-hit (same shape as Sleep) |
+//! | `Venom`   | `3`  | DoT `min(max_hp/32, 128)` per round, never lethal; skipped while Toxic is active; rolls scale x9/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`venom_tick_damage`) |
+//! | `Sleep`   | `4`  | Asleep; wakes when hit (wiki)                               | block + clear-on-hit |
+//! | `Confuse` | `5`  | Acts uncontrollably. Pinned for monsters: the AI keeps its *rolled* action - including Magic casts - but every per-monster scripted-cast override is suppressed (`overlay_battle_action_801e9fd4` gates on `+0x16E & 0x380`), and the target re-rolls to the opposite side at ActionSeed (`FUN_801E7320`). For party members only the delegation flag is pinned (`FUN_80047430`, from the Rage accessory passive); the retail auto-pick for a delegated party member is not in the dumped corpus | monster: physical + casts retarget via the `FUN_801E7320` port; party: auto-physical stand-in (see `engine-core::world::battle`) until the retail party-side pick is captured |
+//! | `Curse`   | `6`  | Blocks Magic; battle-actor bit `0x1000` (Magic Amulet protects) | blocks Magic (matches) |
+//! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; no in-battle cure. On a successful party escape retail floors every party actor's `+0x14C` at 1 (`FUN_801E295C` case `0x64`), which un-defeats a petrified/KO'd member | block + whole-battle duration + invulnerability (core strikes) + counts-as-defeated + [`StatusEffectTracker::cure_stone_on_escape`] for the escape restore |
 //! | `Faint`   | `8`  | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
+//!
+//! **Byte-map caveat.** The two pinned status appliers
+//! (`overlay_battle_action_801ec3e4` ~line 3099, `overlay_battle_action_801e09f8`
+//! ~line 1416 - the physical-strike and special-attack hit resolvers reading the
+//! record's status byte) wire byte `3` -> the weak-DoT bit (`+0x16E |= 1`, 1/8
+//! chance), byte `4` -> the strong-DoT bit (`|= 2`, 1/8), byte `5` -> a random
+//! limb-disable bit (`1 << (rand%3 + 3)`, blocked by the Rot Guard / Master
+//! Guard passives - i.e. retail byte `5` is **Rot**, not Confuse), and byte `6`
+//! -> Curse (`|= 0x1000`, 1/4). Bytes `1`/`2` only install the lingering
+//! status *visual* (`actor+0x21F` + tint) in these paths. That conflicts with
+//! the engine's inherited byte naming above (`4` = Sleep, `5` = Confuse, from
+//! external notes); the remap is left open until a runtime capture pins what
+//! bytes `1`/`2` do mechanically - see `docs/subsystems/battle-formulas.md`.
 //!
 //! Engines drain pending [`StatusEvent`]s from [`StatusEffectTracker::tick_actor`]
 //! and feed them back into their HUD / battle event log.
@@ -44,33 +60,46 @@ use legaia_art::record::EnemyEffect;
 /// `EnemyEffect::Other(_)`. Per-turn effects are clean-room approximations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusKind {
-    /// Deadly poison: HP drains faster than Venom and ATK/DEF drop. Modelled as
-    /// an HP tick (clean-room `max_hp / 8`, a flat fraction of max HP so it
-    /// doesn't taper and stays >= Venom's `current_hp / 8`) plus ATK + DEF
-    /// penalties (see [`crate::status_effects`] consumers).
+    /// Deadly poison: HP drains faster than Venom and ATK/DEF drop. The HP
+    /// tick is the exact `FUN_801E752C` strong-DoT arm
+    /// ([`toxic_tick_damage`]: `min(max_hp/16, 256)`, clamped so it never
+    /// kills); the combat-roll penalty is the `FUN_801DD864` x7/10 scale
+    /// ([`crate::battle_formulas::apply_status_weaken`] bit 2). While Toxic
+    /// is active Venom's tick is suppressed (the retail ticker's strong-DoT
+    /// branch shadows the weak one).
     Toxic,
     /// Paralysis: the unit cannot act; clears on being hit or after some turns
     /// (a full block, NOT a probability roll). Enforced via [`Self::blocks_actions`]
     /// + [`Self::clears_on_damage`], same shape as Sleep.
     Numb,
-    /// Standard poison: HP drains (lesser than Toxic). Clean-room
-    /// `current_hp / 8` tick.
+    /// Standard poison: HP drains (lesser than Toxic). Exact `FUN_801E752C`
+    /// weak-DoT arm ([`venom_tick_damage`]: `min(max_hp/32, 128)`, clamped so
+    /// it never kills); rolls scale x9/10
+    /// ([`crate::battle_formulas::apply_status_weaken`] bit 1).
     Venom,
     /// Asleep; wakes when hit.
     Sleep,
-    /// Acts uncontrollably: an action flips to a random living member of the
-    /// opposite side (the engine wires this for the monster + party physical
-    /// strike and monster casts via `FUN_801E7320`; a confused party member
-    /// auto-acts a physical strike without the command menu).
+    /// Acts uncontrollably. Pinned for monsters: the rolled action is *kept*
+    /// (a confused monster can still cast Magic - the picker's generic core
+    /// runs; only the per-monster-id scripted-cast overrides are suppressed,
+    /// `overlay_battle_action_801e9fd4` `& 0x380` guards) and the target
+    /// re-rolls to the opposite side at ActionSeed (`FUN_801E7320`, ported as
+    /// `engine-core::World::resolve_monster_target`). For a party member the
+    /// dumps pin only the AI-delegation flag (`FUN_80047430` sets
+    /// `+0x16E |= 0x380` from the Rage accessory passive); the retail action
+    /// pick for a delegated party member is not in the dumped corpus, so the
+    /// engine's auto-physical party behaviour is a stand-in.
     Confuse,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
     Curse,
     /// Petrification: cannot act and cannot be damaged; petrified members count
-    /// as defeated and Stone lasts the whole battle (no in-battle cure - a
-    /// successful escape restores them). The engine models the action block, a
-    /// whole-battle duration ([`Self::default_duration`] = 255), invulnerability
-    /// on the core combat-strike paths, and counts-as-defeated in the wipe
-    /// checks; the on-escape "restored to normal" nicety is not modelled.
+    /// as defeated and Stone lasts the whole battle (no in-battle cure). The
+    /// engine models the action block, a whole-battle duration
+    /// ([`Self::default_duration`] = 255), invulnerability on the core
+    /// combat-strike paths, counts-as-defeated in the wipe checks, and the
+    /// on-escape restore ([`StatusEffectTracker::cure_stone_on_escape`],
+    /// paired with the `FUN_801E295C` case-`0x64` party HP floor ported in
+    /// [`crate::battle_action`]).
     Stone,
     /// KO at 0 HP: the unit collapses and cannot act; revived only by a Phoenix
     /// or revive Magic. If the whole party Faints it is a Game Over.
@@ -287,6 +316,31 @@ impl StatusEffectTracker {
         }
     }
 
+    /// Successful-escape restore: clears Stone on every tracked actor and
+    /// returns how many actors were restored (a [`StatusEvent::Cleared`] is
+    /// queued per restore).
+    ///
+    /// Models the published "a petrified member returns to normal when the
+    /// party escapes" behaviour. The pinned retail side of the escape is the
+    /// party HP floor in the run band - `FUN_801E295C` case `0x64`'s
+    /// successful-escape branch walks the party slots and sets any
+    /// `+0x14C == 0` actor to 1 (ported in [`crate::battle_action`]'s
+    /// `RunBegin`); Stone's retail bit representation is not pinned in the
+    /// dumped corpus, so this tracker-level clear carries the engine model.
+    /// Engines call this when the battle ends with
+    /// `BattleEndCause::Escaped`.
+    ///
+    /// REF: FUN_801E295C
+    pub fn cure_stone_on_escape(&mut self) -> usize {
+        let mut restored = 0;
+        for slot in 0..self.per_actor.len() as u8 {
+            if self.cure(slot, StatusKind::Stone) {
+                restored += 1;
+            }
+        }
+        restored
+    }
+
     /// Clear-on-damage hook. Engines call this when an actor takes damage,
     /// so Sleep clears as it would in retail.
     pub fn on_damaged(&mut self, slot: u8) {
@@ -307,9 +361,19 @@ impl StatusEffectTracker {
     /// instance's `remaining_turns`. Expired instances are cleared and a
     /// [`StatusEvent::Cleared`] is queued.
     ///
+    /// The DoT arithmetic is the exact `FUN_801E752C` per-round ticker
+    /// (called once per round by the round driver `FUN_801D0748` state
+    /// `0x14`, skipped while the round counter `ctx[+0x28A]` is still 0):
+    /// Toxic shadows Venom (the retail ticker's strong-DoT branch is taken
+    /// first and the weak one only `else`-fires), a dead actor
+    /// (`current_hp == 0`) doesn't tick, and the per-status damage never
+    /// kills (clamped to `current_hp - 1`).
+    ///
     /// Returns the total tick damage dealt this turn (for engines that
     /// want a single number to subtract); the per-status events are
     /// queued in [`Self::pending_events`] regardless.
+    ///
+    /// PORT: FUN_801E752C
     pub fn tick_actor(&mut self, actor_slot: u8, current_hp: u16, max_hp: u16) -> u16 {
         let mut total_damage = 0u16;
         let mut to_clear: Vec<StatusKind> = Vec::new();
@@ -318,13 +382,16 @@ impl StatusEffectTracker {
         let snapshot: Vec<StatusInstance> = self.slots(actor_slot).to_vec();
         // A petrified actor can't be damaged, so its poison DoTs don't tick.
         let petrified = snapshot.iter().any(|s| s.kind == StatusKind::Stone);
+        // Retail: the strong-DoT bit (Toxic) is tested first and the weak one
+        // (Venom) only ticks when it is clear.
+        let toxic_active = snapshot.iter().any(|s| s.kind == StatusKind::Toxic);
         for inst in &snapshot {
-            let dmg = if petrified {
+            let dmg = if petrified || current_hp == 0 {
                 0
             } else {
                 match inst.kind {
-                    StatusKind::Toxic => toxic_tick_damage(max_hp),
-                    StatusKind::Venom => venom_tick_damage(current_hp),
+                    StatusKind::Toxic => toxic_tick_damage(current_hp, max_hp),
+                    StatusKind::Venom if !toxic_active => venom_tick_damage(current_hp, max_hp),
                     _ => 0,
                 }
             };
@@ -403,19 +470,43 @@ impl StatusEffectTracker {
     }
 }
 
-/// Tick-damage formula for Toxic (clean-room `max_hp / 8`, floored at 1).
-/// Toxic is the deadly poison: it bites a flat fraction of *max* HP (so it
-/// doesn't taper as HP falls, unlike Venom, and can deplete the target to 0),
-/// which keeps it >= Venom's `current_hp / 8` at every HP and lands at ~2x once
-/// the target drops below half HP. The exact disc rate isn't pinned - the wiki
-/// only gives "drains faster than Venom".
-pub fn toxic_tick_damage(max_hp: u16) -> u16 {
-    (max_hp / 8).max(1)
+/// Tick-damage formula for Toxic - the exact strong-DoT arm of the retail
+/// per-round status ticker: `damage = max_hp >> 4`, clamped to
+/// `current_hp - 1` when it would kill, then capped at `0x100` (256). Toxic
+/// bites exactly twice Venom's fraction of *max* HP and can reduce the
+/// target to 1 HP but never to 0.
+///
+/// PORT: FUN_801E752C (`ghidra/scripts/funcs/overlay_battle_action_801e752c.txt`,
+/// the `+0x16E & 2` branch)
+pub fn toxic_tick_damage(current_hp: u16, max_hp: u16) -> u16 {
+    dot_tick_damage(current_hp, max_hp >> 4, 0x100)
 }
 
-/// Tick-damage formula for Venom (clean-room `current_hp / 8`, floored at 1).
-pub fn venom_tick_damage(current_hp: u16) -> u16 {
-    (current_hp / 8).max(1)
+/// Tick-damage formula for Venom - the exact weak-DoT arm of the retail
+/// per-round status ticker: `damage = max_hp >> 5`, clamped to
+/// `current_hp - 1` when it would kill, then capped at `0x80` (128).
+///
+/// PORT: FUN_801E752C (`ghidra/scripts/funcs/overlay_battle_action_801e752c.txt`,
+/// the `+0x16E & 1` branch)
+pub fn venom_tick_damage(current_hp: u16, max_hp: u16) -> u16 {
+    dot_tick_damage(current_hp, max_hp >> 5, 0x80)
+}
+
+/// Shared DoT clamp shape of `FUN_801E752C`, in the retail order: the
+/// never-kill clamp (`current_hp <= raw` -> `current_hp - 1`) applies
+/// *before* the per-status cap, so a low-HP actor's tick is `current_hp - 1`
+/// even when that exceeds nothing. A tiny `max_hp` legitimately produces a
+/// zero tick (retail has no 1-damage floor; a zero tick draws no damage
+/// popup).
+fn dot_tick_damage(current_hp: u16, raw: u16, cap: u16) -> u16 {
+    let mut dmg = raw;
+    if current_hp <= dmg {
+        dmg = current_hp.saturating_sub(1);
+    }
+    if dmg > cap {
+        dmg = cap;
+    }
+    dmg
 }
 
 #[cfg(test)]
@@ -493,27 +584,86 @@ mod tests {
     }
 
     #[test]
-    fn toxic_tick_dot_uses_max_hp() {
+    fn toxic_tick_dot_is_max_hp_over_16() {
         let mut t = StatusEffectTracker::new();
         t.apply_with_duration(0, StatusKind::Toxic, 3);
         let dmg = t.tick_actor(0, 100, 160);
-        assert_eq!(dmg, 20); // 160 / 8
+        assert_eq!(dmg, 10); // 160 >> 4
     }
 
     #[test]
-    fn toxic_floors_at_1() {
+    fn toxic_never_kills_clamps_to_current_minus_one() {
+        // Retail: `if (cur <= raw) raw = cur - 1` BEFORE the cap. A 5-HP
+        // actor with a big max takes 4, landing at 1 HP, never 0.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Toxic);
+        let dmg = t.tick_actor(0, 5, 4000);
+        assert_eq!(dmg, 4);
+    }
+
+    #[test]
+    fn toxic_caps_at_256_and_venom_at_128() {
+        // toxic: 65535 >> 4 = 4095 -> capped to 0x100.
+        assert_eq!(toxic_tick_damage(65535, 65535), 0x100);
+        // venom: 65535 >> 5 = 2047 -> capped to 0x80.
+        assert_eq!(venom_tick_damage(65535, 65535), 0x80);
+    }
+
+    #[test]
+    fn never_kill_clamp_applies_before_the_cap() {
+        // cur=200, max=10000: raw toxic = 625 >= cur -> 199, and the cap
+        // does NOT shrink it further (199 < 256). Retail order.
+        assert_eq!(toxic_tick_damage(200, 10000), 199);
+    }
+
+    #[test]
+    fn tiny_max_hp_ticks_zero_no_floor() {
+        // Retail has no 1-damage floor: max_hp 5 >> 4 == 0.
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Toxic);
         let dmg = t.tick_actor(0, 5, 5);
-        assert_eq!(dmg, 1);
+        assert_eq!(dmg, 0);
+        // And a zero tick queues no TickDamage event (no damage popup).
+        assert!(
+            !t.drain_events()
+                .iter()
+                .any(|e| matches!(e, StatusEvent::TickDamage { .. }))
+        );
     }
 
     #[test]
-    fn poison_tick_uses_current_hp() {
+    fn poison_tick_is_max_hp_over_32() {
         let mut t = StatusEffectTracker::new();
         t.apply(0, StatusKind::Venom);
         let dmg = t.tick_actor(0, 80, 100);
-        assert_eq!(dmg, 10); // 80 / 8
+        assert_eq!(dmg, 3); // 100 >> 5
+    }
+
+    #[test]
+    fn toxic_suppresses_venom_tick() {
+        // Retail's ticker takes the strong-DoT branch first; the weak one is
+        // an `else`. With both active only Toxic's max/16 lands.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Toxic);
+        t.apply(0, StatusKind::Venom);
+        let dmg = t.tick_actor(0, 1000, 1600);
+        assert_eq!(dmg, 100); // 1600 >> 4 only, not + 1600 >> 5
+        let evs = t.drain_events();
+        assert!(!evs.iter().any(|e| matches!(
+            e,
+            StatusEvent::TickDamage {
+                kind: StatusKind::Venom,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn dead_actor_does_not_tick() {
+        // Retail guards the whole DoT arm on `+0x14C != 0`.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Toxic);
+        assert_eq!(t.tick_actor(0, 0, 1600), 0);
     }
 
     #[test]
@@ -586,13 +736,51 @@ mod tests {
     }
 
     #[test]
-    fn toxic_drains_at_least_as_fast_as_venom() {
-        // Toxic bites max_hp/8 (a flat fraction of max, doesn't taper); Venom
-        // bites current_hp/8. For an actor with max_hp 100: equal at full HP,
-        // and ~2x once below half HP.
-        assert_eq!(toxic_tick_damage(100), venom_tick_damage(100)); // full: 12 == 12
-        assert!(toxic_tick_damage(100) > venom_tick_damage(40)); // hurt: 12 > 5
-        assert_eq!(toxic_tick_damage(100), 2 * venom_tick_damage(50)); // half: 12 == 2*6
+    fn toxic_drains_exactly_twice_venom() {
+        // Both arms key on max HP: max/16 vs max/32 (below the caps and the
+        // never-kill clamp).
+        assert_eq!(toxic_tick_damage(1000, 1600), 100);
+        assert_eq!(venom_tick_damage(1000, 1600), 50);
+        assert_eq!(
+            toxic_tick_damage(1000, 1600),
+            2 * venom_tick_damage(1000, 1600)
+        );
+    }
+
+    #[test]
+    fn cure_stone_on_escape_restores_only_stone() {
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Stone);
+        t.apply(0, StatusKind::Venom);
+        t.apply(2, StatusKind::Stone);
+        t.apply(1, StatusKind::Toxic);
+        t.drain_events();
+        assert_eq!(t.cure_stone_on_escape(), 2);
+        assert!(!t.has(0, StatusKind::Stone));
+        assert!(!t.has(2, StatusKind::Stone));
+        assert!(t.has(0, StatusKind::Venom), "escape cures only Stone");
+        assert!(t.has(1, StatusKind::Toxic), "escape cures only Stone");
+        let evs = t.drain_events();
+        assert_eq!(
+            evs.iter()
+                .filter(|e| matches!(
+                    e,
+                    StatusEvent::Cleared {
+                        kind: StatusKind::Stone,
+                        ..
+                    }
+                ))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn cure_stone_on_escape_is_noop_without_stone() {
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Venom);
+        assert_eq!(t.cure_stone_on_escape(), 0);
+        assert!(t.has(0, StatusKind::Venom));
     }
 
     #[test]

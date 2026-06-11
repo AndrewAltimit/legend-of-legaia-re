@@ -7,6 +7,7 @@ Damage, MP-cost, and stat-cap math used by the [battle action state machine](bat
 - [Damage application primitive — `FUN_800402F4`](#damage-application-primitive---fun_800402f4)
 - [Actor stat block + monster record mapping](#actor-stat-block--monster-record-mapping) — [spell list](#spell-list-record-0x4c) · [physical attack damage](#physical-attack-damage---overlay_battle_action_801ec3e4) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9 (accuracy)](#selector-9---accuracy--evasion-roll) · [stat-buff selectors](#stat-buff-selectors-17)
 - [Victory spoils (rewards)](#victory-spoils-rewards) · [spirit damage formula](#spirit-damage-formula)
+- [Per-round status DoT ticker — `FUN_801E752C`](#per-round-status-dot-ticker---fun_801e752c) · [status application byte map](#status-application-the-art--move-record-status-byte)
 - [Summon-magic damage roll — `FUN_801dd0ac`](#summon-magic-damage-roll---fun_801dd0ac) — [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8)
 - [MP cost & ability-bit modifiers](#mp-cost--ability-bit-modifiers) · [RNG primitive](#rng-primitive)
 - [Engine-side mirror — `engine-vm::battle_formulas`](#engine-side-mirror---engine-vmbattle_formulas) · [what's still open](#whats-still-open)
@@ -217,6 +218,73 @@ damage = min(damage, 0x120);            // cap 1: 288 hit-points
 ```
 
 This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_80076D7E` damage popup is written directly with the result before the state machine calls `func_0x800402F4` in state `0x3F`. The spirit pre-application formula is the one place the engine has to reproduce a non-obvious arithmetic; everything else is selector-dispatch driven.
+
+## Per-round status DoT ticker - `FUN_801E752C`
+
+`ghidra/scripts/funcs/overlay_battle_action_801e752c.txt` (760 bytes / 190
+instructions). Called once per battle round by the round driver `FUN_801D0748`
+(state `0x14`, immediately after `FUN_801D88CC` / `FUN_801DA780`), gated on
+`ctx[+0x28A] != 0` - the round counter, incremented by the SM at end-of-round
+(`0x801E67E8`) and by the scripted `case 0xFF` phase action - so no DoT lands
+before the first round has completed. Walks all 7 actor slots; for each living
+actor (`+0x14C != 0`) it reads the `+0x16E` status halfword:
+
+```c
+if (status & 2) {                       // Toxic (strong DoT) - tested FIRST
+    dmg = max_hp >> 4;                  //   +0x14E / 16
+    if (cur_hp <= dmg) dmg = cur_hp - 1;//   never lethal: leaves 1 HP
+    if (dmg > 0x100)   dmg = 0x100;     //   cap 256
+} else if (status & 1) {                // Venom (weak DoT) - shadowed by Toxic
+    dmg = max_hp >> 5;                  //   +0x14E / 32
+    if (cur_hp <= dmg) dmg = cur_hp - 1;
+    if (dmg > 0x80)    dmg = 0x80;      //   cap 128
+}
+cur_hp -= dmg;                          // +0x14C and the +0x172 mirror
+```
+
+Reads:
+
+1. **Both arms key on max HP** (`+0x14E`), not current HP, so the drain does
+   not taper; Toxic is exactly 2x Venom.
+2. **The never-kill clamp precedes the cap**, so a low-HP actor's tick is
+   `cur_hp - 1` even when that exceeds what the raw fraction would give after
+   mitigation. There is no 1-damage floor - a tiny `max_hp` ticks 0 and draws
+   no damage popup (the popup ring at `ctx[+0x83C]`/`+0x318` is only pushed
+   for `dmg != 0`).
+3. **Toxic suppresses Venom** - the bits are an if/else pair, so with both set
+   only the strong arm ticks.
+4. Under the `ctx[+0x287]` config flag, a **monster's** (slot >= 3) DoT bit is
+   cleared after one tick (`status &= ~bit`) - party DoTs persist regardless.
+   Not yet modelled by the engine.
+5. The same walk pays the per-round accessory recoveries for party slots:
+   char `+0xF8` bit `0x20` (passive `0x25` HP After / Life Grail) →
+   `FUN_800402F4(0, 0, slot)`, bit `0x40` (`0x26` MP After / Magic Grail) →
+   `FUN_800402F4(2, 2, slot)`.
+
+The two DoT bits also scale combat rolls: `FUN_801DD864` (and the inline twin
+in `overlay_battle_action_801ec3e4` lines 2800-2808) multiplies an afflicted
+actor's outgoing roll *and* its guard roll by `9/10` for bit 1 (Venom) and
+`7/10` for bit 2 (Toxic) - already ported as
+`battle_formulas::apply_status_weaken`.
+
+### Status application (the art / move record status byte)
+
+The two pinned hit resolvers - `overlay_battle_action_801ec3e4` (~line 3099,
+physical strike, art record `+0x7A`) and `overlay_battle_action_801e09f8`
+(~line 1416, monster special attack, effect-block `+0x0A`) - apply the same
+byte map onto the target's `+0x16E`:
+
+| byte | `+0x16E` effect | chance | guard |
+|---|---|---|---|
+| `1`, `2` | visual only here (`actor+0x21F` marker + tint word `+4`); the mechanical arm for these bytes is not in the dumped corpus | - | - |
+| `3` | `\|= 1` (**Venom**) | `rand & 7 == 0` (1/8) | - |
+| `4` | `\|= 2` (**Toxic**) | `rand & 7 == 0` (1/8) | - |
+| `5` | `\|= 1 << (rand%3 + 3)` (**Rot** - disables one random strike command; bits `8`/`0x10`/`0x20` gray the matching arrow in the command menu, `== 0x38` blocks Attack entirely) | always (party target) | char `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
+| `6` | `\|= 0x1000` (**Curse** - the magic block the menu + AI affordability checks read) | `rand & 3 == 0` (1/4) | - |
+
+Note this conflicts with the engine's inherited byte naming (`4` = Sleep, `5` =
+Confuse, from external notes - see `legaia_engine_vm::status_effects`); the
+remap is held open until a capture pins what bytes `1`/`2` do mechanically.
 
 ## Summon-magic damage roll - `FUN_801dd0ac`
 
@@ -501,6 +569,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
+| `status_effects::toxic_tick_damage` / `venom_tick_damage` (module `engine-vm::status_effects`) | this doc, [per-round status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`) |
 
 The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.
 

@@ -31,8 +31,9 @@
 //!   action calls so the next turn's [`decide`] reads the bumped mode and the
 //!   phase's scripted casts come alive.
 //! - The `actor+0x16e & 0x380` AI flag is **not** a missing monster writer.
-//!   `FUN_80047430` sets it only on **party** slots (slot `< 3`) whose status
-//!   word `+0x00` has bit `0x2000` (Confuse/Charm), delegating that party member
+//!   `FUN_80047430` sets it only on **party** slots (slot `< 3`) whose character
+//!   ability bitfield `+0xF8` has bit `0x2000` - accessory passive `0x2D`,
+//!   the Evil Medallion's Rage - delegating that party member
 //!   to the AI; the target resolver `FUN_801E7320` (`monster_setup`) is reached
 //!   only when it is set. A normal monster keeps `0x380` **clear**, so its
 //!   `!ai380` scripted-cast cases fire and the resolver stays dormant - which is
@@ -153,7 +154,8 @@ pub struct MonsterAiCtx {
     pub monster_count: u8,
     /// `actor+0x16E` field flags at entry (`local_40`). Bit set `0x380` =
     /// "this turn is delegated to the AI target resolver" (set by `FUN_80047430`
-    /// only on Charm/Confuse'd party members). A normal monster keeps it clear,
+    /// only on party members whose ability bitfield carries the Evil
+    /// Medallion's Rage passive). A normal monster keeps it clear,
     /// so its `!ai380` scripted-cast cases fire - `0` in the current engine.
     pub field_flags: u16,
     /// Count of living party members with non-zero MP (for monster `0xA7`).

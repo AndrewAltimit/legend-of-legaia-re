@@ -3211,6 +3211,11 @@ impl World {
                 self.screen_fade = Some(crate::fade::FadeState::load(
                     &crate::fade::escape_fade_template(),
                 ));
+                // A petrified member returns to normal when the party
+                // escapes (retail's run band floors every downed party
+                // slot's HP at 1 on a successful escape; the tracker-level
+                // Stone clear is the engine's model of that restore).
+                self.status_effects.cure_stone_on_escape();
                 None
             }
             BattleEvent::SpellAnimTrigger {
