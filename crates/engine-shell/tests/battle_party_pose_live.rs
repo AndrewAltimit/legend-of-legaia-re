@@ -398,3 +398,100 @@ fn assembled_party_matches_live_battle() {
         );
     }
 }
+
+/// Terra-in-party capture (`terra_party_battle`): the 4th playable
+/// character's `record[0]` work area is banded by her **present-party
+/// ordinal** exactly like the trio, and her live idle stream byte-matches
+/// the disc decode of her player file (extraction 0866). Closes the
+/// "no Terra runtime validation" tail of the assembled-mesh work; the
+/// texture-band half lives in `battle_char_texture_live.rs` (same capture).
+#[test]
+fn terra_idle_stream_matches_live_battle() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(dir) = prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    let Some(manifest_path) = ["scripts/scenarios.toml", "../../scripts/scenarios.toml"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
+    else {
+        eprintln!("[skip] scenarios.toml missing");
+        return;
+    };
+    let Some(library) = ["saves/library", "../../saves/library"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.is_dir())
+    else {
+        eprintln!("[skip] saves/library missing");
+        return;
+    };
+    let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse manifest");
+    let Some(sc) = manifest
+        .scenarios
+        .iter()
+        .find(|s| s.label == "terra_party_battle")
+    else {
+        eprintln!("[skip] terra_party_battle scenario missing");
+        return;
+    };
+    let Ok(save_path) = manifest.mednafen_save_path(sc, Some(library.as_path())) else {
+        eprintln!("[skip] terra_party_battle save unresolvable");
+        return;
+    };
+    if !save_path.exists() {
+        eprintln!("[skip] terra_party_battle save missing on disk");
+        return;
+    }
+    let state = SaveState::from_path(&save_path).expect("parse save state");
+    let ram = state.main_ram().expect("main RAM");
+
+    // Present battle party (char ids, 1-based; 0 = empty slot).
+    let party: Vec<u8> = rbytes(ram, PARTY_IDS, 3)
+        .iter()
+        .copied()
+        .filter(|&c| c != 0)
+        .collect();
+    let Some(ordinal) = party.iter().position(|&c| c == 4) else {
+        panic!("terra_party_battle: Terra (char id 4) not in the captured party {party:?}");
+    };
+    // Per-character player file, extraction entry 862 + char id.
+    let file_names: [&str; 4] = [
+        "0863_edstati3.BIN",
+        "0864_edstati3.BIN",
+        "0865_battle_data.BIN",
+        "0866_battle_data.BIN",
+    ];
+    let raw = std::fs::read(dir.join(file_names[3])).expect("read Terra player file");
+    let decoded = battle_char_assembly::decode_record0(&raw).expect("decode record[0]");
+
+    // The record[0] work area for her party ordinal holds the same bytes
+    // the disc decodes: idle entry at table[0], packed stream at +0xAC.
+    let rec0_base = ru32(ram, RECORD0_BASES + ordinal as u32 * 4);
+    assert_ne!(rec0_base, 0, "Terra record[0] work area unset");
+    let entry_off = u32::from_le_bytes(decoded[0..4].try_into().unwrap());
+    let stream_off = entry_off as usize + battle_char_assembly::PLAYER_ANIM_STREAM_OFFSET;
+    let parts = decoded[stream_off] as usize;
+    let frames = decoded[stream_off + 1] as usize;
+    let stream_len = 2 + parts * frames * 9;
+    let live_stream = rbytes(ram, rec0_base + stream_off as u32, stream_len);
+    assert_eq!(
+        live_stream,
+        &decoded[stream_off..stream_off + stream_len],
+        "Terra live idle stream bytes != disc decode"
+    );
+    let idle = battle_char_assembly::idle_battle_animation(&raw)
+        .expect("idle decode")
+        .expect("idle present");
+    assert_eq!(idle.part_count, parts, "Terra idle parts");
+    assert_eq!(idle.frame_count, frames, "Terra idle frames");
+    eprintln!(
+        "terra_party_battle: Terra at party ordinal {ordinal}, idle stream \
+         ({parts} parts x {frames} frames) byte-matches the disc decode"
+    );
+}

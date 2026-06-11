@@ -285,7 +285,7 @@ pub fn find_signature(blob: &[u8], signature: &[u8]) -> Option<usize> {
 
 /// How many of an overlay's internal absolute pointers resolve inside the
 /// file when it is loaded at `base_va`. The slot-B overlays (summon stagers,
-/// dance-song data) have sparse internal `jal` call graphs — too sparse to
+/// effect data) have sparse internal `jal` call graphs — too sparse to
 /// recover a base from — but they are dense with absolute self-pointers built
 /// as `lui rX, hi ; addiu rX, rX, lo` (the standard MIPS 32-bit-immediate
 /// idiom). If the committed base is right, a high fraction of those pointers

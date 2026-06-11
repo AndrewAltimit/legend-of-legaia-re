@@ -50,19 +50,27 @@ impl World {
     /// Round-trip: `world.load_party(p); world.save_party() == p` modulo
     /// the HP/MP resync (which is a no-op when no battle has run yet).
     pub fn save_party(&mut self) -> legaia_save::Party {
-        for (slot, rec) in self
-            .roster
-            .members
-            .iter_mut()
-            .enumerate()
-            .take(self.actors.len())
-        {
-            let mut hms = rec.hp_mp_sp();
-            let a = &self.actors[slot];
-            hms.hp_cur = a.battle.hp;
-            hms.hp_max = a.battle.max_hp;
-            hms.mp_cur = a.battle.mp;
-            rec.set_hp_mp_sp(hms);
+        // Actor slot -> roster record follows the present-party composition:
+        // under an [`World::active_party`] mapping, actor ordinal `i` mirrors
+        // the character at `active_party[i]`, and characters NOT in the
+        // present party keep their record values untouched. The identity
+        // default resyncs every record from its same-index actor, the
+        // historical behaviour.
+        let members = if self.active_party.is_empty() {
+            self.roster.members.len().min(self.actors.len())
+        } else {
+            self.active_party.len().min(self.actors.len())
+        };
+        for member in 0..members {
+            let rslot = self.party_roster_slot(member);
+            let a = &self.actors[member];
+            if let Some(rec) = self.roster.members.get_mut(rslot) {
+                let mut hms = rec.hp_mp_sp();
+                hms.hp_cur = a.battle.hp;
+                hms.hp_max = a.battle.max_hp;
+                hms.mp_cur = a.battle.mp;
+                rec.set_hp_mp_sp(hms);
+            }
         }
         self.roster.clone()
     }
@@ -81,7 +89,14 @@ impl World {
         inventory.sort_by_key(|&(id, _)| id);
 
         // Build per-character extension records from live world state.
-        let active_party: Vec<u8> = (0..party.members.len() as u8).collect();
+        // The present-party composition persists when installed; the
+        // identity default serialises as the full roster order (the
+        // historical encoding, which `load_full` treats as identity).
+        let active_party: Vec<u8> = if self.active_party.is_empty() {
+            (0..party.members.len() as u8).collect()
+        } else {
+            self.active_party.clone()
+        };
         let mut per_char: Vec<(u8, legaia_save::CharSaveExt)> = Vec::new();
         for slot in 0..party.members.len() as u8 {
             let mut ce = legaia_save::CharSaveExt::default();
@@ -136,6 +151,16 @@ impl World {
     /// so reloads don't silently reset every party slot to level 1.
     pub fn load_full(&mut self, sf: legaia_save::SaveFile) {
         self.load_party(sf.party);
+        // Restore the present-party composition. The full-roster identity
+        // order (what `save_full` writes when no composition is installed)
+        // stays the identity default rather than a 3-cap reorder, so legacy
+        // saves keep their historical party_count.
+        let identity: Vec<u8> = (0..self.roster.members.len() as u8).collect();
+        if sf.ext_v2.active_party != identity {
+            self.set_active_party(sf.ext_v2.active_party.clone());
+        } else {
+            self.active_party.clear();
+        }
         self.story_flags = sf.ext.story_flags;
         self.story_flag_bits = sf.ext.story_flag_bits;
         self.money = sf.ext.money;

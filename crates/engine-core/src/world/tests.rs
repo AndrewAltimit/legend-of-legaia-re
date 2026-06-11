@@ -8615,3 +8615,384 @@ fn final_heal_ignores_members_without_the_bit() {
     assert_eq!(world.actors[0].battle.hp, 0, "stays down without the bit");
     assert_eq!(world.actors[0].battle.liveness, 0);
 }
+
+// --- battle pose -> action-clip switching -----------------------------------
+
+/// Synthetic one-part action clip: `frames` keyframes translating from `tx`.
+fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
+    use legaia_asset::monster_archive::PartPose;
+    MonsterAnimation {
+        action_id,
+        rate: 2,
+        part_count: 1,
+        frame_count: frames,
+        frames: (0..frames)
+            .map(|f| {
+                vec![PartPose {
+                    tx: tx + f as i16,
+                    ty: 0,
+                    tz: 0,
+                    rx: 0,
+                    ry: 0,
+                    rz: 0,
+                }]
+            })
+            .collect(),
+    }
+}
+
+fn pose_test_world() -> World {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[8] = Some(pose_test_clip(8, 2, 100));
+    clips[9] = Some(pose_test_clip(9, 2, 200));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world
+}
+
+#[test]
+fn battle_pose_plays_action_clip_then_restores_idle() {
+    let mut world = pose_test_world();
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    assert_eq!(world.actors[0].battle_pose, Some(8));
+    // One-shot: run the 2-frame clip to its end in one tick.
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    world.tick_battle_animations();
+    assert!(
+        world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished(),
+        "recover clip is a one-shot"
+    );
+    // The next tick falls back to the idle loop (slot 0).
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Idle as u8)
+    );
+    assert!(
+        !world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished(),
+        "idle loops"
+    );
+}
+
+#[test]
+fn battle_pose_defeat_holds_final_frame() {
+    let mut world = pose_test_world();
+    world.apply_battle_pose(0, vm::battle_action::Pose::Defeat as u8);
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    for _ in 0..5 {
+        world.tick_battle_animations();
+    }
+    // Defeat never falls back to idle: the downed pose holds.
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Defeat as u8)
+    );
+    assert!(
+        world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished()
+    );
+}
+
+#[test]
+fn battle_pose_missing_slot_falls_back_to_idle_loop() {
+    let mut world = pose_test_world();
+    // Slot 7 (ready) is empty in the installed set: the request binds the
+    // idle loop instead and records the pose so the SM isn't retried.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Ready as u8);
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Ready as u8)
+    );
+    world.tick_battle_animations();
+    assert!(
+        !world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished()
+    );
+}
+
+#[test]
+fn battle_pose_repeat_request_keeps_playing_clip() {
+    let mut world = pose_test_world();
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.actors[0].battle_animation.as_mut().unwrap().step = 7;
+    world.tick_battle_animations();
+    let phase_frame = world.actors[0].pose_frame.clone();
+    // Re-requesting the same pose must not rewind the clip.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.tick_battle_animations();
+    assert_ne!(
+        world.actors[0].pose_frame.as_ref().map(|f| f.factor),
+        phase_frame.as_ref().map(|f| f.factor),
+        "cursor advanced instead of restarting"
+    );
+}
+
+#[test]
+fn battle_pose_without_clips_is_inert() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    assert_eq!(world.actors[0].battle_pose, None);
+    assert!(world.actors[0].battle_animation.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Present-party composition (`World::active_party`)
+// ---------------------------------------------------------------------------
+
+/// Four-record roster with distinct, recognisable stats per character.
+fn composition_roster() -> legaia_save::Party {
+    let mut party = legaia_save::Party::zeroed(4);
+    for (slot, rec) in party.members.iter_mut().enumerate() {
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 100 + slot as u16 * 100; // 100/200/300/400
+        hms.hp_cur = hms.hp_max;
+        hms.mp_max = 10 + slot as u16 * 10;
+        hms.mp_cur = hms.mp_max;
+        rec.set_hp_mp_sp(hms);
+        let mut ls = rec.live_stats();
+        ls.atk = 11 + slot as u16 * 11; // 11/22/33/44
+        ls.spd = 5 + slot as u16 * 5;
+        rec.set_live_stats(ls);
+    }
+    party
+}
+
+#[test]
+fn active_party_maps_battle_ordinals_to_characters() {
+    let mut world = World::new();
+    world.load_party(composition_roster());
+    // Noa + Terra present: battle ordinal 0 = roster slot 1, ordinal 1 =
+    // roster slot 3 (the live-verified retail Terra-party shape).
+    world.set_active_party(vec![1, 3]);
+    assert_eq!(world.party_count, 2);
+    assert_eq!(world.party_roster_slot(0), 1);
+    assert_eq!(world.party_roster_slot(1), 3);
+    // Actor mirrors reseeded per the mapping.
+    assert_eq!(world.actors[0].battle.max_hp, 200, "ordinal 0 = Noa's HP");
+    assert_eq!(world.actors[1].battle.max_hp, 400, "ordinal 1 = Terra's HP");
+    assert_eq!(world.battle_speed[0], 10);
+    assert_eq!(world.battle_speed[1], 20);
+    // Stat seeding folds the OCCUPYING character's record onto the ordinal.
+    world.seed_party_battle_stats();
+    assert_eq!(
+        world.battle_attack[0], 22,
+        "ordinal 0 attacks with Noa's ATK"
+    );
+    assert_eq!(
+        world.battle_attack[1], 44,
+        "ordinal 1 attacks with Terra's ATK"
+    );
+}
+
+#[test]
+fn battle_spell_session_reads_composed_character() {
+    let mut world = World::new();
+    let mut party = composition_roster();
+    // Terra (slot 3) knows Flame; nobody else knows anything.
+    let mut list = party.members[3].spell_list();
+    list.count = 1;
+    list.ids[0] = 0x20;
+    party.members[3].set_spell_list(list);
+    world.load_party(party);
+    world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+    world.set_active_party(vec![3, 0]);
+    world.mode = SceneMode::Battle;
+    // Ordinal 0 (Terra) offers her spell; ordinal 1 (Vahn) has none.
+    let menu = world
+        .build_battle_spell_session(0)
+        .expect("composed caster builds a session");
+    assert_eq!(menu.spells.len(), 1, "Terra's learned spell shows");
+    let vahn_menu = world.build_battle_spell_session(1);
+    assert!(
+        vahn_menu.is_none_or(|m| m.spells.is_empty()),
+        "ordinal 1 (Vahn) has no learned spells"
+    );
+}
+
+#[test]
+fn battle_xp_routes_to_composed_characters() {
+    let mut world = World::new();
+    world.load_party(composition_roster());
+    world.set_active_party(vec![2, 3]);
+    world.enter_battle(2, 1, 600);
+    world.apply_battle_xp(100);
+    // The 3/4-scaled split lands on the OCCUPYING characters' XP wells
+    // (roster slots 2 + 3), not on slots 0/1.
+    assert_eq!(world.level_up_tracker.xp[0], 0, "Vahn (absent) gets none");
+    assert_eq!(world.level_up_tracker.xp[1], 0, "Noa (absent) gets none");
+    assert!(
+        world.level_up_tracker.xp[2] > 0,
+        "Gala (ordinal 0) earns XP"
+    );
+    assert!(
+        world.level_up_tracker.xp[3] > 0,
+        "Terra (ordinal 1) earns XP"
+    );
+}
+
+#[test]
+fn active_party_survives_save_roundtrip_and_maps_hp_writeback() {
+    let mut world = World::new();
+    world.load_party(composition_roster());
+    world.set_active_party(vec![1, 3]);
+    // Battle damage on ordinal 0 (= Noa).
+    world.actors[0].battle.hp = 150;
+    let sf = world.save_full();
+    assert_eq!(sf.ext_v2.active_party, vec![1, 3]);
+    let noa = sf.party.members[1].hp_mp_sp();
+    assert_eq!(noa.hp_cur, 150, "ordinal-0 damage lands on Noa's record");
+    let vahn = sf.party.members[0].hp_mp_sp();
+    assert_eq!(vahn.hp_cur, 100, "absent Vahn's record is untouched");
+
+    let mut fresh = World::new();
+    fresh.load_full(sf);
+    assert_eq!(fresh.active_party, vec![1, 3]);
+    assert_eq!(fresh.party_count, 2);
+    assert_eq!(fresh.actors[0].battle.hp, 150, "Noa's HP back on ordinal 0");
+}
+
+#[test]
+fn identity_save_keeps_legacy_party_semantics() {
+    let mut world = World::new();
+    world.load_party(composition_roster());
+    let sf = world.save_full();
+    // No composition installed: the historical full-roster identity order.
+    assert_eq!(sf.ext_v2.active_party, vec![0, 1, 2, 3]);
+    let mut fresh = World::new();
+    fresh.load_full(sf);
+    assert!(
+        fresh.active_party.is_empty(),
+        "identity order restores as the identity default"
+    );
+    assert_eq!(fresh.party_count, 4, "legacy party_count preserved");
+}
+
+// --- battle hit reactions (retail +0x1EF tag map) ----------------------------
+
+/// Clip set carrying the full party reaction family at identity indices
+/// (action tags 2..5 + 0x0B), like a player battle file's record[0].
+fn reaction_test_world(with_getup: bool) -> World {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.max_hp = 100;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 12];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[2] = Some(pose_test_clip(2, 2, 20));
+    clips[4] = Some(pose_test_clip(4, 2, 40));
+    if with_getup {
+        clips[5] = Some(pose_test_clip(5, 2, 50));
+    }
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world
+}
+
+/// Run the active one-shot to completion and let the chain advance once.
+fn finish_reaction_clip(world: &mut World) {
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    world.tick_battle_animations(); // finishes the clip
+    world.tick_battle_animations(); // chain reacts to `finished`
+}
+
+#[test]
+fn hit_reaction_knockdown_then_getup_then_idle() {
+    // An actor WITH a get-up entry plays knockdown (tag 4) on any hit,
+    // then get-up (tag 5), then resumes idle - the FUN_800402F4 staging +
+    // FUN_8004AD80 record-type-4 chain.
+    let mut world = reaction_test_world(true);
+    world.queue_battle_reaction(0, true);
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    finish_reaction_clip(&mut world);
+    assert_eq!(
+        world.actors[0].battle_reaction,
+        Some(5),
+        "living actor chains knockdown into get-up"
+    );
+    finish_reaction_clip(&mut world);
+    assert_eq!(world.actors[0].battle_reaction, None);
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Idle as u8),
+        "reaction chain ends in the idle loop"
+    );
+}
+
+#[test]
+fn hit_reaction_light_flinch_without_getup() {
+    // A surviving target with no get-up entry plays the light flinch
+    // (tag 2) and falls straight back to idle.
+    let mut world = reaction_test_world(false);
+    world.queue_battle_reaction(0, true);
+    assert_eq!(world.actors[0].battle_reaction, Some(2));
+    finish_reaction_clip(&mut world);
+    assert_eq!(world.actors[0].battle_reaction, None);
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Idle as u8)
+    );
+}
+
+#[test]
+fn hit_reaction_lethal_knockdown_holds_downed_frame() {
+    let mut world = reaction_test_world(true);
+    world.actors[0].battle.hp = 0;
+    world.queue_battle_reaction(0, false);
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    for _ in 0..5 {
+        world.tick_battle_animations();
+    }
+    // Dead: the knockdown holds its final keyframe; no get-up, no idle.
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    assert!(
+        world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished()
+    );
+}
+
+#[test]
+fn reaction_outranks_pose_requests_until_done() {
+    let mut world = reaction_test_world(true);
+    world.queue_battle_reaction(0, true);
+    // The SM keeps requesting poses every frame; an in-flight reaction wins.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    assert_eq!(world.actors[0].battle_reaction, Some(4));
+    assert_eq!(world.actors[0].battle_pose, None);
+}
+
+#[test]
+fn monster_slots_only_honor_idle_pose() {
+    // Monster clip vectors are archive-order, not pose-indexed: a Defeat
+    // pose request on a monster slot must not start clip index 9 (an
+    // arbitrary spell action). Idle still maps to clip 0.
+    let mut world = World::new();
+    world.actors[3].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 12];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[9] = Some(pose_test_clip(0x0C, 2, 90));
+    world.set_actor_battle_action_clips(3, std::sync::Arc::new(clips));
+    world.apply_battle_pose(3, vm::battle_action::Pose::Defeat as u8);
+    assert_eq!(world.actors[3].battle_pose, None, "non-idle pose ignored");
+    world.apply_battle_pose(3, vm::battle_action::Pose::Idle as u8);
+    assert_eq!(world.actors[3].battle_pose, Some(6), "idle still maps");
+}

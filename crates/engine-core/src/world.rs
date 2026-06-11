@@ -34,6 +34,7 @@ use crate::move_buffer_host;
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 use crate::world_map::WorldMapController;
 pub use legaia_anm::{AnimPlayer, PoseFrame};
+use legaia_asset::monster_archive::MonsterAnimation;
 use legaia_engine_vm as vm;
 use legaia_save;
 use vm::Position as ActorVmPosition;
@@ -631,6 +632,35 @@ pub struct Actor {
     /// `active_animation` (field ANM) on a given actor.
     pub battle_animation: Option<crate::battle_anim::MonsterAnimPlayer>,
 
+    /// Per-slot battle action clips for this actor (the player files'
+    /// `record[0]` action streams, expanded so channel `i` drives TMD object
+    /// `i`), indexed by action-stream slot; index 0 = the idle loop. Set by
+    /// the host at battle init (see `World::set_actor_battle_action_clips`);
+    /// consulted by the battle-action SM's `pose()` host hook to switch
+    /// `battle_animation` between idle and action clips. `None` keeps the
+    /// idle-only behavior.
+    pub battle_action_clips: Option<std::sync::Arc<Vec<Option<MonsterAnimation>>>>,
+
+    /// Pose id the current `battle_animation` was selected for, in the pose-id
+    /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
+    /// `9` defeat). Lets a repeated request for the same pose keep the playing
+    /// clip instead of restarting it. (Retail mechanism note: the SM's
+    /// `FUN_801D5854(actor, 6..9)` calls are camera/presentation programs - the
+    /// anim ids retail stages into `actor+0x1DA` are entry indices, with idle
+    /// = id `0`; ids `7`/`8`/`9` are real entries staged by the SM and the
+    /// anim commit `FUN_8004AD80`. The engine folds both spaces into this one
+    /// hook; pose `6` plays entry 0's idle loop, which matches the frames
+    /// retail shows.)
+    pub battle_pose: Option<u8>,
+
+    /// Hit-reaction action tag currently playing on `battle_animation`
+    /// (the retail `actor+0x1EF..+0x1F3` key space: `2`/`3` light flinch,
+    /// `4` knockdown, `5` get-up, `0x0B` block). Set by
+    /// [`World::queue_battle_reaction`]; cleared when the reaction chain
+    /// finishes and idle resumes. Takes precedence over `battle_pose` while
+    /// active.
+    pub battle_reaction: Option<u8>,
+
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot
     /// (`FUN_80055468` → `legaia_asset::monster_archive::relocate_cba/relocate_tsb`).
@@ -1025,6 +1055,20 @@ pub struct World {
 
     /// Number of party slots (default 3).
     pub party_count: u8,
+
+    /// Present-party composition: `active_party[i]` = the **roster slot**
+    /// (index into [`Self::roster`]) occupying battle ordinal `i`. The
+    /// engine mirror of retail's present-party list at `0x8007BD10`
+    /// (1-based char ids there; 0-based roster slots here). Battle actor
+    /// slot `i`, HUD row `i`, and the runtime VRAM texture band `i`
+    /// (`relocate_tsb_cba` row `481 + i`) all key on the ORDINAL; the
+    /// character content (player battle file `863 + roster_slot`,
+    /// equipment, spell list, XP recipient) keys on the roster slot —
+    /// the live-verified retail banding rule (band = ordinal, file =
+    /// 862 + char_id). Empty = identity mapping (slot `i` = roster `i`,
+    /// the Vahn/Noa/Gala default). Resolve through
+    /// [`Self::party_roster_slot`]; install via [`Self::set_active_party`].
+    pub active_party: Vec<u8>,
 
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
@@ -2133,6 +2177,7 @@ impl World {
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,
+            active_party: Vec::new(),
             battle_end: None,
             screen_fade: None,
             roster: legaia_save::Party::zeroed(0),
@@ -3365,10 +3410,13 @@ impl World {
             ArtRow, chain_matches_record, miracle_for_chain, power_from_record, super_for_chain,
             synthetic_power,
         };
-        let character = self.caster_character(caster);
+        // `caster` is the battle ordinal; chains + art catalog belong to the
+        // occupying CHARACTER (roster slot per the present-party composition).
+        let char_slot = self.party_roster_slot(caster as usize) as u8;
+        let character = self.caster_character(char_slot);
         self.saved_chains
             .iter()
-            .filter(|c| c.char_slot == caster)
+            .filter(|c| c.char_slot == char_slot)
             .map(|c| {
                 // Miracle Arts win over a plain art-record match: a chain whose
                 // directional string is the caster's Miracle Art replaces the
@@ -4002,16 +4050,22 @@ impl World {
             return Vec::new();
         }
         let mut results = Vec::new();
-        for char_id in alive {
+        for member in alive {
+            // XP / level state belongs to the CHARACTER (roster slot), while
+            // the live HP/MP resync targets the battle ordinal's actor mirror.
+            let char_id = self.party_roster_slot(member as usize) as u8;
             let Some(result) = self.level_up_tracker.grant_xp(char_id, per_member_xp) else {
                 continue;
             };
-            let slot = char_id as usize;
-            if let Some(rec) = self.roster.members.get_mut(slot) {
+            if let Some(rec) = self.roster.members.get_mut(char_id as usize) {
                 LevelUpTracker::apply_to_record(&result, rec);
             }
-            let new_hms = self.roster.members.get(slot).map(|r| r.hp_mp_sp());
-            if let (Some(actor), Some(hms)) = (self.actors.get_mut(slot), new_hms) {
+            let new_hms = self
+                .roster
+                .members
+                .get(char_id as usize)
+                .map(|r| r.hp_mp_sp());
+            if let (Some(actor), Some(hms)) = (self.actors.get_mut(member as usize), new_hms) {
                 actor.battle.max_hp = hms.hp_max;
                 actor.battle.hp = hms.hp_cur;
                 actor.battle.mp = hms.mp_cur;
@@ -4093,7 +4147,7 @@ impl World {
                 && self
                     .roster
                     .members
-                    .get(i)
+                    .get(self.party_roster_slot(i))
                     .is_some_and(|rec| rec.ability_bits()[6] & 0x01 != 0)
         });
         let gold_credited = vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold);
@@ -6045,10 +6099,179 @@ impl World {
     /// since battle-init actors keep their `tmd_binding` without the field
     /// `.active` flag.
     pub fn tick_battle_animations(&mut self) {
-        for actor in &mut self.actors {
+        for i in 0..self.actors.len() {
+            // Hit-reaction chaining first (the FUN_8004AD80 record-type-4 arm):
+            // a finished knockdown re-stages the get-up entry while the actor
+            // lives, and holds its final downed keyframe otherwise. Other
+            // finished reactions fall through to the idle restore below.
+            let reaction = {
+                let a = &self.actors[i];
+                match (a.battle_reaction, &a.battle_animation) {
+                    (Some(key), Some(p)) if p.finished() => Some((key, a.battle.hp > 0)),
+                    _ => None,
+                }
+            };
+            match reaction {
+                Some((4, true)) => {
+                    // Knockdown finished on a living actor: play get-up (key 5).
+                    if !self.queue_battle_reaction_key(i, 5) {
+                        self.actors[i].battle_reaction = None;
+                    }
+                }
+                Some((4, false)) => {
+                    // Knockdown finished on a dead actor: hold the downed pose.
+                }
+                Some((_, _)) => {
+                    // Flinch / get-up / block finished: resume idle.
+                    self.actors[i].battle_reaction = None;
+                }
+                None => {}
+            }
+            // A finished one-shot action clip falls back to the idle loop -
+            // except defeat, which holds its final (downed) keyframe.
+            let restore_idle = {
+                let a = &self.actors[i];
+                a.battle_action_clips.is_some()
+                    && a.battle_reaction.is_none()
+                    && a.battle_pose != Some(vm::battle_action::Pose::Defeat as u8)
+                    && matches!(&a.battle_animation, Some(p) if p.finished())
+            };
+            if restore_idle {
+                self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
+            }
+            let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 actor.pose_frame = Some(player.tick());
             }
+        }
+    }
+
+    /// Queue the retail hit reaction on a damaged battle actor, mirroring the
+    /// damage primitive `FUN_800402F4`: a surviving target with no get-up
+    /// entry (action tag `5`) plays the light flinch (tag `2`, then straight
+    /// back to idle); any other hit plays the knockdown (tag `4`), whose
+    /// end-of-clip chain ([`Self::tick_battle_animations`], the
+    /// `FUN_8004AD80` record-type-4 arm) re-stages the get-up while the actor
+    /// lives and holds the downed keyframe when it dies. No-op for actors
+    /// without installed action clips (or without the needed entries).
+    // PORT: FUN_800402F4 (damage-arm reaction staging: `+0x1DA = +0x1EF` for
+    // a surviving no-get-up target, else `+0x1DA = +0x1F1`; the `+0x1EF..
+    // +0x1F3` tag->entry map is built by FUN_80054CB0 / FUN_80053CB8).
+    pub fn queue_battle_reaction(&mut self, slot: usize, survives: bool) {
+        let has_getup = self
+            .battle_reaction_clip(slot, 5)
+            .map(|c| c.frame_count > 0)
+            .unwrap_or(false);
+        let key = if survives && !has_getup { 2 } else { 4 };
+        self.queue_battle_reaction_key(slot, key);
+    }
+
+    /// Look up actor `slot`'s action clip carrying action tag `key` (the
+    /// retail `+0x1EF` map: tag -> entry, with the loader's tag-4 -> tag-2
+    /// fallback applied by the caller). Player files store the reaction
+    /// family identity-ordered; monster archives at arbitrary indices - so
+    /// the lookup is by each clip's `action_id`, exactly like
+    /// `FUN_80054CB0`'s first-byte scan.
+    fn battle_reaction_clip(&self, slot: usize, key: u8) -> Option<MonsterAnimation> {
+        let clips = self.actors.get(slot)?.battle_action_clips.as_ref()?;
+        clips.iter().flatten().find(|c| c.action_id == key).cloned()
+    }
+
+    /// Start the reaction clip for `key` on actor `slot` (one-shot). Applies
+    /// the retail tag-4 -> tag-2 fallback (`FUN_80054CB0` seeds `+0x1F1` from
+    /// `+0x1EF` when no tag-4 entry exists). Returns `false` when no usable
+    /// clip exists.
+    fn queue_battle_reaction_key(&mut self, slot: usize, key: u8) -> bool {
+        let clip = self.battle_reaction_clip(slot, key).or_else(|| {
+            (key == 4)
+                .then(|| self.battle_reaction_clip(slot, 2))
+                .flatten()
+        });
+        let Some(clip) = clip else {
+            return false;
+        };
+        let Some(player) = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip) else {
+            return false;
+        };
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        actor.battle_animation = Some(player);
+        actor.battle_reaction = Some(key);
+        actor.battle_pose = None;
+        true
+    }
+
+    /// Install the per-slot battle action clips for actor `slot` (see
+    /// [`Actor::battle_action_clips`]). The battle-action SM's `pose()` host
+    /// hook then switches `battle_animation` between the idle loop and the
+    /// matching action clip. No-ops for out-of-range slots.
+    pub fn set_actor_battle_action_clips(
+        &mut self,
+        slot: usize,
+        clips: std::sync::Arc<Vec<Option<MonsterAnimation>>>,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_action_clips = Some(clips);
+            actor.battle_pose = None;
+        }
+    }
+
+    /// Switch actor `slot`'s battle animation for a battle-action SM pose
+    /// request (the retail `FUN_801D5854(actor, pose_id)` call).
+    ///
+    /// Pose id → action-stream slot is an explicit engine interpretation
+    /// grounded in the player files' slot census: the SM's pose-id space is
+    /// `6` idle / `7` ready / `8` recover / `9` defeat, and in every player
+    /// battle file slot 6 is EMPTY while slots 7/8/9 are populated (Terra,
+    /// who barely fights, lacks exactly 7/8) and slot 0 is the proven idle
+    /// loop. So: pose 6 plays slot 0 as a loop; poses 7/8/9 play their
+    /// same-numbered slot as a one-shot (defeat holds its last frame via
+    /// [`Self::tick_battle_animations`]); a missing slot falls back to idle.
+    /// Re-requesting the actor's current pose keeps the playing clip.
+    // REF: FUN_801D5854 - the SM's pose dispatch this hook answers; the
+    // id->slot mapping is an engine interpretation, not a port of its body.
+    pub fn apply_battle_pose(&mut self, slot: usize, pose_id: u8) {
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return;
+        };
+        let Some(clips) = actor.battle_action_clips.clone() else {
+            return;
+        };
+        // An in-flight hit reaction outranks the SM's per-frame pose calls
+        // (retail's pose driver never touches the anim-id fields; the
+        // reaction chain owns them until it completes).
+        if actor.battle_reaction.is_some() {
+            return;
+        }
+        // Monster clip vectors are archive-order (retail resolves monster
+        // actions by first-byte search, not by pose id), so only the idle
+        // request maps for monster slots; party tables are identity-ordered
+        // and accept the full pose set.
+        if slot >= 3 && pose_id != vm::battle_action::Pose::Idle as u8 {
+            return;
+        }
+        if actor.battle_pose == Some(pose_id) {
+            return;
+        }
+        let idle_pose = vm::battle_action::Pose::Idle as u8;
+        let clip_slot = if pose_id == idle_pose {
+            0
+        } else {
+            pose_id as usize
+        };
+        let player = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
+            Some(clip) if clip_slot != 0 => {
+                crate::battle_anim::MonsterAnimPlayer::new_one_shot(clip)
+            }
+            _ => clips
+                .first()
+                .and_then(|c| c.as_ref())
+                .and_then(crate::battle_anim::MonsterAnimPlayer::new),
+        };
+        if let Some(player) = player {
+            actor.battle_animation = Some(player);
+            actor.battle_pose = Some(pose_id);
         }
     }
 
@@ -6115,6 +6338,54 @@ impl World {
             }
         }
         outcome
+    }
+
+    /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
+    /// band) to the **roster slot** of the character occupying it, per
+    /// [`Self::active_party`]. Identity when no composition is installed
+    /// or the ordinal runs past it — the historical slot-`i`-is-character-`i`
+    /// behaviour every synthetic test relies on.
+    pub fn party_roster_slot(&self, member: usize) -> usize {
+        self.active_party
+            .get(member)
+            .map(|&s| s as usize)
+            .unwrap_or(member)
+    }
+
+    /// Install a present-party composition: `slots[i]` = roster slot for
+    /// battle ordinal `i` (the engine mirror of retail's present-party
+    /// list at `0x8007BD10`). The list caps at the 3 on-screen party
+    /// positions (the runtime texture-band count). Sets
+    /// [`Self::party_count`] to the resulting length and, for each ordinal
+    /// whose mapped roster record exists, reseeds the party actor's HP /
+    /// MP / liveness / SPD mirror from it — the same projection
+    /// [`Self::load_party`] performs for the identity mapping. Ordinals
+    /// past the roster keep their live mirrors (zeroed-roster / synthetic
+    /// setups render the character with default equipment, exactly like
+    /// the identity default).
+    pub fn set_active_party(&mut self, slots: Vec<u8>) {
+        let mut active = slots;
+        active.truncate(3);
+        for (member, &rslot) in active.iter().enumerate() {
+            let Some(rec) = self.roster.members.get(rslot as usize) else {
+                continue;
+            };
+            let hms = rec.hp_mp_sp();
+            if let Some(a) = self.actors.get_mut(member) {
+                a.active = true;
+                a.battle.hp = hms.hp_cur;
+                a.battle.max_hp = hms.hp_max;
+                a.battle.mp = hms.mp_cur;
+                a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
+            }
+            if let Some(s) = self.battle_speed.get_mut(member) {
+                *s = rec.live_stats().spd;
+            }
+        }
+        if !active.is_empty() {
+            self.party_count = active.len() as u8;
+        }
+        self.active_party = active;
     }
 
     /// Place the world into [`SceneMode::Battle`] and populate the actor

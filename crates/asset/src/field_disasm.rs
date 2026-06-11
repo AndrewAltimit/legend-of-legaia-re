@@ -330,16 +330,19 @@ pub enum ActorCtrlKind {
     AllocActorMode { sub_op: u8, b: [u8; 4] },
     /// Sub-E: 2-byte mark currently-iterating actor flag bit 8.
     MarkActorFlag8,
-    /// Sub-0x10: 21-byte emitter init.
-    EmitterInit,
-    /// Sub-0x11: 12-byte 5-word emitter call.
-    Emitter5Words { words: [u16; 5] },
-    /// Sub-0x12 / Sub-0x13: 14-byte emitter calls.
-    EmitterPayload14,
-    /// Sub-0x14: 10-byte 4-word emitter call.
-    Emitter4Words { words: [i16; 4] },
-    /// Sub-0x15: 14-byte emitter struct.
-    EmitterStruct12,
+    /// Sub-0x10: 21-byte sprite-widget spawn (PROT-0900 family,
+    /// `FUN_801F8004`; inline 19-byte record).
+    WidgetSpriteSpawn,
+    /// Sub-0x11: 12-byte screen-mask (iris) rect tween
+    /// (`FUN_801F8D4C(l, t, r, b, dur)`).
+    WidgetMaskRect { words: [u16; 5] },
+    /// Sub-0x12 (VRAM rect copy via `FUN_800468A4`) / Sub-0x13 (image-panel
+    /// spawn `FUN_801F88FC`): 14-byte 6-word payloads.
+    WidgetPayload14,
+    /// Sub-0x14: 10-byte panel move/scale (`FUN_801F8E6C(x, y, scale, dur)`).
+    WidgetPanelMove { words: [i16; 4] },
+    /// Sub-0x15: 14-byte letterbox config (`FUN_801F8F28`).
+    WidgetLetterbox,
 }
 
 #[derive(Debug, Clone)]
@@ -1047,7 +1050,7 @@ fn decode_actor_ctrl(
         0xE => mk(header_size + 1, ActorCtrlKind::MarkActorFlag8),
         0x10 => {
             need(20)?;
-            mk(header_size + 20, ActorCtrlKind::EmitterInit)
+            mk(header_size + 20, ActorCtrlKind::WidgetSpriteSpawn)
         }
         0x11 => {
             need(11)?;
@@ -1058,11 +1061,11 @@ fn decode_actor_ctrl(
                     bytecode[operand + 2 + i * 2],
                 ]);
             }
-            mk(header_size + 11, ActorCtrlKind::Emitter5Words { words })
+            mk(header_size + 11, ActorCtrlKind::WidgetMaskRect { words })
         }
         0x12 | 0x13 => {
             need(13)?;
-            mk(header_size + 13, ActorCtrlKind::EmitterPayload14)
+            mk(header_size + 13, ActorCtrlKind::WidgetPayload14)
         }
         0x14 => {
             need(9)?;
@@ -1073,11 +1076,11 @@ fn decode_actor_ctrl(
                     bytecode[operand + 2 + i * 2],
                 ]) as i16;
             }
-            mk(header_size + 9, ActorCtrlKind::Emitter4Words { words })
+            mk(header_size + 9, ActorCtrlKind::WidgetPanelMove { words })
         }
         0x15 => {
             need(13)?;
-            mk(header_size + 13, ActorCtrlKind::EmitterStruct12)
+            mk(header_size + 13, ActorCtrlKind::WidgetLetterbox)
         }
         _ => Err(DisasmError::UnknownSubOp { pc, opcode, sub_op }),
     }

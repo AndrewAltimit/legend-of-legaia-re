@@ -18,9 +18,12 @@
 //! Interpolation matches the retail decoder + the visually-validated site
 //! animator (`monsters.html` `_frameTransforms`): translation lerps linearly,
 //! rotation takes the shortest-path 12-bit-angle step. The per-tick phase
-//! advance (`step`) is **not** pinned to retail's exact `actor[+0x68]` delta —
-//! it's a display-rate default (~14 keyframes/sec at a 60 Hz tick), adjustable
-//! per player.
+//! advance is retail-pinned when the clip carries its entry's rate byte:
+//! `FUN_80047430` advances the node's 12.4 cursor by
+//! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame, which with the
+//! normal `+0x21D == 4` and a 1-frame delta is `rate / 8` keyframes per tick
+//! ([`step_for_rate`]). A zero rate (clip built without entry context) keeps
+//! the historical display default.
 
 use legaia_anm::PoseFrame;
 use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
@@ -39,14 +42,35 @@ pub struct MonsterAnimPlayer {
     part_count: usize,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
-    /// Phase units added per [`tick`](Self::tick). Default `64` ≈ a quarter
-    /// keyframe per tick (≈15 keyframes/sec at 60 Hz). Not retail-pinned.
+    /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
+    /// entry rate byte via [`step_for_rate`] (retail: `rate * 2` units of
+    /// 1/16 keyframe per frame); still adjustable per player.
     pub step: u32,
+    /// `true` (default) loops the clip forever (idle). `false` plays the clip
+    /// once: the cursor clamps at the last keyframe and [`Self::finished`]
+    /// turns `true` (action clips - attack ready / hit recovery / defeat).
+    looping: bool,
+    /// One-shot completion latch (see [`Self::new_one_shot`]).
+    finished: bool,
+}
+
+/// Retail-pinned per-tick phase advance for an entry rate byte: the
+/// `FUN_80047430` cursor delta `(1 * 4 * rate) >> 1` = `2 * rate` units of
+/// 1/16 keyframe, scaled to this player's 8.8 phase (`rate * 32`). A zero
+/// rate (no entry context) falls back to the historical display default
+/// (`64`, which equals rate `2` - the faster of the two retail values).
+// PORT: FUN_80047430 - the per-frame anim-node cursor advance
+// (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`),
+// reduced to the normal case `frame_dt = 1`, `actor[+0x21D] = 4`.
+pub fn step_for_rate(rate: u8) -> u32 {
+    if rate == 0 { 64 } else { rate as u32 * 32 }
 }
 
 impl MonsterAnimPlayer {
     /// Build a player around one decoded animation (typically action 0 = idle).
     /// Returns `None` for a degenerate animation (no parts or no frames).
+    /// The playback step comes from the clip's entry rate byte
+    /// ([`step_for_rate`]).
     pub fn new(anim: &MonsterAnimation) -> Option<Self> {
         if anim.frame_count == 0 || anim.part_count == 0 {
             return None;
@@ -56,8 +80,26 @@ impl MonsterAnimPlayer {
             frame_count: anim.frame_count as u32,
             part_count: anim.part_count,
             phase: 0,
-            step: 64,
+            step: step_for_rate(anim.rate),
+            looping: true,
+            finished: false,
         })
+    }
+
+    /// Build a **one-shot** player: the clip plays once, the cursor clamps at
+    /// the last keyframe, and [`Self::finished`] reports completion. Used for
+    /// battle action clips (ready / recover / defeat) where idle is the loop
+    /// to fall back to.
+    pub fn new_one_shot(anim: &MonsterAnimation) -> Option<Self> {
+        let mut p = Self::new(anim)?;
+        p.looping = false;
+        Some(p)
+    }
+
+    /// `true` once a one-shot clip has reached its last keyframe. Always
+    /// `false` for a looping player.
+    pub fn finished(&self) -> bool {
+        self.finished
     }
 
     /// Number of animated parts (= TMD objects the pose addresses).
@@ -70,14 +112,24 @@ impl MonsterAnimPlayer {
         self.phase = 0;
     }
 
-    /// Advance one tick and return the interpolated per-object pose. The cursor
-    /// loops over the clip; `PoseFrame::finished` is always `false` (idle loops
-    /// forever).
+    /// Advance one tick and return the interpolated per-object pose. A looping
+    /// player wraps over the clip (`PoseFrame::finished` always `false`); a
+    /// one-shot player clamps at the last keyframe and reports `finished`.
     pub fn tick(&mut self) -> PoseFrame {
         let total = self.frame_count * PHASE_ONE;
-        self.phase = (self.phase + self.step) % total;
-        let f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
-        let f1 = (f0 + 1) % self.frames.len();
+        let (f0, f1);
+        if self.looping {
+            self.phase = (self.phase + self.step) % total;
+            f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
+            f1 = (f0 + 1) % self.frames.len();
+        } else {
+            // One-shot: clamp the cursor on the final keyframe.
+            let last = (self.frame_count - 1) * PHASE_ONE;
+            self.phase = (self.phase + self.step).min(last);
+            self.finished = self.phase >= last;
+            f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
+            f1 = (f0 + 1).min(self.frames.len() - 1);
+        }
         let frac = (self.phase & (PHASE_ONE - 1)) as i32; // 0..=255
 
         let a = &self.frames[f0];
@@ -103,7 +155,7 @@ impl MonsterAnimPlayer {
         PoseFrame {
             bone_outputs,
             factor: (frac as u8),
-            finished: false,
+            finished: self.finished,
         }
     }
 }
@@ -132,6 +184,7 @@ mod tests {
         // rotated a quarter turn (1024 = 4096/4) about Z.
         MonsterAnimation {
             action_id: 0,
+            rate: 2,
             part_count: 1,
             frame_count: 2,
             frames: vec![
@@ -159,6 +212,7 @@ mod tests {
     fn new_rejects_degenerate() {
         let a = MonsterAnimation {
             action_id: 0,
+            rate: 2,
             part_count: 0,
             frame_count: 0,
             frames: vec![],
@@ -198,6 +252,7 @@ mod tests {
         // should land near the wrap midpoint (4096/0), not near 2048.
         let anim = MonsterAnimation {
             action_id: 0,
+            rate: 2,
             part_count: 1,
             frame_count: 2,
             frames: vec![
@@ -225,5 +280,60 @@ mod tests {
         // step = ((256 - 3840 + 6144) % 4096) - 2048 = (2560 % 4096) - 2048 = 512.
         // halfway: 3840 + 512/2 = 4096.
         assert_eq!(r[2], 4096);
+    }
+}
+
+#[cfg(test)]
+mod one_shot_tests {
+    use super::*;
+    use legaia_asset::monster_archive::PartPose;
+
+    fn clip(frames: usize) -> MonsterAnimation {
+        MonsterAnimation {
+            action_id: 8,
+            rate: 2,
+            part_count: 1,
+            frame_count: frames,
+            frames: (0..frames)
+                .map(|f| {
+                    vec![PartPose {
+                        tx: f as i16 * 10,
+                        ty: 0,
+                        tz: 0,
+                        rx: 0,
+                        ry: 0,
+                        rz: 0,
+                    }]
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn one_shot_clamps_on_last_keyframe_and_finishes() {
+        let mut p = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        p.step = 256; // one keyframe per tick
+        assert!(!p.finished());
+        let _ = p.tick(); // frame 1
+        assert!(!p.finished());
+        let f = p.tick(); // frame 2 (last)
+        assert!(p.finished());
+        assert!(f.finished);
+        let (t, _) = f.bone_outputs[0];
+        assert_eq!(t[0], 20, "clamped on the final keyframe");
+        // Further ticks hold the final pose.
+        let f2 = p.tick();
+        assert_eq!(f2.bone_outputs[0].0[0], 20);
+        assert!(f2.finished);
+    }
+
+    #[test]
+    fn looping_player_never_finishes() {
+        let mut p = MonsterAnimPlayer::new(&clip(3)).unwrap();
+        p.step = 256;
+        for _ in 0..10 {
+            assert!(!p.tick().finished);
+        }
+        assert!(!p.finished());
     }
 }

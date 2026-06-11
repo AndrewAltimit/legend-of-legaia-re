@@ -55,10 +55,15 @@
 //! Each spell entry's head:
 //!
 //! - `+0x00` (u8) — spell/action id. The id doubles as a category selector:
-//!   ids `2,3,4,5,0x0B` mark an **elemental resist/affinity** (`FUN_80054CB0`
-//!   stores the matching spell index into actor `+0x1EF..+0x1F3`); ids in
-//!   `0x0C..=0x1F` are **offensive castable spells** the battle AI may roll
-//!   (`overlay_0898_801e9fd4`); `0x23` (`'#'`) is a special category.
+//!   ids `2,3,4,5,0x0B` mark the **hit-reaction animation family** (light
+//!   flinch / heavy flinch / knockdown / get-up / block — `FUN_80054CB0`
+//!   caches the matching entry index into actor `+0x1EF..+0x1F3`, the map
+//!   the damage primitive `FUN_800402F4` and the anim commit `FUN_8004AD80`
+//!   stage reactions from); ids in `0x0C..=0x1F` are **offensive castable
+//!   spells** the battle AI may roll (`overlay_0898_801e9fd4`); `0x20`/`0x21`/
+//!   `0x22` are the attack-approach family the action SM resolves by
+//!   first-byte search (`FUN_80050E2C`: pre-approach / close-in / victory);
+//!   `0x23` (`'#'`) is a special category.
 //! - `+0x74` (u8) — **SP (spirit) cost**. The enemy-AI spell picker only
 //!   considers a spell when `cost != 0xFF` and the actor's current SP
 //!   (`+0x154`) is `>= cost`, then subtracts it on cast. `0xFF` = unavailable.
@@ -818,9 +823,20 @@ pub struct PartPose {
 /// neutral **idle** animation the engine loops when the monster isn't acting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonsterAnimation {
-    /// Action id (entry `+0x00`): `0` idle, `1` basic attack, then the spell /
-    /// special actions (matching [`MonsterSpell::id`]).
+    /// Action id (entry `+0x00`) - a semantic **type tag**, not just an index.
+    /// `0` idle loop, `1` walk/approach, `2`/`3` light hit reactions, `4`
+    /// knockdown (heavy hit / death fall), `5` get-up, `0x0B` block; monster
+    /// archives additionally carry the attack family (`0x20` pre-approach,
+    /// `0x21` close-in, `0x22` victory) and spell actions. The battle loaders
+    /// cache a tag → entry-index map at actor `+0x1EF..+0x1F3` for tags
+    /// `{2,3,4,5,0x0B}` (`FUN_80054CB0` scans the entry table; `FUN_80053CB8`
+    /// hardcodes `[2,3,4,5,0xB]` for party files, whose layout is identity).
     pub action_id: u8,
+    /// Playback-rate byte (entry `+0x78`). The retail per-frame cursor advance
+    /// is `(frame_dt * actor[+0x21D] * rate) >> 1` in 12.4 fixed point
+    /// (`FUN_80047430`), i.e. `rate / 8` keyframes per 60 Hz tick with the
+    /// normal `actor[+0x21D] == 4`. Retail data uses `1` or `2`.
+    pub rate: u8,
     /// Number of animated objects per frame (one per TMD object).
     pub part_count: usize,
     /// Number of keyframes.
@@ -838,6 +854,9 @@ impl MonsterAnimation {
 
 /// Offset of the packed animation stream inside a per-action entry.
 const ANIM_STREAM_OFFSET: usize = 0x8c;
+/// Offset of the playback-rate byte inside a per-action entry (shared with
+/// the player battle files' record[0] entries).
+pub(crate) const ANIM_RATE_OFFSET: usize = 0x78;
 /// Bytes per part record in the packed stream (six 12-bit fields).
 const ANIM_PART_STRIDE: usize = 9;
 
@@ -874,7 +893,11 @@ fn unpack_part(b: &[u8]) -> PartPose {
 /// `entry_off`. Returns `None` when the stream head or frame data falls outside
 /// the block, or the part/frame counts are zero.
 fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<MonsterAnimation> {
-    parse_animation_stream(block, action_id, entry_off + ANIM_STREAM_OFFSET)
+    let rate = block
+        .get(entry_off + ANIM_RATE_OFFSET)
+        .copied()
+        .unwrap_or(0);
+    parse_animation_stream(block, action_id, rate, entry_off + ANIM_STREAM_OFFSET)
 }
 
 /// Parse a packed `[u8 parts][u8 frames][9-byte TRS records]` stream starting
@@ -885,6 +908,7 @@ fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<Mons
 pub(crate) fn parse_animation_stream(
     block: &[u8],
     action_id: u8,
+    rate: u8,
     s: usize,
 ) -> Option<MonsterAnimation> {
     let part_count = *block.get(s)? as usize;
@@ -908,6 +932,7 @@ pub(crate) fn parse_animation_stream(
     }
     Some(MonsterAnimation {
         action_id,
+        rate,
         part_count,
         frame_count,
         frames,

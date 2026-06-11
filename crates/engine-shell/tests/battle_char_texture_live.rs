@@ -35,6 +35,10 @@ const CAPTURES: &[&str] = &[
     "party_battle_gobu_gobu",
     "noa_levelup_fight_pre",
     "rim_elm_queen_bee_battle",
+    // Noa + Terra party: covers the 4th playable character (char id 4,
+    // player file 0866) - the band selector is the present-party ordinal,
+    // so Terra bands like any other member.
+    "terra_party_battle",
 ];
 
 /// RAM offset of `DAT_8007BD10` (battle party char ids, 3 slots, 1-based;

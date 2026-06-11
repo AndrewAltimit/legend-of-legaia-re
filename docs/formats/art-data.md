@@ -90,6 +90,20 @@ Every entry in the battle action queue is one of these `0x00–0x32` values:
 
 The first 4 directional bytes of a Miracle Art's replacement string are stored on disc with the high nibble's MSB set (`0x8C` / `0x8D` / `0x8E` / `0x8F`); the runtime ANDs with `0x7F` when copying into the queue. `legaia_art::miracle::unmask_replacement_byte` matches that.
 
+These constants double as the **battle anim-id space**: the action SM's
+strike loop stages each queue byte verbatim into `actor[+0x1DA]`, and the
+anim commit `FUN_8004AD80` resolves it - directions `0x0C..0x0F` index the
+runtime action table directly (those four slots are swing records spliced
+from the **equipped-item sections** at battle init), while ids `>= 0x10`
+(starters, arts) materialize a record from the per-character `0xD0`-stride
+**art-animation bank** (the record[0] `+0x58` pointer) into dynamic table
+slot `0x10`/`0x11` - the on-disc "Empty Slots". Art ids `0x1B+` also drive
+the HUD art-name display and `FUN_8004C650(char, id - 0x1B)`. The "Empty
+Slots 1-8" ids `0x11..0x18` reappear at runtime in `actor[+0x1DB]` (last
+staged id), where the battle camera driver `FUN_801D5854` dispatches
+per-art camera variants on them. See
+[battle-data-pack.md § Battle animations](battle-data-pack.md#battle-animations-record0).
+
 ## Art record layout
 
 The layout is **schema-then-walk**: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The researcher captured field positions but did not pin every byte - this page documents the schema; [`crates/art`](../../crates/art) ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.

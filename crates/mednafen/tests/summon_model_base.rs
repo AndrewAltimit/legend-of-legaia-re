@@ -41,13 +41,18 @@ use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice, scenarios
 /// (`gp` base `0x8007B318` + `0x754`). See `docs/formats/move-power.md`.
 const GP_754_MODEL_BASE: u32 = 0x8007_BA6C;
 
-/// PSX address of the party member count (`u8`). See
-/// `docs/reference/memory-map.md`.
-const PARTY_COUNT: u32 = 0x8008_4594;
+/// PSX address of the 5-slot present-party character-id list the battle
+/// loader (`FUN_80052FA0`) walks at init, loading one model per nonzero slot.
+/// Slots 0..=2 are the main battle members, slot 3 a guest slot, slot 4 an
+/// extra/special slot. (The story party-count global at `0x80084594` counts
+/// main members only - the Terra-in-party capture showed it excludes guests,
+/// so the model-base invariant keys on this list instead.)
+const PRESENT_PARTY_LIST: u32 = 0x8007_BD10;
 
 /// The fixed pool prefix that precedes the live party-character meshes in
-/// `DAT_8007C018` at battle init: `gp[0x754] == party_count + MODEL_BASE_PREFIX`
-/// whenever the library is resident.
+/// `DAT_8007C018` at battle init: `gp[0x754]` snapshots the running
+/// model-register counter after the per-slot loads, i.e.
+/// `MODEL_BASE_PREFIX + loaded_model_count` whenever the library is resident.
 const MODEL_BASE_PREFIX: u8 = 2;
 
 fn read_u32(ram: &[u8], addr: u32) -> u32 {
@@ -86,10 +91,15 @@ fn library_dir() -> Option<PathBuf> {
     None
 }
 
-/// `(gp[0x754], party_count)` for a scenario's mednafen library backup, or
-/// `None` (skip) when the scenario, its `backup_fingerprint`, or the backup
-/// file is missing.
-fn model_base_and_party(manifest: &ScenarioManifest, lib: &Path, label: &str) -> Option<(u32, u8)> {
+/// `(gp[0x754], member_count, extra_slot)` for a scenario's mednafen library
+/// backup, or `None` (skip) when the scenario, its `backup_fingerprint`, or
+/// the backup file is missing. `member_count` counts nonzero entries in
+/// present-party slots 0..=3; `extra_slot` is slot 4's id byte.
+fn model_base_and_party(
+    manifest: &ScenarioManifest,
+    lib: &Path,
+    label: &str,
+) -> Option<(u32, u8, u8)> {
     let scn = manifest.scenarios.iter().find(|s| s.label == label)?;
     let fp = scn.backup_fingerprint.as_deref()?;
     let path = scenarios::library_backup_for("mednafen", lib, fp)?;
@@ -98,7 +108,11 @@ fn model_base_and_party(manifest: &ScenarioManifest, lib: &Path, label: &str) ->
     let ram = save
         .main_ram()
         .unwrap_or_else(|e| panic!("main RAM for {label}: {e:#}"));
-    Some((read_u32(ram, GP_754_MODEL_BASE), read_u8(ram, PARTY_COUNT)))
+    let members = (0..4)
+        .filter(|i| read_u8(ram, PRESENT_PARTY_LIST + i) != 0)
+        .count() as u8;
+    let extra = read_u8(ram, PRESENT_PARTY_LIST + 4);
+    Some((read_u32(ram, GP_754_MODEL_BASE), members, extra))
 }
 
 #[test]
@@ -114,27 +128,32 @@ fn model_library_base_tracks_party_size() {
     };
 
     // For every scenario with a mednafen backup, the model-library base is
-    // either 0 (no library resident) or exactly party_count + 2 (resident). We
-    // also require having seen the relationship hold for at least two *distinct*
-    // party sizes, so the test demonstrably pins a party-size-tracking base and
-    // not a constant 3.
+    // either 0 (no library resident) or 2 + the number of party-side models
+    // the loader registered. Slots 0..=3 of the present-party list are stable
+    // member ids; slot 4 (the extra/special slot) mutates at runtime, so when
+    // it is nonzero in a late-battle state its model may or may not have been
+    // resident at the snapshot point - both counts are accepted for it. We
+    // also require having seen the relationship hold for at least two
+    // *distinct* member counts, so the test demonstrably pins a
+    // party-size-tracking base and not a constant.
     let mut resident_party_sizes: Vec<u8> = Vec::new();
     let mut checked = 0usize;
 
     for scn in &manifest.scenarios {
-        let Some((base, party)) = model_base_and_party(&manifest, &lib, &scn.label) else {
+        let Some((base, members, extra)) = model_base_and_party(&manifest, &lib, &scn.label) else {
             continue;
         };
         checked += 1;
-        let expected_resident = u32::from(party) + u32::from(MODEL_BASE_PREFIX);
+        let resident = u32::from(members) + u32::from(MODEL_BASE_PREFIX);
+        let resident_with_extra = resident + u32::from(extra != 0);
         assert!(
-            base == 0 || base == expected_resident,
-            "{}: gp[0x754]={base} must be 0 (no library) or party_count+2={expected_resident} \
-             (party_count={party})",
+            base == 0 || base == resident || base == resident_with_extra,
+            "{}: gp[0x754]={base} must be 0 (no library), members+2={resident}, or \
+             members+extra+2={resident_with_extra} (members={members}, extra slot={extra:#x})",
             scn.label
         );
-        if base != 0 {
-            resident_party_sizes.push(party);
+        if base == resident && base != 0 {
+            resident_party_sizes.push(members);
         }
     }
 
@@ -158,6 +177,6 @@ fn model_library_base_tracks_party_size() {
     assert!(
         resident_party_sizes.contains(&1) && resident_party_sizes.contains(&3),
         "expected the corpus to cover the 1-member (base 3) and 3-member (base 5) \
-         party battles; saw resident party sizes {resident_party_sizes:?}"
+         party battles; saw resident member counts {resident_party_sizes:?}"
     );
 }

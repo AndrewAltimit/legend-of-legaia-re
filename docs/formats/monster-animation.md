@@ -30,6 +30,56 @@ cycle played while the monster advances on a target (a walk for grounded
 enemies, a flight cycle for fliers), and the rest correspond to the
 monster's spell / special actions.
 
+## Action tags and the `+0x1EF` reaction map
+
+The entry's first byte (`+0x00`) is a semantic **tag**, not just an index:
+
+| tag | meaning |
+|---|---|
+| `0` | idle loop |
+| `1` | walk / approach cycle |
+| `2`, `3` | light hit reactions (flinch variants) |
+| `4` | knockdown (heavy hit / death fall) |
+| `5` | get-up |
+| `7`, `8`, `9` | ready / recover / defeat poses (player files) |
+| `0x0B` | block |
+| `0x0C..0x1F` | castable spell / special actions (monster AI roll space) |
+| `0x20`, `0x21`, `0x22` | attack pre-approach / close-in / victory (monster files) |
+
+At battle init the monster installer `FUN_80054CB0` scans the entry table and
+caches the **entry index** of each tag in `{2,3,4,5,0x0B}` into battle-actor
+bytes `+0x1EF..+0x1F3` (with a tag-4 → tag-2 fallback when no knockdown entry
+exists); the party installer `FUN_80053CB8` hardcodes `[2,3,4,5,0xB]` because
+the player files store the family identity-ordered. Consumers:
+
+- the damage primitive `FUN_800402F4` stages the target's reaction from the
+  map — a surviving target with no get-up entry queues `+0x1EF` (light
+  flinch, with the exit-to-idle flag), any other hit queues `+0x1F1`
+  (knockdown);
+- the anim commit `FUN_8004AD80` chains a finished knockdown (record tag 4)
+  into `+0x1F2` (get-up) while the actor lives, or anim id 7 for a downed
+  party member, and tests the queued id against `+0x1EF/+0x1F0/+0x1F3` for
+  the counter/guard window;
+- the battle-action SM (`FUN_801E295C`) resolves monster attack anims by
+  **first-byte search** over the entry table (`FUN_80050E2C` with tags
+  `0x20`/`1`/`0x21`/`0x22`), staging the returned *index*.
+
+## Anim selection (`actor +0x1D9/+0x1DA` → entry)
+
+The per-actor anim state is a pair of bytes: `+0x1DA` = queued anim id,
+`+0x1D9` = current. The id **is the entry index** — the commit function
+`FUN_8004AD80` installs `node+0x4C = *(record_ptr + 0x4C + id*4)` for
+monsters (record pointers at `0x801C9348 + (slot-3)*4`) and
+`node+0x4C = *(table + id*4)` for party (per-character record[0] tables at
+`0x801C9360 + slot*4`), then snaps `+0x1D9 = +0x1DA`. There is no remap
+table and no special case for id 6: retail's idle id is **0**, and the
+battle SM's `FUN_801D5854(actor, 6..9)` "pose" calls are a separate
+camera/presentation program space that never touches the anim fields.
+Party ids `≥ 0x10` (basic swings staged as direction bytes `0x0C..0x0F` are
+still table-direct; art starters `0x19`/`0x1A` and art constants `0x1B+` are
+not) trigger the dynamic-slot path instead — see
+[`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
+
 The **player battle files** carry the same per-action entry family for the
 party's assembled meshes — action-offset table at the head of `record[0]`,
 packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
@@ -85,12 +135,30 @@ draw struct (`+0x68`): integer frame index = `phase >> 4`, sub-frame fraction =
 buffer (6 shorts per object) and applied per object via the GTE in the draw
 loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
 
+The per-frame cursor advance lives in the anim-node tick `FUN_80047430`:
+`phase += (frame_dt * actor[+0x21D] * record[+0x78]) >> 1`, where `+0x21D`
+is the actor's speed scale (normally `4`) and the entry's `+0x78` byte is
+its **playback rate** (`1` or `2` across the retail corpus — `rate/8`
+keyframes per 60 Hz tick in the normal case). When the cursor passes the
+stream's frame count (or the `+0x1DC` event flags fire mid-clip) the tick
+calls the commit `FUN_8004AD80`, which swaps the entry, zeroes the cursor,
+and converges `+0x1D9 = +0x1DA`. On the last frame of a clip the decoder
+cross-blends toward **frame 0 of the queued entry's stream** (looked up by
+`+0x1DA`), so anim transitions tween rather than snap. Entry `+0x84` seeds a
+loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
+(e.g. the player defeat entries hold a 2-frame loop); `+0x87` is a sound
+cue fired at install.
+
 ## Provenance
 
 - `FUN_8004998c` — packed-stream decoder + frame interpolation (`ghidra/scripts/funcs/8004998c.txt`).
 - `FUN_80048a08` — per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
 - `FUN_800495c8` / `FUN_8005b038` — GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
-- `FUN_80054cb0` — monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` (`ghidra/scripts/funcs/80054cb0.txt`).
+- `FUN_80054cb0` — monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` and builds the `+0x1EF..+0x1F3` tag map (`ghidra/scripts/funcs/80054cb0.txt`).
+- `FUN_80047430` — per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
+- `FUN_8004AD80` — anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).
+- `FUN_800402F4` — damage primitive; stages the target's hit reaction from the `+0x1EF` map (`ghidra/scripts/funcs/800402f4.txt`).
+- `FUN_80050E2C` — first-byte tag search over the entry-pointer array (`ghidra/scripts/funcs/80050e2c.txt`).
 
 ## Engine playback
 
@@ -106,8 +174,14 @@ the rigid `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` builder (`R·v + T`,
 `Rz·Ry·Rx` about each object's local origin — the same composition as the
 glTF export below and the site animator). The disc-gated `battle_anim_real`
 test drives the whole decode → player → deform path on a real monster and
-asserts the posed mesh moves frame-to-frame. The per-tick phase advance is a
-display-rate default, not pinned to retail's exact `actor[+0x68]` delta.
+asserts the posed mesh moves frame-to-frame. The per-tick phase advance is
+retail-pinned through the entry's rate byte
+(`battle_anim::step_for_rate`, the `FUN_80047430` formula reduced to the
+normal `frame_dt = 1`, `+0x21D = 4` case); the engine also plays the
+hit-reaction family — `World::queue_battle_reaction` mirrors the
+`FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
+chain. The decoder's cross-blend into the queued clip is a known engine
+simplification (transitions restart at frame 0 without the tween).
 
 ## Export
 

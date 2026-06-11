@@ -245,14 +245,33 @@ placement is pinned — see
 
 `record[0]` (the LZS stream at file `+0x10`, decoded to `budget` bytes) is
 not just the battle-palette chain: its head is a **u32 action-offset table**
-(22 slots at `+0x00..+0x58`, zero = empty; the two words at `+0x58`/`+0x5C`
-point at further blocks inside the same record) whose entries are the
-character's **battle action-animation records** — the same per-action entry
-family as the monster archive's (`docs/formats/monster-animation.md`), with
-the packed `[u8 part_count][u8 frame_count][9-byte TRS records]` keyframe
-stream at **entry `+0xAC`** (the monster entries keep theirs at `+0x8C`).
-Slot 0 is the neutral **idle** loop; its frame 0 is the combat-stance rest
-pose that sockets the assembled battle mesh.
+(12 populated disc slots at `+0x00..+0x2C`; the loader widens it at runtime —
+see below) whose entries are the character's **battle action-animation
+records** — the same per-action entry family as the monster archive's
+(`docs/formats/monster-animation.md`), with the packed
+`[u8 part_count][u8 frame_count][9-byte TRS records]` keyframe stream at
+**entry `+0xAC`** (the monster entries keep theirs at `+0x8C`), the playback
+rate byte at entry `+0x78`, and the entry's first byte its **action tag**
+(identity with the slot index in these files). Slot 0 is the neutral
+**idle** loop; its frame 0 is the combat-stance rest pose that sockets the
+assembled battle mesh.
+
+The **runtime action table** (rebased copies at `0x801C9360 + slot*4`,
+built by `FUN_80052FA0`) is wider than the 12 disc words:
+
+- slots `0xC`/`0xD`/`0xE` are filled with **swing records spliced from the
+  equipped-item sections** 2/3/4 (each section payload carries a per-item
+  action record; section 4 contributes a second record into slot `0xF`) —
+  the four direction-command swings (`0x0C` L / `0x0D` R / `0x0E` D /
+  `0x0F` U, the same byte values the Tactical-Arts command queue stages as
+  anim ids) are therefore **per-equipment animations**;
+- slots `0x10`/`0x11` are **dynamic**: the anim commit `FUN_8004AD80`
+  materializes a record there for any staged id `>= 0x10` from the
+  per-character **art-animation bank** (the `+0x58` word: `0xD0`-stride
+  records; art ids `0x1B+` also drive the HUD art-name display and
+  `FUN_8004C650(char, id - 0x1B)`), loading its keyframe stream into a
+  scratch buffer and rewriting the queued id to the slot number;
+- the `+0x5C` word is a rebased sibling pointer (consumer untraced).
 
 `part_count` equals the character's **skeleton bone count** (15 Vahn /
 16 Noa / 15 Gala / 17 Terra — the assembled mesh's `nobj` minus its
@@ -271,6 +290,28 @@ battle RAM, and its banks are authored against PROT 1204's own object
 order (see
 [`character-mesh.md` § Assembly](character-mesh.md#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams)).
 
+**Populated slots** (disc census, asserted by the disc-gated
+`player_action_table_real` test): all four characters carry entries `0..0xB`
+with `action_tag == slot`; Vahn / Noa / Gala have decodable streams at
+`{0,1,2,3,4,5,7,8,9,11}`, Terra at `{0,1,2,3,4,5,9,11}` (her 7/8 entries
+exist but hold empty streams — she barely fights). **Entry 6's stream is
+empty in all four files**, and that's expected: retail's idle anim id is
+`0` (the SM stages `+0x1DA = 0`), and the `FUN_801D5854(actor, 6..9)` calls
+are a separate camera/presentation program space — id 6 never reaches the
+anim system. The slot semantics are the **action-tag space** (see
+[`monster-animation.md` § Action tags](monster-animation.md#action-tags-and-the-0x1ef-reaction-map)):
+`1` walk/approach (staged by the attack band's party arm), `2`/`3` light
+flinches, `4` knockdown, `5` get-up, `7`/`8`/`9` ready/recover/defeat
+(staged by the SM and the `FUN_8004AD80` end-of-clip chains), `0x0B` block.
+The historical "strike family awaiting per-state attribution" reading is
+resolved: the attack swings do **not** come from these entries at all —
+they come from the equipment-spliced slots `0xC..0xF` and the dynamic art
+slots `0x10`/`0x11` above. The engine plays the hit-reaction family via
+`engine-core::World::queue_battle_reaction` (the `FUN_800402F4` staging
+rule) and keeps the SM pose ids on their same-numbered entries
+(`apply_battle_pose`; idle maps to entry 0, matching the frames retail
+shows).
+
 Parsers: `legaia_asset::battle_char_assembly::{decode_record0,
 battle_animations, idle_battle_animation, expand_animation_for_objects}`
 (the stream decode is shared with `legaia_asset::monster_archive`).
@@ -279,7 +320,12 @@ battle_animations, idle_battle_animation, expand_animation_for_objects}`
 
 The battle-init texture upload is fully pinned. `FUN_80052FA0` runs once per
 **present** party member; `p` below is the member's 0-based ordinal among the
-present battle party (the band selector — *not* the character id). Per
+present battle party (the band selector — *not* the character id). The
+ordinal rule is live-verified for **all four playable characters**: a
+Noa + Terra party capture (`terra_party_battle`) byte-matches both bands at
+100% with Terra (char id 4, player file 0866) banding at her ordinal like
+any other member — there is no special "4th band"
+(`crates/engine-shell/tests/battle_char_texture_live.rs`). Per
 member it issues up to seven upload blocks through `FUN_80053B9C`
 (decomp `ghidra/scripts/funcs/80052fa0.txt` / `80053b9c.txt`):
 
