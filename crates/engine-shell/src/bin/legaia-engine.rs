@@ -54,6 +54,16 @@ use legaia_font::Font;
 /// The geometry helpers (`world_map_*_line_geometry`) emit this shape; it is
 /// uploaded via `Renderer::upload_lines`.
 type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
+
+/// One assembled party member ready for the battle render:
+/// `(assembled character, texture uploads, idle clip, per-slot action clips)`.
+/// Produced by `PlayWindowApp::assembled_party_battle_mesh`.
+type AssembledPartyMesh = (
+    legaia_asset::battle_char_assembly::AssembledCharacter,
+    Vec<legaia_asset::battle_char_assembly::TextureUpload>,
+    legaia_asset::monster_archive::MonsterAnimation,
+    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+);
 use legaia_prot::cdname;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -6358,8 +6368,12 @@ impl PlayWindowApp {
                 )> = None;
                 let mut tex_uploads: Vec<legaia_asset::battle_char_assembly::TextureUpload> =
                     Vec::new();
-                if let Some((asm, uploads, idle)) = self.assembled_party_battle_mesh(cslot) {
+                let mut action_clips: Option<
+                    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+                > = None;
+                if let Some((asm, uploads, idle, clips)) = self.assembled_party_battle_mesh(cslot) {
                     tex_uploads = uploads;
+                    action_clips = Some(clips);
                     match legaia_tmd::parse(&asm.tmd) {
                         Ok(tmd) => source = Some((tmd, asm.tmd, Some(idle))),
                         Err(e) => log::warn!(
@@ -6522,6 +6536,14 @@ impl PlayWindowApp {
                                 .world
                                 .set_actor_battle_animation(member, player);
                         }
+                        // Hand the SM pose hook the full action-clip set so
+                        // ready / recover / defeat play their real streams.
+                        if let Some(clips) = action_clips.take() {
+                            self.session
+                                .host
+                                .world
+                                .set_actor_battle_action_clips(member, std::sync::Arc::new(clips));
+                        }
                         party_bound += 1;
                     }
                     Err(e) => log::warn!("play-window: party {cslot} mesh upload: {e:#}"),
@@ -6568,14 +6590,7 @@ impl PlayWindowApp {
     /// mesh assembly or the idle-stream decode fails - the caller falls
     /// back to the slot's static PROT 1204 mesh, whose rest pose
     /// (PROT 1203, identity object->bone) is known-correct.
-    fn assembled_party_battle_mesh(
-        &self,
-        cslot: usize,
-    ) -> Option<(
-        legaia_asset::battle_char_assembly::AssembledCharacter,
-        Vec<legaia_asset::battle_char_assembly::TextureUpload>,
-        legaia_asset::monster_archive::MonsterAnimation,
-    )> {
+    fn assembled_party_battle_mesh(&self, cslot: usize) -> Option<AssembledPartyMesh> {
         let prot = 863 + cslot as u32;
         let raw = match self.session.host.index.entry_bytes_extended(prot) {
             Ok(raw) => raw,
@@ -6650,7 +6665,27 @@ impl PlayWindowApp {
             log::warn!("play-window: party {cslot} texture-pool decode: {e:#}");
             Vec::new()
         });
-        Some((asm, uploads, idle))
+        // Every populated action-stream slot, expanded the same way as the
+        // idle: the battle-action SM's pose hook switches between these
+        // (ready / recover / defeat one-shots over the idle loop).
+        let mut clips: Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> =
+            vec![None; legaia_asset::battle_char_assembly::ACTION_SLOT_COUNT];
+        match legaia_asset::battle_char_assembly::battle_animations(&raw) {
+            Ok(anims) => {
+                for a in &anims {
+                    if let Some(slot) = clips.get_mut(a.action_id as usize) {
+                        *slot = Some(
+                            legaia_asset::battle_char_assembly::expand_animation_for_objects(
+                                a,
+                                &asm.anm_bones,
+                            ),
+                        );
+                    }
+                }
+            }
+            Err(e) => log::warn!("play-window: party {cslot} action-stream decode: {e:#}"),
+        }
+        Some((asm, uploads, idle, clips))
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful

@@ -271,6 +271,20 @@ battle RAM, and its banks are authored against PROT 1204's own object
 order (see
 [`character-mesh.md` § Assembly](character-mesh.md#assembly--object-local-pieces-posed-by-the-characters-own-battle-streams)).
 
+**Populated slots** (disc census): Vahn / Noa / Gala fill slots
+`{0,1,2,3,4,5,7,8,9,11}`; Terra fills `{0,1,2,3,4,5,9,11}` (no 7/8 — she
+barely fights). **Slot 6 is empty in all four files**, and the battle-action
+state machine's pose calls (`FUN_801D5854(actor, pose_id)`, see
+`docs/subsystems/battle-action.md`) use pose ids `6` idle / `7` ready /
+`8` recover / `9` defeat — with slot 0 the proven idle. The alignment
+(every non-idle pose id has a same-numbered populated slot exactly where
+the table has one; the idle id's slot is the one hole) reads as pose id →
+same-numbered stream slot with idle special-cased to slot 0. *Inferred*:
+the engine plays poses 7/8/9 from their same-numbered slots (one-shot,
+defeat holds its final keyframe) and pose 6 from slot 0 as the loop
+(`engine-core::World::apply_battle_pose`); slots 1..5 and 11 — the strike
+family the attack states consume — are not yet attributed per state.
+
 Parsers: `legaia_asset::battle_char_assembly::{decode_record0,
 battle_animations, idle_battle_animation, expand_animation_for_objects}`
 (the stream decode is shared with `legaia_asset::monster_archive`).

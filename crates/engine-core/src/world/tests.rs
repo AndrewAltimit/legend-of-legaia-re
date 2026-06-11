@@ -8615,3 +8615,138 @@ fn final_heal_ignores_members_without_the_bit() {
     assert_eq!(world.actors[0].battle.hp, 0, "stays down without the bit");
     assert_eq!(world.actors[0].battle.liveness, 0);
 }
+
+// --- battle pose -> action-clip switching -----------------------------------
+
+/// Synthetic one-part action clip: `frames` keyframes translating from `tx`.
+fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
+    use legaia_asset::monster_archive::PartPose;
+    MonsterAnimation {
+        action_id,
+        part_count: 1,
+        frame_count: frames,
+        frames: (0..frames)
+            .map(|f| {
+                vec![PartPose {
+                    tx: tx + f as i16,
+                    ty: 0,
+                    tz: 0,
+                    rx: 0,
+                    ry: 0,
+                    rz: 0,
+                }]
+            })
+            .collect(),
+    }
+}
+
+fn pose_test_world() -> World {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[8] = Some(pose_test_clip(8, 2, 100));
+    clips[9] = Some(pose_test_clip(9, 2, 200));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world
+}
+
+#[test]
+fn battle_pose_plays_action_clip_then_restores_idle() {
+    let mut world = pose_test_world();
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    assert_eq!(world.actors[0].battle_pose, Some(8));
+    // One-shot: run the 2-frame clip to its end in one tick.
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    world.tick_battle_animations();
+    assert!(
+        world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished(),
+        "recover clip is a one-shot"
+    );
+    // The next tick falls back to the idle loop (slot 0).
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Idle as u8)
+    );
+    assert!(
+        !world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished(),
+        "idle loops"
+    );
+}
+
+#[test]
+fn battle_pose_defeat_holds_final_frame() {
+    let mut world = pose_test_world();
+    world.apply_battle_pose(0, vm::battle_action::Pose::Defeat as u8);
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    for _ in 0..5 {
+        world.tick_battle_animations();
+    }
+    // Defeat never falls back to idle: the downed pose holds.
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Defeat as u8)
+    );
+    assert!(
+        world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished()
+    );
+}
+
+#[test]
+fn battle_pose_missing_slot_falls_back_to_idle_loop() {
+    let mut world = pose_test_world();
+    // Slot 7 (ready) is empty in the installed set: the request binds the
+    // idle loop instead and records the pose so the SM isn't retried.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Ready as u8);
+    assert_eq!(
+        world.actors[0].battle_pose,
+        Some(vm::battle_action::Pose::Ready as u8)
+    );
+    world.tick_battle_animations();
+    assert!(
+        !world.actors[0]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .finished()
+    );
+}
+
+#[test]
+fn battle_pose_repeat_request_keeps_playing_clip() {
+    let mut world = pose_test_world();
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.actors[0].battle_animation.as_mut().unwrap().step = 7;
+    world.tick_battle_animations();
+    let phase_frame = world.actors[0].pose_frame.clone();
+    // Re-requesting the same pose must not rewind the clip.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.tick_battle_animations();
+    assert_ne!(
+        world.actors[0].pose_frame.as_ref().map(|f| f.factor),
+        phase_frame.as_ref().map(|f| f.factor),
+        "cursor advanced instead of restarting"
+    );
+}
+
+#[test]
+fn battle_pose_without_clips_is_inert() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    assert_eq!(world.actors[0].battle_pose, None);
+    assert!(world.actors[0].battle_animation.is_none());
+}

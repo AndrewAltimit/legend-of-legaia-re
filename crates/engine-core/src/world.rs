@@ -34,6 +34,7 @@ use crate::move_buffer_host;
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 use crate::world_map::WorldMapController;
 pub use legaia_anm::{AnimPlayer, PoseFrame};
+use legaia_asset::monster_archive::MonsterAnimation;
 use legaia_engine_vm as vm;
 use legaia_save;
 use vm::Position as ActorVmPosition;
@@ -630,6 +631,21 @@ pub struct Actor {
     /// battle tick advances it into `pose_frame`. Mutually exclusive with
     /// `active_animation` (field ANM) on a given actor.
     pub battle_animation: Option<crate::battle_anim::MonsterAnimPlayer>,
+
+    /// Per-slot battle action clips for this actor (the player files'
+    /// `record[0]` action streams, expanded so channel `i` drives TMD object
+    /// `i`), indexed by action-stream slot; index 0 = the idle loop. Set by
+    /// the host at battle init (see `World::set_actor_battle_action_clips`);
+    /// consulted by the battle-action SM's `pose()` host hook to switch
+    /// `battle_animation` between idle and action clips. `None` keeps the
+    /// idle-only behavior.
+    pub battle_action_clips: Option<std::sync::Arc<Vec<Option<MonsterAnimation>>>>,
+
+    /// Pose id the current `battle_animation` was selected for, in the retail
+    /// `FUN_801D5854` pose-id space the battle-action SM emits (`6` idle /
+    /// `7` ready / `8` recover / `9` defeat). Lets a repeated request for the
+    /// same pose keep the playing clip instead of restarting it.
+    pub battle_pose: Option<u8>,
 
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot
@@ -6045,10 +6061,80 @@ impl World {
     /// since battle-init actors keep their `tmd_binding` without the field
     /// `.active` flag.
     pub fn tick_battle_animations(&mut self) {
-        for actor in &mut self.actors {
+        for i in 0..self.actors.len() {
+            // A finished one-shot action clip falls back to the idle loop -
+            // except defeat, which holds its final (downed) keyframe.
+            let restore_idle = {
+                let a = &self.actors[i];
+                a.battle_action_clips.is_some()
+                    && a.battle_pose != Some(vm::battle_action::Pose::Defeat as u8)
+                    && matches!(&a.battle_animation, Some(p) if p.finished())
+            };
+            if restore_idle {
+                self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
+            }
+            let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 actor.pose_frame = Some(player.tick());
             }
+        }
+    }
+
+    /// Install the per-slot battle action clips for actor `slot` (see
+    /// [`Actor::battle_action_clips`]). The battle-action SM's `pose()` host
+    /// hook then switches `battle_animation` between the idle loop and the
+    /// matching action clip. No-ops for out-of-range slots.
+    pub fn set_actor_battle_action_clips(
+        &mut self,
+        slot: usize,
+        clips: std::sync::Arc<Vec<Option<MonsterAnimation>>>,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_action_clips = Some(clips);
+            actor.battle_pose = None;
+        }
+    }
+
+    /// Switch actor `slot`'s battle animation for a battle-action SM pose
+    /// request (the retail `FUN_801D5854(actor, pose_id)` call).
+    ///
+    /// Pose id → action-stream slot is an explicit engine interpretation
+    /// grounded in the player files' slot census: the SM's pose-id space is
+    /// `6` idle / `7` ready / `8` recover / `9` defeat, and in every player
+    /// battle file slot 6 is EMPTY while slots 7/8/9 are populated (Terra,
+    /// who barely fights, lacks exactly 7/8) and slot 0 is the proven idle
+    /// loop. So: pose 6 plays slot 0 as a loop; poses 7/8/9 play their
+    /// same-numbered slot as a one-shot (defeat holds its last frame via
+    /// [`Self::tick_battle_animations`]); a missing slot falls back to idle.
+    /// Re-requesting the actor's current pose keeps the playing clip.
+    pub fn apply_battle_pose(&mut self, slot: usize, pose_id: u8) {
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return;
+        };
+        let Some(clips) = actor.battle_action_clips.clone() else {
+            return;
+        };
+        if actor.battle_pose == Some(pose_id) {
+            return;
+        }
+        let idle_pose = vm::battle_action::Pose::Idle as u8;
+        let clip_slot = if pose_id == idle_pose {
+            0
+        } else {
+            pose_id as usize
+        };
+        let player = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
+            Some(clip) if clip_slot != 0 => {
+                crate::battle_anim::MonsterAnimPlayer::new_one_shot(clip)
+            }
+            _ => clips
+                .first()
+                .and_then(|c| c.as_ref())
+                .and_then(crate::battle_anim::MonsterAnimPlayer::new),
+        };
+        if let Some(player) = player {
+            actor.battle_animation = Some(player);
+            actor.battle_pose = Some(pose_id);
         }
     }
 

@@ -42,6 +42,12 @@ pub struct MonsterAnimPlayer {
     /// Phase units added per [`tick`](Self::tick). Default `64` ≈ a quarter
     /// keyframe per tick (≈15 keyframes/sec at 60 Hz). Not retail-pinned.
     pub step: u32,
+    /// `true` (default) loops the clip forever (idle). `false` plays the clip
+    /// once: the cursor clamps at the last keyframe and [`Self::finished`]
+    /// turns `true` (action clips - attack ready / hit recovery / defeat).
+    looping: bool,
+    /// One-shot completion latch (see [`Self::new_one_shot`]).
+    finished: bool,
 }
 
 impl MonsterAnimPlayer {
@@ -57,7 +63,25 @@ impl MonsterAnimPlayer {
             part_count: anim.part_count,
             phase: 0,
             step: 64,
+            looping: true,
+            finished: false,
         })
+    }
+
+    /// Build a **one-shot** player: the clip plays once, the cursor clamps at
+    /// the last keyframe, and [`Self::finished`] reports completion. Used for
+    /// battle action clips (ready / recover / defeat) where idle is the loop
+    /// to fall back to.
+    pub fn new_one_shot(anim: &MonsterAnimation) -> Option<Self> {
+        let mut p = Self::new(anim)?;
+        p.looping = false;
+        Some(p)
+    }
+
+    /// `true` once a one-shot clip has reached its last keyframe. Always
+    /// `false` for a looping player.
+    pub fn finished(&self) -> bool {
+        self.finished
     }
 
     /// Number of animated parts (= TMD objects the pose addresses).
@@ -70,14 +94,24 @@ impl MonsterAnimPlayer {
         self.phase = 0;
     }
 
-    /// Advance one tick and return the interpolated per-object pose. The cursor
-    /// loops over the clip; `PoseFrame::finished` is always `false` (idle loops
-    /// forever).
+    /// Advance one tick and return the interpolated per-object pose. A looping
+    /// player wraps over the clip (`PoseFrame::finished` always `false`); a
+    /// one-shot player clamps at the last keyframe and reports `finished`.
     pub fn tick(&mut self) -> PoseFrame {
         let total = self.frame_count * PHASE_ONE;
-        self.phase = (self.phase + self.step) % total;
-        let f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
-        let f1 = (f0 + 1) % self.frames.len();
+        let (f0, f1);
+        if self.looping {
+            self.phase = (self.phase + self.step) % total;
+            f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
+            f1 = (f0 + 1) % self.frames.len();
+        } else {
+            // One-shot: clamp the cursor on the final keyframe.
+            let last = (self.frame_count - 1) * PHASE_ONE;
+            self.phase = (self.phase + self.step).min(last);
+            self.finished = self.phase >= last;
+            f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
+            f1 = (f0 + 1).min(self.frames.len() - 1);
+        }
         let frac = (self.phase & (PHASE_ONE - 1)) as i32; // 0..=255
 
         let a = &self.frames[f0];
@@ -103,7 +137,7 @@ impl MonsterAnimPlayer {
         PoseFrame {
             bone_outputs,
             factor: (frac as u8),
-            finished: false,
+            finished: self.finished,
         }
     }
 }
@@ -225,5 +259,59 @@ mod tests {
         // step = ((256 - 3840 + 6144) % 4096) - 2048 = (2560 % 4096) - 2048 = 512.
         // halfway: 3840 + 512/2 = 4096.
         assert_eq!(r[2], 4096);
+    }
+}
+
+#[cfg(test)]
+mod one_shot_tests {
+    use super::*;
+    use legaia_asset::monster_archive::PartPose;
+
+    fn clip(frames: usize) -> MonsterAnimation {
+        MonsterAnimation {
+            action_id: 8,
+            part_count: 1,
+            frame_count: frames,
+            frames: (0..frames)
+                .map(|f| {
+                    vec![PartPose {
+                        tx: f as i16 * 10,
+                        ty: 0,
+                        tz: 0,
+                        rx: 0,
+                        ry: 0,
+                        rz: 0,
+                    }]
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn one_shot_clamps_on_last_keyframe_and_finishes() {
+        let mut p = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        p.step = 256; // one keyframe per tick
+        assert!(!p.finished());
+        let _ = p.tick(); // frame 1
+        assert!(!p.finished());
+        let f = p.tick(); // frame 2 (last)
+        assert!(p.finished());
+        assert!(f.finished);
+        let (t, _) = f.bone_outputs[0];
+        assert_eq!(t[0], 20, "clamped on the final keyframe");
+        // Further ticks hold the final pose.
+        let f2 = p.tick();
+        assert_eq!(f2.bone_outputs[0].0[0], 20);
+        assert!(f2.finished);
+    }
+
+    #[test]
+    fn looping_player_never_finishes() {
+        let mut p = MonsterAnimPlayer::new(&clip(3)).unwrap();
+        p.step = 256;
+        for _ in 0..10 {
+            assert!(!p.tick().finished);
+        }
+        assert!(!p.finished());
     }
 }

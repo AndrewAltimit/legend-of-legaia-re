@@ -1085,6 +1085,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::Pose { actor_id, pose });
+        // Switch the actor's battle animation to the requested pose's action
+        // clip (no-op for actors without installed action clips).
+        self.world.apply_battle_pose(actor_id as usize, pose as u8);
     }
     fn ui_element(&mut self, effect_id: u8, mode: u8) {
         self.world
