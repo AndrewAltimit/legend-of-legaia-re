@@ -71,7 +71,7 @@
 
 <section class="doc-section" id="textures">
   <h2>Textures</h2>
-  <p>The field-form character TMDs reference texture pages and CLUTs the engine uploads from <strong>PROT 0876</strong> (<code>player_data</code>), the streaming-format file with a VAB + a 256&times;256 TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; both blocks are pinned in <a href="../subsystems/asset-loader.html#field_shared_blocks"><code>FIELD_SHARED_BLOCKS</code></a> so they survive every field-scene transition without being re-uploaded. PROT 0874 itself carries <strong>no character textures</strong> &mdash; its remaining sections are the effect 3D models (<code>etmd.dat</code>) and effect-texture TIMs (<code>etim.dat</code>), unrelated to the player mesh.</p>
+  <p>The field-form character TMDs reference texture pages and CLUTs the engine uploads from <strong>PROT 0876</strong> (<code>player_data</code>), the streaming-format file with a VAB + a 256&times;256 TIM_LIST atlas + a small SEQ trailer. The atlas goes to VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; both blocks are pinned in <a href="../subsystems/asset-loader.html#clut-scattering"><code>FIELD_SHARED_BLOCKS</code></a> so they survive every field-scene transition without being re-uploaded. PROT 0874 itself carries <strong>no character textures</strong> &mdash; its remaining sections are the effect 3D models (<code>etmd.dat</code>) and effect-texture TIMs (<code>etim.dat</code>), unrelated to the player mesh.</p>
   <p>The field-form atlas (above) serves the field form only; the battle form (below) carries its own seven TIM atlases.</p>
 </section>
 

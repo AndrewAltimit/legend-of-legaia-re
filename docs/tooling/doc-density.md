@@ -54,3 +54,21 @@ early-exit so docs-only commits are covered too. Set `LEGAIA_SKIP_PRECOMMIT=1`
 to bypass the whole hook in an emergency.
 
 Pure standard library; ASCII-only; no external dependencies.
+
+## Sibling gate: site internal-link checker
+
+`scripts/check-site-links.py` is the same idea aimed at the static site:
+it scans every generated page under `site/` (skipping the `_content/`
+fragments) and fails on a relative `href`/`src` whose target file doesn't
+exist or a fragment link (`page.html#anchor`, bare `#anchor`) whose element
+id is absent from the target page. External URLs are out of scope.
+
+It runs in two places:
+
+- `python3 site/_gen.py` invokes it after regenerating, so a deploy with a
+  broken internal link fails the build;
+- the pre-commit hook runs it when staged changes touch `site/`.
+
+Both exit non-zero on violations; fix the `_content/` fragment hrefs (the
+generated pages mirror them) and regenerate. Pure standard library,
+ASCII-only.

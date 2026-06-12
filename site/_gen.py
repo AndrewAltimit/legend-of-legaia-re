@@ -243,6 +243,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/pcsx-redux-automation.html","PCSX-Redux automation",  "tooling/pcsx-redux-automation","tooling/pcsx-redux-automation.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/randomizer.html",    "Randomizer / disc patcher",     "tooling/randomizer",         "tooling/randomizer.html"),
+    ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
@@ -1039,6 +1040,18 @@ def main() -> int:
           f"{len(minigames_payload['sol_tower']['floors'])} sol-tower floors")
     print(f"  arts.json:      {sum(c['total'] for c in arts_payload['characters'])} arts across "
           f"{len(arts_payload['characters'])} characters")
+
+    # Internal-link gate over the freshly generated pages: a broken relative
+    # href/src or a dangling #anchor fails the build (and the deploy that
+    # reruns this script). See scripts/check-site-links.py.
+    import subprocess
+    link_check = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "check-site-links.py")],
+    )
+    if link_check.returncode != 0:
+        print("[_gen] broken internal links above -- fix the _content fragment hrefs",
+              file=sys.stderr)
+        return 1
     return 0
 
 
