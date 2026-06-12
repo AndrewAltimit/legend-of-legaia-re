@@ -1439,6 +1439,56 @@ expected_game_mode = 0x15
 description = "Noa casting Nova (spell 0x8B) mid-summon. Loader-B current-id 0x8007BC4C = 18 -> stager extraction 0913. Completes the capture-pinned player Seru-magic block: 0x81..0x8B -> 903..913, every leg on the linear arithmetic."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8B"]
 
+# High-id summon mid-cast corpus (endgame card): the Ra-Seru summons
+# (Meta / Terra / Ozma, spell ids 0x9E..0xA0) and an Evil Seru Magic
+# cast (spell id 0x99, creature Juggernaut). Same evidential shape as
+# the base block above: loader-B current-id 0x8007BC4C read mid-cast +
+# the predicted stager byte-resident at slot-B 0x801F69D8. These four
+# extend the verified linear arithmetic (extraction = loader_id + 895,
+# loader_id = spell_id - 0x79) across the high block: 0x99 -> 0927
+# ("Dark Eclipse" = the ATTACK display name, parallel to Nighto's
+# "Hell's Music"), 0x9E..0xA0 -> 0932..0934.
+
+[[scenarios]]
+slot = 2
+label = "juggernaut_summon_mid_cast"
+ram_fingerprint_sha256 = "08a9ef833879c39c4eeef4a4bcfff8e83a92e75fc4bb6d59e562f98eee1143e9"
+backup_fingerprint = "c9bb599b6b44f21290896a93ce31ac54d70567b9fbc195a81e4f05a1349f0293"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Evil Seru Magic (spell 0x99) mid-summon, creature Juggernaut. Loader-B current-id 0x8007BC4C = 0x20 -> stager extraction 0927 (the 'Dark Eclipse'-titled stager; the title is the attack's display name). Resolves the 0927 'loads computed' question."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x99", "Evil Seru Magic", "Juggernaut", "extraction 0927"]
+
+[[scenarios]]
+slot = 3
+label = "meta_summon_mid_cast"
+ram_fingerprint_sha256 = "8df6166dea3110b2e4bb535423a539f4f3216e9a3b28713b7368f2f0e95d3209"
+backup_fingerprint = "6ce344812e0fb47119d6a9f3fdeb48a9b72e569d671dcdf9ffd99c7a559b356e"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Meta (spell 0x9E, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x25 -> stager extraction 0932 (slot-B pointer-table head, byte-resident at 0x801F69D8)."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9E", "Ra-Seru", "Meta"]
+
+[[scenarios]]
+slot = 4
+label = "terra_summon_mid_cast"
+ram_fingerprint_sha256 = "daf0a829198bd9f9899cdd826137e116edafcfa2096877e01fd78b9298381d15"
+backup_fingerprint = "4bddedf7ee28d1481bbad30bc53feac74414602764b22f3779401cf3daf5732a"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Terra (spell 0x9F, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x26 -> stager extraction 0933."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9F", "Ra-Seru", "Terra"]
+
+[[scenarios]]
+slot = 5
+label = "ozma_summon_mid_cast"
+ram_fingerprint_sha256 = "b1cf96853826e56ffaf76e21340f6a74e8597b6babfec6a27046fe0521611a1c"
+backup_fingerprint = "4ecc936179600e06be2b7cb6b8d8237aaf829afd7bc8667870573de81d265963"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Ozma (spell 0xA0, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x27 -> stager extraction 0934. With Meta/Terra this completes the Ra-Seru block 0x9E..0xA0 -> 0932..0934 on the same linear arithmetic as the base summons."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0xA0", "Ra-Seru", "Ozma"]
+
 [[scenarios]]
 slot = 2
 label = "terra_party_battle"
