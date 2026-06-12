@@ -28,9 +28,14 @@
 --
 -- The script fills all 72 consumable slots with Water Talisman + sets gold to
 -- 999,999, then attempts to trigger a full-bag ADD via two paths:
---   Path A: CROSS at the casino prize-exchange counter (koin1 context)
+--   Path A: X -> Up -> X at the casino prize-exchange counter (koin1 context)
+--           = open exchange, select the prize, confirm the buy. The confirm
+--           is the full-bag add. Driven as several triples; each completed buy
+--           chains into the next key-item slot.
 --   Path B: START + navigate to Equip → un-equip a weapon (EquipSwapBackRefund
 --           caller FUN_8020E748, works from any field scene)
+-- Each write to the watched range is tagged path=casino|equip|walk so the log
+-- shows unambiguously which interaction fired the OOB store.
 --
 -- Run:
 --   LEGAIA_SSTATE=~/Tools/pcsx-redux/SCUS94254.sstate2 \
@@ -56,11 +61,12 @@ local FILL_QTY = 99
 local OUT = probe.out_path("inventory_oob_writer.txt")
 local f   = assert(io.open(OUT, "w"))
 
-local g        = 0
-local armed    = false
-local handle   = nil
-local oob_hits = 0
-local seen     = {}
+local g           = 0
+local armed       = false
+local handle      = nil
+local oob_hits    = 0
+local seen        = {}
+local active_path = "none"   -- tags which input path was driving when a write hit
 
 probe.run({
     sstate = probe.getenv("LEGAIA_SSTATE",
@@ -110,8 +116,8 @@ probe.run({
                     local is_oob = (rg.pc == ADD_ID_STORE_PC)
                     if is_oob then oob_hits = oob_hits + 1 end
                     f:write(string.format(
-                        "f=%-5d pc=0x%08X %s%s  t0=%02X a0=%08X\n",
-                        g, rg.pc, rg.note,
+                        "f=%-5d path=%-7s pc=0x%08X %s%s  t0=%02X a0=%08X\n",
+                        g, active_path, rg.pc, rg.note,
                         is_oob and "  <== OOB ID STORE (FUN_800421D4)" or "",
                         (rg.t0 or 0) % 0x100, rg.a0 or 0))
                     f:flush()
@@ -123,104 +129,103 @@ probe.run({
         if not armed then return end
 
         -- ── Path A: casino prize-exchange (koin1 context) ──────────────────
-        -- Press CROSS repeatedly early on to interact with the counter NPC.
-        -- If the save state was made at the prize-exchange counter, the first
-        -- CROSS opens the exchange. Subsequent presses confirm the purchase.
-        -- Exchange requires coins (separate bank at 0x800845A4, not gold).
+        -- The real hand sequence to buy one prize from the counter is
+        -- X -> Up -> X:  CROSS opens/advances the exchange, UP selects the
+        -- prize (or raises the quantity to 1), CROSS confirms the purchase.
+        -- The confirm is the add-to-inventory call; on a full 72-slot bag that
+        -- add fires the OOB id store (FUN_800421D4 @ 0x800422BC).
+        --
+        -- We drive the X-Up-X TRIPLE several times. Each completed buy stamps
+        -- the next key-item slot (the free-slot scan chains past slot 72), so
+        -- repeats are useful, not redundant. tap() = press for ~2 vsyncs.
         if elapsed == 15 then
-            -- also boost casino coins to 999999
-            mem.write_u8(0x800845A4,     0xFF)
-            mem.write_u8(0x800845A5,     0xE0)
-            mem.write_u8(0x800845A6,     0xF5)
-            mem.write_u8(0x800845A7,     0x05)
+            active_path = "casino"
+            -- boost casino coins to ~99,999,999 so we never run dry
+            mem.write_u8(0x800845A4, 0xFF)
+            mem.write_u8(0x800845A5, 0xE0)
+            mem.write_u8(0x800845A6, 0xF5)
+            mem.write_u8(0x800845A7, 0x05)
         end
-        -- CROSS presses for prize-exchange interaction + confirm
-        if elapsed == 20 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 22 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 30 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 32 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 40 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 42 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 50 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 52 then probe.pad_release(probe.BTN.CROSS) end
+
+        -- Triple 1: X (open) -> Up (select) -> X (confirm)
+        -- Each triple needs ~90 frames between them for the purchase animation
+        -- + dialog dismiss to fully clear before the next open press.
+        -- The gap between the opening X and the Up is 30 frames to let the
+        -- exchange menu fully appear before navigating.
         if elapsed == 60 then probe.pad_force(probe.BTN.CROSS) end
         if elapsed == 62 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 92 then probe.pad_force(probe.BTN.UP) end
+        if elapsed == 94 then probe.pad_release(probe.BTN.UP) end
+        if elapsed == 104 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 106 then probe.pad_release(probe.BTN.CROSS) end
 
-        -- ── Path B: START menu → Equip → un-equip (works from any scene) ───
-        -- Press START to open field menu, then navigate to Equip and remove
-        -- a weapon. EquipSwapBackRefund caller FUN_8020E748 fires the OOB
-        -- when it tries to return the weapon to the full inventory.
-        -- Timing: start late enough that Path A confirmations would have run.
-        if elapsed == 90 then probe.pad_force(probe.BTN.START) end
-        if elapsed == 92 then probe.pad_release(probe.BTN.START) end
-        -- wait for menu to open, navigate to second option (Equip or Status)
-        if elapsed == 105 then probe.pad_force(probe.BTN.DOWN) end
-        if elapsed == 107 then probe.pad_release(probe.BTN.DOWN) end
-        if elapsed == 115 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 117 then probe.pad_release(probe.BTN.CROSS) end
-        -- select first character
-        if elapsed == 130 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 132 then probe.pad_release(probe.BTN.CROSS) end
-        -- navigate to first equip slot (weapon)
-        if elapsed == 145 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 147 then probe.pad_release(probe.BTN.CROSS) end
-        -- confirm unequip / press CROSS on "Remove" option
+        -- Triple 2: starts ~90 frames after triple 1's confirm
+        if elapsed == 136 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 138 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 148 then probe.pad_force(probe.BTN.UP) end
+        if elapsed == 150 then probe.pad_release(probe.BTN.UP) end
         if elapsed == 160 then probe.pad_force(probe.BTN.CROSS) end
         if elapsed == 162 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 175 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 177 then probe.pad_release(probe.BTN.CROSS) end
 
-        -- ── Path B retry: try again with different navigation offsets ───────
-        if elapsed == 200 then probe.pad_force(probe.BTN.START) end
-        if elapsed == 202 then probe.pad_release(probe.BTN.START) end
-        if elapsed == 215 then probe.pad_force(probe.BTN.CROSS) end  -- first option
-        if elapsed == 217 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 230 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 232 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 245 then probe.pad_force(probe.BTN.DOWN) end
-        if elapsed == 247 then probe.pad_release(probe.BTN.DOWN) end
-        if elapsed == 255 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 257 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 270 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 272 then probe.pad_release(probe.BTN.CROSS) end
+        -- Triple 3: starts ~90 frames after triple 2's confirm
+        if elapsed == 252 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 254 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 264 then probe.pad_force(probe.BTN.UP) end
+        if elapsed == 266 then probe.pad_release(probe.BTN.UP) end
+        if elapsed == 276 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 278 then probe.pad_release(probe.BTN.CROSS) end
 
-        -- ── Path A retry: walk toward counter + CROSS ───────────────────────
-        if elapsed == 310 then probe.pad_force(probe.BTN.UP) end
-        if elapsed == 340 then probe.pad_release(probe.BTN.UP) end
-        if elapsed == 355 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 357 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 365 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 367 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 375 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 377 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 385 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 387 then probe.pad_release(probe.BTN.CROSS) end
+        -- Triple 4: starts ~90 frames after triple 3's confirm
+        if elapsed == 368 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 370 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 380 then probe.pad_force(probe.BTN.UP) end
+        if elapsed == 382 then probe.pad_release(probe.BTN.UP) end
+        if elapsed == 392 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 394 then probe.pad_release(probe.BTN.CROSS) end
 
-        -- walk RIGHT + CROSS
-        if elapsed == 420 then probe.pad_force(probe.BTN.RIGHT) end
-        if elapsed == 450 then probe.pad_release(probe.BTN.RIGHT) end
-        if elapsed == 460 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 462 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 470 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 472 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 480 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 482 then probe.pad_release(probe.BTN.CROSS) end
+        -- ── Path B: START menu → Equip → un-equip (works from any scene) ───
+        -- Independent confirmation path: removing a weapon returns it to the
+        -- (full) inventory via EquipSwapBackRefund (caller FUN_8020E748), which
+        -- also fires the OOB id store. Runs AFTER Path A so the path= tag in
+        -- the write log unambiguously separates the two sources.
+        if elapsed == 480 then active_path = "equip"; probe.pad_force(probe.BTN.START) end
+        if elapsed == 482 then probe.pad_release(probe.BTN.START) end
+        -- navigate to the Equip option, open it
+        if elapsed == 495 then probe.pad_force(probe.BTN.DOWN) end
+        if elapsed == 497 then probe.pad_release(probe.BTN.DOWN) end
+        if elapsed == 507 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 509 then probe.pad_release(probe.BTN.CROSS) end
+        -- select first character
+        if elapsed == 522 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 524 then probe.pad_release(probe.BTN.CROSS) end
+        -- open the first equip slot (weapon)
+        if elapsed == 537 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 539 then probe.pad_release(probe.BTN.CROSS) end
+        -- confirm unequip / "Remove"
+        if elapsed == 552 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 554 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 567 then probe.pad_force(probe.BTN.CROSS) end
+        if elapsed == 569 then probe.pad_release(probe.BTN.CROSS) end
 
-        -- walk DOWN + CROSS
-        if elapsed == 520 then probe.pad_force(probe.BTN.DOWN) end
-        if elapsed == 550 then probe.pad_release(probe.BTN.DOWN) end
-        if elapsed == 560 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 562 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 570 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 572 then probe.pad_release(probe.BTN.CROSS) end
+        -- ── Path A retry: walk toward the counter, then X-Up-X again ───────
+        if elapsed == 620 then active_path = "walk" end
+        if elapsed == 620 then probe.pad_force(probe.BTN.UP) end
+        if elapsed == 650 then probe.pad_release(probe.BTN.UP) end
+        if elapsed == 662 then probe.pad_force(probe.BTN.CROSS) end  -- open
+        if elapsed == 664 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 674 then probe.pad_force(probe.BTN.UP) end     -- select
+        if elapsed == 676 then probe.pad_release(probe.BTN.UP) end
+        if elapsed == 686 then probe.pad_force(probe.BTN.CROSS) end  -- confirm
+        if elapsed == 688 then probe.pad_release(probe.BTN.CROSS) end
 
-        -- walk LEFT + CROSS
-        if elapsed == 610 then probe.pad_force(probe.BTN.LEFT) end
-        if elapsed == 640 then probe.pad_release(probe.BTN.LEFT) end
-        if elapsed == 650 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 652 then probe.pad_release(probe.BTN.CROSS) end
-        if elapsed == 660 then probe.pad_force(probe.BTN.CROSS) end
-        if elapsed == 662 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 720 then probe.pad_force(probe.BTN.RIGHT) end
+        if elapsed == 750 then probe.pad_release(probe.BTN.RIGHT) end
+        if elapsed == 762 then probe.pad_force(probe.BTN.CROSS) end  -- open
+        if elapsed == 764 then probe.pad_release(probe.BTN.CROSS) end
+        if elapsed == 774 then probe.pad_force(probe.BTN.UP) end     -- select
+        if elapsed == 776 then probe.pad_release(probe.BTN.UP) end
+        if elapsed == 786 then probe.pad_force(probe.BTN.CROSS) end  -- confirm
+        if elapsed == 788 then probe.pad_release(probe.BTN.CROSS) end
     end,
 
     on_done = function()
