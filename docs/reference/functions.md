@@ -693,6 +693,10 @@ Gated on `_DAT_8007b868 == 0` (the same field-camera / mode gate `FUN_801dbe9c` 
 
 Callers — battle-loot reward writer `FUN_8004F0E8`, table item-give `FUN_8004AD80`, and the field item-give pair `FUN_801D71F0` / `FUN_801D7210` (overlay 0897) — do not visibly pre-check inventory room before the add, so the OOB is plausibly reachable via an item drop with a full bag (capture-confirm pending). NB this `FUN_801D71F0`/`_D7210` pair is the one earlier mis-cited as a "status-effect timer tick" on `FUN_80043048`; both are inventory item-give callers.
 
+The full set of unchecked call sites (each a candidate full-bag trigger) is catalogued as `legaia_save::retail_inventory::AddHelperCaller`: battle-loot reward `FUN_8004E568` (adds at `0x8004F380`/`0x8004F608`), shop buy-confirm `FUN_801C36B0` (variable quantity, catalog id `rec+8`), captured-monster pay `FUN_801F138C` (`actor[+0x1DF]`), one-shot minigame reward `FUN_801C2748` (fixed id `0xCD`), and equip swap-back refund `FUN_8020E748`/`FUN_801E01F0`.
+
+The clean-room model surfaces the full-bag case as `AddOutcome::OobIdWrite { oob_target, written_id }`; the written byte is the added id and is **independent of quantity** (only the count store is guarded). Live confirmation probe: `scripts/pcsx-redux/autorun_inventory_oob_writer.lua` (watches `0x800859E8` for a store from the id-store PC `0x800422BC`).
+
 ### `8004E568`
 
 **Battle-end reward resolution** (5984 B, spans `0x8004E568..0x8004FCC8`). The post-battle spoils routine: it accumulates the formation's gold into the party purse `_DAT_8008459C` (saturating cap `99999999`) and awards item drops by calling the inventory-add helper `FUN_800421D4` (at `0x8004F380` and `0x8004F608`), reading the active actor record at `gp[+0xA0C]` and gating on `gp[+0x332]`. It drives its multi-step sub-overlay loads through `FUN_80025358`. After dividing the monster XP pool by the alive-party count (`divu` at `0x8004F198`) it calls the **level-up applier `FUN_801E9504`** at `0x8004F34C` (`jal`, arg = active-party slot − 1) per surviving member.

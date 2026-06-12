@@ -1747,3 +1747,24 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Enemy boss Cort casting Evil Seru Magic (Juggernaut) mid-cast. Loader-B current-id 0x8007BC4C = 0x47 -> stager extraction 0966 (byte-resident at slot B 0x801F69D8) - DISTINCT from the player-side Juggernaut stager 0927 (loader id 0x20): the enemy arm of the same spell ships its own stager."
 topics = ["battle", "Cort", "boss", "stager", "loader-B", "Evil Seru Magic", "Juggernaut", "enemy cast"]
+
+# ----------------------------------------------------------------------
+# CAPTURE PENDING (no fingerprint yet). ACE backlog 2.1 reachability:
+# a save state with a FULL 72-slot consumable bag (item window
+# 0x80085958..0x800859E8 all occupied, distinct ids) positioned in front
+# of a shop, so a single buy drives the unchecked add helper FUN_800421D4
+# into its out-of-bounds id store at 0x800859E8. Consumed by
+# scripts/pcsx-redux/autorun_inventory_oob_writer.lua. To produce it:
+# fill the consumable page (buy/farm to 72 distinct stacks), stand at any
+# shop's buy menu, save state, then:
+#   scripts/manage-states.py backup pcsx-redux <path> --label inventory_full_shop
+# and add `backup_fingerprint` here. Battle-loot (FUN_8004E568) and
+# captured-monster pay (FUN_801F138C) reach the same helper if a shop is
+# inconvenient; a full-bag pre-drop battle save works for those.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 8
+label = "inventory_full_shop"
+phase = "field"
+description = "Full 72-slot consumable bag at a shop buy menu; drives the FUN_800421D4 full-window OOB id store to 0x800859E8 (ACE backlog 2.1 reachability). Capture pending."
+topics = ["ace", "inventory", "oob", "FUN_800421D4", "shop", "reachability", "capture-pending"]

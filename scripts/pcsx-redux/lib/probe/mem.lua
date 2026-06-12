@@ -85,6 +85,25 @@ function M.bytes_to_hex(buf)
     return table.concat(out)
 end
 
+-- GameShark-style RAM pokes. `write_u8(addr, value)` is the equivalent of a
+-- `30XXXXXX 00YY` code: an 8-bit store to the given KSEG virtual address.
+-- Returns true on success, false if the address is out of main RAM range.
+function M.write_u8(addr, value)
+    local off = M.ram_offset(addr)
+    if off == nil or off + 1 > RAM_SIZE then return false end
+    local mf = get_mem_file()
+    local ok = pcall(function() mf:writeU8At(bit.band(value, 0xFF), off) end)
+    return ok
+end
+
+function M.write_u16(addr, value)
+    local off = M.ram_offset(addr)
+    if off == nil or off + 2 > RAM_SIZE then return false end
+    local mf = get_mem_file()
+    local ok = pcall(function() mf:writeU16At(bit.band(value, 0xFFFF), off) end)
+    return ok
+end
+
 -- Scratchpad reader. The 1 KiB scratchpad sits at 0x1F800000 and is
 -- accessible via PCSX.getScratchPtr() as a uint8_t*. Any virtual
 -- address in 0x1F800000..0x1F8003FF maps to that buffer.
