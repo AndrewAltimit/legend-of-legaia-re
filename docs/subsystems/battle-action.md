@@ -105,7 +105,11 @@ The full step body for state `0x1E`:
 
 Counters `actor[+0x15]` (per-strike index) + `actor[+0x16]` (combo bit). Reads the
 per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step writes
-`actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. Counter-attack handling: if
+`actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. The byte read is **gated on
+`+0x1DC` bit `0x2` being clear** (`0x801E370C`: `lbu +0x1DC; andi 0x2; bne -> skip`) -
+while the previous staged swing is still in flight the step does only the per-frame
+physics, so strikes pace one-per-clip, with the anim system's end-of-clip edge clearing
+the bit. Counter-attack handling: if
 `_DAT_801F6970 != 0` and the *target's* sub-state byte at `s8[+0x1DE] == 3` (was
 attacking), redirects active actor to the counterattacker - sets
 `s_Counterattack_successful_801CED18` text, fires effect `FUN_801D8DE8(0x66, 0)`, swaps
@@ -335,6 +339,16 @@ Called from state `0x0C` for non-flee actions. Walks the 8-slot actor table comp
 - `step(host, ctx) -> StepOutcome` - runs one frame's worth of dispatch; returns `Stay` (still waiting on a precondition), `Transition { from, to }`, `BattleComplete` (terminal), or `UnknownState { state }` (default-arm fall-through for unmapped bytes).
 
 `crates/engine-core/src/world.rs` composes this with the actor VM, move VM, and effect VM into a single `World` struct that engines drive via `World::tick`.
+
+### Staged-anim playback (the attack band plays in-engine)
+
+The ids the SM stages into `actor.queued_anim` actually play on the battle actors. The id → slot/record ladder of the retail commit `FUN_8004AD80` is `legaia_engine_vm::anim_vm::resolve_staged_anim`: ids `< 0x10` play their action-table entry directly (`0` idle, `1` walk/approach, `0xC..0xF` the equipment-spliced weapon swings); ids `>= 0x10` materialize **art-bank record `id − 0x10`** into dynamic slot `0x10`/`0x11` (ids `0x10` and `0x1A` install at `0x11`) and the staged id is rewritten to the slot number.
+
+`World::commit_staged_battle_anims` (called from `step_battle` pre-step and from `tick_battle_animations`) applies that ladder per actor: a staged swing/art plays as a one-shot `MonsterAnimPlayer` (rate from the record's entry `+0x78` byte through the same `step_for_rate` path as the idle clips), the id pair converges on the committed value, and the in-flight clip outranks the SM's per-frame `pose()` requests (the same precedence rule hit reactions use).
+The clip's finish is the engine's anim-end signal: `ADVANCE_DONE` clears (opening the `0x801E370C` read gate for the next strike byte), the id pair converges back to idle `0`, and the idle loop resumes. An actor with no usable clip for a staged id converges immediately (a zero-length swing), so clip-less hosts keep the pre-animation pacing.
+
+Clip sources, decoded at battle entry next to the mesh assembly (`play-window`): the record[0] action streams + `swing_battle_animations` (per equipped item, runtime slots `0xC..0xF`) feed `World::set_actor_battle_action_clips`; the art bank (`art_animation_bank`, streams resolved through the `readef.DAT` `"ME"` archives via `art_me_archive`/`art_animation`) feeds `World::set_actor_battle_art_bank`.
+Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. The art records' `rate_alt` (`+0x84`) byte is used only as the base-archive marker; playback stepping follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)). Engine assumption: the loop-vs-once bit retail derives from the record kind isn't modelled - staged id `1` (the approach walk) loops, every other staged id plays once.
 
 ## Action validator (`FUN_8003FB10`)
 

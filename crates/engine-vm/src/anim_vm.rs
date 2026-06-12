@@ -1256,6 +1256,64 @@ impl AnimRuntime {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Staged battle-anim commit (the FUN_8004AD80 id -> slot/record ladder)
+// ---------------------------------------------------------------------------
+
+/// First staged anim id that resolves through the per-character
+/// **art-animation bank** instead of the runtime action table
+/// (`docs/formats/battle-data-pack.md` § Art-animation bank).
+pub const ART_ANIM_ID_BASE: u8 = 0x10;
+
+/// The two **dynamic** action-table slots the anim commit materializes an
+/// art-bank record into (`0x801C9360 + slot*4`, slots `0x10` / `0x11`).
+pub const DYNAMIC_ART_SLOT_A: u8 = 0x10;
+pub const DYNAMIC_ART_SLOT_B: u8 = 0x11;
+
+/// Where a staged battle anim id (`actor[+0x1DA]`, written by the battle
+/// action SM) resolves when the anim system commits it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StagedAnimTarget {
+    /// `q < 0x10`: play action-table entry `q` directly. For a party
+    /// member the table is the player file's record[0] slots widened with
+    /// the equipment-spliced swings (`0` idle, `1` walk/approach, `2..5`
+    /// hit reactions, `7..9` ready/recover/defeat, `0xC..0xF` the four
+    /// direction-command weapon swings); for a monster, its archive entry
+    /// index.
+    Direct { slot: u8 },
+    /// `q >= 0x10`: materialize **art-bank record** `q - 0x10` into
+    /// dynamic action-table slot `slot` (`0x10` or `0x11`) and rewrite the
+    /// staged id to `slot`. Only meaningful for actors that carry an art
+    /// bank (party members); a monster's ids stay plain entry indices.
+    ArtBank { record: u8, slot: u8 },
+}
+
+/// Resolve a staged anim id through the retail commit ladder: ids below
+/// [`ART_ANIM_ID_BASE`] play their action-table entry directly; ids
+/// `q >= 0x10` select art-bank record `q - 0x10`, installing at dynamic
+/// slot `0x11` for ids `0x10` and `0x1A` and at slot `0x10` for every
+/// other id (the staged id is then rewritten to the slot number, so the
+/// SM's `+0x1D9 == +0x1DA` equality checks compare slot numbers).
+// PORT: FUN_8004AD80 (dynamic-art commit arm) - staged id q >= 0x10 reads
+// bank record q - 0x10 (`q*0xD0 + bank + 4 - 0xCDC` install arithmetic),
+// installs at action-table slot 0x11 when q == 0x10 || q == 0x1A else
+// 0x10, and rewrites the staged byte to the slot number. See
+// docs/formats/battle-data-pack.md § Art-animation bank.
+pub fn resolve_staged_anim(q: u8) -> StagedAnimTarget {
+    if q < ART_ANIM_ID_BASE {
+        return StagedAnimTarget::Direct { slot: q };
+    }
+    let slot = if q == 0x10 || q == 0x1A {
+        DYNAMIC_ART_SLOT_B
+    } else {
+        DYNAMIC_ART_SLOT_A
+    };
+    StagedAnimTarget::ArtBank {
+        record: q - ART_ANIM_ID_BASE,
+        slot,
+    }
+}
+
 /// Errors the runtime can return from `play`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnimError {
@@ -2016,5 +2074,45 @@ mod tests {
         host.on_child_step_iter(0, 1);
         host.on_per_bone_interp(0, &[], 0);
         host.on_special_effect_spawn(0, 0);
+    }
+
+    #[test]
+    fn staged_ids_below_0x10_resolve_direct() {
+        // Idle / walk / reactions / poses / equipment swings all play
+        // their action-table entry as-is.
+        for q in 0u8..ART_ANIM_ID_BASE {
+            assert_eq!(
+                resolve_staged_anim(q),
+                StagedAnimTarget::Direct { slot: q },
+                "id {q:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn staged_art_ids_select_bank_record_q_minus_0x10() {
+        for q in ART_ANIM_ID_BASE..=0x3F {
+            match resolve_staged_anim(q) {
+                StagedAnimTarget::ArtBank { record, .. } => {
+                    assert_eq!(record, q - 0x10, "id {q:#x}")
+                }
+                other => panic!("id {q:#x} resolved to {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn staged_ids_0x10_and_0x1a_install_at_slot_0x11_others_at_0x10() {
+        // The FUN_8004AD80 rewrite: q == 0x10 / 0x1A -> dynamic slot B
+        // (0x11); every other art id -> dynamic slot A (0x10).
+        let slot_of = |q: u8| match resolve_staged_anim(q) {
+            StagedAnimTarget::ArtBank { slot, .. } => slot,
+            other => panic!("id {q:#x} resolved to {other:?}"),
+        };
+        assert_eq!(slot_of(0x10), DYNAMIC_ART_SLOT_B);
+        assert_eq!(slot_of(0x1A), DYNAMIC_ART_SLOT_B);
+        for q in [0x11u8, 0x12, 0x19, 0x1B, 0x1C, 0x2F, 0x3F] {
+            assert_eq!(slot_of(q), DYNAMIC_ART_SLOT_A, "id {q:#x}");
+        }
     }
 }

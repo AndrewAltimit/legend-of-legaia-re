@@ -661,6 +661,27 @@ pub struct Actor {
     /// active.
     pub battle_reaction: Option<u8>,
 
+    /// Per-character **art-animation bank** clips (the player file's
+    /// record[0] `+0x58` bank, each record's keyframe stream resolved
+    /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`
+    /// drives TMD object `i`), indexed by bank record. The staged-anim
+    /// commit ([`World::commit_staged_battle_anims`]) materializes record
+    /// `q - 0x10` from here for a staged id `q >= 0x10`, exactly like
+    /// retail `FUN_8004AD80`. `None` (monsters, or hosts that didn't decode
+    /// the bank) treats staged ids as plain action-table entry indices.
+    pub battle_art_bank: Option<std::sync::Arc<Vec<Option<MonsterAnimation>>>>,
+
+    /// Committed anim id (post `FUN_8004AD80` rewrite) of the **staged
+    /// one-shot clip** currently owning `battle_animation` - a weapon swing
+    /// (`0xC..0xF`) or a materialized art record (dynamic slot `0x10`/
+    /// `0x11`). While `Some`, the SM's per-frame `pose()` requests don't
+    /// steal the player (same precedence rule as `battle_reaction`).
+    /// Cleared by [`World::tick_battle_animations`] when the clip finishes:
+    /// that's the engine's anim-end signal - `ADVANCE_DONE` is cleared so
+    /// the attack chain reads its next strike byte, and the id pair
+    /// converges back to idle `0`.
+    pub battle_staged_anim: Option<u8>,
+
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot
     /// (`FUN_80055468` → `legaia_asset::monster_archive::relocate_cba/relocate_tsb`).
@@ -4513,6 +4534,11 @@ impl World {
 
     /// Run one battle-action state-machine step.
     pub fn step_battle(&mut self) -> StepOutcome {
+        // Anim commit first (the retail frame order: FUN_8004AD80 ran last
+        // frame after the SM staged its id), so the SM observes converged
+        // `current_anim` / cleared `ADVANCE_DONE` for clip-less actors and
+        // sees in-flight staged clips otherwise.
+        self.commit_staged_battle_anims();
         let ctx_ptr: *mut BattleActionCtx = &mut self.battle_ctx;
         let mut host = BattleHostImpl { world: self };
         // SAFETY: BattleHostImpl never reads or writes `world.battle_ctx`
@@ -6099,6 +6125,9 @@ impl World {
     /// since battle-init actors keep their `tmd_binding` without the field
     /// `.active` flag.
     pub fn tick_battle_animations(&mut self) {
+        // Commit any anim ids the SM staged this frame (idempotent - the
+        // step_battle pre-step commit already handled last frame's stages).
+        self.commit_staged_battle_anims();
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first (the FUN_8004AD80 record-type-4 arm):
             // a finished knockdown re-stages the get-up entry while the actor
@@ -6127,6 +6156,30 @@ impl World {
                 }
                 None => {}
             }
+            // Staged-clip end - the engine's anim-end signal (retail: the
+            // anim system's completion edge). Clear `ADVANCE_DONE` so the
+            // attack chain's read gate opens for the next strike byte, and
+            // converge the id pair back to idle `0` when the SM hasn't
+            // staged a new id meanwhile; the idle restore below then
+            // resumes the loop.
+            let staged_done = {
+                let a = &self.actors[i];
+                match (a.battle_staged_anim, &a.battle_animation) {
+                    (Some(id), Some(p)) if p.finished() => Some(id),
+                    _ => None,
+                }
+            };
+            if let Some(id) = staged_done {
+                let a = &mut self.actors[i];
+                a.battle_staged_anim = None;
+                a.battle
+                    .flag_bits
+                    .clear(vm::battle_action::ActorFlags::ADVANCE_DONE);
+                if a.battle.queued_anim == id {
+                    a.battle.queued_anim = 0;
+                    a.battle.current_anim = 0;
+                }
+            }
             // A finished one-shot action clip falls back to the idle loop -
             // except defeat, which holds its final (downed) keyframe.
             let restore_idle = {
@@ -6142,6 +6195,118 @@ impl World {
             let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 actor.pose_frame = Some(player.tick());
+            }
+        }
+    }
+
+    /// Commit every actor's staged battle anim id (`queued_anim` vs
+    /// `current_anim`) through the retail anim-commit ladder. Engine port of
+    /// the per-frame consumer that converges `+0x1D9` toward `+0x1DA`:
+    ///
+    /// - staged `0` converges and resumes the idle loop;
+    /// - staged `q < 0x10` plays action-table entry `q` directly (the
+    ///   equipment-spliced weapon swings live at `0xC..0xF`); `1` (the
+    ///   walk/approach) loops, everything else plays one-shot;
+    /// - staged `q >= 0x10` on an actor carrying an art bank materializes
+    ///   bank record `q - 0x10` into dynamic slot `0x10`/`0x11` (ids `0x10`
+    ///   and `0x1A` install at `0x11`) and **rewrites the staged id to the
+    ///   slot number** - `legaia_engine_vm::anim_vm::resolve_staged_anim`;
+    ///   without a bank (monsters) the id is a plain entry index;
+    /// - an actor with no usable clip converges immediately and clears
+    ///   `ADVANCE_DONE` (a zero-length swing), so clip-less hosts keep the
+    ///   pre-animation pacing.
+    ///
+    /// Idempotent per frame (a converged pair is a no-op). Called by
+    /// [`Self::step_battle`] (pre-step) and [`Self::tick_battle_animations`].
+    // PORT: FUN_8004AD80 (staged-anim commit; the id -> slot/record ladder
+    // lives in `legaia_engine_vm::anim_vm::resolve_staged_anim`).
+    pub fn commit_staged_battle_anims(&mut self) {
+        for i in 0..self.actors.len() {
+            self.commit_staged_battle_anim(i);
+        }
+    }
+
+    /// Single-actor arm of [`Self::commit_staged_battle_anims`]. Public so
+    /// tests can drive one slot deterministically.
+    pub fn commit_staged_battle_anim(&mut self, i: usize) {
+        use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
+        use vm::battle_action::ActorFlags;
+        let Some(actor) = self.actors.get(i) else {
+            return;
+        };
+        let q = actor.battle.queued_anim;
+        if q == actor.battle.current_anim {
+            return;
+        }
+        // Staged idle: converge and resume the loop. A staged clip in
+        // flight is dropped (retail: the commit replaces the playing
+        // record unconditionally).
+        if q == 0 {
+            let a = &mut self.actors[i];
+            a.battle.current_anim = 0;
+            a.battle_staged_anim = None;
+            self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
+            return;
+        }
+        // Resolve the clip + the committed id (post-rewrite).
+        let (clip, committed) = match resolve_staged_anim(q) {
+            StagedAnimTarget::ArtBank { record, slot } if actor.battle_art_bank.is_some() => {
+                let clip = actor
+                    .battle_art_bank
+                    .as_ref()
+                    .and_then(|b| b.get(record as usize))
+                    .and_then(|c| c.clone());
+                (clip, slot)
+            }
+            // Direct entries - and, for an actor without an art bank (a
+            // monster), ids >= 0x10 too: monster anim ids are archive entry
+            // indices across the whole range.
+            _ => {
+                let clip = actor
+                    .battle_action_clips
+                    .as_ref()
+                    .and_then(|cl| cl.get(q as usize))
+                    .and_then(|c| c.clone());
+                (clip, q)
+            }
+        };
+        let a = &mut self.actors[i];
+        // The FUN_8004AD80 rewrite: both id fields hold the committed slot
+        // number, so the SM's equality checks compare post-rewrite values.
+        a.battle.queued_anim = committed;
+        a.battle.current_anim = committed;
+        // An in-flight hit reaction owns the player (same precedence as the
+        // pose hook); the ids still converge above so the SM doesn't stall,
+        // and the clip is treated as elapsed.
+        if a.battle_reaction.is_some() {
+            a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+            return;
+        }
+        // Id 1 is the walk/approach: it loops until the SM stages something
+        // else (AttackShortStep clears it to 0 on arrival). Engine
+        // assumption - the loop-vs-once bit retail derives from the record
+        // kind isn't modelled on MonsterAnimation.
+        let player = clip.as_ref().and_then(|c| {
+            if committed == 1 {
+                crate::battle_anim::MonsterAnimPlayer::new(c)
+            } else {
+                crate::battle_anim::MonsterAnimPlayer::new_one_shot(c)
+            }
+        });
+        match player {
+            Some(p) => {
+                a.battle_animation = Some(p);
+                a.battle_pose = None;
+                // The marker keeps the SM's per-frame pose() requests from
+                // stealing the player. A looping walk never finishes, so its
+                // marker is released by the next staged id (AttackShortStep
+                // clears the queue to 0 on arrival).
+                a.battle_staged_anim = Some(committed);
+            }
+            None => {
+                // No usable clip: a zero-length swing - fire the anim-end
+                // signal immediately so the attack chain's read gate opens.
+                a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
             }
         }
     }
@@ -6214,6 +6379,23 @@ impl World {
         if let Some(actor) = self.actors.get_mut(slot) {
             actor.battle_action_clips = Some(clips);
             actor.battle_pose = None;
+            actor.battle_staged_anim = None;
+        }
+    }
+
+    /// Install the per-character art-animation bank clips for actor `slot`
+    /// (see [`Actor::battle_art_bank`]): index = bank record, content = the
+    /// record's `"ME"`-archive keyframe stream expanded per assembled
+    /// object. The staged-anim commit resolves ids `>= 0x10` through this
+    /// bank exactly like retail `FUN_8004AD80`. No-ops for out-of-range
+    /// slots.
+    pub fn set_actor_battle_art_bank(
+        &mut self,
+        slot: usize,
+        bank: std::sync::Arc<Vec<Option<MonsterAnimation>>>,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_art_bank = Some(bank);
         }
     }
 
@@ -6242,6 +6424,14 @@ impl World {
         // (retail's pose driver never touches the anim-id fields; the
         // reaction chain owns them until it completes).
         if actor.battle_reaction.is_some() {
+            return;
+        }
+        // Same precedence for a staged one-shot (weapon swing / art clip):
+        // the SM keeps calling `pose()` every step while the swing plays
+        // (idle during the wait states, recover at the band end) - the
+        // staged clip owns the player until it finishes
+        // (`tick_battle_animations` clears the marker).
+        if actor.battle_staged_anim.is_some() {
             return;
         }
         // Monster clip vectors are archive-order (retail resolves monster
