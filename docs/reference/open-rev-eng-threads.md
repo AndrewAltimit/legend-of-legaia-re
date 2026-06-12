@@ -931,13 +931,19 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    the Ra-Seru summons Meta / Terra / Ozma (`0x9E..0xA0`) drive ids `0x25..0x27` →
    **0932..0934** (the untitled entries head with a pre-linked slot-B pointer table). The
    linear arithmetic (`loader = spell − 0x79`, `extraction = loader + 895`) holds across
-   every pinned leg of both blocks. Still open: whether the evolved-Seru casts
-   (`0x8C..0x95` — Gola Gola / Mushura / …) ride stagers at all (predicted `914..923`,
-   with 914/915 stager-shaped; they may instead be move-FX-path casts), and the
-   attack-titled 0924 "Ultimate Rave" / 925 / 926 (their arithmetic slots map to spell
-   ids `0x96..0x98` = rare-drop placeholder names — likeliest other Evil-Seru-Magic
-   creatures' stagers, the creature resolving the id like Juggernaut's `0x20` under the
-   generic `0x99` spell).
+   every pinned leg of both blocks. **The enemy arm is capture-pinned too** (six
+   catalogued final-boss Cort mid-cast states): boss specials stream their own stagers
+   through the same loader — Mystic Circle `0x2B` → **938**, Mystic Shield `0x2D` →
+   **940**, Guilty Cross `0x31` → **944**, evolved-form Final Crisis / Ultra Charge
+   `0x42`/`0x43` → **961/962**, and Cort's Evil Seru Magic `0x47` → **966**, *distinct*
+   from the player-side Juggernaut stager 0927 — the player and enemy arms of the same
+   spell ship separate stagers, and the enemy-special id band sits at `0x2B..0x47` →
+   `938..966`. Still open: whether the evolved-Seru casts (`0x8C..0x95` — Gola Gola /
+   Mushura / …) ride stagers at all (predicted `914..923`, with 914/915 stager-shaped;
+   they may instead be move-FX-path casts), and the attack-titled 0924 "Ultimate Rave" /
+   925 / 926 (arithmetic ids `0x1D..0x1F`, between the predicted evolved-Seru block and
+   the pinned enemy-special band — with enemy stagers now confirmed, likeliest **other
+   enemies'** special-attack stagers; one mid-cast each still closes them).
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
 3. **Engine mirrors — resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain — `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 — consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 

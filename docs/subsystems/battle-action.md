@@ -256,8 +256,16 @@ content-pinned). **The Gimard leg is capture-pinned**: the loader-B current-id g
 (`gp+0x934` = `0x8007BC4C`) reads `8` → extraction **PROT 903** in all three catalogued
 player-Gimard cast states (`gimard_summon_start` / `_visible` / `_burning_attack` — the
 value sits in the save-state RAM, no live probe needed), and stays `8` through the whole
-cast; the **enemy** "Fire Tail" frames instead hold `5` → extraction **PROT 0900** (the
-move-FX module — the enemy special path, distinct from the player stager). The
+cast; the **enemy** Gimard "Fire Tail" frames instead hold `5` → extraction **PROT 0900** (the
+move-FX module). **Enemy boss specials ride their own stagers through the same loader**:
+the catalogued final-boss corpus (six Cort mid-cast states) lands every leg on the same
+linear arithmetic, byte-resident at slot B `0x801F69D8` — Mystic Circle `0x2B` → **938**,
+Mystic Shield `0x2D` → **940**, Guilty Cross `0x31` → **944**, evolved-form Final Crisis
+`0x42` → **961** and Ultra Charge `0x43` → **962**, and Cort's Evil Seru Magic `0x47` →
+**966** — the last **distinct from the player-side Juggernaut stager 0927** (loader id
+`0x20`): the player and enemy arms of the same spell ship separate stagers. So the
+enemy-special id band `0x2B..0x47` maps to extraction **938..966**, while small ids
+(`5`/`6` → 0900/0901) are the move-FX / widget modules streaming through the same slot. The
 capture-class (`'c'`) spell branch loads from a different base:
 `FUN_8003EC70(spell_record[+1] + 0x28)`. **The whole block is capture-pinned**: every spell
 id `0x81..=0x8B` was observed mid-cast loading its arithmetic slot (`903..=913`), with zero

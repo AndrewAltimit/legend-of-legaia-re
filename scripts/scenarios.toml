@@ -1676,3 +1676,74 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Right after Zora's Glare petrified Vahn. The AFTER leg: +0x16E = 0x04 (Stone's runtime bit, the previously-unassigned hole in the applier byte map), HP untouched, queued action category cleared, +0x220 visual flag dropped. Diff vs zora_glare_petrify_pre pins Stone's representation."
 topics = ["battle", "status", "Stone", "petrify", "Glare", "capture pair", "+0x16E bit 0x04"]
+
+# ----------------------------------------------------------------
+# Final-boss (Cort) special-attack mid-cast corpus: the first ENEMY-cast
+# legs of the loader-B stager mechanism. Every leg lands on the same
+# linear arithmetic as the player summons (stager extraction = 895 +
+# loader-B current-id at 0x8007BC4C) and is byte-resident at slot B
+# 0x801F69D8 - enemy boss specials stream their own stager overlays,
+# answering the "enemy cast = stager or move-FX module?" question for
+# Cort. NOTE Cort's Evil Seru Magic resolves loader id 0x47 -> stager
+# extraction 0966, DISTINCT from the player-side Juggernaut stager 0927:
+# the player and enemy arms of the same spell ship separate stagers.
+
+[[scenarios]]
+slot = 2
+label = "cort_mystic_shield_mid_cast"
+ram_fingerprint_sha256 = "9a06b7e988a4a5e215eac2ab0af395c9f931026950a1add7fb77f23258f91d8e"
+backup_fingerprint = "5e24762bd6926e85609f1b2d8971ade83066c93192f09068908740caedf2efa1"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy boss Cort casting Mystic Shield mid-cast (final-boss battle). Loader-B current-id 0x8007BC4C = 0x2D -> stager extraction 0940 (byte-resident at slot B 0x801F69D8). Enemy-cast stager leg."
+topics = ["battle", "Cort", "boss", "stager", "loader-B", "Mystic Shield", "enemy cast"]
+
+[[scenarios]]
+slot = 3
+label = "cort_guilty_cross_mid_cast"
+ram_fingerprint_sha256 = "8fa77f7e47171f8ef9fc6f0069241bcda3c93dd030947fc9e880ac7c839ad4f8"
+backup_fingerprint = "b54a2a425aba832769dc1b32f14f20a044a8f29bca28c910df9193bbc7be77c1"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy boss Cort casting Guilty Cross mid-cast. Loader-B current-id 0x8007BC4C = 0x31 -> stager extraction 0944 (byte-resident at slot B 0x801F69D8)."
+topics = ["battle", "Cort", "boss", "stager", "loader-B", "Guilty Cross", "enemy cast"]
+
+[[scenarios]]
+slot = 4
+label = "cort_mystic_circle_mid_cast"
+ram_fingerprint_sha256 = "6577ccaeb74a85ef029544224de5afe4010879eefd9d358edfca36720d748269"
+backup_fingerprint = "0ba3c2ba495e25703bf8c2380c9d98156a22ddc411460c3810b28a687be8c16e"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy boss Cort casting Mystic Circle mid-cast. Loader-B current-id 0x8007BC4C = 0x2B -> stager extraction 0938 (byte-resident at slot B 0x801F69D8)."
+topics = ["battle", "Cort", "boss", "stager", "loader-B", "Mystic Circle", "enemy cast"]
+
+[[scenarios]]
+slot = 5
+label = "cort_evolved_ultra_charge_mid_cast"
+ram_fingerprint_sha256 = "aa46ab10e5842f303e3dc8f5eed3a1c69615232d08773cb0d06dce49a26d3fe2"
+backup_fingerprint = "baf51cc2d6063dd27e459c5445327470e329a50150c73d3c2c3cb634263e0f51"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Evolved (second-form) Cort casting Ultra Charge mid-cast. Loader-B current-id 0x8007BC4C = 0x43 -> stager extraction 0962 (byte-resident at slot B 0x801F69D8)."
+topics = ["battle", "Cort", "evolved Cort", "boss", "stager", "loader-B", "Ultra Charge", "enemy cast"]
+
+[[scenarios]]
+slot = 6
+label = "cort_evolved_final_crisis_mid_cast"
+ram_fingerprint_sha256 = "7a1a2e231d86649383ac6149824d077b9020a9222884c9339880f3d5cde8ce3d"
+backup_fingerprint = "f96f2d3cc30ef3c3c82a57799728b990bc702007857e224f00da4622ffe45ea5"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Evolved (second-form) Cort casting Final Crisis mid-cast. Loader-B current-id 0x8007BC4C = 0x42 -> stager extraction 0961 (byte-resident at slot B 0x801F69D8)."
+topics = ["battle", "Cort", "evolved Cort", "boss", "stager", "loader-B", "Final Crisis", "enemy cast"]
+
+[[scenarios]]
+slot = 7
+label = "cort_evil_seru_magic_mid_cast"
+ram_fingerprint_sha256 = "812a21ef3fb82cb107dcfac3f873306bd6b06928b17c2454abdd4c3637bbc273"
+backup_fingerprint = "ccf3e11956ce940f269adf93abc50e172b3a1c18ad66ff301a9708a5660d0f23"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy boss Cort casting Evil Seru Magic (Juggernaut) mid-cast. Loader-B current-id 0x8007BC4C = 0x47 -> stager extraction 0966 (byte-resident at slot B 0x801F69D8) - DISTINCT from the player-side Juggernaut stager 0927 (loader id 0x20): the enemy arm of the same spell ships its own stager."
+topics = ["battle", "Cort", "boss", "stager", "loader-B", "Evil Seru Magic", "Juggernaut", "enemy cast"]
