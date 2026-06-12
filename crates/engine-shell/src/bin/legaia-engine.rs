@@ -57,16 +57,18 @@ type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 
 /// One assembled party member ready for the battle render:
 /// `(assembled character, texture uploads, idle clip, per-slot action clips,
-/// art-animation bank)`. The action clips cover the record[0] slots plus the
-/// equipment-spliced weapon swings (runtime slots `0xC..0xF`); the bank is
-/// indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80` commit.
-/// Produced by `PlayWindowApp::assembled_party_battle_mesh`.
+/// art-animation bank, per-slot face tracks, per-art-record face tracks)`.
+/// The action clips cover the record[0] slots plus the equipment-spliced
+/// weapon swings (runtime slots `0xC..0xF`); the bank and its face tracks
+/// are indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80`
+/// commit. Produced by `PlayWindowApp::assembled_party_battle_mesh`.
 type AssembledPartyMesh = (
     legaia_asset::battle_char_assembly::AssembledCharacter,
     Vec<legaia_asset::battle_char_assembly::TextureUpload>,
     legaia_asset::monster_archive::MonsterAnimation,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
 );
 
@@ -84,9 +86,21 @@ struct BattleMemberFace {
     /// Face tracks indexed by action slot (record[0] entries + the
     /// equipment-spliced swing slots 0xC..0xF).
     tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    /// Face tracks of the art-bank records' embedded entries, indexed by
+    /// bank record (= playing clip `action_id - 0x10`). Retail reads these
+    /// through the `FUN_8004AD80`-installed entry pointer (bank record
+    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth — the mid-battle
+    /// art-strike faces.
+    art_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     /// Stamp set applied on the previous frame (`None` = nothing applied
     /// yet, force the first stamp).
     last_stamps: Option<Vec<legaia_asset::face_anim::FaceStamp>>,
+    /// Victory-window frame counter — the engine's per-member equivalent
+    /// of the retail global `gp+0x9EA` (reset to 0 when the win pose is
+    /// staged, advanced per frame; the stamp pass halves it). `Some`
+    /// while the member's mouth-override window is open, `None` outside
+    /// it.
+    art_counter: Option<u16>,
 }
 use legaia_prot::cdname;
 use winit::application::ApplicationHandler;
@@ -3832,6 +3846,11 @@ struct PlayWindowApp {
     /// entry. `None` after a failed attempt (disc-free runs) — facial
     /// animation is skipped.
     face_tables: Option<legaia_asset::face_anim::FaceFrameTables>,
+    /// The static SCUS victory-window mouth-override table (the
+    /// `0x80077E80` per-(char, staged-id) tracks), loaded alongside
+    /// `face_tables`. `None` skips the override (the entry tracks still
+    /// animate).
+    art_mouth_tables: Option<legaia_asset::face_anim::ArtMouthTables>,
     /// Whether the lazy `face_tables` load already ran (so a missing
     /// executable is only probed once).
     face_tables_attempted: bool,
@@ -6458,13 +6477,16 @@ impl PlayWindowApp {
                 > = None;
                 let mut face_tracks: Option<Vec<Option<legaia_asset::face_anim::FaceTracks>>> =
                     None;
-                if let Some((asm, uploads, idle, clips, bank, faces)) =
+                let mut art_face_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+                    Vec::new();
+                if let Some((asm, uploads, idle, clips, bank, faces, art_faces)) =
                     self.assembled_party_battle_mesh(cslot, member)
                 {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
                     art_bank = Some(bank);
                     face_tracks = Some(faces);
+                    art_face_tracks = art_faces;
                     match legaia_tmd::parse(&asm.tmd) {
                         Ok(tmd) => source = Some((tmd, asm.tmd, Some(idle))),
                         Err(e) => log::warn!(
@@ -6669,7 +6691,9 @@ impl PlayWindowApp {
                                 actor_slot: member,
                                 char_index: cslot,
                                 tracks,
+                                art_tracks: std::mem::take(&mut art_face_tracks),
                                 last_stamps: None,
+                                art_counter: None,
                             });
                         }
                         party_bound += 1;
@@ -6851,40 +6875,48 @@ impl PlayWindowApp {
         // (main slot 3*char+1, base slot 3*char+2 for rate_alt == 0xFF
         // records). The staged-anim commit materializes bank record
         // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
-        let art_bank = self.party_art_bank(&raw, cslot, &asm.anm_bones);
-        Some((asm, uploads, idle, clips, art_bank, faces))
+        let (art_bank, art_faces) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
+        Some((asm, uploads, idle, clips, art_bank, faces, art_faces))
     }
 
     /// Decode one character's art-animation bank into commit-ready clips
-    /// (index = bank record). Failures degrade per record (a `None` slot
-    /// commits as a zero-length clip) or to an empty bank with a warning.
+    /// plus the records' embedded-entry face tracks (both indexed by bank
+    /// record). Failures degrade per record (a `None` slot commits as a
+    /// zero-length clip) or to an empty bank with a warning.
     fn party_art_bank(
         &self,
         raw: &[u8],
         cslot: usize,
         anm_bones: &[u8],
-    ) -> Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> {
+    ) -> (
+        Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+        Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    ) {
         let record0 = match legaia_asset::battle_char_assembly::decode_record0(raw) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} record[0] decode for art bank: {e:#}");
-                return Vec::new();
+                return (Vec::new(), Vec::new());
             }
         };
         let records = match legaia_asset::battle_char_assembly::art_animation_bank(&record0) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} art-bank parse: {e:#}");
-                return Vec::new();
+                return (Vec::new(), Vec::new());
             }
         };
+        // The embedded entries' face tracks (record +0xB0 / +0xBC) come
+        // straight off the bank records - no ME archive involved.
+        let faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+            records.iter().map(|r| r.face).collect();
         // readef.DAT (extraction PROT 894) - the battle side-band file whose
         // 0x10800-byte slots carry the per-character "ME" stream archives.
         let readef = match self.session.host.index.entry_bytes_extended(894) {
             Ok(b) => b,
             Err(e) => {
                 log::warn!("play-window: readef.DAT (PROT 894) read: {e:#}");
-                return Vec::new();
+                return (Vec::new(), faces);
             }
         };
         let main = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, false);
@@ -6912,7 +6944,7 @@ impl PlayWindowApp {
                 ),
             }
         }
-        bank
+        (bank, faces)
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful
@@ -7071,6 +7103,9 @@ impl PlayWindowApp {
         self.face_tables = scus
             .as_deref()
             .and_then(legaia_asset::face_anim::FaceFrameTables::from_scus);
+        self.art_mouth_tables = scus
+            .as_deref()
+            .and_then(legaia_asset::face_anim::ArtMouthTables::from_scus);
         if self.face_tables.is_none() {
             log::info!(
                 "play-window: SCUS face-frame tables unavailable - battle faces stay neutral"
@@ -7084,24 +7119,44 @@ impl PlayWindowApp {
     /// `action_id` selects the member's face tracks, its integer keyframe
     /// cursor is the frame counter, and the selected frames are VRAM-to-VRAM
     /// copies from the band's face-frame strip (`Vram::move_image`, the
-    /// `MoveImage` stamp). The GPU texture is only re-uploaded on a frame
+    /// `MoveImage` stamp). During the victory window — the battle ended in
+    /// a monster wipe while a member still plays a dynamic-art-slot clip
+    /// (staged id `0x11..=0x18`, e.g. the killing art) — the mouth records
+    /// come from the static `0x80077E80` override table and the animator
+    /// clocks on the halved victory counter instead (the win-quote mouth
+    /// flap). The GPU texture is only re-uploaded on a frame
     /// whose stamp set differs from the previous one (retail re-issues
     /// identical `MoveImage`s every frame; the visible result is the same).
     // PORT: FUN_80047430 (facial-animator dispatch): per visible party
     // node, call the stamp pass with (band slot, char index, cursor
     // keyframes, playing action entry), skipping char 3 (Terra) and bands
-    // >= 3. The stamp-selection half is `FaceFrameTables::stamps`
+    // >= 3. The stamp-selection half is `FaceFrameTables::stamps_with_art_window`
     // (PORT: FUN_8004C7B4 in legaia_asset::face_anim).
     fn tick_battle_face_stamps(&mut self) {
+        use legaia_asset::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
+        use legaia_engine_vm::battle_action::BattleEndCause;
         if self.session.host.world.mode != SceneMode::Battle || self.battle_faces.is_empty() {
             return;
         }
         let Some(tables) = self.face_tables.as_ref() else {
             return;
         };
+        let art_tables = self.art_mouth_tables.as_ref();
         let Some(vram) = self.battle_vram.as_mut() else {
             return;
         };
+        // Retail gate 1 of the victory-window mouth override: the
+        // battle-end signal `DAT_8007BD71 == 0xFE` raised by a monster
+        // wipe (the SM `0x5A` arm; the engine mirror is the
+        // `BattleActionHost::battle_end` latch). Gates 2/3 — the victory
+        // sequencer's phase halfword `ctx+0x6CE != 0` and the celebration
+        // flag `DAT_8007BD60 & 0x80` (which the party-wipe path clears) —
+        // are the retail victory presentation's internal progress flags;
+        // the engine has no victory sequencer, so "the won battle is
+        // still on screen" stands in for them. Escapes also raise 0xFE
+        // but never set the celebration flag, so they stay excluded.
+        let victory_window =
+            self.session.host.world.battle_end == Some(BattleEndCause::MonsterWipe);
         let mut changed = false;
         for mf in &mut self.battle_faces {
             let Some(actor) = self.session.host.world.actors.get(mf.actor_slot) else {
@@ -7114,7 +7169,38 @@ impl PlayWindowApp {
                 .as_ref()
                 .map(|p| (p.action_id(), p.current_frame()))
                 .unwrap_or((0, 0));
-            let tracks = mf.tracks.get(action_id as usize).and_then(|t| t.as_ref());
+            // Track source. Staged ids >= 0x10 are art-bank clips: retail
+            // materializes bank record `id - 0x10` and installs its
+            // embedded entry (record +0x24) as the action-table pointer
+            // (FUN_8004AD80), so the animator reads THAT entry's tracks
+            // (record +0xB0 eyes / +0xBC mouth). Below the art base, the
+            // playing clip's action slot picks the record[0] / swing entry.
+            let tracks = if action_id >= legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE {
+                mf.art_tracks
+                    .get(
+                        (action_id - legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE) as usize,
+                    )
+                    .and_then(|t| t.as_ref())
+            } else {
+                mf.tracks.get(action_id as usize).and_then(|t| t.as_ref())
+            };
+            // Retail gate 4: the member's last-staged anim id
+            // (`actor[+0x1DB]`; the engine's art-bank clips carry it as
+            // their `action_id`) sits in the dynamic-art-slot band
+            // `0x11..=0x18`. Open the override window, clocking the
+            // member's `gp+0x9EA` mirror from 0; closed, the counter
+            // resets.
+            let art_mouth = if victory_window
+                && (ART_BAND_FIRST..=ART_BAND_LAST).contains(&action_id)
+                && let Some(track) = art_tables.and_then(|t| t.track(mf.char_index, action_id))
+            {
+                let counter = mf.art_counter.unwrap_or(0);
+                mf.art_counter = Some(counter.saturating_add(1));
+                Some(ArtMouthOverride { track, counter })
+            } else {
+                mf.art_counter = None;
+                None
+            };
             // The retail mouth-neutral gate: character-record word `+0xF8`
             // bit 0x2000 = ability bitfield (`+0xF4`) bit 45 (passive 0x2D
             // Rage, Evil Medallion). Read it off the occupying character's
@@ -7126,11 +7212,12 @@ impl PlayWindowApp {
                 .get(world.party_roster_slot(mf.actor_slot))
                 .map(|m| m.ability_bits()[5] & 0x20 != 0)
                 .unwrap_or(false);
-            let stamps = tables.stamps(
+            let stamps = tables.stamps_with_art_window(
                 mf.char_index,
                 mf.actor_slot,
                 tracks,
                 frame,
+                art_mouth,
                 force_neutral_mouth,
             );
             if mf.last_stamps.as_deref() != Some(&stamps) {
@@ -10537,6 +10624,7 @@ fn cmd_play_window_with_record(
         battle_tex_slots_used: 0,
         battle_faces: Vec::new(),
         face_tables: None,
+        art_mouth_tables: None,
         face_tables_attempted: false,
         summon_actor_slot: None,
         battle_stage_mesh: None,

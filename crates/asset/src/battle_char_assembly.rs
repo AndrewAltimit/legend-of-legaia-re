@@ -574,6 +574,15 @@ pub struct ArtAnimRecord {
     /// records present in every character's bank - see
     /// [`Self::uses_base_archive`].
     pub rate_alt: u8,
+    /// The embedded entry's facial keyframe tracks (entry `+0x8C` eyes /
+    /// `+0x98` mouth = record `+0xB0` / `+0xBC`). `FUN_8004AD80` installs
+    /// the embedded entry (record `+0x24`) as the action-table slot
+    /// `0x10`/`0x11` pointer, so while the materialized art clip plays the
+    /// render node's `+0x4C` anim context is this entry and the per-frame
+    /// facial animator `FUN_8004C7B4` reads these tracks - the mid-battle
+    /// art-strike faces. Sibling of
+    /// [`SwingAnimation::face`]; `None` only for a truncated record.
+    pub face: Option<crate::face_anim::FaceTracks>,
     /// record[0]-image byte offset of the record's action-entry header.
     pub entry_offset: usize,
 }
@@ -646,6 +655,7 @@ pub fn art_animation_bank(record0: &[u8]) -> Result<Vec<ArtAnimRecord>> {
             attach_key: entry[0x77],
             rate: entry[0x78],
             rate_alt: entry[0x84],
+            face: crate::face_anim::FaceTracks::from_entry(rec, ART_ENTRY_OFFSET),
             entry_offset: base + ART_ENTRY_OFFSET,
         });
     }
@@ -1212,6 +1222,10 @@ mod tests {
         img[base0 + ART_ENTRY_OFFSET + 0x77] = 21; // attach key
         img[base0 + ART_ENTRY_OFFSET + 0x78] = 2; // rate
         img[base0 + ART_ENTRY_OFFSET + 0x84] = 0; // rate_alt (main archive)
+        // Embedded-entry face tracks: eye record 0 at record +0xB0
+        // (= entry +0x8C), mouth record 1 at record +0xBC + 3.
+        img[base0 + 0xB0..base0 + 0xB3].copy_from_slice(&[2, 4, 9]);
+        img[base0 + 0xBC + 3..base0 + 0xBC + 6].copy_from_slice(&[1, 10, 14]);
         // Record 1: empty combo/name, source 5, base-archive marker.
         let base1 = base0 + ART_RECORD_STRIDE;
         img[base1 + 0x0A] = 5;
@@ -1229,10 +1243,33 @@ mod tests {
         assert_eq!(bank[0].rate, 2);
         assert!(!bank[0].uses_base_archive());
         assert_eq!(bank[0].entry_offset, base0 + ART_ENTRY_OFFSET);
+        // The embedded entry's face tracks (record +0xB0 / +0xBC).
+        let face = bank[0].face.expect("record 0 face tracks");
+        assert_eq!(
+            face.eyes[0],
+            crate::face_anim::FaceTrackRecord {
+                frame: 2,
+                start: 4,
+                end: 9,
+            }
+        );
+        assert_eq!(
+            face.mouth[1],
+            crate::face_anim::FaceTrackRecord {
+                frame: 1,
+                start: 10,
+                end: 14,
+            }
+        );
+        assert!(!face.is_empty());
         assert_eq!(bank[1].anim_id, 0x11);
         assert!(bank[1].combo.is_empty());
         assert!(bank[1].name.is_empty());
         assert!(bank[1].uses_base_archive());
+        assert!(
+            bank[1].face.expect("record 1 face tracks").is_empty(),
+            "untouched record parses as empty tracks"
+        );
 
         // A combo byte outside 1..=4 is rejected.
         img[base0] = 9;
