@@ -399,6 +399,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
 | [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
+| [`autorun_battle_moveimage_trace.lua`](../../scripts/pcsx-redux/autorun_battle_moveimage_trace.lua) | Logs every libgpu `MoveImage` request (caller RA + source RECT + dest) via an exec-bp on `FUN_80058490`; `LEGAIA_TRACE_LOADIMAGE=1` adds the `LoadImage` wrapper (slow — it fires every frame on the overworld). Pinned move-VM op `0x40` as the animated-texture strip primitive (see [`move-vm.md`](../subsystems/move-vm.md)). |
 
 #### Runtime probe details
 
