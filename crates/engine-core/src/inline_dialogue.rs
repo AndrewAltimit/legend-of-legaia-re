@@ -55,6 +55,11 @@ pub struct InlineDialogue {
     /// ending, so prologue execution is never worse than the truncated path.
     /// Consumed (set to `None`) the first time a box opens or the fallback fires.
     pub fallback_segment_pc: Option<usize>,
+    /// The field-NPC placement slot this interaction record belongs to, when
+    /// known (set by the interact dispatch). The world's step loop exposes it
+    /// to the field-VM host so the prologue's `0x4C 0x51` NPC-run ops can
+    /// walk the right actor. `None` for hand-started scripts.
+    pub npc_slot: Option<u8>,
 }
 
 impl InlineDialogue {
@@ -69,6 +74,7 @@ impl InlineDialogue {
             done: false,
             last_choice: None,
             fallback_segment_pc: None,
+            npc_slot: None,
         }
     }
 
@@ -94,6 +100,7 @@ impl InlineDialogue {
             done: false,
             last_choice: None,
             fallback_segment_pc: Some(first_segment),
+            npc_slot: None,
         }
     }
 

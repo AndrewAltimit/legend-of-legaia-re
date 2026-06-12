@@ -526,7 +526,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
         })
     };
 
-    match opcode {
+    let decoded = match opcode {
         0x21 | 0x24 | 0x25 | 0x48 => mk(header_size, InsnInfo::Nop),
         0x22 => {
             need(1)?;
@@ -956,7 +956,14 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             }
         }
         _ => Err(DisasmError::UnknownOpcode { pc, opcode }),
-    }
+    };
+    // The sub-dispatched decoders (0x34 / 0x43 / 0x45 / 0x49 / 0x4C / 0x4E)
+    // construct their own `Insn` without seeing the lead byte's `0x80`
+    // cross-context target; re-attach it here so `Insn::extended` is
+    // populated uniformly across every opcode family.
+    let mut insn = decoded?;
+    insn.extended = extended;
+    Ok(insn)
 }
 
 fn decode_actor_ctrl(

@@ -44,6 +44,11 @@
   <p>The default mode follows a target actor slot at a configured distance + height - same shape as the retail "follow the player" camera.</p>
 </section>
 
+<section class="doc-section" id="field-npcs">
+  <h2>Field-NPC walking</h2>
+  <p><code>World::tick_field_npc_motions</code> (<code>engine-core</code>) drives MAN-placed field NPCs through the <code>0x47</code> <code>MoveTowardTarget</code> pursue step, one motion-VM step per field tick, writing the live position back into <code>World::field_npc_positions</code> so the moving NPC's &plusmn;40-unit collision box and its interact box follow it. Three start paths feed it: <strong>autonomous patrol routes</strong> (each placement's own pre-text <code>0x4C 0x51</code> move-to-tile ops, decoded by <code>man_field_scripts::placement_motion_route</code>; opt-in via <code>play-window --live-npcs</code>, paused while a dialogue is up), <strong>interaction-prologue runs</strong> (a record's own <code>0x4C 0x51</code> walks the interacted NPC), and the <strong>actor-VM <code>start_motion</code></strong> glide (op <code>0x09</code>, retail <code>FUN_800358c0</code>). Residue: the exact retail per-NPC glide speed is unpinned (the engine paces NPCs at the player walking step), and per-actor field-VM channels are not executed - the engine loops the decoded waypoint list.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
