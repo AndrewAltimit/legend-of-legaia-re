@@ -123,16 +123,24 @@ enum Cmd {
         #[arg(long, default_value = "32768,65536,98304,131072,196608,262144")]
         lzs_sizes: String,
     },
-    /// Parse a per-summon stager overlay (extraction PROT 0903..=0913) into
-    /// its move-VM part-record scene-graph: scan the `FUN_80021B04` spawn calls
-    /// and print each part's record offset, mesh selector, flags, and bytecode
-    /// span. Input is the raw overlay `.BIN`.
+    /// Parse a per-summon stager overlay (extraction PROT 0903..=0913 player,
+    /// 0927..=0934 high-summon, or the enemy boss block 0938/0940/0944/0961/
+    /// 0962/0966) into its move-VM part-record scene-graph: scan the
+    /// `FUN_80021B04` + `FUN_80050ED4` spawn calls and print each part's record
+    /// offset, mesh selector, flags, and bytecode span. Input is the raw
+    /// overlay `.BIN`. Stager extraction files over-read into the following
+    /// TOC entries — pass `--trim` with the entry's unique-content length
+    /// (`(next_start_lba - start_lba) * 0x800`) to drop the neighbour bytes.
     SummonOverlay {
         input: PathBuf,
         /// Overlay link/load base (`*DAT_80010390`); default is the pinned
         /// shared summon-overlay buffer base.
         #[arg(long, value_parser = parse_hex_u32, default_value = "0x801F69D8")]
         base: u32,
+        /// Trim the input to this many bytes before parsing (the entry's
+        /// TOC-gap unique-content footprint). Accepts hex with `0x` prefix.
+        #[arg(long, value_parser = parse_hex_u32)]
+        trim: Option<u32>,
     },
     /// Parse a battle side-band streaming file — `summon.dat` (extraction PROT
     /// 0893) or `readef.DAT` (0894) — into its `0x10800`-byte slots and print
@@ -1029,7 +1037,7 @@ fn main() -> Result<()> {
             top,
             lzs_sizes,
         } => find_overlay(&dir, top, &lzs_sizes),
-        Cmd::SummonOverlay { input, base } => summon_overlay_cmd(&input, base),
+        Cmd::SummonOverlay { input, base, trim } => summon_overlay_cmd(&input, base, trim),
         Cmd::SummonReadef {
             input,
             texture_png_dir,
@@ -1273,17 +1281,22 @@ fn element_affinity_cmd(input: &Path) -> Result<()> {
 }
 
 /// Parse a per-summon stager overlay and print its move-VM part-record list.
-fn summon_overlay_cmd(input: &Path, base: u32) -> Result<()> {
-    let bytes = std::fs::read(input)?;
+fn summon_overlay_cmd(input: &Path, base: u32, trim: Option<u32>) -> Result<()> {
+    let mut bytes = std::fs::read(input)?;
+    let full_len = bytes.len();
+    if let Some(t) = trim {
+        bytes.truncate(t as usize);
+    }
     let ov = legaia_asset::summon_overlay::parse(&bytes, base);
     println!(
-        "summon overlay {}: {} bytes, link base {:#010x}",
+        "summon overlay {}: {} bytes ({} after trim), link base {:#010x}",
         input.display(),
+        full_len,
         bytes.len(),
         ov.link_base
     );
     println!(
-        "{} FUN_80021B04 spawn site(s), {} part record(s) recovered",
+        "{} FUN_80021B04/FUN_80050ED4 spawn site(s), {} part record(s) recovered",
         ov.spawn_sites,
         ov.parts.len()
     );

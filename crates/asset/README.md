@@ -257,14 +257,20 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 
 `summon_overlay` — Seru-magic **summon scene-graph** part records:
 
-- A per-summon stager overlay (extraction PROT 0903..=0913; Gimard *Tail Fire*
-  `0x81` arithmetics to 0903 under the corrected loader index math) stages each
-  summon body part with a `FUN_80021B04` call passing a per-part record.
+- A per-summon stager overlay (player extraction PROT 0903..=0913 — Gimard
+  *Tail Fire* `0x81` arithmetics to 0903 under the corrected loader index math
+  — high-summon 0927..=0934, and the six Cort enemy boss stagers
+  `ENEMY_BOSS_STAGER_PROT`) stages each summon body part with a `FUN_80021B04`
+  call passing a per-part record — directly or through the `FUN_80050ED4` pool
+  wrapper (both scanned).
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
-  transform/pivot node). Records live in-file under link base `0x801F69D8`.
+  transform/pivot node, `0x4000`/`0x4001` = render-mode nodes). Records live
+  in-file under link base `0x801F69D8`. Trim the entry to its TOC-gap
+  unique-content footprint first (`unique_content_len`) — stager extraction
+  files over-read into the following entries.
 
-CLI `asset summon-overlay <PROT 0905 .BIN>`. See
+CLI `asset summon-overlay <stager .BIN> [--trim 0xNNNN]`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
 

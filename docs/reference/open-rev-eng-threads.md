@@ -127,10 +127,11 @@ The summon visual is a **per-summon code overlay**, not an opcode or `befect_dat
 
 **Two overlays timeshare the shared buffer at link base `0x801F69D8`** (`*DAT_80010390`):
 
-**PROT 0905** is a **spawn stager** (38 `FUN_80021B04` calls) — under the corrected loader index
+**PROT 0905** is a **spawn stager** (22 `FUN_80021B04` calls within its trimmed TOC-gap
+footprint — see the over-read note below) — under the corrected loader index
 math (`FUN_8003EC70(param)` → extraction entry `param + 0x37F`, see [`formats/prot.md § In-RAM
 TOC`](../formats/prot.md#in-ram-toc)) it is the **spell-`0x83` slot**, while Gimard `0x81`
-arithmetics to **extraction 0903** (also a clean stager: 40 spawn sites / 32 records; the
+arithmetics to **extraction 0903** (also a clean stager; the
 historical "0905 = Gimard" label was the `+ 0x381` off-by-2, never content-pinned) — and **PROT
 0900** is a resident **transform / GTE-render** overlay (`RotMatrixX/Y/Z` ×6 + prim emit) that
 animates and draws the spawned parts. PROT 0900 is the one **byte-resident** in a mid-cast save
@@ -141,10 +142,13 @@ The stager spawns each part via the SCUS part-stager **`FUN_80021B04`** (`a1` = 
 move-buffer base, `actor[+0x70] = 2` PC) then `jal FUN_80023070` ticks the **move VM** on
 `record+4`.
 
-**RECORDS RESOLVED — in-file, parsed.** Each `FUN_80021B04` call passes its record by absolute pointer (`lui 0x8020 / addiu`); under the correct link base `0x801F69D8` those resolve to PROT 0905 **file `0x180C..0x1E00`** (runtime `0x801F81E4..`), a contiguous table of variable-length records `[i16 model_sel][u16 flags][move-VM bytecode @+4]`, `model_sel == -1` = transform/pivot node (dominant; mesh bound by the move-VM anim-bank ops), `>= 0` = `DAT_8007C018[model_sel + gp[0x754]]`. `legaia_asset::summon_overlay::parse` recovers them by scanning the spawn calls (disc-gated `summon_overlay_real`: 38 sites → 23 part records, 17 transform nodes; CLI `asset summon-overlay`).
+**RECORDS RESOLVED — in-file, parsed.** Each `FUN_80021B04` call passes its record by absolute pointer (`lui 0x8020 / addiu`); under the correct link base `0x801F69D8` those resolve to PROT 0905 **file `0x180C..0x1E00`** (runtime `0x801F81E4..`), a contiguous table of variable-length records `[i16 model_sel][u16 flags][move-VM bytecode @+4]`, `model_sel == -1` = transform/pivot node (dominant; mesh bound by the move-VM anim-bank ops), `>= 0` = `DAT_8007C018[model_sel + gp[0x754]]`. `legaia_asset::summon_overlay::parse` recovers them by scanning the spawn calls (disc-gated `summon_overlay_real`: 22 sites → 17 part records, all transform nodes, within the trimmed footprint; CLI `asset summon-overlay`).
 
-**Generalizes across the whole player-summon block:** every overlay in extraction PROT 0903..=0913 (`spell_id 0x81..=0x8b`, `summon_overlay::PLAYER_SUMMON_STAGER_PROT`) recovers a move-VM scene-graph (disc-gated `summon_overlay_block` sweep — 20..73 spawn sites, 10..43 contiguous in-file records each). 0905 reads cleanest (transform-node-dominated + small library indices); the larger stagers carry many `SummonPartKind::Sentinel` first-words — node-mode `0x1000`/`0x4000`/`0x8000`-class markers, **not** library indices — so the CLI labels those `sentinel 0xNNNN`. The model-library base (`gp[0x754]`) is **resolved** (see the summon-render block below): it is **not per-summon** but one per-battle, party-size-derived value (`party_count + 2`). Open across the block:
-the precise sentinel semantics.
+**Generalizes across the player, high-summon AND enemy boss blocks — and the sentinel question is RESOLVED.** Every overlay in extraction PROT 0903..=0913 (`spell_id 0x81..=0x8b`, `summon_overlay::PLAYER_SUMMON_STAGER_PROT`), the high-summon block 0927..=0934 (`HIGH_SUMMON_STAGER_PROT`), and the six Cort enemy stagers 0938/0940/0944/0961/0962/0966 (`ENEMY_BOSS_STAGER_PROT`) recovers a move-VM scene-graph (disc-gated `summon_overlay_block` + `enemy_stager_real` sweeps), once two facts are applied:
+(1) the high/enemy stagers spawn dominantly through the pool wrapper `FUN_80050ED4` (→ `FUN_80021B04`, pool `DAT_801C90F0`), which the parser scans alongside the direct calls;
+(2) **stager extraction entries are over-read windows** — each `.BIN` runs past the next entry's start LBA, so it must be trimmed to `(next_start_lba - start_lba) * 0x800` (`unique_content_len`) before parsing, a boundary the Cort mid-cast saves pin byte-exactly against the slot-B resident image.
+After trimming, the record first words across the whole 25-stager corpus are only `-1` / small library indices / **`0x4000`** (four records, PROT 0928/0929/0931) — matching `FUN_80021B04`'s own dispatch (negative → transform path; `0x4000`/`0x4001` → render-mode nodes `+0x5A = 3`/`5`; else library index). The earlier "`0x1000`/`0x8000`-class sentinel" census was over-read contamination: those offsets belong to *neighbouring* stagers' loads and dereference unrelated bytes in the wrong file window.
+The model-library base (`gp[0x754]`) is **resolved** (see the summon-render block below): it is **not per-summon** but one per-battle, party-size-derived value (`party_count + 2`). Still open: the draw behaviour of the `0x4000`/`0x4001` render-mode nodes (no live capture holds one mid-cast — the Cort states' live pooled part-actors all carry `-1` records, `+0x56 = 4` / `+0x5A = 2` after move-VM rebinding).
 
 **This CORRECTS the earlier "records beyond the `0x5800` file / `0x180C` only coincidentally record-shaped / parser reverted" reading — that was the wrong link base (`0x801F0000` instead of `0x801F69D8`), which pushed the runtime record addresses past the file.** **Still pinned:** the CLUT band is byte-identical across the two animation-distinct frames (motion is geometric, not palette cycling); flame texture is **PROT 870** (three 64x256 4bpp TIMs → battle VRAM `(320/384/448,0)`, CLUTs rows 474..476); the bound flame mesh comes from **PROT 871** (`etmd.dat`, 30-TMD pack) at `DAT_8007C018[26]`.
 

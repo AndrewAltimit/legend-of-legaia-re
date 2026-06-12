@@ -43,10 +43,21 @@ fn summon_stager_parses_into_move_vm_part_records() {
         .get(PROT_SUMMON_STAGER)
         .cloned()
         .expect("PROT 0905 entry exists");
+    let next = archive
+        .entries
+        .get(PROT_SUMMON_STAGER + 1)
+        .cloned()
+        .expect("PROT 0906 entry exists");
     let mut bytes = Vec::new();
     archive
         .read_entry(&entry, &mut bytes)
         .expect("read PROT 0905");
+
+    // Trim the over-read window (the extraction footprint runs into PROT
+    // 0906's content) down to 0905's own TOC-gap footprint; the record table
+    // at 0x180C..0x1E00 sits inside it.
+    let unique = summon_overlay::unique_content_len(bytes.len(), entry.start_lba, next.start_lba);
+    bytes.truncate(unique);
     assert!(
         bytes.len() >= 0x1E00,
         "stager overlay must include its data region (got {} bytes)",
