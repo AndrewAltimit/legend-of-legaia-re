@@ -17,6 +17,10 @@
 //! - Vahn / Noa / Gala each have action entries with live eye AND mouth
 //!   records (the blink / talk content); Terra's tracks are all empty
 //!   (retail skips char 3 entirely);
+//! - the art-bank records' embedded entries (record `+0xB0` / `+0xBC` —
+//!   the tracks the animator reads while a materialized art clip plays)
+//!   pass the same census, and nearly every Vahn / Noa / Gala art record
+//!   carries live records;
 //! - every stamp the selection can produce lands inside the member's
 //!   128x256 texture band, for every character x band slot.
 //!
@@ -289,6 +293,92 @@ fn player_face_tracks_census() {
             );
         }
         eprintln!("[ok] {name}: {live_eye} eye + {live_mouth} mouth records");
+    }
+}
+
+#[test]
+fn art_bank_face_tracks_census() {
+    let Some(root) = gate() else { return };
+    for (ci, (name, file)) in PLAYER_FILES.iter().enumerate() {
+        let path = root.join("PROT").join(file);
+        if !path.exists() {
+            eprintln!("[skip] {} missing", path.display());
+            continue;
+        }
+        let raw = std::fs::read(&path).expect("read player file");
+        let record0 =
+            legaia_asset::battle_char_assembly::decode_record0(&raw).expect("decode record[0]");
+        let bank =
+            legaia_asset::battle_char_assembly::art_animation_bank(&record0).expect("parse bank");
+        let mut live_eye = 0usize;
+        let mut live_mouth = 0usize;
+        let mut clips_with_tracks = 0usize;
+        for rec in &bank {
+            let face = rec.face.unwrap_or_else(|| {
+                panic!("{name} art record {}: truncated face tracks", rec.index)
+            });
+            if !face.is_empty() {
+                clips_with_tracks += 1;
+            }
+            for r in &face.eyes {
+                if r.end == 0 {
+                    continue;
+                }
+                assert!(
+                    (1..EYE_FRAME_COUNT).contains(&(r.frame as usize)),
+                    "{name} art record {}: eye frame id {} out of range / neutral",
+                    rec.index,
+                    r.frame
+                );
+                assert!(
+                    r.start <= r.end,
+                    "{name} art record {}: inverted eye window {}..{}",
+                    rec.index,
+                    r.start,
+                    r.end
+                );
+                live_eye += 1;
+            }
+            for r in &face.mouth {
+                if r.end == 0 {
+                    continue;
+                }
+                assert!(
+                    (1..MOUTH_FRAME_COUNT).contains(&(r.frame as usize)),
+                    "{name} art record {}: mouth frame id {} out of range / neutral",
+                    rec.index,
+                    r.frame
+                );
+                assert!(
+                    r.start <= r.end,
+                    "{name} art record {}: inverted mouth window {}..{}",
+                    rec.index,
+                    r.start,
+                    r.end
+                );
+                live_mouth += 1;
+            }
+        }
+        // Stable disc invariants: the art clips are face-rich for the
+        // animated trio (nearly every record carries live records); Terra's
+        // bank is all-empty, matching her empty record[0] tracks (retail
+        // skips char 3 in the animator anyway).
+        let expect = [
+            (33usize, 32usize, 71usize, 86usize), // Vahn
+            (35, 33, 75, 53),                     // Noa
+            (32, 30, 57, 56),                     // Gala
+            (9, 0, 0, 0),                         // Terra
+        ][ci];
+        assert_eq!(
+            (bank.len(), clips_with_tracks, live_eye, live_mouth),
+            expect,
+            "{name}: art-bank face-track census"
+        );
+        eprintln!(
+            "[ok] {name} (char {ci}): {} art records, {clips_with_tracks} with non-empty \
+             tracks, {live_eye} eye + {live_mouth} mouth records",
+            bank.len()
+        );
     }
 }
 

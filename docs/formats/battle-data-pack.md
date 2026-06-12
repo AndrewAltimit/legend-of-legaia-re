@@ -359,6 +359,11 @@ The self-relative word at record[0] `+0x58` locates the bank:
                               ; 0xFF marks the eight base-archive records
        +0x88 u32 stream_ptr   ; 0 on disc - FUN_8004AD80 points it at the
                               ; decoded scratch buffer at commit
+       +0x8C u8  eyes[4][3]   ; facial eye track (= record +0xB0) - the
+                              ; standard entry tracks, read while the
+                              ; materialized art clip plays (see Facial
+                              ; animation tracks)
+       +0x98 u8  mouth[4][3]  ; facial mouth track (= record +0xBC)
 ```
 
 The "record 0's first byte coincides with the bank count" wrinkle
@@ -495,6 +500,18 @@ captures: the `+0x8C` table's frames are the wide two-eye band — frame 1
 a narrowed blink — and the `+0x98` frames the closed / open mouth
 shapes.)
 
+The mid-battle **art clips** read the same two offsets through a
+different entry: the anim commit `FUN_8004AD80` installs the art-bank
+record's **embedded entry** (bank record `+0x24`) as the action-table
+slot `0x10`/`0x11` pointer, so while the materialized art plays the
+render node's `+0x4C` anim context is that entry and the animator's
+track reads land at bank record `+0xB0` (eyes) / `+0xBC` (mouth) — see
+[Art-animation bank](#art-animation-bank-record0-0x58). The art clips
+are face-rich on disc: nearly every Vahn / Noa / Gala bank record
+carries live records (32 of 33 / 33 of 35 / 30 of 32 records with
+non-empty tracks); Terra's nine are all empty, matching her empty
+record[0] tracks.
+
 A record is active while `start <= clip_frame <= end` (`end != 0`,
 counter clamped at `0xFE`); its `frame_id` selects a face frame from the
 static per-character SCUS tables — eye-frame source x/y at
@@ -551,8 +568,9 @@ shows no residue at all.
 
 Parser + engine consumer: `legaia_asset::face_anim` carries the track
 parser (`FaceTracks` / `battle_face_tracks`; the swing entries' tracks
-ride on `battle_char_assembly::SwingAnimation::face`), the SCUS table
-parsers (`FaceFrameTables::from_scus`, the override table as
+ride on `battle_char_assembly::SwingAnimation::face` and the art-bank
+embedded entries' on `battle_char_assembly::ArtAnimRecord::face`), the
+SCUS table parsers (`FaceFrameTables::from_scus`, the override table as
 `ArtMouthTables::from_scus` with an `ArtMouthTables::track` lookup keyed
 by the staged id) and the retail stamp selection
 (`FaceFrameTables::stamps` / `stamps_with_art_window`, which takes the
@@ -561,8 +579,10 @@ clamp). The engine play-window battle path
 registers each assembled member's tracks and re-stamps the current
 eye/mouth frame per tick through `legaia_tim::Vram::move_image` (the
 `MoveImage` port), keyed by the playing clip's `action_id` + keyframe
-cursor — so party members blink and mouth through their reaction and
-swing clips exactly like retail. When the battle ends in a monster wipe
+cursor — a staged id `>= 0x10` selects the art-bank record's embedded
+tracks (the `FUN_8004AD80` entry-pointer rule above), every other id its
+action slot's — so party members blink and mouth through their
+reaction, swing and dynamic-art clips exactly like retail. When the battle ends in a monster wipe
 while a member still plays a dynamic-art-slot clip (the engine carries
 the staged id as the art-bank clip's `action_id`; the world's
 `battle_end` latch mirrors the `0xFE` signal), the stamp tick opens the
@@ -570,10 +590,11 @@ override window and clocks a per-member `gp+0x9EA` mirror from 0 — the
 sequencer-progress gates (`ctx+0x6CE`, `DAT_8007BD60` bit `0x80`) have
 no engine counterpart yet, so "the won battle is still on screen" stands
 in for them. Disc-gated validation:
-`crates/asset/tests/face_anim_real.rs` (table anchors + track census +
-the override-table census: 40 live records, in-range non-neutral frames,
-the empty rows where retail has no flap, in-band stamps for every
-reachable counter) and
+`crates/asset/tests/face_anim_real.rs` (table anchors + track census —
+record[0] entries, swing entries and the art-bank embedded entries —
+plus the override-table census: 40 live records, in-range non-neutral
+frames, the empty rows where retail has no flap, in-band stamps for
+every reachable counter) and
 `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle
 VRAM holds a byte-exact stamped frame at the documented rects). The
 `FUN_8004CCD4` sibling pass is not modelled.

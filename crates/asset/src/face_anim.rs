@@ -12,6 +12,13 @@
 //!   `[frame_id, start, end]`;
 //! - entry `+0x98`: **mouth** track — same shape.
 //!
+//! The mid-battle **art clips** read the same offsets through a different
+//! entry: `FUN_8004AD80` installs the art-bank record's embedded entry
+//! (record `+0x24`) as the action-table slot `0x10`/`0x11` pointer, so a
+//! playing art's tracks are the embedded entry's — record `+0xB0` (eyes) /
+//! `+0xBC` (mouth), carried as
+//! [`crate::battle_char_assembly::ArtAnimRecord::face`].
+//!
 //! A record is active while `start <= clip_frame <= end` (`end != 0`); its
 //! `frame_id` selects a face frame from the static per-character tables in
 //! `SCUS_942.54` (eye source x/y at `DAT_80076824/26` — eight frames per
@@ -181,7 +188,10 @@ impl FaceTracks {
 /// [`crate::battle_char_assembly::battle_animations`]'s `action_id`; `None`
 /// for unpopulated slots. The runtime swing slots `0xC..0xF` are spliced
 /// from the equipment sections instead — see
-/// [`crate::battle_char_assembly::SwingAnimation::face`].
+/// [`crate::battle_char_assembly::SwingAnimation::face`] — and the
+/// dynamically-materialized art clips (staged ids `>= 0x10`) carry their
+/// tracks in the art-bank records' embedded entries — see
+/// [`crate::battle_char_assembly::ArtAnimRecord::face`].
 pub fn battle_face_tracks(file: &[u8]) -> Result<Vec<Option<FaceTracks>>> {
     let block = crate::battle_char_assembly::decode_record0(file)?;
     let mut out = vec![None; crate::battle_char_assembly::ACTION_SLOT_COUNT];
@@ -408,8 +418,8 @@ impl FaceFrameTables {
     /// `char_index` is the character (0 Vahn / 1 Noa / 2 Gala; Terra and
     /// out-of-range indices return no stamps, mirroring the retail skip),
     /// `party_slot` the present-party band ordinal (`>= 3` returns no
-    /// stamps), `tracks` the playing clip's facial tracks (`None` — e.g. a
-    /// dynamically-materialized art clip — behaves like a clip whose
+    /// stamps), `tracks` the playing clip's facial tracks (`None` — a clip
+    /// with no registered tracks — behaves like a clip whose
     /// records are never active: the neutral face is re-stamped),
     /// `clip_frame` the playing clip's integer keyframe counter and
     /// `force_neutral_mouth` the character-record `0x2000` flag.

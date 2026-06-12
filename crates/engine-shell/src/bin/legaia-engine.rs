@@ -57,16 +57,18 @@ type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 
 /// One assembled party member ready for the battle render:
 /// `(assembled character, texture uploads, idle clip, per-slot action clips,
-/// art-animation bank)`. The action clips cover the record[0] slots plus the
-/// equipment-spliced weapon swings (runtime slots `0xC..0xF`); the bank is
-/// indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80` commit.
-/// Produced by `PlayWindowApp::assembled_party_battle_mesh`.
+/// art-animation bank, per-slot face tracks, per-art-record face tracks)`.
+/// The action clips cover the record[0] slots plus the equipment-spliced
+/// weapon swings (runtime slots `0xC..0xF`); the bank and its face tracks
+/// are indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80`
+/// commit. Produced by `PlayWindowApp::assembled_party_battle_mesh`.
 type AssembledPartyMesh = (
     legaia_asset::battle_char_assembly::AssembledCharacter,
     Vec<legaia_asset::battle_char_assembly::TextureUpload>,
     legaia_asset::monster_archive::MonsterAnimation,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
 );
 
@@ -84,6 +86,12 @@ struct BattleMemberFace {
     /// Face tracks indexed by action slot (record[0] entries + the
     /// equipment-spliced swing slots 0xC..0xF).
     tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    /// Face tracks of the art-bank records' embedded entries, indexed by
+    /// bank record (= playing clip `action_id - 0x10`). Retail reads these
+    /// through the `FUN_8004AD80`-installed entry pointer (bank record
+    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth — the mid-battle
+    /// art-strike faces.
+    art_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     /// Stamp set applied on the previous frame (`None` = nothing applied
     /// yet, force the first stamp).
     last_stamps: Option<Vec<legaia_asset::face_anim::FaceStamp>>,
@@ -6469,13 +6477,16 @@ impl PlayWindowApp {
                 > = None;
                 let mut face_tracks: Option<Vec<Option<legaia_asset::face_anim::FaceTracks>>> =
                     None;
-                if let Some((asm, uploads, idle, clips, bank, faces)) =
+                let mut art_face_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+                    Vec::new();
+                if let Some((asm, uploads, idle, clips, bank, faces, art_faces)) =
                     self.assembled_party_battle_mesh(cslot, member)
                 {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
                     art_bank = Some(bank);
                     face_tracks = Some(faces);
+                    art_face_tracks = art_faces;
                     match legaia_tmd::parse(&asm.tmd) {
                         Ok(tmd) => source = Some((tmd, asm.tmd, Some(idle))),
                         Err(e) => log::warn!(
@@ -6680,6 +6691,7 @@ impl PlayWindowApp {
                                 actor_slot: member,
                                 char_index: cslot,
                                 tracks,
+                                art_tracks: std::mem::take(&mut art_face_tracks),
                                 last_stamps: None,
                                 art_counter: None,
                             });
@@ -6863,40 +6875,48 @@ impl PlayWindowApp {
         // (main slot 3*char+1, base slot 3*char+2 for rate_alt == 0xFF
         // records). The staged-anim commit materializes bank record
         // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
-        let art_bank = self.party_art_bank(&raw, cslot, &asm.anm_bones);
-        Some((asm, uploads, idle, clips, art_bank, faces))
+        let (art_bank, art_faces) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
+        Some((asm, uploads, idle, clips, art_bank, faces, art_faces))
     }
 
     /// Decode one character's art-animation bank into commit-ready clips
-    /// (index = bank record). Failures degrade per record (a `None` slot
-    /// commits as a zero-length clip) or to an empty bank with a warning.
+    /// plus the records' embedded-entry face tracks (both indexed by bank
+    /// record). Failures degrade per record (a `None` slot commits as a
+    /// zero-length clip) or to an empty bank with a warning.
     fn party_art_bank(
         &self,
         raw: &[u8],
         cslot: usize,
         anm_bones: &[u8],
-    ) -> Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> {
+    ) -> (
+        Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+        Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    ) {
         let record0 = match legaia_asset::battle_char_assembly::decode_record0(raw) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} record[0] decode for art bank: {e:#}");
-                return Vec::new();
+                return (Vec::new(), Vec::new());
             }
         };
         let records = match legaia_asset::battle_char_assembly::art_animation_bank(&record0) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("play-window: party {cslot} art-bank parse: {e:#}");
-                return Vec::new();
+                return (Vec::new(), Vec::new());
             }
         };
+        // The embedded entries' face tracks (record +0xB0 / +0xBC) come
+        // straight off the bank records - no ME archive involved.
+        let faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+            records.iter().map(|r| r.face).collect();
         // readef.DAT (extraction PROT 894) - the battle side-band file whose
         // 0x10800-byte slots carry the per-character "ME" stream archives.
         let readef = match self.session.host.index.entry_bytes_extended(894) {
             Ok(b) => b,
             Err(e) => {
                 log::warn!("play-window: readef.DAT (PROT 894) read: {e:#}");
-                return Vec::new();
+                return (Vec::new(), faces);
             }
         };
         let main = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, false);
@@ -6924,7 +6944,7 @@ impl PlayWindowApp {
                 ),
             }
         }
-        bank
+        (bank, faces)
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful
@@ -7149,7 +7169,21 @@ impl PlayWindowApp {
                 .as_ref()
                 .map(|p| (p.action_id(), p.current_frame()))
                 .unwrap_or((0, 0));
-            let tracks = mf.tracks.get(action_id as usize).and_then(|t| t.as_ref());
+            // Track source. Staged ids >= 0x10 are art-bank clips: retail
+            // materializes bank record `id - 0x10` and installs its
+            // embedded entry (record +0x24) as the action-table pointer
+            // (FUN_8004AD80), so the animator reads THAT entry's tracks
+            // (record +0xB0 eyes / +0xBC mouth). Below the art base, the
+            // playing clip's action slot picks the record[0] / swing entry.
+            let tracks = if action_id >= legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE {
+                mf.art_tracks
+                    .get(
+                        (action_id - legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE) as usize,
+                    )
+                    .and_then(|t| t.as_ref())
+            } else {
+                mf.tracks.get(action_id as usize).and_then(|t| t.as_ref())
+            };
             // Retail gate 4: the member's last-staged anim id
             // (`actor[+0x1DB]`; the engine's art-bank clips carry it as
             // their `action_id`) sits in the dynamic-art-slot band
