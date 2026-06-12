@@ -188,6 +188,17 @@ pub enum SlotKind {
     Texture(TextureSlot),
     /// Summon-creature actor record — TMD + texture pool + part table.
     ActorRecord(ActorRecordSlot),
+    /// `"ME"` keyframe-stream archive at the slot head — a player
+    /// **art-animation stream source** (`readef.DAT` slots `3*char + 1` /
+    /// `3*char + 2`, read by `FUN_8002B28C` out of the `_DAT_8007BD74`
+    /// streaming buffer this file fills). See [`crate::me_archive`] and
+    /// [`crate::battle_char_assembly::art_me_archive`].
+    MeArchive {
+        /// Entry count.
+        count: usize,
+        /// How many entries are compressed (size-word bit 15).
+        compressed: usize,
+    },
     /// Neither shape (raw payload, e.g. the big-summon 3rd slot's
     /// CLUT+texture+part-pool block, or filler).
     Payload,
@@ -292,6 +303,13 @@ pub fn parse(bytes: &[u8]) -> Result<SidebandFile> {
                 SlotKind::Texture(t)
             } else if let Some(r) = actor_record_slot(slot) {
                 SlotKind::ActorRecord(r)
+            } else if let Ok(me) = crate::me_archive::parse(slot) {
+                SlotKind::MeArchive {
+                    count: me.len(),
+                    compressed: (0..me.len())
+                        .filter(|&n| me.is_compressed(n) == Some(true))
+                        .count(),
+                }
             } else {
                 SlotKind::Payload
             };

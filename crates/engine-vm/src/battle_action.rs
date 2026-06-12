@@ -1191,6 +1191,20 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
     // terminates as this port's out-of-range sentinel. Otherwise stage the
     // byte as the queued anim and fire damage.
     let slot = ctx.active_actor;
+    // Strike pacing gate: while ADVANCE_DONE is still set the previous
+    // staged swing is in flight - skip the byte read and hold (the anim
+    // system clears the bit when the staged clip finishes; for the engine
+    // that's `World::tick_battle_animations`' staged-clip end handling, or
+    // an immediate clear when the actor carries no clips).
+    // PORT: overlay_battle_action_801e295c `0x801E370C` - `lbu +0x1DC;
+    // andi 0x2; bne -> skip` guards the next-byte read at `+0x1DF + +0x15`.
+    let in_flight = host
+        .actor(slot)
+        .map(|a| a.flag_bits.has(ActorFlags::ADVANCE_DONE))
+        .unwrap_or(false);
+    if in_flight {
+        return stay(ctx);
+    }
     let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
     if next_byte == 0x00 || next_byte == 0xFF {
         if let Some(actor) = host.actor_mut(slot) {
@@ -2523,11 +2537,21 @@ mod tests {
         assert!(host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
         assert!(host.take().contains(&Event::ApplyDamage(0x10, 0, 0, 1)));
 
+        // While ADVANCE_DONE is set the staged swing is in flight - the
+        // chain holds without reading the next byte (the 0x801E370C gate).
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+        assert_eq!(host.actors[1].strike_index, 1, "gated - no byte read");
+        assert!(host.take().is_empty(), "gated - no damage fired");
+
+        // Anim system signals clip end (clears ADVANCE_DONE).
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+
         // Second step: queue 0x12 and fire damage.
         assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
         assert_eq!(host.actors[1].queued_anim, 0x12);
         assert_eq!(host.actors[1].strike_index, 2);
         assert!(host.take().contains(&Event::ApplyDamage(0x12, 0, 0, 1)));
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
 
         // Third step: terminator → recovery; SM clears ADVANCE_DONE.
         let out = step(&mut host, &mut ctx);
@@ -2989,6 +3013,9 @@ mod tests {
         host.actors[1].params[1] = 0xFF;
         step(&mut host, &mut ctx); // queue 0x10, fires apply_damage
         assert!(host.take().contains(&Event::ApplyDamage(0x10, 0, 0, 1)));
+        // Anim system signals the staged swing finished (clears the
+        // 0x801E370C read gate) before the chain reads the next byte.
+        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
         step(&mut host, &mut ctx); // terminator → AttackRecovery, SM clears ADVANCE_DONE
         assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
         assert!(!host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
@@ -3338,10 +3365,14 @@ mod tests {
         ctx.active_actor = 0;
 
         // Tick 1: consumes params[0] = 0x10 → fires both apply_art_strike
-        // and apply_damage.
+        // and apply_damage. Between ticks the anim system signals each
+        // staged swing's clip end by clearing ADVANCE_DONE (the 0x801E370C
+        // read gate).
         step(&mut host, &mut ctx);
+        host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
         // Tick 2: params[1] = 0x11 → fires for second strike.
         step(&mut host, &mut ctx);
+        host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
         // Tick 3: params[2] = 0xFF terminator → transitions to AttackRecovery.
         step(&mut host, &mut ctx);
 
@@ -3404,6 +3435,8 @@ mod tests {
         ctx.active_actor = 0;
 
         step(&mut host, &mut ctx);
+        // Clip-end signal between strikes (the 0x801E370C read gate).
+        host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
         step(&mut host, &mut ctx);
 
         let events = host.take();

@@ -289,12 +289,17 @@ pub fn assemble_character(
 /// only `+0x00..+0x2C` (slots 0..0xB) are populated; the runtime table is
 /// wider: the battle loader `FUN_80052FA0` rebases the 12 disc words, fills
 /// slots `0xC..0xF` (offsets `0x30..0x3C`) with swing records spliced from
-/// the equipped-item sections, and the anim commit `FUN_8004AD80` installs
-/// dynamically-materialized art records at slots `0x10`/`0x11`. The word at
-/// `+0x58` is the **art-animation record bank** pointer (`0xD0`-stride
+/// the equipped-item sections ([`swing_battle_animations`]), and the anim
+/// commit `FUN_8004AD80` installs dynamically-materialized art records at
+/// slots `0x10`/`0x11` ([`art_animation_bank`]). The word at `+0x58` is the
+/// **art-animation record bank** pointer (`[u32 count]` + `0xD0`-stride
 /// records the dynamic slots are built from; also the art matcher's table),
-/// and `+0x5C` a sibling pointer (rebased at load; consumer untraced) - not
-/// texture-block offsets as earlier noted.
+/// and `+0x5C` a sibling pointer (rebased at load) - in all four retail
+/// files it equals `clut_a_off - 4`, the zero word immediately before
+/// record[0]'s first image block (consumer untraced; the "it points at the
+/// art ME stream archive" hypothesis is disc-refuted - those archives live
+/// in `readef.DAT`, see [`art_me_archive`]). Not texture-block offsets as
+/// earlier noted.
 pub const ACTION_SLOT_COUNT: usize = 22;
 
 /// Offset of the packed `[u8 parts][u8 frames][9-byte TRS records]` stream
@@ -399,6 +404,296 @@ pub fn idle_battle_animation(
         rate,
         entry_off + PLAYER_ANIM_STREAM_OFFSET,
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Weapon-swing animations (equipment-section records -> runtime slots 0xC..0xF)
+// ---------------------------------------------------------------------------
+
+/// First runtime action slot filled from the equipment sections: the four
+/// direction-command swings live at slots `0xC` (L) / `0xD` (R) / `0xE` (D) /
+/// `0xF` (U) - the same byte values the Tactical-Arts command queue stages
+/// as anim ids.
+pub const SWING_SLOT_BASE: u8 = 0xC;
+
+/// One weapon-swing animation spliced from an equipment section's payload
+/// into the runtime action table (see [`swing_battle_animations`]).
+#[derive(Debug, Clone)]
+pub struct SwingAnimation {
+    /// Runtime action-table slot (`0xC..=0xF`).
+    pub slot: u8,
+    /// Equipment section the record came from (`2..=4`; sections 0/1 carry
+    /// no swing records - their `+0x04`/`+0x08` words are zero on disc).
+    pub section: usize,
+    /// Descriptor id of the section slot (equippable item id; `0` =
+    /// section default).
+    pub item_id: u32,
+    /// The record's first byte - a presentation-class tag in the same id
+    /// space as the art entries' (`0x0E..0x1F` observed), **not** the slot.
+    pub entry_tag: u8,
+    /// The decoded keyframe animation. `action_id` is the runtime slot.
+    pub anim: crate::monster_archive::MonsterAnimation,
+}
+
+/// Parse the standard `0xAC`-byte action entry at `off` in `block`: action
+/// tag at `+0x00`, rate byte at `+0x78`
+/// ([`crate::monster_archive::ANIM_RATE_OFFSET`]), packed keyframe stream at
+/// `+0xAC` ([`PLAYER_ANIM_STREAM_OFFSET`]).
+// PORT: FUN_800557b8 - the record copy that pins this shape: 0x2B words
+// (= 0xAC bytes) of header, then `(parts * frames * 9 + 5) >> 2` words of
+// the packed stream read from the bytes at +0xAC.
+fn parse_action_entry(
+    block: &[u8],
+    off: usize,
+    action_id: u8,
+) -> Option<crate::monster_archive::MonsterAnimation> {
+    let rate = block
+        .get(off + crate::monster_archive::ANIM_RATE_OFFSET)
+        .copied()?;
+    crate::monster_archive::parse_animation_stream(
+        block,
+        action_id,
+        rate,
+        off + PLAYER_ANIM_STREAM_OFFSET,
+    )
+}
+
+/// Decode the **weapon-swing animations** the battle loader splices into the
+/// runtime action table from the equipped-item sections: per selected
+/// section 2/3/4, the decoded payload's `+0x04` word is a self-relative
+/// offset to a standard action-entry record (header + keyframe stream at
+/// `+0xAC`), installed at slot `0xC + (section - 2)`; section 4's `+0x08`
+/// word carries a **second** record, installed at slot `0xF`. Sections 0/1
+/// contribute none (their words are zero on disc).
+///
+/// `equipped` is the char record's `+0x196..+0x19A` bytes, as for
+/// [`assemble_character`]; the returned animations' `action_id` is the
+/// runtime slot (`0xC..=0xF`).
+// PORT: FUN_80052FA0 (swing-splice half) - the `if (1 < iVar3)` section
+// loop: copies the section-base + `+0x04` record via FUN_800557b8 into the
+// action-table word at 0x28 + section*4 (= slot 0xC..0xE for sections
+// 2..4), and section 4's `+0x08` record into word 0x3C (slot 0xF), pointing
+// each installed entry's +0x88 stream pointer at entry+0xAC.
+pub fn swing_battle_animations(
+    buf: &[u8],
+    pack: &BattleDataPack,
+    equipped: &[u8; SECTION_COUNT],
+) -> Result<Vec<SwingAnimation>> {
+    let records = select_sections(pack, equipped)?;
+    let mut out = Vec::with_capacity(4);
+    for (section, rec) in records.iter().enumerate().take(SECTION_COUNT).skip(2) {
+        let entry = decode_record(buf, pack, rec.index)
+            .with_context(|| format!("decode section {section} (id {:#x})", rec.id))?;
+        let d = &entry.bytes;
+        let mut offsets = vec![(SWING_SLOT_BASE + (section as u8 - 2), read_u32(d, 4)?)];
+        if section == 4 {
+            offsets.push((0xF, read_u32(d, 8)?));
+        }
+        for (slot, off) in offsets {
+            let off = off as usize;
+            if off == 0 || off >= d.len() {
+                bail!("section {section} swing record offset {off:#x} out of range");
+            }
+            let entry_tag = d[off];
+            let anim = parse_action_entry(d, off, slot).ok_or_else(|| {
+                anyhow::anyhow!("section {section} swing record at {off:#x} has no valid stream")
+            })?;
+            out.push(SwingAnimation {
+                slot,
+                section,
+                item_id: rec.id,
+                entry_tag,
+                anim,
+            });
+        }
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Art-animation bank (record[0] +0x58 -> dynamic slots 0x10/0x11)
+// ---------------------------------------------------------------------------
+
+/// Stride of one art-animation bank record.
+pub const ART_RECORD_STRIDE: usize = 0xD0;
+
+/// Offset of the embedded `0xAC`-byte action-entry header inside a bank
+/// record (`0x24 + 0xAC` = the full `0xD0` stride).
+pub const ART_ENTRY_OFFSET: usize = 0x24;
+
+/// First staged anim id that resolves through the bank: id `q >= 0x10`
+/// selects bank record `q - 0x10` (`FUN_8004AD80`).
+pub const ART_ANIM_ID_BASE: u8 = 0x10;
+
+/// One record of the per-character **art-animation bank** (record[0] image
+/// word `+0x58`): `[u32 count]` then `count` `0xD0`-stride records, each a
+/// `0x24`-byte arts-matcher head + a standard `0xAC`-byte action entry.
+///
+/// The anim commit `FUN_8004AD80` materializes a staged anim id
+/// `q >= 0x10` from record `q - 0x10`: ids `0x10` and `0x1A` install at
+/// runtime slot `0x11`, every other id at slot `0x10`; ids `> 0x1A`
+/// additionally drive the HUD art-name display from [`Self::name`] and
+/// `FUN_8004C650(char, id - 0x1B)`. The record's keyframe stream is **not
+/// inline**: `FUN_8002B28C(_DAT_8007BD74, scratch, stream_source)` pulls it
+/// from the `"ME"` archive resident in the side-band streaming buffer - see
+/// [`art_me_archive`] / [`crate::me_archive`].
+#[derive(Debug, Clone)]
+pub struct ArtAnimRecord {
+    /// Bank record index.
+    pub index: usize,
+    /// The staged anim id this record materializes (`0x10 + index`).
+    pub anim_id: u8,
+    /// Arts-matcher direction-command sequence (record `+0x00`, values
+    /// `1..=4`, zero-terminated; empty for the un-named base records). The
+    /// same combo bytes the arts matcher reads (the canonical
+    /// `record +0` combo of the arts-randomizer corpus).
+    pub combo: Vec<u8>,
+    /// Index into the character's art `"ME"` stream archive (record
+    /// `+0x0A`) - the `FUN_8002B28C` third argument.
+    pub stream_source: u8,
+    /// Inline art-name string (record `+0x10`, NUL-terminated ASCII, up to
+    /// 20 bytes; empty on the base / un-named records).
+    pub name: String,
+    /// Action tag byte (entry `+0x00`; presentation-class id space
+    /// `0x16..0x1F` on named arts, `0` on base records).
+    pub entry_tag: u8,
+    /// Attach key (entry `+0x77` = record `+0x9B`): the id the equipment
+    /// sections' attach-object records match against (`FUN_80052FA0`'s
+    /// bank scan compares attach-record `+0x07` with it).
+    pub attach_key: u8,
+    /// Playback-rate byte (entry `+0x78`, the `FUN_80047430` cursor
+    /// multiplier; `1..=7` observed).
+    pub rate: u8,
+    /// Entry `+0x84` (a secondary anim-rate field - `FUN_8004AD80` copies
+    /// it into actor `+0x21B`). `0xFF` marks the eight **base-archive**
+    /// records present in every character's bank - see
+    /// [`Self::uses_base_archive`].
+    pub rate_alt: u8,
+    /// record[0]-image byte offset of the record's action-entry header.
+    pub entry_offset: usize,
+}
+
+impl ArtAnimRecord {
+    /// Whether this record's [`Self::stream_source`] indexes the
+    /// character's **base** art archive (readef slot `3*char + 2`) instead
+    /// of the main one (slot `3*char + 1`).
+    ///
+    /// Disc-pinned mapping (the art-path caller of the side-band request
+    /// arm `FUN_80055B4C`, which stages the readef slot via the
+    /// `ctx+0x26B` byte, is not in the dumped corpus): in all four
+    /// retail files the records with
+    /// `rate_alt == 0xFF` are exactly eight per character with
+    /// `stream_source` `0..=7` = the base archive's exact entry range,
+    /// while the remaining records' max `stream_source` equals the main
+    /// archive's `count - 1` exactly (17/18/19/1 entries for
+    /// Vahn/Noa/Gala/Terra).
+    pub fn uses_base_archive(&self) -> bool {
+        self.rate_alt == 0xFF
+    }
+}
+
+/// Parse the art-animation bank out of a decoded record[0] image
+/// ([`decode_record0`]): the self-relative word at `+0x58` locates
+/// `[u32 count][count x 0xD0-stride records]`.
+// PORT: FUN_8004AD80 (bank-record select) - dynamic anim id q >= 0x10 reads
+// record q - 0x10 (entry pointer = bank + 4 + (q - 0x10)*0xD0 + 0x24, the
+// `q*0xD0 + bank + 4 - 0xCDC` install arithmetic), name at -0xCF0
+// (record +0x10), stream-source byte at -0xCF6 (record +0x0A).
+// REF: FUN_80052FA0 - rebases the +0x58 word and scans the bank's
+// `+0x9B` attach keys for the equipment attach-object records.
+pub fn art_animation_bank(record0: &[u8]) -> Result<Vec<ArtAnimRecord>> {
+    let bank_off = read_u32(record0, 0x58)? as usize;
+    let count = read_u32(record0, bank_off).context("art bank count word")? as usize;
+    if count == 0 || count > 0x40 {
+        bail!("implausible art bank count {count}");
+    }
+    let mut out = Vec::with_capacity(count);
+    for index in 0..count {
+        let base = bank_off + 4 + index * ART_RECORD_STRIDE;
+        let rec = record0
+            .get(base..base + ART_RECORD_STRIDE)
+            .ok_or_else(|| anyhow::anyhow!("art bank record {index} past record[0] end"))?;
+        let combo: Vec<u8> = rec[..0x0A]
+            .iter()
+            .copied()
+            .take_while(|&b| b != 0)
+            .collect();
+        if combo.iter().any(|&b| !(1..=4).contains(&b)) {
+            bail!("art bank record {index} combo byte outside 1..=4");
+        }
+        let name_raw = &rec[0x10..ART_ENTRY_OFFSET];
+        let name_end = name_raw
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(name_raw.len());
+        let name_bytes = &name_raw[..name_end];
+        if !name_bytes.iter().all(|&b| (0x20..0x7F).contains(&b)) {
+            bail!("art bank record {index} name is not printable ASCII");
+        }
+        let entry = &rec[ART_ENTRY_OFFSET..];
+        out.push(ArtAnimRecord {
+            index,
+            anim_id: ART_ANIM_ID_BASE + index as u8,
+            combo,
+            stream_source: rec[0x0A],
+            name: String::from_utf8_lossy(name_bytes).into_owned(),
+            entry_tag: entry[0],
+            attach_key: entry[0x77],
+            rate: entry[0x78],
+            rate_alt: entry[0x84],
+            entry_offset: base + ART_ENTRY_OFFSET,
+        });
+    }
+    Ok(out)
+}
+
+/// `readef.DAT` slot index of a character's art `"ME"` stream archive:
+/// slot `3*char_index + 1` (main archive - the named arts) or
+/// `3*char_index + 2` (base archive - the eight `rate_alt == 0xFF`
+/// records). `char_index` is 0..=3 for Vahn/Noa/Gala/Terra. Disc-pinned
+/// (see [`ArtAnimRecord::uses_base_archive`]); slot `3*char_index` is the
+/// character's non-ME texture slot.
+pub fn art_me_slot(char_index: usize, base: bool) -> usize {
+    char_index * 3 + if base { 2 } else { 1 }
+}
+
+/// Slice + parse a character's art `"ME"` archive out of the raw
+/// `readef.DAT` bytes (extraction PROT entry 894 - the
+/// `crate::summon_readef` side-band file whose `0x10800`-byte slots the
+/// battle streamer `FUN_801F17F8` reads into `_DAT_8007BD74`).
+pub fn art_me_archive(
+    readef: &[u8],
+    char_index: usize,
+    base: bool,
+) -> Result<crate::me_archive::MeArchive<'_>> {
+    use crate::summon_readef::SLOT_BYTES;
+    let slot = art_me_slot(char_index, base);
+    let bytes = readef
+        .get(slot * SLOT_BYTES..(slot + 1) * SLOT_BYTES)
+        .ok_or_else(|| anyhow::anyhow!("readef slot {slot} past file end"))?;
+    crate::me_archive::parse(bytes).with_context(|| format!("art ME archive in readef slot {slot}"))
+}
+
+/// Resolve + decode one art record's keyframe animation through its `"ME"`
+/// archive (the caller picks the archive per
+/// [`ArtAnimRecord::uses_base_archive`]). The returned animation's
+/// `action_id` is the record's staged anim id (`0x10 + index`) and `rate`
+/// the record's entry `+0x78` byte.
+pub fn art_animation(
+    record: &ArtAnimRecord,
+    archive: &crate::me_archive::MeArchive<'_>,
+) -> Result<crate::monster_archive::MonsterAnimation> {
+    let stream = archive
+        .entry(record.stream_source as usize)
+        .with_context(|| format!("art record {} stream", record.index))?;
+    crate::monster_archive::parse_animation_stream(&stream, record.anim_id, record.rate, 0)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "art record {} stream (source {}) is not a valid keyframe stream",
+                record.index,
+                record.stream_source
+            )
+        })
 }
 
 /// Re-index an animation's pose channels **per assembled object**: output
@@ -894,6 +1189,64 @@ mod tests {
             records: ids.iter().enumerate().map(|(i, &id)| rec(i, id)).collect(),
             data_base: 0x8000,
         }
+    }
+
+    #[test]
+    fn art_bank_parses_synthetic_records() {
+        // record0 image with the bank pointer at +0x58 -> 0x100:
+        // [u32 count = 2] + two 0xD0-stride records.
+        let mut img = vec![0u8; 0x100 + 4 + 2 * ART_RECORD_STRIDE];
+        img[0x58..0x5C].copy_from_slice(&0x100u32.to_le_bytes());
+        img[0x100..0x104].copy_from_slice(&2u32.to_le_bytes());
+        let base0 = 0x104;
+        // Record 0: combo [1,2,4], source 3, named, entry fields.
+        img[base0..base0 + 3].copy_from_slice(&[1, 2, 4]);
+        img[base0 + 0x0A] = 3;
+        img[base0 + 0x10..base0 + 0x18].copy_from_slice(b"Test Art");
+        img[base0 + ART_ENTRY_OFFSET] = 0x18; // entry tag
+        img[base0 + ART_ENTRY_OFFSET + 0x77] = 21; // attach key
+        img[base0 + ART_ENTRY_OFFSET + 0x78] = 2; // rate
+        img[base0 + ART_ENTRY_OFFSET + 0x84] = 0; // rate_alt (main archive)
+        // Record 1: empty combo/name, source 5, base-archive marker.
+        let base1 = base0 + ART_RECORD_STRIDE;
+        img[base1 + 0x0A] = 5;
+        img[base1 + ART_ENTRY_OFFSET + 0x78] = 1;
+        img[base1 + ART_ENTRY_OFFSET + 0x84] = 0xFF;
+
+        let bank = art_animation_bank(&img).expect("bank parses");
+        assert_eq!(bank.len(), 2);
+        assert_eq!(bank[0].anim_id, 0x10);
+        assert_eq!(bank[0].combo, vec![1, 2, 4]);
+        assert_eq!(bank[0].stream_source, 3);
+        assert_eq!(bank[0].name, "Test Art");
+        assert_eq!(bank[0].entry_tag, 0x18);
+        assert_eq!(bank[0].attach_key, 21);
+        assert_eq!(bank[0].rate, 2);
+        assert!(!bank[0].uses_base_archive());
+        assert_eq!(bank[0].entry_offset, base0 + ART_ENTRY_OFFSET);
+        assert_eq!(bank[1].anim_id, 0x11);
+        assert!(bank[1].combo.is_empty());
+        assert!(bank[1].name.is_empty());
+        assert!(bank[1].uses_base_archive());
+
+        // A combo byte outside 1..=4 is rejected.
+        img[base0] = 9;
+        assert!(art_animation_bank(&img).is_err());
+        img[base0] = 1;
+        // A non-printable name byte is rejected.
+        img[base0 + 0x10] = 0x01;
+        assert!(art_animation_bank(&img).is_err());
+    }
+
+    #[test]
+    fn art_me_slot_mapping() {
+        // Vahn/Noa/Gala/Terra -> readef slots (3c+1, 3c+2).
+        assert_eq!(art_me_slot(0, false), 1);
+        assert_eq!(art_me_slot(0, true), 2);
+        assert_eq!(art_me_slot(1, false), 4);
+        assert_eq!(art_me_slot(2, true), 8);
+        assert_eq!(art_me_slot(3, false), 10);
+        assert_eq!(art_me_slot(3, true), 11);
     }
 
     #[test]

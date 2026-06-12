@@ -75,6 +75,7 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 | Seru-magic summon visual (e.g. Tail Fire) | **player visual RESOLVED + WIRED** | [details ↓](#seru-magic-summon-visual-eg-tail-fire) | `project_effect_pool_draw_bridge.md` |
 | `summon.dat` / `readef.DAT` side-band streaming | **RESOLVED (entries + format)** | [details ↓](#summondat--readefdat-side-band-streaming) | `project_effect_pool_draw_bridge.md` |
 | Monster steal item (Evil God Icon) | RESOLVED | [details ↓](#monster-steal-item-evil-god-icon) | `project_steal_item_field.md` |
+| Battle face-stamp issuing site | RESOLVED | The facial-texel overwrite is the per-frame **facial animator `FUN_8004C7B4`** (called from the render-node update with the clip's frame cursor; Terra skipped): action-entry facial tracks at `+0x8C` (mouth) / `+0x98` (eyes) select frames from static per-character SCUS tables, stamped by `MoveImage` from band-parked frame strips every frame. Pinned live across a battle entry (`karisto_sol_pre_encounter` + the MoveImage trace probe); the earlier "one-shot at init" reading traced a summon mid-cast window where the animator is paused. Residue: the sibling pass `FUN_8004CCD4`'s trigger states. See `battle-data-pack.md` § Facial animation tracks. | `project_battle_face_stamp.md` |
 | Per-spell magic power / multiplier | **mechanism RESOLVED + roll PORTED** | [details ↓](#per-spell-magic-power--multiplier) | `project_spell_table_pinned.md`, `project_move_power_special_attack_only.md` |
 | Arts command sequence — independent source | resolved | The SCUS arts-name table (`DAT_80075EC4`) glyph string is byte-exact ground truth for every art's directional command; `legaia_art::ArtsOracle` exposes it, and disc-gated contract tests validate both the best-effort PROT `0x05C4` `parse_record` command-decode and the curated gamedata `directions`/`ap` columns against it (one documented walkthrough error: Hyper Elbow). | `project_arts_name_table_pinned.md` |
 | Stat growth-rate source | RESOLVED + validated + WIRED (core + opt-in jitter) | [details ↓](#stat-growth-rate-source) | `project_shop_ui_and_levelup.md` |
@@ -230,7 +231,7 @@ and a **distinct 11-part / 2-action** entity. That 11-part idle (`0x800BBB20`, 1
 
 Open residue:
 
-- **Low-band `readef.DAT` aux-slot consumer.** Readef groups end after 2 slots; the streamed-but-not-uploaded aux slots are high-entropy (LZS-decode plausibly but no decoded-magic gate passes) and no consumer is pinned. An exec-bp sweep over readers of `*0x8007BD74` outside `FUN_801F12D0`/`FUN_801F19EC` during a non-summon special attack would close it.
+- **Low-band `readef.DAT` aux-slot consumer — groups 0..3 RESOLVED.** The eight aux slots of readef groups 0..3 (slots `3c+1`/`3c+2`, c = Vahn/Noa/Gala/Terra) are the player **art-animation `"ME"` stream archives**, consumed by `FUN_8002B28C` (via `FUN_8004AD80`'s dynamic-slot commit) out of the `*0x8007BD74` buffer — see [battle-data-pack.md § "ME" stream archives](../formats/battle-data-pack.md#me-stream-archives-readefdat); parser `legaia_asset::me_archive`, classifier `summon_readef::SlotKind::MeArchive`. Aux slots of the higher readef groups (enemy-special bands) remain unattributed; an exec-bp sweep over readers of `*0x8007BD74` outside `FUN_801F12D0`/`FUN_801F19EC` during a non-summon enemy special would close those.
 - **Readef id ↔ named attack table.** The Tail Fire capture is consistent with action id 1 → readef group 0; the full `actor+0x1DF` id ↔ enemy-special mapping (the `map[actor+0x1df]` 128-byte band) is unenumerated.
 - **CDNAME `#define` number space — RESOLVED: raw-TOC space, uniform −2 to extraction.** Quantified by `scripts/cdname_shift_analysis.py`:
   1. Every byte-pinned loader constant for a dev-named file *equals* the same-named define — `PLAYER1..4` `0x361..0x364` = `battle_data 865..868` (extraction 863..866 start at the traced PROT.DAT offsets), `monster.snd` `0x37D` = `monster_se 893` (extraction 891 = 206-bank multi-VAB), `summon.dat`/`readef.DAT` `0x37F`/`0x380` = `bat_back_dat 895/896`, overlay slots `0x381+` = `xxx_dat 897+`.
@@ -694,7 +695,7 @@ Decoded by `legaia_mes::dialog_box` (`pack_box` / `pack_boxes`, `LINES_PER_BOX =
 | Player ANM per-record layout | resolved (container + per-`(bone, frame)` semantic) | [details ↓](#player-anm-per-record-layout) | `project_player_anm_source_pinned.md` |
 | Battle anim-id space + record[0] "strike family" | resolved | Anim ids ARE entry indices (commit `FUN_8004AD80`; idle id = `0`; `FUN_801D5854` ids 6..9 = a camera program space). Tags `2/3/4/5/0xB` = the hit-reaction family (`+0x1EF..+0x1F3` map; `FUN_800402F4` stages flinch/knockdown). Swings = the equipment-section splice (slots `0xC..0xF`) + dynamic art slots `0x10`/`0x11` from the `+0x58` art bank. Capture-pinned + disc census. See [monster-animation.md](../formats/monster-animation.md) / [battle-data-pack.md](../formats/battle-data-pack.md). | `project_battle_anim_id_space_resolved.md` |
 | `FUN_80047430` caller | open | The per-frame anim-node tick has no `jal` in the dump corpus (likely a function-pointer dispatch). One exec-breakpoint capture on `0x80047430` reading `$ra` closes it. | `project_battle_anim_id_space_resolved.md` |
-| Record[0] `+0x5C` pointer + art-anim bank stream source | open | `FUN_80052FA0` rebases a second record[0] word (`+0x5C`) with no traced consumer, and the dynamic art records' keyframe streams load through `FUN_8002B28C` into a `gp+0xA24` scratch buffer - the backing source (in-record bank vs side-band stream) is unpinned. A write-watch on the scratch buffer during one art swing closes both. | `project_battle_anim_id_space_resolved.md` |
+| Record[0] `+0x5C` pointer + art-anim bank stream source | stream source RESOLVED; `+0x5C` consumer open | Art streams = `"ME"` archives (`FUN_8002B28C` walk + `FUN_8002A9CC` codec, ported as `legaia_asset::me_archive`) in `readef.DAT` slots `3*char+1`/`3*char+2` via the `_DAT_8007BD74` streaming buffer; disc-validated (`parts` == bones, length-exact; `swing_anim_real`). `+0x5C` = `clut_a_off − 4` (zero word; in-record ME hypothesis refuted) but no traced reader; the art-path caller of the staging arm `FUN_80055B4C` (`ctx+0x26B`) is untraced (mapping pinned by exact cover). See [battle-data-pack.md](../formats/battle-data-pack.md#me-stream-archives-readefdat). | `project_battle_anim_id_space_resolved.md` |
 
 
 ### Player ANM per-record layout
@@ -908,8 +909,22 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    evidential. The whole spell block `0x81..=0x8B` is now capture-pinned to `903..=913` (one mid-cast
    state per spell, zero exceptions; 0907 = Nighto, whose "Hell's Music" head title is the
    attack's display name — the dance-song / dual-use reading is refuted, the dance overlay has
-   no slot-B loader callsite). Still open: the high-id summons (`0x8C..` and the ultimate
-   block) and the computed loads behind the attack-titled 0924/0927.
+   no slot-B loader callsite). The **whole high block `0x99..0xA0` is capture-pinned too**
+   (one mid-cast mednafen state per cast, loader-B id read + the predicted entry
+   byte-resident at slot B `0x801F69D8`): an Evil Seru Magic cast (spell id `0x99`,
+   creature Juggernaut) drives id `0x20` → **0927** ("Dark Eclipse" is that attack's
+   display name, the same pattern as Nighto's "Hell's Music"), the Sim-Seru summons
+   Palma / Mule / Horn / Jedo (`0x9A..0x9D`) drive ids `0x21..0x24` → **0928..0931**, and
+   the Ra-Seru summons Meta / Terra / Ozma (`0x9E..0xA0`) drive ids `0x25..0x27` →
+   **0932..0934** (the untitled entries head with a pre-linked slot-B pointer table). The
+   linear arithmetic (`loader = spell − 0x79`, `extraction = loader + 895`) holds across
+   every pinned leg of both blocks. Still open: whether the evolved-Seru casts
+   (`0x8C..0x95` — Gola Gola / Mushura / …) ride stagers at all (predicted `914..923`,
+   with 914/915 stager-shaped; they may instead be move-FX-path casts), and the
+   attack-titled 0924 "Ultimate Rave" / 925 / 926 (their arithmetic slots map to spell
+   ids `0x96..0x98` = rare-drop placeholder names — likeliest other Evil-Seru-Magic
+   creatures' stagers, the creature resolving the id like Juggernaut's `0x20` under the
+   generic `0x99` spell).
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
 3. **Engine mirrors — resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain — `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 — consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 

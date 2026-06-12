@@ -39,6 +39,9 @@ Implementations:
 - [Slot region](#slot-region)
 - [Decompressed slot layout](#decompressed-slot-layout)
 - [Battle animations (record[0])](#battle-animations-record0)
+  - [Swing records](#swing-records-equipment-sections--slots-0xc0xf)
+  - [Art-animation bank](#art-animation-bank-record0-0x58)
+  - ["ME" stream archives](#me-stream-archives-readefdat)
 - [Texture-pool VRAM placement](#texture-pool-vram-placement)
 - [Parser status](#parser-status)
 - [VRAM byte-match corpus](#vram-byte-match-corpus)
@@ -200,26 +203,43 @@ generous source slice rather than truncating to `entry.size`.
 ## Decompressed slot layout
 
 ```
-+0x00  u32 frame_off         ; 0x14 in every observed slot: offset of the
-                             ; loader frame the assembler reads (below)
-+0x04  u32 sub_obj0_end      ; nested-section end offset; often 0
-+0x08  u32 sub_obj1_end      ; nested-section end; non-zero in multi-mesh slots
-+0x0C  u32 tmd_body_end      ; offset where the embedded Legaia TMD ends
-                             ; (= where the texture-pool upload block starts)
-+0x10  u16                   ; low half of the flag word (0x0000 / 0x0002)
++0x00  u32 frame_off         ; self-relative offset of the loader frame the
+                             ; assembler reads (below): 0x14 + 4*attach_objs
++0x04  u32 swing_rec_a       ; self-relative offset of the section's SWING
+                             ; ACTION RECORD (sections 2..4; 0 in sections 0/1)
++0x08  u32 swing_rec_b       ; second swing record - consumed only for
+                             ; section 4 (0 everywhere else)
++0x0C  u32 tmd_body_end      ; section footprint: where the embedded Legaia
+                             ; TMD ends = where the texture-pool upload block
+                             ; starts = the decode-buffer advance to the next
+                             ; section
++0x10  s16 attach_obj_count  ; attach-object records (0 / 1 / 2 observed)
 +0x12  u16 upload_flag       ; non-zero = the post-TMD pool is uploaded to
                              ; VRAM at battle init (the `lh 0x12(s2)` gate in
                              ; FUN_80052FA0); zero = the pool bytes are dead
                              ; (overwritten by the next section's decode)
-+0x14  loader frame          ; = decoded + frame_off, consumed by FUN_800536BC:
++0x14  u32 attach_obj_off[]  ; attach_obj_count self-relative offsets, each
+                             ; -> an attach-object record whose +0x07 byte is
+                             ; its ATTACH KEY (matched against action-entry
+                             ; +0x77 bytes - see Battle animations below)
++frame_off  loader frame     ; consumed by FUN_800536BC:
        +0x00 u8  attach_count    ; objects that bind to skeleton bones
        +0x01 u8  bone_ids[]      ; one bone id per attached object (padded)
        +0x08 u32 data_size       ; section data extent (word-copied span)
-       +0x0C Legaia TMD          ; magic 0x80000002 (= absolute +0x20)
+       +0x0C Legaia TMD          ; magic 0x80000002
        +0x14 u32 nobj            ; (= the TMD's own object count)
        +0x18 object table        ; 7-word TMD object entries
 +tmd_body_end                ; texture / CLUT pool
 ```
+
+The earlier readings of `+0x04`/`+0x08` as "nested-section end offsets"
+(`sub_obj0_end`/`sub_obj1_end`) and of `+0x10` as "low half of the flag
+word" are superseded: `FUN_80052FA0`'s section loop rebases `+0x04` (and,
+for section index 4 only, `+0x08` - the `if (1 < iVar3)` / `iVar3 == 4`
+guards) and splices the records into the runtime action table, and walks
+`+0x10`/`+0x14` as the attach-object list (decomp
+`ghidra/scripts/funcs/80052fa0.txt`). `frame_off` = `0x14 +
+4 * attach_obj_count` across the whole retail corpus (`0x14`/`0x18`/`0x1C`).
 
 The assembler `FUN_800536BC` reads the section through the **loader frame**
 at `decoded + frame_off`: one bone-id byte per object while
@@ -264,14 +284,153 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   action record; section 4 contributes a second record into slot `0xF`) —
   the four direction-command swings (`0x0C` L / `0x0D` R / `0x0E` D /
   `0x0F` U, the same byte values the Tactical-Arts command queue stages as
-  anim ids) are therefore **per-equipment animations**;
+  anim ids) are therefore **per-equipment animations** (see
+  [Swing records](#swing-records-equipment-sections--slots-0xc0xf));
 - slots `0x10`/`0x11` are **dynamic**: the anim commit `FUN_8004AD80`
   materializes a record there for any staged id `>= 0x10` from the
-  per-character **art-animation bank** (the `+0x58` word: `0xD0`-stride
-  records; art ids `0x1B+` also drive the HUD art-name display and
-  `FUN_8004C650(char, id - 0x1B)`), loading its keyframe stream into a
-  scratch buffer and rewriting the queued id to the slot number;
-- the `+0x5C` word is a rebased sibling pointer (consumer untraced).
+  per-character **art-animation bank** (the `+0x58` word; see
+  [Art-animation bank](#art-animation-bank-record0-0x58)), loading its
+  keyframe stream into a scratch buffer and rewriting the queued id to the
+  slot number;
+- the `+0x5C` word is a rebased sibling pointer. Its target is pinned:
+  in all four retail files `+0x5C == clut_a_off − 4`, the **zero word
+  immediately before record[0]'s first image block** (the art bank at
+  `+0x58`'s target ends at or before it). The consumer is still untraced;
+  the "it points at the art `"ME"` stream archive" hypothesis is
+  **disc-refuted** — those archives live in `readef.DAT`
+  ([below](#me-stream-archives-readefdat)), and no `"ME"` archive exists
+  anywhere in a player file's footprint or its decoded record[0].
+
+### Swing records (equipment sections → slots 0xC..0xF)
+
+Each selected section's decoded payload carries self-relative offsets to
+its swing record(s) at `+0x04` (and `+0x08` for section 4 — see
+[Decompressed slot layout](#decompressed-slot-layout)). A swing record is a
+standard **action entry**: action-tag byte at `+0x00`, rate byte at
+`+0x78`, packed `[u8 parts][u8 frames][parts*frames × 9-byte TRS]` keyframe
+stream at `+0xAC`. The splice helper `FUN_800557B8` pins the shape exactly:
+it copies `0x2B` words (`0xAC` bytes) of header plus
+`(parts*frames*9 + 5) >> 2` words of stream into the persistent buffer, and
+`FUN_80052FA0` installs the copy at action-table word `0x28 + section*4`
+(slot `0xC + section − 2`; section 4's `+0x08` record at word `0x3C` =
+slot `0xF`), pointing the entry's `+0x88` stream pointer at `entry+0xAC`
+(decomps `80052fa0.txt` / `800557b8.txt`).
+
+Disc census (every equippable id in every file, disc-gated
+`swing_anim_real` test): sections 0/1 carry `0` in both words; every
+section-2/3/4 slot carries a valid record at `+0x04` (and section 4 at
+`+0x08`), `parts` = the character's skeleton bone count (up to +2 channels
+on slots with attach objects), stream end inside the section footprint.
+The record's `+0x00` tag is a presentation-class id (`0x0E..0x1F`
+observed), **not** the runtime slot. Sections with `attach_obj_count > 0`
+additionally carry attach-object records; `FUN_80052FA0` matches each
+attach record's `+0x07` **attach key** against the action entries'
+`+0x77` bytes (then the art bank's `+0x9B` keys) and links the attach copy
+into the matching entry's `+0x04`/`+0x08` pointer pair (copy helper
+`FUN_80055854`).
+
+Parser: `legaia_asset::battle_char_assembly::swing_battle_animations`
+(slots `0xC..=0xF` for a given equipped-id set, sharing the monster-archive
+stream decoder).
+
+### Art-animation bank (record[0] +0x58)
+
+The self-relative word at record[0] `+0x58` locates the bank:
+`[u32 count]` then `count` `0xD0`-stride records. Each record is a
+`0x24`-byte arts-matcher head + a standard `0xAC`-byte action entry
+(`0x24 + 0xAC = 0xD0` exactly):
+
+```
++0x00  u8 combo[..0x0A]   ; arts-matcher direction commands (1..4),
+                          ; zero-terminated; empty on the base records
++0x0A  u8 stream_source   ; entry index into the character's "ME" stream
+                          ; archive (the FUN_8002B28C third argument)
++0x10  char name[20]      ; inline art-name string (NUL-terminated ASCII;
+                          ; empty on the base / un-named records)
++0x24  action entry       ; 0xAC bytes - the standard entry header:
+       +0x00 u8  tag          ; presentation-class id (0x16..0x1F on named
+                              ; arts, 0 on base records)
+       +0x04/+0x08 u32        ; attach pointers - 0 on disc, written at
+                              ; runtime by FUN_80052FA0's attach-key scan
+       +0x77 u8  attach_key   ; matched against equipment attach records
+                              ; (record-relative +0x9B)
+       +0x78 u8  rate         ; playback rate (FUN_80047430 cursor)
+       +0x84 u8  rate_alt     ; secondary anim-rate field (-> actor +0x21B);
+                              ; 0xFF marks the eight base-archive records
+       +0x88 u32 stream_ptr   ; 0 on disc - FUN_8004AD80 points it at the
+                              ; decoded scratch buffer at commit
+```
+
+The "record 0's first byte coincides with the bank count" wrinkle
+dissolves byte-exactly: the bank head is a **u32 count** and records start
+at `bank + 4` — `FUN_8004AD80`'s install arithmetic
+`q*0xD0 + bank + 4 − 0xCDC` = `bank + 4 + (q−0x10)*0xD0 + 0x24` (entry),
+name read at `−0xCF0` (= record `+0x10`), stream-source byte at `−0xCF6`
+(= record `+0x0A`); `FUN_80052FA0`'s attach scan reads the keys at
+`bank + 4 + k*0xD0 + 0x9B` (decomps `8004ad80.txt` / `80052fa0.txt`). A
+staged anim id `q >= 0x10` selects record `q − 0x10`; ids `0x10` and
+`0x1A` install at slot `0x11`, every other id at `0x10`; ids `> 0x1A`
+drive the HUD art-name display from `+0x10` and
+`FUN_8004C650(char, id − 0x1B)`. Retail banks: Vahn 33 / Noa 35 / Gala 32 /
+Terra 9 records; the named band (records 11+) carries the Hyper/Miracle
+Art names (`Vahn Rondo`, `Fiery Miyawaki`, `Mirage Lancer`, …).
+
+Parser: `legaia_asset::battle_char_assembly::art_animation_bank` (+
+`art_animation` to resolve a record's keyframe stream through its archive).
+
+### "ME" stream archives (readef.DAT)
+
+An art record's keyframe stream is **not inline** in the player file:
+`FUN_8004AD80` calls `FUN_8002B28C(_DAT_8007BD74, scratch, stream_source)`,
+and `_DAT_8007BD74` is the battle side-band **streaming buffer** —
+`FUN_801F17F8` fills it with one `0x10800`-byte slot of
+`data\battle\summon.dat` / `readef.DAT`
+([`summon-readef.md`](summon-readef.md)). The player art archives live at
+the head of the **`readef.DAT`** (extraction PROT 894) slots
+
+| character | main archive (named arts) | base archive (`rate_alt = 0xFF`) |
+|---|---|---|
+| Vahn  | slot 1 (17 entries) | slot 2 (8) |
+| Noa   | slot 4 (18) | slot 5 (8) |
+| Gala  | slot 7 (19) | slot 8 (8) |
+| Terra | slot 10 (1) | slot 11 (8) |
+
+i.e. slots `3*char + 1` / `3*char + 2` (slot `3*char` is the group's
+non-ME texture slot). The per-record archive choice is **disc-pinned by
+exact cover** (the request arm `FUN_80055B4C` writes the staging byte
+`ctx+0x26B = slot + 1`, but its art-path caller — the code that computes
+`3*char + 1/2` for a queued art — is not in the dumped corpus): each
+file's eight `rate_alt == 0xFF` records carry `stream_source` `0..=7` =
+the base archive's exact entry range, and the remaining records' max
+`stream_source` equals the main archive's `count − 1` exactly, in all
+four files.
+
+Archive layout (reader `FUN_8002B28C`, decomp `8002b28c.txt`):
+
+```
++0x00  'M' 'E'                 ; magic
++0x02  u8  count
++0x03  u16 entry_sizes[count]  ; bit 15 = compressed, low 15 bits = size
++0x03 + 2*count                ; concatenated bodies, in entry order
+```
+
+A clear bit 15 means the body is the packed keyframe stream verbatim; a
+set bit 15 routes through the **channel-delta codec** `FUN_8002A9CC`
+(decomp `8002a9cc.txt`): header byte `(b0 & 0xC0) == 0x40`, u16 offsets at
+`+1`/`+3` to a 4-bit operand stream and a byte stream (`[parts][frames]` +
+literal low bytes), selector bits at `+5`. Per 12-bit channel value the
+selectors choose a literal, a previous-part delta ± nibble, or a literal
+nibble; frame 0 accumulates spatially down the parts, later frames
+temporally per channel; each frame row re-packs into the standard 9-byte
+TRS records. **Every** art entry on the retail disc has bit 15 set, so the
+codec is the exercised path. Decoded output validated across the full
+corpus: every stream is length-exact (`2 + parts*frames*9`) with
+`parts` == the character's skeleton bone count.
+
+Parsers: `legaia_asset::me_archive` (`parse` + `decode_channel_delta`) and
+`legaia_asset::battle_char_assembly::art_me_archive` (the readef slot
+slicing); `legaia_asset::summon_readef` classifies these slots as
+`SlotKind::MeArchive`.
 
 `part_count` equals the character's **skeleton bone count** (15 Vahn /
 16 Noa / 15 Gala / 17 Terra — the assembled mesh's `nobj` minus its
@@ -313,8 +472,48 @@ rule) and keeps the SM pose ids on their same-numbered entries
 shows).
 
 Parsers: `legaia_asset::battle_char_assembly::{decode_record0,
-battle_animations, idle_battle_animation, expand_animation_for_objects}`
-(the stream decode is shared with `legaia_asset::monster_archive`).
+battle_animations, idle_battle_animation, expand_animation_for_objects,
+swing_battle_animations, art_animation_bank, art_me_archive,
+art_animation}` (the stream decode is shared with
+`legaia_asset::monster_archive`; the `"ME"` archive + codec live in
+`legaia_asset::me_archive`).
+
+### Facial animation tracks (entry `+0x8C` / `+0x98`)
+
+Two fields of the `0xAC` action-entry header are per-clip **facial
+keyframe tracks**, consumed by the per-frame facial animator
+`FUN_8004C7B4` (called from the render-node update `FUN_80047430` with
+the node's `+0x68` anim cursor as the frame counter, for every party
+member except Terra — char index 3 is skipped):
+
+- entry `+0x8C`: **mouth** track — four 3-byte records
+  `[frame_id, start, end]`;
+- entry `+0x98`: **eye** track — same shape.
+
+A record is active while `start <= clip_frame <= end` (`end != 0`); its
+`frame_id` selects a face frame from the static per-character SCUS
+tables — eye-frame source x/y at `DAT_80076884/86` (stride 4, six frames
+per character, char stride `0x18`), mouth frames at `DAT_80076824/26`
+(char stride `0x20`), rect sizes + per-character destination offsets at
+`DAT_800768CC..F2`, all banded by the per-slot origin deltas at
+`DAT_800768FC/FE`. No active record selects frame 0 (the neutral face);
+character-record flag `0x2000` forces the neutral eye frame. Each stamp
+is a libgpu `MoveImage` from the frame strip (parked in the character's
+texture band by the normal pool uploads) onto the live face rows of
+section 1's rect — e.g. Vahn's eyes `(544,384) 15x17 → (512,272)` +
+mouth `(544,452) 7x16 → (516,298)` in band slot 0, re-stamped every
+frame (live-traced across a battle entry with
+`autorun_battle_moveimage_trace.lua`). During the dynamic art anims
+(staged ids `0x11..0x18`, under the `DAT_8007BD71 == -2` window) the
+track instead comes from a static per-(char, anim) table at
+`0x80077E80` (stride `0x30`, 16 records) clocked by the global anim
+counter `gp[0x9EA] >> 1`. The sibling stamp pass `FUN_8004CCD4` (called
+right after) covers an additional overlay family; its trigger states are
+untraced. This resolves the historical "~220-byte facial-texel
+overwrite" residue in the texture-placement validation: the overwrite is
+the facial animator's current frame, and a character whose stamped frame
+equals the pool default (Noa in the catalogued captures, Terra always)
+shows no residue at all.
 
 ## Texture-pool VRAM placement
 
@@ -371,9 +570,11 @@ with the live party ids (`DAT_8007BD10`) + equipped item ids (char record
 the bands at **99.7–100 %** per member across the `party_battle_gobu_gobu`
 and `noa_levelup_fight_pre` captures (most blocks byte-exact). The residual
 is a single ~220-byte cluster in section 1's rect (face rows), identical
-across captures — a small post-load facial-texel overwrite, not a placement
-error. (`v0_1_battle_first_frame_tetsu` is captured before the upload pass
-runs and still shows field texels in the band.)
+across captures — the facial animator's current frame, stamped over the
+pool default every frame (see
+[Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98)),
+not a placement error. (`v0_1_battle_first_frame_tetsu` is captured
+before the upload pass runs and still shows field texels in the band.)
 
 Typed port: `legaia_asset::battle_char_assembly` —
 `SECTION_TEXTURE_RECTS` / `RECORD0_TEXTURE_RECTS` /
@@ -477,9 +678,16 @@ on the player files.)
 - ~~**Per-texture descriptor / placement**~~ **resolved**: the placement is
   per-*section*, from the static rect table at `0x800775B8` + the
   party-ordinal band — see
-  [Texture-pool VRAM placement](#texture-pool-vram-placement). Still open
-  within it: the source of the small (~220-byte) post-load facial-texel
-  overwrite the live captures show inside section 1's rect.
+  [Texture-pool VRAM placement](#texture-pool-vram-placement). The residual
+  facial-texel overwrite is ~~narrowed~~ **resolved**: it is the per-frame
+  facial animator `FUN_8004C7B4` stamping the current eye + mouth frames
+  over section 1's face rows via `MoveImage`, driven by the action-entry
+  facial tracks at `+0x8C`/`+0x98` — see
+  [Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98).
+  (The earlier "one-shot at init" reading came from tracing a summon
+  mid-cast window, where the animator is paused; a battle-entry trace
+  from `karisto_sol_pre_encounter` shows it re-stamping every frame.)
+  Residue: the trigger states of the sibling stamp pass `FUN_8004CCD4`.
 - ~~**Slot id ↔ equipment id mapping**~~ **resolved**: the section ids ARE
   item-table ids and the `FUN_80052770` case-4 picker matches them against
   the character record's equipped-item bytes (see
@@ -488,9 +696,20 @@ on the player files.)
   [`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files).
 - **`data_base` derivation**: observed `0x8000` in all four files; the
   header/table → `0x8000` rule is unconfirmed.
-- **Sub-object end offsets** (`u32[1]`, `u32[2]`): multi-mesh slots (e.g. a
-  Gala slot with `u32[1] = 0x3310`) hold several TMDs back-to-back; the
-  stride isn't validated across every variant.
+- ~~**Sub-object end offsets** (`u32[1]`, `u32[2]`)~~ **resolved**: they are
+  the section's **swing action records** (the earlier "multi-mesh slot"
+  reading of a Gala slot with `u32[1] = 0x3310` was this swing record —
+  sec-2 id `0x21`'s entry at `0x3310` parses as a 15-part/17-frame stream).
+  See [Swing records](#swing-records-equipment-sections--slots-0xc0xf).
+- **record[0] `+0x5C` consumer**: the word's target is pinned
+  (`clut_a_off − 4`, zero on disc) but no reader has been traced; the art
+  `"ME"`-archive hypothesis is refuted (the archives are in `readef.DAT`).
+- **Art-archive slot staging**: the request arm `FUN_80055B4C` writes the
+  staging byte (`battle ctx +0x26B = slot + 1`, consumed by
+  `FUN_801F17F8`), but its art-path caller — the code computing
+  `3*char + 1/2` for a queued art — is untraced; the record → archive
+  mapping is pinned by exact cover instead (see
+  ["ME" stream archives](#me-stream-archives-readefdat)).
 
 ## See also
 

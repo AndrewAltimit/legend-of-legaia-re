@@ -17,14 +17,19 @@
 //! decoding to:
 //!
 //! ```text
-//!   +0x00  u32 magic_or_count  ; 0x14 (=20) in every observed slot
-//!   +0x04  u32 sub_obj0_end    ; nested-section end offset (often 0)
-//!   +0x08  u32 sub_obj1_end    ; nested-section end offset (often 0)
+//!   +0x00  u32 frame_off       ; loader-frame offset (0x14 + 4*attach_objs)
+//!   +0x04  u32 swing_rec_a     ; swing action record (sections 2..4; else 0)
+//!   +0x08  u32 swing_rec_b     ; second swing record (section 4 only)
 //!   +0x0C  u32 tmd_body_end    ; offset where the Legaia TMD body ends
-//!   +0x10..0x20                ; per-texture info (layout TBD)
-//!   +0x20  Legaia TMD          ; magic 0x80000002
-//!   +tmd_body_end              ; texture/CLUT pool (layout partially TBD)
+//!   +0x10  s16 attach_objs     ; attach-object record count
+//!   +0x12  u16 upload_flag     ; texture-pool-present flag
+//!   +0x14  u32 attach_off[]    ; attach-object record offsets
+//!   +frame_off  loader frame   ; attach_count + bone ids + embedded TMD
+//!   +tmd_body_end              ; texture/CLUT pool
 //! ```
+//!
+//! (Full layout: `docs/formats/battle-data-pack.md` § Decompressed slot
+//! layout; swing records: [`crate::battle_char_assembly::swing_battle_animations`].)
 //!
 //! ### Framing
 //!
@@ -265,11 +270,11 @@ pub fn decode_all(buf: &[u8], pack: &BattleDataPack) -> Vec<Result<DecodedEntry>
 
 /// Find the Legaia TMD inside a decoded entry.
 ///
-/// Empirically two record-shape variants appear in retail 0865:
+/// Empirically two record-shape variants appear in the retail files:
 ///   - Simple: TMD at offset 0x20 (after a 32-byte header whose u32[3]
-///     holds the TMD body end).
-///   - Nested: u32[1] / u32[2] hold non-zero sub-object end offsets and
-///     the TMD shifts later in the buffer.
+///     holds the TMD body end; `frame_off = 0x14`).
+///   - Attach-object slots: `frame_off` grows by 4 per attach-object
+///     record (`+0x18`/`+0x1C`) and the TMD shifts later in the buffer.
 ///
 /// Try the canonical 0x20 position first; if that doesn't validate,
 /// fall back to scanning every word-aligned offset for the magic and

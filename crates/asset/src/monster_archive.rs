@@ -973,10 +973,15 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
 /// the slice returned by [`animations`]. Index 0 is the idle loop; `action_id`
 /// `1` is the locomotion cycle the battle engine plays while the monster
 /// advances on a target (a walk for grounded enemies, a flight cycle for
-/// fliers - hence "Move", not "Attack"); the rest are the monster's spell /
-/// special actions (`Action 0xNN`). When two entries would share a label (some monsters carry
-/// several actions with the same `action_id`), a ` #N` suffix disambiguates so
-/// every label is unique — handy for toggle buttons and glTF animation names.
+/// fliers - hence "Move", not "Attack"). The named tags follow the action-tag
+/// space ([`monster-animation.md` § Action
+/// tags](../../../docs/formats/monster-animation.md)): `2` the light hit
+/// reaction, `4` knockdown, `5` get-up, `0x0B` block, and `0x0D..0x0F` the
+/// monster's attack actions (each a distinct move - the `#N` suffix keeps
+/// them apart). Everything else stays `Action 0xNN`. When two entries would
+/// share a label (several actions with the same `action_id`, or the multiple
+/// attack tags), a ` #N` suffix disambiguates so every label is unique -
+/// handy for toggle buttons and glTF animation names.
 pub fn action_labels(anims: &[MonsterAnimation]) -> Vec<String> {
     use std::collections::HashMap;
     let base: Vec<String> = anims
@@ -984,11 +989,16 @@ pub fn action_labels(anims: &[MonsterAnimation]) -> Vec<String> {
         .enumerate()
         .map(|(i, a)| {
             if i == 0 {
-                "Idle".to_string()
-            } else if a.action_id == 1 {
-                "Move".to_string()
-            } else {
-                format!("Action 0x{:02X}", a.action_id)
+                return "Idle".to_string();
+            }
+            match a.action_id {
+                1 => "Move".to_string(),
+                2 => "Damaged".to_string(),
+                4 => "Knocked Down".to_string(),
+                5 => "Getting Up".to_string(),
+                0x0B => "Block".to_string(),
+                0x0D..=0x0F => "Attack".to_string(),
+                id => format!("Action 0x{id:02X}"),
             }
         })
         .collect();

@@ -56,12 +56,16 @@ use legaia_font::Font;
 type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 
 /// One assembled party member ready for the battle render:
-/// `(assembled character, texture uploads, idle clip, per-slot action clips)`.
+/// `(assembled character, texture uploads, idle clip, per-slot action clips,
+/// art-animation bank)`. The action clips cover the record[0] slots plus the
+/// equipment-spliced weapon swings (runtime slots `0xC..0xF`); the bank is
+/// indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80` commit.
 /// Produced by `PlayWindowApp::assembled_party_battle_mesh`.
 type AssembledPartyMesh = (
     legaia_asset::battle_char_assembly::AssembledCharacter,
     Vec<legaia_asset::battle_char_assembly::TextureUpload>,
     legaia_asset::monster_archive::MonsterAnimation,
+    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
 );
 use legaia_prot::cdname;
@@ -6400,11 +6404,15 @@ impl PlayWindowApp {
                 let mut action_clips: Option<
                     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
                 > = None;
-                if let Some((asm, uploads, idle, clips)) =
+                let mut art_bank: Option<
+                    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+                > = None;
+                if let Some((asm, uploads, idle, clips, bank)) =
                     self.assembled_party_battle_mesh(cslot, member)
                 {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
+                    art_bank = Some(bank);
                     match legaia_tmd::parse(&asm.tmd) {
                         Ok(tmd) => source = Some((tmd, asm.tmd, Some(idle))),
                         Err(e) => log::warn!(
@@ -6572,13 +6580,23 @@ impl PlayWindowApp {
                                 .world
                                 .set_actor_battle_animation(member, player);
                         }
-                        // Hand the SM pose hook the full action-clip set so
-                        // ready / recover / defeat play their real streams.
+                        // Hand the SM pose hook the full action-clip set
+                        // (record[0] slots + the equipment-spliced swings at
+                        // 0xC..0xF) so ready / recover / defeat AND the
+                        // staged attack-band swings play their real streams.
                         if let Some(clips) = action_clips.take() {
                             self.session
                                 .host
                                 .world
                                 .set_actor_battle_action_clips(member, std::sync::Arc::new(clips));
+                        }
+                        // And the art bank, so staged ids >= 0x10 resolve
+                        // through the ME-archive streams (FUN_8004AD80).
+                        if let Some(bank) = art_bank.take().filter(|b| !b.is_empty()) {
+                            self.session
+                                .host
+                                .world
+                                .set_actor_battle_art_bank(member, std::sync::Arc::new(bank));
                         }
                         party_bound += 1;
                     }
@@ -6721,7 +6739,91 @@ impl PlayWindowApp {
             }
             Err(e) => log::warn!("play-window: party {cslot} action-stream decode: {e:#}"),
         }
-        Some((asm, uploads, idle, clips))
+        // The four direction-command weapon swings spliced from the equipped
+        // sections (runtime slots 0xC..0xF) - per-equipment animations the
+        // attack chain stages as anim ids 0x0C..0x0F.
+        match legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped) {
+            Ok(swings) => {
+                for s in &swings {
+                    if let Some(slot) = clips.get_mut(s.slot as usize) {
+                        *slot = Some(
+                            legaia_asset::battle_char_assembly::expand_animation_for_objects(
+                                &s.anim,
+                                &asm.anm_bones,
+                            ),
+                        );
+                    }
+                }
+            }
+            Err(e) => log::warn!("play-window: party {cslot} swing decode: {e:#}"),
+        }
+        // The art-animation bank (record[0] +0x58): each record's keyframe
+        // stream resolves through the character's readef.DAT "ME" archive
+        // (main slot 3*char+1, base slot 3*char+2 for rate_alt == 0xFF
+        // records). The staged-anim commit materializes bank record
+        // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
+        let art_bank = self.party_art_bank(&raw, cslot, &asm.anm_bones);
+        Some((asm, uploads, idle, clips, art_bank))
+    }
+
+    /// Decode one character's art-animation bank into commit-ready clips
+    /// (index = bank record). Failures degrade per record (a `None` slot
+    /// commits as a zero-length clip) or to an empty bank with a warning.
+    fn party_art_bank(
+        &self,
+        raw: &[u8],
+        cslot: usize,
+        anm_bones: &[u8],
+    ) -> Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> {
+        let record0 = match legaia_asset::battle_char_assembly::decode_record0(raw) {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("play-window: party {cslot} record[0] decode for art bank: {e:#}");
+                return Vec::new();
+            }
+        };
+        let records = match legaia_asset::battle_char_assembly::art_animation_bank(&record0) {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("play-window: party {cslot} art-bank parse: {e:#}");
+                return Vec::new();
+            }
+        };
+        // readef.DAT (extraction PROT 894) - the battle side-band file whose
+        // 0x10800-byte slots carry the per-character "ME" stream archives.
+        let readef = match self.session.host.index.entry_bytes_extended(894) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("play-window: readef.DAT (PROT 894) read: {e:#}");
+                return Vec::new();
+            }
+        };
+        let main = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, false);
+        let base = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, true);
+        let mut bank = vec![None; records.len()];
+        for rec in &records {
+            let archive = if rec.uses_base_archive() {
+                &base
+            } else {
+                &main
+            };
+            let Ok(archive) = archive else { continue };
+            match legaia_asset::battle_char_assembly::art_animation(rec, archive) {
+                Ok(anim) => {
+                    bank[rec.index] = Some(
+                        legaia_asset::battle_char_assembly::expand_animation_for_objects(
+                            &anim, anm_bones,
+                        ),
+                    );
+                }
+                Err(e) => log::warn!(
+                    "play-window: party {cslot} art record {} ({}): {e:#}",
+                    rec.index,
+                    rec.name
+                ),
+            }
+        }
+        bank
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful

@@ -1439,6 +1439,102 @@ expected_game_mode = 0x15
 description = "Noa casting Nova (spell 0x8B) mid-summon. Loader-B current-id 0x8007BC4C = 18 -> stager extraction 0913. Completes the capture-pinned player Seru-magic block: 0x81..0x8B -> 903..913, every leg on the linear arithmetic."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8B"]
 
+# High-id summon mid-cast corpus (endgame card): the Ra-Seru summons
+# (Meta / Terra / Ozma, spell ids 0x9E..0xA0) and an Evil Seru Magic
+# cast (spell id 0x99, creature Juggernaut). Same evidential shape as
+# the base block above: loader-B current-id 0x8007BC4C read mid-cast +
+# the predicted stager byte-resident at slot-B 0x801F69D8. These four
+# extend the verified linear arithmetic (extraction = loader_id + 895,
+# loader_id = spell_id - 0x79) across the high block: 0x99 -> 0927
+# ("Dark Eclipse" = the ATTACK display name, parallel to Nighto's
+# "Hell's Music"), 0x9E..0xA0 -> 0932..0934.
+
+[[scenarios]]
+slot = 2
+label = "juggernaut_summon_mid_cast"
+ram_fingerprint_sha256 = "08a9ef833879c39c4eeef4a4bcfff8e83a92e75fc4bb6d59e562f98eee1143e9"
+backup_fingerprint = "c9bb599b6b44f21290896a93ce31ac54d70567b9fbc195a81e4f05a1349f0293"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Evil Seru Magic (spell 0x99) mid-summon, creature Juggernaut. Loader-B current-id 0x8007BC4C = 0x20 -> stager extraction 0927 (the 'Dark Eclipse'-titled stager; the title is the attack's display name). Resolves the 0927 'loads computed' question."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x99", "Evil Seru Magic", "Juggernaut", "extraction 0927"]
+
+[[scenarios]]
+slot = 3
+label = "meta_summon_mid_cast"
+ram_fingerprint_sha256 = "8df6166dea3110b2e4bb535423a539f4f3216e9a3b28713b7368f2f0e95d3209"
+backup_fingerprint = "6ce344812e0fb47119d6a9f3fdeb48a9b72e569d671dcdf9ffd99c7a559b356e"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Meta (spell 0x9E, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x25 -> stager extraction 0932 (slot-B pointer-table head, byte-resident at 0x801F69D8)."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9E", "Ra-Seru", "Meta"]
+
+[[scenarios]]
+slot = 4
+label = "terra_summon_mid_cast"
+ram_fingerprint_sha256 = "daf0a829198bd9f9899cdd826137e116edafcfa2096877e01fd78b9298381d15"
+backup_fingerprint = "4bddedf7ee28d1481bbad30bc53feac74414602764b22f3779401cf3daf5732a"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Terra (spell 0x9F, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x26 -> stager extraction 0933."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9F", "Ra-Seru", "Terra"]
+
+[[scenarios]]
+slot = 5
+label = "ozma_summon_mid_cast"
+ram_fingerprint_sha256 = "b1cf96853826e56ffaf76e21340f6a74e8597b6babfec6a27046fe0521611a1c"
+backup_fingerprint = "4ecc936179600e06be2b7cb6b8d8237aaf829afd7bc8667870573de81d265963"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Ozma (spell 0xA0, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x27 -> stager extraction 0934. With Meta/Terra this completes the Ra-Seru block 0x9E..0xA0 -> 0932..0934 on the same linear arithmetic as the base summons."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0xA0", "Ra-Seru", "Ozma"]
+
+# Sim-Seru summon mid-cast corpus (all Vahn casts): Palma / Mule / Horn /
+# Jedo (spell ids 0x9A..0x9D, mp 200). Same evidential shape; these fill
+# the gap between Evil Seru Magic (0x99 -> 0927) and the Ra-Seru trio
+# (0x9E..0xA0 -> 0932..0934), making the whole 0x99..0xA0 -> 927..934
+# stager block linear with zero exceptions.
+
+[[scenarios]]
+slot = 4
+label = "palma_summon_mid_cast"
+ram_fingerprint_sha256 = "c30b1dbcaa4dac5abb1139e8242d6fc01b2d376eb411a24e944ba8d505356b37"
+backup_fingerprint = "dfd540db7aa336bdbe84fb561527da8719b8abf170b386a8d52d39efb131da6f"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Palma (spell 0x9A, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x21 -> stager extraction 0928 (byte-resident at slot B 0x801F69D8)."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9A", "Sim-Seru", "Palma"]
+
+[[scenarios]]
+slot = 6
+label = "mule_summon_mid_cast"
+ram_fingerprint_sha256 = "3905d7903655e76dbc8c002ad49edcec811a6c6bf5f59bbf4747f0c6d0e4fa7d"
+backup_fingerprint = "40b2fe215e52c1fc954031ae4b182ce7ec7f9a5a44402b61e7057dc5c9e4b5b9"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Mule (spell 0x9B, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x22 -> stager extraction 0929."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9B", "Sim-Seru", "Mule"]
+
+[[scenarios]]
+slot = 3
+label = "horn_summon_mid_cast"
+ram_fingerprint_sha256 = "0fdb85fd129f8f1f83fa55bc7399d4a4d29f9f2fbd71d49ecacc92687098903d"
+backup_fingerprint = "0df8c64dfd89d34653c24da20fad289dbd463eaf8fa69413f9f611a05cd1d492"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Horn (spell 0x9C, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x23 -> stager extraction 0930."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9C", "Sim-Seru", "Horn"]
+
+[[scenarios]]
+slot = 2
+label = "jedo_summon_mid_cast"
+ram_fingerprint_sha256 = "202977b8ab0adc3664c36053b6e27c269551139c586b528aaed8cfa25963bd6d"
+backup_fingerprint = "b035a46da481f1af7852a3f4edf37c815cc92f43948764737b447aa59d435bfc"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Jedo (spell 0x9D, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x24 -> stager extraction 0931. Completes the high summon block: 0x99..0xA0 -> 927..934, every leg capture-pinned on the linear arithmetic."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9D", "Sim-Seru", "Jedo"]
+
 [[scenarios]]
 slot = 2
 label = "terra_party_battle"
@@ -1480,6 +1576,16 @@ expected_game_mode = 0x03
 expected_active_scene = "map03"
 description = "Standing resident on the Karisto Kingdom overworld outside Sol (scene-bundle pool slot 0 = 391 = map03 kingdom bundle). The Karisto leg of the world-map CLUT-cycle verification."
 topics = ["world map", "map03", "Karisto", "CLUT cycle", "ocean", "VRAM"]
+
+[[scenarios]]
+slot = 1
+label = "karisto_sol_pre_encounter"
+backup_fingerprint = "f6d09947d68848330fdb5ccbcd8091a7473265f7cc5809443a28606e5e79c28e"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map03"
+description = "Karisto Kingdom overworld outside Sol (PCSX-Redux), parked one step from a random encounter: holding RIGHT for ~1 second of walking rolls a battle. The battle-ENTRY probe state - arm exec breakpoints (e.g. the MoveImage wrapper for the face-stamp hunt) and walk right to capture the field-to-battle init window live."
+topics = ["world map", "map03", "Karisto", "encounter", "battle entry", "probe state"]
 
 # ----------------------------------------------------------------
 # Ending-sequence screen-widget corpus: six states through the end

@@ -130,12 +130,17 @@ fn model_library_base_tracks_party_size() {
     // For every scenario with a mednafen backup, the model-library base is
     // either 0 (no library resident) or 2 + the number of party-side models
     // the loader registered. Slots 0..=3 of the present-party list are stable
-    // member ids; slot 4 (the extra/special slot) mutates at runtime, so when
-    // it is nonzero in a late-battle state its model may or may not have been
-    // resident at the snapshot point - both counts are accepted for it. We
-    // also require having seen the relationship hold for at least two
-    // *distinct* member counts, so the test demonstrably pins a
-    // party-size-tracking base and not a constant.
+    // member ids; slot 4 (the extra/special slot) mutates at runtime in BOTH
+    // directions, so its model count cannot be recovered from the snapshot
+    // value: a late-battle state may hold a nonzero slot whose model was
+    // never registered, and a mid-battle state may hold a zeroed slot whose
+    // model WAS registered at init (the Sim-Seru summon mid-cast corpus -
+    // Palma/Mule/Horn/Jedo - all read base = members + 3 with slot 4 = 0;
+    // the Ra-Seru/Evil-Seru casts in the same party shape read the exact
+    // members + 2). One extra-slot model is therefore accepted regardless of
+    // the current slot value. We also require having seen the exact
+    // relationship hold for at least two *distinct* member counts, so the
+    // test demonstrably pins a party-size-tracking base and not a constant.
     let mut resident_party_sizes: Vec<u8> = Vec::new();
     let mut checked = 0usize;
 
@@ -145,11 +150,12 @@ fn model_library_base_tracks_party_size() {
         };
         checked += 1;
         let resident = u32::from(members) + u32::from(MODEL_BASE_PREFIX);
-        let resident_with_extra = resident + u32::from(extra != 0);
+        let resident_with_extra = resident + 1;
         assert!(
             base == 0 || base == resident || base == resident_with_extra,
             "{}: gp[0x754]={base} must be 0 (no library), members+2={resident}, or \
-             members+extra+2={resident_with_extra} (members={members}, extra slot={extra:#x})",
+             members+2+1={resident_with_extra} (one extra-slot model; members={members}, \
+             extra slot now={extra:#x})",
             scn.label
         );
         if base == resident && base != 0 {

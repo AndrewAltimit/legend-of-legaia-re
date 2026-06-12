@@ -145,15 +145,30 @@ same mesh/texture installer the [monster archive](../formats/monster-animation.m
 uses — and stages the summon creature as a battle actor (`FUN_80024C88`
 allocation, scale `(part_pool_byte_0x1F) << 5`, etc.).
 
-The remaining slot kind — the high-entropy aux slots of low-band `readef.DAT`
-groups (streamed as `base+1` but not VRAM-uploaded by the applier) — is
-**not yet decoded**; the bytes LZS-decode plausibly but no consumer is pinned
-(see [open threads](../reference/open-rev-eng-threads.md)).
+### Art `"ME"` stream-archive slot (readef groups 0..3)
+
+The aux slots of `readef.DAT` groups 0..3 — slots `3*char + 1` and
+`3*char + 2` for char = Vahn / Noa / Gala / Terra — carry the player
+**art-animation keyframe-stream archives** at the slot head: magic
+`'M' 'E'`, `u8 count`, `u16 entry_sizes[count]` (bit 15 = compressed),
+concatenated bodies. The consumer is `FUN_8002B28C` (called by the anim
+commit `FUN_8004AD80` with the `*0x8007BD74` streaming buffer as the
+archive), and every retail entry decompresses through the channel-delta
+codec `FUN_8002A9CC` into a packed
+`[u8 parts][u8 frames][9-byte TRS]` stream — the art-bank side is decoded
+in [`battle-data-pack.md` § "ME" stream
+archives](battle-data-pack.md#me-stream-archives-readefdat). Parser
+`legaia_asset::me_archive`; the side-band classifier reports these as
+`SlotKind::MeArchive`. Slot `3*char` is the group's non-ME (texture) slot.
+
+The aux slots of the **higher** readef groups (the enemy-special bands) are
+still unattributed; the bytes LZS-decode plausibly but no consumer is
+pinned (see [open threads](../reference/open-rev-eng-threads.md)).
 
 ## Tooling
 
 `asset summon-readef <entry.BIN>` lists every slot's class (texture / actor
-record / payload), texture layout, and attack-name string; `--texture-png-dir`
+record / ME stream archive / payload), texture layout, and attack-name string; `--texture-png-dir`
 decodes each texture slot's 4bpp page through a CLUT-row window (`--clut-sub`)
 to PNG; `--action-id` resolves an action id to its `(file, slot)` stream
 target. The attack-name sequence across the `summon.dat` actor records follows

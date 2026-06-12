@@ -238,17 +238,87 @@ form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "a80f6d33eba463d7d5874439762bb23aa37955f62752d10f2c87e5e2c75b9e45"
-notes = "Attack-titled stager-shaped overlay 'Ultimate Rave' (ASCII title at file offset 0, then code with FUN_80021B04 part-spawn calls -- the summon-stager shape; the 'dance-song' reading is refuted with 0907's). Which action id loads it is OPEN: no constant loader argument in SCUS or the mapped overlays resolves to 924; the load is computed (likely an enemy-special / high-id summon path). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
+notes = "Attack-titled stager-shaped overlay 'Ultimate Rave' (ASCII title at file offset 0, then code with FUN_80021B04 part-spawn calls -- the summon-stager shape; the 'dance-song' reading is refuted with 0907's). Which action id loads it is OPEN: no constant loader argument in SCUS or the mapped overlays resolves to 924; the load is computed. Under the verified linear arithmetic its loader id would be 0x1D (spell id 0x96 = a rare-drop name, not a castable spell), so it is likeliest another Evil-Seru-Magic creature's stager whose id resolves per-creature -- its sibling 927 ('Dark Eclipse') is capture-pinned as the Juggernaut cast. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (98%)."
 
 [[overlays]]
 prot_index = 927
-label = "stager_dark_eclipse"
+label = "summon_juggernaut"
 base_va = 0x801F69D8
 form = "raw"
 eligibility = "static"
 base_source = "cross_ref"
 fingerprint_sha256 = "0cff56036607ced1111829e3a3fb683833ac7ce6fcfeb0ba8abb118a14d1d233"
-notes = "Attack-titled stager-shaped overlay 'Dark Eclipse' (ASCII title at file offset 0, then code with FUN_80021B04 part-spawn calls -- the summon-stager shape; the 'dance-song' reading is refuted with 0907's). Which action id loads it is OPEN: no constant loader argument in SCUS or the mapped overlays resolves to 927; the load is computed (likely an enemy-special / high-id summon path). Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (97%)."
+notes = "Evil Seru Magic summon stager, creature Juggernaut (capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x20 -> extraction 895 + 0x20 = 927, byte-resident at slot B; scenario juggernaut_summon_mid_cast). Spell id 0x99 ('Evil Seru Magic' in the SCUS spell table) on the same linear arithmetic as the base summon block (loader_id = spell_id - 0x79). Heads with the ASCII attack title 'Dark Eclipse' -- the ATTACK's display name, parallel to Nighto's 'Hell's Music'; the earlier 'loads computed / id open' status is RESOLVED. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (97%)."
+
+[[overlays]]
+prot_index = 928
+label = "summon_palma"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "2c7052d2c93f05f7ed7f97c852908fef841cd891dba38432a3e5853d8999d4c9"
+notes = "Sim-Seru summon stager for Palma (spell id 0x9A, mp 200; capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x21 -> extraction 895 + 0x21 = 928, byte-resident at slot B through file +0x1000; scenario palma_summon_mid_cast). Pre-linked slot-B pointer-table head, no ASCII title."
+
+[[overlays]]
+prot_index = 929
+label = "summon_mule"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "d566b55a334643fe9a026acfba1c9a4b5c407ccd12c3bcbe52d45d72be3b9c36"
+notes = "Sim-Seru summon stager for Mule (spell id 0x9B; capture-pinned: loader-B id 0x22 -> extraction 929; scenario mule_summon_mid_cast). Pre-linked pointer-table head."
+
+[[overlays]]
+prot_index = 930
+label = "summon_horn"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "cfc70218c5ced8a8c274ccf76115059139fcdf35f09d66e2c83a1f9587076781"
+notes = "Sim-Seru summon stager for Horn (spell id 0x9C; capture-pinned: loader-B id 0x23 -> extraction 930; scenario horn_summon_mid_cast). Pre-linked pointer-table head."
+
+[[overlays]]
+prot_index = 931
+label = "summon_jedo"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "08471863e3eab37587c711884ebd415d9e72857fa43cdac5af6f1857a9cd25fb"
+notes = "Sim-Seru summon stager for Jedo (spell id 0x9D; capture-pinned: loader-B id 0x24 -> extraction 931; scenario jedo_summon_mid_cast). Pre-linked pointer-table head. With Palma/Mule/Horn + Juggernaut (927) + the Ra-Seru trio (932..934) the whole 0x99..0xA0 -> 927..934 stager block is capture-pinned linear."
+
+[[overlays]]
+prot_index = 932
+label = "summon_meta"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "2ccc0909a53df3ae8675f6f7f4f8dc00b03f9564fff1533ac30723d4d00037b2"
+notes = "Ra-Seru summon stager for Meta (spell id 0x9E; capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x25 -> extraction 895 + 0x25 = 932, byte-resident at slot B through file +0x1000; scenario meta_summon_mid_cast). No ASCII title -- heads with a slot-B VA pointer table (0x801F6AD8...), the pre-linked stager shape. Extends the loader_id = spell_id - 0x79 arithmetic into the Ra-Seru block 0x9E..0xA0 -> 932..934."
+
+[[overlays]]
+prot_index = 933
+label = "summon_terra"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "2be5fb85fedb6f928468b2333fd1c6e1ae01321dc279acdb5d1636d3fc6c81f1"
+notes = "Ra-Seru summon stager for Terra (spell id 0x9F; capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x26 -> extraction 933, byte-resident at slot B; scenario terra_summon_mid_cast). Same pre-linked pointer-table head as 932."
+
+[[overlays]]
+prot_index = 934
+label = "summon_ozma"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "cross_ref"
+fingerprint_sha256 = "6fde47126330d2744c878eb8e904add5e25f101baf9fd55ee80ff2b56a48e6c1"
+notes = "Ra-Seru summon stager for Ozma (spell id 0xA0; capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x27 -> extraction 934, byte-resident at slot B; scenario ozma_summon_mid_cast). Same pre-linked pointer-table head as 932; completes the Ra-Seru block 0x9E..0xA0 -> 932..934."
 
 [[overlays]]
 prot_index = 957

@@ -1391,6 +1391,13 @@ fn summon_readef_cmd(
                     r.part_count,
                 );
             }
+            SlotKind::MeArchive { count, compressed } => println!(
+                "  slot {:3}: ME stream archive  {} entr{} ({} compressed)",
+                slot.index,
+                count,
+                if *count == 1 { "y" } else { "ies" },
+                compressed,
+            ),
             SlotKind::Payload => println!("  slot {:3}: payload / raw", slot.index),
         }
     }

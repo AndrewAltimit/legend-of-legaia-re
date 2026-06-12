@@ -53,7 +53,16 @@ struct. `World::tick` runs:
 2. Per-actor move-VM tick - only for active actors with bytecode loaded
    via `set_move_bytecode`.
 3. Mode-specific top-level VM:
-   - `SceneMode::Battle` → battle-action state machine step.
+   - `SceneMode::Battle` → battle-action state machine step, preceded by
+     the staged-anim commit (`commit_staged_battle_anims`, the
+     `FUN_8004AD80` ladder): anim ids the SM stages into
+     `actor.queued_anim` play on the battle actors — equipment weapon
+     swings (`0xC..0xF`) directly, ids `>= 0x10` through the per-character
+     art bank installed via `set_actor_battle_art_bank` (with the retail
+     `0x10`/`0x1A` → dynamic-slot-`0x11` rewrite). The clip's finish
+     clears `ADVANCE_DONE` (the attack chain's strike-pacing gate) and
+     idle resumes. See
+     `docs/subsystems/battle-action.md#staged-anim-playback-the-attack-band-plays-in-engine`.
    - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step, preceded by
      `step_cutscene_timeline` when a cutscene timeline is installed (the
      `opdeene` opening prologue): a *second* spawned `FieldCtx`

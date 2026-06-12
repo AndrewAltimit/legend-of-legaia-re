@@ -184,7 +184,27 @@ Absolute `actor[+0x24..+0x28] = v1..v3`.
 
 Writes `(int)(short)v1` into `*actor[+0x44]` (the indirect scratch slot).
 
-(Cases beyond `0x3C` are documented in the function dump but follow the same pattern; consult `ghidra/scripts/funcs/80023070.txt` for the exhaustive list.)
+### 0x40 - `MOVE_IMAGE` (size 7)
+
+```c
+RECT r = { op[1], op[2], op[3], op[4] };   // source x, y, w, h (VRAM halfwords)
+MoveImage(&r, (short)op[5], (short)op[6]); // FUN_80058490 - dest x, y
+```
+
+A literal-operand VRAM-to-VRAM copy through the libgpu `MoveImage` wrapper.
+This is the engine's **animated-texture strip** primitive: the frames are
+authored inside the scene/character texture uploads (parked in VRAM next to
+the live rect), and a move program cycles them by stamping one frame per
+`0x40` instruction over the displayed texel rect. Live-traced via an exec
+breakpoint on `FUN_80058490` (`scripts/pcsx-redux/autorun_battle_moveimage_trace.lua`):
+field scenes run 4-frame strip cycles (e.g. 16×64 strips at one-frame
+cadence) from this op. (The battle party's facial-texel stamps share the
+`MoveImage` primitive but are NOT this op — they come from the dedicated
+facial animator `FUN_8004C7B4`; see
+[`battle-data-pack.md` § Facial animation tracks](../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98).)
+Engine hook: `MoveVmHost::move_image` (`crates/engine-vm/src/move_vm.rs`).
+
+(Cases beyond `0x3C` not listed here are documented in the function dump and follow the same pattern; consult `ghidra/scripts/funcs/80023070.txt` for the exhaustive list.)
 
 ## Control flow
 

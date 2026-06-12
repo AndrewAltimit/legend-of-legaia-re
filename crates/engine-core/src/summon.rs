@@ -93,23 +93,35 @@ pub const SUMMON_PART_BUDGET: usize = 256;
 /// different, non-stager path).
 pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 
+/// High summon block: Evil Seru Magic (`0x99` — the creature resolves
+/// per-cast, e.g. Juggernaut), the Sim-Seru summons Palma / Mule / Horn /
+/// Jedo (`0x9A..=0x9D`), and the Ra-Seru summons Meta / Terra / Ozma
+/// (`0x9E..=0xA0`).
+pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
+
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
 /// or `None` if `spell_id` is not a summon. Retail: `FUN_8003EC70(id - 0x79)`
 /// loads raw-TOC index `(id - 0x79) + 0x381` — the in-RAM TOC at `0x801C70F0`
 /// is raw `PROT.DAT` from byte 0 (header included), so the extraction entry
-/// sits 2 below the raw index: `0x81..=0x8B → 903..=913` (see
-/// `docs/formats/prot.md` § index spaces).
+/// sits 2 below the raw index: `0x81..=0x8B → 903..=913` and
+/// `0x99..=0xA0 → 927..=934` (see `docs/formats/prot.md` § index spaces).
 ///
-/// Capture-pinned for **every id in the block**: one mid-cast save state per
-/// spell holds the battle overlay's loader-B current-id (`0x8007BC4C`) at
-/// exactly `spell_id - 0x79` (the `<seru>_summon_mid_cast` +
-/// `gimard_summon_*` scenarios in `scripts/scenarios.toml`). Entry 0907
-/// (Nighto) heads with the ASCII title "Hell's Music" — the spell's musical
-/// attack payload rides inside its stager module.
+/// Capture-pinned for **every id in both blocks**: one mid-cast save state
+/// per spell holds the battle overlay's loader-B current-id (`0x8007BC4C`)
+/// at exactly `spell_id - 0x79` with the predicted entry byte-resident at
+/// the slot-B link base (the `<seru>_summon_mid_cast` + `gimard_summon_*`
+/// scenarios in `scripts/scenarios.toml`). Titled entries head with the
+/// ASCII display name of the summon's attack (0907 Nighto "Hell's Music",
+/// 0927 Juggernaut "Dark Eclipse"); the high-block entries otherwise head
+/// with a pre-linked slot-B pointer table.
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
-    SERU_SUMMON_IDS
-        .contains(&spell_id)
-        .then(|| 903 + (spell_id - 0x81) as u32)
+    if SERU_SUMMON_IDS.contains(&spell_id) {
+        Some(903 + (spell_id - 0x81) as u32)
+    } else if HIGH_SUMMON_IDS.contains(&spell_id) {
+        Some(927 + (spell_id - 0x99) as u32)
+    } else {
+        None
+    }
 }
 
 /// `battle_data` (PROT 867) creature id whose mesh + per-object animation the
@@ -636,10 +648,21 @@ mod tests {
     #[test]
     fn summon_prot_entry_maps_the_seru_block() {
         assert_eq!(summon_stager_prot_entry(0x81), Some(903)); // Gimard Burning Attack
-        assert_eq!(summon_stager_prot_entry(0x8B), Some(913)); // last player summon
+        assert_eq!(summon_stager_prot_entry(0x8B), Some(913)); // last base-block summon
         assert_eq!(summon_stager_prot_entry(0x80), None); // below the block
-        assert_eq!(summon_stager_prot_entry(0x8C), None); // above the block
+        assert_eq!(summon_stager_prot_entry(0x8C), None); // evolved-Seru cast, not a stager leg
         assert_eq!(summon_stager_prot_entry(0x27), None); // a monster attack id
+    }
+
+    #[test]
+    fn summon_prot_entry_maps_the_high_block() {
+        assert_eq!(summon_stager_prot_entry(0x99), Some(927)); // Evil Seru Magic (Juggernaut cast)
+        assert_eq!(summon_stager_prot_entry(0x9A), Some(928)); // Palma
+        assert_eq!(summon_stager_prot_entry(0x9D), Some(931)); // Jedo
+        assert_eq!(summon_stager_prot_entry(0x9E), Some(932)); // Meta
+        assert_eq!(summon_stager_prot_entry(0xA0), Some(934)); // Ozma
+        assert_eq!(summon_stager_prot_entry(0x98), None); // below the high block
+        assert_eq!(summon_stager_prot_entry(0xA1), None); // above the high block
     }
 
     #[test]

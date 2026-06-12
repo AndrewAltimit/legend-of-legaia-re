@@ -162,9 +162,14 @@ pub struct UploadedVramMesh {
     index_count: u32,
     /// `[(first_index, index_count); 4]` ranges of the per-ABR-mode
     /// semi-transparent "tail" appended past `index_count` in `index_buf`
-    /// (see [`psx_blend::append_semi_tail`]). Drawn by the PSX-faithful
-    /// blend pass; all-zero counts when the mesh has no semi prims.
+    /// (see [`psx_blend::append_semi_tail`]). Describes the tail layout;
+    /// all-zero counts when the mesh has no semi prims.
     semi_ranges: [(u32, u32); 4],
+    /// Per-prim blend-pass metadata, one entry per semi-transparent
+    /// triangle in original mesh order (see [`psx_blend::SemiPrim`]). The
+    /// PSX-faithful blend pass re-orders these per frame by projected
+    /// depth, mirroring the retail ordering table.
+    semi_prims: Vec<psx_blend::SemiPrim>,
 }
 
 impl UploadedVramMesh {
@@ -182,9 +187,15 @@ impl UploadedVramMesh {
         self.semi_ranges
     }
 
+    /// Per-prim blend-pass metadata in original mesh order (see
+    /// [`psx_blend::SemiPrim`]).
+    pub fn semi_prims(&self) -> &[psx_blend::SemiPrim] {
+        &self.semi_prims
+    }
+
     /// True when any prim in this mesh carries the semi-transparency enable.
     pub fn has_semi_prims(&self) -> bool {
-        self.semi_ranges.iter().any(|&(_, n)| n > 0)
+        !self.semi_prims.is_empty()
     }
 }
 
@@ -199,11 +210,16 @@ pub struct UploadedColorMesh {
     index_count: u32,
     /// `[(first_index, index_count); 4]` ranges of the per-ABR-mode
     /// semi-transparent "tail" appended past `index_count` in `index_buf`
-    /// (see [`psx_blend::append_semi_tail_words`]). Drawn by the
-    /// PSX-faithful blend pass; all-zero counts when the mesh has no semi
-    /// prims (always the case via [`Renderer::upload_color_mesh`] - blend
-    /// words come in through [`Renderer::upload_color_mesh_blended`]).
+    /// (see [`psx_blend::append_semi_tail_words`]). Describes the tail
+    /// layout; all-zero counts when the mesh has no semi prims (always the
+    /// case via [`Renderer::upload_color_mesh`] - blend words come in
+    /// through [`Renderer::upload_color_mesh_blended`]).
     semi_ranges: [(u32, u32); 4],
+    /// Per-prim blend-pass metadata, one entry per semi-transparent
+    /// triangle in original mesh order (see [`psx_blend::SemiPrim`]). The
+    /// PSX-faithful blend pass re-orders these per frame by projected
+    /// depth, mirroring the retail ordering table.
+    semi_prims: Vec<psx_blend::SemiPrim>,
 }
 
 impl UploadedColorMesh {
@@ -221,9 +237,15 @@ impl UploadedColorMesh {
         self.semi_ranges
     }
 
+    /// Per-prim blend-pass metadata in original mesh order (see
+    /// [`psx_blend::SemiPrim`]).
+    pub fn semi_prims(&self) -> &[psx_blend::SemiPrim] {
+        &self.semi_prims
+    }
+
     /// True when any prim in this mesh carries the semi-transparency enable.
     pub fn has_semi_prims(&self) -> bool {
-        self.semi_ranges.iter().any(|&(_, n)| n > 0)
+        !self.semi_prims.is_empty()
     }
 }
 
@@ -3547,6 +3569,11 @@ pub struct Renderer {
     /// Drained by the in-pass draw to issue one `draw_indexed` per overlay
     /// with the matching atlas bound.
     scene_quad_ranges: std::cell::RefCell<Vec<(u32, u32)>>,
+    /// Per-frame blend-pass ordering list (see
+    /// [`psx_blend::BlendListEntry`]). RefCell-borrowed from the non-mut
+    /// `render` API; cleared and refilled each frame, capacity persists so
+    /// the per-prim sort allocates nothing in steady state.
+    blend_list: std::cell::RefCell<Vec<psx_blend::BlendListEntry>>,
     /// Depth target - recreated on resize.
     depth_view: wgpu::TextureView,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
@@ -4547,6 +4574,7 @@ impl Renderer {
             text_vertex_capacity: std::cell::Cell::new(initial_text_quads * 4),
             text_index_capacity: std::cell::Cell::new(initial_text_quads * 6),
             scene_quad_ranges: std::cell::RefCell::new(Vec::new()),
+            blend_list: std::cell::RefCell::new(Vec::new()),
             depth_view,
             psx_mode: std::cell::Cell::new(false),
             vram_upload_counter: std::cell::Cell::new(0),
@@ -4817,7 +4845,8 @@ impl Renderer {
         // Append the per-ABR-mode semi-transparent tail for the PSX-faithful
         // blend pass. The opaque pass still draws `0..indices.len()`
         // (`index_count` below), so the default path is unchanged.
-        let (indices_with_tail, semi_ranges) = psx_blend::append_semi_tail(indices, cba_tsb);
+        let (indices_with_tail, semi_ranges, semi_prims) =
+            psx_blend::append_semi_tail(indices, cba_tsb, positions);
         let index_buf = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -4830,6 +4859,7 @@ impl Renderer {
             index_buf,
             index_count: indices.len() as u32,
             semi_ranges,
+            semi_prims,
         })
     }
 
@@ -4920,10 +4950,10 @@ impl Renderer {
         // Append the per-ABR-mode semi-transparent tail for the PSX-faithful
         // blend pass. The opaque pass still draws `0..indices.len()`
         // (`index_count` below), so the default path is unchanged.
-        let (indices_with_tail, semi_ranges) = if blend.is_empty() {
-            (indices.to_vec(), [(0u32, 0u32); 4])
+        let (indices_with_tail, semi_ranges, semi_prims) = if blend.is_empty() {
+            (indices.to_vec(), [(0u32, 0u32); 4], Vec::new())
         } else {
-            psx_blend::append_semi_tail_words(indices, blend)
+            psx_blend::append_semi_tail_words(indices, blend, positions)
         };
         let index_buf = self
             .device
@@ -4937,6 +4967,7 @@ impl Renderer {
             index_buf,
             index_count: indices.len() as u32,
             semi_ranges,
+            semi_prims,
         })
     }
 
@@ -5313,7 +5344,7 @@ impl Renderer {
                     rp.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                     rp.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
-                RenderTarget::VramMesh { mesh, vram, .. } => {
+                RenderTarget::VramMesh { mesh, vram, mvp } => {
                     rp.set_pipeline(&self.vram_mesh_pipeline);
                     rp.set_bind_group(0, &self.mesh_uniforms_bg, &[]);
                     rp.set_bind_group(1, &vram.bind_group, &[]);
@@ -5321,9 +5352,10 @@ impl Renderer {
                     rp.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                     rp.draw_indexed(0..mesh.index_count, 0, 0..1);
                     // PSX-faithful semi-transparency blend pass (see
-                    // [`psx_blend`]): re-draw the per-ABR-mode index tail
-                    // with the matching blend pipeline. Gated like the rest
-                    // of the faithful extras.
+                    // [`psx_blend`]): re-draw the semi prims back-to-front
+                    // by per-prim depth (the retail ordering-table walk),
+                    // selecting the matching ABR blend pipeline per run.
+                    // Gated like the rest of the faithful extras.
                     if self.psx_mode.get() && mesh.has_semi_prims() {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
@@ -5332,13 +5364,20 @@ impl Renderer {
                             b: c,
                             a: c,
                         });
-                        for (mode, &(start, count)) in mesh.semi_ranges().iter().enumerate() {
-                            if count == 0 {
-                                continue;
+                        let mut list = self.blend_list.borrow_mut();
+                        list.clear();
+                        psx_blend::push_draw_prims(&mut list, false, 0, &mvp, mesh.semi_prims());
+                        psx_blend::sort_blend_list(&mut list);
+                        let mut bound_mode: Option<u8> = None;
+                        psx_blend::coalesce_sorted(&list, |head, start, count| {
+                            if bound_mode != Some(head.mode) {
+                                rp.set_pipeline(
+                                    &self.vram_mesh_blend_pipelines[head.mode as usize],
+                                );
+                                bound_mode = Some(head.mode);
                             }
-                            rp.set_pipeline(&self.vram_mesh_blend_pipelines[mode]);
                             rp.draw_indexed(start..start + count, 0, 0..1);
-                        }
+                        });
                     }
                 }
                 RenderTarget::Lines { mesh, .. } => {
@@ -5392,21 +5431,23 @@ impl Renderer {
                         }
                     }
                     // PSX-faithful semi-transparency blend pass (see
-                    // [`psx_blend`]): after every opaque draw, re-draw each
-                    // draw's per-ABR-mode semi-transparent index tail with
-                    // the matching blend pipeline. Runs last among the 3D
-                    // draws so blended fragments (which don't write depth)
-                    // can't be overwritten by later opaque geometry.
+                    // [`psx_blend`]): after every opaque draw, re-draw the
+                    // semi-transparent prims with the matching blend
+                    // pipelines. Runs last among the 3D draws so blended
+                    // fragments (which don't write depth) can't be
+                    // overwritten by later opaque geometry.
                     //
                     // Ordering: retail inserts each semi prim into the
                     // depth-bucketed ordering table and blends back-to-front,
-                    // interleaved across actors. The engine approximates
-                    // that OT ordering at per-draw granularity - every
-                    // semi-carrying draw (textured + untextured alike)
-                    // blends in far-to-near order of its model origin's
-                    // clip-space depth (`mvp.w_axis.w` = the origin's clip
-                    // `w` = view depth), not scene-list order. Per-prim
-                    // bucketing within one draw stays in tail order.
+                    // interleaved across actors. The engine mirrors that at
+                    // per-PRIMITIVE granularity - every semi prim of every
+                    // semi-carrying draw (textured + untextured alike) is
+                    // keyed by its centroid's clip-space `w` under the
+                    // draw's MVP (= the average of its vertices' clip `w`,
+                    // the GTE avg-Z the OT bins on) and the whole list is
+                    // blended far-to-near, regardless of draw boundaries.
+                    // Equal keys (one OT bucket) draw later-submitted-first,
+                    // the retail LIFO bucket order (`AddPrim` prepends).
                     let any_semi = scene.draws.iter().any(|d| d.mesh.has_semi_prims())
                         || scene.color_draws.iter().any(|d| d.mesh.has_semi_prims());
                     if self.psx_mode.get() && any_semi {
@@ -5419,53 +5460,65 @@ impl Renderer {
                         });
                         let color_base =
                             scene.draws.len() as u32 + scene.overlay_lines.is_some() as u32;
-                        // (untextured?, draw index, uniform offset, far key)
-                        let mut order: Vec<(bool, usize, u32, f32)> = Vec::new();
+                        let mut list = self.blend_list.borrow_mut();
+                        list.clear();
                         for (i, draw) in scene.draws.iter().enumerate() {
-                            if draw.mesh.has_semi_prims() {
-                                order.push((false, i, i as u32 * stride, draw.mvp.w_axis.w));
-                            }
+                            psx_blend::push_draw_prims(
+                                &mut list,
+                                false,
+                                i as u32,
+                                &draw.mvp,
+                                draw.mesh.semi_prims(),
+                            );
                         }
                         for (i, draw) in scene.color_draws.iter().enumerate() {
-                            if draw.mesh.has_semi_prims() {
-                                order.push((
-                                    true,
-                                    i,
-                                    (color_base + i as u32) * stride,
-                                    draw.mvp.w_axis.w,
-                                ));
-                            }
+                            psx_blend::push_draw_prims(
+                                &mut list,
+                                true,
+                                i as u32,
+                                &draw.mvp,
+                                draw.mesh.semi_prims(),
+                            );
                         }
-                        psx_blend::sort_far_to_near(&mut order);
-                        for (untextured, i, off, _) in order {
-                            let (vbuf, ibuf, ranges, pipelines) = if untextured {
-                                let m = scene.color_draws[i].mesh;
-                                (
-                                    &m.vertex_buf,
-                                    &m.index_buf,
-                                    m.semi_ranges(),
-                                    &self.scene_color_mesh_blend_pipelines,
-                                )
-                            } else {
-                                let m = scene.draws[i].mesh;
-                                (
-                                    &m.vertex_buf,
-                                    &m.index_buf,
-                                    m.semi_ranges(),
-                                    &self.scene_vram_mesh_blend_pipelines,
-                                )
-                            };
-                            rp.set_vertex_buffer(0, vbuf.slice(..));
-                            rp.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                            for (mode, &(start, count)) in ranges.iter().enumerate() {
-                                if count == 0 {
-                                    continue;
-                                }
-                                rp.set_pipeline(&pipelines[mode]);
+                        psx_blend::sort_blend_list(&mut list);
+                        // Emit with state caching: rebind buffers + uniform
+                        // offset only when the owning draw changes, switch
+                        // pipelines only when the (path, ABR mode) changes;
+                        // contiguous tail runs merge into one draw call
+                        // (`coalesce_sorted`).
+                        let mut bound_draw: Option<(bool, u32)> = None;
+                        let mut bound_pipe: Option<(bool, u8)> = None;
+                        psx_blend::coalesce_sorted(&list, |head, start, count| {
+                            let draw_key = (head.untextured, head.draw_index);
+                            if bound_draw != Some(draw_key) {
+                                let (vbuf, ibuf, off) = if head.untextured {
+                                    let m = scene.color_draws[head.draw_index as usize].mesh;
+                                    (
+                                        &m.vertex_buf,
+                                        &m.index_buf,
+                                        (color_base + head.draw_index) * stride,
+                                    )
+                                } else {
+                                    let m = scene.draws[head.draw_index as usize].mesh;
+                                    (&m.vertex_buf, &m.index_buf, head.draw_index * stride)
+                                };
+                                rp.set_vertex_buffer(0, vbuf.slice(..));
+                                rp.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
                                 rp.set_bind_group(0, bg, &[off]);
-                                rp.draw_indexed(start..start + count, 0, 0..1);
+                                bound_draw = Some(draw_key);
                             }
-                        }
+                            let pipe_key = (head.untextured, head.mode);
+                            if bound_pipe != Some(pipe_key) {
+                                let pipelines = if head.untextured {
+                                    &self.scene_color_mesh_blend_pipelines
+                                } else {
+                                    &self.scene_vram_mesh_blend_pipelines
+                                };
+                                rp.set_pipeline(&pipelines[head.mode as usize]);
+                                bound_pipe = Some(pipe_key);
+                            }
+                            rp.draw_indexed(start..start + count, 0, 0..1);
+                        });
                     }
                     let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                     if let Some(s) = scene.overlay_sprites {
@@ -5937,13 +5990,127 @@ pub mod psx_blend {
         (if abe { TSB_SEMI_TRANSPARENT_BIT } else { 0 }) | (((abr & 0x3) as u16) << 5)
     }
 
-    /// Far-to-near (descending key) stable sort of the blend-pass draw
-    /// order, the per-draw approximation of the retail ordering table's
-    /// back-to-front blend. The last tuple element is the depth key (the
-    /// draw origin's clip-space `w`). Uses IEEE `total_cmp` so degenerate
-    /// keys still give a deterministic order (positive NaN sorts farthest).
-    pub fn sort_far_to_near<A, B, C>(order: &mut [(A, B, C, f32)]) {
-        order.sort_by(|a, b| b.3.total_cmp(&a.3));
+    /// One semi-transparent prim's blend-pass metadata, recorded once at
+    /// mesh upload time by [`append_semi_tail`] /
+    /// [`append_semi_tail_words`]. The PSX-faithful blend pass re-keys
+    /// these per frame ([`prim_depth_key`]) to reproduce the retail
+    /// ordering table at per-primitive granularity.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct SemiPrim {
+        /// Model-space centroid (average of the triangle's 3 corners).
+        /// Because the MVP is linear, this point's clip-space `w` equals
+        /// the average of the corners' clip-space `w` - the avg-Z the GTE
+        /// `RTPT` + OT-insertion path bins on.
+        pub centroid: [f32; 3],
+        /// ABR blend mode 0..=3 (selects the blend pipeline).
+        pub mode: u8,
+        /// First index of this triangle inside the mesh's semi tail
+        /// (absolute position in the extended index buffer; the triangle
+        /// spans `first_index..first_index + 3`).
+        pub first_index: u32,
+    }
+
+    /// Per-prim ordering-table depth key: the clip-space `w` of the prim's
+    /// model-space centroid under `mvp` (for the standard projection,
+    /// clip `w` = view depth). By linearity of `mvp` this equals the
+    /// average of the prim's vertices' clip-space `w`, matching the PSX
+    /// OT semantics of binning a prim by its vertices' average Z. The
+    /// model origin's key is `mvp.w_axis.w` - the depth convention the
+    /// rest of the renderer (and the previous per-draw ordering) uses.
+    pub fn prim_depth_key(mvp: &glam::Mat4, centroid: [f32; 3]) -> f32 {
+        mvp.x_axis.w * centroid[0]
+            + mvp.y_axis.w * centroid[1]
+            + mvp.z_axis.w * centroid[2]
+            + mvp.w_axis.w
+    }
+
+    /// One entry of the per-frame blend-pass ordering list: a single semi
+    /// prim of a single draw, keyed for the global back-to-front sort.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct BlendListEntry {
+        /// Depth key ([`prim_depth_key`]); larger = farther = drawn earlier.
+        pub key: f32,
+        /// Submission sequence number (list push order). Ties on `key`
+        /// draw in *descending* `seq`: a retail OT bucket is LIFO
+        /// (`AddPrim` prepends to the bucket list, `DrawOTag` walks it
+        /// head-first), so prims inserted later draw first within a bucket.
+        pub seq: u32,
+        /// `true` when the prim belongs to an untextured colour-mesh draw
+        /// (selects the colour-mesh blend pipelines / draw list).
+        pub untextured: bool,
+        /// Index of the owning draw inside its scene draw list.
+        pub draw_index: u32,
+        /// ABR blend mode 0..=3 (selects the blend pipeline).
+        pub mode: u8,
+        /// First index of the prim's triangle in its mesh's semi tail.
+        pub first_index: u32,
+    }
+
+    /// Append one draw's semi prims to the per-frame blend ordering list,
+    /// keying each prim by [`prim_depth_key`] under the draw's `mvp`.
+    /// `prims` must be in original mesh order (as recorded by
+    /// [`append_semi_tail`]) so `seq` reflects submission order.
+    pub fn push_draw_prims(
+        list: &mut Vec<BlendListEntry>,
+        untextured: bool,
+        draw_index: u32,
+        mvp: &glam::Mat4,
+        prims: &[SemiPrim],
+    ) {
+        for p in prims {
+            list.push(BlendListEntry {
+                key: prim_depth_key(mvp, p.centroid),
+                seq: list.len() as u32,
+                untextured,
+                draw_index,
+                mode: p.mode,
+                first_index: p.first_index,
+            });
+        }
+    }
+
+    /// Far-to-near (descending key) sort of the per-prim blend list, the
+    /// per-primitive mirror of the retail ordering table's back-to-front
+    /// blend. Equal keys (one OT bucket) draw in descending `seq` - the
+    /// retail LIFO bucket order (later-submitted prims draw first). Uses
+    /// IEEE `total_cmp` so degenerate keys still give a deterministic
+    /// order (positive NaN sorts farthest).
+    pub fn sort_blend_list(list: &mut [BlendListEntry]) {
+        list.sort_unstable_by(|a, b| b.key.total_cmp(&a.key).then(b.seq.cmp(&a.seq)));
+    }
+
+    /// Walk a sorted blend list and emit one GPU draw per *run*:
+    /// consecutive entries from the same draw + ABR mode whose tail
+    /// triangles are contiguous in the index buffer merge into a single
+    /// indexed range. `emit(head, first_index, index_count)` receives the
+    /// run's first entry (carrying the draw identity + mode) and the
+    /// merged index range.
+    pub fn coalesce_sorted(
+        list: &[BlendListEntry],
+        mut emit: impl FnMut(&BlendListEntry, u32, u32),
+    ) {
+        let mut i = 0;
+        while i < list.len() {
+            let head = list[i];
+            let start = head.first_index;
+            let mut count = 3u32;
+            let mut j = i + 1;
+            while j < list.len() {
+                let e = &list[j];
+                if e.untextured == head.untextured
+                    && e.draw_index == head.draw_index
+                    && e.mode == head.mode
+                    && e.first_index == start + count
+                {
+                    count += 3;
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            emit(&head, start, count);
+            i = j;
+        }
     }
 
     /// Foreground pre-scale applied in the blend-pass fragment shader for
@@ -6006,34 +6173,59 @@ pub mod psx_blend {
     /// original indices stay untouched at the front (the opaque pass draws
     /// `0..indices.len()` exactly as before), and every semi-transparent
     /// triangle is *duplicated* into one of four contiguous tail buckets,
-    /// one per ABR mode. Returns the extended index list plus
-    /// `[(first_index, index_count); 4]` tail ranges for the blend pass.
+    /// one per ABR mode. Returns the extended index list,
+    /// `[(first_index, index_count); 4]` tail ranges, and one [`SemiPrim`]
+    /// per semi triangle (in original mesh order) carrying its model-space
+    /// centroid + tail location for the per-frame ordering list.
     ///
     /// A triangle's prim flags are read from its first vertex - the mesh
     /// builders emit fresh per-corner vertices per prim, so all corners
     /// share one `(cba, tsb)`.
-    pub fn append_semi_tail(indices: &[u32], cba_tsb: &[[u16; 2]]) -> (Vec<u32>, [(u32, u32); 4]) {
-        append_semi_tail_by(indices, |v| cba_tsb[v][1])
+    pub fn append_semi_tail(
+        indices: &[u32],
+        cba_tsb: &[[u16; 2]],
+        positions: &[[f32; 3]],
+    ) -> (Vec<u32>, [(u32, u32); 4], Vec<SemiPrim>) {
+        append_semi_tail_by(indices, positions, |v| cba_tsb[v][1])
     }
 
     /// [`append_semi_tail`] for the untextured colour-mesh path, whose
     /// vertices carry a bare per-vertex blend word ([`pack_blend_word`])
     /// instead of a `(cba, tsb)` pair. Same bucketing semantics.
-    pub fn append_semi_tail_words(indices: &[u32], blend: &[u16]) -> (Vec<u32>, [(u32, u32); 4]) {
-        append_semi_tail_by(indices, |v| blend[v])
+    pub fn append_semi_tail_words(
+        indices: &[u32],
+        blend: &[u16],
+        positions: &[[f32; 3]],
+    ) -> (Vec<u32>, [(u32, u32); 4], Vec<SemiPrim>) {
+        append_semi_tail_by(indices, positions, |v| blend[v])
     }
 
     /// Shared bucketing core: `word_of` maps a vertex index to its packed
     /// blend word (ABE bit 15, ABR bits 5..=6).
     fn append_semi_tail_by(
         indices: &[u32],
+        positions: &[[f32; 3]],
         word_of: impl Fn(usize) -> u16,
-    ) -> (Vec<u32>, [(u32, u32); 4]) {
+    ) -> (Vec<u32>, [(u32, u32); 4], Vec<SemiPrim>) {
         let mut buckets: [Vec<u32>; 4] = Default::default();
+        // (mode, triangle slot within its bucket, centroid), kept in
+        // original mesh order so the per-frame blend list sees retail's
+        // prim submission order.
+        let mut prims: Vec<(u8, u32, [f32; 3])> = Vec::new();
         for tri in indices.chunks_exact(3) {
             let word = word_of(tri[0] as usize);
             if prim_semi_transparent(word) {
-                buckets[abr_mode(word) as usize].extend_from_slice(tri);
+                let mode = abr_mode(word);
+                let slot = (buckets[mode as usize].len() / 3) as u32;
+                buckets[mode as usize].extend_from_slice(tri);
+                let mut c = [0.0f32; 3];
+                for &v in tri {
+                    let p = positions[v as usize];
+                    c[0] += p[0];
+                    c[1] += p[1];
+                    c[2] += p[2];
+                }
+                prims.push((mode, slot, [c[0] / 3.0, c[1] / 3.0, c[2] / 3.0]));
             }
         }
         let mut out = indices.to_vec();
@@ -6042,7 +6234,15 @@ pub mod psx_blend {
             ranges[mode] = (out.len() as u32, bucket.len() as u32);
             out.extend_from_slice(bucket);
         }
-        (out, ranges)
+        let semi_prims = prims
+            .into_iter()
+            .map(|(mode, slot, centroid)| SemiPrim {
+                centroid,
+                mode,
+                first_index: ranges[mode as usize].0 + slot * 3,
+            })
+            .collect();
+        (out, ranges, semi_prims)
     }
 }
 
@@ -8266,21 +8466,28 @@ mod tests {
         }
     }
 
-    #[test]
-    fn psx_blend_sort_far_to_near_orders_by_descending_depth() {
-        // Mixed textured/untextured draws at shuffled depths; the blend pass
-        // must run them far-to-near regardless of list position or kind.
-        let mut order = vec![
-            (false, 0usize, 0u32, 10.0f32),
-            (true, 0, 100, 30.0),
-            (false, 1, 1, 20.0),
-            (true, 1, 101, f32::NAN), // +NaN = farthest under total_cmp
-            (false, 2, 2, 25.0),
-        ];
-        psx_blend::sort_far_to_near(&mut order);
-        let keys: Vec<u32> = order.iter().map(|e| e.2).collect();
-        // +NaN (color 1), 30 (color 0), 25 (tex 2), 20 (tex 1), 10 (tex 0).
-        assert_eq!(keys, vec![101, 100, 2, 1, 0]);
+    /// Per-corner positions for `n` triangles: triangle `k` sits at
+    /// `z = zs[k]` with corners spread in x so its centroid is
+    /// `(1, 0, zs[k])`.
+    fn tri_positions(zs: &[f32]) -> Vec<[f32; 3]> {
+        let mut out = Vec::new();
+        for &z in zs {
+            out.push([0.0, 0.0, z]);
+            out.push([1.0, 0.0, z]);
+            out.push([2.0, 0.0, z]);
+        }
+        out
+    }
+
+    /// MVP whose clip-space `w` row maps `w = z + d` - a minimal
+    /// perspective-like matrix that makes depth keys easy to predict.
+    fn z_to_w_mvp(d: f32) -> Mat4 {
+        Mat4::from_cols(
+            glam::Vec4::new(1.0, 0.0, 0.0, 0.0),
+            glam::Vec4::new(0.0, 1.0, 0.0, 0.0),
+            glam::Vec4::new(0.0, 0.0, 1.0, 1.0),
+            glam::Vec4::new(0.0, 0.0, 0.0, d),
+        )
     }
 
     #[test]
@@ -8293,7 +8500,8 @@ mod tests {
             cba_tsb.extend_from_slice(&[[0u16, tsb]; 3]);
         }
         let indices: Vec<u32> = (0..12).collect();
-        let (out, ranges) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        let positions = tri_positions(&[1.0, 2.0, 3.0, 4.0]);
+        let (out, ranges, prims) = psx_blend::append_semi_tail(&indices, &cba_tsb, &positions);
         // Original indices untouched at the front (the opaque pass range).
         assert_eq!(&out[..12], indices.as_slice());
         // Tail: 3 semi triangles bucketed per ABR mode, mode 1 empty.
@@ -8305,15 +8513,260 @@ mod tests {
         assert_eq!(&out[15..18], &[6, 7, 8]);
         assert_eq!(&out[18..21], &[9, 10, 11]);
         assert_eq!(out.len(), 21);
+        // Per-prim metadata: original mesh order (not bucket order), each
+        // pointing at its slot in the mode tail, centroid = corner average.
+        assert_eq!(
+            prims,
+            vec![
+                psx_blend::SemiPrim {
+                    centroid: [1.0, 0.0, 2.0],
+                    mode: 0,
+                    first_index: 12,
+                },
+                psx_blend::SemiPrim {
+                    centroid: [1.0, 0.0, 3.0],
+                    mode: 2,
+                    first_index: 15,
+                },
+                psx_blend::SemiPrim {
+                    centroid: [1.0, 0.0, 4.0],
+                    mode: 3,
+                    first_index: 18,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn psx_blend_append_semi_tail_same_mode_prims_get_distinct_tail_slots() {
+        // 3 semi prims all on ABR mode 0: their tail triangles must land at
+        // consecutive first_index slots (12, 15, 18), in mesh order.
+        let semi = psx_blend::TSB_SEMI_TRANSPARENT_BIT;
+        let cba_tsb = vec![[0u16, semi]; 9];
+        let indices: Vec<u32> = (0..9).collect();
+        let positions = tri_positions(&[5.0, 6.0, 7.0]);
+        let (out, ranges, prims) = psx_blend::append_semi_tail(&indices, &cba_tsb, &positions);
+        assert_eq!(out.len(), 18);
+        assert_eq!(ranges[0], (9, 9));
+        let firsts: Vec<u32> = prims.iter().map(|p| p.first_index).collect();
+        assert_eq!(firsts, vec![9, 12, 15]);
+        let zs: Vec<f32> = prims.iter().map(|p| p.centroid[2]).collect();
+        assert_eq!(zs, vec![5.0, 6.0, 7.0]);
+        // Each prim's tail slot holds its own triangle's indices.
+        assert_eq!(&out[9..12], &[0, 1, 2]);
+        assert_eq!(&out[12..15], &[3, 4, 5]);
+        assert_eq!(&out[15..18], &[6, 7, 8]);
     }
 
     #[test]
     fn psx_blend_append_semi_tail_all_opaque_is_identity() {
         let cba_tsb = vec![[0u16, 0x001Au16]; 6];
         let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5];
-        let (out, ranges) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        let positions = tri_positions(&[1.0, 2.0]);
+        let (out, ranges, prims) = psx_blend::append_semi_tail(&indices, &cba_tsb, &positions);
         assert_eq!(out, indices);
         assert_eq!(ranges, [(6, 0); 4]);
+        assert!(prims.is_empty());
+    }
+
+    /// The per-prim depth key must follow the renderer's existing depth
+    /// convention: the clip-space `w` of a point under the draw MVP. For
+    /// the model origin that is exactly `mvp.w_axis.w` (the old per-draw
+    /// key), and by linearity the centroid's key equals the average of the
+    /// corner keys (PSX OT avg-Z binning).
+    #[test]
+    fn psx_blend_prim_depth_key_matches_origin_and_vertex_average() {
+        let mvp = Mat4::from_cols(
+            glam::Vec4::new(0.5, 1.0, -2.0, 0.25),
+            glam::Vec4::new(3.0, -1.5, 0.5, -1.0),
+            glam::Vec4::new(0.0, 2.0, 1.0, 4.0),
+            glam::Vec4::new(7.0, -3.0, 2.0, 11.0),
+        );
+        // Origin key = w_axis.w, the previous per-draw ordering key.
+        assert_eq!(psx_blend::prim_depth_key(&mvp, [0.0; 3]), mvp.w_axis.w);
+        let corners = [[1.0f32, 2.0, 3.0], [-4.0, 0.5, 2.0], [6.0, -1.0, 7.0]];
+        let centroid = [
+            (corners[0][0] + corners[1][0] + corners[2][0]) / 3.0,
+            (corners[0][1] + corners[1][1] + corners[2][1]) / 3.0,
+            (corners[0][2] + corners[1][2] + corners[2][2]) / 3.0,
+        ];
+        let avg_of_keys = corners
+            .iter()
+            .map(|&c| {
+                let v = mvp * glam::Vec4::new(c[0], c[1], c[2], 1.0);
+                v.w
+            })
+            .sum::<f32>()
+            / 3.0;
+        let key = psx_blend::prim_depth_key(&mvp, centroid);
+        assert!(
+            (key - avg_of_keys).abs() < 1e-4,
+            "centroid key {key} != avg of corner keys {avg_of_keys}"
+        );
+        // And the key really is the clip w of the centroid.
+        let clip = mvp * glam::Vec4::new(centroid[0], centroid[1], centroid[2], 1.0);
+        assert!((key - clip.w).abs() < 1e-5);
+    }
+
+    /// Two overlapping draws whose semi prims interleave in depth: the
+    /// sorted blend list must be globally back-to-front per PRIM, an order
+    /// no per-draw sort can produce.
+    #[test]
+    fn psx_blend_list_orders_prims_back_to_front_across_draws() {
+        let semi = psx_blend::TSB_SEMI_TRANSPARENT_BIT;
+        // Draw A (textured): two mode-0 semi prims at view depths 5 and 25.
+        let cba_tsb = vec![[0u16, semi]; 6];
+        let idx: Vec<u32> = (0..6).collect();
+        let (_, _, prims_a) =
+            psx_blend::append_semi_tail(&idx, &cba_tsb, &tri_positions(&[5.0, 25.0]));
+        // Draw B (untextured): two mode-0 semi prims at view depths 11
+        // and 19 - interleaving with A's.
+        let blend = vec![psx_blend::pack_blend_word(true, 0); 6];
+        let (_, _, prims_b) =
+            psx_blend::append_semi_tail_words(&idx, &blend, &tri_positions(&[11.0, 19.0]));
+        let mvp = z_to_w_mvp(0.0);
+        let mut list = Vec::new();
+        psx_blend::push_draw_prims(&mut list, false, 0, &mvp, &prims_a);
+        psx_blend::push_draw_prims(&mut list, true, 1, &mvp, &prims_b);
+        psx_blend::sort_blend_list(&mut list);
+        // Globally far-to-near: 25 (A), 19 (B), 11 (B), 5 (A).
+        let got: Vec<(bool, u32, f32)> = list
+            .iter()
+            .map(|e| (e.untextured, e.draw_index, e.key))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (false, 0, 25.0),
+                (true, 1, 19.0),
+                (true, 1, 11.0),
+                (false, 0, 5.0),
+            ]
+        );
+        // Keys are strictly non-increasing = back-to-front per prim.
+        assert!(list.windows(2).all(|w| w[0].key >= w[1].key));
+        // A per-draw key (the draw origin, w_axis.w = 0 for both) could
+        // never interleave these - the per-prim keys are what separate them.
+        // NaN keys still sort deterministically (farthest first).
+        let mut with_nan = list.clone();
+        with_nan.push(psx_blend::BlendListEntry {
+            key: f32::NAN,
+            seq: 99,
+            untextured: false,
+            draw_index: 7,
+            mode: 0,
+            first_index: 0,
+        });
+        psx_blend::sort_blend_list(&mut with_nan);
+        assert_eq!(with_nan[0].draw_index, 7);
+    }
+
+    /// Equal depth keys = one ordering-table bucket. Retail OT buckets are
+    /// LIFO (`AddPrim` prepends, `DrawOTag` walks head-first), so within a
+    /// bucket later-submitted prims draw FIRST.
+    #[test]
+    fn psx_blend_list_equal_depth_bucket_is_lifo() {
+        let semi = psx_blend::TSB_SEMI_TRANSPARENT_BIT;
+        let cba_tsb = vec![[0u16, semi]; 6];
+        let idx: Vec<u32> = (0..6).collect();
+        // Both draws' prims all sit at the same depth (z = 8).
+        let (_, _, prims) =
+            psx_blend::append_semi_tail(&idx, &cba_tsb, &tri_positions(&[8.0, 8.0]));
+        let mvp = z_to_w_mvp(0.0);
+        let mut list = Vec::new();
+        psx_blend::push_draw_prims(&mut list, false, 0, &mvp, &prims);
+        psx_blend::push_draw_prims(&mut list, false, 1, &mvp, &prims);
+        psx_blend::sort_blend_list(&mut list);
+        // 4 entries, all key 8: submission order was seq 0,1 (draw 0) then
+        // seq 2,3 (draw 1); LIFO draws seq 3,2,1,0.
+        let seqs: Vec<u32> = list.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, vec![3, 2, 1, 0]);
+        let draws: Vec<u32> = list.iter().map(|e| e.draw_index).collect();
+        assert_eq!(draws, vec![1, 1, 0, 0]);
+    }
+
+    /// Sorted-run coalescing: consecutive entries from the same draw +
+    /// mode with contiguous tail triangles merge into one indexed draw;
+    /// any change of draw, mode, or contiguity splits the run.
+    #[test]
+    fn psx_blend_coalesce_merges_contiguous_tail_runs() {
+        let semi = psx_blend::TSB_SEMI_TRANSPARENT_BIT;
+        // One draw, 3 mode-0 semi prims at strictly descending depth so the
+        // sort keeps tail order and the runs stay contiguous, plus a
+        // mode-2 prim in between depths that splits the run.
+        let cba_tsb = vec![
+            [0u16, semi],
+            [0, semi],
+            [0, semi],
+            [0, semi],
+            [0, semi],
+            [0, semi],
+            [0, semi | (2 << 5)],
+            [0, semi | (2 << 5)],
+            [0, semi | (2 << 5)],
+            [0, semi],
+            [0, semi],
+            [0, semi],
+        ];
+        let idx: Vec<u32> = (0..12).collect();
+        // Depths: 40, 30, (mode 2) 20, 10.
+        let (_, ranges, prims) =
+            psx_blend::append_semi_tail(&idx, &cba_tsb, &tri_positions(&[40.0, 30.0, 20.0, 10.0]));
+        // Mode-0 tail holds prims 0,1,3; mode-2 tail holds prim 2.
+        assert_eq!(ranges[0], (12, 9));
+        assert_eq!(ranges[2], (21, 3));
+        let mvp = z_to_w_mvp(0.0);
+        let mut list = Vec::new();
+        psx_blend::push_draw_prims(&mut list, false, 0, &mvp, &prims);
+        psx_blend::sort_blend_list(&mut list);
+        let mut runs: Vec<(u8, u32, u32)> = Vec::new();
+        psx_blend::coalesce_sorted(&list, |head, start, count| {
+            runs.push((head.mode, start, count));
+        });
+        // 40 + 30 are contiguous mode-0 tail slots (12, 15) -> one run of
+        // 6 indices; then the mode-2 prim at 20 (tail 21); then the last
+        // mode-0 prim at 10 (tail 18, not contiguous with the first run).
+        assert_eq!(runs, vec![(0, 12, 6), (2, 21, 3), (0, 18, 3)]);
+    }
+
+    /// Coalescing never merges across draw boundaries even when tail
+    /// indices happen to line up.
+    #[test]
+    fn psx_blend_coalesce_splits_on_draw_change() {
+        let entries = [
+            psx_blend::BlendListEntry {
+                key: 9.0,
+                seq: 0,
+                untextured: false,
+                draw_index: 0,
+                mode: 0,
+                first_index: 12,
+            },
+            psx_blend::BlendListEntry {
+                key: 8.0,
+                seq: 1,
+                untextured: false,
+                draw_index: 1,
+                mode: 0,
+                first_index: 15,
+            },
+            psx_blend::BlendListEntry {
+                key: 7.0,
+                seq: 2,
+                untextured: true,
+                draw_index: 1,
+                mode: 0,
+                first_index: 18,
+            },
+        ];
+        let mut runs = Vec::new();
+        psx_blend::coalesce_sorted(&entries, |head, start, count| {
+            runs.push((head.untextured, head.draw_index, start, count));
+        });
+        assert_eq!(
+            runs,
+            vec![(false, 0, 12, 3), (false, 1, 15, 3), (true, 1, 18, 3)]
+        );
     }
 
     /// `pack_blend_word` must round-trip through the extractors the blend
@@ -8346,7 +8799,8 @@ mod tests {
             blend.extend_from_slice(&[psx_blend::pack_blend_word(abe, abr); 3]);
         }
         let indices: Vec<u32> = (0..12).collect();
-        let (out, ranges) = psx_blend::append_semi_tail_words(&indices, &blend);
+        let positions = tri_positions(&[1.0, 2.0, 3.0, 4.0]);
+        let (out, ranges, prims) = psx_blend::append_semi_tail_words(&indices, &blend, &positions);
         // Original indices untouched at the front (the opaque pass range).
         assert_eq!(&out[..12], indices.as_slice());
         assert_eq!(ranges[0], (12, 3));
@@ -8359,17 +8813,21 @@ mod tests {
 
         // Cross-check against the textured-path partitioner on the same data.
         let cba_tsb: Vec<[u16; 2]> = blend.iter().map(|&w| [0u16, w]).collect();
-        let (out_tsb, ranges_tsb) = psx_blend::append_semi_tail(&indices, &cba_tsb);
+        let (out_tsb, ranges_tsb, prims_tsb) =
+            psx_blend::append_semi_tail(&indices, &cba_tsb, &positions);
         assert_eq!(out, out_tsb);
         assert_eq!(ranges, ranges_tsb);
+        assert_eq!(prims, prims_tsb);
     }
 
     #[test]
     fn psx_blend_append_semi_tail_words_all_opaque_is_identity() {
         let blend = vec![psx_blend::pack_blend_word(false, 1); 6];
         let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5];
-        let (out, ranges) = psx_blend::append_semi_tail_words(&indices, &blend);
+        let positions = tri_positions(&[1.0, 2.0]);
+        let (out, ranges, prims) = psx_blend::append_semi_tail_words(&indices, &blend, &positions);
         assert_eq!(out, indices);
         assert_eq!(ranges, [(6, 0); 4]);
+        assert!(prims.is_empty());
     }
 }

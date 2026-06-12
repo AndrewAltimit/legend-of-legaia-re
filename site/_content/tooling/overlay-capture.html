@@ -27,7 +27,7 @@
 <td>Title screen</td>
 <td>✓</td>
 <td><code>overlay_title.bin</code></td>
-<td>Actor / sprite VM (<code>FUN_801D6628</code>); title-overlay tick <code>FUN_801DD35C</code> (pinned via watchpoint on the title-attract countdown at <code>0x801EF16C</code> &mdash; decrement instruction at <code>0x801DDCCC</code>, see <a href="../subsystems/boot.html#tick-function">boot &mdash; tick function</a>). Captured live via <code>scripts/pcsx-redux/autorun_countdown_trigger.lua</code> against a save state at the title screen; sidecar <code>.screen</code> blob is a PNG-decodable framebuffer of the live title (<code>scripts/pcsx-redux/decode_pcsx_screen.py</code>).</td>
+<td>Actor / sprite VM (<code>FUN_801D6628</code>); title-overlay tick <code>FUN_801DD35C</code> (pinned via watchpoint on the title-attract countdown at <code>0x801EF16C</code> &mdash; decrement instruction at <code>0x801DDCCC</code>, see <a href="../subsystems/boot.html#title-overlay-state">boot &mdash; tick function</a>). Captured live via <code>scripts/pcsx-redux/autorun_countdown_trigger.lua</code> against a save state at the title screen; sidecar <code>.screen</code> blob is a PNG-decodable framebuffer of the live title (<code>scripts/pcsx-redux/decode_pcsx_screen.py</code>).</td>
 </tr>
 <tr>
 <td>Town / field / dialog / inventory (<code>0897</code>)</td>
@@ -190,7 +190,7 @@ for off in range(0, len(data) - 32, 4):
   <ul class="bullets">
     <li>The captured <code>captures/boot_walk/snap_vsync_0300.bin</code> (full 2 MiB main RAM, taken during the publisher-logo phase) contains four TIMs at <code>0x801D09DC</code>, <code>0x801DBBFC</code>, <code>0x801E761C</code>, <code>0x801EB65C</code>.</li>
     <li>Visual decode: PROKION, Contrail "A Contrail Production", "Sony Computer Entertainment America Presents", and the WARNING screen.</li>
-    <li>All four CLUT fingerprints match <code>0895_bat_back_dat.BIN</code> at well-separated offsets - PROT 0895 is the boot <code>init.pak</code> bundle (the <code>bat_back_dat</code> filename label is the <a href="../formats/cdname.html#numbering-space">+2 numbering shift</a>; the dev name truly covers the battle side-band files at extraction 893/894). Documented in <a href="../subsystems/boot.html#boot-initpak-prot-0895">boot &mdash; boot init.pak</a>.</li>
+    <li>All four CLUT fingerprints match <code>0895_bat_back_dat.BIN</code> at well-separated offsets - PROT 0895 is the boot <code>init.pak</code> bundle (the <code>bat_back_dat</code> filename label is the <a href="../formats/cdname.html#numbering-space">+2 numbering shift</a>; the dev name truly covers the battle side-band files at extraction 893/894). Documented in <a href="../subsystems/boot.html#init-pak-publisher-logos">boot &mdash; boot init.pak</a>.</li>
   </ul>
   <p>The same method should work for any other transient TIM (battle backgrounds, menu chrome, world-map terrain textures) provided the source PROT entry stores the TIM uncompressed. LZS-compressed sources won't match by direct byte search - either decompress them first or use a different signature (e.g. the rendered pixel histogram or framebuffer-area VRAM coords).</p>
 </section>
