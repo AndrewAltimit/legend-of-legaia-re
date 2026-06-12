@@ -73,6 +73,49 @@ pub fn packet_length(buf: &[u8]) -> usize {
     count
 }
 
+/// Locate the `nth` occurrence of `delimiter` in a glyph string, returning
+/// the byte offset reached when it is found.
+///
+/// Ported from `FUN_8003CBF8` (see `ghidra/scripts/funcs/8003cbf8.txt`), the
+/// delimiter-counting sibling of [`packet_length`]: the walk uses the same
+/// two-byte `0xC0`-nibble escape stride (the escape's second byte is skipped
+/// without being tested as a delimiter, but still counts toward the offset),
+/// and the string terminates on a NUL. `nth` is 1-based, matching the retail
+/// down-counter. Returns `None` when fewer than `nth` delimiters occur (the
+/// original returns `0` and latches a debug error code when the dev flag is
+/// set; the error path has no engine meaning).
+// PORT: FUN_8003CBF8
+pub fn delimited_field_offset(buf: &[u8], delimiter: u8, nth: u32) -> Option<usize> {
+    if nth == 0 {
+        // Retail would underflow its down-counter and walk to the
+        // terminator; never a match.
+        return None;
+    }
+    let mut remaining = nth;
+    let mut off = 0usize;
+    let mut i = 0usize;
+    while i < buf.len() {
+        let b = buf[i];
+        if b == 0 {
+            break;
+        }
+        if b == delimiter {
+            remaining -= 1;
+            if remaining == 0 {
+                return Some(off);
+            }
+        }
+        if (b & 0xF0) == 0xC0 {
+            // Escape pair - skip the operand byte (never delimiter-tested).
+            i += 1;
+            off += 1;
+        }
+        i += 1;
+        off += 1;
+    }
+    None
+}
+
 /// A decoded instruction.
 #[derive(Debug, Clone)]
 pub struct Insn {
@@ -1905,6 +1948,35 @@ mod tests {
         // 0xC1 is an escape lead - the next byte is consumed unconditionally.
         let buf = [0xC1, 0xAB, 0x00];
         assert_eq!(packet_length(&buf), 2);
+    }
+
+    #[test]
+    fn delimited_field_offset_finds_nth_delimiter() {
+        // Delimiter 0x2A at offsets 1 and 3.
+        let buf = [0x40, 0x2A, 0x41, 0x2A, 0x42, 0x00];
+        assert_eq!(delimited_field_offset(&buf, 0x2A, 1), Some(1));
+        assert_eq!(delimited_field_offset(&buf, 0x2A, 2), Some(3));
+        assert_eq!(delimited_field_offset(&buf, 0x2A, 3), None);
+    }
+
+    #[test]
+    fn delimited_field_offset_skips_escape_operands() {
+        // The escape pair's operand byte equals the delimiter but is never
+        // tested; it still advances the returned offset by one.
+        let buf = [0xC1, 0x2A, 0x40, 0x2A, 0x00];
+        assert_eq!(delimited_field_offset(&buf, 0x2A, 1), Some(3));
+    }
+
+    #[test]
+    fn delimited_field_offset_zero_nth_never_matches() {
+        let buf = [0x2A, 0x00];
+        assert_eq!(delimited_field_offset(&buf, 0x2A, 0), None);
+    }
+
+    #[test]
+    fn delimited_field_offset_terminates_on_nul() {
+        let buf = [0x40, 0x00, 0x2A];
+        assert_eq!(delimited_field_offset(&buf, 0x2A, 1), None);
     }
 
     #[test]
