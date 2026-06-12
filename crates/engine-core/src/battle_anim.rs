@@ -40,6 +40,11 @@ pub struct MonsterAnimPlayer {
     frames: Vec<Vec<PartPose>>,
     frame_count: u32,
     part_count: usize,
+    /// The clip's `action_id` (the action-table slot for player files /
+    /// archive entry index for monsters), retained so per-frame consumers —
+    /// the facial animator looks up the playing entry's face tracks by it —
+    /// can identify the clip without holding the `MonsterAnimation`.
+    action_id: u8,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
     /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
@@ -79,6 +84,7 @@ impl MonsterAnimPlayer {
             frames: anim.frames.clone(),
             frame_count: anim.frame_count as u32,
             part_count: anim.part_count,
+            action_id: anim.action_id,
             phase: 0,
             step: step_for_rate(anim.rate),
             looping: true,
@@ -105,6 +111,20 @@ impl MonsterAnimPlayer {
     /// Number of animated parts (= TMD objects the pose addresses).
     pub fn part_count(&self) -> usize {
         self.part_count
+    }
+
+    /// The playing clip's `action_id` (see the field docs).
+    pub fn action_id(&self) -> u8 {
+        self.action_id
+    }
+
+    /// Integer keyframe index of the cursor — the value retail's render-node
+    /// update passes to the facial animator as the frame counter
+    /// (`FUN_80047430` hands `FUN_8004C7B4` the node's 12.4 `+0x68` cursor
+    /// shifted to whole keyframes; this player's 8.8 phase shifts the same
+    /// way). The facial tracks' `start`/`end` bytes are in these units.
+    pub fn current_frame(&self) -> i16 {
+        (self.phase >> PHASE_FRAC_BITS) as i16
     }
 
     /// Reset the loop cursor to the start of the idle clip.

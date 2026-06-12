@@ -433,6 +433,10 @@ pub struct SwingAnimation {
     pub entry_tag: u8,
     /// The decoded keyframe animation. `action_id` is the runtime slot.
     pub anim: crate::monster_archive::MonsterAnimation,
+    /// The entry's facial keyframe tracks (`+0x8C` eyes / `+0x98` mouth),
+    /// consumed by the per-frame facial animator while the swing plays
+    /// (see [`crate::face_anim`]). `None` only for a truncated header.
+    pub face: Option<crate::face_anim::FaceTracks>,
 }
 
 /// Parse the standard `0xAC`-byte action entry at `off` in `block`: action
@@ -504,6 +508,7 @@ pub fn swing_battle_animations(
                 item_id: rec.id,
                 entry_tag,
                 anim,
+                face: crate::face_anim::FaceTracks::from_entry(d, off),
             });
         }
     }
