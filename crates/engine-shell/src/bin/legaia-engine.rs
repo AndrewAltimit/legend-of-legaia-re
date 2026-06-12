@@ -67,7 +67,27 @@ type AssembledPartyMesh = (
     legaia_asset::monster_archive::MonsterAnimation,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
 );
+
+/// Per-party-member battle facial-animation state: the member's per-action
+/// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
+/// clip's `action_id`) plus the last applied stamp set, so the VRAM is only
+/// re-uploaded when the stamped face actually changes. See
+/// `legaia_asset::face_anim` / `tick_battle_face_stamps`.
+struct BattleMemberFace {
+    /// World actor slot (= present-party band ordinal, 0..3).
+    actor_slot: usize,
+    /// Character index (0 Vahn / 1 Noa / 2 Gala; Terra never gets an entry —
+    /// the retail animator skips char 3).
+    char_index: usize,
+    /// Face tracks indexed by action slot (record[0] entries + the
+    /// equipment-spliced swing slots 0xC..0xF).
+    tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    /// Stamp set applied on the previous frame (`None` = nothing applied
+    /// yet, force the first stamp).
+    last_stamps: Option<Vec<legaia_asset::face_anim::FaceStamp>>,
+}
 use legaia_prot::cdname;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -767,6 +787,13 @@ enum Cmd {
         /// face-the-NPC turn) aren't modelled.
         #[arg(long, default_value_t = false)]
         solid_npcs: bool,
+        /// Animate field NPCs: drive each placement's authored walk route
+        /// (its script's `0x4C 0x51` move-to-tile ops) through the motion VM
+        /// so villagers patrol like retail. Off by default (NPCs rest at
+        /// their placement anchors). Pairs well with `--solid-npcs` (the
+        /// moving NPC's collision box follows its live position).
+        #[arg(long, default_value_t = false)]
+        live_npcs: bool,
         /// Route live basic-attack damage through the retail damage finisher
         /// (`FUN_801ddb30`): adds the 9999 cap and the rand-based no-damage
         /// floor on top of the raw roll. Off by default (flat path, 0xFFFF cap,
@@ -1221,6 +1248,7 @@ fn main() -> Result<()> {
             terrain_y,
             edge_collision,
             solid_npcs,
+            live_npcs,
             damage_finish,
             battle_bgm,
         } => cmd_play_window(
@@ -1242,6 +1270,7 @@ fn main() -> Result<()> {
             terrain_y,
             edge_collision,
             solid_npcs,
+            live_npcs,
             damage_finish,
             battle_bgm,
         ),
@@ -2847,6 +2876,7 @@ fn cmd_record(
         false,
         false,
         false,
+        false,
         None,
         Some(RecordTarget {
             out: out.to_path_buf(),
@@ -3792,6 +3822,19 @@ struct PlayWindowApp {
     /// Number of monster texture slots in use this battle (0..=4). A player
     /// summon reuses the next free slot for its creature texture.
     battle_tex_slots_used: u8,
+    /// Per-member battle facial-animation state (face tracks + last stamp
+    /// set), populated by `enter_battle_render` for each assembled party
+    /// member whose band pixels are the real texture-pool uploads. Driven
+    /// per tick by `tick_battle_face_stamps`; cleared on battle exit.
+    battle_faces: Vec<BattleMemberFace>,
+    /// The static SCUS face-frame tables (`legaia_asset::face_anim`),
+    /// lazily read from the boot source's `SCUS_942.54` on first battle
+    /// entry. `None` after a failed attempt (disc-free runs) — facial
+    /// animation is skipped.
+    face_tables: Option<legaia_asset::face_anim::FaceFrameTables>,
+    /// Whether the lazy `face_tables` load already ran (so a missing
+    /// executable is only probed once).
+    face_tables_attempted: bool,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
@@ -6164,6 +6207,12 @@ impl PlayWindowApp {
         let Some(archive) = self.monster_archive_bytes() else {
             return;
         };
+        // Fresh battle: drop any previous battle's facial-animation state
+        // (re-registered per assembled member below) and make sure the
+        // static SCUS face-frame tables are loaded. Done before the
+        // renderer borrow below (both take `&mut self`).
+        self.battle_faces.clear();
+        self.load_face_tables();
         // Build the battle-stage backdrop (the scene's scene_tmd_stream
         // half-dome). Its VRAM (scene + stage-dome textures resident) becomes
         // the battle base, so the dome renders textured behind the actors;
@@ -6407,12 +6456,15 @@ impl PlayWindowApp {
                 let mut art_bank: Option<
                     Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
                 > = None;
-                if let Some((asm, uploads, idle, clips, bank)) =
+                let mut face_tracks: Option<Vec<Option<legaia_asset::face_anim::FaceTracks>>> =
+                    None;
+                if let Some((asm, uploads, idle, clips, bank, faces)) =
                     self.assembled_party_battle_mesh(cslot, member)
                 {
                     tex_uploads = uploads;
                     action_clips = Some(clips);
                     art_bank = Some(bank);
+                    face_tracks = Some(faces);
                     match legaia_tmd::parse(&asm.tmd) {
                         Ok(tmd) => source = Some((tmd, asm.tmd, Some(idle))),
                         Err(e) => log::warn!(
@@ -6598,6 +6650,28 @@ impl PlayWindowApp {
                                 .world
                                 .set_actor_battle_art_bank(member, std::sync::Arc::new(bank));
                         }
+                        // Facial animation (FUN_8004C7B4): register the
+                        // member's per-action face tracks so the per-tick
+                        // stamp pass (`tick_battle_face_stamps`) re-stamps
+                        // the current eye/mouth frame onto the band's live
+                        // face rows. Only meaningful when the band holds
+                        // the REAL texture-pool pixels (the face-frame
+                        // strip the stamps copy from); the retail animator
+                        // covers chars 0..2 (Terra is skipped) on bands
+                        // 0..2.
+                        if assembled
+                            && !tex_uploads.is_empty()
+                            && cslot < legaia_asset::face_anim::FACE_CHAR_COUNT
+                            && member < legaia_asset::face_anim::FACE_SLOT_COUNT
+                            && let Some(tracks) = face_tracks.take()
+                        {
+                            self.battle_faces.push(BattleMemberFace {
+                                actor_slot: member,
+                                char_index: cslot,
+                                tracks,
+                                last_stamps: None,
+                            });
+                        }
                         party_bound += 1;
                     }
                     Err(e) => log::warn!("play-window: party {cslot} mesh upload: {e:#}"),
@@ -6724,6 +6798,18 @@ impl PlayWindowApp {
         // (ready / recover / defeat one-shots over the idle loop).
         let mut clips: Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> =
             vec![None; legaia_asset::battle_char_assembly::ACTION_SLOT_COUNT];
+        // Per-action facial keyframe tracks (entry +0x8C eyes / +0x98
+        // mouth), keyed like `clips` by the playing clip's action_id; the
+        // per-frame facial animator (`tick_battle_face_stamps`) looks the
+        // playing clip's tracks up here. Record[0] entries first, the
+        // equipment-spliced swing entries' tracks land on slots 0xC..0xF
+        // in the swing loop below.
+        let mut faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+            vec![None; legaia_asset::battle_char_assembly::ACTION_SLOT_COUNT];
+        match legaia_asset::face_anim::battle_face_tracks(&raw) {
+            Ok(t) => faces = t,
+            Err(e) => log::warn!("play-window: party {cslot} face-track decode: {e:#}"),
+        }
         match legaia_asset::battle_char_assembly::battle_animations(&raw) {
             Ok(anims) => {
                 for a in &anims {
@@ -6753,6 +6839,9 @@ impl PlayWindowApp {
                             ),
                         );
                     }
+                    if let Some(face) = faces.get_mut(s.slot as usize) {
+                        *face = s.face;
+                    }
                 }
             }
             Err(e) => log::warn!("play-window: party {cslot} swing decode: {e:#}"),
@@ -6763,7 +6852,7 @@ impl PlayWindowApp {
         // records). The staged-anim commit materializes bank record
         // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
         let art_bank = self.party_art_bank(&raw, cslot, &asm.anm_bones);
-        Some((asm, uploads, idle, clips, art_bank))
+        Some((asm, uploads, idle, clips, art_bank, faces))
     }
 
     /// Decode one character's art-animation bank into commit-ready clips
@@ -6890,6 +6979,10 @@ impl PlayWindowApp {
             }
             Err(e) => log::error!("play-window: summon VRAM re-upload: {e:#}"),
         }
+        // Keep the stashed battle VRAM in sync with what's now resident, so
+        // later battle-VRAM refreshes (the residency heal, the per-frame
+        // face stamps) don't drop the injected summon texture.
+        self.battle_vram = Some(vram);
 
         // Seat the summon in a free high actor slot (>= 8) so it never collides
         // with the party/monster battle slots. Place it on the party side
@@ -6951,6 +7044,117 @@ impl PlayWindowApp {
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
         self.battle_ground_mesh = None;
+        self.battle_faces.clear();
+    }
+
+    /// Lazily read the static face-frame tables out of the boot source's
+    /// `SCUS_942.54` (`legaia_asset::face_anim::FaceFrameTables`). A failed
+    /// attempt (disc-free run / unparsable executable) is remembered so the
+    /// probe only runs once; facial animation is simply skipped then.
+    fn load_face_tables(&mut self) {
+        if self.face_tables_attempted {
+            return;
+        }
+        self.face_tables_attempted = true;
+        use legaia_engine_core::Vfs;
+        let scus = if let Some(root) = self.extracted_root.as_deref() {
+            legaia_engine_core::DirVfs::new(root)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else if let Some(disc) = self.disc_path.as_deref() {
+            legaia_engine_core::DiscVfs::open(disc)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else {
+            None
+        };
+        self.face_tables = scus
+            .as_deref()
+            .and_then(legaia_asset::face_anim::FaceFrameTables::from_scus);
+        if self.face_tables.is_none() {
+            log::info!(
+                "play-window: SCUS face-frame tables unavailable - battle faces stay neutral"
+            );
+        }
+    }
+
+    /// Per-tick battle facial animation: re-stamp each registered party
+    /// member's current eye + mouth face frame onto the band's live face
+    /// rows, exactly like the retail per-frame animator. The playing clip's
+    /// `action_id` selects the member's face tracks, its integer keyframe
+    /// cursor is the frame counter, and the selected frames are VRAM-to-VRAM
+    /// copies from the band's face-frame strip (`Vram::move_image`, the
+    /// `MoveImage` stamp). The GPU texture is only re-uploaded on a frame
+    /// whose stamp set differs from the previous one (retail re-issues
+    /// identical `MoveImage`s every frame; the visible result is the same).
+    // PORT: FUN_80047430 (facial-animator dispatch): per visible party
+    // node, call the stamp pass with (band slot, char index, cursor
+    // keyframes, playing action entry), skipping char 3 (Terra) and bands
+    // >= 3. The stamp-selection half is `FaceFrameTables::stamps`
+    // (PORT: FUN_8004C7B4 in legaia_asset::face_anim).
+    fn tick_battle_face_stamps(&mut self) {
+        if self.session.host.world.mode != SceneMode::Battle || self.battle_faces.is_empty() {
+            return;
+        }
+        let Some(tables) = self.face_tables.as_ref() else {
+            return;
+        };
+        let Some(vram) = self.battle_vram.as_mut() else {
+            return;
+        };
+        let mut changed = false;
+        for mf in &mut self.battle_faces {
+            let Some(actor) = self.session.host.world.actors.get(mf.actor_slot) else {
+                continue;
+            };
+            // No player yet = the rest pose: behaves like clip frame 0 of
+            // the (track-less) idle, i.e. the neutral face.
+            let (action_id, frame) = actor
+                .battle_animation
+                .as_ref()
+                .map(|p| (p.action_id(), p.current_frame()))
+                .unwrap_or((0, 0));
+            let tracks = mf.tracks.get(action_id as usize).and_then(|t| t.as_ref());
+            // The retail mouth-neutral gate: character-record word `+0xF8`
+            // bit 0x2000 = ability bitfield (`+0xF4`) bit 45 (passive 0x2D
+            // Rage, Evil Medallion). Read it off the occupying character's
+            // rebuilt ability bytes (byte 5 bit 0x20).
+            let world = &self.session.host.world;
+            let force_neutral_mouth = world
+                .roster
+                .members
+                .get(world.party_roster_slot(mf.actor_slot))
+                .map(|m| m.ability_bits()[5] & 0x20 != 0)
+                .unwrap_or(false);
+            let stamps = tables.stamps(
+                mf.char_index,
+                mf.actor_slot,
+                tracks,
+                frame,
+                force_neutral_mouth,
+            );
+            if mf.last_stamps.as_deref() != Some(&stamps) {
+                for s in &stamps {
+                    vram.move_image(s.src_x, s.src_y, s.w, s.h, s.dst_x, s.dst_y);
+                }
+                mf.last_stamps = Some(stamps);
+                changed = true;
+            }
+        }
+        if !changed {
+            return;
+        }
+        if let (Some(r), Some(vram)) = (self.win.renderer.as_ref(), self.battle_vram.as_ref()) {
+            match r.upload_vram(vram) {
+                Ok(v) => {
+                    // A face re-stamp is a legitimate battle-VRAM refresh:
+                    // move the expected resident generation along with it.
+                    self.battle_vram_generation = Some(v.generation());
+                    self.uploaded_vram = Some(v);
+                }
+                Err(e) => log::error!("play-window: face-stamp VRAM re-upload: {e:#}"),
+            }
+        }
     }
 
     /// Residency guard: while a battle texture is expected to be GPU-resident,
@@ -8671,6 +8875,10 @@ impl ApplicationHandler for PlayWindowApp {
                     // deforms the mesh via the rigid `posed_rot` builder).
                     if self.session.host.world.mode == SceneMode::Battle {
                         self.session.host.world.tick_battle_animations();
+                        // ...and re-stamp the party's eye/mouth face frames
+                        // from the playing clips' facial tracks (the retail
+                        // per-frame facial animator).
+                        self.tick_battle_face_stamps();
                     }
                     // World-map ocean shimmer: cycle the 13-frame CLUT animation
                     // (self-gates to None off the world map).
@@ -9820,6 +10028,7 @@ fn cmd_play_window(
     terrain_y: bool,
     edge_collision: bool,
     solid_npcs: bool,
+    live_npcs: bool,
     damage_finish: bool,
     battle_bgm: Option<u16>,
 ) -> Result<()> {
@@ -9842,6 +10051,7 @@ fn cmd_play_window(
         terrain_y,
         edge_collision,
         solid_npcs,
+        live_npcs,
         damage_finish,
         battle_bgm,
         None,
@@ -9868,6 +10078,7 @@ fn cmd_play_window_with_record(
     terrain_y: bool,
     edge_collision: bool,
     solid_npcs: bool,
+    live_npcs: bool,
     damage_finish: bool,
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
@@ -9938,6 +10149,9 @@ fn cmd_play_window_with_record(
     // `DAT_801f2214` standoff). Off by default → candidate-centre test.
     session.host.world.leading_edge_wall_probes = edge_collision;
     session.host.world.solid_field_npcs = solid_npcs;
+    // Opt-in: walk field NPCs along their MAN-authored routes through the
+    // motion VM. Off by default -> NPCs rest at their placement anchors.
+    session.host.world.animate_field_npcs = live_npcs;
     // Opt-in: route live basic-attack damage through the retail damage
     // finisher (9999 cap + no-damage floor). Off by default → flat path.
     session.host.world.use_damage_finish = damage_finish;
@@ -10321,6 +10535,9 @@ fn cmd_play_window_with_record(
         battle_vram: None,
         battle_vram_generation: None,
         battle_tex_slots_used: 0,
+        battle_faces: Vec::new(),
+        face_tables: None,
+        face_tables_attempted: false,
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_ground_mesh: None,
