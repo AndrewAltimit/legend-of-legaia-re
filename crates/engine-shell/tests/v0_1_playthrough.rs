@@ -321,9 +321,12 @@ fn v0_1_oracle_convergence() {
         );
         return;
     };
-    // Prefer the immutable library backup over the wipe-prone live slot.
-    let Ok(save_path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
-        eprintln!("[skip] scenario {scenario_label:?}: save path resolution failed");
+    // Immutable library backups only - never the wipe-prone live slot.
+    let Some(save_path) = library_dir()
+        .as_deref()
+        .and_then(|lib| manifest.library_save_path(scn, lib))
+    else {
+        eprintln!("[skip] scenario {scenario_label:?}: no mednafen library backup");
         return;
     };
     if !save_path.exists() {
@@ -650,7 +653,10 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
             return;
         };
-        let Ok(path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
+        let Some(path) = library_dir()
+            .as_deref()
+            .and_then(|lib| manifest.library_save_path(scn, lib))
+        else {
             return;
         };
         if !path.exists() {
@@ -961,7 +967,9 @@ fn v0_1_battle_leg_mode_trace_matches_expected() {
             .scenarios
             .iter()
             .find(|s| s.label.as_str() == "v0_1_battle_loading_tetsu")
-            && let Ok(save) = manifest.mednafen_save_path(scn, library_dir().as_deref())
+            && let Some(save) = library_dir()
+                .as_deref()
+                .and_then(|lib| manifest.library_save_path(scn, lib))
             && save.exists()
         {
             let retail = load_runtime_mode_trace_from_save(&save)

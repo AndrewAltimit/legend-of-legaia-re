@@ -2607,6 +2607,39 @@ pub fn effect_texture_image_rects(index: &ProtIndex) -> Result<Vec<(u16, u16, u1
     Ok(rects)
 }
 
+/// VRAM image rects `(fb_x, fb_y, width_in_words, height)` of every TIM a
+/// CDNAME block carries, via the same scanner the scene VRAM build uses.
+///
+/// Sibling of [`effect_texture_image_rects`] for the **shared-block** upload
+/// set ([`crate::scene_resources::FIELD_SHARED_BLOCKS`]): `init_data`'s UI
+/// tile pages at `fb=(704, 0)` / `fb=(704, 256)` are *journey-dependent*
+/// residency, not per-scene texture - an overworld transit leaves kingdom-
+/// bundle content over parts of the rect, so a field scene reached through
+/// the world map holds kingdom bytes there while a boot-fresh scene holds
+/// the disc tiles. A per-scene static mask misclassifies those words as
+/// static whenever a scene's captures share route history; the VRAM parity
+/// oracle pools captures across all scenes against these rects instead.
+pub fn block_image_rects(index: &ProtIndex, block: &str) -> Result<Vec<(u16, u16, u16, u16)>> {
+    let scene = Scene::load(index, block)?;
+    let mut rects = Vec::new();
+    for entry in &scene.entries {
+        let scan = legaia_asset::tim_scan::scan_entry(&entry.bytes);
+        for (source, hit) in &scan.hits {
+            let payload: &[u8] = match source {
+                legaia_asset::tim_scan::Source::Raw => &entry.bytes,
+                legaia_asset::tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
+            };
+            if let Some(slice) = payload.get(hit.offset..)
+                && let Ok(tim) = legaia_tim::parse(slice)
+            {
+                let img = &tim.image;
+                rects.push((img.fb_x, img.fb_y, img.fb_w, img.h));
+            }
+        }
+    }
+    Ok(rects)
+}
+
 /// Upload the battle effect-texture atlas (PROT 870, the "flame atlas") into
 /// `vram`. These three 64x256 4bpp TIMs (pages at `(320,0)`, `(384,0)`,
 /// `(448,0)`, CLUTs in rows 474..=476) are the texel source for the

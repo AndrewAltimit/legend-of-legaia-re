@@ -116,7 +116,10 @@ fn pcm_oracle_all_scenarios_engine_not_silent_when_retail_audible() {
         let Some(scene_name) = scn.expected_active_scene.as_deref() else {
             continue;
         };
-        let Ok(save_path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
+        let Some(save_path) = library_dir()
+            .as_deref()
+            .and_then(|lib| manifest.library_save_path(scn, lib))
+        else {
             continue;
         };
         if !save_path.exists() {

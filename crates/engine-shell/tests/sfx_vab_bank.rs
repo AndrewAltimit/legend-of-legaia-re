@@ -122,7 +122,7 @@ fn catalogued_states() -> Option<Vec<PathBuf>> {
         manifest
             .scenarios
             .iter()
-            .filter_map(|scn| manifest.mednafen_save_path(scn, Some(lib.as_path())).ok())
+            .filter_map(|scn| manifest.library_save_path(scn, lib.as_path()))
             .filter(|p| p.exists())
             .collect(),
     )

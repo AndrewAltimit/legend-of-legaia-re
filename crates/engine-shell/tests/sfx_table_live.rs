@@ -45,8 +45,7 @@ fn live_ram_table_matches_the_parser_and_feeds_the_sfx_bank() {
     // state holds it.
     let save_path = manifest.scenarios.iter().find_map(|scn| {
         manifest
-            .mednafen_save_path(scn, Some(lib.as_path()))
-            .ok()
+            .library_save_path(scn, lib.as_path())
             .filter(|p| p.exists())
     });
     let Some(save_path) = save_path else {

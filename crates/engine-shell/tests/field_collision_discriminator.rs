@@ -156,8 +156,11 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
         eprintln!("[skip] scenario '{label}' not in manifest");
         return None;
     };
-    let save_path = match manifest.mednafen_save_path(scn, library_dir().as_deref()) {
-        Ok(p) if p.exists() => p,
+    let save_path = match library_dir()
+        .as_deref()
+        .and_then(|lib| manifest.library_save_path(scn, lib))
+    {
+        Some(p) if p.exists() => p,
         _ => {
             eprintln!("[skip] no save on disk for scenario '{label}'");
             return None;
@@ -548,8 +551,11 @@ fn npc_press_pins_moving_actor_arm() {
         eprintln!("[skip] scenario 'rimelm_npc_press_tetsu' not in manifest");
         return;
     };
-    let save_path = match manifest.mednafen_save_path(scn, library_dir().as_deref()) {
-        Ok(p) if p.exists() => p,
+    let save_path = match library_dir()
+        .as_deref()
+        .and_then(|lib| manifest.library_save_path(scn, lib))
+    {
+        Some(p) if p.exists() => p,
         _ => {
             eprintln!("[skip] no save on disk for 'rimelm_npc_press_tetsu'");
             return;

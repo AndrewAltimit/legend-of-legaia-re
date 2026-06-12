@@ -196,6 +196,20 @@ impl ScenarioManifest {
         }
         self.save_path(scenario.slot)
     }
+
+    /// Library-backup-**only** resolution: like [`Self::mednafen_save_path`]
+    /// but never falls back to the wipe-prone live `.mc{slot}`. A scenario
+    /// without a mednafen library backup (no fingerprint, or a PCSX-only
+    /// fingerprint) yields `None`.
+    ///
+    /// Parity / trace oracles must use this: under the live-slot fallback a
+    /// PCSX-only scenario silently resolves to whatever the live slot
+    /// currently holds, polluting a scene group's static mask or diffing
+    /// the engine against an unrelated game state.
+    pub fn library_save_path(&self, scenario: &Scenario, library_dir: &Path) -> Option<PathBuf> {
+        let fp = scenario.backup_fingerprint.as_deref()?;
+        library_backup_for("mednafen", library_dir, fp)
+    }
 }
 
 /// Look up an immutable library backup by `(emulator, fingerprint)`: the first

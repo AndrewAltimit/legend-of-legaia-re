@@ -101,18 +101,24 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
     let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse scenarios manifest");
 
     // Group qualifying captures by scene so we can build a static mask from
-    // all snapshots of the same scene.
+    // all snapshots of the same scene. ONLY immutable library backups
+    // qualify: `mednafen_save_path`'s live-slot fallback would read whatever
+    // the wipe-prone `.mc{slot}` currently holds (a PCSX-only scenario, or a
+    // scenario with no fingerprint, can silently resolve to an unrelated
+    // state and pollute the scene group's static mask), so a scenario
+    // without a mednafen library backup is skipped instead.
+    let Some(library) = library_dir() else {
+        eprintln!("[skip] saves/library missing (oracle uses immutable backups only)");
+        return;
+    };
     let mut by_scene: BTreeMap<String, Vec<(String, PathBuf)>> = BTreeMap::new();
     for scn in &manifest.scenarios {
         let Some(scene_name) = scn.expected_active_scene.as_deref() else {
             continue;
         };
-        let Ok(save_path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
+        let Some(save_path) = manifest.library_save_path(scn, &library) else {
             continue;
         };
-        if !save_path.exists() {
-            continue;
-        }
         by_scene
             .entry(scene_name.to_owned())
             .or_default()
@@ -155,8 +161,17 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
             std::fs::read_to_string(extracted.join("CDNAME.TXT")).expect("read CDNAME.TXT");
         let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))
             .expect("build ProtIndex");
-        legaia_engine_core::scene::effect_texture_image_rects(&index)
-            .expect("befect effect-texture rects")
+        let mut rects = legaia_engine_core::scene::effect_texture_image_rects(&index)
+            .expect("befect effect-texture rects");
+        // The `init_data` shared UI-tile pages are journey-dependent
+        // residency (overworld transit leaves kingdom-bundle content over
+        // parts of the rect), so they get the same pooled cross-scene
+        // treatment as the befect band - see `block_image_rects`.
+        rects.extend(
+            legaia_engine_core::scene::block_image_rects(&index, "init_data")
+                .expect("init_data block rects"),
+        );
+        rects
     };
 
     let mut failures = Vec::new();

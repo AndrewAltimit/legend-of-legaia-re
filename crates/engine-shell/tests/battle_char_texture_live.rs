@@ -127,7 +127,7 @@ fn battle_char_texture_placement_matches_live_vram() {
         let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
             continue;
         };
-        let Ok(save_path) = manifest.mednafen_save_path(scn, Some(library.as_path())) else {
+        let Some(save_path) = manifest.library_save_path(scn, library.as_path()) else {
             continue;
         };
         if !save_path.exists() {
