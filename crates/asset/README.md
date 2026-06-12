@@ -182,6 +182,8 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | `battle_char_pack` | The PROT 1204 `other5` mesh pack (five `TMD2` streaming chunks + seven 256×256 4bpp atlases at `0x8224` stride): the Baka Fighter / default-equipment sibling of the assembled battle meshes. CLI `asset battle-char-pack`. |
 | `battle_char_assembly` | Battle character-mesh assembler: selects a player file's five equipment sections by equipped item ids and splices them into the merged battle TMD (bone tags + attach bones; `PORT: FUN_80052770` case 4 / `FUN_800536BC` / `FUN_80053898`), plus `relocate_tsb_cba` - the registration-time per-slot TSB/CBA rewrite into the runtime VRAM band (`PORT: FUN_80053a28`; texpages `x in [512, 896), y = 256`, CLUT row `481 + slot`). Assembly + relocation reproduces the live runtime blob. |
 | `battle_char_assembly` (battle animations) | The character's battle animations from `record[0]` of the same file (`battle_animations` / `idle_battle_animation`: action-offset table at the record head, monster-format `[parts][frames][9-byte TRS]` stream at entry `+0xAC`, `parts` = skeleton bones, entry first byte = action tag with tags `2..5`/`0xB` the hit-reaction family, rate byte at `+0x78` - the in-battle pose source for the assembled mesh, NOT PROT 1203), plus the per-object pose-channel map (`anm_bones` + `expand_animation_for_objects`; equipment extras ride their attach bone). |
+| `battle_char_assembly` (swing + art animations) | The runtime action table's equipment half: `swing_battle_animations` decodes the per-equipped-item weapon-swing records (section payload `+0x04`/`+0x08`, runtime slots `0xC..0xF`; splice `PORT: FUN_80052FA0`, record shape `FUN_800557B8`), and `art_animation_bank` / `art_animation` the record[0] `+0x58` art-anim bank (`[u32 count]` + `0xD0`-stride matcher+entry records; dynamic slots `0x10`/`0x11` via `FUN_8004AD80`), resolving each record's keyframe stream through its `readef.DAT` `"ME"` archive (`art_me_archive`). |
+| `me_archive` | `"ME"` keyframe-stream archive (`PORT: FUN_8002B28C` walk + `FUN_8002A9CC` channel-delta codec): `['M']['E'][u8 count][u16 sizes (bit 15 = compressed)][bodies]` → packed `[parts][frames][9-byte TRS]` streams. The art-animation stream source in `readef.DAT` slots `3*char+1` / `3*char+2`. |
 | `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) — `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
 | `field_char_textures` | Field-character texture pack (PROT 0874 §2, "etim.dat"): eight TIM entries; 1/2/3 are the Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478). CLI `asset field-char-tex`. |
 | `player_anm` | Per-scene player ANM bundle (each scene bundle's type-0x05 "MOVE" section; battle-form at PROT 1203): per-(bone,frame) 8-byte entries, frame 0 of idle = rest pose. CLI `asset player-anm` / `player-anm-scan`. |
@@ -269,8 +271,10 @@ summon visual).
 `readef.DAT` (extraction PROT 893 / 894 = retail TOC `0x37F` / `0x380`,
 CDNAME block `bat_back_dat`): `0x10800`-byte slots carrying per-special-attack
 CLUT rows + 4bpp texture pages plus summon-creature actor records (name + Legaia
-TMD + texture pool). `parse` classifies every slot; `stream_target(action_id)`
-mirrors the retail id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
+TMD + texture pool) and the player art-animation `"ME"` stream archives
+(readef slots `3*char+1` / `3*char+2` → `SlotKind::MeArchive`). `parse`
+classifies every slot; `stream_target(action_id)` mirrors the retail
+id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
 [`summon-readef.md`](../../docs/formats/summon-readef.md).
 
 ### Scene + MAN
