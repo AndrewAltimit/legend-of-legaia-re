@@ -87,6 +87,12 @@ struct BattleMemberFace {
     /// Stamp set applied on the previous frame (`None` = nothing applied
     /// yet, force the first stamp).
     last_stamps: Option<Vec<legaia_asset::face_anim::FaceStamp>>,
+    /// Victory-window frame counter — the engine's per-member equivalent
+    /// of the retail global `gp+0x9EA` (reset to 0 when the win pose is
+    /// staged, advanced per frame; the stamp pass halves it). `Some`
+    /// while the member's mouth-override window is open, `None` outside
+    /// it.
+    art_counter: Option<u16>,
 }
 use legaia_prot::cdname;
 use winit::application::ApplicationHandler;
@@ -3832,6 +3838,11 @@ struct PlayWindowApp {
     /// entry. `None` after a failed attempt (disc-free runs) — facial
     /// animation is skipped.
     face_tables: Option<legaia_asset::face_anim::FaceFrameTables>,
+    /// The static SCUS victory-window mouth-override table (the
+    /// `0x80077E80` per-(char, staged-id) tracks), loaded alongside
+    /// `face_tables`. `None` skips the override (the entry tracks still
+    /// animate).
+    art_mouth_tables: Option<legaia_asset::face_anim::ArtMouthTables>,
     /// Whether the lazy `face_tables` load already ran (so a missing
     /// executable is only probed once).
     face_tables_attempted: bool,
@@ -6670,6 +6681,7 @@ impl PlayWindowApp {
                                 char_index: cslot,
                                 tracks,
                                 last_stamps: None,
+                                art_counter: None,
                             });
                         }
                         party_bound += 1;
@@ -7071,6 +7083,9 @@ impl PlayWindowApp {
         self.face_tables = scus
             .as_deref()
             .and_then(legaia_asset::face_anim::FaceFrameTables::from_scus);
+        self.art_mouth_tables = scus
+            .as_deref()
+            .and_then(legaia_asset::face_anim::ArtMouthTables::from_scus);
         if self.face_tables.is_none() {
             log::info!(
                 "play-window: SCUS face-frame tables unavailable - battle faces stay neutral"
@@ -7084,24 +7099,44 @@ impl PlayWindowApp {
     /// `action_id` selects the member's face tracks, its integer keyframe
     /// cursor is the frame counter, and the selected frames are VRAM-to-VRAM
     /// copies from the band's face-frame strip (`Vram::move_image`, the
-    /// `MoveImage` stamp). The GPU texture is only re-uploaded on a frame
+    /// `MoveImage` stamp). During the victory window — the battle ended in
+    /// a monster wipe while a member still plays a dynamic-art-slot clip
+    /// (staged id `0x11..=0x18`, e.g. the killing art) — the mouth records
+    /// come from the static `0x80077E80` override table and the animator
+    /// clocks on the halved victory counter instead (the win-quote mouth
+    /// flap). The GPU texture is only re-uploaded on a frame
     /// whose stamp set differs from the previous one (retail re-issues
     /// identical `MoveImage`s every frame; the visible result is the same).
     // PORT: FUN_80047430 (facial-animator dispatch): per visible party
     // node, call the stamp pass with (band slot, char index, cursor
     // keyframes, playing action entry), skipping char 3 (Terra) and bands
-    // >= 3. The stamp-selection half is `FaceFrameTables::stamps`
+    // >= 3. The stamp-selection half is `FaceFrameTables::stamps_with_art_window`
     // (PORT: FUN_8004C7B4 in legaia_asset::face_anim).
     fn tick_battle_face_stamps(&mut self) {
+        use legaia_asset::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
+        use legaia_engine_vm::battle_action::BattleEndCause;
         if self.session.host.world.mode != SceneMode::Battle || self.battle_faces.is_empty() {
             return;
         }
         let Some(tables) = self.face_tables.as_ref() else {
             return;
         };
+        let art_tables = self.art_mouth_tables.as_ref();
         let Some(vram) = self.battle_vram.as_mut() else {
             return;
         };
+        // Retail gate 1 of the victory-window mouth override: the
+        // battle-end signal `DAT_8007BD71 == 0xFE` raised by a monster
+        // wipe (the SM `0x5A` arm; the engine mirror is the
+        // `BattleActionHost::battle_end` latch). Gates 2/3 — the victory
+        // sequencer's phase halfword `ctx+0x6CE != 0` and the celebration
+        // flag `DAT_8007BD60 & 0x80` (which the party-wipe path clears) —
+        // are the retail victory presentation's internal progress flags;
+        // the engine has no victory sequencer, so "the won battle is
+        // still on screen" stands in for them. Escapes also raise 0xFE
+        // but never set the celebration flag, so they stay excluded.
+        let victory_window =
+            self.session.host.world.battle_end == Some(BattleEndCause::MonsterWipe);
         let mut changed = false;
         for mf in &mut self.battle_faces {
             let Some(actor) = self.session.host.world.actors.get(mf.actor_slot) else {
@@ -7115,6 +7150,23 @@ impl PlayWindowApp {
                 .map(|p| (p.action_id(), p.current_frame()))
                 .unwrap_or((0, 0));
             let tracks = mf.tracks.get(action_id as usize).and_then(|t| t.as_ref());
+            // Retail gate 4: the member's last-staged anim id
+            // (`actor[+0x1DB]`; the engine's art-bank clips carry it as
+            // their `action_id`) sits in the dynamic-art-slot band
+            // `0x11..=0x18`. Open the override window, clocking the
+            // member's `gp+0x9EA` mirror from 0; closed, the counter
+            // resets.
+            let art_mouth = if victory_window
+                && (ART_BAND_FIRST..=ART_BAND_LAST).contains(&action_id)
+                && let Some(track) = art_tables.and_then(|t| t.track(mf.char_index, action_id))
+            {
+                let counter = mf.art_counter.unwrap_or(0);
+                mf.art_counter = Some(counter.saturating_add(1));
+                Some(ArtMouthOverride { track, counter })
+            } else {
+                mf.art_counter = None;
+                None
+            };
             // The retail mouth-neutral gate: character-record word `+0xF8`
             // bit 0x2000 = ability bitfield (`+0xF4`) bit 45 (passive 0x2D
             // Rage, Evil Medallion). Read it off the occupying character's
@@ -7126,11 +7178,12 @@ impl PlayWindowApp {
                 .get(world.party_roster_slot(mf.actor_slot))
                 .map(|m| m.ability_bits()[5] & 0x20 != 0)
                 .unwrap_or(false);
-            let stamps = tables.stamps(
+            let stamps = tables.stamps_with_art_window(
                 mf.char_index,
                 mf.actor_slot,
                 tracks,
                 frame,
+                art_mouth,
                 force_neutral_mouth,
             );
             if mf.last_stamps.as_deref() != Some(&stamps) {
@@ -10537,6 +10590,7 @@ fn cmd_play_window_with_record(
         battle_tex_slots_used: 0,
         battle_faces: Vec::new(),
         face_tables: None,
+        art_mouth_tables: None,
         face_tables_attempted: false,
         summon_actor_slot: None,
         battle_stage_mesh: None,

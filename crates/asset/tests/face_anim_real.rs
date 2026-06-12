@@ -25,6 +25,7 @@
 use std::path::PathBuf;
 
 use legaia_asset::face_anim::{
+    ART_BAND_COUNT, ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride, ArtMouthTables,
     EYE_FRAME_COUNT, FACE_CHAR_COUNT, FACE_SLOT_COUNT, FaceFrameTables, FaceTracks,
     MOUTH_FRAME_COUNT, battle_face_tracks,
 };
@@ -123,6 +124,105 @@ fn face_frame_tables_parse_with_the_live_traced_anchors() {
             }
         }
     }
+}
+
+#[test]
+fn art_mouth_override_table_anchors() {
+    let Some(root) = gate() else { return };
+    let scus = std::fs::read(root.join("SCUS_942.54")).expect("read SCUS");
+    let t = ArtMouthTables::from_scus(&scus).expect("parse art-mouth override table");
+    let frames = FaceFrameTables::from_scus(&scus).expect("parse face tables");
+
+    let mut live_total = 0usize;
+    for c in 0..FACE_CHAR_COUNT {
+        let mut live_for_char = 0usize;
+        for band in ART_BAND_FIRST..=ART_BAND_LAST {
+            let track = t.track(c, band).expect("band in window");
+            for r in track {
+                if r.end == 0 {
+                    assert_eq!(
+                        (r.frame, r.start),
+                        (0, 0),
+                        "char {c} band {band:#04x}: unused record carries data"
+                    );
+                    continue;
+                }
+                // Every live record selects a non-neutral in-range mouth
+                // frame over a well-formed window.
+                assert!(
+                    (1..MOUTH_FRAME_COUNT).contains(&(r.frame as usize)),
+                    "char {c} band {band:#04x}: mouth frame id {} out of range",
+                    r.frame
+                );
+                assert!(
+                    r.start <= r.end,
+                    "char {c} band {band:#04x}: inverted window {}..{}",
+                    r.start,
+                    r.end
+                );
+                live_total += 1;
+                live_for_char += 1;
+            }
+        }
+        assert!(
+            live_for_char > 0,
+            "char {c}: no live override records at all"
+        );
+    }
+    // Stable disc invariant: the retail table carries exactly 40 live
+    // records across the 3 x 8 (char x band) rows.
+    assert_eq!(live_total, 40, "live override-record census");
+    // Retail leaves specific bands without a win-quote mouth flap: Vahn's
+    // 0x12 / 0x14 / 0x18 and Noa's 0x15 rows are all-zero.
+    for (c, band) in [(0usize, 0x12u8), (0, 0x14), (0, 0x18), (1, 0x15)] {
+        assert!(
+            t.track(c, band).unwrap().iter().all(|r| r.end == 0),
+            "char {c} band {band:#04x}: expected an empty override row"
+        );
+    }
+    // Out-of-window ids never resolve a track (the retail +0x1DB gate).
+    assert!(t.track(0, ART_BAND_FIRST - 1).is_none());
+    assert!(t.track(0, ART_BAND_LAST + 1).is_none());
+    assert_eq!(
+        ART_BAND_COUNT,
+        (ART_BAND_LAST - ART_BAND_FIRST + 1) as usize
+    );
+
+    // Every stamp the override window can produce lands inside the
+    // member's 128x256 texture band, for every char x band slot x counter.
+    for c in 0..FACE_CHAR_COUNT {
+        for p in 0..FACE_SLOT_COUNT {
+            let (bx, by) = (512 + 128 * p as u32, 256u32);
+            for band in ART_BAND_FIRST..=ART_BAND_LAST {
+                let track = t.track(c, band).unwrap();
+                for counter in (0..=0x200u16).step_by(2) {
+                    let stamps = frames.stamps_with_art_window(
+                        c,
+                        p,
+                        None,
+                        0,
+                        Some(ArtMouthOverride { track, counter }),
+                        false,
+                    );
+                    for s in &stamps {
+                        for (x, y) in [(s.src_x, s.src_y), (s.dst_x, s.dst_y)] {
+                            assert!(
+                                x as u32 >= bx
+                                    && (x as u32 + s.w as u32) <= bx + 128
+                                    && y as u32 >= by
+                                    && (y as u32 + s.h as u32) <= by + 256,
+                                "char {c} slot {p} band {band:#04x} counter {counter}: \
+                                 stamp ({x},{y}) {}x{} leaves the band",
+                                s.w,
+                                s.h
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("[ok] art-mouth override table: {live_total} live records");
 }
 
 #[test]

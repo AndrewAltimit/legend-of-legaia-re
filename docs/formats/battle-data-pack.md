@@ -517,11 +517,31 @@ texture band by the normal pool uploads) onto the live face rows of
 section 1's rect — e.g. Vahn's eyes `(544,384) 15x17 → (512,272)` +
 mouth `(544,452) 7x16 → (516,298)` in band slot 0, re-stamped every
 frame (live-traced across a battle entry with
-`autorun_battle_moveimage_trace.lua`). During the dynamic art anims
-(staged ids `0x11..0x18`, under the `DAT_8007BD71 == -2` window) the
-mouth track instead comes from a static per-(char, anim) table at
-`0x80077E80` (stride `0x30`, 16 records) clocked by the global anim
-counter `gp[0x9EA] >> 1`. The sibling stamp pass `FUN_8004CCD4` (called
+`autorun_battle_moveimage_trace.lua`).
+
+During the battle-end **victory celebration** the mouth source switches.
+`FUN_8004C7B4`'s override branch gates on four conditions: the battle-end
+signal `DAT_8007BD71 == 0xFE` (the SM's `0x5A` monster-wipe arm / `0x66`
+escape teardown), the victory sequencer `FUN_8004E568` running (its phase
+halfword `ctx+0x6CE != 0`), the celebration flag `DAT_8007BD60` bit
+`0x80` (set by the sequencer's asset-load step; explicitly cleared on a
+party wipe, never set on an escape), and the actor's last-staged anim id
+`actor[+0x1DB]` in `0x11..=0x18` — at victory time the staged **win
+pose**, an HP-tier pick from the per-character id tables at
+`DAT_800788A0/A2/A4` (a held debug pad combo on `_DAT_8007B850`
+substitutes any of `0x11..0x18` directly). Inside the window the mouth
+pass walks **sixteen** 3-byte records from the static table at
+`0x80077E80`, indexed `char*0x180 + staged_id*0x30 + i*3` with the *raw*
+band byte (the addressed rows start at `+0x330`; char stride `0x180` =
+exactly 8 bands × `0x30`, so the 24 rows tile contiguously), and the
+animator's frame counter — mouth **and** eye pass, which still reads the
+entry's `+0x8C` records — becomes the global victory counter
+`gp[+0x9EA] >> 1` (reset to 0 when the sequencer stages the win pose; its
+per-frame incrementer is not in the dumped corpus), still clamped at
+`0xFE`. The record shape and mouth-frame indexing are unchanged; the
+retail rows only ever select non-neutral in-range mouth frames, some held
+to end `0xFF` — the win-quote mouth flap. The sibling stamp pass
+`FUN_8004CCD4` (called
 right after) covers an additional overlay family; its trigger states are
 untraced. This resolves the historical "~220-byte facial-texel
 overwrite" residue in the texture-placement validation: the overwrite is
@@ -532,18 +552,31 @@ shows no residue at all.
 Parser + engine consumer: `legaia_asset::face_anim` carries the track
 parser (`FaceTracks` / `battle_face_tracks`; the swing entries' tracks
 ride on `battle_char_assembly::SwingAnimation::face`), the SCUS table
-parser (`FaceFrameTables::from_scus`) and the retail stamp selection
-(`FaceFrameTables::stamps`). The engine play-window battle path
+parsers (`FaceFrameTables::from_scus`, the override table as
+`ArtMouthTables::from_scus` with an `ArtMouthTables::track` lookup keyed
+by the staged id) and the retail stamp selection
+(`FaceFrameTables::stamps` / `stamps_with_art_window`, which takes the
+override track + the raw victory counter and applies the `>> 1` and the
+clamp). The engine play-window battle path
 registers each assembled member's tracks and re-stamps the current
 eye/mouth frame per tick through `legaia_tim::Vram::move_image` (the
 `MoveImage` port), keyed by the playing clip's `action_id` + keyframe
 cursor — so party members blink and mouth through their reaction and
-swing clips exactly like retail. Disc-gated validation:
-`crates/asset/tests/face_anim_real.rs` (table anchors + track census)
-and `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle
+swing clips exactly like retail. When the battle ends in a monster wipe
+while a member still plays a dynamic-art-slot clip (the engine carries
+the staged id as the art-bank clip's `action_id`; the world's
+`battle_end` latch mirrors the `0xFE` signal), the stamp tick opens the
+override window and clocks a per-member `gp+0x9EA` mirror from 0 — the
+sequencer-progress gates (`ctx+0x6CE`, `DAT_8007BD60` bit `0x80`) have
+no engine counterpart yet, so "the won battle is still on screen" stands
+in for them. Disc-gated validation:
+`crates/asset/tests/face_anim_real.rs` (table anchors + track census +
+the override-table census: 40 live records, in-range non-neutral frames,
+the empty rows where retail has no flap, in-band stamps for every
+reachable counter) and
+`crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle
 VRAM holds a byte-exact stamped frame at the documented rects). The
-art-window mouth override and the `FUN_8004CCD4` sibling pass are not
-modelled.
+`FUN_8004CCD4` sibling pass is not modelled.
 
 ## Texture-pool VRAM placement
 
