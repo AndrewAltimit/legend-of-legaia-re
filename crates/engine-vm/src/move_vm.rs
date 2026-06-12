@@ -282,7 +282,7 @@ pub enum MoveOpcode {
     AnimInterpolate = 0x3D,
     Write22 = 0x3E,
     WriteD0 = 0x3F,
-    Func58490 = 0x40,
+    MoveImage = 0x40,
     WriteB2 = 0x41,
     AnimBlock42 = 0x42,
     Flag2000 = 0x43,
@@ -367,7 +367,7 @@ impl MoveOpcode {
             0x3D => Self::AnimInterpolate,
             0x3E => Self::Write22,
             0x3F => Self::WriteD0,
-            0x40 => Self::Func58490,
+            0x40 => Self::MoveImage,
             0x41 => Self::WriteB2,
             0x42 => Self::AnimBlock42,
             0x43 => Self::Flag2000,
@@ -462,10 +462,13 @@ pub trait MoveHost {
     /// no-op (FUN_800583C8 in the original).
     fn keyframe_free(&mut self, _state: &mut ActorState, _buffer_ptr: i32) {}
 
-    /// Op 0x40 - `FUN_80058490(local_30_block, op[5], op[6])`. Where
-    /// `local_30_block` is a 4-word stack array populated from `op[1..5]`.
-    /// Default no-op.
-    fn func58490(&mut self, _block: [u16; 4], _arg0: i16, _arg1: i16) {}
+    /// Op 0x40 - libgpu `MoveImage(rect, dst_x, dst_y)` (`FUN_80058490`):
+    /// a VRAM-to-VRAM copy whose source RECT `[x, y, w, h]` comes from
+    /// `op[1..5]` and destination `(x, y)` from `op[5..7]`. Retail move
+    /// programs use it to cycle animated-texture strips (VRAM-resident
+    /// frames stamped over the live texel rect; live-traced from the field
+    /// scene strip animators). Default no-op.
+    fn move_image(&mut self, _src_rect: [u16; 4], _dst_x: i16, _dst_y: i16) {}
 
     /// Multiplier byte read by op 0x0A KEYFRAME_LOAD - `DAT_1F80037D`.
     /// Default 0x100 (a sane multiplier; the original is initialized at boot).
@@ -2046,10 +2049,10 @@ pub fn step<H: MoveHost + ?Sized>(
             state.anim_block_u16_set(0x1C, read(1));
             size = 2;
         }
-        // 0x40 - call FUN_80058490. size 7.
+        // 0x40 - VRAM MoveImage strip-frame copy (FUN_80058490). size 7.
         0x40 => {
             let block = [read(1), read(2), read(3), read(4)];
-            host.func58490(block, read(5) as i16, read(6) as i16);
+            host.move_image(block, read(5) as i16, read(6) as i16);
             size = 7;
         }
         // 0x41 - write anim_block +0xB2 slot. size 2.
@@ -2619,7 +2622,7 @@ mod tests {
         keyframe_allocs: Vec<i32>,
         keyframe_inits: u32,
         keyframe_frees: u32,
-        func58490_calls: Vec<([u16; 4], i16, i16)>,
+        move_image_calls: Vec<([u16; 4], i16, i16)>,
         ext_debug_world_calls: Vec<(i16, i16, i16)>,
         ext_world_struct_writes: Vec<(i16, [i16; 5])>,
         ext_world_struct_inits: Vec<(i16, [i16; 5])>,
@@ -2688,8 +2691,8 @@ mod tests {
         fn keyframe_free(&mut self, _state: &mut ActorState, _buf: i32) {
             self.keyframe_frees += 1;
         }
-        fn func58490(&mut self, block: [u16; 4], a: i16, b: i16) {
-            self.func58490_calls.push((block, a, b));
+        fn move_image(&mut self, block: [u16; 4], a: i16, b: i16) {
+            self.move_image_calls.push((block, a, b));
         }
         fn ext_debug_world(&mut self, x: i16, y: i16, z: i16) {
             self.ext_debug_world_calls.push((x, y, z));
