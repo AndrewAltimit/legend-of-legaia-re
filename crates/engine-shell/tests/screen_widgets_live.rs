@@ -89,9 +89,7 @@ fn load_state(label: &str) -> Option<Vec<u8>> {
     let manifest = ScenarioManifest::from_path(&manifest_path()?).ok()?;
     let scn = manifest.scenarios.iter().find(|s| s.label == label)?;
     let library = library_dir()?;
-    let path = manifest
-        .mednafen_save_path(scn, Some(library.as_path()))
-        .ok()?;
+    let path = manifest.library_save_path(scn, library.as_path())?;
     if !path.exists() {
         return None;
     }

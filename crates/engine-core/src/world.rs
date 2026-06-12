@@ -30,6 +30,7 @@ use crate::battle_events::{BattleEvent, BattleHitFx, BattleSfxCue};
 use crate::field_events::FieldEvent;
 use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
+use crate::man_field_scripts::WalkTouchEvent;
 use crate::move_buffer_host;
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 use crate::world_map::WorldMapController;
@@ -142,8 +143,8 @@ const FIELD_ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 /// (`0x08020884`) carry the `0x20000` class bit, putting him on this arm
 /// (result bit `1`), with the mutual `+0x98` collision link live in-frame.
 /// (STATIC entities — props, `flags & 0x1020000 == 0` — use a wider
-/// `0x40 + 0x10` = 80-unit box around their MAN record anchor instead; the
-/// engine has no prop-collision list, so that arm is unmodelled.)
+/// `0x40 + 0x10` = 80-unit box around their MAN record anchor instead; see
+/// [`FIELD_PROP_BOX_HALF`] / [`World::field_prop_colliders`].)
 const FIELD_NPC_BOX_HALF: i32 = 0x40 - 0x18;
 
 /// Retail interact facing-probe table `DAT_801f2254` (field overlay 0897,
@@ -184,6 +185,39 @@ const FIELD_INTERACT_BOX_HALF: i32 = 0x40 + 0x20 - 0x18;
 /// `0x10` is hard-coded, independent of the caller extents that widen the
 /// moving-actor box) — ±80 units around the record-derived footprint centre.
 const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
+
+/// Per-frame world-unit budget for one field-NPC motion-VM step. The exact
+/// retail per-NPC glide speed (the `+0x72` multiplier path the NPC run
+/// dispatch feeds) is not capture-pinned; the engine uses the player's
+/// walking step magnitude (base step 8 × the default `0x1000` multiplier),
+/// which paces an NPC like a walking player.
+const FIELD_NPC_MOTION_SPEED: u16 = 8;
+
+/// Motion-VM bytecode for one field-NPC walk leg: a single `0x47`
+/// `MoveTowardTarget` op (the pursue/glide opcode of `FUN_8003774C`). The
+/// engine resets the cursor per leg, so the one-op program is the whole
+/// script.
+const FIELD_NPC_MOTION_PROGRAM: [u8; 1] = [vm::motion_vm::MotionOp::MoveTowardTarget as u8];
+
+/// One in-flight field-NPC walk leg, stepped through the ported motion VM
+/// ([`legaia_engine_vm::motion_vm::step`], the `FUN_8003774C` port) by
+/// [`World::tick_field_npc_motions`]. The live position lives in
+/// [`World::field_npc_positions`] (so collision / interact probes follow the
+/// walking NPC automatically); this carries the VM cursor + target.
+#[derive(Debug, Clone)]
+pub struct FieldNpcMotion {
+    /// Motion-VM state (cursor, per-frame speed, accumulated budget). The
+    /// `world_x` / `world_z` fields mirror the NPC's live position.
+    pub state: vm::motion_vm::MotionState,
+    /// World-space walk target of the current leg.
+    pub target: (i16, i16),
+    /// For an autonomous route leg: the index into
+    /// [`World::field_npc_routes`] this leg walks toward (the next leg starts
+    /// at `cursor + 1`, wrapping — a patrol loop). `None` for a
+    /// script-started leg (interaction-prologue `0x4C 0x51` or actor-VM
+    /// `start_motion`), which ends where it lands.
+    pub route_cursor: Option<usize>,
+}
 
 /// Cold field-entry player spawn coordinate (both X and Z).
 ///
@@ -934,9 +968,10 @@ pub struct World {
     /// (`1`/`4`) gate a step exactly like the wall bit (`2`). Off by default
     /// for the same oracle-stability reason as
     /// [`Self::leading_edge_wall_probes`]. The locomotion-path touch
-    /// side-effects (event post `FUN_801d5b5c` on the `+0x98`-linked partner
-    /// for prop walk-touch) are not modelled; the button-press interact
-    /// dispatch is ([`Self::tick_field_interaction_probe`]).
+    /// dispatch (the `FUN_801d5b5c` auto event post for prop walk-touch) is
+    /// modelled separately and independent of this flag —
+    /// [`Self::check_field_walk_touch`]; the button-press interact dispatch
+    /// is ([`Self::tick_field_interaction_probe`]).
     pub solid_field_npcs: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
@@ -1287,8 +1322,10 @@ pub struct World {
     /// straight into `actor[+0x14/+0x18]` by `FUN_80024C88` with no anchor, and
     /// the player cold-spawn `0xA40` is `tile 20*128 + 0x40` in that same frame.
     /// So these placement positions compare directly against the player's
-    /// [`crate::vm::ActorMoveState::world_x`]. (Positions are the *spawn* tile;
-    /// the engine does not yet walk field NPCs, so spawn == current.)
+    /// [`crate::vm::ActorMoveState::world_x`]. Positions are LIVE, not just
+    /// the spawn tile: [`Self::tick_field_npc_motions`] writes walking NPCs'
+    /// per-frame positions back here, so collision and interact probes follow
+    /// a moving NPC.
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
 
     /// Static prop collision-box centres `(world_x, world_z)`, one per placed
@@ -1303,6 +1340,61 @@ pub struct World {
     /// captures). Gated by [`Self::solid_field_npcs`] alongside the
     /// moving-NPC arm.
     pub field_prop_colliders: Vec<(i32, i32)>,
+
+    /// Per-NPC autonomous walk routes, keyed by the same placement `slot` as
+    /// [`Self::field_npc_dialog`]: the ordered local waypoints the placement's
+    /// own pre-text script walks the actor through (its `0x4C 0x51` NPC
+    /// move-to-tile ops — [`crate::man_field_scripts::placement_motion_route`]).
+    /// Driven through the motion VM by [`Self::tick_field_npc_motions`] when
+    /// [`Self::animate_field_npcs`] is set. `BTreeMap` so the per-tick walk
+    /// order is deterministic (the replay oracle requires bit-stable traces).
+    pub field_npc_routes: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
+
+    /// In-flight field-NPC walk legs, keyed by placement `slot`. Stepped once
+    /// per field tick through the ported motion VM; each step writes the new
+    /// position back into [`Self::field_npc_positions`], so the moving NPC
+    /// keeps its ±40-unit collision box and its interact box at the live
+    /// position. Script-started legs (interaction-prologue `0x4C 0x51`, actor
+    /// VM `start_motion`) run regardless of [`Self::animate_field_npcs`].
+    pub field_npc_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
+
+    /// Drive autonomous NPC patrol routes ([`Self::field_npc_routes`]) through
+    /// the motion VM. Off by default (NPCs rest at their placement anchors,
+    /// like the locomotion oracles expect); `play-window --live-npcs` enables
+    /// it. Script-started motion is NOT gated by this flag.
+    pub animate_field_npcs: bool,
+
+    /// Per-placement walk-touch events, keyed by placement `slot`: the
+    /// placements whose script fires on body contact (door warps, player
+    /// throw-back teleports — [`crate::man_field_scripts::placement_walk_touch_event`]),
+    /// with the placement's spawn position as the contact-box centre. The
+    /// locomotion's per-step touch dispatch ([`Self::check_field_walk_touch`])
+    /// posts these without a button press — retail's `FUN_801d5b5c` auto
+    /// event post on the static-entity collision arm.
+    pub field_walk_touch: std::collections::BTreeMap<u8, ((i16, i16), WalkTouchEvent)>,
+
+    /// Walk-touch edge latch: the slot whose contact box the player currently
+    /// stands in, so a sustained press posts its event once (retail gates the
+    /// per-step post on the player's `+0x10 & 0x80000` engaged flag, cleared
+    /// by the dialog SM teardown — the engine latches per contact instead).
+    pub active_walk_touch: Option<u8>,
+
+    /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
+    /// NPC's interaction record, this carries that NPC's placement slot so the
+    /// `0x4C 0x51` NPC-run host hook can route the walk to the right actor
+    /// (the engine's stand-in for retail's per-actor script context pointer).
+    pub stepping_inline_npc: Option<u8>,
+
+    /// The placement slot [`Self::trigger_field_interact`] most recently
+    /// opened a dialogue for; consumed by [`Self::drive_inline_dialogue`] so
+    /// the inline runner knows which NPC its record belongs to.
+    pub active_inline_slot: Option<u8>,
+
+    /// Actor-VM glide targets (op `0x09` `MotionAt` → `start_motion`,
+    /// retail `FUN_800358c0`), keyed by actor slot: each entry glides the
+    /// actor's `move_state` `(world_x, world_y)` toward the target through
+    /// the motion VM, one step per tick ([`Self::tick_actor_motions`]).
+    pub actor_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
 
     /// Per-tick guard: set when a Cross/Circle press is consumed by a field
     /// dialogue open or dismiss this tick, so the script's `0x4C` dialog poll
@@ -2225,6 +2317,14 @@ impl World {
             active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
+            field_npc_routes: std::collections::BTreeMap::new(),
+            field_npc_motions: std::collections::BTreeMap::new(),
+            animate_field_npcs: false,
+            field_walk_touch: std::collections::BTreeMap::new(),
+            active_walk_touch: None,
+            stepping_inline_npc: None,
+            active_inline_slot: None,
+            actor_motions: std::collections::BTreeMap::new(),
             dialog_input_consumed: false,
             party_leader_slot: None,
             money: 0,
@@ -2932,6 +3032,9 @@ impl World {
         }
 
         // No box open: step the VM until the next text segment or an end.
+        // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
+        // can route the prologue's walk ops to the interacted actor.
+        self.stepping_inline_npc = id.npc_slot;
         let mut host = FieldHostImpl { world: self };
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
@@ -2981,6 +3084,7 @@ impl World {
                 }
             }
         }
+        self.stepping_inline_npc = None;
         self.inline_dialogue = Some(id);
     }
 
@@ -3000,14 +3104,20 @@ impl World {
         // the first segment from the request's inline buffer.
         if self.inline_dialogue.is_none() {
             if let Some(prologue) = self.active_inline_prologue.take() {
-                self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
+                let mut runner = crate::inline_dialogue::InlineDialogue::with_prologue(
                     std::sync::Arc::new(prologue.body),
                     prologue.entry_pc,
                     prologue.first_segment,
-                ));
+                );
+                runner.npc_slot = self.active_inline_slot.take();
+                self.inline_dialogue = Some(runner);
             } else if let Some(req) = self.current_dialog.as_ref() {
                 if !req.inline.is_empty() {
+                    let slot = self.active_inline_slot.take();
                     self.start_inline_dialogue(req.inline.clone());
+                    if let Some(runner) = self.inline_dialogue.as_mut() {
+                        runner.npc_slot = slot;
+                    }
                 } else {
                     return;
                 }
@@ -5105,6 +5215,9 @@ impl World {
         self.tick_move_vms();
         self.tick_actor_physics();
         self.tick_actors();
+        // Actor-VM glides (op 0x09 `MotionAt` -> `start_motion`): one
+        // motion-VM pursue step per frame toward the recorded target.
+        self.tick_actor_motions();
         // Tick art-learned banner countdown - clear when it reaches zero.
         if let Some(banner) = &mut self.current_art_banner {
             if banner.frames_remaining > 0 {
@@ -5161,6 +5274,11 @@ impl World {
                 self.dialog_input_consumed = false;
                 self.step_cutscene_timeline();
                 self.step_field();
+                // Field-NPC walk legs (autonomous patrol routes + scripted
+                // interaction-prologue runs) — one motion-VM step per frame,
+                // writing back into `field_npc_positions` so collision /
+                // interact probes follow the live NPC.
+                self.tick_field_npc_motions();
                 self.tick_tile_board();
                 self.step_field_locomotion();
                 // Interaction probe (retail FUN_801cf9f4): talk to an adjacent
@@ -5724,6 +5842,14 @@ impl World {
         // so a re-install never leaves a stale slot pointing at the old set.
         self.field_carrier_slots.clear();
         self.pending_carrier_engage = None;
+        // NPC motion + walk-touch state is placement-keyed too: never let a
+        // previous scene's routes / in-flight legs / door events leak.
+        self.field_npc_routes.clear();
+        self.field_npc_motions.clear();
+        self.field_walk_touch.clear();
+        self.active_walk_touch = None;
+        self.stepping_inline_npc = None;
+        self.active_inline_slot = None;
     }
 
     /// Install the scene's field carriers **derived from its MAN actor-placement
@@ -5773,11 +5899,13 @@ impl World {
         self.field_npc_dialog_prologue.clear();
         self.field_npc_positions.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
+            let Ok(slot) = u8::try_from(placement.index) else {
+                continue;
+            };
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
                 ..
             } = kind
-                && let Ok(slot) = u8::try_from(placement.index)
             {
                 self.field_npc_dialog.insert(slot, inline);
                 // Stash the untruncated record so the opt-in field-VM runner can
@@ -5792,6 +5920,23 @@ impl World {
                 // position (= runtime actor frame; see `field_npc_positions`).
                 self.field_npc_positions
                     .insert(slot, (placement.world_x, placement.world_z));
+                // The placement's autonomous walk route (its own pre-text
+                // `0x4C 0x51` move-to-tile ops), driven through the motion VM
+                // when `animate_field_npcs` is set.
+                let route =
+                    crate::man_field_scripts::placement_motion_route(man_file, man, &placement);
+                if !route.is_empty() {
+                    self.field_npc_routes.insert(slot, route);
+                }
+            }
+            // Walk-touch events ride any non-parked placement (door warps are
+            // Portal-classified, throw-back teleports are usually on guard
+            // NPCs) — the locomotion's touch dispatch posts them on contact.
+            if let Some(event) =
+                crate::man_field_scripts::placement_walk_touch_event(man_file, man, &placement)
+            {
+                self.field_walk_touch
+                    .insert(slot, ((placement.world_x, placement.world_z), event));
             }
         }
 
@@ -5810,6 +5955,9 @@ impl World {
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.
         self.active_inline_prologue = self.field_npc_dialog_prologue.get(&slot).cloned();
+        // Remember which NPC this interaction belongs to: the inline runner
+        // routes the prologue's `0x4C 0x51` NPC-run ops to this slot.
+        self.active_inline_slot = Some(slot);
         let opened_dialog = if let Some(inline) = self.field_npc_dialog.get(&slot).cloned() {
             self.open_field_dialog(inline);
             true
@@ -7020,22 +7168,25 @@ impl World {
     ///   belong to, capture-pinned by `rimelm_npc_press_tetsu` (the sparring
     ///   partner's `flags+0x10 = 0x08020884` carries the `0x20000` class
     ///   bit, and the mutual `+0x98` collision link is live in-frame). The
-    ///   engine's NPCs don't roam, so their live position equals their MAN
-    ///   placement anchor; box ±[`FIELD_NPC_BOX_HALF`] (40).
+    ///   positions are LIVE: [`Self::tick_field_npc_motions`] walks routed /
+    ///   scripted NPCs through the motion VM and writes back into
+    ///   [`Self::field_npc_positions`], so a moving NPC's
+    ///   ±[`FIELD_NPC_BOX_HALF`] (40) box follows it, exactly as retail
+    ///   probes the live `+0x14`/`+0x18`.
     /// - the **static-entity arm** (result bit `4`) — placed `.MAP` props,
     ///   box ±[`FIELD_PROP_BOX_HALF`] (80) around the record-derived
     ///   footprint centre ([`Self::field_prop_colliders`]).
     ///
-    /// Not modelled: the retail touch side-effects on the locomotion path
-    /// (mutual `+0x98` partner link; the prop walk-touch auto event post
-    /// `FUN_801d5b5c` — the engine has no prop event scripts), NPC motion,
-    /// and the `_DAT_8007b6b8 == 0x20` full-table delegation to
-    /// `FUN_801cf9f4`. The button-press interact dispatch (facing probe +
-    /// event + face-the-NPC) IS modelled —
-    /// [`Self::tick_field_interaction_probe`]. Faithful quirk kept: the
-    /// probe has no near-side clamp, so a position already deep inside a box
-    /// (past the probe reach) reads clear — exactly as retail's forward-only
-    /// probe behaves.
+    /// The locomotion-path touch dispatches are modelled alongside: the
+    /// button-press interact (facing probe + event + face-the-NPC,
+    /// [`Self::tick_field_interaction_probe`]) and the no-button prop
+    /// walk-touch event post ([`Self::check_field_walk_touch`], the
+    /// `FUN_801d5b5c` analogue for the decoded script classes). Not
+    /// modelled: the mutual `+0x98` partner-link bookkeeping itself and the
+    /// `_DAT_8007b6b8 == 0x20` full-table delegation to `FUN_801cf9f4`.
+    /// Faithful quirk kept: the probe has no near-side clamp, so a position
+    /// already deep inside a box (past the probe reach) reads clear —
+    /// exactly as retail's forward-only probe behaves.
     pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         if self.field_npc_positions.is_empty() && self.field_prop_colliders.is_empty() {
             return false;
@@ -7124,6 +7275,291 @@ impl World {
         }
         ms.render_26 =
             ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
+    }
+
+    /// Start a field NPC walking to world `(tx, tz)` through the motion VM —
+    /// the engine's start-motion kernel for the MAN-placed actor set. Mirrors
+    /// the retail start shape: write the walk target onto the actor and reset
+    /// the glide state so the per-frame motion stepper picks it up (retail's
+    /// `FUN_800358c0` writes the target into the actor `+0xA`/`+0xC` + subobj
+    /// mirrors and clears the `+0x20` glide cursor; the per-frame consumer is
+    /// the motion VM `FUN_8003774C`, ported in
+    /// [`legaia_engine_vm::motion_vm`]). Returns `false` (and does nothing)
+    /// when `slot` is not an installed field NPC — the retail actor-list
+    /// search miss, which returns 0.
+    ///
+    /// A leg started here is *scripted* (`route_cursor = None`): it runs even
+    /// while [`Self::animate_field_npcs`] is off and even during a dialogue
+    /// (the interaction partner executing its own prologue walk), and ends
+    /// where it lands.
+    ///
+    /// REF: FUN_800358c0, FUN_8003774C
+    pub fn start_field_npc_motion(&mut self, slot: u8, tx: i16, tz: i16) -> bool {
+        let Some(&(cx, cz)) = self.field_npc_positions.get(&slot) else {
+            return false;
+        };
+        self.field_npc_motions.insert(
+            slot,
+            FieldNpcMotion {
+                state: vm::motion_vm::MotionState {
+                    world_x: cx,
+                    world_y: 0,
+                    world_z: cz,
+                    speed: FIELD_NPC_MOTION_SPEED,
+                    yaw: 0,
+                    op_accum: 0,
+                    pc: 0,
+                },
+                target: (tx, tz),
+                route_cursor: None,
+            },
+        );
+        true
+    }
+
+    /// Step every in-flight field-NPC walk leg one frame through the ported
+    /// motion VM and kick autonomous route legs, writing each NPC's new
+    /// position back into [`Self::field_npc_positions`] — so the moving NPC's
+    /// ±40-unit collision box ([`Self::field_actor_dir_blocked`]) and its
+    /// interact box ([`Self::field_interact_probe_slot`]) follow the live
+    /// position, exactly as retail probes the live `+0x14`/`+0x18` rather
+    /// than the spawn anchor.
+    ///
+    /// Autonomous legs (started from [`Self::field_npc_routes`], gated by
+    /// [`Self::animate_field_npcs`]) loop their waypoints — a patrol — and
+    /// pause while a dialogue is up (retail's interaction motion-pause kick:
+    /// the touch event post reloads every moving-class actor's pause timer,
+    /// `FUN_8003c9ac`). Scripted legs (interaction-prologue `0x4C 0x51`,
+    /// actor-VM `start_motion`) keep stepping through a dialogue — they ARE
+    /// the interaction's choreography.
+    ///
+    /// REF: FUN_8003774C, FUN_8003c9ac
+    fn tick_field_npc_motions(&mut self) {
+        let dialogue_up = self.current_dialog.is_some() || self.inline_dialogue.is_some();
+        // Kick autonomous legs for routed NPCs with no in-flight motion.
+        if self.animate_field_npcs && !dialogue_up {
+            let kicks: Vec<(u8, (i16, i16))> = self
+                .field_npc_routes
+                .iter()
+                .filter(|(slot, _)| !self.field_npc_motions.contains_key(slot))
+                .filter_map(|(&slot, route)| {
+                    let first = *route.first()?;
+                    // A one-waypoint route that has arrived stays put (no
+                    // restart churn); multi-waypoint routes always loop.
+                    if route.len() == 1 && self.field_npc_positions.get(&slot) == Some(&first) {
+                        return None;
+                    }
+                    Some((slot, first))
+                })
+                .collect();
+            for (slot, (tx, tz)) in kicks {
+                if self.start_field_npc_motion(slot, tx, tz)
+                    && let Some(m) = self.field_npc_motions.get_mut(&slot)
+                {
+                    m.route_cursor = Some(0);
+                }
+            }
+        }
+        // Step each leg; collect per-slot outcomes, then apply.
+        let slots: Vec<u8> = self.field_npc_motions.keys().copied().collect();
+        for slot in slots {
+            let Some(motion) = self.field_npc_motions.get_mut(&slot) else {
+                continue;
+            };
+            if dialogue_up && motion.route_cursor.is_some() {
+                continue; // autonomous legs pause during an interaction
+            }
+            let target = vm::motion_vm::MotionTarget {
+                x: motion.target.0,
+                y: 0,
+                z: motion.target.1,
+                id: 0,
+            };
+            let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
+            let pos = (motion.state.world_x, motion.state.world_z);
+            let cursor = motion.route_cursor;
+            self.field_npc_positions.insert(slot, pos);
+            if result == vm::motion_vm::StepResult::Done {
+                match cursor {
+                    // Patrol loop: start the next route leg (wrapping).
+                    Some(i) => {
+                        let next = self
+                            .field_npc_routes
+                            .get(&slot)
+                            .filter(|route| route.len() > 1)
+                            .map(|route| ((i + 1) % route.len(), route[(i + 1) % route.len()]));
+                        match next {
+                            Some((ni, (tx, tz))) => {
+                                if self.start_field_npc_motion(slot, tx, tz)
+                                    && let Some(m) = self.field_npc_motions.get_mut(&slot)
+                                {
+                                    m.route_cursor = Some(ni);
+                                }
+                            }
+                            None => {
+                                self.field_npc_motions.remove(&slot);
+                            }
+                        }
+                    }
+                    // Scripted leg: ends where it lands.
+                    None => {
+                        self.field_npc_motions.remove(&slot);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The locomotion's per-step **walk-touch dispatch**: when the player's
+    /// body stands inside a walk-touch placement's static contact box
+    /// (±[`FIELD_PROP_BOX_HALF`]), post that placement's event — no button
+    /// press, the same dispatch path the button-gated interact uses
+    /// ([`Self::trigger_field_interact`]) plus the decoded script effect:
+    ///
+    /// - [`WalkTouchEvent::Warp`] → queue the door-warp scene transition
+    ///   (the effect of the record's `0x3E` op through the host's
+    ///   `scene_transition` path);
+    /// - [`WalkTouchEvent::PlayerMoveTo`] → snap the player to the decoded
+    ///   world coords (the record's cross-context `0x23` into the player
+    ///   channel) and surface a [`FieldEvent::MoveTo`].
+    ///
+    /// Retail posts the touch event (`FUN_801d5b5c`) on every contact step,
+    /// gated by the player's `+0x10 & 0x80000` engaged flag until the dialog
+    /// SM teardown clears it; the engine latches one post per contact
+    /// ([`Self::active_walk_touch`]) instead. The full post kernel (engaged
+    /// flag, facing save/restore, touch counters) is not modelled.
+    ///
+    /// REF: FUN_801d5b5c, FUN_801cfc40
+    fn check_field_walk_touch(&mut self) {
+        if self.field_walk_touch.is_empty() {
+            self.active_walk_touch = None;
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return;
+        }
+        let (px, pz) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x as i32, ms.world_z as i32)
+        };
+        let hit = self
+            .field_walk_touch
+            .iter()
+            .find(|(_, ((wx, wz), _))| {
+                (px - *wx as i32).abs() < FIELD_PROP_BOX_HALF
+                    && (pz - *wz as i32).abs() < FIELD_PROP_BOX_HALF
+            })
+            .map(|(&s, &(_, event))| (s, event));
+        let Some((touch_slot, event)) = hit else {
+            self.active_walk_touch = None;
+            return;
+        };
+        if self.active_walk_touch == Some(touch_slot) {
+            return; // still inside the same contact — already posted
+        }
+        self.active_walk_touch = Some(touch_slot);
+        // Post through the same dispatch path the button-gated interact uses.
+        self.trigger_field_interact(0, touch_slot);
+        match event {
+            WalkTouchEvent::Warp { target_map } => {
+                self.pending_scene_transition = Some(target_map);
+            }
+            WalkTouchEvent::PlayerMoveTo { world_x, world_z } => {
+                if let Some(p) = self.player_actor_slot
+                    && let Some(actor) = self.actors.get_mut(p as usize)
+                {
+                    actor.move_state.world_x = world_x;
+                    actor.move_state.world_z = world_z;
+                }
+                self.pending_field_events.push(FieldEvent::MoveTo {
+                    world_x: world_x as u16,
+                    world_z: world_z as u16,
+                    is_player: true,
+                });
+            }
+        }
+    }
+
+    /// Actor-VM glide start (`MotionAt` / `EffectMotion` → `start_motion`,
+    /// retail `FUN_800358c0`): record the target on the actor and install a
+    /// motion-VM leg gliding the actor's sprite position
+    /// (`move_state.world_x` / `world_y`) toward it, stepped once per tick by
+    /// [`Self::tick_actor_motions`]. The retail kernel writes the target into
+    /// the actor `+0xA`/`+0xC` and its subobj mirrors and clears the `+0x20`
+    /// glide cursor; the per-frame glide is the motion-VM pursue step.
+    ///
+    /// REF: FUN_800358c0
+    pub(crate) fn start_actor_motion(&mut self, actor_id: u8, target: ActorVmPosition) {
+        let Some(actor) = self.actors.get(actor_id as usize) else {
+            return;
+        };
+        if !actor.active {
+            return;
+        }
+        let (cx, cy) = (actor.move_state.world_x, actor.move_state.world_y);
+        self.actors[actor_id as usize].motion_target = Some(target);
+        self.actor_motions.insert(
+            actor_id,
+            FieldNpcMotion {
+                state: vm::motion_vm::MotionState {
+                    world_x: cx,
+                    world_y: 0,
+                    // The sprite-actor glide runs in the actor VM's packed
+                    // (x, y) plane; the motion VM's XZ pursue step maps
+                    // y → z here.
+                    world_z: cy,
+                    speed: FIELD_NPC_MOTION_SPEED,
+                    yaw: 0,
+                    op_accum: 0,
+                    pc: 0,
+                },
+                target: (target.x, target.y),
+                route_cursor: None,
+            },
+        );
+    }
+
+    /// Step every actor-VM glide ([`Self::start_actor_motion`]) one frame
+    /// through the motion VM, writing back into the actor's `move_state`.
+    /// Finished or stale (despawned-actor) glides are dropped.
+    ///
+    /// REF: FUN_8003774C
+    fn tick_actor_motions(&mut self) {
+        if self.actor_motions.is_empty() {
+            return;
+        }
+        let slots: Vec<u8> = self.actor_motions.keys().copied().collect();
+        for slot in slots {
+            let alive = self
+                .actors
+                .get(slot as usize)
+                .is_some_and(|actor| actor.active);
+            if !alive {
+                self.actor_motions.remove(&slot);
+                continue;
+            }
+            let Some(motion) = self.actor_motions.get_mut(&slot) else {
+                continue;
+            };
+            let target = vm::motion_vm::MotionTarget {
+                x: motion.target.0,
+                y: 0,
+                z: motion.target.1,
+                id: 0,
+            };
+            let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
+            let (nx, ny) = (motion.state.world_x, motion.state.world_z);
+            let actor = &mut self.actors[slot as usize];
+            actor.move_state.world_x = nx;
+            actor.move_state.world_y = ny;
+            if result == vm::motion_vm::StepResult::Done {
+                self.actor_motions.remove(&slot);
+            }
+        }
     }
 
     /// Decode this frame's held d-pad into a camera-relative movement
@@ -7255,6 +7691,11 @@ impl World {
         }
 
         self.advance_with_collision(slot, dir_bits, speed);
+
+        // Walk-touch dispatch (retail: the per-sub-step touch check inside
+        // `FUN_801d01b0`, posting `FUN_801d5b5c` on a static-entity contact
+        // with no button press): post a touched placement's walk-touch event.
+        self.check_field_walk_touch();
 
         // Terrain follow (gated): after the X/Z step commits, snap the
         // player's Y to the per-scene floor elevation at the new tile. Done

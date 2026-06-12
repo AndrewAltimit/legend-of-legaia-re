@@ -237,6 +237,11 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 ///   overwrites).
 /// - **row 509, cols 42..44**: exactly two animated entries; the rest of the
 ///   row is byte-exact vs the disc build in every capture.
+/// - **row 500, cols 48..64**: the `(48, 500)` sibling destination cell from
+///   the live GP0 `MoveImage` packet census. Per-column variance across the
+///   map01-band captures shows cols 62..63 animating; the whole 16-wide
+///   destination cell is excluded because each `MoveImage` rewrites all 16
+///   entries (the other columns merely coincide across the strip's frames).
 ///
 /// Row 507 is fully static (256/256 byte-exact) and stays asserted, as do
 /// the remaining columns of 506/508/509 - the census lets the oracle assert
@@ -250,8 +255,13 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// copies source 13-frame palette strips parked at VRAM rows 498/501..505.
 /// The lockstep phase coupling = sibling script ops sharing the frame
 /// counter. See `docs/subsystems/world-map.md` "Ocean animation".
-pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 3] =
-    [(506, 0..48), (508, 0..48), (509, 42..44)];
+///
+/// The destination-cell set is kingdom-universal: the resident Sebucus /
+/// Karisto captures hold strip-frame content at the same cells
+/// (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`), though the
+/// row-508 mirror relation is a map01 script behaviour only.
+pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 4] =
+    [(500, 48..64), (506, 0..48), (508, 0..48), (509, 42..44)];
 
 /// Clear `mask` on every cell of [`WORLD_MAP_CLUT_CYCLE_CELLS`]. Apply to a
 /// world-map scene's static mask before asserting upload parity; field/town

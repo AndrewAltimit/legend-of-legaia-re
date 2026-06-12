@@ -294,7 +294,7 @@ fn assembled_party_matches_live_battle() {
         eprintln!("[skip] party_battle_gobu_gobu scenario missing");
         return;
     };
-    let Ok(path) = manifest.mednafen_save_path(sc, Some(library.as_path())) else {
+    let Some(path) = manifest.library_save_path(sc, library.as_path()) else {
         eprintln!("[skip] no save path");
         return;
     };
@@ -440,7 +440,7 @@ fn terra_idle_stream_matches_live_battle() {
         eprintln!("[skip] terra_party_battle scenario missing");
         return;
     };
-    let Ok(save_path) = manifest.mednafen_save_path(sc, Some(library.as_path())) else {
+    let Some(save_path) = manifest.library_save_path(sc, library.as_path()) else {
         eprintln!("[skip] terra_party_battle save unresolvable");
         return;
     };

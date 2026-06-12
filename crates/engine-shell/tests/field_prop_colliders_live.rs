@@ -103,7 +103,7 @@ fn field_prop_colliders_match_live_static_actors() {
         let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
             continue;
         };
-        let Ok(save_path) = manifest.mednafen_save_path(scn, Some(library.as_path())) else {
+        let Some(save_path) = manifest.library_save_path(scn, library.as_path()) else {
             continue;
         };
         if !save_path.exists() {

@@ -702,9 +702,22 @@ of STP-set ocean near-copies at 32..39 + the runtime-generated pure-channel
 tail at 40..47, all phase-locked to the ocean), row **508** animates head
 entries `{1, 14, 15, 26, 27}` and live-maintains a mirror `[32..47] ==
 [0..15]` over a disc-base palette it overwrites, and row **509** animates
-exactly cols `{42, 43}`. Row 507 is fully static. The VRAM parity oracle
-excludes exactly the censused columns for world-map scenes and asserts the
-rest (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
+exactly cols `{42, 43}`. Row 507 is fully static. The `(48, 500)` sibling
+destination (next paragraph) is censused dynamic too — cols `62..63` vary
+across the map01-band captures, so the whole 16-wide cell is excluded (a
+`MoveImage` rewrites all 16 entries; the stable columns merely coincide
+across the strip's frames). The VRAM parity oracle excludes exactly the
+censused columns for world-map scenes and asserts the rest
+(`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
+
+The destination-cell set is **kingdom-universal**: on the resident Sebucus /
+Karisto captures every censused destination cell — `(0/16/32, 506)`,
+`(0/16/32, 508)`, `(32, 509)`, `(48, 500)` — holds a 16-px-aligned window of
+that state's own strip park rows (same test file, cross-kingdom leg), i.e.
+the copy family runs against per-kingdom strips with kingdom-invariant
+destination operands. The row-508 mirror, by contrast, is a **map01 script
+behaviour**: on Sebucus / Karisto the `(32, 508)` cell holds strip content
+that differs from `(0, 508)`.
 
 **The writer is the script-driven CLUT-cell effect family**, not a single
 hardcoded DMA. A map01-resident capture's libgpu command queue holds the

@@ -77,7 +77,12 @@ struct. `World::tick` runs:
      the per-scene `field_collision_grid`, and facing is updated. The grid
      (one byte per 128-unit tile, high nibble = 4 sub-cell wall bits) is
      zeroed at field entry and painted by the field-VM `0x4C` outer-nibble-7
-     op as the prescript runs. See
+     op as the prescript runs. The same tick walks field NPCs through the
+     motion VM (`tick_field_npc_motions`: MAN-authored `0x4C 0x51` patrol
+     routes + interaction-prologue runs, live positions feeding the
+     collision / interact probes) and runs the prop walk-touch dispatch
+     (`check_field_walk_touch`: door-warp / player-teleport placements post
+     on body contact through the interact path). See
      [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
    - `SceneMode::Title` → no further VM.
 

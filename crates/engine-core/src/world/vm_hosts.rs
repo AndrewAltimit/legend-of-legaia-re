@@ -47,9 +47,20 @@ impl<'a> ActorVmHost for ActorVmHostImpl<'a> {
         a.move_state.world_x = p.x;
         a.move_state.world_y = p.y;
     }
-    fn start_motion(&mut self, _actor_id: u8, _target: ActorVmPosition) {
-        // Engines typically schedule a tween here; the world records nothing
-        // by default.
+    fn start_motion(&mut self, actor_id: u8, target: ActorVmPosition) {
+        // Retail `FUN_800358c0`: write the glide target onto the actor (and
+        // its subobj mirrors) and clear the glide cursor; the per-frame
+        // pursue step is the motion VM. The world installs a motion-VM leg
+        // gliding the actor's sprite position toward the target
+        // ([`World::start_actor_motion`], stepped by `tick_actor_motions`),
+        // and — when the actor id is also an installed field-NPC placement
+        // slot — walks that NPC in the field frame (y → z).
+        // PORT: FUN_800358c0
+        self.world.start_actor_motion(actor_id, target);
+        if self.world.field_npc_positions.contains_key(&actor_id) {
+            self.world
+                .start_field_npc_motion(actor_id, target.x, target.y);
+        }
     }
     fn delete_sprite(&mut self, actor_id: u8) {
         if let Some(a) = self.world.actors.get_mut(actor_id as usize) {
@@ -957,6 +968,39 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world
             .pending_field_events
             .push(FieldEvent::ActorAllocate { records });
+    }
+
+    /// Op `0x4C 0x51` — NPC / player move-to-tile with run dispatch. The NPC
+    /// arm walks the executing actor to the decoded tile; the engine routes
+    /// it to the interacted NPC's placement slot (the inline-dialogue runner
+    /// exposes it while stepping that record) and starts a motion-VM walk
+    /// leg, so an interaction prologue's authored NPC run actually moves the
+    /// actor. The player arm (retail: the move-table consumer
+    /// `func_0x800204f8` with the run animation) is not modelled here.
+    ///
+    /// REF: FUN_800358c0, FUN_8003774C
+    fn op4c_n5_sub1_npc_run(
+        &mut self,
+        _ctx: &mut FieldCtx,
+        world_x: u16,
+        world_z: u16,
+        _depth_byte: u8,
+        _move_id: u8,
+        is_player: bool,
+    ) {
+        if is_player {
+            return;
+        }
+        let Some(slot) = self.world.stepping_inline_npc else {
+            return;
+        };
+        // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
+        // a despawn, not a walk.
+        if world_x == 0x3FC0 && world_z == 0x3FC0 {
+            return;
+        }
+        self.world
+            .start_field_npc_motion(slot, world_x as i16, world_z as i16);
     }
 
     fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {

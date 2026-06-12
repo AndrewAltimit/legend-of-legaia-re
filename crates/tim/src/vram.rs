@@ -189,6 +189,32 @@ impl Vram {
         self.write_words(fb_x, fb_y, w_words, h, &halfwords);
     }
 
+    /// VRAM-to-VRAM rectangle copy: `w x h` halfwords from `(src_x, src_y)`
+    /// to `(dst_x, dst_y)` — the libgpu `MoveImage` primitive. A zero `w` or
+    /// `h` is a no-op (the retail wrapper rejects those rects); cells falling
+    /// outside the 1024x512 framebuffer are skipped. The source rect is
+    /// snapshotted first, so overlapping copies behave like the GPU's
+    /// buffered transfer.
+    ///
+    /// Used by the engine's battle facial animator, which re-stamps the
+    /// current eye/mouth face frame from a member band's face-frame strip
+    /// onto its live face rows every frame (`legaia_asset::face_anim`).
+    // PORT: FUN_80058490 - the MoveImage wrapper the per-frame facial
+    // animator FUN_8004C7B4 stamps through (skips rects with a zero
+    // width or height).
+    pub fn move_image(&mut self, src_x: u16, src_y: u16, w: u16, h: u16, dst_x: u16, dst_y: u16) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let mut snap = Vec::with_capacity(w as usize * h as usize);
+        for row in 0..h as usize {
+            for col in 0..w as usize {
+                snap.push(self.pixel(src_x as usize + col, src_y as usize + row));
+            }
+        }
+        self.write_words(dst_x, dst_y, w, h, &snap);
+    }
+
     /// Write `w * h` 16-bit words into VRAM starting at `(x, y)`.
     /// Pixels falling outside `[0..VRAM_WIDTH) × [0..VRAM_HEIGHT)` are skipped.
     fn write_words(&mut self, x: u16, y: u16, w: u16, h: u16, src: &[u16]) {
@@ -730,5 +756,26 @@ mod tests {
         // Sanity: no panic, no writes.
         vram.write_clut_row(0, 0, &[]);
         assert_eq!(vram.pixel(0, 0), 0);
+    }
+
+    #[test]
+    fn move_image_copies_a_rect() {
+        let mut vram = Vram::new();
+        // 2x2 source block at (10, 20).
+        for (i, &v) in [0x1111u16, 0x2222, 0x3333, 0x4444].iter().enumerate() {
+            let bytes = v.to_le_bytes();
+            vram.write_block(10 + (i % 2) as u16, 20 + (i / 2) as u16, 1, 1, &bytes);
+        }
+        vram.move_image(10, 20, 2, 2, 100, 200);
+        assert_eq!(vram.pixel(100, 200), 0x1111);
+        assert_eq!(vram.pixel(101, 200), 0x2222);
+        assert_eq!(vram.pixel(100, 201), 0x3333);
+        assert_eq!(vram.pixel(101, 201), 0x4444);
+        // Source untouched.
+        assert_eq!(vram.pixel(10, 20), 0x1111);
+        // A zero-size rect is a no-op (the retail wrapper rejects it).
+        vram.move_image(10, 20, 0, 2, 300, 300);
+        vram.move_image(10, 20, 2, 0, 300, 300);
+        assert_eq!(vram.pixel(300, 300), 0);
     }
 }

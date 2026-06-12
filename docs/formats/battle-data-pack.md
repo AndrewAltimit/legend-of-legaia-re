@@ -483,29 +483,43 @@ art_animation}` (the stream decode is shared with
 Two fields of the `0xAC` action-entry header are per-clip **facial
 keyframe tracks**, consumed by the per-frame facial animator
 `FUN_8004C7B4` (called from the render-node update `FUN_80047430` with
-the node's `+0x68` anim cursor as the frame counter, for every party
-member except Terra — char index 3 is skipped):
+the node's `+0x68` anim cursor — in integer keyframes — as the frame
+counter, for every party member except Terra — char index 3 is skipped):
 
-- entry `+0x8C`: **mouth** track — four 3-byte records
+- entry `+0x8C`: **eye** track — four 3-byte records
   `[frame_id, start, end]`;
-- entry `+0x98`: **eye** track — same shape.
+- entry `+0x98`: **mouth** track — same shape.
 
-A record is active while `start <= clip_frame <= end` (`end != 0`); its
-`frame_id` selects a face frame from the static per-character SCUS
-tables — eye-frame source x/y at `DAT_80076884/86` (stride 4, six frames
-per character, char stride `0x18`), mouth frames at `DAT_80076824/26`
-(char stride `0x20`), rect sizes + per-character destination offsets at
-`DAT_800768CC..F2`, all banded by the per-slot origin deltas at
-`DAT_800768FC/FE`. No active record selects frame 0 (the neutral face);
-character-record flag `0x2000` forces the neutral eye frame. Each stamp
-is a libgpu `MoveImage` from the frame strip (parked in the character's
+(The eye/mouth identity is pinned visually from the catalogued battle
+captures: the `+0x8C` table's frames are the wide two-eye band — frame 1
+a narrowed blink — and the `+0x98` frames the closed / open mouth
+shapes.)
+
+A record is active while `start <= clip_frame <= end` (`end != 0`,
+counter clamped at `0xFE`); its `frame_id` selects a face frame from the
+static per-character SCUS tables — eye-frame source x/y at
+`DAT_80076824/26` (stride 4, eight frames per character, char stride
+`0x20`), mouth frames at `DAT_80076884/86` (six per character, char
+stride `0x18`), rect sizes + per-character destination offsets at
+`DAT_800768CC` (eyes) / `DAT_800768E4` (mouth), all banded by the
+per-slot origin deltas at `DAT_800768FC/FE` (3 slots — the member band
+origins `(0x200 + p*0x80, 0x100)`). No active record selects frame 0
+(the neutral face): when no record is active the neutral frame is
+re-stamped instead, which is the steady state — the **idle entries'
+tracks are empty in all four retail files** (resting faces are neutral;
+the eye/mouth records live on the flinch / knockdown / recover / defeat
+and equipment-swing entries). Character-record word `+0xF8` flag
+`0x2000` — ability-bitfield (`+0xF4`) bit 45, the Rage passive (Evil
+Medallion) — forces the neutral mouth frame. Each stamp is a libgpu
+`MoveImage`
+(`FUN_80058490`) from the frame strip (parked in the character's
 texture band by the normal pool uploads) onto the live face rows of
 section 1's rect — e.g. Vahn's eyes `(544,384) 15x17 → (512,272)` +
 mouth `(544,452) 7x16 → (516,298)` in band slot 0, re-stamped every
 frame (live-traced across a battle entry with
 `autorun_battle_moveimage_trace.lua`). During the dynamic art anims
 (staged ids `0x11..0x18`, under the `DAT_8007BD71 == -2` window) the
-track instead comes from a static per-(char, anim) table at
+mouth track instead comes from a static per-(char, anim) table at
 `0x80077E80` (stride `0x30`, 16 records) clocked by the global anim
 counter `gp[0x9EA] >> 1`. The sibling stamp pass `FUN_8004CCD4` (called
 right after) covers an additional overlay family; its trigger states are
@@ -514,6 +528,22 @@ overwrite" residue in the texture-placement validation: the overwrite is
 the facial animator's current frame, and a character whose stamped frame
 equals the pool default (Noa in the catalogued captures, Terra always)
 shows no residue at all.
+
+Parser + engine consumer: `legaia_asset::face_anim` carries the track
+parser (`FaceTracks` / `battle_face_tracks`; the swing entries' tracks
+ride on `battle_char_assembly::SwingAnimation::face`), the SCUS table
+parser (`FaceFrameTables::from_scus`) and the retail stamp selection
+(`FaceFrameTables::stamps`). The engine play-window battle path
+registers each assembled member's tracks and re-stamps the current
+eye/mouth frame per tick through `legaia_tim::Vram::move_image` (the
+`MoveImage` port), keyed by the playing clip's `action_id` + keyframe
+cursor — so party members blink and mouth through their reaction and
+swing clips exactly like retail. Disc-gated validation:
+`crates/asset/tests/face_anim_real.rs` (table anchors + track census)
+and `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle
+VRAM holds a byte-exact stamped frame at the documented rects). The
+art-window mouth override and the `FUN_8004CCD4` sibling pass are not
+modelled.
 
 ## Texture-pool VRAM placement
 
