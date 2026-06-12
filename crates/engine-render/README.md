@@ -96,10 +96,24 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
   the prim colour as `F`. Untextured TMD prims carry no texpage, so the
   caller resolves ABR from draw-env state (mode 0 = the PSX default);
   plain `upload_color_mesh` keeps every prim opaque.
-  Blend-draw *ordering* approximates the retail ordering table at
-  per-draw granularity: all semi-carrying draws (textured + untextured
-  in one sequence) blend far-to-near by their model origin's clip-space
-  depth (`psx_blend::sort_far_to_near`), not scene-list order. Dither
+  Blend-draw *ordering* mirrors the retail ordering table at
+  per-PRIMITIVE granularity: every semi prim of every semi-carrying
+  draw (textured + untextured in one shared sequence) is keyed by its
+  model-space centroid's clip-space `w` under the draw's MVP
+  (`psx_blend::prim_depth_key` - by linearity of the MVP this equals
+  the average of the prim's vertices' clip `w`, the GTE avg-Z the OT
+  bins on; the model origin's key is `mvp.w_axis.w`, the renderer's
+  standing depth convention) and the whole list blends far-to-near
+  regardless of draw boundaries, so prims that interleave in depth
+  across overlapping draws blend in correct global order
+  (`psx_blend::sort_blend_list`). Equal keys form one OT bucket and
+  draw later-submitted-first - the retail LIFO bucket order (`AddPrim`
+  prepends to a bucket's list, `DrawOTag` walks it head-first). The
+  per-prim metadata (`psx_blend::SemiPrim`: centroid + ABR mode + tail
+  location) is recorded once at upload time by the tail builders; the
+  per-frame list lives in a reused buffer and contiguous same-draw,
+  same-mode runs coalesce into single indexed draws
+  (`psx_blend::coalesce_sorted`). Dither
   parity in the blend pass follows retail's rule that only shading
   arithmetic is dithered: the untextured blend entries dither `F` (a
   gouraud result) before the blend; the textured blend pass draws raw
