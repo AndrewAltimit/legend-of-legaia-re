@@ -198,10 +198,11 @@ the live rect), and a move program cycles them by stamping one frame per
 `0x40` instruction over the displayed texel rect. Live-traced via an exec
 breakpoint on `FUN_80058490` (`scripts/pcsx-redux/autorun_battle_moveimage_trace.lua`):
 field scenes run 4-frame strip cycles (e.g. 16×64 strips at one-frame
-cadence) from this op; the battle party's facial-texel stamps (see
-[`battle-data-pack.md`](../formats/battle-data-pack.md#open-questions)) are
-the same mechanism. Engine hook: `MoveVmHost::move_image`
-(`crates/engine-vm/src/move_vm.rs`).
+cadence) from this op. (The battle party's facial-texel stamps share the
+`MoveImage` primitive but are NOT this op — they come from the dedicated
+facial animator `FUN_8004C7B4`; see
+[`battle-data-pack.md` § Facial animation tracks](../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98).)
+Engine hook: `MoveVmHost::move_image` (`crates/engine-vm/src/move_vm.rs`).
 
 (Cases beyond `0x3C` not listed here are documented in the function dump and follow the same pattern; consult `ghidra/scripts/funcs/80023070.txt` for the exhaustive list.)
 

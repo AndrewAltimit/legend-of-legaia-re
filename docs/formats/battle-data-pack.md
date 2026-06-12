@@ -478,6 +478,43 @@ art_animation}` (the stream decode is shared with
 `legaia_asset::monster_archive`; the `"ME"` archive + codec live in
 `legaia_asset::me_archive`).
 
+### Facial animation tracks (entry `+0x8C` / `+0x98`)
+
+Two fields of the `0xAC` action-entry header are per-clip **facial
+keyframe tracks**, consumed by the per-frame facial animator
+`FUN_8004C7B4` (called from the render-node update `FUN_80047430` with
+the node's `+0x68` anim cursor as the frame counter, for every party
+member except Terra — char index 3 is skipped):
+
+- entry `+0x8C`: **mouth** track — four 3-byte records
+  `[frame_id, start, end]`;
+- entry `+0x98`: **eye** track — same shape.
+
+A record is active while `start <= clip_frame <= end` (`end != 0`); its
+`frame_id` selects a face frame from the static per-character SCUS
+tables — eye-frame source x/y at `DAT_80076884/86` (stride 4, six frames
+per character, char stride `0x18`), mouth frames at `DAT_80076824/26`
+(char stride `0x20`), rect sizes + per-character destination offsets at
+`DAT_800768CC..F2`, all banded by the per-slot origin deltas at
+`DAT_800768FC/FE`. No active record selects frame 0 (the neutral face);
+character-record flag `0x2000` forces the neutral eye frame. Each stamp
+is a libgpu `MoveImage` from the frame strip (parked in the character's
+texture band by the normal pool uploads) onto the live face rows of
+section 1's rect — e.g. Vahn's eyes `(544,384) 15x17 → (512,272)` +
+mouth `(544,452) 7x16 → (516,298)` in band slot 0, re-stamped every
+frame (live-traced across a battle entry with
+`autorun_battle_moveimage_trace.lua`). During the dynamic art anims
+(staged ids `0x11..0x18`, under the `DAT_8007BD71 == -2` window) the
+track instead comes from a static per-(char, anim) table at
+`0x80077E80` (stride `0x30`, 16 records) clocked by the global anim
+counter `gp[0x9EA] >> 1`. The sibling stamp pass `FUN_8004CCD4` (called
+right after) covers an additional overlay family; its trigger states are
+untraced. This resolves the historical "~220-byte facial-texel
+overwrite" residue in the texture-placement validation: the overwrite is
+the facial animator's current frame, and a character whose stamped frame
+equals the pool default (Noa in the catalogued captures, Terra always)
+shows no residue at all.
+
 ## Texture-pool VRAM placement
 
 The battle-init texture upload is fully pinned. `FUN_80052FA0` runs once per
@@ -533,9 +570,11 @@ with the live party ids (`DAT_8007BD10`) + equipped item ids (char record
 the bands at **99.7–100 %** per member across the `party_battle_gobu_gobu`
 and `noa_levelup_fight_pre` captures (most blocks byte-exact). The residual
 is a single ~220-byte cluster in section 1's rect (face rows), identical
-across captures — a small post-load facial-texel overwrite, not a placement
-error. (`v0_1_battle_first_frame_tetsu` is captured before the upload pass
-runs and still shows field texels in the band.)
+across captures — the facial animator's current frame, stamped over the
+pool default every frame (see
+[Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98)),
+not a placement error. (`v0_1_battle_first_frame_tetsu` is captured
+before the upload pass runs and still shows field texels in the band.)
 
 Typed port: `legaia_asset::battle_char_assembly` —
 `SECTION_TEXTURE_RECTS` / `RECORD0_TEXTURE_RECTS` /
@@ -640,22 +679,15 @@ on the player files.)
   per-*section*, from the static rect table at `0x800775B8` + the
   party-ordinal band — see
   [Texture-pool VRAM placement](#texture-pool-vram-placement). The residual
-  ~220-byte facial-texel overwrite inside section 1's rect is **narrowed
-  but not closed**: its content byte-matches alternate face frames that
-  are *authored in the same band* (Vahn's live face rows at
-  `(513..526, 272..313)` match frame cells parked around
-  `(545..569, 394..456)`, inside the clean `(544, 384)` upload block), the
-  seven upload rects tile the band with no overlap, and no `MoveImage`
-  fires during steady-state battle frames — so the stamp is a **one-shot
-  VRAM-to-VRAM copy in the battle-init window**, the same primitive family
-  as move-VM op `0x40` (see [`move-vm.md`](../subsystems/move-vm.md)).
-  Per-character presence varies (Vahn ~220 B eyes + mouth, Gala 48 B eye
-  columns, Noa / Terra byte-exact, i.e. the stamped frame equals the pool
-  default). No op-`0x40` instruction pattern targeting the band exists in
-  the player files' decoded pieces, so the issuing site is
-  overlay-resident or built at runtime — catching a battle *entry* under
-  the `MoveImage` exec-trace probe
-  (`autorun_battle_moveimage_trace.lua`) closes it.
+  facial-texel overwrite is ~~narrowed~~ **resolved**: it is the per-frame
+  facial animator `FUN_8004C7B4` stamping the current eye + mouth frames
+  over section 1's face rows via `MoveImage`, driven by the action-entry
+  facial tracks at `+0x8C`/`+0x98` — see
+  [Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98).
+  (The earlier "one-shot at init" reading came from tracing a summon
+  mid-cast window, where the animator is paused; a battle-entry trace
+  from `karisto_sol_pre_encounter` shows it re-stamping every frame.)
+  Residue: the trigger states of the sibling stamp pass `FUN_8004CCD4`.
 - ~~**Slot id ↔ equipment id mapping**~~ **resolved**: the section ids ARE
   item-table ids and the `FUN_80052770` case-4 picker matches them against
   the character record's equipped-item bytes (see

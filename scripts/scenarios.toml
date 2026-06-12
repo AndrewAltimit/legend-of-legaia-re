@@ -1577,6 +1577,16 @@ expected_active_scene = "map03"
 description = "Standing resident on the Karisto Kingdom overworld outside Sol (scene-bundle pool slot 0 = 391 = map03 kingdom bundle). The Karisto leg of the world-map CLUT-cycle verification."
 topics = ["world map", "map03", "Karisto", "CLUT cycle", "ocean", "VRAM"]
 
+[[scenarios]]
+slot = 1
+label = "karisto_sol_pre_encounter"
+backup_fingerprint = "f6d09947d68848330fdb5ccbcd8091a7473265f7cc5809443a28606e5e79c28e"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map03"
+description = "Karisto Kingdom overworld outside Sol (PCSX-Redux), parked one step from a random encounter: holding RIGHT for ~1 second of walking rolls a battle. The battle-ENTRY probe state - arm exec breakpoints (e.g. the MoveImage wrapper for the face-stamp hunt) and walk right to capture the field-to-battle init window live."
+topics = ["world map", "map03", "Karisto", "encounter", "battle entry", "probe state"]
+
 # ----------------------------------------------------------------
 # Ending-sequence screen-widget corpus: six states through the end
 # credits, the only retail consumer of the PROT-0900 widget family
