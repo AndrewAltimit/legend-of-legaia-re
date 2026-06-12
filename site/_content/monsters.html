@@ -858,12 +858,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
 
   // A short label for an animation entry. The decoder hands one down
-  // (`meta.label`: Idle / Move / Action 0xNN, disambiguated on collision);
-  // the local fallback keeps the UI working if an older WASM build is cached.
+  // (`meta.label`: Idle / Move / the named action tags / Action 0xNN,
+  // disambiguated on collision); the local fallback keeps the UI working if
+  // an older WASM build is cached.
   function actionLabel(meta, idx) {
     if (meta && meta.label) return meta.label;
     if (idx === 0) return 'Idle';
-    if (meta.action_id === 1) return 'Move';
+    const NAMED = { 1: 'Move', 2: 'Damaged', 4: 'Knocked Down', 5: 'Getting Up', 0x0B: 'Block', 0x0D: 'Attack', 0x0E: 'Attack', 0x0F: 'Attack' };
+    if (NAMED[meta.action_id]) return NAMED[meta.action_id];
     return 'Action 0x' + meta.action_id.toString(16).toUpperCase().padStart(2, '0');
   }
 
