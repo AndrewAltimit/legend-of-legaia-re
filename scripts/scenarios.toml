@@ -1489,6 +1489,52 @@ expected_game_mode = 0x15
 description = "Gala casting Ozma (spell 0xA0, the Ra-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x27 -> stager extraction 0934. With Meta/Terra this completes the Ra-Seru block 0x9E..0xA0 -> 0932..0934 on the same linear arithmetic as the base summons."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0xA0", "Ra-Seru", "Ozma"]
 
+# Sim-Seru summon mid-cast corpus (all Vahn casts): Palma / Mule / Horn /
+# Jedo (spell ids 0x9A..0x9D, mp 200). Same evidential shape; these fill
+# the gap between Evil Seru Magic (0x99 -> 0927) and the Ra-Seru trio
+# (0x9E..0xA0 -> 0932..0934), making the whole 0x99..0xA0 -> 927..934
+# stager block linear with zero exceptions.
+
+[[scenarios]]
+slot = 4
+label = "palma_summon_mid_cast"
+ram_fingerprint_sha256 = "c30b1dbcaa4dac5abb1139e8242d6fc01b2d376eb411a24e944ba8d505356b37"
+backup_fingerprint = "dfd540db7aa336bdbe84fb561527da8719b8abf170b386a8d52d39efb131da6f"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Palma (spell 0x9A, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x21 -> stager extraction 0928 (byte-resident at slot B 0x801F69D8)."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9A", "Sim-Seru", "Palma"]
+
+[[scenarios]]
+slot = 6
+label = "mule_summon_mid_cast"
+ram_fingerprint_sha256 = "3905d7903655e76dbc8c002ad49edcec811a6c6bf5f59bbf4747f0c6d0e4fa7d"
+backup_fingerprint = "40b2fe215e52c1fc954031ae4b182ce7ec7f9a5a44402b61e7057dc5c9e4b5b9"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Mule (spell 0x9B, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x22 -> stager extraction 0929."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9B", "Sim-Seru", "Mule"]
+
+[[scenarios]]
+slot = 3
+label = "horn_summon_mid_cast"
+ram_fingerprint_sha256 = "0fdb85fd129f8f1f83fa55bc7399d4a4d29f9f2fbd71d49ecacc92687098903d"
+backup_fingerprint = "0df8c64dfd89d34653c24da20fad289dbd463eaf8fa69413f9f611a05cd1d492"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Horn (spell 0x9C, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x23 -> stager extraction 0930."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9C", "Sim-Seru", "Horn"]
+
+[[scenarios]]
+slot = 2
+label = "jedo_summon_mid_cast"
+ram_fingerprint_sha256 = "202977b8ab0adc3664c36053b6e27c269551139c586b528aaed8cfa25963bd6d"
+backup_fingerprint = "b035a46da481f1af7852a3f4edf37c815cc92f43948764737b447aa59d435bfc"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Jedo (spell 0x9D, Sim-Seru summon) mid-summon. Loader-B current-id 0x8007BC4C = 0x24 -> stager extraction 0931. Completes the high summon block: 0x99..0xA0 -> 927..934, every leg capture-pinned on the linear arithmetic."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x9D", "Sim-Seru", "Jedo"]
+
 [[scenarios]]
 slot = 2
 label = "terra_party_battle"

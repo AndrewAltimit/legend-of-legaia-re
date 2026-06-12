@@ -909,18 +909,22 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    evidential. The whole spell block `0x81..=0x8B` is now capture-pinned to `903..=913` (one mid-cast
    state per spell, zero exceptions; 0907 = Nighto, whose "Hell's Music" head title is the
    attack's display name — the dance-song / dual-use reading is refuted, the dance overlay has
-   no slot-B loader callsite). The **high block is now capture-pinned too** (one mid-cast
-   mednafen state per cast, loader-B id read + the predicted entry byte-resident at slot B
-   `0x801F69D8`): the Ra-Seru summons Meta / Terra / Ozma (spell ids `0x9E`/`0x9F`/`0xA0`)
-   drive ids `0x25`/`0x26`/`0x27` → extractions **0932/0933/0934** (pre-linked pointer-table
-   heads, no ASCII title), and an Evil Seru Magic cast (spell id `0x99`, creature Juggernaut)
-   drives id `0x20` → **0927** — "Dark Eclipse" is that attack's display name, the same
-   pattern as Nighto's "Hell's Music". The linear arithmetic (`loader = spell − 0x79`,
-   `extraction = loader + 895`) holds across every pinned leg, base and high. Still open:
-   the evolved-Seru block (`0x8C..0x95` — Gola Gola / Mushura / … casts; predicted
-   `914..923`, with 914/915 already stager-shaped) and 0924 "Ultimate Rave" (its arithmetic
-   slot maps to spell id `0x96`, a rare-drop name — likeliest another Evil-Seru-Magic
-   creature's stager, id resolved per-creature like Juggernaut's).
+   no slot-B loader callsite). The **whole high block `0x99..0xA0` is capture-pinned too**
+   (one mid-cast mednafen state per cast, loader-B id read + the predicted entry
+   byte-resident at slot B `0x801F69D8`): an Evil Seru Magic cast (spell id `0x99`,
+   creature Juggernaut) drives id `0x20` → **0927** ("Dark Eclipse" is that attack's
+   display name, the same pattern as Nighto's "Hell's Music"), the Sim-Seru summons
+   Palma / Mule / Horn / Jedo (`0x9A..0x9D`) drive ids `0x21..0x24` → **0928..0931**, and
+   the Ra-Seru summons Meta / Terra / Ozma (`0x9E..0xA0`) drive ids `0x25..0x27` →
+   **0932..0934** (the untitled entries head with a pre-linked slot-B pointer table). The
+   linear arithmetic (`loader = spell − 0x79`, `extraction = loader + 895`) holds across
+   every pinned leg of both blocks. Still open: whether the evolved-Seru casts
+   (`0x8C..0x95` — Gola Gola / Mushura / …) ride stagers at all (predicted `914..923`,
+   with 914/915 stager-shaped; they may instead be move-FX-path casts), and the
+   attack-titled 0924 "Ultimate Rave" / 925 / 926 (their arithmetic slots map to spell
+   ids `0x96..0x98` = rare-drop placeholder names — likeliest other Evil-Seru-Magic
+   creatures' stagers, the creature resolving the id like Juggernaut's `0x20` under the
+   generic `0x99` spell).
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
 3. **Engine mirrors — resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain — `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 — consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 

@@ -251,6 +251,50 @@ fingerprint_sha256 = "0cff56036607ced1111829e3a3fb683833ac7ce6fcfeb0ba8abb118a14
 notes = "Evil Seru Magic summon stager, creature Juggernaut (capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x20 -> extraction 895 + 0x20 = 927, byte-resident at slot B; scenario juggernaut_summon_mid_cast). Spell id 0x99 ('Evil Seru Magic' in the SCUS spell table) on the same linear arithmetic as the base summon block (loader_id = spell_id - 0x79). Heads with the ASCII attack title 'Dark Eclipse' -- the ATTACK's display name, parallel to Nighto's 'Hell's Music'; the earlier 'loads computed / id open' status is RESOLVED. Slot-B base 0x801F69D8 confirmed by in-file pointer resolution (97%)."
 
 [[overlays]]
+prot_index = 928
+label = "summon_palma"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "capture"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "2c7052d2c93f05f7ed7f97c852908fef841cd891dba38432a3e5853d8999d4c9"
+notes = "Sim-Seru summon stager for Palma (spell id 0x9A, mp 200; capture-pinned mid-cast: loader-B current id 0x8007BC4C = 0x21 -> extraction 895 + 0x21 = 928, byte-resident at slot B through file +0x1000; scenario palma_summon_mid_cast). Pre-linked slot-B pointer-table head, no ASCII title."
+
+[[overlays]]
+prot_index = 929
+label = "summon_mule"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "capture"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "d566b55a334643fe9a026acfba1c9a4b5c407ccd12c3bcbe52d45d72be3b9c36"
+notes = "Sim-Seru summon stager for Mule (spell id 0x9B; capture-pinned: loader-B id 0x22 -> extraction 929; scenario mule_summon_mid_cast). Pre-linked pointer-table head."
+
+[[overlays]]
+prot_index = 930
+label = "summon_horn"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "capture"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "cfc70218c5ced8a8c274ccf76115059139fcdf35f09d66e2c83a1f9587076781"
+notes = "Sim-Seru summon stager for Horn (spell id 0x9C; capture-pinned: loader-B id 0x23 -> extraction 930; scenario horn_summon_mid_cast). Pre-linked pointer-table head."
+
+[[overlays]]
+prot_index = 931
+label = "summon_jedo"
+base_va = 0x801F69D8
+form = "raw"
+eligibility = "static"
+base_source = "capture"
+anchor_va = 0x801F69D8
+fingerprint_sha256 = "08471863e3eab37587c711884ebd415d9e72857fa43cdac5af6f1857a9cd25fb"
+notes = "Sim-Seru summon stager for Jedo (spell id 0x9D; capture-pinned: loader-B id 0x24 -> extraction 931; scenario jedo_summon_mid_cast). Pre-linked pointer-table head. With Palma/Mule/Horn + Juggernaut (927) + the Ra-Seru trio (932..934) the whole 0x99..0xA0 -> 927..934 stager block is capture-pinned linear."
+
+[[overlays]]
 prot_index = 932
 label = "summon_meta"
 base_va = 0x801F69D8
