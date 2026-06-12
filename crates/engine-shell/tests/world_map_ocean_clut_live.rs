@@ -127,3 +127,93 @@ fn ocean_clut_cycle_live_on_all_kingdoms() {
         eprintln!("[skip] no resident kingdom captures available");
     }
 }
+
+/// The script-driven CLUT-cell copy family targets the **same destination
+/// cells on every kingdom**. The map01 GP0 packet census pinned the 16x1
+/// `MoveImage` destinations `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`
+/// and the `(48, 500)` sibling, sourced from the 13-frame palette strips
+/// parked at VRAM rows 498 / 501..505. On a resident Sebucus / Karisto
+/// capture each destination cell must hold a 16-px-aligned window of one of
+/// the strip rows in the **same** state's VRAM - i.e. the copy family runs
+/// against per-kingdom strips with kingdom-invariant destination operands.
+///
+/// (The map01-observed `[32..47] == [0..15]` mirror on row 508 is a map01
+/// script behaviour: on Sebucus / Karisto the `(32, 508)` cell holds strip
+/// content that differs from `(0, 508)`.)
+///
+/// Library-gated: skip-passes without `scripts/scenarios.toml` /
+/// `saves/library` (CI runs without Sony-derived bytes).
+#[test]
+fn clut_cycle_destination_cells_hold_strip_frames_on_all_kingdoms() {
+    let (Some(manifest_path), Some(library)) = (manifest_path(), library_dir()) else {
+        eprintln!("[skip] scenarios manifest / saves library missing");
+        return;
+    };
+    let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse manifest");
+
+    const STRIP_ROWS: [usize; 6] = [498, 501, 502, 503, 504, 505];
+    const DEST_CELLS: [(usize, usize); 8] = [
+        (0, 506),
+        (16, 506),
+        (32, 506),
+        (0, 508),
+        (16, 508),
+        (32, 508),
+        (32, 509),
+        (48, 500),
+    ];
+    let cell = |vram: &[u8], x: usize, y: usize| -> [u8; 32] {
+        let off = (y * VRAM_WIDTH + x) * 2;
+        vram[off..off + 32].try_into().unwrap()
+    };
+
+    let mut checked = 0usize;
+    for &(label, _, scene) in CAPTURES {
+        let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
+            continue;
+        };
+        let Ok(save_path) = manifest.mednafen_save_path(scn, Some(library.as_path())) else {
+            continue;
+        };
+        if !save_path.exists() {
+            continue;
+        }
+        let state = SaveState::from_path(&save_path).expect("parse save state");
+        let gpu = PsxGpu::new(&state);
+        let Some(vram) = gpu.vram_bytes() else {
+            eprintln!("[skip] {label}: no VRAM section");
+            continue;
+        };
+
+        // Every 16-px-aligned nonzero window of the strip park rows.
+        let mut windows = std::collections::HashSet::new();
+        for y in STRIP_ROWS {
+            for x in (0..VRAM_WIDTH - 15).step_by(16) {
+                let w = cell(vram, x, y);
+                if w.iter().any(|&b| b != 0) {
+                    windows.insert(w);
+                }
+            }
+        }
+        for (x, y) in DEST_CELLS {
+            let live = cell(vram, x, y);
+            assert!(
+                live.iter().any(|&b| b != 0),
+                "{label} ({scene}): destination cell ({x}, {y}) is zero"
+            );
+            assert!(
+                windows.contains(&live),
+                "{label} ({scene}): destination cell ({x}, {y}) matches no strip window: {}",
+                live.iter().map(|b| format!("{b:02x}")).collect::<String>()
+            );
+        }
+        eprintln!(
+            "{label} ({scene}): all {} destination cells hold strip-window frames",
+            DEST_CELLS.len()
+        );
+        checked += 1;
+    }
+    if checked == 0 {
+        eprintln!("[skip] no resident kingdom captures available");
+    }
+}
