@@ -571,9 +571,9 @@ and the gap was an oracle artifact (the lightweight pre-pass skipped that step; 
 (2) the world-map walk view **palette-cycles** specific columns of the kingdom terrain CLUT rows 506/508/509 in place; `vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS` excludes exactly those columns for world-map scenes (per-column census below) — row 507 and the static columns of 506/508/509 are asserted.
 
 
-### World-map CLUT cycling beyond the ocean head — column census pinned; writer unlocated
+### World-map CLUT cycling beyond the ocean head — census + writer pinned, all kingdoms
 
-*Status:* effects fully pinned from a ten-state capture census; the writer (one coupled animator) is unlocated
+*Status:* effects pinned from a ten-state capture census + a cross-kingdom destination-cell verification; the writer family is located; residue = retail cadence
 
 The row-506 **head** (entries 0..15) is the documented 13-frame ocean CLUT animation (`legaia_asset::ocean`, engine-implemented — see [`world-map.md`](../subsystems/world-map.md) "Ocean animation"); a capture holds an arbitrary phase, never the disc base CLUT.
 
@@ -581,15 +581,26 @@ A per-column variance census across all ten map01-CLUT-resident catalog states p
 
 - **row 506** cols `{1, 4..10, 16..20, 33..39, 41..47}`: the ocean head, a second block head, a rotating ring at 32..39 of STP-set near-copies of the ocean colours (`ring & 0x7fff` ≈ head, rotating in lockstep with the ocean phase), and the generated pure-channel tail at 40..47 whose intensity is itself phase-animated (`0x11/0x0d/0x0c/0x0b` across captures).
 - **row 507**: none — fully static, 256/256 byte-exact vs the disc build.
-- **row 508** cols `{1, 14, 15, 26, 27, 33, 46, 47}` plus the live-maintained mirror `[32..47] == [0..15]` (verified at every captured phase; the disc base there is a different blue-ramp palette the runtime overwrites).
+- **row 508** cols `{1, 14, 15, 26, 27, 33, 46, 47}` plus the live-maintained mirror `[32..47] == [0..15]` (verified at every captured map01 phase; the disc base there is a different blue-ramp palette the runtime overwrites). The mirror is a **map01 script behaviour**: on the Sebucus / Karisto resident captures the `(32, 508)` cell holds strip content that differs from `(0, 508)`.
 - **row 509** cols `{42, 43}` only.
+- **row 500** cols `{62, 63}` — inside the `(48, 500)` sibling destination cell from the packet census below; the whole 16-wide cell is excluded (a `MoveImage` rewrites all 16 entries; the stable columns merely coincide across the strip's frames).
 
 The four overworld-battle angle states are byte-identical on these rows (the cycle parks during battle); cycling shows across capture groups instead (menu / into-town / level-up lineages = distinct phases).
 
 **The writer is LOCATED** — resolved from the `keikoku_chest_preload` capture's RAM alone (no live probe): the map01 libgpu command queue holds 16×1 GP0 `0x80` cell copies whose destinations are exactly the censused cells (plus a `(48, 500)` sibling) and whose sources walk the 13-frame palette strips parked at VRAM rows 498/501..505.
 The emitters are the field overlay's script-driven CLUT-cell effect family — `FUN_801E4C58` (field-VM `0x4C` n6 sub-`0x61`: one-shot `MoveImage` cell copy or flat-colour `LoadImage`, coordinates = script operands at `+5/+7` → `+9/+0xB`) and `FUN_801E4794` (multi-frame cross-fade SM via the `[0xFFFF0000][handler]` records at `0x801F291C+`) — bottoming out in statically-linked libgpu `MoveImage`/`LoadImage`/`StoreImage`.
 No rect constant exists in any code image because the rows live in scene-script operands; the lockstep coupling = sibling ops sharing the frame counter, not one wider rect. See [`world-map.md`](../subsystems/world-map.md) "Ocean animation".
-Remaining residue: the exact retail cadence (the scratchpad frame-delta byte `0x1F800393` feeds the fade SM) is still unpinned, `play-window` animates the row-506 ocean head only, and the census is map01/Drake-only (no map02/map03-resident capture exists).
+**Cross-kingdom verification:** the destination-cell set is kingdom-universal — on the resident Sebucus / Karisto captures every censused destination cell (`(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`, `(48, 500)`) holds a 16-px-aligned window of that state's own strip park rows (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`), i.e. the copy family runs against per-kingdom strips with kingdom-invariant destination operands.
+Remaining residue: the exact retail cadence (the scratchpad frame-delta byte `0x1F800393` feeds the fade SM) is still unpinned, and `play-window` animates the row-506 ocean head only.
+
+
+### `init_data` UI-tile pages — journey-dependent residency (resolved); map03 texture column (open)
+
+*Status:* the keikoku oracle drift is resolved (residency class pinned); a map03-only engine-vs-retail texture divergence is capture-blocked
+
+`init_data` (PROT 0) carries two 64-word × 256 UI-tile TIMs at fb `(704, 0)` / `(704, 256)`. The capture corpus proves the rects are **journey-dependent residency**, not stable shared texture: overworld transit leaves kingdom-bundle content over parts of the rect (every Drake-stage capture — keikoku, the field-menu states — holds the *same* kingdom bytes at `(704, 256)` where the boot-fresh town01 states hold the disc tiles). Town scenes mask this only because their own scene TIM overwrites the slot; keikoku carries none, exposing the engine's `init_data` upload against retail's resident kingdom content. The parity oracle pools captures across all scenes against `scene::block_image_rects(index, "init_data")` — the same cross-scene dynamism treatment as the befect band.
+
+**Open:** the engine's map03 pre-pass diverges from the Karisto resident capture in the 64-wide page column `x=576..640, y≈320..448` (~2.2k cells; engine `0x3332`-family texels, retail `0x4444 4411 ffff...`), while map01 and map02 match the engine at the same cells. One capture cannot split the two readings — Sol-town residency overwriting the kingdom upload (the player exited Sol) vs the engine uploading a wrong map03 TIM. A second map03-resident capture reached by a different route decides it.
 
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels — pause-menu-lineage, not boot
