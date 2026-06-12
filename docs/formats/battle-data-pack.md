@@ -639,9 +639,23 @@ on the player files.)
 - ~~**Per-texture descriptor / placement**~~ **resolved**: the placement is
   per-*section*, from the static rect table at `0x800775B8` + the
   party-ordinal band — see
-  [Texture-pool VRAM placement](#texture-pool-vram-placement). Still open
-  within it: the source of the small (~220-byte) post-load facial-texel
-  overwrite the live captures show inside section 1's rect.
+  [Texture-pool VRAM placement](#texture-pool-vram-placement). The residual
+  ~220-byte facial-texel overwrite inside section 1's rect is **narrowed
+  but not closed**: its content byte-matches alternate face frames that
+  are *authored in the same band* (Vahn's live face rows at
+  `(513..526, 272..313)` match frame cells parked around
+  `(545..569, 394..456)`, inside the clean `(544, 384)` upload block), the
+  seven upload rects tile the band with no overlap, and no `MoveImage`
+  fires during steady-state battle frames — so the stamp is a **one-shot
+  VRAM-to-VRAM copy in the battle-init window**, the same primitive family
+  as move-VM op `0x40` (see [`move-vm.md`](../subsystems/move-vm.md)).
+  Per-character presence varies (Vahn ~220 B eyes + mouth, Gala 48 B eye
+  columns, Noa / Terra byte-exact, i.e. the stamped frame equals the pool
+  default). No op-`0x40` instruction pattern targeting the band exists in
+  the player files' decoded pieces, so the issuing site is
+  overlay-resident or built at runtime — catching a battle *entry* under
+  the `MoveImage` exec-trace probe
+  (`autorun_battle_moveimage_trace.lua`) closes it.
 - ~~**Slot id ↔ equipment id mapping**~~ **resolved**: the section ids ARE
   item-table ids and the `FUN_80052770` case-4 picker matches them against
   the character record's equipped-item bytes (see
