@@ -954,12 +954,17 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    `0x42`/`0x43` → **961/962**, and Cort's Evil Seru Magic `0x47` → **966**, *distinct*
    from the player-side Juggernaut stager 0927 — the player and enemy arms of the same
    spell ship separate stagers, and the enemy-special id band sits at `0x2B..0x47` →
-   `938..966`. Still open: whether the evolved-Seru casts (`0x8C..0x95` — Gola Gola /
-   Mushura / …) ride stagers at all (predicted `914..923`, with 914/915 stager-shaped;
-   they may instead be move-FX-path casts), and the attack-titled 0924 "Ultimate Rave" /
-   925 / 926 (arithmetic ids `0x1D..0x1F`, between the predicted evolved-Seru block and
-   the pinned enemy-special band — with enemy stagers now confirmed, likeliest **other
-   enemies'** special-attack stagers; one mid-cast each still closes them).
+   `938..966`. **Evolved-Seru block — structurally resolved (static).** All ten
+   evolved-Seru entries (`0x8C..0x95` — Gola Gola / Mushura / …) → `914..923` trim to
+   clean move-VM stagers (4..67 spawn sites; `EVOLVED_SUMMON_STAGER_PROT`, disc-gated
+   `summon_overlay_block`), so the "they may be move-FX-path casts instead" alternative is
+   falsified — they ride the stager mechanism, on the same `(id − 0x81) + 903` run as the
+   base block (bracket-pinned by `0x8B → 913` and `0x99 → 927`); only the per-id binding
+   is capture-pending. Two carry `0x4000` render-mode nodes (`0x8E → 916`, `0x93 → 921`).
+   The attack-titled 0924 "Ultimate Rave" + 0925 are likewise confirmed stager-shaped
+   (arithmetic ids `0x1D..0x1F` under the enemy `895 + id` formula — likeliest **other
+   enemies'** specials; one mid-cast each still pins the binding), while **0926 is a
+   single-sector non-stager** (1 spawn site, 0 records — no real scene-graph there).
 2. **The 0977 sub-id-5 minigame.** Its image holds the mode-24 case-5 init (`0x801CEA6C` prologue) + the arena monster-name roster + `other6` dev paths, but the Muscle Dome match SM `FUN_801D0748` does **not** land in it — identity (which Sol/arena attraction it is) unconfirmed.
 3. **Engine mirrors — resolved.** `OVERLAY_PROT_BASE` now carries the extraction-space `0x37F` (the engine host chain — `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 — consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 
