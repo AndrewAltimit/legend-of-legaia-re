@@ -2,7 +2,9 @@
 //! `battle_data` creature, so the summon can render through the ordinary battle
 //! per-object animation pipeline. Pins `summon::summon_creature_id` against real
 //! PROT 867 bytes. The Gimard mapping (`0x81` → id 10) is the one byte-verified
-//! against the fingerprinted `gimard_summon_visible` save.
+//! against the fingerprinted `gimard_summon_visible` save; the whole base +
+//! evolved block `0x81..=0x95` is disc-pinned by mesh identity (see
+//! `legaia_asset::summon_creatures` + the asset-side `summon_creature_tmd_map_real`).
 use std::path::PathBuf;
 
 fn battle_data() -> Option<Vec<u8>> {
@@ -37,6 +39,18 @@ fn player_summons_map_to_their_namesake_battle_data_creatures() {
         (0x89, "Orb", 83),
         (0x8a, "Freed", 92),
         (0x8b, "Nova", 95),
+        // Evolved-Seru block (disc-pinned by mesh identity, not name) — the two
+        // legs 0x90/0x91 had no mid-cast capture and are pinned from disc bytes.
+        (0x8c, "Gola Gola", 98),
+        (0x8d, "Mushura", 101),
+        (0x8e, "Aluru", 80),
+        (0x8f, "Barra", 141),
+        (0x90, "Kemaro", 144),
+        (0x91, "Spoon", 147),
+        (0x92, "Slippery", 150),
+        (0x93, "Iota", 153),
+        (0x94, "Puera", 156),
+        (0x95, "Gilium", 159),
     ];
     for &(spell, name, id) in expect {
         let got = summon_creature_id(spell, &entry)
@@ -61,4 +75,13 @@ fn player_summons_map_to_their_namesake_battle_data_creatures() {
     // Non-summon spell ids resolve to nothing.
     assert!(summon_creature_id(0x80, &entry).is_none());
     assert!(summon_creature_id(0x10, &entry).is_none());
+
+    // The high block 0x99..=0xA0 is a bespoke mesh, not an archive creature, so
+    // it is intentionally unresolved here (the bespoke-mesh render is unwired).
+    for spell in 0x99u8..=0xA0 {
+        assert!(
+            summon_creature_id(spell, &entry).is_none(),
+            "high-block summon {spell:#04x} should not resolve to an archive creature",
+        );
+    }
 }

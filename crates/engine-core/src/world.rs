@@ -5097,7 +5097,12 @@ impl World {
     /// Seru-magic id (`0x81..=0x8b`). Idempotent within a step (last cast wins);
     /// no-op for non-summon ids. The retail cast band's overlay-resolve point.
     pub(crate) fn request_summon_spawn(&mut self, spell_id: u8, origin: [i16; 3]) {
-        if (crate::summon::SERU_SUMMON_IDS).contains(&spell_id) {
+        // Base + evolved-Seru summons render their namesake battle_data creature
+        // (disc-pinned by `legaia_asset::summon_creatures`); the high block
+        // 0x99..=0xA0 is a bespoke mesh not yet supported, so it is not spawned.
+        if crate::summon::SERU_SUMMON_IDS.contains(&spell_id)
+            || crate::summon::EVOLVED_SUMMON_IDS.contains(&spell_id)
+        {
             self.pending_summon_spawn = Some((spell_id, origin));
         }
     }
