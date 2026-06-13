@@ -1976,6 +1976,20 @@ pub struct World {
     /// per-tile step detection. `None` until the first world-map tick seeds it.
     pub world_map_last_tile: Option<(i32, i32)>,
 
+    /// Region-keyed random-encounter state for the current FIELD scene (the
+    /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
+    /// uses, [`Self::world_map_region_tracker`]). When set,
+    /// [`Self::on_field_step`] rolls against the player's *active region*
+    /// (per-region rate increment + formation-range pick) and drives the
+    /// trigger through the [`crate::encounter::EncounterSession`]'s
+    /// transition / grace SM, instead of the session's mean-rate tracker.
+    /// `None` on scenes whose MAN has no encounter-region section (towns,
+    /// or any engine that hasn't routed per-region data) - those fall back
+    /// to the aggregated mean-rate `EncounterSession`.
+    ///
+    /// REF: FUN_801D9E1C
+    pub field_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
+
     /// Overworld player walk speed in world units per frame (per held d-pad
     /// direction). Default [`Self::WORLD_MAP_PLAYER_SPEED`].
     pub world_map_player_speed: i16,
@@ -2403,6 +2417,7 @@ impl World {
             pending_world_map_encounter: None,
             world_map_region_tracker: None,
             world_map_last_tile: None,
+            field_region_tracker: None,
             world_map_player_speed: Self::WORLD_MAP_PLAYER_SPEED,
             battle_return_mode: SceneMode::Field,
             field_carriers: Vec::new(),
@@ -5589,6 +5604,26 @@ impl World {
         self.world_map_region_tracker =
             Some(crate::region_encounter::RegionEncounterTracker::new(table));
         self.world_map_last_tile = None;
+    }
+
+    /// Route the current FIELD scene's region-keyed encounter table so
+    /// [`Self::on_field_step`] rolls per *active region* (the retail
+    /// `FUN_801D9E1C` rate counter + formation-range pick) instead of the
+    /// aggregated mean-rate [`crate::encounter::EncounterSession`]. The
+    /// session stays installed and supplies the transition / grace
+    /// bracketing (via [`crate::encounter::EncounterSession::trigger_with`]);
+    /// the region tracker just replaces *which* rate and formation a step
+    /// rolls. `None` clears the field tracker (back to the mean path).
+    ///
+    /// The scene-entry path calls this from the same MAN the mean table is
+    /// built from ([`crate::region_encounter::region_encounter_table_from_man`]),
+    /// so a scene whose MAN has no encounter-region section keeps the mean
+    /// path untouched.
+    pub fn set_field_regions(
+        &mut self,
+        table: Option<crate::region_encounter::RegionEncounterTable>,
+    ) {
+        self.field_region_tracker = table.map(crate::region_encounter::RegionEncounterTracker::new);
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so

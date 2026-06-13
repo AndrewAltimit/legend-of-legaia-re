@@ -407,6 +407,25 @@ impl EncounterSession {
         }
     }
 
+    /// Drive a roll sourced from *outside* the session's own mean-rate
+    /// tracker into the transition SM. Used by the per-region field path
+    /// ([`crate::region_encounter::RegionEncounterTracker`]), which owns the
+    /// rate counter + formation pick; this session still supplies the
+    /// transition / grace bracketing so a region-driven encounter flows
+    /// through the same `Transition -> Triggered -> Battling -> Grace`
+    /// states as a mean-rate one. No-op (returns `false`) unless the phase
+    /// is [`EncounterPhase::Idle`], mirroring [`Self::on_step`]'s own gate.
+    pub fn trigger_with(&mut self, roll: EncounterRoll) -> bool {
+        if !matches!(self.phase, EncounterPhase::Idle) {
+            return false;
+        }
+        self.phase = EncounterPhase::Transition {
+            frames_remaining: self.transition_frames,
+            roll,
+        };
+        true
+    }
+
     /// Drain the [`EncounterPhase::Triggered`] roll. Engines call this
     /// once the transition is done to fetch the formation_id and load
     /// the battle scene. Sets the phase to [`EncounterPhase::Battling`].

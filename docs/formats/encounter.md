@@ -361,6 +361,20 @@ subtracts the setting-scaled rate increment from the step counter, and on a
 one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` counter reset. The
 no-trigger path consumes zero RNG, matching retail (so it is replay-safe).
 
+Both scene modes route the tracker off the same MAN section. The **overworld**
+installs it via `World::set_world_map_regions` (rolled per tile in
+`live_world_map_tick`). A **field** scene installs it at scene entry via
+`World::set_field_regions` (`SceneHost::enter_field_scene`), and
+`World::on_field_step` rolls the active region and feeds a trigger through the
+aggregated [`EncounterSession`](../../crates/engine-core/src/encounter.rs)'s
+transition / grace SM (`EncounterSession::trigger_with`) — so the field path now
+varies the rate + formation pick by region instead of using the single
+mean-rate table, while keeping the same transition bracketing. A field scene
+whose MAN has no encounter-region section (towns) installs no tracker and falls
+back to the mean-rate session. Pinned by
+`crates/engine-core/tests/field_region_encounter_disc.rs` (install + per-region
+rate variation + the full region→session→drain flow).
+
 **Encounter control block (`_DAT_801C6EA4`).** A 100-byte block
 allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
 ("Mesworks set encount group table"). After scene load it carries:

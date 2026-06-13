@@ -1813,6 +1813,21 @@ impl SceneHost {
                 self.ensure_move_power_table();
             }
         }
+        // Route the per-region random-encounter table from the same MAN so
+        // field steps roll against the player's active region (per-region
+        // rate + formation-range, `FUN_801D9E1C`) rather than the aggregated
+        // mean rate the `EncounterSession` above carries. Scenes whose MAN
+        // has no encounter-region section (towns) resolve to `None`, which
+        // clears the field tracker and leaves the mean path in place - so
+        // this is additive: the mean session stays installed either way and
+        // supplies the transition / grace bracketing.
+        let field_region_table = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
+            .as_ref()
+            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
+        self.world.set_field_regions(field_region_table);
         // Install the scene's field entity-SM carriers derived from the same
         // MAN actor-placement partition (retail builds one record per
         // MAN-placed entity at scene load). They sit Idle - the sparring

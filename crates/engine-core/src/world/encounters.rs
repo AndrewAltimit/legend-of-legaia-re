@@ -460,6 +460,49 @@ impl World {
         if !matches!(self.mode, SceneMode::Field) {
             return false;
         }
+        // Per-region path: when a field region tracker is installed, the
+        // player's active region (rate increment + formation-range pick)
+        // drives the roll (`FUN_801D9E1C`) instead of the session's
+        // aggregated mean rate. The session still owns the transition /
+        // grace SM, so only roll while it is `Idle` (mirroring
+        // [`crate::encounter::EncounterSession::on_step`]'s own gate) and feed
+        // a trigger through [`crate::encounter::EncounterSession::trigger_with`].
+        // REF: FUN_801D9E1C (ported in crate::region_encounter)
+        if self.field_region_tracker.is_some() {
+            let idle = self
+                .encounter
+                .as_ref()
+                .is_none_or(|s| matches!(s.phase(), crate::encounter::EncounterPhase::Idle));
+            if !idle {
+                return false;
+            }
+            let Some(slot) = self.player_actor_slot else {
+                return false;
+            };
+            let (wx, wz) = match self.actors.get(slot as usize) {
+                Some(a) => (a.move_state.world_x, a.move_state.world_z),
+                None => return false,
+            };
+            // Take the tracker out so the RNG closure can borrow `self`
+            // (same borrow-window pattern as `live_world_map_tick`).
+            let mut tracker = self.field_region_tracker.take().expect("is_some checked");
+            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            self.field_region_tracker = Some(tracker);
+            return match roll {
+                Some(r) => {
+                    let er = crate::encounter::EncounterRoll {
+                        formation_id: r.formation_id as u16,
+                        row_index: r.formation_id as usize,
+                        roll_q8: 0,
+                    };
+                    self.encounter
+                        .as_mut()
+                        .map(|s| s.trigger_with(er))
+                        .unwrap_or(false)
+                }
+                None => false,
+            };
+        }
         let rng = self.next_rng();
         match self.encounter.as_mut() {
             Some(session) => session.on_step(rng),
