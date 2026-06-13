@@ -62,11 +62,13 @@
 //!
 //! ## Record first words: nodes, meshes, and the `0x4000` render-mode sentinel
 //!
-//! Across every trimmed stager in the corpus (player 0903..=0913, high
-//! 0927..=0934, enemy 0938/0940/0944/0961/0962/0966) the record first word is
-//! one of exactly three things: `-1` (transform node — the dominant kind), a
-//! small library-mesh index (`< 0x20` observed), or **`0x4000`** (four records:
-//! one each in PROT 0928/0931, two in 0929). The historical `0x1000` /
+//! Across every trimmed stager in the corpus (player 0903..=0913, evolved-Seru
+//! 0914..=0923, high 0927..=0934, enemy 0938/0940/0944/0961/0962/0966) the
+//! record first word is one of exactly three things: `-1` (transform node — the
+//! dominant kind), a small library-mesh index (`< 0x20` observed), or
+//! **`0x4000`** (render-mode nodes, in five stagers: the Sim-Seru trio
+//! 0928/0929/0931 and the evolved-Seru casts 0916/0921). The historical
+//! `0x1000` /
 //! `0x8000`-class "sentinel" census was the over-read artifact above and
 //! dissolves under trimming. This matches the spawn helper's own dispatch
 //! (`FUN_80021B04`, `ghidra/scripts/funcs/80021b04.txt`): `model_sel < 0` →
@@ -146,6 +148,24 @@ pub const POOL_SPAWN_HELPER: u32 = 0x8005_0ED4;
 /// before treating it as a stager. See the disc-gated `summon_overlay_block`
 /// sweep and `docs/reference/open-rev-eng-threads.md`.
 pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 903..=913;
+
+/// Evolved-Seru player cast block (`spell_id 0x8C..=0x95`), the contiguous
+/// continuation of [`PLAYER_SUMMON_STAGER_PROT`] under the *same* linear loader
+/// arithmetic: `extraction = (id - 0x81) + 903`, so `0x8C → 914 .. 0x95 → 923`.
+/// Each entry, trimmed to its TOC-gap footprint ([`unique_content_len`]), parses
+/// as a move-VM stager (4..67 spawn sites, non-trivial scene-graphs) — the same
+/// structure the base, high, and enemy blocks carry. This pins the *structural*
+/// half statically: the evolved-Seru casts ride the stager mechanism, not the
+/// resident `0900` move-FX module. Several legs are now capture-pinned too — a
+/// mid-cast state per cast holds loader-B id `spell − 0x79` with the stager
+/// 100% byte-resident at slot B (`evolved_summon_binding`); the remaining legs
+/// ride the same bracketed run (`0x8B → 913` and `0x99 → 927` bracket the gap).
+///
+/// **Two entries carry `0x4000` render-mode nodes** ([`RENDER_NODE_MODE_A`]) —
+/// `0x8E` → 916 (4 records) and `0x93` → 921 (6) — the only such records found
+/// outside the Sim-Seru high stagers (0928/0929/0931). Pinned by the disc-gated
+/// `summon_overlay_block` sweep.
+pub const EVOLVED_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 914..=923;
 
 /// High-summon (evil-Seru creature) stager block, capture-pinned: action ids
 /// `0x99..=0xA0` (Juggernaut / Palma / Mule / Horn / Jedo / Meta / Terra /

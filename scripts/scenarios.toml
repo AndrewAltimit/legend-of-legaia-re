@@ -1439,6 +1439,94 @@ expected_game_mode = 0x15
 description = "Noa casting Nova (spell 0x8B) mid-summon. Loader-B current-id 0x8007BC4C = 18 -> stager extraction 0913. Completes the capture-pinned player Seru-magic block: 0x81..0x8B -> 903..913, every leg on the linear arithmetic."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8B"]
 
+# Evolved-Seru summon mid-cast corpus: the player evolved-Seru casts
+# (spell ids 0x8C..) that continue the base block on the same linear
+# arithmetic (extraction = loader_id + 895, loader_id = spell_id - 0x79).
+# Each was previously only statically predicted (the entries parse as
+# stagers, but no mid-cast state pinned the per-id binding); these three
+# byte-pin it - loader-B current-id read mid-cast + the predicted stager
+# 100% byte-resident at slot-B 0x801F69D8.
+
+[[scenarios]]
+slot = 2
+label = "gola_gola_summon_mid_cast"
+ram_fingerprint_sha256 = "53c9d0345c2cee22fe32c5bb584cce3adc355ce8e5f32c61a87b16a07ef93056"
+backup_fingerprint = "de6b61e58bfa84404133cc74b0e582a2793260f182d334dc6c5dfa8bf626aab5"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Gola Gola (evolved-Seru, fire, attack 'Spinning Flare', spell 0x8C) mid-summon. Loader-B current-id 0x8007BC4C = 19 (0x13) -> stager extraction 0914; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8C -> 914."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8C", "evolved-Seru"]
+
+[[scenarios]]
+slot = 3
+label = "mushura_summon_mid_cast"
+ram_fingerprint_sha256 = "0a4412f8a879c39e9866dfb9ff515b2eb7a279d1f65031cb01d2d82db4868a3c"
+backup_fingerprint = "2a73b0a95f14853e1059cd9271c9f5bb0121db362d1468d6b1703d472b6f6e88"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Mushura (evolved-Seru, earth, attack 'Crazy Driver', spell 0x8D) mid-summon. Loader-B current-id 0x8007BC4C = 20 (0x14) -> stager extraction 0915; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8D -> 915."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8D", "evolved-Seru"]
+
+[[scenarios]]
+slot = 4
+label = "barra_summon_mid_cast"
+ram_fingerprint_sha256 = "c8d607dbd2f34700378ad928a1c67482088addd9f437421092dd7717b8ed9f60"
+backup_fingerprint = "fbe3179a7668dbe094c526756a2eaf12d197c21252b03da2168f6dbb1a910979"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Barra (evolved-Seru, wind, attack 'Hell Dive', spell 0x8F) mid-summon. Loader-B current-id 0x8007BC4C = 22 (0x16) -> stager extraction 0917; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8F -> 917."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8F", "evolved-Seru"]
+
+[[scenarios]]
+slot = 8
+label = "aluru_summon_mid_cast"
+ram_fingerprint_sha256 = "dfb57b1bddc8b233beb5dad3a8b8b64c3efa04662d0edce6759ba5825a7cffcb"
+backup_fingerprint = "164d2174566d7613889f3363ab7964b7dfb311d1c4210933fb3440c18a03983c"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Aluru (evolved-Seru, light, attack 'Final Blast', spell 0x8E) mid-summon. Loader-B current-id 0x8007BC4C = 21 (0x15) -> stager extraction 0916; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x8E -> 916 - one of the two evolved-block stagers carrying 0x4000 render-mode-node records - confirming that carrier is a player cast."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8E", "evolved-Seru", "render-mode"]
+
+[[scenarios]]
+slot = 5
+label = "slippery_summon_mid_cast"
+ram_fingerprint_sha256 = "ec87790af7570ce6837e4ce1728af43fd5436a83dc7a5f848f68c81a10e53693"
+backup_fingerprint = "ba29ffa030958fb38acb82948707dde451ae052bea04ce2a587daa7ee765ca4c"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Slippery (evolved-Seru, water, attack 'Deadly Rain', spell 0x92) mid-summon. Loader-B current-id 0x8007BC4C = 25 (0x19) -> stager extraction 0920; the stager is byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x92 -> 920."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x92", "evolved-Seru"]
+
+[[scenarios]]
+slot = 7
+label = "iota_summon_mid_cast"
+ram_fingerprint_sha256 = "f8fd73be47c7b8e5debb9354edbe2e4fa43eb9ffe5d53648f7611f5e3c4118bd"
+backup_fingerprint = "7779cd109943b4489d879adc9b8d200b44df83131d4ee851e4b8e98336d4a547"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Iota (evolved-Seru, earth, attack 'Odd Dimension', spell 0x93) mid-summon. Loader-B current-id 0x8007BC4C = 26 (0x1a) -> stager extraction 0921; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x93 -> 921 - the second evolved-block stager carrying 0x4000 render-mode-node records (6 of them) - confirming that carrier is a player cast."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x93", "evolved-Seru", "render-mode"]
+
+[[scenarios]]
+slot = 6
+label = "puera_summon_mid_cast"
+ram_fingerprint_sha256 = "7673a799ee29f77bd3a972742378a8e0edc493ec17cb02fb7be865dc7f0d2261"
+backup_fingerprint = "f09357904e2ad50a966c8213fdf116cb1157db343f30f23574b06830a04b1940"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Puera (evolved-Seru, dark, attack 'Dream Illusion', spell 0x94) mid-summon. Loader-B current-id 0x8007BC4C = 27 (0x1b) -> stager extraction 0922; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x94 -> 922."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x94", "evolved-Seru"]
+
+[[scenarios]]
+slot = 9
+label = "gilium_summon_mid_cast"
+ram_fingerprint_sha256 = "01a398e1d798fb45d7f753b1abf42102e47a80d442e01b6f968db0e3f630e9c8"
+backup_fingerprint = "4010d82fbff48cc13840984ccc3cfc1061e33dfa9d364638145b9463da157049"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Gilium (evolved-Seru, thunder, attack 'Space Cannon', spell 0x95) mid-summon. Loader-B current-id 0x8007BC4C = 28 (0x1c) -> stager extraction 0923; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x95 -> 923, the last entry of the evolved-Seru block. With these the only unpinned legs are 0x90 -> 918 and 0x91 -> 919."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x95", "evolved-Seru"]
+
 # High-id summon mid-cast corpus (endgame card): the Ra-Seru summons
 # (Meta / Terra / Ozma, spell ids 0x9E..0xA0) and an Evil Seru Magic
 # cast (spell id 0x99, creature Juggernaut). Same evidential shape as
@@ -1678,6 +1766,75 @@ description = "Right after Zora's Glare petrified Vahn. The AFTER leg: +0x16E = 
 topics = ["battle", "status", "Stone", "petrify", "Glare", "capture pair", "+0x16E bit 0x04"]
 
 # ----------------------------------------------------------------
+# Delilas-brothers enemy special-attack mid-cast corpus: a NON-final-boss
+# enemy block on the same loader-B stager mechanism (extraction = 895 +
+# loader-B id at 0x8007BC4C), confirming the enemy-cast stager path
+# generalizes beyond Cort. Ids 0x3F/0x40/0x41 -> extraction 0958/0959/0960
+# (a contiguous block just below Cort's evolved-form 0x42/0x43 -> 0961/0962).
+# Each stager is 100% byte-resident at slot B and parses as a move-VM
+# stager. At the captured instants the part-actor pool DAT_801C90F0 is
+# empty (no live pooled part-actor; the few RAM word-matches into the
+# record table are the overlay's own internal pointers, not actor +0x48).
+# None of the three carries a 0x4000 render-mode node, so even a live part
+# here would not seat the render-mode draw.
+
+[[scenarios]]
+slot = 2
+label = "gi_delilas_blazing_slash_mid_cast"
+ram_fingerprint_sha256 = "7a97cf28e8abb9fdc97b4b87658972d9c6ed6399b98bb9c946afc5a473c4068e"
+backup_fingerprint = "94769738cb0eb2d460171c0a2ef30b00afc1f6998dfdc784eaa3b798ef389394"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Gi Delilas casting Blazing Slash mid-cast. Loader-B current-id 0x8007BC4C = 0x3F (63) -> stager extraction 0958 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Blazing Slash", "enemy cast"]
+
+[[scenarios]]
+slot = 3
+label = "che_delilas_megaton_press_mid_cast"
+ram_fingerprint_sha256 = "7340a85e78e1d4f361c81c17b65f07322586739d0e7558e467765f01cd800a41"
+backup_fingerprint = "760cb4604254c4ab55043381db5284e66ec5a65b843a8fc6e460683cf2e06c97"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Che Delilas casting Megaton Press mid-cast. Loader-B current-id 0x8007BC4C = 0x40 (64) -> stager extraction 0959 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Megaton Press", "enemy cast"]
+
+[[scenarios]]
+slot = 4
+label = "lu_delilas_plasma_strike_mid_cast"
+ram_fingerprint_sha256 = "1f37b93502c424aa36ac20d51d9de798c5d74b51c7762903109f0d9fe1f60438"
+backup_fingerprint = "ba7756bfb31f592f5a06db7363caafa9f8031796d7f81a11161022660616dc31"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Lu Delilas casting Plasma Strike mid-cast. Loader-B current-id 0x8007BC4C = 0x41 (65) -> stager extraction 0960 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Plasma Strike", "enemy cast"]
+
+# Zeto enemy special-attack mid-casts. Call Wave and Big Wave are one logical
+# attack over two turns (Call Wave summons the wave; Big Wave unleashes it the
+# next turn), so both read loader-B id 0x33 -> the SAME stager extraction 0946,
+# byte-resident at slot B in both states - the shared id is the move's
+# identity, not a stale tracker. No 0x4000 record; part pool empty at both
+# instants.
+
+[[scenarios]]
+slot = 5
+label = "zeto_call_wave_mid_cast"
+ram_fingerprint_sha256 = "507e00081b48816d3f476e1788dbf1a815b1f14cd86c37d216705603bf4211cb"
+backup_fingerprint = "81b5850d8373aba6d30fe8b6804863e462aa7c25eb61a861ba2cd7caa75f3772"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Zeto casting Call Wave mid-cast. Loader-B current-id 0x8007BC4C = 0x33 (51) -> stager extraction 0946 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant. Shares stager 0946 with zeto_big_wave_mid_cast."
+topics = ["battle", "Zeto", "boss", "stager", "loader-B", "Call Wave", "enemy cast"]
+
+[[scenarios]]
+slot = 6
+label = "zeto_big_wave_mid_cast"
+ram_fingerprint_sha256 = "29499bcbb7c4a264ba2090d2ebd49cc0ffbd77f8d5c8cf0ebb8effe250055c24"
+backup_fingerprint = "b44ff5645f5094c0313b2c1781096b12264fcb8d74d3adc21539fda84a47064f"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Zeto casting Big Wave mid-cast. Loader-B current-id 0x8007BC4C = 0x33 (51) -> stager extraction 0946 (byte-resident at slot B 0x801F69D8) - the same stager as zeto_call_wave_mid_cast. Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Zeto", "boss", "stager", "loader-B", "Big Wave", "enemy cast"]
+
 # Final-boss (Cort) special-attack mid-cast corpus: the first ENEMY-cast
 # legs of the loader-B stager mechanism. Every leg lands on the same
 # linear arithmetic as the player summons (stager extraction = 895 +

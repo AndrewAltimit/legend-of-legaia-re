@@ -1,8 +1,14 @@
 //! Disc-gated: the summon-overlay parser generalizes across the **whole player
 //! Seru-magic summon block** (extraction PROT 0903..=0913, the corrected
-//! loader-arithmetic range) **and the high-summon block** (PROT 0927..=0934),
-//! not just the deep-dived stager (PROT 0905, covered byte-for-byte by
-//! `summon_overlay_real`).
+//! loader-arithmetic range), the **evolved-Seru cast block** (PROT 0914..=0923,
+//! the contiguous continuation under the same linear arithmetic) **and the
+//! high-summon block** (PROT 0927..=0934), not just the deep-dived stager (PROT
+//! 0905, covered byte-for-byte by `summon_overlay_real`).
+//!
+//! The evolved-Seru block extends the structural pin: those ten entries
+//! (`spell_id 0x8C..=0x95`) parse as the same move-VM stagers, and two of them —
+//! `0x8E` → 916, `0x93` → 921 — carry `0x4000` render-mode nodes, the only such
+//! records outside the Sim-Seru high stagers (0928/0929/0931).
 //!
 //! Each entry is a per-summon stager overlay: [`summon_overlay::parse`] scans
 //! its `FUN_80021B04` + `FUN_80050ED4` spawn calls and recovers a move-VM
@@ -14,9 +20,10 @@
 //! across both blocks: spawn sites present, a non-trivial contiguous record
 //! table, all records in-file, every bytecode range in bounds, and — the
 //! sentinel resolution — every record first word is a `-1` transform node, a
-//! small library-mesh index, or the `0x4000` render-mode node (PROT
-//! 0928/0929/0931 carry the only four `0x4000` records in the corpus; the
-//! historical `0x1000`/`0x8000`-class "sentinels" were over-read artifacts).
+//! small library-mesh index, or the `0x4000` render-mode node (five stagers
+//! carry `0x4000` records: the Sim-Seru trio 0928/0929/0931 and the
+//! evolved-Seru casts 0916/0921; the historical `0x1000`/`0x8000`-class
+//! "sentinels" were over-read artifacts).
 //!
 //! Skips when `LEGAIA_DISC_BIN` / `extracted/` is absent.
 
@@ -24,8 +31,8 @@ use std::path::PathBuf;
 
 use legaia_asset::static_overlay;
 use legaia_asset::summon_overlay::{
-    self, HIGH_SUMMON_STAGER_PROT, PLAYER_SUMMON_STAGER_PROT, SUMMON_OVERLAY_LINK_BASE,
-    SummonPartKind, unique_content_len,
+    self, EVOLVED_SUMMON_STAGER_PROT, HIGH_SUMMON_STAGER_PROT, PLAYER_SUMMON_STAGER_PROT,
+    SUMMON_OVERLAY_LINK_BASE, SummonPartKind, unique_content_len,
 };
 use legaia_prot::archive::Archive;
 
@@ -52,7 +59,11 @@ fn player_summon_block_parses_into_move_vm_scene_graphs() {
     let mut archive = Archive::open(&prot).expect("open PROT.DAT");
 
     let mut render_mode_nodes = 0usize;
-    for entry_idx in PLAYER_SUMMON_STAGER_PROT.chain(HIGH_SUMMON_STAGER_PROT) {
+    let mut render_mode_entries: Vec<u32> = Vec::new();
+    for entry_idx in PLAYER_SUMMON_STAGER_PROT
+        .chain(EVOLVED_SUMMON_STAGER_PROT)
+        .chain(HIGH_SUMMON_STAGER_PROT)
+    {
         let entry = archive
             .entries
             .get(entry_idx as usize)
@@ -135,6 +146,9 @@ fn player_summon_block_parses_into_move_vm_scene_graphs() {
                         p.record_off,
                     );
                     render_mode_nodes += 1;
+                    if !render_mode_entries.contains(&entry_idx) {
+                        render_mode_entries.push(entry_idx);
+                    }
                 }
             }
             prev_end = p.bytecode.end;
@@ -158,10 +172,17 @@ fn player_summon_block_parses_into_move_vm_scene_graphs() {
         );
     }
 
-    // The 0x4000 render-mode nodes live in the high-summon block (0928 /
-    // 0929 / 0931); the parse must surface them.
+    // The 0x4000 render-mode nodes live in the Sim-Seru high stagers (0928 /
+    // 0929 / 0931) AND, as this sweep pins, two evolved-Seru stagers (0916 /
+    // 0921); the parse must surface them.
     assert!(
         render_mode_nodes >= 1,
-        "expected the high-summon block to carry 0x4000 render-mode node records",
+        "expected the stager corpus to carry 0x4000 render-mode node records",
     );
+    for expect in [916u32, 921, 928, 929, 931] {
+        assert!(
+            render_mode_entries.contains(&expect),
+            "expected PROT {expect} to carry a 0x4000 render-mode node (got carriers {render_mode_entries:?})",
+        );
+    }
 }

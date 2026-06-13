@@ -93,6 +93,19 @@ pub const SUMMON_PART_BUDGET: usize = 256;
 /// different, non-stager path).
 pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 
+/// Evolved-Seru player cast block (`0x8C..=0x95`), the contiguous continuation
+/// of [`SERU_SUMMON_IDS`] under the *same* `(id - 0x81) + 903` arithmetic
+/// (`0x8C → 914 .. 0x95 → 923`, `summon_overlay::EVOLVED_SUMMON_STAGER_PROT`).
+/// Every entry is statically confirmed stager-shaped, and the arithmetic is
+/// capture-pinned on **both** sides of the gap (`0x8B → 913`, `0x99 → 927`).
+/// Three legs are now *individually* capture-pinned too — `0x8C → 914`,
+/// `0x8D → 915`, `0x8F → 917` (the `{gola_gola,mushura,barra}_summon_mid_cast`
+/// states, loader-B id read mid-cast + the stager byte-resident at slot B;
+/// disc+library-gated `evolved_summon_binding`) — so the block is no longer
+/// purely predicted; the remaining legs ride the same bracketed run. Two of
+/// these stagers carry `0x4000` render-mode nodes (`0x8E → 916`, `0x93 → 921`).
+pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
+
 /// High summon block: Evil Seru Magic (`0x99` — the creature resolves
 /// per-cast, e.g. Juggernaut), the Sim-Seru summons Palma / Mule / Horn /
 /// Jedo (`0x9A..=0x9D`), and the Ra-Seru summons Meta / Terra / Ozma
@@ -106,16 +119,21 @@ pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 /// sits 2 below the raw index: `0x81..=0x8B → 903..=913` and
 /// `0x99..=0xA0 → 927..=934` (see `docs/formats/prot.md` § index spaces).
 ///
-/// Capture-pinned for **every id in both blocks**: one mid-cast save state
-/// per spell holds the battle overlay's loader-B current-id (`0x8007BC4C`)
-/// at exactly `spell_id - 0x79` with the predicted entry byte-resident at
-/// the slot-B link base (the `<seru>_summon_mid_cast` + `gimard_summon_*`
-/// scenarios in `scripts/scenarios.toml`). Titled entries head with the
-/// ASCII display name of the summon's attack (0907 Nighto "Hell's Music",
-/// 0927 Juggernaut "Dark Eclipse"); the high-block entries otherwise head
-/// with a pre-linked slot-B pointer table.
+/// Capture-pinned for **every id in the base and high blocks**: one mid-cast
+/// save state per spell holds the battle overlay's loader-B current-id
+/// (`0x8007BC4C`) at exactly `spell_id - 0x79` with the predicted entry
+/// byte-resident at the slot-B link base (the `<seru>_summon_mid_cast` +
+/// `gimard_summon_*` scenarios in `scripts/scenarios.toml`). Titled entries
+/// head with the ASCII display name of the summon's attack (0907 Nighto
+/// "Hell's Music", 0927 Juggernaut "Dark Eclipse"); the high-block entries
+/// otherwise head with a pre-linked slot-B pointer table. The
+/// [`EVOLVED_SUMMON_IDS`] block bridging the two is statically stager-shaped
+/// with three legs capture-pinned (`0x8C`/`0x8D`/`0x8F`); the rest ride the same
+/// bracketed run. The id-`0x96..=0x98` gap is *not* a player summon (those
+/// resolve to 924..926 under the enemy `895 + id` formula); it returns `None`.
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
-    if SERU_SUMMON_IDS.contains(&spell_id) {
+    if SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id) {
+        // One contiguous run: 0x81 → 903 .. 0x95 → 923.
         Some(903 + (spell_id - 0x81) as u32)
     } else if HIGH_SUMMON_IDS.contains(&spell_id) {
         Some(927 + (spell_id - 0x99) as u32)
@@ -650,8 +668,22 @@ mod tests {
         assert_eq!(summon_stager_prot_entry(0x81), Some(903)); // Gimard Burning Attack
         assert_eq!(summon_stager_prot_entry(0x8B), Some(913)); // last base-block summon
         assert_eq!(summon_stager_prot_entry(0x80), None); // below the block
-        assert_eq!(summon_stager_prot_entry(0x8C), None); // evolved-Seru cast, not a stager leg
         assert_eq!(summon_stager_prot_entry(0x27), None); // a monster attack id
+    }
+
+    #[test]
+    fn summon_prot_entry_maps_the_evolved_block() {
+        // The evolved-Seru block bridges the base and high blocks on one
+        // continuous arithmetic run; stager-shaped, three legs capture-pinned.
+        assert_eq!(summon_stager_prot_entry(0x8C), Some(914)); // Gola Gola (capture-pinned)
+        assert_eq!(summon_stager_prot_entry(0x8D), Some(915)); // Mushura (capture-pinned)
+        assert_eq!(summon_stager_prot_entry(0x8E), Some(916)); // carries 0x4000 render-mode nodes
+        assert_eq!(summon_stager_prot_entry(0x8F), Some(917)); // Barra (capture-pinned)
+        assert_eq!(summon_stager_prot_entry(0x93), Some(921)); // carries 0x4000 render-mode nodes
+        assert_eq!(summon_stager_prot_entry(0x95), Some(923)); // last evolved-Seru leg
+        // The id-0x96..0x98 gap is the enemy 895+id block, not a player summon.
+        assert_eq!(summon_stager_prot_entry(0x96), None);
+        assert_eq!(summon_stager_prot_entry(0x98), None);
     }
 
     #[test]

@@ -259,10 +259,11 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 
 - A per-summon stager overlay (player extraction PROT 0903..=0913 — Gimard
   *Tail Fire* `0x81` arithmetics to 0903 under the corrected loader index math
-  — high-summon 0927..=0934, and the six Cort enemy boss stagers
-  `ENEMY_BOSS_STAGER_PROT`) stages each summon body part with a `FUN_80021B04`
-  call passing a per-part record — directly or through the `FUN_80050ED4` pool
-  wrapper (both scanned).
+  — the evolved-Seru block `EVOLVED_SUMMON_STAGER_PROT` (0914..=0923,
+  `spell_id 0x8C..=0x95`, the same arithmetic run), high-summon 0927..=0934, and
+  the six Cort enemy boss stagers `ENEMY_BOSS_STAGER_PROT`) stages each summon
+  body part with a `FUN_80021B04` call passing a per-part record — directly or
+  through the `FUN_80050ED4` pool wrapper (both scanned).
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
   transform/pivot node, `0x4000`/`0x4001` = render-mode nodes). Records live
