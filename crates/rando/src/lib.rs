@@ -34,6 +34,8 @@
 //! - [`drops`] — the drop-table planner (shuffle / random).
 //! - [`equipment`] — classify equipment ids + tier them, turning each monster's
 //!   drop slot into a rare random weapon / armor / accessory drop.
+//! - [`equip_bonus`] — redistribute the equipment passive stat tuples within
+//!   each slot category (the SCUS `DAT_80074F68` bonus table).
 //! - [`shop`] — reassign what town stores sell (the gold-merchant stock is
 //!   inline in each scene's field-VM script, op `0x49`).
 //! - [`casino`] — reassign the casino prize-exchange table (a static overlay
@@ -55,6 +57,7 @@ pub mod door;
 pub mod drops;
 pub mod element_affinity;
 pub mod encounter;
+pub mod equip_bonus;
 pub mod equipment;
 pub mod house_door;
 pub mod item_name;

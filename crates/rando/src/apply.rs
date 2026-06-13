@@ -752,6 +752,115 @@ pub fn randomize_spell_costs(
     Ok(changed)
 }
 
+/// One equipment stat-bonus row, for the read-only listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquipBonusRow {
+    /// Bonus-table row index (the `bonus_index` an item resolves to).
+    pub row: usize,
+    /// Slot category the row belongs to (`body` / `head` / `weapon` / `footwear`).
+    pub slot: &'static str,
+    /// The five stat bonuses `[INT, ATK, UDF, LDF, SPD]` (`+0..+4`).
+    pub stats: [u8; 5],
+    /// 1-based item ids that resolve to this row (a row can be shared).
+    pub items: Vec<u8>,
+}
+
+/// Map an [`legaia_asset::equip_stats::EquipSlot`] to its CLI label.
+fn equip_slot_name(slot: legaia_asset::equip_stats::EquipSlot) -> &'static str {
+    use legaia_asset::equip_stats::EquipSlot;
+    match slot {
+        EquipSlot::Body => "body",
+        EquipSlot::Head => "head",
+        EquipSlot::Weapon => "weapon",
+        EquipSlot::Footwear => "footwear",
+    }
+}
+
+/// Read the equipment stat-bonus table (`DAT_80074F68`) off the disc's SCUS, in
+/// row order, each with its slot category, decoded stats, and the item ids that
+/// reference it. The randomizable population (see [`crate::equip_bonus`]).
+/// `None` if SCUS / its bonus table can't be parsed.
+pub fn current_equip_bonuses(patcher: &DiscPatcher) -> Result<Option<Vec<EquipBonusRow>>> {
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(None);
+    };
+    let Some(table) = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus) else {
+        return Ok(None);
+    };
+    let items = table.items_for_rows();
+    let rows = table
+        .rows()
+        .iter()
+        .enumerate()
+        .map(|(i, b)| EquipBonusRow {
+            row: i,
+            slot: equip_slot_name(b.slot()),
+            stats: b.stat_bonus(),
+            items: items.get(i).cloned().unwrap_or_default(),
+        })
+        .collect();
+    Ok(Some(rows))
+}
+
+/// Randomize the equipment passive stat bonuses (see [`crate::equip_bonus`]).
+/// Rewrites only the `+0..+4` stat tuple of each bonus row that at least one
+/// equippable item references, reassigning it **within its slot category** — a
+/// same-size in-place SCUS patch. The equip-character mask, accessory passive,
+/// and slot type stay welded to their row. Returns the number of rows changed.
+///
+/// Operates on bonus rows (not item ids): several items can share one record,
+/// so a per-id rewrite would double-edit a shared record. Rows no equippable
+/// item reaches are left untouched, so an unused/garbage row can't hand a real
+/// item a junk stat tuple.
+pub fn randomize_equip_bonuses(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(0);
+    };
+    let Some(table) = EquipStatTable::from_scus(&scus) else {
+        return Ok(0);
+    };
+    let Some(off) = bonus_table_file_offset(&scus) else {
+        return Ok(0);
+    };
+
+    let all_rows: Vec<[u8; 8]> = table.rows().iter().map(|b| b.raw).collect();
+    let items = table.items_for_rows();
+    // Only rows an equippable item actually resolves to participate.
+    let participating: Vec<usize> = (0..all_rows.len())
+        .filter(|&i| !items[i].is_empty())
+        .collect();
+    if participating.is_empty() {
+        return Ok(0);
+    }
+    let sub: Vec<[u8; 8]> = participating.iter().map(|&i| all_rows[i]).collect();
+    let planned = crate::equip_bonus::plan_bonus_shuffle(&sub, seed, mode);
+
+    let mut new_rows = all_rows.clone();
+    let mut changed = 0usize;
+    for (k, &i) in participating.iter().enumerate() {
+        if planned[k] != all_rows[i] {
+            new_rows[i] = planned[k];
+            changed += 1;
+        }
+    }
+    if changed == 0 {
+        return Ok(0);
+    }
+    let mut bytes = Vec::with_capacity(all_rows.len() * BONUS_STRIDE);
+    for r in &new_rows {
+        bytes.extend_from_slice(r);
+    }
+    patcher
+        .patch_named_file(SCUS_NAME, off as u64, &bytes)
+        .context("write equipment stat-bonus table")?;
+    Ok(changed)
+}
+
 /// Outcome of randomizing scene encounters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EncounterApplyReport {

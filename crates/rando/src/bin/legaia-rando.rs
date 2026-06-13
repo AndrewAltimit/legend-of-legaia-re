@@ -135,6 +135,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list the equipment stat-bonus table (`DAT_80074F68`), grouped
+    /// by slot category, with each row's stats and the items that reference it —
+    /// the population the `--equip-bonus` randomizer redistributes.
+    EquipBonuses {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -231,6 +239,14 @@ struct RandomizeArgs {
     /// spells never gain a cost. `legaia-rando spell-costs` lists them.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     spell_cost: DropArg,
+    /// How equipment passive stat bonuses are reassigned (the SCUS bonus table).
+    /// `shuffle` permutes each slot category's stat tuples (`INT/ATK/UDF/LDF/SPD`)
+    /// among that category's gear (so weapon power lands on another weapon, armor
+    /// on armor; the per-category budget is kept); `random` draws each from that
+    /// category's pool. The equip-character mask, accessory passive, and slot type
+    /// never move. `legaia-rando equip-bonuses` lists the current table.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    equip_bonus: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -408,6 +424,7 @@ fn main() -> Result<()> {
         Cmd::MovePowers { input } => cmd_move_powers(&input),
         Cmd::Affinity { input } => cmd_affinity(&input),
         Cmd::SpellCosts { input } => cmd_spell_costs(&input),
+        Cmd::EquipBonuses { input } => cmd_equip_bonuses(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -614,6 +631,52 @@ fn cmd_spell_costs(input: &Path) -> Result<()> {
             println!("{} named, costed spells", spells.len());
         }
         None => println!("spell table not found"),
+    }
+    Ok(())
+}
+
+fn cmd_equip_bonuses(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+    let nm = |id: u8| {
+        item_names
+            .as_ref()
+            .and_then(|t| t.name(id))
+            .unwrap_or("?")
+            .to_string()
+    };
+    match apply::current_equip_bonuses(&patcher)? {
+        Some(rows) => {
+            // Group consecutive same-slot rows for a readable, category-first table.
+            let mut cur = "";
+            for r in &rows {
+                if r.slot != cur {
+                    cur = r.slot;
+                    println!("\n[{}]", r.slot);
+                }
+                let [int, atk, udf, ldf, spd] = r.stats;
+                let items: Vec<String> = r.items.iter().map(|&id| nm(id)).collect();
+                println!(
+                    "  row {:>2}  INT {:>3} ATK {:>3} UDF {:>3} LDF {:>3} SPD {:>3}  [{}]",
+                    r.row,
+                    int,
+                    atk,
+                    udf,
+                    ldf,
+                    spd,
+                    items.join(", ")
+                );
+            }
+            let referenced = rows.iter().filter(|r| !r.items.is_empty()).count();
+            println!(
+                "\n{} bonus rows ({} referenced by equipment — the randomizable population)",
+                rows.len(),
+                referenced
+            );
+        }
+        None => println!("equipment stat-bonus table not found"),
     }
     Ok(())
 }
@@ -897,6 +960,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let move_power_mode = args.move_power.mode();
     let element_affinity_mode = args.element_affinity.mode();
     let spell_cost_mode = args.spell_cost.mode();
+    let equip_bonus_mode = args.equip_bonus.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -1197,6 +1261,16 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("spell costs: untouched");
         manifest.push("spell_cost = \"none\"".to_string());
+    }
+
+    if let Some(equip_bonus_mode) = equip_bonus_mode {
+        let changed = apply::randomize_equip_bonuses(&mut patcher, seed, equip_bonus_mode)?;
+        println!("equip bonuses: {changed} bonus row(s) changed ({equip_bonus_mode:?})");
+        manifest.push(format!("equip_bonus = {:?}", mode_str(equip_bonus_mode)));
+        manifest.push(format!("equip_bonus_changed = {changed}"));
+    } else {
+        println!("equip bonuses: untouched");
+        manifest.push("equip_bonus = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {
