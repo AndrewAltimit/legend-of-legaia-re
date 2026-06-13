@@ -1925,3 +1925,55 @@ label = "inventory_full_shop"
 phase = "field"
 description = "Full 72-slot consumable bag at a shop buy menu; drives the FUN_800421D4 full-window OOB id store to 0x800859E8 (ACE backlog 2.1 reachability). Capture pending."
 topics = ["ace", "inventory", "oob", "FUN_800421D4", "shop", "reachability", "capture-pending"]
+
+# ----------------------------------------------------------------------
+# Weapon-specialty / arts-bar arm-width corpus. Three PCSX-Redux states,
+# all at the in-battle arts command-input screen (game_mode 0x15), each
+# with a different character holding a weapon whose favored-class status
+# differs - the contrast needed to locate the table + consumer that sets
+# the "Arms" input width on the action-queue bar (off-class / Astral =
+# double width; favored = single). See the weapon-specialty RE thread.
+#   - astral  : Vahn + Astral Sword  -> always-double arms (the exception)
+#   - offclass: Gala + Nail Gloves   -> off-class (claw on a club user) = double
+#   - ideal   : Noa  + Ra-Seru Fangs -> favored class = single (baseline)
+# Diff astral/offclass against ideal to find the differing bar-width field,
+# then read-watch the weapon slot (char+0x196) to pin the builder + table.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 1
+label = "arts_bar_astral_sword_vahn"
+backup_fingerprint = "4a42dbc15d3be77b6b81d8b03262f1410a5b9c2ebc0ec64bd0bd11717a69e1d6"
+description = "In-battle arts command-input screen, Vahn equipped with the Astral Sword (always double-width Arms input - the can't-be-favored exception); game_mode 0x15"
+topics = ["weapon specialty", "arts bar", "arm width", "astral sword", "battle", "BattleMode"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 2
+label = "arts_bar_offclass_gala_nail"
+backup_fingerprint = "7867ed3ea46b19183970c3b0b4723fc7fea94e8aeb622c51888c55adc2fa72b9"
+description = "In-battle arts command-input screen, Gala equipped with Nail Gloves (off-class - a claw on a club user, so double-width Arms input); game_mode 0x15"
+topics = ["weapon specialty", "arts bar", "arm width", "off-class weapon", "battle", "BattleMode"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 3
+label = "arts_bar_ideal_noa_fangs"
+backup_fingerprint = "da710f5a5a5ddc5c9b83a298e9ff4dc8034b0f77016f20f143c6079b4d4501b1"
+description = "In-battle arts command-input screen, Noa equipped with Ra-Seru Fangs (favored class - single-width Arms input, the baseline); game_mode 0x15"
+topics = ["weapon specialty", "arts bar", "arm width", "favored weapon", "battle", "BattleMode"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
