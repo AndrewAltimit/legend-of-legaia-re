@@ -62,6 +62,7 @@ pub mod items;
 pub mod kingdom;
 pub mod monster;
 pub mod monster_stats;
+pub mod move_power;
 pub mod ppf;
 pub mod rng;
 pub mod shop;

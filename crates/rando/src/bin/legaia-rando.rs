@@ -112,6 +112,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list the special-attack move-power table (the 44 power values
+    /// the `--move-power` randomizer redistributes), each tagged with the
+    /// spell-table name of a move id that resolves to it.
+    MovePowers {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -188,6 +196,13 @@ struct RandomizeArgs {
     /// current stats.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     monster_stats: DropArg,
+    /// How special-attack power is reassigned (the battle-action move-power
+    /// table — enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
+    /// permutes the 44 power values (multiset preserved); `random` draws each
+    /// from that pool. Only the power changes — each move keeps its own
+    /// animation, effects, and sound. `legaia-rando move-powers` lists them.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    move_power: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -362,6 +377,7 @@ fn main() -> Result<()> {
         Cmd::Shops { input } => cmd_shops(&input),
         Cmd::Casino { input } => cmd_casino(&input),
         Cmd::MonsterStats { input } => cmd_monster_stats(&input),
+        Cmd::MovePowers { input } => cmd_move_powers(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -486,6 +502,43 @@ fn cmd_monster_stats(input: &Path) -> Result<()> {
         );
     }
     println!("{} populated monster records", records.len());
+    Ok(())
+}
+
+fn cmd_move_powers(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let entry = patcher
+        .read_entry(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let records =
+        legaia_asset::move_power::parse(&entry).context("parse move-power table (PROT 0898)")?;
+
+    // Tag each power-table index with the spell-table name of a move id that
+    // resolves to it (the move-id space is the spell-table id space).
+    let map = legaia_asset::move_power::parse_id_index_map(&entry);
+    let spells = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::spell_names::SpellNameTable::from_scus(&scus));
+    let label = |idx: usize| -> String {
+        let (Some(map), Some(spells)) = (map.as_ref(), spells.as_ref()) else {
+            return String::new();
+        };
+        for move_id in 0u8..=0x7F {
+            if legaia_asset::move_power::index_for_move_id(map, move_id) != Some(idx as u8) {
+                continue;
+            }
+            if let Some(name) = spells.name(move_id).filter(|n| !n.is_empty()) {
+                return name.to_string();
+            }
+        }
+        String::new()
+    };
+
+    println!("{:>3}  {:>6}  example move", "idx", "power");
+    for (i, r) in records.iter().enumerate() {
+        println!("{:>3}  {:>6}  {}", i, r.power(), label(i));
+    }
+    println!("{} move-power records", records.len());
     Ok(())
 }
 
@@ -765,6 +818,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let shop_mode = args.shops.mode();
     let casino_mode = args.casino.mode();
     let monster_stats_mode = args.monster_stats.mode();
+    let move_power_mode = args.move_power.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -1032,6 +1086,16 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("monster stats: untouched");
         manifest.push("monster_stats = \"none\"".to_string());
+    }
+
+    if let Some(move_power_mode) = move_power_mode {
+        let changed = apply::randomize_move_powers(&mut patcher, seed, move_power_mode)?;
+        println!("move power: {changed} special-attack power(s) changed ({move_power_mode:?})");
+        manifest.push(format!("move_power = {:?}", mode_str(move_power_mode)));
+        manifest.push(format!("move_power_changed = {changed}"));
+    } else {
+        println!("move power: untouched");
+        manifest.push("move_power = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {

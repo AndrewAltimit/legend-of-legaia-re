@@ -550,6 +550,67 @@ pub fn randomize_casino(patcher: &mut DiscPatcher, seed: u64, mode: DropMode) ->
     Ok(changed)
 }
 
+/// Read the special-attack move-power column (the per-record `+0x00` power
+/// halfword) from PROT 0898, for the read-only listing / the randomizer input.
+/// Returns `None` if the battle-action overlay entry can't be parsed.
+pub fn current_move_powers(patcher: &DiscPatcher) -> Result<Option<Vec<i16>>> {
+    let entry = patcher
+        .read_entry(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    Ok(legaia_asset::move_power::parse(&entry)
+        .map(|recs| recs.iter().map(|r| r.power_raw).collect()))
+}
+
+/// Randomize the special-attack power table (see [`crate::move_power`]). Rewrites
+/// only each record's `+0x00` power halfword in PROT 0898 — a same-size raw edit
+/// (no LZS). Returns the number of power values that changed.
+pub fn randomize_move_powers(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::move_power::{
+        BATTLE_ACTION_OVERLAY_PROT_INDEX, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+    };
+    let mut entry = patcher
+        .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let Some(records) = legaia_asset::move_power::parse(&entry) else {
+        return Ok(0);
+    };
+    // Redistribute powers only among populated records. Empty (all-zero) records
+    // — including the index-0 sentinel `parse` keys on — must stay zero, so a
+    // move's power is never handed to an unused slot (nor a real move zeroed).
+    let populated: Vec<usize> = records
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| !r.is_empty())
+        .map(|(i, _)| i)
+        .collect();
+    let current: Vec<i16> = populated.iter().map(|&i| records[i].power_raw).collect();
+    let plan = crate::move_power::plan_powers(&current, seed, mode);
+
+    let table = MOVE_POWER_TABLE_FILE_OFFSET;
+    let span = records.len() * MOVE_POWER_RECORD_STRIDE;
+    let before = entry[table..table + span].to_vec();
+    let mut changed = 0usize;
+    for (k, &i) in populated.iter().enumerate() {
+        if current[k] == plan[k] {
+            continue;
+        }
+        let off = table + i * MOVE_POWER_RECORD_STRIDE;
+        entry[off..off + 2].copy_from_slice(&plan[k].to_le_bytes());
+        changed += 1;
+    }
+    let after = &entry[table..table + span];
+    if after != before.as_slice() {
+        patcher
+            .patch_prot_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX, table as u64, after)
+            .context("write move-power table")?;
+    }
+    Ok(changed)
+}
+
 /// Outcome of randomizing scene encounters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EncounterApplyReport {
