@@ -1474,8 +1474,58 @@ ram_fingerprint_sha256 = "c8d607dbd2f34700378ad928a1c67482088addd9f437421092dd77
 backup_fingerprint = "fbe3179a7668dbe094c526756a2eaf12d197c21252b03da2168f6dbb1a910979"
 phase = "battle"
 expected_game_mode = 0x15
-description = "Gala casting Barra (evolved-Seru, wind, attack 'Hell Dive', spell 0x8F) mid-summon. Loader-B current-id 0x8007BC4C = 22 (0x16) -> stager extraction 0917; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8F -> 917 (so 0x8E -> 916, the render-mode-node carrier, sits between the pinned 0x8D and 0x8F)."
+description = "Gala casting Barra (evolved-Seru, wind, attack 'Hell Dive', spell 0x8F) mid-summon. Loader-B current-id 0x8007BC4C = 22 (0x16) -> stager extraction 0917; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8F -> 917."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8F", "evolved-Seru"]
+
+[[scenarios]]
+slot = 8
+label = "aluru_summon_mid_cast"
+ram_fingerprint_sha256 = "dfb57b1bddc8b233beb5dad3a8b8b64c3efa04662d0edce6759ba5825a7cffcb"
+backup_fingerprint = "164d2174566d7613889f3363ab7964b7dfb311d1c4210933fb3440c18a03983c"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Aluru (evolved-Seru, light, attack 'Final Blast', spell 0x8E) mid-summon. Loader-B current-id 0x8007BC4C = 21 (0x15) -> stager extraction 0916; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x8E -> 916 - one of the two evolved-block stagers carrying 0x4000 render-mode-node records - confirming that carrier is a player cast."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8E", "evolved-Seru", "render-mode"]
+
+[[scenarios]]
+slot = 5
+label = "slippery_summon_mid_cast"
+ram_fingerprint_sha256 = "ec87790af7570ce6837e4ce1728af43fd5436a83dc7a5f848f68c81a10e53693"
+backup_fingerprint = "ba29ffa030958fb38acb82948707dde451ae052bea04ce2a587daa7ee765ca4c"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Slippery (evolved-Seru, water, attack 'Deadly Rain', spell 0x92) mid-summon. Loader-B current-id 0x8007BC4C = 25 (0x19) -> stager extraction 0920; the stager is byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x92 -> 920."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x92", "evolved-Seru"]
+
+[[scenarios]]
+slot = 7
+label = "iota_summon_mid_cast"
+ram_fingerprint_sha256 = "f8fd73be47c7b8e5debb9354edbe2e4fa43eb9ffe5d53648f7611f5e3c4118bd"
+backup_fingerprint = "7779cd109943b4489d879adc9b8d200b44df83131d4ee851e4b8e98336d4a547"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Iota (evolved-Seru, earth, attack 'Odd Dimension', spell 0x93) mid-summon. Loader-B current-id 0x8007BC4C = 26 (0x1a) -> stager extraction 0921; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x93 -> 921 - the second evolved-block stager carrying 0x4000 render-mode-node records (6 of them) - confirming that carrier is a player cast."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x93", "evolved-Seru", "render-mode"]
+
+[[scenarios]]
+slot = 6
+label = "puera_summon_mid_cast"
+ram_fingerprint_sha256 = "7673a799ee29f77bd3a972742378a8e0edc493ec17cb02fb7be865dc7f0d2261"
+backup_fingerprint = "f09357904e2ad50a966c8213fdf116cb1157db343f30f23574b06830a04b1940"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Puera (evolved-Seru, dark, attack 'Dream Illusion', spell 0x94) mid-summon. Loader-B current-id 0x8007BC4C = 27 (0x1b) -> stager extraction 0922; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x94 -> 922."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x94", "evolved-Seru"]
+
+[[scenarios]]
+slot = 9
+label = "gilium_summon_mid_cast"
+ram_fingerprint_sha256 = "01a398e1d798fb45d7f753b1abf42102e47a80d442e01b6f968db0e3f630e9c8"
+backup_fingerprint = "4010d82fbff48cc13840984ccc3cfc1061e33dfa9d364638145b9463da157049"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Gilium (evolved-Seru, thunder, attack 'Space Cannon', spell 0x95) mid-summon. Loader-B current-id 0x8007BC4C = 28 (0x1c) -> stager extraction 0923; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins leg 0x95 -> 923, the last entry of the evolved-Seru block. With these the only unpinned legs are 0x90 -> 918 and 0x91 -> 919."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x95", "evolved-Seru"]
 
 # High-id summon mid-cast corpus (endgame card): the Ra-Seru summons
 # (Meta / Terra / Ozma, spell ids 0x9E..0xA0) and an Evil Seru Magic
