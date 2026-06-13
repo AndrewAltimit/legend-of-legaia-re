@@ -11,15 +11,9 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::move_power::{self, BATTLE_ACTION_OVERLAY_PROT_INDEX};
-use legaia_asset::summon_overlay::{self, SummonPartKind};
+use legaia_asset::move_power::{self, BATTLE_ACTION_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_BASE};
+use legaia_asset::summon_overlay::SummonPartKind;
 use legaia_prot::archive::Archive;
-
-/// VA → file-offset delta for the battle-action overlay: the move-power table is
-/// at VA `0x801F4F5C` / file `0x26744`, so any overlay VA maps to file
-/// `VA - (TABLE_VA - TABLE_FILE_OFFSET)`.
-const OVERLAY_VA_TO_FILE: u32 =
-    move_power::MOVE_POWER_TABLE_VA - move_power::MOVE_POWER_TABLE_FILE_OFFSET as u32;
 
 fn overlay_0898() -> Option<Vec<u8>> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -42,8 +36,8 @@ fn overlay_0898() -> Option<Vec<u8>> {
 
 #[test]
 fn move_fx_prototype_entries_are_summon_format_records() {
-    // The VA→file delta is the pinned 0x801CE818.
-    assert_eq!(OVERLAY_VA_TO_FILE, 0x801C_E818);
+    // The overlay's load base is the pinned 0x801CE818.
+    assert_eq!(BATTLE_OVERLAY_BASE, 0x801C_E818);
 
     let Some(bytes) = overlay_0898() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
@@ -56,7 +50,7 @@ fn move_fx_prototype_entries_are_summon_format_records() {
     assert_eq!(proto.len(), 61, "61-entry prototype-pointer table");
 
     // The worked examples from the RE trace: spawn-id -> (proto VA, file off,
-    // expected model_sel). Each VA resolves in-file via the pinned delta.
+    // expected model_sel). The library `proto_record_offset` resolves the VA.
     let examples: [(usize, u32, usize, i16); 4] = [
         (0x21, 0x801F_5B28, 0x27310, 24),
         (0x25, 0x801F_5B64, 0x2734C, 2),
@@ -66,27 +60,28 @@ fn move_fx_prototype_entries_are_summon_format_records() {
     for (id, va, file_off, _) in examples {
         assert_eq!(proto[id], va, "proto[{id:#04x}] VA");
         assert_eq!(
-            va.wrapping_sub(OVERLAY_VA_TO_FILE) as usize,
-            file_off,
+            aux.proto_record_offset(id as u8),
+            Some(file_off),
             "proto[{id:#04x}] file offset"
         );
     }
 
-    // Resolve every non-null prototype VA to a file offset and parse the records.
-    let offsets: Vec<usize> = proto
-        .iter()
-        .filter(|&&va| va != 0)
-        .map(|&va| va.wrapping_sub(OVERLAY_VA_TO_FILE) as usize)
-        .filter(|&f| f + 4 <= bytes.len())
-        .collect();
-    assert!(
-        offsets.len() >= 8,
-        "a healthy share of prototype entries resolve in-file ({})",
-        offsets.len()
-    );
+    // The enemy Gimard "Fire Tail" record, cross-referencing the live-capture
+    // finding (`crates/mednafen/tests/firetail_movefx_liveness.rs`): proto
+    // entries 0 / 0x30 / 0x31 all point at VA 0x801F5484, the record a live
+    // Fire-Tail part-actor carries at +0x48 (model_sel 5).
+    for id in [0usize, 0x30, 0x31] {
+        assert_eq!(proto[id], 0x801F_5484, "Fire Tail proto[{id}] VA");
+    }
 
-    let parts = summon_overlay::parse_records_at(&bytes, &offsets);
-    assert!(!parts.is_empty());
+    // Decode every prototype record straight through the library helper.
+    let parts = move_power::parse_effect_proto_records(&bytes)
+        .expect("effect-proto records decode from the real overlay");
+    assert!(
+        parts.len() >= 8,
+        "a healthy share of prototype records decode ({})",
+        parts.len()
+    );
 
     // Each record is a summon-format part: a transform node, a small library
     // mesh index, or a node-mode sentinel — never garbage. Library indices stay
@@ -110,8 +105,15 @@ fn move_fx_prototype_entries_are_summon_format_records() {
         );
     }
 
-    // The worked-example records decode to their pinned model_sel.
-    for (id, _, file_off, model_sel) in examples {
+    // The worked-example records decode to their pinned model_sel (plus the
+    // Fire Tail record at 0x26C6C, model_sel 5 — what the live part-actor seats).
+    let fire_tail_off = (0x801F_5484u32 - BATTLE_OVERLAY_BASE) as usize;
+    let with_fire_tail =
+        examples
+            .iter()
+            .copied()
+            .chain([(0usize, 0x801F_5484, fire_tail_off, 5i16)]);
+    for (id, _, file_off, model_sel) in with_fire_tail {
         let part = parts
             .iter()
             .find(|p| p.record_off == file_off)
