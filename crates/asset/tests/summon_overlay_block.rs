@@ -20,9 +20,10 @@
 //! across both blocks: spawn sites present, a non-trivial contiguous record
 //! table, all records in-file, every bytecode range in bounds, and — the
 //! sentinel resolution — every record first word is a `-1` transform node, a
-//! small library-mesh index, or the `0x4000` render-mode node (PROT
-//! 0928/0929/0931 carry the only four `0x4000` records in the corpus; the
-//! historical `0x1000`/`0x8000`-class "sentinels" were over-read artifacts).
+//! small library-mesh index, or the `0x4000` render-mode node (five stagers
+//! carry `0x4000` records: the Sim-Seru trio 0928/0929/0931 and the
+//! evolved-Seru casts 0916/0921; the historical `0x1000`/`0x8000`-class
+//! "sentinels" were over-read artifacts).
 //!
 //! Skips when `LEGAIA_DISC_BIN` / `extracted/` is absent.
 

@@ -62,11 +62,13 @@
 //!
 //! ## Record first words: nodes, meshes, and the `0x4000` render-mode sentinel
 //!
-//! Across every trimmed stager in the corpus (player 0903..=0913, high
-//! 0927..=0934, enemy 0938/0940/0944/0961/0962/0966) the record first word is
-//! one of exactly three things: `-1` (transform node — the dominant kind), a
-//! small library-mesh index (`< 0x20` observed), or **`0x4000`** (four records:
-//! one each in PROT 0928/0931, two in 0929). The historical `0x1000` /
+//! Across every trimmed stager in the corpus (player 0903..=0913, evolved-Seru
+//! 0914..=0923, high 0927..=0934, enemy 0938/0940/0944/0961/0962/0966) the
+//! record first word is one of exactly three things: `-1` (transform node — the
+//! dominant kind), a small library-mesh index (`< 0x20` observed), or
+//! **`0x4000`** (render-mode nodes, in five stagers: the Sim-Seru trio
+//! 0928/0929/0931 and the evolved-Seru casts 0916/0921). The historical
+//! `0x1000` /
 //! `0x8000`-class "sentinel" census was the over-read artifact above and
 //! dissolves under trimming. This matches the spawn helper's own dispatch
 //! (`FUN_80021B04`, `ghidra/scripts/funcs/80021b04.txt`): `model_sel < 0` →
