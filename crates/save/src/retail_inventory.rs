@@ -43,8 +43,20 @@
 //! the KEY-ITEM list immediately following the consumable-item window.
 //!
 //! This model surfaces that primitive as the [`AddOutcome::OobIdWrite`] data
-//! variant (carrying the would-be target address) and performs **no** write,
-//! leaving the modelled inventory unchanged.
+//! variant (carrying the would-be target address **and** the would-be written
+//! id byte) and performs **no** write, leaving the modelled inventory
+//! unchanged.
+//!
+//! ## Reachability: the known add-helper call sites
+//!
+//! The primitive only fires if normal play can reach `FUN_800421D4` with a full
+//! window. The reverse-engineered call sites that do not pre-check inventory
+//! room are catalogued in [`AddHelperCaller`]; each is a candidate trigger:
+//! battle-loot drops, shop buy-confirm (variable quantity), captured-monster
+//! item pay, the one-shot minigame reward, and the equip swap-back refund. The
+//! written byte is attacker-influenced to varying degrees (the shop catalog id,
+//! the drop id, the captured-monster id), so the primitive is a 1-byte write of
+//! a *partially controllable value* to the *fixed* address `0x800859E8`.
 //!
 //! See [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
 
@@ -93,7 +105,63 @@ pub enum AddOutcome {
     OobIdWrite {
         /// Address the retail id store would have hit (`= base + window * 2`).
         oob_target: u32,
+        /// Value the retail id store would have written: the added item's id.
+        /// This is the attacker-influenced byte of the primitive (the `V` in
+        /// "write value `V` to address `A`"); `qty` never reaches the OOB
+        /// store because the count write is the guarded one.
+        written_id: u8,
     },
+}
+
+/// The reverse-engineered call sites that invoke the unchecked add helper
+/// [`FUN_800421D4`] without pre-checking inventory room — i.e. the normal-play
+/// paths through which the full-window OOB id store ([`AddOutcome::OobIdWrite`])
+/// is reachable. Each carries its source function address for provenance.
+///
+/// See `docs/reference/functions.md` (`800421D4` caller list) and the per-site
+/// entries (`8004E568`, `801C36B0`, `801F138C`, `801C2748`, `8020E748`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddHelperCaller {
+    /// Battle-end reward resolution (`FUN_8004E568`, add at `0x8004F380` /
+    /// `0x8004F608`): awards the formation's drop items. Written id = drop id.
+    BattleLoot,
+    /// Shop / exchange buy-confirm (`FUN_801C36B0`, overlay 0971): a priced,
+    /// **variable-quantity** give of the selected catalog record's item.
+    /// Written id = the catalog record's item id (`rec+8`).
+    ShopBuyConfirm,
+    /// Captured-monster item pay (`FUN_801F138C`, overlay 0897): on a resolved
+    /// capture, pays `actor[+0x1DF]` into the bag. Written id = captured id.
+    CaptureItemPay,
+    /// One-shot minigame completion reward (`FUN_801C2748`, overlay 0977):
+    /// awards a single fixed item `0xCD`. Written id = `0xCD` (fixed).
+    MinigameReward,
+    /// Equip swap-back refund (`FUN_8020E748` / `FUN_801E01F0`): refunds the
+    /// displaced old equip/consumable id when swapping. Written id = old id.
+    EquipSwapBackRefund,
+}
+
+impl AddHelperCaller {
+    /// All known unchecked call sites, in `docs/reference/functions.md` order.
+    pub const ALL: [AddHelperCaller; 5] = [
+        AddHelperCaller::BattleLoot,
+        AddHelperCaller::ShopBuyConfirm,
+        AddHelperCaller::CaptureItemPay,
+        AddHelperCaller::MinigameReward,
+        AddHelperCaller::EquipSwapBackRefund,
+    ];
+
+    /// The `FUN_<addr>` entry point of the calling function (for the variable
+    /// callers this is the function that performs the add).
+    #[must_use]
+    pub fn source_addr(self) -> u32 {
+        match self {
+            AddHelperCaller::BattleLoot => 0x8004_E568,
+            AddHelperCaller::ShopBuyConfirm => 0x801C_36B0,
+            AddHelperCaller::CaptureItemPay => 0x801F_138C,
+            AddHelperCaller::MinigameReward => 0x801C_2748,
+            AddHelperCaller::EquipSwapBackRefund => 0x8020_E748,
+        }
+    }
 }
 
 /// A faithful, memory-safe model of the retail fixed-window item inventory.
@@ -250,6 +318,7 @@ impl RetailInventory {
         // before its (failing) bound check. Surface as data; perform no write.
         AddOutcome::OobIdWrite {
             oob_target: self.oob_target(),
+            written_id: id,
         }
     }
 }
@@ -308,7 +377,8 @@ mod tests {
         assert_eq!(
             outcome,
             AddOutcome::OobIdWrite {
-                oob_target: 0x8008_59E8
+                oob_target: 0x8008_59E8,
+                written_id: 0xFE,
             }
         );
         // No count applied, no slot mutated, no panic.
@@ -395,5 +465,106 @@ mod tests {
         // Already-empty slot (id == 0): same echo, no mutation.
         assert_eq!(inv.consume_slot(5, 1, 0x33), 0x33);
         assert_eq!(inv.find_count(0xC0), 4);
+    }
+
+    /// A full window with all-distinct ids: the next add can never merge or
+    /// place, so it always surfaces the OOB primitive.
+    fn full_distinct_bag() -> RetailInventory {
+        // ids 1..=72 — all non-zero (no empty slot) and none equal to the test
+        // ids below (0x80+), so neither the merge nor free-slot pass succeeds.
+        let slots: Vec<(u8, u8)> = (0..ITEM_WINDOW_SLOTS)
+            .map(|i| ((i as u8).wrapping_add(1), 5))
+            .collect();
+        RetailInventory::from_slots(ITEM_WINDOW_BASE, slots)
+    }
+
+    #[test]
+    fn oob_write_carries_the_added_id_as_value() {
+        // The written byte is the *added item's id*, not qty — this is the
+        // attacker-influenced value of the primitive.
+        for id in [0x80u8, 0xCD, 0xFE, 0xFF] {
+            let mut inv = full_distinct_bag();
+            assert_eq!(
+                inv.add(id, 1),
+                AddOutcome::OobIdWrite {
+                    oob_target: 0x8008_59E8,
+                    written_id: id,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn oob_write_is_independent_of_quantity() {
+        // The shop buy-confirm path adds a variable quantity, but only the id
+        // store is unguarded; qty never reaches the OOB store. So the outcome
+        // is identical for qty = 1 and qty = 99.
+        let mut inv1 = full_distinct_bag();
+        let mut inv99 = full_distinct_bag();
+        assert_eq!(
+            inv1.add(0x90, 1),
+            AddOutcome::OobIdWrite {
+                oob_target: 0x8008_59E8,
+                written_id: 0x90,
+            }
+        );
+        assert_eq!(inv1.add(0x90, 1), inv99.add(0x90, 99));
+    }
+
+    #[test]
+    fn add_helper_caller_catalogue_is_complete_and_distinct() {
+        // The five reverse-engineered unchecked call sites, each with its
+        // documented source address. Guards against silent drift if a site is
+        // added/removed without updating ALL.
+        assert_eq!(AddHelperCaller::ALL.len(), 5);
+        let addrs: Vec<u32> = AddHelperCaller::ALL
+            .iter()
+            .map(|c| c.source_addr())
+            .collect();
+        assert_eq!(
+            addrs,
+            vec![
+                0x8004_E568,
+                0x801C_36B0,
+                0x801F_138C,
+                0x801C_2748,
+                0x8020_E748
+            ]
+        );
+        // All distinct.
+        let mut sorted = addrs.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), addrs.len());
+    }
+
+    #[test]
+    fn every_known_caller_reaches_the_oob_on_a_full_bag() {
+        // Model each caller's full-bag add with a representative written id and
+        // assert the primitive fires at the fixed key-item address. The value
+        // column reflects each site's control over the written byte (per the
+        // `AddHelperCaller` docs): shop = catalog id, loot = drop id, capture =
+        // monster id, minigame = fixed 0xCD, refund = displaced equip id.
+        // Representative ids chosen > ITEM_WINDOW_SLOTS (72) so they don't
+        // collide with full_distinct_bag's 1..=72 fill (which would merge).
+        let site_ids = [
+            (AddHelperCaller::BattleLoot, 0x80u8),
+            (AddHelperCaller::ShopBuyConfirm, 0x91),
+            (AddHelperCaller::CaptureItemPay, 0xA5),
+            (AddHelperCaller::MinigameReward, 0xCD),
+            (AddHelperCaller::EquipSwapBackRefund, 0xB0),
+        ];
+        for (caller, id) in site_ids {
+            let mut inv = full_distinct_bag();
+            assert_eq!(
+                inv.add(id, 1),
+                AddOutcome::OobIdWrite {
+                    oob_target: 0x8008_59E8,
+                    written_id: id,
+                },
+                "caller {caller:?} (FUN_{:08X}) should reach the OOB on a full bag",
+                caller.source_addr(),
+            );
+        }
     }
 }

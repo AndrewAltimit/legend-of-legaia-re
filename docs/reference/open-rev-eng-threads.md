@@ -755,7 +755,8 @@ So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace.
 | `title.pak` PROT entry | resolved | [details ↓](#titlepak-prot-entry) | `project_prot_0895_init_pak.md` |
 | Title screen mode-table PROT | resolved (no such entry) | [details ↓](#title-screen-mode-table-prot) | `project_mode_table_structure.md` |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn — the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. | `project_load_screen_panel_source_pinned.md` |
-| Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (writer absent **by design** in retail) | [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) | `project_debug_flags.md` |
+| Debug flags `0x8007B8C2` / `0x8007B98F` | partial — `0x8007B98F` live-confirmed; consumer in uncaptured overlay | [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) | `project_debug_flags.md` |
+| Key-item area consumers (`0x800859E8..0x80085A40`) | open — read-BP scan pending | Identify which native code reads the key-item id bytes that the full-bag OOB add helper writes. A consumer that uses the attacker-controlled id byte as an unguarded index is a potential chain toward the debug bytes. Probe: `scripts/pcsx-redux/autorun_key_item_consumer_hunt.lua`. | `project_ace_oob_confirmed.md` |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) | `project_xp_split_static_negative.md` |
 | Opening-prologue tail (`opdeene`) | partial | [details ↓](#opening-prologue-tail-opdeene) | `project_cold_boot_prologue.md` |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
@@ -807,11 +808,13 @@ and the **options/config-menu bundle** is **PROT 899** (`xxx_dat`) — its index
 
 ### Debug flags `0x8007B8C2` / `0x8007B98F`
 
-*Status:* resolved (writer absent **by design** in retail)
+*Status:* partial — `_DAT_8007B8C2` resolved; `_DAT_8007B98F` live-confirmed but consumer not located in the captured corpus
 
-Both addresses are in the SBSS/BSS region (zero-initialised at boot). The retail code paths only ever consult them as **dev-vs-retail build-time selectors**: `FUN_8003E360`'s dual-mode loader pattern routes through ISO9660 when `_DAT_8007B8C2 == 0` (the retail path) and through the PROT-index loader when non-zero (the dev path); same shape at `FUN_8001FA88` / `FUN_8001FC00` (sound) and `FUN_8001F7C0` (per-scene field-asset loader, see [`reference/functions.md`](functions.md)). The earlier "at least one writer must exist in an unscanned overlay" framing was wrong: a retail build whose selector lives at zero needs **no writer at all** — BSS init alone establishes the retail config, and the dev branches are never taken because no code path flips the flag.
+Both addresses are in the SBSS/BSS region (zero-initialised at boot). `_DAT_8007B8C2` is the dev/retail asset-load selector: `FUN_8003E360`'s dual-mode loader pattern routes through ISO9660 when `_DAT_8007B8C2 == 0` (retail) and through the PROT-index loader when non-zero (dev); same shape at `FUN_8001FA88` / `FUN_8001FC00` (sound) and `FUN_8001F7C0` (per-scene field-asset loader). Zero code writers across the full corpus — BSS init establishes the retail config.
 
-**Exhaustive corpus sweep (2661 dump files across SCUS + every captured overlay) confirms zero writes to `_DAT_8007B8C2` and zero references — read or write — to `_DAT_8007B98F`.** So `_DAT_8007B8C2` is read-only at runtime (10+ `== 0` retail-mode tests, no writers anywhere), and `_DAT_8007B98F` is effectively inert (the dev branches it would gate were stripped at link time — the byte exists in BSS because GameShark codes can POKE it, but no retail code path consumes it). Row kept so the "writer must exist somewhere" framing isn't re-opened.
+**Exhaustive corpus sweep (2661 dump files across SCUS + every captured overlay) confirms zero writes to `_DAT_8007B8C2` and zero references — read or write — to `_DAT_8007B98F`.** `_DAT_8007B8C2` is read-only at runtime (10+ `== 0` retail-mode tests, no writers anywhere).
+
+`_DAT_8007B98F` has zero references in the captured corpus — the earlier conclusion "stripped at link time / inert" is **falsified**: writing `0x8007B98F = 1` via external RAM poke brings up the debug menu on SELECT+△ in the NA retail build, proving the consumer is overlay-resident but outside the captured 2661-file set. See [`subsystems/boot.md` § Debug flags](../subsystems/boot.md#debug-flags) and [`reference/builds.md` § Debug input bindings](builds.md#debug-input-bindings) for the full combo table. Row kept so the "stripped / inert" framing isn't re-opened — the correct framing is "consumer in an uncaptured overlay".
 
 
 ### XP-table source + reader

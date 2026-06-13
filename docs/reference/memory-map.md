@@ -275,7 +275,9 @@ Full write-ups for the rows above whose detail outgrew a table cell. Linked from
 
 The **add** helper `FUN_800421D4` is the one exception worth noting: its id store precedes the bound check, so a full-window add writes the item id **one slot past** the window (`0x80085958 + gp[+0x2D4]*2`); only its count store is guarded (see [`functions.md`](functions.md)).
 
-**Aliasing (RESOLVED):** `0x800859E8` = SC+0x18A8 = the first slot of the KEY-ITEM list immediately following the 72-slot consumable window, so the full-bag add's 1-byte OOB lands on the first key-item id — *not* on any debug/control flag (it does not reach the `0x8007Bxxx` debug bytes). Whether the full-bag-add code path is reachable in normal play remains capture-gated. A memory-safe RE model of this accessor family (incl. the OOB primitive surfaced as data) lives in [`legaia_save::retail_inventory`](../../crates/save/src/retail_inventory.rs).
+**Aliasing (RESOLVED):** `0x800859E8` = SC+0x18A8 = the first slot of the KEY-ITEM list immediately following the 72-slot consumable window, so the full-bag add's 1-byte OOB lands on the first key-item id — *not* on any debug/control flag (it does not reach the `0x8007Bxxx` debug bytes).
+
+**Reachability live-confirmed via two independent caller paths:** a probe-instrumented full-bag scene shows `pc=0x800422BC` write hits via (A) casino prize-exchange CROSS (`id=0x9C` → `0x800859E8`) and (B) equip-unequip via START menu (`id=0xD0` → `0x800859EA`). The free-slot scan does not stop at the 72-slot boundary, so successive full-bag adds chain through the key-item area one slot at a time (each add writes to the next non-zero-free slot). A memory-safe RE model of this accessor family (incl. the OOB primitive surfaced as `AddOutcome::OobIdWrite { oob_target, written_id }`) lives in [`legaia_save::retail_inventory`](../../crates/save/src/retail_inventory.rs).
 
 ### `0x8007C018` — Global TMD pointer table
 

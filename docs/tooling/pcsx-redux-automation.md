@@ -141,7 +141,7 @@ which is an umbrella that re-exports the per-concern submodules under
 [`scripts/pcsx-redux/lib/probe/`](../../scripts/pcsx-redux/lib/probe/) -
 `env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, `watch`, `step`,
 and `symbols`. A new probe doesn't reimplement the state machine, the
-memory readers, the save-state loader, the pad-override helpers, the
+memory readers + writers, the save-state loader, the pad-override helpers, the
 CSV writer, or the live-snapshot writer - it imports them:
 
 ```lua
@@ -400,6 +400,11 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
 | [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
 | [`autorun_battle_moveimage_trace.lua`](../../scripts/pcsx-redux/autorun_battle_moveimage_trace.lua) | Logs every libgpu `MoveImage` request (caller RA + source RECT + dest) via an exec-bp on `FUN_80058490`; `LEGAIA_TRACE_LOADIMAGE=1` adds the `LoadImage` wrapper (slow — it fires every frame on the overworld). Pinned move-VM op `0x40` as the animated-texture strip primitive (see [`move-vm.md`](../subsystems/move-vm.md)). |
+| [`autorun_debug_bit_poke.lua`](../../scripts/pcsx-redux/autorun_debug_bit_poke.lua) | ACE Phase 0: external-poke probe for `_DAT_8007B8C2` (dev/retail loader flag) and/or `_DAT_8007B98F` (debug-menu enable). Loads a stable field sstate, asserts the chosen byte every vsync, and stays running for human-in-the-loop observation. Confirmed `_DAT_8007B98F = 1` brings up the debug menu on SELECT+△ in the NA retail build. |
+| [`autorun_inventory_fill.lua`](../../scripts/pcsx-redux/autorun_inventory_fill.lua) | ACE Phase 2.1 harness helper: RAM-fills all 72 consumable slots (`0x80085958..0x800859E7`) with Water Talisman ids and maxes gold + casino coins so the next item-add fires the unchecked add helper `FUN_800421D4` out-of-bounds. Used as a setup step before `autorun_inventory_oob_writer.lua`. |
+| [`autorun_inventory_oob_writer.lua`](../../scripts/pcsx-redux/autorun_inventory_oob_writer.lua) | ACE Phase 2.1 reachability probe: arms `probe.step.find_writer` on the key-item window (`0x800859E8..0x800859F8`) and flags any store from `0x800422BC` (the add helper's unguarded id store). **Confirmed two live hits via two distinct callers**: casino exchange CROSS (id `0x9C` to `0x800859E8`) and equip-unequip via START menu (id `0xD0` to `0x800859EA`). Closes ACE backlog 2.1 reachability. |
+| [`autorun_flag_bank_watcher.lua`](../../scripts/pcsx-redux/autorun_flag_bank_watcher.lua) | ACE Phase 3 reconnaissance: exec-bps on `FUN_8003CE08/CE34/CE64` (flag SET/CLR/TST). Early-outs for flag indices below 5248 (the OOB-reachable start) and logs only OOB-range calls, reducing per-frame overhead. Use interactively: load the sstate, open the debug menu (SELECT+△), warp to credits, watch for `*** OOB-REACHABLE ***` lines. |
+| [`autorun_key_item_consumer_hunt.lua`](../../scripts/pcsx-redux/autorun_key_item_consumer_hunt.lua) | ACE Phase 3 / Path C: fills the consumable bag in RAM, optionally seeds key-item slot 0 with a chosen id, then arms Read BPs on the first 24 bytes of the key-item area (`0x800859E8..+0x18`) plus passive Write BPs on the debug bytes (`0x8007B8C2`/`0x8007B98F`). Logs every read with PC + RA; heartbeat prints a unique-PC summary for post-analysis. Use to find native consumers of the OOB-writable bytes that may be exploitable as a chain. |
 
 #### Runtime probe details
 
