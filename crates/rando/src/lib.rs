@@ -53,6 +53,7 @@ pub mod chest;
 pub mod disc;
 pub mod door;
 pub mod drops;
+pub mod element_affinity;
 pub mod encounter;
 pub mod equipment;
 pub mod house_door;

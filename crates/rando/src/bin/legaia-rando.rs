@@ -120,6 +120,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: print the 8×8 element-affinity matrix (rows = attacking
+    /// element, columns = defending element; each cell a damage-scale percent)
+    /// the `--element-affinity` randomizer redistributes.
+    Affinity {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -203,6 +211,13 @@ struct RandomizeArgs {
     /// animation, effects, and sound. `legaia-rando move-powers` lists them.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     move_power: DropArg,
+    /// How the element-affinity matrix is reassigned (which element beats which:
+    /// the 8×8 damage-scale grid). `shuffle` permutes the 64 cells (the same
+    /// number of weaknesses / resistances exists, between different pairs);
+    /// `random` draws each cell from that pool. Per-character element assignment
+    /// is left untouched. `legaia-rando affinity` shows the current grid.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    element_affinity: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -378,6 +393,7 @@ fn main() -> Result<()> {
         Cmd::Casino { input } => cmd_casino(&input),
         Cmd::MonsterStats { input } => cmd_monster_stats(&input),
         Cmd::MovePowers { input } => cmd_move_powers(&input),
+        Cmd::Affinity { input } => cmd_affinity(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -539,6 +555,37 @@ fn cmd_move_powers(input: &Path) -> Result<()> {
         println!("{:>3}  {:>6}  {}", i, r.power(), label(i));
     }
     println!("{} move-power records", records.len());
+    Ok(())
+}
+
+fn cmd_affinity(input: &Path) -> Result<()> {
+    use legaia_asset::element_affinity::{ELEMENT_COUNT, Element, ElementAffinity};
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let entry = patcher
+        .read_entry(legaia_asset::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let aff =
+        ElementAffinity::parse(&entry).context("parse element-affinity matrix (PROT 0898)")?;
+
+    print!("{:>8}", "atk\\def");
+    for d in 0..ELEMENT_COUNT {
+        print!(
+            " {:>7}",
+            Element::from_id(d as u8).map(|e| e.name()).unwrap_or("?")
+        );
+    }
+    println!();
+    for (a, row) in aff.matrix.iter().enumerate() {
+        print!(
+            "{:>8}",
+            Element::from_id(a as u8).map(|e| e.name()).unwrap_or("?")
+        );
+        for cell in row {
+            print!(" {:>7}", cell);
+        }
+        println!();
+    }
     Ok(())
 }
 
@@ -819,6 +866,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let casino_mode = args.casino.mode();
     let monster_stats_mode = args.monster_stats.mode();
     let move_power_mode = args.move_power.mode();
+    let element_affinity_mode = args.element_affinity.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -1096,6 +1144,19 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("move power: untouched");
         manifest.push("move_power = \"none\"".to_string());
+    }
+
+    if let Some(element_affinity_mode) = element_affinity_mode {
+        let changed = apply::randomize_element_affinity(&mut patcher, seed, element_affinity_mode)?;
+        println!("element affinity: {changed} matrix cell(s) changed ({element_affinity_mode:?})");
+        manifest.push(format!(
+            "element_affinity = {:?}",
+            mode_str(element_affinity_mode)
+        ));
+        manifest.push(format!("element_affinity_changed = {changed}"));
+    } else {
+        println!("element affinity: untouched");
+        manifest.push("element_affinity = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {

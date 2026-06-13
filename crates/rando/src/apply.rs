@@ -611,6 +611,54 @@ pub fn randomize_move_powers(
     Ok(changed)
 }
 
+/// Read the 8×8 element-affinity matrix (PROT 0898), flattened row-major
+/// (`attacker * 8 + defender`), for the read-only listing / randomizer input.
+/// `None` if the entry can't parse.
+pub fn current_affinity_matrix(
+    patcher: &DiscPatcher,
+) -> Result<Option<[u8; crate::element_affinity::MATRIX_CELLS]>> {
+    let entry = patcher
+        .read_entry(legaia_asset::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let Some(aff) = legaia_asset::element_affinity::ElementAffinity::parse(&entry) else {
+        return Ok(None);
+    };
+    let ec = legaia_asset::element_affinity::ELEMENT_COUNT;
+    let mut flat = [0u8; crate::element_affinity::MATRIX_CELLS];
+    for (atk, row) in aff.matrix.iter().enumerate() {
+        flat[atk * ec..atk * ec + row.len()].copy_from_slice(row);
+    }
+    Ok(Some(flat))
+}
+
+/// Randomize the element-affinity matrix (see [`crate::element_affinity`]).
+/// Rewrites the 64 matrix bytes in PROT 0898 — a same-size raw edit (no LZS).
+/// Returns the number of cells that changed.
+pub fn randomize_element_affinity(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::element_affinity::{
+        AFFINITY_MATRIX_FILE_OFFSET, BATTLE_ACTION_OVERLAY_PROT_INDEX,
+    };
+    let Some(current) = current_affinity_matrix(patcher)? else {
+        return Ok(0);
+    };
+    let plan = crate::element_affinity::plan_matrix(&current, seed, mode);
+    let changed = current.iter().zip(&plan).filter(|(a, b)| a != b).count();
+    if plan != current {
+        patcher
+            .patch_prot_entry(
+                BATTLE_ACTION_OVERLAY_PROT_INDEX,
+                AFFINITY_MATRIX_FILE_OFFSET as u64,
+                &plan,
+            )
+            .context("write element-affinity matrix")?;
+    }
+    Ok(changed)
+}
+
 /// Outcome of randomizing scene encounters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EncounterApplyReport {
