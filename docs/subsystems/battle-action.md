@@ -289,14 +289,38 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
 - **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** — a contiguous table of `[i16 model_sel][u16 flags][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings — "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
   the reason PROT 905 has zero `jal 0x80023070` *inside the overlay* is simply that the `jal` lives in the SCUS stager `FUN_80021B04` (which seats `actor[+0x70] = 2` PC → bytecode at `record+4`, then ticks `FUN_80023070`), not in the overlay image.
 - **But the move-VM scene-graph is NOT how retail renders the player summon (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast shows `FUN_801F7088` = **0×**, the move VM `FUN_80023070` = **2-3×** (noise), and the **battle per-actor draw `FUN_80048A08` = 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`. So the **player** summon is drawn as an ordinary battle actor (per-object TRS keyframes), the faithful path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The move-VM stager records still exist (and the engine drives them in `summon::SummonScene` as a stand-in), but they aren't the player summon's per-frame render path. SCOPE: the trace covers the **player** "Burning Attack" only;
-  the **enemy** Gimard *Fire Tail* boss move is untraced and may still use the overlay/move-VM path.
+  the **enemy** Gimard *Fire Tail* boss move is a distinct path — see the Fire-Tail note below.
 
 The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the resident `etim` page (832,256) 4bpp; `cba`/`tsb` are applied at render.
 
 - In a live Tail-Fire capture the summon library occupies `DAT_8007C018[3..32]`; ten of those (`[23..32]`) are fire-textured meshes (cba row 478 `0x778B` baked), and the **active Gimard flame is `DAT_8007C018[26]`** - the only rendered model baking etim, with both rendering actors carrying `actor[+0x64]=26` and `actor[+0x56]=5` (full-TMD mode → `FUN_8002735C`).
 - Each individual flame mesh is **static geometry**; the visible fire motion is the **spawned part-actors** moving (the 8 RNG-seeded parts above), **not** CLUT cycling — the entire CLUT band is byte-identical across two animation-distinct `battle_gimard_tail_fire_a/_b` frames while the framebuffer differs ~21% (this falsifies the earlier "fire flicker = CLUT/palette animation" reading).
 - The PROT 905 `LoadImage` (`FUN_800583C8`) CLUT uploads target VRAM row `481+` (the character/party-CLUT region), conditionally, not the flame's row 478.
-- **Residual:** the part records are now recovered (`legaia_asset::summon_overlay`) and driven as a stand-in; what's open is the faithful **player** render — the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`, ported) needs the summon's per-object keyframe source wired in place of the move-VM stand-in — and the untraced **enemy** *Fire Tail* path. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+- **Residual:** the part records are now recovered (`legaia_asset::summon_overlay`) and driven as a stand-in; what's open is the faithful **player** render — the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`, ported) needs the summon's per-object keyframe source wired in place of the move-VM stand-in. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
+##### Enemy "Fire Tail" — move-VM part, not the widget path
+
+The **enemy** Gimard *Fire Tail* boss move is the distinct path the player-summon
+trace did not cover, and it is now characterized from the two catalogued
+mid-cast frames (`battle_gimard_tail_fire_a/_b`; disc + library gated
+`firetail_movefx_liveness`). Unlike the player summons and the Cort/Delilas/Zeto
+boss specials — which page a per-spell *stager* into slot B — Fire Tail's slot-B
+occupant is the move-FX module **PROT 0900** itself (loader-B id `5`, byte-exact
+at the residency pin file `0x1628` ↔ `0x801F8000`).
+But PROT 0900's **screen-widget family is dormant**: an effect-actor-list walk of
+both frames finds **zero** live mask/sprite/panel/letterbox widgets — so Fire
+Tail is not the cutscene widget path (that stays exclusive to the eight ending
+scenes; see [`move-vm.md` § screen-effect widget family](move-vm.md#screen-effect-widget-family-prot-0900)).
+The live effect is instead a single **move-VM part-actor** in the part pool
+`DAT_801C90F0`, ticked per frame by the generic SCUS actor tick `FUN_80021DF4`
+(→ `FUN_80023070`) — a live capture pinning that render-tail driver. Its
+`[i16 model_sel][u16 flags][bytecode]` record (`actor[+0x48]`) lives in the
+**battle overlay (0898)** resident data at `0x801F5xxx` (below the 0900 slot-B
+link base `0x801F69D8`), `model_sel` reading `-1` (transform node) / `5` (library
+mesh `DAT_8007C018[5 + base]`) — the summon part-record format, sourced from the
+battle overlay rather than a stager. So the move-VM scene-graph *is* Fire Tail's
+render path (one live part), but its records are battle-overlay data and PROT
+0900's role there is resident move-FX code, not the live driver.
 
 #### Enemy boss stagers + the record-table trim
 
