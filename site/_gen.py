@@ -1046,7 +1046,7 @@ def main() -> int:
     # reruns this script). See scripts/ci/check-site-links.py.
     import subprocess
     link_check = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "check-site-links.py")],
+        [sys.executable, str(REPO_ROOT / "scripts" / "ci" / "check-site-links.py")],
     )
     if link_check.returncode != 0:
         print("[_gen] broken internal links above -- fix the _content fragment hrefs",
