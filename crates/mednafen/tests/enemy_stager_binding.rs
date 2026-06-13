@@ -1,11 +1,14 @@
-//! Disc + library gated: ordinary (non-final-boss) enemy special attacks ride
-//! the same loader-B stager mechanism as the player summons and the final-boss
-//! Cort specials.
+//! Disc + library gated: enemy special attacks ride the same loader-B stager
+//! mechanism as the player summons — both the final-boss Cort specials and the
+//! ordinary (non-final-boss) bosses.
 //!
-//! The enemy-cast stager path was pinned for Cort (`enemy_stager_real`,
-//! `ENEMY_BOSS_STAGER_PROT`). These mid-cast states extend it to two ordinary
-//! bosses — the Delilas brothers and Zeto — confirming the mechanism is not
-//! Cort-specific. For each, the loader-B current-id (`0x8007BC4C`) read mid-cast
+//! The Cort stager *files* are pinned structurally by `enemy_stager_real`
+//! (disc-only: trim to TOC-gap footprint, parse as a stager), but that test does
+//! not read RAM, so the Cort loader-B binding itself had no committed coverage.
+//! This oracle adds the RAM pin for all six Cort legs (`ENEMY_BOSS_STAGER_PROT`)
+//! and extends it to two ordinary bosses — the Delilas brothers and Zeto —
+//! confirming the mechanism is not Cort-specific. For each, the loader-B
+//! current-id (`0x8007BC4C`) read mid-cast
 //! resolves the stager entry on the universal `extraction = id + 895`
 //! arithmetic, and that entry is byte-resident at the slot-B link base
 //! `0x801F69D8` and parses as a move-VM stager:
@@ -48,6 +51,20 @@ const ENEMY_CASTS: &[(&str, u16, u32)] = &[
     ("zeto_big_wave_mid_cast", 0x33, 946),
 ];
 
+/// `(scenario label, loader-B id, extraction entry)` for the six final-boss
+/// Cort special-attack mid-casts (`summon_overlay::ENEMY_BOSS_STAGER_PROT`).
+/// The base form casts Mystic Circle / Mystic Shield / Guilty Cross; the evolved
+/// form casts Final Crisis / Ultra Charge / Evil Seru Magic. Same universal
+/// `extraction = id + 895` arithmetic; none carries a `0x4000` render-mode node.
+const CORT_CASTS: &[(&str, u16, u32)] = &[
+    ("cort_mystic_circle_mid_cast", 0x2B, 938),
+    ("cort_mystic_shield_mid_cast", 0x2D, 940),
+    ("cort_guilty_cross_mid_cast", 0x31, 944),
+    ("cort_evolved_final_crisis_mid_cast", 0x42, 961),
+    ("cort_evolved_ultra_charge_mid_cast", 0x43, 962),
+    ("cort_evil_seru_magic_mid_cast", 0x47, 966),
+];
+
 /// Battle overlay loader-B current-id (`*DAT_8007BC4C`).
 const LOADER_B_VA: u32 = 0x8007_BC4C;
 /// Part-actor pool base (`DAT_801C90F0`, 0x60 u32 slots).
@@ -88,23 +105,21 @@ fn extracted_root() -> Option<PathBuf> {
     None
 }
 
-#[test]
-fn enemy_specials_byte_pin_their_stager() {
-    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
-        return;
-    }
+/// Byte-pin each cast in `casts` against its catalogued mid-cast state; returns
+/// how many legs were actually pinned (states present). Asserts hard on any
+/// loader-B / residency / parse mismatch.
+fn pin_casts(casts: &[(&str, u16, u32)]) -> usize {
     let (Some(mpath), Some(lib), Some(root)) = (manifest_path(), library_dir(), extracted_root())
     else {
         eprintln!("[skip] scenarios.toml / saves/library / extracted missing");
-        return;
+        return 0;
     };
     let manifest = ScenarioManifest::from_path(&mpath).expect("parse manifest");
     let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
 
     let mut pinned = 0usize;
 
-    for &(label, loader_b, extraction) in ENEMY_CASTS {
+    for &(label, loader_b, extraction) in casts {
         let Some(scn) = manifest.scenarios.iter().find(|s| s.label == label) else {
             eprintln!("[skip] scenario {label} absent");
             continue;
@@ -183,7 +198,27 @@ fn enemy_specials_byte_pin_their_stager() {
         pinned += 1;
     }
 
-    if pinned == 0 {
-        eprintln!("[skip] no enemy special-attack mid-cast states available");
+    pinned
+}
+
+#[test]
+fn enemy_specials_byte_pin_their_stager() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    if pin_casts(ENEMY_CASTS) == 0 {
+        eprintln!("[skip] no ordinary-enemy special-attack mid-cast states available");
+    }
+}
+
+#[test]
+fn cort_specials_byte_pin_their_stager() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    if pin_casts(CORT_CASTS) == 0 {
+        eprintln!("[skip] no Cort special-attack mid-cast states available");
     }
 }

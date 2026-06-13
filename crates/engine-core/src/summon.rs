@@ -90,7 +90,9 @@ pub const SUMMON_PART_BUDGET: usize = 256;
 /// Player Seru-magic spell-id range that resolves to a per-summon overlay at
 /// the battle-action cast band (`FUN_801E295C` state `0x29`: `actor[+0x1DF] >=
 /// 0x81`). Gimard *Burning Attack* = `0x81` (the enemy boss *Fire Tail* is a
-/// different, non-stager path).
+/// different, non-stager path). The `0x82..=0x8B` legs each carry a committed
+/// regression oracle (mid-cast loader-B id + slot-B-resident stager;
+/// disc+library-gated `summon_binding_base_high`); `0x81` is PCSX-side.
 pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 
 /// Evolved-Seru player cast block (`0x8C..=0x95`), the contiguous continuation
@@ -109,7 +111,9 @@ pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 /// High summon block: Evil Seru Magic (`0x99` — the creature resolves
 /// per-cast, e.g. Juggernaut), the Sim-Seru summons Palma / Mule / Horn /
 /// Jedo (`0x9A..=0x9D`), and the Ra-Seru summons Meta / Terra / Ozma
-/// (`0x9E..=0xA0`).
+/// (`0x9E..=0xA0`). All eight legs each carry a committed regression oracle
+/// (mid-cast loader-B id + slot-B-resident stager; disc+library-gated
+/// `summon_binding_base_high`).
 pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
@@ -152,15 +156,28 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// [`crate::battle_anim::MonsterAnimPlayer`] → `tmd_to_vram_mesh_posed_rot`) —
 /// **not** the move-VM scene-graph the [`SummonScene`] stand-in drives.
 ///
-/// Resolved by matching the spell's display name ([`crate::retail_magic`]) to a
-/// `battle_data` record name, so the `"$2"`/`"$3"` higher-level enemy variants
-/// (different names) are excluded and the base creature is chosen. Pinned from
-/// the fingerprint-verified `gimard_summon_visible` save: the live summon
-/// actor's 11-part idle byte-matches `battle_data` id 10 ("Gimard"). The
-/// disc-verified map is Gimard `0x81`→10, Theeder `0x82`→25, Vera `0x83`→28,
-/// Gizam `0x84`→55, Nighto `0x85`→49, Zenoir `0x86`→64, Viguro `0x87`→74,
-/// Swordie `0x88`→86, Orb `0x89`→83, Freed `0x8a`→92, Nova `0x8b`→95.
+/// Resolved from the disc-pinned base + evolved map
+/// ([`legaia_asset::summon_creatures`]): every summon group's `summon.dat`
+/// actor-record TMD is byte-identical to its mapped `battle_data` creature mesh,
+/// covering `0x81..=0x95` (the base block plus the evolved-Seru block, including
+/// the two evolved legs Kemaro `0x90` / Spoon `0x91` that had no capture state).
+/// The high block `0x99..=0xA0` carries a bespoke mesh (not an archive creature)
+/// and is intentionally unmapped — those summons return `None` here for now.
+/// The map id is validated as live in this archive; a name-based fallback covers
+/// anything [`crate::retail_magic`] names but the map does not.
 pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
+    // Disc-pinned map: the creature id is exact (byte-validated mesh identity),
+    // so prefer it. Validate it resolves in this archive before returning.
+    let mapped = legaia_asset::summon_creatures::creature_for_spell(spell_id).filter(|c| {
+        legaia_asset::monster_archive::record(battle_data_entry, c.creature_id)
+            .ok()
+            .flatten()
+            .is_some()
+    });
+    if let Some(c) = mapped {
+        return Some(c.creature_id);
+    }
+    // Fallback: name-based resolution for any other named summon.
     let name = crate::retail_magic::get(spell_id)?.name;
     let slots = legaia_asset::monster_archive::slot_count(battle_data_entry) as u16;
     (1..=slots).find(|&id| {

@@ -135,7 +135,10 @@ pub const POOL_SPAWN_HELPER: u32 = 0x8005_0ED4;
 ///
 /// **The whole block is capture-pinned**: every spell id `0x81..=0x8B` was
 /// observed mid-cast loading its arithmetic slot (loader-B current id at
-/// `0x8007BC4C`), with zero exceptions. PROT 0907 (the spell-`0x85` slot) is
+/// `0x8007BC4C`), with zero exceptions. The `0x82..=0x8B` legs carry a committed
+/// regression oracle — one mid-cast state each byte-pins the loader-B id and the
+/// slot-B-resident stager (disc+library-gated `summon_binding_base_high`); the
+/// `0x81` Gimard leg is PCSX-side. PROT 0907 (the spell-`0x85` slot) is
 /// **Nighto's stager** - its ASCII head title `Hell's Music` is the attack's
 /// display name (the SCUS spell table carries the same string, and
 /// `summon.dat`'s attack-name records list it exactly parallel to Gimard's
@@ -169,7 +172,11 @@ pub const EVOLVED_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 914..=923;
 
 /// High-summon (evil-Seru creature) stager block, capture-pinned: action ids
 /// `0x99..=0xA0` (Juggernaut / Palma / Mule / Horn / Jedo / Meta / Terra /
-/// Ozma) load extraction PROT 0927..=0934 through the same loader-B path.
+/// Ozma) load extraction PROT 0927..=0934 through the same loader-B path. All
+/// eight legs carry a committed regression oracle (one mid-cast state each
+/// byte-pins the loader-B id + slot-B-resident stager; disc+library-gated
+/// `summon_binding_base_high`), including the `0x4000`-node carriers Palma 0928
+/// / Mule 0929 / Jedo 0931.
 pub const HIGH_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 927..=934;
 
 /// Enemy boss (final-boss Cort) special-attack stagers, capture-pinned by the

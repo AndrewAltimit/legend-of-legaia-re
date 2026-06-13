@@ -1,9 +1,11 @@
 //! Disc-gated: the six enemy-boss (final-boss Cort) special-attack stagers
 //! (`summon_overlay::ENEMY_BOSS_STAGER_PROT` = extraction PROT 0938 Mystic
 //! Circle / 0940 Mystic Shield / 0944 Guilty Cross / 0961 Final Crisis / 0962
-//! Ultra Charge / 0966 Evil Seru Magic, capture-pinned by the `cort_*_mid_cast`
-//! save states) parse as summon stagers under the shared slot-B link base
-//! `0x801F69D8`, exactly like the player block.
+//! Ultra Charge / 0966 Evil Seru Magic) parse as summon stagers under the
+//! shared slot-B link base `0x801F69D8`, exactly like the player block. This is
+//! the disc-only *structural* test; the per-leg RAM loader-B binding against the
+//! `cort_*_mid_cast` save states is pinned by `enemy_stager_binding`
+//! (disc+library-gated, in `legaia-mednafen`).
 //!
 //! Two structural facts are pinned here:
 //!
