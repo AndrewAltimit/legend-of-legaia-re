@@ -145,6 +145,19 @@ same mesh/texture installer the [monster archive](../formats/monster-animation.m
 uses — and stages the summon creature as a battle actor (`FUN_80024C88`
 allocation, scale `(part_pool_byte_0x1F) << 5`, etc.).
 
+For the **base + evolved-Seru summons (`0x81..=0x95`)** this actor-record TMD is
+**byte-identical** to a record in the `battle_data` monster archive (PROT 867):
+the summon reuses an ordinary enemy creature's mesh. Matching each group's
+actor-record TMD against the archive by longest-common-prefix recovers the full
+spell → creature map (e.g. Gimard `0x81`→ archive id 10; the otherwise
+capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The map lives
+in `legaia_asset::summon_creatures` and is byte-validated by the disc-gated
+`summon_creature_tmd_map_real`. The **big-summon block `0x9A..=0xA0`** instead
+carries a **bespoke mesh** in the group's third (raw CLUT+texture+part-pool)
+slot — no archive byte-match — so those summons are not reused enemy bodies.
+See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md) (Seru-magic
+summon visual).
+
 ### Art `"ME"` stream-archive slot (readef groups 0..3)
 
 The aux slots of `readef.DAT` groups 0..3 — slots `3*char + 1` and

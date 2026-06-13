@@ -25,7 +25,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [World map](#world-map) — `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
   - [Boot / title / menu UI](#boot--title--menu-ui) — `init_pak`, `title_pak`, `menu_glyph_atlas`
   - [SCUS static tables](#scus-static-tables) — `item_names`, `item_effect`, `equip_stats`, `accessory_passive`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
-  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`
+  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
   - [Scene + MAN](#scene--man) — `man_section`, `man_edit`, scene tables
   - [TIM/TMD scan + catalog](#timtmd-scan--catalog)
 - [CLI](#cli)
@@ -284,6 +284,16 @@ TMD + texture pool) and the player art-animation `"ME"` stream archives
 classifies every slot; `stream_target(action_id)` mirrors the retail
 id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
 [`summon-readef.md`](../../docs/formats/summon-readef.md).
+
+`summon_creatures` — the player-summon → namesake `battle_data` creature map.
+A base or evolved-Seru summon renders an ordinary `monster_archive` creature
+(PROT 867), and that creature's mesh is **byte-identical** to the `summon.dat`
+group's actor-record Legaia TMD — so matching each group's TMD against the
+archive recovers the whole map for `0x81..=0x95` (base block + evolved-Seru,
+including the two evolved legs no capture state covered: `0x90` Kemaro, `0x91`
+Spoon). The high block `0x99..=0xA0` has no archive byte-match (bespoke summon
+meshes). `SUMMON_CREATURES` + `creature_for_spell`; byte-validated by the
+disc-gated `summon_creature_tmd_map_real`.
 
 ### Scene + MAN
 
