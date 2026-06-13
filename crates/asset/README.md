@@ -140,7 +140,7 @@ Static battle-overlay data, pinned in PROT 0898 at fixed raw-entry offsets
 - `parse_id_index_map` + `index_for_move_id` / `record_for_move_id` resolve a move
   id. Remaining record fields open.
 
-CLI `asset move-power <PROT 0898 .BIN>`. See
+CLI `asset move-power <PROT 0898 .BIN>` (`--json` for the machine-readable table). See
 [`spell-table.md`](../../docs/formats/spell-table.md).
 
 ### `element_affinity`
@@ -155,7 +155,7 @@ the attacker roll.
 - `Element` enum names the ids (2/3/4/7 pinned, 0/1/5/6 inferred).
 
 PROT 0898, same link base as `move_power`. CLI `asset element-affinity <PROT 0898
-.BIN>`. See
+.BIN>` (`--json` emits the matrix + per-character + summon-power tables). See
 [`battle-formulas.md`](../../docs/subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8).
 
 ### `befect_cluster`
@@ -221,7 +221,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `accessory_passive` | Accessory ("Goods") passive effects: `AccessoryPassiveTable::from_scus` → `passive(id)` (item id → descriptor `+3` / equip `+5` index byte → 64-slot passive index + the `0x8007625C` name/description/scope record). `stat_boosts(index)` mirrors the `FUN_80042558` percent arithmetic, `bit_location(index)` the `char+0xF4` ability-bitfield placement. Byte-validated vs the curated gamedata accessory table. CLI `asset accessory-passive <SCUS>`. See [`accessory-passive-table.md`](../../docs/formats/accessory-passive-table.md). |
 | `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). CLI `asset spell-names <SCUS>`. See [`spell-table.md`](../../docs/formats/spell-table.md). |
 | `steal_table` | `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`): `StealTable::from_scus` → `entry(id)` / `steal_item(id)`. What the Evil God Icon steals; the item id resolves through `item_names`. NOT in the PROT 867 record. CLI `asset steal-table <SCUS> [--all]`. See [`steal-table.md`](../../docs/formats/steal-table.md). |
-| `mode_table` | `SCUS_942.54` game-mode dispatch table (`0x8007078C`, 28 × 24-byte entries): `ModeTable::from_scus` → per-mode handler fn ptr / param / dev name. Recovers the index → retail-handler map from the disc (12 of 14 per-frame modes share `0x80025EEC`; field/town = 2/3 MAIN; world-map = 12/13 MAPDISP). CLI `asset mode-table`. See [`boot.md`](../../docs/subsystems/boot.md#game-mode-state-machine). |
+| `mode_table` | `SCUS_942.54` game-mode dispatch table (`0x8007078C`, 28 × 24-byte entries): `ModeTable::from_scus` → per-mode handler fn ptr / param / dev name. Recovers the index → retail-handler map from the disc (12 of 14 per-frame modes share `0x80025EEC`; field/town = 2/3 MAIN; world-map = 12/13 MAPDISP). CLI `asset mode-table` (`--json`). See [`boot.md`](../../docs/subsystems/boot.md#game-mode-state-machine). |
 
 `new_game` — `SCUS_942.54` new-game seed data:
 
@@ -293,7 +293,9 @@ archive recovers the whole map for `0x81..=0x95` (base block + evolved-Seru,
 including the two evolved legs no capture state covered: `0x90` Kemaro, `0x91`
 Spoon). The high block `0x99..=0xA0` has no archive byte-match (bespoke summon
 meshes). `SUMMON_CREATURES` + `creature_for_spell`; byte-validated by the
-disc-gated `summon_creature_tmd_map_real`.
+disc-gated `summon_creature_tmd_map_real`. CLI `asset summon-creatures`
+(`--scus <SCUS_942.54>` annotates each row with the summon's spell name;
+`--json` for the machine-readable map).
 
 ### Scene + MAN
 
@@ -351,7 +353,8 @@ asset scene-v12 / scene-v12-scan
 asset man / man-scan                      # MAN multi-section walker (--with-encounter)
 asset kingdom-slot / slot4-png            # world-map kingdom bundles
 asset summon-overlay   <PROT 0905 .BIN>
-asset move-power / element-affinity       # PROT 0898 battle-overlay tables
+asset move-power / element-affinity       # PROT 0898 battle-overlay tables (--json)
+asset summon-creatures                    # summon -> creature map (--scus, --json)
 asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
 asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables (--json)
 asset sfx-table / new-game / level-up             # more SCUS_942.54 tables (--json)

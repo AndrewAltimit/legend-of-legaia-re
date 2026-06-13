@@ -172,6 +172,9 @@ enum Cmd {
     MovePower {
         /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
         input: PathBuf,
+        /// Emit the table as JSON instead of the text listing.
+        #[arg(long)]
+        json: bool,
     },
     /// Parse the 28-entry game-mode dispatch table (runtime VA `0x8007078C`)
     /// out of `SCUS_942.54`. Prints each mode's dev name, handler function
@@ -180,6 +183,9 @@ enum Cmd {
     ModeTable {
         /// `SCUS_942.54` executable image.
         input: PathBuf,
+        /// Emit the table as JSON instead of the text listing.
+        #[arg(long)]
+        json: bool,
     },
     /// Parse the battle element-affinity matrix (runtime VA `0x801F53E8`, read
     /// by `FUN_801dd864`) and the per-character element table (`0x801F5480`) out
@@ -188,6 +194,21 @@ enum Cmd {
     ElementAffinity {
         /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
         input: PathBuf,
+        /// Emit the matrix + tables as JSON instead of the text listing.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the player Seru-magic summon → namesake `battle_data` creature map
+    /// (`legaia_asset::summon_creatures`, recovered from the disc by mesh
+    /// identity). A static table, so no disc input is required; pass `--scus` to
+    /// annotate each row with the summon's spell name.
+    SummonCreatures {
+        /// Optional `SCUS_942.54` image — adds each summon's spell name.
+        #[arg(long)]
+        scus: Option<PathBuf>,
+        /// Emit the map as JSON instead of the text listing.
+        #[arg(long)]
+        json: bool,
     },
     /// Scan PROT entries (raw + LZS-decoded) for embedded PSX TIMs.
     /// Reports per-entry hit counts; with `--out` extracts each TIM to
@@ -1117,9 +1138,10 @@ fn main() -> Result<()> {
             clut_sub,
             action_id,
         } => summon_readef_cmd(&input, texture_png_dir.as_deref(), clut_sub, action_id),
-        Cmd::MovePower { input } => move_power_cmd(&input),
-        Cmd::ModeTable { input } => mode_table_cmd(&input),
-        Cmd::ElementAffinity { input } => element_affinity_cmd(&input),
+        Cmd::MovePower { input, json } => move_power_cmd(&input, json),
+        Cmd::ModeTable { input, json } => mode_table_cmd(&input, json),
+        Cmd::ElementAffinity { input, json } => element_affinity_cmd(&input, json),
+        Cmd::SummonCreatures { scus, json } => summon_creatures_cmd(scus.as_deref(), json),
         Cmd::Overlay { cmd } => match cmd {
             OverlayCmd::List { json } => overlay_list_cmd(json),
             OverlayCmd::Extract {
@@ -1154,7 +1176,7 @@ fn main() -> Result<()> {
 }
 
 /// Parse the battle-action per-move power table and print its records.
-fn mode_table_cmd(input: &Path) -> Result<()> {
+fn mode_table_cmd(input: &Path, json: bool) -> Result<()> {
     let bytes = std::fs::read(input)?;
     let Some(table) = legaia_asset::mode_table::ModeTable::from_scus(&bytes) else {
         anyhow::bail!(
@@ -1163,6 +1185,24 @@ fn mode_table_cmd(input: &Path) -> Result<()> {
             input.display(),
         );
     };
+    if json {
+        let rows: Vec<_> = table
+            .entries
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "index": e.index,
+                    "name": e.name,
+                    "handler": format!("{:#010x}", e.handler),
+                    "param": format!("{:#010x}", e.param),
+                    "per_frame": e.is_per_frame(),
+                    "shared_handler": e.uses_shared_handler(),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
     println!(
         "game-mode table @ VA {:#010x} ({} entries)",
         legaia_asset::mode_table::MODE_TABLE_VA,
@@ -1196,7 +1236,7 @@ fn mode_table_cmd(input: &Path) -> Result<()> {
     Ok(())
 }
 
-fn move_power_cmd(input: &Path) -> Result<()> {
+fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
     let bytes = std::fs::read(input)?;
     let Some(table) = legaia_asset::move_power::parse(&bytes) else {
         anyhow::bail!(
@@ -1208,6 +1248,46 @@ fn move_power_cmd(input: &Path) -> Result<()> {
         );
     };
     let map = legaia_asset::move_power::parse_id_index_map(&bytes);
+    // The move id(s) that resolve to a given power-table index (the move-id
+    // space is the spell-table id space).
+    let move_ids_of = |idx: usize| -> Vec<u8> {
+        match &map {
+            None => Vec::new(),
+            Some(m) => (0..m.len())
+                .filter(|&mid| {
+                    legaia_asset::move_power::index_for_move_id(m, mid as u8) == Some(idx as u8)
+                })
+                .map(|mid| mid as u8)
+                .collect(),
+        }
+    };
+    if json {
+        let rows: Vec<_> = table
+            .iter()
+            .filter(|r| !r.is_empty())
+            .map(|r| {
+                serde_json::json!({
+                    "index": r.index,
+                    "power": r.power(),
+                    "power_raw": r.power_raw,
+                    "counter_init": r.counter_init(),
+                    "phase_duration": r.phase_duration(),
+                    "homing_speed": r.homing_speed(),
+                    "strike_y_offset": r.strike_y_offset(),
+                    "impact_effect": r.impact_effect(),
+                    "trail_texture_page": r.trail_texture_page(),
+                    "sound_cue_id": r.sound_cue_id(),
+                    "list_mode": r.list_mode(),
+                    "tag": r.annotation_tag(),
+                    "contact_effects": r.contact_effects(),
+                    "launch_effects": r.launch_effects(),
+                    "move_ids": move_ids_of(r.index),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
     // Invert the map: power index -> the move id(s) that resolve to it.
     let move_ids_for = |idx: usize| -> String {
         match &map {
@@ -1280,7 +1360,7 @@ fn move_power_cmd(input: &Path) -> Result<()> {
 }
 
 /// Parse + print the battle element-affinity matrix and per-character table.
-fn element_affinity_cmd(input: &Path) -> Result<()> {
+fn element_affinity_cmd(input: &Path, json: bool) -> Result<()> {
     use legaia_asset::element_affinity::{self, Element};
     let bytes = std::fs::read(input)?;
     let Some(aff) = element_affinity::parse(&bytes) else {
@@ -1294,6 +1374,19 @@ fn element_affinity_cmd(input: &Path) -> Result<()> {
             bytes.len(),
         );
     };
+    if json {
+        let elements: Vec<&str> = (0..element_affinity::ELEMENT_COUNT)
+            .map(|id| Element::from_id(id as u8).map(|e| e.name()).unwrap_or("?"))
+            .collect();
+        let out = serde_json::json!({
+            "elements": elements,
+            "matrix": aff.matrix,
+            "character_elements": aff.character_elements,
+            "summon_power": aff.summon_power,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
     let label = |id: usize| -> String {
         Element::from_id(id as u8)
             .map(|e| e.name().to_string())
@@ -1349,6 +1442,61 @@ fn element_affinity_cmd(input: &Path) -> Result<()> {
             print!("{pct:>8}");
         }
         println!();
+    }
+    Ok(())
+}
+
+/// Print the player Seru-magic summon → namesake creature map. The map is a
+/// static table recovered from the disc by mesh identity (see
+/// [`legaia_asset::summon_creatures`]); `--scus` annotates each row with the
+/// summon's spell name.
+fn summon_creatures_cmd(scus: Option<&Path>, json: bool) -> Result<()> {
+    use legaia_asset::summon_creatures::SUMMON_CREATURES;
+    let names = match scus {
+        Some(p) => {
+            let bytes = std::fs::read(p)?;
+            legaia_asset::spell_names::SpellNameTable::from_scus(&bytes)
+        }
+        None => None,
+    };
+    let spell_name = |id: u8| -> Option<String> {
+        names
+            .as_ref()
+            .and_then(|t| t.name(id))
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+    };
+    if json {
+        let rows: Vec<_> = SUMMON_CREATURES
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "spell_id": c.spell_id,
+                    "spell_name": spell_name(c.spell_id),
+                    "creature_id": c.creature_id,
+                    "creature_name": c.name,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    println!(
+        "summon → creature map ({} summons; creature mesh byte-identical to the PROT 867 archive record)",
+        SUMMON_CREATURES.len()
+    );
+    println!(
+        "{:>9}  {:<14}  {:>11}  creature",
+        "spell id", "spell name", "creature id"
+    );
+    for c in SUMMON_CREATURES {
+        println!(
+            "  {:#04x}     {:<14}  {:>11}  {}",
+            c.spell_id,
+            spell_name(c.spell_id).unwrap_or_default(),
+            c.creature_id,
+            c.name,
+        );
     }
     Ok(())
 }
