@@ -8,7 +8,7 @@
 //!   replay with two button presses is six lines instead of six hundred;
 //! - an optional `[[expected]]` block of `(frame, scene_mode,
 //!   active_scene)` rows - the regression fixture against the engine's
-//!   [`ModeTraceFrame`](crate::mode_trace_oracle::ModeTraceFrame) stream.
+//!   [`ModeTraceFrame`] stream.
 //!
 //! [`ReplayFile::expand_pad_stream`] turns the sparse event list into a
 //! dense `Vec<u16>` of length `meta.frames + 1` (frame 0 inclusive) for

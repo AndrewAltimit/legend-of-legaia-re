@@ -8,7 +8,7 @@
 //! The record **header** is partition-specific. Partitions 0/1 use the
 //! `[u8 N][N*2 locals][4-byte header]` prefix below. Partition 2 (the
 //! cutscene-timeline records) instead opens with a Shift-JIS name and three
-//! condition-list gates - see [`partition2_record_script_offset`] and
+//! condition-list gates - see `partition2_record_script_offset` and
 //! [`partition_record_span`], decoded from the dispatcher `FUN_8003BDE0`.
 //!
 //! Partition 1 of a scene MAN (the "actor-placement / scripts" partition)
@@ -262,7 +262,7 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
 /// message text is located by scanning for the `0x1F`-lead segment block
 /// directly, and the (unreliable, for field scenes) opcode-decoded `interact_id`
 /// is kept only as a best-effort hint. The warp scan is opcode-based but gated
-/// (see [`is_genuine_warp`]): a *genuine* warp marks the actor a portal, and
+/// (see `is_genuine_warp`): a *genuine* warp marks the actor a portal, and
 /// genuine warp records carry no inline text block to confuse it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlacementKind {
@@ -918,7 +918,7 @@ fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
 ///
 /// The header shape is partition-specific: partition 2 (the cutscene-timeline
 /// records) uses the named-record header decoded by
-/// [`partition2_record_script_offset`] (`FUN_8003BDE0`); the other partitions
+/// `partition2_record_script_offset` (`FUN_8003BDE0`); the other partitions
 /// use the `[u8 N][N*2 locals][4-byte header]` prefix (`pc0 = 1 + N*2 + 4`).
 ///
 /// `None` when the partition / index is out of range, the offset lands past

@@ -414,7 +414,7 @@ impl ClutVramMatch {
 }
 
 /// Slide a halfword-aligned 32-byte window across `decoded` (skipping any
-/// known TMD body), keep windows that pass [`looks_clut_like`], and look
+/// known TMD body), keep windows that pass `looks_clut_like`, and look
 /// each one up in `vram_bytes` as an exact byte match.
 ///
 /// Returns one [`ClutVramMatch`] per `(record_offset, vram_position)` pair.

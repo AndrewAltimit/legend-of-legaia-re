@@ -324,7 +324,7 @@ fn record0_offset(entry: &[u8]) -> usize {
 ///
 /// `record0` = `[u32 desc_off][u32 clut_a][u32 clut_b][u32 budget]` then an LZS
 /// stream (at header `+0x10`) that decodes to `budget` bytes. The art records
-/// are a fixed [`ART_RECORD_STRIDE`] array inside the decoded block, combo at
+/// are a fixed `ART_RECORD_STRIDE` array inside the decoded block, combo at
 /// record `+0` in `1=L,2=R,3=D,4=U` form, 0-terminated. Each `(vanilla, new)`
 /// edit overwrites the vanilla combo bytes with the new ones (same length) at
 /// every record-grid-aligned clean-start occurrence.

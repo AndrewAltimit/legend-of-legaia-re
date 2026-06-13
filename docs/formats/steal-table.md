@@ -53,6 +53,8 @@ the file bytes, so it resolves the same way as the
 `[chance, item]` pair; `steal_item(monster_id)` returns the item only when the
 entry is stealable. The disc-gated `steal_table_real` test pins the
 Skeleton→Incense anchor plus a span of ids against the real executable.
+CLI: `asset steal-table <SCUS> [--all] [--json]` (the stolen item id is joined
+to its name).
 
 The randomizer (`legaia_rando::steal`) edits this table on a user-supplied disc
 to reassign steal items; see [`randomizer.md`](../tooling/randomizer.md).

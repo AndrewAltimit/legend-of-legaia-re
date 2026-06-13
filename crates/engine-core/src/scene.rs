@@ -1813,6 +1813,21 @@ impl SceneHost {
                 self.ensure_move_power_table();
             }
         }
+        // Route the per-region random-encounter table from the same MAN so
+        // field steps roll against the player's active region (per-region
+        // rate + formation-range, `FUN_801D9E1C`) rather than the aggregated
+        // mean rate the `EncounterSession` above carries. Scenes whose MAN
+        // has no encounter-region section (towns) resolve to `None`, which
+        // clears the field tracker and leaves the mean path in place - so
+        // this is additive: the mean session stays installed either way and
+        // supplies the transition / grace bracketing.
+        let field_region_table = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
+            .as_ref()
+            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
+        self.world.set_field_regions(field_region_table);
         // Install the scene's field entity-SM carriers derived from the same
         // MAN actor-placement partition (retail builds one record per
         // MAN-placed entity at scene load). They sit Idle - the sparring
@@ -2318,7 +2333,7 @@ const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
 ///
 /// **This is a preview mesh, not the model retail draws.** The real battle
 /// flame is [`GIMARD_TAIL_FIRE_MODEL_INDEX`], pulled from the PROT 0871
-/// effect-model library ([`seed_effect_model_library_from_etmd`]). The
+/// effect-model library (`seed_effect_model_library_from_etmd`). The
 /// stand-in is kept only as a fallback when that library isn't loaded (e.g.
 /// raw-PROT.DAT inspection without the battle assets). See
 /// `docs/formats/effect.md`.
@@ -2358,7 +2373,7 @@ const EFFECT_MODEL_LIBRARY_COUNT: usize = 30;
 
 /// Index in [`crate::world::World::global_tmd_pool`] of Gimard's *Tail Fire*
 /// flame model (`DAT_8007C018[26]`) - the model retail draws for the Gimard
-/// Seru cast. Equals [`EFFECT_MODEL_LIBRARY_BASE`]` + 23` (pack entry 23). Its
+/// Seru cast. Equals `EFFECT_MODEL_LIBRARY_BASE`` + 23` (pack entry 23). Its
 /// fire flicker is CLUT/palette cycling driven by the summon stager overlay (extraction PROT 0903)
 /// (the model geometry is static). Supersedes the PROT 0874 §0 preview
 /// stand-in at [`ETMD_TAIL_FIRE_MODEL_INDEX`]. See `docs/formats/effect.md`.
@@ -2536,7 +2551,7 @@ const BEFECT_ETIM_SECTION: usize = 2;
 /// page-`(0,0)` 8bpp source - see [`crate::world::World::active_effect_sprites`]
 /// and the open atlas-source thread in `docs/formats/effect.md`.)
 ///
-/// Mirrors [`seed_global_tmd_pool_from_befect_data`]'s LZS path. Soft-fails;
+/// Mirrors `seed_global_tmd_pool_from_befect_data`'s LZS path. Soft-fails;
 /// returns the number of TIMs uploaded.
 ///
 /// Public so the VRAM-parity oracle's lightweight pre-pass can apply the same
@@ -2673,7 +2688,7 @@ pub fn block_image_rects(index: &ProtIndex, block: &str) -> Result<Vec<(u16, u16
 /// `vram`. These three 64x256 4bpp TIMs (pages at `(320,0)`, `(384,0)`,
 /// `(448,0)`, CLUTs in rows 474..=476) are the texel source for the
 /// fire/flame effect meshes during battle, byte-verified against live battle
-/// VRAM (see [`PROT_FLAME_ATLAS_ENTRY`]).
+/// VRAM (see `PROT_FLAME_ATLAS_ENTRY`).
 ///
 /// Call this on **battle entry**, not field entry: the pages land in the same
 /// VRAM columns (`fb_x` 320..512, `fb_y` 0) the field stage textures occupy,

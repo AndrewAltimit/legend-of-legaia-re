@@ -654,7 +654,7 @@ pub struct Snapshot {
     pub displayed_skill_count: u8,
     /// Displayed-skill IDs at `+0x186` (length [`MAX_DISPLAYED_SKILLS`]).
     pub displayed_skill_ids: Vec<u8>,
-    /// Equipment slots at `+0x196` (length [`EQUIPMENT_SLOT_COUNT`]).
+    /// Equipment slots at `+0x196` (length `EQUIPMENT_SLOT_COUNT`).
     pub equipment_slots: Vec<u8>,
 }
 

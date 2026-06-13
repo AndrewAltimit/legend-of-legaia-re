@@ -29,7 +29,7 @@
 pub struct SlotSnapshot {
     pub slot: u8,
     pub present: bool,
-    /// Display label engines render. "<empty>" for empty slots.
+    /// Display label engines render. `"<empty>"` for empty slots.
     pub label: String,
     /// Game time in seconds (for the "Play time: 12:34:56" line).
     pub play_time_seconds: u32,

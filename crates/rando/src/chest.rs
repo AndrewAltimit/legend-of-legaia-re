@@ -36,7 +36,7 @@
 //! interactable record opens with dialogue.
 //!
 //! **Display vs grant.** A chest's announcement renders the item *name* from a
-//! separate dialogue token ([`ITEM_NAME_ESCAPE`] `<id>` — "There is a {item} in
+//! separate dialogue token (`ITEM_NAME_ESCAPE` `<id>` — "There is a {item} in
 //! the treasure chest!" / "{name} now has the {item}!"), which is a **different
 //! byte** from the `0x39` give operand that actually adds the item to the bag.
 //! Patching only the give operand grants the new item but leaves the text naming
@@ -156,7 +156,7 @@ pub fn give_item_sites(man: &[u8]) -> Vec<usize> {
 
 /// Like [`give_item_sites`], but also returns, per site (parallel to the sites
 /// vec), the absolute offsets of the item-name display-token argument bytes
-/// ([`ITEM_NAME_ESCAPE`] `<id>`) in the same chest record whose id equals that
+/// (`ITEM_NAME_ESCAPE` `<id>`) in the same chest record whose id equals that
 /// site's give operand. Patching the give operand and these tokens together
 /// keeps a chest's announcement text in sync with the item it grants.
 ///

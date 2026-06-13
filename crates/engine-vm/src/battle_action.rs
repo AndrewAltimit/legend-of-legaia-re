@@ -1196,8 +1196,9 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
     // system clears the bit when the staged clip finishes; for the engine
     // that's `World::tick_battle_animations`' staged-clip end handling, or
     // an immediate clear when the actor carries no clips).
-    // PORT: overlay_battle_action_801e295c `0x801E370C` - `lbu +0x1DC;
-    // andi 0x2; bne -> skip` guards the next-byte read at `+0x1DF + +0x15`.
+    // PORT: overlay_battle_action_801e295c (strike-pacing gate, interior).
+    // The retail gate (battle-action overlay, file +0x370C) reads `lbu +0x1DC;
+    // andi 0x2; bne -> skip` to guard the next-byte read at `+0x1DF + +0x15`.
     let in_flight = host
         .actor(slot)
         .map(|a| a.flag_bits.has(ActorFlags::ADVANCE_DONE))

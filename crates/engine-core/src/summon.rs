@@ -27,7 +27,7 @@
 //! [`SummonScene`].
 //!
 //! The faithful **player** summon render is already wired: a cast routes through
-//! [`crate::world::World::request_summon_spawn`] →
+//! `crate::world::World::request_summon_spawn` →
 //! [`crate::world::World::take_pending_summon_spawn`], and the host spawns the
 //! summon's namesake `battle_data` creature ([`summon_creature_id`]) as an
 //! ordinary battle actor — mesh + texture via
@@ -290,7 +290,7 @@ impl SummonScene {
     /// product); a typical value keeps the parts on their authored timing.
     ///
     /// After the move-VM step, applies the **render-side translation glide**
-    /// (interpreted — see [`apply_translation_update`]'s provenance note; the
+    /// (interpreted — see `apply_translation_update`'s provenance note; the
     /// retail `FUN_801F811C` is the screen-mask widget handler, faithfully
     /// ported as [`crate::screen_fx::MaskWidget`]): the part's world
     /// position LERPs toward the move-VM anim-bank target (`anim_3c/3e/40`, set

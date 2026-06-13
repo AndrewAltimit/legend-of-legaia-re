@@ -606,7 +606,7 @@ impl BattleSession {
         }
     }
 
-    /// Mirror of [`Self::drain_world_events`] for engines that already
+    /// Mirror of `Self::drain_world_events` for engines that already
     /// drained the world themselves (e.g. play-window keeps its own log).
     pub fn fold_event(&mut self, world: &mut World, ev: &crate::battle_events::BattleEvent) {
         world.fold_battle_event(ev);

@@ -8,7 +8,7 @@
 //! loop of `FUN_8001B964` itself is not ported; this file owns the data side.
 //!
 //! Each town scene's first PROT slot ships a multi-section
-//! [`parse_player_lzs`](crate::parse_player_lzs)-shaped container; one of
+//! [`parse_player_lzs`]-shaped container; one of
 //! the sections (typically section 2) is tagged with asset type byte
 //! [`SCENE_ANM_TYPE_BYTE`] (= `0x05`, [`crate::AssetType::Move`]). Despite
 //! the "MOVE" label in the dispatcher table, the content is a canonical

@@ -999,7 +999,7 @@ fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) ->
 ///   each door's destination from the global pool.
 /// - **Coupled**: re-pairs doors into two-way connections (the `mode` is treated
 ///   as the matching's randomness; doors with no reverse partner get the
-///   decoupled fallback — see [`plan_doors_coupled`]).
+///   decoupled fallback — see `plan_doors_coupled`).
 ///
 /// Because the destination name is variable length, this uses the
 /// [`crate::door::SceneDoors::rebuild`] relocation path (decompress → resize the

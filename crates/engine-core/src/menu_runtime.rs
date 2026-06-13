@@ -3,7 +3,7 @@
 //! a [`crate::world::World`] and to disk-backed save / load slots.
 //!
 //! [`MenuRuntime`] owns the menu ctx, a save-slot directory, and a small
-//! flag block driven by [`step`](legaia_engine_vm::menu::step) callbacks.
+//! flag block driven by [`step`] callbacks.
 //! Engines call [`MenuRuntime::tick`] each frame with a [`MenuInput`]; the
 //! runtime advances the state machine, captures save bytes when the menu
 //! commits at `SavePickSlot`, writes them to a file, and on `LoadSlot`

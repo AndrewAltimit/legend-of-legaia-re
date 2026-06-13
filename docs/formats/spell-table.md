@@ -88,7 +88,8 @@ magic-attack array at [`+0x21..=+0x23`](../subsystems/battle.md) (values `> 1`
 are live), writes it into the live actor at `+0x1DF`, and the battle-action SM
 prints `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). So the enemy spell name
 *is* in this shared table after all - just keyed by the record's global id, not
-the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md).
+the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md);
+CLI `asset spell-names <SCUS> [--json]`.
 
 (The `0xC5` MES substitution table at `DAT_80075EC4`, once mistaken for a
 spell-name source, is the [Tactical Arts name

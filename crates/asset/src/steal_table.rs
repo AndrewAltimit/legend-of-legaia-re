@@ -79,7 +79,7 @@ pub fn table_file_offset(scus: &[u8]) -> Option<usize> {
 }
 
 /// One monster's steal entry: the item it yields and the success chance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct StealEntry {
     /// Steal success chance, percent (`+0`).
     pub chance_pct: u8,

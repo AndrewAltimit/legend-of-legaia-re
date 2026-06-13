@@ -291,7 +291,7 @@ pub trait MenuHost {
 /// post-step state byte for engines that want to drive UI off it.
 ///
 /// Open / close transitions are handled directly. Transient screens
-/// ([`is_transient`]) fire their one-shot side effect on entry, hold, then
+/// (`is_transient`) fire their one-shot side effect on entry, hold, then
 /// auto-advance. Every other (interactive) screen advances the cursor on
 /// the d-pad, commits on Cross - then routes forward via [`commit_route`] -
 /// and on Triangle routes back via [`back_route`].

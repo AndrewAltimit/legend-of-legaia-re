@@ -522,8 +522,8 @@ impl CdDmaHost for ProtCdDmaHost {
     /// collapses asynchrony: a stale `read_in_progress` is drained
     /// immediately, `error` is cleared, then [`LoadFlags::ISSUE`] queues
     /// the kick and [`LoadFlags::BLOCK`] is satisfied without a real
-    /// poll loop (the synchronous copy in [`Self::perform_synchronous_read`]
-    /// already left the state machine in [`PollState::Ready`]).
+    /// poll loop (the synchronous copy in `Self::perform_synchronous_read`
+    /// already left the state machine in `PollState::Ready`).
     fn async_lba_load(&mut self, dst: DestAddr, count: u32, flags: LoadFlags) {
         if self.read_in_progress {
             // Drain any stale read first - retail's FUN_8003e800 calls

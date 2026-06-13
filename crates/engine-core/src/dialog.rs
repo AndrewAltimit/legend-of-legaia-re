@@ -311,7 +311,7 @@ impl OwnedDialogPanel {
     /// byte where `& 0x7F < 0x20`). This implementation skips past it to the
     /// first `0x1F` lead marker and types the first segment from just past
     /// it through the standard MES
-    /// [`Interpreter`](legaia_mes::Interpreter).
+    /// [`Interpreter`].
     ///
     /// Only the first segment is typed: the record holds the NPC's whole
     /// dialogue line pool (see [`decode_inline_segments`]). Retail picks

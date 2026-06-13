@@ -98,7 +98,7 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
 /// summon's projection plays toward the enemy field and the revive is
 /// special-cased by spell id. (Cross-checked in
 /// `legaia-gamedata::magic_vs_disc`.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum SpellTargetShape {
     /// Single enemy (bit `0x02` clear, `0x20` clear).
     OneEnemy,
@@ -116,7 +116,7 @@ pub const TARGET_ALLY_BIT: u8 = 0x02;
 pub const TARGET_ALL_BIT: u8 = 0x20;
 
 /// One decoded spell-table entry.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct SpellEntry {
     /// Display name, or `None` for an empty / internal-tier slot.
     pub name: Option<String>,

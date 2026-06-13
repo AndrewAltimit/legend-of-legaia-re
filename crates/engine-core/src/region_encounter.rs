@@ -38,6 +38,20 @@
 //! engine consumer yet and are deliberately not ported here (the additive
 //! equipment bias lives on [`crate::encounter::EncounterTracker`]).
 //!
+//! ## Consumers
+//!
+//! Both scene modes route this tracker off the scene's MAN encounter section
+//! ([`region_encounter_table_from_man`]):
+//!
+//! - **Overworld** — [`crate::world::World::set_world_map_regions`]; the per-tile
+//!   roll lives in `World::live_world_map_tick`, latching
+//!   `World::pending_world_map_encounter`.
+//! - **Field** — [`crate::world::World::set_field_regions`]; the roll lives in
+//!   [`crate::world::World::on_field_step`], which drives a trigger through the
+//!   mean-rate [`crate::encounter::EncounterSession`]'s transition / grace SM via
+//!   [`crate::encounter::EncounterSession::trigger_with`]. A field scene whose MAN
+//!   has no encounter-region section keeps the aggregated mean-rate session.
+//!
 //! Source: `ghidra/scripts/funcs/overlay_world_map_walk_801d9e1c.txt` +
 //! [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
 //!

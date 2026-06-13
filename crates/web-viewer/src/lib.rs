@@ -2053,7 +2053,7 @@ impl LegaiaViewer {
     }
 
     /// Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
-    /// Uses [`centroid_bounds`] so asymmetric poses (weapon extended, arm out)
+    /// Uses `centroid_bounds` so asymmetric poses (weapon extended, arm out)
     /// don't pull the camera target off the body.
     pub fn character_mesh_bounds(&self, slot: u32, equip_byte: i32) -> Vec<f32> {
         let equip = (equip_byte >= 0).then_some(equip_byte as u8);
@@ -3974,7 +3974,7 @@ const WALK_FIELD_MAP_LEN: usize = 0x12000;
 ///
 /// - **Walk `.MAP`** is the entry two slots before the kingdom block start
 ///   (`prot_base - 2`), whose extended on-disc footprint is exactly
-///   [`WALK_FIELD_MAP_LEN`] (`0x12000`) - the universal field-map resolution
+///   `WALK_FIELD_MAP_LEN` (`0x12000`) - the universal field-map resolution
 ///   (the scene PROT clusters overlap by two entries, so the first `0x12000`
 ///   entry inside the block is the NEXT scene's map; pinned 14/14 against a
 ///   live `map01` walk capture). Falls back to scanning the block when that
@@ -4027,7 +4027,7 @@ pub struct WalkPlacement {
 /// continent terrain.
 ///
 /// Reads the same walk `.MAP` + floor-height LUT [`build_walk_ground`] does
-/// (see [`resolve_walk_map_and_lut`]), runs
+/// (see `resolve_walk_map_and_lut`), runs
 /// [`legaia_asset::field_objects::parse_placements`], and resolves each
 /// placement's world Y from the floor nibble exactly like the native
 /// `resolve_placement_draws`. Placements whose mesh isn't in the scene pack

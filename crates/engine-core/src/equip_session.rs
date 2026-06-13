@@ -6,7 +6,7 @@
 //!
 //! The retail engine threads equip state through `FUN_80042558` (the
 //! battle-stat aggregator) on commit; this module mirrors that:
-//! [`EquipSession::commit`] writes the new equip id into the character
+//! `EquipSession::commit` writes the new equip id into the character
 //! record and re-runs [`compute_battle_stats`] so the world's resolved
 //! stats stay in sync.
 
@@ -37,7 +37,7 @@ pub enum EquipState {
     /// Cursor on the item list filtered to the active slot. Cross
     /// confirms; Circle goes back to slot picker.
     ItemPicker { slot: u8, cursor: u16 },
-    /// "Equip <X>?" Yes/No prompt. Cross confirms; Circle abandons.
+    /// "Equip `<X>`?" Yes/No prompt. Cross confirms; Circle abandons.
     Confirm { slot: u8, item_id: u8, cursor: u8 },
     /// Session done - committed or aborted.
     Done(EquipOutcome),

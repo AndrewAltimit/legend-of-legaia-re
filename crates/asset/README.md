@@ -213,14 +213,14 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 
 | Module | Table |
 |---|---|
-| `sfx_table` | Sound-effect descriptor table (`DAT_8006F198`, 100 × 8-byte): `SfxTable::from_scus` → per-cue program/VAG, ADSR-region base, voice count + sustained bit, mixer channel. Feeds `SfxBank::from_descriptors`. See [`sfx-table.md`](../../docs/formats/sfx-table.md). |
-| `level_up_tables` | Level-up data: `xp_thresholds_from_scus` (the 98-entry XP increment table) + `xp_correction_divisors_from_scus` (the per-level slots-1/2 threshold-correction divisors at `0x80070A2C`) + `growth_tables_from_scus` (the `DAT_80076918` per-character 8-stat growth curves). |
+| `sfx_table` | Sound-effect descriptor table (`DAT_8006F198`, 100 × 8-byte): `SfxTable::from_scus` → per-cue program/VAG, ADSR-region base, voice count + sustained bit, mixer channel. Feeds `SfxBank::from_descriptors`. CLI `asset sfx-table <SCUS>`. See [`sfx-table.md`](../../docs/formats/sfx-table.md). |
+| `level_up_tables` | Level-up data: `xp_thresholds_from_scus` (the 98-entry XP increment table) + `xp_correction_divisors_from_scus` (the per-level slots-1/2 threshold-correction divisors at `0x80070A2C`) + `growth_tables_from_scus` (the `DAT_80076918` per-character 8-stat growth curves). CLI `asset level-up <SCUS>`. |
 | `item_names` | `SCUS_942.54` item-name table (`PTR_DAT_8007436C[id*3]`, 256 ids): `ItemNameTable::from_scus` → `name(id)`. The id space a monster record's `drop_item` indexes; used by the web viewer's enemy table. See [`item-table.md`](../../docs/formats/item-table.md). |
 | `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability, plus the **literal restore amounts** — `heal_amounts()` / `restore_amount(id)` decode the static heal-amount table at `0x8007655C` (HP `[200,800,9999]` / MP `[50,200,20]`) the apply handler `FUN_800402F4` reads — and the **stat-up / buff taxonomy** — `stat_effect(id)` → `StatItemEffect` for the permanent stat-up *Water* line (class 6), the one-battle `×6/5` buff Elixirs (class 7), and Fury Boost (class 5). See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
 | `equip_stats` | `SCUS_942.54` equipment stat-bonus table (`DAT_80074F68`, 8-byte stride): `EquipStatTable::from_scus` → `bonus(id)` (equippable id → property `+1` byte → record). Attack/def-up/def-down (byte-exact vs gamedata) + equip-character mask + slot type + Ra-Seru flag. See [`equipment-table.md`](../../docs/formats/equipment-table.md). |
-| `accessory_passive` | Accessory ("Goods") passive effects: `AccessoryPassiveTable::from_scus` → `passive(id)` (item id → descriptor `+3` / equip `+5` index byte → 64-slot passive index + the `0x8007625C` name/description/scope record). `stat_boosts(index)` mirrors the `FUN_80042558` percent arithmetic, `bit_location(index)` the `char+0xF4` ability-bitfield placement. Byte-validated vs the curated gamedata accessory table. See [`accessory-passive-table.md`](../../docs/formats/accessory-passive-table.md). |
-| `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). See [`spell-table.md`](../../docs/formats/spell-table.md). |
-| `steal_table` | `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`): `StealTable::from_scus` → `entry(id)` / `steal_item(id)`. What the Evil God Icon steals; the item id resolves through `item_names`. NOT in the PROT 867 record. See [`steal-table.md`](../../docs/formats/steal-table.md). |
+| `accessory_passive` | Accessory ("Goods") passive effects: `AccessoryPassiveTable::from_scus` → `passive(id)` (item id → descriptor `+3` / equip `+5` index byte → 64-slot passive index + the `0x8007625C` name/description/scope record). `stat_boosts(index)` mirrors the `FUN_80042558` percent arithmetic, `bit_location(index)` the `char+0xF4` ability-bitfield placement. Byte-validated vs the curated gamedata accessory table. CLI `asset accessory-passive <SCUS>`. See [`accessory-passive-table.md`](../../docs/formats/accessory-passive-table.md). |
+| `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). CLI `asset spell-names <SCUS>`. See [`spell-table.md`](../../docs/formats/spell-table.md). |
+| `steal_table` | `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`): `StealTable::from_scus` → `entry(id)` / `steal_item(id)`. What the Evil God Icon steals; the item id resolves through `item_names`. NOT in the PROT 867 record. CLI `asset steal-table <SCUS> [--all]`. See [`steal-table.md`](../../docs/formats/steal-table.md). |
 | `mode_table` | `SCUS_942.54` game-mode dispatch table (`0x8007078C`, 28 × 24-byte entries): `ModeTable::from_scus` → per-mode handler fn ptr / param / dev name. Recovers the index → retail-handler map from the disc (12 of 14 per-frame modes share `0x80025EEC`; field/town = 2/3 MAIN; world-map = 12/13 MAPDISP). CLI `asset mode-table`. See [`boot.md`](../../docs/subsystems/boot.md#game-mode-state-machine). |
 
 `new_game` — `SCUS_942.54` new-game seed data:
@@ -234,7 +234,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
   randomizer's packed `sh` halfword stores.
 
 Seeds for the live `0x80084708 + n*0x414` records + the `0x80085958` bag;
-`OPENING_SCENE` = `town01`. See
+`OPENING_SCENE` = `town01`. CLI `asset new-game <SCUS>`. See
 [`new-game-table.md`](../../docs/formats/new-game-table.md).
 
 ### Cutscene / FMV / summon
@@ -353,6 +353,8 @@ asset kingdom-slot / slot4-png            # world-map kingdom bundles
 asset summon-overlay   <PROT 0905 .BIN>
 asset move-power / element-affinity       # PROT 0898 battle-overlay tables
 asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
+asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables (--json)
+asset sfx-table / new-game / level-up             # more SCUS_942.54 tables (--json)
 asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
 asset validate                            # cross-check detector coverage
 ```

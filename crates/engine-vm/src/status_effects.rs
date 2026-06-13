@@ -379,7 +379,7 @@ impl StatusEffectTracker {
     ///
     /// Returns the total tick damage dealt this turn (for engines that
     /// want a single number to subtract); the per-status events are
-    /// queued in [`Self::pending_events`] regardless.
+    /// queued in `Self::pending_events` regardless.
     ///
     /// PORT: FUN_801E752C
     pub fn tick_actor(&mut self, actor_slot: u8, current_hp: u16, max_hp: u16) -> u16 {

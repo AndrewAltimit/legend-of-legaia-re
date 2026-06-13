@@ -115,7 +115,7 @@ const EQUIP_BONUS_BASE_VA: u32 = 0x8007_4F68;
 const EQUIP_BONUS_STRIDE: u32 = 8;
 
 /// A stat targeted by one of the aggregator-applied percent boosts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum BoostedStat {
     /// Max HP (effective slot char `+0x104`, base `+0x11C`).
     MaxHp,
@@ -193,7 +193,7 @@ pub mod index {
 }
 
 /// One record of the passive name/description table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PassiveRecord {
     /// Raw scope word (`+0`).
     pub scope_raw: u32,
