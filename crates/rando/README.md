@@ -4,7 +4,9 @@ Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
 drops (optionally as rare equipment), random-encounter formations, treasure-chest
-contents, steal items, Tactical-Arts button combos, doors, and starting items. It is
+contents, steal items, Tactical-Arts button combos, doors, starting items, and a
+set of battle-tuning tables (monster combat stats, special-attack power, the
+element-affinity matrix, spell MP costs). It is
 Track-1-adjacent tooling — it does **not** touch the clean-room engine — and it
 ships only code: no game bytes are embedded or committed, and every test that
 needs real data is disc-gated.
@@ -21,6 +23,10 @@ full design.
   - [Encounters](#encounters)
   - [Chests](#chests)
   - [Steals](#steals)
+  - [Monster stats](#monster-stats)
+  - [Move power](#move-power)
+  - [Element affinity](#element-affinity)
+  - [Spell cost](#spell-cost)
   - [Arts](#arts)
   - [Doors](#doors)
   - [House doors](#house-doors)
@@ -159,6 +165,50 @@ Steal-item randomizer (the Evil God Icon) (`steal` module).
   the item pool).
 - `item_patches` emits same-size single-byte SCUS edits that touch the **item**
   only — the steal chance is preserved. No LZS re-pack, so nothing is ever skipped.
+
+## Monster stats
+
+Monster combat-stat randomizer (`monster_stats` module).
+
+- Redistributes every enemy's HP / MP / ATK / DEF↑ / DEF↓ / AGL / SPD across the
+  `battle_data` archive (PROT 867), **column-wise**: `plan_stats` permutes each
+  stat field across the populated roster (`Shuffle`, multiset-preserving) or
+  draws each cell from the column pool (`Random`). Spirit/SP is left untouched.
+- `set_stats` re-packs a monster slot through [`monster::repack_slot`]; the
+  decoded length is unchanged, so each slot keeps its `0x14000` footprint (a slot
+  too tight to re-pack is skipped, like drops).
+
+## Move power
+
+Special-attack power randomizer (`move_power` module).
+
+- Redistributes the `+0x00` power halfword of the battle-action move-power table
+  (`0x801F4F5C`, PROT 0898; enemy specials + Seru-magic, not party arts). Only
+  populated records participate, so the index-0 sentinel + empty slots stay zero.
+- `plan_powers` permutes the power column (`Shuffle`) or draws from it (`Random`);
+  the apply path writes the halfwords back — a same-size raw PROT-0898 edit. Every
+  other record byte (geometry, timing, effects, sound) is untouched.
+
+## Element affinity
+
+Element-affinity matrix randomizer (`element_affinity` module).
+
+- Redistributes the 8×8 affinity matrix (`matrix[attacker][defender]`, PROT 0898;
+  damage-scale percentages). `plan_matrix` permutes the 64 cells (`Shuffle`,
+  multiset-preserving) or draws each (`Random`).
+- The per-character element assignment + summon-power rows are left untouched; the
+  edit is a same-size raw PROT-0898 write.
+
+## Spell cost
+
+Spell MP-cost randomizer (`spell_cost` module).
+
+- Redistributes the `+3` MP-cost byte of the named, costed spells in the static
+  `SCUS_942.54` spell table (`DAT_800754C8`). `plan_costs` permutes the cost
+  column (`Shuffle`) or draws from it (`Random`); free / unnamed internal-tier
+  spells never participate.
+- The apply path emits a same-size in-place SCUS patch via `patch_named_file`
+  (like steals). The public `spell_names::stats_file_offset` resolves the offset.
 
 ## Arts
 
