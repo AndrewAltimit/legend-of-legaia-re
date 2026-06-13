@@ -361,7 +361,12 @@ byte-resident at slot B — disc+library-gated `evolved_summon_binding`); only
 `0x90 → 918` / `0x91 → 919` stay arithmetic-predicted. **Both render-mode
 carriers are pinned as player casts** — `0x8E → 916` (Aluru) and `0x93 → 921`
 (Iota) — so neither unblocks the live-exerciser question below (a player cast
-renders the namesake creature, never seats the stager parts).
+renders the namesake creature, never seats the stager parts). The two flanking
+blocks carry the same byte-pin oracle: the base block `0x82..=0x8B` → 904..913
+and the high block `0x99..=0xA0` → 927..934 each byte-pin one mid-cast state
+per leg (loader-B id + slot-B-resident stager; disc+library-gated
+`summon_binding_base_high`), so `0x82..=0x95` (minus the two predicted evolved
+legs) and `0x99..=0xA0` are all regression-covered against real RAM.
 Live correlation from the Cort states: every live pooled part-actor (`DAT_801C90F0` slots) carries `actor[+0x48]` pointing into the trimmed record table at a `-1` record (RAM first word == file first word), with the spawn-time `+0x56`/`+0x5A` zeros rebound post-spawn by the move-VM ops (`+0x56 = 4` / `+0x5A = 2` dominate mid-cast) and `actor[+0x64] = 0` throughout. No `0x4000`/`0x4001` part-actor was live in these captures.
 
 **The render-mode nodes have no live exerciser in the catalogued corpus.**

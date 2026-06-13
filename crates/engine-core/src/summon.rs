@@ -90,7 +90,9 @@ pub const SUMMON_PART_BUDGET: usize = 256;
 /// Player Seru-magic spell-id range that resolves to a per-summon overlay at
 /// the battle-action cast band (`FUN_801E295C` state `0x29`: `actor[+0x1DF] >=
 /// 0x81`). Gimard *Burning Attack* = `0x81` (the enemy boss *Fire Tail* is a
-/// different, non-stager path).
+/// different, non-stager path). The `0x82..=0x8B` legs each carry a committed
+/// regression oracle (mid-cast loader-B id + slot-B-resident stager;
+/// disc+library-gated `summon_binding_base_high`); `0x81` is PCSX-side.
 pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 
 /// Evolved-Seru player cast block (`0x8C..=0x95`), the contiguous continuation
@@ -109,7 +111,9 @@ pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 /// High summon block: Evil Seru Magic (`0x99` — the creature resolves
 /// per-cast, e.g. Juggernaut), the Sim-Seru summons Palma / Mule / Horn /
 /// Jedo (`0x9A..=0x9D`), and the Ra-Seru summons Meta / Terra / Ozma
-/// (`0x9E..=0xA0`).
+/// (`0x9E..=0xA0`). All eight legs each carry a committed regression oracle
+/// (mid-cast loader-B id + slot-B-resident stager; disc+library-gated
+/// `summon_binding_base_high`).
 pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
