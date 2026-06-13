@@ -1977,3 +1977,20 @@ expected_game_mode = 0x15
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+# Same-character favored pair for arts_bar_offclass_gala_nail: Gala holding the
+# Ra-Seru Club (a club = his favored class -> single-width Arms input). Diffed
+# against the off-class Gala+Nail-Glove state (same character, same battle) this
+# isolates the cached arm-width field with no character confound.
+[[scenarios]]
+slot = 4
+label = "arts_bar_ideal_gala_club"
+backup_fingerprint = "b97a031eec3b0be650acd3828b456c5d51435ea495eeaa1500d8e7d3165e0b62"
+description = "In-battle arts command-input screen, Gala equipped with the Ra-Seru Club (favored club class - single-width Arms input); pairs with arts_bar_offclass_gala_nail for a same-character diff; game_mode 0x15"
+topics = ["weapon specialty", "arts bar", "arm width", "favored weapon", "gala", "battle", "BattleMode"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
