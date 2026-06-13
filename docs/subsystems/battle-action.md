@@ -220,11 +220,24 @@ that *chooses* an action for a delegated **party** member is not in the dumped
 corpus: the round driver `FUN_801D0748` routes party slots to the player
 command menu with no `0x380` test, `FUN_801DABA4` calls the AI picker only for
 monster slots, and `FUN_801EED1C`'s auto-fight block is keyed to character id 4
-(the prologue wolf), not to `0x380`. Pinning the party-side auto-pick (does it
-cast? which strike pattern?) needs a runtime capture with the Evil Medallion
-equipped, watching the writers of `actor[+0x1DE]`/`+0x1DD` during the command
-phase. The monster-side confuse behaviour *is* pinned (picker `& 0x380` guards
-+ `FUN_801E7320` retarget at ActionSeed).
+(the prologue wolf), not to `0x380`. Pinning the party-side auto-pick *writer*
+(does it cast? does the pattern vary?) still needs a runtime capture watching
+the writers of `actor[+0x1DE]`/`+0x1DD` during the command phase. The
+monster-side confuse behaviour *is* pinned (picker `& 0x380` guards +
+`FUN_801E7320` retarget at ActionSeed).
+
+**One delegated pick is now observed** (`evil_medallion_rage_battle`; disc +
+library gated `rage_delegated_pick`). In the battle-actor pool, exactly the
+Evil-Medallion wearer carries the delegation bits `+0x16E & 0x380 == 0x380`
+(the other party slots read `+0x16E == 0`), and its already-resolved pick is
+category `+0x1DE == 3` (Attack) with the `+0x1DF` action stream
+`[0x22,0x26,0x25,0x22,0x21]` — a five-element multi-strike, not a single plain
+attack. Two qualifications: (a) within the **battle-actor** struct the `+0xF8`
+bit `0x2000` is set on every party slot at this instant, so there it is not the
+per-actor delegation discriminator — `+0x16E & 0x380` is (the
+`FUN_80047430`/`+0xF8 & 0x2000` relation above is on the **character record**,
+a different struct); (b) this is a single sample, so the engine's auto-physical
+stand-in stays a stand-in — the writer and the pick variability are still open.
 
 ### `FUN_801DFDF8` - effect-bundle public spawn API
 
