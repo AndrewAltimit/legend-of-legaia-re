@@ -584,6 +584,27 @@ enum Cmd {
         /// Path to `SCUS_942.54`.
         scus: PathBuf,
     },
+    /// Dump the sound-effect descriptor table from `SCUS_942.54`
+    /// (`legaia_asset::sfx_table`, `DAT_8006F198`, 100 cues). See
+    /// `docs/formats/sfx-table.md`.
+    SfxTable {
+        /// Path to `SCUS_942.54`.
+        scus: PathBuf,
+    },
+    /// Dump the new-game starting-party template + starting inventory from
+    /// `SCUS_942.54` (`legaia_asset::new_game`, `0x80078C4C`). See
+    /// `docs/formats/new-game-table.md`.
+    NewGame {
+        /// Path to `SCUS_942.54`.
+        scus: PathBuf,
+    },
+    /// Dump the per-character stat-growth params + XP thresholds from
+    /// `SCUS_942.54` (`legaia_asset::level_up_tables`, `DAT_80076918`). See
+    /// `docs/reference/gamedata.md` and the stat-growth thread.
+    LevelUp {
+        /// Path to `SCUS_942.54`.
+        scus: PathBuf,
+    },
     /// Render a kingdom's slot-4 wireframe (or a raw decoded slot-4 .bin)
     /// to a top-down PNG. The output uses the same per-body color palette
     /// as the WebGL world-overview viewer so a PNG screenshot can be
@@ -959,6 +980,9 @@ fn main() -> Result<()> {
         Cmd::SpellNames { scus } => spell_names_cmd(&scus),
         Cmd::StealTable { scus, all } => steal_table_cmd(&scus, all),
         Cmd::AccessoryPassive { scus } => accessory_passive_cmd(&scus),
+        Cmd::SfxTable { scus } => sfx_table_cmd(&scus),
+        Cmd::NewGame { scus } => new_game_cmd(&scus),
+        Cmd::LevelUp { scus } => level_up_cmd(&scus),
         Cmd::KingdomSlot {
             input,
             slot,
@@ -1961,6 +1985,97 @@ fn accessory_passive_cmd(scus: &Path) -> Result<()> {
                 .join(" ")
         };
         println!("0x{idx:02X}  {scope}  {name:28}  {effect}");
+    }
+    Ok(())
+}
+
+/// `asset sfx-table <SCUS>` - dump the sound-effect descriptor table
+/// (`legaia_asset::sfx_table`, `DAT_8006F198`).
+fn sfx_table_cmd(scus: &Path) -> Result<()> {
+    use legaia_asset::sfx_table::SfxTable;
+
+    let bytes = std::fs::read(scus)?;
+    let table = SfxTable::from_scus(&bytes).context("parse sfx table")?;
+    println!("id    prog tone note voices sustained category");
+    for (id, d) in table.active() {
+        println!(
+            "0x{id:02X}  {:>4} {:>4} {:>4} {:>6} {:>9} {:>3}",
+            d.program,
+            d.tone,
+            d.note,
+            d.voice_count(),
+            d.sustained(),
+            d.category,
+        );
+    }
+    println!(
+        "\n{} active of {} cues",
+        table.active().count(),
+        table.len()
+    );
+    Ok(())
+}
+
+/// `asset new-game <SCUS>` - dump the new-game starting-party template
+/// (`legaia_asset::new_game`, `0x80078C4C`) + the code-built starting inventory.
+fn new_game_cmd(scus: &Path) -> Result<()> {
+    use legaia_asset::{
+        item_names::ItemNameTable,
+        new_game::{StartingInventory, StartingParty},
+    };
+
+    let bytes = std::fs::read(scus)?;
+    let party = StartingParty::from_scus(&bytes).context("parse new-game party template")?;
+    println!("Starting party (new-game template):");
+    println!("slot  name        HP   MP   AGL  ATK  UDF  LDF  SPD  INT");
+    for (i, m) in party.members().iter().enumerate() {
+        println!(
+            "{i:>4}  {:10} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4}",
+            m.name, m.hp_max, m.mp_max, m.agl, m.atk, m.udf, m.ldf, m.spd, m.intel,
+        );
+    }
+    if let Some(inv) = StartingInventory::from_scus(&bytes) {
+        let names = ItemNameTable::from_scus(&bytes);
+        println!("\nStarting inventory:");
+        for (id, qty) in inv.items() {
+            let name = names.as_ref().and_then(|n| n.name(*id)).unwrap_or("");
+            println!("  0x{id:02X} x{qty}  {name}");
+        }
+    }
+    Ok(())
+}
+
+/// `asset level-up <SCUS>` - dump the per-character stat-growth params +
+/// XP thresholds (`legaia_asset::level_up_tables`, `DAT_80076918`). Stats are
+/// indexed (the on-disc sub-record order); cross-reference the stat-growth doc.
+fn level_up_cmd(scus: &Path) -> Result<()> {
+    use legaia_asset::level_up_tables::{
+        GROWTH_CHAR_COUNT, growth_tables_from_scus, xp_thresholds_from_scus,
+    };
+
+    let bytes = std::fs::read(scus)?;
+    let gt = growth_tables_from_scus(&bytes).context("parse stat-growth tables")?;
+    const CHARS: [&str; GROWTH_CHAR_COUNT] = ["Vahn", "Noa", "Gala"];
+    println!("Per-character stat-growth params (start / max / jitter / row):");
+    for (slot, name) in CHARS.iter().enumerate() {
+        let Some(cp) = gt.char_params(slot) else {
+            continue;
+        };
+        println!("  {name}:");
+        for (i, s) in cp.stats.iter().enumerate() {
+            println!(
+                "    stat[{i}]  start={:>5} max={:>5} jitter={:>3} row={}",
+                s.start, s.max, s.jitter, s.row,
+            );
+        }
+    }
+    if let Some(thresholds) = xp_thresholds_from_scus(&bytes) {
+        let n = thresholds.len();
+        let head: Vec<u32> = thresholds.iter().take(12).copied().collect();
+        println!(
+            "\nXP thresholds ({n} levels), first {}: {head:?}",
+            head.len()
+        );
     }
     Ok(())
 }

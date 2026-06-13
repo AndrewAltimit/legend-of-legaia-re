@@ -213,8 +213,8 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 
 | Module | Table |
 |---|---|
-| `sfx_table` | Sound-effect descriptor table (`DAT_8006F198`, 100 × 8-byte): `SfxTable::from_scus` → per-cue program/VAG, ADSR-region base, voice count + sustained bit, mixer channel. Feeds `SfxBank::from_descriptors`. See [`sfx-table.md`](../../docs/formats/sfx-table.md). |
-| `level_up_tables` | Level-up data: `xp_thresholds_from_scus` (the 98-entry XP increment table) + `xp_correction_divisors_from_scus` (the per-level slots-1/2 threshold-correction divisors at `0x80070A2C`) + `growth_tables_from_scus` (the `DAT_80076918` per-character 8-stat growth curves). |
+| `sfx_table` | Sound-effect descriptor table (`DAT_8006F198`, 100 × 8-byte): `SfxTable::from_scus` → per-cue program/VAG, ADSR-region base, voice count + sustained bit, mixer channel. Feeds `SfxBank::from_descriptors`. CLI `asset sfx-table <SCUS>`. See [`sfx-table.md`](../../docs/formats/sfx-table.md). |
+| `level_up_tables` | Level-up data: `xp_thresholds_from_scus` (the 98-entry XP increment table) + `xp_correction_divisors_from_scus` (the per-level slots-1/2 threshold-correction divisors at `0x80070A2C`) + `growth_tables_from_scus` (the `DAT_80076918` per-character 8-stat growth curves). CLI `asset level-up <SCUS>`. |
 | `item_names` | `SCUS_942.54` item-name table (`PTR_DAT_8007436C[id*3]`, 256 ids): `ItemNameTable::from_scus` → `name(id)`. The id space a monster record's `drop_item` indexes; used by the web viewer's enemy table. See [`item-table.md`](../../docs/formats/item-table.md). |
 | `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability, plus the **literal restore amounts** — `heal_amounts()` / `restore_amount(id)` decode the static heal-amount table at `0x8007655C` (HP `[200,800,9999]` / MP `[50,200,20]`) the apply handler `FUN_800402F4` reads — and the **stat-up / buff taxonomy** — `stat_effect(id)` → `StatItemEffect` for the permanent stat-up *Water* line (class 6), the one-battle `×6/5` buff Elixirs (class 7), and Fury Boost (class 5). See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
 | `equip_stats` | `SCUS_942.54` equipment stat-bonus table (`DAT_80074F68`, 8-byte stride): `EquipStatTable::from_scus` → `bonus(id)` (equippable id → property `+1` byte → record). Attack/def-up/def-down (byte-exact vs gamedata) + equip-character mask + slot type + Ra-Seru flag. See [`equipment-table.md`](../../docs/formats/equipment-table.md). |
@@ -234,7 +234,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
   randomizer's packed `sh` halfword stores.
 
 Seeds for the live `0x80084708 + n*0x414` records + the `0x80085958` bag;
-`OPENING_SCENE` = `town01`. See
+`OPENING_SCENE` = `town01`. CLI `asset new-game <SCUS>`. See
 [`new-game-table.md`](../../docs/formats/new-game-table.md).
 
 ### Cutscene / FMV / summon
@@ -354,6 +354,7 @@ asset summon-overlay   <PROT 0905 .BIN>
 asset move-power / element-affinity       # PROT 0898 battle-overlay tables
 asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
 asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables
+asset sfx-table / new-game / level-up             # more SCUS_942.54 tables
 asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
 asset validate                            # cross-check detector coverage
 ```
