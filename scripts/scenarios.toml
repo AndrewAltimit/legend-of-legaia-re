@@ -1808,11 +1808,12 @@ expected_game_mode = 0x15
 description = "Enemy Lu Delilas casting Plasma Strike mid-cast. Loader-B current-id 0x8007BC4C = 0x41 (65) -> stager extraction 0960 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
 topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Plasma Strike", "enemy cast"]
 
-# Zeto enemy special-attack mid-casts. Both of Zeto's captured wave attacks
-# (Call Wave / Big Wave) read loader-B id 0x33 -> the SAME stager extraction
-# 0946, byte-resident at slot B in both - one stager serves both wave moves
-# (or loader-B holds the shared last-load; either way 0946 is Zeto's resident
-# wave-attack stager). No 0x4000 record; part pool empty at both instants.
+# Zeto enemy special-attack mid-casts. Call Wave and Big Wave are one logical
+# attack over two turns (Call Wave summons the wave; Big Wave unleashes it the
+# next turn), so both read loader-B id 0x33 -> the SAME stager extraction 0946,
+# byte-resident at slot B in both states - the shared id is the move's
+# identity, not a stale tracker. No 0x4000 record; part pool empty at both
+# instants.
 
 [[scenarios]]
 slot = 5
