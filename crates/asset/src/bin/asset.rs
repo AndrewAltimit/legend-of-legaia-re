@@ -124,13 +124,14 @@ enum Cmd {
         lzs_sizes: String,
     },
     /// Parse a per-summon stager overlay (extraction PROT 0903..=0913 player,
-    /// 0927..=0934 high-summon, or the enemy boss block 0938/0940/0944/0961/
-    /// 0962/0966) into its move-VM part-record scene-graph: scan the
-    /// `FUN_80021B04` + `FUN_80050ED4` spawn calls and print each part's record
-    /// offset, mesh selector, flags, and bytecode span. Input is the raw
-    /// overlay `.BIN`. Stager extraction files over-read into the following
-    /// TOC entries — pass `--trim` with the entry's unique-content length
-    /// (`(next_start_lba - start_lba) * 0x800`) to drop the neighbour bytes.
+    /// 0914..=0923 evolved-Seru, 0927..=0934 high-summon, or the enemy boss
+    /// block 0938/0940/0944/0961/0962/0966) into its move-VM part-record
+    /// scene-graph: scan the `FUN_80021B04` + `FUN_80050ED4` spawn calls and
+    /// print each part's record offset, mesh selector, flags, and bytecode
+    /// span. Input is the raw overlay `.BIN`. Stager extraction files over-read
+    /// into the following TOC entries — pass `--trim` with the entry's
+    /// unique-content length (`(next_start_lba - start_lba) * 0x800`, accepts
+    /// `0x` hex) to drop the neighbour bytes.
     SummonOverlay {
         input: PathBuf,
         /// Overlay link/load base (`*DAT_80010390`); default is the pinned
@@ -138,7 +139,9 @@ enum Cmd {
         #[arg(long, value_parser = parse_hex_u32, default_value = "0x801F69D8")]
         base: u32,
         /// Trim the input to this many bytes before parsing (the entry's
-        /// TOC-gap unique-content footprint). Accepts hex with `0x` prefix.
+        /// TOC-gap unique-content footprint). Value is **hex** — the `0x`
+        /// prefix is optional, so `0x1800` and `1800` both mean 6144 bytes
+        /// (a bare `6144` would be read as `0x6144`).
         #[arg(long, value_parser = parse_hex_u32)]
         trim: Option<u32>,
     },
