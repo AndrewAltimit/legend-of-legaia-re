@@ -143,10 +143,19 @@ struct RandomizeArgs {
     /// Takes precedence over `--drops`.
     #[arg(long, default_value_t = false)]
     equipment_drops: bool,
-    /// How random-encounter formations are reassigned (within each scene's own
-    /// monster pool, so every monster stays scene-loaded).
+    /// How random-encounter formations are reassigned. The pool each scene draws
+    /// from is set by `--encounter-scope`.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     encounters: DropArg,
+    /// Pool an encounter randomization draws from: `scene` (each scene's own
+    /// monsters — the default, every monster stays a local resident),
+    /// `kingdom` (any monster from the same kingdom: Drake / Sebucus / Karisto),
+    /// or `world` (any monster on the disc, so late-game monsters can appear at
+    /// the start). Only applies when `--encounters` is set. `kingdom` needs the
+    /// disc's CDNAME.TXT; the wider pools rely on the battle loader streaming a
+    /// monster by id, so an out-of-area enemy still loads and renders.
+    #[arg(long, value_enum, default_value_t = ScopeArg::Scene)]
+    encounter_scope: ScopeArg,
     /// How treasure-chest contents are reassigned (global; `random` draws from
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -276,6 +285,34 @@ enum DropArg {
     Random,
     /// Leave untouched.
     None,
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+enum ScopeArg {
+    /// Each scene draws only from its own monsters (the classic behaviour).
+    Scene,
+    /// Each scene draws from any monster in its kingdom (Drake/Sebucus/Karisto).
+    Kingdom,
+    /// Each scene draws from any monster on the disc (regions fully mixed).
+    World,
+}
+
+impl ScopeArg {
+    fn scope(self) -> apply::EncounterScope {
+        match self {
+            ScopeArg::Scene => apply::EncounterScope::Scene,
+            ScopeArg::Kingdom => apply::EncounterScope::Kingdom,
+            ScopeArg::World => apply::EncounterScope::World,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            ScopeArg::Scene => "scene",
+            ScopeArg::Kingdom => "kingdom",
+            ScopeArg::World => "world",
+        }
+    }
 }
 
 /// Lowercase name of a mode for the manifest (valid-TOML string value).
@@ -792,11 +829,25 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(enc_mode) = enc_mode {
-        let report = apply::randomize_encounters(&mut patcher, seed, enc_mode, unused_enemies)?;
+        let scope = args.encounter_scope.scope();
+        let report = apply::randomize_encounters_scoped(
+            &mut patcher,
+            seed,
+            enc_mode,
+            scope,
+            unused_enemies,
+        )?;
         println!(
-            "encounters: {} scenes rewritten, {} ids changed ({:?})",
-            report.scenes_changed, report.ids_changed, enc_mode
+            "encounters: {} scenes rewritten, {} ids changed ({} {})",
+            report.scenes_changed,
+            report.ids_changed,
+            args.encounter_scope.as_str(),
+            mode_str(enc_mode)
         );
+        manifest.push(format!(
+            "encounters_scope = {:?}",
+            args.encounter_scope.as_str()
+        ));
         if report.unused_placed > 0 {
             println!(
                 "  including {} unused-enemy spawn(s) injected",

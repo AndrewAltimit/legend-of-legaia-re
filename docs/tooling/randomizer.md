@@ -112,6 +112,8 @@ legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --starting-items 3 --patch run.ppf --output patched.bin --manifest run.toml
 legaia-rando randomize --input DISC.bin --seed wild --encounters random \
     --unused-enemies --chests random --unused-items                  # bring back unused content
+legaia-rando randomize --input DISC.bin --seed chaos --encounters random \
+    --encounter-scope world                                          # late-game monsters anywhere
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
@@ -126,7 +128,9 @@ and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 `--equipment-drops` instead turns every monster's drop into rare tiered
 equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
-(one-way); `--starting-items N` seeds the new game with `N` random consumables
+(one-way); `--encounter-scope` widens the monster pool an encounter roll draws
+from to `scene` (default), `kingdom`, or `world` (see
+[Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
 (0 = vanilla; capped at 5). `--door-of-wind [N]` adds
 `N` Door of Wind (the warp consumable; default 10) to the starting bag and
 `--all-warps` unlocks every
@@ -228,6 +232,38 @@ left byte-identical. town01 is the canonical case — its rate-0 regions cover
 formations 2..=4, but the only rate>0 regions reach 0..=2, so Tetsu at index 4 is
 correctly left alone. The candidate pool for `Random` is likewise the random
 formations' ids only, so a roll never drops a boss into an ordinary encounter.
+
+**Pool scope (`--encounter-scope`).** By default the pool is per scene, but
+`apply::randomize_encounters_scoped` widens it to one of three
+[`EncounterScope`] settings:
+
+| Scope | Pool a scene draws from | Effect |
+|---|---|---|
+| `scene` (default) | the scene's own monsters | classic; difficulty stays local. |
+| `kingdom` | every monster in the scene's **kingdom** (Drake / Sebucus / Karisto) | "within a region": late Drake monsters can appear in early Drake, but nothing crosses a kingdom boundary. |
+| `world` | every monster on the disc | "across regions": a late-game Karisto monster can appear in the opening Drake caves. |
+
+The kingdom partition is derived from the disc's own `CDNAME.TXT`, never a
+hardcoded scene list: the three overworlds (`map01` / `map02` / `map03`) are
+pinned world-map bundles, so **Sebucus begins at the first CDNAME block after
+`map01`, Karisto at the first after `map02`** (Karisto absorbs the dungeons
+listed after `map03`). See [`kingdom`](../../crates/rando/src/kingdom.rs).
+`kingdom` scope needs `CDNAME.TXT`; `world` does not. The wider pools rely on the
+battle loader streaming a monster's archive slot on demand by id, so an
+out-of-area enemy still loads and renders.
+
+`Random` fills each scene's slots independently from its scope pool. `Shuffle`
+conserves the scope-wide id **multiset** — it pools every random-encounter id in
+the scope, permutes it once, and redistributes it across the scope's scenes, so
+monsters move between scenes (and, for `world`, between kingdoms) while the
+overall monster census is unchanged. Because a cross-scene shuffle is only
+multiset-preserving if every shuffled scene is actually written back, any scene
+whose recompressed MAN overflows its footprint is *locked to its original* and
+the rest are reshuffled (a fixpoint), so a re-pack skip never duplicates or drops
+a monster. Every scope×mode combination is byte-deterministic for a fixed seed
+and validated on a real disc by `tests/encounter_scope_real.rs` (kingdom
+confinement, cross-kingdom mixing under `world`, per-scope multiset conservation,
+boss survival, EDC/ECC validity).
 
 ### Treasure chests
 

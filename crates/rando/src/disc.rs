@@ -185,6 +185,15 @@ impl DiscPatcher {
         legaia_iso::write::patch_file_logical(&mut self.image, lba, logical_off, bytes)
     }
 
+    /// Parse the disc's `CDNAME.TXT` scene-name map. Returns `None` if the file
+    /// is absent or unreadable. Used by the scoped encounter randomizer to bucket
+    /// scenes into kingdoms (see [`crate::kingdom`]).
+    pub fn cdname(&self) -> Option<legaia_prot::cdname::IndexMap> {
+        let bytes = self.read_named_file("CDNAME.TXT")?;
+        let text = String::from_utf8_lossy(&bytes);
+        legaia_prot::cdname::parse_str(&text).ok()
+    }
+
     /// Borrow the current (possibly patched) disc image.
     pub fn image(&self) -> &[u8] {
         &self.image

@@ -279,20 +279,11 @@ impl SceneEncounters {
         let mut rng =
             SplitMix64::new(seed ^ (self.entry_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
 
-        // Collect every **random** formation's id slots (offset) in a stable
-        // order. Scripted/boss formations (no region references them) are left
-        // untouched, so a randomized run never replaces a Tetsu / Cort / Songi
-        // fight — only the ordinary random encounters are shuffled/redrawn.
-        let mut slots: Vec<usize> = Vec::new();
-        for i in 0..self.formation_count {
-            if !self.is_random_formation(i) {
-                continue;
-            }
-            let (off, len) = self.id_span(i);
-            for s in 0..len {
-                slots.push(off + s);
-            }
-        }
+        // Every **random** formation id slot, in a stable order. Scripted/boss
+        // formations (no region references them) are excluded, so a randomized
+        // run never replaces a Tetsu / Cort / Songi fight — only the ordinary
+        // random encounters are shuffled/redrawn.
+        let slots = self.random_slot_offsets();
         let originals: Vec<u8> = slots.iter().map(|&o| self.decoded[o]).collect();
 
         let new_vals: Vec<u8> = match mode {
@@ -304,6 +295,86 @@ impl SceneEncounters {
             DropMode::Random => slots.iter().map(|_| pool[rng.below(pool.len())]).collect(),
         };
 
+        let mut changed = 0;
+        for (&off, &v) in slots.iter().zip(&new_vals) {
+            if self.decoded[off] != v {
+                self.decoded[off] = v;
+                changed += 1;
+            }
+        }
+        changed
+    }
+
+    /// Absolute `decoded` offsets of every **random**-formation monster-id slot,
+    /// in a stable order (ascending formation index, then slot). Scripted/boss
+    /// formations are excluded — this is exactly the population every randomize
+    /// path rewrites. Shared by the per-scene [`Self::randomize_with_extra`] and
+    /// the cross-scene scoped passes ([`Self::random_slot_ids`] /
+    /// [`Self::fill_random_slots_from_pool`] / [`Self::apply_random_slots`]).
+    fn random_slot_offsets(&self) -> Vec<usize> {
+        let mut slots = Vec::new();
+        for i in 0..self.formation_count {
+            if !self.is_random_formation(i) {
+                continue;
+            }
+            let (off, len) = self.id_span(i);
+            for s in 0..len {
+                slots.push(off + s);
+            }
+        }
+        slots
+    }
+
+    /// How many random-encounter monster-id slots this scene exposes to a
+    /// scoped (kingdom / world) pass — the count of ids it contributes to a
+    /// cross-scene shuffle and consumes back from it.
+    pub fn random_slot_count(&self) -> usize {
+        self.random_slot_offsets().len()
+    }
+
+    /// The current monster ids in this scene's random-formation slots, in the
+    /// stable [`Self::random_slot_offsets`] order. This is the scene's
+    /// contribution to a cross-scene **shuffle** multiset (and the read side of
+    /// [`Self::apply_random_slots`]).
+    pub fn random_slot_ids(&self) -> Vec<u8> {
+        self.random_slot_offsets()
+            .iter()
+            .map(|&o| self.decoded[o])
+            .collect()
+    }
+
+    /// Overwrite this scene's random-formation slots with `ids` (taken in the
+    /// stable [`Self::random_slot_offsets`] order), the write side of a
+    /// cross-scene shuffle. Only the first `min(ids.len(), slot_count)` slots
+    /// are written, so a short slice is a partial-but-safe write rather than a
+    /// panic. Returns the number of id bytes that actually changed.
+    pub fn apply_random_slots(&mut self, ids: &[u8]) -> usize {
+        let mut changed = 0;
+        for (&off, &v) in self.random_slot_offsets().iter().zip(ids) {
+            if self.decoded[off] != v {
+                self.decoded[off] = v;
+                changed += 1;
+            }
+        }
+        changed
+    }
+
+    /// Fill this scene's random-formation slots by drawing each id uniformly
+    /// from an **externally supplied** `pool` (the kingdom-wide or world-wide
+    /// monster set), as opposed to [`Self::randomize`]'s scene-local pool. The
+    /// per-scene RNG is derived from `(seed, entry_idx)` so the result is
+    /// reproducible and independent of iteration order. Returns the number of id
+    /// bytes that changed; a no-op (0) when `pool` is empty.
+    pub fn fill_random_slots_from_pool(&mut self, seed: u64, pool: &[u8]) -> usize {
+        if pool.is_empty() {
+            return 0;
+        }
+        let mut rng =
+            SplitMix64::new(seed ^ (self.entry_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
+        let slots = self.random_slot_offsets();
+        let new_vals: Vec<u8> = (0..slots.len())
+            .map(|_| pool[rng.below(pool.len())])
+            .collect();
         let mut changed = 0;
         for (&off, &v) in slots.iter().zip(&new_vals) {
             if self.decoded[off] != v {
@@ -488,5 +559,104 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Hand-build a scene whose formation array is a list of `(ids, is_random)`
+    /// rows at stride 8 (count byte at +3, ids from +4). Mirrors the layout the
+    /// other unit tests assemble by hand, factored so the cross-scene tests can
+    /// build several scenes cheaply.
+    fn make_scene(entry_idx: usize, rows: &[(&[u8], bool)]) -> SceneEncounters {
+        let stride = 8;
+        let mut decoded = vec![0u8; rows.len() * stride];
+        let mut mask = Vec::with_capacity(rows.len());
+        for (i, (ids, is_random)) in rows.iter().enumerate() {
+            let rec = i * stride;
+            decoded[rec + 3] = ids.len() as u8;
+            decoded[rec + 4..rec + 4 + ids.len()].copy_from_slice(ids);
+            mask.push(*is_random);
+        }
+        SceneEncounters {
+            entry_idx,
+            man_offset: 0,
+            compressed_budget: 9999,
+            decoded,
+            formation_array_off: 0,
+            formation_stride: stride,
+            formation_count: rows.len(),
+            random_mask: mask,
+        }
+    }
+
+    #[test]
+    fn random_slot_ids_and_apply_roundtrip_skip_scripted() {
+        // Rows: random [10,20], scripted [0x4F], random [30].
+        let mut se = make_scene(2, &[(&[10, 20], true), (&[0x4F], false), (&[30], true)]);
+        // Only the random rows' ids are exposed, in order.
+        assert_eq!(se.random_slot_count(), 3);
+        assert_eq!(se.random_slot_ids(), vec![10, 20, 30]);
+        // Apply a permutation; the scripted boss row stays put.
+        let changed = se.apply_random_slots(&[30, 10, 20]);
+        assert_eq!(changed, 3);
+        assert_eq!(se.random_slot_ids(), vec![30, 10, 20]);
+        assert_eq!(se.formation_ids(1), vec![0x4F], "scripted row untouched");
+        // A short slice is a partial, panic-free write.
+        let mut se2 = make_scene(2, &[(&[1, 2, 3], true)]);
+        se2.apply_random_slots(&[9]);
+        assert_eq!(se2.random_slot_ids(), vec![9, 2, 3]);
+    }
+
+    #[test]
+    fn fill_from_pool_only_uses_pool_and_skips_scripted() {
+        let pool = [40u8, 41, 42, 43];
+        let mut se = make_scene(5, &[(&[10, 20], true), (&[0x4F], false)]);
+        let changed = se.fill_random_slots_from_pool(99, &pool);
+        assert!(changed > 0);
+        for &id in &se.random_slot_ids() {
+            assert!(
+                pool.contains(&id),
+                "filled id {id} came from outside the pool"
+            );
+        }
+        assert_eq!(se.formation_ids(1), vec![0x4F], "scripted row untouched");
+        // Same seed reproduces the fill; empty pool is a no-op.
+        let mut a = make_scene(5, &[(&[10, 20], true)]);
+        let mut b = make_scene(5, &[(&[10, 20], true)]);
+        a.fill_random_slots_from_pool(99, &pool);
+        b.fill_random_slots_from_pool(99, &pool);
+        assert_eq!(a.decoded, b.decoded);
+        let mut c = make_scene(5, &[(&[10, 20], true)]);
+        assert_eq!(c.fill_random_slots_from_pool(99, &[]), 0);
+    }
+
+    #[test]
+    fn cross_scene_shuffle_preserves_group_multiset() {
+        // Two scenes in one group; simulate the orchestration's gather -> shuffle
+        // -> redistribute over their random slots and assert the group-wide
+        // multiset is conserved while scripted ids never move.
+        let mut scenes = vec![
+            make_scene(0, &[(&[1, 2], true), (&[0x90], false)]),
+            make_scene(1, &[(&[3], true), (&[4, 5], true)]),
+        ];
+        let before: Vec<u8> = {
+            let mut v: Vec<u8> = scenes.iter().flat_map(|s| s.random_slot_ids()).collect();
+            v.sort_unstable();
+            v
+        };
+        let mut all_ids: Vec<u8> = scenes.iter().flat_map(|s| s.random_slot_ids()).collect();
+        let mut rng = SplitMix64::new(0xABCD);
+        rng.shuffle(&mut all_ids);
+        let mut cursor = 0;
+        for s in &mut scenes {
+            let n = s.random_slot_count();
+            s.apply_random_slots(&all_ids[cursor..cursor + n]);
+            cursor += n;
+        }
+        let after: Vec<u8> = {
+            let mut v: Vec<u8> = scenes.iter().flat_map(|s| s.random_slot_ids()).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(before, after, "cross-scene shuffle conserves the multiset");
+        assert_eq!(scenes[0].formation_ids(1), vec![0x90], "scripted id stays");
     }
 }

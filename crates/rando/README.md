@@ -109,6 +109,12 @@ Random-encounter randomizer (`encounter` module).
   decompresses it.
 - `randomize` rewrites the formation monster ids from the scene's own id pool (so
   every monster stays scene-loaded) in `Shuffle` / `Random` mode.
+- `apply::randomize_encounters_scoped` widens that pool via `EncounterScope`:
+  `Scene` (default), `Kingdom` (any monster in the same Drake/Sebucus/Karisto
+  kingdom — partition derived from `CDNAME.TXT` in the `kingdom` module), or
+  `World` (any monster on the disc, so late-game monsters can appear at the
+  start). `Shuffle` conserves the scope-wide multiset via a lock-and-reshuffle
+  fixpoint that survives re-pack skips.
 - `repack` recompresses and reports whether it fits the original footprint.
 
 **Only random formations are touched** — a formation is random iff a
@@ -463,9 +469,11 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 - `--drops` and `--encounters` each take `shuffle` / `random` / `none`.
 - `--drops random` needs the SCUS item table off the disc for the valid item pool;
   the others need no external table.
-- `--encounters` reassigns each scene's formation monster ids from that scene's own
-  id set, so every swapped-in monster is one the scene already loads (no missing
-  model).
+- `--encounters` reassigns each scene's formation monster ids; `--encounter-scope`
+  sets the pool it draws from: `scene` (default — the scene's own ids, every swap is
+  one the scene already loads), `kingdom` (any monster in the scene's Drake / Sebucus
+  / Karisto kingdom), or `world` (any monster on the disc). The wider pools rely on
+  the battle loader streaming a monster by id, so an out-of-area enemy still loads.
 
 ### Read-only listings
 
