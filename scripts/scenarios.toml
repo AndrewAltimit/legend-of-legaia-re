@@ -1766,6 +1766,74 @@ description = "Right after Zora's Glare petrified Vahn. The AFTER leg: +0x16E = 
 topics = ["battle", "status", "Stone", "petrify", "Glare", "capture pair", "+0x16E bit 0x04"]
 
 # ----------------------------------------------------------------
+# Delilas-brothers enemy special-attack mid-cast corpus: a NON-final-boss
+# enemy block on the same loader-B stager mechanism (extraction = 895 +
+# loader-B id at 0x8007BC4C), confirming the enemy-cast stager path
+# generalizes beyond Cort. Ids 0x3F/0x40/0x41 -> extraction 0958/0959/0960
+# (a contiguous block just below Cort's evolved-form 0x42/0x43 -> 0961/0962).
+# Each stager is 100% byte-resident at slot B and parses as a move-VM
+# stager. At the captured instants the part-actor pool DAT_801C90F0 is
+# empty (no live pooled part-actor; the few RAM word-matches into the
+# record table are the overlay's own internal pointers, not actor +0x48).
+# None of the three carries a 0x4000 render-mode node, so even a live part
+# here would not seat the render-mode draw.
+
+[[scenarios]]
+slot = 2
+label = "gi_delilas_blazing_slash_mid_cast"
+ram_fingerprint_sha256 = "7a97cf28e8abb9fdc97b4b87658972d9c6ed6399b98bb9c946afc5a473c4068e"
+backup_fingerprint = "94769738cb0eb2d460171c0a2ef30b00afc1f6998dfdc784eaa3b798ef389394"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Gi Delilas casting Blazing Slash mid-cast. Loader-B current-id 0x8007BC4C = 0x3F (63) -> stager extraction 0958 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Blazing Slash", "enemy cast"]
+
+[[scenarios]]
+slot = 3
+label = "che_delilas_megaton_press_mid_cast"
+ram_fingerprint_sha256 = "7340a85e78e1d4f361c81c17b65f07322586739d0e7558e467765f01cd800a41"
+backup_fingerprint = "760cb4604254c4ab55043381db5284e66ec5a65b843a8fc6e460683cf2e06c97"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Che Delilas casting Megaton Press mid-cast. Loader-B current-id 0x8007BC4C = 0x40 (64) -> stager extraction 0959 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Megaton Press", "enemy cast"]
+
+[[scenarios]]
+slot = 4
+label = "lu_delilas_plasma_strike_mid_cast"
+ram_fingerprint_sha256 = "1f37b93502c424aa36ac20d51d9de798c5d74b51c7762903109f0d9fe1f60438"
+backup_fingerprint = "ba7756bfb31f592f5a06db7363caafa9f8031796d7f81a11161022660616dc31"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Lu Delilas casting Plasma Strike mid-cast. Loader-B current-id 0x8007BC4C = 0x41 (65) -> stager extraction 0960 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Delilas", "boss", "stager", "loader-B", "Plasma Strike", "enemy cast"]
+
+# Zeto enemy special-attack mid-casts. Both of Zeto's captured wave attacks
+# (Call Wave / Big Wave) read loader-B id 0x33 -> the SAME stager extraction
+# 0946, byte-resident at slot B in both - one stager serves both wave moves
+# (or loader-B holds the shared last-load; either way 0946 is Zeto's resident
+# wave-attack stager). No 0x4000 record; part pool empty at both instants.
+
+[[scenarios]]
+slot = 5
+label = "zeto_call_wave_mid_cast"
+ram_fingerprint_sha256 = "507e00081b48816d3f476e1788dbf1a815b1f14cd86c37d216705603bf4211cb"
+backup_fingerprint = "81b5850d8373aba6d30fe8b6804863e462aa7c25eb61a861ba2cd7caa75f3772"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Zeto casting Call Wave mid-cast. Loader-B current-id 0x8007BC4C = 0x33 (51) -> stager extraction 0946 (100% byte-resident at slot B 0x801F69D8). Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant. Shares stager 0946 with zeto_big_wave_mid_cast."
+topics = ["battle", "Zeto", "boss", "stager", "loader-B", "Call Wave", "enemy cast"]
+
+[[scenarios]]
+slot = 6
+label = "zeto_big_wave_mid_cast"
+ram_fingerprint_sha256 = "29499bcbb7c4a264ba2090d2ebd49cc0ffbd77f8d5c8cf0ebb8effe250055c24"
+backup_fingerprint = "b44ff5645f5094c0313b2c1781096b12264fcb8d74d3adc21539fda84a47064f"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Enemy Zeto casting Big Wave mid-cast. Loader-B current-id 0x8007BC4C = 0x33 (51) -> stager extraction 0946 (byte-resident at slot B 0x801F69D8) - the same stager as zeto_call_wave_mid_cast. Enemy-cast stager leg; no 0x4000 render-mode record; part pool empty at this instant."
+topics = ["battle", "Zeto", "boss", "stager", "loader-B", "Big Wave", "enemy cast"]
+
 # Final-boss (Cort) special-attack mid-cast corpus: the first ENEMY-cast
 # legs of the loader-B stager mechanism. Every leg lands on the same
 # linear arithmetic as the player summons (stager extraction = 895 +
