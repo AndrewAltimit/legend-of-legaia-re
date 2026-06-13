@@ -12,7 +12,7 @@
 # table.
 #
 # Run inside Ghidra against the overlay program imported via
-# scripts/import-overlay-named.sh. Output lands at
+# scripts/ghidra-analysis/import-overlay-named.sh. Output lands at
 # ghidra/scripts/funcs/<prog>_<addr>.txt.
 #
 # Pair this with `dump_funcs.py` against SCUS_942.54 to compare each

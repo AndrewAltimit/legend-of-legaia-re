@@ -122,10 +122,10 @@ How the runtime engine works.
 | [`static-overlay-pipeline.md`](docs/tooling/static-overlay-pipeline.md) | Static complement to the dynamic captures: extract each clean-copy runtime overlay from `PROT.DAT` at its statically-recovered base (`asset overlay …`), identity attached from the PROT entry. Solves VA-aliasing identity structurally + reproducible from the disc; does NOT address runtime values. Committed map `crates/asset/data/static-overlays.toml`. |
 | [`mednafen-automation.md`](docs/tooling/mednafen-automation.md) | Save-state diff / bisect / scenario manifest; watchpoint-equivalent observation across `.mc{0..9}` snapshots. |
 | [`pcsx-redux-automation.md`](docs/tooling/pcsx-redux-automation.md) | Closed-loop Lua probes layered on PCSX-Redux's breakpoint debugger. Save-state load → arm probes → capture N VSyncs → CSV / snapshot. Catalogue + authoring pattern. |
-| [`port-catalog.md`](docs/tooling/port-catalog.md) | Per-function status catalog: `dumped` (Ghidra) × `documented` (`docs/`) × `ported` (`// PORT: FUN_<addr>` tag in `crates/`) × `ignored` (PsyQ infra in `scripts/port-catalog-ignore.toml`). BFS-from-roots feature views in `scripts/features.toml`. `// REF:` sibling tag for cross-references. `--dashboard` mode emits a single regenerable open-work page. Drift checker `scripts/check-port-tags.py` (warn-only in pre-commit). |
+| [`port-catalog.md`](docs/tooling/port-catalog.md) | Per-function status catalog: `dumped` (Ghidra) × `documented` (`docs/`) × `ported` (`// PORT: FUN_<addr>` tag in `crates/`) × `ignored` (PsyQ infra in `scripts/ci/port-catalog-ignore.toml`). BFS-from-roots feature views in `scripts/ci/features.toml`. `// REF:` sibling tag for cross-references. `--dashboard` mode emits a single regenerable open-work page. Drift checker `scripts/ci/check-port-tags.py` (warn-only in pre-commit). |
 | [`determinism-replay.md`](docs/tooling/determinism-replay.md) | `j-replay-v1` TOML record/replay format + `legaia-engine record` / `replay` subcommands + disc-free determinism cargo-test. Same input file run twice → bit-identical state-trace bytes; pad transitions captured from `play-window` keyboard handler. |
 | [`randomizer.md`](docs/tooling/randomizer.md) | Disc patcher for a user-supplied `.bin` (monster drops; encounters/treasure as they land). Built on three new capabilities: `legaia_lzs::compress` (LZS *encoder*; greedy LZSS, `decompress(compress(x))==x`), `legaia_iso::write` (Mode 2/2352 EDC/ECC re-encode + `patch_file_logical`), and `legaia_rando::disc::DiscPatcher` (PROT-entry → LBA same-size in-place edit). No Sony bytes committed; disc-gated tests. |
-| [`doc-density.md`](docs/tooling/doc-density.md) | `scripts/check-doc-density.py` legibility linter: flags >800-char lines and >150-word markdown table cells across `docs/` + crate READMEs. Exits non-zero on violations; wired as a hard pre-commit gate on the staged doc set (bypass with `LEGAIA_SKIP_PRECOMMIT=1`). |
+| [`doc-density.md`](docs/tooling/doc-density.md) | `scripts/ci/check-doc-density.py` legibility linter: flags >800-char lines and >150-word markdown table cells across `docs/` + crate READMEs. Exits non-zero on violations; wired as a hard pre-commit gate on the staged doc set (bypass with `LEGAIA_SKIP_PRECOMMIT=1`). |
 
 ### Reference - [`docs/reference/`](docs/reference/)
 
@@ -184,6 +184,10 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 Jython analysis scripts that run inside the `blacktop/ghidra:latest` container. The script catalogue lives in [`docs/tooling/ghidra.md`](docs/tooling/ghidra.md#script-catalogue). Per-function decompiled-C dumps land in `ghidra/scripts/funcs/<addr>.txt` (gitignored - they're Sony-derived).
 
+### Host-side scripts - [`scripts/`](scripts/README.md)
+
+Helper scripts that run on the host (not in the Ghidra container), mapped in [`scripts/README.md`](scripts/README.md): `ci/` (the pre-commit + CI gates and build/install helpers), `ghidra-analysis/` (overlay extraction + MIPS/GTE disassembly), `asset-investigation/` (TIM/TMD/slot-4/scene RE one-offs), plus `pcsx-redux/` + `mednafen/` capture automation. `scripts/scenarios.toml` (the capture-scenario manifest) and `manage-states.py` stay at the top level as operational entry points.
+
 ## Common commands
 
 ```bash
@@ -223,7 +227,7 @@ Plus non-randomizer chains: `extract/validation_suite` (full pipeline), `engine-
 - **Don't redistribute or commit any Sony-owned bytes** (executables, asset data, decompressed output). `extracted/` and `ghidra/projects/` are gitignored. CI runs without disc data.
 - **Disc-dependent tests behind the same `LEGAIA_DISC_BIN` skip-pattern.** Tests must pass when the env var is unset.
 - **Prefer adding a CLI subcommand to the existing per-crate binary** over a new binary unless the new tool spans crates. The pattern is `clap` derive + an enum of subcommands at the top of each `bin/<name>.rs`.
-- **CI is strict.** `cargo clippy --all-targets --workspace -- -D warnings` and `cargo fmt --all -- --check` both before pushing. A pre-commit hook is shipped - run `scripts/install-hooks.sh` once per clone and the same gates run on every `git commit`. Set `LEGAIA_SKIP_PRECOMMIT=1` to bypass in emergencies.
+- **CI is strict.** `cargo clippy --all-targets --workspace -- -D warnings` and `cargo fmt --all -- --check` both before pushing. A pre-commit hook is shipped - run `scripts/ci/install-hooks.sh` once per clone and the same gates run on every `git commit`. Set `LEGAIA_SKIP_PRECOMMIT=1` to bypass in emergencies.
 
 ## Cross-cutting facts that catch people out
 

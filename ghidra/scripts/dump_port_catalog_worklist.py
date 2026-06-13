@@ -2,7 +2,7 @@
 # @runtime Jython
 #
 # Dumps the "cited but not dumped" worklist surfaced by
-# scripts/port-catalog.py. Each address has been referenced from at
+# scripts/ci/port-catalog.py. Each address has been referenced from at
 # least one existing dump but has no dump of its own yet - filling
 # them in closes the BFS frontier on the citation graph.
 #

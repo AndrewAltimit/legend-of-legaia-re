@@ -144,7 +144,7 @@ controlled vocabulary) plus the disc-gated catalog regressions guard it.
 
 The coarse categories were assigned by reviewing the decoded thumbnails:
 `asset tim-render-distinct <PROT.DAT> --out <dir>` decodes each distinct
-texture (deduped by fingerprint) to a local PNG, and `scripts/montage_tims.py`
+texture (deduped by fingerprint) to a local PNG, and `scripts/asset-investigation/montage_tims.py`
 lays them into indexed contact sheets for review. Those PNGs are decoded pixel
 data and stay local — only the resulting fingerprint→label table is committed.
 

@@ -38,13 +38,13 @@
 #   2. Switch to the "Mesh inspector" mode and step through each slot.
 #   3. Set the class for slots you can identify; leave the rest unknown.
 #   4. The viewer reloads the TOML via the build pipeline
-#      (`scripts/extract-world-placements.py`).
+#      (`scripts/asset-investigation/extract-world-placements.py`).
 #
 # Live-RAM signal: scripts/pcsx-redux/resolve_actor_tmds.py extracts
 # actor-placed slots from PCSX-Redux save states. Slots that show up in
 # site/world-overview-live.json are seeded as "landmark" below.
 #
-# Visual sweep aid: `python3 scripts/render-unplaced-tmds.py` writes a
+# Visual sweep aid: `python3 scripts/asset-investigation/render-unplaced-tmds.py` writes a
 # wireframe contact sheet (iso + top + front) for every unplaced slot to
 # /tmp/world-thumbs/<kingdom>_unplaced_pN.png so you can review a kingdom
 # end-to-end without driving the live web viewer.

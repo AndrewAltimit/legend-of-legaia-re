@@ -51,7 +51,7 @@ variants extend past `0x801F0000` - capture them with a wider window
 (`0x801C0000..0x801F9000`, 228 KB) to include the prim-mode dispatch
 table at `0x801F8968` and its eight overlay-resident emit leaves at
 `0x801F7644..0x801F8690`. The old 192 KB default
-(`0x801C0000..0x801EFFFF`) clips both. `scripts/extract-mednafen-overlay.py`
+(`0x801C0000..0x801EFFFF`) clips both. `scripts/ghidra-analysis/extract-mednafen-overlay.py`
 now defaults to the wider window.
 
 ## Key functions
@@ -657,7 +657,7 @@ Observed `+0x15` pages: `0x1A` fb `(640,256)` **grass**, `0x0C` fb `(768,0)`
 **water**, `0x0B` fb `(704,0)` **forest/coastal**, with a family of CLUTs per
 page in VRAM rows `495..509`.
 
-**How it was pinned** (`scripts/analyze-walk-ground-tiles.py --verify-rule`):
+**How it was pinned** (`scripts/ghidra-analysis/analyze-walk-ground-tiles.py --verify-rule`):
 the ground quads emit in world-cell-sweep order, so aligning a quad run's
 UV→tile-index sequence to the walk `.MAP`'s `+0x14` grid finds an exact match;
 on the aligned cells the quad's tile / page / clut equal the record's

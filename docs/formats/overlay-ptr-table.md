@@ -63,7 +63,7 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
 }
 ```
 
-Each entry can be Ghidra-imported via [`scripts/bulk-import-overlays.sh`](../tooling/overlay-capture.md) once the load address is determined; the pointer values bound the load address from above (`<= min_ptr`).
+Each entry can be Ghidra-imported via [`scripts/ghidra-analysis/bulk-import-overlays.sh`](../tooling/overlay-capture.md) once the load address is determined; the pointer values bound the load address from above (`<= min_ptr`).
 
 ## See also
 

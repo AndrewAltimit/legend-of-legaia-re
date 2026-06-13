@@ -53,7 +53,7 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
     println!("Overlay pointer table: {} entries, first=0x{:08x}, last=0x{:08x}",
              t.count, t.first_ptr, t.last_ptr);
 }</code></pre>
-  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/bulk-import-overlays.sh</code></a> once the load address is determined; the pointer values bound the load address from above (<code>&lt;= min_ptr</code>).</p>
+  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once the load address is determined; the pointer values bound the load address from above (<code>&lt;= min_ptr</code>).</p>
 </section>
 
 <section class="doc-section" id="see-also">

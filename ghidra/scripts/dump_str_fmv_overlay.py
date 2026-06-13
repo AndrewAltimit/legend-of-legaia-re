@@ -11,9 +11,9 @@
 #   2. Save state while the video is playing:
 #         mednafen -> F5 to save into slot N
 #   3. Extract the overlay slice:
-#         scripts/analyze-overlay.sh ~/.mednafen/mcs/Legend*Legaia*.mcN --label str_fmv
+#         scripts/ghidra-analysis/analyze-overlay.sh ~/.mednafen/mcs/Legend*Legaia*.mcN --label str_fmv
 #   4. Import into Ghidra:
-#         scripts/import-overlay-named.sh ghidra/projects/legaia.rep str_fmv
+#         scripts/ghidra-analysis/import-overlay-named.sh ghidra/projects/legaia.rep str_fmv
 #   5. Run this script:
 #         docker compose exec ghidra /ghidra/support/analyzeHeadless \
 #             /projects legaia -process overlay_str_fmv.bin -noanalysis \

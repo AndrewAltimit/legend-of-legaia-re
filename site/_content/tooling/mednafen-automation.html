@@ -40,7 +40,7 @@
 <pre><code>target/release/mednafen-state extract \
     "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;SLOT&gt;" \
     --start 0x801C0000 --end 0x80200000 --out /tmp/battle_overlay.bin</code></pre>
-  <p>This is the structured replacement for <code>scripts/extract-mednafen-overlay.py</code> - same anchor-based fallback when the structured <code>MainRAM.data8</code> lookup misses, plus a MIPS-shape sanity check.</p>
+  <p>This is the structured replacement for <code>scripts/ghidra-analysis/extract-mednafen-overlay.py</code> - same anchor-based fallback when the structured <code>MainRAM.data8</code> lookup misses, plus a MIPS-shape sanity check.</p>
   <h3>Diff two saves in the overlay window</h3>
 <pre><code>target/release/mednafen-state diff \
     "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;BEFORE&gt;" \
@@ -68,7 +68,7 @@
   <p>Prints the u32 value at <code>0x8007BAC8</code> in each state - useful when you want to <em>see</em> the value evolve before deciding what predicate to bisect on.</p>
   <h3>Walk every scenario through extraction</h3>
 <pre><code>scripts/mednafen/state-walk.sh --import</code></pre>
-  <p>For every scenario in the manifest, slices its overlay window into <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> and (with <code>--import</code>) imports it as a labelled program in the Ghidra container via <code>scripts/import-overlay-named.sh</code>. One command, all scenarios staged.</p>
+  <p>For every scenario in the manifest, slices its overlay window into <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> and (with <code>--import</code>) imports it as a labelled program in the Ghidra container via <code>scripts/ghidra-analysis/import-overlay-named.sh</code>. One command, all scenarios staged.</p>
   <h3>Dump the runtime GPU VRAM as a PNG</h3>
 <pre><code>mednafen-state vram-dump ~/.mednafen/mcs/"Legend of Legaia (USA)."*".&lt;SLOT&gt;" \
   --out vram.png --out-bin vram.bin --regs</code></pre>

@@ -261,12 +261,12 @@ Cross-cutting helpers under `scripts/` (host-side, not Ghidra):
 
 | Script | Purpose |
 |---|---|
-| `scripts/function-coverage.py` | Citation-ranked missing-helper tracker over the function dumps. |
-| `scripts/call-graph.py` | `callees` / `callers` / `xref` over the dumps; replaces grep-across-files. |
-| `scripts/scene-asset-detect.py` | Joins `categorize.json` with TIM/TMD scan hits to surface unknown-bucket entries that look like scene bundles. |
-| `scripts/bulk-import-overlays.sh` | Reads `find-overlay` output, imports each high-score candidate, runs analysis + the inventory dumper. |
-| `scripts/extract-mednafen-overlay.py` | Slices `0x801C0000-0x80200000` (256 KB) out of a gzipped mednafen save state. |
-| `scripts/analyze-overlay.sh` | One-shot capture pipeline: decompress save → slice → import → emit asset-load CSV. |
+| `scripts/ci/function-coverage.py` | Citation-ranked missing-helper tracker over the function dumps. |
+| `scripts/ghidra-analysis/call-graph.py` | `callees` / `callers` / `xref` over the dumps; replaces grep-across-files. |
+| `scripts/asset-investigation/scene-asset-detect.py` | Joins `categorize.json` with TIM/TMD scan hits to surface unknown-bucket entries that look like scene bundles. |
+| `scripts/ghidra-analysis/bulk-import-overlays.sh` | Reads `find-overlay` output, imports each high-score candidate, runs analysis + the inventory dumper. |
+| `scripts/ghidra-analysis/extract-mednafen-overlay.py` | Slices `0x801C0000-0x80200000` (256 KB) out of a gzipped mednafen save state. |
+| `scripts/ghidra-analysis/analyze-overlay.sh` | One-shot capture pipeline: decompress save → slice → import → emit asset-load CSV. |
 
 ## Known dev paths in the binary
 

@@ -18,7 +18,7 @@
 //! 12 + 65536 pixel block). Pixel-block VRAM target is `fb=(512,256)`,
 //! CLUT block target is in-line with the pixel block's frame buffer.
 //!
-//! Pinned by `scripts/scan_tims_and_match_prot.py` against a full
+//! Pinned by `scripts/asset-investigation/scan_tims_and_match_prot.py` against a full
 //! 2 MiB main-RAM dump captured at the live title screen (sstate8),
 //! cross-referenced against the in-RAM copy at vaddr `0x80170DF8`.
 //! Renders to the complete title screen: wordmark, orb, "PRESS START
@@ -52,7 +52,7 @@
 //! byte-grep the extracted PROT corpus for each candidate. The
 //! runtime patches only `fb_x`/`fb_y` for CLUT relocation; the rest
 //! of each TIM is byte-equal to the on-disc source. Full repro in
-//! `scripts/scan_tims_and_match_prot.py --help`.
+//! `scripts/asset-investigation/scan_tims_and_match_prot.py --help`.
 
 use anyhow::{Context, Result};
 

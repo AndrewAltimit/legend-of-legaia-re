@@ -70,7 +70,7 @@ wasm-pack build crates/web-viewer --target web
 
 # Or via the convenience script that also syncs into site/wasm/ for
 # local previewing:
-scripts/build-wasm.sh
+scripts/ci/build-wasm.sh
 ```
 
 The generated `pkg/` is consumed by the static site under
@@ -80,7 +80,7 @@ regenerates it from `pkg/` on demand.
 ## Serve locally
 
 ```bash
-scripts/build-wasm.sh
+scripts/ci/build-wasm.sh
 python3 -m http.server -d site 8000
 # then open http://localhost:8000/viewer.html
 ```

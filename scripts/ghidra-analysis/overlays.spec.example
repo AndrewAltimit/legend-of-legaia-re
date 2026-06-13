@@ -1,0 +1,14 @@
+# Example spec file for scripts/ghidra-analysis/sweep-overlays.sh
+# Format: <mednafen-save-state-path>  <label>
+# Blank lines and lines starting with # are ignored.
+#
+# Copy to overlays.spec (gitignored), fill in real save-state paths, then:
+#   scripts/ghidra-analysis/sweep-overlays.sh overlays.spec
+#   scripts/ghidra-analysis/sweep-overlays.sh --dry-run overlays.spec   # preview first
+#
+# The five overlays that unlock shop / inn / save-screen / level-up / world-map:
+~/.mednafen/mcs/Legend_of_Legaia.mc0  world_map
+~/.mednafen/mcs/Legend_of_Legaia.mc1  save_screen
+~/.mednafen/mcs/Legend_of_Legaia.mc2  shop
+~/.mednafen/mcs/Legend_of_Legaia.mc3  cutscene
+~/.mednafen/mcs/Legend_of_Legaia.mc4  level_up

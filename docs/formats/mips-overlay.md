@@ -26,7 +26,7 @@ Three checks together produce zero false positives across the corpus:
 
 All matches cluster in the `0901..=0969` PROT range - sized 14 KB to 37 KB (one outlier at 163 KB for `0969_xxx_dat.BIN`). The `find-overlay` heuristic ranks these as MIPS-code-shape candidates; this detector formalises that ranking into the categorize pipeline.
 
-Each entry can be Ghidra-imported via [`scripts/bulk-import-overlays.sh`](../tooling/overlay-capture.md) once a base address is determined. The overlay window is `0x801C0000`–`0x80200000`; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.
+Each entry can be Ghidra-imported via [`scripts/ghidra-analysis/bulk-import-overlays.sh`](../tooling/overlay-capture.md) once a base address is determined. The overlay window is `0x801C0000`–`0x80200000`; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.
 
 ## Likely subsystems
 

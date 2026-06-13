@@ -244,7 +244,7 @@ unrelated regions, and **the SC save/load path does not sync between them**:
 The scratchpad word `_DAT_1F800394` is the field-VM transient that opcodes
 `0x2E` (set bit), `0x2F` (clear bit), and `0x30` (test bit) operate on.
 Static-reader sweep across `ghidra/scripts/funcs/*.txt` (`python3
-scripts/scan_funcs_for_addr_range.py --lo 0x1F800394 --hi 0x1F800398`)
+scripts/ghidra-analysis/scan_funcs_for_addr_range.py --lo 0x1F800394 --hi 0x1F800398`)
 finds **one** non-RMW writer: `FUN_8001DCF8` at PC `0x8001E17C`, which
 seeds it from the game-mode descriptor table:
 

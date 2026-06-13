@@ -315,7 +315,7 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 <section class="doc-section" id="what-s-still-open">
   <h2>What's still open</h2>
   <ul class="bullets">
-    <li><strong>On-disc carrier of the glyph bitmap.</strong> The static categorizer in <code>crates/asset</code> doesn't yet recognise the PROT entry that carries the font - the bitmap is reachable only from a save-state VRAM dump. The font extractor writes <code>dialog_font_vram_4bpp.bin</code> (the raw 32 KB tile-page bytes) alongside the PNG, and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/find-font-carrier.py"><code>scripts/find-font-carrier.py</code></a> searches every PROT entry for matching slices. The script runs three search strategies:</li>
+    <li><strong>On-disc carrier of the glyph bitmap.</strong> The static categorizer in <code>crates/asset</code> doesn't yet recognise the PROT entry that carries the font - the bitmap is reachable only from a save-state VRAM dump. The font extractor writes <code>dialog_font_vram_4bpp.bin</code> (the raw 32 KB tile-page bytes) alongside the PNG, and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/asset-investigation/find-font-carrier.py"><code>scripts/asset-investigation/find-font-carrier.py</code></a> searches every PROT entry for matching slices. The script runs three search strategies:</li>
   </ul>
   <ol class="bullets">
     <li>Direct slice match (4 fixed offsets, 64-byte windows).</li>

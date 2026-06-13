@@ -95,7 +95,7 @@ pub struct ManRecord {
 }
 
 /// Parse the disc-extracted MAN buffer, mirroring
-/// ``scripts/extract-world-placements.py:parse_placements``.
+/// ``scripts/asset-investigation/extract-world-placements.py:parse_placements``.
 ///
 /// The walker only emits records in the ``[a+1, total)`` range (the
 /// ``a``-class records aren't drawn as actors).

@@ -10,10 +10,10 @@ equivalents rather than porting line-by-line):
 | **dumped** | A Ghidra decompiler dump exists under `ghidra/scripts/funcs/` (gitignored — regenerable from the Ghidra project). |
 | **documented** | The address is cited from at least one file under `docs/` (`FUN_<addr>` or `0x<addr>`, case-insensitive). |
 | **ported** | A Rust source under `crates/` carries a `// PORT: FUN_<addr>` tag for that address. |
-| **ignored** | The address is listed in `scripts/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
+| **ignored** | The address is listed in `scripts/ci/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
 
-Tool: [`scripts/port-catalog.py`](../../scripts/port-catalog.py). Reuses helpers
-from [`scripts/function-coverage.py`](../../scripts/function-coverage.py) and
+Tool: [`scripts/ci/port-catalog.py`](../../scripts/ci/port-catalog.py). Reuses helpers
+from [`scripts/ci/function-coverage.py`](../../scripts/ci/function-coverage.py) and
 shares the same code-range filter (SCUS `0x80010000-0x8006FFFF`, overlays
 `0x801C0000-0x8020FFFF`).
 
@@ -63,12 +63,12 @@ outer-doc `///`) and same multi-address syntax.
 ```
 
 `port-catalog.py` ignores REF tags — they don't set the "ported" column —
-but the drift checker (`scripts/check-port-tags.py`, see below) treats them
+but the drift checker (`scripts/ci/check-port-tags.py`, see below) treats them
 as equivalent to PORT for warning suppression.
 
 ## Tag drift checker
 
-`scripts/check-port-tags.py` walks `crates/engine-*/src/**.rs` and warns
+`scripts/ci/check-port-tags.py` walks `crates/engine-*/src/**.rs` and warns
 when a `FUN_<addr>` citation lacks a matching `// PORT:` or `// REF:` tag
 *in the same file*. The goal is to catch the "I ported X but forgot the
 tag" pattern so the catalog stays in sync with what the engine actually
@@ -80,11 +80,11 @@ every line of every engine-crate file (full historical sweep). `--strict`
 turns warnings into a nonzero exit for CI.
 
 ```bash
-python3 scripts/check-port-tags.py                  # default = --staged
-python3 scripts/check-port-tags.py --scan-all       # full audit
-python3 scripts/check-port-tags.py --strict         # exit 1 on warning
-python3 scripts/check-port-tags.py --addr 80019b28  # drill-down
-python3 scripts/check-port-tags.py --backfill-refs  # one-shot grandfather pass
+python3 scripts/ci/check-port-tags.py                  # default = --staged
+python3 scripts/ci/check-port-tags.py --scan-all       # full audit
+python3 scripts/ci/check-port-tags.py --strict         # exit 1 on warning
+python3 scripts/ci/check-port-tags.py --addr 80019b28  # drill-down
+python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pass
 ```
 
 **Scope rule:** only files that already carry a `// PORT:` tag are checked.
@@ -107,17 +107,17 @@ checker doesn't gate unrelated PRs. CI can tighten by switching to
 ## Usage
 
 ```bash
-python3 scripts/port-catalog.py                       # global catalog -> target/port-catalog/
-python3 scripts/port-catalog.py --missing-ports       # dumped + documented, not ported (excludes ignore-list)
-python3 scripts/port-catalog.py --missing-ports --include-ignored   # include ignore-list entries
-python3 scripts/port-catalog.py --missing-dumps       # cited but not dumped
-python3 scripts/port-catalog.py --ported-only         # show only ported addresses
-python3 scripts/port-catalog.py --ignored-only        # show only ignore-list entries
-python3 scripts/port-catalog.py --addr 801dd35c       # drill-down on one address
-python3 scripts/port-catalog.py --md                  # markdown to stdout
-python3 scripts/port-catalog.py --list-features       # list features in features.toml
-python3 scripts/port-catalog.py --feature title-screen   # BFS from a feature's roots
-python3 scripts/port-catalog.py --dashboard           # open-work rollup -> open-work.md
+python3 scripts/ci/port-catalog.py                       # global catalog -> target/port-catalog/
+python3 scripts/ci/port-catalog.py --missing-ports       # dumped + documented, not ported (excludes ignore-list)
+python3 scripts/ci/port-catalog.py --missing-ports --include-ignored   # include ignore-list entries
+python3 scripts/ci/port-catalog.py --missing-dumps       # cited but not dumped
+python3 scripts/ci/port-catalog.py --ported-only         # show only ported addresses
+python3 scripts/ci/port-catalog.py --ignored-only        # show only ignore-list entries
+python3 scripts/ci/port-catalog.py --addr 801dd35c       # drill-down on one address
+python3 scripts/ci/port-catalog.py --md                  # markdown to stdout
+python3 scripts/ci/port-catalog.py --list-features       # list features in features.toml
+python3 scripts/ci/port-catalog.py --feature title-screen   # BFS from a feature's roots
+python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> open-work.md
 ```
 
 Output is written to `target/port-catalog/` (gitignored):
@@ -133,7 +133,7 @@ A *feature* in this tool is a named set of seed Ghidra function addresses
 `--feature <name>` filters the catalog to the addresses reachable from those
 roots via the citation graph (one edge per "this dump cites that address").
 
-Features live in `scripts/features.toml`:
+Features live in `scripts/ci/features.toml`:
 
 ```toml
 [title-screen]
@@ -159,7 +159,7 @@ Use feature views to:
 
 ## Ignore list
 
-`scripts/port-catalog-ignore.toml` lists addresses that the catalog should
+`scripts/ci/port-catalog-ignore.toml` lists addresses that the catalog should
 treat as out-of-scope for engine porting — statically-linked PsyQ kernel /
 runtime / SDK code. The clean-room port maps these clusters to native
 equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the
@@ -205,7 +205,7 @@ dashboard combines four signals:
 1. **Global counts** — dumped / documented / ported / ignored / remaining port
    worklist.
 2. **Per-feature status table** — for each feature in
-   [`scripts/features.toml`](../../scripts/features.toml): reachable, ported,
+   [`scripts/ci/features.toml`](../../scripts/ci/features.toml): reachable, ported,
    port %, missing (port worklist within the feature, ignore-list excluded),
    ignored.
 3. **Per-feature top-N missing-ports** — the highest-citation-count helpers

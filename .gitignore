@@ -68,7 +68,7 @@
 /overlays/
 /extracted/overlays/
 
-# Mednafen save states (referenced by scripts/analyze-overlay.sh; the
+# Mednafen save states (referenced by scripts/ghidra-analysis/analyze-overlay.sh; the
 # canonical location is ~/.mednafen/mcs/, but ignore stray copies here).
 *.mc[0-9]
 *.mca
@@ -102,7 +102,7 @@
 scripts/overlays.spec
 
 # WASM build output - tracked in the repo so the site works without a local rebuild.
-# Regenerate via scripts/build-wasm.sh when crates/web-viewer or its deps change.
+# Regenerate via scripts/ci/build-wasm.sh when crates/web-viewer or its deps change.
 # site/wasm/.gitignore allows only the specific artifacts needed by viewer.html.
 
 # Local docker compose env (UID/GID overrides). The committed

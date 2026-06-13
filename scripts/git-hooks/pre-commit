@@ -3,7 +3,7 @@
 # Pre-commit hook: runs the same gates CI runs.
 #
 # Install (once per clone):
-#     scripts/install-hooks.sh
+#     scripts/ci/install-hooks.sh
 #
 # Then every `git commit` runs the same `cargo fmt --check` and
 # `cargo clippy -D warnings` that .github/workflows/main-ci.yml runs, so a
@@ -37,10 +37,10 @@ cd "$REPO_ROOT"
 # over-150-word markdown table cells in staged docs / crate READMEs, so density
 # creep can't land. Runs before the Rust-only early-exit so docs-only commits
 # are covered too. Bypass with LEGAIA_SKIP_PRECOMMIT=1 (handled above); run
-# scripts/check-doc-density.py for a full-corpus audit.
-if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/check-doc-density.py" ]]; then
+# scripts/ci/check-doc-density.py for a full-corpus audit.
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-doc-density.py" ]]; then
     printf '[pre-commit] doc legibility-density check\n'
-    if ! python3 scripts/check-doc-density.py --staged --quiet; then
+    if ! python3 scripts/ci/check-doc-density.py --staged --quiet; then
         printf '[pre-commit] doc density violations above -- reflow long lines or move over-budget table cells into sections (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
         exit 1
     fi
@@ -60,9 +60,9 @@ while IFS= read -r path; do
     esac
 done < <(git diff --cached --name-only --diff-filter=ACMR)
 if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
-    && [[ -f "scripts/check-site-links.py" ]]; then
+    && [[ -f "scripts/ci/check-site-links.py" ]]; then
     printf '[pre-commit] site internal-link check\n'
-    if ! python3 scripts/check-site-links.py --quiet; then
+    if ! python3 scripts/ci/check-site-links.py --quiet; then
         printf '[pre-commit] broken site links above -- run python3 site/_gen.py and fix the _content hrefs (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
         exit 1
     fi
@@ -136,11 +136,11 @@ cargo clippy --all-targets --workspace -- -D warnings
 # Port-tag drift check (warn-only). Surfaces newly-added `FUN_<addr>` citations
 # in engine-crate Rust files that lack a matching `// PORT:` or `// REF:` tag.
 # Non-fatal by design - the catalog stays in sync incrementally rather than
-# blocking unrelated PRs. Run scripts/check-port-tags.py --strict in CI when
+# blocking unrelated PRs. Run scripts/ci/check-port-tags.py --strict in CI when
 # you want to enforce.
-if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/check-port-tags.py" ]]; then
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-port-tags.py" ]]; then
     printf '[pre-commit] port-tag drift check (warn-only)\n'
-    python3 scripts/check-port-tags.py --staged --quiet || true
+    python3 scripts/ci/check-port-tags.py --staged --quiet || true
 fi
 
 printf '[pre-commit] OK\n'

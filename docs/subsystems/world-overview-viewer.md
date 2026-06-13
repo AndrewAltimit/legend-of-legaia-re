@@ -392,7 +392,7 @@ disc is loaded:
 ```
 scripts/mednafen/resolve_bulk_terrain.py --bundles map01,map02,map03 \
     --json site/world-overview-live.json <mc1> <mc2> <mc3>
-python3 scripts/extract-world-placements.py \
+python3 scripts/asset-investigation/extract-world-placements.py \
     --prot-dir extracted/PROT --out site/world-overview.json
 ```
 
