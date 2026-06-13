@@ -16,6 +16,7 @@ use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 use crate::encounter::SceneEncounters;
 use crate::equipment::{EquipmentItem, MonsterExp, plan_equipment_drops};
 use crate::house_door::SceneHouseDoors;
+use crate::monster_stats;
 use crate::rng::SplitMix64;
 use crate::shop::SceneShops;
 
@@ -171,6 +172,92 @@ pub fn randomize_equipment_drops(
     let plan = plan_equipment_drops(&monsters, pool, seed);
     let report = apply_drop_plan(patcher, &plan)?;
     Ok((plan, report))
+}
+
+/// Outcome of randomizing monster combat stats.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MonsterStatsReport {
+    /// Monster slots actually rewritten.
+    pub monsters_changed: usize,
+    /// Total stat fields that changed across all rewritten monsters.
+    pub fields_changed: usize,
+    /// Monster ids whose re-packed slot would overflow the `0x14000` footprint,
+    /// so the edit was skipped (the original stats are kept). Our LZS re-packer
+    /// isn't byte-identical to Sony's, so a record already near the slot limit
+    /// can rarely overflow; skipping keeps the rest of the patch valid (mirrors
+    /// the drop randomizer, see [`crate::monster`]).
+    pub skipped: Vec<u16>,
+}
+
+/// Read every populated monster's id + current combat stats (the
+/// [`crate::monster_stats::STAT_FIELDS`] halfwords) out of the `battle_data`
+/// archive. This is the population the stat randomizer redistributes.
+pub fn current_monster_stats(patcher: &DiscPatcher) -> Result<Vec<monster_stats::StatAssignment>> {
+    let entry = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive")?;
+    let records =
+        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    Ok(records
+        .iter()
+        .map(|r| monster_stats::StatAssignment {
+            monster_id: r.id,
+            stats: [
+                r.hp,
+                r.mp,
+                r.attack(),
+                r.defense_high(),
+                r.defense_low(),
+                r.agility(),
+                r.speed(),
+            ],
+        })
+        .collect())
+}
+
+/// Randomize every monster's combat stats in place (see [`crate::monster_stats`]).
+/// Each monster's `0x14000`-byte slot is decompressed, the stat halfwords
+/// rewritten, and recompressed back to the same footprint — a same-size,
+/// in-place edit. A slot too tight to re-pack is skipped (recorded in the
+/// report) rather than aborting the run. Returns the apply report.
+pub fn randomize_monster_stats(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<MonsterStatsReport> {
+    let current = current_monster_stats(patcher)?;
+    let plan = monster_stats::plan_stats(&current, seed, mode);
+    let mut report = MonsterStatsReport::default();
+    for (cur, new) in current.iter().zip(&plan) {
+        if cur.stats == new.stats {
+            continue;
+        }
+        let slot = patcher
+            .monster_slot(new.monster_id)
+            .with_context(|| format!("read monster {} slot", new.monster_id))?;
+        let new_slot = match monster_stats::set_stats(&slot, &new.stats) {
+            Ok(s) => s,
+            Err(_) => {
+                // Expected only on the slot-overflow guard; a malformed slot
+                // would have failed in `current_monster_stats` already.
+                report.skipped.push(new.monster_id);
+                continue;
+            }
+        };
+        if new_slot != slot {
+            patcher
+                .patch_monster_slot(new.monster_id, &new_slot)
+                .with_context(|| format!("write monster {} slot", new.monster_id))?;
+            report.monsters_changed += 1;
+            report.fields_changed += cur
+                .stats
+                .iter()
+                .zip(&new.stats)
+                .filter(|(a, b)| a != b)
+                .count();
+        }
+    }
+    Ok(report)
 }
 
 /// Build the `256`-entry "id is sellable" mask from the disc's SCUS item table:
@@ -459,6 +546,208 @@ pub fn randomize_casino(patcher: &mut DiscPatcher, seed: u64, mode: DropMode) ->
         patcher
             .patch_prot_entry(casino::CASINO_ENTRY, base as u64, after)
             .context("write casino prize table")?;
+    }
+    Ok(changed)
+}
+
+/// Read the special-attack move-power column (the per-record `+0x00` power
+/// halfword) from PROT 0898, for the read-only listing / the randomizer input.
+/// Returns `None` if the battle-action overlay entry can't be parsed.
+pub fn current_move_powers(patcher: &DiscPatcher) -> Result<Option<Vec<i16>>> {
+    let entry = patcher
+        .read_entry(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    Ok(legaia_asset::move_power::parse(&entry)
+        .map(|recs| recs.iter().map(|r| r.power_raw).collect()))
+}
+
+/// Randomize the special-attack power table (see [`crate::move_power`]). Rewrites
+/// only each record's `+0x00` power halfword in PROT 0898 — a same-size raw edit
+/// (no LZS). Returns the number of power values that changed.
+pub fn randomize_move_powers(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::move_power::{
+        BATTLE_ACTION_OVERLAY_PROT_INDEX, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+    };
+    let mut entry = patcher
+        .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let Some(records) = legaia_asset::move_power::parse(&entry) else {
+        return Ok(0);
+    };
+    // Redistribute powers only among populated records. Empty (all-zero) records
+    // — including the index-0 sentinel `parse` keys on — must stay zero, so a
+    // move's power is never handed to an unused slot (nor a real move zeroed).
+    let populated: Vec<usize> = records
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| !r.is_empty())
+        .map(|(i, _)| i)
+        .collect();
+    let current: Vec<i16> = populated.iter().map(|&i| records[i].power_raw).collect();
+    let plan = crate::move_power::plan_powers(&current, seed, mode);
+
+    let table = MOVE_POWER_TABLE_FILE_OFFSET;
+    let span = records.len() * MOVE_POWER_RECORD_STRIDE;
+    let before = entry[table..table + span].to_vec();
+    let mut changed = 0usize;
+    for (k, &i) in populated.iter().enumerate() {
+        if current[k] == plan[k] {
+            continue;
+        }
+        let off = table + i * MOVE_POWER_RECORD_STRIDE;
+        entry[off..off + 2].copy_from_slice(&plan[k].to_le_bytes());
+        changed += 1;
+    }
+    let after = &entry[table..table + span];
+    if after != before.as_slice() {
+        patcher
+            .patch_prot_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX, table as u64, after)
+            .context("write move-power table")?;
+    }
+    Ok(changed)
+}
+
+/// Read the 8×8 element-affinity matrix (PROT 0898), flattened row-major
+/// (`attacker * 8 + defender`), for the read-only listing / randomizer input.
+/// `None` if the entry can't parse.
+pub fn current_affinity_matrix(
+    patcher: &DiscPatcher,
+) -> Result<Option<[u8; crate::element_affinity::MATRIX_CELLS]>> {
+    let entry = patcher
+        .read_entry(legaia_asset::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let Some(aff) = legaia_asset::element_affinity::ElementAffinity::parse(&entry) else {
+        return Ok(None);
+    };
+    let ec = legaia_asset::element_affinity::ELEMENT_COUNT;
+    let mut flat = [0u8; crate::element_affinity::MATRIX_CELLS];
+    for (atk, row) in aff.matrix.iter().enumerate() {
+        flat[atk * ec..atk * ec + row.len()].copy_from_slice(row);
+    }
+    Ok(Some(flat))
+}
+
+/// Randomize the element-affinity matrix (see [`crate::element_affinity`]).
+/// Rewrites the 64 matrix bytes in PROT 0898 — a same-size raw edit (no LZS).
+/// Returns the number of cells that changed.
+pub fn randomize_element_affinity(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::element_affinity::{
+        AFFINITY_MATRIX_FILE_OFFSET, BATTLE_ACTION_OVERLAY_PROT_INDEX,
+    };
+    let Some(current) = current_affinity_matrix(patcher)? else {
+        return Ok(0);
+    };
+    let plan = crate::element_affinity::plan_matrix(&current, seed, mode);
+    let changed = current.iter().zip(&plan).filter(|(a, b)| a != b).count();
+    if plan != current {
+        patcher
+            .patch_prot_entry(
+                BATTLE_ACTION_OVERLAY_PROT_INDEX,
+                AFFINITY_MATRIX_FILE_OFFSET as u64,
+                &plan,
+            )
+            .context("write element-affinity matrix")?;
+    }
+    Ok(changed)
+}
+
+/// One spell's current MP cost, for the read-only listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpellCost {
+    /// Spell id (index into the spell table).
+    pub id: u8,
+    /// Display name.
+    pub name: String,
+    /// MP cost (`stats +3`).
+    pub mp: u8,
+}
+
+/// `SCUS_942.54` filename (the static-table container).
+const SCUS_NAME: &str = "SCUS_942.54";
+
+/// Read every named, costed spell's id + name + MP cost from the SCUS spell
+/// table — the population the MP-cost randomizer redistributes. Empty / unnamed
+/// internal-tier slots and zero-cost spells are excluded. `None` if SCUS / its
+/// spell table can't be parsed.
+pub fn current_spell_costs(patcher: &DiscPatcher) -> Result<Option<Vec<SpellCost>>> {
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(None);
+    };
+    let Some(table) = legaia_asset::spell_names::SpellNameTable::from_scus(&scus) else {
+        return Ok(None);
+    };
+    let mut out = Vec::new();
+    for id in 0..=u8::MAX {
+        let Some(entry) = table.entry(id) else { break };
+        if let Some(name) = entry.name.as_deref().filter(|_| entry.mp > 0) {
+            out.push(SpellCost {
+                id,
+                name: name.to_string(),
+                mp: entry.mp,
+            });
+        }
+    }
+    Ok(Some(out))
+}
+
+/// Randomize spell MP costs in the SCUS spell table (see [`crate::spell_cost`]).
+/// Rewrites only the `+3` cost byte of each named, costed spell — a same-size
+/// in-place SCUS patch. Returns the number of spells whose cost changed.
+pub fn randomize_spell_costs(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::spell_names::{RECORD_STRIDE, SPELL_COUNT};
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(0);
+    };
+    let Some(table_off) = legaia_asset::spell_names::stats_file_offset(&scus) else {
+        return Ok(0);
+    };
+    let span = SPELL_COUNT * RECORD_STRIDE;
+    let Some(mut table) = scus.get(table_off..table_off + span).map(<[u8]>::to_vec) else {
+        return Ok(0);
+    };
+
+    // Randomizable population: named spells with a non-zero MP cost.
+    let names = legaia_asset::spell_names::SpellNameTable::from_scus(&scus);
+    let ids: Vec<usize> = (0..SPELL_COUNT)
+        .filter(|&id| {
+            let cost = table[id * RECORD_STRIDE + 3];
+            let named = names
+                .as_ref()
+                .and_then(|t| t.name(id as u8))
+                .is_some_and(|n| !n.is_empty());
+            cost > 0 && named
+        })
+        .collect();
+    let current: Vec<u8> = ids
+        .iter()
+        .map(|&id| table[id * RECORD_STRIDE + 3])
+        .collect();
+    let plan = crate::spell_cost::plan_costs(&current, seed, mode);
+
+    let mut changed = 0usize;
+    for (k, &id) in ids.iter().enumerate() {
+        let off = id * RECORD_STRIDE + 3;
+        if table[off] != plan[k] {
+            table[off] = plan[k];
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        patcher
+            .patch_named_file(SCUS_NAME, table_off as u64, &table)
+            .context("write spell MP-cost table")?;
     }
     Ok(changed)
 }

@@ -104,6 +104,37 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every monster's current combat stats (HP / MP / ATK /
+    /// DEF↑ / DEF↓ / AGL / SPD) from the `battle_data` archive — the population
+    /// the `--monster-stats` randomizer redistributes.
+    MonsterStats {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list the special-attack move-power table (the 44 power values
+    /// the `--move-power` randomizer redistributes), each tagged with the
+    /// spell-table name of a move id that resolves to it.
+    MovePowers {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: print the 8×8 element-affinity matrix (rows = attacking
+    /// element, columns = defending element; each cell a damage-scale percent)
+    /// the `--element-affinity` randomizer redistributes.
+    Affinity {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only: list every named spell's current MP cost from the SCUS spell
+    /// table — the population the `--spell-cost` randomizer redistributes.
+    SpellCosts {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -172,6 +203,34 @@ struct RandomizeArgs {
     /// casino spends coins, not gold.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     casino: DropArg,
+    /// How monster combat stats are reassigned (HP / MP / ATK / DEF / AGL / SPD
+    /// from the `battle_data` archive). `shuffle` permutes each stat column
+    /// across the roster (each stat's multiset preserved, so the overall
+    /// difficulty budget is kept); `random` draws each stat from that column's
+    /// pool. Spirit/SP is left untouched. `legaia-rando monster-stats` lists the
+    /// current stats.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    monster_stats: DropArg,
+    /// How special-attack power is reassigned (the battle-action move-power
+    /// table — enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
+    /// permutes the 44 power values (multiset preserved); `random` draws each
+    /// from that pool. Only the power changes — each move keeps its own
+    /// animation, effects, and sound. `legaia-rando move-powers` lists them.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    move_power: DropArg,
+    /// How the element-affinity matrix is reassigned (which element beats which:
+    /// the 8×8 damage-scale grid). `shuffle` permutes the 64 cells (the same
+    /// number of weaknesses / resistances exists, between different pairs);
+    /// `random` draws each cell from that pool. Per-character element assignment
+    /// is left untouched. `legaia-rando affinity` shows the current grid.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    element_affinity: DropArg,
+    /// How spell MP costs are reassigned (the SCUS spell table). `shuffle`
+    /// permutes the MP costs of the named, costed spells (the cost multiset is
+    /// preserved); `random` draws each from that pool. Free / internal-tier
+    /// spells never gain a cost. `legaia-rando spell-costs` lists them.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    spell_cost: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -345,6 +404,10 @@ fn main() -> Result<()> {
         Cmd::StartingItems { input } => cmd_starting_items(&input),
         Cmd::Shops { input } => cmd_shops(&input),
         Cmd::Casino { input } => cmd_casino(&input),
+        Cmd::MonsterStats { input } => cmd_monster_stats(&input),
+        Cmd::MovePowers { input } => cmd_move_powers(&input),
+        Cmd::Affinity { input } => cmd_affinity(&input),
+        Cmd::SpellCosts { input } => cmd_spell_costs(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -438,6 +501,119 @@ fn cmd_casino(input: &Path) -> Result<()> {
             }
         }
         None => println!("casino prize table not found"),
+    }
+    Ok(())
+}
+
+fn cmd_monster_stats(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let entry = patcher
+        .read_entry(legaia_rando::disc::MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive")?;
+    let records =
+        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    println!(
+        "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+        "id", "name", "hp", "mp", "atk", "def+", "def-", "agl", "spd"
+    );
+    for r in &records {
+        println!(
+            "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+            r.id,
+            r.name,
+            r.hp,
+            r.mp,
+            r.attack(),
+            r.defense_high(),
+            r.defense_low(),
+            r.agility(),
+            r.speed()
+        );
+    }
+    println!("{} populated monster records", records.len());
+    Ok(())
+}
+
+fn cmd_move_powers(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let entry = patcher
+        .read_entry(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let records =
+        legaia_asset::move_power::parse(&entry).context("parse move-power table (PROT 0898)")?;
+
+    // Tag each power-table index with the spell-table name of a move id that
+    // resolves to it (the move-id space is the spell-table id space).
+    let map = legaia_asset::move_power::parse_id_index_map(&entry);
+    let spells = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+        .and_then(|scus| legaia_asset::spell_names::SpellNameTable::from_scus(&scus));
+    let label = |idx: usize| -> String {
+        let (Some(map), Some(spells)) = (map.as_ref(), spells.as_ref()) else {
+            return String::new();
+        };
+        for move_id in 0u8..=0x7F {
+            if legaia_asset::move_power::index_for_move_id(map, move_id) != Some(idx as u8) {
+                continue;
+            }
+            if let Some(name) = spells.name(move_id).filter(|n| !n.is_empty()) {
+                return name.to_string();
+            }
+        }
+        String::new()
+    };
+
+    println!("{:>3}  {:>6}  example move", "idx", "power");
+    for (i, r) in records.iter().enumerate() {
+        println!("{:>3}  {:>6}  {}", i, r.power(), label(i));
+    }
+    println!("{} move-power records", records.len());
+    Ok(())
+}
+
+fn cmd_affinity(input: &Path) -> Result<()> {
+    use legaia_asset::element_affinity::{ELEMENT_COUNT, Element, ElementAffinity};
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let entry = patcher
+        .read_entry(legaia_asset::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay entry 0898")?;
+    let aff =
+        ElementAffinity::parse(&entry).context("parse element-affinity matrix (PROT 0898)")?;
+
+    print!("{:>8}", "atk\\def");
+    for d in 0..ELEMENT_COUNT {
+        print!(
+            " {:>7}",
+            Element::from_id(d as u8).map(|e| e.name()).unwrap_or("?")
+        );
+    }
+    println!();
+    for (a, row) in aff.matrix.iter().enumerate() {
+        print!(
+            "{:>8}",
+            Element::from_id(a as u8).map(|e| e.name()).unwrap_or("?")
+        );
+        for cell in row {
+            print!(" {:>7}", cell);
+        }
+        println!();
+    }
+    Ok(())
+}
+
+fn cmd_spell_costs(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    match apply::current_spell_costs(&patcher)? {
+        Some(spells) => {
+            for s in &spells {
+                println!("  {:>3}  {:<16} {:>3} MP", s.id, s.name, s.mp);
+            }
+            println!("{} named, costed spells", spells.len());
+        }
+        None => println!("spell table not found"),
     }
     Ok(())
 }
@@ -717,6 +893,10 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let door_mode = args.doors.mode();
     let shop_mode = args.shops.mode();
     let casino_mode = args.casino.mode();
+    let monster_stats_mode = args.monster_stats.mode();
+    let move_power_mode = args.move_power.mode();
+    let element_affinity_mode = args.element_affinity.mode();
+    let spell_cost_mode = args.spell_cost.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -953,6 +1133,70 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("casino: untouched");
         manifest.push("casino = \"none\"".to_string());
+    }
+
+    if let Some(monster_stats_mode) = monster_stats_mode {
+        let report = apply::randomize_monster_stats(&mut patcher, seed, monster_stats_mode)?;
+        println!(
+            "monster stats: {} monsters changed, {} fields ({:?})",
+            report.monsters_changed, report.fields_changed, monster_stats_mode
+        );
+        manifest.push(format!(
+            "monster_stats = {:?}",
+            mode_str(monster_stats_mode)
+        ));
+        manifest.push(format!(
+            "monster_stats_monsters_changed = {}",
+            report.monsters_changed
+        ));
+        manifest.push(format!(
+            "monster_stats_fields_changed = {}",
+            report.fields_changed
+        ));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("monster_stats_skipped = {:?}", report.skipped));
+        }
+    } else {
+        println!("monster stats: untouched");
+        manifest.push("monster_stats = \"none\"".to_string());
+    }
+
+    if let Some(move_power_mode) = move_power_mode {
+        let changed = apply::randomize_move_powers(&mut patcher, seed, move_power_mode)?;
+        println!("move power: {changed} special-attack power(s) changed ({move_power_mode:?})");
+        manifest.push(format!("move_power = {:?}", mode_str(move_power_mode)));
+        manifest.push(format!("move_power_changed = {changed}"));
+    } else {
+        println!("move power: untouched");
+        manifest.push("move_power = \"none\"".to_string());
+    }
+
+    if let Some(element_affinity_mode) = element_affinity_mode {
+        let changed = apply::randomize_element_affinity(&mut patcher, seed, element_affinity_mode)?;
+        println!("element affinity: {changed} matrix cell(s) changed ({element_affinity_mode:?})");
+        manifest.push(format!(
+            "element_affinity = {:?}",
+            mode_str(element_affinity_mode)
+        ));
+        manifest.push(format!("element_affinity_changed = {changed}"));
+    } else {
+        println!("element affinity: untouched");
+        manifest.push("element_affinity = \"none\"".to_string());
+    }
+
+    if let Some(spell_cost_mode) = spell_cost_mode {
+        let changed = apply::randomize_spell_costs(&mut patcher, seed, spell_cost_mode)?;
+        println!("spell costs: {changed} spell MP cost(s) changed ({spell_cost_mode:?})");
+        manifest.push(format!("spell_cost = {:?}", mode_str(spell_cost_mode)));
+        manifest.push(format!("spell_cost_changed = {changed}"));
+    } else {
+        println!("spell costs: untouched");
+        manifest.push("spell_cost = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {
