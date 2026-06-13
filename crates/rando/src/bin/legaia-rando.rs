@@ -104,6 +104,14 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every monster's current combat stats (HP / MP / ATK /
+    /// DEF↑ / DEF↓ / AGL / SPD) from the `battle_data` archive — the population
+    /// the `--monster-stats` randomizer redistributes.
+    MonsterStats {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -172,6 +180,14 @@ struct RandomizeArgs {
     /// casino spends coins, not gold.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     casino: DropArg,
+    /// How monster combat stats are reassigned (HP / MP / ATK / DEF / AGL / SPD
+    /// from the `battle_data` archive). `shuffle` permutes each stat column
+    /// across the roster (each stat's multiset preserved, so the overall
+    /// difficulty budget is kept); `random` draws each stat from that column's
+    /// pool. Spirit/SP is left untouched. `legaia-rando monster-stats` lists the
+    /// current stats.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    monster_stats: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -345,6 +361,7 @@ fn main() -> Result<()> {
         Cmd::StartingItems { input } => cmd_starting_items(&input),
         Cmd::Shops { input } => cmd_shops(&input),
         Cmd::Casino { input } => cmd_casino(&input),
+        Cmd::MonsterStats { input } => cmd_monster_stats(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -439,6 +456,36 @@ fn cmd_casino(input: &Path) -> Result<()> {
         }
         None => println!("casino prize table not found"),
     }
+    Ok(())
+}
+
+fn cmd_monster_stats(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let entry = patcher
+        .read_entry(legaia_rando::disc::MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive")?;
+    let records =
+        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    println!(
+        "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+        "id", "name", "hp", "mp", "atk", "def+", "def-", "agl", "spd"
+    );
+    for r in &records {
+        println!(
+            "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+            r.id,
+            r.name,
+            r.hp,
+            r.mp,
+            r.attack(),
+            r.defense_high(),
+            r.defense_low(),
+            r.agility(),
+            r.speed()
+        );
+    }
+    println!("{} populated monster records", records.len());
     Ok(())
 }
 
@@ -717,6 +764,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let door_mode = args.doors.mode();
     let shop_mode = args.shops.mode();
     let casino_mode = args.casino.mode();
+    let monster_stats_mode = args.monster_stats.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -953,6 +1001,37 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("casino: untouched");
         manifest.push("casino = \"none\"".to_string());
+    }
+
+    if let Some(monster_stats_mode) = monster_stats_mode {
+        let report = apply::randomize_monster_stats(&mut patcher, seed, monster_stats_mode)?;
+        println!(
+            "monster stats: {} monsters changed, {} fields ({:?})",
+            report.monsters_changed, report.fields_changed, monster_stats_mode
+        );
+        manifest.push(format!(
+            "monster_stats = {:?}",
+            mode_str(monster_stats_mode)
+        ));
+        manifest.push(format!(
+            "monster_stats_monsters_changed = {}",
+            report.monsters_changed
+        ));
+        manifest.push(format!(
+            "monster_stats_fields_changed = {}",
+            report.fields_changed
+        ));
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("monster_stats_skipped = {:?}", report.skipped));
+        }
+    } else {
+        println!("monster stats: untouched");
+        manifest.push("monster_stats = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {
