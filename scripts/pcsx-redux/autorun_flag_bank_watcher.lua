@@ -17,9 +17,11 @@
 --   The flag bank overlap (flags 5248..32767) is the only live game-logic
 --   surface in the OOB range.
 --
--- Method: exec-breakpoint on FUN_8003CE08 (flag SET) and FUN_8003CE34 (flag
--- CLEAR). When called, a0 = flag index (u16). Log all calls; flag to the
--- console whenever idx >= 5248 (OOB-reachable range).
+-- Method: exec-breakpoint on FUN_8003CE08 (flag SET), FUN_8003CE34 (flag
+-- CLEAR), and FUN_8003CE64 (flag TEST). When called, a0 = flag index (u16).
+-- The callbacks early-out for indices below 5248 and only log OOB-reachable
+-- calls, to avoid the massive per-frame overhead that crashes PCSX-Redux when
+-- logging every flag operation.
 --
 -- What to look for in the log:
 --   Any "OOB-REACHABLE" line during or just before the credits sequence means
@@ -75,12 +77,46 @@ local OOB_MIN_IDX    = (OOB_START - FLAG_BANK_BASE) * 8  -- 5248
 local SSTATE     = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate2")
 local BOOT_DELAY = probe.getenv_num("LEGAIA_BOOT_DELAY", 60)
-local SETTLE     = 5
+local SETTLE       = 5
+-- Whether to auto-poke the debug byte. In interactive use, leave this at
+-- "manual" and press SELECT+TRIANGLE yourself to open the debug menu, then
+-- warp to credits; the probe will log flags the whole time. "auto" pokes the
+-- byte once stable field mode is detected, but it can trigger an unintended
+-- warp depending on save-state timing (the observed symptom was a jump to
+-- koin1 instead of credits).
+local AUTO_POKE    = probe.getenv("LEGAIA_DEBUG_POKE", "manual"):lower() ~= "manual"
+local POKE_STABLE  = 6  -- consecutive field-mode frames before auto-poke
+local field_frames = 0
 
 local OUT = probe.out_path("flag_bank_watcher.txt")
 local f   = assert(io.open(OUT, "w"))
 
+-- Output buffering: the flag-bank ops are extremely hot, so we only log
+-- OOB-range calls and batch flushes to avoid crashing the emulator. Defined
+-- before logline() because logline flushes the buffer first.
+local log_buffer   = {}
+local LOG_BATCH    = 32
+local oob_count    = 0
+
+local function buf_write(s)
+    log_buffer[#log_buffer + 1] = s
+    if #log_buffer >= LOG_BATCH then
+        f:write(table.concat(log_buffer, ""))
+        f:flush()
+        log_buffer = {}
+    end
+end
+
+local function buf_flush()
+    if #log_buffer > 0 then
+        f:write(table.concat(log_buffer, ""))
+        f:flush()
+        log_buffer = {}
+    end
+end
+
 local function logline(s)
+    buf_flush()
     f:write(s .. "\n"); f:flush()
     PCSX.log("[flag-watch] " .. s)
 end
@@ -143,58 +179,46 @@ local function on_vsync()
     if loaded_at < 0 then return end
 
     local since = vsync - loaded_at
+    local mode = u16(GAME_MODE)
 
-    -- Step 2: poke debug menu once the scene has settled.
-    if not poked and since >= SETTLE then
-        mem.write_u8(DEBUG_MENU_HI, 1)
-        poked = true
-        local ok = (u8(DEBUG_MENU_HI) == 1)
-        logline(string.format(
-            "debug_menu_hi poked at vsync %d; readback=%s  word@B98C=0x%08X",
-            vsync, ok and "OK" or "MISMATCH", u32(DEBUG_WORD)))
-        last_word = u32(DEBUG_WORD)
-    end
-    if not poked then return end
-
-    -- Re-assert every vsync (scene-init can revert it).
-    if u8(DEBUG_MENU_HI) ~= 1 then
-        revert_count = revert_count + 1
-        mem.write_u8(DEBUG_MENU_HI, 1)
-    end
-
-    -- Step 3: arm exec-breakpoints on the flag SET/CLEAR/TEST functions.
-    if poked and not armed and since >= (SETTLE + 1) then
+    -- Step 2: arm exec-breakpoints once the save state has settled into
+    -- field mode. Arming while still in the casino/menu session (mode 0x17)
+    -- crashes PCSX-Redux, so we gate on mode 0x03.
+    if not armed and since >= SETTLE and mode == 0x0003 then
         armed = true
 
         -- ── FLAG SET (FUN_8003CE08) ─────────────────────────────────────
         bp.arm(FLAG_SET_PC, "Exec", 4, "flag_set", function()
             local r = regs()
             local idx_raw = tonumber(r.GPR.n.a0) or 0
+            if (idx_raw % 0x10000) < OOB_MIN_IDX then return end
             local idx, baddr, bpos, mask, is_oob, buys = decode_flag_call(idx_raw)
+            if not is_oob then return end
             set_count = set_count + 1
-            local tag = is_oob and "  *** OOB-REACHABLE ***" or ""
-            f:write(string.format(
-                "SET  f=%-5d  idx=%-5d(0x%04X)  byte=0x%08X  bit=%d  mask=0x%02X  mode=0x%04X%s\n",
-                vsync, idx, idx, baddr, bpos, mask, u16(GAME_MODE), tag))
-            if is_oob then
-                f:write(string.format(
-                    "     OOB: buy #%d  prize id must have (id & 0x%02X) != 0\n",
-                    buys, mask))
-            end
-            f:flush()
+            oob_count = oob_count + 1
+            buf_write(string.format(
+                "SET  f=%-5d  idx=%-5d(0x%04X)  byte=0x%08X  bit=%d  mask=0x%02X  mode=0x%04X  *** OOB-REACHABLE ***\n",
+                vsync, idx, idx, baddr, bpos, mask, u16(GAME_MODE)))
+            buf_write(string.format(
+                "     OOB: buy #%d  prize id must have (id & 0x%02X) != 0\n",
+                buys, mask))
         end)
 
         -- ── FLAG CLEAR (FUN_8003CE34) ───────────────────────────────────
         bp.arm(FLAG_CLR_PC, "Exec", 4, "flag_clr", function()
             local r = regs()
             local idx_raw = tonumber(r.GPR.n.a0) or 0
+            if (idx_raw % 0x10000) < OOB_MIN_IDX then return end
             local idx, baddr, bpos, mask, is_oob, buys = decode_flag_call(idx_raw)
+            if not is_oob then return end
             clr_count = clr_count + 1
-            local tag = is_oob and "  *** OOB-REACHABLE ***" or ""
-            f:write(string.format(
-                "CLR  f=%-5d  idx=%-5d(0x%04X)  byte=0x%08X  bit=%d  mask=0x%02X  mode=0x%04X%s\n",
-                vsync, idx, idx, baddr, bpos, mask, u16(GAME_MODE), tag))
-            f:flush()
+            oob_count = oob_count + 1
+            buf_write(string.format(
+                "CLR  f=%-5d  idx=%-5d(0x%04X)  byte=0x%08X  bit=%d  mask=0x%02X  mode=0x%04X  *** OOB-REACHABLE ***\n",
+                vsync, idx, idx, baddr, bpos, mask, u16(GAME_MODE)))
+            buf_write(string.format(
+                "     OOB: buy #%d  prize id must have (id & 0x%02X) != 0\n",
+                buys, mask))
         end)
 
         -- ── FLAG TEST (FUN_8003CE64) ────────────────────────────────────
@@ -203,16 +227,17 @@ local function on_vsync()
         bp.arm(FLAG_TST_PC, "Exec", 4, "flag_tst", function()
             local r = regs()
             local idx_raw = tonumber(r.GPR.n.a0) or 0
+            if (idx_raw % 0x10000) < OOB_MIN_IDX then return end
             local idx, baddr, bpos, mask, is_oob, buys = decode_flag_call(idx_raw)
-            if not is_oob then return end  -- skip noise from common low-index tests
+            if not is_oob then return end
             tst_count = tst_count + 1
-            f:write(string.format(
+            oob_count = oob_count + 1
+            buf_write(string.format(
                 "TST  f=%-5d  idx=%-5d(0x%04X)  byte=0x%08X  bit=%d  mask=0x%02X  mode=0x%04X  *** OOB-REACHABLE ***\n",
                 vsync, idx, idx, baddr, bpos, mask, u16(GAME_MODE)))
-            f:write(string.format(
+            buf_write(string.format(
                 "     OOB: buy #%d  prize id must have (id & 0x%02X) != 0\n",
                 buys, mask))
-            f:flush()
         end)
 
         logline(string.format(
@@ -220,7 +245,38 @@ local function on_vsync()
             FLAG_SET_PC, FLAG_CLR_PC, FLAG_TST_PC))
         logline("OOB-REACHABLE range: flag indices 5248..32767 (buy #1 at flag 5248..5255)")
         logline("")
-        logline("READY. Press SELECT+TRIANGLE to open the debug menu, then warp to credits.")
+        if AUTO_POKE then
+            logline("AUTO-POKE enabled: will set debug_menu_hi once stable field mode (0x03) is detected.")
+        else
+            logline("MANUAL mode: arm SELECT+TRIANGLE for debug menu, then warp to credits.")
+        end
+    end
+
+    -- Step 3 (optional): auto-poke the debug byte once stable field mode is reached.
+    -- sstate2 loads into a casino/menu session (mode 0x17) that returns to field
+    -- mode (0x03) after ~180 vsyncs. Poking while still in menu mode can crash
+    -- PCSX-Redux, so we require POKE_STABLE consecutive field-mode frames.
+    if AUTO_POKE and not poked then
+        if mode == 0x0003 then
+            field_frames = field_frames + 1
+            if field_frames >= POKE_STABLE then
+                mem.write_u8(DEBUG_MENU_HI, 1)
+                poked = true
+                local ok = (u8(DEBUG_MENU_HI) == 1)
+                logline(string.format(
+                    "debug_menu_hi poked at vsync %d; readback=%s  word@B98C=0x%08X",
+                    vsync, ok and "OK" or "MISMATCH", u32(DEBUG_WORD)))
+                last_word = u32(DEBUG_WORD)
+            end
+        else
+            field_frames = 0
+        end
+    end
+
+    -- Re-assert debug byte every vsync after auto-poke (scene-init can revert it).
+    if AUTO_POKE and poked and u8(DEBUG_MENU_HI) ~= 1 then
+        revert_count = revert_count + 1
+        mem.write_u8(DEBUG_MENU_HI, 1)
     end
 
     -- Note master-word transitions.
@@ -231,12 +287,15 @@ local function on_vsync()
     end
     last_word = w
 
-    -- Heartbeat every ~8s.
+    -- Heartbeat every ~8s; also flush the batched OOB log lines.
     if armed and (since % 480) == 0 and since > 0 then
+        buf_flush()
         logline(string.format(
-            "alive vsync=%d mode=0x%04X set=%d clr=%d tst_oob=%d reverts=%d",
-            vsync, u16(GAME_MODE), set_count, clr_count, tst_count, revert_count))
+            "alive vsync=%d mode=0x%04X set=%d clr=%d tst_oob=%d oob_logged=%d reverts=%d",
+            vsync, u16(GAME_MODE), set_count, clr_count, tst_count, oob_count, revert_count))
     end
+
+    buf_flush()  -- ensure any OOB lines from this frame hit the log
 end
 
 -- ── startup ────────────────────────────────────────────────────────────────
