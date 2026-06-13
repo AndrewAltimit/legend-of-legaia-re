@@ -156,9 +156,10 @@ pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 903..=913;
 /// as a move-VM stager (4..67 spawn sites, non-trivial scene-graphs) — the same
 /// structure the base, high, and enemy blocks carry. This pins the *structural*
 /// half statically: the evolved-Seru casts ride the stager mechanism, not the
-/// resident `0900` move-FX module. The exact per-id binding is the one residual
-/// that a mid-cast save per id would make byte-exact (the base/high/enemy blocks
-/// are capture-pinned; this block inherits the arithmetic, not yet a capture).
+/// resident `0900` move-FX module. Several legs are now capture-pinned too — a
+/// mid-cast state per cast holds loader-B id `spell − 0x79` with the stager
+/// 100% byte-resident at slot B (`evolved_summon_binding`); the remaining legs
+/// ride the same bracketed run (`0x8B → 913` and `0x99 → 927` bracket the gap).
 ///
 /// **Two entries carry `0x4000` render-mode nodes** ([`RENDER_NODE_MODE_A`]) —
 /// `0x8E` → 916 (4 records) and `0x93` → 921 (6) — the only such records found

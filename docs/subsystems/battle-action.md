@@ -315,11 +315,14 @@ Jedo (0931), **plus two evolved-Seru player casts** — spell `0x8E` → 0916
 0x8C..=0x95` → extraction 0914..=0923, `summon_overlay::EVOLVED_SUMMON_STAGER_PROT`)
 is the contiguous continuation of the player block under the same linear loader
 arithmetic (`extraction = (id - 0x81) + 903`); every entry trims to a clean
-move-VM stager, so the evolved casts ride the stager mechanism structurally (the
-per-id binding inherits the arithmetic — capture-pending, unlike the byte-pinned
-base/high/enemy blocks). The render-mode carriers are all **player** casts, so
-they don't unblock the live-exerciser question below (a player cast renders the
-namesake creature, never seats the stager parts).
+move-VM stager, so the evolved casts ride the stager mechanism. **Eight of the
+ten legs are capture-pinned** (`0x8C..=0x8F` → 914..917, `0x92..=0x95` →
+920..923; one mid-cast state each, loader-B id read mid-cast + the stager 100%
+byte-resident at slot B — disc+library-gated `evolved_summon_binding`); only
+`0x90 → 918` / `0x91 → 919` stay arithmetic-predicted. **Both render-mode
+carriers are pinned as player casts** — `0x8E → 916` (Aluru) and `0x93 → 921`
+(Iota) — so neither unblocks the live-exerciser question below (a player cast
+renders the namesake creature, never seats the stager parts).
 Live correlation from the Cort states: every live pooled part-actor (`DAT_801C90F0` slots) carries `actor[+0x48]` pointing into the trimmed record table at a `-1` record (RAM first word == file first word), with the spawn-time `+0x56`/`+0x5A` zeros rebound post-spawn by the move-VM ops (`+0x56 = 4` / `+0x5A = 2` dominate mid-cast) and `actor[+0x64] = 0` throughout. No `0x4000`/`0x4001` part-actor was live in these captures.
 
 **The render-mode nodes have no live exerciser in the catalogued corpus.**

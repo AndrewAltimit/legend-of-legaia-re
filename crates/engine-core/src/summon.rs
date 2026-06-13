@@ -97,11 +97,13 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 /// of [`SERU_SUMMON_IDS`] under the *same* `(id - 0x81) + 903` arithmetic
 /// (`0x8C → 914 .. 0x95 → 923`, `summon_overlay::EVOLVED_SUMMON_STAGER_PROT`).
 /// Every entry is statically confirmed stager-shaped, and the arithmetic is
-/// capture-pinned on **both** sides of the gap (`0x8B → 913`, `0x99 → 927`), so
-/// the structural mapping is sound; unlike the base / high blocks the per-id
-/// binding is not yet *individually* capture-pinned (no evolved-Seru mid-cast
-/// state in the catalogue). Two of these stagers carry `0x4000` render-mode
-/// nodes (`0x8E → 916`, `0x93 → 921`).
+/// capture-pinned on **both** sides of the gap (`0x8B → 913`, `0x99 → 927`).
+/// Three legs are now *individually* capture-pinned too — `0x8C → 914`,
+/// `0x8D → 915`, `0x8F → 917` (the `{gola_gola,mushura,barra}_summon_mid_cast`
+/// states, loader-B id read mid-cast + the stager byte-resident at slot B;
+/// disc+library-gated `evolved_summon_binding`) — so the block is no longer
+/// purely predicted; the remaining legs ride the same bracketed run. Two of
+/// these stagers carry `0x4000` render-mode nodes (`0x8E → 916`, `0x93 → 921`).
 pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 
 /// High summon block: Evil Seru Magic (`0x99` — the creature resolves
@@ -125,10 +127,10 @@ pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 /// head with the ASCII display name of the summon's attack (0907 Nighto
 /// "Hell's Music", 0927 Juggernaut "Dark Eclipse"); the high-block entries
 /// otherwise head with a pre-linked slot-B pointer table. The
-/// [`EVOLVED_SUMMON_IDS`] block bridging the two is arithmetic-predicted
-/// (statically stager-shaped, the binding bracket-pinned but not yet pinned
-/// per id). The id-`0x96..=0x98` gap is *not* a player summon (those resolve to
-/// 924..926 under the enemy `895 + id` formula); it returns `None`.
+/// [`EVOLVED_SUMMON_IDS`] block bridging the two is statically stager-shaped
+/// with three legs capture-pinned (`0x8C`/`0x8D`/`0x8F`); the rest ride the same
+/// bracketed run. The id-`0x96..=0x98` gap is *not* a player summon (those
+/// resolve to 924..926 under the enemy `895 + id` formula); it returns `None`.
 pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
     if SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id) {
         // One contiguous run: 0x81 → 903 .. 0x95 → 923.
@@ -672,9 +674,11 @@ mod tests {
     #[test]
     fn summon_prot_entry_maps_the_evolved_block() {
         // The evolved-Seru block bridges the base and high blocks on one
-        // continuous arithmetic run; statically stager-shaped, bracket-pinned.
-        assert_eq!(summon_stager_prot_entry(0x8C), Some(914)); // first evolved-Seru leg
+        // continuous arithmetic run; stager-shaped, three legs capture-pinned.
+        assert_eq!(summon_stager_prot_entry(0x8C), Some(914)); // Gola Gola (capture-pinned)
+        assert_eq!(summon_stager_prot_entry(0x8D), Some(915)); // Mushura (capture-pinned)
         assert_eq!(summon_stager_prot_entry(0x8E), Some(916)); // carries 0x4000 render-mode nodes
+        assert_eq!(summon_stager_prot_entry(0x8F), Some(917)); // Barra (capture-pinned)
         assert_eq!(summon_stager_prot_entry(0x93), Some(921)); // carries 0x4000 render-mode nodes
         assert_eq!(summon_stager_prot_entry(0x95), Some(923)); // last evolved-Seru leg
         // The id-0x96..0x98 gap is the enemy 895+id block, not a player summon.

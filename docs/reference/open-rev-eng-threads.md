@@ -144,7 +144,7 @@ move-buffer base, `actor[+0x70] = 2` PC) then `jal FUN_80023070` ticks the **mov
 
 **RECORDS RESOLVED — in-file, parsed.** Each `FUN_80021B04` call passes its record by absolute pointer (`lui 0x8020 / addiu`); under the correct link base `0x801F69D8` those resolve to PROT 0905 **file `0x180C..0x1E00`** (runtime `0x801F81E4..`), a contiguous table of variable-length records `[i16 model_sel][u16 flags][move-VM bytecode @+4]`, `model_sel == -1` = transform/pivot node (dominant; mesh bound by the move-VM anim-bank ops), `>= 0` = `DAT_8007C018[model_sel + gp[0x754]]`. `legaia_asset::summon_overlay::parse` recovers them by scanning the spawn calls (disc-gated `summon_overlay_real`: 22 sites → 17 part records, all transform nodes, within the trimmed footprint; CLI `asset summon-overlay`).
 
-**Generalizes across the player, evolved-Seru, high-summon AND enemy boss blocks — and the sentinel question is RESOLVED.** Every overlay in extraction PROT 0903..=0913 (`spell_id 0x81..=0x8b`, `summon_overlay::PLAYER_SUMMON_STAGER_PROT`), the evolved-Seru block 0914..=0923 (`spell_id 0x8c..=0x95`, `EVOLVED_SUMMON_STAGER_PROT` — the contiguous continuation under the same `(id - 0x81) + 903` arithmetic; structurally stager-shaped, the per-id binding capture-pending), the high-summon block 0927..=0934 (`HIGH_SUMMON_STAGER_PROT`), and the six Cort enemy stagers 0938/0940/0944/0961/0962/0966 (`ENEMY_BOSS_STAGER_PROT`) recovers a move-VM scene-graph (disc-gated `summon_overlay_block` + `enemy_stager_real` sweeps), once two facts are applied:
+**Generalizes across the player, evolved-Seru, high-summon AND enemy boss blocks — and the sentinel question is RESOLVED.** Every overlay in extraction PROT 0903..=0913 (`spell_id 0x81..=0x8b`, `summon_overlay::PLAYER_SUMMON_STAGER_PROT`), the evolved-Seru block 0914..=0923 (`spell_id 0x8c..=0x95`, `EVOLVED_SUMMON_STAGER_PROT` — same `(id - 0x81) + 903` run; 8/10 legs capture-pinned, only `0x90`/`0x91` predicted), the high-summon block 0927..=0934 (`HIGH_SUMMON_STAGER_PROT`), and the six Cort enemy stagers 0938/0940/0944/0961/0962/0966 (`ENEMY_BOSS_STAGER_PROT`) recovers a move-VM scene-graph (disc-gated `summon_overlay_block` + `enemy_stager_real` sweeps), once two facts are applied:
 (1) the high/enemy stagers spawn dominantly through the pool wrapper `FUN_80050ED4` (→ `FUN_80021B04`, pool `DAT_801C90F0`), which the parser scans alongside the direct calls;
 (2) **stager extraction entries are over-read windows** — each `.BIN` runs past the next entry's start LBA, so it must be trimmed to `(next_start_lba - start_lba) * 0x800` (`unique_content_len`) before parsing, a boundary the Cort mid-cast saves pin byte-exactly against the slot-B resident image.
 After trimming, the record first words across the whole stager corpus are only `-1` / small library indices / **`0x4000`** — matching `FUN_80021B04`'s own dispatch (negative → transform path; `0x4000`/`0x4001` → render-mode nodes `+0x5A = 3`/`5`; else library index). The earlier "`0x1000`/`0x8000`-class sentinel" census was over-read contamination: those offsets belong to *neighbouring* stagers' loads and dereference unrelated bytes in the wrong file window. The `0x4000` render-mode records live in **five** stagers: Palma 0928 (4) / Mule 0929 / Jedo 0931, **plus the evolved-Seru casts 0916 (`0x8e`, 4) and 0921 (`0x93`, 6)** — the first such records found outside the Sim-Seru trio (all are *player* casts, so none unblocks the live-exerciser question below).
@@ -954,13 +954,18 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    `0x42`/`0x43` → **961/962**, and Cort's Evil Seru Magic `0x47` → **966**, *distinct*
    from the player-side Juggernaut stager 0927 — the player and enemy arms of the same
    spell ship separate stagers, and the enemy-special id band sits at `0x2B..0x47` →
-   `938..966`. **Evolved-Seru block — structurally resolved (static).** All ten
+   `938..966`. **Evolved-Seru block — RESOLVED (8/10 capture-pinned).** All ten
    evolved-Seru entries (`0x8C..0x95` — Gola Gola / Mushura / …) → `914..923` trim to
    clean move-VM stagers (4..67 spawn sites; `EVOLVED_SUMMON_STAGER_PROT`, disc-gated
    `summon_overlay_block`), so the "they may be move-FX-path casts instead" alternative is
    falsified — they ride the stager mechanism, on the same `(id − 0x81) + 903` run as the
-   base block (bracket-pinned by `0x8B → 913` and `0x99 → 927`); only the per-id binding
-   is capture-pending. Two carry `0x4000` render-mode nodes (`0x8E → 916`, `0x93 → 921`).
+   base block. **Eight legs are now capture-pinned** by mid-cast states (loader-B id +
+   slot-B residency; disc+library-gated `evolved_summon_binding`): `0x8C` Gola Gola → 914,
+   `0x8D` Mushura → 915, `0x8E` Aluru → 916, `0x8F` Barra → 917, `0x92` Slippery → 920,
+   `0x93` Iota → 921, `0x94` Puera → 922, `0x95` Gilium → 923; only `0x90 → 918` and
+   `0x91 → 919` stay arithmetic-predicted (no mid-cast captured). The two `0x4000`
+   render-mode carriers (`0x8E → 916` Aluru, `0x93 → 921` Iota) are both pinned as player
+   casts — so neither seats a live render-mode part (still the F-RENDERMODE blocker below).
    The attack-titled 0924 "Ultimate Rave" + 0925 are likewise confirmed stager-shaped
    (arithmetic ids `0x1D..0x1F` under the enemy `895 + id` formula — likeliest **other
    enemies'** specials; one mid-cast each still pins the binding), while **0926 is a

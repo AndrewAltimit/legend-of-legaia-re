@@ -10,11 +10,13 @@
 //! only *statically* mapped — the entries parse as stagers, but no mid-cast
 //! state had pinned the per-id binding.
 //!
-//! These three catalogued mid-cast states pin three legs of it with the same
-//! evidential shape — `0x8C → 914`, `0x8D → 915`, `0x8F → 917` — confirming the
-//! `(id − 0x81) + 903` arithmetic continues through the gap exactly as the
-//! bracket-pinned base and high blocks predicted. (`0x8E → 916`, the
-//! render-mode-node carrier, sits between the pinned `0x8D` and `0x8F`.)
+//! Eight catalogued mid-cast states pin eight of the ten legs with the same
+//! evidential shape — `0x8C..=0x8F` → `914..=917` and `0x92..=0x95` →
+//! `920..=923` — confirming the `(id − 0x81) + 903` arithmetic continues
+//! through the gap exactly as the bracket-pinned base and high blocks
+//! predicted. Both `0x4000` render-mode-node carriers (`0x8E → 916` Aluru,
+//! `0x93 → 921` Iota) are among them, confirming those carriers are player
+//! casts. Only `0x90 → 918` and `0x91 → 919` stay arithmetic-predicted.
 //!
 //! Disc + library gated: needs the extracted PROT (stager bytes) and the
 //! mednafen save backups (mid-cast RAM). Skip-passes otherwise.
@@ -26,12 +28,18 @@ use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_core::summon::summon_stager_prot_entry;
 use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
 
-/// `(scenario label, loader-B id, extraction entry, spell id)` for the three
-/// catalogued evolved-Seru player casts.
+/// `(scenario label, loader-B id, extraction entry, spell id)` for the
+/// catalogued evolved-Seru player casts. Eight of the ten legs are pinned; only
+/// `0x90 → 918` and `0x91 → 919` remain arithmetic-predicted (no mid-cast yet).
 const EVOLVED_CASTS: &[(&str, u16, u32, u8)] = &[
     ("gola_gola_summon_mid_cast", 19, 914, 0x8C), // Vahn, fire, "Spinning Flare"
     ("mushura_summon_mid_cast", 20, 915, 0x8D),   // Noa, earth, "Crazy Driver"
+    ("aluru_summon_mid_cast", 21, 916, 0x8E),     // Vahn, light, "Final Blast" (0x4000 carrier)
     ("barra_summon_mid_cast", 22, 917, 0x8F),     // Gala, wind, "Hell Dive"
+    ("slippery_summon_mid_cast", 25, 920, 0x92),  // Vahn, water, "Deadly Rain"
+    ("iota_summon_mid_cast", 26, 921, 0x93),      // Vahn, earth, "Odd Dimension" (0x4000 carrier)
+    ("puera_summon_mid_cast", 27, 922, 0x94),     // Noa, dark, "Dream Illusion"
+    ("gilium_summon_mid_cast", 28, 923, 0x95),    // Noa, thunder, "Space Cannon"
 ];
 
 /// Battle overlay loader-B current-id (`*DAT_8007BC4C`, the last stager id the
