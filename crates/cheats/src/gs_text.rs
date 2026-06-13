@@ -14,7 +14,7 @@
 //! 4. `L` — endianness (always `L` for little-endian).
 //! 5. `0` — placeholder for compression group (always `0`).
 //! 6. address (8-hex-digit, no `0x` prefix). The high byte encodes
-//!    the [`CheatOp`](crate::CheatOp).
+//!    the [`CheatOp`].
 //! 7. value (1-4 hex digits, no leading `0x`).
 //! 8. ... rest of the line is the description.
 //!

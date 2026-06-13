@@ -55,7 +55,7 @@ pub struct VabBank {
     pub master_vol: u8,
     pub samples: Vec<Option<UploadedVag>>,
     /// Per-program tone table. Index is program 0..=ps-1; each entry is
-    /// the same Vec<VagAtr> that VabReport carries, copied so we don't
+    /// the same `Vec<VagAtr>` that VabReport carries, copied so we don't
     /// need to keep VabReport alive.
     pub programs: Vec<Vec<VagAtr>>,
 }

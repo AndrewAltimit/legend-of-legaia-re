@@ -10,7 +10,7 @@
 //!
 //! `+` separates multiple writes inside one effect (used for
 //! multi-byte writes and conditional codes). The parser reads each
-//! `cheatI_*` triplet into a single [`CheatEntry`](crate::CheatEntry).
+//! `cheatI_*` triplet into a single [`CheatEntry`].
 //!
 //! Comments (`#` to end-of-line) and blank lines are tolerated.
 //! `cheatI_enable` is parsed but ignored at the data level - the

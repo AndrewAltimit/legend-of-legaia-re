@@ -19,7 +19,7 @@ enum Cmd {
     /// With --all-cluts, emit one PNG per CLUT row.
     Convert {
         path: PathBuf,
-        /// Output PNG path. Defaults to <path>.png (or <path>_clut<N>.png with --all-cluts).
+        /// Output PNG path. Defaults to `<path>.png` (or `<path>_clut<N>.png` with --all-cluts).
         #[arg(short, long)]
         out: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]

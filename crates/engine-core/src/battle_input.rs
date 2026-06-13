@@ -1,6 +1,6 @@
 //! Player-driven battle command input for the live gameplay loop.
 //!
-//! The live battle loop ([`crate::world::World::live_battle_tick`]) can run a
+//! The live battle loop (`crate::world::World::live_battle_tick`) can run a
 //! battle two ways. By default it auto-resolves: every party turn commits a
 //! physical Attack with no player choice. When
 //! [`crate::world::World::battle_player_driven`] is set, each party turn pauses

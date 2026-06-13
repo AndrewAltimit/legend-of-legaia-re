@@ -4588,7 +4588,7 @@ impl Renderer {
     /// characteristic surface-warp on slanted surfaces), clip-space X/Y are
     /// snapped to integer pixels (the GTE's per-vertex jitter), and the
     /// shaded colour is ordered-dithered down to 15-bit BGR555 (the PSX
-    /// framebuffer depth — see [`PSX_DITHER_WGSL`] / [`psx_dither`]). Default
+    /// framebuffer depth — see `PSX_DITHER_WGSL` / [`psx_dither`]). Default
     /// `false` (smooth, full-precision modern rendering).
     pub fn set_psx_mode(&self, enable: bool) {
         self.psx_mode.set(enable);
@@ -5888,7 +5888,7 @@ fn compose_psx_shader(base: &str) -> String {
     format!("{PSX_DITHER_WGSL}\n{base}")
 }
 
-/// CPU mirror of the [`PSX_DITHER_WGSL`] shader helper, kept byte-for-byte
+/// CPU mirror of the `PSX_DITHER_WGSL` shader helper, kept byte-for-byte
 /// equivalent so the dither algorithm can be unit-tested without a GPU. The
 /// PSX GPU dithers when packing a 24-bit shaded colour into the 15-bit
 /// (BGR555) framebuffer: a signed 4x4 matrix offset is added to each 8-bit

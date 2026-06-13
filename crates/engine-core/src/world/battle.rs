@@ -1309,7 +1309,7 @@ impl World {
     }
 
     /// Install the master [`crate::seru_learning::SeruRegistry`]. Boot wires
-    /// this once; [`Self::finish_battle`] consults it to bank capture points.
+    /// this once; `Self::finish_battle` consults it to bank capture points.
     pub fn set_seru_registry(&mut self, registry: crate::seru_learning::SeruRegistry) {
         self.seru_registry = registry;
     }
@@ -2432,7 +2432,7 @@ impl World {
     /// battle-action SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), the
     /// boss-phase-transition pseudo-action. A boss script issues action `0xFF`
     /// when the fight crosses a scripted phase boundary; the next monster turn's
-    /// [`Self::pick_monster_action`] then reads the bumped mode through
+    /// `Self::pick_monster_action` then reads the bumped mode through
     /// [`crate::monster_ai::decide`], activating that phase's scripted casts.
     /// The retail counter is a byte, so it wraps at `0xFF`.
     ///

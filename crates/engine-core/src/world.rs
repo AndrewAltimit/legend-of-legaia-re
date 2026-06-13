@@ -201,7 +201,7 @@ const FIELD_NPC_MOTION_PROGRAM: [u8; 1] = [vm::motion_vm::MotionOp::MoveTowardTa
 
 /// One in-flight field-NPC walk leg, stepped through the ported motion VM
 /// ([`legaia_engine_vm::motion_vm::step`], the `FUN_8003774C` port) by
-/// [`World::tick_field_npc_motions`]. The live position lives in
+/// `World::tick_field_npc_motions`. The live position lives in
 /// [`World::field_npc_positions`] (so collision / interact probes follow the
 /// walking NPC automatically); this carries the VM cursor + target.
 #[derive(Debug, Clone)]
@@ -241,7 +241,7 @@ pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 /// Mirrors retail `func_0x800467e8`, which remaps the held pad through the same
 /// camera yaw the renderer frames the overworld with. `azimuth` is PSX angle
 /// units (`4096` = full turn) — the
-/// [`WorldMapController`](crate::world_map::WorldMapController) azimuth the
+/// [`WorldMapController`] azimuth the
 /// renderer's `world_map_camera_mvp` orbits the eye by:
 /// `eye = center + (d·cosθ, -0.7d, d·sinθ)`, `θ = azimuth / 4096 · τ`.
 ///
@@ -761,7 +761,7 @@ pub struct Actor {
     /// Monster id (1-based, into the PROT 867 monster archive) when this
     /// actor is an enemy spawned for a battle formation. `None` for party
     /// members and for actors outside a formation-driven battle. Set by
-    /// [`World::enter_battle_from_formation`]; lets a renderer fetch the
+    /// `World::enter_battle_from_formation`; lets a renderer fetch the
     /// monster's battle mesh + texture pool (the on-disc CBA/TSB are
     /// relocated per battle slot - see
     /// `legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`).
@@ -792,7 +792,7 @@ impl Actor {
 ///
 /// The applied delta is the exact change written into the per-slot scalar
 /// ([`World::battle_attack`] / [`World::battle_defense`] / [`World::battle_magic`]),
-/// so [`World::finish_battle`] (or natural expiry) can revert it precisely.
+/// so `World::finish_battle` (or natural expiry) can revert it precisely.
 /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) are tracked
 /// with a zero delta so the timer still expires cleanly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -951,7 +951,7 @@ pub struct World {
     /// floor LUT + collision grid.
     pub follow_terrain_height: bool,
     /// When set, pad locomotion blocks a direction with retail's
-    /// **three-probe leading-edge footprint** ([`FIELD_WALL_PROBES`], the
+    /// **three-probe leading-edge footprint** (`FIELD_WALL_PROBES`, the
     /// `DAT_801f2214` table `FUN_801cfe4c` walks) instead of a single
     /// candidate-centre test: the player rests ~47 units off a wall plane
     /// exactly like retail, instead of walking up to it. Off by default so
@@ -961,7 +961,7 @@ pub struct World {
     /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
     pub leading_edge_wall_probes: bool,
     /// When set, pad locomotion also blocks a direction when any of retail's
-    /// **actor-collision probes** ([`FIELD_ACTOR_PROBES`], the `DAT_801f21b4`
+    /// **actor-collision probes** (`FIELD_ACTOR_PROBES`, the `DAT_801f21b4`
     /// sibling table) lands inside a field NPC's body box or a placed prop's
     /// static collision box ([`Self::field_actor_dir_blocked`]) - NPCs and
     /// props become solid, as in retail, where `FUN_801cfe4c`'s actor bits
@@ -970,8 +970,8 @@ pub struct World {
     /// [`Self::leading_edge_wall_probes`]. The locomotion-path touch
     /// dispatch (the `FUN_801d5b5c` auto event post for prop walk-touch) is
     /// modelled separately and independent of this flag —
-    /// [`Self::check_field_walk_touch`]; the button-press interact dispatch
-    /// is ([`Self::tick_field_interaction_probe`]).
+    /// `Self::check_field_walk_touch`; the button-press interact dispatch
+    /// is (`Self::tick_field_interaction_probe`).
     pub solid_field_npcs: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
@@ -1078,9 +1078,9 @@ pub struct World {
     /// [`World::load_party`]; monster slots from [`crate::monster_catalog::MonsterDef::speed`]
     /// at battle setup. When **every** living actor has SPD `0` (the
     /// disc-free / synthetic case) the battle stays on the round-robin
-    /// turn-order fallback ([`World::next_living_combatant`]); when any actor
+    /// turn-order fallback (`World::next_living_combatant`); when any actor
     /// carries real SPD the next-actor selector switches to the SPD-seeded
-    /// initiative scheme ([`World::next_combatant_by_initiative`], the port of
+    /// initiative scheme (`World::next_combatant_by_initiative`, the port of
     /// `recompute_battle_order` / `FUN_801daba4`).
     ///
     /// REF: FUN_801DABA4
@@ -1263,14 +1263,14 @@ pub struct World {
     /// op-`0x35` start.
     pub battle_bgm: Option<u16>,
 
-    /// Field track stashed at battle entry so [`World::restore_field_bgm`]
+    /// Field track stashed at battle entry so `World::restore_field_bgm`
     /// can resume it after the encounter. Managed by the swap helpers; not
     /// meant to be set directly.
     pub field_bgm_resume: Option<u16>,
 
     /// `true` while the battle track is playing (set by
-    /// [`World::swap_to_battle_bgm`], cleared by
-    /// [`World::restore_field_bgm`]). Guards against double-swap / spurious
+    /// `World::swap_to_battle_bgm`, cleared by
+    /// `World::restore_field_bgm`). Guards against double-swap / spurious
     /// restore.
     pub battle_bgm_active: bool,
 
@@ -1289,7 +1289,7 @@ pub struct World {
     /// (`0x3E` with `op0 < 100`) carries. Populated at field-scene entry from
     /// the scene's actor placements. This is the **real** field NPC dialogue
     /// source (the actor's inline MES text at retail `actor[+0x90]`), so
-    /// [`crate::world::vm_hosts`]'s `field_interact` opens the interacted
+    /// `crate::world::vm_hosts`'s `field_interact` opens the interacted
     /// actor's dialogue from here — not from a `0x3F` op (which is the named
     /// scene-change, not dialogue). Empty between field scenes.
     pub field_npc_dialog: std::collections::HashMap<u8, Vec<u8>>,
@@ -1312,7 +1312,7 @@ pub struct World {
     /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
     /// same `slot` as [`Self::field_npc_dialog`]. Populated at field-scene entry
     /// from the MAN actor placements. The interaction probe
-    /// ([`Self::tick_field_interaction_probe`]) box-tests the player's position
+    /// (`Self::tick_field_interaction_probe`) box-tests the player's position
     /// against these to fire a `field_interact` on the action button — the
     /// clean-room analogue of retail's `FUN_801cf9f4` adjacency test.
     ///
@@ -1323,7 +1323,7 @@ pub struct World {
     /// the player cold-spawn `0xA40` is `tile 20*128 + 0x40` in that same frame.
     /// So these placement positions compare directly against the player's
     /// [`crate::vm::ActorMoveState::world_x`]. Positions are LIVE, not just
-    /// the spawn tile: [`Self::tick_field_npc_motions`] writes walking NPCs'
+    /// the spawn tile: `Self::tick_field_npc_motions` writes walking NPCs'
     /// per-frame positions back here, so collision and interact probes follow
     /// a moving NPC.
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
@@ -1332,7 +1332,7 @@ pub struct World {
     /// object of the scene's field `.MAP` object grid — the engine's source
     /// for the **static-entity arm** of the actor-collision probe (retail
     /// `FUN_801cf9f4` result bit `4`; box half-extent
-    /// [`FIELD_PROP_BOX_HALF`]). Installed at field-scene entry from
+    /// `FIELD_PROP_BOX_HALF`). Installed at field-scene entry from
     /// [`crate::scene::Scene::field_object_placements`] (each placement's
     /// [`collider_x`](legaia_asset::field_objects::Placement::collider_x) /
     /// `collider_z` = spawn position + the record's collision-footprint
@@ -1345,7 +1345,7 @@ pub struct World {
     /// [`Self::field_npc_dialog`]: the ordered local waypoints the placement's
     /// own pre-text script walks the actor through (its `0x4C 0x51` NPC
     /// move-to-tile ops — [`crate::man_field_scripts::placement_motion_route`]).
-    /// Driven through the motion VM by [`Self::tick_field_npc_motions`] when
+    /// Driven through the motion VM by `Self::tick_field_npc_motions` when
     /// [`Self::animate_field_npcs`] is set. `BTreeMap` so the per-tick walk
     /// order is deterministic (the replay oracle requires bit-stable traces).
     pub field_npc_routes: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
@@ -1368,7 +1368,7 @@ pub struct World {
     /// placements whose script fires on body contact (door warps, player
     /// throw-back teleports — [`crate::man_field_scripts::placement_walk_touch_event`]),
     /// with the placement's spawn position as the contact-box centre. The
-    /// locomotion's per-step touch dispatch ([`Self::check_field_walk_touch`])
+    /// locomotion's per-step touch dispatch (`Self::check_field_walk_touch`)
     /// posts these without a button press — retail's `FUN_801d5b5c` auto
     /// event post on the static-entity collision arm.
     pub field_walk_touch: std::collections::BTreeMap<u8, ((i16, i16), WalkTouchEvent)>,
@@ -1393,7 +1393,7 @@ pub struct World {
     /// Actor-VM glide targets (op `0x09` `MotionAt` → `start_motion`,
     /// retail `FUN_800358c0`), keyed by actor slot: each entry glides the
     /// actor's `move_state` `(world_x, world_y)` toward the target through
-    /// the motion VM, one step per tick ([`Self::tick_actor_motions`]).
+    /// the motion VM, one step per tick (`Self::tick_actor_motions`).
     pub actor_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
 
     /// Per-tick guard: set when a Cross/Circle press is consumed by a field
@@ -1430,7 +1430,7 @@ pub struct World {
     ///
     /// Consumed in the world-tick path by: field free-movement locomotion
     /// ([`Self::step_field_locomotion`]), the tile-board walk SM
-    /// ([`Self::tick_tile_board`]), the world-map controller
+    /// (`Self::tick_tile_board`), the world-map controller
     /// ([`Self::enter_world_map`]), and the field-VM dialog-advance poll.
     /// Hosts that drive a scripted timeline (`legaia-engine replay`, the
     /// v0.1 playthrough oracle) thread recorded `j-replay-v1` pad events
@@ -1468,7 +1468,7 @@ pub struct World {
     /// Engines render this as a dialog-font overlay after battle.
     pub current_level_up_banner: Option<LevelUpBanner>,
 
-    /// Active post-battle Seru-capture banner. Set by [`World::resolve_captures`]
+    /// Active post-battle Seru-capture banner. Set by `World::resolve_captures`
     /// when a capture is accepted; advanced one frame per [`World::tick`] and
     /// cleared when its [`crate::seru_learning::SeruCaptureSession`] reaches
     /// `Done`. Engines render [`crate::seru_learning::SeruCaptureSession::current_banner`]
@@ -1578,7 +1578,7 @@ pub struct World {
     pub seru_log: crate::seru_learning::SeruCaptureLog,
 
     /// Master Seru registry (Seru id -> spell taught + capture points).
-    /// Engines install via [`World::set_seru_registry`]; [`World::finish_battle`]
+    /// Engines install via [`World::set_seru_registry`]; `World::finish_battle`
     /// resolves [`World::battle_captures`] against it into [`World::seru_log`].
     /// Empty by default - captures then bank no points (the monster is still
     /// downed + logged, but nothing is learned).
@@ -1610,7 +1610,7 @@ pub struct World {
     /// `0x801F4F5C`). When present, the monster special-attack damage path
     /// resolves each move id to its real per-move power scalar and rolls
     /// damage through the faithful arts/physical kernel
-    /// ([`crate::world::World::enemy_move_predamage`]); when `None` (disc-free /
+    /// (`crate::world::World::enemy_move_predamage`); when `None` (disc-free /
     /// synthetic battles) that path falls back to the MP-scaled placeholder, so
     /// the RNG stream and determinism trace are unchanged. Installed lazily from
     /// the disc by [`crate::scene::SceneHost`].
@@ -1857,7 +1857,7 @@ pub struct World {
     /// saved chains / picks a target (the action SM and [`Self::battle_command`]
     /// are parked meanwhile); `None` otherwise. The World owns it because each
     /// row's power profile is resolved from [`Self::saved_chains`] +
-    /// [`Self::art_records`] by [`Self::build_battle_arts_rows`]. Hosts read it
+    /// [`Self::art_records`] by `Self::build_battle_arts_rows`. Hosts read it
     /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
 
@@ -1865,7 +1865,7 @@ pub struct World {
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
     /// scalar so expiry can undo it, plus the remaining turn count (decremented
     /// at the start of the buffed actor's turn). Cleared - and their deltas
-    /// reverted - by [`World::finish_battle`].
+    /// reverted - by `World::finish_battle`.
     pub battle_buffs: Vec<BattleBuff>,
 
     /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
@@ -1889,7 +1889,7 @@ pub struct World {
 
     /// Set when an escape spell (`SpellEffect::Escape`) resolves. The live
     /// battle tick returns to the field on the next pass (no loot, no
-    /// game-over). Cleared by [`World::finish_battle`].
+    /// game-over). Cleared by `World::finish_battle`.
     pub battle_escaped: bool,
 
     /// Formation currently being fought, captured at the `Field -> Battle`
@@ -1926,7 +1926,7 @@ pub struct World {
     /// installed overworld entity (encounter zones / town portals / NPCs).
     /// Empty unless [`Self::install_world_map_entities`] seeded them, so
     /// world-map mode without gameplay (camera-only) keeps ticking untouched.
-    /// Driven each [`SceneMode::WorldMap`] tick by [`Self::tick_world_map`].
+    /// Driven each [`SceneMode::WorldMap`] tick by `Self::tick_world_map`.
     pub world_map_entities: Vec<vm::world_map::WorldMapEntityCtx>,
 
     /// Per-entity role config, paired by index with [`Self::world_map_entities`].
@@ -1940,7 +1940,7 @@ pub struct World {
     /// [`Self::world_map_entities`]. Populated only by
     /// [`Self::install_world_map_entities_at`] (the disc placement seeding);
     /// the config-only installers leave it empty. When present, it drives the
-    /// **auto-engage-on-walkover** trigger in [`Self::tick_world_map`]: the
+    /// **auto-engage-on-walkover** trigger in `Self::tick_world_map`: the
     /// player stepping onto a `Portal` entity's tile fires its transition with
     /// no host call, the clean-room stand-in for retail's per-entity
     /// player-position-in-zone check.
@@ -1959,13 +1959,13 @@ pub struct World {
 
     /// Overworld encounter pending resolution into a battle: the formation id
     /// an entity SM's encounter handler latched this frame. Drained at the end
-    /// of [`Self::tick_world_map`] to flip into [`SceneMode::Battle`]. `None`
+    /// of `Self::tick_world_map` to flip into [`SceneMode::Battle`]. `None`
     /// between encounters.
     pub pending_world_map_encounter: Option<u16>,
 
     /// Region-keyed random-encounter state for the overworld (the
     /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
-    /// [`Self::tick_world_map`] rolls it once per 128-unit tile the player
+    /// `Self::tick_world_map` rolls it once per 128-unit tile the player
     /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
     /// `None` on a camera-only world map (no region data routed).
     ///
@@ -1995,7 +1995,7 @@ pub struct World {
     pub world_map_player_speed: i16,
 
     /// Scene mode to return to when the current battle finishes. Captured at
-    /// the transition into [`SceneMode::Battle`]; [`Self::finish_battle`]
+    /// the transition into [`SceneMode::Battle`]; `Self::finish_battle`
     /// restores it (an overworld encounter returns to [`SceneMode::WorldMap`],
     /// a field encounter to [`SceneMode::Field`]). Defaults to
     /// [`SceneMode::Field`].
@@ -2006,7 +2006,7 @@ pub struct World {
     /// for the scene's MAN-placed actors. A scripted-encounter carrier (the
     /// Rim Elm Tetsu fight) sits Idle until [`Self::engage_field_carrier`]
     /// (the dialogue-accept) advances it to `Activating`; the next
-    /// [`Self::tick_field_carriers`] then copies its formation and launches the
+    /// `Self::tick_field_carriers` then copies its formation and launches the
     /// battle, mirroring retail's state-1 `entity[+0x94]` copy + `case 2/3`
     /// fall-through battle handoff. Empty unless
     /// [`Self::install_field_carriers`] seeded them.
@@ -2017,7 +2017,7 @@ pub struct World {
 
     /// Field carrier battle pending resolution: the MAN `formation_id` a
     /// carrier SM latched on its scene-transition this frame. Drained at the
-    /// end of [`Self::tick_field_carriers`] to flip Field -> Battle. `None`
+    /// end of `Self::tick_field_carriers` to flip Field -> Battle. `None`
     /// between transitions.
     pub pending_field_carrier_battle: Option<u16>,
 
@@ -2032,7 +2032,7 @@ pub struct World {
 
     /// A scripted-encounter carrier whose dialogue the player opened via a
     /// field-interact and which engages when that dialogue is dismissed (the
-    /// accept). Set in [`crate::world::vm_hosts`]'s `field_interact`, consumed
+    /// accept). Set in `crate::world::vm_hosts`'s `field_interact`, consumed
     /// by the dialog-advance dismiss (`op 0x4C n5 sub-4`). `None` when no
     /// scripted carrier's prompt is up.
     pub pending_carrier_engage: Option<usize>,
@@ -2138,7 +2138,7 @@ pub enum WorldMapEntityConfig {
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
     ///
     /// `inline` is the entity's own placement-script dialog text (the `0x3F`
-    /// op's inline buffer the placement walker captured); [`World::tick_world_map`]
+    /// op's inline buffer the placement walker captured); `World::tick_world_map`
     /// opens it when the player presses confirm next to the entity. `text_id`
     /// is the box-config id carried alongside it (not an MES index). Both are
     /// empty/`None` when the placement has an interaction but no inline dialog.
@@ -3724,7 +3724,7 @@ impl World {
     /// Tactical Arts editor browses + edits. The editor mutates the returned
     /// library; the engine writes the result back with
     /// [`Self::store_chain_library`] so the edit reaches the next battle's
-    /// Arts menu (via [`Self::build_battle_arts_rows`]) and the next save
+    /// Arts menu (via `Self::build_battle_arts_rows`) and the next save
     /// (via [`Self::saved_chains`]).
     pub fn chain_library(&self) -> crate::tactical_arts_editor::ChainLibrary {
         crate::tactical_arts_editor::ChainLibrary::from_records(&self.saved_chains)
@@ -4966,7 +4966,7 @@ impl World {
     /// `+0x02 flags`, `+0x04` bytecode) staged by the shared `FUN_80021B04`
     /// machinery. This parses those records out of the retained battle-action
     /// overlay (PROT 0898) and spawns them as a [`crate::summon::SummonScene`]
-    /// with model base [`crate::scene::EFFECT_MODEL_LIBRARY_BASE`] (the engine's
+    /// with model base `crate::scene::EFFECT_MODEL_LIBRARY_BASE` (the engine's
     /// fixed-library analogue of the retail `gp[0x754] = party_count + 2`; see
     /// that constant's docs), so each mesh part resolves to
     /// `global_tmd_pool[model_sel + 3]` — the PROT 0871 effect-model library,
@@ -5456,7 +5456,7 @@ impl World {
 
     /// Overworld player walk speed in world units per frame (per held d-pad
     /// direction). The field player moves ~8 units/frame
-    /// ([`FIELD_BASE_STEP`]); the overworld uses the same baseline.
+    /// (`FIELD_BASE_STEP`); the overworld uses the same baseline.
     pub const WORLD_MAP_PLAYER_SPEED: i16 = 8;
 
     /// Move the overworld player actor from the held d-pad, bounded by the
@@ -5598,7 +5598,7 @@ impl World {
     }
 
     /// Route the scene's region-keyed encounter table onto the overworld so
-    /// [`Self::tick_world_map`] rolls random encounters per region. Resets the
+    /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
     pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
         self.world_map_region_tracker =
@@ -5627,7 +5627,7 @@ impl World {
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so
-    /// [`Self::tick_world_map`] drives encounter / interaction gameplay.
+    /// `Self::tick_world_map` drives encounter / interaction gameplay.
     /// Replaces any previously installed set. The retail engine builds one
     /// record per on-map entity from the scene's entity table; the clean-room
     /// world takes the count and pairs it with the shared encounter state
@@ -5653,7 +5653,7 @@ impl World {
 
     /// Seed overworld entities with a per-entity config **and** world position.
     /// One Idle state machine per `(config, position)`. The positions enable
-    /// the auto-engage-on-walkover trigger in [`Self::tick_world_map`] (the
+    /// the auto-engage-on-walkover trigger in `Self::tick_world_map` (the
     /// player stepping onto a `Portal` entity's tile fires it). Replaces any
     /// previously installed set. This is the disc-placement seeding path
     /// ([`crate::scene::SceneHost::enter_world_map_scene`] feeds it the
@@ -5810,12 +5810,12 @@ impl World {
 
     /// Host signal that the player engaged overworld entity `idx` (walked onto
     /// a portal tile / pressed confirm on it). Drives the entity SM straight to
-    /// its scene-transition state so the next [`Self::tick_world_map`] fires the
+    /// its scene-transition state so the next `Self::tick_world_map` fires the
     /// transition; a [`WorldMapEntityConfig::Portal`] then surfaces a
     /// [`crate::field_events::FieldEvent::WorldMapTransition`] with its target
     /// map. No-op for an out-of-range index.
     ///
-    /// Hosts can call this directly; [`Self::auto_engage_world_map_portals`]
+    /// Hosts can call this directly; `Self::auto_engage_world_map_portals`
     /// also calls it each tick for any `Portal` entity the player has walked
     /// onto (the engine-driven trigger), so an entity installed with a position
     /// via [`Self::install_world_map_entities_at`] fires on walk-over without a
@@ -5852,7 +5852,7 @@ impl World {
     /// [`vm::world_map::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
     /// scripted-encounter carrier can be advanced via
     /// [`Self::engage_field_carrier`] and ticked by
-    /// [`Self::tick_field_carriers`]. Replaces any previously installed set.
+    /// `Self::tick_field_carriers`. Replaces any previously installed set.
     ///
     /// This is the field-mode counterpart to
     /// [`Self::install_world_map_entities_with_configs`]; retail builds the
@@ -5974,7 +5974,7 @@ impl World {
     /// the actor's inline dialogue if it has any, arms / engages a scripted-
     /// encounter carrier on that slot (the dialogue-accept auto-arm), and
     /// surfaces a [`FieldEvent::FieldInteract`]. Shared by the field VM host and
-    /// [`Self::tick_field_interaction_probe`].
+    /// `Self::tick_field_interaction_probe`.
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
         self.last_field_interact = Some((interact_id, slot));
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
@@ -6088,7 +6088,7 @@ impl World {
     /// Host signal that the player engaged field carrier `idx` (accepted the
     /// Tetsu "Come at me!" dialogue / pressed confirm on the NPC). Advances the
     /// carrier's `FUN_801DA51C` SM from Idle to **Activating** and drains its
-    /// countdown to zero, so the next [`Self::tick_field_carriers`] runs the
+    /// countdown to zero, so the next `Self::tick_field_carriers` runs the
     /// state-1 body in full: `on_activating` (formation copy) immediately
     /// followed by the `case 2/3` fall-through scene-transition (battle
     /// handoff). No-op for an out-of-range index or a non-Idle carrier.
@@ -6964,7 +6964,7 @@ impl World {
     /// field-VM op `0x42` mode 0 tests), latches the scratch attribute
     /// block, and re-selects the current camera-zone record. Called on
     /// scene entry and on every player tile crossing
-    /// ([`Self::live_field_tick`]).
+    /// (`Self::live_field_tick`).
     ///
     /// REF: FUN_800180EC, FUN_801DBA20 (ports in [`crate::field_regions`])
     pub fn refresh_field_regions(&mut self) {
@@ -7131,7 +7131,7 @@ impl World {
     ///
     /// Retail tests **three leading-edge footprint probes** through this
     /// sampler (47-48 units ahead, ±16 lateral; per-direction table
-    /// `DAT_801f2214` = [`FIELD_WALL_PROBES`]) — see
+    /// `DAT_801f2214` = `FIELD_WALL_PROBES`) — see
     /// [`World::field_dir_blocked`], wired into pad locomotion behind
     /// [`World::leading_edge_wall_probes`]. With the flag off, locomotion
     /// tests one candidate-centre point — a standoff/feel difference, not an
@@ -7156,7 +7156,7 @@ impl World {
     }
 
     /// Retail's static-wall direction test: from the CURRENT position
-    /// `(x, z)`, probe the three leading-edge points of [`FIELD_WALL_PROBES`]
+    /// `(x, z)`, probe the three leading-edge points of `FIELD_WALL_PROBES`
     /// row `dir` (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+) through
     /// [`Self::field_tile_is_wall`]; the direction is blocked when any probe
     /// lands on a wall sub-cell.
@@ -7178,11 +7178,11 @@ impl World {
     }
 
     /// Retail's actor-collision direction test: from the CURRENT position
-    /// `(x, z)`, take the three probe points of [`FIELD_ACTOR_PROBES`] row
+    /// `(x, z)`, take the three probe points of `FIELD_ACTOR_PROBES` row
     /// `dir` (same `(x + dx, z - dz)` convention as the wall probes) and
     /// box-test each against every field NPC's position
     /// ([`Self::field_npc_positions`]); the direction is blocked when any
-    /// probe lands within [`FIELD_NPC_BOX_HALF`] (40 units) of an NPC on
+    /// probe lands within `FIELD_NPC_BOX_HALF` (40 units) of an NPC on
     /// both axes (strict).
     ///
     /// PORT: FUN_801cfc40
@@ -7194,19 +7194,19 @@ impl World {
     ///   belong to, capture-pinned by `rimelm_npc_press_tetsu` (the sparring
     ///   partner's `flags+0x10 = 0x08020884` carries the `0x20000` class
     ///   bit, and the mutual `+0x98` collision link is live in-frame). The
-    ///   positions are LIVE: [`Self::tick_field_npc_motions`] walks routed /
+    ///   positions are LIVE: `Self::tick_field_npc_motions` walks routed /
     ///   scripted NPCs through the motion VM and writes back into
     ///   [`Self::field_npc_positions`], so a moving NPC's
-    ///   ±[`FIELD_NPC_BOX_HALF`] (40) box follows it, exactly as retail
+    ///   ±`FIELD_NPC_BOX_HALF` (40) box follows it, exactly as retail
     ///   probes the live `+0x14`/`+0x18`.
     /// - the **static-entity arm** (result bit `4`) — placed `.MAP` props,
-    ///   box ±[`FIELD_PROP_BOX_HALF`] (80) around the record-derived
+    ///   box ±`FIELD_PROP_BOX_HALF` (80) around the record-derived
     ///   footprint centre ([`Self::field_prop_colliders`]).
     ///
     /// The locomotion-path touch dispatches are modelled alongside: the
     /// button-press interact (facing probe + event + face-the-NPC,
-    /// [`Self::tick_field_interaction_probe`]) and the no-button prop
-    /// walk-touch event post ([`Self::check_field_walk_touch`], the
+    /// `Self::tick_field_interaction_probe`) and the no-button prop
+    /// walk-touch event post (`Self::check_field_walk_touch`, the
     /// `FUN_801d5b5c` analogue for the decoded script classes). Not
     /// modelled: the mutual `+0x98` partner-link bookkeeping itself and the
     /// `_DAT_8007b6b8 == 0x20` full-table delegation to `FUN_801cf9f4`.
@@ -7741,13 +7741,13 @@ impl World {
 
     /// Advance actor `slot` by `speed` world units in the direction encoded by
     /// `dir_bits` (post-remap convention: `0x1000`=Z+, `0x4000`=Z-,
-    /// `0x2000`=X+, `0x8000`=X-), stepping [`FIELD_STEP_UNIT`] at a time and
+    /// `0x2000`=X+, `0x8000`=X-), stepping `FIELD_STEP_UNIT` at a time and
     /// committing only the axes that stay off a wall in
     /// [`World::field_collision_grid`]. X collision uses the just-committed Z
     /// so a diagonal move can't tunnel through a wall corner.
     ///
     /// Shared by [`Self::step_field_locomotion`] and
-    /// [`Self::step_world_map_locomotion`]: retail `FUN_801d01b0` is the same
+    /// `Self::step_world_map_locomotion`: retail `FUN_801d01b0` is the same
     /// routine in both the field and world-map-walk overlays, and both collide
     /// against the same `_DAT_1f8003ec + 0x4000` walkability grid.
     ///

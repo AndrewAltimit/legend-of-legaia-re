@@ -80,7 +80,7 @@ pub fn render_bgm_to_pcm(
 /// any of the 24 voices).
 ///
 /// One [`XaPlayback`] is active at a time; stash a fresh buffer via
-/// [`AudioOut::play_xa`] to replace it. The [`StreamResampler`] owns the
+/// [`AudioOut::play_xa`] to replace it. The `StreamResampler` owns the
 /// playback cursor and drives sample-rate conversion to the SPU's 44.1 kHz
 /// per output sample.
 pub struct XaPlayback {

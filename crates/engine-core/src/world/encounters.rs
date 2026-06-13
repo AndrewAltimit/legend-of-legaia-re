@@ -113,7 +113,7 @@ impl World {
     /// then all members' words OR into the global mask (the engine's
     /// [`Self::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
     /// word 0 also lands in [`Self::character_ability_bits`] - the mask the
-    /// MP-cost consumers read ([`Self::build_battle_spell_session`] /
+    /// MP-cost consumers read (`Self::build_battle_spell_session` /
     /// `cast_spell_on_slots` / the battle-action VM host) - together with the
     /// party-wide-scoped bits any member contributes, so a party-wide passive
     /// is visible through every member's effective mask.

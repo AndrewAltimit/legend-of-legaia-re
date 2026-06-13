@@ -25,7 +25,7 @@ enum Cmd {
         #[arg(long)]
         cdname: Option<PathBuf>,
     },
-    /// Extract every entry to <out>; also unpack TIM packs and write manifest.json.
+    /// Extract every entry to `<out>`; also unpack TIM packs and write manifest.json.
     Extract {
         prot: PathBuf,
         out: PathBuf,

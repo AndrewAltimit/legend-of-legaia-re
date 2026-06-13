@@ -5,7 +5,7 @@
 //!
 //! Subcommands:
 //!   list     - find + describe every VAB in the input file
-//!   extract  - dump VAG bodies + metadata.json under <out>/<vab_idx>/
+//!   extract  - dump VAG bodies + metadata.json under `<out>/<vab_idx>/`
 
 use std::path::PathBuf;
 

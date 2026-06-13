@@ -22,7 +22,7 @@
 //! by a region whose `rate_increment > 0` (a region that can actually trigger an
 //! encounter) — are randomized; scripted formations are left exactly as
 //! authored, so a randomized run never replaces a boss (see
-//! [`random_formation_mask`] / [`SceneEncounters::is_random_formation`]).
+//! `random_formation_mask` / [`SceneEncounters::is_random_formation`]).
 
 use legaia_asset::man_section::{self, EncounterSection};
 use legaia_asset::scene_asset_table;

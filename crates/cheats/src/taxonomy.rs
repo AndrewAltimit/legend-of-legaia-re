@@ -1,7 +1,7 @@
 //! Write-surface taxonomy: bucket a set of changed RAM addresses by the
-//! [`Category`](crate::classify::Category) region they fall in.
+//! [`Category`] region they fall in.
 //!
-//! The companion to [`classify_address`](crate::classify::classify_address):
+//! The companion to [`classify_address`]:
 //! given the addresses that changed between two points in time (e.g. the
 //! per-byte deltas from a pair of save states via
 //! `legaia_mednafen::diff_ram`), this rolls them up into per-region counts +

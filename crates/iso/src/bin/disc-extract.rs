@@ -33,7 +33,7 @@ struct Cli {
 enum Cmd {
     /// List every file on the disc with its size and LBA.
     List { bin: PathBuf },
-    /// Extract every file on the disc to <out>.
+    /// Extract every file on the disc to `<out>`.
     Extract { bin: PathBuf, out: PathBuf },
     /// Compute the .bin SHA-256 and compare against known good hashes.
     ///

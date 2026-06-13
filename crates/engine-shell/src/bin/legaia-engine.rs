@@ -3963,7 +3963,7 @@ enum BootUiState {
     /// Options / config panel is active.
     Options(legaia_engine_core::options::OptionsSession),
     /// Field (pause) menu is active. The menu session itself is hosted by
-    /// the [`BootSession`](legaia_engine_shell::BootSession)
+    /// the [`BootSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;
     /// the world runs `SceneMode::Menu` while it is open). This arm only
     /// routes the window's input + draws to it, so dropping out returns

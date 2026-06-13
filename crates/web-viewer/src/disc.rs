@@ -231,7 +231,7 @@ pub fn extract_cdname_txt(disc: &[u8]) -> Option<String> {
 
 /// Walk a Mode2/2352 disc image and return the bytes of the SCUS_942.54
 /// executable (the retail NA build's main `.EXE`). The semicolon-version
-/// suffix used by ISO9660 is already stripped by [`parse_iso_record`].
+/// suffix used by ISO9660 is already stripped by `parse_iso_record`.
 pub fn extract_scus(disc: &[u8]) -> Option<Vec<u8>> {
     extract_root_file(disc, "SCUS_942.54")
 }

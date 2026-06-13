@@ -12,7 +12,7 @@
 /// set = pixel on). Bit 4 is leftmost.
 pub type Glyph = [u8; 7];
 
-/// Returns the 5×7 glyph for `byte`, or [`UNKNOWN`] for unmapped bytes.
+/// Returns the 5×7 glyph for `byte`, or `UNKNOWN` for unmapped bytes.
 pub fn glyph(byte: u8) -> Glyph {
     match byte {
         b' ' => SPACE,

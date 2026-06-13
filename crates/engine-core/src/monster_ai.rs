@@ -3,7 +3,7 @@
 //! (`ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`).
 //!
 //! The picker has two layers. The **generic decision core** (ported inline in
-//! [`crate::world::World::pick_monster_action`]) rolls physical-vs-cast over the
+//! `crate::world::World::pick_monster_action`) rolls physical-vs-cast over the
 //! monster's own `+0x21` magic ids. After it, a large `switch` keyed on
 //! `DAT_8007BD0C[slot]` can **override** the choice with a bespoke scripted
 //! cast. `DAT_8007BD0C[slot]` is the **per-slot monster id** - `FUN_801DA51C`

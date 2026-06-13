@@ -106,7 +106,7 @@ pub struct OverlayPtrTable {
 }
 
 /// Try to detect an overlay-pointer-table header. Returns `None` when the
-/// buffer doesn't start with at least [`MIN_PTRS`] consecutive overlay
+/// buffer doesn't start with at least `MIN_PTRS` consecutive overlay
 /// pointer u32s.
 pub fn detect(buf: &[u8]) -> Option<OverlayPtrTable> {
     if buf.len() < MIN_PTRS * 4 {

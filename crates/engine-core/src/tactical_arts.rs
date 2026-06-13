@@ -96,7 +96,7 @@ impl TacticalArtsTracker {
     /// Record one use of `art_id` by `char_id`.
     ///
     /// Returns `Some(TacticalArtLearned)` the first time the use count
-    /// crosses [`Self::threshold`]; `None` on every subsequent call (already
+    /// crosses `Self::threshold`; `None` on every subsequent call (already
     /// learned) or when the threshold has not yet been reached.
     pub fn notify_art_used(&mut self, char_id: u8, art_id: u8) -> Option<TacticalArtLearned> {
         if self

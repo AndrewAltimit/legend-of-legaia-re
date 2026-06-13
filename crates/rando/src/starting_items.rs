@@ -222,7 +222,7 @@ pub fn build_seed_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
 /// Emits one `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)`
 /// pair per inventory slot, padded to [`STARTING_INV_SEED_LEN`] with `nop` (which
 /// also overwrites the redundant zero-loop — required for the warp preset, see
-/// [`build_warp_patch`]). Panics if the plan exceeds the [`SEED_INSTRS`]-instruction
+/// [`build_warp_patch`]). Panics if the plan exceeds the `SEED_INSTRS`-instruction
 /// budget (callers clamp via [`plan_seed`]). The `all_warps` flag is **not**
 /// encoded here — the warp preset is a separate region ([`build_warp_patch`]) so
 /// it never reduces the item capacity. The inventory base offset comes from

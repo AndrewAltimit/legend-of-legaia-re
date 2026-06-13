@@ -18,8 +18,8 @@
 //!   capture event; returns the resulting [`CaptureOutcome`] with the
 //!   list of new spells learned this capture.
 //! - [`SeruCaptureSession`] - UI-facing state machine driving the
-//!   "Genocide Crystal succeeded → captured Seru: <name>" → "<X> learned
-//!   <spell>!" → close popup flow.
+//!   "Genocide Crystal succeeded → captured Seru: `<name>`" → "`<X>` learned
+//!   `<spell>`!" → close popup flow.
 
 use std::collections::HashMap;
 
