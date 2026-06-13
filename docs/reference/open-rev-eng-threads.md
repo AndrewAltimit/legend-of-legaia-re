@@ -148,7 +148,16 @@ move-buffer base, `actor[+0x70] = 2` PC) then `jal FUN_80023070` ticks the **mov
 (1) the high/enemy stagers spawn dominantly through the pool wrapper `FUN_80050ED4` (→ `FUN_80021B04`, pool `DAT_801C90F0`), which the parser scans alongside the direct calls;
 (2) **stager extraction entries are over-read windows** — each `.BIN` runs past the next entry's start LBA, so it must be trimmed to `(next_start_lba - start_lba) * 0x800` (`unique_content_len`) before parsing, a boundary the Cort mid-cast saves pin byte-exactly against the slot-B resident image.
 After trimming, the record first words across the whole 25-stager corpus are only `-1` / small library indices / **`0x4000`** (four records, PROT 0928/0929/0931) — matching `FUN_80021B04`'s own dispatch (negative → transform path; `0x4000`/`0x4001` → render-mode nodes `+0x5A = 3`/`5`; else library index). The earlier "`0x1000`/`0x8000`-class sentinel" census was over-read contamination: those offsets belong to *neighbouring* stagers' loads and dereference unrelated bytes in the wrong file window.
-The model-library base (`gp[0x754]`) is **resolved** (see the summon-render block below): it is **not per-summon** but one per-battle, party-size-derived value (`party_count + 2`). Still open: the draw behaviour of the `0x4000`/`0x4001` render-mode nodes (no live capture holds one mid-cast — the Cort states' live pooled part-actors all carry `-1` records, `+0x56 = 4` / `+0x5A = 2` after move-VM rebinding).
+The model-library base (`gp[0x754]`) is **resolved** (see the summon-render block below): it is **not per-summon** but one per-battle, party-size-derived value (`party_count + 2`). Still open: the draw behaviour of the `0x4000`/`0x4001` render-mode nodes —
+**no live exerciser in the catalogued corpus**. The Cort enemy states' live
+pooled part-actors all carry `-1` records (`+0x56 = 4` / `+0x5A = 2` after
+move-VM rebinding), and the three player Sim-Seru casts that *carry* the
+`0x4000` records (Palma 0928 / Mule 0929 / Jedo 0931) hold **no live stager
+part at all** at the captured instant — a RAM pointer-scan finds zero
+references to any of the stager's records despite the stager being byte-resident
+at slot B (the player summon is the creature pipeline by the on-screen phase).
+Closing it needs a frame-stepped *enemy* stager-spawn capture whose stager
+carries a `0x4000` record (`crates/mednafen/tests/summon_render_mode_node.rs`).
 
 **This CORRECTS the earlier "records beyond the `0x5800` file / `0x180C` only coincidentally record-shaped / parser reverted" reading — that was the wrong link base (`0x801F0000` instead of `0x801F69D8`), which pushed the runtime record addresses past the file.** **Still pinned:** the CLUT band is byte-identical across the two animation-distinct frames (motion is geometric, not palette cycling); flame texture is **PROT 870** (three 64x256 4bpp TIMs → battle VRAM `(320/384/448,0)`, CLUTs rows 474..476); the bound flame mesh comes from **PROT 871** (`etmd.dat`, 30-TMD pack) at `DAT_8007C018[26]`.
 
