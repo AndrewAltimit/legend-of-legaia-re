@@ -59,6 +59,7 @@ pub mod house_door;
 pub mod item_name;
 pub mod item_price;
 pub mod items;
+pub mod kingdom;
 pub mod monster;
 pub mod ppf;
 pub mod rng;

@@ -530,6 +530,242 @@ pub fn randomize_encounters(
     Ok(report)
 }
 
+/// How wide a net the encounter randomizer casts when reassigning a scene's
+/// monsters — the *pool* a random encounter is drawn from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncounterScope {
+    /// Each scene draws only from its own monster ids — the classic per-scene
+    /// behaviour ([`randomize_encounters`]). Difficulty stays local; a swap can
+    /// never surprise you with a monster the area didn't already host.
+    Scene,
+    /// "Within a region": a scene draws from the union of every monster across
+    /// its **kingdom** (Drake / Sebucus / Karisto, see [`crate::kingdom`]).
+    /// Late-game Drake monsters can show up in early Drake, but no monster ever
+    /// crosses a kingdom boundary.
+    Kingdom,
+    /// "Across regions": a scene draws from every monster on the disc, so a
+    /// late-game Karisto monster can appear in the opening Drake caves.
+    World,
+}
+
+/// Tag mixed into the cross-scene shuffle RNG so a scoped shuffle is independent
+/// of the per-scene seeding used by [`randomize_encounters`].
+const SCOPED_SHUFFLE_NONCE: u64 = 0x5343_4F50_4544_0001; // "SCOPED\0\1"
+
+/// Randomize scene encounters with a pool [`EncounterScope`] wider than a single
+/// scene. `Scene` scope delegates to [`randomize_encounters`] unchanged.
+///
+/// For `Kingdom` / `World` scope the disc is processed in two passes:
+///
+/// 1. **Collect** every scene's encounter data and (for `Kingdom`) its kingdom,
+///    then build the per-group monster pool — the union of each group's scenes'
+///    random-encounter ids (bosses excluded, exactly as the per-scene path).
+/// 2. **Reassign**: under [`DropMode::Random`] each scene's random slots are
+///    redrawn from its group pool ([`SceneEncounters::fill_random_slots_from_pool`]);
+///    under [`DropMode::Shuffle`] the whole group's random ids are pooled,
+///    permuted once, and redistributed across the group's scenes
+///    ([`SceneEncounters::random_slot_ids`] / [`SceneEncounters::apply_random_slots`]),
+///    so the group-wide multiset is preserved but monsters move between scenes
+///    (and, for `World`, between kingdoms).
+///
+/// `Kingdom` scope needs the disc's `CDNAME.TXT` to resolve kingdoms; if it
+/// can't be parsed the call errors (every retail disc carries it). `World` scope
+/// never touches CDNAME. `unused_enemies` behaves as in [`randomize_encounters`]
+/// (it widens the pool under `Random` only). The result is deterministic for a
+/// fixed `seed`, independent of patcher iteration order.
+pub fn randomize_encounters_scoped(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+    scope: EncounterScope,
+    unused_enemies: &[u8],
+) -> Result<EncounterApplyReport> {
+    use std::collections::BTreeMap;
+
+    if scope == EncounterScope::Scene {
+        return randomize_encounters(patcher, seed, mode, unused_enemies);
+    }
+
+    // Kingdom scope needs the CDNAME partition; World lumps everything together.
+    let kingdom_map = if scope == EncounterScope::Kingdom {
+        let cdname = patcher
+            .cdname()
+            .context("read CDNAME.TXT for kingdom-scoped encounters")?;
+        Some(crate::kingdom::KingdomMap::from_cdname(&cdname).context(
+            "CDNAME.TXT is missing the map01/map02 kingdom anchors; \
+                 use --encounter-scope world instead",
+        )?)
+    } else {
+        None
+    };
+
+    // Pass 1: locate every scene and assign it a group key (0 = the single
+    // World group; otherwise the kingdom's tag). Scenes are kept so their MAN is
+    // only decompressed once.
+    struct Located {
+        idx: usize,
+        group: u64,
+        scene: SceneEncounters,
+    }
+    let mut located: Vec<Located> = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(scene) = SceneEncounters::locate(&entry, idx) else {
+            continue;
+        };
+        let group = match kingdom_map {
+            Some(km) => km.kingdom_for_extraction_index(idx).seed_tag(),
+            None => 0,
+        };
+        located.push(Located { idx, group, scene });
+    }
+
+    // Per-group monster pool: the union of every member scene's random-encounter
+    // ids (boss ids are already excluded by `monster_pool`). Under Random the
+    // unused-enemy ids widen each pool.
+    let mut pools: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
+    for l in &located {
+        let pool = pools.entry(l.group).or_default();
+        for id in l.scene.monster_pool() {
+            if !pool.contains(&id) {
+                pool.push(id);
+            }
+        }
+    }
+    if mode == DropMode::Random {
+        for pool in pools.values_mut() {
+            for &id in unused_enemies {
+                if !pool.contains(&id) {
+                    pool.push(id);
+                }
+            }
+            pool.sort_unstable();
+        }
+    }
+
+    // Pass 2: reassign + write back. The two modes differ enough — Random fills
+    // each scene independently; Shuffle moves ids *between* scenes and so must
+    // keep the group multiset intact across re-pack failures — that they own
+    // their write-back loops.
+    let mut report = EncounterApplyReport::default();
+    match mode {
+        DropMode::Random => {
+            for l in &mut located {
+                let pool = pools.get(&l.group).map(Vec::as_slice).unwrap_or(&[]);
+                let changed = l.scene.fill_random_slots_from_pool(seed, pool);
+                if changed == 0 {
+                    continue;
+                }
+                match l.scene.repack() {
+                    Some(stream) => {
+                        patcher
+                            .patch_prot_entry(l.idx, l.scene.man_offset as u64, &stream)
+                            .with_context(|| format!("write scene {} MAN", l.idx))?;
+                        report.scenes_changed += 1;
+                        report.ids_changed += changed;
+                        if !unused_enemies.is_empty() {
+                            report.unused_placed += l.scene.count_ids_in(unused_enemies);
+                        }
+                    }
+                    None => report.skipped.push(l.idx),
+                }
+            }
+        }
+        DropMode::Shuffle => {
+            // A cross-scene shuffle conserves the group-wide id multiset only if
+            // every shuffled scene is actually written. A scene whose mutated
+            // MAN no longer fits its compressed footprint can't be — and if it
+            // silently kept its original ids, the ids it was *given* would
+            // vanish while the ids it *gave away* would duplicate. So lock any
+            // such scene to its original (removing it from the pool) and reshuffle
+            // the rest. Each round locks at least one more scene, so this reaches
+            // a fixpoint where every still-shuffled scene re-packs cleanly and
+            // the conserved multiset is exactly the unlocked scenes' originals.
+            let orig_ids: Vec<Vec<u8>> =
+                located.iter().map(|l| l.scene.random_slot_ids()).collect();
+            let mut locked = vec![false; located.len()];
+            let mut streams: Vec<Option<Vec<u8>>> = vec![None; located.len()];
+            loop {
+                // Restore every scene to its original ids, so a freshly-locked
+                // scene reverts and locked scenes stay put.
+                for (i, l) in located.iter_mut().enumerate() {
+                    l.scene.apply_random_slots(&orig_ids[i]);
+                }
+                // Group the still-unlocked members, in ascending scene order.
+                let mut groups: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
+                for (i, l) in located.iter().enumerate() {
+                    if !locked[i] {
+                        groups.entry(l.group).or_default().push(i);
+                    }
+                }
+                for (gid, members) in &groups {
+                    let mut all_ids: Vec<u8> = Vec::new();
+                    for &mi in members {
+                        all_ids.extend_from_slice(&orig_ids[mi]);
+                    }
+                    let mut rng = SplitMix64::new(
+                        seed ^ gid.wrapping_mul(0x9E3779B97F4A7C15) ^ SCOPED_SHUFFLE_NONCE,
+                    );
+                    rng.shuffle(&mut all_ids);
+                    let mut cursor = 0;
+                    for &mi in members {
+                        let n = orig_ids[mi].len();
+                        located[mi]
+                            .scene
+                            .apply_random_slots(&all_ids[cursor..cursor + n]);
+                        cursor += n;
+                    }
+                }
+                // Try to re-pack every changed, unlocked scene; lock new failures.
+                let mut new_failure = false;
+                for i in 0..located.len() {
+                    if locked[i] {
+                        continue;
+                    }
+                    if located[i].scene.random_slot_ids() == orig_ids[i] {
+                        streams[i] = None; // no-op assignment, nothing to write
+                        continue;
+                    }
+                    match located[i].scene.repack() {
+                        Some(stream) => streams[i] = Some(stream),
+                        None => {
+                            locked[i] = true;
+                            streams[i] = None;
+                            new_failure = true;
+                        }
+                    }
+                }
+                if !new_failure {
+                    break;
+                }
+            }
+            // Commit: write the scenes that re-packed; the locked ones were
+            // restored to their originals, so report them as skipped.
+            for i in 0..located.len() {
+                if let Some(stream) = &streams[i] {
+                    let l = &located[i];
+                    patcher
+                        .patch_prot_entry(l.idx, l.scene.man_offset as u64, stream)
+                        .with_context(|| format!("write scene {} MAN", l.idx))?;
+                    report.scenes_changed += 1;
+                    report.ids_changed += located[i]
+                        .scene
+                        .random_slot_ids()
+                        .iter()
+                        .zip(&orig_ids[i])
+                        .filter(|(a, b)| a != b)
+                        .count();
+                } else if locked[i] {
+                    report.skipped.push(located[i].idx);
+                }
+            }
+        }
+    }
+    Ok(report)
+}
+
 /// Outcome of randomizing treasure-chest contents.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ChestApplyReport {

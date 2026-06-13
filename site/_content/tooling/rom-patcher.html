@@ -1,153 +1,226 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ROM patcher</div>
   <h1>ROM patcher (in browser)</h1>
-  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser. Pick a seed, toggle what to shuffle, and download a patched image. The disc bytes never leave your machine &mdash; the patch runs as WebAssembly locally, nothing is uploaded.</p>
+  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser. Pick a preset (or fine-tune), choose a seed, and download a patched image. The disc bytes never leave your machine &mdash; the patch runs as WebAssembly locally, nothing is uploaded.</p>
 </header>
 
 <section class="doc-section" id="patch">
   <h2>Patch a disc</h2>
   <div class="rom-form">
+
     <label class="rom-row">
       <span class="rom-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
       <input type="file" id="rom-file" accept=".bin,application/octet-stream">
     </label>
     <label class="rom-row">
-      <span class="rom-label">Seed</span>
+      <span class="rom-label">Seed <span class="rom-hint">&mdash; same seed always makes the same disc</span></span>
       <input type="text" id="rom-seed" placeholder="any word or number (blank = random)">
     </label>
-    <label class="rom-row">
-      <span class="rom-label">Monster drops</span>
-      <select id="rom-drops">
-        <option value="shuffle">Shuffle (redistribute existing drops)</option>
-        <option value="random">Random (any valid item)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Random encounters</span>
-      <select id="rom-encounters">
-        <option value="shuffle">Shuffle (within each scene's monsters)</option>
-        <option value="random">Random (within each scene's monsters)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Treasure chests</span>
-      <select id="rom-chests">
-        <option value="shuffle">Shuffle (redistribute existing items)</option>
-        <option value="random">Random (any valid item)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Town shops</span>
-      <select id="rom-shops">
-        <option value="shuffle">Shuffle (redistribute what stores sell)</option>
-        <option value="random">Random (any valid item)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Casino prizes</span>
-      <select id="rom-casino">
-        <option value="shuffle">Shuffle (redistribute prizes)</option>
-        <option value="random">Random (any existing prize)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Steal items</span>
-      <select id="rom-steals">
-        <option value="shuffle">Shuffle (redistribute existing steals)</option>
-        <option value="random">Random (any valid item)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Arts button combos</span>
-      <select id="rom-arts">
-        <option value="shuffle">Shuffle (swap a character's own same-length combos)</option>
-        <option value="random">Random (any same-length combo)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Doors / exits</span>
-      <select id="rom-doors">
-        <option value="shuffle">Shuffle (redistribute destinations)</option>
-        <option value="random">Random (any destination)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Door connectivity</span>
-      <select id="rom-door-coupling">
-        <option value="coupled" selected>Bidirectional (return the way you came)</option>
-        <option value="decoupled">One-way (going back leads elsewhere)</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">House doors (experimental)</span>
-      <select id="rom-house-doors">
-        <option value="shuffle">Shuffle (intra-town MOVE_TO targets)</option>
-        <option value="none" selected>Leave alone</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Starting items</span>
-      <select id="rom-starting-items">
-        <option value="0" selected>Leave alone (Healing Leaf &times;5)</option>
-        <option value="1">1 random item</option>
-        <option value="2">2 random items</option>
-        <option value="3">3 random items</option>
-        <option value="4">4 random items</option>
-        <option value="5">5 random items</option>
-      </select>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Door of Wind</span>
-      <span class="rom-check"><input type="checkbox" id="rom-door-of-wind"> Seed Door of Wind (the warp consumable) into the new game's starting bag &mdash; count <input type="number" id="rom-door-of-wind-count" min="1" max="99" value="10" style="width:4em"></span>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">All warps</span>
-      <span class="rom-check"><input type="checkbox" id="rom-all-warps"> Unlock every Door-of-Wind destination from the start (teleport to any town)</span>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Equipment drops</span>
-      <span class="rom-check"><input type="checkbox" id="rom-equipment-drops"> Every monster drops rare equipment (weapon / armor / accessory) instead of its normal drop &mdash; overrides Monster drops</span>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Unused enemies</span>
-      <span class="rom-check"><input type="checkbox" id="rom-unused-enemies"> Add the unused &ldquo;Comm&rdquo; + Evil Bat enemies to random encounters (needs Random encounters)</span>
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Unused items</span>
-      <span class="rom-check"><input type="checkbox" id="rom-unused-items"> Add the unused &ldquo;Something Good&rdquo; + the &ldquo;Seru Bell&rdquo; accessory to random fills</span>
-    </label>
+
+    <!-- Presets: one click sets every toggle below. Editing any toggle flips
+         the chip row back to "Custom". -->
     <div class="rom-row">
+      <span class="rom-label">Presets</span>
+      <div class="rom-presets" id="rom-presets" role="group" aria-label="Presets">
+        <button type="button" class="rom-preset is-active" data-preset="vanilla">Vanilla
+          <span class="rom-preset-sub">nothing changed</span></button>
+        <button type="button" class="rom-preset" data-preset="items">Item Mix-up
+          <span class="rom-preset-sub">same items, new spots</span></button>
+        <button type="button" class="rom-preset" data-preset="balanced">Balanced
+          <span class="rom-preset-sub">fresh but fair first run</span></button>
+        <button type="button" class="rom-preset" data-preset="chaos">Full Chaos
+          <span class="rom-preset-sub">everything randomized</span></button>
+        <span class="rom-preset-custom" id="rom-preset-custom" hidden>Custom</span>
+      </div>
+    </div>
+
+    <!-- Legend: the one place the two modes are defined. -->
+    <p class="rom-legend">
+      <span class="rom-legend-item"><span class="rom-chip rom-chip-shuffle">Shuffle</span> <em>rebalanced</em> &mdash; redistributes what's already there (same set, new places &mdash; keeps the game's balance).</span>
+      <span class="rom-legend-item"><span class="rom-chip rom-chip-random">Randomize</span> <em>wild</em> &mdash; draws fresh from the whole pool (anything can land anywhere &mdash; less predictable).</span>
+    </p>
+
+    <!-- ---- Items & rewards ---- -->
+    <details class="rom-group" open>
+      <summary>Items &amp; rewards</summary>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Monster drops <span class="rom-opt-note" id="rom-drops-note" hidden>&mdash; overridden by Equipment drops</span></span>
+        <div class="seg" role="group" aria-label="Monster drops">
+          <input type="radio" name="drops" id="drops-none" value="none" checked><label for="drops-none">Off</label>
+          <input type="radio" name="drops" id="drops-shuffle" value="shuffle"><label for="drops-shuffle">Shuffle</label>
+          <input type="radio" name="drops" id="drops-random" value="random"><label for="drops-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Treasure chests</span>
+        <div class="seg" role="group" aria-label="Treasure chests">
+          <input type="radio" name="chests" id="chests-none" value="none" checked><label for="chests-none">Off</label>
+          <input type="radio" name="chests" id="chests-shuffle" value="shuffle"><label for="chests-shuffle">Shuffle</label>
+          <input type="radio" name="chests" id="chests-random" value="random"><label for="chests-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Town shops</span>
+        <div class="seg" role="group" aria-label="Town shops">
+          <input type="radio" name="shops" id="shops-none" value="none" checked><label for="shops-none">Off</label>
+          <input type="radio" name="shops" id="shops-shuffle" value="shuffle"><label for="shops-shuffle">Shuffle</label>
+          <input type="radio" name="shops" id="shops-random" value="random"><label for="shops-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Casino prizes</span>
+        <div class="seg" role="group" aria-label="Casino prizes">
+          <input type="radio" name="casino" id="casino-none" value="none" checked><label for="casino-none">Off</label>
+          <input type="radio" name="casino" id="casino-shuffle" value="shuffle"><label for="casino-shuffle">Shuffle</label>
+          <input type="radio" name="casino" id="casino-random" value="random"><label for="casino-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Steal items <span class="rom-opt-note">&mdash; chance kept; only the item changes</span></span>
+        <div class="seg" role="group" aria-label="Steal items">
+          <input type="radio" name="steals" id="steals-none" value="none" checked><label for="steals-none">Off</label>
+          <input type="radio" name="steals" id="steals-shuffle" value="shuffle"><label for="steals-shuffle">Shuffle</label>
+          <input type="radio" name="steals" id="steals-random" value="random"><label for="steals-random">Randomize</label>
+        </div>
+      </div>
+    </details>
+
+    <!-- ---- Battles ---- -->
+    <details class="rom-group" open>
+      <summary>Battles</summary>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Random encounters</span>
+        <div class="seg" role="group" aria-label="Random encounters">
+          <input type="radio" name="encounters" id="enc-none" value="none" checked><label for="enc-none">Off</label>
+          <input type="radio" name="encounters" id="enc-shuffle" value="shuffle"><label for="enc-shuffle">Shuffle</label>
+          <input type="radio" name="encounters" id="enc-random" value="random"><label for="enc-random">Randomize</label>
+        </div>
+      </div>
+      <div class="rom-opt rom-sub" id="rom-scope-row">
+        <span class="rom-opt-label">&#8627; Monster pool <span class="rom-opt-note">how far afield enemies are drawn from</span></span>
+        <div class="seg" role="group" aria-label="Encounter monster pool">
+          <input type="radio" name="encounter_scope" id="scope-scene" value="scene" checked><label for="scope-scene" title="Each area's own monsters">Scene</label>
+          <input type="radio" name="encounter_scope" id="scope-kingdom" value="kingdom"><label for="scope-kingdom" title="Any monster from the same kingdom (Drake / Sebucus / Karisto)">Kingdom</label>
+          <input type="radio" name="encounter_scope" id="scope-world" value="world"><label for="scope-world" title="Any monster on the disc — late-game monsters can appear at the start">World</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">&mdash; input count kept; Miracle Arts left alone</span></span>
+        <div class="seg" role="group" aria-label="Arts button combos">
+          <input type="radio" name="arts" id="arts-none" value="none" checked><label for="arts-none">Off</label>
+          <input type="radio" name="arts" id="arts-shuffle" value="shuffle"><label for="arts-shuffle">Shuffle</label>
+          <input type="radio" name="arts" id="arts-random" value="random"><label for="arts-random">Randomize</label>
+        </div>
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-equipment-drops">
+        <span>Equipment drops &mdash; every monster drops rare gear (weapon / armor / accessory) instead of its normal drop <span class="rom-opt-note">(overrides Monster drops)</span></span>
+      </label>
+    </details>
+
+    <!-- ---- Exploration ---- -->
+    <details class="rom-group">
+      <summary>Exploration <span class="rom-summary-note">doors &amp; warps</span></summary>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Doors / exits</span>
+        <div class="seg" role="group" aria-label="Doors and exits">
+          <input type="radio" name="doors" id="doors-none" value="none" checked><label for="doors-none">Off</label>
+          <input type="radio" name="doors" id="doors-shuffle" value="shuffle"><label for="doors-shuffle">Shuffle</label>
+          <input type="radio" name="doors" id="doors-random" value="random"><label for="doors-random">Randomize</label>
+        </div>
+      </div>
+      <div class="rom-opt rom-sub" id="rom-coupling-row">
+        <span class="rom-opt-label">&#8627; Connectivity</span>
+        <div class="seg" role="group" aria-label="Door connectivity">
+          <input type="radio" name="door_coupling" id="coupling-coupled" value="coupled" checked><label for="coupling-coupled" title="You can walk back the way you came">Two-way</label>
+          <input type="radio" name="door_coupling" id="coupling-decoupled" value="decoupled"><label for="coupling-decoupled" title="Going back leads somewhere else">One-way</label>
+        </div>
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-house-doors">
+        <span>House doors (experimental) &mdash; shuffle intra-town interior/exit door targets <span class="rom-opt-note">(also scrambles some actor positions)</span></span>
+      </label>
+    </details>
+
+    <!-- ---- New game ---- -->
+    <details class="rom-group">
+      <summary>New game start <span class="rom-summary-note">starting bag &amp; warps</span></summary>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Starting items</span>
+        <select id="rom-starting-items">
+          <option value="0" selected>Leave alone (Healing Leaf &times;5)</option>
+          <option value="1">1 random item</option>
+          <option value="2">2 random items</option>
+          <option value="3">3 random items</option>
+          <option value="4">4 random items</option>
+          <option value="5">5 random items</option>
+        </select>
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-door-of-wind">
+        <span>Seed Door of Wind (warp consumable) into the starting bag &mdash; count
+          <input type="number" id="rom-door-of-wind-count" min="1" max="99" value="10"></span>
+      </label>
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-all-warps">
+        <span>Unlock every Door-of-Wind destination from the start (teleport to any town)</span>
+      </label>
+    </details>
+
+    <!-- ---- Unused content ---- -->
+    <details class="rom-group">
+      <summary>Unused content <span class="rom-summary-note">cut enemies &amp; items</span></summary>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-unused-enemies">
+        <span>Add the unused &ldquo;Comm&rdquo; + Evil Bat enemies to random encounters <span class="rom-opt-note">(needs Randomize encounters)</span></span>
+      </label>
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-unused-items">
+        <span>Add the unused &ldquo;Something Good&rdquo; + the &ldquo;Seru Bell&rdquo; accessory to random fills</span>
+      </label>
+    </details>
+
+    <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
-    <div id="rom-status" class="rom-status">Choose a disc image and at least one option, then patch.</div>
+    <div id="rom-status" class="rom-status">Choose a disc image and a preset (or any toggle), then patch.</div>
     <pre id="rom-summary" class="rom-summary"></pre>
   </div>
+
   <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code> (same base name). Keep them together and point your emulator at the <code>.cue</code> &mdash; it references the <code>.bin</code> by name. Legend of Legaia is a single-track <code>MODE2/2352</code> disc, so the cue is just a track header. If you'd rather reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
   <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching holds a couple of copies in memory and the download is the same size &mdash; give it a moment, and use a desktop browser with enough RAM. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong>. (Sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.)</p>
 </section>
 
 <section class="doc-section" id="how">
   <h2>What it does</h2>
-  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit &mdash; same-size in place for drops / encounters / chests / steals, and a variable-length <a href="../formats/man-relocation.html">MAN rebuild</a> for doors (the disc's total size never changes either way):</p>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit &mdash; same-size in place for drops / encounters / chests / steals, and a variable-length <a href="../formats/man-relocation.html">MAN rebuild</a> for doors (the disc's total size never changes either way). Every randomizable category offers two modes: <strong>Shuffle</strong> (<em>rebalanced</em> &mdash; redistributes the existing set, so difficulty is preserved) or <strong>Randomize</strong> (<em>wild</em> &mdash; draws fresh from the whole valid pool).</p>
   <ul class="bullets">
-    <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Random</em> draws from the valid item table.</li>
-    <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations, drawn from that scene's <em>own</em> monster set, so every swapped-in monster is one the scene already loads (no missing model).</li>
+    <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Randomize</em> draws from the valid item table.</li>
+    <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations. The <strong>Monster pool</strong> sub-option sets how wide a net is cast: <em>Scene</em> (each area's own monsters &mdash; every swap is one the area already loads), <em>Kingdom</em> (any monster from the same Drake / Sebucus / Karisto kingdom), or <em>World</em> (any monster on the disc, so late-game monsters can appear at the start). Boss / scripted fights are never touched.</li>
     <li><strong>Treasure chests</strong> &mdash; reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest. A curated set of quest / key items (Mary's Diary, Dark Stone, the Genesis-Tree garden tools, Silver Compass, Old Rod) is kept static so progression items stay where the player expects them.</li>
+    <li><strong>Town shops</strong> &mdash; reassigns what each town store sells (the field-VM op <code>0x49</code> stock list).</li>
+    <li><strong>Casino prizes</strong> &mdash; reassigns the casino prize-exchange items; each prize keeps its coin price and progression gate.</li>
     <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
-    <li><strong>Arts button combos</strong> &mdash; reassigns the directional combo that fires each Tactical Art (the <code>SCUS_942.54</code> arts table, which is the one place the combo lives, so the menu arrows and the trigger always match). Every art keeps its <em>input count</em> (a 4-input art stays 4 inputs) and each character's combos stay unique. <em>Shuffle</em> swaps a character's own same-length combos; <em>Random</em> draws each a same-length combo from the whole cast's combos. Each character's Miracle Art is left alone.</li>
-    <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Bidirectional</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
-    <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving, so every target stays a valid tile), so house/interior doors lead to different rooms. The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
-    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count). There is no static starting-inventory table, so this rewrites the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place &mdash; a same-size patch using a packed halfword store per item, drawing from the consumable item block (Healing Leaf &hellip; Wonder Elixir) so each item belongs on the bag's consumable page.</li>
-    <li><strong>Unused enemies</strong> &mdash; brings back two fully-formed monsters the shipped game has in its data but never places in any encounter: <strong>"Comm"</strong> (a tough standalone enemy) and the <strong>Evil Bat</strong>. The battle loader streams a monster's graphics on demand by id, so adding its id to the encounter pool is enough to make it spawn. Only takes effect with <em>Random</em> encounters (a multiset-preserving shuffle can't introduce a new monster).</li>
-    <li><strong>Unused items</strong> &mdash; adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a 50,000&nbsp;G sell item) and an accessory that has no name in the data &mdash; the randomizer names it <strong>&ldquo;Seru Bell&rdquo;</strong> (a same-size <code>SCUS_942.54</code> patch that repoints just that item's name pointer) so it shows a real name when it lands. Only affects the <em>Random</em> drop / chest / steal fills.</li>
+    <li><strong>Arts button combos</strong> &mdash; reassigns the directional combo that fires each Tactical Art (the <code>SCUS_942.54</code> arts table, the one place the combo lives, so the menu arrows and the trigger always match). Every art keeps its <em>input count</em> and each character's combos stay unique. Each character's Miracle Art is left alone.</li>
+    <li><strong>Equipment drops</strong> &mdash; turns every monster's drop into a rare random weapon / armor / accessory at a tiered chance. Owns the single drop slot, so it overrides Monster drops.</li>
+    <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
+    <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
+    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place.</li>
+    <li><strong>Unused enemies</strong> &mdash; brings back two fully-formed monsters the shipped game never places: <strong>&ldquo;Comm&rdquo;</strong> and the <strong>Evil Bat</strong>. Only takes effect with <em>Randomize</em> encounters (a Shuffle can't introduce a new monster).</li>
+    <li><strong>Unused items</strong> &mdash; adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a sell item) and a no-name accessory the randomizer names <strong>&ldquo;Seru Bell&rdquo;</strong>. Only affects the <em>Randomize</em> drop / chest / steal fills.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>
@@ -163,18 +236,76 @@
 </section>
 
 <style>
-  .rom-form { max-width: 46rem; }
-  .rom-row { display: block; margin: 0.6rem 0; }
-  .rom-label { display: block; font-weight: 600; margin-bottom: 0.2rem; }
-  .rom-check { display: block; font-weight: 400; }
-  .rom-check input { margin-right: 0.4rem; }
-  .rom-form input[type=text], .rom-form select { width: 100%; max-width: 32rem; padding: 0.35rem 0.5rem; }
-  .rom-button { padding: 0.5rem 1.1rem; font-weight: 600; cursor: pointer; }
+  .rom-form { max-width: 48rem; }
+  .rom-row { display: block; margin: 0.7rem 0; }
+  .rom-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+  .rom-hint { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
+  .rom-form input[type=text], .rom-form select { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
+  .rom-form input[type=file] { color: var(--text-muted); }
+
+  /* Presets */
+  .rom-presets { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: stretch; }
+  .rom-preset { display: flex; flex-direction: column; gap: 0.15rem; text-align: left; padding: 0.5rem 0.8rem; cursor: pointer; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-weight: 600; transition: border-color var(--transition), background var(--transition); }
+  .rom-preset:hover { border-color: var(--border-hi); background: var(--bg-card-hi); }
+  .rom-preset.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-hi); }
+  .rom-preset-sub { font-weight: 400; font-size: 0.78em; color: var(--text-dim); }
+  .rom-preset.is-active .rom-preset-sub { color: var(--accent); }
+  .rom-preset-custom { align-self: center; font-size: 0.85em; color: var(--text-dim); font-style: italic; padding-left: 0.3rem; }
+
+  /* Mode legend */
+  .rom-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; margin: 0.9rem 0 0.4rem; padding: 0.7rem 0.9rem; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px; font-size: 0.9em; }
+  .rom-legend-item { display: block; color: var(--text-muted); }
+  .rom-legend-item em { color: var(--text); font-style: normal; font-weight: 600; }
+  .rom-chip { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 4px; font-size: 0.82em; font-weight: 700; border: 1px solid; margin-right: 0.2rem; }
+  .rom-chip-shuffle { color: var(--accent); border-color: var(--accent); }
+  .rom-chip-random { color: var(--partial); border-color: var(--partial); }
+
+  /* Collapsible groups */
+  .rom-group { margin: 0.7rem 0; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); overflow: hidden; }
+  .rom-group > summary { cursor: pointer; padding: 0.6rem 0.85rem; font-weight: 600; list-style: none; background: var(--bg-raised); user-select: none; }
+  .rom-group > summary::-webkit-details-marker { display: none; }
+  .rom-group > summary::before { content: '\25B8'; display: inline-block; width: 1.1em; color: var(--text-dim); transition: transform var(--transition); }
+  .rom-group[open] > summary::before { transform: rotate(90deg); }
+  .rom-summary-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; margin-left: 0.3rem; }
+
+  /* One randomizable option: label on the left, segmented control on the right */
+  .rom-opt { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.4rem 1rem; padding: 0.55rem 0.85rem; border-top: 1px solid var(--border); }
+  .rom-opt:first-of-type { border-top: none; }
+  .rom-opt-label { font-weight: 500; }
+  .rom-opt-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
+  .rom-sub { padding-left: 1.6rem; background: var(--bg-raised); }
+  .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
+
+  /* Segmented control (radio group styled as connected buttons) */
+  .seg { display: inline-flex; border: 1px solid var(--border-hi); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label { padding: 0.32rem 0.8rem; cursor: pointer; font-size: 0.9em; color: var(--text-muted); background: var(--bg-code); border-left: 1px solid var(--border); transition: background var(--transition), color var(--transition); }
+  .seg label:first-of-type { border-left: none; }
+  .seg input:checked + label { background: var(--accent-soft); color: var(--accent-hi); font-weight: 600; }
+  .seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* The "Randomize" segment, when picked, reads as the wilder amber. */
+  .seg input[value=random]:checked + label { background: #2a2418; color: var(--partial); }
+
+  .rom-check-row { display: flex; gap: 0.5rem; align-items: flex-start; padding: 0.55rem 0.85rem; border-top: 1px solid var(--border); font-weight: 400; }
+  .rom-check-row:first-of-type { border-top: none; }
+  .rom-check-row input[type=checkbox] { margin-top: 0.2rem; }
+  .rom-check-row input[type=number] { width: 4em; padding: 0.15rem 0.3rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+  .rom-opt.is-disabled, .rom-check-row.is-disabled { opacity: 0.45; }
+
+  .rom-actions { margin-top: 1rem; }
+  .rom-button { padding: 0.55rem 1.2rem; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: none; border-radius: 6px; }
+  .rom-button:hover { background: var(--accent-hi); }
   .rom-button:disabled { opacity: 0.6; cursor: progress; }
-  .rom-status { margin-top: 0.8rem; font-family: var(--mono, monospace); }
-  .rom-status-ok { color: #2e7d32; }
-  .rom-status-err { color: #c62828; }
-  .rom-summary { white-space: pre-wrap; margin-top: 0.5rem; }
+  .rom-status { margin-top: 0.8rem; font-family: var(--font-mono, monospace); font-size: 0.9em; }
+  .rom-status-ok { color: var(--done); }
+  .rom-status-err { color: var(--open); }
+  .rom-summary { white-space: pre-wrap; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.88em; }
+
+  @media (max-width: 33rem) {
+    .rom-opt { justify-content: flex-start; }
+    .seg { width: 100%; }
+    .seg label { flex: 1; text-align: center; }
+  }
 </style>
 
 <script type="module" src="../js/rom-patcher-app.js"></script>

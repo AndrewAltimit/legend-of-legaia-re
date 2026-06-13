@@ -28,6 +28,14 @@ fn parse_mode(s: &str) -> Option<DropMode> {
     }
 }
 
+fn parse_encounter_scope(s: &str) -> apply::EncounterScope {
+    match s {
+        "kingdom" => apply::EncounterScope::Kingdom,
+        "world" => apply::EncounterScope::World,
+        _ => apply::EncounterScope::Scene, // "scene" or anything else
+    }
+}
+
 fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
 }
@@ -57,8 +65,12 @@ pub fn resolve_seed(seed: &str) -> String {
 /// "Something Good" / unnamed-accessory items to the random-fill pool (only the
 /// `random` drop / chest / steal modes use it). `equipment_drops` turns every
 /// monster's drop into a rare random weapon / armor / accessory at a tiered
-/// chance (overrides `drops`). `seed` is a number or any string (hashed).
-/// Returns `{ data, summary, seed }`.
+/// chance (overrides `drops`). `encounter_scope` widens the monster pool an
+/// encounter roll draws from: `"scene"` (default — each scene's own monsters),
+/// `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
+/// `"world"` (any monster on the disc, so late-game monsters can appear at the
+/// start). Only matters when `encounters` is not `"none"`. `seed` is a number or
+/// any string (hashed). Returns `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn patch_rom(
@@ -66,6 +78,7 @@ pub fn patch_rom(
     seed: &str,
     drops: &str,
     encounters: &str,
+    encounter_scope: &str,
     chests: &str,
     shops: &str,
     casino: &str,
@@ -171,11 +184,18 @@ pub fn patch_rom(
 
     match enc_mode {
         Some(m) => {
-            let rep = apply::randomize_encounters(&mut patcher, seed_n, m, unused_enemy_ids)
-                .map_err(|e| err(format!("encounters: {e}")))?;
+            let scope = parse_encounter_scope(encounter_scope);
+            let rep = apply::randomize_encounters_scoped(
+                &mut patcher,
+                seed_n,
+                m,
+                scope,
+                unused_enemy_ids,
+            )
+            .map_err(|e| err(format!("encounters: {e}")))?;
             summary.push_str(&format!(
-                "encounters: {} scenes, {} ids changed ({})\n",
-                rep.scenes_changed, rep.ids_changed, encounters
+                "encounters: {} scenes, {} ids changed ({} {})\n",
+                rep.scenes_changed, rep.ids_changed, encounter_scope, encounters
             ));
             if rep.unused_placed > 0 {
                 summary.push_str(&format!(

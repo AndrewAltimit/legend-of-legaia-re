@@ -348,7 +348,7 @@ export class LegaiaViewer {
     catalog_len(): number;
     /**
      * Bounding-sphere `[cx, cy, cz, r]` so the JS viewer can frame the model.
-     * Uses [`centroid_bounds`] so asymmetric poses (weapon extended, arm out)
+     * Uses `centroid_bounds` so asymmetric poses (weapon extended, arm out)
      * don't pull the camera target off the body.
      */
     character_mesh_bounds(slot: number, equip_byte: number): Float32Array;
@@ -1097,10 +1097,14 @@ export class LegaiaViewer {
  * "Something Good" / unnamed-accessory items to the random-fill pool (only the
  * `random` drop / chest / steal modes use it). `equipment_drops` turns every
  * monster's drop into a rare random weapon / armor / accessory at a tiered
- * chance (overrides `drops`). `seed` is a number or any string (hashed).
- * Returns `{ data, summary, seed }`.
+ * chance (overrides `drops`). `encounter_scope` widens the monster pool an
+ * encounter roll draws from: `"scene"` (default — each scene's own monsters),
+ * `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
+ * `"world"` (any monster on the disc, so late-game monsters can appear at the
+ * start). Only matters when `encounters` is not `"none"`. `seed` is a number or
+ * any string (hashed). Returns `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1263,7 +1267,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
