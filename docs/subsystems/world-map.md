@@ -867,6 +867,19 @@ reach the world-map render tick:
 | `FUN_80025EEC` | Default per-frame handler (used by 12 of the 14 per-frame modes - not world-map-specific; disc-confirmed by `legaia_asset::mode_table`). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
 | `FUN_80025F2C` | Mode 13 (MAPDSIP MODE) - field/world-map display per-frame handler. | `FUN_8001698C` → `func_0x801CE850` (overlay entry) → `FUN_80016444(0)`. |
 
+The matching **Mode 12 (MAPDSIP INIT) handler `FUN_80025DA0`** is a transient
+sub-overlay swap: it saves the field overlay 0897's slot-A head
+(`*0x8001038C` = `0x801CE818`, `0x4000` bytes) into a scratch buffer, loads
+PROT 981 over it (`FUN_8003EBE4(0x56)`), and calls the display module's init
+`0x801CF4AC` (file `+0xC94`; base `0x801CE818` pinned by the call target). The
+module seeds the scratchpad display-list base `0x1F800314` from world-state
+globals (player pos `0x800840B8`, scroll vec `0x80092118`) and runs a 21-state
+display SM over the still-resident 0897 body (it reads `0x801D5334`, beyond its
+`0x4000` swap window); on mode exit `FUN_80025DA0` restores 0897's head and
+re-enters it (`0x801CE8CC`). So MAPDSIP is the world-map *display* head, while
+the controller proper (`FUN_801E76D4`) stays in the co-resident 0897 body. See
+[`boot.md`](boot.md#per-frame-dispatch-scus-resident) mode-12 row.
+
 The `a0` arg controls whether `FUN_80016444` skips its early
 `FUN_8005FB84` block (Mode 13 skips it; the default handler runs
 it). Both reach the world-map render branch deeper in the function,
