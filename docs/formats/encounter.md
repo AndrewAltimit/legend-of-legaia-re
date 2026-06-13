@@ -375,6 +375,19 @@ back to the mean-rate session. Pinned by
 `crates/engine-core/tests/field_region_encounter_disc.rs` (install + per-region
 rate variation + the full region→session→drain flow).
 
+**Scripted formations override the region roll.** A *scripted* arm
+(`World::install_man_formation` by index, or
+`World::install_encounter_from_record` from an inline `[count][ids]` window)
+is a one-shot that must fire on the next step regardless of the per-region
+random rate — retail copies the carrier's `entity[+0x94]` formation into the
+battle cell on confirm, independent of the `FUN_801D9E1C` roll. The engine
+models this with a `scripted_formation_pending` flag that `on_field_step`
+checks *before* the region path, driving the forced `0xFF`-rate session
+directly and consuming the flag. This is what lets the Rim Elm Tetsu tutorial
+fight start in town01 even though that scene installs a region tracker whose
+effective random rate is 0%. Pinned by
+`crates/engine-shell/tests/training_battle.rs`.
+
 **Encounter control block (`_DAT_801C6EA4`).** A 100-byte block
 allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
 ("Mesworks set encount group table"). After scene load it carries:
