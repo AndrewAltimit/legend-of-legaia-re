@@ -188,7 +188,7 @@ pub fn warp_seed_file_offset(scus: &[u8]) -> Option<usize> {
 }
 
 /// One roster member's opening stats + name, decoded from the template.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
 pub struct StartingChar {
     /// Display name (e.g. `"Vahn"`).
     pub name: String,

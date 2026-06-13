@@ -353,8 +353,8 @@ asset kingdom-slot / slot4-png            # world-map kingdom bundles
 asset summon-overlay   <PROT 0905 .BIN>
 asset move-power / element-affinity       # PROT 0898 battle-overlay tables
 asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
-asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables
-asset sfx-table / new-game / level-up             # more SCUS_942.54 tables
+asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables (--json)
+asset sfx-table / new-game / level-up             # more SCUS_942.54 tables (--json)
 asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
 asset validate                            # cross-check detector coverage
 ```

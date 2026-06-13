@@ -241,7 +241,7 @@ pub fn growth_tables_from_scus(scus: &[u8]) -> Option<GrowthTables> {
 /// validated against the new-game starting template ([`crate::new_game`]):
 /// Gala's record matches the template on **all 8** stats, Vahn/Noa on HP/MP/AGL
 /// (their late-join templates are lightly retuned).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct StatGrowthParam {
     /// Base (level-1) stat value (matches the new-game template stat).
     pub start: u16,
@@ -254,7 +254,7 @@ pub struct StatGrowthParam {
 }
 
 /// The [`GROWTH_STAT_COUNT`]-stat growth-param record for one character.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct CharGrowthParams {
     /// Per-stat sub-records in record order (HP, MP, then the six battle stats).
     pub stats: [StatGrowthParam; GROWTH_STAT_COUNT],

@@ -51,7 +51,7 @@ pub const SFX_ENTRY_STRIDE: usize = 8;
 pub const SFX_TABLE_ENTRIES: usize = 0x64;
 
 /// One decoded 8-byte sound-effect descriptor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 pub struct SfxDescriptor {
     /// `+0` `p` — program / VAG index into the loaded bank's program-attr table.
     pub program: u8,
