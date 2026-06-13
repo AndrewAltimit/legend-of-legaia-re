@@ -128,6 +128,13 @@ enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every named spell's current MP cost from the SCUS spell
+    /// table — the population the `--spell-cost` randomizer redistributes.
+    SpellCosts {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -218,6 +225,12 @@ struct RandomizeArgs {
     /// is left untouched. `legaia-rando affinity` shows the current grid.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     element_affinity: DropArg,
+    /// How spell MP costs are reassigned (the SCUS spell table). `shuffle`
+    /// permutes the MP costs of the named, costed spells (the cost multiset is
+    /// preserved); `random` draws each from that pool. Free / internal-tier
+    /// spells never gain a cost. `legaia-rando spell-costs` lists them.
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
+    spell_cost: DropArg,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool — the steal *chance* is always preserved).
@@ -394,6 +407,7 @@ fn main() -> Result<()> {
         Cmd::MonsterStats { input } => cmd_monster_stats(&input),
         Cmd::MovePowers { input } => cmd_move_powers(&input),
         Cmd::Affinity { input } => cmd_affinity(&input),
+        Cmd::SpellCosts { input } => cmd_spell_costs(&input),
         Cmd::Randomize(args) => cmd_randomize(args),
         Cmd::Verify {
             input,
@@ -585,6 +599,21 @@ fn cmd_affinity(input: &Path) -> Result<()> {
             print!(" {:>7}", cell);
         }
         println!();
+    }
+    Ok(())
+}
+
+fn cmd_spell_costs(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    match apply::current_spell_costs(&patcher)? {
+        Some(spells) => {
+            for s in &spells {
+                println!("  {:>3}  {:<16} {:>3} MP", s.id, s.name, s.mp);
+            }
+            println!("{} named, costed spells", spells.len());
+        }
+        None => println!("spell table not found"),
     }
     Ok(())
 }
@@ -867,6 +896,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let monster_stats_mode = args.monster_stats.mode();
     let move_power_mode = args.move_power.mode();
     let element_affinity_mode = args.element_affinity.mode();
+    let spell_cost_mode = args.spell_cost.mode();
 
     println!("seed: {seed} (0x{seed:016X})");
     // Manifest lines accumulate the run's options + outcome for reproducibility.
@@ -1157,6 +1187,16 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("element affinity: untouched");
         manifest.push("element_affinity = \"none\"".to_string());
+    }
+
+    if let Some(spell_cost_mode) = spell_cost_mode {
+        let changed = apply::randomize_spell_costs(&mut patcher, seed, spell_cost_mode)?;
+        println!("spell costs: {changed} spell MP cost(s) changed ({spell_cost_mode:?})");
+        manifest.push(format!("spell_cost = {:?}", mode_str(spell_cost_mode)));
+        manifest.push(format!("spell_cost_changed = {changed}"));
+    } else {
+        println!("spell costs: untouched");
+        manifest.push("spell_cost = \"none\"".to_string());
     }
 
     if let Some(steal_mode) = steal_mode {

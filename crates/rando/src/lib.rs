@@ -67,6 +67,7 @@ pub mod move_power;
 pub mod ppf;
 pub mod rng;
 pub mod shop;
+pub mod spell_cost;
 pub mod starting_items;
 pub mod steal;
 pub mod unused;

@@ -659,6 +659,99 @@ pub fn randomize_element_affinity(
     Ok(changed)
 }
 
+/// One spell's current MP cost, for the read-only listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpellCost {
+    /// Spell id (index into the spell table).
+    pub id: u8,
+    /// Display name.
+    pub name: String,
+    /// MP cost (`stats +3`).
+    pub mp: u8,
+}
+
+/// `SCUS_942.54` filename (the static-table container).
+const SCUS_NAME: &str = "SCUS_942.54";
+
+/// Read every named, costed spell's id + name + MP cost from the SCUS spell
+/// table — the population the MP-cost randomizer redistributes. Empty / unnamed
+/// internal-tier slots and zero-cost spells are excluded. `None` if SCUS / its
+/// spell table can't be parsed.
+pub fn current_spell_costs(patcher: &DiscPatcher) -> Result<Option<Vec<SpellCost>>> {
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(None);
+    };
+    let Some(table) = legaia_asset::spell_names::SpellNameTable::from_scus(&scus) else {
+        return Ok(None);
+    };
+    let mut out = Vec::new();
+    for id in 0..=u8::MAX {
+        let Some(entry) = table.entry(id) else { break };
+        if let Some(name) = entry.name.as_deref().filter(|_| entry.mp > 0) {
+            out.push(SpellCost {
+                id,
+                name: name.to_string(),
+                mp: entry.mp,
+            });
+        }
+    }
+    Ok(Some(out))
+}
+
+/// Randomize spell MP costs in the SCUS spell table (see [`crate::spell_cost`]).
+/// Rewrites only the `+3` cost byte of each named, costed spell — a same-size
+/// in-place SCUS patch. Returns the number of spells whose cost changed.
+pub fn randomize_spell_costs(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::spell_names::{RECORD_STRIDE, SPELL_COUNT};
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(0);
+    };
+    let Some(table_off) = legaia_asset::spell_names::stats_file_offset(&scus) else {
+        return Ok(0);
+    };
+    let span = SPELL_COUNT * RECORD_STRIDE;
+    let Some(mut table) = scus.get(table_off..table_off + span).map(<[u8]>::to_vec) else {
+        return Ok(0);
+    };
+
+    // Randomizable population: named spells with a non-zero MP cost.
+    let names = legaia_asset::spell_names::SpellNameTable::from_scus(&scus);
+    let ids: Vec<usize> = (0..SPELL_COUNT)
+        .filter(|&id| {
+            let cost = table[id * RECORD_STRIDE + 3];
+            let named = names
+                .as_ref()
+                .and_then(|t| t.name(id as u8))
+                .is_some_and(|n| !n.is_empty());
+            cost > 0 && named
+        })
+        .collect();
+    let current: Vec<u8> = ids
+        .iter()
+        .map(|&id| table[id * RECORD_STRIDE + 3])
+        .collect();
+    let plan = crate::spell_cost::plan_costs(&current, seed, mode);
+
+    let mut changed = 0usize;
+    for (k, &id) in ids.iter().enumerate() {
+        let off = id * RECORD_STRIDE + 3;
+        if table[off] != plan[k] {
+            table[off] = plan[k];
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        patcher
+            .patch_named_file(SCUS_NAME, table_off as u64, &table)
+            .context("write spell MP-cost table")?;
+    }
+    Ok(changed)
+}
+
 /// Outcome of randomizing scene encounters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EncounterApplyReport {

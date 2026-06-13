@@ -52,6 +52,16 @@ impl ExeMap {
     }
 }
 
+/// File offset of the spell-stats table (entry 0 of [`STATS_VA`]) within
+/// `SCUS_942.54`. Spell `id`'s record begins at the returned offset
+/// `+ id * `[`RECORD_STRIDE`], so its MP-cost byte is `+ 3` further. `None` when
+/// `SCUS_942.54` isn't a parseable PSX-EXE. Mirrors
+/// [`crate::steal_table::table_file_offset`]; the MP-cost randomizer uses it to
+/// turn a spell id into a same-size SCUS patch offset.
+pub fn stats_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(STATS_VA)
+}
+
 fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
     let start = map.off(va)?;
     let mut out = String::new();
