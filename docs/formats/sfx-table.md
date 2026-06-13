@@ -98,7 +98,7 @@ fields plus `voice_count()` / `sustained()` / `is_active()`. The disc-gated
 the descriptors into `legaia_engine_audio::SfxBank::from_descriptors`, and
 `sfx_vab_bank` (engine-shell) proves the program bank is the per-scene music VAB
 (SFX programs resolve in the `music_01` bank; the live bank is byte-identical to
-the disc bank; the bank varies per scene).
+the disc bank; the bank varies per scene). CLI: `asset sfx-table <SCUS> [--json]`.
 
 ## See also
 

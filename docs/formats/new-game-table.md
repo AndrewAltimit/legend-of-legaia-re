@@ -96,7 +96,8 @@ parses the table from a `SCUS_942.54` image at runtime (PSX-EXE `t_addr` →
 file-offset map, identical to the [item-name table](item-table.md) resolver), so
 the engine can seed a faithful New Game from the user's own disc without
 committing any Sony bytes. The disc-gated `new_game_real` test pins the four
-rows against the real executable.
+rows against the real executable. CLI: `asset new-game <SCUS> [--json]` (dumps
+the party template + the code-built starting inventory).
 
 ## See also
 

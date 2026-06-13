@@ -195,7 +195,8 @@ the aggregator arithmetic and `bit_location(index)` the bitfield placement.
 The disc-gated `accessory_passive_real` test pins the per-item indices, the
 table text, the scope flags, and the retail equip `+5` sentinel invariant;
 `legaia-gamedata`'s `accessory_passives_vs_disc` cross-validates every
-curated accessory effect class against its decoded index.
+curated accessory effect class against its decoded index. CLI:
+`asset accessory-passive <SCUS> [--json]`.
 
 ## Engine consumers
 
