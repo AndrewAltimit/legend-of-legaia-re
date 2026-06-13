@@ -1994,3 +1994,25 @@ expected_game_mode = 0x15
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+# Equip-UI before/after-class pair for the weapon-specialty mechanic: Vahn in the
+# equipment menu holding the Astral Sword (id 0xBA, not-favored / always-double
+# Arms) vs the Ra-Seru Blade (favored sword, single Arms). Same character + same
+# menu, and the two weapons' ATK is near-identical (97 vs 98), so a char-record
+# diff isolates exactly what equipping each writes - revealing any equip-time
+# "favored" flag beyond the slot byte + ATK bonus.
+[[scenarios]]
+slot = 5
+label = "equip_ui_vahn_astral"
+backup_fingerprint = "93dcb7b46d552d11f01a25af2806a9cac036a0ad53487638f1d271f01238a929"
+description = "Equipment UI, Vahn holding the Astral Sword (id 0xBA, not-favored / always-double-width Arms exception)"
+topics = ["weapon specialty", "equip menu", "arm width", "astral sword", "vahn"]
+phase = "menu"
+
+[[scenarios]]
+slot = 6
+label = "equip_ui_vahn_raseru_blade"
+backup_fingerprint = "8d656e67367c7de3ba8d443053b5698032bed3578bcacdc96c0e64d007abc5cd"
+description = "Equipment UI, Vahn holding the Ra-Seru Blade (favored sword - single-width Arms); pairs with equip_ui_vahn_astral"
+topics = ["weapon specialty", "equip menu", "arm width", "favored weapon", "vahn"]
+phase = "menu"
