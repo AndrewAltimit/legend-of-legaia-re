@@ -203,6 +203,35 @@ impl ProtIndex {
         Ok(bytes)
     }
 
+    /// Read an entry's bytes trimmed to its **TOC-gap LBA footprint** —
+    /// the `(toc[idx+3] - toc[idx+2]) * 0x800` window the boot loader
+    /// actually streams (start LBA + LBA count, see
+    /// [`Self::entry_lba_count_retail`]).
+    ///
+    /// This is the correct view for the overlay code images whose
+    /// extraction `.BIN`s **over-read** into the following entry — the
+    /// per-summon move-VM stagers (PROT 0903.., the high-summon block,
+    /// the enemy-boss block). [`Self::entry_bytes_extended`] returns the
+    /// raw on-disc footprint, which for these entries runs past their own
+    /// content into the neighbour; parsing that untrimmed makes spawn-site
+    /// pointers in the over-read tail dereference unrelated bytes. Trimming
+    /// here matches `legaia_asset::summon_overlay::unique_content_len`
+    /// (which the disc-gated `summon_overlay_real` test applies).
+    ///
+    /// Falls back to the extended footprint when the TOC can't supply a
+    /// monotonic LBA gap for this entry (so a malformed/short TOC still
+    /// yields bytes rather than an empty slice).
+    pub fn entry_bytes_lba_footprint(&self, idx: u32) -> Result<Vec<u8>> {
+        let mut bytes = self.entry_bytes_extended(idx)?;
+        if let Some(count) = self.entry_lba_count_retail(idx as u16) {
+            let footprint = count as usize * 0x800;
+            if footprint > 0 && footprint <= bytes.len() {
+                bytes.truncate(footprint);
+            }
+        }
+        Ok(bytes)
+    }
+
     /// Read raw bytes from `PROT.DAT` at an arbitrary file offset.
     ///
     /// Used to reach unindexed gap regions that don't belong to any TOC

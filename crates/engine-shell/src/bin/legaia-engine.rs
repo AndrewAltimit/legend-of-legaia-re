@@ -8619,11 +8619,16 @@ impl ApplicationHandler for PlayWindowApp {
                             ]
                         })
                         .unwrap_or([0, 0, 0]);
+                    // Read the stager's TOC-gap LBA footprint, not the
+                    // indexed sub-region: the stager `.BIN`s over-read into
+                    // the next entry, so the spawn-site pointer table must be
+                    // parsed against the trimmed window (mirrors the disc-gated
+                    // `summon_overlay_real` test's `unique_content_len` trim).
                     match self
                         .session
                         .host
                         .index
-                        .entry_bytes(PROT_GIMARD_SUMMON_STAGER)
+                        .entry_bytes_lba_footprint(PROT_GIMARD_SUMMON_STAGER)
                     {
                         Ok(bytes) => {
                             let overlay = legaia_asset::summon_overlay::parse(

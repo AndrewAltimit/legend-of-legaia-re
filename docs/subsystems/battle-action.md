@@ -306,7 +306,22 @@ The six final-boss Cort special-attack stagers — extraction PROT **0938** (Mys
 The Cort mid-cast saves pin the boundary byte-exactly: each state's slot-B resident image matches its stager file up to precisely the TOC gap (0938 → `0x1800`, 0940/0944/0961 → `0x2000`, 0962 → `0x2800`, 0966 → `0x4000`) and diverges after it (stale bytes of the slot's previous occupant). Spawn sites in the over-read tail belong to *neighbouring* stagers, and their `lui/addiu` record pointers — valid only for the neighbour's own load at the shared base — dereference unrelated bytes in the wrong file window.
 
 **That trim resolves the record-first-word "sentinel" question.** Across every trimmed stager (player 0903..=0913, high 0927..=0934, the six Cort entries) the first word is only ever `-1` (transform node, dominant), a small library-mesh index, or **`0x4000`** — four records total, in PROT 0928/0929/0931 — matching `FUN_80021B04`'s own dispatch exactly (negative → transform path, `0x4000`/`0x4001` → render-mode nodes, else library index). The previously-reported `0x1000`/`0x8000`-class sentinel population was the over-read artifact.
-Live correlation from the Cort states: every live pooled part-actor (`DAT_801C90F0` slots) carries `actor[+0x48]` pointing into the trimmed record table at a `-1` record (RAM first word == file first word), with the spawn-time `+0x56`/`+0x5A` zeros rebound post-spawn by the move-VM ops (`+0x56 = 4` / `+0x5A = 2` dominate mid-cast) and `actor[+0x64] = 0` throughout. No `0x4000`/`0x4001` part-actor was live in these captures, so those two render modes' draw behaviour stays open.
+Live correlation from the Cort states: every live pooled part-actor (`DAT_801C90F0` slots) carries `actor[+0x48]` pointing into the trimmed record table at a `-1` record (RAM first word == file first word), with the spawn-time `+0x56`/`+0x5A` zeros rebound post-spawn by the move-VM ops (`+0x56 = 4` / `+0x5A = 2` dominate mid-cast) and `actor[+0x64] = 0` throughout. No `0x4000`/`0x4001` part-actor was live in these captures.
+
+**The render-mode nodes have no live exerciser in the catalogued corpus.**
+The three player Sim-Seru casts whose stagers *carry* the `0x4000` records —
+Palma (0928), Mule (0929), Jedo (0931) — are now in the mid-cast save corpus,
+and a pointer-scan of each state's full RAM finds **zero** words referencing
+any of the stager's record starts (or their `record+4` bytecode entries), even
+though the stager is 99.9–100% byte-resident at slot B. So in a player cast the
+move-VM scene-graph is not live at the on-screen instant at all — the summon
+renders as its namesake `battle_data` creature through the monster animation
+pipeline (the player-summon correction), and the stager part-actors (including
+any `0x4000` node) are already gone. The Cort *enemy* path does run live stager
+parts but holds only `-1` nodes. Pinning the `0x4000`/`0x4001` draw behaviour
+therefore needs a frame-stepped capture inside an *enemy* stager-spawn window
+whose stager carries a `0x4000` record — not reachable from the catalogued
+states (`crates/mednafen/tests/summon_render_mode_node.rs`).
 
 The single most-cited helper inside `FUN_801E295C` (~30 call sites). Signature `FUN_801D5854(actor_id, pose_id)`. Pose IDs surfaced:
 - `6` = idle / breathing
