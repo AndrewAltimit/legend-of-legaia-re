@@ -27,8 +27,12 @@
 //!   `_DAT_8007B5FC`); using the mean here is a reasonable summary that
 //!   keeps engines that don't yet route the player position through the
 //!   region AABB lookup behaving in-character. Engines that DO route the
-//!   player position can swap rates with [`set_region_rate`] once they
-//!   know which region the player is in.
+//!   player position should instead build the region-keyed table with
+//!   [`crate::region_encounter::region_encounter_table_from_man`] and roll
+//!   against the active region via
+//!   [`crate::region_encounter::RegionEncounterTracker`] — the per-region
+//!   rate + formation-range model the world-map path already uses (see
+//!   [`crate::world::World::set_world_map_regions`]).
 //!
 //! See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md)
 //! for the byte-level MAN layout.
