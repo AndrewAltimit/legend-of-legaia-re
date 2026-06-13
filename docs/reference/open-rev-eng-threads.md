@@ -156,8 +156,13 @@ move-VM rebinding), and the three player Sim-Seru casts that *carry* the
 part at all** at the captured instant — a RAM pointer-scan finds zero
 references to any of the stager's records despite the stager being byte-resident
 at slot B (the player summon is the creature pipeline by the on-screen phase).
-Closing it needs a frame-stepped *enemy* stager-spawn capture whose stager
-carries a `0x4000` record (`crates/mednafen/tests/summon_render_mode_node.rs`).
+Newly-captured *ordinary*-enemy casts (the Delilas brothers → 0958/0959/0960,
+Zeto → 0946; `enemy_stager_binding`) confirm the enemy stager path generalizes
+beyond Cort, but none of those stagers carries a `0x4000` record either, so they
+don't seat one. Closing it needs a frame-stepped *enemy* stager-spawn capture
+whose stager carries a `0x4000` record — i.e. an enemy that casts one of the
+Sim-Seru creatures (Palma/Mule/Jedo, the only `0x4000` carriers that are also
+*enemies*) (`crates/mednafen/tests/summon_render_mode_node.rs`).
 
 **This CORRECTS the earlier "records beyond the `0x5800` file / `0x180C` only coincidentally record-shaped / parser reverted" reading — that was the wrong link base (`0x801F0000` instead of `0x801F69D8`), which pushed the runtime record addresses past the file.** **Still pinned:** the CLUT band is byte-identical across the two animation-distinct frames (motion is geometric, not palette cycling); flame texture is **PROT 870** (three 64x256 4bpp TIMs → battle VRAM `(320/384/448,0)`, CLUTs rows 474..476); the bound flame mesh comes from **PROT 871** (`etmd.dat`, 30-TMD pack) at `DAT_8007C018[26]`.
 
