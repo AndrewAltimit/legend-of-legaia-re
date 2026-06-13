@@ -1189,6 +1189,15 @@ pub struct World {
     /// mistaken for encounter arms. See [`Self::arm_scripted_encounter`].
     pub scripted_encounter_armed: bool,
 
+    /// One-shot override: a scripted/forced formation has been installed
+    /// ([`Self::install_man_formation`] / [`Self::install_encounter_from_record`])
+    /// and the next [`Self::on_field_step`] must fire it regardless of any
+    /// per-region random rate. Retail copies the carrier's `entity[+0x94]`
+    /// formation into the battle cell independent of the random-roll path
+    /// (`FUN_801D9E1C`), so a 0%-random scene (e.g. town01's Rim Elm tutorial)
+    /// still starts the scripted fight. Cleared when the step consumes it.
+    pub scripted_formation_pending: bool,
+
     /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
     /// world consumes a [`Self::pending_fmv_trigger`] at the top of a
     /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
@@ -2313,6 +2322,7 @@ impl World {
             pending_fmv_trigger: None,
             pending_scripted_encounter: None,
             scripted_encounter_armed: false,
+            scripted_formation_pending: false,
             active_fmv: None,
             cutscene_return_mode: None,
             pending_field_events: Vec::new(),
@@ -2484,6 +2494,7 @@ impl World {
         self.pending_fmv_trigger = None;
         self.pending_scripted_encounter = None;
         self.scripted_encounter_armed = false;
+        self.scripted_formation_pending = false;
         self.encounter = None;
         self.battle_end = None;
         self.game_over = false;

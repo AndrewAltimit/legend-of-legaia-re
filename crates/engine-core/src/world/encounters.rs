@@ -353,6 +353,9 @@ impl World {
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
         self.encounter = Some(EncounterSession::new(tracker));
+        // One-shot override: fire on the next field step regardless of any
+        // installed per-region random tracker.
+        self.scripted_formation_pending = true;
         Some(formation_id)
     }
 
@@ -397,6 +400,9 @@ impl World {
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
         self.encounter = Some(EncounterSession::new(tracker));
+        // One-shot override: fire on the next field step even when a per-region
+        // random tracker is installed (town01 is 0% random). See the field.
+        self.scripted_formation_pending = true;
         Some(formation_id)
     }
 
@@ -459,6 +465,21 @@ impl World {
     pub fn on_field_step(&mut self) -> bool {
         if !matches!(self.mode, SceneMode::Field) {
             return false;
+        }
+        // Scripted/forced formation (install_man_formation /
+        // install_encounter_from_record): a one-shot override that fires on this
+        // step regardless of any per-region random tracker. Retail copies the
+        // carrier's `entity[+0x94]` formation into the battle cell independent of
+        // the random-roll path (`FUN_801D9E1C`), so a 0%-random scene still
+        // starts the scripted fight. Drive the forced 0xFF session directly and
+        // consume the flag.
+        if self.scripted_formation_pending {
+            self.scripted_formation_pending = false;
+            let rng = self.next_rng();
+            return match self.encounter.as_mut() {
+                Some(session) => session.on_step(rng),
+                None => false,
+            };
         }
         // Per-region path: when a field region tracker is installed, the
         // player's active region (rate increment + formation-range pick)
