@@ -1640,7 +1640,7 @@ ram_fingerprint_sha256 = "bdac6719c35274edf4ef6623ff7f5b6e00cbcd5f163b34119f2956
 backup_fingerprint = "1bc733225aae105a430cbefab2ee472ff51520ec69f0a9dfdbe21d81a299bc06"
 phase = "battle"
 expected_game_mode = 0x15
-description = "Vahn wearing the Evil Medallion, about to attack an enemy Gimard variant (full trio party). The Rage passive bit 0x2000 is SET at actor+0xF8 (0x0000FCC7) and the AI-delegated action pick is RESOLVED in the actor: +0x1DE category = 3 (physical attack), +0x1DF action stream = 22 26 25 22 21, ctx action_state = 0x0A pre-action. Values support the auto-physical reading; the pick WRITER (and whether Rage ever picks arts/magic) still needs a write-watch probe or more pick samples."
+description = "Vahn wearing the Evil Medallion, about to attack an enemy Gimard variant (full trio party). The AI-delegation marker is the battle-actor +0x16E & 0x380 bits, set ONLY on the delegated slot 0 (the other party slots read +0x16E = 0); the battle-actor +0xF8 bit 0x2000 is set on all three party slots so it does NOT discriminate the delegated actor. The delegated pick is RESOLVED in the actor: +0x1DE category = 3 (Attack), +0x1DF action stream = 22 26 25 22 21 (a 5-element multi-strike), ctx action_state = 0x0A pre-action. One sample; the pick WRITER (and whether Rage ever picks arts/magic) still needs a write-watch probe or more pick samples. Pinned by rage_delegated_pick."
 topics = ["battle", "status", "Evil Medallion", "Rage", "delegated action", "actor +0x1DE", "RE"]
 
 [[scenarios]]

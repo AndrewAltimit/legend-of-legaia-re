@@ -133,6 +133,11 @@ pub const MOVE_POWER_TABLE_VA: u32 = 0x801F_4F5C;
 /// byte-matching the entry against the in-RAM table at [`MOVE_POWER_TABLE_VA`].
 pub const MOVE_POWER_TABLE_FILE_OFFSET: usize = 0x26744;
 
+/// Load base of the battle-action overlay (PROT 0898), so a runtime VA in this
+/// overlay maps to a raw-entry file offset as `va − BATTLE_OVERLAY_BASE`. Derived
+/// from the table's own VA / file-offset pin (`0x801F4F5C − 0x26744`).
+pub const BATTLE_OVERLAY_BASE: u32 = MOVE_POWER_TABLE_VA - MOVE_POWER_TABLE_FILE_OFFSET as u32;
+
 /// Per-record stride (the `26*param_1` index math in `FUN_801dd0ac`).
 pub const MOVE_POWER_RECORD_STRIDE: usize = 26;
 
@@ -158,8 +163,13 @@ pub const MOVE_ID_INDEX_MAP_LEN: usize = 0x80;
 pub const MOVE_ID_INDEX_NONE: u8 = 0xFF;
 
 /// Runtime VA of the **effect-prototype table** the records' `+0x12` / `+0x16`
-/// effect-id lists index (the `u32` each entry yields is the spawn parameter
-/// `FUN_801e09f8` passes to the effect spawner `FUN_80050ed4`).
+/// effect-id lists index. Each `u32` entry is the spawn parameter `FUN_801e09f8`
+/// passes to the effect spawner `FUN_80050ed4` (→ the part-stager `FUN_80021B04`)
+/// — and it is a **pointer into this same overlay's data** at a move-VM part
+/// record `[i16 model_sel][u16 flags][bytecode]` (the summon part-record format).
+/// So the table is the move-FX **part-record index**: every entry resolves to a
+/// scene-graph head the move VM then animates. Resolve entries with
+/// [`EffectAuxTables::proto_record_offset`] / [`parse_effect_proto_records`].
 pub const EFFECT_PROTO_TABLE_VA: u32 = 0x801F_6324;
 
 /// Runtime VA of the **per-effect SFX table** indexed by the same effect-list
@@ -545,6 +555,43 @@ impl EffectAuxTables {
     pub fn effect_sfx(&self, index: u8) -> Option<u8> {
         self.sfx.get(index as usize).copied()
     }
+
+    /// Resolve a proto entry's `u32` (a runtime VA into the battle overlay) to its
+    /// move-FX part-record **file offset** within PROT 0898, or `None` when the
+    /// index is outside the table or the pointer does not land in this overlay.
+    /// The record there is the summon part-record format
+    /// (`[i16 model_sel][u16 flags][move-VM bytecode]`).
+    pub fn proto_record_offset(&self, index: u8) -> Option<usize> {
+        let va = self.effect_proto(index)?;
+        va.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize)
+    }
+}
+
+/// Decode the move-FX part records the [`EFFECT_PROTO_TABLE_VA`] entries point at,
+/// straight out of the raw PROT 0898 (battle-action overlay) entry.
+///
+/// Each of the table's [`EFFECT_AUX_TABLE_LEN`] entries is a pointer into this
+/// overlay's own data at a `[i16 model_sel][u16 flags][move-VM bytecode]` record
+/// — the same scene-graph part format the summon stagers use
+/// ([`crate::summon_overlay`]). Entries can alias (several effect ids reuse one
+/// record), so the returned parts are the **unique** records, sorted by offset,
+/// each with its `bytecode` range bounded by the next record. Map a proto index
+/// back to its record with [`EffectAuxTables::proto_record_offset`].
+///
+/// Returns `None` if the overlay fails the move-power structural guard (so a
+/// wrong / different-build entry can't yield garbage). The `bytecode` ranges
+/// belong to the move VM ([`crate::move_power`] feeds `legaia-engine-vm`).
+pub fn parse_effect_proto_records(
+    battle_overlay_0898: &[u8],
+) -> Option<Vec<crate::summon_overlay::SummonPart>> {
+    let aux = EffectAuxTables::parse(battle_overlay_0898)?;
+    let offsets: Vec<usize> = (0..EFFECT_AUX_TABLE_LEN as u8)
+        .filter_map(|i| aux.proto_record_offset(i))
+        .collect();
+    Some(crate::summon_overlay::parse_records_at(
+        battle_overlay_0898,
+        &offsets,
+    ))
 }
 
 /// Parse the 5-entry **impact-effect config table** (`0x801f53d4`) out of the

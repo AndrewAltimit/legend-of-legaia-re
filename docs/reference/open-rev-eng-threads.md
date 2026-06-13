@@ -121,7 +121,13 @@ A `battle_noa_miracle_art_combo` capture (probe `autorun_super_art_action_queue.
 
 ### Seru-magic summon visual (e.g. Tail Fire)
 
-*Status:* **player visual RESOLVED + WIRED** — the player summon renders as its **namesake `battle_data` creature** through the ordinary rigid TRS-keyframe battle draw (`monster_archive::battle_render_mesh` + `MonsterAnimPlayer` + `tmd_to_vram_mesh_posed_rot`), spawned off the live cast band (`request_summon_spawn` → `spawn_summon_creature`); the move-VM `SummonScene` is retained only as the on-disc stager-record parser/driver + a non-battle debug exerciser + the candidate model for the untraced **enemy** "Fire Tail" boss move. (The earlier "`FUN_801F7088` rotation node source unpinned" framing is superseded — see the RESOLVED block below.)
+*Status:* **player visual RESOLVED + WIRED** — the player summon renders as its **namesake `battle_data` creature** through the ordinary rigid TRS-keyframe battle draw (`monster_archive::battle_render_mesh` + `MonsterAnimPlayer` + `tmd_to_vram_mesh_posed_rot`), spawned off the live cast band (`request_summon_spawn` → `spawn_summon_creature`); the move-VM `SummonScene` is retained only as the on-disc stager-record
+parser/driver + a non-battle debug exerciser + the model for the **enemy** "Fire
+Tail" boss move, which is now characterized: a single live move-VM part-actor
+(SCUS tick `FUN_80021DF4`) over a battle-overlay (0898) record, with PROT 0900's
+screen-widget path dormant — see the Fire-Tail note below. (The earlier
+"`FUN_801F7088` rotation node source unpinned" framing is superseded — see the
+RESOLVED block below.)
 
 The summon visual is a **per-summon code overlay**, not an opcode or `befect_data`: battle SM `FUN_801E295C` state `0x29` resolves spell id `0x81..0x8b` via `PTR_801f6734[id-0x81]` + `FUN_8003EC70(id-0x79)`.
 
@@ -223,7 +229,26 @@ itself** (the slot-B screen-effect + top-view-grid overlay, see the RESOLVED blo
 "different overlay aliasing the band" attribution was wrong, while the "not the battle-summon
 code path" conclusion stands.]
 
-SCOPE: this capture is the PLAYER "Burning Attack" move only; the ENEMY Gimard boss move **"Fire Tail"** (the `battle_gimard_tail_fire_a/_b` captures) is a DISTINCT move with a distinct animation and was not re-traced — whether it uses the overlay/move-VM path is a separate open question. (Probes: `autorun_summon_rotation.lua` + `autorun_summon_path_reconcile.lua`; RAM dumps under `captures/summon_rotation/`.) The engine's `summon::SummonScene` move-VM model therefore needs reconciliation: for the player summon the faithful path is the battle TRS-keyframe draw, already ported as `FUN_80048A08` / `FUN_8004998C` in `crates/engine-vm/src/anim_vm.rs`.
+SCOPE: this capture is the PLAYER "Burning Attack" move only; the ENEMY Gimard boss move **"Fire Tail"** (the `battle_gimard_tail_fire_a/_b` captures) is a DISTINCT move with a distinct animation and was traced separately (Fire-Tail note below). (Probes: `autorun_summon_rotation.lua` + `autorun_summon_path_reconcile.lua`; RAM dumps under `captures/summon_rotation/`.) The engine's `summon::SummonScene` move-VM model therefore needs reconciliation: for the player summon the faithful path is the battle TRS-keyframe draw, already ported as `FUN_80048A08` / `FUN_8004998C` in `crates/engine-vm/src/anim_vm.rs`.
+
+**Enemy "Fire Tail" — RESOLVED (move-VM part, not the widget path).** A
+pure-Rust scan of the two catalogued mid-cast frames
+(`battle_gimard_tail_fire_a/_b`; disc + library gated `firetail_movefx_liveness`)
+settles the separate question. The slot-B occupant is the move-FX module **PROT
+0900** itself (loader-B id `5`; byte-exact at the residency pin file `0x1628` ↔
+`0x801F8000`), *not* a per-spell stager. But PROT 0900's screen-widget family
+(the iris/sprite/panel/letterbox set the eight ending scenes drive via field-VM
+op `0x43`) is **dormant** here — an effect-actor-list walk of both frames finds
+**zero** live widgets. The live effect is a single **move-VM part-actor** in the
+part pool `DAT_801C90F0`, ticked per frame by the generic SCUS actor tick
+`FUN_80021DF4` (→ `FUN_80023070`; this is the live capture that pins that
+render-tail driver). Its `[i16 model_sel][u16 flags][bytecode]` record
+(`actor[+0x48]`) lives in the **battle overlay (0898)** resident data at
+`0x801F5xxx` — below the 0900 slot-B link base `0x801F69D8`, so not a 0900 record
+— with `model_sel` reading `-1` (transform node) / `5` (library mesh). So Fire
+Tail's render path is the move-VM scene-graph (one live part) sourced from
+battle-overlay data; the 0900 widget reading of it is falsified and the widget
+family stays ending-scene-exclusive.
 
 **Animated battle-actor rendering is now WIRED** (the general pipeline this thread's player-summon render rides on). Enemy monsters animate in `play-window`: `legaia_asset::monster_archive::idle_animation` (action 0, the `+0x8c` 9-byte TRS stream) → `legaia_engine_core::battle_anim::MonsterAnimPlayer` (an 8.8 fixed-point loop cursor producing a `legaia_anm::PoseFrame`, the same per-object `(translation, rotation)` shape the field ANM player produces) → the rigid `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` deform (`R·v + T`, `Rz·Ry·Rx`, the validated `monsters.html` `_assemble` math).
 
@@ -304,7 +329,7 @@ So the base **tracks party size** (the two fixed pool slots + the live party-cha
 The engine **renders the move-FX scene-graph**: `World::spawn_move_fx` parses a move's spawn-entry records (`MoveFx` via `MovePowerCatalog::fx_for_move_id`), stages them as a `SummonScene` at the effect-model library base (the engine registers PROT 0871 at a fixed `DAT_8007C018[3..]` and `model_sel` is library-relative, so this is the retail `party_count + 2 = 3` case for the 1-member slice; the layouts are equivalent), and drives them through the ported move VM (`tick_move_fx` / `active_move_fx_part_draws`; `play-window` `H` debug-spawn) — reusing the summon machinery wholesale, so it shares the same interpreted-transform caveat. A spawn also surfaces the move's two presentation fields: the **trail texpage** (`+0x0b` → `0x7700 + id`) on `World::active_move_fx_trail_texpage()`,
 and the **sound cue** (`+0x0d`) as `World::take_pending_move_fx_cue()`, which the host routes through the now-ported `FUN_8004fcc8` dispatch decode (`legaia_engine_audio::classify_cue` → `CueDispatch`; `voice_pitch` for the voice arm). The 2D afterimage *draw* `FUN_801e1ab0` (the streak pass that consumes the trail texpage) is ported as the pure `legaia_engine_render::afterimage::build_afterimage_quad` — jittered semi-transparent `POLY_FT4` (per-corner `rand` wobble, brightness band, UV/CLUT/texpage layout) from four projected corners + the trail id.
 The corner projection is ported too: `FUN_800195a8` (the camera-coupled GTE billboard projector — view-space MVMVA center, ±half-size corner fan-out, rotation+translation reset, RTPT×3 + RTPS; see the [`functions.md` detail](functions.md#800195a8)) is `legaia_engine_render::billboard::project_billboard`, with the exact `FUN_801e1ab0` call shape (`+0x120` Y push, dynamic half-width `state+0x6c6 − 0x200`, half-height `0x100`) as `afterimage::project_streak_corners`; the `RotMatrix*` sin/cos LUT is pinned as `trunc(4096·sin)` by the disc-gated `gte_sin_lut_real` oracle.
-What remains: the live note-on wiring of the resolved cue; and the retail draw transform of a move-VM scene-graph part itself (the `FUN_801F811C` / PROT-0900 reading of that transform is **resolved-as-unrelated** — `FUN_801F811C` is the 2D screen-mask widget, see the PROT 0900 RESOLVED block in the summon-visual row — so the part-draw transform question moves to the `FUN_80021DF4`-family render tail, with the engine's anim-bank-derived draw staying an explicit interpretation).
+What remains: the live note-on wiring of the resolved cue; and the retail draw transform of a move-VM scene-graph part itself (the `FUN_801F811C` / PROT-0900 reading of that transform is **resolved-as-unrelated** — `FUN_801F811C` is the 2D screen-mask widget, see the PROT 0900 RESOLVED block in the summon-visual row — so the part-draw transform question moves to the `FUN_80021DF4`-family render tail, with the engine's anim-bank-derived draw staying an explicit interpretation). `FUN_80021DF4` is now **live-captured as the part render-tail**: in the enemy "Fire Tail" mid-cast frames the single live move-FX part-actor binds it at `actor[+0xC]` (disc + library gated `firetail_movefx_liveness`; see the Fire-Tail note below).
 The **SFX program bank is pinned**: the cue's `program`/`tone` (static `DAT_8006F198` table, [`sfx-table.md`](../formats/sfx-table.md)) index the **per-scene music VAB** the BGM sequencer already has open (`FUN_80065034` reads the libsnd current-bank globals; byte-identical to the disc `music_01` VAB for that scene), so firing a cue is `SfxBank::play_one_shot(spu, scene_vab)` — no separate bank.
 
 **`0x801F4F5C` is special-attack-only:** the id→index map covers 44 ids (internal tiers `0x04..=0x07`/`0x12..=0x1F` + named attacks `0x25..=0x74`); the basic-attack / art bands `0x08..=0x11` and `0x16..=0x18` are unmapped (pinned by a live capture — a party member's Tactical Art carries an unmapped id, e.g. Vahn's Somersault `0x0F`, so it would roll against the zero-power record 0). A party member's arts therefore do **not** use this table — they take their damage from the per-strike *art-record* power byte (which `art_strike.rs` already does, faithfully); the only remaining engine stand-in is `apply_basic_attack`'s flat `art_strike_damage_default` for a no-art generic hit.

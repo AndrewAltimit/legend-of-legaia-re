@@ -210,10 +210,22 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 So each `0x801f6324` record is **byte-identical to a summon part record**
 (`+0x00 i16 model_sel`, `+0x02 u16 flags`, `+0x04` move-VM bytecode) and reuses
 the same stager, move VM, and `DAT_8007C018` TMD-pool bridge — see
-[`legaia_asset::summon_overlay`](../../crates/asset/src/summon_overlay.rs). The
-`0x80`-bit list bytes route to the *separate* 2D-billboard path
-(`FUN_801dfdf0(id & 0x7F)` → the `efect.dat` `EffectCatalog`), already ported as
-`spawn_by_ui_id`.
+[`legaia_asset::summon_overlay`](../../crates/asset/src/summon_overlay.rs).
+`move_power::parse_effect_proto_records` decodes the whole table to part records
+(VA → file offset via `BATTLE_OVERLAY_BASE` / `EffectAuxTables::proto_record_offset`),
+the helper `World::spawn_move_fx` uses. Every one of the 54 unique records drives
+cleanly through the ported move VM — seeded as the retail part-stager does (PC = 2)
+and run under the same `wait_timer` gate / per-frame budget — with no unimplemented
+opcode (disc-gated `move_fx_records_vm_exec_disc`; the corpus exercises ~20 distinct
+move-VM ops). The `0x80`-bit list bytes route to the
+*separate* 2D-billboard path (`FUN_801dfdf0(id & 0x7F)` → the `efect.dat`
+`EffectCatalog`), already ported as `spawn_by_ui_id`.
+
+These records are not just authored data: a live capture seats one. The enemy
+Gimard "Fire Tail" mid-cast holds a live part-actor whose `+0x48` record pointer
+is `0x801F5484` — proto entries `0`/`0x30`/`0x31` (`model_sel` 5), the same
+record `move_fx_records_real` pins statically (disc + library gated
+`firetail_movefx_liveness`; [battle-action.md § Enemy "Fire Tail"](../subsystems/battle-action.md#enemy-fire-tail--move-vm-part-not-the-widget-path)).
 
 ## Open
 

@@ -4971,32 +4971,18 @@ impl World {
         let Some(fx) = cat.fx_for_move_id(move_id) else {
             return false;
         };
-        use legaia_asset::move_power::EffectListEntry;
-
-        // VA → file-offset delta for the battle-action overlay (the move-power
-        // table's VA vs its file offset). A 0x801f6324 entry's VA minus this
-        // lands on the record's file offset.
-        let va_to_file = legaia_asset::move_power::MOVE_POWER_TABLE_VA
-            - legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET as u32;
+        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE, EffectListEntry};
 
         // Parse ALL prototype records first (full offset set) so each record's
         // move-VM bytecode is bounded by its true packed neighbour, then select
         // the ones this move's Spawn entries reference. Bounding against only
         // this move's subset would over-run each record into the next selected
         // one rather than the next packed one.
-        let Some(aux) = cat.aux_tables() else {
+        let Some(all_parts) = move_power::parse_effect_proto_records(&overlay) else {
             return false;
         };
-        let all_offsets: Vec<usize> = aux
-            .proto()
-            .iter()
-            .filter(|&&va| va != 0)
-            .map(|&va| va.wrapping_sub(va_to_file) as usize)
-            .filter(|&f| f + 4 <= overlay.len())
-            .collect();
-        let all_parts = legaia_asset::summon_overlay::parse_records_at(&overlay, &all_offsets);
 
-        // The file offsets this move's Spawn entries point at.
+        // The file offsets this move's Spawn entries point at (proto VA → file).
         let wanted: std::collections::BTreeSet<usize> = fx
             .contact_effects
             .iter()
@@ -5005,7 +4991,7 @@ impl World {
                 EffectListEntry::Spawn(_) => e.proto,
                 _ => None,
             })
-            .map(|va| va.wrapping_sub(va_to_file) as usize)
+            .filter_map(|va| va.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize))
             .collect();
         if wanted.is_empty() {
             return false;

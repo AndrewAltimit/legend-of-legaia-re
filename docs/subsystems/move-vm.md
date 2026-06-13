@@ -310,6 +310,22 @@ base. PROT 0900 file `0x0640..0x2660` (the whole family) is byte-resident at
 save, and the function bodies are byte-identical to the dance / baka-fighter
 overlay images (`overlay_dance_801f811c.txt` etc.).
 
+**Battle (enemy "Fire Tail") does NOT drive the widget path.** PROT 0900 is the
+slot-B occupant in the enemy Gimard "Fire Tail" mid-cast frames (loader-B id 5;
+byte-exact at the residency pin file `0x1628` ↔ `0x801F8000`), but the
+screen-widget path is dormant there: an effect-actor-list walk of both
+catalogued frames (`battle_gimard_tail_fire_a/_b`) finds **zero** live
+mask/sprite/panel/letterbox actors. The Fire Tail's live effect is instead a
+single **move-VM part-actor** in the part pool `DAT_801C90F0`, ticked each frame
+by the generic SCUS actor tick `FUN_80021DF4` (→ `FUN_80023070`); its
+`[i16 model_sel][u16 flags][bytecode]` record sits in the **battle overlay
+(0898)** resident data at `0x801F5xxx` (below the 0900 slot-B link base), with
+`model_sel` reading `-1` (transform node) / `5` (library mesh) — the summon
+part-record format, sourced from the battle overlay rather than a per-spell
+stager. So the widget family stays **ending-scene-exclusive**, and `FUN_80021DF4`
+is pinned as the live part render-tail. Disc + library gated
+`firetail_movefx_liveness` (crate `legaia-mednafen`).
+
 ## Connection to other crates
 
 - **`crates/mdt`** - parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, `crates/mdt` can grow a disassembler.

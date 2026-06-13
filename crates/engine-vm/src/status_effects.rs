@@ -91,8 +91,12 @@ pub enum StatusKind {
     /// `engine-core::World::resolve_monster_target`). For a party member the
     /// dumps pin only the AI-delegation flag (`FUN_80047430` sets
     /// `+0x16E |= 0x380` from the Rage accessory passive); the retail action
-    /// pick for a delegated party member is not in the dumped corpus, so the
-    /// engine's auto-physical party behaviour is a stand-in.
+    /// pick *writer* for a delegated party member is not in the dumped corpus,
+    /// so the engine's auto-physical party behaviour is a stand-in. One pick is
+    /// observed (`evil_medallion_rage_battle`, test `rage_delegated_pick`): the
+    /// delegated actor's resolved action is category `+0x1DE == 3` (Attack) with
+    /// a 5-element multi-strike `+0x1DF` stream — consistent with auto-physical,
+    /// but a single sample, so the stand-in stays a stand-in.
     Confuse,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
     Curse,
