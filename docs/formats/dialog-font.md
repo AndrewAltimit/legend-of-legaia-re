@@ -149,7 +149,7 @@ by the `0x3F` named scene-change; an earlier note mislabeled it. The
 
 ## What's still open
 
-- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font - the bitmap is reachable only from a save-state VRAM dump. The font extractor writes `dialog_font_vram_4bpp.bin` (the raw 32 KB tile-page bytes) alongside the PNG, and [`scripts/find-font-carrier.py`](../../scripts/find-font-carrier.py) searches every PROT entry for matching slices. The script runs three search strategies:
+- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font - the bitmap is reachable only from a save-state VRAM dump. The font extractor writes `dialog_font_vram_4bpp.bin` (the raw 32 KB tile-page bytes) alongside the PNG, and [`scripts/asset-investigation/find-font-carrier.py`](../../scripts/asset-investigation/find-font-carrier.py) searches every PROT entry for matching slices. The script runs three search strategies:
   1. Direct slice match (4 fixed offsets, 64-byte windows).
   2. Glyph-row signature match (per-cell 8-byte rows concatenated for 4–8 adjacent cells; survives row-major byte permutations).
   3. LZS-decompressed match (decompresses every entry that parses as a valid LZS container and re-runs both probe sets against the decoded bytes).

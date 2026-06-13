@@ -31,7 +31,7 @@
 <section class="doc-section" id="cluster-anatomy">
   <h2>Cluster anatomy</h2>
   <p>All matches cluster in the <code>0901..=0969</code> PROT range - sized 14 KB to 37 KB (one outlier at 163 KB for <code>0969_xxx_dat.BIN</code>). The <code>find-overlay</code> heuristic ranks these as MIPS-code-shape candidates; this detector formalises that ranking into the categorize pipeline.</p>
-  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/bulk-import-overlays.sh</code></a> once a base address is determined. The overlay window is <code>0x801C0000</code>–<code>0x80200000</code>; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.</p>
+  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> once a base address is determined. The overlay window is <code>0x801C0000</code>–<code>0x80200000</code>; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.</p>
 </section>
 
 <section class="doc-section" id="likely-subsystems">

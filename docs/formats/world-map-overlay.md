@@ -960,7 +960,7 @@ field scene, see correction above):
 | `DAT_8007B828` (error bits) | `0x00000000` (no magic mismatches during install) |
 
 Entry contents (per
-[`scripts/classify_dat_8007c018.py`](../../scripts/classify_dat_8007c018.py)):
+[`scripts/asset-investigation/classify_dat_8007c018.py`](../../scripts/asset-investigation/classify_dat_8007c018.py)):
 
 | Index range | Count | Content |
 |---|---:|---|
@@ -1130,7 +1130,7 @@ TMD-pack.
    loader call populates the kingdom-derived entries `[5..N]`.
 
    **Static-side evidence narrowing the hunt** (sweep via
-   [`scripts/scan_funcs_for_addr_range.py`](../../scripts/scan_funcs_for_addr_range.py)
+   [`scripts/ghidra-analysis/scan_funcs_for_addr_range.py`](../../scripts/ghidra-analysis/scan_funcs_for_addr_range.py)
    across SCUS + every captured overlay dump under
    `ghidra/scripts/funcs/`):
 

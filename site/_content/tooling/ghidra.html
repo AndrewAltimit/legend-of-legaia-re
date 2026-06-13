@@ -404,27 +404,27 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 </tr></thead>
 <tbody>
 <tr>
-<td><code>scripts/function-coverage.py</code></td>
+<td><code>scripts/ci/function-coverage.py</code></td>
 <td>Citation-ranked missing-helper tracker over the function dumps.</td>
 </tr>
 <tr>
-<td><code>scripts/call-graph.py</code></td>
+<td><code>scripts/ghidra-analysis/call-graph.py</code></td>
 <td><code>callees</code> / <code>callers</code> / <code>xref</code> over the dumps; replaces grep-across-files.</td>
 </tr>
 <tr>
-<td><code>scripts/scene-asset-detect.py</code></td>
+<td><code>scripts/asset-investigation/scene-asset-detect.py</code></td>
 <td>Joins <code>categorize.json</code> with TIM/TMD scan hits to surface unknown-bucket entries that look like scene bundles.</td>
 </tr>
 <tr>
-<td><code>scripts/bulk-import-overlays.sh</code></td>
+<td><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></td>
 <td>Reads <code>find-overlay</code> output, imports each high-score candidate, runs analysis + the inventory dumper.</td>
 </tr>
 <tr>
-<td><code>scripts/extract-mednafen-overlay.py</code></td>
+<td><code>scripts/ghidra-analysis/extract-mednafen-overlay.py</code></td>
 <td>Slices <code>0x801C0000-0x80200000</code> (256 KB) out of a gzipped mednafen save state.</td>
 </tr>
 <tr>
-<td><code>scripts/analyze-overlay.sh</code></td>
+<td><code>scripts/ghidra-analysis/analyze-overlay.sh</code></td>
 <td>One-shot capture pipeline: decompress save → slice → import → emit asset-load CSV.</td>
 </tr>
 </tbody>

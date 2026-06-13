@@ -2,7 +2,7 @@
 
 Most of Legaia's gameplay code doesn't live in `SCUS_942.54` - it lives in RAM-loaded overlays at `0x801C0000+` that the runtime pages in per-mode (title, town/field, battle, options menu, world map, cutscene). Capturing these requires dumping live RAM from a running emulator.
 
-PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path. Duckstation `.sav` save states are supported via `scripts/extract-duckstation-overlay.py` (zstd-compressed; same anchor-string approach, 256 KB slice). All three give equivalent overlay dumps.
+PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path. Duckstation `.sav` save states are supported via `scripts/ghidra-analysis/extract-duckstation-overlay.py` (zstd-compressed; same anchor-string approach, 256 KB slice). All three give equivalent overlay dumps.
 
 ## What's in the overlay window
 
@@ -135,7 +135,7 @@ The same method should work for any other transient TIM (battle backgrounds, men
 ## One-command capture (mednafen + Duckstation)
 
 For new captures, the highest-leverage entry point is
-[`scripts/auto-name-overlay.py`](../../scripts/auto-name-overlay.py).
+[`scripts/ghidra-analysis/auto-name-overlay.py`](../../scripts/ghidra-analysis/auto-name-overlay.py).
 It detects the save-state format from the magic bytes (mednafen
 gzip+`MDFNSVST` or Duckstation `DUCCS`+zstd), extracts the overlay
 window, fingerprints which overlay is loaded by counting matches
@@ -145,7 +145,7 @@ table below), and emits both the binary slice and a stub
 function entry-points pre-seeded.
 
 ```bash
-scripts/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0"
+scripts/ghidra-analysis/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0"
 # [info] format: mednafen; sliced 262,144 bytes
 # [info] auto-detected label: world_map  (world_map=4, field=3)
 # [ok]   /tmp/overlay_world_map.bin
@@ -158,14 +158,14 @@ currently miss because no documented function is exclusive to them),
 pass `--label name` to override:
 
 ```bash
-scripts/auto-name-overlay.py SAVE.mc0 --label cutscene_dialogue
+scripts/ghidra-analysis/auto-name-overlay.py SAVE.mc0 --label cutscene_dialogue
 ```
 
 The stub is preserved if it already exists (pass `--force` to
 overwrite). After running, follow with the existing Ghidra import:
 
 ```bash
-scripts/import-overlay-named.sh /tmp/overlay_<label>.bin <label>
+scripts/ghidra-analysis/import-overlay-named.sh /tmp/overlay_<label>.bin <label>
 docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
     -process overlay_<label>.bin -noanalysis \
     -postScript /scripts/dump_<label>_overlay.py
@@ -178,7 +178,7 @@ a Ghidra import.
 To grow the anchor table: when you confirm a function is exclusive to
 a specific overlay (via the dump-script comments + cross-overlay
 inventory diffs), add it to `ANCHOR_FUNCTIONS` in
-[`scripts/auto-name-overlay.py`](../../scripts/auto-name-overlay.py).
+[`scripts/ghidra-analysis/auto-name-overlay.py`](../../scripts/ghidra-analysis/auto-name-overlay.py).
 
 ## Mednafen pipeline with asset-loader CSV
 
@@ -188,13 +188,13 @@ inventory diffs), add it to `ANCHOR_FUNCTIONS` in
 > each `mc{0..9}` slot - see
 > [`mednafen-automation.md`](mednafen-automation.md).
 
-The `scripts/analyze-overlay.sh` helper is the older flow. Use it when
+The `scripts/ghidra-analysis/analyze-overlay.sh` helper is the older flow. Use it when
 you specifically need the asset-loader CSV (which PROT entries the
 runtime loader requested for that scene); for plain "capture overlay
 + stub dump" use the auto-name helper above.
 
 ```bash
-scripts/analyze-overlay.sh \
+scripts/ghidra-analysis/analyze-overlay.sh \
     "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" \
     --label level_up
 ```
@@ -209,11 +209,11 @@ The CSV gives the *exact* PROT entries the runtime loader requests for that scen
 
 ## Capturing with Duckstation
 
-Duckstation `.sav` save-state files use `DUCCS` magic followed by a zstd-compressed binary stream. The `scripts/extract-duckstation-overlay.py` script decompresses the stream with the system `zstd` binary and locates main RAM using the same anchor-string approach as `extract-mednafen-overlay.py`. The default slice is `0x801C0000–0x80200000` (256 KB).
+Duckstation `.sav` save-state files use `DUCCS` magic followed by a zstd-compressed binary stream. The `scripts/ghidra-analysis/extract-duckstation-overlay.py` script decompresses the stream with the system `zstd` binary and locates main RAM using the same anchor-string approach as `extract-mednafen-overlay.py`. The default slice is `0x801C0000–0x80200000` (256 KB).
 
 ```bash
-scripts/extract-duckstation-overlay.py SCUS-94254_1.sav --out /tmp/legaia_overlay_fishing.bin
-scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing
+scripts/ghidra-analysis/extract-duckstation-overlay.py SCUS-94254_1.sav --out /tmp/legaia_overlay_fishing.bin
+scripts/ghidra-analysis/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing
 ```
 
 The `import-overlay-named.sh` step imports as `overlay_fishing.bin` in the Ghidra project (base `0x801C0000`, MIPS LE) and runs auto-analysis. Run `inventory_overlay.py` afterwards to get the function list, then write a `dump_<label>_overlay.py` for the functions of interest.
@@ -268,8 +268,8 @@ piece is the renderer's overlay-resident byte→quad pipeline.
 2. Initiate dialog (Cross on an NPC).
 3. **As soon as the dialog box appears**, save state. (The overlay unloads
    when the box closes; capturing mid-conversation is essential.)
-4. Run `scripts/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label dialog`.
-5. Run `scripts/import-overlay-named.sh dialog` so the overlay imports as
+4. Run `scripts/ghidra-analysis/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label dialog`.
+5. Run `scripts/ghidra-analysis/import-overlay-named.sh dialog` so the overlay imports as
    a named program (preserved across re-imports of other overlays).
 
 What to look for after import:
@@ -299,8 +299,8 @@ transitions.
 2. **Once the cutscene starts playing** (XA audio audible, fullscreen
    playback), save state. The first 1-2 seconds work - the overlay is
    resident as long as the cutscene is active.
-3. Run `scripts/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label cutscene`.
-4. Run `scripts/import-overlay-named.sh cutscene`.
+3. Run `scripts/ghidra-analysis/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label cutscene`.
+4. Run `scripts/ghidra-analysis/import-overlay-named.sh cutscene`.
 
 What to look for after import:
 - `jal` to `_DAT_8007AF40`-region SPU regs at the XA-DMA destination
@@ -319,7 +319,7 @@ mode table."
 The `find-overlay` heuristic surfaces PROT entries that look like overlay code (high `addiu sp, sp, -X` density). To bulk-import the top candidates:
 
 ```bash
-scripts/bulk-import-overlays.sh --score 3.5
+scripts/ghidra-analysis/bulk-import-overlays.sh --score 3.5
 ```
 
 Reads the `find-overlay` output, filters by score, imports each at base `0x801C0000` (the overlay window) and runs auto-analysis + the inventory dumper. Per-overlay function inventories land in `ghidra/scripts/inventory_overlay_<stem>.bin.csv`.

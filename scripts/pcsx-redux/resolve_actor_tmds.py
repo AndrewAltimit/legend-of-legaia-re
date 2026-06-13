@@ -39,7 +39,7 @@ USAGE
 The optional --json output writes a placements list usable by the
 disc-only viewer: each entry has `pos`, `slots` (list of int), and
 `actor_node` for tracing. Multi-bundle runs emit a list of bundle
-dicts; `scripts/extract-world-placements.py` merges them per-kingdom
+dicts; `scripts/asset-investigation/extract-world-placements.py` merges them per-kingdom
 into `site/world-overview.json`.
 
 CAVEAT

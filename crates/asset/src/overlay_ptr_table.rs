@@ -67,7 +67,7 @@
 //!   compiler for `switch(x)` over a dense integer range).
 //! - A **vtable** for a per-mode actor type.
 //!
-//! Each can be Ghidra-imported via `scripts/bulk-import-overlays.sh` once
+//! Each can be Ghidra-imported via `scripts/ghidra-analysis/bulk-import-overlays.sh` once
 //! the load address is determined (the first pointer's high bits give a
 //! strong hint - most cluster around `0x801F6Axx`).
 //!

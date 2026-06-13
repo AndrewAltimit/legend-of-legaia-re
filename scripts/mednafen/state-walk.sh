@@ -75,7 +75,7 @@ for line in "${LINES[@]}"; do
 
     if [[ "$DO_IMPORT" == "1" ]]; then
         echo "[import] $LABEL"
-        scripts/import-overlay-named.sh "$OUT" "$LABEL" >/dev/null 2>&1 \
+        scripts/ghidra-analysis/import-overlay-named.sh "$OUT" "$LABEL" >/dev/null 2>&1 \
             || echo "[warn]  import failed for $LABEL"
     fi
 done

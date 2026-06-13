@@ -47,7 +47,7 @@
 //!
 //! ## Provenance
 //!
-//! Pinned by `scripts/scan_tims_and_match_prot.py --sig-mode pixel`
+//! Pinned by `scripts/asset-investigation/scan_tims_and_match_prot.py --sig-mode pixel`
 //! against a full main-RAM dump captured at the live title-menu
 //! state (sstate8). The in-RAM TIM at vaddr `0x80106478` is
 //! byte-equal to `PROT.DAT[0x11218..0x11218 + 33312]`.

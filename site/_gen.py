@@ -1043,7 +1043,7 @@ def main() -> int:
 
     # Internal-link gate over the freshly generated pages: a broken relative
     # href/src or a dangling #anchor fails the build (and the deploy that
-    # reruns this script). See scripts/check-site-links.py.
+    # reruns this script). See scripts/ci/check-site-links.py.
     import subprocess
     link_check = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "check-site-links.py")],

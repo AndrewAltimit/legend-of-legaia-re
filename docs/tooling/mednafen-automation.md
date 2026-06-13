@@ -85,7 +85,7 @@ target/release/mednafen-state extract \
 ```
 
 This is the structured replacement for
-`scripts/extract-mednafen-overlay.py` - same anchor-based fallback when
+`scripts/ghidra-analysis/extract-mednafen-overlay.py` - same anchor-based fallback when
 the structured `MainRAM.data8` lookup misses, plus a MIPS-shape sanity
 check.
 
@@ -159,7 +159,7 @@ scripts/mednafen/state-walk.sh --import
 For every scenario in the manifest, slices its overlay window into
 `/tmp/legaia_overlay_<label>.bin` and (with `--import`) imports it as
 a labelled program in the Ghidra container via
-`scripts/import-overlay-named.sh`. One command, all scenarios staged.
+`scripts/ghidra-analysis/import-overlay-named.sh`. One command, all scenarios staged.
 
 ### Dump the runtime GPU VRAM as a PNG
 

@@ -1,6 +1,6 @@
 # Doc legibility-density checker
 
-`scripts/check-doc-density.py` keeps the committed documentation read-optimized
+`scripts/ci/check-doc-density.py` keeps the committed documentation read-optimized
 by flagging the two patterns that make long-lived docs hard to skim:
 
 - **Over-long lines** — any line wider than `--max-line` characters (default
@@ -29,10 +29,10 @@ blocks a within-budget cell).
 ## Usage
 
 ```bash
-scripts/check-doc-density.py                 # scan the whole corpus
-scripts/check-doc-density.py --staged        # only staged md files (hook mode)
-scripts/check-doc-density.py --quiet         # suppress the success summary line
-scripts/check-doc-density.py --max-cell-words 120 --max-line 700
+scripts/ci/check-doc-density.py                 # scan the whole corpus
+scripts/ci/check-doc-density.py --staged        # only staged md files (hook mode)
+scripts/ci/check-doc-density.py --quiet         # suppress the success summary line
+scripts/ci/check-doc-density.py --max-cell-words 120 --max-line 700
 ```
 
 Output is one `path:line: message` per violation. The checker **exits non-zero
@@ -41,11 +41,11 @@ when it finds violations**, so it can gate CI if wanted.
 ## Pre-commit wiring (hard gate)
 
 The pre-commit hook (`scripts/git-hooks/pre-commit`, installed once per clone by
-`scripts/install-hooks.sh`) runs it on the staged doc set and aborts the commit
+`scripts/ci/install-hooks.sh`) runs it on the staged doc set and aborts the commit
 on a violation:
 
 ```bash
-python3 scripts/check-doc-density.py --staged --quiet || exit 1
+python3 scripts/ci/check-doc-density.py --staged --quiet || exit 1
 ```
 
 Unlike the warn-only [`check-port-tags.py`](port-catalog.md), a density
@@ -57,7 +57,7 @@ Pure standard library; ASCII-only; no external dependencies.
 
 ## Sibling gate: site internal-link checker
 
-`scripts/check-site-links.py` is the same idea aimed at the static site:
+`scripts/ci/check-site-links.py` is the same idea aimed at the static site:
 it scans every generated page under `site/` (skipping the `_content/`
 fragments) and fails on a relative `href`/`src` whose target file doesn't
 exist or a fragment link (`page.html#anchor`, bare `#anchor`) whose element

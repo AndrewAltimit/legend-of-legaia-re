@@ -2,7 +2,7 @@
 # @runtime Jython
 #
 # Dump the 7 dialog-overlay missing helpers reported by
-# scripts/function-coverage.py. One target lives in SCUS_942.54
+# scripts/ci/function-coverage.py. One target lives in SCUS_942.54
 # (80032434), the other six are in the overlay_dialog_mc4 program.
 #
 # Run twice with -process: once with SCUS_942.54 and once with

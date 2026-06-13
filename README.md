@@ -60,7 +60,7 @@ Binaries land in `target/release/`. Run `<binary> --help` for full subcommand li
 If you plan to commit, run the hook installer once - it points `core.hooksPath` at `scripts/git-hooks/` so `cargo fmt --check` and `cargo clippy -D warnings` run before each commit (matching CI). The hook auto-skips when no Rust files are staged.
 
 ```bash
-scripts/install-hooks.sh
+scripts/ci/install-hooks.sh
 ```
 
 ### Run the whole pipeline
@@ -176,7 +176,7 @@ Per-function decompile + disassembly dumps land in `ghidra/scripts/funcs/<addr>.
 Most game logic (field/battle/menu state machines, dialog renderer, debug-flag writers) lives in RAM overlays loaded at `0x801C0000+`, **not** in `SCUS_942.54`. Save state at the target scene in mednafen and run:
 
 ```bash
-scripts/analyze-overlay.sh \
+scripts/ghidra-analysis/analyze-overlay.sh \
     ~/.mednafen/mcs/Legend*Legaia*.mcN \
     --label level_up
 ```

@@ -34,7 +34,7 @@
 
 <section class="doc-section" id="numbering-space">
   <h2>Numbering space (the &minus;2 correction)</h2>
-  <p>The boot TOC loader copies <code>PROT.DAT</code> verbatim (8-byte header included) into <code>0x801C70F0</code>, so <strong>raw index = extraction index + 2</strong> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>). The default <code>NNNN_&lt;name&gt;.BIN</code> naming is kept for stability; <code>legaia_prot::cdname::block_for_extraction_index</code> resolves the retail-space name for an extraction index, and <code>scripts/cdname_shift_analysis.py</code> reproduces the full quantitative analysis against a local extraction.</p>
+  <p>The boot TOC loader copies <code>PROT.DAT</code> verbatim (8-byte header included) into <code>0x801C70F0</code>, so <strong>raw index = extraction index + 2</strong> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>). The default <code>NNNN_&lt;name&gt;.BIN</code> naming is kept for stability; <code>legaia_prot::cdname::block_for_extraction_index</code> resolves the retail-space name for an extraction index, and <code>scripts/asset-investigation/cdname_shift_analysis.py</code> reproduces the full quantitative analysis against a local extraction.</p>
   <h3>Evidence</h3>
   <p><strong>Loader-constant identities</strong> (strongest &mdash; retail hard-codes raw-TOC indices for dev-named files, and each constant <em>equals</em> the same-named define):</p>
   <table>

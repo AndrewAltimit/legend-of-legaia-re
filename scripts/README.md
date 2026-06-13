@@ -1,0 +1,67 @@
+# scripts/
+
+Helper scripts for the two project tracks: developer/CI maintenance, Ghidra
+overlay analysis, asset reverse-engineering, and emulator-driven runtime
+capture. This is a **map** of the layout — each script carries its own usage
+header (`--help` or a top-of-file comment block).
+
+Two files stay at this top level because they are operational entry points
+referenced by code, not analysis one-offs:
+
+| File | Role |
+|---|---|
+| `scenarios.toml` | The save-state / capture **scenario manifest** (`ScenarioManifest`). Hard-wired as a default path in `legaia-engine` and the disc-/library-gated oracle tests, so it lives at a stable location. |
+| `manage-states.py` | Curates the save-state catalogue that `scenarios.toml` indexes (list / fingerprint / import mednafen + PCSX states). |
+
+## Layout
+
+| Directory | Scope |
+|---|---|
+| [`ci/`](#ci) | Repo-maintenance gates and build/install helpers the pre-commit hook and CI run. |
+| [`ghidra-analysis/`](#ghidra-analysis) | Static analysis: overlay extraction + import into Ghidra, MIPS/GTE disassembly, GPU-packet and call-graph tooling. |
+| [`asset-investigation/`](#asset-investigation) | One-off RE probes over disc assets: TIM/TMD review + render, slot-4 / world-map decode, scene/font/CDNAME/save-format hunts. |
+| `pcsx-redux/` | PCSX-Redux Lua probe library (`lib/probe`) + `autorun_*.lua` capture scripts + Python decoders. See [`docs/tooling/pcsx-redux-automation.md`](../docs/tooling/pcsx-redux-automation.md). |
+| `mednafen/` | Mednafen save-state automation: capture, diff, bisect, bulk-terrain resolve. See [`docs/tooling/mednafen-automation.md`](../docs/tooling/mednafen-automation.md). |
+| `git-hooks/` | The shipped `pre-commit` hook (installed via `ci/install-hooks.sh`). |
+| `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
+| `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests. |
+
+### ci/
+
+Run from the repo root; the pre-commit hook (`git-hooks/pre-commit`) and CI
+invoke them by `scripts/ci/<name>` path.
+
+- `install-hooks.sh` — point `core.hooksPath` at `git-hooks/` (run once per clone).
+- `install-tools.sh` — install the local toolchain (Ghidra container, capstone, emulators).
+- `check-doc-density.py` — doc legibility-density gate (long lines / over-budget table cells).
+- `check-site-links.py` — static-site internal-link + anchor gate.
+- `check-port-tags.py` — `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
+- `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) — per-function port worklist + `--dashboard`.
+- `function-coverage.py` — Ghidra-dump citation coverage report.
+- `build-wasm.sh` / `check-wasm.sh` — web-viewer WASM build + CI smoke.
+
+### ghidra-analysis/
+
+Static-overlay and code-analysis tooling. Some scripts import siblings as
+modules (`disasm-overlay-fn.py` → `mips_gte`; `find-addprim-emitters.py` /
+`analyze-walk-ground-tiles.py` → `gpu_packets`), which is why they share this
+directory.
+
+- `extract-mednafen-overlay.py` / `extract-duckstation-overlay.py` — slice a runtime overlay out of a save state.
+- `analyze-overlay.sh` / `import-overlay-named.sh` / `bulk-import-overlays.sh` / `sweep-overlays.sh` — extract → import-into-Ghidra pipelines (`overlays*.spec` drive the sweep).
+- `auto-name-overlay.py` — auto-label an imported overlay.
+- `disasm-overlay-fn.py` + `mips_gte.py` — capstone MIPS disassembly with COP2/GTE annotation.
+- `gpu_packets.py` + `find-addprim-emitters.py` + `analyze-walk-ground-tiles.py` — PSX GPU-primitive decode + emitter/ground-tile analysis.
+- `call-graph.py` / `scan_funcs_for_addr_range.py` — call-graph + address-range scans over the Ghidra dumps.
+
+See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
+[`docs/tooling/static-overlay-pipeline.md`](../docs/tooling/static-overlay-pipeline.md).
+
+### asset-investigation/
+
+Disc-asset RE probes. `decode_slot4_subbodies.py`, `slot4_to_obj.py`, and
+`slot4_topdown_png.py` borrow disc helpers from `pcsx-redux/` via `sys.path`.
+
+- TIM/TMD: `build_tim_review.py` / `apply_tim_review.py`, `montage_tims.py`, `scan_tims_and_match_prot.py`, `find_large_tmd_packs.py`, `render_battle_char_true.py`, `render-unplaced-tmds.py`, `verify_battle_char_pack.py`.
+- World-map / slot-4: `decode_slot4_subbodies.py`, `slot4_to_obj.py`, `slot4_topdown_png.py`, `classify_dat_8007c018.py`, `extract-world-placements.py`, `analyze_world_map_vm_log.py` (the live-RAM GPU-tile variant `analyze-walk-ground-tiles.py` lives in `ghidra-analysis/`).
+- Scene / font / naming / save: `scene-asset-detect.py`, `find-font-carrier.py`, `cdname_shift_analysis.py`, `match_title_staging_to_prot.py`, `find_save_offsets.py`.

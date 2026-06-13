@@ -51,7 +51,7 @@
 //! new candidates are smaller subsystem blobs - likely cutscenes, world-map,
 //! menu screens, mini-games, or per-scene specialised code.
 //!
-//! Each can be Ghidra-imported via `scripts/bulk-import-overlays.sh` once a
+//! Each can be Ghidra-imported via `scripts/ghidra-analysis/bulk-import-overlays.sh` once a
 //! base address is determined (the overlay window is `0x801C0000`–`0x80200000`,
 //! but each blob loads at a specific offset within that range - likely
 //! reverse-engineerable from the PROT entry's reference in the asset chain).

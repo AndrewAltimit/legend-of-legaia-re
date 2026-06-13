@@ -350,7 +350,7 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
 
   <h3 id="dat-8007c018-snapshot">Live snapshot &mdash; settled field scene</h3>
   <p class="note"><strong>Provenance correction:</strong> the local dump is named <code>drake_world.bin</code>, but its scene id (<code>0x80084540</code> = <code>0x3c</code>), scene name (<code>dolk</code>), and <code>game_mode 0x03</code> identify it as the <strong><code>dolk</code> field scene</strong>, <em>not</em> the Drake world map. <code>DAT_8007C018</code> is filled identically by every field-scene load (the single <code>FUN_80020224</code> descriptor-walk), so the layout/counters below are a valid generic field-scene example; the <code>[5..142]</code> entries are this scene's field-file TMD pack (one contiguous 138-entry pack), not a "kingdom bundle". type-<code>0x05</code> slot-4 does not install into <code>DAT_8007C018</code> &mdash; only dispatcher cases <code>0x02</code>/<code>0x09</code> reach <code>FUN_80026B4C</code>.</p>
-  <p>RAM dump after the scene load has settled (full RAM captured by <code>autorun_dump_full_ram.lua</code> + the classifier at <code>scripts/classify_dat_8007c018.py</code>):</p>
+  <p>RAM dump after the scene load has settled (full RAM captured by <code>autorun_dump_full_ram.lua</code> + the classifier at <code>scripts/asset-investigation/classify_dat_8007c018.py</code>):</p>
   <table>
     <thead><tr><th>Field</th><th>Value</th></tr></thead>
     <tbody>

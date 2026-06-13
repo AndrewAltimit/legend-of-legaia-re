@@ -1,7 +1,7 @@
 //! Slice PSX virtual-address windows out of mednafen save-state main RAM.
 //!
 //! `main_ram_via_anchor` is the legacy-compatible path that mirrors
-//! `scripts/extract-mednafen-overlay.py` - used as a fallback when the
+//! `scripts/ghidra-analysis/extract-mednafen-overlay.py` - used as a fallback when the
 //! structured section walker can't find the `MainRAM.data8` entry.
 
 use anyhow::{Context, Result, anyhow, bail};

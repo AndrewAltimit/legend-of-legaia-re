@@ -28,7 +28,7 @@ Each `#define name N` marks **the start of a block** of N entries. Subsequent PR
 
 The `#define` numbers are **raw in-RAM PROT-TOC indices** — the index space `FUN_8003E8A8` consumes — **not** extraction-entry indices. The boot TOC loader copies `PROT.DAT` verbatim (8-byte header included) into `0x801C70F0`, so `raw index = extraction index + 2` (see [`prot.md` § In-RAM TOC](prot.md#in-ram-toc)). The content `#define name N` actually names lives at **extraction entry `N − 2`**, and the extractor's filename labels (which apply define numbers as extraction indices directly) are systematically shifted +2.
 
-The default `NNNN_<name>.BIN` naming is kept for stability; `legaia_prot::cdname::block_for_extraction_index` resolves the retail-space name for an extraction index, and `scripts/cdname_shift_analysis.py` reproduces the full quantitative analysis against a local extraction.
+The default `NNNN_<name>.BIN` naming is kept for stability; `legaia_prot::cdname::block_for_extraction_index` resolves the retail-space name for an extraction index, and `scripts/asset-investigation/cdname_shift_analysis.py` reproduces the full quantitative analysis against a local extraction.
 
 ### Evidence
 

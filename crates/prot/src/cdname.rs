@@ -46,7 +46,7 @@ pub fn block_for(map: &IndexMap, entry_index: u32) -> Option<&str> {
 /// `monster.snd = 0x37D` (`monster_se 893`), `summon.dat`/`readef.DAT` =
 /// `0x37F`/`0x380` (`bat_back_dat 895..896`), overlay slots `0x381+`
 /// (`xxx_dat 897`). See `docs/formats/cdname.md` § numbering space and
-/// `scripts/cdname_shift_analysis.py`.
+/// `scripts/asset-investigation/cdname_shift_analysis.py`.
 pub const RAW_TOC_INDEX_OFFSET: u32 = 2;
 
 /// Resolve the CDNAME block that retail-semantically covers an **extraction**
