@@ -305,13 +305,27 @@ The six final-boss Cort special-attack stagers — extraction PROT **0938** (Mys
 **Stager extraction entries are over-read windows.** The TOC-indexed footprint of every stager entry runs past the next entry's start LBA, so an extraction `.BIN` is `[this stager][the following stagers' bytes...]`; only the first `(next_start_lba - start_lba) * 0x800` bytes are the entry's own content (`summon_overlay::unique_content_len`).
 The Cort mid-cast saves pin the boundary byte-exactly: each state's slot-B resident image matches its stager file up to precisely the TOC gap (0938 → `0x1800`, 0940/0944/0961 → `0x2000`, 0962 → `0x2800`, 0966 → `0x4000`) and diverges after it (stale bytes of the slot's previous occupant). Spawn sites in the over-read tail belong to *neighbouring* stagers, and their `lui/addiu` record pointers — valid only for the neighbour's own load at the shared base — dereference unrelated bytes in the wrong file window.
 
-**That trim resolves the record-first-word "sentinel" question.** Across every trimmed stager (player 0903..=0913, high 0927..=0934, the six Cort entries) the first word is only ever `-1` (transform node, dominant), a small library-mesh index, or **`0x4000`** — four records total, in PROT 0928/0929/0931 — matching `FUN_80021B04`'s own dispatch exactly (negative → transform path, `0x4000`/`0x4001` → render-mode nodes, else library index). The previously-reported `0x1000`/`0x8000`-class sentinel population was the over-read artifact.
+**That trim resolves the record-first-word "sentinel" question.** Across every trimmed stager (player 0903..=0913, the evolved-Seru block 0914..=0923, high 0927..=0934, the six Cort entries) the first word is only ever `-1` (transform node, dominant), a small library-mesh index, or **`0x4000`** — matching `FUN_80021B04`'s own dispatch exactly (negative → transform path, `0x4000`/`0x4001` → render-mode nodes, else library index). The previously-reported `0x1000`/`0x8000`-class sentinel population was the over-read artifact.
+
+**Render-mode-node census (`0x4000`).** A static sweep of the trimmed stager
+corpus (disc-gated `summon_overlay_block`) finds `0x4000` records in **five**
+stagers: the three Sim-Seru high casts Palma (0928, 4 records), Mule (0929),
+Jedo (0931), **plus two evolved-Seru player casts** — spell `0x8E` → 0916
+(4 records) and `0x93` → 0921 (6). The evolved-Seru block (`spell_id
+0x8C..=0x95` → extraction 0914..=0923, `summon_overlay::EVOLVED_SUMMON_STAGER_PROT`)
+is the contiguous continuation of the player block under the same linear loader
+arithmetic (`extraction = (id - 0x81) + 903`); every entry trims to a clean
+move-VM stager, so the evolved casts ride the stager mechanism structurally (the
+per-id binding inherits the arithmetic — capture-pending, unlike the byte-pinned
+base/high/enemy blocks). The render-mode carriers are all **player** casts, so
+they don't unblock the live-exerciser question below (a player cast renders the
+namesake creature, never seats the stager parts).
 Live correlation from the Cort states: every live pooled part-actor (`DAT_801C90F0` slots) carries `actor[+0x48]` pointing into the trimmed record table at a `-1` record (RAM first word == file first word), with the spawn-time `+0x56`/`+0x5A` zeros rebound post-spawn by the move-VM ops (`+0x56 = 4` / `+0x5A = 2` dominate mid-cast) and `actor[+0x64] = 0` throughout. No `0x4000`/`0x4001` part-actor was live in these captures.
 
 **The render-mode nodes have no live exerciser in the catalogued corpus.**
-The three player Sim-Seru casts whose stagers *carry* the `0x4000` records —
-Palma (0928), Mule (0929), Jedo (0931) — are now in the mid-cast save corpus,
-and a pointer-scan of each state's full RAM finds **zero** words referencing
+For the three player Sim-Seru casts in the mid-cast save corpus whose stagers
+*carry* `0x4000` records — Palma (0928), Mule (0929), Jedo (0931) —
+a pointer-scan of each state's full RAM finds **zero** words referencing
 any of the stager's record starts (or their `record+4` bytecode entries), even
 though the stager is 99.9–100% byte-resident at slot B. So in a player cast the
 move-VM scene-graph is not live at the on-screen instant at all — the summon

@@ -147,6 +147,23 @@ pub const POOL_SPAWN_HELPER: u32 = 0x8005_0ED4;
 /// sweep and `docs/reference/open-rev-eng-threads.md`.
 pub const PLAYER_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 903..=913;
 
+/// Evolved-Seru player cast block (`spell_id 0x8C..=0x95`), the contiguous
+/// continuation of [`PLAYER_SUMMON_STAGER_PROT`] under the *same* linear loader
+/// arithmetic: `extraction = (id - 0x81) + 903`, so `0x8C → 914 .. 0x95 → 923`.
+/// Each entry, trimmed to its TOC-gap footprint ([`unique_content_len`]), parses
+/// as a move-VM stager (4..67 spawn sites, non-trivial scene-graphs) — the same
+/// structure the base, high, and enemy blocks carry. This pins the *structural*
+/// half statically: the evolved-Seru casts ride the stager mechanism, not the
+/// resident `0900` move-FX module. The exact per-id binding is the one residual
+/// that a mid-cast save per id would make byte-exact (the base/high/enemy blocks
+/// are capture-pinned; this block inherits the arithmetic, not yet a capture).
+///
+/// **Two entries carry `0x4000` render-mode nodes** ([`RENDER_NODE_MODE_A`]) —
+/// `0x8E` → 916 (4 records) and `0x93` → 921 (6) — the only such records found
+/// outside the Sim-Seru high stagers (0928/0929/0931). Pinned by the disc-gated
+/// `summon_overlay_block` sweep.
+pub const EVOLVED_SUMMON_STAGER_PROT: std::ops::RangeInclusive<u32> = 914..=923;
+
 /// High-summon (evil-Seru creature) stager block, capture-pinned: action ids
 /// `0x99..=0xA0` (Juggernaut / Palma / Mule / Horn / Jedo / Meta / Terra /
 /// Ozma) load extraction PROT 0927..=0934 through the same loader-B path.
