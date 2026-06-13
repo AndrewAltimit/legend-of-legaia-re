@@ -559,6 +559,31 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         consumables_only: bool,
     },
+    /// Dump the static spell name / MP / target table from `SCUS_942.54`
+    /// (`legaia_asset::spell_names`, `DAT_800754C8`). See
+    /// `docs/formats/spell-table.md`.
+    SpellNames {
+        /// Path to `SCUS_942.54` (typically `extracted/SCUS_942.54`).
+        scus: PathBuf,
+    },
+    /// Dump the static per-monster steal table from `SCUS_942.54`
+    /// (`legaia_asset::steal_table`, `DAT_80077828`) - what the Evil God
+    /// Icon steals - joining each stolen item id to its name. See
+    /// `docs/formats/steal-table.md`.
+    StealTable {
+        /// Path to `SCUS_942.54`.
+        scus: PathBuf,
+        /// Print every monster id, including non-stealable rows.
+        #[arg(long, default_value_t = false)]
+        all: bool,
+    },
+    /// Dump the 64-slot accessory ("Goods") passive-effect table from
+    /// `SCUS_942.54` (`legaia_asset::accessory_passive`, `0x8007625C`). See
+    /// `docs/formats/accessory-passive-table.md`.
+    AccessoryPassive {
+        /// Path to `SCUS_942.54`.
+        scus: PathBuf,
+    },
     /// Render a kingdom's slot-4 wireframe (or a raw decoded slot-4 .bin)
     /// to a top-down PNG. The output uses the same per-body color palette
     /// as the WebGL world-overview viewer so a PNG screenshot can be
@@ -931,6 +956,9 @@ fn main() -> Result<()> {
             equipment_only,
             consumables_only,
         } => item_tables_cmd(&scus, equipment_only, consumables_only),
+        Cmd::SpellNames { scus } => spell_names_cmd(&scus),
+        Cmd::StealTable { scus, all } => steal_table_cmd(&scus, all),
+        Cmd::AccessoryPassive { scus } => accessory_passive_cmd(&scus),
         Cmd::KingdomSlot {
             input,
             slot,
@@ -1849,6 +1877,90 @@ fn item_tables_cmd(scus: &Path, equipment_only: bool, consumables_only: bool) ->
                 where_,
             );
         }
+    }
+    Ok(())
+}
+
+/// `asset spell-names <SCUS>` - dump the static spell name / MP / target
+/// table (`legaia_asset::spell_names`, `DAT_800754C8`).
+fn spell_names_cmd(scus: &Path) -> Result<()> {
+    use legaia_asset::spell_names::SpellNameTable;
+
+    let bytes = std::fs::read(scus)?;
+    let table = SpellNameTable::from_scus(&bytes).context("parse spell-name table")?;
+    let mut named = 0usize;
+    println!("id    mp   target           name");
+    for id in 0u8..=u8::MAX {
+        let Some(e) = table.entry(id) else { continue };
+        let name = e.name.as_deref().unwrap_or("");
+        if name.is_empty() {
+            continue;
+        }
+        named += 1;
+        println!("0x{id:02X}  {:<4} {:<16?} {name}", e.mp, e.target_shape());
+    }
+    println!("\n{named} named spell ids");
+    Ok(())
+}
+
+/// `asset steal-table <SCUS>` - dump the static per-monster steal table
+/// (`legaia_asset::steal_table`, `DAT_80077828`), joining the stolen item
+/// id to its name from the item-name table.
+fn steal_table_cmd(scus: &Path, all: bool) -> Result<()> {
+    use legaia_asset::{item_names::ItemNameTable, steal_table::StealTable};
+
+    let bytes = std::fs::read(scus)?;
+    let table = StealTable::from_scus(&bytes).context("parse steal table")?;
+    let names = ItemNameTable::from_scus(&bytes);
+    println!("monster  chance  item");
+    for monster_id in 1u16..=255 {
+        let Some(e) = table.entry(monster_id) else {
+            continue;
+        };
+        if !all && !e.is_stealable() {
+            continue;
+        }
+        let item = names.as_ref().and_then(|n| n.name(e.item_id)).unwrap_or("");
+        println!(
+            "{monster_id:>5}    {:>3}%    0x{:02X} {item}",
+            e.chance_pct, e.item_id
+        );
+    }
+    println!(
+        "\n{} stealable of {} entries",
+        table.stealable_count(),
+        table.len()
+    );
+    Ok(())
+}
+
+/// `asset accessory-passive <SCUS>` - dump the 64-slot accessory ("Goods")
+/// passive-effect table (`legaia_asset::accessory_passive`, `0x8007625C`).
+fn accessory_passive_cmd(scus: &Path) -> Result<()> {
+    use legaia_asset::accessory_passive::{AccessoryPassiveTable, stat_boosts};
+
+    let bytes = std::fs::read(scus)?;
+    let table =
+        AccessoryPassiveTable::from_scus(&bytes).context("parse accessory-passive table")?;
+    println!("idx   scope  name                          boosts / effect");
+    for i in 0..table.record_count() {
+        let idx = i as u8;
+        let Some(rec) = table.record(idx) else {
+            continue;
+        };
+        let name = rec.name.as_deref().unwrap_or("");
+        let scope = if rec.party_wide() { "party" } else { "self " };
+        let boosts = stat_boosts(idx);
+        let effect = if boosts.is_empty() {
+            String::new()
+        } else {
+            boosts
+                .iter()
+                .map(|(s, p)| format!("{s:?}+{p}%"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        println!("0x{idx:02X}  {scope}  {name:28}  {effect}");
     }
     Ok(())
 }
