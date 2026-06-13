@@ -1439,6 +1439,44 @@ expected_game_mode = 0x15
 description = "Noa casting Nova (spell 0x8B) mid-summon. Loader-B current-id 0x8007BC4C = 18 -> stager extraction 0913. Completes the capture-pinned player Seru-magic block: 0x81..0x8B -> 903..913, every leg on the linear arithmetic."
 topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8B"]
 
+# Evolved-Seru summon mid-cast corpus: the player evolved-Seru casts
+# (spell ids 0x8C..) that continue the base block on the same linear
+# arithmetic (extraction = loader_id + 895, loader_id = spell_id - 0x79).
+# Each was previously only statically predicted (the entries parse as
+# stagers, but no mid-cast state pinned the per-id binding); these three
+# byte-pin it - loader-B current-id read mid-cast + the predicted stager
+# 100% byte-resident at slot-B 0x801F69D8.
+
+[[scenarios]]
+slot = 2
+label = "gola_gola_summon_mid_cast"
+ram_fingerprint_sha256 = "53c9d0345c2cee22fe32c5bb584cce3adc355ce8e5f32c61a87b16a07ef93056"
+backup_fingerprint = "de6b61e58bfa84404133cc74b0e582a2793260f182d334dc6c5dfa8bf626aab5"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Vahn casting Gola Gola (evolved-Seru, fire, attack 'Spinning Flare', spell 0x8C) mid-summon. Loader-B current-id 0x8007BC4C = 19 (0x13) -> stager extraction 0914; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8C -> 914."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8C", "evolved-Seru"]
+
+[[scenarios]]
+slot = 3
+label = "mushura_summon_mid_cast"
+ram_fingerprint_sha256 = "0a4412f8a879c39e9866dfb9ff515b2eb7a279d1f65031cb01d2d82db4868a3c"
+backup_fingerprint = "2a73b0a95f14853e1059cd9271c9f5bb0121db362d1468d6b1703d472b6f6e88"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Noa casting Mushura (evolved-Seru, earth, attack 'Crazy Driver', spell 0x8D) mid-summon. Loader-B current-id 0x8007BC4C = 20 (0x14) -> stager extraction 0915; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8D -> 915."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8D", "evolved-Seru"]
+
+[[scenarios]]
+slot = 4
+label = "barra_summon_mid_cast"
+ram_fingerprint_sha256 = "c8d607dbd2f34700378ad928a1c67482088addd9f437421092dd7717b8ed9f60"
+backup_fingerprint = "fbe3179a7668dbe094c526756a2eaf12d197c21252b03da2168f6dbb1a910979"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Gala casting Barra (evolved-Seru, wind, attack 'Hell Dive', spell 0x8F) mid-summon. Loader-B current-id 0x8007BC4C = 22 (0x16) -> stager extraction 0917; the stager is 100% byte-resident at slot-B 0x801F69D8. Byte-pins the predicted evolved-Seru leg 0x8F -> 917 (so 0x8E -> 916, the render-mode-node carrier, sits between the pinned 0x8D and 0x8F)."
+topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x8F", "evolved-Seru"]
+
 # High-id summon mid-cast corpus (endgame card): the Ra-Seru summons
 # (Meta / Terra / Ozma, spell ids 0x9E..0xA0) and an Evil Seru Magic
 # cast (spell id 0x99, creature Juggernaut). Same evidential shape as
