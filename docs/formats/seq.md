@@ -3,7 +3,9 @@
 PsyQ's `SsSeqOpen` / `SsSeqPlay` accepts a 13-byte-header SEQ file: a thin
 MIDI variant that names a single track with delta-time + event records.
 Legaia uses it for in-game music, paired with a [VAB](vab.md) sound bank
-that holds the instrument samples.
+that holds the instrument samples. For the human-readable map between each
+track's debug sound-test ID, the scene it plays in, and its official OST
+title, see [`reference/music-tracks.md`](../reference/music-tracks.md).
 
 The format is a publicly-documented PsyQ SDK shape (header layout +
 event encoding). This page describes byte order, the meaning of every

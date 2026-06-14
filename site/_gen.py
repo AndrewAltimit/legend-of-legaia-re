@@ -119,6 +119,7 @@ WIDE_PAGES: set[str] = {
     "media",
     "architecture",
     "world-overview",
+    "reference/music-tracks",
 }
 
 
@@ -251,6 +252,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
     ("reference/cheats.html",      "Cheat databases",               "reference/cheats",           "reference/cheats.html"),
     ("reference/gamedata.html",    "Curated game-data tables",      "reference/gamedata",         "reference/gamedata.html"),
+    ("reference/music-tracks.html","Music-track disambiguation",     "reference/music-tracks",     "reference/music-tracks.html"),
     ("reference/open-rev-eng-threads.html","Open RE threads",        "reference/open-rev-eng-threads","reference/open-rev-eng-threads.html"),
 ]
 

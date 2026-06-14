@@ -137,6 +137,7 @@ How the runtime engine works.
 | [`builds.md`](docs/reference/builds.md) | TCRF region data; known builds. |
 | [`cheats.md`](docs/reference/cheats.md) | GameShark / Mednafen cheat database parser + classifier; pinned RAM offsets for character record, inventory, battle actor, story flags. |
 | [`gamedata.md`](docs/reference/gamedata.md) | Curated arts/magic/items/weapons/armor/accessories/enemies/shops/casino/fishing tables mined from public walkthroughs. Ground-truth labels for binary records under reverse engineering. |
+| [`music-tracks.md`](docs/reference/music-tracks.md) | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test ID + title / in-game context / official OST title / proposed relocalization). Curated reference (Stann0x); the label layer for the extracted SEQ/BGM tracks. |
 | [`open-rev-eng-threads.md`](docs/reference/open-rev-eng-threads.md) | Index of still-open RE hunts + falsified hypotheses worth not re-walking. Question-level companion to `port-catalog.py --dashboard`. |
 
 ### Crates - [`crates/`](crates/)
