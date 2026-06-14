@@ -56,6 +56,9 @@ data/gamedata/
   sol_tower.toml      - Sol Tower floor map + side-quest chains
   fishing.toml        - Vidna/Buma fishing pond prizes
   characters.toml     - Vahn / Noa / Gala affinities and weapon classes
+  music.toml          - 81-track BGM disambiguation (debug id + title /
+                        in-game context / OST title / relocalization);
+                        contributed by Stann0x (see music-tracks.md)
 ```
 
 Implementation: [`crates/gamedata`](../../crates/gamedata).
@@ -359,3 +362,5 @@ records being reverse-engineered:
   `0x414`-byte runtime record cheats and gamedata both anchor on.
 - [Art data format](../formats/art-data.md) — the on-disc Art
   Record layout the gamedata `directions` field cross-validates.
+- [Music-track disambiguation](music-tracks.md) — the sibling
+  curated table this crate also exposes (the `music` accessors).
