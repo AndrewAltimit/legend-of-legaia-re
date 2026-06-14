@@ -428,6 +428,9 @@ pub fn patch_rom(
         chicken_heart,
         good_luck_bell,
         all_warps,
+        // The in-browser patcher doesn't surface explicit item picks yet; the CLI
+        // `--start-with` flag does. Leave it empty so web behaviour is unchanged.
+        extra_items: Vec::new(),
     };
     if seed_opts.is_active() {
         let rep = apply::randomize_starting_items(&mut patcher, seed_n, &seed_opts)

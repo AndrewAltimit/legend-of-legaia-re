@@ -388,6 +388,10 @@ toggles:
   to 99) force those accessories (`0xD1` / `0xF4` / `0xFC`) into a slot. They are
   "Goods", but the owned-item list is one ordered `(id, count)` array shared by
   every category, so they seed exactly like a consumable.
+- `extra_items` is an explicit `(id, count)` list (CLI `--start-with`). Unlike the
+  random fill (consumable pool only), it takes **any** id — consumable, equipment,
+  or accessory — and is seeded into the forced prefix after the toggles, excluded
+  from the reroll, and de-duplicated (id/count `0` and already-seeded ids dropped).
 - `all_warps` presets the all-towns visited bitmask (`0x8008575C = 0xF77F`,
   `0x8008575E = 0xF8FF`).
 

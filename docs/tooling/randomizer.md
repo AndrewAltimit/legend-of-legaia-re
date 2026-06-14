@@ -762,6 +762,19 @@ capacity they leave (excluding every forced id so it never deals a duplicate) �
 so a random fill adds *on top of* the convenience items instead of being crowded
 out by them, up to the seven-slot cap (five with `--all-warps`).
 
+**`--start-with ID[:COUNT],…`** seeds *explicit* items into the starting bag —
+comma-separated `id[:count]` entries (id decimal or `0xHH`, count defaulting to 1,
+clamped to 99), e.g. `--start-with 0x89:10,0xd1,154:3`. Unlike `--starting-items`
+(whose random fill is restricted to the consumable block so a *random* start stays
+sensible), the explicit list takes **any** item id — consumable, weapon, armor, or
+accessory — because they all share the one owned-item array. The picks are treated
+like the convenience toggles: seeded into the forced prefix (after the toggles, in
+the order given), excluded from the random reroll, and de-duplicated (an id already
+seeded by a toggle or an earlier pick is skipped, an id-`0` or count-`0` entry is
+dropped). Picks past the direct cap overflow into the opening-scene `GIVE_ITEM`
+grant just like the random fill, so an arbitrarily long explicit bag still lands.
+The options carrier is `StartingSeedOptions::extra_items`.
+
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
 (`SC + 0x161C`), split into the two halfwords the well-known "Access All Towns"
