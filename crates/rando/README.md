@@ -469,14 +469,22 @@ start coherent:
   (Vahn/Noa/Gala); the 4th template slot (Terra) has no curve and keeps its base
   stats. This keeps the stats coherent with the level the loop stamps for every slot —
   fixing the prior bug where Noa/Gala showed level `N` with level-1 stats.
-- **Experience** — additionally, the lead's `+0x0` gets the midpoint of level `N`'s XP
-  band (from the disc's own `xp_thresholds_from_scus`) via a `$t0` preload + store that
-  repurpose the slot-3/slot-1 threshold seeds; the lead's next-level threshold `+0x4`
-  gets `reach(N+1)`. Single 16-bit immediates, which caps the level at
-  `MAX_STARTING_LEVEL` (14).
+- **Experience + threshold** — **each growth-capable slot's** `+0x0` gets the midpoint
+  of level `N`'s XP band (from the disc's own `xp_thresholds_from_scus`) and its `+0x4`
+  gets `reach(N+1)`. The seed routine never writes `+0x0` natively and seeds `+0x4` by
+  storing one shared `$v0` literal, so the edit feeds a single `$t0` preload into three
+  `sw $t0, <+0x0>($s0)` stores (repurposing the slot-1/slot-2 threshold reloads and a
+  redundant `lui`), and dropping those reloads leaves `$v0` = `reach(N+1)` intact for
+  the routine's existing `+0x4` stores — so all three slots take the same threshold.
+  The small per-slot `FUN_801E9504` correction is re-applied by the level-up applier on
+  each character's first post-seed level-up. The preload is a single 16-bit immediate,
+  which caps the level at `MAX_STARTING_LEVEL` (14). Fixes the prior bug where only the
+  lead's XP was seeded, so Noa showed experience 0 and Gala a stale level-1 threshold.
 
 The disc-gated `starting_level_real` oracle round-trips every level in range and
-checks each leveled slot's stats off the patched image.
+checks each leveled slot's stats off the patched image; a companion test runs a
+MIPS-subset interpreter over the patched seed routine and asserts every growth
+record's `+0x0`/`+0x4`/`+0x130` land correctly.
 
 ## Item prices
 
