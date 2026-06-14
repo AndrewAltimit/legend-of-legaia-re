@@ -18,6 +18,14 @@
 //! shuffling it would mostly perturb how often enemies cast, not how hard the
 //! fight is.
 //!
+//! The scripted Rim Elm tutorial sparring partner ([`PROTECTED_MONSTER_IDS`]) is
+//! also left untouched: it fights the player in a teaching battle the game never
+//! expects the player to lose (there is no game-over branch out of it), so giving
+//! it a different monster's attack can let it one-shot the party and soft-lock a
+//! brand-new game before the player can act. Its combat stats are always kept as
+//! the disc ships them. The encounter randomizer already keeps that formation
+//! scripted (`crate::encounter`); this is the matching guard on the stat side.
+//!
 //! Each edit re-packs the monster's slot through [`crate::monster::repack_slot`]:
 //! the decoded block length is unchanged, so the slot stays its original
 //! `0x14000`-byte footprint and every other monster's slot offset is fixed — a
@@ -46,6 +54,17 @@ pub const STAT_FIELDS: [(&str, usize); 7] = [
 
 /// Number of stat fields a [`StatAssignment`] carries.
 pub const FIELD_COUNT: usize = STAT_FIELDS.len();
+
+/// 1-based monster ids the stat randomizer must never modify.
+///
+/// `79` is the Rim Elm tutorial sparring partner (Tetsu, the `999/999` teaching
+/// opponent): the opening battle pits the player against it in a scripted fight
+/// that is unwinnable by design and has no game-over handling. If the randomizer
+/// hands it a hard-hitting monster's attack it can kill the party in one move on
+/// a fresh save, with no way to recover — a soft-lock. Its stats are therefore
+/// pinned to the disc's originals, both as a randomization *source* and a
+/// *target*, so neither it nor any other monster inherits its tutorial stats.
+pub const PROTECTED_MONSTER_IDS: &[u16] = &[79];
 
 /// One monster's stat values, in [`STAT_FIELDS`] order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,25 +110,36 @@ pub fn set_stats(slot_bytes: &[u8], stats: &[u16; FIELD_COUNT]) -> Result<Vec<u8
 /// preserved); [`StatMode::Random`] draws each cell from the column pool with
 /// replacement (the multiset is no longer preserved, but every value is still a
 /// real in-game stat).
+///
+/// Monsters in [`PROTECTED_MONSTER_IDS`] (the scripted tutorial fight) are passed
+/// through unchanged and excluded from every column pool, so they keep their own
+/// stats and never donate them to another monster. Under `Shuffle` this still
+/// preserves each column's full multiset: a protected monster contributes the
+/// same value before and after, and the rest are a permutation among themselves.
 pub fn plan_stats(current: &[StatAssignment], seed: u64, mode: StatMode) -> Vec<StatAssignment> {
     let mut out = current.to_vec();
-    if out.is_empty() {
+    // Indices of the monsters eligible for randomization (everything but the
+    // protected scripted-fight ids). Protected entries stay byte-identical.
+    let free: Vec<usize> = (0..current.len())
+        .filter(|&i| !PROTECTED_MONSTER_IDS.contains(&current[i].monster_id))
+        .collect();
+    if free.is_empty() {
         return out;
     }
     let mut rng = SplitMix64::new(seed);
     for field in 0..FIELD_COUNT {
-        let column: Vec<u16> = current.iter().map(|a| a.stats[field]).collect();
+        let column: Vec<u16> = free.iter().map(|&i| current[i].stats[field]).collect();
         match mode {
             StatMode::Shuffle => {
                 let mut bag = column;
                 rng.shuffle(&mut bag);
-                for (slot, value) in out.iter_mut().zip(bag) {
-                    slot.stats[field] = value;
+                for (&i, value) in free.iter().zip(bag) {
+                    out[i].stats[field] = value;
                 }
             }
             StatMode::Random => {
-                for slot in out.iter_mut() {
-                    slot.stats[field] = column[rng.below(column.len())];
+                for &i in &free {
+                    out[i].stats[field] = column[rng.below(column.len())];
                 }
             }
         }
@@ -225,5 +255,64 @@ mod tests {
     #[test]
     fn empty_roster_is_noop() {
         assert!(plan_stats(&[], 1, StatMode::Shuffle).is_empty());
+    }
+
+    /// A protected monster keeps its exact stats and never leaks them into the
+    /// pool, while the rest of the roster is still randomized.
+    #[test]
+    fn protected_monster_is_pinned() {
+        let protected = PROTECTED_MONSTER_IDS[0];
+        // A roster that includes the protected id, with a recognisable, unique
+        // stat block on the protected monster.
+        let mut current = sample(24);
+        let pidx = 5;
+        current[pidx].monster_id = protected;
+        let pinned = [4242u16, 4243, 4244, 4245, 4246, 4247, 4248];
+        current[pidx].stats = pinned;
+
+        for mode in [StatMode::Shuffle, StatMode::Random] {
+            let plan = plan_stats(&current, 0x1234_5678, mode);
+            let p = plan.iter().find(|a| a.monster_id == protected).unwrap();
+            assert_eq!(
+                p.stats, pinned,
+                "{mode:?}: protected monster must be pinned"
+            );
+            // Its unique values never appear on any other monster.
+            for a in &plan {
+                if a.monster_id == protected {
+                    continue;
+                }
+                for (field, &p) in pinned.iter().enumerate() {
+                    assert_ne!(
+                        a.stats[field], p,
+                        "{mode:?}: protected monster's stats leaked to id {}",
+                        a.monster_id
+                    );
+                }
+            }
+            // The rest of the roster is actually randomized (not a no-op).
+            let moved = current
+                .iter()
+                .zip(&plan)
+                .filter(|(c, p)| c.monster_id != protected && c.stats != p.stats)
+                .count();
+            assert!(moved > 0, "{mode:?}: non-protected monsters should change");
+        }
+    }
+
+    /// Shuffle still preserves each column's full multiset even with a protected
+    /// monster in the roster (the protected value is conserved in place).
+    #[test]
+    fn shuffle_with_protected_preserves_full_multiset() {
+        let mut current = sample(24);
+        current[3].monster_id = PROTECTED_MONSTER_IDS[0];
+        let plan = plan_stats(&current, 0xFEED_BEEF, StatMode::Shuffle);
+        for field in 0..FIELD_COUNT {
+            let mut before: Vec<u16> = current.iter().map(|a| a.stats[field]).collect();
+            let mut after: Vec<u16> = plan.iter().map(|a| a.stats[field]).collect();
+            before.sort_unstable();
+            after.sort_unstable();
+            assert_eq!(before, after, "column {field} multiset must be preserved");
+        }
     }
 }

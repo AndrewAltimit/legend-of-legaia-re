@@ -122,6 +122,31 @@ fn shuffle_monster_stats_round_trips_on_disc() {
         );
     }
 
+    // The protected scripted-fight monster(s) keep their disc stats verbatim, so
+    // the unwinnable-by-design tutorial battle can't be made lethal.
+    let stat_vec = |r: &monster_archive::MonsterRecord| {
+        [
+            r.hp,
+            r.mp,
+            r.attack(),
+            r.defense_high(),
+            r.defense_low(),
+            r.agility(),
+            r.speed(),
+        ]
+    };
+    let before_by_id = by_id(&before);
+    for &pid in legaia_rando::monster_stats::PROTECTED_MONSTER_IDS {
+        let (Some(b), Some(r)) = (before_by_id.get(&pid), a.get(&pid)) else {
+            continue; // id not populated on this disc — nothing to pin
+        };
+        assert_eq!(
+            stat_vec(r),
+            stat_vec(b),
+            "protected monster {pid}: combat stats must be unchanged"
+        );
+    }
+
     // Every slot stays its fixed footprint (no LBA moved).
     let patched_entry = patcher.read_entry(MONSTER_ARCHIVE_ENTRY).expect("read 867");
     assert_eq!(
