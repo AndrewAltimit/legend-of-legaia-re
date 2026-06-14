@@ -98,7 +98,7 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
     <li><span class="tag tag-done">Confirmed</span> (live-pinned + byte-validated against the disc) the cost field <code>DAT_801C9360[char][0x0C] + 0x74</code>, its values, the case-<code>9</code> read / case-<code>0xB</code> spend in <code>FUN_801D388C</code>, the resolver call site, the <strong>writer</strong> (<code>FUN_800557B8</code>, verbatim copy from the LZS-decoded equipment section at battle load), and the <strong>disc location</strong> (<code>section[+0x04]</code> swing record <code>+0x74</code> in the player battle files, tabulated above).</li>
     <li><span class="tag tag-partial">Inferred</span> that command <code>0x0C</code> is "the arm" (it is the only command whose cost tracks the weapon).</li>
   </ul>
-  <p>The mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty &mdash; a clean target for a <a href="../tooling/randomizer.html">randomizer</a> feature.</p>
+  <p>The mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty &mdash; which is exactly what the <a href="../tooling/randomizer.html">randomizer</a>'s <code>--weapon-specialty</code> does, permuting the three favored families among the characters by rewriting these bytes in place.</p>
 </section>
 
 <section class="doc-section" id="see-also">

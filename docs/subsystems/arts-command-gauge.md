@@ -115,7 +115,7 @@ Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru C
 
 **Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon).
 
-The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. This is a clean target for a [randomizer](../tooling/randomizer.md) feature (same-size in-place edits to the LZS sections of the player battle files).
+The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. The [randomizer](../tooling/randomizer.md)'s `--weapon-specialty` does exactly this — it permutes the three favored families among the characters by rewriting these bytes (decompressing / re-compressing each touched section in place).
 
 ## See also
 
