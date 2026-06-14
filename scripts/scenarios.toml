@@ -2016,3 +2016,23 @@ backup_fingerprint = "8d656e67367c7de3ba8d443053b5698032bed3578bcacdc96c0e64d007
 description = "Equipment UI, Vahn holding the Ra-Seru Blade (favored sword - single-width Arms); pairs with equip_ui_vahn_astral"
 topics = ["weapon specialty", "equip menu", "arm width", "favored weapon", "vahn"]
 phase = "menu"
+
+# The pre-build arts-input state: saved the instant the player presses the button
+# to BEGIN inputting an arts command for Gala holding the off-class Nail Glove
+# (a claw on a club user). Run a few frames forward and the gauge draws; that
+# build window is when the weapon class is consulted to set the arm width. Unlike
+# the other arts_bar states (all captured mid-input, past the build), this one is
+# armed BEFORE the gauge is built - the one window a read-watch on the weapon byte
+# can catch the arm-width consumer + its per-weapon-class data source.
+[[scenarios]]
+slot = 1
+label = "arts_input_start_gala_nail"
+backup_fingerprint = "0c58c4d4ca6e17496c3aa578ed6b8c27f59aa5d076d3c96b6cd1e2e31053de51"
+description = "In-battle, the instant arts command-input BEGINS (button just pressed, gauge not yet drawn) for Gala equipped with the off-class Nail Glove (claw on a club user); stepping forward builds the double-width Arms gauge; game_mode 0x15"
+topics = ["weapon specialty", "arts bar", "arm width", "off-class weapon", "bar build", "gala", "battle", "BattleMode"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
