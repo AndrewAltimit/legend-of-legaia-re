@@ -9,13 +9,13 @@
 use anyhow::{Context, Result};
 use legaia_asset::item_names::ItemNameTable;
 
-/// Curated set of chest item ids that should **never** be randomized — quest /
-/// key items whose chest location the player needs predictable (and which would
-/// be nonsensical as random fill elsewhere). The chest randomizer keeps every
-/// chest whose original item is in this set at its original item, and drops
-/// these ids from the random-fill pool so they can't be duplicated into other
-/// chests. Override at the CLI with `--keep-static-items` (pass an empty value
-/// to randomize everything).
+/// Curated **fallback** set of quest / key items kept out of chest
+/// randomization when the disc's item table can't be read. Every entry is an
+/// unsellable (price-0) quest item, so this is a strict subset of the
+/// data-driven [`crate::item_price::quest_item_ids`] — the chest randomizer's
+/// real default ([`default_static_chest_items`]) prefers that disc-derived set
+/// and only falls back to this constant. Override at the CLI with
+/// `--keep-static-items` (pass an empty value to randomize everything).
 ///
 /// | id | item | why |
 /// |----|------|-----|
@@ -24,36 +24,31 @@ use legaia_asset::item_names::ItemNameTable;
 /// | `0xa9` | Fertilizer | Genesis-tree garden quest tool |
 /// | `0xaa` | Weed Hammer | Genesis-tree garden quest tool |
 /// | `0xb0` | Spring Salts | Genesis-tree garden quest tool |
-/// | `0xf3` | Silver Compass | navigation enabler |
 /// | `0xa0` | Old Rod | fishing enabler |
 ///
-/// This is the *curated* fallback. The chest randomizer's actual default comes
-/// from [`default_static_chest_items`], which derives the full quest/key/story
-/// set from the disc's price table and unions this curated list on top (the
-/// constant adds priced-but-special tools the price-0 rule can't see, like the
-/// Silver Compass).
-pub const DEFAULT_STATIC_CHEST_ITEMS: &[u8] = &[0x9a, 0x71, 0xa9, 0xaa, 0xb0, 0xf3, 0xa0];
+/// Buyable items are deliberately excluded — a shop-tradeable tool like the
+/// Silver Compass is a fine chest-randomization candidate, so only genuinely
+/// unsellable quest items are protected.
+pub const DEFAULT_STATIC_CHEST_ITEMS: &[u8] = &[0x9a, 0x71, 0xa9, 0xaa, 0xb0, 0xa0];
 
 /// The chest randomizer's default keep-static set, derived from the disc.
 ///
-/// Combines two sources so no quest item is ever moved out of its chest or
-/// dropped into an unrelated one:
-/// - the data-driven [`crate::item_price::quest_item_ids`] — every named,
-///   unsellable (price-0) item except the chest-found equipment, which catches
-///   the door keys, garden tools, eggs/talismans/books, letters, fishing rods,
-///   casino cards, and Ra-Seru template entries automatically; and
-/// - the curated [`DEFAULT_STATIC_CHEST_ITEMS`], which adds priced-but-special
-///   tools (e.g. the Silver Compass) the price-0 rule doesn't cover.
+/// Returns the data-driven [`crate::item_price::quest_item_ids`] — every named,
+/// unsellable (price-0) item except the chest-found equipment — which catches
+/// the door keys, garden tools, eggs/talismans/books, letters, fishing rods,
+/// casino cards, and Ra-Seru template entries automatically, so no quest item
+/// is ever moved out of its chest or dropped into an unrelated one. Buyable
+/// items (priced > 0) are intentionally left randomizable.
 ///
 /// If the item table can't be read from `scus`, falls back to the curated
-/// constant alone (still a safe, if narrower, default).
+/// [`DEFAULT_STATIC_CHEST_ITEMS`] constant (a safe, if narrower, default). The
+/// curated constant is a subset of the disc-derived set, so the result only
+/// ever shrinks under the fallback, never gains a buyable id.
 pub fn default_static_chest_items(scus: &[u8]) -> std::collections::BTreeSet<u8> {
-    let mut set: std::collections::BTreeSet<u8> =
-        DEFAULT_STATIC_CHEST_ITEMS.iter().copied().collect();
-    if let Ok(quest) = crate::item_price::quest_item_ids(scus) {
-        set.extend(quest);
+    match crate::item_price::quest_item_ids(scus) {
+        Ok(quest) => quest.into_iter().collect(),
+        Err(_) => DEFAULT_STATIC_CHEST_ITEMS.iter().copied().collect(),
     }
-    set
 }
 
 /// The set of item ids that name a real (non-empty) item.
