@@ -150,6 +150,10 @@
       <div class="card-title">Battle formulas</div>
       <div class="card-body">Damage / MP-cost / accuracy / RNG arithmetic. Selector dispatch in <code>FUN_800402F4</code>; spirit damage is hard-coded; MP cost is ability-bit modified; engine-vm port lives in <code>battle_formulas.rs</code>.</div>
     </a>
+    <a class="card" href="arts-command-gauge.html">
+      <div class="card-title">Arts command gauge</div>
+      <div class="card-body">The AP gauge the player spends inputting an arts combo, and the weapon-specialty arm width: the arm command's cost at <code>DAT_801C9360[char][0x0C]+0x74</code> escalates over base for an off-class weapon (favored <code>0x1E</code> / off-class <code>0x2A</code> / Astral <code>0x36</code>) &mdash; not a flat double.</div>
+    </a>
     <a class="card" href="audio.html">
       <div class="card-title">Audio</div>
       <div class="card-body">Sound-driver path strings, three SCUS consumers, the SsAPI sequencer cluster (statically linked PsyQ libsnd), and the libspu DMA engine that moves bytes into SPU RAM.</div>
