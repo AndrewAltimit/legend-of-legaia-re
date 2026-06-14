@@ -153,11 +153,12 @@ from to `scene` (default), `kingdom`, or `world` (see
 `N` Door of Wind (the warp consumable; default 10) to the starting bag,
 `--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
 likewise, `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]`
-add those accessories (default 1 each), and `--all-warps` unlocks every
-Door-of-Wind destination from the start (see
+add those accessories (default 1 each), `--start-with id[:count],…` seeds
+explicit item(s) on top (any id — consumable, equipment, or accessory), and
+`--all-warps` unlocks every Door-of-Wind destination from the start (see
 [Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
-`--starting-level N` begins the new game at character level `N` instead of 1
-(0/1 = vanilla; range 2..=14, see [Starting level](#starting-level)).
+`--starting-level N` begins the new game with the starting party at level `N`
+instead of 1 (0/1 = vanilla; range 2..=14, see [Starting level](#starting-level)).
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).

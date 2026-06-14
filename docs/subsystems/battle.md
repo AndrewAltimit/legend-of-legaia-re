@@ -580,7 +580,7 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x10E` | u8 - written on level-up (delta `+8` for Vahn slot in the captured pre→post pair). Likely max-HP byte component or stat-derived rank. |
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
 | `+0x11C..+0x122` | Six adjacent stat bytes (paired) - incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
-| `+0x130` | u8 - incremented by `+1` on level-up (rank-style counter, e.g. number of times leveled). |
+| `+0x130` | u8 - the **displayed character level** (the byte the status screen reads as "LV"; the `Level 99` cheat target), incremented `+1` per level-up event. See [save-record.md](../formats/save-record.md#0x130-is-the-displayed-character-level). |
 | `+0x161..+0x184` | u8 spell-level array (one byte per spell id; stride matches spell list). Magic-rank up writes here (delta `+1` per learned spell). |
 
 **Level-up captured deltas (Vahn, pre/post a single character-level event).** Diff captured via `mednafen-state` shows the per-character side-effects:
@@ -591,7 +591,7 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x04..+0x06` | u16 LE | `0x016D` → `0x02DA` (365 → 730) | XP word delta (+365). Matches the published level-up XP curves. |
 | `+0x10E` | u8 | `0x3A` → `0x42` (+8) | Max-HP / vitality byte. |
 | `+0x11C..+0x122` | 6× u8 | `67/1C/13/10/16/0B` → `6B/20/15/12/1A/0F` | Per-stat increments (`+4 +4 +2 +2 +4 +4`). |
-| `+0x130` | u8 | `0x02` → `0x03` | Rank counter. |
+| `+0x130` | u8 | `0x02` → `0x03` | Displayed character level (+1 — the level 2 → 3 event). |
 
 Noa and Gala records are byte-identical across the same pair - the level-up event in this capture pair is for Vahn alone.
 
@@ -943,7 +943,7 @@ The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../to
 | Level-up | `+0x04..+0x06` | `0x016D → 0x02DA` | u16 LE XP delta (+365) |
 | Level-up | `+0x10E` | `0x3A → 0x42` | low byte of `sp_max` (Spirit, +8) |
 | Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
-| Level-up | `+0x130` | `0x02 → 0x03` | rank counter (+1) |
+| Level-up | `+0x130` | `0x02 → 0x03` | displayed character level (+1) |
 
 The retail per-level growth source **is** in `SCUS_942.54`: the per-stat
 98-entry curves at `DAT_800769CC` (stride `0x62`) + the parameter block at
