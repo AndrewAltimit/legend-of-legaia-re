@@ -707,6 +707,29 @@ is the contiguous consumable block `0x77..=0x8e` (Healing Leaf … Wonder Elixir
 `--starting-items N` (0 = leave vanilla); the read-only `starting-items` listing
 shows the current bag.
 
+#### Beyond the seven-slot cap — opening-scene `GIVE_ITEM` injection
+
+The direct seed is hard-capped at seven slots (five with `--all-warps`): the
+reclaimable executable region is that small, there is no safe code cave, and the
+file can't grow within the same-size-sector / PPF patch model. So when the bag
+(convenience items **plus** the requested random fill) exceeds the cap, the
+overflow is granted a different way — the way a treasure chest grants an item: a
+run of **silent `GIVE_ITEM` field-VM ops** (`0x39`, `[0x39, id]`; the "found X!"
+text is a separate `0xC2` token, so a bare `0x39` is a silent add) spliced into the
+**opening scene `town01`'s entry script**. That script runs on every scene load, so
+the block is wrapped in a once-only guard on a persistent SC story flag (the
+`0x50` SET / `0x70` TEST bank at `0x80085758`, where `--all-warps` writes): test the
+flag, skip the block if set, else grant the bag and set it. `apply::apply_starting_bag`
+emits the guarded block (`starting_bag::guarded_grant_block`), inserts it at the
+entry script's first opcode via `man_edit::apply_insertions` (the same partition /
+jump-delta relocation the door randomizer uses), recompresses the MAN in place, and
+bumps the descriptor size word. `starting_items::overflow_bag` computes the items
+past the direct cap; the direct seed still writes the prefix, so `direct + overflow`
+is exactly the full bag (unit-tested — no duplicate, no gap). The disc-gated
+`starting_bag_real` oracle round-trips the injected bytecode; the runtime grant
+needs a boot test (the guard bit `0xD70` is chosen from the high, retail-unused end
+of the saved bitfield but isn't proven free at runtime — it's a tunable constant).
+
 ### Starting-bag convenience toggles
 
 Opt-in flags that ride the same reclaimable seed region as the starting items,

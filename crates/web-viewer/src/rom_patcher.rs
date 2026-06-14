@@ -450,6 +450,38 @@ pub fn patch_rom(
         if rep.all_warps {
             summary.push_str("all-warps: every Door of Wind destination unlocked from the start\n");
         }
+        // Items beyond the 7-slot direct-seed cap are granted on top via a silent
+        // GIVE_ITEM block injected into the opening scene (see `starting_bag`), so
+        // the explicit convenience items AND the full requested random fill land.
+        let overflow = legaia_rando::starting_items::overflow_bag(seed_n, &seed_opts);
+        if !overflow.is_empty() {
+            let bag = apply::apply_starting_bag(
+                &mut patcher,
+                &overflow,
+                legaia_rando::starting_bag::DEFAULT_GUARD_BIT,
+            )
+            .map_err(|e| err(format!("starting-items overflow: {e}")))?;
+            let extra: Vec<String> = overflow
+                .iter()
+                .map(|(id, count)| {
+                    let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
+                    format!("{count}x {nm}")
+                })
+                .collect();
+            if bag.applied {
+                summary.push_str(&format!(
+                    "starting-items: + {} more via the opening scene: {}\n",
+                    overflow.len(),
+                    extra.join(", ")
+                ));
+            } else {
+                summary.push_str(&format!(
+                    "starting-items: WARNING - {} overflow item(s) could not be injected; \
+                     bag truncated to the direct seed\n",
+                    overflow.len()
+                ));
+            }
+        }
     } else {
         summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
     }
