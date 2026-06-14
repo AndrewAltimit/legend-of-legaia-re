@@ -89,6 +89,11 @@ pub const INVENTORY_SC_OFFSET: u32 = 0x1818;
 /// starting-item seed can write it directly to the inventory page.
 pub const DOOR_OF_WIND_ITEM: u8 = 0x89;
 
+/// Item id of Incense — the consumable that lowers the random-encounter rate for
+/// a while. In the same contiguous consumable block as Door of Wind, so the
+/// starting-item seed can write it directly to the inventory page.
+pub const INCENSE_ITEM: u8 = 0x8A;
+
 /// Byte offset of the low half of the Door-of-Wind "visited towns" bitmask
 /// relative to the save-context (`SC`) base; the live word is `SC + 0x161C`
 /// (`0x8008575C`). It lives in the story-flag block (`SC + 0x14C0..0x16C0` =

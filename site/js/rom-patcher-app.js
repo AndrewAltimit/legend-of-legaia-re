@@ -4,7 +4,7 @@
  *
  * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, drops,
  * encounters, encounter_scope, chests, shops, casino, steals, arts, doors,
- * door_coupling, house_doors, starting_items, door_of_wind, all_warps,
+ * door_coupling, house_doors, starting_items, door_of_wind, incense, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty)
  * -> { data, summary, seed }`
@@ -74,7 +74,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false,
-  startingItems: 0, doorOfWind: false, allWarps: false,
+  startingItems: 0, doorOfWind: false, incense: false, allWarps: false,
   unusedEnemies: false, unusedItems: false,
   monster_stats: 'none', move_power: 'none', element_affinity: 'none',
   spell_cost: 'none', equip_bonus: 'none', weaponSpecialty: false,
@@ -98,7 +98,7 @@ const PRESETS = {
     chests: 'random', shops: 'random', casino: 'random', steals: 'random',
     arts: 'random', doors: 'random', door_coupling: 'coupled',
     houseDoors: true, equipmentDrops: false, startingItems: 5,
-    doorOfWind: false, allWarps: true, unusedEnemies: true, unusedItems: true,
+    doorOfWind: false, incense: false, allWarps: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
   },
@@ -110,6 +110,8 @@ function init() {
   const startingItemsSel = $('rom-starting-items');
   const doorOfWindChk = $('rom-door-of-wind');
   const doorOfWindCountInput = $('rom-door-of-wind-count');
+  const incenseChk = $('rom-incense');
+  const incenseCountInput = $('rom-incense-count');
   const allWarpsChk = $('rom-all-warps');
   const equipmentDropsChk = $('rom-equipment-drops');
   const weaponSpecialtyChk = $('rom-weapon-specialty');
@@ -144,6 +146,7 @@ function init() {
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     doorOfWindChk.checked = cfg.doorOfWind;
+    incenseChk.checked = cfg.incense;
     allWarpsChk.checked = cfg.allWarps;
     unusedEnemiesChk.checked = cfg.unusedEnemies;
     unusedItemsChk.checked = cfg.unusedItems;
@@ -222,6 +225,10 @@ function init() {
     const doorOfWind = doorOfWindChk.checked
       ? Math.min(99, Math.max(1, parseInt(doorOfWindCountInput.value, 10) || 10))
       : 0;
+    // Incense: same shape as Door of Wind (0 = off; count clamped to 1..99).
+    const incense = incenseChk.checked
+      ? Math.min(99, Math.max(1, parseInt(incenseCountInput.value, 10) || 10))
+      : 0;
     const allWarps = allWarpsChk.checked;
     const unusedEnemies = unusedEnemiesChk.checked;
     const unusedItems = unusedItemsChk.checked;
@@ -236,7 +243,7 @@ function init() {
       drops === 'none' && !equipmentDrops && encounters === 'none' &&
       chests === 'none' && shops === 'none' && casino === 'none' &&
       steals === 'none' && arts === 'none' && doors === 'none' &&
-      houseDoors === 'none' && startingItems === 0 && doorOfWind === 0 && !allWarps &&
+      houseDoors === 'none' && startingItems === 0 && doorOfWind === 0 && incense === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty
     ) {
@@ -254,7 +261,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty);
+      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

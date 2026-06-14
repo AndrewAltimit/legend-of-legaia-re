@@ -37,7 +37,7 @@ so CI runs without a disc.
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Starting items](#starting-items)
-  - [Door of Wind convenience toggles](#door-of-wind-convenience-toggles)
+  - [Starting-bag convenience toggles](#starting-bag-convenience-toggles)
   - [Unused content](#unused-content)
   - [Re-pack slack](#re-pack-slack)
 - [The patch chain](#the-patch-chain)
@@ -149,10 +149,11 @@ equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 from to `scene` (default), `kingdom`, or `world` (see
 [Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
 (0 = vanilla; capped at 5). `--door-of-wind [N]` adds
-`N` Door of Wind (the warp consumable; default 10) to the starting bag and
-`--all-warps` unlocks every
+`N` Door of Wind (the warp consumable; default 10) to the starting bag,
+`--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
+likewise, and `--all-warps` unlocks every
 Door-of-Wind destination from the start (see
-[Door of Wind convenience toggles](#door-of-wind-convenience-toggles)).
+[Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
@@ -693,18 +694,25 @@ add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
 (Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
 read-only `starting-items` listing shows the current bag.
 
-### Door of Wind convenience toggles
+### Starting-bag convenience toggles
 
-Two opt-in flags that ride the same reclaimable seed region as the starting
-items, built for fast-travel testing. Door of Wind (item `0x89`) is the warp
+Opt-in flags that ride the same reclaimable seed region as the starting items,
+built for fast-travel and pacing testing. Door of Wind (item `0x89`) is the warp
 consumable: using one opens a menu to teleport to any town you have already
-visited.
+visited. Incense (item `0x8A`) lowers the random-encounter rate for a while.
 
 **`--door-of-wind [N]`** seeds Door of Wind into the new game's starting bag —
 `N` of them (1..=99; the default when the flag is given bare is 10). It is
 *additive*: with no `--starting-items` reroll the vanilla Healing Leaf ×5 is kept
 alongside it; with a reroll the random consumables replace the Healing Leaf and
 Door of Wind is forced on top.
+
+**`--incense [N]`** seeds Incense into the starting bag the same way (`N` of them,
+1..=99, default 10 when given bare). It is additive on the same terms as Door of
+Wind, and the two stack: enabling both forces a Door of Wind slot and an Incense
+slot (then the Healing Leaf base, or the reroll). Forced items are seeded first
+so they survive the five-slot capacity clamp, and a reroll excludes both so it
+never deals a duplicate of either.
 
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
@@ -721,12 +729,13 @@ seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
 overwritten when the seed is rewritten. `region_unlocks_all_warps` /
 `scus_unlocks_all_warps` read it back.
 
-The clean-room engine seeds the forced Door of Wind through the same
-`World::seed_starting_inventory` path as any other starting item (covered by the
-runtime oracle). The all-warps preset has no engine consumer yet — there is no
-Door-of-Wind warp menu in the port — so it is validated at the disc-round-trip
-level (`door_of_wind_and_all_warps_round_trip_on_disc`) and matches the
-user-verified GameShark write byte-for-byte.
+The clean-room engine seeds the forced Door of Wind (and Incense) through the
+same `World::seed_starting_inventory` path as any other starting item (covered by
+the runtime oracle), and the Incense path has its own disc round-trip oracle
+(`incense_round_trips_on_disc`). The all-warps preset has no engine consumer yet
+— there is no Door-of-Wind warp menu in the port — so it is validated at the
+disc-round-trip level (`door_of_wind_and_all_warps_round_trip_on_disc`) and
+matches the user-verified GameShark write byte-for-byte.
 
 ### Unused content
 

@@ -36,6 +36,7 @@ fn randomize_starting_items_round_trips_on_disc() {
     let opts = StartingSeedOptions {
         random_items: n,
         door_of_wind: 0,
+        incense: 0,
         all_warps: false,
     };
 
@@ -150,6 +151,7 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
     let opts = StartingSeedOptions {
         random_items: 5,
         door_of_wind: legaia_rando::starting_items::DOOR_OF_WIND_COUNT,
+        incense: 0,
         all_warps: true,
     };
 
@@ -253,4 +255,71 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
     );
 
     eprintln!("door-of-wind + all-warps seed {seed:#x}: bag {after:?}, warps unlocked");
+}
+
+/// Seeding Incense (the encounter-rate consumable) into the starting bag is
+/// additive to the vanilla Healing Leaf and round-trips off the patched disc,
+/// mirroring the Door-of-Wind path.
+#[test]
+fn incense_round_trips_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let seed = 0x14CE_45E0_0000_0001_u64;
+    let opts = StartingSeedOptions {
+        incense: legaia_rando::starting_items::INCENSE_COUNT,
+        ..Default::default()
+    };
+
+    // Vanilla baseline: exactly Healing Leaf (0x77) x5.
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    assert_eq!(
+        apply::current_starting_items(&base).expect("read seed"),
+        vec![(0x77, 5)],
+        "vanilla starts with Healing Leaf x5"
+    );
+
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+    let report = apply::randomize_starting_items(&mut patcher, seed, &opts).expect("randomize");
+    assert_eq!(report.items, plan_seed(seed, &opts).items);
+
+    // Re-decode off the patched image: Incense first, then the kept Healing Leaf.
+    let after = apply::current_starting_items(&patcher).expect("read patched seed");
+    assert_eq!(
+        after,
+        vec![
+            (
+                legaia_rando::starting_items::INCENSE_ID,
+                legaia_rando::starting_items::INCENSE_COUNT
+            ),
+            (0x77, 5),
+        ],
+        "Incense is seeded additively to the vanilla Healing Leaf"
+    );
+
+    // Same image size; the touched SCUS sector stays EDC/ECC-valid.
+    assert_eq!(
+        patcher.image().len(),
+        original.len(),
+        "image size unchanged"
+    );
+    let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+    let inv_off = starting_inv_seed_file_offset(&scus).expect("inv seed offset");
+    let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
+    let sector = scus_lba as usize + inv_off / USER_DATA_SIZE;
+    let sb = sector * SECTOR_SIZE;
+    assert!(
+        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        "patched sector must be EDC/ECC-valid"
+    );
+
+    // Determinism.
+    let mut patcher2 = DiscPatcher::open(original).expect("open");
+    apply::randomize_starting_items(&mut patcher2, seed, &opts).expect("randomize");
+    assert!(
+        patcher2.image() == patcher.image(),
+        "deterministic for a fixed seed"
+    );
+    eprintln!("incense seed {seed:#x}: bag {after:?}");
 }
