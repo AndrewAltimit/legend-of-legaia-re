@@ -5,8 +5,9 @@ Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
 drops (optionally as rare equipment), random-encounter formations, treasure-chest
 contents, steal items, Tactical-Arts button combos, doors, starting items,
-equipment passive stat bonuses, and a set of battle-tuning tables (monster combat
-stats, special-attack power, the element-affinity matrix, spell MP costs). It is
+equipment passive stat bonuses, weapon specialty (which class each character
+favors), and a set of battle-tuning tables (monster combat stats, special-attack
+power, the element-affinity matrix, spell MP costs). It is
 Track-1-adjacent tooling — it does **not** touch the clean-room engine — and it
 ships only code: no game bytes are embedded or committed, and every test that
 needs real data is disc-gated.
@@ -28,6 +29,7 @@ full design.
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
   - [Equipment bonuses](#equipment-bonuses)
+  - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Doors](#doors)
   - [House doors](#house-doors)
@@ -228,6 +230,29 @@ Equipment passive stat-bonus randomizer (`equip_bonus` module).
 - The apply path emits a same-size in-place SCUS patch via `patch_named_file`.
   The public `equip_stats::bonus_table_file_offset` + `EquipStatTable::rows`
   resolve the table.
+
+## Weapon specialty
+
+Weapon-specialty randomizer (`weapon_specialty` module).
+
+- Reassigns which weapon **class** each character specializes in. In retail,
+  equipping a weapon outside a character's favored class (Vahn blades, Noa claws,
+  Gala clubs/axes) makes that character's **arm** command (action-gauge command
+  `0x0C`) cost more AP in an arts combo. The cost is a per-(character, weapon)
+  byte inside each weapon's LZS-compressed section of the player battle file, at
+  `decoded_section[+0x04]` (the swing-record offset) `+0x74` (favored `0x1E` /
+  off-class `0x2A`). See [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md).
+- `plan_favored` permutes the three favored families (`{blade, claw, club}`)
+  among the three characters (a seeded bijection — one specialist per class).
+  `weapon_family` maps each equippable weapon id to its family; non-class weapons
+  (the Astral Sword, armor) map to `None` and are never touched, so the Astral
+  Sword stays always-wide.
+- The apply path (`apply::randomize_weapon_specialty`) walks the three player
+  files (`0863`/`0864`/`0865`), and for each weapon section decompresses it,
+  rewrites the arm-cost byte for its new favored relationship, and re-compresses
+  in place. A section whose re-compressed stream wouldn't fit its slot is skipped
+  (counted in the report) rather than aborting — in practice every section
+  re-packs.
 
 ## Arts
 

@@ -74,6 +74,7 @@ pub mod spell_cost;
 pub mod starting_items;
 pub mod steal;
 pub mod unused;
+pub mod weapon_specialty;
 
 /// Compressed-stream budget for a scene bundle's MAN: the space its LZS stream
 /// may occupy without overflowing into the next asset, i.e. the distance from

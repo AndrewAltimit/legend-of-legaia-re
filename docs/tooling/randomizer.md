@@ -156,6 +156,8 @@ Door-of-Wind destination from the start (see
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
+`--weapon-specialty` (a toggle) reassigns which weapon class each character
+favors (see [Weapon specialty](#weapon-specialty)).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
@@ -163,8 +165,8 @@ result still parses end to end — a recipient's check that a shared patch + see
 match their own disc.
 
 The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
-`starting-items`, `monster-stats`, `move-powers`, `affinity`, `spell-costs`, and
-`equip-bonuses` subcommands write nothing
+`starting-items`, `monster-stats`, `move-powers`, `affinity`, `spell-costs`,
+`equip-bonuses`, and `weapon-specialty` subcommands write nothing
 — they decode the randomizable populations off the user's disc and print them
 (item ids + names resolved from the disc's own SCUS table; chests + doors grouped
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
@@ -505,6 +507,28 @@ equippable item references are left untouched, so an unused/garbage row can neve
 hand a real item a junk tuple. The table is in `SCUS_942.54`, so the edit is a
 same-size in-place SCUS patch. `legaia-rando equip-bonuses` lists the table,
 grouped by slot category, with the items that reference each row.
+
+### Weapon specialty
+
+`--weapon-specialty` (a toggle, not a mode) reassigns which weapon **class** each
+character favors. In retail, equipping a weapon outside a character's favored class
+(Vahn blades, Noa claws, Gala clubs/axes) makes that character's **arm** command
+cost more AP in an arts combo, so fewer commands fit. As the
+[arts command gauge](../subsystems/arts-command-gauge.md) doc traces, the cost is
+not a runtime class comparison — it is a per-(character, weapon) byte baked into
+the player battle file, at the weapon section's `decoded_section[+0x04]` (swing
+record) `+0x74` (favored `0x1E` / off-class `0x2A`).
+
+The pass permutes the three favored families (`{blade, claw, club}`) among the
+three characters — a seeded bijection, so each class keeps exactly one specialist —
+then walks each player file (`0863` Vahn / `0864` Noa / `0865` Gala) and, for every
+weapon section, decompresses it, rewrites the arm-cost byte for the character's new
+favored relationship, and re-compresses in place. The byte lives inside an LZS
+stream, so this is the one feature that decompresses + re-compresses a section per
+edit (a section too tight to re-pack is skipped and reported; in practice every one
+re-packs). The Astral Sword and non-class gear carry no family and are never
+touched, so the Astral Sword stays always-wide. `legaia-rando weapon-specialty`
+shows each character's current favored class.
 
 ### Arts button combos
 

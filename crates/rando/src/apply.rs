@@ -2207,6 +2207,156 @@ pub fn randomize_starting_items(
     })
 }
 
+/// One character's weapon-specialty reassignment, for the report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecialtyAssignment {
+    /// Character name.
+    pub character: String,
+    /// The family this character specialized in before.
+    pub from: String,
+    /// The family this character specializes in after.
+    pub to: String,
+}
+
+/// Outcome of a weapon-specialty randomization.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpecialtyReport {
+    /// Per-character favored-family reassignment.
+    pub assignments: Vec<SpecialtyAssignment>,
+    /// Weapon sections whose arm cost was rewritten.
+    pub weapons_changed: usize,
+    /// Weapon sections skipped because the re-compressed section wouldn't fit
+    /// its slot footprint.
+    pub weapons_skipped_fit: usize,
+}
+
+/// Read the current favored family of each character straight from its player
+/// battle file (the family whose weapons carry [`FAVORED_COST`]), for the
+/// read-only listing. Returns `None` when the player files aren't present.
+pub fn current_specialties(patcher: &DiscPatcher) -> Result<Vec<SpecialtyAssignment>> {
+    use crate::weapon_specialty::{self, Family};
+    use legaia_asset::battle_data_pack;
+    let mut out = Vec::new();
+    for player in &weapon_specialty::PLAYERS {
+        let Ok(buf) = patcher.read_entry(player.entry) else {
+            continue;
+        };
+        let Some(pack) = battle_data_pack::detect(&buf) else {
+            continue;
+        };
+        // Tally, per family, how many of that family's weapons read FAVORED_COST.
+        let mut favored_hits = [(0usize, 0usize); 3]; // (favored, total) per family
+        for (idx, rec) in pack.records.iter().enumerate() {
+            let Some(fam) = weapon_specialty::weapon_family(rec.id as u8) else {
+                continue;
+            };
+            let Ok(dec) = battle_data_pack::decode_record(&buf, &pack, idx) else {
+                continue;
+            };
+            let Some(coff) = weapon_specialty::arm_cost_offset(&dec.bytes) else {
+                continue;
+            };
+            let fi = match fam {
+                Family::Blade => 0,
+                Family::Claw => 1,
+                Family::Club => 2,
+            };
+            favored_hits[fi].1 += 1;
+            if dec.bytes[coff] == weapon_specialty::FAVORED_COST {
+                favored_hits[fi].0 += 1;
+            }
+        }
+        // The favored family is the one with the highest favored ratio.
+        let fams = [Family::Blade, Family::Claw, Family::Club];
+        let cur = (0..3)
+            .filter(|&i| favored_hits[i].1 > 0)
+            .max_by(|&a, &b| {
+                let ra = favored_hits[a].0 as f64 / favored_hits[a].1 as f64;
+                let rb = favored_hits[b].0 as f64 / favored_hits[b].1 as f64;
+                ra.partial_cmp(&rb).unwrap()
+            })
+            .map(|i| fams[i])
+            .unwrap_or(player.vanilla);
+        out.push(SpecialtyAssignment {
+            character: player.name.to_string(),
+            from: player.vanilla.label().to_string(),
+            to: cur.label().to_string(),
+        });
+    }
+    Ok(out)
+}
+
+/// Randomize each character's weapon specialty (see [`crate::weapon_specialty`]).
+///
+/// Permutes the three favored families among Vahn / Noa / Gala and rewrites the
+/// per-(character, weapon) arm-cost byte in the player battle files so each
+/// character's new favored family is single-cost and every other class is
+/// off-class. The byte sits inside an LZS-compressed section, so each touched
+/// section is decompressed, edited, and re-compressed; a section whose
+/// re-compressed stream wouldn't fit its slot is left unchanged (counted in the
+/// report) rather than aborting the run.
+pub fn randomize_weapon_specialty(patcher: &mut DiscPatcher, seed: u64) -> Result<SpecialtyReport> {
+    use crate::weapon_specialty;
+    use legaia_asset::battle_data_pack;
+
+    let favored = weapon_specialty::plan_favored(seed);
+    let mut report = SpecialtyReport::default();
+
+    for (i, player) in weapon_specialty::PLAYERS.iter().enumerate() {
+        let new_fav = favored[i];
+        report.assignments.push(SpecialtyAssignment {
+            character: player.name.to_string(),
+            from: player.vanilla.label().to_string(),
+            to: new_fav.label().to_string(),
+        });
+
+        let Ok(buf) = patcher.read_entry(player.entry) else {
+            continue;
+        };
+        let Some(pack) = battle_data_pack::detect(&buf) else {
+            continue;
+        };
+
+        for (idx, rec) in pack.records.iter().enumerate() {
+            let Some(fam) = weapon_specialty::weapon_family(rec.id as u8) else {
+                continue;
+            };
+            let Ok(dec) = battle_data_pack::decode_record(&buf, &pack, idx) else {
+                continue;
+            };
+            let Some(coff) = weapon_specialty::arm_cost_offset(&dec.bytes) else {
+                continue;
+            };
+            let new_cost = weapon_specialty::cost_for(fam, new_fav);
+            if dec.bytes[coff] == new_cost {
+                continue; // already correct (idempotent)
+            }
+            let mut decoded = dec.bytes.clone();
+            decoded[coff] = new_cost;
+            let recompressed = legaia_lzs::compress(&decoded);
+
+            // Available footprint for the LZS stream: the slot minus its 4-byte
+            // decoded-size prefix. A stream too large to re-pack is skipped.
+            let avail = (rec.size as usize).saturating_sub(4);
+            if recompressed.len() > avail {
+                report.weapons_skipped_fit += 1;
+                continue;
+            }
+            let stream_off = rec.file_offset(pack.data_base) + 4;
+            patcher
+                .patch_prot_entry(player.entry, stream_off as u64, &recompressed)
+                .with_context(|| {
+                    format!(
+                        "write arm cost for {} weapon id 0x{:02x}",
+                        player.name, rec.id
+                    )
+                })?;
+            report.weapons_changed += 1;
+        }
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod door_plan_tests {
     use super::*;
