@@ -296,9 +296,10 @@ struct RandomizeArgs {
     house_doors: DropArg,
     /// Number of random starting items the new game begins with (`0` = leave the
     /// vanilla Healing Leaf ×5 untouched). Each is a distinct random consumable
-    /// with a small random count; capped at the seed region's capacity (5, or 3
-    /// when `--all-warps` is set). `legaia-rando starting-items` shows the
-    /// current contents.
+    /// with a small random count. The random fill shares the seed's capacity
+    /// (7 slots, or 5 with `--all-warps`) with the convenience-item toggles, and
+    /// takes whatever they leave — so it adds on top of them rather than being
+    /// crowded out. `legaia-rando starting-items` shows the current contents.
     #[arg(long, default_value_t = 0)]
     starting_items: usize,
     /// Seed Door of Wind (the warp consumable) into the new game's starting bag.
@@ -353,10 +354,18 @@ struct RandomizeArgs {
     good_luck_bell: Option<u8>,
     /// Unlock every Door-of-Wind warp destination from the start (preset the
     /// "visited towns" story-flag bitmask). Lets Door of Wind teleport to any
-    /// town immediately. Costs part of the starting-seed budget, so it caps
-    /// `--starting-items` at 3.
+    /// town immediately. It claims the warp-preset region that otherwise carries
+    /// the last two starting-item slots, so the bag is capped at 5 items with it
+    /// on (7 without).
     #[arg(long, default_value_t = false)]
     all_warps: bool,
+    /// Start the new game at this character level instead of 1 (`0` or `1` =
+    /// vanilla level 1). Seeds the lead character's cumulative XP and recomputes
+    /// the starting stats to the level from the disc's own growth curves. Range
+    /// 2..=14 (the XP seed is a single 16-bit immediate). `legaia-rando
+    /// starting-items` shows the current starting level.
+    #[arg(long, default_value_t = 0)]
+    starting_level: u8,
     /// Re-introduce unused enemies (the Evil Bat duplicates that no formation
     /// references) into the random-encounter pool. Only takes effect with
     /// `--encounters random` (a `shuffle` can't introduce a new monster).
@@ -1011,6 +1020,12 @@ fn cmd_starting_items(input: &Path) -> Result<()> {
         "Door-of-Wind all-warps preset: {}",
         if all_warps { "ON" } else { "off" }
     );
+    let level = apply::current_starting_level(&patcher)?;
+    println!(
+        "Starting level: {}{}",
+        level,
+        if level == 1 { " (vanilla)" } else { "" }
+    );
     Ok(())
 }
 
@@ -1533,6 +1548,18 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         println!("starting-items: untouched (vanilla Healing Leaf x5)");
         manifest.push("starting_items = 0".to_string());
         manifest.push("all_warps = false".to_string());
+    }
+
+    if legaia_rando::starting_level::is_active(args.starting_level) {
+        let report = apply::apply_starting_level(&mut patcher, args.starting_level)?;
+        println!(
+            "starting-level: new game now begins at level {} (HP {}, ATK {})",
+            report.level, report.stats[0], report.stats[3]
+        );
+        manifest.push(format!("starting_level = {}", report.level));
+    } else {
+        println!("starting-level: untouched (vanilla level 1)");
+        manifest.push("starting_level = 0".to_string());
     }
 
     // Diff original vs patched -> PPF.

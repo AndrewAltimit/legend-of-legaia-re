@@ -1,5 +1,5 @@
 //! Starting-inventory randomization: replace the new game's fixed Healing Leaf
-//! with up to five random consumables.
+//! with random consumables and/or forced convenience items.
 //!
 //! A vanilla New Game seeds exactly one inventory slot — Healing Leaf (item id
 //! `0x77`) ×5 — written in code by `FUN_80034A6C`
@@ -13,10 +13,15 @@
 //! Each item is written with a single packed **halfword store** — an inventory
 //! slot is two contiguous bytes `[id][count]`, so `sh $v0` writes both at once
 //! after `addiu $v0, $zero, (count << 8) | id`. That is two instructions per
-//! item, and the reclaimable region is ten instructions, so the seed holds at
-//! most [`MAX_STARTING_ITEMS`] slots. The patch is the same size as the
-//! original code (no executable growth or relocation) and is applied through
-//! [`crate::disc::DiscPatcher::patch_named_file`] like the steal table.
+//! item, and the reclaimable inventory region is ten instructions, so it holds
+//! [`INV_REGION_SLOTS`] slots. When the all-warps preset is off, the seed also
+//! borrows the adjacent warp-preset region (four more instructions, using `$v1`)
+//! for [`WARP_REGION_SLOTS`] more slots that continue the same inventory array —
+//! a combined [`MAX_STARTING_ITEMS`]. This keeps a full random fill *additive*
+//! to the forced convenience items rather than crowding it out. The patch is the
+//! same size as the original code (no executable growth or relocation) and is
+//! applied through [`crate::disc::DiscPatcher::patch_named_file`] like the steal
+//! table.
 //!
 //! The write lands **directly** in the new game's owned-item list — the single
 //! ordered `(id, count)` array the inventory menu later filters into its Items /
@@ -40,13 +45,28 @@ use crate::rng::SplitMix64;
 /// (40 bytes / 4).
 const SEED_INSTRS: usize = STARTING_INV_SEED_LEN / 4;
 
-/// Instructions one inventory slot costs: one `addiu $v0,(count<<8)|id` + one
-/// `sh $v0,off($s0)`.
+/// Instructions one inventory slot costs: one `addiu,(count<<8)|id` + one
+/// `sh,off($s0)`.
 const INSTRS_PER_ITEM: usize = 2;
 
-/// Most starting-item slots the reclaimable seed region can hold: ten
-/// instructions / two per item (`addiu` + `sh`).
-pub const MAX_STARTING_ITEMS: usize = SEED_INSTRS / INSTRS_PER_ITEM;
+/// Item slots the inventory-seed region holds on its own: ten instructions /
+/// two per item (`addiu` + `sh`).
+pub const INV_REGION_SLOTS: usize = SEED_INSTRS / INSTRS_PER_ITEM;
+
+/// Extra item slots the warp-preset region ([`legaia_asset::new_game::WARP_SEED_VA`])
+/// can hold **when the all-warps preset is not requested**. Its four
+/// instructions otherwise carry the visited-towns bitmask; when that preset is
+/// off they are free, so the seed borrows them for two more `(id, count)` slots
+/// (using `$v1` so they never clobber the live constant the surrounding code
+/// keeps in `$v0`). The slots they write continue the inventory array, so a
+/// decode that replays both regions reads one contiguous run.
+pub const WARP_REGION_SLOTS: usize = WARP_SEED_LEN / 4 / INSTRS_PER_ITEM;
+
+/// Most starting-item slots a seed can hold: the inventory region plus the
+/// warp-preset region's borrowed slots. The warp region is only available for
+/// items when the all-warps preset is off; with it on the cap is
+/// [`INV_REGION_SLOTS`] (see [`plan_seed`]).
+pub const MAX_STARTING_ITEMS: usize = INV_REGION_SLOTS + WARP_REGION_SLOTS;
 
 /// Item id of Door of Wind (the warp consumable), re-exported for callers.
 pub const DOOR_OF_WIND_ID: u8 = DOOR_OF_WIND_ITEM;
@@ -225,11 +245,21 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
 ///    consumables instead (the existing `--starting-items` behaviour), drawn
 ///    excluding any forced item so it isn't duplicated.
 ///
-/// The item list is clamped to [`MAX_STARTING_ITEMS`]. The all-warps preset
-/// lives in its **own** code region (it doesn't share the inventory budget), so
-/// it never reduces how many items fit. Deterministic in `(seed, opts)`.
+/// The item list is clamped to the available capacity: [`MAX_STARTING_ITEMS`]
+/// normally, or [`INV_REGION_SLOTS`] when the all-warps preset is on (it then
+/// claims the warp-preset region that would otherwise hold the last item
+/// slots). Convenience items are seeded first so they survive the clamp; the
+/// random fill takes whatever capacity is left — so the requested random count
+/// is preserved as long as it fits *on top of* the convenience items rather
+/// than being displaced by them. Deterministic in `(seed, opts)`.
 pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
-    let cap = MAX_STARTING_ITEMS;
+    // The warp-preset region doubles as the last two item slots, but only when
+    // the all-warps bitmask isn't using it.
+    let cap = if opts.all_warps {
+        INV_REGION_SLOTS
+    } else {
+        MAX_STARTING_ITEMS
+    };
     let mut items: Vec<(u8, u8)> = Vec::new();
     // Forced convenience items, in a stable slot order. Each is seeded first so
     // it always survives the capacity clamp; its id is excluded from the reroll
@@ -275,33 +305,88 @@ pub fn build_seed_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
     })
 }
 
-/// Encode a [`SeedPlan`]'s inventory slots into the 40-byte inventory-seed patch
-/// (the region at [`legaia_asset::new_game::STARTING_INV_SEED_VA`]).
+/// Encode a [`SeedPlan`]'s **inventory-region** slots into the 40-byte
+/// inventory-seed patch (the region at
+/// [`legaia_asset::new_game::STARTING_INV_SEED_VA`]).
+///
+/// Only the first [`INV_REGION_SLOTS`] slots land here; any overflow is encoded
+/// into the warp-preset region by [`build_warp_items_patch`] (see
+/// [`overflow_items`]). Thin wrapper over [`build_inv_patch`].
+pub fn build_seed_patch_for(plan: &SeedPlan) -> [u8; STARTING_INV_SEED_LEN] {
+    let n = plan.items.len().min(INV_REGION_SLOTS);
+    build_inv_patch(&plan.items[..n])
+}
+
+/// Encode up to [`INV_REGION_SLOTS`] `(id, count)` slots into the 40-byte
+/// inventory-seed region.
 ///
 /// Emits one `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)`
-/// pair per inventory slot, padded to [`STARTING_INV_SEED_LEN`] with `nop` (which
-/// also overwrites the redundant zero-loop — required for the warp preset, see
-/// [`build_warp_patch`]). Panics if the plan exceeds the `SEED_INSTRS`-instruction
-/// budget (callers clamp via [`plan_seed`]). The `all_warps` flag is **not**
-/// encoded here — the warp preset is a separate region ([`build_warp_patch`]) so
-/// it never reduces the item capacity. The inventory base offset comes from
-/// [`INVENTORY_SC_OFFSET`].
-pub fn build_seed_patch_for(plan: &SeedPlan) -> [u8; STARTING_INV_SEED_LEN] {
+/// pair per slot (slot `k` at `INVENTORY_SC_OFFSET + 2k`), padded to
+/// [`STARTING_INV_SEED_LEN`] with `nop` (which also overwrites the redundant
+/// zero-loop — required for the warp preset, see [`build_warp_patch`]). Panics
+/// if more than [`INV_REGION_SLOTS`] slots are given (callers clamp via
+/// [`plan_seed`]). The inventory base offset comes from [`INVENTORY_SC_OFFSET`].
+pub fn build_inv_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
     let mut words: Vec<u32> = Vec::with_capacity(SEED_INSTRS);
-    for (slot, &(id, count)) in plan.items.iter().enumerate() {
+    for (slot, &(id, count)) in items.iter().enumerate() {
         let off = (INVENTORY_SC_OFFSET as usize + slot * 2) as u16;
         words.push(addiu_v0(((count as u16) << 8) | id as u16));
         words.push(sh_v0_s0(off));
     }
     assert!(
         words.len() <= SEED_INSTRS,
-        "seed plan needs {} instructions but only {SEED_INSTRS} fit the region",
+        "{} item slots need {} instructions but only {SEED_INSTRS} fit the inventory region",
+        items.len(),
         words.len()
     );
     while words.len() < SEED_INSTRS {
         words.push(NOP);
     }
     let mut out = [0u8; STARTING_INV_SEED_LEN];
+    for (i, w) in words.iter().enumerate() {
+        out[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+    }
+    out
+}
+
+/// The item slots that overflow past the inventory region (slots
+/// [`INV_REGION_SLOTS`]..), which the warp-preset region carries when all-warps
+/// is off. Empty when the plan fits the inventory region alone, or when
+/// `all_warps` reserves the warp region for the bitmask. Slice into
+/// [`build_warp_items_patch`].
+pub fn overflow_items(plan: &SeedPlan) -> &[(u8, u8)] {
+    if plan.all_warps || plan.items.len() <= INV_REGION_SLOTS {
+        &[]
+    } else {
+        &plan.items[INV_REGION_SLOTS..]
+    }
+}
+
+/// Encode the overflow item slots into the 16-byte warp-preset region as
+/// `addiu $v1, $zero, (count << 8) | id` + `sh $v1, off($s0)` pairs that
+/// **continue** the inventory array at slot [`INV_REGION_SLOTS`]+, padded with
+/// `nop`. Uses `$v1` (not `$v0`) for the same reason [`build_warp_patch`] does:
+/// the surrounding code keeps a live `0x2dc0` constant in `$v0`. Only used when
+/// the all-warps preset is off (otherwise that preset owns this region). Panics
+/// if more than [`WARP_REGION_SLOTS`] slots are given (callers clamp via
+/// [`plan_seed`] / [`overflow_items`]).
+pub fn build_warp_items_patch(items: &[(u8, u8)]) -> [u8; WARP_SEED_LEN] {
+    assert!(
+        items.len() <= WARP_REGION_SLOTS,
+        "{} overflow slots exceed the {WARP_REGION_SLOTS}-slot warp region",
+        items.len()
+    );
+    let mut words: Vec<u32> = Vec::with_capacity(WARP_SEED_LEN / 4);
+    for (i, &(id, count)) in items.iter().enumerate() {
+        let slot = INV_REGION_SLOTS + i;
+        let off = (INVENTORY_SC_OFFSET as usize + slot * 2) as u16;
+        words.push(addiu_v1(((count as u16) << 8) | id as u16));
+        words.push(sh_v1_s0(off));
+    }
+    while words.len() < WARP_SEED_LEN / 4 {
+        words.push(NOP);
+    }
+    let mut out = [0u8; WARP_SEED_LEN];
     for (i, w) in words.iter().enumerate() {
         out[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
     }
@@ -350,8 +435,12 @@ mod tests {
     }
 
     #[test]
-    fn max_items_is_five() {
-        assert_eq!(MAX_STARTING_ITEMS, 5);
+    fn capacity_is_inventory_plus_warp_region() {
+        // Inventory region (10 instrs / 2) plus the warp region's borrowed
+        // slots (16 bytes / 4 / 2) when all-warps is off.
+        assert_eq!(INV_REGION_SLOTS, 5);
+        assert_eq!(WARP_REGION_SLOTS, 2);
+        assert_eq!(MAX_STARTING_ITEMS, 7);
     }
 
     #[test]
@@ -407,37 +496,85 @@ mod tests {
     }
 
     #[test]
-    fn warps_do_not_reduce_the_item_capacity() {
-        // The warp preset lives in its own region, so enabling it leaves the
-        // full 5-slot item capacity intact.
-        let with = plan_seed(
-            7,
+    fn all_warps_trades_the_two_overflow_slots_for_the_bitmask() {
+        // The warp-preset region carries EITHER the all-warps bitmask OR the two
+        // item slots that overflow the inventory region. So enabling all-warps
+        // lowers the item cap to the inventory region alone; with it off the bag
+        // can use the full capacity.
+        let many = |all_warps| StartingSeedOptions {
+            random_items: MAX_STARTING_ITEMS, // ask for more than the inv region holds
+            door_of_wind: 0,
+            incense: 0,
+            speed_chain: 0,
+            chicken_heart: 0,
+            good_luck_bell: 0,
+            all_warps,
+        };
+        let with = plan_seed(7, &many(true));
+        assert_eq!(with.items.len(), INV_REGION_SLOTS);
+        assert!(
+            overflow_items(&with).is_empty(),
+            "warp region is reserved for the bitmask"
+        );
+        let without = plan_seed(7, &many(false));
+        assert_eq!(without.items.len(), MAX_STARTING_ITEMS);
+        assert_eq!(overflow_items(&without).len(), WARP_REGION_SLOTS);
+    }
+
+    #[test]
+    fn random_fill_is_additive_to_convenience_items() {
+        // The reported case: enable convenience items AND ask for a full random
+        // bag. The convenience items must all survive, and the random fill takes
+        // the REMAINING capacity rather than the convenience items eating into
+        // the random count. With two accessories + five random (= the combined
+        // capacity) everything fits, so the requested five random are preserved.
+        let opts = StartingSeedOptions {
+            random_items: 5,
+            door_of_wind: 0,
+            incense: 0,
+            speed_chain: ACCESSORY_SEED_COUNT,
+            chicken_heart: ACCESSORY_SEED_COUNT,
+            good_luck_bell: 0,
+            all_warps: false,
+        };
+        let plan = plan_seed(7, &opts);
+        assert!(plan.items.contains(&(SPEED_CHAIN_ID, ACCESSORY_SEED_COUNT)));
+        assert!(
+            plan.items
+                .contains(&(CHICKEN_HEART_ID, ACCESSORY_SEED_COUNT))
+        );
+        assert_eq!(plan.items.len(), MAX_STARTING_ITEMS);
+        // The non-forced slots are the five random consumables, intact.
+        let randoms = plan
+            .items
+            .iter()
+            .filter(|(id, _)| STARTING_ITEM_POOL.contains(id))
+            .count();
+        assert_eq!(
+            randoms, 5,
+            "all five random items survive the convenience picks"
+        );
+    }
+
+    #[test]
+    fn dual_region_round_trip_reads_all_slots() {
+        // A bag larger than the inventory region (all-warps off): the first
+        // INV_REGION_SLOTS land in the inventory region and the rest in the warp
+        // region; decoding BOTH yields the original slots in order.
+        let plan = plan_seed(
+            0xD15C,
             &StartingSeedOptions {
-                random_items: 5,
-                door_of_wind: 0,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: true,
+                random_items: MAX_STARTING_ITEMS,
+                ..Default::default()
             },
         );
-        assert_eq!(with.items.len(), MAX_STARTING_ITEMS);
-        assert_eq!(with.items.len(), 5);
-        let without = plan_seed(
-            7,
-            &StartingSeedOptions {
-                random_items: 5,
-                door_of_wind: 0,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
-            },
-        );
-        // Same items either way — warps don't perturb the inventory plan.
-        assert_eq!(with.items, without.items);
+        assert_eq!(plan.items.len(), MAX_STARTING_ITEMS);
+        let overflow = overflow_items(&plan);
+        assert_eq!(overflow.len(), WARP_REGION_SLOTS);
+        let inv = build_seed_patch_for(&plan);
+        let warp = build_warp_items_patch(overflow);
+        let decoded = StartingInventory::decode_regions(&inv, &warp);
+        assert_eq!(decoded.items(), &plan.items[..]);
     }
 
     #[test]
@@ -545,8 +682,9 @@ mod tests {
 
     #[test]
     fn door_plus_warps_plus_reroll_keeps_five_item_slots() {
-        // Request 5 random + door of wind + warps: warps no longer steal item
-        // budget, so all 5 slots fill (door takes one, 4 random fills).
+        // Request 5 random + door of wind + warps: with all-warps on the bag is
+        // capped at the inventory region (5 slots), so door takes one and 4
+        // random fills — the door is never crowded out.
         let opts = StartingSeedOptions {
             random_items: 5,
             door_of_wind: DOOR_OF_WIND_COUNT,
@@ -744,9 +882,11 @@ mod tests {
     }
 
     #[test]
-    fn all_convenience_items_fill_the_five_slots_in_order() {
-        // Door of Wind, Incense, then the three accessories — five forced items
-        // exactly fill the seed region, dropping the vanilla Healing Leaf.
+    fn all_convenience_items_seed_alongside_the_vanilla_base() {
+        // Door of Wind, Incense, then the three accessories — five forced items.
+        // With the inventory + warp capacity there is still room for the vanilla
+        // Healing Leaf, so it stays (the toggles are additive to a normal new
+        // game) and spills into the warp region as the sixth slot.
         let plan = plan_seed(
             7,
             &StartingSeedOptions {
@@ -766,13 +906,16 @@ mod tests {
                 (SPEED_CHAIN_ID, ACCESSORY_SEED_COUNT),
                 (CHICKEN_HEART_ID, ACCESSORY_SEED_COUNT),
                 (GOOD_LUCK_BELL_ID, ACCESSORY_SEED_COUNT),
+                VANILLA_STARTING_ITEM,
             ],
-            "all five forced slots in order, no Healing Leaf left"
+            "five forced items in order, Healing Leaf kept"
         );
-        assert_eq!(plan.items.len(), MAX_STARTING_ITEMS);
-        let patch = build_seed_patch_for(&plan);
+        // Decoding both regions (the Healing Leaf overflows into the warp region)
+        // reads every slot back.
+        let inv = build_seed_patch_for(&plan);
+        let warp = build_warp_items_patch(overflow_items(&plan));
         assert_eq!(
-            StartingInventory::decode_region(&patch).items(),
+            StartingInventory::decode_regions(&inv, &warp).items(),
             &plan.items[..]
         );
     }
@@ -780,7 +923,7 @@ mod tests {
     #[test]
     fn reroll_excludes_both_forced_items() {
         // A reroll alongside both forced items must not deal a duplicate of
-        // either; all five slots fill (2 forced + 3 random).
+        // either; with all-warps off all seven slots fill (2 forced + 5 random).
         let plan = plan_seed(
             99,
             &StartingSeedOptions {
@@ -793,7 +936,7 @@ mod tests {
                 all_warps: false,
             },
         );
-        assert_eq!(plan.items.len(), 5);
+        assert_eq!(plan.items.len(), MAX_STARTING_ITEMS);
         assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT));
         assert_eq!(plan.items[1], (INCENSE_ID, INCENSE_COUNT));
         for (id, _) in &plan.items[2..] {

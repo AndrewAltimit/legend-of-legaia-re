@@ -5,9 +5,9 @@ Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
 drops (optionally as rare equipment), random-encounter formations, treasure-chest
 contents, steal items, Tactical-Arts button combos, doors, starting items,
-equipment passive stat bonuses, weapon specialty (which class each character
-favors), and a set of battle-tuning tables (monster combat stats, special-attack
-power, the element-affinity matrix, spell MP costs). It is
+starting level, equipment passive stat bonuses, weapon specialty (which class
+each character favors), and a set of battle-tuning tables (monster combat stats,
+special-attack power, the element-affinity matrix, spell MP costs). It is
 Track-1-adjacent tooling — it does **not** touch the clean-room engine — and it
 ships only code: no game bytes are embedded or committed, and every test that
 needs real data is disc-gated.
@@ -36,6 +36,7 @@ full design.
   - [Shops](#shops)
   - [Casino](#casino)
   - [Starting items](#starting-items)
+  - [Starting level](#starting-level)
   - [Item prices](#item-prices)
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
@@ -388,9 +389,33 @@ toggles:
 - `all_warps` presets the all-towns visited bitmask (`0x8008575C = 0xF77F`,
   `0x8008575E = 0xF8FF`).
 
-The warp preset gets its OWN reclaimable region (`build_warp_patch` at
-`0x80034adc`, four redundant `sw $zero` stores; uses `$v1` to spare the live `$v0`),
-so it does NOT reduce the item budget — items keep all five slots.
+The warp preset shares a second reclaimable region (`0x80034adc`, four redundant
+`sw $zero` stores; uses `$v1` to spare the live `$v0`) that does double duty: it
+holds EITHER the all-towns bitmask (`build_warp_patch`) OR the two item slots that
+overflow the inventory region's five (`build_warp_items_patch`). So the bag holds
+seven items with all-warps off, five with it on, and the random fill stays
+additive to the convenience items up to that cap (`plan_seed`); the slots both
+regions write are contiguous, and `StartingInventory::from_scus` replays both.
+
+## Starting level
+
+`apply_starting_level` begins a New Game with the lead character (Vahn) at a
+chosen level instead of 1 (`starting_level` module). Legaia stores no level field
+— the per-character level byte at record `+0x100` is zeroed by the new-game
+memset and never written by retail, so the displayed level is derived from
+cumulative XP. Two same-size SCUS edits make a level-`N` start coherent:
+
+- **XP** — rewrite the seed routine's `addiu $v0, $zero, 0x79` literal
+  (`STARTING_XP_SEED_VA`) to the midpoint of level `N`'s XP band (from the disc's
+  own `xp_thresholds_from_scus`), so it lands unambiguously inside the band. A
+  single 16-bit immediate, which caps the level at `MAX_STARTING_LEVEL` (14).
+- **Stats** — overwrite slot 0's eight `u16` template stats (`PARTY_TEMPLATE_VA`)
+  with the level-`N` values, accumulated from the disc's deterministic per-level
+  growth curves (`GrowthTables::level_gain_core`) on top of the level-1 template,
+  so the start has level-`N` HP/ATK rather than level-1 stats behind a full XP bar.
+
+Only the New-Game character (slot 0) is affected; magic rank is left at 1. The
+disc-gated `starting_level_real` oracle round-trips every level in range.
 
 ## Item prices
 
@@ -445,7 +470,8 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Arts | `current_arts` | `randomize_arts` | Tactical-Arts button combos (`ArtsApplyReport`; same-size `+8` pointer reassignment, input count + within-character uniqueness preserved). |
 | Doors | `current_doors` | `randomize_doors` | scene transitions (`DoorApplyReport`; takes a `DoorCoupling` = `Coupled` re-pairs doors into genuinely two-way connections / `Decoupled` reassigns each independently). |
 | House doors | `current_house_doors` | `randomize_house_doors` | intra-town house doors (`HouseDoorApplyReport`; per-scene class-preserving shuffle of the player door warps, shuffle-only). |
-| Starting items | `current_starting_items` | `randomize_starting_items` | the new game's starting inventory (`StartingItemsApplyReport`; rewrites the SCUS seed code with `n` random consumables). |
+| Starting items | `current_starting_items` | `randomize_starting_items` | the new game's starting inventory (`StartingItemsApplyReport`; rewrites the SCUS seed code with random consumables + convenience items, additively, across the inventory + warp-preset reclaimable regions). |
+| Starting level | `current_starting_level` | `apply_starting_level` | the new game's starting level (`StartingLevelReport`; rewrites the seed routine's XP literal + recomputes slot 0's stat template to the level via the disc's growth curves). |
 | Name injection | — | `inject_seru_bell_name` | names the unnamed accessory. |
 
 ## Door coupling
@@ -518,7 +544,10 @@ legaia-rando randomize --input DISC.bin --seed myrun --doors shuffle --door-coup
 # Start the new game with 3 random items instead of the fixed Healing Leaf x5.
 legaia-rando randomize --input DISC.bin --seed myrun --starting-items 3
 
-# Read-only: show the new game's current starting bag.
+# Start the new game at character level 10 instead of 1.
+legaia-rando randomize --input DISC.bin --seed myrun --starting-level 10
+
+# Read-only: show the new game's current starting bag + level.
 legaia-rando starting-items --input DISC.bin
 
 # Read-only: list what each town store sells / the casino prize exchange.
@@ -546,7 +575,11 @@ legaia-rando verify --input DISC.bin --patch run.ppf
   (overrides `--drops`).
 - `--door-coupling` is `coupled` (default, bidirectional) or `decoupled` (one-way).
 - `--starting-items N` seeds the new game with `N` random consumables
-  (`0` = vanilla Healing Leaf ×5; capped at 5).
+  (`0` = vanilla Healing Leaf ×5). The random fill shares a seven-slot capacity
+  (five with `--all-warps`) with the convenience toggles below, additively.
+- `--starting-level N` begins the new game at character level `N` instead of 1
+  (`0`/`1` = vanilla; range `2..=14`). Rewrites the seed routine's XP literal and
+  recomputes the starting stats to the level from the disc's growth curves.
 - `--door-of-wind [N]` adds `N` Door of Wind (the warp consumable; default 10) to
   the starting bag.
 - `--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10) to

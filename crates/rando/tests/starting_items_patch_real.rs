@@ -17,7 +17,7 @@ use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_rando::apply;
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::starting_items::{
-    MAX_STARTING_ITEMS, STARTING_ITEM_POOL, StartingSeedOptions, plan_seed,
+    INV_REGION_SLOTS, MAX_STARTING_ITEMS, STARTING_ITEM_POOL, StartingSeedOptions, plan_seed,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -392,4 +392,109 @@ fn accessories_round_trip_on_disc() {
         "deterministic for a fixed seed"
     );
     eprintln!("accessories seed {seed:#x}: bag {after:?}");
+}
+
+/// The additive fix: convenience items + a full random fill, beyond the
+/// inventory region's five slots, with all-warps off. The last slots overflow
+/// into the warp-preset region; decoding both regions off the patched disc must
+/// recover the whole seven-item bag — so the random items are NOT crowded out by
+/// the convenience picks. Also pins that the overflow write leaves the live code
+/// bracketing the warp region intact (the `$v0 = 0x2dc0` it must preserve).
+#[test]
+fn convenience_plus_random_overflow_round_trips_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_rando::starting_items::{DOOR_OF_WIND_COUNT, INCENSE_COUNT};
+    let seed = 0x0FF1_0AD0_0000_0007_u64;
+    // 2 convenience (Door of Wind + Incense) + 5 random = 7 = the full capacity
+    // with all-warps off. All five random must survive on top of the two forced.
+    let opts = StartingSeedOptions {
+        random_items: 5,
+        door_of_wind: DOOR_OF_WIND_COUNT,
+        incense: INCENSE_COUNT,
+        all_warps: false,
+        ..Default::default()
+    };
+
+    let scus = read_file_in_image(&original, "SCUS_942.54").expect("SCUS present");
+    let inv_off = starting_inv_seed_file_offset(&scus).expect("inv seed offset");
+    let warp_off = warp_seed_file_offset(&scus).expect("warp seed offset");
+    // The live constant load (addiu $v0,0x2dc0) before and consumer (sw $v0,0x3ef8)
+    // after the warp region, which the overflow write must not disturb.
+    let before_warp = scus[warp_off - 4..warp_off].to_vec();
+    let after_warp = scus[warp_off + WARP_SEED_LEN..warp_off + WARP_SEED_LEN + 8].to_vec();
+
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+    let report = apply::randomize_starting_items(&mut patcher, seed, &opts).expect("randomize");
+    assert!(!report.all_warps);
+    assert_eq!(
+        report.items_set, MAX_STARTING_ITEMS,
+        "all seven slots fill: 2 convenience + 5 random"
+    );
+    assert_eq!(report.items, plan_seed(seed, &opts).items);
+
+    // Re-decode off the patched image (replays BOTH regions): the whole bag.
+    let after = apply::current_starting_items(&patcher).expect("read patched seed");
+    assert_eq!(after, report.items, "patched seed decodes to the full plan");
+    assert_eq!(after.len(), 7);
+    // Both convenience items survived, plus five random consumables on top of
+    // them (Door of Wind 0x89 / Incense 0x8A are themselves in the consumable
+    // pool, so the random fill is everything that ISN'T one of the two forced).
+    use legaia_rando::starting_items::{DOOR_OF_WIND_ID, INCENSE_ID};
+    assert!(after.iter().any(|&(id, _)| id == DOOR_OF_WIND_ID));
+    assert!(after.iter().any(|&(id, _)| id == INCENSE_ID));
+    let randoms = after
+        .iter()
+        .filter(|(id, _)| {
+            STARTING_ITEM_POOL.contains(id) && *id != DOOR_OF_WIND_ID && *id != INCENSE_ID
+        })
+        .count();
+    assert_eq!(
+        randoms, 5,
+        "all five random items survive the convenience picks"
+    );
+
+    let patched_scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+    // The warp region now carries item stores, not the bitmask.
+    assert!(
+        !scus_unlocks_all_warps(&patched_scus).unwrap_or(true),
+        "no all-warps preset when the warp region holds overflow items"
+    );
+    // The inventory region holds the first five slots; the warp region the rest.
+    let inv_only =
+        StartingInventory::decode_region(&patched_scus[inv_off..inv_off + STARTING_INV_SEED_LEN]);
+    assert_eq!(
+        inv_only.items(),
+        &after[..INV_REGION_SLOTS],
+        "inventory region holds the first five slots"
+    );
+    // The live code bracketing the warp region is intact ($v0 preserved).
+    assert_eq!(&patched_scus[warp_off - 4..warp_off], &before_warp[..]);
+    assert_eq!(
+        &patched_scus[warp_off + WARP_SEED_LEN..warp_off + WARP_SEED_LEN + 8],
+        &after_warp[..]
+    );
+
+    // Same image size; both touched SCUS sectors stay EDC/ECC-valid.
+    assert_eq!(
+        patcher.image().len(),
+        original.len(),
+        "image size unchanged"
+    );
+    let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
+    for region_off in [inv_off, warp_off] {
+        let sb = (scus_lba as usize + region_off / USER_DATA_SIZE) * SECTOR_SIZE;
+        assert!(
+            legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+            "patched sector must be EDC/ECC-valid"
+        );
+    }
+
+    // Determinism.
+    let mut patcher2 = DiscPatcher::open(original).expect("open");
+    apply::randomize_starting_items(&mut patcher2, seed, &opts).expect("randomize");
+    assert!(patcher2.image() == patcher.image(), "deterministic");
+    eprintln!("overflow seed {seed:#x}: full bag {after:?}");
 }

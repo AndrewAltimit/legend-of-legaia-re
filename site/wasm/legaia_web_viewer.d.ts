@@ -1088,8 +1088,10 @@ export class LegaiaViewer {
  * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
- * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
- * 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+ * the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
+ * random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
+ * the convenience-item toggles below and takes whatever they leave, so it adds
+ * on top of them. `door_of_wind` is how many Door of Wind (the warp consumable) to seed
  * into the starting bag (`0` = none); `incense` is how many Incense (the
  * encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
  * `chicken_heart` / `good_luck_bell` seed those accessories the same way
@@ -1109,10 +1111,13 @@ export class LegaiaViewer {
  * encounter roll draws from: `"scene"` (default — each scene's own monsters),
  * `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
  * `"world"` (any monster on the disc, so late-game monsters can appear at the
- * start). Only matters when `encounters` is not `"none"`. `seed` is a number or
+ * start). Only matters when `encounters` is not `"none"`. `starting_level`
+ * begins the new game at that character level instead of 1 (`0` or `1` =
+ * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
+ * starting stats from the disc's growth curves. `seed` is a number or
  * any string (hashed). Returns `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1275,7 +1280,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

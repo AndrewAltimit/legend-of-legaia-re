@@ -148,13 +148,16 @@ equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 (one-way); `--encounter-scope` widens the monster pool an encounter roll draws
 from to `scene` (default), `kingdom`, or `world` (see
 [Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
-(0 = vanilla; capped at 5). `--door-of-wind [N]` adds
+(0 = vanilla; the random fill shares a seven-slot capacity — five with
+`--all-warps` — with the convenience toggles, additively). `--door-of-wind [N]` adds
 `N` Door of Wind (the warp consumable; default 10) to the starting bag,
 `--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
 likewise, `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]`
 add those accessories (default 1 each), and `--all-warps` unlocks every
 Door-of-Wind destination from the start (see
 [Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
+`--starting-level N` begins the new game at character level `N` instead of 1
+(0/1 = vanilla; range 2..=14, see [Starting level](#starting-level)).
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
@@ -445,15 +448,20 @@ decompress → edit → recompress path as the drop randomizer
 its `0x14000`-byte footprint (a slot too tight to re-pack is skipped, as with
 drops). `legaia-rando monster-stats` lists the current stats.
 
-The scripted opening tutorial opponent (the Rim Elm sparring partner,
-`monster_stats::PROTECTED_MONSTER_IDS`) is excluded from the pass entirely — both
-as a source and a target — so it keeps its original stats and never donates them
-to another monster. That fight is unwinnable by design and has no game-over
-branch, so handing it a hard-hitting attack could let it one-shot the party and
-soft-lock a fresh game; pinning its record keeps a new game playable. This is the
-stat-side companion to the encounter randomizer already leaving that formation
-scripted. Under `Shuffle` the column multisets are still exactly preserved (the
-pinned values are conserved in place).
+A set of scripted enemies (`monster_stats::PROTECTED_MONSTER_IDS`) is excluded
+from the pass entirely — both as a source and a target — so each keeps its
+original stats and never donates them to another monster. Two kinds qualify. The
+**early tutorial enemies** (the Rim Elm sparring partner and the first wild
+Piura): the sparring fight is unwinnable by design and has no game-over branch,
+so a hard-hitting attack could one-shot the party and soft-lock a fresh game, and
+the early wild enemies are fragile by design. The **story bosses** (Caruban,
+Zeto, Songi, Berserker, Tetsu, Dohati, Xain, the three Delilas, Gaza, Zora,
+Jette, Cort — every version of each): their set-piece fights are tuned around
+scripted HP/phase triggers, so scrambling their stats can make a mandatory fight
+unwinnable, and leaking a boss's extreme stats onto a trash mob would wreck
+balance. This is the stat-side companion to the encounter randomizer already
+leaving those formations scripted. Under `Shuffle` the column multisets are still
+exactly preserved (the pinned values are conserved in place).
 
 ### Special-attack power
 
@@ -687,13 +695,17 @@ inventory) right before the call.
 small random count) and writes one **packed halfword store** per item into that
 region — an inventory slot is two contiguous bytes `[id][count]`, so
 `addiu $v0, (count<<8)|id; sh $v0, (0x1818 + 2k)($s0)` seeds a slot in two
-instructions. Ten instructions / two per item caps it at **five** starting
-items. The patch is the same size as the original code (no executable growth or
-relocation), applied like the steal table via `patch_named_file`. Because the
-write lands directly in the consumable page (bypassing the engine's id-routing
-add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
-(Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
-read-only `starting-items` listing shows the current bag.
+instructions. Ten instructions / two per item gives the inventory region **five**
+slots. The adjacent warp-preset region (below) carries **two more** slots when
+the all-warps preset is not using it, for a combined cap of **seven** starting
+items (five with `--all-warps`); the slots the two regions write are contiguous
+in the inventory array, so a decode replays both regions as one run. The patch is
+the same size as the original code (no executable growth or relocation), applied
+like the steal table via `patch_named_file`. Because the write lands directly in
+the consumable page (bypassing the engine's id-routing add primitive), the pool
+is the contiguous consumable block `0x77..=0x8e` (Healing Leaf … Wonder Elixir).
+`--starting-items N` (0 = leave vanilla); the read-only `starting-items` listing
+shows the current bag.
 
 ### Starting-bag convenience toggles
 
@@ -722,9 +734,10 @@ list as plain `(id, count)` pairs — so an accessory seeds exactly like a consu
 
 All five item toggles are *additive* (the vanilla Healing Leaf ×5 is kept unless a
 `--starting-items` reroll replaces it) and stack. Forced items are seeded first so
-they survive the five-slot capacity clamp (Door of Wind, Incense, Speed Chain,
-Chicken Heart, Good Luck Bell — exactly filling the five slots if all are on), and
-a reroll excludes every forced id so it never deals a duplicate.
+they survive the capacity clamp, and a `--starting-items` reroll takes whatever
+capacity they leave (excluding every forced id so it never deals a duplicate) —
+so a random fill adds *on top of* the convenience items instead of being crowded
+out by them, up to the seven-slot cap (five with `--all-warps`).
 
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
@@ -732,14 +745,19 @@ a reroll excludes every forced id so it never deals a duplicate.
 GameShark code writes (`0x8008575C = 0xF77F`, `0x8008575E = 0xF8FF`). It lives in
 the story-flag block (`SC + 0x14C0..0x16C0`), which the New-Game seed `memset`
 covers, so the seed code can preset it the same way it presets the inventory. The
-preset gets its **own** reclaimable region in `FUN_80034A6C` —
+preset lives in a **second** reclaimable region in `FUN_80034A6C` —
 `0x80034adc..0x80034aeb`, four redundant `sw $zero` stores into `SC` words the
-caller already zeroed — so it does **not** reduce the starting-item budget (items
-keep all five slots). It uses `$v1` (not `$v0`, which carries a live `0x2dc0`
-constant into `DAT_80073ef8` just below) and survives because the inventory
+caller already zeroed. This region does double duty: it holds **either** the
+all-warps bitmask **or** the two item slots that overflow the inventory region
+(slots 6–7), so `--all-warps` and a full seven-item bag are mutually exclusive —
+turning all-warps on lowers the item cap to the inventory region's five. Both
+forms use `$v1` (not `$v0`, which carries a live `0x2dc0` constant into
+`DAT_80073ef8` just below). The bitmask form survives because the inventory
 seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
-overwritten when the seed is rewritten. `region_unlocks_all_warps` /
-`scus_unlocks_all_warps` read it back.
+overwritten when the seed is rewritten; the overflow-item form writes inventory
+offsets above that loop's range, so it survives regardless.
+`region_unlocks_all_warps` / `scus_unlocks_all_warps` read the bitmask back, and
+`StartingInventory::from_scus` replays both regions to recover the full bag.
 
 The clean-room engine seeds every forced item (Door of Wind, Incense, and the
 accessories) through the same `World::seed_starting_inventory` path as any other
@@ -749,6 +767,45 @@ have their own disc round-trip oracles (`incense_round_trips_on_disc`,
 — there is no Door-of-Wind warp menu in the port — so it is validated at the
 disc-round-trip level (`door_of_wind_and_all_warps_round_trip_on_disc`) and
 matches the user-verified GameShark write byte-for-byte.
+
+### Starting level
+
+**`--starting-level N`** (web: a dropdown) begins a New Game with the lead
+character (Vahn) already at level `N` instead of 1 (`0`/`1` = vanilla; range
+`2..=14`). Legaia has **no stored level field**: the per-character level byte at
+record `+0x100` is left zero by the New-Game memset and never written by retail
+(byte-checked against early save states, where `+0x100 = 0` even for clearly
+past-level-1 characters), so the displayed combat level is derived from the
+cumulative-XP cell at record `+0x4`. A coherent level-`N` start therefore takes
+two same-size in-place edits in `SCUS_942.54`, both applied by
+`apply::apply_starting_level`:
+
+1. **XP** — the seed routine `FUN_800560B4` writes Vahn's starting XP from a
+   single `addiu $v0, $zero, 0x79` literal (= 121) at
+   `STARTING_XP_SEED_VA` (`0x800560F0`). The randomizer rewrites that immediate
+   to the **midpoint of level `N`'s XP band** — between the disc's own thresholds
+   to reach `N` and `N+1` (`legaia_asset::level_up_tables::xp_thresholds_from_scus`)
+   — so the value sits unambiguously inside the band regardless of the exact
+   comparison the level display uses. Because it is a single 16-bit immediate, the
+   midpoint must fit a positive `imm16` (`<= 0x7FFF`), which caps the level at
+   **14**. The literal is shared with slot 3 (Terra), who re-scales when she
+   actually joins, so only the character present at a New Game is affected.
+2. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) still
+   feeds the live record, so the randomizer overwrites slot 0's eight `u16` stats
+   with the level-`N` values. These are computed by accumulating the deterministic
+   (jitter-free) per-level growth gains (`GrowthTables::level_gain_core`, the
+   `FUN_801E9504` curve arithmetic) on top of the level-1 template, so a level-10
+   Vahn gets level-10 HP/ATK/… (e.g. HP 584 vs the vanilla 180) rather than
+   level-1 stats behind a level-10 XP bar. The 10-byte name after the stats is
+   left untouched.
+
+Magic rank (a separate progression that ticks once per level-up event) is left at
+its seeded value of 1. The disc-gated `starting_level_real` test round-trips the
+edit off the patched image — the seeded XP decodes back to the requested level
+for every level in range, the stats are the growth-curve values and strictly above
+vanilla, and the surrounding seed-routine code stays byte-identical and
+EDC/ECC-valid. The randomizer is enabled at level 10 in the web "Balanced" and
+"Full Chaos" presets and off in "Vanilla" / "Item Shuffle".
 
 ### Unused content
 
@@ -872,7 +929,7 @@ bit-for-bit.
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, the protected tutorial monster's combat stats unchanged, slot footprints fixed, deterministic |
+| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic |
 | `crates/rando` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |

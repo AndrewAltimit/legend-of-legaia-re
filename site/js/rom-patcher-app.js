@@ -81,6 +81,7 @@ const PRESET_BASE = {
   unusedEnemies: false, unusedItems: false,
   monster_stats: 'none', move_power: 'none', element_affinity: 'none',
   spell_cost: 'none', equip_bonus: 'none', weaponSpecialty: false,
+  startingLevel: 0,
 };
 
 const PRESETS = {
@@ -95,6 +96,7 @@ const PRESETS = {
     drops: 'shuffle', encounters: 'shuffle', encounter_scope: 'kingdom',
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     monster_stats: 'shuffle', equip_bonus: 'shuffle',
+    startingLevel: 10,
   },
   chaos: {
     drops: 'random', encounters: 'random', encounter_scope: 'world',
@@ -106,6 +108,7 @@ const PRESETS = {
     allWarps: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
+    startingLevel: 10,
   },
 };
 
@@ -113,6 +116,7 @@ function init() {
   const fileInput = $('rom-file');
   const seedInput = $('rom-seed');
   const startingItemsSel = $('rom-starting-items');
+  const startingLevelSel = $('rom-starting-level');
   const doorOfWindChk = $('rom-door-of-wind');
   const doorOfWindCountInput = $('rom-door-of-wind-count');
   const incenseChk = $('rom-incense');
@@ -153,6 +157,7 @@ function init() {
     equipmentDropsChk.checked = cfg.equipmentDrops;
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
+    startingLevelSel.value = String(cfg.startingLevel);
     doorOfWindChk.checked = cfg.doorOfWind;
     incenseChk.checked = cfg.incense;
     speedChainChk.checked = cfg.speedChain;
@@ -231,6 +236,7 @@ function init() {
     const houseDoors = houseDoorsChk.checked ? 'shuffle' : 'none';
     const equipmentDrops = equipmentDropsChk.checked;
     const startingItems = parseInt(startingItemsSel.value, 10) || 0;
+    const startingLevel = parseInt(startingLevelSel.value, 10) || 0;
     // Door of Wind: the count (0 = off). The checkbox enables it; the number
     // input (default 10) sets how many, clamped to 1..99.
     const doorOfWind = doorOfWindChk.checked
@@ -261,7 +267,8 @@ function init() {
       houseDoors === 'none' && startingItems === 0 && doorOfWind === 0 && incense === 0 &&
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
-      spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty
+      spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
+      startingLevel === 0
     ) {
       setStatus('Enable at least one option (pick a preset, or flip a toggle).', 'err');
       return;
@@ -277,7 +284,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty);
+      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

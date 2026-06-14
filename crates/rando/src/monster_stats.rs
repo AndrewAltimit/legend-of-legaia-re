@@ -18,13 +18,21 @@
 //! shuffling it would mostly perturb how often enemies cast, not how hard the
 //! fight is.
 //!
-//! The scripted Rim Elm tutorial sparring partner ([`PROTECTED_MONSTER_IDS`]) is
-//! also left untouched: it fights the player in a teaching battle the game never
-//! expects the player to lose (there is no game-over branch out of it), so giving
-//! it a different monster's attack can let it one-shot the party and soft-lock a
-//! brand-new game before the player can act. Its combat stats are always kept as
-//! the disc ships them. The encounter randomizer already keeps that formation
-//! scripted (`crate::encounter`); this is the matching guard on the stat side.
+//! A set of scripted enemies ([`PROTECTED_MONSTER_IDS`]) is left untouched so
+//! their fights stay coherent. Two kinds qualify. **Early tutorial enemies** —
+//! the scripted Rim Elm sparring partner fights the player in a teaching battle
+//! the game never expects the player to lose (there is no game-over branch out
+//! of it), so giving it a different monster's attack can let it one-shot the
+//! party and soft-lock a brand-new game; the first wild enemies are similarly
+//! fragile by design, and a late-game monster's stats can wall a fresh save.
+//! **Story bosses** — set-piece fights tuned around scripted HP/phase triggers
+//! and a specific difficulty; scrambling their stats can make a mandatory fight
+//! unwinnable (or trivial), and donating a boss's extreme stats to a random
+//! trash mob is its own kind of soft-lock. Every version of each protected boss
+//! is pinned. Their combat stats are always kept as the disc ships them, both as
+//! a randomization source and target. The encounter randomizer already keeps
+//! scripted formations fixed (`crate::encounter`); this is the matching guard on
+//! the stat side.
 //!
 //! Each edit re-packs the monster's slot through [`crate::monster::repack_slot`]:
 //! the decoded block length is unchanged, so the slot stays its original
@@ -57,14 +65,31 @@ pub const FIELD_COUNT: usize = STAT_FIELDS.len();
 
 /// 1-based monster ids the stat randomizer must never modify.
 ///
-/// `79` is the Rim Elm tutorial sparring partner (Tetsu, the `999/999` teaching
-/// opponent): the opening battle pits the player against it in a scripted fight
-/// that is unwinnable by design and has no game-over handling. If the randomizer
-/// hands it a hard-hitting monster's attack it can kill the party in one move on
-/// a fresh save, with no way to recover — a soft-lock. Its stats are therefore
-/// pinned to the disc's originals, both as a randomization *source* and a
-/// *target*, so neither it nor any other monster inherits its tutorial stats.
-pub const PROTECTED_MONSTER_IDS: &[u16] = &[79];
+/// 1-based monster ids pinned to their disc stats — never modified, and never a
+/// donor into another monster's stats. Two groups (see the module docs):
+/// the early **tutorial enemies** (the Piura and the scripted Tetsu sparring
+/// partner) that must stay beatable on a fresh save, and the **story bosses**
+/// whose set-piece fights randomized stats could break (or whose extreme stats
+/// would wreck balance if leaked to a trash mob). Every version of each named
+/// boss is listed.
+pub const PROTECTED_MONSTER_IDS: &[u16] = &[
+    // Early tutorial enemies.
+    19, 20, 21, // Red / Black / Blue Piura — the first wild enemies, deliberately weak.
+    79, // Tetsu, the Rim Elm sparring partner (999/999, unwinnable by design).
+    // Story bosses (all versions of each).
+    73, 171, 172, // Caruban
+    75,  // Zeto
+    76, 136, 179, // Songi
+    77, 173, 174, // Berserker
+    175, // Tetsu (boss form; 79 above is the tutorial form)
+    138, // Dohati
+    139, // Xain
+    162, 163, 164, // Gi / Che / Lu Delilas
+    165, 166, // Gaza
+    169, // Zora
+    170, // Jette
+    180, 181, 183, 184, 185, 186, // Cort
+];
 
 /// One monster's stat values, in [`STAT_FIELDS`] order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,9 +220,12 @@ mod tests {
     }
 
     fn sample(n: usize) -> Vec<StatAssignment> {
+        // Base ids at 100 so the synthetic roster never overlaps the real
+        // PROTECTED_MONSTER_IDS (the tutorial enemies) — a test that wants a
+        // protected monster sets one id explicitly.
         (0..n)
             .map(|i| StatAssignment {
-                monster_id: i as u16 + 1,
+                monster_id: i as u16 + 100,
                 stats: [
                     i as u16,
                     i as u16 + 100,
