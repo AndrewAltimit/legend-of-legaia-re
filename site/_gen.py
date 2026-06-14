@@ -181,6 +181,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/battle.html",     "Battle",                        "subsystems/battle",          "subsystems/battle.html"),
     ("subsystems/battle-action.html","Battle action state machine", "subsystems/battle-action",   "subsystems/battle-action.html"),
     ("subsystems/battle-formulas.html","Battle formulas",            "subsystems/battle-formulas", "subsystems/battle-formulas.html"),
+    ("subsystems/arts-command-gauge.html","Arts command gauge",      "subsystems/arts-command-gauge","subsystems/arts-command-gauge.html"),
     ("subsystems/audio.html",      "Audio",                         "subsystems/audio",           "subsystems/audio.html"),
     ("subsystems/renderer.html",   "Renderer",                      "subsystems/renderer",        "subsystems/renderer.html"),
     ("subsystems/world-map.html",  "World map",                     "subsystems/world-map",       "subsystems/world-map.html"),

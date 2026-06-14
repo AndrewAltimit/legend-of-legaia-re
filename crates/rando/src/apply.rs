@@ -752,6 +752,115 @@ pub fn randomize_spell_costs(
     Ok(changed)
 }
 
+/// One equipment stat-bonus row, for the read-only listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquipBonusRow {
+    /// Bonus-table row index (the `bonus_index` an item resolves to).
+    pub row: usize,
+    /// Slot category the row belongs to (`body` / `head` / `weapon` / `footwear`).
+    pub slot: &'static str,
+    /// The five stat bonuses `[INT, ATK, UDF, LDF, SPD]` (`+0..+4`).
+    pub stats: [u8; 5],
+    /// 1-based item ids that resolve to this row (a row can be shared).
+    pub items: Vec<u8>,
+}
+
+/// Map an [`legaia_asset::equip_stats::EquipSlot`] to its CLI label.
+fn equip_slot_name(slot: legaia_asset::equip_stats::EquipSlot) -> &'static str {
+    use legaia_asset::equip_stats::EquipSlot;
+    match slot {
+        EquipSlot::Body => "body",
+        EquipSlot::Head => "head",
+        EquipSlot::Weapon => "weapon",
+        EquipSlot::Footwear => "footwear",
+    }
+}
+
+/// Read the equipment stat-bonus table (`DAT_80074F68`) off the disc's SCUS, in
+/// row order, each with its slot category, decoded stats, and the item ids that
+/// reference it. The randomizable population (see [`crate::equip_bonus`]).
+/// `None` if SCUS / its bonus table can't be parsed.
+pub fn current_equip_bonuses(patcher: &DiscPatcher) -> Result<Option<Vec<EquipBonusRow>>> {
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(None);
+    };
+    let Some(table) = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus) else {
+        return Ok(None);
+    };
+    let items = table.items_for_rows();
+    let rows = table
+        .rows()
+        .iter()
+        .enumerate()
+        .map(|(i, b)| EquipBonusRow {
+            row: i,
+            slot: equip_slot_name(b.slot()),
+            stats: b.stat_bonus(),
+            items: items.get(i).cloned().unwrap_or_default(),
+        })
+        .collect();
+    Ok(Some(rows))
+}
+
+/// Randomize the equipment passive stat bonuses (see [`crate::equip_bonus`]).
+/// Rewrites only the `+0..+4` stat tuple of each bonus row that at least one
+/// equippable item references, reassigning it **within its slot category** — a
+/// same-size in-place SCUS patch. The equip-character mask, accessory passive,
+/// and slot type stay welded to their row. Returns the number of rows changed.
+///
+/// Operates on bonus rows (not item ids): several items can share one record,
+/// so a per-id rewrite would double-edit a shared record. Rows no equippable
+/// item reaches are left untouched, so an unused/garbage row can't hand a real
+/// item a junk stat tuple.
+pub fn randomize_equip_bonuses(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<usize> {
+    use legaia_asset::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
+    let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
+        return Ok(0);
+    };
+    let Some(table) = EquipStatTable::from_scus(&scus) else {
+        return Ok(0);
+    };
+    let Some(off) = bonus_table_file_offset(&scus) else {
+        return Ok(0);
+    };
+
+    let all_rows: Vec<[u8; 8]> = table.rows().iter().map(|b| b.raw).collect();
+    let items = table.items_for_rows();
+    // Only rows an equippable item actually resolves to participate.
+    let participating: Vec<usize> = (0..all_rows.len())
+        .filter(|&i| !items[i].is_empty())
+        .collect();
+    if participating.is_empty() {
+        return Ok(0);
+    }
+    let sub: Vec<[u8; 8]> = participating.iter().map(|&i| all_rows[i]).collect();
+    let planned = crate::equip_bonus::plan_bonus_shuffle(&sub, seed, mode);
+
+    let mut new_rows = all_rows.clone();
+    let mut changed = 0usize;
+    for (k, &i) in participating.iter().enumerate() {
+        if planned[k] != all_rows[i] {
+            new_rows[i] = planned[k];
+            changed += 1;
+        }
+    }
+    if changed == 0 {
+        return Ok(0);
+    }
+    let mut bytes = Vec::with_capacity(all_rows.len() * BONUS_STRIDE);
+    for r in &new_rows {
+        bytes.extend_from_slice(r);
+    }
+    patcher
+        .patch_named_file(SCUS_NAME, off as u64, &bytes)
+        .context("write equipment stat-bonus table")?;
+    Ok(changed)
+}
+
 /// Outcome of randomizing scene encounters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EncounterApplyReport {
@@ -2096,6 +2205,156 @@ pub fn randomize_starting_items(
         items: plan.items,
         all_warps: plan.all_warps,
     })
+}
+
+/// One character's weapon-specialty reassignment, for the report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecialtyAssignment {
+    /// Character name.
+    pub character: String,
+    /// The family this character specialized in before.
+    pub from: String,
+    /// The family this character specializes in after.
+    pub to: String,
+}
+
+/// Outcome of a weapon-specialty randomization.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpecialtyReport {
+    /// Per-character favored-family reassignment.
+    pub assignments: Vec<SpecialtyAssignment>,
+    /// Weapon sections whose arm cost was rewritten.
+    pub weapons_changed: usize,
+    /// Weapon sections skipped because the re-compressed section wouldn't fit
+    /// its slot footprint.
+    pub weapons_skipped_fit: usize,
+}
+
+/// Read the current favored family of each character straight from its player
+/// battle file (the family whose weapons carry [`FAVORED_COST`]), for the
+/// read-only listing. Returns `None` when the player files aren't present.
+pub fn current_specialties(patcher: &DiscPatcher) -> Result<Vec<SpecialtyAssignment>> {
+    use crate::weapon_specialty::{self, Family};
+    use legaia_asset::battle_data_pack;
+    let mut out = Vec::new();
+    for player in &weapon_specialty::PLAYERS {
+        let Ok(buf) = patcher.read_entry(player.entry) else {
+            continue;
+        };
+        let Some(pack) = battle_data_pack::detect(&buf) else {
+            continue;
+        };
+        // Tally, per family, how many of that family's weapons read FAVORED_COST.
+        let mut favored_hits = [(0usize, 0usize); 3]; // (favored, total) per family
+        for (idx, rec) in pack.records.iter().enumerate() {
+            let Some(fam) = weapon_specialty::weapon_family(rec.id as u8) else {
+                continue;
+            };
+            let Ok(dec) = battle_data_pack::decode_record(&buf, &pack, idx) else {
+                continue;
+            };
+            let Some(coff) = weapon_specialty::arm_cost_offset(&dec.bytes) else {
+                continue;
+            };
+            let fi = match fam {
+                Family::Blade => 0,
+                Family::Claw => 1,
+                Family::Club => 2,
+            };
+            favored_hits[fi].1 += 1;
+            if dec.bytes[coff] == weapon_specialty::FAVORED_COST {
+                favored_hits[fi].0 += 1;
+            }
+        }
+        // The favored family is the one with the highest favored ratio.
+        let fams = [Family::Blade, Family::Claw, Family::Club];
+        let cur = (0..3)
+            .filter(|&i| favored_hits[i].1 > 0)
+            .max_by(|&a, &b| {
+                let ra = favored_hits[a].0 as f64 / favored_hits[a].1 as f64;
+                let rb = favored_hits[b].0 as f64 / favored_hits[b].1 as f64;
+                ra.partial_cmp(&rb).unwrap()
+            })
+            .map(|i| fams[i])
+            .unwrap_or(player.vanilla);
+        out.push(SpecialtyAssignment {
+            character: player.name.to_string(),
+            from: player.vanilla.label().to_string(),
+            to: cur.label().to_string(),
+        });
+    }
+    Ok(out)
+}
+
+/// Randomize each character's weapon specialty (see [`crate::weapon_specialty`]).
+///
+/// Permutes the three favored families among Vahn / Noa / Gala and rewrites the
+/// per-(character, weapon) arm-cost byte in the player battle files so each
+/// character's new favored family is single-cost and every other class is
+/// off-class. The byte sits inside an LZS-compressed section, so each touched
+/// section is decompressed, edited, and re-compressed; a section whose
+/// re-compressed stream wouldn't fit its slot is left unchanged (counted in the
+/// report) rather than aborting the run.
+pub fn randomize_weapon_specialty(patcher: &mut DiscPatcher, seed: u64) -> Result<SpecialtyReport> {
+    use crate::weapon_specialty;
+    use legaia_asset::battle_data_pack;
+
+    let favored = weapon_specialty::plan_favored(seed);
+    let mut report = SpecialtyReport::default();
+
+    for (i, player) in weapon_specialty::PLAYERS.iter().enumerate() {
+        let new_fav = favored[i];
+        report.assignments.push(SpecialtyAssignment {
+            character: player.name.to_string(),
+            from: player.vanilla.label().to_string(),
+            to: new_fav.label().to_string(),
+        });
+
+        let Ok(buf) = patcher.read_entry(player.entry) else {
+            continue;
+        };
+        let Some(pack) = battle_data_pack::detect(&buf) else {
+            continue;
+        };
+
+        for (idx, rec) in pack.records.iter().enumerate() {
+            let Some(fam) = weapon_specialty::weapon_family(rec.id as u8) else {
+                continue;
+            };
+            let Ok(dec) = battle_data_pack::decode_record(&buf, &pack, idx) else {
+                continue;
+            };
+            let Some(coff) = weapon_specialty::arm_cost_offset(&dec.bytes) else {
+                continue;
+            };
+            let new_cost = weapon_specialty::cost_for(fam, new_fav);
+            if dec.bytes[coff] == new_cost {
+                continue; // already correct (idempotent)
+            }
+            let mut decoded = dec.bytes.clone();
+            decoded[coff] = new_cost;
+            let recompressed = legaia_lzs::compress(&decoded);
+
+            // Available footprint for the LZS stream: the slot minus its 4-byte
+            // decoded-size prefix. A stream too large to re-pack is skipped.
+            let avail = (rec.size as usize).saturating_sub(4);
+            if recompressed.len() > avail {
+                report.weapons_skipped_fit += 1;
+                continue;
+            }
+            let stream_off = rec.file_offset(pack.data_base) + 4;
+            patcher
+                .patch_prot_entry(player.entry, stream_off as u64, &recompressed)
+                .with_context(|| {
+                    format!(
+                        "write arm cost for {} weapon id 0x{:02x}",
+                        player.name, rec.id
+                    )
+                })?;
+            report.weapons_changed += 1;
+        }
+    }
+    Ok(report)
 }
 
 #[cfg(test)]

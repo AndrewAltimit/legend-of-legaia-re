@@ -65,7 +65,12 @@ pub fn resolve_seed(seed: &str) -> String {
 /// "Something Good" / unnamed-accessory items to the random-fill pool (only the
 /// `random` drop / chest / steal modes use it). `equipment_drops` turns every
 /// monster's drop into a rare random weapon / armor / accessory at a tiered
-/// chance (overrides `drops`). `encounter_scope` widens the monster pool an
+/// chance (overrides `drops`). `monster_stats` / `move_power` /
+/// `element_affinity` / `spell_cost` / `equip_bonus` are the battle-tuning +
+/// equipment-bonus passes, each `"shuffle"` / `"random"` / `"none"`: monster
+/// combat stats, special-attack power, the element-affinity matrix, spell MP
+/// costs, and the equipment passive stat tuples (redistributed within each slot
+/// category). `encounter_scope` widens the monster pool an
 /// encounter roll draws from: `"scene"` (default — each scene's own monsters),
 /// `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
 /// `"world"` (any monster on the disc, so late-game monsters can appear at the
@@ -93,11 +98,22 @@ pub fn patch_rom(
     unused_enemies: bool,
     unused_items: bool,
     equipment_drops: bool,
+    monster_stats: &str,
+    move_power: &str,
+    element_affinity: &str,
+    spell_cost: &str,
+    equip_bonus: &str,
+    weapon_specialty: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
     let enc_mode = parse_mode(encounters);
     let chest_mode = parse_mode(chests);
+    let monster_stats_mode = parse_mode(monster_stats);
+    let move_power_mode = parse_mode(move_power);
+    let element_affinity_mode = parse_mode(element_affinity);
+    let spell_cost_mode = parse_mode(spell_cost);
+    let equip_bonus_mode = parse_mode(equip_bonus);
     let shop_mode = parse_mode(shops);
     let casino_mode = parse_mode(casino);
     let steal_mode = parse_mode(steals);
@@ -251,6 +267,79 @@ pub fn patch_rom(
             ));
         }
         None => summary.push_str("casino: untouched\n"),
+    }
+
+    match monster_stats_mode {
+        Some(m) => {
+            let rep = apply::randomize_monster_stats(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("monster-stats: {e}")))?;
+            summary.push_str(&format!(
+                "monster-stats: {} monsters changed, {} fields ({})\n",
+                rep.monsters_changed, rep.fields_changed, monster_stats
+            ));
+        }
+        None => summary.push_str("monster-stats: untouched\n"),
+    }
+
+    match move_power_mode {
+        Some(m) => {
+            let changed = apply::randomize_move_powers(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("move-power: {e}")))?;
+            summary.push_str(&format!(
+                "move-power: {changed} special-attack power(s) changed ({move_power})\n"
+            ));
+        }
+        None => summary.push_str("move-power: untouched\n"),
+    }
+
+    match element_affinity_mode {
+        Some(m) => {
+            let changed = apply::randomize_element_affinity(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("element-affinity: {e}")))?;
+            summary.push_str(&format!(
+                "element-affinity: {changed} matrix cell(s) changed ({element_affinity})\n"
+            ));
+        }
+        None => summary.push_str("element-affinity: untouched\n"),
+    }
+
+    match spell_cost_mode {
+        Some(m) => {
+            let changed = apply::randomize_spell_costs(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("spell-cost: {e}")))?;
+            summary.push_str(&format!(
+                "spell-cost: {changed} spell MP cost(s) changed ({spell_cost})\n"
+            ));
+        }
+        None => summary.push_str("spell-cost: untouched\n"),
+    }
+
+    match equip_bonus_mode {
+        Some(m) => {
+            let changed = apply::randomize_equip_bonuses(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("equip-bonus: {e}")))?;
+            summary.push_str(&format!(
+                "equip-bonus: {changed} bonus row(s) changed ({equip_bonus})\n"
+            ));
+        }
+        None => summary.push_str("equip-bonus: untouched\n"),
+    }
+
+    if weapon_specialty {
+        let rep = apply::randomize_weapon_specialty(&mut patcher, seed_n)
+            .map_err(|e| err(format!("weapon-specialty: {e}")))?;
+        let map = rep
+            .assignments
+            .iter()
+            .map(|a| format!("{}->{}", a.character, a.to))
+            .collect::<Vec<_>>()
+            .join(", ");
+        summary.push_str(&format!(
+            "weapon-specialty: reassigned ({map}); {} weapon(s) rewritten\n",
+            rep.weapons_changed
+        ));
+    } else {
+        summary.push_str("weapon-specialty: untouched\n");
     }
 
     match steal_mode {

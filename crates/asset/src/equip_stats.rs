@@ -286,6 +286,38 @@ impl EquipStatTable {
     pub fn record_count(&self) -> usize {
         self.bonuses.len()
     }
+
+    /// The parsed bonus records in table order (`row 0..record_count`). The row
+    /// index is the `bonus_index` an equippable item resolves to; multiple items
+    /// can share a row, so an editor that rewrites bonuses must operate on rows
+    /// (not item ids) to avoid double-editing a shared record.
+    pub fn rows(&self) -> &[EquipBonus] {
+        &self.bonuses
+    }
+
+    /// The 1-based item ids that resolve to each bonus row, in row order. Useful
+    /// for an editor / listing that wants to show which equipment a row feeds.
+    pub fn items_for_rows(&self) -> Vec<Vec<u8>> {
+        let mut out = vec![Vec::new(); self.bonuses.len()];
+        for id in 0..self.kind.len() {
+            if self.kind[id] != KIND_EQUIPMENT {
+                continue;
+            }
+            let row = self.bonus_index[id] as usize;
+            if let Some(items) = out.get_mut(row) {
+                items.push(id as u8);
+            }
+        }
+        out
+    }
+}
+
+/// File offset of the equipment stat-bonus table (`DAT_80074F68`) inside a
+/// `SCUS_942.54` image, or `None` if the input isn't a PS-X EXE or the table
+/// address falls outside its data segment. Lets an editor write the table back
+/// in place (same shape as [`crate::item_names::price_slot`]'s resolver).
+pub fn bonus_table_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(BONUS_TABLE_VA)
 }
 
 #[cfg(test)]

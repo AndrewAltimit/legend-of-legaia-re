@@ -120,9 +120,59 @@
         </div>
       </div>
 
+      <div class="rom-opt">
+        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">&mdash; HP / MP / ATK / DEF / AGL / SPD</span></span>
+        <div class="seg" role="group" aria-label="Monster stats">
+          <input type="radio" name="monster_stats" id="mstats-none" value="none" checked><label for="mstats-none">Off</label>
+          <input type="radio" name="monster_stats" id="mstats-shuffle" value="shuffle"><label for="mstats-shuffle">Shuffle</label>
+          <input type="radio" name="monster_stats" id="mstats-random" value="random"><label for="mstats-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">&mdash; enemy specials &amp; Seru magic (not party Arts)</span></span>
+        <div class="seg" role="group" aria-label="Special-attack power">
+          <input type="radio" name="move_power" id="mpow-none" value="none" checked><label for="mpow-none">Off</label>
+          <input type="radio" name="move_power" id="mpow-shuffle" value="shuffle"><label for="mpow-shuffle">Shuffle</label>
+          <input type="radio" name="move_power" id="mpow-random" value="random"><label for="mpow-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">&mdash; which element beats which</span></span>
+        <div class="seg" role="group" aria-label="Element affinity">
+          <input type="radio" name="element_affinity" id="eaff-none" value="none" checked><label for="eaff-none">Off</label>
+          <input type="radio" name="element_affinity" id="eaff-shuffle" value="shuffle"><label for="eaff-shuffle">Shuffle</label>
+          <input type="radio" name="element_affinity" id="eaff-random" value="random"><label for="eaff-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Spell MP costs <span class="rom-opt-note">&mdash; named, costed spells</span></span>
+        <div class="seg" role="group" aria-label="Spell MP costs">
+          <input type="radio" name="spell_cost" id="scost-none" value="none" checked><label for="scost-none">Off</label>
+          <input type="radio" name="spell_cost" id="scost-shuffle" value="shuffle"><label for="scost-shuffle">Shuffle</label>
+          <input type="radio" name="spell_cost" id="scost-random" value="random"><label for="scost-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Equipment stat bonuses <span class="rom-opt-note">&mdash; gear stats, redistributed within each slot type</span></span>
+        <div class="seg" role="group" aria-label="Equipment stat bonuses">
+          <input type="radio" name="equip_bonus" id="ebonus-none" value="none" checked><label for="ebonus-none">Off</label>
+          <input type="radio" name="equip_bonus" id="ebonus-shuffle" value="shuffle"><label for="ebonus-shuffle">Shuffle</label>
+          <input type="radio" name="equip_bonus" id="ebonus-random" value="random"><label for="ebonus-random">Randomize</label>
+        </div>
+      </div>
+
       <label class="rom-check-row">
         <input type="checkbox" id="rom-equipment-drops">
         <span>Equipment drops &mdash; every monster drops rare gear (weapon / armor / accessory) instead of its normal drop <span class="rom-opt-note">(overrides Monster drops)</span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-weapon-specialty">
+        <span>Weapon specialty &mdash; reassign which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default); an off-class weapon widens the Arms command in an arts combo <span class="rom-opt-note">(the Astral Sword stays always-wide)</span></span>
       </label>
     </details>
 
@@ -215,7 +265,13 @@
     <li><strong>Casino prizes</strong> &mdash; reassigns the casino prize-exchange items; each prize keeps its coin price and progression gate.</li>
     <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
     <li><strong>Arts button combos</strong> &mdash; reassigns the directional combo that fires each Tactical Art (the <code>SCUS_942.54</code> arts table, the one place the combo lives, so the menu arrows and the trigger always match). Every art keeps its <em>input count</em> and each character's combos stay unique. Each character's Miracle Art is left alone.</li>
+    <li><strong>Monster stats</strong> &mdash; redistributes each monster's combat stats (HP / MP / ATK / DEF&uarr; / DEF&darr; / AGL / SPD) from the <code>battle_data</code> archive. <em>Shuffle</em> permutes each stat column across the roster (the difficulty budget is kept); <em>Randomize</em> draws each stat from that column. Spirit/SP is left alone.</li>
+    <li><strong>Special-attack power</strong> &mdash; redistributes the per-move power of the battle-action move table (enemy specials &amp; Seru magic &mdash; <em>not</em> party Tactical Arts). Each move keeps its own animation, effects, and sound; only how hard it hits changes.</li>
+    <li><strong>Element affinity</strong> &mdash; scrambles the 8&times;8 element matrix (which element is strong / weak against which). <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances, just between different pairs; the per-character element assignment is untouched.</li>
+    <li><strong>Spell MP costs</strong> &mdash; redistributes the MP costs of the named, costed spells in the <code>SCUS_942.54</code> spell table. Free / internal enemy-tier entries never gain a cost.</li>
+    <li><strong>Equipment stat bonuses</strong> &mdash; redistributes the passive stat bonuses (INT / ATK / DEF&uarr; / DEF&darr; / SPD) of the equipment table, <em>within each slot type</em> (weapon power lands on another weapon, armor on armor). The equip-character restriction, accessory passive, and slot type never move.</li>
     <li><strong>Equipment drops</strong> &mdash; turns every monster's drop into a rare random weapon / armor / accessory at a tiered chance. Owns the single drop slot, so it overrides Monster drops.</li>
+    <li><strong>Weapon specialty</strong> &mdash; reassigns which weapon class each character favors (Vahn blades, Noa claws, Gala clubs/axes by default), permuting the three favored classes among them. Equipping an off-class weapon widens that character's <em>Arms</em> command in an arts combo, so fewer commands fit; this rewrites the per-(character, weapon) arm-cost byte in the player battle files (decompressing / re-compressing each section in place). The Astral Sword stays always-wide and can't be specialized in.</li>
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
     <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place.</li>

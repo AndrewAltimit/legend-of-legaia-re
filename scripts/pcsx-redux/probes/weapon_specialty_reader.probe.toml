@@ -1,0 +1,45 @@
+# Pin the arts-bar weapon-specialty reader: who reads the active character's
+# equipped-weapon byte (char+0x198) when the in-battle Arts command bar decides
+# the per-input "Arms" width (off-class / Astral = double; favored = single).
+#
+# The equipped weapon lives ONLY in the field character record (no battle-actor
+# copy): equip block at char+0x196, weapon at index 2 (+0x198). Live records are
+# 0x80084708 + idx*0x414; weapon byte = +0x198:
+#   Vahn (idx0) 0x800848A0   Noa (idx1) 0x80084CB4   Gala (idx2) 0x800850C8
+#
+# Read-watch all three weapon bytes. The reader PC that fires while the arts bar
+# is live is the bar builder; its $ra + the code around it expose the per-weapon
+# class table the randomizer needs. Run against each arts_bar_* scenario.
+#
+# If zero hits across the capture window, the width is computed only on
+# menu-entry (not re-read at rest) and a pad-injection rebuild is needed.
+
+capture_frames  = 600
+output_path     = "weapon_specialty_reader.csv"
+capture_columns = ["tick", "addr", "offset", "pc", "width", "value_u16", "ra"]
+
+[detail]
+hits = 12
+path = "weapon_specialty_reader.detail.txt"
+
+# One 4-byte Read watchpoint over each character's weapon byte (+0x198).
+[[breakpoint_range]]
+base     = 0x800848A0
+length   = 4
+stride   = 4
+kind     = "Read"
+name_fmt = "vahn_wpn"
+
+[[breakpoint_range]]
+base     = 0x80084CB4
+length   = 4
+stride   = 4
+kind     = "Read"
+name_fmt = "noa_wpn"
+
+[[breakpoint_range]]
+base     = 0x800850C8
+length   = 4
+stride   = 4
+kind     = "Read"
+name_fmt = "gala_wpn"

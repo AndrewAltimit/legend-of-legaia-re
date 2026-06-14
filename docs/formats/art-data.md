@@ -328,4 +328,5 @@ validation oracle for the two derived command sources:
 
 - [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) - battle action state machine that consumes the queue and resolves damage.
 - [`docs/subsystems/battle-formulas.md`](../subsystems/battle-formulas.md) - damage / MP / accuracy / RNG arithmetic kernels that read the power bytes.
+- [`docs/subsystems/arts-command-gauge.md`](../subsystems/arts-command-gauge.md) - the AP gauge the player spends inputting these arts, and the weapon-specialty arm-width penalty.
 - [`docs/formats/mdt.md`](mdt.md) - the per-frame *animation* bytecode for the Tactical Arts move VM, distinct from this art-record layer.

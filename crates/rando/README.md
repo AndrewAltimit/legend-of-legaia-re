@@ -4,9 +4,10 @@ Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
 drops (optionally as rare equipment), random-encounter formations, treasure-chest
-contents, steal items, Tactical-Arts button combos, doors, starting items, and a
-set of battle-tuning tables (monster combat stats, special-attack power, the
-element-affinity matrix, spell MP costs). It is
+contents, steal items, Tactical-Arts button combos, doors, starting items,
+equipment passive stat bonuses, weapon specialty (which class each character
+favors), and a set of battle-tuning tables (monster combat stats, special-attack
+power, the element-affinity matrix, spell MP costs). It is
 Track-1-adjacent tooling — it does **not** touch the clean-room engine — and it
 ships only code: no game bytes are embedded or committed, and every test that
 needs real data is disc-gated.
@@ -27,6 +28,8 @@ full design.
   - [Move power](#move-power)
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
+  - [Equipment bonuses](#equipment-bonuses)
+  - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Doors](#doors)
   - [House doors](#house-doors)
@@ -209,6 +212,47 @@ Spell MP-cost randomizer (`spell_cost` module).
   spells never participate.
 - The apply path emits a same-size in-place SCUS patch via `patch_named_file`
   (like steals). The public `spell_names::stats_file_offset` resolves the offset.
+
+## Equipment bonuses
+
+Equipment passive stat-bonus randomizer (`equip_bonus` module).
+
+- Redistributes the `+0..+4` stat tuple (`INT/ATK/UDF/LDF/SPD`) of the static
+  `SCUS_942.54` equipment bonus table (`DAT_80074F68`). `plan_bonus_shuffle`
+  groups the rows by their `+7` slot category (body/head/weapon/footwear) and
+  permutes the tuples within each category (`Shuffle`) or draws from the
+  category pool (`Random`). The `+5/+6/+7` tail (accessory passive / equip mask /
+  slot type) never moves, so a tuple never crosses a slot boundary.
+- Operates on bonus **rows**, not item ids — several items can share a row, so a
+  per-id rewrite would double-edit it (`equip_stats::items_for_rows` maps rows →
+  the ids that reach them; only referenced rows participate, so an unused row
+  can't hand a real item a junk tuple).
+- The apply path emits a same-size in-place SCUS patch via `patch_named_file`.
+  The public `equip_stats::bonus_table_file_offset` + `EquipStatTable::rows`
+  resolve the table.
+
+## Weapon specialty
+
+Weapon-specialty randomizer (`weapon_specialty` module).
+
+- Reassigns which weapon **class** each character specializes in. In retail,
+  equipping a weapon outside a character's favored class (Vahn blades, Noa claws,
+  Gala clubs/axes) makes that character's **arm** command (action-gauge command
+  `0x0C`) cost more AP in an arts combo. The cost is a per-(character, weapon)
+  byte inside each weapon's LZS-compressed section of the player battle file, at
+  `decoded_section[+0x04]` (the swing-record offset) `+0x74` (favored `0x1E` /
+  off-class `0x2A`). See [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md).
+- `plan_favored` permutes the three favored families (`{blade, claw, club}`)
+  among the three characters (a seeded bijection — one specialist per class).
+  `weapon_family` maps each equippable weapon id to its family; non-class weapons
+  (the Astral Sword, armor) map to `None` and are never touched, so the Astral
+  Sword stays always-wide.
+- The apply path (`apply::randomize_weapon_specialty`) walks the three player
+  files (`0863`/`0864`/`0865`), and for each weapon section decompresses it,
+  rewrites the arm-cost byte for its new favored relationship, and re-compresses
+  in place. A section whose re-compressed stream wouldn't fit its slot is skipped
+  (counted in the report) rather than aborting — in practice every section
+  re-packs.
 
 ## Arts
 
@@ -488,6 +532,9 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 
 - `--drops` / `--encounters` / `--chests` / `--shops` / `--casino` / `--steals` /
   `--arts` / `--doors` each take `shuffle` / `random` / `none`.
+- The battle-tuning + equipment-bonus passes — `--monster-stats` / `--move-power` /
+  `--element-affinity` / `--spell-cost` / `--equip-bonus` — each also take
+  `shuffle` / `random` / `none`.
 - `--equipment-drops` instead turns every monster's drop into rare tiered equipment
   (overrides `--drops`).
 - `--door-coupling` is `coupled` (default, bidirectional) or `decoupled` (one-way).
@@ -528,7 +575,8 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 ### Read-only listings
 
 `drops` / `chests` / `shops` / `casino` / `steals` / `arts` / `doors` /
-`house-doors` / `starting-items` each list the current data for that feature.
+`house-doors` / `starting-items` / `monster-stats` / `move-powers` / `affinity` /
+`spell-costs` / `equip-bonuses` each list the current data for that feature.
 
 ## How an edit reaches the disc
 
@@ -558,7 +606,9 @@ directory record moves.
   enumerate, shuffle preserves the multiset/counts, casino preserves the
   prize set); and the item-price edits (the 13 chest-equipment items get their
   reviewed values, the sellable pool excludes quest ids, and a shop `Random`
-  pass only stocks priced items).
+  pass only stocks priced items); and an equipment-bonus shuffle asserting each
+  slot category's stat-tuple multiset is preserved while every row's
+  passive/mask/slot tail stays byte-identical.
 
 ```bash
 cargo test -p legaia-rando                                   # synthetic only

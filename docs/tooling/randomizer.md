@@ -5,10 +5,10 @@ disc image: it shuffles monster item drops (optionally turning them into rare
 equipment), random-encounter formations, treasure-chest contents, what town
 stores sell (and the casino prize exchange), per-monster steal items,
 scene-transition doors/exits, intra-town (house / interior) doors, the new
-game's starting items, and a set of **battle-tuning** tables — monster combat
-stats, special-attack power, the element-affinity matrix, and spell MP costs —
-and writes the result back into the `.bin`. It does not touch the clean-room
-engine.
+game's starting items, equipment passive stat bonuses, and a set of
+**battle-tuning** tables — monster combat stats, special-attack power, the
+element-affinity matrix, and spell MP costs — and writes the result back into the
+`.bin`. It does not touch the clean-room engine.
 
 Crate: [`crates/rando`](../../crates/rando/README.md) (`legaia-rando`). It ships
 only code — no game bytes — and every test that needs real data is disc-gated,
@@ -32,6 +32,7 @@ so CI runs without a disc.
   - [Special-attack power](#special-attack-power)
   - [Element-affinity matrix](#element-affinity-matrix)
   - [Spell MP costs](#spell-mp-costs)
+  - [Equipment stat bonuses](#equipment-stat-bonuses)
   - [Arts button combos](#arts-button-combos)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
@@ -114,6 +115,7 @@ legaia-rando monster-stats --input DISC.bin                   # read-only: monst
 legaia-rando move-powers   --input DISC.bin                   # read-only: special-attack power table
 legaia-rando affinity      --input DISC.bin                   # read-only: element-affinity matrix
 legaia-rando spell-costs   --input DISC.bin                   # read-only: spell MP costs
+legaia-rando equip-bonuses --input DISC.bin                   # read-only: equipment stat-bonus table
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
@@ -136,7 +138,7 @@ play. The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
 and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 `--steals`, `--arts`, `--doors`, `--monster-stats`, `--move-power`,
-`--element-affinity`, and `--spell-cost` each take `shuffle` / `random` / `none`
+`--element-affinity`, `--spell-cost`, and `--equip-bonus` each take `shuffle` / `random` / `none`
 (`--arts` reassigns Tactical-Arts button combos — see [Arts button combos](#arts-button-combos);
 the four battle-tuning passes are described under
 [Monster combat stats](#monster-combat-stats) and the three sections after it);
@@ -154,6 +156,8 @@ Door-of-Wind destination from the start (see
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
+`--weapon-specialty` (a toggle) reassigns which weapon class each character
+favors (see [Weapon specialty](#weapon-specialty)).
 `--dry-run` reports the plan without writing; `--manifest` writes a small TOML
 record of the seed + options + change counts (no game bytes, safe to share). The
 `verify` subcommand applies a PPF to a copy of the user's disc and confirms the
@@ -161,8 +165,8 @@ result still parses end to end — a recipient's check that a shared patch + see
 match their own disc.
 
 The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
-`starting-items`, `monster-stats`, `move-powers`, `affinity`, and `spell-costs`
-subcommands write nothing
+`starting-items`, `monster-stats`, `move-powers`, `affinity`, `spell-costs`,
+`equip-bonuses`, and `weapon-specialty` subcommands write nothing
 — they decode the randomizable populations off the user's disc and print them
 (item ids + names resolved from the disc's own SCUS table; chests + doors grouped
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
@@ -483,6 +487,49 @@ gain a cost and names / target shapes are untouched. The table is in
 `SCUS_942.54`, so the edit is a same-size in-place SCUS patch via
 `patch_named_file` (like steals). `legaia-rando spell-costs` lists the table.
 
+### Equipment stat bonuses
+
+`--equip-bonus` redistributes the passive stat tuples on the static
+`SCUS_942.54` equipment bonus table (`DAT_80074F68`, 8-byte rows; see
+[equipment-table.md](../formats/equipment-table.md)). Each row's `+0..+4` is the
+five-stat bonus `[INT, ATK, UDF, LDF, SPD]`; `+5` the accessory passive, `+6` the
+equip-character mask, `+7` the slot type (body / head / weapon / footwear, plus a
+Ra-Seru bit). The pass moves only the `+0..+4` tuple, and only **within a slot
+category** — a weapon's stats only ever land on another weapon, armor on armor —
+so the mask, passive, and slot type stay welded to their row and the per-category
+power budget is kept. `Shuffle` permutes each category's tuples (the per-category
+multiset is preserved); `Random` draws each row's tuple from its category pool.
+
+It edits bonus **rows**, not item ids: several items can share one record, so a
+per-id rewrite would double-edit a shared row and corrupt its bonuses
+(`equip_stats::items_for_rows` maps rows → the ids that reach them). Rows no
+equippable item references are left untouched, so an unused/garbage row can never
+hand a real item a junk tuple. The table is in `SCUS_942.54`, so the edit is a
+same-size in-place SCUS patch. `legaia-rando equip-bonuses` lists the table,
+grouped by slot category, with the items that reference each row.
+
+### Weapon specialty
+
+`--weapon-specialty` (a toggle, not a mode) reassigns which weapon **class** each
+character favors. In retail, equipping a weapon outside a character's favored class
+(Vahn blades, Noa claws, Gala clubs/axes) makes that character's **arm** command
+cost more AP in an arts combo, so fewer commands fit. As the
+[arts command gauge](../subsystems/arts-command-gauge.md) doc traces, the cost is
+not a runtime class comparison — it is a per-(character, weapon) byte baked into
+the player battle file, at the weapon section's `decoded_section[+0x04]` (swing
+record) `+0x74` (favored `0x1E` / off-class `0x2A`).
+
+The pass permutes the three favored families (`{blade, claw, club}`) among the
+three characters — a seeded bijection, so each class keeps exactly one specialist —
+then walks each player file (`0863` Vahn / `0864` Noa / `0865` Gala) and, for every
+weapon section, decompresses it, rewrites the arm-cost byte for the character's new
+favored relationship, and re-compresses in place. The byte lives inside an LZS
+stream, so this is the one feature that decompresses + re-compresses a section per
+edit (a section too tight to re-pack is skipped and reported; in practice every one
+re-packs). The Astral Sword and non-class gear carry no family and are never
+touched, so the Astral Sword stays always-wide. `legaia-rando weapon-specialty`
+shows each character's current favored class.
+
 ### Arts button combos
 
 Each art's combo lives in **two** files, and both must change together
@@ -797,6 +844,7 @@ bit-for-bit.
 | `crates/rando` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
+| `crates/rando` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
