@@ -79,13 +79,22 @@ So: favored mapping is **knife/sword → Vahn, claw → Noa, club/axe → Gala**
 
 Once a combo is committed, it is replayed by the **Arms execution resolver `FUN_801EC3E4`** (overlay `0898`), which is **called from `SCUS_942.54` at `0x800478A0`** (`jal 0x801EC3E4`) — the arts execution driver is the static side, which is why the resolver has no caller inside the overlay. The resolver advances the input cursor (`actor + 0x1F4`) one step per recorded command and dispatches per-command sub-handlers through the jump table `PTR_801CF4B4[(actor + 0x1D9) - 0xC]`. These sub-handlers read the equipped weapon again (e.g. `0x801ECC00`: weapon id → item subtype `DAT_80074369` → equip record `DAT_80074F68`) to fold the weapon into the damage / effect calculation. This execution-time weapon read is **distinct** from the gauge-build cost above.
 
+## Who writes the cost
+
+The cost is **not** computed by a runtime favored-class comparison. It is written once at battle load (the `game_mode 0x14 → 0x15` transition) as a **verbatim copy** out of the assembled battle-character buffer:
+
+- The writer is `FUN_800557B8` (the per-command-struct copy routine in `SCUS_942.54`): a fixed 43-word block copy from the source `a1` to the runtime struct `a0` (`lw v0,(a1)` → `sw v0,(a0)`, the cost word at struct `+0x74` lands inside that block) followed by a variable-length tail whose length is `(src[0] * src[1] * 9 + 5) / 4`. There is **no arithmetic on the cost value** between load and store.
+- It is called from the **battle character-assembly chain** (`FUN_80052770` → … → the call site at `0x80053330`; see [character-mesh assembly](../formats/character-mesh.md)), which splices the equipped item's section into the per-character battle buffer. Confirmed by a live write-watch on the cost field through a field→battle transition — the only write fires here, at battle load, with `pc = 0x80055810`.
+
+So the arm cost originates in the **equipped weapon's section of the per-character [player battle file](../formats/battle-data-pack.md)** (extraction 863..866) and is carried verbatim into the runtime struct. The "off-class penalty" is therefore **per-(character, weapon) data baked into those files** — favored-class weapons simply carry a low arm cost in that character's file and off-class weapons a higher one — not a class comparison the engine performs. The same weapon yields different costs in different characters' files (a claw is cheap in Noa's file, expensive in Gala's).
+
 ## Confidence and open threads
 
-**Confirmed** (live-pinned by reading the field across the off-class / favored / Astral states, plus the decompiled gauge builder): the cost field `DAT_801C9360[char][0x0C] + 0x74`, its measured values, the case-`9` read and case-`0xB` AP spend in `FUN_801D388C`, and the SCUS call site of the execution resolver.
+**Confirmed** (live-pinned): the cost field `DAT_801C9360[char][0x0C] + 0x74`, its measured values, the case-`9` read and case-`0xB` AP spend in `FUN_801D388C`, the SCUS call site of the execution resolver, and the **writer** (`FUN_800557B8`, verbatim copy from the assembled equipment section at battle load — no runtime penalty arithmetic).
 
-**Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon); the penalty structure (`base + 0x0C` off-class / `+ 0x18` Astral) from three data points.
+**Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon); that the cost is disc-resident per-(character, weapon) in the player battle files (the store is a verbatim copy, so the value pre-exists in the assembled source — which is built by splicing those files' equipment sections).
 
-**Open**: where `+0x74` is **written** — the code that adds the off-class penalty by comparing the equipped weapon's class to the character's favored class. The field is recomputed from the equipped weapon when arts input initializes (it differs for the same character across weapons), so a write-watch on the now-known address across an arts-menu (re)entry pins the comparison and the favored-class source. It is also unresolved whether the base `0x74` value is disc-resident in the player battle files ([863..866](../formats/battle-data-pack.md)) with the penalty added at runtime, or computed wholesale. Locating the writer is the prerequisite for a faithful weapon-specialty randomizer.
+**Open (for the randomizer)**: the exact byte offset of the arm cost within a weapon's section in the player battle file. The runtime struct places it at `+0x74` and the load is a verbatim copy, so the same field sits at the matching offset in the file's equipment-section layout; pinning it makes the weapon-specialty mechanic an editable data table (raise an off-class character's favored-class arm costs / lower another class's to reassign specialties).
 
 ## See also
 
