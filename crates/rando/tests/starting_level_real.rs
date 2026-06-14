@@ -11,8 +11,9 @@
 //! `LEGAIA_DISC_BIN`.
 
 use legaia_asset::new_game::{
-    CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, StartingParty, party_template_file_offset,
-    scus_file_offset, starting_xp_seed_file_offset,
+    CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, LEVEL_SEED_VA, LEVEL_STORE_REDUNDANT_VA,
+    LEVEL_STORE_VA, StartingParty, party_template_file_offset, scus_file_offset,
+    starting_xp_seed_file_offset,
 };
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
@@ -55,6 +56,10 @@ fn starting_level_round_trips_on_disc() {
     let tmpl_off = party_template_file_offset(&scus0).expect("template offset");
     let cur_store_off = scus_file_offset(&scus0, CURRENT_XP_STORE_VA).expect("current-xp store");
     let cur_pre_off = scus_file_offset(&scus0, CURRENT_XP_PRELOAD_VA).expect("current-xp preload");
+    let level_seed_off = scus_file_offset(&scus0, LEVEL_SEED_VA).expect("level seed");
+    let level_store_off = scus_file_offset(&scus0, LEVEL_STORE_VA).expect("level store");
+    let level_redundant_off =
+        scus_file_offset(&scus0, LEVEL_STORE_REDUNDANT_VA).expect("level redundant");
     // Bytes that must survive: the `sw $ra` right after the threshold literal, and
     // the lead character's 10-byte name right after slot 0's 16 stat bytes.
     let after_xp = scus0[xp_off + 4..xp_off + 8].to_vec();
@@ -104,6 +109,29 @@ fn starting_level_round_trips_on_disc() {
         0xAE08_05C8,
         "sw $t0, 0x5c8($s0) -> record +0x0"
     );
+    // The displayed-level edit: `addiu $v0, (1<<8)|level`, then `sh $v0, 0x6f8($s0)`
+    // (record +0x130 = level, +0x131 = 1), then a nop where the old level store was.
+    assert_eq!(
+        word(level_seed_off) >> 16,
+        0x2402,
+        "level literal is addiu $v0"
+    );
+    assert_eq!(
+        word(level_seed_off) & 0xff,
+        level as u32,
+        "level literal low byte is the level"
+    );
+    assert_eq!(
+        (word(level_seed_off) >> 8) & 0xff,
+        1,
+        "level literal keeps magic rank = 1"
+    );
+    assert_eq!(
+        word(level_store_off),
+        0xA602_06F8,
+        "sh $v0, 0x6f8($s0) -> record +0x130 / +0x131"
+    );
+    assert_eq!(word(level_redundant_off), 0, "redundant level store is nop");
     // The current-experience value is strictly inside level N's XP band (above
     // reach(N), below the next threshold) so the derived level is unambiguous.
     assert!(
@@ -145,7 +173,15 @@ fn starting_level_round_trips_on_disc() {
         "image size unchanged"
     );
     let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
-    for off in [xp_off, cur_pre_off, cur_store_off, tmpl_off] {
+    for off in [
+        xp_off,
+        cur_pre_off,
+        cur_store_off,
+        level_seed_off,
+        level_store_off,
+        level_redundant_off,
+        tmpl_off,
+    ] {
         let sb = (scus_lba as usize + off / USER_DATA_SIZE) * SECTOR_SIZE;
         assert!(
             legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),

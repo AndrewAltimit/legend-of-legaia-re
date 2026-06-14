@@ -85,10 +85,35 @@ pub const CURRENT_XP_PRELOAD_VA: u32 = 0x8005_60FC;
 /// (vanilla `addiu $v0, $zero, 0x66`). The starting-level randomizer overwrites it
 /// with `sw $t0, 0x5c8($s0)`, storing the preloaded experience value
 /// ([`CURRENT_XP_PRELOAD_VA`]) into party slot 0's **cumulative-experience cell
-/// `+0x0`** — the field the displayed level derives from. (The instruction after it,
-/// the Noa `+0x4` store, then writes the now-`$v0`-resident threshold to Noa's `+0x4`
+/// `+0x0`** — the status screen's "Experience" readout and the value the level-up
+/// applier compares against the next-level threshold. (The instruction after it, the
+/// Noa `+0x4` store, then writes the now-`$v0`-resident threshold to Noa's `+0x4`
 /// instead of her vanilla `102`; harmless, since Noa re-scales when she joins.)
 pub const CURRENT_XP_STORE_VA: u32 = 0x8005_6100;
+
+/// RAM address of the seed routine's per-slot level/magic-rank literal: the
+/// `addiu $v0, $zero, 1` at `0x800561C4` in `FUN_800560B4`'s record-init loop. The
+/// two stores after it write the byte to the live record's **displayed-level cell
+/// `+0x130`** and the magic-rank cell `+0x131`, so vanilla seeds every slot at level
+/// 1 / rank 1. The displayed combat level is read from `+0x130` directly (it is *not*
+/// re-derived from cumulative experience at a New Game — confirmed live: a record
+/// with level-10 experience + stats but `+0x130 == 1` still shows "LV 1"). The
+/// starting-level randomizer rewrites this literal to `(1 << 8) | level` and the
+/// first store to a `sh` ([`LEVEL_STORE_VA`]) so the halfword sets `+0x130 = level`
+/// while leaving magic rank `+0x131` at 1.
+pub const LEVEL_SEED_VA: u32 = 0x8005_61C4;
+
+/// RAM address of the first level/magic store in the seed loop (vanilla
+/// `sb $v0, 0x6f9($s0)` → record `+0x131`). The starting-level randomizer rewrites
+/// it to `sh $v0, 0x6f8($s0)`, writing the packed `[level, 1]` halfword to
+/// `+0x130`/`+0x131` at once (see [`LEVEL_SEED_VA`]).
+pub const LEVEL_STORE_VA: u32 = 0x8005_61C8;
+
+/// RAM address of the second level store in the seed loop (vanilla
+/// `sb $v0, 0x6f8($s0)` → record `+0x130`), made redundant once [`LEVEL_STORE_VA`]
+/// is a `sh` that writes both bytes. The starting-level randomizer overwrites it with
+/// a `nop`.
+pub const LEVEL_STORE_REDUNDANT_VA: u32 = 0x8005_61CC;
 
 /// Per-record stride: eight `u16` stats (16 bytes) + a 10-byte name.
 pub const RECORD_STRIDE: usize = 26;

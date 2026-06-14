@@ -210,6 +210,28 @@ pub fn current_xp_store_instruction() -> [u8; 4] {
     0xAE08_05C8u32.to_le_bytes()
 }
 
+/// Encode the loop's level literal `addiu $v0, $zero, (1 << 8) | level` written at
+/// [`legaia_asset::new_game::LEVEL_SEED_VA`]. Packed so the [`level_store_instruction`]
+/// `sh` sets the record's displayed-level cell `+0x130 = level` (low byte) and the
+/// magic-rank cell `+0x131 = 1` (high byte) in one halfword store.
+pub fn level_literal_instruction(level: u8) -> [u8; 4] {
+    (0x2402_0000u32 | 0x0100u32 | level as u32).to_le_bytes()
+}
+
+/// The fixed `sh $v0, 0x6f8($s0)` instruction written at
+/// [`legaia_asset::new_game::LEVEL_STORE_VA`] — stores the packed `[level, 1]`
+/// halfword to the record's `+0x130`/`+0x131` cells (replacing the vanilla
+/// `sb $v0, 0x6f9($s0)`).
+pub fn level_store_instruction() -> [u8; 4] {
+    0xA602_06F8u32.to_le_bytes()
+}
+
+/// A `nop`, written at [`legaia_asset::new_game::LEVEL_STORE_REDUNDANT_VA`] — the
+/// vanilla second level store, made redundant by the `sh` above.
+pub fn nop_instruction() -> [u8; 4] {
+    [0; 4]
+}
+
 /// Encode the level-`N` stats into the 16 bytes of slot 0's template stat block
 /// (`STAT_COUNT` little-endian `u16`s, in template order).
 pub fn stat_block(stats: &[u16; STAT_COUNT]) -> [u8; STAT_COUNT * 2] {

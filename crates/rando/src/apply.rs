@@ -2290,8 +2290,8 @@ pub struct StartingLevelReport {
 /// callers guard on [`crate::starting_level::is_active`]. Deterministic.
 pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<StartingLevelReport> {
     use legaia_asset::new_game::{
-        CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, STARTING_XP_SEED_VA,
-        party_template_file_offset, scus_file_offset,
+        CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, LEVEL_SEED_VA, LEVEL_STORE_REDUNDANT_VA,
+        LEVEL_STORE_VA, STARTING_XP_SEED_VA, party_template_file_offset, scus_file_offset,
     };
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
@@ -2299,8 +2299,12 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
     let plan = crate::starting_level::plan(&scus, level)?;
 
     // Each seed-routine instruction the level edit rewrites, with its 4-byte
-    // replacement word. See `crate::starting_level` for the encodings + rationale.
-    let edits: [(u32, [u8; 4]); 3] = [
+    // replacement word. See `crate::starting_level` for the encodings + rationale:
+    // the next-level threshold (+0x4) and current experience (+0x0, via a $t0 preload
+    // + store) make the readouts + progression coherent, and the loop's level literal
+    // + stores set the displayed-level cell +0x130 (keeping magic rank +0x131 at 1)
+    // so the character actually reads as level N.
+    let edits: [(u32, [u8; 4]); 6] = [
         (
             STARTING_XP_SEED_VA,
             crate::starting_level::next_threshold_instruction(plan.next_threshold),
@@ -2312,6 +2316,18 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
         (
             CURRENT_XP_STORE_VA,
             crate::starting_level::current_xp_store_instruction(),
+        ),
+        (
+            LEVEL_SEED_VA,
+            crate::starting_level::level_literal_instruction(plan.level),
+        ),
+        (
+            LEVEL_STORE_VA,
+            crate::starting_level::level_store_instruction(),
+        ),
+        (
+            LEVEL_STORE_REDUNDANT_VA,
+            crate::starting_level::nop_instruction(),
         ),
     ];
     for (va, word) in edits {
