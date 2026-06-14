@@ -103,6 +103,7 @@ pub fn patch_rom(
     element_affinity: &str,
     spell_cost: &str,
     equip_bonus: &str,
+    weapon_specialty: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -322,6 +323,23 @@ pub fn patch_rom(
             ));
         }
         None => summary.push_str("equip-bonus: untouched\n"),
+    }
+
+    if weapon_specialty {
+        let rep = apply::randomize_weapon_specialty(&mut patcher, seed_n)
+            .map_err(|e| err(format!("weapon-specialty: {e}")))?;
+        let map = rep
+            .assignments
+            .iter()
+            .map(|a| format!("{}->{}", a.character, a.to))
+            .collect::<Vec<_>>()
+            .join(", ");
+        summary.push_str(&format!(
+            "weapon-specialty: reassigned ({map}); {} weapon(s) rewritten\n",
+            rep.weapons_changed
+        ));
+    } else {
+        summary.push_str("weapon-specialty: untouched\n");
     }
 
     match steal_mode {

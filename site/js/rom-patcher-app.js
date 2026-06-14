@@ -6,7 +6,8 @@
  * encounters, encounter_scope, chests, shops, casino, steals, arts, doors,
  * door_coupling, house_doors, starting_items, door_of_wind, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
- * element_affinity, spell_cost, equip_bonus) -> { data, summary, seed }`
+ * element_affinity, spell_cost, equip_bonus, weapon_specialty)
+ * -> { data, summary, seed }`
  * and `resolve_seed(str)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`.
@@ -76,7 +77,7 @@ const PRESET_BASE = {
   startingItems: 0, doorOfWind: false, allWarps: false,
   unusedEnemies: false, unusedItems: false,
   monster_stats: 'none', move_power: 'none', element_affinity: 'none',
-  spell_cost: 'none', equip_bonus: 'none',
+  spell_cost: 'none', equip_bonus: 'none', weaponSpecialty: false,
 };
 
 const PRESETS = {
@@ -99,7 +100,7 @@ const PRESETS = {
     houseDoors: true, equipmentDrops: false, startingItems: 5,
     doorOfWind: false, allWarps: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
-    spell_cost: 'random', equip_bonus: 'random',
+    spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
   },
 };
 
@@ -111,6 +112,7 @@ function init() {
   const doorOfWindCountInput = $('rom-door-of-wind-count');
   const allWarpsChk = $('rom-all-warps');
   const equipmentDropsChk = $('rom-equipment-drops');
+  const weaponSpecialtyChk = $('rom-weapon-specialty');
   const houseDoorsChk = $('rom-house-doors');
   const unusedEnemiesChk = $('rom-unused-enemies');
   const unusedItemsChk = $('rom-unused-items');
@@ -139,6 +141,7 @@ function init() {
     }
     houseDoorsChk.checked = cfg.houseDoors;
     equipmentDropsChk.checked = cfg.equipmentDrops;
+    weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     doorOfWindChk.checked = cfg.doorOfWind;
     allWarpsChk.checked = cfg.allWarps;
@@ -227,6 +230,7 @@ function init() {
     const elementAffinity = segVal('element_affinity', 'none');
     const spellCost = segVal('spell_cost', 'none');
     const equipBonus = segVal('equip_bonus', 'none');
+    const weaponSpecialty = weaponSpecialtyChk.checked;
 
     if (
       drops === 'none' && !equipmentDrops && encounters === 'none' &&
@@ -234,7 +238,7 @@ function init() {
       steals === 'none' && arts === 'none' && doors === 'none' &&
       houseDoors === 'none' && startingItems === 0 && doorOfWind === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
-      spellCost === 'none' && equipBonus === 'none'
+      spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty
     ) {
       setStatus('Enable at least one option (pick a preset, or flip a toggle).', 'err');
       return;
@@ -250,7 +254,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus);
+      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);
