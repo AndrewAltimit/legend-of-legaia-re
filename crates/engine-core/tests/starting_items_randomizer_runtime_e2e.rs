@@ -79,8 +79,7 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
     let opts = legaia_rando::starting_items::StartingSeedOptions {
         random_items: n,
-        door_of_wind: 0,
-        all_warps: false,
+        ..Default::default()
     };
     let report = apply::randomize_starting_items(&mut patcher, seed, &opts).expect("randomize");
     assert!(report.items_set >= 2, "expected several seeded items");
@@ -155,9 +154,8 @@ fn forced_door_of_wind_seeds_the_bag_at_runtime() {
     // Patch with the Door-of-Wind toggle (no reroll, no warps): additive to vanilla.
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
     let opts = StartingSeedOptions {
-        random_items: 0,
         door_of_wind: DOOR_OF_WIND_COUNT,
-        all_warps: false,
+        ..Default::default()
     };
     let report = apply::randomize_starting_items(&mut patcher, 1, &opts).expect("randomize");
     assert!(!report.all_warps);
