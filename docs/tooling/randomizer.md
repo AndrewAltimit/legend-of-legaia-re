@@ -445,15 +445,20 @@ decompress → edit → recompress path as the drop randomizer
 its `0x14000`-byte footprint (a slot too tight to re-pack is skipped, as with
 drops). `legaia-rando monster-stats` lists the current stats.
 
-The scripted opening tutorial opponent (the Rim Elm sparring partner,
-`monster_stats::PROTECTED_MONSTER_IDS`) is excluded from the pass entirely — both
-as a source and a target — so it keeps its original stats and never donates them
-to another monster. That fight is unwinnable by design and has no game-over
-branch, so handing it a hard-hitting attack could let it one-shot the party and
-soft-lock a fresh game; pinning its record keeps a new game playable. This is the
-stat-side companion to the encounter randomizer already leaving that formation
-scripted. Under `Shuffle` the column multisets are still exactly preserved (the
-pinned values are conserved in place).
+A set of scripted enemies (`monster_stats::PROTECTED_MONSTER_IDS`) is excluded
+from the pass entirely — both as a source and a target — so each keeps its
+original stats and never donates them to another monster. Two kinds qualify. The
+**early tutorial enemies** (the Rim Elm sparring partner and the first wild
+Piura): the sparring fight is unwinnable by design and has no game-over branch,
+so a hard-hitting attack could one-shot the party and soft-lock a fresh game, and
+the early wild enemies are fragile by design. The **story bosses** (Caruban,
+Zeto, Songi, Berserker, Tetsu, Dohati, Xain, the three Delilas, Gaza, Zora,
+Jette, Cort — every version of each): their set-piece fights are tuned around
+scripted HP/phase triggers, so scrambling their stats can make a mandatory fight
+unwinnable, and leaking a boss's extreme stats onto a trash mob would wreck
+balance. This is the stat-side companion to the encounter randomizer already
+leaving those formations scripted. Under `Shuffle` the column multisets are still
+exactly preserved (the pinned values are conserved in place).
 
 ### Special-attack power
 
@@ -921,7 +926,7 @@ bit-for-bit.
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, the protected tutorial monster's combat stats unchanged, slot footprints fixed, deterministic |
+| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic |
 | `crates/rando` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
