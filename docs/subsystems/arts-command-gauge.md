@@ -88,13 +88,34 @@ The cost is **not** computed by a runtime favored-class comparison. It is writte
 
 So the arm cost originates in the **equipped weapon's section of the per-character [player battle file](../formats/battle-data-pack.md)** (extraction 863..866) and is carried verbatim into the runtime struct. The "off-class penalty" is therefore **per-(character, weapon) data baked into those files** — favored-class weapons simply carry a low arm cost in that character's file and off-class weapons a higher one — not a class comparison the engine performs. The same weapon yields different costs in different characters' files (a claw is cheap in Noa's file, expensive in Gala's).
 
+## Disc location
+
+Inside the [player battle file](../formats/battle-data-pack.md), the cost is in the weapon's section, reached through the section's **swing-action record**:
+
+```
+section (decoded)
+  +0x04  u32 swing_rec_a   ; offset (within the section) to the swing/arm command record
+  …
+  swing_rec_a + 0x74       ; u8 arm cost  ← the weapon-specialty byte
+```
+
+The descriptor table keys sections by **equippable item id**, so each equippable weapon has its own section and its own swing record. Decoding all three player files (`asset battle-data-pack <file> --out`) and reading `section[+0x04] + 0x74` per weapon gives a clean, byte-exact picture — favored-class weapons carry `0x1E` (30), off-class weapons carry higher costs that scale with class distance:
+
+| character (file) | favored class → `0x1E` | off-class → `0x2A` | far off-class → `0x36` |
+|---|---|---|---|
+| Vahn (863) | blade / knife / sword / fist | claw, axe | — |
+| Noa (864) | claw / feral / fang (+ knife) | sword / blade | club / axe |
+| Gala (865) | club / axe / mace | claw, knife | — |
+
+Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru Club reads `0x1E` — matching that file's `0x28` and `0x21` sections. The cost lives inside the section's **LZS-compressed** stream, so an editor decompresses the section, rewrites the byte at `swing_rec_a + 0x74`, recompresses, and writes back within the slot footprint.
+
 ## Confidence and open threads
 
-**Confirmed** (live-pinned): the cost field `DAT_801C9360[char][0x0C] + 0x74`, its measured values, the case-`9` read and case-`0xB` AP spend in `FUN_801D388C`, the SCUS call site of the execution resolver, and the **writer** (`FUN_800557B8`, verbatim copy from the assembled equipment section at battle load — no runtime penalty arithmetic).
+**Confirmed** (live-pinned + byte-validated against the disc): the cost field `DAT_801C9360[char][0x0C] + 0x74`, its measured values, the case-`9` read and case-`0xB` AP spend in `FUN_801D388C`, the SCUS call site of the execution resolver, the **writer** (`FUN_800557B8`, verbatim copy from the LZS-decoded equipment section at battle load — no runtime penalty arithmetic), and the **disc location** of the cost byte (`section[+0x04]` swing record `+0x74` in the player battle files, tabulated above).
 
-**Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon); that the cost is disc-resident per-(character, weapon) in the player battle files (the store is a verbatim copy, so the value pre-exists in the assembled source — which is built by splicing those files' equipment sections).
+**Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon).
 
-**Open (for the randomizer)**: the exact byte offset of the arm cost within a weapon's section in the player battle file. The runtime struct places it at `+0x74` and the load is a verbatim copy, so the same field sits at the matching offset in the file's equipment-section layout; pinning it makes the weapon-specialty mechanic an editable data table (raise an off-class character's favored-class arm costs / lower another class's to reassign specialties).
+The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. This is a clean target for a [randomizer](../tooling/randomizer.md) feature (same-size in-place edits to the LZS sections of the player battle files).
 
 ## See also
 
