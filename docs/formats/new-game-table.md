@@ -54,7 +54,7 @@ per-character archetypes (`Noa = 120`, `Gala = 80`) read as agility.
 
 The opening inventory is **not** a static table like the party stats — the
 new-game data-init `FUN_80034A6C` (`docs/subsystems/boot.md`) builds it in code,
-writing a single slot into the live consumable inventory at `0x80085958`
+writing a single slot into the live owned-item array at `0x80085958`
 (= `SC` base `0x80084140` + `0x1818`; 2 bytes/slot `[id: u8][count: u8]`,
 id-`0` terminator):
 
@@ -73,6 +73,16 @@ the 512 bytes *below* the inventory — but **both** callers of `FUN_80034A6C`
 which contains the entire 72-slot inventory — immediately before the call, so
 that inline zero-loop is redundant. The reclaimable seed region is therefore
 the **10 instructions at [`STARTING_INV_SEED_VA`] (`0x80034b04`, 40 bytes)**.
+
+The array at `0x1818` is a **single ordered `(id, count)` owned-item list shared
+by every item category** — the inventory menu only *filters* it into Items /
+Goods / Key tabs by item id. (Verified against a real end-game save: consumables,
+equipment, and accessories all sit in this one list as plain `(id, count)` pairs,
+running past the first 72 slots to a `(0, 0)` terminator.) So a seeded slot can
+hold any item id regardless of category — the randomizer's starting-bag toggles
+seed the Door of Wind / Incense consumables and the Speed Chain / Chicken Heart /
+Good Luck Bell accessories through this same array (see
+[`randomizer.md`](../tooling/randomizer.md#starting-bag-convenience-toggles)).
 
 `legaia_asset::new_game::StartingInventory` decodes this region by replaying its
 `$v0`-source byte/halfword stores into an `SC`-offset → byte map and reading
