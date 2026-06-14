@@ -44,7 +44,7 @@ The same pattern (`h:\mpack\…` paths + per-record TOC at a small data structur
 
 The field VM's opcode `0x35` writes the BGM ID to `_DAT_8007BAC8`. `FUN_800243F0` (the per-frame asset poller) resolves it to a PROT index - `bgm_id < 2000` is scene-local, `bgm_id >= 2000` is a global pool. There's no literal BGM table; the resolution is a PROT-relative offset into the [CDNAME](../formats/cdname.md) per-scene block.
 
-See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the resolver code.
+See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the resolver code. For the human-readable map between each track's debug sound-test ID, the scene it plays in, and its official OST title, see [`reference/music-tracks.md`](../reference/music-tracks.md).
 
 The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). The host's `AudioBgmDirector` cross-fades both transitions over ~0.5 s through its existing `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
 

@@ -21,7 +21,8 @@ enum Cmd {
     List {
         /// Which table to list: arts | magic | items | weapons | armor |
         ///                       accessories | enemies | bosses | shops |
-        ///                       slots | muscle | baka | fishing | characters
+        ///                       slots | muscle | baka | fishing | characters |
+        ///                       music
         table: String,
         /// Filter `arts` by character (Vahn/Noa/Gala).
         #[arg(long)]
@@ -253,6 +254,19 @@ fn list(
                 );
             }
         }
+        "music" => {
+            for t in db.music_tracks() {
+                let id = t.id.as_deref().unwrap_or("-");
+                let ctx = t.context.as_deref().unwrap_or("-");
+                let ost = t.ost_gloss.as_deref().unwrap_or("-");
+                let reloc = t.relocalization.as_deref().unwrap_or("-");
+                let flag = if t.uncertain { " (?)" } else { "" };
+                println!(
+                    "{:>3}  {:<8}  {:<34}  ost:{:<26}  {}{}",
+                    t.index, id, ctx, ost, reloc, flag
+                );
+            }
+        }
         other => bail!("unknown table {other:?}"),
     }
     Ok(())
@@ -402,6 +416,7 @@ fn dump_json(db: &Database, table: &str) -> Result<()> {
         "baka" => serde_json::to_string_pretty(db.baka_fighter())?,
         "fishing" => serde_json::to_string_pretty(db.fishing_prizes())?,
         "characters" => serde_json::to_string_pretty(db.characters())?,
+        "music" => serde_json::to_string_pretty(db.music_tracks())?,
         other => bail!("unknown table {other:?}"),
     };
     println!("{json}");
