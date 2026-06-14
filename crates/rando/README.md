@@ -388,6 +388,10 @@ toggles:
   to 99) force those accessories (`0xD1` / `0xF4` / `0xFC`) into a slot. They are
   "Goods", but the owned-item list is one ordered `(id, count)` array shared by
   every category, so they seed exactly like a consumable.
+- `extra_items` is an explicit `(id, count)` list (CLI `--start-with`). Unlike the
+  random fill (consumable pool only), it takes **any** id — consumable, equipment,
+  or accessory — and is seeded into the forced prefix after the toggles, excluded
+  from the reroll, and de-duplicated (id/count `0` and already-seeded ids dropped).
 - `all_warps` presets the all-towns visited bitmask (`0x8008575C = 0xF77F`,
   `0x8008575E = 0xF8FF`).
 
@@ -417,25 +421,31 @@ random count. Disc-gated oracle: `starting_bag_real`.
 
 ## Starting level
 
-`apply_starting_level` begins a New Game with the lead character (Vahn) at a
-chosen level instead of 1 (`starting_level` module). A New Game seeds four
-live-record cells; the **displayed level** is the byte at `+0x130` (boot-confirmed —
-*not* derived from experience at a New Game; `+0x100` is zero in retail). Same-size
-SCUS edits make a level-`N` start coherent:
+`apply_starting_level` begins a New Game with the starting party at a chosen level
+instead of 1 (`starting_level` module). The **displayed level** is the byte at
+`+0x130` (boot-confirmed — *not* derived from experience at a New Game; `+0x100` is
+zero in retail), and the seed routine's **record-init loop stamps `+0x130` on every
+roster slot**, so the level applies party-wide. Same-size SCUS edits make a level-`N`
+start coherent:
 
-- **Level** — the seed loop's level literal + stores set `+0x130 = N` (packed
-  `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping magic rank `+0x131` at 1).
-- **Experience** — slot 0's `+0x0` gets the midpoint of level `N`'s XP band (from the
-  disc's own `xp_thresholds_from_scus`) via a `$t0` preload + store that repurpose
-  the slot-3/slot-1 threshold seeds; the next-level threshold `+0x4` gets
-  `reach(N+1)`. Single 16-bit immediates, which caps the level at
+- **Level** — the seed loop's level literal + stores set `+0x130 = N` for every party
+  record (packed `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping magic rank
+  `+0x131` at 1).
+- **Stats** — overwrite **each growth-capable slot's** eight `u16` template stats
+  (`PARTY_TEMPLATE_VA`) with that character's level-`N` values, accumulated from the
+  disc's deterministic per-level growth curves (`GrowthTables::level_gain_core`) on
+  top of the level-1 template. The growth table covers `GROWTH_CHAR_COUNT` characters
+  (Vahn/Noa/Gala); the 4th template slot (Terra) has no curve and keeps its base
+  stats. This keeps the stats coherent with the level the loop stamps for every slot —
+  fixing the prior bug where Noa/Gala showed level `N` with level-1 stats.
+- **Experience** — additionally, the lead's `+0x0` gets the midpoint of level `N`'s XP
+  band (from the disc's own `xp_thresholds_from_scus`) via a `$t0` preload + store that
+  repurpose the slot-3/slot-1 threshold seeds; the lead's next-level threshold `+0x4`
+  gets `reach(N+1)`. Single 16-bit immediates, which caps the level at
   `MAX_STARTING_LEVEL` (14).
-- **Stats** — overwrite slot 0's eight `u16` template stats (`PARTY_TEMPLATE_VA`)
-  with the level-`N` values, accumulated from the disc's deterministic per-level
-  growth curves (`GrowthTables::level_gain_core`) on top of the level-1 template.
 
-Only the New-Game character (slot 0) is seeded; joining characters re-scale. The
-disc-gated `starting_level_real` oracle round-trips every level in range.
+The disc-gated `starting_level_real` oracle round-trips every level in range and
+checks each leveled slot's stats off the patched image.
 
 ## Item prices
 

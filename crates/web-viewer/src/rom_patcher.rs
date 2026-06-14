@@ -428,6 +428,9 @@ pub fn patch_rom(
         chicken_heart,
         good_luck_bell,
         all_warps,
+        // The in-browser patcher doesn't surface explicit item picks yet; the CLI
+        // `--start-with` flag does. Leave it empty so web behaviour is unchanged.
+        extra_items: Vec::new(),
     };
     if seed_opts.is_active() {
         let rep = apply::randomize_starting_items(&mut patcher, seed_n, &seed_opts)
@@ -490,8 +493,9 @@ pub fn patch_rom(
         let rep = apply::apply_starting_level(&mut patcher, starting_level)
             .map_err(|e| err(format!("starting-level: {e}")))?;
         summary.push_str(&format!(
-            "starting-level: new game begins at level {} (HP {}, MP {}, ATK {})\n",
-            rep.level, rep.stats[0], rep.stats[1], rep.stats[3]
+            "starting-level: starting party begins at level {} ({} slot(s) leveled; \
+             lead HP {}, MP {}, ATK {})\n",
+            rep.level, rep.slots_leveled, rep.stats[0], rep.stats[1], rep.stats[3]
         ));
     } else {
         summary.push_str("starting-level: untouched (vanilla level 1)\n");

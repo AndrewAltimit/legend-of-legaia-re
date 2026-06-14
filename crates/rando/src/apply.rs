@@ -2268,30 +2268,40 @@ pub struct StartingLevelReport {
     pub current_xp: u16,
     /// Next-level XP threshold, written to the record's `+0x4` cell.
     pub next_threshold: u16,
-    /// The level-`N` stats written into slot 0's template, in template order
-    /// (`hp, mp, agl, atk, udf, ldf, spd, int`).
+    /// The level-`N` stats written into the lead (slot 0) template, in template
+    /// order (`hp, mp, agl, atk, udf, ldf, spd, int`). Equal to `party_stats[0]`.
     pub stats: [u16; 8],
+    /// The number of party slots seeded to level `N` (Vahn / Noa / Gala — the
+    /// growth-capable slots). The displayed level (`+0x130`) is stamped on every
+    /// roster slot by the seed loop; these are the slots whose stats were also
+    /// leveled to match.
+    pub slots_leveled: usize,
 }
 
-/// Seed the new game so the lead character starts at `level` instead of level 1
+/// Seed the new game so the starting party begins at `level` instead of level 1
 /// (see [`crate::starting_level`]).
 ///
 /// Same-size in-place edits in `SCUS_942.54` across the seed routine `FUN_800560B4`
 /// and the starting-party template:
-/// - slot 0's current-experience cell `+0x0` (the field the displayed level derives
-///   from), seeded to an in-band level-`N` value via a `$t0` preload + store that
-///   repurpose the slot-3 / slot-1 next-level-threshold seeds;
-/// - the slot-0 next-level-threshold literal (`+0x4`), set to `reach(level + 1)`;
-/// - slot 0's eight `u16` stats in the template, recomputed to the level via the
-///   disc's own growth curves.
+/// - the seed loop's displayed-level literal + store, so it writes `+0x130 = level`
+///   (keeping magic rank `+0x131 = 1`) into **every** party record;
+/// - each growth-capable slot's eight `u16` template stats (Vahn / Noa / Gala),
+///   recomputed to the level via the disc's own growth curves, so the displayed
+///   level the loop stamps and the stats stay coherent across the roster (the 4th
+///   slot, Terra, has no growth curve and keeps its base stats);
+/// - the lead's current-experience cell `+0x0`, seeded to an in-band level-`N`
+///   value via a `$t0` preload + store that repurpose the slot-3 / slot-1
+///   next-level-threshold seeds, and the lead's next-level-threshold literal
+///   (`+0x4`), set to `reach(level + 1)`, so its status readout is exact.
 ///
-/// The magic-rank byte `+0x130` is intentionally left untouched. `level` must be in
+/// `level` must be in
 /// [`crate::starting_level::MIN_STARTING_LEVEL`]`..=`[`crate::starting_level::MAX_STARTING_LEVEL`];
 /// callers guard on [`crate::starting_level::is_active`]. Deterministic.
 pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<StartingLevelReport> {
     use legaia_asset::new_game::{
         CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, LEVEL_SEED_VA, LEVEL_STORE_REDUNDANT_VA,
-        LEVEL_STORE_VA, STARTING_XP_SEED_VA, party_template_file_offset, scus_file_offset,
+        LEVEL_STORE_VA, RECORD_STRIDE, STARTING_XP_SEED_VA, party_template_file_offset,
+        scus_file_offset,
     };
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
@@ -2339,21 +2349,31 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
             .with_context(|| format!("write seed instruction at SCUS offset {off:#x}"))?;
     }
 
+    // Write each growth-capable slot's level-N stats into its template stat block
+    // (the first 16 of each record's RECORD_STRIDE bytes; the name field follows).
+    // The seed loop copies these into the live records, so every leveled slot's
+    // stats match the displayed level the loop stamps.
     let tmpl_off = party_template_file_offset(&scus)
         .context("locate starting-party template in SCUS_942.54")? as u64;
-    patcher
-        .patch_named_file(
-            crate::steal::SCUS_NAME,
-            tmpl_off,
-            &crate::starting_level::stat_block(&plan.stats),
-        )
-        .with_context(|| format!("write level-{level} stats at SCUS offset {tmpl_off:#x}"))?;
+    for (slot, stats) in plan.party_stats.iter().enumerate() {
+        let off = tmpl_off + (slot * RECORD_STRIDE) as u64;
+        patcher
+            .patch_named_file(
+                crate::steal::SCUS_NAME,
+                off,
+                &crate::starting_level::stat_block(stats),
+            )
+            .with_context(|| {
+                format!("write level-{level} stats for slot {slot} at SCUS offset {off:#x}")
+            })?;
+    }
 
     Ok(StartingLevelReport {
         level: plan.level,
         current_xp: plan.current_xp,
         next_threshold: plan.next_threshold,
         stats: plan.stats,
+        slots_leveled: plan.party_stats.len(),
     })
 }
 

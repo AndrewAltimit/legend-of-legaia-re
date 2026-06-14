@@ -352,6 +352,16 @@ struct RandomizeArgs {
         value_name = "COUNT"
     )]
     good_luck_bell: Option<u8>,
+    /// Seed explicit item(s) into the new game's starting bag, on top of the
+    /// convenience toggles and the Healing Leaf base. Comma-separated
+    /// `id[:count]` entries, id in decimal or `0xHH`, count defaulting to 1
+    /// (e.g. `--start-with 0x89:10,0xd1,154:3`). The id space is the full item
+    /// table — any consumable, weapon, armor, or accessory id works. Items
+    /// beyond the 7-slot direct seed (5 with `--all-warps`) are granted via the
+    /// opening scene like the random fill. `legaia-rando starting-items` shows
+    /// the resulting bag.
+    #[arg(long, value_name = "ID[:COUNT]", value_delimiter = ',', value_parser = parse_item_spec)]
+    start_with: Vec<(u8, u8)>,
     /// Unlock every Door-of-Wind warp destination from the start (preset the
     /// "visited towns" story-flag bitmask). Lets Door of Wind teleport to any
     /// town immediately. It claims the warp-preset region that otherwise carries
@@ -514,6 +524,28 @@ fn parse_item_id(s: &str) -> Result<u8> {
         s.parse::<u8>()
     };
     parsed.with_context(|| format!("invalid item id {s:?} (expected 0..=255, decimal or 0xHH)"))
+}
+
+/// Parse a single `--start-with` entry: an item id, optionally `:count`
+/// (`0x89:10`, `0xd1`, `154:3`). Count defaults to `1` and is clamped to the
+/// game's per-slot stack cap. The id space is the full 256-id item table
+/// (consumables, equipment, AND accessories), so any item can be requested.
+fn parse_item_spec(s: &str) -> Result<(u8, u8)> {
+    let s = s.trim();
+    let (id_str, count) = match s.split_once(':') {
+        Some((id_str, count_str)) => {
+            let count = count_str
+                .trim()
+                .parse::<u32>()
+                .with_context(|| format!("invalid count in {s:?} (expected a number)"))?;
+            (
+                id_str,
+                count.min(legaia_rando::starting_items::MAX_ITEM_STACK as u32) as u8,
+            )
+        }
+        None => (s, 1u8),
+    };
+    Ok((parse_item_id(id_str)?, count))
 }
 
 fn clock_seed() -> u64 {
@@ -1520,6 +1552,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         chicken_heart: args.chicken_heart.unwrap_or(0),
         good_luck_bell: args.good_luck_bell.unwrap_or(0),
         all_warps: args.all_warps,
+        extra_items: args.start_with.clone(),
     };
     if seed_opts.is_active() {
         let report = apply::randomize_starting_items(&mut patcher, seed, &seed_opts)?;
@@ -1587,8 +1620,9 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     if legaia_rando::starting_level::is_active(args.starting_level) {
         let report = apply::apply_starting_level(&mut patcher, args.starting_level)?;
         println!(
-            "starting-level: new game now begins at level {} (HP {}, ATK {})",
-            report.level, report.stats[0], report.stats[3]
+            "starting-level: new game now begins at level {} for the starting party \
+             ({} slot(s) leveled; lead HP {}, ATK {})",
+            report.level, report.slots_leveled, report.stats[0], report.stats[3]
         );
         manifest.push(format!("starting_level = {}", report.level));
     } else {

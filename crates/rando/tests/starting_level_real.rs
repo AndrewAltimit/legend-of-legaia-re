@@ -1,18 +1,19 @@
 //! Disc-gated end-to-end test for the starting-level randomizer: rewrite the
 //! new-game seed routine's level / current-XP / next-threshold instructions and
-//! slot 0's stat template in `SCUS_942.54` on a scratch copy of the disc, then
-//! re-decode straight off the patched image and confirm the edit is faithful — the
-//! level literal decodes back to the requested level, the seed instructions carry
-//! the planned XP values with the right register/opcode shape, the stats are the
-//! level's growth-curve values (and strictly above the vanilla level-1 template),
-//! the lead character's name and the `sw $ra` after the threshold literal are
-//! untouched, the image is the same size, every touched SCUS sector stays
-//! EDC/ECC-valid, and the patch is byte-deterministic. Skips + passes without
-//! `LEGAIA_DISC_BIN`.
+//! every growth-capable slot's stat template in `SCUS_942.54` on a scratch copy of
+//! the disc, then re-decode straight off the patched image and confirm the edit is
+//! faithful — the level literal decodes back to the requested level, the seed
+//! instructions carry the planned XP values with the right register/opcode shape,
+//! each leveled slot's stats are that character's growth-curve values (strictly
+//! above its vanilla level-1 stats) with its name preserved, the `sw $ra` after the
+//! threshold literal is untouched, the image is the same size, every touched SCUS
+//! sector stays EDC/ECC-valid, and the patch is byte-deterministic. Skips + passes
+//! without `LEGAIA_DISC_BIN`.
 
+use legaia_asset::level_up_tables::GROWTH_CHAR_COUNT;
 use legaia_asset::new_game::{
     CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, LEVEL_SEED_VA, LEVEL_STORE_REDUNDANT_VA,
-    LEVEL_STORE_VA, StartingParty, party_template_file_offset, scus_file_offset,
+    LEVEL_STORE_VA, RECORD_STRIDE, StartingParty, party_template_file_offset, scus_file_offset,
     starting_xp_seed_file_offset,
 };
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
@@ -28,9 +29,9 @@ fn load_disc() -> Option<Vec<u8>> {
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
 }
 
-fn slot0_stats(scus: &[u8]) -> [u16; 8] {
+fn slot_stats(scus: &[u8], slot: usize) -> [u16; 8] {
     let p = StartingParty::from_scus(scus).expect("template");
-    let v = p.member(0).expect("slot 0");
+    let v = p.member(slot).expect("template slot");
     [
         v.hp_max, v.mp_max, v.agl, v.atk, v.udf, v.ldf, v.spd, v.intel,
     ]
@@ -51,9 +52,19 @@ fn starting_level_round_trips_on_disc() {
         "retail new game starts at level 1"
     );
     let scus0 = read_file_in_image(&original, "SCUS_942.54").expect("SCUS present");
-    let vanilla_stats = slot0_stats(&scus0);
+    let vanilla_stats = slot_stats(&scus0, 0);
+    // Vanilla stats + names for every growth-capable slot (Vahn / Noa / Gala): each
+    // must be leveled, and each name must survive its stat-block rewrite.
+    let vanilla_party: Vec<[u16; 8]> = (0..GROWTH_CHAR_COUNT)
+        .map(|s| slot_stats(&scus0, s))
+        .collect();
     let xp_off = starting_xp_seed_file_offset(&scus0).expect("xp seed offset");
     let tmpl_off = party_template_file_offset(&scus0).expect("template offset");
+    let slot_names: Vec<Vec<u8>> = (0..GROWTH_CHAR_COUNT)
+        .map(|s| {
+            scus0[tmpl_off + s * RECORD_STRIDE + 16..tmpl_off + s * RECORD_STRIDE + 26].to_vec()
+        })
+        .collect();
     let cur_store_off = scus_file_offset(&scus0, CURRENT_XP_STORE_VA).expect("current-xp store");
     let cur_pre_off = scus_file_offset(&scus0, CURRENT_XP_PRELOAD_VA).expect("current-xp preload");
     let level_seed_off = scus_file_offset(&scus0, LEVEL_SEED_VA).expect("level seed");
@@ -63,7 +74,6 @@ fn starting_level_round_trips_on_disc() {
     // Bytes that must survive: the `sw $ra` right after the threshold literal, and
     // the lead character's 10-byte name right after slot 0's 16 stat bytes.
     let after_xp = scus0[xp_off + 4..xp_off + 8].to_vec();
-    let slot0_name = scus0[tmpl_off + 16..tmpl_off + 26].to_vec();
 
     let level = DEFAULT_STARTING_LEVEL;
     let want = plan(&scus0, level).expect("plan");
@@ -74,9 +84,14 @@ fn starting_level_round_trips_on_disc() {
     assert_eq!(report.stats, want.stats);
     assert_eq!(report.current_xp, want.current_xp);
     assert_eq!(report.next_threshold, want.next_threshold);
+    // Every growth-capable slot (Vahn / Noa / Gala) is leveled, matching the
+    // displayed level the seed loop stamps on the whole roster.
+    assert_eq!(report.slots_leveled, GROWTH_CHAR_COUNT);
+    assert_eq!(want.party_stats.len(), GROWTH_CHAR_COUNT);
 
     // Re-decode off the patched image: the seeded experience must read back as the
-    // requested level, and the template stats as the planned level-N stats.
+    // requested level, and EACH leveled slot's template stats as its planned level-N
+    // stats (strictly above its own vanilla level-1 stats), with its name preserved.
     assert_eq!(
         apply::current_starting_level(&patcher).expect("read patched level"),
         level,
@@ -84,10 +99,29 @@ fn starting_level_round_trips_on_disc() {
     );
     let patched_scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
     assert_eq!(
-        slot0_stats(&patched_scus),
+        slot_stats(&patched_scus, 0),
         want.stats,
-        "template carries the level-N stats"
+        "lead template carries the level-N stats"
     );
+    for slot in 0..GROWTH_CHAR_COUNT {
+        let got = slot_stats(&patched_scus, slot);
+        assert_eq!(
+            got, want.party_stats[slot],
+            "slot {slot} template carries its planned level-{level} stats"
+        );
+        assert!(
+            got[0] > vanilla_party[slot][0],
+            "slot {slot} HP {} must exceed its vanilla {}",
+            got[0],
+            vanilla_party[slot][0]
+        );
+        let name_off = tmpl_off + slot * RECORD_STRIDE + 16;
+        assert_eq!(
+            &patched_scus[name_off..name_off + 10],
+            &slot_names[slot][..],
+            "slot {slot} name preserved across the stat rewrite"
+        );
+    }
 
     // The seed instructions carry the planned values + register/opcode shape.
     let word = |o: usize| u32::from_le_bytes(patched_scus[o..o + 4].try_into().unwrap());
@@ -153,13 +187,8 @@ fn starting_level_round_trips_on_disc() {
         vanilla_stats[0]
     );
 
-    // The lead character's name and the instruction after the XP literal are
-    // untouched (the edits are confined to the stat bytes + the one literal).
-    assert_eq!(
-        &patched_scus[tmpl_off + 16..tmpl_off + 26],
-        &slot0_name[..],
-        "slot 0 name preserved"
-    );
+    // The instruction after the XP literal is untouched (the edits are confined to
+    // the stat bytes + the seed literals); per-slot names are checked above.
     assert_eq!(
         &patched_scus[xp_off + 4..xp_off + 8],
         &after_xp[..],

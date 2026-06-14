@@ -118,7 +118,12 @@ pub const VANILLA_STARTING_ITEM: (u8, u8) = (0x77, 5);
 pub const DEFAULT_COUNT_RANGE: (u8, u8) = (1, 5);
 
 /// What the New Game starting seed should set, beyond the vanilla Healing Leaf.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// Not `Copy`: [`extra_items`] is a `Vec`. Pass by reference (the plan / apply
+/// API takes `&StartingSeedOptions`).
+///
+/// [`extra_items`]: Self::extra_items
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StartingSeedOptions {
     /// Number of random consumables to reroll the starting bag to. `0` keeps
     /// the vanilla Healing Leaf base (so the convenience toggles stay additive).
@@ -147,6 +152,19 @@ pub struct StartingSeedOptions {
     /// Preset the all-towns visited-towns bitmask so Door of Wind can warp to
     /// every destination from the start.
     pub all_warps: bool,
+    /// Explicit `(item_id, count)` slots to seed into the starting bag, on top
+    /// of the convenience toggles. Additive — like the toggles, these are
+    /// seeded into the "forced" prefix that always survives the capacity clamp,
+    /// and their ids are excluded from the random reroll so they're never
+    /// duplicated. Each `count` is clamped to [`MAX_ITEM_STACK`]; an entry with
+    /// id `0` (the no-item sentinel) or count `0` is dropped, and a duplicate id
+    /// (already a convenience item or an earlier `extra_items` entry) is skipped
+    /// so every slot is distinct. The id space is the full 256-id item table
+    /// (consumables, equipment, AND accessories all live in the one owned-item
+    /// list — see the module docs), so any item or accessory can be requested.
+    /// Slots beyond the direct-seed capacity overflow into the script-injection
+    /// path ([`crate::starting_bag`]) like any other bag item.
+    pub extra_items: Vec<(u8, u8)>,
 }
 
 impl StartingSeedOptions {
@@ -159,6 +177,10 @@ impl StartingSeedOptions {
             || self.chicken_heart > 0
             || self.good_luck_bell > 0
             || self.all_warps
+            || self
+                .extra_items
+                .iter()
+                .any(|&(id, count)| id != 0 && count > 0)
     }
 }
 
@@ -254,6 +276,35 @@ pub fn direct_cap(all_warps: bool) -> usize {
     }
 }
 
+/// The **forced** starting-bag items in slot order: the enabled convenience
+/// toggles (Door of Wind, Incense, then the Speed Chain / Chicken Heart / Good
+/// Luck Bell accessories) followed by the user's explicit [`StartingSeedOptions::extra_items`].
+///
+/// Each entry's count is clamped to [`MAX_ITEM_STACK`]; entries with id `0` (the
+/// no-item sentinel) or count `0` are dropped, and a duplicate id is skipped so
+/// every returned slot is distinct. These items are seeded first by both
+/// [`plan_seed`] and [`plan_full_bag`] so they survive the capacity clamp, and
+/// their ids are excluded from the random reroll. Factoring this into one helper
+/// keeps the direct seed an exact prefix of the full bag (the invariant
+/// [`overflow_bag`] relies on).
+fn forced_items(opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
+    let convenience = [
+        (DOOR_OF_WIND_ID, opts.door_of_wind),
+        (INCENSE_ID, opts.incense),
+        (SPEED_CHAIN_ID, opts.speed_chain),
+        (CHICKEN_HEART_ID, opts.chicken_heart),
+        (GOOD_LUCK_BELL_ID, opts.good_luck_bell),
+    ];
+    let mut items: Vec<(u8, u8)> = Vec::new();
+    for &(id, count) in convenience.iter().chain(opts.extra_items.iter()) {
+        let count = count.min(MAX_ITEM_STACK);
+        if id != 0 && count > 0 && !items.iter().any(|&(seen, _)| seen == id) {
+            items.push((id, count));
+        }
+    }
+    items
+}
+
 /// The **full**, uncapped starting bag for `opts` — the forced convenience items
 /// then the full requested random fill (or the vanilla Healing Leaf base when no
 /// reroll), in the exact order [`plan_seed`] composes. So `plan_seed`'s output is
@@ -261,21 +312,8 @@ pub fn direct_cap(all_warps: bool) -> usize {
 /// the script path grants. Deterministic in `(seed, opts)`.
 pub fn plan_full_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
     let cap = direct_cap(opts.all_warps);
-    let mut items: Vec<(u8, u8)> = Vec::new();
-    let mut forced_ids: Vec<u8> = Vec::new();
-    for (id, count) in [
-        (DOOR_OF_WIND_ID, opts.door_of_wind),
-        (INCENSE_ID, opts.incense),
-        (SPEED_CHAIN_ID, opts.speed_chain),
-        (CHICKEN_HEART_ID, opts.chicken_heart),
-        (GOOD_LUCK_BELL_ID, opts.good_luck_bell),
-    ] {
-        let count = count.min(MAX_ITEM_STACK);
-        if count > 0 {
-            items.push((id, count));
-            forced_ids.push(id);
-        }
-    }
+    let mut items = forced_items(opts);
+    let forced_ids: Vec<u8> = items.iter().map(|&(id, _)| id).collect();
     if opts.random_items > 0 {
         // Uncapped random fill (cap = pool size); the first `cap - forced` of these
         // match what `plan_seed` seeds directly, the rest are the overflow.
@@ -308,10 +346,11 @@ pub fn overflow_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
 /// Resolve [`StartingSeedOptions`] into a concrete [`SeedPlan`] for `seed`.
 ///
 /// Composition, in slot order:
-/// 1. **Forced convenience items** — Door of Wind, Incense, then the Speed Chain
-///    / Chicken Heart / Good Luck Bell accessories (each `count`× , clamped to
-///    [`MAX_ITEM_STACK`]) for whichever has a non-zero count, written first so
-///    they always survive the capacity clamp.
+/// 1. **Forced items** — the enabled convenience toggles (Door of Wind, Incense,
+///    then the Speed Chain / Chicken Heart / Good Luck Bell accessories, each
+///    `count`× clamped to [`MAX_ITEM_STACK`]) followed by the user's explicit
+///    [`StartingSeedOptions::extra_items`], written first so they always survive
+///    the capacity clamp (see [`forced_items`]).
 /// 2. **Base / reroll**: with `random_items == 0` the vanilla Healing Leaf base
 ///    is kept (the convenience toggles stay additive to a normal new game);
 ///    with `random_items > 0` the bag is rerolled to that many random
@@ -333,24 +372,12 @@ pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
     } else {
         MAX_STARTING_ITEMS
     };
-    let mut items: Vec<(u8, u8)> = Vec::new();
-    // Forced convenience items, in a stable slot order. Each is seeded first so
-    // it always survives the capacity clamp; its id is excluded from the reroll
-    // below so a random fill can't deal a duplicate slot.
-    let mut forced_ids: Vec<u8> = Vec::new();
-    for (id, count) in [
-        (DOOR_OF_WIND_ID, opts.door_of_wind),
-        (INCENSE_ID, opts.incense),
-        (SPEED_CHAIN_ID, opts.speed_chain),
-        (CHICKEN_HEART_ID, opts.chicken_heart),
-        (GOOD_LUCK_BELL_ID, opts.good_luck_bell),
-    ] {
-        let count = count.min(MAX_ITEM_STACK);
-        if count > 0 {
-            items.push((id, count));
-            forced_ids.push(id);
-        }
-    }
+    // Forced items (convenience toggles + explicit extras), in a stable slot
+    // order. Each is seeded first so it always survives the capacity clamp; its
+    // id is excluded from the reroll below so a random fill can't deal a
+    // duplicate slot.
+    let mut items = forced_items(opts);
+    let forced_ids: Vec<u8> = items.iter().map(|&(id, _)| id).collect();
 
     if opts.random_items > 0 {
         let room = cap.saturating_sub(items.len());
@@ -576,12 +603,8 @@ mod tests {
         // can use the full capacity.
         let many = |all_warps| StartingSeedOptions {
             random_items: MAX_STARTING_ITEMS, // ask for more than the inv region holds
-            door_of_wind: 0,
-            incense: 0,
-            speed_chain: 0,
-            chicken_heart: 0,
-            good_luck_bell: 0,
             all_warps,
+            ..Default::default()
         };
         let with = plan_seed(7, &many(true));
         assert_eq!(with.items.len(), INV_REGION_SLOTS);
@@ -603,12 +626,9 @@ mod tests {
         // capacity) everything fits, so the requested five random are preserved.
         let opts = StartingSeedOptions {
             random_items: 5,
-            door_of_wind: 0,
-            incense: 0,
             speed_chain: ACCESSORY_SEED_COUNT,
             chicken_heart: ACCESSORY_SEED_COUNT,
-            good_luck_bell: 0,
-            all_warps: false,
+            ..Default::default()
         };
         let plan = plan_seed(7, &opts);
         assert!(plan.items.contains(&(SPEED_CHAIN_ID, ACCESSORY_SEED_COUNT)));
@@ -656,13 +676,8 @@ mod tests {
         let plan = plan_seed(
             1,
             &StartingSeedOptions {
-                random_items: 0,
                 door_of_wind: DOOR_OF_WIND_COUNT,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
+                ..Default::default()
             },
         );
         assert!(!plan.all_warps);
@@ -683,13 +698,8 @@ mod tests {
         let plan = plan_seed(
             1,
             &StartingSeedOptions {
-                random_items: 0,
                 door_of_wind: 25,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
+                ..Default::default()
             },
         );
         assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, 25));
@@ -697,29 +707,13 @@ mod tests {
         let plan = plan_seed(
             1,
             &StartingSeedOptions {
-                random_items: 0,
                 door_of_wind: 250,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
+                ..Default::default()
             },
         );
         assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, MAX_ITEM_STACK));
         // Count 0 means off: no Door of Wind, just the vanilla base.
-        let plan = plan_seed(
-            1,
-            &StartingSeedOptions {
-                random_items: 0,
-                door_of_wind: 0,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
-            },
-        );
+        let plan = plan_seed(1, &StartingSeedOptions::default());
         assert_eq!(plan.items, vec![VANILLA_STARTING_ITEM]);
         assert!(!plan.items.iter().any(|(id, _)| *id == DOOR_OF_WIND_ID));
     }
@@ -729,13 +723,8 @@ mod tests {
         let plan = plan_seed(
             1,
             &StartingSeedOptions {
-                random_items: 0,
-                door_of_wind: 0,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
                 all_warps: true,
+                ..Default::default()
             },
         );
         assert!(plan.all_warps);
@@ -761,11 +750,8 @@ mod tests {
         let opts = StartingSeedOptions {
             random_items: 5,
             door_of_wind: DOOR_OF_WIND_COUNT,
-            incense: 0,
-            speed_chain: 0,
-            chicken_heart: 0,
-            good_luck_bell: 0,
             all_warps: true,
+            ..Default::default()
         };
         let plan = plan_seed(99, &opts);
         assert!(plan.all_warps);
@@ -790,12 +776,7 @@ mod tests {
             3,
             &StartingSeedOptions {
                 random_items: 3,
-                door_of_wind: 0,
-                incense: 0,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
+                ..Default::default()
             },
         );
         assert_eq!(plan.items.len(), 3);
@@ -807,11 +788,8 @@ mod tests {
         let opts = StartingSeedOptions {
             random_items: 4,
             door_of_wind: DOOR_OF_WIND_COUNT,
-            incense: 0,
-            speed_chain: 0,
-            chicken_heart: 0,
-            good_luck_bell: 0,
             all_warps: true,
+            ..Default::default()
         };
         assert_eq!(plan_seed(0xABCD, &opts), plan_seed(0xABCD, &opts));
     }
@@ -1003,10 +981,7 @@ mod tests {
                 random_items: 5,
                 door_of_wind: DOOR_OF_WIND_COUNT,
                 incense: INCENSE_COUNT,
-                speed_chain: 0,
-                chicken_heart: 0,
-                good_luck_bell: 0,
-                all_warps: false,
+                ..Default::default()
             },
         );
         assert_eq!(plan.items.len(), MAX_STARTING_ITEMS);
@@ -1066,5 +1041,111 @@ mod tests {
             ..Default::default()
         };
         assert!(overflow_bag(7, &opts).is_empty());
+    }
+
+    #[test]
+    fn explicit_extra_items_activate_and_seed_additively() {
+        // An explicit item alone activates the seed and is added on top of the
+        // vanilla Healing Leaf base (no reroll requested).
+        let opts = StartingSeedOptions {
+            extra_items: vec![(0xD1, 1)], // Speed Chain accessory
+            ..Default::default()
+        };
+        assert!(opts.is_active());
+        let plan = plan_seed(1, &opts);
+        assert_eq!(plan.items, vec![(0xD1, 1), VANILLA_STARTING_ITEM]);
+        let patch = build_seed_patch_for(&plan);
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &[(0xD1, 1), VANILLA_STARTING_ITEM]
+        );
+    }
+
+    #[test]
+    fn extra_items_follow_convenience_items_in_slot_order() {
+        // Convenience toggles seed first, then the explicit extras, then the
+        // vanilla base — a stable, predictable slot order.
+        let opts = StartingSeedOptions {
+            door_of_wind: DOOR_OF_WIND_COUNT,
+            extra_items: vec![(0x30, 2), (0x42, 9)], // arbitrary equipment ids
+            ..Default::default()
+        };
+        let plan = plan_seed(1, &opts);
+        assert_eq!(
+            plan.items,
+            vec![
+                (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT),
+                (0x30, 2),
+                (0x42, 9),
+                VANILLA_STARTING_ITEM,
+            ]
+        );
+    }
+
+    #[test]
+    fn extra_items_clamp_count_and_drop_invalid_or_duplicate_entries() {
+        let opts = StartingSeedOptions {
+            door_of_wind: DOOR_OF_WIND_COUNT,
+            extra_items: vec![
+                (0x42, 250),          // count clamps to the stack cap
+                (0x00, 5),            // id 0 is the no-item sentinel: dropped
+                (0x43, 0),            // count 0: dropped
+                (0x42, 1),            // duplicate id: skipped (first wins)
+                (DOOR_OF_WIND_ID, 1), // already a convenience item: skipped
+            ],
+            ..Default::default()
+        };
+        let plan = plan_seed(1, &opts);
+        assert_eq!(
+            plan.items,
+            vec![
+                (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT),
+                (0x42, MAX_ITEM_STACK),
+                VANILLA_STARTING_ITEM,
+            ]
+        );
+    }
+
+    #[test]
+    fn random_reroll_excludes_explicit_extra_items() {
+        // A consumable id requested explicitly must not also be dealt by the
+        // random fill (no duplicate slot).
+        let extra_id = STARTING_ITEM_POOL[3];
+        let opts = StartingSeedOptions {
+            random_items: MAX_STARTING_ITEMS,
+            extra_items: vec![(extra_id, 7)],
+            ..Default::default()
+        };
+        let plan = plan_seed(123, &opts);
+        assert_eq!(plan.items[0], (extra_id, 7), "explicit item seeded first");
+        let dupes = plan.items[1..]
+            .iter()
+            .filter(|&&(id, _)| id == extra_id)
+            .count();
+        assert_eq!(dupes, 0, "the random fill never repeats the explicit id");
+    }
+
+    #[test]
+    fn extra_items_beyond_the_cap_become_overflow() {
+        // More explicit items than the direct seed holds: the first `cap` land in
+        // the direct seed and the rest are the script-path overflow. `direct ++
+        // overflow` reconstructs the full forced list (the same prefix invariant
+        // the convenience/random path relies on).
+        let extras: Vec<(u8, u8)> = (0x20u8..0x2Cu8).map(|id| (id, 1)).collect(); // 12 items
+        let opts = StartingSeedOptions {
+            extra_items: extras.clone(),
+            ..Default::default()
+        };
+        let direct = plan_seed(1, &opts).items;
+        let overflow = overflow_bag(1, &opts);
+        assert_eq!(
+            direct.len(),
+            MAX_STARTING_ITEMS,
+            "direct seed fills its cap"
+        );
+        assert!(!overflow.is_empty(), "the rest overflow to the script path");
+        let mut combined = direct;
+        combined.extend(overflow);
+        assert_eq!(combined, extras, "direct + overflow reconstructs the bag");
     }
 }

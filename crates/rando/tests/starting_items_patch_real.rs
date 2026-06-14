@@ -17,7 +17,8 @@ use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_rando::apply;
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::starting_items::{
-    INV_REGION_SLOTS, MAX_STARTING_ITEMS, STARTING_ITEM_POOL, StartingSeedOptions, plan_seed,
+    GOOD_LUCK_BELL_ID, INV_REGION_SLOTS, MAX_STARTING_ITEMS, SPEED_CHAIN_ID, STARTING_ITEM_POOL,
+    StartingSeedOptions, plan_seed,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -35,12 +36,7 @@ fn randomize_starting_items_round_trips_on_disc() {
     let n = 4;
     let opts = StartingSeedOptions {
         random_items: n,
-        door_of_wind: 0,
-        incense: 0,
-        speed_chain: 0,
-        chicken_heart: 0,
-        good_luck_bell: 0,
-        all_warps: false,
+        ..Default::default()
     };
 
     // Vanilla baseline: the new game starts with exactly Healing Leaf (0x77) x5,
@@ -154,11 +150,8 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
     let opts = StartingSeedOptions {
         random_items: 5,
         door_of_wind: legaia_rando::starting_items::DOOR_OF_WIND_COUNT,
-        incense: 0,
-        speed_chain: 0,
-        chicken_heart: 0,
-        good_luck_bell: 0,
         all_warps: true,
+        ..Default::default()
     };
 
     let scus = read_file_in_image(&original, "SCUS_942.54").expect("SCUS present");
@@ -497,4 +490,83 @@ fn convenience_plus_random_overflow_round_trips_on_disc() {
     apply::randomize_starting_items(&mut patcher2, seed, &opts).expect("randomize");
     assert!(patcher2.image() == patcher.image(), "deterministic");
     eprintln!("overflow seed {seed:#x}: full bag {after:?}");
+}
+
+/// Explicit `--start-with` items: the user names exact `(id, count)` slots to seed
+/// into the starting bag. Unlike the random fill (consumable-pool only), the
+/// explicit path takes ANY item id — including accessories ("Goods"), since the
+/// owned-item list is one unified array shared by every menu category. This patches
+/// two accessory ids directly and confirms they decode back verbatim, additively to
+/// the vanilla Healing Leaf base, with the surrounding code untouched.
+#[test]
+fn explicit_start_with_items_round_trip_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // Two accessories requested explicitly — neither is a consumable-pool id, so a
+    // pass proves the explicit path bypasses the random fill's pool restriction.
+    let opts = StartingSeedOptions {
+        extra_items: vec![(SPEED_CHAIN_ID, 1), (GOOD_LUCK_BELL_ID, 1)],
+        ..Default::default()
+    };
+    assert!(
+        !STARTING_ITEM_POOL.contains(&SPEED_CHAIN_ID)
+            && !STARTING_ITEM_POOL.contains(&GOOD_LUCK_BELL_ID),
+        "the requested ids are accessories, outside the random consumable pool"
+    );
+    let expected = plan_seed(0, &opts).items;
+    assert_eq!(
+        expected,
+        vec![(SPEED_CHAIN_ID, 1), (GOOD_LUCK_BELL_ID, 1), (0x77, 5)],
+        "explicit items seeded first, then the vanilla Healing Leaf base"
+    );
+
+    let scus = read_file_in_image(&original, "SCUS_942.54").expect("SCUS present");
+    let off = starting_inv_seed_file_offset(&scus).expect("seed offset");
+    let before_prologue = scus[off - 16..off].to_vec();
+    let after_region_orig =
+        scus[off + STARTING_INV_SEED_LEN..off + STARTING_INV_SEED_LEN + 16].to_vec();
+
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+    let report = apply::randomize_starting_items(&mut patcher, 0, &opts).expect("randomize");
+    assert_eq!(report.items, expected, "report mirrors the plan");
+
+    // Re-decode the seed off the PATCHED image: the explicit accessories land
+    // verbatim, including their counts.
+    let after = apply::current_starting_items(&patcher).expect("read patched seed");
+    assert_eq!(after, expected, "patched seed decodes to the explicit bag");
+
+    // The edit stays inside the 40-byte seed region.
+    let patched_scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+    assert_eq!(
+        &patched_scus[off - 16..off],
+        &before_prologue[..],
+        "prologue untouched"
+    );
+    assert_eq!(
+        &patched_scus[off + STARTING_INV_SEED_LEN..off + STARTING_INV_SEED_LEN + 16],
+        &after_region_orig[..],
+        "code after the seed region untouched"
+    );
+
+    // Same image size; the touched SCUS sector stays EDC/ECC-valid.
+    assert_eq!(
+        patcher.image().len(),
+        original.len(),
+        "image size unchanged"
+    );
+    let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
+    let seed_sector = scus_lba as usize + off / USER_DATA_SIZE;
+    let sb = seed_sector * SECTOR_SIZE;
+    assert!(
+        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        "patched seed-region sector must be EDC/ECC-valid"
+    );
+
+    // Determinism.
+    let mut patcher2 = DiscPatcher::open(original).expect("open");
+    apply::randomize_starting_items(&mut patcher2, 0, &opts).expect("randomize");
+    assert!(patcher2.image() == patcher.image(), "deterministic");
+    eprintln!("explicit start-with bag: {after:?}");
 }

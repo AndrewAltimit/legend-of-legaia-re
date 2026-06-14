@@ -84,6 +84,15 @@ const PRESET_BASE = {
   startingLevel: 0,
 };
 
+// Both gameplay presets hand the player a generous, fast-travel-ready start:
+// every convenience item + accessory, all warps unlocked, the whole starting
+// party at level 10, and 5 random consumables on top.
+const STARTING_BUNDLE = {
+  startingItems: 5, startingLevel: 10, allWarps: true,
+  doorOfWind: true, incense: true,
+  speedChain: true, chickenHeart: true, goodLuckBell: true,
+};
+
 const PRESETS = {
   vanilla: { ...PRESET_BASE },
   items: {
@@ -96,19 +105,17 @@ const PRESETS = {
     drops: 'shuffle', encounters: 'shuffle', encounter_scope: 'kingdom',
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     monster_stats: 'shuffle', equip_bonus: 'shuffle',
-    startingLevel: 10,
+    ...STARTING_BUNDLE,
   },
   chaos: {
+    ...PRESET_BASE,
     drops: 'random', encounters: 'random', encounter_scope: 'world',
     chests: 'random', shops: 'random', casino: 'random', steals: 'random',
     arts: 'random', doors: 'random', door_coupling: 'coupled',
-    houseDoors: true, equipmentDrops: false, startingItems: 5,
-    doorOfWind: false, incense: false,
-    speedChain: false, chickenHeart: false, goodLuckBell: false,
-    allWarps: true, unusedEnemies: true, unusedItems: true,
+    houseDoors: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
-    startingLevel: 10,
+    ...STARTING_BUNDLE,
   },
 };
 
