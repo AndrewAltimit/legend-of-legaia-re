@@ -195,8 +195,8 @@ but are real, randomizable gear.
 This automatically covers every door/dungeon key, the egg/talisman/book
 collectibles, the fishing rods, the casino cards, and the internal Ra-Seru
 weapon-state template entries — no manual list to keep in sync with the game.
-Buyable tools (priced > 0, e.g. the Silver Compass) are intentionally left
-randomizable. A chest whose original item is in the set keeps that item, the id
+Buyable items (priced > 0, e.g. the Silver Compass accessory) are intentionally
+left randomizable. A chest whose original item is in the set keeps that item, the id
 is excluded from the shuffle multiset (so it can never move to another chest),
 and it is dropped from the `random` fill pool (so it can't be placed into an
 unrelated chest). If the item table can't be read, the randomizer falls back to

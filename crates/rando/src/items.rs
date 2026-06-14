@@ -26,9 +26,10 @@ use legaia_asset::item_names::ItemNameTable;
 /// | `0xb0` | Spring Salts | Genesis-tree garden quest tool |
 /// | `0xa0` | Old Rod | fishing enabler |
 ///
-/// Buyable items are deliberately excluded — a shop-tradeable tool like the
-/// Silver Compass is a fine chest-randomization candidate, so only genuinely
-/// unsellable quest items are protected.
+/// Buyable items are deliberately excluded — a shop-tradeable accessory like
+/// the Silver Compass (lowers the battle-start ambush rate) is a fine
+/// chest-randomization candidate, so only genuinely unsellable quest items are
+/// protected.
 pub const DEFAULT_STATIC_CHEST_ITEMS: &[u8] = &[0x9a, 0x71, 0xa9, 0xaa, 0xb0, 0xa0];
 
 /// The chest randomizer's default keep-static set, derived from the disc.

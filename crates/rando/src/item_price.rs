@@ -94,9 +94,9 @@ pub fn sellable_pool(scus: &[u8]) -> Result<Vec<u8>> {
 /// random-fill pool), so a quest item never moves and never spawns elsewhere.
 ///
 /// The chest-found **equipment** is excluded so it stays randomizable — it is
-/// real gear, not a quest item. Buyable tools (priced > 0, e.g. the Silver
-/// Compass a shop sells) are likewise not protected: only genuinely unsellable
-/// quest items are. This is exactly the set
+/// real gear, not a quest item. Buyable items (priced > 0, e.g. the Silver
+/// Compass accessory a shop sells) are likewise not protected: only genuinely
+/// unsellable quest items are. This is exactly the set
 /// [`crate::items::default_static_chest_items`] uses by default.
 ///
 /// Errors only if `scus` isn't a PSX-EXE / the item table is out of range.

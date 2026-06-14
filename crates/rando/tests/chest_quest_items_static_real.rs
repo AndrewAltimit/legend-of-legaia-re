@@ -81,9 +81,9 @@ fn default_keep_static_covers_every_quest_item() {
             "chest-found equipment 0x{id:02x} must remain randomizable"
         );
     }
-    // Buyable tools are NOT protected: only genuinely unsellable quest items are.
-    // The Silver Compass (0xf3) is shop-tradeable (price > 0), so it must stay
-    // randomizable even though it's a "navigation" tool.
+    // Buyable items are NOT protected: only genuinely unsellable quest items are.
+    // The Silver Compass (0xf3) is a shop-tradeable accessory (lowers the
+    // battle-start ambush rate; price > 0), so it must stay randomizable.
     assert!(
         legaia_asset::item_names::item_price(&scus, 0xf3).is_some_and(|p| p > 0),
         "Silver Compass (0xf3) is expected to be a buyable item on this disc"
