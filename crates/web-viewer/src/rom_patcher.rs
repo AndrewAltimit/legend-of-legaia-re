@@ -79,7 +79,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// encounter roll draws from: `"scene"` (default — each scene's own monsters),
 /// `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
 /// `"world"` (any monster on the disc, so late-game monsters can appear at the
-/// start). Only matters when `encounters` is not `"none"`. `seed` is a number or
+/// start). Only matters when `encounters` is not `"none"`. `starting_level`
+/// begins the new game at that character level instead of 1 (`0` or `1` =
+/// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
+/// starting stats from the disc's growth curves. `seed` is a number or
 /// any string (hashed). Returns `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
@@ -113,6 +116,7 @@ pub fn patch_rom(
     spell_cost: &str,
     equip_bonus: &str,
     weapon_specialty: bool,
+    starting_level: u8,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -448,6 +452,17 @@ pub fn patch_rom(
         }
     } else {
         summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
+    }
+
+    if legaia_rando::starting_level::is_active(starting_level) {
+        let rep = apply::apply_starting_level(&mut patcher, starting_level)
+            .map_err(|e| err(format!("starting-level: {e}")))?;
+        summary.push_str(&format!(
+            "starting-level: new game begins at level {} (HP {}, MP {}, ATK {})\n",
+            rep.level, rep.stats[0], rep.stats[1], rep.stats[3]
+        ));
+    } else {
+        summary.push_str("starting-level: untouched (vanilla level 1)\n");
     }
 
     let patched = patcher.into_image();

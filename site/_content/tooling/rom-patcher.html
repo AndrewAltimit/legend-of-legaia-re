@@ -220,6 +220,20 @@
         </select>
       </div>
 
+      <div class="rom-opt">
+        <span class="rom-opt-label">Starting level</span>
+        <select id="rom-starting-level">
+          <option value="0" selected>Level 1 (vanilla)</option>
+          <option value="2">Level 2</option>
+          <option value="3">Level 3</option>
+          <option value="5">Level 5</option>
+          <option value="8">Level 8</option>
+          <option value="10">Level 10</option>
+          <option value="12">Level 12</option>
+          <option value="14">Level 14</option>
+        </select>
+      </div>
+
       <label class="rom-check-row">
         <input type="checkbox" id="rom-door-of-wind">
         <span>Seed Door of Wind (warp consumable) into the starting bag &mdash; count
@@ -294,6 +308,7 @@
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
     <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place. The random fill shares the seed's seven-slot capacity (five with all-warps) with the convenience toggles below and adds on top of them rather than crowding them out.</li>
+    <li><strong>Starting level</strong> &mdash; begins the new game with the lead character already at the chosen level (up to 14) instead of 1. The displayed level is XP-derived, so this rewrites the seed routine's cumulative-XP literal and recomputes the starting stats to the level from the disc's own growth curves &mdash; a level-10 start has level-10 HP/ATK, not level-1 stats with a full XP bar.</li>
     <li><strong>Unused enemies</strong> &mdash; brings back two fully-formed monsters the shipped game never places: <strong>&ldquo;Comm&rdquo;</strong> and the <strong>Evil Bat</strong>. Only takes effect with <em>Randomize</em> encounters (a Shuffle can't introduce a new monster).</li>
     <li><strong>Unused items</strong> &mdash; adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a sell item) and a no-name accessory the randomizer names <strong>&ldquo;Seru Bell&rdquo;</strong>. Only affects the <em>Randomize</em> drop / chest / steal fills.</li>
   </ul>

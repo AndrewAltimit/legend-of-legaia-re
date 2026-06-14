@@ -760,6 +760,45 @@ have their own disc round-trip oracles (`incense_round_trips_on_disc`,
 disc-round-trip level (`door_of_wind_and_all_warps_round_trip_on_disc`) and
 matches the user-verified GameShark write byte-for-byte.
 
+### Starting level
+
+**`--starting-level N`** (web: a dropdown) begins a New Game with the lead
+character (Vahn) already at level `N` instead of 1 (`0`/`1` = vanilla; range
+`2..=14`). Legaia has **no stored level field**: the per-character level byte at
+record `+0x100` is left zero by the New-Game memset and never written by retail
+(byte-checked against early save states, where `+0x100 = 0` even for clearly
+past-level-1 characters), so the displayed combat level is derived from the
+cumulative-XP cell at record `+0x4`. A coherent level-`N` start therefore takes
+two same-size in-place edits in `SCUS_942.54`, both applied by
+`apply::apply_starting_level`:
+
+1. **XP** — the seed routine `FUN_800560B4` writes Vahn's starting XP from a
+   single `addiu $v0, $zero, 0x79` literal (= 121) at
+   `STARTING_XP_SEED_VA` (`0x800560F0`). The randomizer rewrites that immediate
+   to the **midpoint of level `N`'s XP band** — between the disc's own thresholds
+   to reach `N` and `N+1` (`legaia_asset::level_up_tables::xp_thresholds_from_scus`)
+   — so the value sits unambiguously inside the band regardless of the exact
+   comparison the level display uses. Because it is a single 16-bit immediate, the
+   midpoint must fit a positive `imm16` (`<= 0x7FFF`), which caps the level at
+   **14**. The literal is shared with slot 3 (Terra), who re-scales when she
+   actually joins, so only the character present at a New Game is affected.
+2. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) still
+   feeds the live record, so the randomizer overwrites slot 0's eight `u16` stats
+   with the level-`N` values. These are computed by accumulating the deterministic
+   (jitter-free) per-level growth gains (`GrowthTables::level_gain_core`, the
+   `FUN_801E9504` curve arithmetic) on top of the level-1 template, so a level-10
+   Vahn gets level-10 HP/ATK/… (e.g. HP 584 vs the vanilla 180) rather than
+   level-1 stats behind a level-10 XP bar. The 10-byte name after the stats is
+   left untouched.
+
+Magic rank (a separate progression that ticks once per level-up event) is left at
+its seeded value of 1. The disc-gated `starting_level_real` test round-trips the
+edit off the patched image — the seeded XP decodes back to the requested level
+for every level in range, the stats are the growth-curve values and strictly above
+vanilla, and the surrounding seed-routine code stays byte-identical and
+EDC/ECC-valid. The randomizer is enabled at level 10 in the web "Balanced" and
+"Full Chaos" presets and off in "Vanilla" / "Item Shuffle".
+
 ### Unused content
 
 The game ships fully-formed content it never surfaces in normal play; two opt-in

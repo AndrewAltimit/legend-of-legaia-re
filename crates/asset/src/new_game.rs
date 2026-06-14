@@ -51,6 +51,17 @@
 /// RAM address of the starting-party template (Vahn's record base).
 pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 
+/// RAM address of the new-game seed routine's cumulative-XP literal for party
+/// slot 0 (Vahn): the `addiu $v0, $zero, 0x79` (= 121) in `FUN_800560B4` whose
+/// value the routine stores to the live record's cumulative-XP cell (`+0x4`).
+/// The displayed combat level is derived from this XP (the level byte `+0x100`
+/// is left zero by the new-game memset — verified against early save states), so
+/// editing this literal sets the starting character's level. The same `$v0` is
+/// reused for slot 3 (Terra), who re-scales when she actually joins, so the edit
+/// only affects the character who is in the party at a New Game. It is a single
+/// `addiu` with a 16-bit immediate, so a seeded XP must fit a positive `imm16`.
+pub const STARTING_XP_SEED_VA: u32 = 0x8005_60F0;
+
 /// Per-record stride: eight `u16` stats (16 bytes) + a 10-byte name.
 pub const RECORD_STRIDE: usize = 26;
 
@@ -190,6 +201,22 @@ pub fn starting_inv_seed_file_offset(scus: &[u8]) -> Option<usize> {
 /// inventory seed, so it never reduces the starting-item capacity).
 pub fn warp_seed_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(WARP_SEED_VA)
+}
+
+/// File offset of the starting-party stat template ([`PARTY_TEMPLATE_VA`])
+/// within a `SCUS_942.54` image, or `None` if the image isn't a PSX-EXE or the
+/// address is out of range. The starting-level randomizer overwrites slot 0's
+/// stats here.
+pub fn party_template_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(PARTY_TEMPLATE_VA)
+}
+
+/// File offset of the new-game cumulative-XP literal ([`STARTING_XP_SEED_VA`])
+/// within a `SCUS_942.54` image, or `None` if the image isn't a PSX-EXE or the
+/// address is out of range. The starting-level randomizer rewrites this `addiu`
+/// immediate to set the starting character's XP (and hence level).
+pub fn starting_xp_seed_file_offset(scus: &[u8]) -> Option<usize> {
+    ExeMap::parse(scus)?.off(STARTING_XP_SEED_VA)
 }
 
 /// One roster member's opening stats + name, decoded from the template.

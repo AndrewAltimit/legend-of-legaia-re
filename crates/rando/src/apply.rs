@@ -2217,6 +2217,89 @@ pub fn randomize_starting_items(
     })
 }
 
+/// Read the new game's current starting level for slot 0, derived from the
+/// cumulative-XP literal the seed routine writes (the level byte is XP-derived,
+/// not stored). Purely read-only; retail is level 1.
+pub fn current_starting_level(patcher: &DiscPatcher) -> Result<u8> {
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    let off = legaia_asset::new_game::starting_xp_seed_file_offset(&scus)
+        .context("locate XP seed literal in SCUS_942.54")?;
+    let word = u32::from_le_bytes(
+        scus.get(off..off + 4)
+            .context("XP seed literal out of range")?
+            .try_into()
+            .unwrap(),
+    );
+    let xp = (word & 0xFFFF) as u32;
+    let thresholds = legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)
+        .context("read XP thresholds from SCUS_942.54")?;
+    // Level N when reach(N) < xp <= reach(N+1); reach(m) = thresholds[m - 2].
+    let mut level = 1u8;
+    for (i, &reach) in thresholds.iter().enumerate() {
+        if xp > reach {
+            level = (i as u8 + 2).min(legaia_asset::level_up_tables::MAX_LEVEL as u8);
+        } else {
+            break;
+        }
+    }
+    Ok(level)
+}
+
+/// Outcome of seeding the new game's starting level.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct StartingLevelReport {
+    /// The starting level seeded.
+    pub level: u8,
+    /// The cumulative-XP value written into the seed literal.
+    pub xp_seed: u16,
+    /// The level-`N` stats written into slot 0's template, in template order
+    /// (`hp, mp, agl, atk, udf, ldf, spd, int`).
+    pub stats: [u16; 8],
+}
+
+/// Seed the new game so the lead character starts at `level` instead of level 1
+/// (see [`crate::starting_level`]).
+///
+/// Two same-size in-place edits in `SCUS_942.54`: the cumulative-XP literal in
+/// the seed routine, and slot 0's eight `u16` stats in the starting-party
+/// template (recomputed to the level via the disc's own growth curves). `level`
+/// must be in [`crate::starting_level::MIN_STARTING_LEVEL`]`..=`[`crate::starting_level::MAX_STARTING_LEVEL`];
+/// callers guard on [`crate::starting_level::is_active`]. Deterministic.
+pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<StartingLevelReport> {
+    let scus = patcher
+        .read_named_file(crate::steal::SCUS_NAME)
+        .context("read SCUS_942.54")?;
+    let plan = crate::starting_level::plan(&scus, level)?;
+
+    let xp_off = legaia_asset::new_game::starting_xp_seed_file_offset(&scus)
+        .context("locate XP seed literal in SCUS_942.54")? as u64;
+    patcher
+        .patch_named_file(
+            crate::steal::SCUS_NAME,
+            xp_off,
+            &crate::starting_level::xp_seed_instruction(plan.xp_seed),
+        )
+        .with_context(|| format!("write XP seed literal at SCUS offset {xp_off:#x}"))?;
+
+    let tmpl_off = legaia_asset::new_game::party_template_file_offset(&scus)
+        .context("locate starting-party template in SCUS_942.54")? as u64;
+    patcher
+        .patch_named_file(
+            crate::steal::SCUS_NAME,
+            tmpl_off,
+            &crate::starting_level::stat_block(&plan.stats),
+        )
+        .with_context(|| format!("write level-{level} stats at SCUS offset {tmpl_off:#x}"))?;
+
+    Ok(StartingLevelReport {
+        level: plan.level,
+        xp_seed: plan.xp_seed,
+        stats: plan.stats,
+    })
+}
+
 /// One character's weapon-specialty reassignment, for the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecialtyAssignment {

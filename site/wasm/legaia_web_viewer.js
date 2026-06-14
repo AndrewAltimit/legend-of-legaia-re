@@ -2257,8 +2257,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
  * `"shuffle"`. `starting_items` is the number of random starting consumables
- * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
- * 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+ * the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
+ * random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
+ * the convenience-item toggles below and takes whatever they leave, so it adds
+ * on top of them. `door_of_wind` is how many Door of Wind (the warp consumable) to seed
  * into the starting bag (`0` = none); `incense` is how many Incense (the
  * encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
  * `chicken_heart` / `good_luck_bell` seed those accessories the same way
@@ -2278,7 +2280,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * encounter roll draws from: `"scene"` (default — each scene's own monsters),
  * `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
  * `"world"` (any monster on the disc, so late-game monsters can appear at the
- * start). Only matters when `encounters` is not `"none"`. `seed` is a number or
+ * start). Only matters when `encounters` is not `"none"`. `starting_level`
+ * begins the new game at that character level instead of 1 (`0` or `1` =
+ * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
+ * starting stats from the disc's growth curves. `seed` is a number or
  * any string (hashed). Returns `{ data, summary, seed }`.
  * @param {Uint8Array} image
  * @param {string} seed
@@ -2309,9 +2314,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {string} spell_cost
  * @param {string} equip_bonus
  * @param {boolean} weapon_specialty
+ * @param {number} starting_level
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty) {
+export function patch_rom(image, seed, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2348,7 +2354,7 @@ export function patch_rom(image, seed, drops, encounters, encounter_scope, chest
     const len16 = WASM_VECTOR_LEN;
     const ptr17 = passStringToWasm0(equip_bonus, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len17 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr13, len13, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, weapon_specialty);
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr13, len13, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, weapon_specialty, starting_level);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
