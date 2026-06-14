@@ -149,25 +149,32 @@ one record stride; same offsets, same fields.
 
 Two prior interpretations had to be reconciled:
 
-### `+0x130` is *Magic Rank*, not character level.
+### `+0x130` is the displayed character level.
 
-The captured Noa + Gala 4-level jumps in
-`engine_core::levelup::observations::{noa,gala}_4_level_jump` show
-this byte ticking `+1` per level-up event regardless of the levels
-gained. The `Level 99` GameShark cheat sets the same byte to
-`0x63` (99), which would be a sensible level value in isolation.
+The status screen reads `+0x130` as "LV" and the `Level 99` GameShark cheat sets it
+to `0x63` (99). **Boot-confirmed via the starting-level randomizer**: a New Game
+record with level-10 cumulative experience (`+0x0`), level-10 stats, and the correct
+next-level threshold (`+0x4`) but `+0x130 == 1` still displays **LV 1**, and setting
+`+0x130 = 10` makes it display **LV 10** — so the shown level is read from `+0x130`
+directly, *not* re-derived from cumulative XP at a New Game.
 
-Both readings reconcile if `+0x130` is the **Magic Rank** (a
-separate Legaia stat that ranks up once per level-up event). Setting
-it to 99 unlocks every magic / summon at maximum power without
-changing the character's combat level (which is derived from
-cumulative XP via [`legaia_save::level_for_cumulative_xp`]).
+The retail level-up applier maintains `+0x130` by incrementing it `+1` per level-up
+event (the captured `engine_core::levelup::observations::{noa,gala}_4_level_jump`
+bumped it by one across a four-level grant, so it can momentarily lag the XP-derived
+level after a rare multi-level jump), but for single-level play and the new-game seed
+it equals the level. This supersedes the earlier "`+0x130` = Magic Rank" reading for
+the level question; whether a separate magic-rank byte lives at the adjacent `+0x131`
+(which the new-game seed also inits to 1) is unconfirmed. The runtime accessor
+`legaia_save::CharacterRecord::magic_rank()` reads this byte, so it is in fact the
+**level** byte under a legacy name; the crate's `level()` reads `+0x100`, which is
+always zero in retail (the engine port uses it as its own internal level cell).
 
 ### `+0x4` is the *next-level threshold*, not cumulative XP.
 
-`+0x0` is the cumulative experience the displayed level derives from (the "Max
-Exp" cheat target); `+0x4` is the **next-level XP threshold** — the "next" readout
-on the status screen, and the value the level-up applier compares `+0x0` against.
+`+0x0` is the cumulative experience (the "Max Exp" cheat target and the "Experience"
+readout, and the value the level-up applier compares against the threshold); `+0x4`
+is the **next-level XP threshold** — the "next" readout on the status screen. (The
+displayed level itself is read from `+0x130`, above, not derived from `+0x0`.)
 Confirmed live: a randomized ROM that wrote a level-10 XP value into `+0x4` showed
 it as "next level: 11195" while *experience* stayed `0`, leaving the derived level
 at 1 (the earlier note that "the level-up logic reads +0x4 as XP" conflated the

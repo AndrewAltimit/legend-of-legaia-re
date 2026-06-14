@@ -99,30 +99,39 @@ instruction). The relevant LE-instruction-word top-16 signatures are:
 ## Starting level / XP seed
 
 The same routine (`FUN_800560B4`) also seeds each live record's progression
-fields. The displayed combat **level is derived from cumulative experience**, not
-stored as a level byte, so the relevant live-record cells are:
+fields. The relevant live-record cells (boot-confirmed via the starting-level
+randomizer):
 
 | Record offset | Field | Vanilla seed |
 |---|---|---|
-| `+0x0` (u32) | cumulative experience (the "Max Exp" cheat target); the displayed level derives from this | `0` |
-| `+0x4` (u32) | next-level XP threshold (the status screen's "next" readout; the level-up applier compares experience against it) | `reach(L2)`: Vahn/Terra `121`, Noa `102`, Gala `140` |
-| `+0x130` (u8) | magic-rank counter — `+1` per level-up *event*, **not** the character level (a captured 4-level jump raised it by only `+1`) | `1` |
+| `+0x0` (u32) | cumulative experience (the "Max Exp" cheat target / "Experience" readout; the level-up applier compares it against the threshold) | `0` |
+| `+0x4` (u32) | next-level XP threshold (the status screen's "next" readout) | `reach(L2)`: Vahn/Terra `121`, Noa `102`, Gala `140` |
+| `+0x130` (u8) | **displayed character level** — what "LV" shows and the `Level 99` cheat targets; the applier maintains it `+1` per level-up event | `1` |
+| `+0x131` (u8) | a second per-character byte the seed also inits to `1` (magic-rank candidate, unconfirmed) | `1` |
 
-`+0x100` stays zero and is unrelated to the level. The seed writes `+0x4` per
-character (`0x800560F0` Vahn+Terra / `0x80056100` Noa / `0x80056108` Gala) and
-leaves `+0x0 = 0`, so a vanilla New Game derives level 1.
+`+0x100` stays zero and is unrelated to the level (the engine port uses it as its
+own internal level cell). The shown level is read from `+0x130` directly, **not**
+re-derived from experience at a New Game — confirmed live: a record with level-10
+experience + stats but `+0x130 == 1` still shows LV 1.
 
-The starting-level randomizer seeds the lead character at level `N` by writing an
-in-band experience value (the midpoint of `reach(N)..reach(N+1)`) into `+0x0` and
-`reach(N+1)` into `+0x4`, recomputing the template stats to the level, and leaving
-the magic-rank byte alone. It does this with same-size in-place edits to three
-seed instructions: the Vahn `+0x4` literal at `0x800560F0`, and the slot-3 (Terra)
-+ slot-1 (Noa) threshold seeds at `0x800560FC` / `0x80056100`, repurposed to an
-`addiu $t0` preload + `sw $t0, 0x5c8($s0)` store of the experience value into slot
-0's `+0x0`. Noa/Terra re-scale when they join, so their dropped seeds are never
-observed. See [`subsystems/level-up.md`](../subsystems/level-up.md) for the XP
-thresholds + growth curves and [`tooling/randomizer.md`](../tooling/randomizer.md)
-for the feature.
+The starting-level randomizer seeds the lead character at level `N` with same-size
+in-place edits to the seed routine:
+
+1. **Level** — the loop's level literal + stores set `+0x130 = N` (packed
+   `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop` at `0x800561C4`/`C8`/`CC`, keeping
+   `+0x131` at 1).
+2. **Experience** — slot 0's `+0x0` gets an in-band level-`N` value (the midpoint of
+   `reach(N)..reach(N+1)`) via an `addiu $t0` preload + `sw $t0, 0x5c8($s0)` store
+   that repurpose the slot-3 (Terra) / slot-1 (Noa) threshold seeds at
+   `0x800560FC` / `0x80056100` (those characters re-scale on join, so the dropped
+   seeds are never observed).
+3. **Next threshold** — slot 0's `+0x4` gets `reach(N+1)` via the literal at
+   `0x800560F0`.
+4. **Stats** — slot 0's template stats are recomputed to level `N`.
+
+See [`subsystems/level-up.md`](../subsystems/level-up.md) for the XP thresholds +
+growth curves and [`tooling/randomizer.md`](../tooling/randomizer.md) for the
+feature.
 
 ## Provenance + parser
 

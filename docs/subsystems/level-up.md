@@ -260,9 +260,23 @@ with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
   earlier `legaia_save::character::CharacterRecord::stat_cap` accessor
   reading `+0x11A` is misnamed — `+0x11A` is one of the live stat slots and
   is mutated on level-up. Engines should read the cap from `+0x120` instead.
-- **Rank counter at `+0x130`** increments by `+1` per level-up event,
-  independent of `levels_gained` (Noa and Gala both jumped four levels but
-  bumped this byte by one).
+- **Displayed character level at `+0x130`.** This is the byte the status
+  screen reads as "LV" and the `Level 99` GameShark code targets — **boot-confirmed
+  via the starting-level randomizer**: a New Game record with level-10 cumulative
+  experience (`+0x0`), level-10 stats, and the correct next-level threshold (`+0x4`)
+  but `+0x130 == 1` still displays **LV 1**, and setting `+0x130 = 10` makes it
+  display **LV 10**. So the shown level is *not* re-derived from experience at a New
+  Game — it is read from `+0x130` directly (the new-game seed writes it; see
+  [`new-game-table.md`](../formats/new-game-table.md)). The retail level-up applier
+  maintains it by **incrementing it `+1` per level-up event** (the captured 4-level
+  jumps bumped it by one, so it can momentarily lag the XP-derived level after a rare
+  multi-level grant), but for single-level play and the new-game seed it equals the
+  level. This supersedes the earlier "`+0x130` = magic rank, level derived from
+  cumulative XP" reading for the *level* question; whether a separate magic-rank byte
+  lives at the adjacent `+0x131` (which the seed also inits to 1) is unconfirmed.
+  NB the engine port tracks its own level at `+0x100` (always zero in retail, where
+  the live byte is `+0x130`) — self-consistent for the port's own LGSF saves, a
+  deliberate divergence from the retail byte, not a mirror of it.
 
 ### Cross-character delta search (negative finding)
 
