@@ -335,8 +335,9 @@ struct RandomizeArgs {
         value_name = "COUNT"
     )]
     speed_chain: Option<u8>,
-    /// Seed the Chicken Heart accessory (always flee from battle) into the
-    /// starting bag. `--chicken-heart` for the default (1) or `--chicken-heart N`.
+    /// Seed the Chicken Heart accessory (increases the successful-escape rate)
+    /// into the starting bag. `--chicken-heart` for the default (1) or
+    /// `--chicken-heart N`.
     #[arg(
         long,
         num_args = 0..=1,
