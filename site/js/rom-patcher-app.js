@@ -93,18 +93,21 @@ const STARTING_BUNDLE = {
   speedChain: true, chickenHeart: true, goodLuckBell: true,
 };
 
+// Equipment drops are additive — a code hook grants one extra random gear piece
+// on a low per-battle chance, on top of the normal drop — so every gameplay
+// preset turns them on; only vanilla leaves them off.
 const PRESETS = {
   vanilla: { ...PRESET_BASE },
   items: {
     ...PRESET_BASE,
     drops: 'shuffle', chests: 'shuffle', shops: 'shuffle',
-    casino: 'shuffle', steals: 'shuffle',
+    casino: 'shuffle', steals: 'shuffle', equipmentDrops: true,
   },
   balanced: {
     ...PRESET_BASE,
     drops: 'shuffle', encounters: 'shuffle', encounter_scope: 'kingdom',
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
-    monster_stats: 'shuffle', equip_bonus: 'shuffle',
+    monster_stats: 'shuffle', equip_bonus: 'shuffle', equipmentDrops: true,
     ...STARTING_BUNDLE,
   },
   chaos: {
@@ -115,6 +118,7 @@ const PRESETS = {
     houseDoors: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
+    equipmentDrops: true,
     ...STARTING_BUNDLE,
   },
 };
@@ -191,16 +195,12 @@ function init() {
   function syncDependents() {
     const encOn = segVal('encounters', 'none') !== 'none';
     const doorsOn = segVal('doors', 'none') !== 'none';
-    const equip = equipmentDropsChk.checked;
     const scopeRow = $('rom-scope-row');
     const couplingRow = $('rom-coupling-row');
     if (scopeRow) scopeRow.classList.toggle('is-disabled', !encOn);
     if (couplingRow) couplingRow.classList.toggle('is-disabled', !doorsOn);
-    // Equipment drops owns the drop slot, so Monster drops is moot when it's on.
-    const dropsRow = document.querySelector('input[name="drops"]').closest('.rom-opt');
-    if (dropsRow) dropsRow.classList.toggle('is-disabled', equip);
-    const dropsNote = $('rom-drops-note');
-    if (dropsNote) dropsNote.hidden = !equip;
+    // Equipment drops are additive (an extra reward-routine grant), so the
+    // Monster drops control stays fully live alongside them — nothing to grey.
   }
 
   // Preset chip clicks.

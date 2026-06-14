@@ -14,7 +14,6 @@ use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use crate::door::SceneDoors;
 use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 use crate::encounter::SceneEncounters;
-use crate::equipment::{EquipmentItem, MonsterExp, plan_equipment_drops};
 use crate::house_door::SceneHouseDoors;
 use crate::monster_stats;
 use crate::rng::SplitMix64;
@@ -139,39 +138,50 @@ pub fn randomize_drops(
     Ok((plan, report))
 }
 
-/// Read every populated monster's id + base EXP reward out of the `battle_data`
-/// archive — the per-enemy input the equipment-drop planner tiers on. Mirrors
-/// [`current_drops`] but exposes EXP (`+0x46`) instead of the drop fields.
-pub fn current_monster_exp(patcher: &DiscPatcher) -> Result<Vec<MonsterExp>> {
-    let entry = patcher
-        .read_entry(MONSTER_ARCHIVE_ENTRY)
-        .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
-    Ok(records
-        .iter()
-        .map(|r| MonsterExp {
-            monster_id: r.id,
-            exp: r.exp,
-        })
-        .collect())
+/// Outcome of injecting the bonus equipment drop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EquipmentDropReport {
+    /// Number of equipment ids embedded in the injected table (the gear the
+    /// extra drop can roll).
+    pub table_len: usize,
+    /// The low-chance gate the routine rolls (percent, once per battle).
+    pub chance_pct: u8,
 }
 
-/// Plan and apply the equipment-drop randomization: turn **every** monster's
-/// drop slot into a rare random weapon / armor / accessory, with a chance tiered
-/// by the gear's price and the enemy's EXP (see [`crate::equipment`]). `pool` is
-/// the equipment pool from [`crate::equipment::equipment_pool`]. Reuses
-/// [`apply_drop_plan`], so a slot too tight to re-pack is skipped (recorded in
-/// the report) rather than aborting the run.
-pub fn randomize_equipment_drops(
+/// Inject the **additive** bonus equipment drop (see [`crate::bonus_drop`]): a
+/// code hook into the battle-end reward routine that, on a `chance_pct` roll
+/// once per battle, grants one extra random equipment id picked from the disc's
+/// own equipment pool — *on top of* the normal drop, which is left untouched.
+///
+/// Two same-size `SCUS_942.54` edits: the detour at the reward-routine hook and
+/// the routine + id-table blob in preserved rodata padding. Fails (without
+/// touching the disc) if the build isn't the recognized US layout.
+pub fn inject_equipment_bonus_drop(
     patcher: &mut DiscPatcher,
-    pool: &[EquipmentItem],
-    seed: u64,
-) -> Result<(Vec<DropAssignment>, DropApplyReport)> {
-    let monsters = current_monster_exp(patcher)?;
-    let plan = plan_equipment_drops(&monsters, pool, seed);
-    let report = apply_drop_plan(patcher, &plan)?;
-    Ok((plan, report))
+    chance_pct: u8,
+) -> Result<EquipmentDropReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for equipment-drop injection")?;
+    let ids = crate::equipment::equipment_ids(&scus).context("build equipment id pool")?;
+    let plan = crate::bonus_drop::BonusDropInjection::plan(&scus, &ids, chance_pct)?;
+
+    // Detour at the hook site, then the routine + table blob.
+    let detour: Vec<u8> = crate::bonus_drop::detour_words()
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    patcher
+        .patch_named_file(SCUS_NAME, plan.hook_off as u64, &detour)
+        .context("write reward-routine detour")?;
+    patcher
+        .patch_named_file(SCUS_NAME, plan.blob_off as u64, &plan.blob)
+        .context("write injected routine + equipment table")?;
+
+    Ok(EquipmentDropReport {
+        table_len: plan.table_len,
+        chance_pct: plan.chance_pct,
+    })
 }
 
 /// Outcome of randomizing monster combat stats.

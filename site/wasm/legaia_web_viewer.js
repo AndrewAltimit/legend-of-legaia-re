@@ -2269,9 +2269,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
  * "Something Good" / unnamed-accessory items to the random-fill pool (only the
- * `random` drop / chest / steal modes use it). `equipment_drops` turns every
- * monster's drop into a rare random weapon / armor / accessory at a tiered
- * chance (overrides `drops`). `monster_stats` / `move_power` /
+ * `random` drop / chest / steal modes use it). `equipment_drops` injects a code
+ * hook into the battle-end reward routine that, on a low per-battle chance,
+ * grants one *extra* random weapon / armor / accessory on top of the normal
+ * drop — additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
  * `element_affinity` / `spell_cost` / `equip_bonus` are the battle-tuning +
  * equipment-bonus passes, each `"shuffle"` / `"random"` / `"none"`: monster
  * combat stats, special-attack power, the element-affinity matrix, spell MP

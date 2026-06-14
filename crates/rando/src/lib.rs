@@ -50,6 +50,7 @@
 
 pub mod apply;
 pub mod arts;
+pub mod bonus_drop;
 pub mod casino;
 pub mod chest;
 pub mod disc;

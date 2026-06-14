@@ -119,7 +119,7 @@ legaia-rando equip-bonuses --input DISC.bin                   # read-only: equip
 legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
-legaia-rando randomize --input DISC.bin --seed gear --equipment-drops      # monsters drop rare equipment
+legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
 legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -142,8 +142,10 @@ and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 (`--arts` reassigns Tactical-Arts button combos — see [Arts button combos](#arts-button-combos);
 the four battle-tuning passes are described under
 [Monster combat stats](#monster-combat-stats) and the three sections after it);
-`--equipment-drops` instead turns every monster's drop into rare tiered
-equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
+`--equipment-drops` injects a code hook into the battle-end reward routine that
+grants one extra random equipment piece on a low per-battle chance
+(`--equipment-drop-chance N`, default 5) on top of `--drops`, never disturbing it
+(see [Equipment drops](#equipment-drops));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--encounter-scope` widens the monster pool an encounter roll draws
 from to `scene` (default), `kingdom`, or `world` (see
@@ -214,33 +216,64 @@ external table.
 
 ### Equipment drops
 
-`--equipment-drops` is an alternative drop mode: instead of a consumable, it
-turns **every** monster's single drop slot into a *rare* random piece of
-equipment — a weapon, armor, or accessory. It takes precedence over `--drops`
-(both write the same `+0x48`/`+0x49` slot).
+`--equipment-drops` is genuinely **additive**: it grants one *extra* piece of
+equipment on a low per-battle chance, **on top of** the normal drop, which it
+never touches. A monster record has a single drop slot (`+0x48` item id /
+`+0x49` chance), so no data edit can make a monster drop two things — turning the
+slot into equipment would destroy the normal drop. So instead of editing data,
+this feature **patches the executable's reward routine** the same way the
+starting-bag feature splices a grant into the opening scene: a small routine is
+injected that rolls the game's own RNG and, on success, calls the inventory-add
+helper for a random equipment id. This is why every gameplay preset of the
+in-browser patcher enables it; only "Vanilla" leaves it off.
 
-The retail item id space is one flat table shared by consumables, key items, and
-equipment, with nothing that flags "this id is a weapon" in a single byte, so
-the equipment ids are recovered by **name**: every weapon / armor / accessory in
-the curated public [gamedata tables](../reference/gamedata.md) is matched
-case-insensitively against the disc's own item-name table to find its id
-(`legaia_rando::equipment::equipment_pool`). The names ship in the repo; the ids
-come from the user's disc — no Sony bytes are embedded, and the join doubles as a
-cross-check of the curated tables against the real executable. About 150 of the
-~155 curated equipment names resolve (a few character-default weapons and quest
-items don't match by name, which is harmless for a drop pool); the stray
-in-range consumable *Honey* is correctly excluded.
+**The hook (`bonus_drop` module).** The battle-end reward routine `FUN_8004E568`
+tallies a battle's spoils exactly once (gated on the per-battle state byte
+`actor+0x6ce == 0`, which it then sets to `1`). Right after it grants the
+formation's normal drop via `FUN_800421d4(item, 1)` at `0x8004f608`, control
+joins at `0x8004f610` (`lui v0,0x8008` / `lw v0,-0x4540(v0)`). The randomizer
+overwrites those two instructions with `j <routine>` + `nop` (a detour), and the
+injected routine:
 
-The drop **rate** is tiered, "both combined": each equipment piece is bucketed
-by its gamedata gold price (early ≤ 3 700 G, mid ≤ 17 000 G, late above — or
-unpriced quest gear) and each monster by its base EXP reward (early ≤ 600, mid ≤
-3 000, late above), and the rate is the *lower* of the two tiers' rates — a
-powerful weapon is rare even on a weak early enemy, and an early trinket is rare
-on a late boss. Tier rates are early 3 %, mid 2 %, late 1 %.
+1. rolls `rand() % 100 < chance` (the low-chance gate, default 5 %, reusing the
+   battle RNG `FUN_80056798`);
+2. rolls `rand() % table_len` to index an embedded equipment-id table;
+3. calls `FUN_800421d4(id, 1)` to add the gear — the same helper the normal
+   drop, shops, and minigame rewards use (an unguarded add, like the minigame
+   completion reward `FUN_801C2748`);
+4. replays the two displaced instructions and `j`s back to `0x8004f618`.
 
-> The requested late-game 0.5 % is **floored to 1 %**: the retail drop roll is
-> integer `rand() % 100 < chance` (pinned in `FUN_8004E568`), so a sub-percent
-> chance is unrepresentable. 1 % is the rarest the engine can express.
+The join is reached once per battle, so the roll fires once per battle. The
+routine + id table are written into the 1028-byte preserved rodata gap at
+`0x8007AB38` (the same loaded-and-preserved padding the [name injection](#name-injection)
+uses, at a non-overlapping offset clear of the Seru-Bell string) — on PSX all
+resident RAM is executable, so a routine placed there runs when jumped to.
+Everything is a same-size, in-place `SCUS_942.54` edit; the planner guards on the
+two detour-site words matching the known US build and on the routine region being
+all-zero dead space, refusing a differently-laid-out image rather than corrupting
+it.
+
+The grant is silent (no victory-screen "received" line); the gear simply appears
+in the bag after the battle. The chance is `--equipment-drop-chance N` (percent,
+default 5).
+
+**The id table** is the equipment pool: the retail item id space is one flat
+table shared by consumables, key items, and equipment, with nothing that flags
+"this id is a weapon" in a single byte, so the equipment ids are recovered by
+**name** — every weapon / armor / accessory in the curated public
+[gamedata tables](../reference/gamedata.md) is matched case-insensitively against
+the disc's own item-name table to find its id (`legaia_rando::equipment::equipment_pool`).
+The names ship in the repo; the ids come from the user's disc — no Sony bytes are
+embedded (the injected routine is the randomizer's own code), and the join
+doubles as a cross-check of the curated tables against the real executable. About
+150 of the ~155 curated equipment names resolve; the stray in-range consumable
+*Honey* is correctly excluded.
+
+> The clean-room engine can't execute injected MIPS, so — unlike the data-edit
+> randomizers — this feature has no engine runtime oracle. It is verified by the
+> byte/disassembly checks in `equipment_drops_real` (the detour + routine + table
+> decode as the hand-assembled code, the edit is surgical, the build guard
+> refuses an unknown layout) plus an emulator playtest.
 
 ### Random encounters
 
@@ -989,7 +1022,7 @@ bit-for-bit.
 | `crates/rando` `house_door_classifier_real` | disc-gated | house-door warp census: every classified site carries the `0xA3 0xF8` cross-context player-MOVE_TO signature, the per-scene ＩＮ/ＯＵＴ class counts match the audited population (12 scenes, 27 + 29 sites), targets non-sentinel, and the runtime-captured Mei's-house interior `(97, 54)` is among town01's ＩＮ targets |
 | `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene ＩＮ-class and ＯＵＴ-class door-warp target multisets each preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
-| `crates/rando` `equipment_drops_real` | disc-gated | build the equipment pool from `SCUS_942.54`, plan an every-monster equipment drop, re-decode every monster's drop off the patched `battle_data`, assert each is a pool equipment id at a tiered 1..=3% chance; deterministic |
+| `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
@@ -1009,7 +1042,6 @@ bit-for-bit.
 | `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
 | `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
 | `crates/engine-core` `shop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch a town-shop slot (scene MAN op `0x49`) and a casino prize (PROT 899 table), re-decode the patched stock, drive `World::buy_from_shop` (shared with the menu `ShopConfirm` commit), assert the runtime sells/grants the patched id (not the original) |
-| `crates/engine-core` `equipment_drops_runtime_e2e` | disc-gated | runtime oracle: run `randomize_equipment_drops`, re-decode a planned monster's record off the patched archive, drive `apply_battle_loot` (roll seeded to land the tiered 1..=3% chance), assert the runtime grants the planned equipment id from the pool (baseline grants the original consumable) |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
