@@ -17,7 +17,8 @@
 //!   token list under the per-character mapping,
 //! - every shop inventory `item` key resolves through one of `items`,
 //!   `weapons`, `armor`, `accessories`,
-//! - the magic table contains exactly 21 Seru + 8 Ra-Seru entries.
+//! - the magic table contains exactly 21 Seru + 8 Ra-Seru entries,
+//! - the music table covers debug sound-test indices `0..=80` exactly once.
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
@@ -37,6 +38,7 @@ const SHOPS_TOML: &str = include_str!("../../../data/gamedata/shops.toml");
 const CASINO_TOML: &str = include_str!("../../../data/gamedata/casino.toml");
 const FISHING_TOML: &str = include_str!("../../../data/gamedata/fishing.toml");
 const CHARACTERS_TOML: &str = include_str!("../../../data/gamedata/characters.toml");
+const MUSIC_TOML: &str = include_str!("../../../data/gamedata/music.toml");
 
 // ---------------------------------------------------------------------------
 // Arts
@@ -642,6 +644,63 @@ struct CharactersFile {
 }
 
 // ---------------------------------------------------------------------------
+// Music tracks
+// ---------------------------------------------------------------------------
+
+/// One in-game music track, cross-referenced across its four naming spaces.
+///
+/// A single Legaia BGM cue has, in practice, several names: the internal
+/// debug sound-test [`id`](Self::id) + working title, the in-game
+/// [`context`](Self::context) it actually plays in, and the official OST
+/// album title. They do not line up one-to-one (a track written for one
+/// scene gets reused elsewhere), which is why this disambiguation exists.
+/// Curated reference; the human-readable label layer for the extracted
+/// SEQ/BGM tracks. See `docs/reference/music-tracks.md` for full provenance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MusicTrack {
+    /// Debug sound-test order (0..=80).
+    pub index: u32,
+    /// Internal debug sound-test identifier (`M01`, `M14A`, `ALNDRA`, ...).
+    /// Absent for the one unnamed dev entry.
+    #[serde(default)]
+    pub id: Option<String>,
+    /// Debug-menu working title (Japanese).
+    #[serde(default)]
+    pub debug_title_jp: Option<String>,
+    /// Romaji reading of the debug title.
+    #[serde(default)]
+    pub debug_romaji: Option<String>,
+    /// English gloss of the debug title.
+    #[serde(default)]
+    pub debug_gloss: Option<String>,
+    /// Where the cue is actually heard in-game.
+    #[serde(default)]
+    pub context: Option<String>,
+    /// Official OST album title (Japanese), where one exists.
+    #[serde(default)]
+    pub ost_title_jp: Option<String>,
+    /// Romaji reading of the OST title.
+    #[serde(default)]
+    pub ost_romaji: Option<String>,
+    /// English gloss of the OST title.
+    #[serde(default)]
+    pub ost_gloss: Option<String>,
+    /// Proposed English relocalization title.
+    #[serde(default)]
+    pub relocalization: Option<String>,
+    /// True for the entries the source flags as guesses (trailing
+    /// test/placeholder files).
+    #[serde(default)]
+    pub uncertain: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct MusicFile {
+    #[serde(rename = "track")]
+    tracks: Vec<MusicTrack>,
+}
+
+// ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
 
@@ -665,6 +724,7 @@ pub struct Database {
     baka_fighter: Vec<BakaFighterRound>,
     fishing: Vec<FishingPrize>,
     characters: Vec<CharacterProfile>,
+    music: Vec<MusicTrack>,
     item_index: BTreeMap<String, usize>,
     weapon_index: BTreeMap<String, usize>,
     armor_index: BTreeMap<String, usize>,
@@ -693,6 +753,7 @@ impl Database {
         let casino: CasinoFile = toml::from_str(CASINO_TOML).expect("casino.toml");
         let fishing: FishingFile = toml::from_str(FISHING_TOML).expect("fishing.toml");
         let characters: CharactersFile = toml::from_str(CHARACTERS_TOML).expect("characters.toml");
+        let music: MusicFile = toml::from_str(MUSIC_TOML).expect("music.toml");
 
         let mut db = Self {
             arts: arts.arts,
@@ -709,6 +770,7 @@ impl Database {
             baka_fighter: casino.baka_fighter,
             fishing: fishing.prizes,
             characters: characters.characters,
+            music: music.tracks,
             item_index: BTreeMap::new(),
             weapon_index: BTreeMap::new(),
             armor_index: BTreeMap::new(),
@@ -942,6 +1004,27 @@ impl Database {
     /// All character profiles.
     pub fn characters(&self) -> &[CharacterProfile] {
         &self.characters
+    }
+
+    /// All music tracks, in debug sound-test order.
+    pub fn music_tracks(&self) -> &[MusicTrack] {
+        &self.music
+    }
+
+    /// Look up a music track by its debug sound-test ID (case-insensitive,
+    /// e.g. `"M14A"`). Returns the first match; a few IDs are reused across
+    /// entries.
+    pub fn music_by_id(&self, id: &str) -> Option<&MusicTrack> {
+        let id = id.trim().to_ascii_lowercase();
+        self.music.iter().find(|t| {
+            t.id.as_deref()
+                .is_some_and(|i| i.to_ascii_lowercase() == id)
+        })
+    }
+
+    /// Look up a music track by its debug sound-test index (0..=80).
+    pub fn music_by_index(&self, index: u32) -> Option<&MusicTrack> {
+        self.music.iter().find(|t| t.index == index)
     }
 }
 

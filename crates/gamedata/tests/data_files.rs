@@ -428,3 +428,39 @@ fn known_lookups_smoke() {
     assert_eq!(life_ring.category, ShopEntryCategory::Accessory);
     assert_eq!(life_ring.price, Some(9500));
 }
+
+#[test]
+fn music_tracks_cover_debug_indices_contiguously() {
+    let db = Database::load();
+    let tracks = db.music_tracks();
+    assert_eq!(tracks.len(), 81, "expected 81 debug sound-test tracks");
+
+    // Indices 0..=80, each present exactly once.
+    let mut indices: Vec<u32> = tracks.iter().map(|t| t.index).collect();
+    indices.sort_unstable();
+    let expected: Vec<u32> = (0..=80).collect();
+    assert_eq!(
+        indices, expected,
+        "music indices must cover 0..=80 exactly once"
+    );
+
+    // Every track carries at least an id or a context (no fully-blank rows).
+    for t in tracks {
+        assert!(
+            t.id.is_some() || t.context.is_some(),
+            "music track {} has neither id nor context",
+            t.index
+        );
+    }
+
+    // Lookups resolve. M14A = the Rim Elm evening theme; reused IDs return
+    // the first entry.
+    assert_eq!(db.music_by_index(15).unwrap().id.as_deref(), Some("M14A"));
+    assert_eq!(
+        db.music_by_id("M65").unwrap().relocalization.as_deref(),
+        Some("Legend of Legaia")
+    );
+
+    // The trailing placeholder/test entries are flagged uncertain.
+    assert!(db.music_by_index(80).unwrap().uncertain);
+}

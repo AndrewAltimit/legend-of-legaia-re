@@ -50,6 +50,7 @@ exposes typed accessors.
 | `shops.toml` | Per-town shop inventories (Rim Elm through Conkram); each entry references an item key |
 | `casino.toml` | Sol/Vidna slot prizes + Muscle Dome courses |
 | `fishing.toml` | Vidna/Buma fishing pond prizes |
+| `music.toml` | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test id + title / in-game context / official OST title / proposed relocalization). Contributed by Stann0x; see [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md) |
 
 ## Cross-validation invariants
 

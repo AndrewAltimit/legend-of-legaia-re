@@ -1,0 +1,843 @@
+# Music-track disambiguation: every in-game BGM cue across its four naming
+# spaces. A single track has up to four names depending on where you read it:
+#
+#   - `id`              internal debug sound-test identifier (M01, M14A, ...)
+#   - `debug_title_*`   the short Japanese working title in the debug menu,
+#                       describing the scene the track was WRITTEN for
+#   - `context`         where the cue is actually HEARD in-game
+#   - `ost_title_*`     the published soundtrack album title, where one exists
+#   - `relocalization`  proposed English title
+#
+# `index` is the debug sound-test order (0..80). Missing columns are omitted
+# (the source leaves them blank). `uncertain = true` marks the entries the
+# source flags as guesses (the trailing test/placeholder files).
+#
+# Source: Henrique Stanke Scandelari (Stann0x, github.com/Stann0xus). Factual
+# short labels only - transcribed from the game's own debug sound test and the
+# published OST listing - in the same curated-reference spirit as the other
+# tables here. No Sony-owned bytes (sequence/sample data) are reproduced.
+# Companion prose + provenance: docs/reference/music-tracks.md.
+
+[[track]]
+index = 0
+id = "M01"
+debug_title_jp = "霧のあるフィールド"
+debug_romaji = "KIRI NO ARU FĪRUDO"
+debug_gloss = "Field with mist"
+context = "Overworld with mist"
+ost_title_jp = "霧の荒野"
+ost_romaji = "KIRI NO KŌYA"
+ost_gloss = "The misty wasteland"
+relocalization = "The Misty Barren Fields"
+
+[[track]]
+index = 1
+id = "M02"
+debug_title_jp = "霧の消えたフィールド"
+debug_romaji = "KIRI NO KIETA FĪRUDO"
+debug_gloss = "Field where the mist disappeared"
+context = "Overworld with no mist"
+ost_title_jp = "よろこびの大地"
+ost_romaji = "YOROKOBI NO DAICHI"
+ost_gloss = "The land of joy"
+relocalization = "The Land of Joy"
+
+[[track]]
+index = 2
+id = "M03"
+debug_title_jp = "創世樹復活後のダンジョン"
+debug_romaji = "SŌSEIJU FUKKATSU-GO NO DANJON"
+debug_gloss = "Dungeon after Genesis Tree revival"
+context = "Mt. Rikuroa after tree is revived"
+ost_title_jp = "風, 樹, 水"
+ost_romaji = "KAZE, KI, SUI"
+ost_gloss = "Wind, tree, water"
+relocalization = "Winds, Trees and Water"
+
+[[track]]
+index = 3
+id = "M04"
+debug_title_jp = "森のダンジョンA"
+debug_romaji = "MORI NO DANJON A"
+debug_gloss = "Forest dungeon A/B"
+context = "Underground path to Octam"
+relocalization = "Path of Secrets"
+
+[[track]]
+index = 4
+id = "M04B"
+debug_title_jp = "森のダンジョンB"
+debug_romaji = "MORI NO DANJON B"
+debug_gloss = "Forest of mystery"
+context = "East Voz Forest"
+ost_title_jp = "神秘の森"
+ost_romaji = "SHINPI NO MORI"
+ost_gloss = "The mysterious forest"
+relocalization = "Forest of Mystery"
+
+[[track]]
+index = 5
+id = "M05"
+debug_title_jp = "霧のダンジョン"
+debug_romaji = "KIRI NO DANJON"
+debug_gloss = "Misty dungeon"
+context = "Town/dungeon in mist"
+relocalization = "The Misty Town"
+
+[[track]]
+index = 6
+id = "M06"
+debug_title_jp = "リクロア山霧"
+debug_romaji = "RIKUROA YAMA KIRI"
+debug_gloss = "Rikuroa mountain fog"
+context = "Mt. Rikuroa/Mt. Dhini in the mist"
+relocalization = "The Misty Mountains"
+
+[[track]]
+index = 7
+id = "M07"
+debug_title_jp = "ガーメル城"
+debug_romaji = "GĀMERU-JŌ"
+debug_gloss = "Garmel Castle"
+context = "Fire path/Xain's nest"
+ost_title_jp = "王国騎士団"
+ost_romaji = "ŌKOKUKISHI-DAN"
+ost_gloss = "The royal knights"
+relocalization = "The Fire Fortress"
+
+[[track]]
+index = 8
+id = "M08"
+debug_title_jp = "遺跡ダンジョン"
+debug_romaji = "ISEKI DANJON"
+debug_gloss = "Ruin dungeon"
+context = "Uru Mais"
+ost_title_jp = "遺跡の呼び声"
+ost_romaji = "ISEKI NO YOBIGOE"
+ost_gloss = "The call of the ruins"
+relocalization = "Call of the Ruins"
+
+[[track]]
+index = 9
+id = "M09"
+debug_title_jp = "獣衣界への道"
+debug_romaji = "JŪI-KAI E NO MICHI"
+debug_gloss = "The path to the beast-garment world"
+context = "Field with Juggernaut"
+ost_title_jp = "闇の鼓動"
+ost_romaji = "YAMI NO KODŌ"
+ost_gloss = "The pulse of darkness"
+relocalization = "Heartbeat of Darkness"
+
+[[track]]
+index = 10
+id = "M10"
+debug_title_jp = "霧の発生"
+debug_romaji = "KIRI NO HASSEI"
+debug_gloss = "Mist outbreak"
+context = "Drake/Vidna in mist"
+ost_title_jp = "霧"
+ost_romaji = "KIRI"
+ost_gloss = "Mist"
+relocalization = "The Mist"
+
+[[track]]
+index = 11
+id = "M11"
+debug_title_jp = "凶獣界"
+debug_romaji = "KYŌJŪ-KAI"
+debug_gloss = "Evil beast realm"
+context = "Rogue's dungeon"
+relocalization = "The Profane Realm"
+
+[[track]]
+index = 12
+id = "M12"
+debug_title_jp = "聖獣界"
+debug_romaji = "SEIJŪ-KAI"
+debug_gloss = "Holy beast realm"
+context = "Octam's station"
+relocalization = "The Sacred Realm"
+
+[[track]]
+index = 13
+id = "M13"
+debug_title_jp = "生物城"
+debug_romaji = "SEIBUTSU-JŌ"
+debug_gloss = "Live creature castle"
+context = "Bio-Castle dungeon"
+ost_title_jp = "生物城"
+ost_romaji = "SEIBUTSU-JŌ"
+ost_gloss = "The creature castle"
+relocalization = "Bio-Castle"
+
+[[track]]
+index = 14
+id = "M14"
+context = "M14A with sustained note"
+
+[[track]]
+index = 15
+id = "M14A"
+debug_title_jp = "リムエルム夕方"
+debug_romaji = "RIMU-ERUMU YŪGATA"
+debug_gloss = "Rim Elm evening"
+context = "Juno's death/Rim Elm sunrise"
+ost_title_jp = "夕映えのリムエルム"
+ost_romaji = "YŪBAE NO RIMU-ERUMU"
+ost_gloss = "Rim Elm in the sunset glow"
+relocalization = "Rim Elm's Evening Glow"
+
+[[track]]
+index = 16
+id = "M14B"
+debug_title_jp = "リムエルム昼"
+debug_romaji = "RIMU-ERUMU HIRU"
+debug_gloss = "Rim Elm noon"
+context = "Rim Elm theme"
+ost_title_jp = "リムエルム"
+ost_romaji = "RIMUERUMU"
+ost_gloss = "Rim Elm"
+relocalization = "Rim Elm's Sunshine"
+
+[[track]]
+index = 17
+id = "M15"
+debug_title_jp = "吹きだまりの洞窟"
+debug_romaji = "FUKIDAMARI NO DŌKUTSU"
+debug_gloss = "Snow-drift cave"
+context = "Snowdrift Cave"
+ost_title_jp = "ぬくもりの洞窟"
+ost_romaji = "NUKUMORI NO DŌKUTSU"
+ost_gloss = "The cavern of warmth"
+relocalization = "Cave of Warmth"
+
+[[track]]
+index = 18
+id = "M16"
+debug_title_jp = "サブゲーム"
+debug_romaji = "SABUGĒMU"
+debug_gloss = "Sub-game"
+context = "Sol casino"
+ost_title_jp = "ワイルド宣言"
+ost_romaji = "WAIRUDO SENGEN"
+ost_gloss = "Wild declaration"
+relocalization = "Wild Declaration"
+
+[[track]]
+index = 19
+id = "M17"
+debug_title_jp = "バイロン寺院"
+debug_romaji = "BAIRON JIIN"
+debug_gloss = "Byron Temple"
+context = "Byron Monastery"
+ost_title_jp = "我らバイロン僧兵団"
+ost_romaji = "WARERA BAIRON SŌHEI-DAN"
+ost_gloss = "We are the Byron monk warriors"
+relocalization = "We, the Byron Monk Warriors"
+
+[[track]]
+index = 20
+id = "M18"
+debug_title_jp = "コル上層"
+debug_romaji = "KORU JŌSŌ"
+debug_gloss = "Top of the valley"
+context = "Seru Kai"
+ost_romaji = "NOARU"
+ost_gloss = "Noaru"
+relocalization = "Valley of Noaru"
+
+[[track]]
+index = 21
+id = "M20"
+debug_title_jp = "復活したドルク城"
+debug_romaji = "FUKKATSU SHITA DORUKU-JŌ"
+debug_gloss = "Dolk Castle revived"
+context = "Drake Castle after mist"
+ost_title_jp = "にぎやかな王宮"
+ost_romaji = "NIGIYAKANA ŌKYŪ"
+ost_gloss = "The bustling royal palace"
+relocalization = "Lively Royal Castle"
+
+[[track]]
+index = 22
+id = "M21"
+debug_title_jp = "ドーマン博士の研究所"
+debug_romaji = "DŌMAN HAKASE NO KENKYŪJO"
+debug_gloss = "Doctor Doman's laboratory"
+context = "Dr. Usha's research lab"
+relocalization = "Dr. Usha's Research Institute"
+
+[[track]]
+index = 23
+id = "M22"
+debug_title_jp = "みんなが踊ってる部屋"
+debug_romaji = "MIN'NA GA ODOTTERU HEYA"
+debug_gloss = "The room where everyone dances"
+context = "Mei's theme"
+ost_title_jp = "メイ"
+ost_romaji = "MEI"
+ost_gloss = "Mei"
+relocalization = "Where Everyone Dances"
+
+[[track]]
+index = 24
+id = "M23"
+debug_title_jp = "酒場"
+debug_romaji = "SAKABA"
+debug_gloss = "Bar"
+context = "Sol's bar"
+relocalization = "Where Everyone Drinks"
+
+[[track]]
+index = 25
+id = "M25"
+debug_title_jp = "創世樹周辺の曲"
+debug_romaji = "SŌSEIJU SHŪHEN NO KYOKU"
+debug_gloss = "Music about the Genesis Tree"
+context = "Genesis Tree theme"
+ost_title_jp = "静かなる創世樹"
+ost_romaji = "SHIZUKANARU SŌSEIJU"
+ost_gloss = "The silent Genesis Tree"
+relocalization = "The Quiet Genesis Tree"
+
+[[track]]
+index = 26
+id = "M26B1"
+debug_title_jp = "雑魚戦闘バージョン1"
+debug_romaji = "ZAKO SENTŌ BĀJON 1"
+debug_gloss = "Minor enemy battle version 1"
+context = "Battle theme 1"
+ost_gloss = "Brand of the Holy Knuckles"
+relocalization = "Brand of the Holy Knuckles"
+
+[[track]]
+index = 27
+id = "M26B2"
+debug_title_jp = "雑魚戦闘バージョン2"
+debug_romaji = "ZAKO SENTŌ BĀJON 2"
+debug_gloss = "Minor enemy battle version 2"
+context = "Battle theme 2"
+
+[[track]]
+index = 28
+id = "M27"
+debug_title_jp = "中ボス"
+debug_romaji = "CHŪ BOSU"
+debug_gloss = "Medium boss"
+context = "Boss theme 1"
+ost_title_jp = "襲撃"
+ost_romaji = "SHŪGEKI"
+ost_gloss = "Assault"
+relocalization = "Attack!"
+
+[[track]]
+index = 29
+id = "M28"
+debug_title_jp = "霧の巣ボス戦"
+debug_romaji = "KIRI NO SU BOSU SEN"
+debug_gloss = "Mist nest boss battle"
+context = "Koru battle theme"
+relocalization = "The Cold Koru"
+
+[[track]]
+index = 30
+id = "M29"
+debug_title_jp = "ソンギ戦闘"
+debug_romaji = "SONGI SENTŌ"
+debug_gloss = "Battle with Songi"
+context = "Songi battle"
+ost_title_jp = "我が名はソンギ"
+ost_romaji = "WAGA NA WA SONGI"
+ost_gloss = "My name is Songi"
+relocalization = "I Am Songi!"
+
+[[track]]
+index = 31
+id = "M30"
+debug_title_jp = "コート戦1"
+debug_romaji = "KŌTO-SEN 1"
+debug_gloss = "Cort battle 1"
+context = "Cort battle 1"
+relocalization = "Cort's War"
+
+[[track]]
+index = 32
+id = "M32"
+debug_title_jp = "中ボス序曲"
+debug_romaji = "CHŪ BOSU JOKYOKU"
+debug_gloss = "Medium boss overture"
+context = "Boss theme 2"
+ost_title_jp = "霧の使徒"
+ost_romaji = "KIRI NO SHITO"
+ost_gloss = "Apostles of the mist"
+relocalization = "Apostles of the Mist"
+
+[[track]]
+index = 33
+id = "M34"
+debug_title_jp = "ソンギ出現序曲"
+debug_romaji = "SONGI SHUTSUGEN JOKYOKU"
+debug_gloss = "Songi appearance overture"
+context = "Songi theme"
+ost_title_jp = "ソンギ推参"
+ost_romaji = "SONGI SUIZAN"
+ost_gloss = "Songi's arrival"
+relocalization = "Songi's Overture"
+
+[[track]]
+index = 34
+id = "M35"
+debug_title_jp = "ジャガーノート襲撃2、3用"
+debug_romaji = "JAGĀNŌTO SHŪGEKI 2, 3 YŌ"
+debug_gloss = "For Juggernaut attack 2 and 3"
+context = "Juggernaut appears"
+relocalization = "Juggernaut's Attack"
+
+[[track]]
+index = 35
+id = "M36"
+debug_title_jp = "創世樹復活イベント"
+debug_romaji = "SŌSEIJU FUKKATSU IBENTO"
+debug_gloss = "Genesis Tree revival event"
+context = "Genesis Tree resurrection"
+ost_title_jp = "創世樹の目覚め"
+ost_romaji = "SŌSEIJU NO MEZAME"
+ost_gloss = "The awakening of the Genesis Tree"
+relocalization = "Awakening the Genesis Tree"
+
+[[track]]
+index = 36
+id = "M37"
+debug_title_jp = "神秘的イベント2"
+debug_romaji = "SHINPITEKI IBENTO 2"
+debug_gloss = "Mystical event 2"
+context = "Ra-Seru speaks/Hari"
+relocalization = "Mystical Happening"
+
+[[track]]
+index = 37
+id = "M38"
+debug_title_jp = "風来獣車"
+debug_romaji = "FŪRAISHŪ-SHA"
+debug_gloss = "Wandering beast-vehicle"
+context = "Gondola flying train theme"
+ost_title_jp = "風来獣車"
+ost_romaji = "FŪRAISHŪ-SHA"
+ost_gloss = "The wandering beast-vehicle"
+relocalization = "The Flying Train"
+
+[[track]]
+index = 38
+id = "M39"
+debug_title_jp = "ソーン族の空中飛行"
+debug_romaji = "SŌN-ZOKU NO KŪCHŪ HIKŌ"
+debug_gloss = "Aerial flight of the Soren tribe"
+context = "Soren flight"
+relocalization = "The Flying Soren Tribe"
+
+[[track]]
+index = 39
+id = "M40"
+debug_title_jp = "予期せぬ出来事"
+debug_romaji = "YOKI SENU DEKIGOTO"
+debug_gloss = "Unpredicted event"
+context = "Byron under attack/tense theme"
+ost_title_jp = "予期せぬ出来事"
+ost_romaji = "YOKISENU DEKIGOTO"
+ost_gloss = "The unforeseen event"
+relocalization = "Unforeseen Event"
+
+[[track]]
+index = 40
+id = "M41"
+debug_title_jp = "神秘的イベント1"
+debug_romaji = "SHINPITEKI IBENTO 1"
+debug_gloss = "Mystical event 1"
+context = "Noa's dreams"
+relocalization = "Mystical Dreaming"
+
+[[track]]
+index = 41
+id = "M42"
+debug_title_jp = "悲しいイベント全般"
+debug_romaji = "KANASHĪ IBENTO ZENPAN"
+debug_gloss = "Sad events in general"
+context = "Conkram/sad events"
+ost_title_jp = "霧の都"
+ost_romaji = "KIRI NO MIYAKO"
+ost_gloss = "The mist-capital"
+relocalization = "The Misty Capitol"
+
+[[track]]
+index = 42
+id = "M47"
+debug_title_jp = "脱出イベント"
+debug_romaji = "DASSHUTSU IBENTO"
+debug_gloss = "Escape event"
+context = "Floating castle escape"
+ost_gloss = "Hurry up"
+relocalization = "Hurry Up!"
+
+[[track]]
+index = 43
+id = "M48"
+debug_title_jp = "スーパースペクタル"
+debug_romaji = "SŪPĀ SUPEKUTARU"
+debug_gloss = "Super spectacle"
+context = "Mist dungeons"
+ost_title_jp = "霧の巣"
+ost_romaji = "KIRI NO SU"
+ost_gloss = "The nest of mist"
+relocalization = "Misty Nest"
+
+[[track]]
+index = 44
+id = "M49"
+debug_title_jp = "人間の世界"
+debug_romaji = "NINGEN NO SEKAI"
+debug_gloss = "Human world"
+context = "Opening title pt 1 (incomplete?)"
+
+[[track]]
+index = 45
+id = "M100"
+debug_title_jp = "イベント未定"
+debug_romaji = "IBENTO MITEI"
+debug_gloss = "Undecided event"
+context = "Sol"
+relocalization = "The Sol Tower"
+
+[[track]]
+index = 46
+id = "M101"
+debug_title_jp = "バン夢のシーン"
+debug_romaji = "BAN YUME NO SHĪN"
+debug_gloss = "Vahn dream scene"
+context = "Vahn dream scene"
+relocalization = "Vahn Dreams"
+
+[[track]]
+index = 47
+id = "M102"
+debug_title_jp = "町の曲"
+debug_romaji = "MACHI NO KYOKU"
+debug_gloss = "Town song"
+context = "Jeremi"
+ost_title_jp = "街の灯"
+ost_romaji = "MACHI NO AKARI"
+ost_gloss = "The town's light"
+relocalization = "Light of the Town"
+
+[[track]]
+index = 48
+id = "M104"
+debug_title_jp = "バイロン寺院で宴の曲"
+debug_romaji = "BAIRON JĪN DE UTAGE NO KYOKU"
+debug_gloss = "Music for a banquet at Byron Temple"
+context = "Party in Byron Monastery"
+relocalization = "Byron Party"
+
+[[track]]
+index = 49
+id = "M106"
+debug_title_jp = "思い出の曲"
+debug_romaji = "OMOIDE NO KYOKU"
+debug_gloss = "Music of memories"
+context = "Nostalgic theme"
+ost_title_jp = "思い出のメロディー"
+ost_romaji = "OMOIDE NO MERODĪ"
+ost_gloss = "Melody of memories"
+relocalization = "The Melody of Memories"
+
+[[track]]
+index = 50
+id = "M107"
+debug_title_jp = "前向きな汎用イベント"
+debug_romaji = "MAEMUKI NA HANYŌ IBENTO"
+debug_gloss = "Positive generic event"
+context = "Noa joins the party"
+relocalization = "Positive Energy!"
+
+[[track]]
+index = 51
+id = "M108"
+debug_title_jp = "中ボス"
+debug_romaji = "CHŪ BOSU"
+debug_gloss = "Medium boss"
+context = "Koru battle theme 2"
+relocalization = "The Hot Heat"
+
+[[track]]
+index = 52
+id = "M109"
+debug_title_jp = "不気味な気配"
+debug_romaji = "BUKIMI NA KEHAI"
+debug_gloss = "Eerie presence"
+context = "Tense moment"
+relocalization = "Ominous Presence"
+
+[[track]]
+index = 53
+id = "M110"
+debug_title_jp = "中ボス出現序曲"
+debug_romaji = "CHŪ BOSU SHUTSUGEN JOKYOKU"
+debug_gloss = "Medium boss appearance overture"
+context = "Boss overture/Vahn-Saryu"
+relocalization = "Lords of the Mist"
+
+[[track]]
+index = 54
+id = "M111"
+debug_title_jp = "ニルボア"
+debug_romaji = "NIRUBOA"
+debug_gloss = "Nivora"
+context = "Nivora Ravine"
+ost_title_jp = "静かなる破滅"
+ost_romaji = "SHIZUKANARU HAMETSU"
+ost_gloss = "The silent ruin"
+relocalization = "Silent Doom"
+
+[[track]]
+index = 55
+id = "M112"
+debug_title_jp = "ディスコ"
+debug_romaji = "DISUKO"
+debug_gloss = "Disco"
+context = "Sol disco fever"
+relocalization = "Sol's Disco Fever!"
+
+[[track]]
+index = 56
+id = "M113"
+debug_title_jp = "スーパースペクタル2"
+debug_romaji = "SŪPĀ SUPEKUTARU 2"
+debug_gloss = "Super spectacle 2"
+context = "Mist generator dungeon 2"
+relocalization = "Misty Hideout"
+
+[[track]]
+index = 57
+id = "KANASIMI"
+debug_title_jp = "悲しみイベント"
+debug_romaji = "KANASHIMI IBENTO"
+debug_gloss = "Sorrowful event"
+context = "Cara's theme/Alundra requiem"
+relocalization = "Requiem"
+
+[[track]]
+index = 58
+id = "M114"
+debug_title_jp = "普通の街2"
+debug_romaji = "FUTSŪ NO MACHI 2"
+debug_gloss = "Ordinary town 2"
+context = "Vidna"
+relocalization = "Town of the Wind"
+
+[[track]]
+index = 59
+id = "M115"
+debug_title_jp = "ディスコ予選"
+debug_romaji = "DISUKO YOSEN"
+debug_gloss = "Disco preliminaries"
+context = "Sol disco preliminary"
+relocalization = "Funky Ascent"
+
+[[track]]
+index = 60
+id = "M116"
+debug_title_jp = "ディスコ決勝"
+debug_romaji = "DISUKO KESSHŌ"
+debug_gloss = "Disco finals"
+context = "Sol disco final 1"
+relocalization = "Tower Boogie"
+
+[[track]]
+index = 61
+id = "M31"
+debug_title_jp = "コート戦2"
+debug_romaji = "KŌTO-SEN 2"
+debug_gloss = "Cort battle 2"
+context = "Juggernaut final battle"
+relocalization = "Apocalypse"
+
+[[track]]
+index = 62
+id = "M105"
+debug_title_jp = "霧の谷の曲"
+debug_romaji = "KIRI NO TANI NO KYOKU"
+debug_gloss = "Mist valley song"
+context = "Buma/misty valley"
+relocalization = "The Misty Valley"
+
+[[track]]
+index = 63
+id = "M118"
+debug_title_jp = "オープニングキャラ劇1"
+debug_romaji = "ŌPUNINGU KYARA GEKI 1"
+debug_gloss = "Opening character act 1"
+context = "Opening title pt 1"
+ost_title_jp = "プロローグ"
+ost_romaji = "PURORŌGU"
+ost_gloss = "Prologue"
+relocalization = "Prologue"
+
+[[track]]
+index = 64
+id = "M119"
+debug_title_jp = "オープニングキャラ劇2"
+debug_romaji = "ŌPUNINGU KYARA GEKI 2"
+debug_gloss = "Opening character act 2"
+context = "Opening title pt 2"
+relocalization = "Henchmen of the Mist"
+
+[[track]]
+index = 65
+id = "M65"
+debug_title_jp = "タイトル画面"
+debug_romaji = "TAITORU GAMEN"
+debug_gloss = "Title screen"
+context = "Title screen theme"
+ost_title_jp = "タイトル"
+ost_romaji = "TAITORU"
+ost_gloss = "Title"
+relocalization = "Legend of Legaia"
+
+[[track]]
+index = 66
+id = "M120"
+debug_title_jp = "ディスコ決勝"
+debug_romaji = "DISUKO KESSHŌ"
+debug_gloss = "Disco finals"
+context = "Sol disco final 2"
+relocalization = "Disco Hero"
+
+[[track]]
+index = 67
+id = "M33"
+debug_title_jp = "中ボス"
+debug_romaji = "CHŪ BOSU"
+debug_gloss = "Medium boss"
+context = "Vahn-Saryu"
+relocalization = "Tense Presence"
+
+[[track]]
+index = 68
+id = "M50"
+debug_title_jp = "エンディング"
+debug_romaji = "ENDINGU"
+debug_gloss = "Ending"
+context = "Credits theme"
+ost_title_jp = "エンドタイトル"
+ost_romaji = "ENDO TAITORU"
+ost_gloss = "End title"
+relocalization = "Song of the Genesis Tree"
+
+[[track]]
+index = 69
+id = "M121"
+debug_title_jp = "生物城崩壊"
+debug_romaji = "SEIBUTSU-JŌ HŌKAI"
+debug_gloss = "Creature castle collapse"
+context = "Bio-Castle collapse"
+ost_title_jp = "生物城の崩壊"
+ost_romaji = "SEIBUTSU-JŌ NO HŌKAI"
+ost_gloss = "The collapse of the creature castle"
+relocalization = "The Collapse of the Bio-Castle"
+
+[[track]]
+index = 70
+id = "M122"
+debug_title_jp = "祝福のリムエルム"
+debug_romaji = "SHUKUFUKU NO RIMU-ERUMU"
+debug_gloss = "Blessed Rim-Elm"
+context = "Rim Elm ending"
+ost_title_jp = "人間の世界"
+ost_romaji = "NINGEN NO SEKAI"
+ost_gloss = "The human world"
+relocalization = "The Blessed Human World"
+
+[[track]]
+index = 71
+id = "M123"
+debug_title_jp = "コート序曲"
+debug_romaji = "KŌTO JOKYOKU"
+debug_gloss = "Cort overture"
+context = "Bio-Castle"
+relocalization = "The Rise of the Bio-Castle"
+
+[[track]]
+index = 72
+id = "ALNDRA"
+debug_title_jp = "アランドラ"
+debug_romaji = "ARANDORA"
+debug_gloss = "Alundra"
+context = "Alundra Zazzan's battle theme"
+relocalization = "Excitement"
+
+[[track]]
+index = 73
+id = "JBGM"
+debug_title_jp = "ワイルドアームズ"
+debug_romaji = "WAIRUDO ĀMUZU"
+debug_gloss = "Wild Arms"
+context = "Wild Arms battle theme"
+relocalization = "Wild Arms Battle Theme"
+
+[[track]]
+index = 74
+debug_romaji = "DAMĪ"
+debug_gloss = "Dummy"
+context = "Dummy test music file"
+relocalization = "\"I'm a Dummy-dayo!\""
+
+[[track]]
+index = 75
+id = "M47B"
+debug_title_jp = "スーパースペクタクルB"
+debug_romaji = "SŪPĀ SUPEKUTAKURU B"
+debug_gloss = "Super spectacle B"
+context = "Another flying castle escape"
+relocalization = "Hurry Up! Faster!"
+
+[[track]]
+index = 76
+id = "M13"
+debug_gloss = "No name file"
+context = "Soren flute/Soren theme"
+relocalization = "The Melody of Memories (Piano)"
+
+[[track]]
+index = 77
+id = "M117"
+debug_title_jp = "ディスコ"
+debug_romaji = "DISUKO"
+debug_gloss = "Disco"
+context = "Sol disco fever 2"
+relocalization = "Disco Legend"
+
+[[track]]
+index = 78
+id = "MPIANO"
+debug_title_jp = "ピアノ"
+debug_romaji = "PIANO"
+debug_gloss = "Piano"
+context = "Piano?"
+uncertain = true
+
+[[track]]
+index = 79
+id = "獸衣"
+debug_romaji = "LEVELUP"
+debug_gloss = "Levelup"
+context = "Level up?"
+uncertain = true
+
+[[track]]
+index = 80
+id = "M26A"
+debug_title_jp = "A"
+debug_romaji = "A"
+debug_gloss = "A"
+context = "A? Another test file maybe?"
+uncertain = true
