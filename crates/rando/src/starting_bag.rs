@@ -177,7 +177,7 @@ mod tests {
         }
         let expected: Vec<u8> = items
             .iter()
-            .flat_map(|&(id, count)| std::iter::repeat(id).take(count as usize))
+            .flat_map(|&(id, count)| std::iter::repeat_n(id, count as usize))
             .collect();
         assert_eq!(decoded_units, expected);
 
