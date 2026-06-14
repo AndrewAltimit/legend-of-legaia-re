@@ -71,6 +71,7 @@ pub mod ppf;
 pub mod rng;
 pub mod shop;
 pub mod spell_cost;
+pub mod starting_bag;
 pub mod starting_items;
 pub mod starting_level;
 pub mod steal;
