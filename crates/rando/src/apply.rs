@@ -2274,9 +2274,10 @@ pub fn current_starting_level(patcher: &DiscPatcher) -> Result<u8> {
 pub struct StartingLevelReport {
     /// The starting level seeded.
     pub level: u8,
-    /// Cumulative XP to reach the level, written to the record's `+0x0` cell.
+    /// In-band cumulative XP for the level, written to **every** growth slot's `+0x0`
+    /// cell (Vahn / Noa / Gala).
     pub current_xp: u16,
-    /// Next-level XP threshold, written to the record's `+0x4` cell.
+    /// Next-level XP threshold, written to **every** growth slot's `+0x4` cell.
     pub next_threshold: u16,
     /// The level-`N` stats written into the lead (slot 0) template, in template
     /// order (`hp, mp, agl, atk, udf, ldf, spd, int`). Equal to `party_stats[0]`.
@@ -2299,19 +2300,25 @@ pub struct StartingLevelReport {
 ///   recomputed to the level via the disc's own growth curves, so the displayed
 ///   level the loop stamps and the stats stay coherent across the roster (the 4th
 ///   slot, Terra, has no growth curve and keeps its base stats);
-/// - the lead's current-experience cell `+0x0`, seeded to an in-band level-`N`
-///   value via a `$t0` preload + store that repurpose the slot-3 / slot-1
-///   next-level-threshold seeds, and the lead's next-level-threshold literal
-///   (`+0x4`), set to `reach(level + 1)`, so its status readout is exact.
+/// - **each growth-capable slot's** (Vahn / Noa / Gala) current-experience cell
+///   `+0x0`, seeded to an in-band level-`N` value via a single `$t0` preload + three
+///   `sw $t0, <+0x0>($s0)` stores that repurpose the slot-3 / slot-1 / slot-2
+///   next-level-threshold seeds (and one redundant `lui`), and each slot's
+///   next-level-threshold cell (`+0x4`), set to `reach(level + 1)`, so every
+///   character's status readout is coherent — not just the lead's (an earlier version
+///   seeded only slot 0, leaving Noa with experience `0` and Gala with a stale level-1
+///   threshold). All three `+0x4` cells take the same threshold; the small per-slot
+///   `FUN_801E9504` correction is re-applied by the applier on each character's first
+///   post-seed level-up.
 ///
 /// `level` must be in
 /// [`crate::starting_level::MIN_STARTING_LEVEL`]`..=`[`crate::starting_level::MAX_STARTING_LEVEL`];
 /// callers guard on [`crate::starting_level::is_active`]. Deterministic.
 pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<StartingLevelReport> {
     use legaia_asset::new_game::{
-        CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, LEVEL_SEED_VA, LEVEL_STORE_REDUNDANT_VA,
-        LEVEL_STORE_VA, RECORD_STRIDE, STARTING_XP_SEED_VA, party_template_file_offset,
-        scus_file_offset,
+        CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, GALA_XP_STORE_VA, LEVEL_SEED_VA,
+        LEVEL_STORE_REDUNDANT_VA, LEVEL_STORE_VA, NOA_XP_STORE_VA, RECORD_STRIDE,
+        STARTING_XP_SEED_VA, live_record_xp_offset, party_template_file_offset, scus_file_offset,
     };
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
@@ -2320,11 +2327,14 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
 
     // Each seed-routine instruction the level edit rewrites, with its 4-byte
     // replacement word. See `crate::starting_level` for the encodings + rationale:
-    // the next-level threshold (+0x4) and current experience (+0x0, via a $t0 preload
-    // + store) make the readouts + progression coherent, and the loop's level literal
-    // + stores set the displayed-level cell +0x130 (keeping magic rank +0x131 at 1)
-    // so the character actually reads as level N.
-    let edits: [(u32, [u8; 4]); 6] = [
+    // the next-level threshold (+0x4) and current experience (+0x0, via one $t0 preload
+    // + one store per growth slot) make every character's readouts + progression
+    // coherent, and the loop's level literal + stores set the displayed-level cell
+    // +0x130 (keeping magic rank +0x131 at 1) so the character actually reads as
+    // level N. The three experience stores all source $t0 (the shared preload) and
+    // dropping the per-slot threshold reloads leaves $v0 holding reach(N+1) for the
+    // unmodified Noa/Gala +0x4 stores downstream.
+    let edits: [(u32, [u8; 4]); 8] = [
         (
             STARTING_XP_SEED_VA,
             crate::starting_level::next_threshold_instruction(plan.next_threshold),
@@ -2333,9 +2343,20 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
             CURRENT_XP_PRELOAD_VA,
             crate::starting_level::current_xp_preload_instruction(plan.current_xp),
         ),
+        // Three cumulative-experience stores `sw $t0, <+0x0>($s0)`, one per growth slot
+        // (Vahn / Noa / Gala), repurposing the slot-1 / slot-2 threshold literals and a
+        // redundant `lui`.
         (
             CURRENT_XP_STORE_VA,
-            crate::starting_level::current_xp_store_instruction(),
+            crate::starting_level::cumulative_xp_store_instruction(live_record_xp_offset(0)),
+        ),
+        (
+            NOA_XP_STORE_VA,
+            crate::starting_level::cumulative_xp_store_instruction(live_record_xp_offset(1)),
+        ),
+        (
+            GALA_XP_STORE_VA,
+            crate::starting_level::cumulative_xp_store_instruction(live_record_xp_offset(2)),
         ),
         (
             LEVEL_SEED_VA,

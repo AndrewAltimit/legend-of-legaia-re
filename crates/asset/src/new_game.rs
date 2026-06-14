@@ -61,6 +61,19 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 /// for slot 3 (Terra), who re-scales when she actually joins. A single `addiu` with a
 /// 16-bit immediate, so a seeded threshold must fit a positive `imm16`.
 ///
+/// The seed routine sets every slot's `+0x4` by storing `$v0` (this literal) to that
+/// slot's cell — Vahn at `0x5cc`, Noa at `0x9e0`, Gala at `0xdf4` — with two
+/// intervening `addiu $v0` reloads (the vanilla `102` / `140` literals at
+/// [`CURRENT_XP_STORE_VA`] / [`NOA_XP_STORE_VA`]) giving Noa / Gala their distinct
+/// per-character values. The per-character spread is the `FUN_801E9504` slots-1/2
+/// correction (Noa subtracts ~16 %, Gala adds ~16 % at level 1), which the applier
+/// re-derives at every level-up. The starting-level randomizer drops those two
+/// reloads (repurposing them as cumulative-experience stores, see below), so `$v0`
+/// holds the seeded `reach(N+1)` threshold uncorrupted from here through Gala's store
+/// and **all three growth slots take the same threshold** — the ≤2 % per-character
+/// correction is re-applied by the applier on each character's first post-seed
+/// level-up.
+///
 /// The displayed combat level is **derived from the cumulative experience at `+0x0`**
 /// (the "Max Exp" cheat target), *not* stored: across a captured 4-level jump the
 /// `+0x130` byte rose by only `+1` (it is the magic-rank counter, one tick per
@@ -88,8 +101,48 @@ pub const CURRENT_XP_PRELOAD_VA: u32 = 0x8005_60FC;
 /// `+0x0`** — the status screen's "Experience" readout and the value the level-up
 /// applier compares against the next-level threshold. (The instruction after it, the
 /// Noa `+0x4` store, then writes the now-`$v0`-resident threshold to Noa's `+0x4`
-/// instead of her vanilla `102`; harmless, since Noa re-scales when she joins.)
+/// instead of her vanilla `102`; the per-character correction is re-applied on Noa's
+/// first level-up.)
 pub const CURRENT_XP_STORE_VA: u32 = 0x8005_6100;
+
+/// RAM address of the slot-2 / Gala next-level-threshold *literal* in `FUN_800560B4`
+/// (vanilla `addiu $v0, $zero, 0x8c` = 140). The starting-level randomizer overwrites
+/// it with `sw $t0, 0x9dc($s0)`, storing the preloaded experience value
+/// ([`CURRENT_XP_PRELOAD_VA`]) into party slot 1's (**Noa**) cumulative-experience
+/// cell `+0x0`. Dropping the `140` reload also leaves `$v0` holding the seeded
+/// `reach(N+1)` threshold for the Gala `+0x4` store two instructions later — so the
+/// same edit that gives Noa her experience also fixes Gala's threshold (vanilla left
+/// it at the level-1 literal `140`, which would trigger a spurious level-up). A store,
+/// so it takes no immediate.
+pub const NOA_XP_STORE_VA: u32 = 0x8005_6108;
+
+/// RAM address of a redundant `lui $at, 0x8008` in `FUN_800560B4`'s prefix
+/// (`0x80056118`): the second of two identical `lui $at, 0x8008` reloads — `$at` is
+/// unchanged between them and both `sb $zero, off($at)` global clears read it, so the
+/// reload is dead. The starting-level randomizer reclaims it for `sw $t0, 0xdf0($s0)`,
+/// storing the preloaded experience value ([`CURRENT_XP_PRELOAD_VA`]) into party slot
+/// 2's (**Gala**) cumulative-experience cell `+0x0`. The following `sb $zero` still
+/// uses `$at` from the *first* `lui`, so the global clear is preserved. This is the
+/// one extra instruction slot the whole-party XP seed needs beyond the per-slot
+/// threshold sites.
+pub const GALA_XP_STORE_VA: u32 = 0x8005_6118;
+
+/// SC-relative byte offset of a live record's cumulative-experience cell (`+0x0`) for
+/// roster `slot`: record 0 (Vahn) sits at `SC + 0x5c8` and records are
+/// [`LIVE_RECORD_STRIDE`] apart, so slot `k`'s `+0x0` is `0x5c8 + k * 0x414` (Vahn
+/// `0x5c8`, Noa `0x9dc`, Gala `0xdf0`). The seed routine's experience stores are
+/// `sw $t0, <this>($s0)` with `$s0` = SC base.
+pub fn live_record_xp_offset(slot: usize) -> u16 {
+    (LIVE_RECORD_0_XP_OFFSET as usize + slot * LIVE_RECORD_STRIDE as usize) as u16
+}
+
+/// SC-relative byte offset of roster slot 0's (Vahn) cumulative-experience cell
+/// (`+0x0`); the live per-character records begin here at `SC + 0x5c8`
+/// (`0x80084708`).
+pub const LIVE_RECORD_0_XP_OFFSET: u32 = 0x5C8;
+
+/// Byte stride between live per-character records (`0x80084708 + n * 0x414`).
+pub const LIVE_RECORD_STRIDE: u32 = 0x414;
 
 /// RAM address of the seed routine's per-slot level/magic-rank literal: the
 /// `addiu $v0, $zero, 1` at `0x800561C4` in `FUN_800560B4`'s record-init loop. The
@@ -604,6 +657,15 @@ mod tests {
     fn non_psx_exe_returns_none() {
         assert!(StartingParty::from_scus(b"not an exe").is_none());
         assert!(StartingParty::from_scus(&[0u8; 0x900]).is_none());
+    }
+
+    #[test]
+    fn live_record_xp_offsets_match_the_seed_routine_stores() {
+        // The seed routine's `+0x4` stores target 0x5cc / 0x9e0 / 0xdf4, so the
+        // neighbouring `+0x0` cells are 4 bytes lower: 0x5c8 / 0x9dc / 0xdf0.
+        assert_eq!(live_record_xp_offset(0), 0x5c8); // Vahn
+        assert_eq!(live_record_xp_offset(1), 0x9dc); // Noa
+        assert_eq!(live_record_xp_offset(2), 0xdf0); // Gala
     }
 
     #[test]

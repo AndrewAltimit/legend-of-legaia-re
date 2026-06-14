@@ -870,20 +870,26 @@ level 1 / experience 0; a coherent level-`N` start takes same-size in-place edit
    read **LV N**. (An earlier version stamped the level on all slots but only seeded
    the lead's stats, so Noa/Gala read **LV N** with level-1 stats — the bug step 4
    fixes.)
-2. **Experience** — seed slot 0's `+0x0` to the **midpoint of level `N`'s XP band**
-   (between the disc's own thresholds to reach `N` and `N+1`,
-   `legaia_asset::level_up_tables::xp_thresholds_from_scus`), so the "Experience"
-   readout and the level-up applier's progression are coherent. The seed routine
-   does not write `+0x0` natively, so the randomizer repurposes the slot-3 (Terra) +
-   slot-1 (Noa) next-level-threshold seeds at `0x800560FC` / `0x80056100` into an
-   `addiu $t0, midpoint` preload + `sw $t0, 0x5c8($s0)` store. Both are single 16-bit
-   immediates, so the value must fit a positive `imm16` (`<= 0x7FFF`), which caps the
-   level at **14**. Only the lead's experience/threshold are seeded this way; the
-   non-lead slots keep experience 0, but since the displayed level is `+0x130` (not
-   XP-derived) and their stats are leveled in step 4, the visible roster is coherent.
-3. **Next threshold** — set the slot-0 `+0x4` cell (the "next" readout) to
-   `reach(N+1)` via the literal at `STARTING_XP_SEED_VA` (`0x800560F0`, vanilla
-   `addiu $v0, $zero, 0x79` = 121).
+2. **Experience** — seed **each growth-capable slot's** `+0x0` to the **midpoint of
+   level `N`'s XP band** (between the disc's own thresholds to reach `N` and `N+1`,
+   `legaia_asset::level_up_tables::xp_thresholds_from_scus`), so every character's
+   "Experience" readout and the level-up applier's progression are coherent — not just
+   the lead's. The seed routine does not write `+0x0` natively, so the randomizer feeds
+   one `addiu $t0, midpoint` preload (at `0x800560FC`, the old Terra threshold store)
+   into three `sw $t0, <+0x0>($s0)` stores at `0x80056100` / `0x80056108` / `0x80056118`
+   (the old Noa + Gala threshold literals and a redundant `lui $at`), targeting Vahn
+   `0x5c8` / Noa `0x9dc` / Gala `0xdf0`. The preload is a single 16-bit immediate, so
+   the value must fit a positive `imm16` (`<= 0x7FFF`), which caps the level at **14**.
+   (An earlier version seeded only the lead, leaving Noa with experience `0` and Gala
+   with a stale level-1 threshold of `140` — which dings her almost immediately.)
+3. **Next threshold** — set **each growth slot's** `+0x4` cell (the "next" readout) to
+   `reach(N+1)`. The literal at `STARTING_XP_SEED_VA` (`0x800560F0`, vanilla
+   `addiu $v0, $zero, 0x79` = 121) loads it into `$v0`; dropping the per-character
+   reloads in step 2 leaves `$v0` intact through the routine's three existing
+   `sw $v0, <+0x4>($s0)` stores, so all three slots take the same `reach(N+1)`. The
+   per-slot `FUN_801E9504` correction (Noa −, Gala +; the reason the vanilla
+   thresholds are `121`/`102`/`140`, ≤2 % near these levels) is re-applied by the
+   applier on each character's first post-seed level-up.
 4. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) feeds each
    live record, so the randomizer overwrites **every growth-capable slot's** eight
    `u16` stats with that character's level-`N` values, computed by accumulating the
@@ -900,7 +906,10 @@ image — the seeded experience decodes back to the requested level, the
 level/experience/threshold instructions carry the planned values, **each** leveled
 slot's template stats are the growth-curve values and strictly above that
 character's vanilla stats (with its name preserved), and the surrounding
-seed-routine code stays byte-identical and EDC/ECC-valid. The randomizer is enabled
+seed-routine code stays byte-identical and EDC/ECC-valid. A companion test runs a
+tiny MIPS-subset interpreter over the *patched* seed routine and asserts every
+growth slot's live record lands with the right `+0x0` / `+0x4` / `+0x130` — proving
+the whole party, not just the lead, ends up coherent. The randomizer is enabled
 at level 10 in the web "Balanced" and "Full Chaos" presets and off in
 "Vanilla" / "Item Shuffle".
 

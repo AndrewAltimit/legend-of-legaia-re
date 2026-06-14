@@ -114,20 +114,36 @@ own internal level cell). The shown level is read from `+0x130` directly, **not*
 re-derived from experience at a New Game — confirmed live: a record with level-10
 experience + stats but `+0x130 == 1` still shows LV 1.
 
-The starting-level randomizer seeds the lead character at level `N` with same-size
-in-place edits to the seed routine:
+The starting-level randomizer seeds the whole growth-capable party
+(Vahn / Noa / Gala) at level `N` with same-size in-place edits to the seed routine.
+The seed routine seeds `+0x4` for each slot by storing one `$v0` literal, reloading
+it twice for the per-character values — so the edits work by controlling that one
+register and reclaiming the two reload sites (plus a redundant `lui`) as the
+experience stores:
 
-1. **Level** — the loop's level literal + stores set `+0x130 = N` (packed
-   `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop` at `0x800561C4`/`C8`/`CC`, keeping
-   `+0x131` at 1).
-2. **Experience** — slot 0's `+0x0` gets an in-band level-`N` value (the midpoint of
-   `reach(N)..reach(N+1)`) via an `addiu $t0` preload + `sw $t0, 0x5c8($s0)` store
-   that repurpose the slot-3 (Terra) / slot-1 (Noa) threshold seeds at
-   `0x800560FC` / `0x80056100` (those characters re-scale on join, so the dropped
-   seeds are never observed).
-3. **Next threshold** — slot 0's `+0x4` gets `reach(N+1)` via the literal at
-   `0x800560F0`.
-4. **Stats** — slot 0's template stats are recomputed to level `N`.
+1. **Level** — the loop's level literal + stores set `+0x130 = N` for *every* record
+   (packed `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop` at `0x800561C4`/`C8`/`CC`,
+   keeping `+0x131` at 1).
+2. **Experience** — each growth slot's `+0x0` gets an in-band level-`N` value (the
+   midpoint of `reach(N)..reach(N+1)`). A single `addiu $t0` preload (at
+   `0x800560FC`, the old slot-3 / Terra threshold store) feeds three
+   `sw $t0, <+0x0>($s0)` stores — Vahn `0x5c8`, Noa `0x9dc`, Gala `0xdf0` — written at
+   `0x80056100` (old Noa `0x66` literal), `0x80056108` (old Gala `0x8c` literal), and
+   `0x80056118` (a redundant second `lui $at, 0x8008`; the first `lui` at `0x80056110`
+   still serves both `sb $zero` global clears).
+3. **Next threshold** — each growth slot's `+0x4` gets `reach(N+1)`. The literal at
+   `0x800560F0` loads it into `$v0`; dropping the two per-character reloads (now
+   experience stores) leaves `$v0` intact through the existing
+   `sw $v0, 0x5cc/0x9e0/0xdf4($s0)` stores, so all three take the same threshold. The
+   small per-slot `FUN_801E9504` correction (Noa −, Gala +; ≤2 % near these levels) is
+   re-applied by the level-up applier on each character's first post-seed level-up.
+   (Vanilla `+0x4`: Vahn `121`, Noa `102`, Gala `140` — these differ *because* of that
+   correction, not because the XP curve is per-character.)
+4. **Stats** — each growth slot's template stats are recomputed to level `N`.
+
+Seeding only slot 0 would leave Noa with an experience readout of `0` and Gala with a
+stale level-1 `+0x4` of `140` (which triggers a spurious early level-up); seeding all
+three keeps the visible roster coherent.
 
 See [`subsystems/level-up.md`](../subsystems/level-up.md) for the XP thresholds +
 growth curves and [`tooling/randomizer.md`](../tooling/randomizer.md) for the
