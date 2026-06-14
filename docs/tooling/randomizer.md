@@ -806,19 +806,24 @@ matches the user-verified GameShark write byte-for-byte.
 
 ### Starting level
 
-**`--starting-level N`** (web: a dropdown) begins a New Game with the lead
-character (Vahn) already at level `N` instead of 1 (`0`/`1` = vanilla; range
-`2..=14`). A New Game seeds four live-record cells (see
+**`--starting-level N`** (web: a dropdown) begins a New Game with the starting
+party already at level `N` instead of 1 (`0`/`1` = vanilla; range `2..=14`). A New
+Game seeds these live-record cells (see
 [save-record.md](../formats/save-record.md) / [new-game-table.md](../formats/new-game-table.md)):
 the **displayed level** at `+0x130` (what "LV" shows — boot-confirmed; *not* derived
 from experience at a New Game), the **cumulative experience** at `+0x0`, the
-**next-level threshold** at `+0x4`, and the stats from the party template. Vanilla
-seeds level 1 / experience 0; a coherent level-`N` start takes same-size in-place
-edits to `SCUS_942.54`, applied by `apply::apply_starting_level`:
+**next-level threshold** at `+0x4`, and the stats from the party template. Crucially
+the seed routine's **record-init loop stamps `+0x130` on every roster slot**, so the
+displayed level applies to the whole starting party, not just the lead. Vanilla seeds
+level 1 / experience 0; a coherent level-`N` start takes same-size in-place edits to
+`SCUS_942.54`, applied by `apply::apply_starting_level`:
 
 1. **Level** — the seed loop's level literal + stores set `+0x130 = N` (packed
    `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping the magic-rank byte
-   `+0x131` at 1). This is what makes the status screen read **LV N**.
+   `+0x131` at 1) for **every** party record. This is what makes the status screen
+   read **LV N**. (An earlier version stamped the level on all slots but only seeded
+   the lead's stats, so Noa/Gala read **LV N** with level-1 stats — the bug step 4
+   fixes.)
 2. **Experience** — seed slot 0's `+0x0` to the **midpoint of level `N`'s XP band**
    (between the disc's own thresholds to reach `N` and `N+1`,
    `legaia_asset::level_up_tables::xp_thresholds_from_scus`), so the "Experience"
@@ -827,25 +832,31 @@ edits to `SCUS_942.54`, applied by `apply::apply_starting_level`:
    slot-1 (Noa) next-level-threshold seeds at `0x800560FC` / `0x80056100` into an
    `addiu $t0, midpoint` preload + `sw $t0, 0x5c8($s0)` store. Both are single 16-bit
    immediates, so the value must fit a positive `imm16` (`<= 0x7FFF`), which caps the
-   level at **14**. Noa/Terra re-scale when they join, so the dropped seeds are never
-   observed.
+   level at **14**. Only the lead's experience/threshold are seeded this way; the
+   non-lead slots keep experience 0, but since the displayed level is `+0x130` (not
+   XP-derived) and their stats are leveled in step 4, the visible roster is coherent.
 3. **Next threshold** — set the slot-0 `+0x4` cell (the "next" readout) to
    `reach(N+1)` via the literal at `STARTING_XP_SEED_VA` (`0x800560F0`, vanilla
    `addiu $v0, $zero, 0x79` = 121).
-4. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) still feeds
-   the live record, so the randomizer overwrites slot 0's eight `u16` stats with the
-   level-`N` values, computed by accumulating the deterministic (jitter-free)
-   per-level growth gains (`GrowthTables::level_gain_core`, the `FUN_801E9504` curve
-   arithmetic) on top of the level-1 template — so a level-10 Vahn gets level-10
-   HP/ATK/… (e.g. HP 584 vs the vanilla 180). The 10-byte name is left untouched.
+4. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) feeds each
+   live record, so the randomizer overwrites **every growth-capable slot's** eight
+   `u16` stats with that character's level-`N` values, computed by accumulating the
+   deterministic (jitter-free) per-level growth gains (`GrowthTables::level_gain_core`,
+   the `FUN_801E9504` curve arithmetic) on top of the level-1 template — so a level-10
+   start gives Vahn level-10 HP/ATK/… (e.g. HP 584 vs the vanilla 180) *and* the same
+   for Noa and Gala, matching the level the loop stamps. The growth table covers the
+   three main characters (`GROWTH_CHAR_COUNT`); the 4th template slot (Terra) has no
+   growth curve, so it keeps its base stats (she is a scripted guest who re-scales on
+   her late join). Each 10-byte name is left untouched.
 
 The disc-gated `starting_level_real` test round-trips the edit off the patched
-image — the seeded experience decodes back to the requested level for every level in
-range, the level/experience/threshold instructions carry the planned values, the
-stats are the growth-curve values and strictly above vanilla, and the
-surrounding seed-routine code stays byte-identical and EDC/ECC-valid. The
-randomizer is enabled at level 10 in the web "Balanced" and "Full Chaos" presets
-and off in "Vanilla" / "Item Shuffle".
+image — the seeded experience decodes back to the requested level, the
+level/experience/threshold instructions carry the planned values, **each** leveled
+slot's template stats are the growth-curve values and strictly above that
+character's vanilla stats (with its name preserved), and the surrounding
+seed-routine code stays byte-identical and EDC/ECC-valid. The randomizer is enabled
+at level 10 in the web "Balanced" and "Full Chaos" presets and off in
+"Vanilla" / "Item Shuffle".
 
 ### Unused content
 

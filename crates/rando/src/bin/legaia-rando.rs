@@ -1620,8 +1620,9 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     if legaia_rando::starting_level::is_active(args.starting_level) {
         let report = apply::apply_starting_level(&mut patcher, args.starting_level)?;
         println!(
-            "starting-level: new game now begins at level {} (HP {}, ATK {})",
-            report.level, report.stats[0], report.stats[3]
+            "starting-level: new game now begins at level {} for the starting party \
+             ({} slot(s) leveled; lead HP {}, ATK {})",
+            report.level, report.slots_leveled, report.stats[0], report.stats[3]
         );
         manifest.push(format!("starting_level = {}", report.level));
     } else {

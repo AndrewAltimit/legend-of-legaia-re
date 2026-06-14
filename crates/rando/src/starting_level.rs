@@ -1,54 +1,54 @@
-//! Starting-level randomization: begin a New Game with the lead character
+//! Starting-level randomization: begin a New Game with the starting party
 //! already at a chosen level instead of level 1.
 //!
-//! A vanilla New Game seeds Vahn at level 1. The seed routine `FUN_800560B4`
+//! A vanilla New Game seeds the party at level 1. The seed routine `FUN_800560B4`
 //! initialises these progression fields per roster record (offsets relative to the
 //! `0x414`-byte record at `0x80084708 + n*0x414`, pinned from live captures + the
 //! cheat database — see [`legaia_asset::new_game`]):
 //!
-//! - **`+0x0`** — current cumulative experience (the "Max Exp" cheat target). Left
-//!   `0` at a New Game. **The displayed combat level is derived from this value**, so
-//!   it is the field that actually sets the level.
-//! - **`+0x4`** — the *next-level* XP threshold (what the status screen labels
-//!   "next"). Seeded per character to its level-1→2 threshold (Vahn `121`, Noa `102`,
-//!   Gala `140`). This is the literal at
-//!   [`legaia_asset::new_game::STARTING_XP_SEED_VA`].
-//! - **`+0x130`** — the magic-rank counter (it ticks `+1` per level-up *event*, not
-//!   per level — across a captured 4-level jump it rose by only `+1`). NOT the level;
-//!   the randomizer leaves it alone. (`+0x100` stays zero and is unrelated.)
+//! - **`+0x130`** — the **displayed combat level**, read directly (it is *not*
+//!   re-derived from cumulative experience at a New Game — confirmed live: a record
+//!   with level-10 experience + stats but `+0x130 == 1` still shows "LV 1"). The
+//!   high byte `+0x131` is the magic-rank counter. `FUN_800560B4`'s **record-init
+//!   loop** stamps `+0x130 = 1` / `+0x131 = 1` for *every* party record.
+//! - **stats** — eight `u16`s copied from the per-record starting-party template
+//!   ([`legaia_asset::new_game::PARTY_TEMPLATE_VA`], level-1 values) into each live
+//!   record by that same loop.
+//! - **`+0x0`** — current cumulative experience (the "Max Exp" cheat target), left
+//!   `0` at a New Game; **`+0x4`** — the *next-level* XP threshold, seeded per
+//!   character to its level-1→2 value (the literal at
+//!   [`legaia_asset::new_game::STARTING_XP_SEED_VA`]).
 //!
-//! Stats come from the starting-party template
-//! ([`legaia_asset::new_game::PARTY_TEMPLATE_VA`], level-1 values), copied into the
-//! live record by the same routine.
+//! Because the loop stamps `+0x130` for all four roster slots, the randomizer makes
+//! the whole *starting roster* coherent at level `N` with same-size in-place
+//! `SCUS_942.54` edits (an earlier version stamped the level for every slot but only
+//! seeded slot 0's stats, so Noa/Gala showed level `N` with level-1 stats):
 //!
-//! An earlier version of this randomizer mistook `+0x4` for cumulative XP and wrote
-//! a level-`N` XP value *there* — so the value showed up as the "next level" readout
-//! while the experience cell `+0x0` stayed `0`, leaving the derived level at `1`
-//! (only the template stats, written correctly, looked like level `N`). This version
-//! makes the start coherent at level `N` with same-size in-place `SCUS_942.54` edits:
-//!
-//! 1. **Current experience** — seed slot 0's `+0x0` to an in-band level-`N` value
-//!    (the midpoint of `reach(N)..reach(N+1)`, so it is unambiguously inside level
-//!    `N`'s band whichever comparison the level derivation uses). This is what makes
-//!    the displayed level `N`.
-//! 2. **Next threshold** — set `+0x4` to `reach(N+1)`, the real disc XP threshold to
-//!    advance out of level `N`, so the "next" readout is correct and a single battle
-//!    can't trigger a runaway level-up cascade.
-//! 3. **Stats** — overwrite slot 0's eight `u16` template stats with the level-`N`
-//!    values, accumulating the deterministic (jitter-free) per-level growth gains
-//!    from `FUN_801E9504`'s curves ([`legaia_asset::level_up_tables`]) on top of the
-//!    level-1 template.
+//! 1. **Displayed level** — rewrite the loop's level literal to `(1 << 8) | N` and
+//!    its first store to a `sh`, so the loop writes `+0x130 = N` (keeping magic rank
+//!    `+0x131 = 1`) into every party record.
+//! 2. **Stats** — overwrite each growth-capable slot's eight `u16` template stats
+//!    with that character's level-`N` values, accumulating the deterministic
+//!    (jitter-free) per-level growth gains from `FUN_801E9504`'s curves
+//!    ([`legaia_asset::level_up_tables`]) on top of the level-1 template. The growth
+//!    table covers [`GROWTH_CHAR_COUNT`] characters (Vahn / Noa / Gala); the 4th
+//!    template slot (Terra) has no growth curve, so it keeps its base template stats
+//!    (Terra is a scripted guest who re-scales on her late join, so this is moot).
+//! 3. **Lead experience** — additionally seed slot 0's `+0x0` to an in-band level-`N`
+//!    value (the midpoint of `reach(N)..reach(N+1)`) and its `+0x4` to `reach(N+1)`,
+//!    so the lead's "exp / next" status readouts and level-up progression are exact.
+//!    These reuse the slot-1 / slot-3 `+0x4` seed instructions, so the non-lead slots
+//!    aren't individually XP-seeded — but the displayed level is `+0x130` (not
+//!    XP-derived) and their stats now match it, so the visible roster is coherent.
 //!
 //! Both XP values are single `addiu` 16-bit immediates, which caps the level at
 //! [`MAX_STARTING_LEVEL`] (where `reach(N+1)` still fits a positive `imm16`).
-//!
-//! Only party slot 0 (the character present at a New Game) is seeded; the
-//! repurposed stores cost slots 1 and 3 (Noa / Terra) their seeded `+0x4` threshold,
-//! but those characters re-scale when they join, so the loss is never observed.
 
 use anyhow::{Context, Result, bail};
-use legaia_asset::level_up_tables::{growth_tables_from_scus, xp_thresholds_from_scus};
-use legaia_asset::new_game::{STAT_COUNT, StartingParty};
+use legaia_asset::level_up_tables::{
+    GROWTH_CHAR_COUNT, growth_tables_from_scus, xp_thresholds_from_scus,
+};
+use legaia_asset::new_game::{PARTY_RECORDS, STAT_COUNT, StartingParty};
 
 /// Default starting level the toggle seeds when enabled without an explicit
 /// value. A modest head start that skips the earliest grind without
@@ -67,21 +67,29 @@ pub const MIN_STARTING_LEVEL: u8 = 2;
 pub const MAX_STARTING_LEVEL: u8 = 14;
 
 /// A resolved starting-level plan: the XP literals to seed and the level-`N`
-/// stats to write into slot 0's template, in template order
+/// stats to write into each growth-capable slot's template, in template order
 /// (`hp, mp, agl, atk, udf, ldf, spd, int`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartingLevelPlan {
     /// The chosen level (`MIN_STARTING_LEVEL..=MAX_STARTING_LEVEL`).
     pub level: u8,
     /// In-band cumulative experience for level `N` (the midpoint of
-    /// `reach(N)..reach(N+1)`) — written to the record's current-experience cell
-    /// `+0x0`, the field the displayed level derives from (fits a positive `imm16`).
+    /// `reach(N)..reach(N+1)`) — written to the **lead** record's current-experience
+    /// cell `+0x0` so its status readout is exact (fits a positive `imm16`).
     pub current_xp: u16,
     /// Cumulative XP to reach level `N+1` — the next-level threshold written to
-    /// the record's `+0x4` cell (fits a positive `imm16`).
+    /// the **lead** record's `+0x4` cell (fits a positive `imm16`).
     pub next_threshold: u16,
-    /// The level-`N` stats for slot 0, in template order.
+    /// The level-`N` stats for the lead (slot 0), in template order. Equal to
+    /// `party_stats[0]`; kept as a convenience for the report / summary.
     pub stats: [u16; STAT_COUNT],
+    /// The level-`N` stats for each growth-capable party slot, in slot order
+    /// (Vahn, Noa, Gala — [`GROWTH_CHAR_COUNT`] entries). Each is written into that
+    /// slot's starting-party-template stat block so the displayed level (`+0x130 = N`,
+    /// stamped for every slot by the seed loop) and the stats stay coherent across
+    /// the starting roster. The 4th template slot (Terra) has no growth curve and is
+    /// left at its base stats.
+    pub party_stats: Vec<[u16; STAT_COUNT]>,
 }
 
 /// `true` when `level` requests a non-vanilla starting level the randomizer can
@@ -140,47 +148,59 @@ pub fn plan(scus: &[u8], level: u8) -> Result<StartingLevelPlan> {
     )?;
     let next_threshold = as_imm16(reach_n1, "next-level threshold")?;
 
-    // Level-N stats: accumulate the deterministic per-level growth gains on top
-    // of the level-1 template. Growth slot 0 = Vahn; its 8 sub-records are in the
-    // same order as the template stats (hp, mp, agl, atk, udf, ldf, spd, int).
+    // Level-N stats per growth-capable slot: accumulate the deterministic per-level
+    // growth gains on top of each character's level-1 template. The growth table's 8
+    // sub-records are in the same order as the template stats
+    // (hp, mp, agl, atk, udf, ldf, spd, int).
     let template = StartingParty::from_scus(scus)
         .context("decode starting-party template from SCUS_942.54")?;
-    let vahn = template
-        .member(0)
-        .context("starting-party template has no slot 0")?;
-    let base = [
-        vahn.hp_max,
-        vahn.mp_max,
-        vahn.agl,
-        vahn.atk,
-        vahn.udf,
-        vahn.ldf,
-        vahn.spd,
-        vahn.intel,
-    ];
     let growth =
         growth_tables_from_scus(scus).context("read stat-growth tables from SCUS_942.54")?;
-    let params = growth
-        .char_params(0)
-        .context("growth tables have no slot 0 (Vahn)")?;
 
-    let mut stats = [0u16; STAT_COUNT];
-    for (s, out) in stats.iter_mut().enumerate() {
-        let p = &params.stats[s];
-        let mut val = base[s] as u32;
-        // Gains applied leveling from L to L+1, for L = 1..N-1 (reaching level N).
-        for l in 1..n {
-            val += growth.level_gain_core(p, l).unwrap_or(1);
+    // The seed loop stamps the displayed level on every roster slot, so level all the
+    // slots the growth curves cover (Vahn / Noa / Gala) to keep level + stats coherent;
+    // the 4th template slot (Terra) has no curve and keeps its base stats.
+    let mut party_stats: Vec<[u16; STAT_COUNT]> = Vec::new();
+    for slot in 0..PARTY_RECORDS.min(GROWTH_CHAR_COUNT) {
+        let member = template
+            .member(slot)
+            .with_context(|| format!("starting-party template has no slot {slot}"))?;
+        let params = growth
+            .char_params(slot)
+            .with_context(|| format!("growth tables have no slot {slot}"))?;
+        let base = [
+            member.hp_max,
+            member.mp_max,
+            member.agl,
+            member.atk,
+            member.udf,
+            member.ldf,
+            member.spd,
+            member.intel,
+        ];
+        let mut stats = [0u16; STAT_COUNT];
+        for (s, out) in stats.iter_mut().enumerate() {
+            let p = &params.stats[s];
+            let mut val = base[s] as u32;
+            // Gains applied leveling from L to L+1, for L = 1..N-1 (reaching level N).
+            for l in 1..n {
+                val += growth.level_gain_core(p, l).unwrap_or(1);
+            }
+            // Never exceed the stat's level-99 ceiling (or the u16 range).
+            *out = val.min(p.max as u32).min(u16::MAX as u32) as u16;
         }
-        // Never exceed the stat's level-99 ceiling (or the u16 range).
-        *out = val.min(p.max as u32).min(u16::MAX as u32) as u16;
+        party_stats.push(stats);
     }
+    let stats = *party_stats
+        .first()
+        .context("no growth-capable party slot to seed")?;
 
     Ok(StartingLevelPlan {
         level,
         current_xp,
         next_threshold,
         stats,
+        party_stats,
     })
 }
 

@@ -493,8 +493,9 @@ pub fn patch_rom(
         let rep = apply::apply_starting_level(&mut patcher, starting_level)
             .map_err(|e| err(format!("starting-level: {e}")))?;
         summary.push_str(&format!(
-            "starting-level: new game begins at level {} (HP {}, MP {}, ATK {})\n",
-            rep.level, rep.stats[0], rep.stats[1], rep.stats[3]
+            "starting-level: starting party begins at level {} ({} slot(s) leveled; \
+             lead HP {}, MP {}, ATK {})\n",
+            rep.level, rep.slots_leveled, rep.stats[0], rep.stats[1], rep.stats[3]
         ));
     } else {
         summary.push_str("starting-level: untouched (vanilla level 1)\n");
