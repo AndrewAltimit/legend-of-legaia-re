@@ -119,6 +119,31 @@ pub fn guarded_grant_block(items: &[(u8, u8)], guard_bit: u16) -> Vec<u8> {
 /// MAN sub-asset type byte in a scene bundle's asset table.
 const MAN_TYPE: u8 = 0x03;
 
+/// Field-VM `BGM` opcode (`0x35`) — the entry script's sound-bank loader.
+const BGM_OP: u8 = 0x35;
+
+/// Walk the entry script from `pc0` and return the offset just past the first `BGM`
+/// op (`0x35`) — the safe injection point (the scene's sound bank is loaded by then).
+/// `None` if the script has no BGM op before its bytecode stops decoding cleanly
+/// (the caller falls back to `pc0`). Uses the shared field-VM disassembler to size
+/// each instruction, so it never mis-splits a multi-byte op.
+fn bgm_injection_offset(decoded: &[u8], pc0: usize) -> Option<usize> {
+    let mut pc = pc0;
+    // Bound the scan so a runaway never walks the whole MAN.
+    for _ in 0..64 {
+        let insn = legaia_asset::field_disasm::decode(decoded, pc).ok()?;
+        if insn.size == 0 {
+            return None;
+        }
+        let next = pc + insn.size;
+        if insn.opcode == BGM_OP {
+            return Some(next);
+        }
+        pc = next;
+    }
+    None
+}
+
 /// A scene whose opening event script can host the starting-bag grant block.
 ///
 /// Holds the decompressed MAN plus the absolute offset of its **entry script**
@@ -165,10 +190,17 @@ impl SceneBagInject {
         let &off = mf.partitions[1].first()?;
         let rstart = mf.data_region_offset + off as usize;
         let locals = *decoded.get(rstart)? as usize;
-        let inject_offset = rstart + 1 + locals * 2 + 4;
-        if inject_offset >= decoded.len() {
+        let pc0 = rstart + 1 + locals * 2 + 4;
+        if pc0 >= decoded.len() {
             return None;
         }
+        // Inject *after* the entry script's BGM op (the scene's sound-bank loader,
+        // op 0x35) rather than at pc0, so the entire vanilla scene-setup prologue
+        // (BGM / sound bank) runs byte-identically before the grant — otherwise the
+        // grant runs before the VAB is loaded and the BGM loader prints a stray
+        // "WARNING VAB NO …". Walk from pc0 to the first 0x35 and inject past it;
+        // fall back to pc0 if the script has no BGM op (still correct, just earlier).
+        let inject_offset = bgm_injection_offset(&decoded, pc0).unwrap_or(pc0);
         let next_off = table
             .used()
             .iter()
@@ -197,6 +229,12 @@ impl SceneBagInject {
     /// Offset of the MAN descriptor's decompressed-size word in the asset table.
     pub fn man_descriptor_off(&self) -> usize {
         self.man_descriptor_off
+    }
+
+    /// Absolute offset in the decoded MAN where the grant block is spliced (after
+    /// the entry script's BGM op; see [`Self::locate`]).
+    pub fn inject_offset(&self) -> usize {
+        self.inject_offset
     }
 
     /// Splice the guarded grant block at the entry-script start, recompress, and

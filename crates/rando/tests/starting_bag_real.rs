@@ -176,9 +176,10 @@ fn empty_bag_is_a_no_op() {
 }
 
 /// Decode the opening scene's MAN out of a PROT entry and return `(decoded_man,
-/// entry_script_pc0)` — the same path `SceneBagInject::locate` walks, used here to
-/// re-read the patched bytecode.
+/// inject_offset)` — the offset `SceneBagInject` splices at (just past the entry
+/// script's BGM op), used here to re-read the injected bytecode.
 fn decode_entry_script(entry: &[u8], _ext: usize) -> (Vec<u8>, usize) {
+    use legaia_asset::field_disasm;
     use legaia_asset::{man_section, scene_asset_table};
     let table = scene_asset_table::detect(entry).expect("scene table");
     let man_idx = table.descriptor_index(0x03).expect("MAN descriptor");
@@ -191,5 +192,15 @@ fn decode_entry_script(entry: &[u8], _ext: usize) -> (Vec<u8>, usize) {
     let rstart = mf.data_region_offset + off as usize;
     let locals = decoded[rstart] as usize;
     let pc0 = rstart + 1 + locals * 2 + 4;
+    // Walk to just past the first BGM op (0x35) — the injection point.
+    let mut pc = pc0;
+    for _ in 0..64 {
+        let insn = field_disasm::decode(&decoded, pc).expect("decode entry op");
+        let next = pc + insn.size;
+        if insn.opcode == 0x35 {
+            return (decoded, next);
+        }
+        pc = next;
+    }
     (decoded, pc0)
 }
