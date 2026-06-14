@@ -369,8 +369,10 @@ original seed + a redundant inline zero-loop both callers already cover with the
 - `plan_starting_items` picks `n` distinct random consumables from
   `STARTING_ITEM_POOL` (`0x77..=0x8e`) with small random counts.
 - `build_seed_patch` encodes them as one packed halfword store per slot
-  (`addiu $v0,(count<<8)|id; sh $v0,off($s0)`), capping at `MAX_STARTING_ITEMS` = 5.
+  (`addiu $v0,(count<<8)|id; sh $v0,off($s0)`); the inventory region holds
+  `INV_REGION_SLOTS` = 5 and the warp region two more (`MAX_STARTING_ITEMS` = 7).
   Same-size code patch (no executable growth), applied via `patch_named_file`.
+  Items past that cap are granted by the `starting_bag` GIVE_ITEM path (below).
 
 ### Door-of-Wind / all-warps toggles
 
@@ -392,29 +394,47 @@ toggles:
 The warp preset shares a second reclaimable region (`0x80034adc`, four redundant
 `sw $zero` stores; uses `$v1` to spare the live `$v0`) that does double duty: it
 holds EITHER the all-towns bitmask (`build_warp_patch`) OR the two item slots that
-overflow the inventory region's five (`build_warp_items_patch`). So the bag holds
-seven items with all-warps off, five with it on, and the random fill stays
-additive to the convenience items up to that cap (`plan_seed`); the slots both
-regions write are contiguous, and `StartingInventory::from_scus` replays both.
+overflow the inventory region's five (`build_warp_items_patch`). So the **direct**
+seed holds seven items with all-warps off, five with it on, and the random fill
+stays additive to the convenience items up to that cap (`plan_seed`); the slots
+both regions write are contiguous, and `StartingInventory::from_scus` replays both.
+
+### Beyond the direct cap (`starting_bag` module)
+
+The reclaimable seed code can't grow, so anything past the seven-slot direct cap
+(`overflow_bag`) is granted a different way: a run of **silent `GIVE_ITEM` field-VM
+ops** (`0x39`) — the same op a treasure chest uses — spliced into the opening scene
+`town01`'s entry script, wrapped in a **once-only guard** on a persistent SC
+story flag (the `0x50` SET / `0x70` TEST bank at `0x80085758`). The block is emitted
+by `starting_bag::guarded_grant_block` (round-tripped through `legaia_asset::field_disasm`)
+and inserted **after the entry script's BGM op** via `man_edit::apply_insertions`
+(variable-length MAN insert with partition / jump-delta fixups; injecting before the
+BGM made the silent gives run before the sound bank loaded and flashed a stray
+"WARNING VAB NO …"). `apply::apply_starting_bag` recompresses the MAN and bumps its
+descriptor size word. So `direct + overflow` reconstructs the full bag (unit-tested)
+and the player gets all the explicit convenience items **plus** the full requested
+random count. Disc-gated oracle: `starting_bag_real`.
 
 ## Starting level
 
 `apply_starting_level` begins a New Game with the lead character (Vahn) at a
-chosen level instead of 1 (`starting_level` module). Legaia stores no level field
-— the per-character level byte at record `+0x100` is zeroed by the new-game
-memset and never written by retail, so the displayed level is derived from
-cumulative XP. Two same-size SCUS edits make a level-`N` start coherent:
+chosen level instead of 1 (`starting_level` module). A New Game seeds four
+live-record cells; the **displayed level** is the byte at `+0x130` (boot-confirmed —
+*not* derived from experience at a New Game; `+0x100` is zero in retail). Same-size
+SCUS edits make a level-`N` start coherent:
 
-- **XP** — rewrite the seed routine's `addiu $v0, $zero, 0x79` literal
-  (`STARTING_XP_SEED_VA`) to the midpoint of level `N`'s XP band (from the disc's
-  own `xp_thresholds_from_scus`), so it lands unambiguously inside the band. A
-  single 16-bit immediate, which caps the level at `MAX_STARTING_LEVEL` (14).
+- **Level** — the seed loop's level literal + stores set `+0x130 = N` (packed
+  `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping magic rank `+0x131` at 1).
+- **Experience** — slot 0's `+0x0` gets the midpoint of level `N`'s XP band (from the
+  disc's own `xp_thresholds_from_scus`) via a `$t0` preload + store that repurpose
+  the slot-3/slot-1 threshold seeds; the next-level threshold `+0x4` gets
+  `reach(N+1)`. Single 16-bit immediates, which caps the level at
+  `MAX_STARTING_LEVEL` (14).
 - **Stats** — overwrite slot 0's eight `u16` template stats (`PARTY_TEMPLATE_VA`)
   with the level-`N` values, accumulated from the disc's deterministic per-level
-  growth curves (`GrowthTables::level_gain_core`) on top of the level-1 template,
-  so the start has level-`N` HP/ATK rather than level-1 stats behind a full XP bar.
+  growth curves (`GrowthTables::level_gain_core`) on top of the level-1 template.
 
-Only the New-Game character (slot 0) is affected; magic rank is left at 1. The
+Only the New-Game character (slot 0) is seeded; joining characters re-scale. The
 disc-gated `starting_level_real` oracle round-trips every level in range.
 
 ## Item prices

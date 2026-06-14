@@ -439,36 +439,35 @@ impl CharacterRecord {
         self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
     }
 
-    /// Character level byte at `+0x100` (u8).
-    ///
-    /// Pinned by the captured per-character level-up triplets (Noa mc4-7,
-    /// Gala mc7-9): the engine writes this byte from the live `BattleActor`
-    /// mirror's level field as part of the post-battle settle pass, and the
-    /// `GameShark Level 99` cheat sets the same byte to `0x63`.
+    /// Byte at `+0x100` (u8). **Not the retail displayed level** — `+0x100` is zero
+    /// in retail (both card saves and live RAM); the live displayed level is at
+    /// `+0x130` (see [`Self::magic_rank`], boot-confirmed via the starting-level
+    /// randomizer). This accessor is kept as the engine port's *own* internal level
+    /// cell, written/read by its level-up sync for its LGSF saves — self-consistent
+    /// for the port, a deliberate divergence from the retail byte, not a mirror.
     pub fn level(&self) -> u8 {
         self.raw[0x100]
     }
 
-    /// Replace the character-level byte. Engines call this after
-    /// granting XP and resolving a level-up to keep the save record in
-    /// sync with the live tracker.
+    /// Replace the `+0x100` byte (the engine port's internal level cell — see
+    /// [`Self::level`]). The retail displayed level is [`Self::magic_rank`] (`+0x130`).
     pub fn set_level(&mut self, level: u8) {
         self.raw[0x100] = level;
     }
 
-    /// "Magic Rank" / level field at `+0x130` (u8).
+    /// Byte at `+0x130` (u8) — the **retail displayed character level** (legacy
+    /// accessor name).
     ///
-    /// Captured Noa + Gala level-up triplets show this byte ticking
-    /// `+1` per level-up event regardless of how many character
-    /// levels were granted; the GameShark `Level 99` cheat for each
-    /// character sets the same byte to `0x63`. The two readings are
-    /// reconciled by treating this byte as the **Magic Rank** (not
-    /// the character level): single-level XP gains tick rank +1
-    /// per event, and the cheat-set value of 99 unlocks every
-    /// magic / summon at maximum power without affecting the
-    /// character's Tactical Arts level. The character's combat
-    /// level is derived from cumulative XP via
-    /// [`crate::level_for_cumulative_xp`].
+    /// Boot-confirmed via the starting-level randomizer: this is the byte the status
+    /// screen reads as "LV" and the GameShark `Level 99` code targets — a New Game
+    /// record with level-10 cumulative experience (`+0x0`), level-10 stats, and the
+    /// right next-level threshold (`+0x4`) but `+0x130 == 1` still shows LV 1, and
+    /// `+0x130 = 10` shows LV 10. The retail level-up applier maintains it `+1` per
+    /// level-up event (the captured Noa/Gala four-level jumps bumped it by one, so it
+    /// can lag the XP-derived level after a rare multi-level grant). The earlier
+    /// "Magic Rank, level derived from XP" reading is superseded for the level
+    /// question; a separate magic-rank byte may live at the adjacent `+0x131` (the
+    /// new-game seed inits both to 1) but is unconfirmed.
     pub fn magic_rank(&self) -> u8 {
         self.raw[0x130]
     }

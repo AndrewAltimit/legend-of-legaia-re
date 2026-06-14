@@ -707,6 +707,29 @@ is the contiguous consumable block `0x77..=0x8e` (Healing Leaf … Wonder Elixir
 `--starting-items N` (0 = leave vanilla); the read-only `starting-items` listing
 shows the current bag.
 
+#### Beyond the seven-slot cap — opening-scene `GIVE_ITEM` injection
+
+The direct seed is hard-capped at seven slots (five with `--all-warps`): the
+reclaimable executable region is that small, there is no safe code cave, and the
+file can't grow within the same-size-sector / PPF patch model. So when the bag
+(convenience items **plus** the requested random fill) exceeds the cap, the
+overflow is granted a different way — the way a treasure chest grants an item: a
+run of **silent `GIVE_ITEM` field-VM ops** (`0x39`, `[0x39, id]`; the "found X!"
+text is a separate `0xC2` token, so a bare `0x39` is a silent add) spliced into the
+**opening scene `town01`'s entry script**. That script runs on every scene load, so
+the block is wrapped in a once-only guard on a persistent SC story flag (the
+`0x50` SET / `0x70` TEST bank at `0x80085758`, where `--all-warps` writes): test the
+flag, skip the block if set, else grant the bag and set it. `apply::apply_starting_bag`
+emits the guarded block (`starting_bag::guarded_grant_block`), inserts it at the
+entry script's first opcode via `man_edit::apply_insertions` (the same partition /
+jump-delta relocation the door randomizer uses), recompresses the MAN in place, and
+bumps the descriptor size word. `starting_items::overflow_bag` computes the items
+past the direct cap; the direct seed still writes the prefix, so `direct + overflow`
+is exactly the full bag (unit-tested — no duplicate, no gap). The disc-gated
+`starting_bag_real` oracle round-trips the injected bytecode; the runtime grant
+needs a boot test (the guard bit `0xD70` is chosen from the high, retail-unused end
+of the saved bitfield but isn't proven free at runtime — it's a tunable constant).
+
 ### Starting-bag convenience toggles
 
 Opt-in flags that ride the same reclaimable seed region as the starting items,
@@ -772,40 +795,44 @@ matches the user-verified GameShark write byte-for-byte.
 
 **`--starting-level N`** (web: a dropdown) begins a New Game with the lead
 character (Vahn) already at level `N` instead of 1 (`0`/`1` = vanilla; range
-`2..=14`). Legaia has **no stored level field**: the per-character level byte at
-record `+0x100` is left zero by the New-Game memset and never written by retail
-(byte-checked against early save states, where `+0x100 = 0` even for clearly
-past-level-1 characters), so the displayed combat level is derived from the
-cumulative-XP cell at record `+0x4`. A coherent level-`N` start therefore takes
-two same-size in-place edits in `SCUS_942.54`, both applied by
-`apply::apply_starting_level`:
+`2..=14`). A New Game seeds four live-record cells (see
+[save-record.md](../formats/save-record.md) / [new-game-table.md](../formats/new-game-table.md)):
+the **displayed level** at `+0x130` (what "LV" shows — boot-confirmed; *not* derived
+from experience at a New Game), the **cumulative experience** at `+0x0`, the
+**next-level threshold** at `+0x4`, and the stats from the party template. Vanilla
+seeds level 1 / experience 0; a coherent level-`N` start takes same-size in-place
+edits to `SCUS_942.54`, applied by `apply::apply_starting_level`:
 
-1. **XP** — the seed routine `FUN_800560B4` writes Vahn's starting XP from a
-   single `addiu $v0, $zero, 0x79` literal (= 121) at
-   `STARTING_XP_SEED_VA` (`0x800560F0`). The randomizer rewrites that immediate
-   to the **midpoint of level `N`'s XP band** — between the disc's own thresholds
-   to reach `N` and `N+1` (`legaia_asset::level_up_tables::xp_thresholds_from_scus`)
-   — so the value sits unambiguously inside the band regardless of the exact
-   comparison the level display uses. Because it is a single 16-bit immediate, the
-   midpoint must fit a positive `imm16` (`<= 0x7FFF`), which caps the level at
-   **14**. The literal is shared with slot 3 (Terra), who re-scales when she
-   actually joins, so only the character present at a New Game is affected.
-2. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) still
-   feeds the live record, so the randomizer overwrites slot 0's eight `u16` stats
-   with the level-`N` values. These are computed by accumulating the deterministic
-   (jitter-free) per-level growth gains (`GrowthTables::level_gain_core`, the
-   `FUN_801E9504` curve arithmetic) on top of the level-1 template, so a level-10
-   Vahn gets level-10 HP/ATK/… (e.g. HP 584 vs the vanilla 180) rather than
-   level-1 stats behind a level-10 XP bar. The 10-byte name after the stats is
-   left untouched.
+1. **Level** — the seed loop's level literal + stores set `+0x130 = N` (packed
+   `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping the magic-rank byte
+   `+0x131` at 1). This is what makes the status screen read **LV N**.
+2. **Experience** — seed slot 0's `+0x0` to the **midpoint of level `N`'s XP band**
+   (between the disc's own thresholds to reach `N` and `N+1`,
+   `legaia_asset::level_up_tables::xp_thresholds_from_scus`), so the "Experience"
+   readout and the level-up applier's progression are coherent. The seed routine
+   does not write `+0x0` natively, so the randomizer repurposes the slot-3 (Terra) +
+   slot-1 (Noa) next-level-threshold seeds at `0x800560FC` / `0x80056100` into an
+   `addiu $t0, midpoint` preload + `sw $t0, 0x5c8($s0)` store. Both are single 16-bit
+   immediates, so the value must fit a positive `imm16` (`<= 0x7FFF`), which caps the
+   level at **14**. Noa/Terra re-scale when they join, so the dropped seeds are never
+   observed.
+3. **Next threshold** — set the slot-0 `+0x4` cell (the "next" readout) to
+   `reach(N+1)` via the literal at `STARTING_XP_SEED_VA` (`0x800560F0`, vanilla
+   `addiu $v0, $zero, 0x79` = 121).
+4. **Stats** — the level-1 starting-party template (`PARTY_TEMPLATE_VA`) still feeds
+   the live record, so the randomizer overwrites slot 0's eight `u16` stats with the
+   level-`N` values, computed by accumulating the deterministic (jitter-free)
+   per-level growth gains (`GrowthTables::level_gain_core`, the `FUN_801E9504` curve
+   arithmetic) on top of the level-1 template — so a level-10 Vahn gets level-10
+   HP/ATK/… (e.g. HP 584 vs the vanilla 180). The 10-byte name is left untouched.
 
-Magic rank (a separate progression that ticks once per level-up event) is left at
-its seeded value of 1. The disc-gated `starting_level_real` test round-trips the
-edit off the patched image — the seeded XP decodes back to the requested level
-for every level in range, the stats are the growth-curve values and strictly above
-vanilla, and the surrounding seed-routine code stays byte-identical and
-EDC/ECC-valid. The randomizer is enabled at level 10 in the web "Balanced" and
-"Full Chaos" presets and off in "Vanilla" / "Item Shuffle".
+The disc-gated `starting_level_real` test round-trips the edit off the patched
+image — the seeded experience decodes back to the requested level for every level in
+range, the level/experience/threshold instructions carry the planned values, the
+stats are the growth-curve values and strictly above vanilla, and the
+surrounding seed-routine code stays byte-identical and EDC/ECC-valid. The
+randomizer is enabled at level 10 in the web "Balanced" and "Full Chaos" presets
+and off in "Vanilla" / "Item Shuffle".
 
 ### Unused content
 

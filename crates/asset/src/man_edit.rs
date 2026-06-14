@@ -492,6 +492,22 @@ pub fn apply_dest_edits(man: &[u8], edits: &[DestEdit]) -> Result<Vec<u8>, ManEd
         });
     }
 
+    rebuild_man(man, &mf, splices, &jump_fixups)
+}
+
+/// Rebuild a decompressed MAN applying `splices` (each replaces `old_len` bytes at
+/// `block_start` with `new_bytes`, byte delta `delta`) and fixing the three classes
+/// of internal offset: the partition record-offset tables, the section-0 offset
+/// (`u24_at_28`), and the intra-record relative-jump deltas in `jump_fixups`. The
+/// relocation is identical whether the splices come from destination-name resizes
+/// ([`apply_dest_edits`]) or raw byte insertions ([`apply_insertions`]). Errors on
+/// overlapping splices.
+fn rebuild_man(
+    man: &[u8],
+    mf: &ManFile,
+    mut splices: Vec<Splice>,
+    jump_fixups: &[RelJump],
+) -> Result<Vec<u8>, ManEditError> {
     splices.sort_by_key(|s| s.block_start);
     for w in splices.windows(2) {
         if w[0].block_start + w[0].old_len > w[1].block_start {
@@ -546,7 +562,7 @@ pub fn apply_dest_edits(man: &[u8], edits: &[DestEdit]) -> Result<Vec<u8>, ManEd
     // ---- fixup #3: intra-record relative-jump deltas ----
     // Only jumps whose endpoints straddle a splice change; the rest recompute to
     // the same delta. The delta field lives at the jump's relative `base`.
-    for j in &jump_fixups {
+    for j in jump_fixups {
         let new_base = map_off(j.base);
         let new_target = map_off(j.target);
         let new_delta = (new_target as i64 - new_base as i64) as u16;
@@ -554,6 +570,62 @@ pub fn apply_dest_edits(man: &[u8], edits: &[DestEdit]) -> Result<Vec<u8>, ManEd
     }
 
     Ok(out)
+}
+
+/// One byte-block insertion into a decompressed MAN: splice `bytes` in **before**
+/// the instruction currently at `offset` (an instruction boundary inside a record's
+/// script body), growing that record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Insertion {
+    /// Absolute offset in the decompressed MAN to insert before. Must be at/after
+    /// the containing record's first opcode (`pc0`) and at/before its end.
+    pub offset: usize,
+    /// The bytecode to splice in. Assumed position-independent at `offset` (its own
+    /// relative jumps are self-contained); the caller emits such a block (see
+    /// `legaia_rando::starting_bag`).
+    pub bytes: Vec<u8>,
+}
+
+/// Insert byte blocks into a decompressed MAN, returning the rebuilt buffer with the
+/// partition table / section offset / intra-record jump deltas relocated (the same
+/// fixups as [`apply_dest_edits`], via [`rebuild_man`]).
+///
+/// Each insertion must sit at an instruction boundary inside a record's script body,
+/// and that record must contain no absolute reference (`0x4E` abs-jump, `0x45 0xC0`
+/// camera-apply, inventory abs-jump) — those store an absolute target that a shift
+/// would invalidate, so the call errors [`ManEditError::AbsoluteRef`] and the caller
+/// leaves the scene unchanged (relative jumps shift with their record and are
+/// preserved). The caller rewrites the external descriptor size after recompressing
+/// and should run [`validate`] / re-walk on the result.
+pub fn apply_insertions(man: &[u8], insertions: &[Insertion]) -> Result<Vec<u8>, ManEditError> {
+    let mf = man_section::parse(man).map_err(|_| ManEditError::Parse)?;
+    let mut splices: Vec<Splice> = Vec::new();
+    let mut jump_fixups: Vec<RelJump> = Vec::new();
+    for ins in insertions {
+        if ins.bytes.is_empty() {
+            continue;
+        }
+        let (rstart, pc0, rend) = record_for(&mf, man, ins.offset)
+            .ok_or(ManEditError::RecordNotFound { op_pc: ins.offset })?;
+        if ins.offset < rstart + pc0 || ins.offset > rend {
+            return Err(ManEditError::RecordNotFound { op_pc: ins.offset });
+        }
+        // Reuse the record scan to reject absolute refs + collect relative jumps
+        // (which a uniform same-record shift leaves with identical deltas, but the
+        // fixup re-emits them correctly regardless).
+        jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend, ins.offset)?);
+        splices.push(Splice {
+            block_start: ins.offset,
+            old_len: 0,
+            delta: ins.bytes.len() as i64,
+            tail: ins.offset,
+            new_bytes: ins.bytes.clone(),
+        });
+    }
+    if splices.is_empty() {
+        return Ok(man.to_vec());
+    }
+    rebuild_man(man, &mf, splices, &jump_fixups)
 }
 
 /// Re-parse the rebuilt MAN and confirm it walks cleanly: the structure parses

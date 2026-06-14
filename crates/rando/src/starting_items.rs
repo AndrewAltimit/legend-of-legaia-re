@@ -215,8 +215,19 @@ pub fn plan_starting_items(seed: u64, n: usize) -> Vec<(u8, u8)> {
 
 /// Plan `n` random starting items, excluding any id in `exclude` from the draw
 /// (so a forced item like Door of Wind isn't also dealt a duplicate slot). `n`
-/// is clamped to the (filtered) pool size. Deterministic in `(seed, n, exclude)`.
+/// is clamped to [`MAX_STARTING_ITEMS`] and the (filtered) pool size. Deterministic
+/// in `(seed, n, exclude)`.
 fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
+    plan_random_items_capped(seed, n, exclude, MAX_STARTING_ITEMS)
+}
+
+/// Like [`plan_random_items`] but clamped to `cap` (and the pool size) instead of
+/// [`MAX_STARTING_ITEMS`]. The shuffle + per-item count RNG draws are identical
+/// regardless of `cap`, so a larger `cap` simply extends the same sequence — the
+/// first `min(small_cap, …)` items match a smaller-`cap` call exactly. This lets
+/// the script-injection path ([`plan_full_bag`]) plan a bag beyond the 7-slot
+/// direct-seed cap whose prefix still equals what [`plan_seed`] seeds directly.
+fn plan_random_items_capped(seed: u64, n: usize, exclude: &[u8], cap: usize) -> Vec<(u8, u8)> {
     let mut rng = SplitMix64::new(seed ^ 0x5247_4E49_5453_5452); // "RGNITSTR"-ish salt
     let mut pool: Vec<u8> = STARTING_ITEM_POOL
         .iter()
@@ -227,9 +238,71 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
     let (lo, hi) = DEFAULT_COUNT_RANGE;
     let span = (hi - lo) as usize + 1;
     pool.into_iter()
-        .take(n.min(MAX_STARTING_ITEMS))
+        .take(n.min(cap))
         .map(|id| (id, lo + rng.below(span) as u8))
         .collect()
+}
+
+/// Capacity of the direct new-game seed given the warp preset: [`INV_REGION_SLOTS`]
+/// when `all_warps` claims the warp region, else [`MAX_STARTING_ITEMS`]. Items
+/// beyond this are granted by the script-injection path ([`overflow_bag`]).
+pub fn direct_cap(all_warps: bool) -> usize {
+    if all_warps {
+        INV_REGION_SLOTS
+    } else {
+        MAX_STARTING_ITEMS
+    }
+}
+
+/// The **full**, uncapped starting bag for `opts` — the forced convenience items
+/// then the full requested random fill (or the vanilla Healing Leaf base when no
+/// reroll), in the exact order [`plan_seed`] composes. So `plan_seed`'s output is
+/// this list truncated to [`direct_cap`], and the remainder is the [`overflow_bag`]
+/// the script path grants. Deterministic in `(seed, opts)`.
+pub fn plan_full_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
+    let cap = direct_cap(opts.all_warps);
+    let mut items: Vec<(u8, u8)> = Vec::new();
+    let mut forced_ids: Vec<u8> = Vec::new();
+    for (id, count) in [
+        (DOOR_OF_WIND_ID, opts.door_of_wind),
+        (INCENSE_ID, opts.incense),
+        (SPEED_CHAIN_ID, opts.speed_chain),
+        (CHICKEN_HEART_ID, opts.chicken_heart),
+        (GOOD_LUCK_BELL_ID, opts.good_luck_bell),
+    ] {
+        let count = count.min(MAX_ITEM_STACK);
+        if count > 0 {
+            items.push((id, count));
+            forced_ids.push(id);
+        }
+    }
+    if opts.random_items > 0 {
+        // Uncapped random fill (cap = pool size); the first `cap - forced` of these
+        // match what `plan_seed` seeds directly, the rest are the overflow.
+        items.extend(plan_random_items_capped(
+            seed,
+            opts.random_items,
+            &forced_ids,
+            STARTING_ITEM_POOL.len(),
+        ));
+    } else if items.len() < cap {
+        items.push(VANILLA_STARTING_ITEM);
+    }
+    items
+}
+
+/// The starting-bag slots beyond the direct seed's [`direct_cap`] — the items the
+/// script-injection path ([`crate::starting_bag`]) grants on top of what
+/// [`plan_seed`] writes directly. Empty when the whole bag fits the direct seed.
+/// Deterministic in `(seed, opts)`.
+pub fn overflow_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
+    let full = plan_full_bag(seed, opts);
+    let cap = direct_cap(opts.all_warps);
+    if full.len() > cap {
+        full[cap..].to_vec()
+    } else {
+        Vec::new()
+    }
 }
 
 /// Resolve [`StartingSeedOptions`] into a concrete [`SeedPlan`] for `seed`.
@@ -944,5 +1017,54 @@ mod tests {
             assert_ne!(*id, DOOR_OF_WIND_ID, "reroll excludes Door of Wind");
             assert_ne!(*id, INCENSE_ID, "reroll excludes Incense");
         }
+    }
+
+    #[test]
+    fn direct_seed_is_the_full_bag_prefix_and_overflow_is_the_rest() {
+        // A bag past the direct cap (2 convenience + a big random fill), with and
+        // without all-warps (which lowers the cap). The direct seed must equal the
+        // full bag's prefix and `direct ++ overflow` must reconstruct it exactly —
+        // so the script path grants precisely the items the direct seed dropped, no
+        // duplicate, no gap.
+        for all_warps in [false, true] {
+            let opts = StartingSeedOptions {
+                random_items: 12,
+                door_of_wind: DOOR_OF_WIND_COUNT,
+                incense: INCENSE_COUNT,
+                all_warps,
+                ..Default::default()
+            };
+            for seed in [1u64, 42, 0xC0FFEE, 1781435615857] {
+                let direct = plan_seed(seed, &opts).items;
+                let full = plan_full_bag(seed, &opts);
+                let overflow = overflow_bag(seed, &opts);
+                let cap = direct_cap(all_warps);
+                assert!(direct.len() <= cap, "direct seed within its cap");
+                assert_eq!(
+                    direct,
+                    full[..direct.len()],
+                    "direct seed is the full bag's prefix (all_warps={all_warps}, seed={seed})"
+                );
+                let mut combined = direct.clone();
+                combined.extend(overflow.iter().copied());
+                assert_eq!(
+                    combined, full,
+                    "direct + overflow reconstructs the full bag (no dup, no gap)"
+                );
+                // The bag exceeds the cap, so there IS overflow for the script path.
+                assert!(!overflow.is_empty(), "this bag overflows the direct cap");
+            }
+        }
+    }
+
+    #[test]
+    fn small_bag_has_no_overflow() {
+        // A bag that fits the direct seed produces no script-path overflow.
+        let opts = StartingSeedOptions {
+            door_of_wind: DOOR_OF_WIND_COUNT,
+            incense: INCENSE_COUNT,
+            ..Default::default()
+        };
+        assert!(overflow_bag(7, &opts).is_empty());
     }
 }
