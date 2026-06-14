@@ -215,6 +215,8 @@
           <option value="3">3 random items</option>
           <option value="4">4 random items</option>
           <option value="5">5 random items</option>
+          <option value="6">6 random items</option>
+          <option value="7">7 random items</option>
         </select>
       </div>
 
@@ -291,7 +293,7 @@
     <li><strong>Weapon specialty</strong> &mdash; reassigns which weapon class each character favors (Vahn blades, Noa claws, Gala clubs/axes by default), permuting the three favored classes among them. Equipping an off-class weapon widens that character's <em>Arms</em> command in an arts combo, so fewer commands fit; this rewrites the per-(character, weapon) arm-cost byte in the player battle files (decompressing / re-compressing each section in place). The Astral Sword stays always-wide and can't be specialized in.</li>
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
-    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with up to five distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place.</li>
+    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place. The random fill shares the seed's seven-slot capacity (five with all-warps) with the convenience toggles below and adds on top of them rather than crowding them out.</li>
     <li><strong>Unused enemies</strong> &mdash; brings back two fully-formed monsters the shipped game never places: <strong>&ldquo;Comm&rdquo;</strong> and the <strong>Evil Bat</strong>. Only takes effect with <em>Randomize</em> encounters (a Shuffle can't introduce a new monster).</li>
     <li><strong>Unused items</strong> &mdash; adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a sell item) and a no-name accessory the randomizer names <strong>&ldquo;Seru Bell&rdquo;</strong>. Only affects the <em>Randomize</em> drop / chest / steal fills.</li>
   </ul>

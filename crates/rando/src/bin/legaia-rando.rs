@@ -296,9 +296,10 @@ struct RandomizeArgs {
     house_doors: DropArg,
     /// Number of random starting items the new game begins with (`0` = leave the
     /// vanilla Healing Leaf ×5 untouched). Each is a distinct random consumable
-    /// with a small random count; capped at the seed region's capacity (5, or 3
-    /// when `--all-warps` is set). `legaia-rando starting-items` shows the
-    /// current contents.
+    /// with a small random count. The random fill shares the seed's capacity
+    /// (7 slots, or 5 with `--all-warps`) with the convenience-item toggles, and
+    /// takes whatever they leave — so it adds on top of them rather than being
+    /// crowded out. `legaia-rando starting-items` shows the current contents.
     #[arg(long, default_value_t = 0)]
     starting_items: usize,
     /// Seed Door of Wind (the warp consumable) into the new game's starting bag.

@@ -56,8 +56,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
 /// `"shuffle"`. `starting_items` is the number of random starting consumables
-/// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
-/// 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+/// the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
+/// random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
+/// the convenience-item toggles below and takes whatever they leave, so it adds
+/// on top of them. `door_of_wind` is how many Door of Wind (the warp consumable) to seed
 /// into the starting bag (`0` = none); `incense` is how many Incense (the
 /// encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
 /// `chicken_heart` / `good_luck_bell` seed those accessories the same way

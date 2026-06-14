@@ -349,7 +349,10 @@ pub fn scus_unlocks_all_warps(scus: &[u8]) -> Option<bool> {
 /// seed routine ([`STARTING_INV_SEED_VA`]) writes into the live consumable
 /// inventory at New Game, in slot order. Vanilla retail is a single slot
 /// `(0x77, 5)` (Healing Leaf ×5); the starting-item randomizer rewrites this
-/// region to seed up to five slots.
+/// region to seed multiple slots. The randomizer can also borrow the adjacent
+/// warp-preset region ([`WARP_SEED_VA`]) for the last couple of slots when the
+/// all-warps preset is not in use, so a decode must replay both regions — the
+/// slots they write are contiguous in the inventory.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StartingInventory {
     items: Vec<(u8, u8)>,
@@ -366,19 +369,38 @@ impl StartingInventory {
     /// every `sb $v0`/`sh $v0` store into a sparse `SC`-offset → byte map, then
     /// reads `(id, count)` slots from [`INVENTORY_SC_OFFSET`] until the
     /// id-`0` terminator — so it handles either encoding (and any future one)
-    /// without special-casing instruction order. Returns `None` if the image
-    /// isn't a PSX-EXE or the region is out of range.
+    /// without special-casing instruction order. Both the inventory-seed region
+    /// and the warp-preset region are replayed (the randomizer can spill the
+    /// last slots into the latter when all-warps is off; when it holds the warp
+    /// bitmask or its original stores instead, those land at offsets the slot
+    /// reader ignores). Returns `None` if the image isn't a PSX-EXE or a region
+    /// is out of range.
     pub fn from_scus(scus: &[u8]) -> Option<Self> {
         let map = ExeMap::parse(scus)?;
-        let off = map.off(STARTING_INV_SEED_VA)?;
-        let region = scus.get(off..off + STARTING_INV_SEED_LEN)?;
-        Some(Self::decode_region(region))
+        let inv_off = map.off(STARTING_INV_SEED_VA)?;
+        let inv = scus.get(inv_off..inv_off + STARTING_INV_SEED_LEN)?;
+        let warp_off = map.off(WARP_SEED_VA)?;
+        let warp = scus.get(warp_off..warp_off + WARP_SEED_LEN)?;
+        Some(Self::decode_regions(inv, warp))
     }
 
-    /// Decode a 40-byte seed region (exposed for callers that already hold the
-    /// raw bytes, e.g. a patcher reading back its own edit).
+    /// Decode a 40-byte inventory-seed region alone (exposed for callers that
+    /// already hold the raw bytes, e.g. a patcher reading back its own edit).
     pub fn decode_region(region: &[u8]) -> Self {
-        let bytes = replay_seed_stores(region);
+        Self::decode_from_bytes(replay_seed_stores(region))
+    }
+
+    /// Decode from both reclaimable regions: the inventory-seed region and the
+    /// warp-preset region (which the randomizer may borrow for the last item
+    /// slots). Stores from both are replayed into one `SC`-offset → byte map;
+    /// they target disjoint offsets, so merge order is irrelevant.
+    pub fn decode_regions(inv: &[u8], warp: &[u8]) -> Self {
+        let mut bytes = replay_seed_stores(inv);
+        bytes.extend(replay_seed_stores(warp));
+        Self::decode_from_bytes(bytes)
+    }
+
+    fn decode_from_bytes(bytes: std::collections::BTreeMap<u32, u8>) -> Self {
         let mut items = Vec::new();
         let mut slot = 0u32;
         loop {

@@ -687,13 +687,17 @@ inventory) right before the call.
 small random count) and writes one **packed halfword store** per item into that
 region — an inventory slot is two contiguous bytes `[id][count]`, so
 `addiu $v0, (count<<8)|id; sh $v0, (0x1818 + 2k)($s0)` seeds a slot in two
-instructions. Ten instructions / two per item caps it at **five** starting
-items. The patch is the same size as the original code (no executable growth or
-relocation), applied like the steal table via `patch_named_file`. Because the
-write lands directly in the consumable page (bypassing the engine's id-routing
-add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
-(Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
-read-only `starting-items` listing shows the current bag.
+instructions. Ten instructions / two per item gives the inventory region **five**
+slots. The adjacent warp-preset region (below) carries **two more** slots when
+the all-warps preset is not using it, for a combined cap of **seven** starting
+items (five with `--all-warps`); the slots the two regions write are contiguous
+in the inventory array, so a decode replays both regions as one run. The patch is
+the same size as the original code (no executable growth or relocation), applied
+like the steal table via `patch_named_file`. Because the write lands directly in
+the consumable page (bypassing the engine's id-routing add primitive), the pool
+is the contiguous consumable block `0x77..=0x8e` (Healing Leaf … Wonder Elixir).
+`--starting-items N` (0 = leave vanilla); the read-only `starting-items` listing
+shows the current bag.
 
 ### Starting-bag convenience toggles
 
@@ -722,9 +726,10 @@ list as plain `(id, count)` pairs — so an accessory seeds exactly like a consu
 
 All five item toggles are *additive* (the vanilla Healing Leaf ×5 is kept unless a
 `--starting-items` reroll replaces it) and stack. Forced items are seeded first so
-they survive the five-slot capacity clamp (Door of Wind, Incense, Speed Chain,
-Chicken Heart, Good Luck Bell — exactly filling the five slots if all are on), and
-a reroll excludes every forced id so it never deals a duplicate.
+they survive the capacity clamp, and a `--starting-items` reroll takes whatever
+capacity they leave (excluding every forced id so it never deals a duplicate) —
+so a random fill adds *on top of* the convenience items instead of being crowded
+out by them, up to the seven-slot cap (five with `--all-warps`).
 
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
@@ -732,14 +737,19 @@ a reroll excludes every forced id so it never deals a duplicate.
 GameShark code writes (`0x8008575C = 0xF77F`, `0x8008575E = 0xF8FF`). It lives in
 the story-flag block (`SC + 0x14C0..0x16C0`), which the New-Game seed `memset`
 covers, so the seed code can preset it the same way it presets the inventory. The
-preset gets its **own** reclaimable region in `FUN_80034A6C` —
+preset lives in a **second** reclaimable region in `FUN_80034A6C` —
 `0x80034adc..0x80034aeb`, four redundant `sw $zero` stores into `SC` words the
-caller already zeroed — so it does **not** reduce the starting-item budget (items
-keep all five slots). It uses `$v1` (not `$v0`, which carries a live `0x2dc0`
-constant into `DAT_80073ef8` just below) and survives because the inventory
+caller already zeroed. This region does double duty: it holds **either** the
+all-warps bitmask **or** the two item slots that overflow the inventory region
+(slots 6–7), so `--all-warps` and a full seven-item bag are mutually exclusive —
+turning all-warps on lowers the item cap to the inventory region's five. Both
+forms use `$v1` (not `$v0`, which carries a live `0x2dc0` constant into
+`DAT_80073ef8` just below). The bitmask form survives because the inventory
 seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
-overwritten when the seed is rewritten. `region_unlocks_all_warps` /
-`scus_unlocks_all_warps` read it back.
+overwritten when the seed is rewritten; the overflow-item form writes inventory
+offsets above that loop's range, so it survives regardless.
+`region_unlocks_all_warps` / `scus_unlocks_all_warps` read the bitmask back, and
+`StartingInventory::from_scus` replays both regions to recover the full bag.
 
 The clean-room engine seeds every forced item (Door of Wind, Incense, and the
 accessories) through the same `World::seed_starting_inventory` path as any other
