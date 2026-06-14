@@ -45,7 +45,7 @@
       <summary>Items &amp; rewards</summary>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Monster drops <span class="rom-opt-note" id="rom-drops-note" hidden>&mdash; overridden by Equipment drops</span></span>
+        <span class="rom-opt-label">Monster drops</span>
         <div class="seg" role="group" aria-label="Monster drops">
           <input type="radio" name="drops" id="drops-none" value="none" checked><label for="drops-none">Off</label>
           <input type="radio" name="drops" id="drops-shuffle" value="shuffle"><label for="drops-shuffle">Shuffle</label>
@@ -167,7 +167,7 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-equipment-drops">
-        <span>Equipment drops &mdash; every monster drops rare gear (weapon / armor / accessory) instead of its normal drop <span class="rom-opt-note">(overrides Monster drops)</span></span>
+        <span>Equipment drops &mdash; a low per-battle chance to win one extra random weapon / armor / accessory, on top of the normal drop <span class="rom-opt-note">(additive code hook &mdash; on in every gameplay preset)</span></span>
       </label>
 
       <label class="rom-check-row">
@@ -250,7 +250,7 @@
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-chicken-heart">
-        <span>Seed a Chicken Heart accessory (always flee from battle) into the starting bag</span>
+        <span>Seed a Chicken Heart accessory (increases the successful-escape rate) into the starting bag</span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-good-luck-bell">
@@ -303,7 +303,7 @@
     <li><strong>Element affinity</strong> &mdash; scrambles the 8&times;8 element matrix (which element is strong / weak against which). <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances, just between different pairs; the per-character element assignment is untouched.</li>
     <li><strong>Spell MP costs</strong> &mdash; redistributes the MP costs of the named, costed spells in the <code>SCUS_942.54</code> spell table. Free / internal enemy-tier entries never gain a cost.</li>
     <li><strong>Equipment stat bonuses</strong> &mdash; redistributes the passive stat bonuses (INT / ATK / DEF&uarr; / DEF&darr; / SPD) of the equipment table, <em>within each slot type</em> (weapon power lands on another weapon, armor on armor). The equip-character restriction, accessory passive, and slot type never move.</li>
-    <li><strong>Equipment drops</strong> &mdash; turns every monster's drop into a rare random weapon / armor / accessory at a tiered chance. Owns the single drop slot, so it overrides Monster drops.</li>
+    <li><strong>Equipment drops</strong> &mdash; a low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, granted <em>on top of</em> the normal drop. Because a monster has only one drop slot, this can't be a data edit (that would destroy the normal drop) &mdash; instead it injects a tiny code hook into the battle-end reward routine that rolls the chance and adds a random gear id. The normal drop table (vanilla or shuffled / randomized) is never touched. On by default in every gameplay preset.</li>
     <li><strong>Weapon specialty</strong> &mdash; reassigns which weapon class each character favors (Vahn blades, Noa claws, Gala clubs/axes by default), permuting the three favored classes among them. Equipping an off-class weapon widens that character's <em>Arms</em> command in an arts combo, so fewer commands fit; this rewrites the per-(character, weapon) arm-cost byte in the player battle files (decompressing / re-compressing each section in place). The Astral Sword stays always-wide and can't be specialized in.</li>
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>

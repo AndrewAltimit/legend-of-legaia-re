@@ -178,18 +178,19 @@ struct RandomizeArgs {
     /// from the system clock.
     #[arg(long)]
     seed: Option<String>,
-    /// How monster item drops are reassigned. Ignored when `--equipment-drops`
-    /// is set (that pass owns the drop slot).
+    /// How monster item drops are reassigned.
     #[arg(long, value_enum, default_value_t = DropArg::Shuffle)]
     drops: DropArg,
-    /// Turn every monster's drop into a *rare* random piece of equipment
-    /// (weapon / armor / accessory) instead of the normal drop. The chance is
-    /// tiered by the gear's value and the enemy's strength (the rarer of the
-    /// two wins): early-game ~3 %, late-game ~1 % (the engine's integer
-    /// `rand() % 100` roll can't express the requested sub-percent 0.5 %).
-    /// Takes precedence over `--drops`.
+    /// Inject an *additional* low-chance equipment drop into the battle-end
+    /// reward routine (a same-size `SCUS_942.54` code hook). On a per-battle
+    /// roll it grants one extra random weapon / armor / accessory **on top of**
+    /// the normal drop — the regular drop table (vanilla or `--drops`) is never
+    /// disturbed.
     #[arg(long, default_value_t = false)]
     equipment_drops: bool,
+    /// Per-battle chance (percent) for the `--equipment-drops` bonus drop.
+    #[arg(long, default_value_t = legaia_rando::bonus_drop::DEFAULT_CHANCE_PCT)]
+    equipment_drop_chance: u8,
     /// How random-encounter formations are reassigned. The pool each scene draws
     /// from is set by `--encounter-scope`.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -334,8 +335,9 @@ struct RandomizeArgs {
         value_name = "COUNT"
     )]
     speed_chain: Option<u8>,
-    /// Seed the Chicken Heart accessory (always flee from battle) into the
-    /// starting bag. `--chicken-heart` for the default (1) or `--chicken-heart N`.
+    /// Seed the Chicken Heart accessory (increases the successful-escape rate)
+    /// into the starting bag. `--chicken-heart` for the default (1) or
+    /// `--chicken-heart N`.
     #[arg(
         long,
         num_args = 0..=1,
@@ -1140,39 +1142,8 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         &[]
     };
 
-    if args.equipment_drops {
-        // Equipment drops own the single drop slot, so this replaces (not
-        // augments) the normal `--drops` pass.
-        if mode.is_some() {
-            println!("note: --equipment-drops overrides --drops (both write the one drop slot)");
-        }
-        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-            .context("SCUS_942.54 not found in disc image (needed for --equipment-drops)")?;
-        let equip_pool =
-            legaia_rando::equipment::equipment_pool(&scus).context("build equipment pool")?;
-        let (plan, report) = apply::randomize_equipment_drops(&mut patcher, &equip_pool, seed)?;
-        println!(
-            "equipment-drops: {} of {} monsters now drop rare equipment ({} gear ids in pool)",
-            report.changed,
-            plan.len(),
-            equip_pool.len()
-        );
-        manifest.push("drops = \"equipment\"".to_string());
-        manifest.push(format!("equipment_pool = {}", equip_pool.len()));
-        manifest.push(format!(
-            "equipment_drops_changed = {}  # of {} monsters",
-            report.changed,
-            plan.len()
-        ));
-        if !report.skipped.is_empty() {
-            println!(
-                "  note: {} slot(s) too full to re-pack, left unchanged: {:?}",
-                report.skipped.len(),
-                report.skipped
-            );
-            manifest.push(format!("drops_skipped = {:?}", report.skipped));
-        }
-    } else if let Some(mode) = mode {
+    // Normal drop table first: reassign the monsters that already drop something.
+    if let Some(mode) = mode {
         let (plan, report) = apply::randomize_drops(&mut patcher, &pool, seed, mode)?;
         println!(
             "drops: {} of {} monsters reassigned ({:?})",
@@ -1197,6 +1168,23 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         println!("drops: untouched");
         manifest.push("drops = \"none\"".to_string());
+    }
+
+    // Equipment-as-drops layers *on top* via a code hook into the battle-end
+    // reward routine: a low-chance roll grants one extra random equipment piece
+    // in addition to the normal drop above, which is never disturbed.
+    if args.equipment_drops {
+        let report = apply::inject_equipment_bonus_drop(&mut patcher, args.equipment_drop_chance)?;
+        println!(
+            "equipment-drops: bonus equipment drop injected ({}% chance per battle, \
+             {} gear ids in pool)",
+            report.chance_pct, report.table_len
+        );
+        manifest.push("equipment_drops = true".to_string());
+        manifest.push(format!("equipment_drop_chance = {}", report.chance_pct));
+        manifest.push(format!("equipment_pool = {}", report.table_len));
+    } else {
+        manifest.push("equipment_drops = false".to_string());
     }
 
     if let Some(enc_mode) = enc_mode {

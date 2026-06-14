@@ -3,7 +3,8 @@
 Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
-drops (optionally as rare equipment), random-encounter formations, treasure-chest
+drops (plus an optional additive low-chance bonus equipment drop, injected into
+the battle-end reward routine), random-encounter formations, treasure-chest
 contents, steal items, Tactical-Arts button combos, doors, starting items,
 starting level, equipment passive stat bonuses, weapon specialty (which class
 each character favors), and a set of battle-tuning tables (monster combat stats,
@@ -20,7 +21,7 @@ full design.
 - [Foundations](#foundations) — [`rng`](#rng), [`items`](#items), [`monster`](#monster), [`disc`](#disc)
 - Randomizer features
   - [Drops](#drops)
-  - [Equipment-as-drops](#equipment-as-drops)
+  - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
   - [Chests](#chests)
   - [Steals](#steals)
@@ -104,18 +105,42 @@ The drop-table planner (`drops` module).
 
 Deterministic in `(current drops, pool, seed, mode)`.
 
-## Equipment-as-drops
+## Bonus equipment drop
 
-Equipment-as-enemy-drops (`equipment` module).
+A code hook that grants one *extra* random equipment piece on a low per-battle
+chance, **on top of** the normal drop (`bonus_drop` + `equipment` modules).
 
-- `equipment_pool` classifies which item ids are gear by matching the curated
-  public weapon/armor/accessory names (`legaia_gamedata`) against the disc's own
-  item-name table (no Sony bytes; ids come from the user's disc).
-- `plan_equipment_drops` turns **every** monster's drop slot into a rare random
-  equipment piece. The chance is "both combined" — the lower of the item's price
-  tier and the enemy's EXP tier (early 3 % / mid 2 % / late 1 %). The retail roll
-  is integer `rand() % 100`, so the requested late-game 0.5 % is floored to the
-  1 % minimum.
+A monster record has a single drop slot (`+0x48` item / `+0x49` chance), so no
+data edit can make a monster drop two things — turning the slot into equipment
+would destroy the normal drop. So this feature is **additive by code injection**,
+not a data edit: it patches the executable's reward routine, like the
+[starting bag](#beyond-the-direct-cap-starting_bag-module) splices a grant into
+the opening scene.
+
+- `equipment::equipment_pool` / `equipment_ids` classify which item ids are gear
+  by matching the curated public weapon/armor/accessory names (`legaia_gamedata`)
+  against the disc's own item-name table (no Sony bytes; ids come from the user's
+  disc; the stray in-range consumable *Honey* is excluded by name).
+- `bonus_drop::BonusDropInjection::plan` / `assemble_routine` build the injection.
+  The battle-end reward routine `FUN_8004E568` tallies a battle's spoils once
+  (gated on `actor+0x6ce == 0`). Right after the normal drop grant
+  `FUN_800421d4(item, 1)` at `0x8004f608`, control joins at `0x8004f610`; the two
+  instructions there (`lui v0,0x8008` / `lw v0,-0x4540(v0)`) are overwritten with
+  `j <routine>` + `nop`. The injected routine rolls `rand() % 100 < chance`
+  (default `DEFAULT_CHANCE_PCT` = 5, via the battle RNG `FUN_80056798`), then
+  `rand() % table_len` to index an embedded equipment-id table, calls
+  `FUN_800421d4(id, 1)` (an unguarded add, like the minigame reward
+  `FUN_801C2748`), replays the two displaced instructions, and `j`s back. The
+  join is reached once per battle, so the roll fires once per battle.
+- The routine + id table live in the 1028-byte preserved rodata gap at
+  `0x8007AB38` (the same loaded-and-preserved padding [name injection](#name-injection)
+  uses, at a non-overlapping offset clear of the Seru-Bell string) — on PSX all
+  resident RAM is executable. Every write is a same-size in-place `SCUS_942.54`
+  edit; the planner guards on the detour-site words matching the known US build
+  and the routine region being all-zero dead space, refusing a different layout.
+
+The grant is silent (no victory-screen "received" line — the gear just appears in
+the bag). `apply::inject_equipment_bonus_drop` performs the two edits.
 
 ## Encounters
 
@@ -497,7 +522,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Feature | Read-only | Randomize | Notes |
 |---|---|---|---|
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
-| Equipment drops | `current_monster_exp` | `randomize_equipment_drops` | every monster's slot → a rare tiered equipment drop, reusing `apply_drop_plan`. |
+| Equipment drops | — | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance — additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
 | Encounters | — | `randomize_encounters` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). |
@@ -590,8 +615,8 @@ legaia-rando starting-items --input DISC.bin
 legaia-rando shops  --input DISC.bin
 legaia-rando casino --input DISC.bin
 
-# Every monster drops rare tiered equipment instead of its normal drop.
-legaia-rando randomize --input DISC.bin --seed gear --equipment-drops
+# Shuffle drops, plus a low-chance bonus equipment drop on top of every battle.
+legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops
 
 # Randomize what stores sell (quest items excluded) + the casino prizes.
 legaia-rando randomize --input DISC.bin --seed mart --shops random --casino shuffle
@@ -607,8 +632,9 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 - The battle-tuning + equipment-bonus passes — `--monster-stats` / `--move-power` /
   `--element-affinity` / `--spell-cost` / `--equip-bonus` — each also take
   `shuffle` / `random` / `none`.
-- `--equipment-drops` instead turns every monster's drop into rare tiered equipment
-  (overrides `--drops`).
+- `--equipment-drops` injects a low-chance bonus equipment drop into the
+  battle-end reward routine — granted on top of `--drops`, never disturbing it.
+  `--equipment-drop-chance N` sets the per-battle percent (default 5).
 - `--door-coupling` is `coupled` (default, bidirectional) or `decoupled` (one-way).
 - `--starting-items N` seeds the new game with `N` random consumables
   (`0` = vanilla Healing Leaf ×5). The random fill shares a seven-slot capacity
@@ -681,8 +707,11 @@ directory record moves.
   deterministic, **and that scripted/boss formations (Tetsu, …) stay
   byte-identical**; a whole-disc chest shuffle asserting give-item site offsets
   unchanged, the chest-item multiset preserved, sectors valid, and deterministic;
-  an equipment-drop pass asserting every monster drops a pool equipment id at a
-  tiered chance; a town-shop + casino pass (Variety Store + its 10 ids
+  the bonus-equipment-drop injection asserting the patched `SCUS_942.54` carries
+  the `j routine` detour + the hand-assembled routine + the equipment-id table
+  (replaying the two displaced instructions and returning), the edit is surgical,
+  deterministic, and the build guard refuses a corrupted hook / non-dead routine
+  region; a town-shop + casino pass (Variety Store + its 10 ids
   enumerate, shuffle preserves the multiset/counts, casino preserves the
   prize set); and the item-price edits (the 13 chest-equipment items get their
   reviewed values, the sellable pool excludes quest ids, and a shop `Random`

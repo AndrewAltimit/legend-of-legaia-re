@@ -91,7 +91,8 @@ pub const INCENSE_COUNT: u8 = 10;
 /// it seeds exactly like Door of Wind.
 pub const SPEED_CHAIN_ID: u8 = 0xD1;
 
-/// Item id of the Chicken Heart accessory ("Always flee from battle").
+/// Item id of the Chicken Heart accessory ("Increases the successful-escape
+/// rate"). Not to be confused with the Chicken King, which guarantees escape.
 pub const CHICKEN_HEART_ID: u8 = 0xF4;
 
 /// Item id of the Good Luck Bell accessory ("Raises the item-drop rate").

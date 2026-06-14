@@ -68,9 +68,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
 /// pool (only with `encounters = "random"`); `unused_items` adds the unused
 /// "Something Good" / unnamed-accessory items to the random-fill pool (only the
-/// `random` drop / chest / steal modes use it). `equipment_drops` turns every
-/// monster's drop into a rare random weapon / armor / accessory at a tiered
-/// chance (overrides `drops`). `monster_stats` / `move_power` /
+/// `random` drop / chest / steal modes use it). `equipment_drops` injects a code
+/// hook into the battle-end reward routine that, on a low per-battle chance,
+/// grants one *extra* random weapon / armor / accessory on top of the normal
+/// drop — additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
 /// `element_affinity` / `spell_cost` / `equip_bonus` are the battle-tuning +
 /// equipment-bonus passes, each `"shuffle"` / `"random"` / `"none"`: monster
 /// combat stats, special-attack power, the element-affinity matrix, spell MP
@@ -168,47 +169,40 @@ pub fn patch_rom(
 
     let mut summary = String::new();
 
-    if equipment_drops {
-        // Equipment drops own the single drop slot, so they replace the normal
-        // drops pass (same as the CLI's `--equipment-drops`).
-        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-            .ok_or_else(|| err("SCUS_942.54 not found (needed for equipment drops)"))?;
-        let equip_pool = legaia_rando::equipment::equipment_pool(&scus)
-            .map_err(|e| err(format!("equipment: {e}")))?;
-        let (plan, rep) = apply::randomize_equipment_drops(&mut patcher, &equip_pool, seed_n)
-            .map_err(|e| err(format!("equipment drops: {e}")))?;
-        summary.push_str(&format!(
-            "equipment-drops: {} of {} monsters drop rare gear ({} ids in pool)\n",
-            rep.changed,
-            plan.len(),
-            equip_pool.len()
-        ));
-        if !rep.skipped.is_empty() {
+    // Normal drop table first: reassign the monsters that already drop something.
+    match drops_mode {
+        Some(m) => {
+            let (plan, rep) = apply::randomize_drops(&mut patcher, &pool, seed_n, m)
+                .map_err(|e| err(format!("drops: {e}")))?;
             summary.push_str(&format!(
-                "  {} slot(s) too full to re-pack\n",
-                rep.skipped.len()
+                "drops: {} of {} reassigned ({})\n",
+                rep.changed,
+                plan.len(),
+                drops
             ));
-        }
-    } else {
-        match drops_mode {
-            Some(m) => {
-                let (plan, rep) = apply::randomize_drops(&mut patcher, &pool, seed_n, m)
-                    .map_err(|e| err(format!("drops: {e}")))?;
+            if !rep.skipped.is_empty() {
                 summary.push_str(&format!(
-                    "drops: {} of {} reassigned ({})\n",
-                    rep.changed,
-                    plan.len(),
-                    drops
+                    "  {} slot(s) too full to re-pack\n",
+                    rep.skipped.len()
                 ));
-                if !rep.skipped.is_empty() {
-                    summary.push_str(&format!(
-                        "  {} slot(s) too full to re-pack\n",
-                        rep.skipped.len()
-                    ));
-                }
             }
-            None => summary.push_str("drops: untouched\n"),
         }
+        None => summary.push_str("drops: untouched\n"),
+    }
+
+    // Equipment-as-drops layers on top via a code hook into the battle-end
+    // reward routine: a low-chance roll grants one extra random equipment piece
+    // in addition to the normal drop, which is never disturbed.
+    if equipment_drops {
+        let rep = apply::inject_equipment_bonus_drop(
+            &mut patcher,
+            legaia_rando::bonus_drop::DEFAULT_CHANCE_PCT,
+        )
+        .map_err(|e| err(format!("equipment drops: {e}")))?;
+        summary.push_str(&format!(
+            "equipment-drops: bonus drop injected ({}% per battle, {} gear ids in pool)\n",
+            rep.chance_pct, rep.table_len
+        ));
     }
 
     match enc_mode {
