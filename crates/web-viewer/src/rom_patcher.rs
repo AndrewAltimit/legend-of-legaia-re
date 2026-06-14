@@ -238,13 +238,17 @@ pub fn patch_rom(
 
     match chest_mode {
         Some(m) => {
-            // Protect the curated quest / key-item chests by default (same set as
-            // the CLI's default), so the in-browser patcher behaves identically.
+            // Protect every quest / key / story item by default (same disc-derived
+            // set as the CLI), so the in-browser patcher behaves identically: no
+            // quest item is moved out of its chest or dropped into another.
             let keep_static: std::collections::BTreeSet<u8> =
-                legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
-                    .iter()
-                    .copied()
-                    .collect();
+                match legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54") {
+                    Some(scus) => legaia_rando::items::default_static_chest_items(&scus),
+                    None => legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
+                        .iter()
+                        .copied()
+                        .collect(),
+                };
             let rep = apply::randomize_chests(&mut patcher, &pool, seed_n, m, &keep_static)
                 .map_err(|e| err(format!("chests: {e}")))?;
             summary.push_str(&format!(

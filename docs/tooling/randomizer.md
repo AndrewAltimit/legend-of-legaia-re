@@ -182,16 +182,28 @@ items a run might want to keep static. `doors` lists every scene-transition exit
 
 ### Keep-static items
 
-A few chest items are progression / quest / key items the player needs in a
-predictable place. The chest randomizer keeps a **curated default set** static
-(`legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS`): Mary's Diary, Dark Stone,
-Fertilizer, Weed Hammer, Spring Salts, Silver Compass, and the Old Rod. A chest
-whose original item is in this set keeps that item, the id is excluded from the
-shuffle multiset (so it can never move to another chest), and it is dropped from
-the `random` fill pool (so it can't be duplicated into an unrelated chest).
-Override with `--keep-static-items 0x9a,0x71,…` (decimal or `0xHH`), or pass an
-empty value (`--keep-static-items ""`) to randomize every chest. The resolved set
-is recorded in the run manifest.
+Progression / quest / key items are things the player needs in a predictable
+place — door keys, garden-quest tools, letters, story books, one-off plot items.
+The chest randomizer keeps the **full quest-item set** static by default, derived
+from the disc rather than a short hand-list (`items::default_static_chest_items`
+→ `item_price::quest_item_ids`): every **named, unsellable** item — the item
+table prices quest/key/story items at `0`, the game's own "a shop never trades
+this" marker — **minus** the handful of chest-found *equipment* pieces (the
+Ra-Seru gear + Astral Sword) that ship price-0 only because they're never sold
+but are real, randomizable gear.
+
+This automatically covers every door/dungeon key, the egg/talisman/book
+collectibles, the fishing rods, the casino cards, and the internal Ra-Seru
+weapon-state template entries — no manual list to keep in sync with the game.
+Buyable items (priced > 0, e.g. the Silver Compass accessory) are intentionally
+left randomizable. A chest whose original item is in the set keeps that item, the id
+is excluded from the shuffle multiset (so it can never move to another chest),
+and it is dropped from the `random` fill pool (so it can't be placed into an
+unrelated chest). If the item table can't be read, the randomizer falls back to
+the curated `items::DEFAULT_STATIC_CHEST_ITEMS` subset. Override with
+`--keep-static-items 0x9a,0x71,…` (decimal or `0xHH`), or pass an empty value
+(`--keep-static-items ""`) to randomize every chest. The resolved set is recorded
+in the run manifest.
 
 Because an edit changes bytes *inside* an LZS stream, the whole touched stream
 is re-packed, so the changed-byte count (and the PPF) is dominated by

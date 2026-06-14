@@ -16,6 +16,8 @@
 
 use anyhow::{Context, Result};
 use legaia_asset::item_names;
+use legaia_asset::item_names::ItemNameTable;
+use std::collections::BTreeSet;
 
 /// Chest-found equipment that ships with shop price `0`, paired with the value
 /// to give it (gold). Approximated from the nearest priced item of the same
@@ -74,6 +76,45 @@ pub fn sellable_pool(scus: &[u8]) -> Result<Vec<u8>> {
         }
     }
     Ok(pool)
+}
+
+/// The quest / key / story item ids on the disc: every **named** item the
+/// item-table prices as unsellable (price `0`), minus the handful of genuinely
+/// equippable "chest-found" gear pieces ([`CHEST_EQUIPMENT_PRICES`]) that ship
+/// price-0 only because they're never sold.
+///
+/// Price-0 is the game's own marker for "this is not a thing a shop trades"
+/// (see [`sellable_pool`]); for items it means a key/story/tool item — the door
+/// keys, the garden-quest tools, the egg/talisman/book collectibles, the
+/// letters and diaries, the fishing rods, the casino cards, and the internal
+/// Ra-Seru weapon-state template entries. None of these belong in the chest
+/// randomizer's pool: moving one out of its scripted chest can soft-lock
+/// progression, and dropping one into an unrelated chest is nonsensical. The
+/// chest randomizer treats this set as static (kept in place, dropped from the
+/// random-fill pool), so a quest item never moves and never spawns elsewhere.
+///
+/// The chest-found **equipment** is excluded so it stays randomizable — it is
+/// real gear, not a quest item. Buyable items (priced > 0, e.g. the Silver
+/// Compass accessory a shop sells) are likewise not protected: only genuinely
+/// unsellable quest items are. This is exactly the set
+/// [`crate::items::default_static_chest_items`] uses by default.
+///
+/// Errors only if `scus` isn't a PSX-EXE / the item table is out of range.
+pub fn quest_item_ids(scus: &[u8]) -> Result<Vec<u8>> {
+    let table = ItemNameTable::from_scus(scus)
+        .context("SCUS_942.54 is not a PSX-EXE / item table absent")?;
+    let exceptions: BTreeSet<u8> = CHEST_EQUIPMENT_PRICES.iter().map(|&(id, _)| id).collect();
+    let mut out = Vec::new();
+    for id in 1..=u8::MAX {
+        if exceptions.contains(&id) {
+            continue;
+        }
+        // A real item (named slot) the table prices as unsellable.
+        if table.name(id).is_some() && item_names::item_price(scus, id).is_some_and(|p| p == 0) {
+            out.push(id);
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
