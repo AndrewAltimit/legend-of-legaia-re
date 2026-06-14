@@ -148,13 +148,16 @@ equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 (one-way); `--encounter-scope` widens the monster pool an encounter roll draws
 from to `scene` (default), `kingdom`, or `world` (see
 [Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
-(0 = vanilla; capped at 5). `--door-of-wind [N]` adds
+(0 = vanilla; the random fill shares a seven-slot capacity — five with
+`--all-warps` — with the convenience toggles, additively). `--door-of-wind [N]` adds
 `N` Door of Wind (the warp consumable; default 10) to the starting bag,
 `--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
 likewise, `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]`
 add those accessories (default 1 each), and `--all-warps` unlocks every
 Door-of-Wind destination from the start (see
 [Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
+`--starting-level N` begins the new game at character level `N` instead of 1
+(0/1 = vanilla; range 2..=14, see [Starting level](#starting-level)).
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
