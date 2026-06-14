@@ -37,6 +37,9 @@ fn randomize_starting_items_round_trips_on_disc() {
         random_items: n,
         door_of_wind: 0,
         incense: 0,
+        speed_chain: 0,
+        chicken_heart: 0,
+        good_luck_bell: 0,
         all_warps: false,
     };
 
@@ -152,6 +155,9 @@ fn door_of_wind_and_all_warps_round_trip_on_disc() {
         random_items: 5,
         door_of_wind: legaia_rando::starting_items::DOOR_OF_WIND_COUNT,
         incense: 0,
+        speed_chain: 0,
+        chicken_heart: 0,
+        good_luck_bell: 0,
         all_warps: true,
     };
 
@@ -322,4 +328,68 @@ fn incense_round_trips_on_disc() {
         "deterministic for a fixed seed"
     );
     eprintln!("incense seed {seed:#x}: bag {after:?}");
+}
+
+/// Seeding the convenience accessories (Speed Chain / Chicken Heart / Good Luck
+/// Bell) into the starting bag round-trips off the patched disc. Accessories are
+/// "Goods", but the owned-item list is a single ordered `(id, count)` array, so
+/// they seed exactly like a consumable.
+#[test]
+fn accessories_round_trip_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_rando::starting_items::{
+        ACCESSORY_SEED_COUNT, CHICKEN_HEART_ID, GOOD_LUCK_BELL_ID, SPEED_CHAIN_ID,
+    };
+    let seed = 0xACCE_5500_0000_0001_u64;
+    let opts = StartingSeedOptions {
+        speed_chain: ACCESSORY_SEED_COUNT,
+        chicken_heart: ACCESSORY_SEED_COUNT,
+        good_luck_bell: ACCESSORY_SEED_COUNT,
+        ..Default::default()
+    };
+
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+    let report = apply::randomize_starting_items(&mut patcher, seed, &opts).expect("randomize");
+    assert_eq!(report.items, plan_seed(seed, &opts).items);
+
+    // Re-decode off the patched image: the three accessories first, then the
+    // kept vanilla Healing Leaf.
+    let after = apply::current_starting_items(&patcher).expect("read patched seed");
+    assert_eq!(
+        after,
+        vec![
+            (SPEED_CHAIN_ID, ACCESSORY_SEED_COUNT),
+            (CHICKEN_HEART_ID, ACCESSORY_SEED_COUNT),
+            (GOOD_LUCK_BELL_ID, ACCESSORY_SEED_COUNT),
+            (0x77, 5),
+        ],
+        "accessories seeded additively to the vanilla Healing Leaf"
+    );
+
+    // Same image size; the touched SCUS sector stays EDC/ECC-valid.
+    assert_eq!(
+        patcher.image().len(),
+        original.len(),
+        "image size unchanged"
+    );
+    let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS");
+    let inv_off = starting_inv_seed_file_offset(&scus).expect("inv seed offset");
+    let (scus_lba, _) = find_file_in_image(patcher.image(), "SCUS_942.54").unwrap();
+    let sb = (scus_lba as usize + inv_off / USER_DATA_SIZE) * SECTOR_SIZE;
+    assert!(
+        legaia_iso::write::mode2_form1_sector_is_valid(&patcher.image()[sb..sb + SECTOR_SIZE]),
+        "patched sector must be EDC/ECC-valid"
+    );
+
+    // Determinism.
+    let mut patcher2 = DiscPatcher::open(original).expect("open");
+    apply::randomize_starting_items(&mut patcher2, seed, &opts).expect("randomize");
+    assert!(
+        patcher2.image() == patcher.image(),
+        "deterministic for a fixed seed"
+    );
+    eprintln!("accessories seed {seed:#x}: bag {after:?}");
 }

@@ -151,7 +151,8 @@ from to `scene` (default), `kingdom`, or `world` (see
 (0 = vanilla; capped at 5). `--door-of-wind [N]` adds
 `N` Door of Wind (the warp consumable; default 10) to the starting bag,
 `--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
-likewise, and `--all-warps` unlocks every
+likewise, `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]`
+add those accessories (default 1 each), and `--all-warps` unlocks every
 Door-of-Wind destination from the start (see
 [Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
 `--unused-enemies` and `--unused-items` re-introduce
@@ -709,10 +710,21 @@ Door of Wind is forced on top.
 
 **`--incense [N]`** seeds Incense into the starting bag the same way (`N` of them,
 1..=99, default 10 when given bare). It is additive on the same terms as Door of
-Wind, and the two stack: enabling both forces a Door of Wind slot and an Incense
-slot (then the Healing Leaf base, or the reroll). Forced items are seeded first
-so they survive the five-slot capacity clamp, and a reroll excludes both so it
-never deals a duplicate of either.
+Wind, and the two stack.
+
+**`--speed-chain [N]`**, **`--chicken-heart [N]`**, and **`--good-luck-bell [N]`**
+seed those *accessories* ("Goods") into the starting bag (`N` 1..=99, default **1**
+when given bare). Although accessories are a different in-game category, the owned-
+item list is a single ordered `(id, count)` array the menu only *filters* into its
+Items / Goods / Key tabs — verified against a real end-game save, where Speed Chain
+(`0xD1`), Chicken Heart (`0xF4`), and Good Luck Bell (`0xFC`) all sit in that one
+list as plain `(id, count)` pairs — so an accessory seeds exactly like a consumable.
+
+All five item toggles are *additive* (the vanilla Healing Leaf ×5 is kept unless a
+`--starting-items` reroll replaces it) and stack. Forced items are seeded first so
+they survive the five-slot capacity clamp (Door of Wind, Incense, Speed Chain,
+Chicken Heart, Good Luck Bell — exactly filling the five slots if all are on), and
+a reroll excludes every forced id so it never deals a duplicate.
 
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
@@ -729,10 +741,11 @@ seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
 overwritten when the seed is rewritten. `region_unlocks_all_warps` /
 `scus_unlocks_all_warps` read it back.
 
-The clean-room engine seeds the forced Door of Wind (and Incense) through the
-same `World::seed_starting_inventory` path as any other starting item (covered by
-the runtime oracle), and the Incense path has its own disc round-trip oracle
-(`incense_round_trips_on_disc`). The all-warps preset has no engine consumer yet
+The clean-room engine seeds every forced item (Door of Wind, Incense, and the
+accessories) through the same `World::seed_starting_inventory` path as any other
+starting item (covered by the runtime oracle); the Incense and accessory paths
+have their own disc round-trip oracles (`incense_round_trips_on_disc`,
+`accessories_round_trip_on_disc`). The all-warps preset has no engine consumer yet
 — there is no Door-of-Wind warp menu in the port — so it is validated at the
 disc-round-trip level (`door_of_wind_and_all_warps_round_trip_on_disc`) and
 matches the user-verified GameShark write byte-for-byte.

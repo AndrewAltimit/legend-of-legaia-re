@@ -381,6 +381,10 @@ toggles:
 - `incense` (a count, default 10, clamped to 99) forces that many Incense (`0x8A`,
   the encounter-rate consumable) into a slot — same shape as `door_of_wind`; both
   are seeded first (surviving the five-slot clamp) and excluded from a reroll.
+- `speed_chain` / `chicken_heart` / `good_luck_bell` (a count, default 1, clamped
+  to 99) force those accessories (`0xD1` / `0xF4` / `0xFC`) into a slot. They are
+  "Goods", but the owned-item list is one ordered `(id, count)` array shared by
+  every category, so they seed exactly like a consumable.
 - `all_warps` presets the all-towns visited bitmask (`0x8008575C = 0xF77F`,
   `0x8008575E = 0xF8FF`).
 
@@ -547,6 +551,8 @@ legaia-rando verify --input DISC.bin --patch run.ppf
   the starting bag.
 - `--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10) to
   the starting bag (same shape as `--door-of-wind`).
+- `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]` add those
+  accessories (default 1 each) to the starting bag, same shape as the above.
 - `--all-warps` presets the visited-towns story-flag bitmask so Door of Wind can
   teleport to any town from the start (both ride the same reclaimable seed region as
   the starting items).
