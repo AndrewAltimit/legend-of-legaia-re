@@ -65,8 +65,15 @@ The valid item-id pool from the SCUS item-name table (`legaia_asset::item_names`
 so a randomized drop is always an item the game has a name and handler for.
 
 - `valid_item_pool` — the pool builder.
-- `DEFAULT_STATIC_CHEST_ITEMS` — curated quest/key items kept out of chest
-  randomization.
+- `default_static_chest_items` — the chest randomizer's disc-derived default
+  keep-static set: the data-driven quest/key/story items
+  (`item_price::quest_item_ids` = named, price-0 items minus the chest-found
+  equipment) unioned with the curated `DEFAULT_STATIC_CHEST_ITEMS` (priced-but-
+  special tools the price-0 rule misses, e.g. the Silver Compass). Keeps every
+  quest item out of chest randomization automatically, with no hand-list to
+  maintain.
+- `DEFAULT_STATIC_CHEST_ITEMS` — the curated fallback used when the item table
+  can't be read.
 
 ### `monster`
 

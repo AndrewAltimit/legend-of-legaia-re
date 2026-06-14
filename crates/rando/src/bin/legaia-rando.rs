@@ -388,9 +388,12 @@ struct RandomizeArgs {
     unused_items: bool,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
     /// chests, never randomized — and dropped from the random-fill pool so they
-    /// can't be duplicated elsewhere. Defaults to a curated quest / key-item set
-    /// (`legaia-rando chests` lists current contents to audit). Pass an empty
-    /// value (`--keep-static-items ""`) to randomize everything.
+    /// can't be duplicated elsewhere. Defaults to the disc's full quest / key /
+    /// story item set (every unsellable item except the chest-found equipment,
+    /// so no door key, garden tool, letter, book, or one-off story item is ever
+    /// moved or randomly placed). `legaia-rando chests` lists current contents
+    /// to audit. Pass an empty value (`--keep-static-items ""`) to randomize
+    /// everything.
     #[arg(long, value_delimiter = ',')]
     keep_static_items: Option<Vec<String>>,
     /// Write the portable PPF 3.0 patch here (defaults to `<input>.ppf`).
@@ -1246,13 +1249,15 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     if let Some(chest_mode) = chest_mode {
-        // Resolve the keep-static set: the curated default, or the user's
-        // explicit (possibly empty) override.
+        // Resolve the keep-static set: the disc-derived quest/key/story set
+        // (every unsellable quest item, so none is ever moved or randomly
+        // placed), or the user's explicit (possibly empty) override.
         let keep_static: std::collections::BTreeSet<u8> = match &args.keep_static_items {
-            None => legaia_rando::items::DEFAULT_STATIC_CHEST_ITEMS
-                .iter()
-                .copied()
-                .collect(),
+            None => {
+                let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+                    .context("SCUS_942.54 not found in disc image (needed for chest defaults)")?;
+                legaia_rando::items::default_static_chest_items(&scus)
+            }
             Some(list) => list
                 .iter()
                 .filter(|s| !s.trim().is_empty())
