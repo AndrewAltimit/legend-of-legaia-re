@@ -116,6 +116,131 @@ pub fn guarded_grant_block(items: &[(u8, u8)], guard_bit: u16) -> Vec<u8> {
     out
 }
 
+/// MAN sub-asset type byte in a scene bundle's asset table.
+const MAN_TYPE: u8 = 0x03;
+
+/// A scene whose opening event script can host the starting-bag grant block.
+///
+/// Holds the decompressed MAN plus the absolute offset of its **entry script**
+/// (partition-1 record 0's first opcode — the per-entry system script that sets
+/// BGM / fade / flags on every scene load), where the guarded grant block is
+/// spliced. The grant runs at scene entry; the guard keeps it to the first visit.
+pub struct SceneBagInject {
+    /// PROT entry index of the scene bundle.
+    pub entry_idx: usize,
+    /// Byte offset of the compressed MAN stream within the PROT entry.
+    man_offset: usize,
+    /// Bytes the recompressed (now larger) MAN may grow into.
+    compressed_budget: usize,
+    /// Offset of the MAN descriptor's decompressed-size word in the asset table.
+    man_descriptor_off: usize,
+    /// The decompressed MAN.
+    decoded: Vec<u8>,
+    /// Absolute offset in `decoded` of the entry script's first opcode (`pc0`).
+    inject_offset: usize,
+}
+
+impl SceneBagInject {
+    /// Locate a scene bundle's entry-script injection point. `None` if the entry is
+    /// not a scene bundle, has no MAN, the MAN doesn't decompress to its declared
+    /// size / parse, or has no partition-1 record 0 (the entry script).
+    pub fn locate(entry: &[u8], entry_idx: usize) -> Option<Self> {
+        use legaia_asset::{man_section, scene_asset_table};
+        let table = scene_asset_table::detect(entry)?;
+        let man_idx = table.descriptor_index(MAN_TYPE)?;
+        let man = table.used()[man_idx];
+        if man.size == 0 || man.data_offset == 0 {
+            return None;
+        }
+        let man_offset = man.data_offset as usize;
+        let body = entry.get(man_offset..)?;
+        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        if decoded.len() != man.size as usize {
+            return None;
+        }
+        let mf = man_section::parse(&decoded).ok()?;
+        // The entry script is partition-1 record 0; pc0 = record start + the
+        // [u8 locals][locals*2][4-byte tail] header (mirrors `man_edit::record_for`
+        // for a non-partition-2 record).
+        let &off = mf.partitions[1].first()?;
+        let rstart = mf.data_region_offset + off as usize;
+        let locals = *decoded.get(rstart)? as usize;
+        let inject_offset = rstart + 1 + locals * 2 + 4;
+        if inject_offset >= decoded.len() {
+            return None;
+        }
+        let next_off = table
+            .used()
+            .iter()
+            .map(|d| d.data_offset as usize)
+            .filter(|&o| o > man_offset)
+            .min();
+        let compressed_budget = match next_off {
+            Some(end) if end <= entry.len() => (end - man_offset).max(consumed),
+            _ => consumed,
+        };
+        Some(Self {
+            entry_idx,
+            man_offset,
+            compressed_budget,
+            man_descriptor_off: scene_asset_table::SceneAssetTable::size_word_offset(man_idx),
+            decoded,
+            inject_offset,
+        })
+    }
+
+    /// Offset of the compressed MAN stream within the PROT entry.
+    pub fn man_offset(&self) -> usize {
+        self.man_offset
+    }
+
+    /// Offset of the MAN descriptor's decompressed-size word in the asset table.
+    pub fn man_descriptor_off(&self) -> usize {
+        self.man_descriptor_off
+    }
+
+    /// Splice the guarded grant block at the entry-script start, recompress, and
+    /// return `(recompressed_stream, new_decompressed_size)`. `None` when the entry
+    /// record carries an absolute reference (unsafe to shift — see
+    /// [`legaia_asset::man_edit::apply_insertions`]), the rebuilt block fails to
+    /// decode back, or the recompressed MAN overflows the original footprint (caller
+    /// then leaves the scene unchanged). The caller writes the size word with
+    /// `scene_asset_table::encode_size_word(0x03, new_size)` at
+    /// [`man_descriptor_off`](Self::man_descriptor_off).
+    pub fn rebuild(&self, items: &[(u8, u8)], guard_bit: u16) -> Option<(Vec<u8>, u32)> {
+        use legaia_asset::field_disasm::{self, FlagKind, InsnInfo};
+        use legaia_asset::man_edit::{self, Insertion};
+
+        let block = guarded_grant_block(items, guard_bit);
+        let new_man = man_edit::apply_insertions(
+            &self.decoded,
+            &[Insertion {
+                offset: self.inject_offset,
+                bytes: block.clone(),
+            }],
+        )
+        .ok()?;
+        // Backstop: the spliced block must decode at the injection point as our
+        // guard test whose skip lands exactly past the block (onto the original
+        // first instruction of the entry script).
+        let insn = field_disasm::decode(&new_man, self.inject_offset).ok()?;
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } if idx == guard_bit && target == self.inject_offset + block.len() => {}
+            _ => return None,
+        }
+        let stream = legaia_lzs::compress(&new_man);
+        if stream.len() > self.compressed_budget {
+            return None;
+        }
+        Some((stream, new_man.len() as u32))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

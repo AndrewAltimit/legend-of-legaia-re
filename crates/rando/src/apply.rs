@@ -2341,6 +2341,87 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
     })
 }
 
+/// Outcome of the starting-bag script injection.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct StartingBagReport {
+    /// PROT entry whose MAN was injected (the opening scene's), if it applied.
+    pub scene_entry: Option<usize>,
+    /// The `(item_id, count)` bag granted.
+    pub items: Vec<(u8, u8)>,
+    /// The persistent story-flag bit guarding the once-only grant.
+    pub guard_bit: u16,
+    /// `true` when the grant block was injected + written back.
+    pub applied: bool,
+}
+
+/// Seed an arbitrarily large starting bag by injecting a guarded run of silent
+/// `GIVE_ITEM` ops into the opening scene's entry script (see
+/// [`crate::starting_bag`]). This lifts the 7-slot cap of the direct
+/// [`randomize_starting_items`] seed: the bag holds every `(id, count)` in `items`
+/// (convenience items + the full requested random fill).
+///
+/// The opening interactive scene is `town01` ([`legaia_asset::new_game::OPENING_SCENE`]);
+/// its MAN entry is found through `CDNAME.TXT`, the guarded block is spliced at the
+/// entry script's first opcode, the MAN is recompressed in place, and the
+/// descriptor's decompressed-size word is bumped. The guard (persistent SC story
+/// flag `guard_bit`) keeps the grant to the first visit. If the scene can't be
+/// located, carries an absolute reference that makes the insert unsafe, or the
+/// recompressed MAN overflows its footprint, nothing is written and
+/// `report.applied` is `false`. Deterministic.
+pub fn apply_starting_bag(
+    patcher: &mut DiscPatcher,
+    items: &[(u8, u8)],
+    guard_bit: u16,
+) -> Result<StartingBagReport> {
+    use legaia_asset::scene_asset_table::encode_size_word;
+    let mut report = StartingBagReport {
+        items: items.to_vec(),
+        guard_bit,
+        ..Default::default()
+    };
+    if items.iter().all(|&(_, c)| c == 0) {
+        return Ok(report);
+    }
+
+    let cdname = patcher
+        .cdname()
+        .context("read CDNAME.TXT for the starting-bag scene")?;
+    let scene = legaia_asset::new_game::OPENING_SCENE; // "town01"
+    let (raw_start, raw_end) = legaia_prot::cdname::block_range_for_name(&cdname, scene)
+        .with_context(|| format!("CDNAME.TXT has no {scene} block"))?;
+    // CDNAME #define numbers are raw-TOC indices; extraction = raw - 2.
+    let ext_start =
+        (raw_start as i64 - legaia_prot::cdname::RAW_TOC_INDEX_OFFSET as i64).max(0) as usize;
+    let ext_end =
+        (raw_end as i64 - legaia_prot::cdname::RAW_TOC_INDEX_OFFSET as i64).max(0) as usize;
+
+    for ext in ext_start..ext_end.min(patcher.entry_count()) {
+        let entry = patcher
+            .read_entry(ext)
+            .with_context(|| format!("read PROT entry {ext}"))?;
+        let Some(inj) = crate::starting_bag::SceneBagInject::locate(&entry, ext) else {
+            continue;
+        };
+        let Some((stream, new_size)) = inj.rebuild(items, guard_bit) else {
+            continue;
+        };
+        patcher
+            .patch_prot_entry(
+                ext,
+                inj.man_descriptor_off() as u64,
+                &encode_size_word(0x03, new_size).to_le_bytes(),
+            )
+            .with_context(|| format!("write {scene} MAN size word"))?;
+        patcher
+            .patch_prot_entry(ext, inj.man_offset() as u64, &stream)
+            .with_context(|| format!("write {scene} MAN"))?;
+        report.scene_entry = Some(ext);
+        report.applied = true;
+        break;
+    }
+    Ok(report)
+}
+
 /// One character's weapon-specialty reassignment, for the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecialtyAssignment {
