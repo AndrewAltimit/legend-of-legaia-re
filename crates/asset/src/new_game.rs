@@ -51,16 +51,44 @@
 /// RAM address of the starting-party template (Vahn's record base).
 pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 
-/// RAM address of the new-game seed routine's cumulative-XP literal for party
-/// slot 0 (Vahn): the `addiu $v0, $zero, 0x79` (= 121) in `FUN_800560B4` whose
-/// value the routine stores to the live record's cumulative-XP cell (`+0x4`).
-/// The displayed combat level is derived from this XP (the level byte `+0x100`
-/// is left zero by the new-game memset — verified against early save states), so
-/// editing this literal sets the starting character's level. The same `$v0` is
-/// reused for slot 3 (Terra), who re-scales when she actually joins, so the edit
-/// only affects the character who is in the party at a New Game. It is a single
-/// `addiu` with a 16-bit immediate, so a seeded XP must fit a positive `imm16`.
+/// RAM address of the new-game seed routine's **next-level XP-threshold** literal
+/// for party slot 0 (Vahn): the `addiu $v0, $zero, 0x79` (= 121) in `FUN_800560B4`
+/// whose value the routine stores to the live record's **next-level threshold**
+/// cell (`+0x4`) — the "XP to next level" the status screen labels *next*, NOT the
+/// cumulative experience (which is its neighbour `+0x0`). Vanilla `121` is the
+/// level-1→2 threshold (`reach(L2)`); Noa's is `102`, Gala's `140` (a value confirmed
+/// live: Gala's in-game "next level" marker reads `140`). The same `$v0` is reused
+/// for slot 3 (Terra), who re-scales when she actually joins. A single `addiu` with a
+/// 16-bit immediate, so a seeded threshold must fit a positive `imm16`.
+///
+/// The displayed combat level is **derived from the cumulative experience at `+0x0`**
+/// (the "Max Exp" cheat target), *not* stored: across a captured 4-level jump the
+/// `+0x130` byte rose by only `+1` (it is the magic-rank counter, one tick per
+/// level-up event; `+0x100` stays zero and is unrelated). So a New Game always shows
+/// level 1 because the seed leaves `+0x0 = 0`, regardless of the seeded `+0x4`. The
+/// starting-level randomizer therefore seeds the **experience** cell `+0x0`
+/// ([`CURRENT_XP_PRELOAD_VA`] / [`CURRENT_XP_STORE_VA`]) so the derived level becomes
+/// `N`, and leaves the magic-rank byte alone.
 pub const STARTING_XP_SEED_VA: u32 = 0x8005_60F0;
+
+/// RAM address of the slot-3 / Terra next-level-threshold store in `FUN_800560B4`
+/// (vanilla `sw $v0, 0x1208($s0)`). The starting-level randomizer repurposes it to
+/// `addiu $t0, $zero, imm`, preloading the slot-0 **current cumulative experience**
+/// (an in-band level-`N` XP value) into `$t0` for the [`CURRENT_XP_STORE_VA`] write.
+/// `$t0` is otherwise unused by the routine and survives to the store two
+/// instructions later; Terra re-scales when she joins so dropping her seeded
+/// threshold is harmless. A single `addiu` immediate, so the value must fit a
+/// positive `imm16`.
+pub const CURRENT_XP_PRELOAD_VA: u32 = 0x8005_60FC;
+
+/// RAM address of the slot-1 / Noa next-level-threshold *literal* in `FUN_800560B4`
+/// (vanilla `addiu $v0, $zero, 0x66`). The starting-level randomizer overwrites it
+/// with `sw $t0, 0x5c8($s0)`, storing the preloaded experience value
+/// ([`CURRENT_XP_PRELOAD_VA`]) into party slot 0's **cumulative-experience cell
+/// `+0x0`** — the field the displayed level derives from. (The instruction after it,
+/// the Noa `+0x4` store, then writes the now-`$v0`-resident threshold to Noa's `+0x4`
+/// instead of her vanilla `102`; harmless, since Noa re-scales when she joins.)
+pub const CURRENT_XP_STORE_VA: u32 = 0x8005_6100;
 
 /// Per-record stride: eight `u16` stats (16 bytes) + a 10-byte name.
 pub const RECORD_STRIDE: usize = 26;
@@ -211,12 +239,21 @@ pub fn party_template_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(PARTY_TEMPLATE_VA)
 }
 
-/// File offset of the new-game cumulative-XP literal ([`STARTING_XP_SEED_VA`])
+/// File offset of the new-game next-level-threshold literal ([`STARTING_XP_SEED_VA`])
 /// within a `SCUS_942.54` image, or `None` if the image isn't a PSX-EXE or the
 /// address is out of range. The starting-level randomizer rewrites this `addiu`
-/// immediate to set the starting character's XP (and hence level).
+/// immediate to set the starting character's next-level XP threshold (`+0x4`).
 pub fn starting_xp_seed_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(STARTING_XP_SEED_VA)
+}
+
+/// File offset of an arbitrary `SCUS_942.54` data-segment virtual address, or
+/// `None` if the image isn't a PSX-EXE or the address is out of range. Used by the
+/// starting-level randomizer to locate the several seed-routine instructions it
+/// rewrites ([`CURRENT_XP_PRELOAD_VA`], [`LEVEL_SEED_VA`], [`LEVEL_STORE_VA`],
+/// [`CURRENT_XP_STORE_VA`]) without a bespoke helper per site.
+pub fn scus_file_offset(scus: &[u8], va: u32) -> Option<usize> {
+    ExeMap::parse(scus)?.off(va)
 }
 
 /// One roster member's opening stats + name, decoded from the template.

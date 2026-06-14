@@ -41,11 +41,18 @@ Field offsets are pinned by a fusion of three sources:
 ## Top-level layout
 
 ```text
-+0x000  u32 LE   xp_low_word_alt          ; "Max Exp" cheat target. Composed
-                                           ; with +0x002 to form a u32 (see note).
-+0x004  u16 LE   xp_cumulative_u16        ; captured XP cell - empirically the
-                                           ; level-up logic reads here. Noa
-                                           ; 4-level jump went 102 -> 336 here.
++0x000  u32 LE   xp_cumulative            ; cumulative EXPERIENCE ("Max Exp" cheat
+                                           ; target). The displayed combat level
+                                           ; derives from this (vanilla New Game
+                                           ; leaves it 0 -> level 1). See note.
++0x004  u32 LE   xp_next_threshold        ; next-level XP threshold - the status
+                                           ; screen's "next" readout; the level-up
+                                           ; applier compares +0x0 against it. NOT
+                                           ; cumulative XP (a live randomized ROM
+                                           ; writing here showed it as "next level"
+                                           ; while experience stayed 0). Seeded per
+                                           ; char to reach(L2): Vahn 121, Noa 102,
+                                           ; Gala 140.
 +0x006  u8[10]   header_tail              ; (function unmapped)
 +0x010  u8[228]  stat_block_unmapped      ; (function partially mapped via
                                            ; FUN_80042558; not all bytes named)
@@ -133,7 +140,7 @@ The mapping from cheat description to record offset is:
 | `Best Equipment` | `0x8008489E` / `0x800848A0` / `0x800848A2` | `+0x196` / `+0x198` / `+0x19A` | armor / weapon / leg gear |
 | `Activate Meta at Lv9` | `0x800848A1` | `+0x199` | accessory_or_seru_lock |
 | `Accessory 1 Modifier` | `0x800848A3` | `+0x19B` | accessory_1_id |
-| `Max Exp` | `0x80084708` / `0x8008470A` | `+0x000` / `+0x002` | xp_low_word_alt (combined u32) |
+| `Max Exp` | `0x80084708` / `0x8008470A` | `+0x000` / `+0x002` | xp_cumulative (combined u32) |
 
 The Noa (`+0x414`) and Gala (`+0x828`) bases shift every address by
 one record stride; same offsets, same fields.
@@ -155,6 +162,17 @@ separate Legaia stat that ranks up once per level-up event). Setting
 it to 99 unlocks every magic / summon at maximum power without
 changing the character's combat level (which is derived from
 cumulative XP via [`legaia_save::level_for_cumulative_xp`]).
+
+### `+0x4` is the *next-level threshold*, not cumulative XP.
+
+`+0x0` is the cumulative experience the displayed level derives from (the "Max
+Exp" cheat target); `+0x4` is the **next-level XP threshold** — the "next" readout
+on the status screen, and the value the level-up applier compares `+0x0` against.
+Confirmed live: a randomized ROM that wrote a level-10 XP value into `+0x4` showed
+it as "next level: 11195" while *experience* stayed `0`, leaving the derived level
+at 1 (the earlier note that "the level-up logic reads +0x4 as XP" conflated the
+threshold the applier reads with the cumulative XP it reads it against). The
+starting-level randomizer therefore seeds `+0x0`, not `+0x4`.
 
 The runtime accessor in [`legaia_save::CharacterRecord`] is
 `magic_rank()` / `set_magic_rank()`. The legacy `stat_cap()` call

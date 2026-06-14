@@ -2217,25 +2217,37 @@ pub fn randomize_starting_items(
     })
 }
 
-/// Read the new game's current starting level for slot 0, derived from the
-/// cumulative-XP literal the seed routine writes (the level byte is XP-derived,
-/// not stored). Purely read-only; retail is level 1.
+/// Read the new game's current starting level for slot 0. Retail seeds the lead
+/// character's experience cell `+0x0` to `0` (level 1, since the level is derived
+/// from cumulative experience). When the starting-level randomizer is applied, the
+/// seeded experience rides in the `addiu $t0, $zero, imm` preload at
+/// [`legaia_asset::new_game::CURRENT_XP_PRELOAD_VA`]; this reads that immediate (when
+/// present) and derives the level from the disc XP thresholds. Purely read-only.
 pub fn current_starting_level(patcher: &DiscPatcher) -> Result<u8> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    let off = legaia_asset::new_game::starting_xp_seed_file_offset(&scus)
-        .context("locate XP seed literal in SCUS_942.54")?;
+    let off = legaia_asset::new_game::scus_file_offset(
+        &scus,
+        legaia_asset::new_game::CURRENT_XP_PRELOAD_VA,
+    )
+    .context("locate current-XP preload in SCUS_942.54")?;
     let word = u32::from_le_bytes(
         scus.get(off..off + 4)
-            .context("XP seed literal out of range")?
+            .context("current-XP preload out of range")?
             .try_into()
             .unwrap(),
     );
+    // Vanilla holds the slot-3 `+0x4` store here, not an `addiu $t0` (`0x2408`); only
+    // the randomizer's preload carries a seeded experience value. Absent it, level 1.
+    if word >> 16 != 0x2408 {
+        return Ok(1);
+    }
     let xp = (word & 0xFFFF) as u32;
     let thresholds = legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)
         .context("read XP thresholds from SCUS_942.54")?;
-    // Level N when reach(N) < xp <= reach(N+1); reach(m) = thresholds[m - 2].
+    // Level N when reach(N) < xp <= reach(N+1); reach(m) = thresholds[m - 2]. The
+    // seeded value is the band midpoint, so it lands strictly inside level N.
     let mut level = 1u8;
     for (i, &reach) in thresholds.iter().enumerate() {
         if xp > reach {
@@ -2252,8 +2264,10 @@ pub fn current_starting_level(patcher: &DiscPatcher) -> Result<u8> {
 pub struct StartingLevelReport {
     /// The starting level seeded.
     pub level: u8,
-    /// The cumulative-XP value written into the seed literal.
-    pub xp_seed: u16,
+    /// Cumulative XP to reach the level, written to the record's `+0x0` cell.
+    pub current_xp: u16,
+    /// Next-level XP threshold, written to the record's `+0x4` cell.
+    pub next_threshold: u16,
     /// The level-`N` stats written into slot 0's template, in template order
     /// (`hp, mp, agl, atk, udf, ldf, spd, int`).
     pub stats: [u16; 8],
@@ -2262,28 +2276,54 @@ pub struct StartingLevelReport {
 /// Seed the new game so the lead character starts at `level` instead of level 1
 /// (see [`crate::starting_level`]).
 ///
-/// Two same-size in-place edits in `SCUS_942.54`: the cumulative-XP literal in
-/// the seed routine, and slot 0's eight `u16` stats in the starting-party
-/// template (recomputed to the level via the disc's own growth curves). `level`
-/// must be in [`crate::starting_level::MIN_STARTING_LEVEL`]`..=`[`crate::starting_level::MAX_STARTING_LEVEL`];
+/// Same-size in-place edits in `SCUS_942.54` across the seed routine `FUN_800560B4`
+/// and the starting-party template:
+/// - slot 0's current-experience cell `+0x0` (the field the displayed level derives
+///   from), seeded to an in-band level-`N` value via a `$t0` preload + store that
+///   repurpose the slot-3 / slot-1 next-level-threshold seeds;
+/// - the slot-0 next-level-threshold literal (`+0x4`), set to `reach(level + 1)`;
+/// - slot 0's eight `u16` stats in the template, recomputed to the level via the
+///   disc's own growth curves.
+///
+/// The magic-rank byte `+0x130` is intentionally left untouched. `level` must be in
+/// [`crate::starting_level::MIN_STARTING_LEVEL`]`..=`[`crate::starting_level::MAX_STARTING_LEVEL`];
 /// callers guard on [`crate::starting_level::is_active`]. Deterministic.
 pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<StartingLevelReport> {
+    use legaia_asset::new_game::{
+        CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, STARTING_XP_SEED_VA,
+        party_template_file_offset, scus_file_offset,
+    };
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
     let plan = crate::starting_level::plan(&scus, level)?;
 
-    let xp_off = legaia_asset::new_game::starting_xp_seed_file_offset(&scus)
-        .context("locate XP seed literal in SCUS_942.54")? as u64;
-    patcher
-        .patch_named_file(
-            crate::steal::SCUS_NAME,
-            xp_off,
-            &crate::starting_level::xp_seed_instruction(plan.xp_seed),
-        )
-        .with_context(|| format!("write XP seed literal at SCUS offset {xp_off:#x}"))?;
+    // Each seed-routine instruction the level edit rewrites, with its 4-byte
+    // replacement word. See `crate::starting_level` for the encodings + rationale.
+    let edits: [(u32, [u8; 4]); 3] = [
+        (
+            STARTING_XP_SEED_VA,
+            crate::starting_level::next_threshold_instruction(plan.next_threshold),
+        ),
+        (
+            CURRENT_XP_PRELOAD_VA,
+            crate::starting_level::current_xp_preload_instruction(plan.current_xp),
+        ),
+        (
+            CURRENT_XP_STORE_VA,
+            crate::starting_level::current_xp_store_instruction(),
+        ),
+    ];
+    for (va, word) in edits {
+        let off = scus_file_offset(&scus, va)
+            .with_context(|| format!("locate seed instruction {va:#x} in SCUS_942.54"))?
+            as u64;
+        patcher
+            .patch_named_file(crate::steal::SCUS_NAME, off, &word)
+            .with_context(|| format!("write seed instruction at SCUS offset {off:#x}"))?;
+    }
 
-    let tmpl_off = legaia_asset::new_game::party_template_file_offset(&scus)
+    let tmpl_off = party_template_file_offset(&scus)
         .context("locate starting-party template in SCUS_942.54")? as u64;
     patcher
         .patch_named_file(
@@ -2295,7 +2335,8 @@ pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<Star
 
     Ok(StartingLevelReport {
         level: plan.level,
-        xp_seed: plan.xp_seed,
+        current_xp: plan.current_xp,
+        next_threshold: plan.next_threshold,
         stats: plan.stats,
     })
 }

@@ -96,6 +96,34 @@ instruction). The relevant LE-instruction-word top-16 signatures are:
 | `sb $v0, off($s0)` | `0xA202` | byte store at `SC + off` |
 | `sh $v0, off($s0)` | `0xA602` | halfword store at `SC + off` |
 
+## Starting level / XP seed
+
+The same routine (`FUN_800560B4`) also seeds each live record's progression
+fields. The displayed combat **level is derived from cumulative experience**, not
+stored as a level byte, so the relevant live-record cells are:
+
+| Record offset | Field | Vanilla seed |
+|---|---|---|
+| `+0x0` (u32) | cumulative experience (the "Max Exp" cheat target); the displayed level derives from this | `0` |
+| `+0x4` (u32) | next-level XP threshold (the status screen's "next" readout; the level-up applier compares experience against it) | `reach(L2)`: Vahn/Terra `121`, Noa `102`, Gala `140` |
+| `+0x130` (u8) | magic-rank counter — `+1` per level-up *event*, **not** the character level (a captured 4-level jump raised it by only `+1`) | `1` |
+
+`+0x100` stays zero and is unrelated to the level. The seed writes `+0x4` per
+character (`0x800560F0` Vahn+Terra / `0x80056100` Noa / `0x80056108` Gala) and
+leaves `+0x0 = 0`, so a vanilla New Game derives level 1.
+
+The starting-level randomizer seeds the lead character at level `N` by writing an
+in-band experience value (the midpoint of `reach(N)..reach(N+1)`) into `+0x0` and
+`reach(N+1)` into `+0x4`, recomputing the template stats to the level, and leaving
+the magic-rank byte alone. It does this with same-size in-place edits to three
+seed instructions: the Vahn `+0x4` literal at `0x800560F0`, and the slot-3 (Terra)
++ slot-1 (Noa) threshold seeds at `0x800560FC` / `0x80056100`, repurposed to an
+`addiu $t0` preload + `sw $t0, 0x5c8($s0)` store of the experience value into slot
+0's `+0x0`. Noa/Terra re-scale when they join, so their dropped seeds are never
+observed. See [`subsystems/level-up.md`](../subsystems/level-up.md) for the XP
+thresholds + growth curves and [`tooling/randomizer.md`](../tooling/randomizer.md)
+for the feature.
+
 ## Provenance + parser
 
 The table base + stride are pinned by byte-search of `SCUS_942.54` for Vahn's
