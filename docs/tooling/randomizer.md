@@ -37,7 +37,7 @@ so CI runs without a disc.
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Starting items](#starting-items)
-  - [Door of Wind convenience toggles](#door-of-wind-convenience-toggles)
+  - [Starting-bag convenience toggles](#starting-bag-convenience-toggles)
   - [Unused content](#unused-content)
   - [Re-pack slack](#re-pack-slack)
 - [The patch chain](#the-patch-chain)
@@ -149,10 +149,12 @@ equipment (overrides `--drops`, see [Equipment drops](#equipment-drops));
 from to `scene` (default), `kingdom`, or `world` (see
 [Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
 (0 = vanilla; capped at 5). `--door-of-wind [N]` adds
-`N` Door of Wind (the warp consumable; default 10) to the starting bag and
-`--all-warps` unlocks every
+`N` Door of Wind (the warp consumable; default 10) to the starting bag,
+`--incense [N]` adds `N` Incense (the encounter-rate consumable; default 10)
+likewise, `--speed-chain [N]` / `--chicken-heart [N]` / `--good-luck-bell [N]`
+add those accessories (default 1 each), and `--all-warps` unlocks every
 Door-of-Wind destination from the start (see
-[Door of Wind convenience toggles](#door-of-wind-convenience-toggles)).
+[Starting-bag convenience toggles](#starting-bag-convenience-toggles)).
 `--unused-enemies` and `--unused-items` re-introduce
 content the game ships but never surfaces (see
 [Unused content](#unused-content) below).
@@ -443,6 +445,16 @@ decompress → edit → recompress path as the drop randomizer
 its `0x14000`-byte footprint (a slot too tight to re-pack is skipped, as with
 drops). `legaia-rando monster-stats` lists the current stats.
 
+The scripted opening tutorial opponent (the Rim Elm sparring partner,
+`monster_stats::PROTECTED_MONSTER_IDS`) is excluded from the pass entirely — both
+as a source and a target — so it keeps its original stats and never donates them
+to another monster. That fight is unwinnable by design and has no game-over
+branch, so handing it a hard-hitting attack could let it one-shot the party and
+soft-lock a fresh game; pinning its record keeps a new game playable. This is the
+stat-side companion to the encounter randomizer already leaving that formation
+scripted. Under `Shuffle` the column multisets are still exactly preserved (the
+pinned values are conserved in place).
+
 ### Special-attack power
 
 `--move-power` redistributes the per-move power values in the battle-action
@@ -683,18 +695,36 @@ add primitive), the pool is the contiguous consumable block `0x77..=0x8e`
 (Healing Leaf … Wonder Elixir). `--starting-items N` (0 = leave vanilla); the
 read-only `starting-items` listing shows the current bag.
 
-### Door of Wind convenience toggles
+### Starting-bag convenience toggles
 
-Two opt-in flags that ride the same reclaimable seed region as the starting
-items, built for fast-travel testing. Door of Wind (item `0x89`) is the warp
+Opt-in flags that ride the same reclaimable seed region as the starting items,
+built for fast-travel and pacing testing. Door of Wind (item `0x89`) is the warp
 consumable: using one opens a menu to teleport to any town you have already
-visited.
+visited. Incense (item `0x8A`) lowers the random-encounter rate for a while.
 
 **`--door-of-wind [N]`** seeds Door of Wind into the new game's starting bag —
 `N` of them (1..=99; the default when the flag is given bare is 10). It is
 *additive*: with no `--starting-items` reroll the vanilla Healing Leaf ×5 is kept
 alongside it; with a reroll the random consumables replace the Healing Leaf and
 Door of Wind is forced on top.
+
+**`--incense [N]`** seeds Incense into the starting bag the same way (`N` of them,
+1..=99, default 10 when given bare). It is additive on the same terms as Door of
+Wind, and the two stack.
+
+**`--speed-chain [N]`**, **`--chicken-heart [N]`**, and **`--good-luck-bell [N]`**
+seed those *accessories* ("Goods") into the starting bag (`N` 1..=99, default **1**
+when given bare). Although accessories are a different in-game category, the owned-
+item list is a single ordered `(id, count)` array the menu only *filters* into its
+Items / Goods / Key tabs — verified against a real end-game save, where Speed Chain
+(`0xD1`), Chicken Heart (`0xF4`), and Good Luck Bell (`0xFC`) all sit in that one
+list as plain `(id, count)` pairs — so an accessory seeds exactly like a consumable.
+
+All five item toggles are *additive* (the vanilla Healing Leaf ×5 is kept unless a
+`--starting-items` reroll replaces it) and stack. Forced items are seeded first so
+they survive the five-slot capacity clamp (Door of Wind, Incense, Speed Chain,
+Chicken Heart, Good Luck Bell — exactly filling the five slots if all are on), and
+a reroll excludes every forced id so it never deals a duplicate.
 
 **`--all-warps`** presets the "visited towns" bitmask so Door of Wind can warp
 *anywhere* from the start. That bitmask is a 32-bit story flag at `0x8008575C`
@@ -711,12 +741,14 @@ seed's zero-loop, which would otherwise re-clear `SC+0x161C`, is always
 overwritten when the seed is rewritten. `region_unlocks_all_warps` /
 `scus_unlocks_all_warps` read it back.
 
-The clean-room engine seeds the forced Door of Wind through the same
-`World::seed_starting_inventory` path as any other starting item (covered by the
-runtime oracle). The all-warps preset has no engine consumer yet — there is no
-Door-of-Wind warp menu in the port — so it is validated at the disc-round-trip
-level (`door_of_wind_and_all_warps_round_trip_on_disc`) and matches the
-user-verified GameShark write byte-for-byte.
+The clean-room engine seeds every forced item (Door of Wind, Incense, and the
+accessories) through the same `World::seed_starting_inventory` path as any other
+starting item (covered by the runtime oracle); the Incense and accessory paths
+have their own disc round-trip oracles (`incense_round_trips_on_disc`,
+`accessories_round_trip_on_disc`). The all-warps preset has no engine consumer yet
+— there is no Door-of-Wind warp menu in the port — so it is validated at the
+disc-round-trip level (`door_of_wind_and_all_warps_round_trip_on_disc`) and
+matches the user-verified GameShark write byte-for-byte.
 
 ### Unused content
 
@@ -840,7 +872,7 @@ bit-for-bit.
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, slot footprints fixed, deterministic |
+| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, the protected tutorial monster's combat stats unchanged, slot footprints fixed, deterministic |
 | `crates/rando` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |

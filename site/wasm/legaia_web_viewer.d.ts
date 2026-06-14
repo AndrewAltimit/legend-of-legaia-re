@@ -1090,7 +1090,10 @@ export class LegaiaViewer {
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
  * 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
- * into the starting bag (`0` = none); `all_warps` presets the visited-towns
+ * into the starting bag (`0` = none); `incense` is how many Incense (the
+ * encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
+ * `chicken_heart` / `good_luck_bell` seed those accessories the same way
+ * (`0` = none each); `all_warps` presets the visited-towns
  * bitmask so Door of Wind can teleport to any town from the start (its own code
  * region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
@@ -1109,7 +1112,7 @@ export class LegaiaViewer {
  * start). Only matters when `encounters` is not `"none"`. `seed` is a number or
  * any string (hashed). Returns `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1272,7 +1275,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

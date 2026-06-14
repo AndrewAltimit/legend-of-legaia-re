@@ -58,7 +58,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// `"shuffle"`. `starting_items` is the number of random starting consumables
 /// the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
 /// 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
-/// into the starting bag (`0` = none); `all_warps` presets the visited-towns
+/// into the starting bag (`0` = none); `incense` is how many Incense (the
+/// encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
+/// `chicken_heart` / `good_luck_bell` seed those accessories the same way
+/// (`0` = none each); `all_warps` presets the visited-towns
 /// bitmask so Door of Wind can teleport to any town from the start (its own code
 /// region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
 /// pool (only with `encounters = "random"`); `unused_items` adds the unused
@@ -94,6 +97,10 @@ pub fn patch_rom(
     house_doors: &str,
     starting_items: usize,
     door_of_wind: u8,
+    incense: u8,
+    speed_chain: u8,
+    chicken_heart: u8,
+    good_luck_bell: u8,
     all_warps: bool,
     unused_enemies: bool,
     unused_items: bool,
@@ -410,6 +417,10 @@ pub fn patch_rom(
     let seed_opts = legaia_rando::starting_items::StartingSeedOptions {
         random_items: starting_items,
         door_of_wind,
+        incense,
+        speed_chain,
+        chicken_heart,
+        good_luck_bell,
         all_warps,
     };
     if seed_opts.is_active() {

@@ -2259,7 +2259,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * `"shuffle"`. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5; capped at
  * 5). `door_of_wind` is how many Door of Wind (the warp consumable) to seed
- * into the starting bag (`0` = none); `all_warps` presets the visited-towns
+ * into the starting bag (`0` = none); `incense` is how many Incense (the
+ * encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
+ * `chicken_heart` / `good_luck_bell` seed those accessories the same way
+ * (`0` = none each); `all_warps` presets the visited-towns
  * bitmask so Door of Wind can teleport to any town from the start (its own code
  * region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
  * pool (only with `encounters = "random"`); `unused_items` adds the unused
@@ -2292,6 +2295,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {string} house_doors
  * @param {number} starting_items
  * @param {number} door_of_wind
+ * @param {number} incense
+ * @param {number} speed_chain
+ * @param {number} chicken_heart
+ * @param {number} good_luck_bell
  * @param {boolean} all_warps
  * @param {boolean} unused_enemies
  * @param {boolean} unused_items
@@ -2304,7 +2311,7 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {boolean} weapon_specialty
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty) {
+export function patch_rom(image, seed, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2341,7 +2348,7 @@ export function patch_rom(image, seed, drops, encounters, encounter_scope, chest
     const len16 = WASM_VECTOR_LEN;
     const ptr17 = passStringToWasm0(equip_bonus, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len17 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, starting_items, door_of_wind, all_warps, unused_enemies, unused_items, equipment_drops, ptr13, len13, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, weapon_specialty);
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr13, len13, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, weapon_specialty);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

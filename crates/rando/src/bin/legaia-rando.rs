@@ -312,6 +312,45 @@ struct RandomizeArgs {
         value_name = "COUNT"
     )]
     door_of_wind: Option<u8>,
+    /// Seed Incense (the encounter-rate consumable) into the new game's starting
+    /// bag. Pass `--incense` for the default stack (10) or `--incense N` for N
+    /// (1..=99). Additive to a normal new game (the Healing Leaf is kept) unless
+    /// `--starting-items` also rerolls the bag.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "10",
+        value_name = "COUNT"
+    )]
+    incense: Option<u8>,
+    /// Seed the Speed Chain accessory (always act first in battle) into the new
+    /// game's starting bag. Pass `--speed-chain` for the default (1) or
+    /// `--speed-chain N` for N (1..=99). Additive like `--door-of-wind`.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "1",
+        value_name = "COUNT"
+    )]
+    speed_chain: Option<u8>,
+    /// Seed the Chicken Heart accessory (always flee from battle) into the
+    /// starting bag. `--chicken-heart` for the default (1) or `--chicken-heart N`.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "1",
+        value_name = "COUNT"
+    )]
+    chicken_heart: Option<u8>,
+    /// Seed the Good Luck Bell accessory (raises the item-drop rate) into the
+    /// starting bag. `--good-luck-bell` for the default (1) or `--good-luck-bell N`.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "1",
+        value_name = "COUNT"
+    )]
+    good_luck_bell: Option<u8>,
     /// Unlock every Door-of-Wind warp destination from the start (preset the
     /// "visited towns" story-flag bitmask). Lets Door of Wind teleport to any
     /// town immediately. Costs part of the starting-seed budget, so it caps
@@ -1461,6 +1500,10 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let seed_opts = legaia_rando::starting_items::StartingSeedOptions {
         random_items: args.starting_items,
         door_of_wind: args.door_of_wind.unwrap_or(0),
+        incense: args.incense.unwrap_or(0),
+        speed_chain: args.speed_chain.unwrap_or(0),
+        chicken_heart: args.chicken_heart.unwrap_or(0),
+        good_luck_bell: args.good_luck_bell.unwrap_or(0),
         all_warps: args.all_warps,
     };
     if seed_opts.is_active() {

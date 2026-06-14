@@ -18,14 +18,19 @@
 //! original code (no executable growth or relocation) and is applied through
 //! [`crate::disc::DiscPatcher::patch_named_file`] like the steal table.
 //!
-//! Because the write lands **directly** in the consumable inventory page
-//! (bypassing the engine's id-routing add primitive), the random pool is
-//! restricted to the contiguous block of genuine consumables
-//! ([`STARTING_ITEM_POOL`], Healing Leaf .. Wonder Elixir) so a starting item
-//! is always something that belongs on that page.
+//! The write lands **directly** in the new game's owned-item list — the single
+//! ordered `(id, count)` array the inventory menu later filters into its Items /
+//! Goods / Key tabs by item category — bypassing the engine's id-routing add
+//! primitive. Because every category shares this one list (verified against a
+//! real end-game save: consumables, equipment, and accessories all sit in it as
+//! plain `(id, count)` pairs), an explicit convenience toggle can seed an
+//! accessory ("Goods") id just as easily as a consumable. The **random** pool,
+//! by contrast, is restricted to the contiguous block of genuine consumables
+//! ([`STARTING_ITEM_POOL`], Healing Leaf .. Wonder Elixir) so a *random* start
+//! stays sensible rather than handing out arbitrary equipment.
 
 use legaia_asset::new_game::{
-    DOOR_OF_WIND_ITEM, INVENTORY_SC_OFFSET, STARTING_INV_SEED_LEN, WARP_ALL_FLAGS_HI,
+    DOOR_OF_WIND_ITEM, INCENSE_ITEM, INVENTORY_SC_OFFSET, STARTING_INV_SEED_LEN, WARP_ALL_FLAGS_HI,
     WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET, WARP_SEED_LEN,
 };
 
@@ -51,6 +56,31 @@ pub const DOOR_OF_WIND_ID: u8 = DOOR_OF_WIND_ITEM;
 /// useful for a while without the GameShark "99 in one slot" overkill; the user
 /// can override it.
 pub const DOOR_OF_WIND_COUNT: u8 = 10;
+
+/// Item id of Incense (the encounter-rate consumable), re-exported for callers.
+pub const INCENSE_ID: u8 = INCENSE_ITEM;
+
+/// Default Incense stack seeded when the toggle is enabled without an explicit
+/// count. Like Door of Wind, Incense is consumed per use, so a modest stack is a
+/// convenience without trivializing exploration; the user can override it.
+pub const INCENSE_COUNT: u8 = 10;
+
+/// Item id of the Speed Chain accessory ("Wearer always gets the first turn").
+/// An accessory ("Goods"), not a consumable, but the owned-item list is a single
+/// ordered `(id, count)` array shared by every category (see the module docs), so
+/// it seeds exactly like Door of Wind.
+pub const SPEED_CHAIN_ID: u8 = 0xD1;
+
+/// Item id of the Chicken Heart accessory ("Always flee from battle").
+pub const CHICKEN_HEART_ID: u8 = 0xF4;
+
+/// Item id of the Good Luck Bell accessory ("Raises the item-drop rate").
+pub const GOOD_LUCK_BELL_ID: u8 = 0xFC;
+
+/// Default stack seeded for each accessory convenience toggle when it is enabled
+/// without an explicit count. Accessories are equip-once goods (not consumed), so
+/// one is the natural default.
+pub const ACCESSORY_SEED_COUNT: u8 = 1;
 
 /// Maximum stack the game holds in one inventory slot. A seeded Door-of-Wind
 /// count is clamped to this (the count byte is written raw, so a larger value
@@ -78,6 +108,22 @@ pub struct StartingSeedOptions {
     /// [`MAX_ITEM_STACK`]. (The CLI / web default when the toggle is enabled is
     /// [`DOOR_OF_WIND_COUNT`].)
     pub door_of_wind: u8,
+    /// How many Incense to seed into the starting bag. `0` = off; any positive
+    /// count seeds one slot of Incense, clamped to [`MAX_ITEM_STACK`]. (The CLI /
+    /// web default when the toggle is enabled is [`INCENSE_COUNT`].)
+    pub incense: u8,
+    /// How many Speed Chain accessories to seed into the starting bag. `0` = off;
+    /// clamped to [`MAX_ITEM_STACK`]. (CLI / web default when enabled:
+    /// [`ACCESSORY_SEED_COUNT`].)
+    pub speed_chain: u8,
+    /// How many Chicken Heart accessories to seed. `0` = off (see [`speed_chain`]).
+    ///
+    /// [`speed_chain`]: Self::speed_chain
+    pub chicken_heart: u8,
+    /// How many Good Luck Bell accessories to seed. `0` = off (see [`speed_chain`]).
+    ///
+    /// [`speed_chain`]: Self::speed_chain
+    pub good_luck_bell: u8,
     /// Preset the all-towns visited-towns bitmask so Door of Wind can warp to
     /// every destination from the start.
     pub all_warps: bool,
@@ -86,7 +132,13 @@ pub struct StartingSeedOptions {
 impl StartingSeedOptions {
     /// `true` when the seed should be rewritten at all (any toggle is set).
     pub fn is_active(&self) -> bool {
-        self.random_items > 0 || self.door_of_wind > 0 || self.all_warps
+        self.random_items > 0
+            || self.door_of_wind > 0
+            || self.incense > 0
+            || self.speed_chain > 0
+            || self.chicken_heart > 0
+            || self.good_luck_bell > 0
+            || self.all_warps
     }
 }
 
@@ -163,13 +215,15 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
 /// Resolve [`StartingSeedOptions`] into a concrete [`SeedPlan`] for `seed`.
 ///
 /// Composition, in slot order:
-/// 1. **Door of Wind** (`door_of_wind`× , clamped to [`MAX_ITEM_STACK`]) if the
-///    count is non-zero, written first so it always survives the capacity clamp.
+/// 1. **Forced convenience items** — Door of Wind, Incense, then the Speed Chain
+///    / Chicken Heart / Good Luck Bell accessories (each `count`× , clamped to
+///    [`MAX_ITEM_STACK`]) for whichever has a non-zero count, written first so
+///    they always survive the capacity clamp.
 /// 2. **Base / reroll**: with `random_items == 0` the vanilla Healing Leaf base
 ///    is kept (the convenience toggles stay additive to a normal new game);
 ///    with `random_items > 0` the bag is rerolled to that many random
 ///    consumables instead (the existing `--starting-items` behaviour), drawn
-///    excluding Door of Wind so it isn't duplicated.
+///    excluding any forced item so it isn't duplicated.
 ///
 /// The item list is clamped to [`MAX_STARTING_ITEMS`]. The all-warps preset
 /// lives in its **own** code region (it doesn't share the inventory budget), so
@@ -177,23 +231,28 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
 pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
     let cap = MAX_STARTING_ITEMS;
     let mut items: Vec<(u8, u8)> = Vec::new();
-
-    let door_count = opts.door_of_wind.min(MAX_ITEM_STACK);
-    if door_count > 0 {
-        items.push((DOOR_OF_WIND_ID, door_count));
+    // Forced convenience items, in a stable slot order. Each is seeded first so
+    // it always survives the capacity clamp; its id is excluded from the reroll
+    // below so a random fill can't deal a duplicate slot.
+    let mut forced_ids: Vec<u8> = Vec::new();
+    for (id, count) in [
+        (DOOR_OF_WIND_ID, opts.door_of_wind),
+        (INCENSE_ID, opts.incense),
+        (SPEED_CHAIN_ID, opts.speed_chain),
+        (CHICKEN_HEART_ID, opts.chicken_heart),
+        (GOOD_LUCK_BELL_ID, opts.good_luck_bell),
+    ] {
+        let count = count.min(MAX_ITEM_STACK);
+        if count > 0 {
+            items.push((id, count));
+            forced_ids.push(id);
+        }
     }
 
     if opts.random_items > 0 {
         let room = cap.saturating_sub(items.len());
         let n = opts.random_items.min(room);
-        // Exclude the forced item from the reroll so it isn't dealt twice; when
-        // Door of Wind isn't forced it stays an eligible random consumable.
-        let exclude: &[u8] = if door_count > 0 {
-            &[DOOR_OF_WIND_ID]
-        } else {
-            &[]
-        };
-        items.extend(plan_random_items(seed, n, exclude));
+        items.extend(plan_random_items(seed, n, &forced_ids));
     } else if items.len() < cap {
         // No reroll requested: keep the vanilla Healing Leaf base so the
         // toggles are purely additive.
@@ -356,6 +415,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 5,
                 door_of_wind: 0,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: true,
             },
         );
@@ -366,6 +429,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 5,
                 door_of_wind: 0,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: false,
             },
         );
@@ -381,6 +448,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 0,
                 door_of_wind: DOOR_OF_WIND_COUNT,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: false,
             },
         );
@@ -404,6 +475,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 0,
                 door_of_wind: 25,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: false,
             },
         );
@@ -414,6 +489,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 0,
                 door_of_wind: 250,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: false,
             },
         );
@@ -424,6 +503,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 0,
                 door_of_wind: 0,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: false,
             },
         );
@@ -438,6 +521,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 0,
                 door_of_wind: 0,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: true,
             },
         );
@@ -463,6 +550,10 @@ mod tests {
         let opts = StartingSeedOptions {
             random_items: 5,
             door_of_wind: DOOR_OF_WIND_COUNT,
+            incense: 0,
+            speed_chain: 0,
+            chicken_heart: 0,
+            good_luck_bell: 0,
             all_warps: true,
         };
         let plan = plan_seed(99, &opts);
@@ -489,6 +580,10 @@ mod tests {
             &StartingSeedOptions {
                 random_items: 3,
                 door_of_wind: 0,
+                incense: 0,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
                 all_warps: false,
             },
         );
@@ -501,6 +596,10 @@ mod tests {
         let opts = StartingSeedOptions {
             random_items: 4,
             door_of_wind: DOOR_OF_WIND_COUNT,
+            incense: 0,
+            speed_chain: 0,
+            chicken_heart: 0,
+            good_luck_bell: 0,
             all_warps: true,
         };
         assert_eq!(plan_seed(0xABCD, &opts), plan_seed(0xABCD, &opts));
@@ -516,5 +615,191 @@ mod tests {
             }
             .is_active()
         );
+        // Incense alone activates the seed rewrite.
+        assert!(
+            StartingSeedOptions {
+                incense: INCENSE_COUNT,
+                ..Default::default()
+            }
+            .is_active()
+        );
+    }
+
+    #[test]
+    fn incense_only_is_additive_to_the_vanilla_base() {
+        // No reroll, no warps: keep Healing Leaf AND add Incense x10.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                incense: INCENSE_COUNT,
+                ..Default::default()
+            },
+        );
+        assert!(!plan.all_warps);
+        assert_eq!(
+            plan.items,
+            vec![(INCENSE_ID, INCENSE_COUNT), VANILLA_STARTING_ITEM]
+        );
+        let patch = build_seed_patch_for(&plan);
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &[(INCENSE_ID, INCENSE_COUNT), VANILLA_STARTING_ITEM]
+        );
+    }
+
+    #[test]
+    fn incense_count_is_user_settable_and_clamped() {
+        // An explicit count is seeded verbatim.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                incense: 30,
+                ..Default::default()
+            },
+        );
+        assert_eq!(plan.items[0], (INCENSE_ID, 30));
+        // A count above the stack cap clamps to MAX_ITEM_STACK.
+        let plan = plan_seed(
+            1,
+            &StartingSeedOptions {
+                incense: 250,
+                ..Default::default()
+            },
+        );
+        assert_eq!(plan.items[0], (INCENSE_ID, MAX_ITEM_STACK));
+        // Count 0 means off: no Incense, just the vanilla base.
+        let plan = plan_seed(1, &StartingSeedOptions::default());
+        assert!(!plan.items.iter().any(|(id, _)| *id == INCENSE_ID));
+    }
+
+    #[test]
+    fn door_of_wind_and_incense_seed_distinct_slots() {
+        // Both convenience items seeded: Door of Wind first, then Incense, then
+        // the vanilla Healing Leaf base — three distinct slots.
+        let plan = plan_seed(
+            5,
+            &StartingSeedOptions {
+                door_of_wind: DOOR_OF_WIND_COUNT,
+                incense: INCENSE_COUNT,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            plan.items,
+            vec![
+                (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT),
+                (INCENSE_ID, INCENSE_COUNT),
+                VANILLA_STARTING_ITEM,
+            ]
+        );
+        let patch = build_seed_patch_for(&plan);
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &plan.items[..]
+        );
+    }
+
+    #[test]
+    fn accessory_toggles_are_additive_and_default_to_one() {
+        // Each accessory toggle alone seeds one of that accessory plus the
+        // vanilla Healing Leaf base. Build the three option sets explicitly.
+        let cases = [
+            (
+                StartingSeedOptions {
+                    speed_chain: ACCESSORY_SEED_COUNT,
+                    ..Default::default()
+                },
+                SPEED_CHAIN_ID,
+            ),
+            (
+                StartingSeedOptions {
+                    chicken_heart: ACCESSORY_SEED_COUNT,
+                    ..Default::default()
+                },
+                CHICKEN_HEART_ID,
+            ),
+            (
+                StartingSeedOptions {
+                    good_luck_bell: ACCESSORY_SEED_COUNT,
+                    ..Default::default()
+                },
+                GOOD_LUCK_BELL_ID,
+            ),
+        ];
+        for (opts, id) in cases {
+            assert!(opts.is_active());
+            let plan = plan_seed(1, &opts);
+            assert_eq!(
+                plan.items,
+                vec![(id, ACCESSORY_SEED_COUNT), VANILLA_STARTING_ITEM],
+                "accessory {id:#04x} seeded additively, count 1"
+            );
+            // Round-trips through the encoder/decoder.
+            let patch = build_seed_patch_for(&plan);
+            assert_eq!(
+                StartingInventory::decode_region(&patch).items(),
+                &plan.items[..]
+            );
+        }
+    }
+
+    #[test]
+    fn all_convenience_items_fill_the_five_slots_in_order() {
+        // Door of Wind, Incense, then the three accessories — five forced items
+        // exactly fill the seed region, dropping the vanilla Healing Leaf.
+        let plan = plan_seed(
+            7,
+            &StartingSeedOptions {
+                door_of_wind: DOOR_OF_WIND_COUNT,
+                incense: INCENSE_COUNT,
+                speed_chain: ACCESSORY_SEED_COUNT,
+                chicken_heart: ACCESSORY_SEED_COUNT,
+                good_luck_bell: ACCESSORY_SEED_COUNT,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            plan.items,
+            vec![
+                (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT),
+                (INCENSE_ID, INCENSE_COUNT),
+                (SPEED_CHAIN_ID, ACCESSORY_SEED_COUNT),
+                (CHICKEN_HEART_ID, ACCESSORY_SEED_COUNT),
+                (GOOD_LUCK_BELL_ID, ACCESSORY_SEED_COUNT),
+            ],
+            "all five forced slots in order, no Healing Leaf left"
+        );
+        assert_eq!(plan.items.len(), MAX_STARTING_ITEMS);
+        let patch = build_seed_patch_for(&plan);
+        assert_eq!(
+            StartingInventory::decode_region(&patch).items(),
+            &plan.items[..]
+        );
+    }
+
+    #[test]
+    fn reroll_excludes_both_forced_items() {
+        // A reroll alongside both forced items must not deal a duplicate of
+        // either; all five slots fill (2 forced + 3 random).
+        let plan = plan_seed(
+            99,
+            &StartingSeedOptions {
+                random_items: 5,
+                door_of_wind: DOOR_OF_WIND_COUNT,
+                incense: INCENSE_COUNT,
+                speed_chain: 0,
+                chicken_heart: 0,
+                good_luck_bell: 0,
+                all_warps: false,
+            },
+        );
+        assert_eq!(plan.items.len(), 5);
+        assert_eq!(plan.items[0], (DOOR_OF_WIND_ID, DOOR_OF_WIND_COUNT));
+        assert_eq!(plan.items[1], (INCENSE_ID, INCENSE_COUNT));
+        for (id, _) in &plan.items[2..] {
+            assert!(STARTING_ITEM_POOL.contains(id));
+            assert_ne!(*id, DOOR_OF_WIND_ID, "reroll excludes Door of Wind");
+            assert_ne!(*id, INCENSE_ID, "reroll excludes Incense");
+        }
     }
 }
