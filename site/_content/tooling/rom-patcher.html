@@ -112,7 +112,11 @@
       </div>
       <label class="rom-check-row rom-sub" id="rom-solo-strong-row">
         <input type="checkbox" id="rom-solo-strong">
-        <span>&#8627; Solo strong fights &mdash; when a randomized encounter would field a monster much stronger than the area's natives, make it a lone enemy instead of a pack of 2+ <span class="rom-opt-note">(on in the Balanced / Full Chaos presets)</span></span>
+        <span>&#8627; Solo strong fights &mdash; when a randomized encounter would field a monster much stronger than the area's natives, make it a lone enemy instead of a pack of 2+</span>
+      </label>
+      <label class="rom-check-row" id="rom-flee-exp-row">
+        <input type="checkbox" id="rom-flee-exp">
+        <span>Experience on the run &mdash; successfully running away banks 5% of the fight's experience into the party (vanilla gives nothing for fleeing)</span>
       </label>
 
       <div class="rom-opt">
@@ -171,7 +175,7 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-equipment-drops">
-        <span>Equipment drops &mdash; a low per-battle chance to win one extra random weapon / armor / accessory, on top of the normal drop <span class="rom-opt-note">(additive code hook &mdash; on in every gameplay preset)</span></span>
+        <span>Equipment drops &mdash; a low per-battle chance to win one extra random weapon / armor / accessory, on top of the normal drop <span class="rom-opt-note">(additive code hook)</span></span>
       </label>
 
       <label class="rom-check-row">
@@ -307,7 +311,8 @@
     <li><strong>Element affinity</strong> &mdash; scrambles the 8&times;8 element matrix (which element is strong / weak against which). <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances, just between different pairs; the per-character element assignment is untouched.</li>
     <li><strong>Spell MP costs</strong> &mdash; redistributes the MP costs of the named, costed spells in the <code>SCUS_942.54</code> spell table. Free / internal enemy-tier entries never gain a cost.</li>
     <li><strong>Equipment stat bonuses</strong> &mdash; redistributes the passive stat bonuses (INT / ATK / DEF&uarr; / DEF&darr; / SPD) of the equipment table, <em>within each slot type</em> (weapon power lands on another weapon, armor on armor). The equip-character restriction, accessory passive, and slot type never move.</li>
-    <li><strong>Equipment drops</strong> &mdash; a low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, granted <em>on top of</em> the normal drop. Because a monster has only one drop slot, this can't be a data edit (that would destroy the normal drop) &mdash; instead it injects a tiny code hook into the battle-end reward routine that rolls the chance and adds a random gear id. The normal drop table (vanilla or shuffled / randomized) is never touched. On by default in every gameplay preset.</li>
+    <li><strong>Equipment drops</strong> &mdash; a low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, granted <em>on top of</em> the normal drop. Because a monster has only one drop slot, this can't be a data edit (that would destroy the normal drop) &mdash; instead it injects a tiny code hook into the battle-end reward routine that rolls the chance and adds a random gear id. The normal drop table (vanilla or shuffled / randomized) is never touched.</li>
+    <li><strong>Experience on the run</strong> &mdash; banks a slice of a fight's experience into the party whenever they successfully run away (vanilla awards nothing for fleeing). Like the equipment drop, this can't be a data edit &mdash; it injects a tiny code hook into the battle-action escape teardown that sums the fled formation's listed experience, takes 5% of it, and adds that to every party member's experience. The experience shows in the status screen immediately and applies as a level the next time a won battle tallies it.</li>
     <li><strong>Weapon specialty</strong> &mdash; reassigns which weapon class each character favors (Vahn blades, Noa claws, Gala clubs/axes by default), permuting the three favored classes among them. Equipping an off-class weapon widens that character's <em>Arms</em> command in an arts combo, so fewer commands fit; this rewrites the per-(character, weapon) arm-cost byte in the player battle files (decompressing / re-compressing each section in place). The Astral Sword stays always-wide and can't be specialized in.</li>
     <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>

@@ -191,6 +191,16 @@ struct RandomizeArgs {
     /// Per-battle chance (percent) for the `--equipment-drops` bonus drop.
     #[arg(long, default_value_t = legaia_rando::bonus_drop::DEFAULT_CHANCE_PCT)]
     equipment_drop_chance: u8,
+    /// Bank a slice of the formation's experience into the party whenever they
+    /// **successfully run away** (a same-size code hook into the battle-action
+    /// escape teardown). Vanilla awards nothing for fleeing; this credits
+    /// `--flee-exp-pct`% of the fled fight's EXP to every party member.
+    #[arg(long, default_value_t = false)]
+    flee_exp: bool,
+    /// Percentage of the formation's experience banked on a successful escape
+    /// (only with `--flee-exp`).
+    #[arg(long, default_value_t = legaia_rando::flee_exp::DEFAULT_PCT)]
+    flee_exp_pct: u8,
     /// How random-encounter formations are reassigned. The pool each scene draws
     /// from is set by `--encounter-scope`.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -1199,6 +1209,20 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("equipment_pool = {}", report.table_len));
     } else {
         manifest.push("equipment_drops = false".to_string());
+    }
+
+    // Run-away EXP: a code hook in the escape teardown banks a slice of the fled
+    // formation's experience into the party (vanilla gives nothing for fleeing).
+    if args.flee_exp {
+        let report = apply::inject_flee_exp(&mut patcher, args.flee_exp_pct)?;
+        println!(
+            "flee-exp: {}% of a fled fight's experience banked into the party",
+            report.pct
+        );
+        manifest.push("flee_exp = true".to_string());
+        manifest.push(format!("flee_exp_pct = {}", report.pct));
+    } else {
+        manifest.push("flee_exp = false".to_string());
     }
 
     if let Some(enc_mode) = enc_mode {

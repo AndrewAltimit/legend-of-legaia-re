@@ -60,6 +60,7 @@ pub mod element_affinity;
 pub mod encounter;
 pub mod equip_bonus;
 pub mod equipment;
+pub mod flee_exp;
 pub mod house_door;
 pub mod item_name;
 pub mod item_price;

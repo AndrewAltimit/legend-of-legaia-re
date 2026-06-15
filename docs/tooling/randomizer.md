@@ -120,6 +120,7 @@ legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
 legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
+legaia-rando randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
 legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -145,7 +146,10 @@ the four battle-tuning passes are described under
 `--equipment-drops` injects a code hook into the battle-end reward routine that
 grants one extra random equipment piece on a low per-battle chance
 (`--equipment-drop-chance N`, default 5) on top of `--drops`, never disturbing it
-(see [Equipment drops](#equipment-drops));
+(see [Equipment drops](#equipment-drops)); `--flee-exp` injects a code hook into
+the battle-action escape teardown so a successful run banks `--flee-exp-pct`%
+(default 5) of the fled fight's experience into the party (see
+[Run-away EXP](#run-away-exp));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--encounter-scope` widens the monster pool an encounter roll draws
 from to `scene` (default), `kingdom`, or `world`; the **solo-strong** pass
@@ -368,6 +372,59 @@ this only ever thins a *random* pack. Validated on a real disc by
 `tests/solo_strong_encounter_real.rs`: a World-scope random pass produces strong
 packs without the option and **zero** with it, non-vacuously, deterministically,
 and EDC/ECC-valid. On by default in the web Balanced / Full Chaos presets.
+
+### Run-away EXP
+
+`--flee-exp` banks a slice of a fight's experience into the party whenever they
+**successfully run away** — vanilla awards nothing for fleeing. Like the
+[equipment drop](#equipment-drops), this is a runtime behaviour with no value to
+edit (the flee path never reaches an EXP grant), so it **patches the executable**
+rather than a table.
+
+**The hook (`flee_exp` module).** The per-actor battle state machine
+`FUN_801E295C` (battle-action overlay, base VA `0x801CE818` = **PROT entry 898**)
+handles "Run" across states `0x64..0x66`. State `0x66` is the
+**successful-escape teardown**, reached only when the run roll succeeds (a failed
+run goes `0x65 -> 0x50` and the battle continues; see
+[`battle-action.md`](../subsystems/battle-action.md)). Its handler begins at VA
+`0x801E5A10` (`lui v1,0x801d` / `addiu a0,v1,-0x6f90`, the fade-template setup).
+The randomizer overwrites those two instructions with `j <routine>` + `nop` (a
+detour) — a same-size **raw** edit of the overlay PROT entry, which maps linearly
+from its base (`file_off = va - 0x801CE818`). State `0x66` advances itself to the
+terminal `0x67`, so it runs once per escape; the party HP was already floored to
+`>= 1` in state `0x64` (the "escape restores a downed member" mechanism), so every
+member is alive at the grant. The injected routine:
+
+1. sums the formation's experience: it walks the live enemy record-pointer table
+   at `0x801C9348` for `actor[+1]` (`*0x8007BD24`) entries and accumulates each
+   record's EXP halfword (`+0x46` — the same field the victory-spoils routine
+   `FUN_8004E568` reads);
+2. scales the total to `--flee-exp-pct`% (default **5**);
+3. adds the scaled amount to **every** party member's cumulative-XP cell — the
+   slot→record-id map is at `0x8007BD10`, the record array is based at
+   `0x80084140` (stride `0x414`), and cumulative XP lives at `+0x5C8` (where
+   `FUN_8004E568` accumulates a win's EXP and `FUN_801E9504` reads it to apply
+   levels), each clamped to the `9,999,999` cap;
+4. replays the two displaced instructions and `j`s back to `0x801E5A18`.
+
+The grant is **banked**, not applied as an immediate level-up: it only writes the
+cumulative-XP cell (it never calls the level processor), so the experience shows
+in the status screen at once and the character levels up the next time a won
+battle tallies the accumulated total — small and side-effect-free during the
+escape fade (no stray level-up screen). The routine lives in the same preserved
+rodata gap as the [equipment-drop](#equipment-drops) and [name](#name-injection)
+injections (`0x8007AB38`), at `0x8007AD00` — clear of the equipment routine + its
+id table, so both battle hooks coexist. The planner guards on the detour-site
+words matching the known US build and on the routine region being all-zero dead
+space, refusing a differently-laid-out image rather than corrupting it. On by
+default in the web Balanced / Full Chaos presets.
+
+> The clean-room engine can't execute injected MIPS, so — like the equipment drop
+> — this has no engine runtime oracle. It is verified by the byte/disassembly
+> checks in `flee_exp_real` (the real disc's hook site **is** the expected
+> displaced pair; the detour + routine decode as the hand-assembled code; each
+> edit is surgical and EDC/ECC-valid; the build guard refuses an unknown layout)
+> plus an emulator playtest.
 
 ### Treasure chests
 
@@ -1064,6 +1121,7 @@ bit-for-bit.
 | `crates/rando` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene ＩＮ-class and ＯＵＴ-class door-warp target multisets each preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
+| `crates/rando` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

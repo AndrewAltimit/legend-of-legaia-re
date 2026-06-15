@@ -84,6 +84,9 @@ pub fn resolve_seed(seed: &str) -> String {
 /// `solo_strong_encounters` (only with `encounters` set) forces any randomized
 /// formation holding a monster much stronger than the area's natives down to that
 /// lone enemy, so an over-strong monster is faced solo instead of in a pack.
+/// `flee_exp` injects a code hook into the battle-action escape teardown so that
+/// successfully running away banks a small slice of the fled fight's experience
+/// into the party (vanilla awards nothing for fleeing).
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -123,6 +126,7 @@ pub fn patch_rom(
     weapon_specialty: bool,
     starting_level: u8,
     solo_strong_encounters: bool,
+    flee_exp: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -241,6 +245,19 @@ pub fn patch_rom(
             }
         }
         None => summary.push_str("encounters: untouched\n"),
+    }
+
+    // Run-away EXP: a code hook in the escape teardown banks a slice of a fled
+    // fight's experience into the party (vanilla gives nothing for fleeing).
+    if flee_exp {
+        let rep = apply::inject_flee_exp(&mut patcher, legaia_rando::flee_exp::DEFAULT_PCT)
+            .map_err(|e| err(format!("flee-exp: {e}")))?;
+        summary.push_str(&format!(
+            "flee-exp: {}% of a fled fight's experience banked into the party\n",
+            rep.pct
+        ));
+    } else {
+        summary.push_str("flee-exp: untouched\n");
     }
 
     match chest_mode {

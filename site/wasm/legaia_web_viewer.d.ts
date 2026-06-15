@@ -1116,13 +1116,16 @@ export class LegaiaViewer {
  * `solo_strong_encounters` (only with `encounters` set) forces any randomized
  * formation holding a monster much stronger than the area's natives down to that
  * lone enemy, so an over-strong monster is faced solo instead of in a pack.
+ * `flee_exp` injects a code hook into the battle-action escape teardown so that
+ * successfully running away banks a small slice of the fled fight's experience
+ * into the party (vanilla awards nothing for fleeing).
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
  * starting stats from the disc's growth curves. `seed` is a number or
  * any string (hashed). Returns `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1285,7 +1288,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

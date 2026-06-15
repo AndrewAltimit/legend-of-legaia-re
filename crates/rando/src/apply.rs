@@ -184,6 +184,49 @@ pub fn inject_equipment_bonus_drop(
     })
 }
 
+/// Outcome of injecting the run-away EXP reward.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FleeExpReport {
+    /// Percentage of the formation's experience banked into each party member on a
+    /// successful escape.
+    pub pct: u8,
+}
+
+/// Inject the **run-away EXP reward** (see [`crate::flee_exp`]): a code hook into
+/// the battle-action escape teardown that, whenever the party successfully flees,
+/// banks `pct`% of the fled formation's experience into every party member's
+/// cumulative-XP cell. Vanilla awards nothing for running.
+///
+/// Two same-size edits: the detour at the escape-teardown hook (the battle-action
+/// overlay's raw PROT entry) and the routine blob in preserved `SCUS_942.54`
+/// rodata padding (placed past the bonus-equipment routine so both hooks coexist).
+/// Fails (without touching the disc) if the build isn't the recognized US layout.
+pub fn inject_flee_exp(patcher: &mut DiscPatcher, pct: u8) -> Result<FleeExpReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for flee-EXP injection")?;
+    let overlay = patcher
+        .read_entry(crate::flee_exp::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay for flee-EXP injection")?;
+    let plan = crate::flee_exp::FleeExpInjection::plan(&scus, &overlay, pct)?;
+
+    // The escape-teardown detour lives in the overlay PROT entry (raw, linear
+    // from base); the routine blob lives in the SCUS rodata gap.
+    let detour: Vec<u8> = plan.detour.iter().flat_map(|w| w.to_le_bytes()).collect();
+    patcher
+        .patch_prot_entry(
+            crate::flee_exp::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+            plan.overlay_hook_off as u64,
+            &detour,
+        )
+        .context("write escape-teardown detour")?;
+    patcher
+        .patch_named_file(SCUS_NAME, plan.routine_off as u64, &plan.blob)
+        .context("write injected flee-EXP routine")?;
+
+    Ok(FleeExpReport { pct: plan.pct })
+}
+
 /// Outcome of randomizing monster combat stats.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MonsterStatsReport {
