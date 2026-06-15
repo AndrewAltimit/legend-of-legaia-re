@@ -65,7 +65,16 @@ const A2: u32 = 6;
 const V0: u32 = 2;
 const V1: u32 = 3;
 const T0: u32 = 8;
+const T1: u32 = 9;
+const T2: u32 = 10;
 const RA: u32 = 31;
+
+/// BIOS A-table dispatcher entry. Calling it with the function number in `$t1`
+/// invokes that A-function (the game's own FlushCache wrapper at `0x8005BBE8`
+/// does `li t2,0xA0; jr t2; li t1,0x44`).
+pub const BIOS_DISPATCH_A: u16 = 0x00A0;
+/// BIOS A-function number for `FlushCache()` (invalidate the I-cache).
+pub const FLUSH_CACHE_FN: u16 = 0x0044;
 
 const fn j(target: u32) -> u32 {
     (0x02 << 26) | ((target >> 2) & 0x03ff_ffff)
@@ -128,7 +137,12 @@ pub fn assemble_sentinel_overlay() -> Vec<u32> {
 /// Assemble the loader stub for an overlay at disc `lba` spanning `sectors`
 /// sectors, loaded to [`DEST`] and called. `displaced` are the two hook
 /// instructions to replay; `return_va` is where to jump back. Lives at
-/// [`STUB_VA`]. 15 instructions / 60 bytes (fits the gap free window).
+/// [`STUB_VA`]. 18 instructions / 72 bytes (fits the gap free window).
+///
+/// After the CD read it calls the BIOS `FlushCache` (A-func [`FLUSH_CACHE_FN`]
+/// via the [`BIOS_DISPATCH_A`] dispatcher) **before** executing the loaded code:
+/// the PSX I-cache is not DMA-coherent, so freshly streamed code can otherwise
+/// run stale on hardware.
 pub fn assemble_loader_stub(
     lba: u32,
     sectors: u16,
@@ -143,14 +157,19 @@ pub fn assemble_loader_stub(
         ori(A2, A2, imm_lo(DEST)), // 4:  /
         jal(LOADER_FN),            // 5:  FUN_8005E4D4(sectors, lba, dest)
         nop(),                     // 6:  (delay)
-        lui(T0, imm_hi(DEST)),     // 7:  \ t0 = dest
-        ori(T0, T0, imm_lo(DEST)), // 8:  /
-        jalr(T0),                  // 9:  call the loaded overlay
-        nop(),                     // 10: (delay)
-        displaced[0],              // 11: replay hook instr 0
-        displaced[1],              // 12: replay hook instr 1
-        j(return_va),              // 13: back to the hook join
-        nop(),                     // 14: (delay)
+        // FlushCache() so the just-loaded code isn't executed from a stale
+        // I-cache line (PSX I-cache is not DMA-coherent).
+        addiu(T2, ZERO, BIOS_DISPATCH_A), // 7:  t2 = 0xA0 (A-table dispatcher)
+        jalr(T2),                         // 8:  call it (returns to us)
+        addiu(T1, ZERO, FLUSH_CACHE_FN),  // 9:  (delay) t1 = 0x44 = FlushCache
+        lui(T0, imm_hi(DEST)),            // 10: \ t0 = dest
+        ori(T0, T0, imm_lo(DEST)),        // 11: /
+        jalr(T0),                         // 12: call the loaded overlay
+        nop(),                            // 13: (delay)
+        displaced[0],                     // 14: replay hook instr 0
+        displaced[1],                     // 15: replay hook instr 1
+        j(return_va),                     // 16: back to the hook join
+        nop(),                            // 17: (delay)
     ]
 }
 
@@ -194,7 +213,7 @@ mod tests {
         let displaced = [0x3c03_801du32, 0x2464_9070u32];
         let return_va = 0x801E_5A18u32;
         let s = assemble_loader_stub(lba, sectors, displaced, return_va);
-        assert_eq!(s.len(), 15);
+        assert_eq!(s.len(), 18);
 
         // a0 = sectors, a1 = lba (lui+ori), a2 = DEST (lui+ori).
         assert_eq!(s[0], addiu(A0, ZERO, sectors));
@@ -205,13 +224,17 @@ mod tests {
 
         // jal lands on the loader function.
         assert_eq!((s[5] & 0x03ff_ffff) << 2, LOADER_FN & 0x0fff_ffff);
+        // FlushCache: li t2,0xA0 ; jalr t2 ; (delay) li t1,0x44.
+        assert_eq!(s[7], addiu(T2, ZERO, BIOS_DISPATCH_A));
+        assert_eq!(s[8], jalr(T2));
+        assert_eq!(s[9], addiu(T1, ZERO, FLUSH_CACHE_FN));
         // jalr t0 calls the loaded overlay at DEST.
-        assert_eq!(s[7], lui(T0, imm_hi(DEST)));
-        assert_eq!(s[9], jalr(T0));
+        assert_eq!(s[10], lui(T0, imm_hi(DEST)));
+        assert_eq!(s[12], jalr(T0));
         // displaced pair replayed, then j back to the hook join.
-        assert_eq!(s[11], displaced[0]);
-        assert_eq!(s[12], displaced[1]);
-        assert_eq!((s[13] & 0x03ff_ffff) << 2, return_va & 0x0fff_ffff);
+        assert_eq!(s[14], displaced[0]);
+        assert_eq!(s[15], displaced[1]);
+        assert_eq!((s[16] & 0x03ff_ffff) << 2, return_va & 0x0fff_ffff);
     }
 
     #[test]
