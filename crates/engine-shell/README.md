@@ -69,9 +69,11 @@ cargo build --release
 ./target/release/legaia-engine play-str MOV/MV1.STR --disc <bin>
 ```
 
-In `play-window`, when the booted disc was randomized with `--seru-trade`, the
-`T` key opens a demo seru-trade overlay (arrows pick, `Z` trades, `X`/`T`
-close) — the clean-room UI for the randomizer's vendor seru-for-seru swaps.
+In `play-window`, when the booted disc was randomized with `--seru-trade`,
+talking to a shop merchant (the field-VM op-`0x49` trigger) shows a
+`[T] Trade seru` hint; `T` opens that vendor's seru-trade overlay (arrows pick,
+`Z` trades, `X`/`T` close) — the clean-room UI for the randomizer's vendor
+seru-for-seru swaps, keyed to the shop you're standing in.
 
 ### Binary source layout
 

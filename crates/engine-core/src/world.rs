@@ -4421,17 +4421,25 @@ impl World {
         let Some(rec) = legaia_asset::shop_stock::parse_record(instr, 0, Some(&mask)) else {
             return false;
         };
-        let items = rec
+        let stock_ids: Vec<u8> = rec
             .id_offsets
             .iter()
             .filter_map(|&o| instr.get(o).copied())
-            .map(|id| crate::shop::ShopItem {
+            .collect();
+        let items = stock_ids
+            .iter()
+            .map(|&id| crate::shop::ShopItem {
                 item_id: id,
                 price: data.price(id) as u32,
             })
             .collect();
+        // Derive a stable per-vendor id from the shop's identity (name + stock)
+        // so this vendor's seru-trade offers reseed independently of every other.
+        let vendor_id = legaia_asset::seru_trade::vendor_id_from_shop(&rec.name, &stock_ids);
         let inv = crate::shop::ShopInventory::new(0, items);
-        self.pending_field_shop = Some(crate::shop::ShopSession::new(inv));
+        let mut session = crate::shop::ShopSession::new(inv);
+        session.vendor_id = vendor_id;
+        self.pending_field_shop = Some(session);
         self.field_shop_armed = true;
         self.field_shop_open = true;
         true

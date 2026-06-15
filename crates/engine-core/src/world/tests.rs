@@ -8274,6 +8274,50 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
 }
 
 #[test]
+fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
+    // The op-0x49 shop arm captures a per-vendor id (from the shop's name +
+    // stock) so seru trading reached through that shop keys on the right vendor.
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    prices[0x34] = 120;
+
+    let mut world = World::new();
+    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    assert!(world.try_arm_field_shop(&shop_op49_script()));
+    let sess = world.take_pending_field_shop().expect("shop opened");
+
+    // The id is the stable derivation from the shop's identity ("Shop", stock).
+    let expected = legaia_asset::seru_trade::vendor_id_from_shop("Shop", &[0x22, 0x34]);
+    assert_eq!(sess.vendor_id, expected);
+    assert_ne!(sess.vendor_id, 0, "a real vendor gets a concrete id");
+
+    // With trading enabled and a party that owns seru, opening a trade for that
+    // vendor yields offers (the through-the-shop path the host drives).
+    world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+        enabled: true,
+        seed: 0x1234,
+        max_offers: 4,
+    });
+    let mut lead = legaia_save::CharacterRecord::zeroed();
+    let mut list = legaia_save::SpellList::default();
+    list.ids[0] = 0x81;
+    list.ids[1] = 0x88;
+    list.count = 2;
+    lead.set_spell_list(list);
+    world.roster = legaia_save::Party {
+        members: vec![lead],
+    };
+
+    let session = world
+        .open_seru_trade(sess.vendor_id)
+        .expect("trading enabled -> session opens");
+    assert!(
+        !session.is_empty(),
+        "the party owns seru, so the vendor offers trades"
+    );
+}
+
+#[test]
 fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
     let mut world = World::new();
     // Only 0x22 is priced. A genuine shop LEADS with a sellable item (a real

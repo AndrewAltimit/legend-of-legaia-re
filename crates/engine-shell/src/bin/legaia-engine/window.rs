@@ -295,11 +295,6 @@ struct SaveMenuAssets {
 }
 
 /// Windowed engine runner state. Owned by the winit event loop.
-/// Vendor id the play-window's seru-trade demo overlay uses. The full game
-/// would seed per-vendor (each town merchant reseeds independently); the dev
-/// harness exposes a single vendor reachable from any field scene with `T`.
-const DEMO_SERU_TRADE_VENDOR_ID: u16 = 1;
-
 struct PlayWindowApp {
     session: BootSession,
     font: Font,
@@ -4525,8 +4520,19 @@ impl PlayWindowApp {
             out.extend(text_draws_for(&layout3, (8, 44), white));
         }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
-        // runtime is in any shop, inn, or confirmation state.
-        if self.menu_runtime.is_open() {
+        // runtime is in any shop, inn, or confirmation state. Suppressed while
+        // the seru-trade overlay (opened from within the shop) is up.
+        if self.menu_runtime.is_open() && self.seru_trade_overlay.is_none() {
+            // When this vendor's shop also offers seru trading, hint the `T` key.
+            if self.menu_runtime.shop_session.is_some()
+                && self.session.host.world.seru_trade_enabled()
+            {
+                out.extend(text_draws_for(
+                    &self.font.layout_ascii("[T] Trade seru"),
+                    (8, 126),
+                    [0.7f32, 0.95, 0.6, 1.0],
+                ));
+            }
             let label = self.menu_runtime.current_label();
             if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
@@ -5275,18 +5281,22 @@ impl ApplicationHandler for PlayWindowApp {
                     evl.exit();
                     return;
                 }
-                // `T`: toggle the seru-trade overlay (the randomizer's
-                // `--seru-trade` feature). Opens only when the booted disc
-                // enabled trading; closes if already open. A single demo vendor.
+                // `T`: open the seru-trade overlay (the randomizer's
+                // `--seru-trade` feature) for the vendor whose shop is currently
+                // open — trading is reached *through* a field shop (op `0x49`),
+                // keyed to that vendor, so each merchant trades independently.
+                // Closes if already open.
                 if matches!(code, KeyCode::KeyT)
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()
                 {
                     if self.seru_trade_overlay.is_some() {
                         self.seru_trade_overlay = None;
-                    } else if self.session.host.world.seru_trade_enabled() {
+                    } else if self.session.host.world.seru_trade_enabled()
+                        && let Some(vendor) =
+                            self.menu_runtime.shop_session.as_ref().map(|s| s.vendor_id)
+                    {
                         self.ensure_seru_names();
-                        let vendor = DEMO_SERU_TRADE_VENDOR_ID;
                         self.seru_trade_overlay = self.session.host.world.open_seru_trade(vendor);
                     }
                     return;
@@ -5762,7 +5772,10 @@ impl ApplicationHandler for PlayWindowApp {
                     // Catch any path that re-uploaded VRAM over the battle
                     // texture this frame (and restore it).
                     self.check_battle_vram_residency();
-                    if self.menu_runtime.is_open() {
+                    // The shop menu is frozen while the seru-trade overlay (opened
+                    // from within the shop) is up, so pad input drives the trade
+                    // list instead of the buy list underneath it.
+                    if self.menu_runtime.is_open() && self.seru_trade_overlay.is_none() {
                         let p = self.pad;
                         let input = MenuInput {
                             cross: p & 0x4000 != 0,

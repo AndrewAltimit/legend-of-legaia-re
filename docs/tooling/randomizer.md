@@ -479,8 +479,14 @@ guard. `apply::enable_seru_trades` performs the single same-size edit;
 boot; `World::open_seru_trade` builds a `SeruTradeSession` (the offer list +
 cursor + yes/no confirm) for the current party + play time, and
 `World::apply_seru_trade` rewrites the chosen owner's spell list (the player
-Seru-magic id block `0x81..=0x95`). The `play-window` harness shows the overlay
-with the `T` key (arrows pick, `Z` trades, `X`/`T` close).
+Seru-magic id block `0x81..=0x95`). Trading is reached **through a real field
+shop** (the op-`0x49` merchant): `World::try_arm_field_shop` captures a stable
+per-vendor id from the shop's identity (its name + stock, via
+`legaia_asset::seru_trade::vendor_id_from_shop`) onto the `ShopSession`, so each
+merchant reseeds its own offers. In `play-window`, while a shop is open the HUD
+shows a `[T] Trade seru` hint; `T` opens that vendor's trade overlay (arrows
+pick, `Z` trades, `X`/`T` close), freezing the buy list underneath until it
+closes.
 
 > Verified by the rando `seru_trade_real` config round-trip oracle (the blob
 > decodes back, same-size, byte-deterministic) **and** the engine

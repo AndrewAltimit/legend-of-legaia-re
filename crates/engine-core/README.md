@@ -146,7 +146,10 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   every two in-game hours. `World::install_seru_trade_config` reads the disc blob
   at boot; `World::open_seru_trade` builds a `SeruTradeSession` (offer list +
   cursor + yes/no confirm) for the current party + `play_time_seconds`, and
-  `World::apply_seru_trade` rewrites the chosen owner's spell list. Offers come
+  `World::apply_seru_trade` rewrites the chosen owner's spell list. Trading is
+  reached **through a field shop**: `try_arm_field_shop` stamps a stable
+  per-vendor id (`seru_trade::vendor_id_from_shop`, from the shop's name + stock)
+  onto the `ShopSession`, so each merchant reseeds independently. Offers come
   from the shared `legaia_asset::seru_trade` kernel, so the engine and the
   randomizer preview always agree.
 - `battle_round` - per-round orchestrator. `BattleRound::begin` resets

@@ -68,6 +68,26 @@ pub fn time_bucket(play_time_seconds: u32) -> u32 {
     play_time_seconds / SECONDS_PER_RESEED
 }
 
+/// Derive a stable vendor id from a shop's identity — its display name plus the
+/// item ids it stocks. Each distinct vendor then reseeds its trade offers
+/// independently, and the same vendor is stable across visits (the offer
+/// generator keys on this id). FNV-1a over the name bytes then the stock ids,
+/// folded to `u16`.
+pub fn vendor_id_from_shop(name: &str, item_ids: &[u8]) -> u16 {
+    let mut h: u32 = 0x811C_9DC5;
+    let mut mix = |b: u8| {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    };
+    for &b in name.as_bytes() {
+        mix(b);
+    }
+    for &id in item_ids {
+        mix(id);
+    }
+    (h ^ (h >> 16)) as u16
+}
+
 /// The randomizer's seru-trade settings, as carried on the patched disc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeConfig {
@@ -339,6 +359,15 @@ mod tests {
         let changed =
             (1..12u32).any(|bucket| vendor_offers(7, 1, bucket, &owned_set, &pool, 4) != b0);
         assert!(changed, "offers should reseed across buckets");
+    }
+
+    #[test]
+    fn vendor_id_is_stable_and_distinguishes_shops() {
+        let a = vendor_id_from_shop("Variety Store", &[0x22, 0x34]);
+        assert_eq!(a, vendor_id_from_shop("Variety Store", &[0x22, 0x34]));
+        // A different name or different stock yields a different vendor.
+        assert_ne!(a, vendor_id_from_shop("Weapon Shop", &[0x22, 0x34]));
+        assert_ne!(a, vendor_id_from_shop("Variety Store", &[0x22, 0x35]));
     }
 
     #[test]
