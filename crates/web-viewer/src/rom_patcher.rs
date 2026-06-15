@@ -80,7 +80,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// encounter roll draws from: `"scene"` (default — each scene's own monsters),
 /// `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
 /// `"world"` (any monster on the disc, so late-game monsters can appear at the
-/// start). Only matters when `encounters` is not `"none"`. `starting_level`
+/// start). Only matters when `encounters` is not `"none"`.
+/// `solo_strong_encounters` (only with `encounters` set) forces any randomized
+/// formation holding a monster much stronger than the area's natives down to that
+/// lone enemy, so an over-strong monster is faced solo instead of in a pack.
+/// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
 /// starting stats from the disc's growth curves. `seed` is a number or
@@ -118,6 +122,7 @@ pub fn patch_rom(
     equip_bonus: &str,
     weapon_specialty: bool,
     starting_level: u8,
+    solo_strong_encounters: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -208,12 +213,14 @@ pub fn patch_rom(
     match enc_mode {
         Some(m) => {
             let scope = parse_encounter_scope(encounter_scope);
-            let rep = apply::randomize_encounters_scoped(
+            let solo = solo_strong_encounters.then(apply::SoloStrongConfig::default);
+            let rep = apply::randomize_encounters_full(
                 &mut patcher,
                 seed_n,
                 m,
                 scope,
                 unused_enemy_ids,
+                solo,
             )
             .map_err(|e| err(format!("encounters: {e}")))?;
             summary.push_str(&format!(
@@ -224,6 +231,12 @@ pub fn patch_rom(
                 summary.push_str(&format!(
                     "  including {} unused-enemy spawn(s) injected\n",
                     rep.unused_placed
+                ));
+            }
+            if solo.is_some() {
+                summary.push_str(&format!(
+                    "  solo-strong: {} strong fight(s) forced to a lone enemy\n",
+                    rep.solo_collapsed
                 ));
             }
         }

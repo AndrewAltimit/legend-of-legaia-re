@@ -204,6 +204,20 @@ struct RandomizeArgs {
     /// monster by id, so an out-of-area enemy still loads and renders.
     #[arg(long, value_enum, default_value_t = ScopeArg::Scene)]
     encounter_scope: ScopeArg,
+    /// Opt out of the solo-strong pass. It is on by default whenever
+    /// `--encounters` is set: a randomized fight that would pit the party against
+    /// a monster much stronger than the area's natives is forced to just that one
+    /// monster instead of a pack of 2+ (cut-off `--solo-strong-threshold`). Pass
+    /// this to keep the over-strong packs (vanilla behaviour for the formation
+    /// counts).
+    #[arg(long)]
+    no_solo_strong_encounters: bool,
+    /// "Strong fight" cut-off for the solo-strong pass, as a percent of the area's
+    /// native average monster power (default 200 = twice as strong). A random
+    /// formation whose strongest monster clears this bar is forced solo. Ignored
+    /// with `--no-solo-strong-encounters`.
+    #[arg(long, default_value_t = apply::DEFAULT_SOLO_STRONG_THRESHOLD_PCT)]
+    solo_strong_threshold: u16,
     /// How treasure-chest contents are reassigned (global; `random` draws from
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -1189,12 +1203,18 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     if let Some(enc_mode) = enc_mode {
         let scope = args.encounter_scope.scope();
-        let report = apply::randomize_encounters_scoped(
+        // Solo-strong is ON by default for any encounter randomization; opt out
+        // with --no-solo-strong-encounters.
+        let solo = (!args.no_solo_strong_encounters).then_some(apply::SoloStrongConfig {
+            threshold_pct: args.solo_strong_threshold,
+        });
+        let report = apply::randomize_encounters_full(
             &mut patcher,
             seed,
             enc_mode,
             scope,
             unused_enemies,
+            solo,
         )?;
         println!(
             "encounters: {} scenes rewritten, {} ids changed ({} {})",
@@ -1203,6 +1223,24 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             args.encounter_scope.as_str(),
             mode_str(enc_mode)
         );
+        if solo.is_some() {
+            println!(
+                "  solo-strong: {} formation(s) forced to a lone enemy (>= {}% of area average)",
+                report.solo_collapsed, args.solo_strong_threshold
+            );
+            manifest.push("encounters_solo_strong = true".to_string());
+            manifest.push(format!(
+                "encounters_solo_strong_threshold = {}",
+                args.solo_strong_threshold
+            ));
+            manifest.push(format!(
+                "encounters_solo_collapsed = {}",
+                report.solo_collapsed
+            ));
+        } else {
+            println!("  solo-strong: off (over-strong packs left as randomized)");
+            manifest.push("encounters_solo_strong = false".to_string());
+        }
         manifest.push(format!(
             "encounters_scope = {:?}",
             args.encounter_scope.as_str()

@@ -556,7 +556,13 @@ So a formation is a *random* encounter **iff some `rate_increment > 0` region
 reaches it**. Worked example — town01 (Rim Elm): rate-0 regions cover formations
 2..=4, but the only rate>0 regions reach 0..=2, so the Tetsu formation at index 4
 is scripted-only. The encounter randomizer relies on this to leave boss fights
-untouched (`legaia_rando::encounter::random_formation_mask`).
+untouched (`legaia_rando::encounter::random_formation_mask`). Its optional
+**solo-strong** pass reuses the same gate: it only ever thins a *random*
+formation (`enforce_solo_strong` skips scripted ones), collapsing a multi-monster
+formation whose strongest member is far above the scene's native average — its
+`count` byte set to 1, the dropped id bytes zeroed within the fixed record stride
+— so an out-of-area heavy hitter from a `kingdom`/`world` roll is faced alone
+rather than in a pack.
 
 ## Files referencing this format
 

@@ -883,6 +883,10 @@ pub struct EncounterApplyReport {
     /// placed. Always `0` unless `unused_enemies` was non-empty and the mode was
     /// [`DropMode::Random`].
     pub unused_placed: usize,
+    /// Random formations forced down to a single enemy by the solo-strong option
+    /// (an over-strong monster faced alone instead of in a pack). Always `0`
+    /// unless [`randomize_encounters_full`] ran with a [`SoloStrongConfig`].
+    pub solo_collapsed: usize,
     /// Scene PROT-entry indices whose recompressed MAN would not fit the
     /// original footprint, so the scene was left untouched.
     pub skipped: Vec<usize>,
@@ -1168,6 +1172,160 @@ pub fn randomize_encounters_scoped(
                 } else if locked[i] {
                     report.skipped.push(located[i].idx);
                 }
+            }
+        }
+    }
+    Ok(report)
+}
+
+/// Default "strong fight" cut-off for [`SoloStrongConfig`]: a random formation
+/// is forced solo when its strongest monster's combat power is at least **twice**
+/// (`200`%) the area's native average. Twice the local norm reads as "much
+/// stronger than this area expects" without firing on the ordinary spread of a
+/// scene's own monsters.
+pub const DEFAULT_SOLO_STRONG_THRESHOLD_PCT: u16 = 200;
+
+/// Configuration for the "limit strong fights to a solo enemy" encounter option
+/// ([`randomize_encounters_full`]).
+#[derive(Debug, Clone, Copy)]
+pub struct SoloStrongConfig {
+    /// A random formation is collapsed to a single enemy when its strongest
+    /// monster's [`crate::monster_stats::combat_power`] is at least this percent
+    /// of the scene's native average power. `200` = "twice the area's normal
+    /// strength". Values `<= 100` would flag ordinary monsters, so the sensible
+    /// range is `> 100`; `0` disables the pass.
+    pub threshold_pct: u16,
+}
+
+impl Default for SoloStrongConfig {
+    fn default() -> Self {
+        Self {
+            threshold_pct: DEFAULT_SOLO_STRONG_THRESHOLD_PCT,
+        }
+    }
+}
+
+/// Build the per-id combat-power lookup the solo-strong-encounter option compares
+/// formations against. Reads the same `battle_data` archive (PROT entry 867) as
+/// the stat randomizer and scores each monster by
+/// [`crate::monster_stats::combat_power`].
+pub fn monster_power_table(patcher: &DiscPatcher) -> Result<crate::encounter::MonsterPowerTable> {
+    let stats = current_monster_stats(patcher)?;
+    Ok(crate::encounter::MonsterPowerTable::from_powers(
+        stats
+            .iter()
+            .map(|a| (a.monster_id, monster_stats::combat_power(&a.stats))),
+    ))
+}
+
+/// Record each locatable scene's **native** combat-power baseline (mean random
+/// monster power), keyed by PROT entry index. Read **before** any encounter edit
+/// so the baseline is the area's authored difficulty, not the post-randomization
+/// monsters — see [`encounter::SceneEncounters::baseline_power`].
+fn solo_strong_baselines(
+    patcher: &DiscPatcher,
+    table: &crate::encounter::MonsterPowerTable,
+) -> Result<std::collections::HashMap<usize, u32>> {
+    let mut out = std::collections::HashMap::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        if let Some(scene) = SceneEncounters::locate(&entry, idx)
+            && let Some(base) = scene.baseline_power(table)
+        {
+            out.insert(idx, base);
+        }
+    }
+    Ok(out)
+}
+
+/// Enforce the solo-strong rule across every scene as a post-pass over the
+/// **already-randomized** scenes: collapse any random formation whose strongest
+/// monster clears `cfg.threshold_pct`% of that scene's pre-saved native baseline
+/// down to that lone monster. Decoupled from how the ids were assigned (Scene /
+/// Kingdom / World, Shuffle / Random), so it composes with every encounter mode.
+/// Returns the number of formations collapsed, id bytes zeroed, and any scene
+/// whose collapsed MAN no longer re-packs (left untouched).
+fn enforce_solo_strong_encounters(
+    patcher: &mut DiscPatcher,
+    table: &crate::encounter::MonsterPowerTable,
+    baselines: &std::collections::HashMap<usize, u32>,
+    cfg: SoloStrongConfig,
+) -> Result<(usize, usize, Vec<usize>)> {
+    let mut collapsed = 0;
+    let mut zeroed = 0;
+    let mut skipped = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let Some(&baseline) = baselines.get(&idx) else {
+            continue;
+        };
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        let Some(mut scene) = SceneEncounters::locate(&entry, idx) else {
+            continue;
+        };
+        let (c, z) = scene.enforce_solo_strong(table, baseline, cfg.threshold_pct);
+        if c == 0 {
+            continue;
+        }
+        match scene.repack() {
+            Some(stream) => {
+                patcher
+                    .patch_prot_entry(idx, scene.man_offset as u64, &stream)
+                    .with_context(|| format!("write scene {idx} MAN (solo-strong)"))?;
+                collapsed += c;
+                zeroed += z;
+            }
+            None => skipped.push(idx),
+        }
+    }
+    Ok((collapsed, zeroed, skipped))
+}
+
+/// Randomize scene encounters ([`randomize_encounters_scoped`]) and, when `solo`
+/// is set, additionally enforce the **solo-strong** rule: any random formation
+/// that ends up holding a monster much stronger than the area's natives is forced
+/// to that single enemy instead of a pack of 2+ (see
+/// [`encounter::SceneEncounters::enforce_solo_strong`]).
+///
+/// The solo-strong pass is computed against each scene's **native** baseline
+/// (captured before randomizing) and applied as a post-pass over the randomized
+/// scenes, so it composes with every scope (Scene / Kingdom / World) and mode
+/// (Shuffle / Random) without perturbing the multiset bookkeeping of the
+/// underlying scoped randomization. `solo == None` reproduces
+/// [`randomize_encounters_scoped`] byte-for-byte (the archive is not even read),
+/// so existing runs are unchanged.
+pub fn randomize_encounters_full(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+    scope: EncounterScope,
+    unused_enemies: &[u8],
+    solo: Option<SoloStrongConfig>,
+) -> Result<EncounterApplyReport> {
+    // Capture the native baselines (and the power table) BEFORE any edit, so the
+    // "strong" judgement is against the area's authored difficulty.
+    let solo_ctx = match solo {
+        Some(cfg) => {
+            let table = monster_power_table(patcher)?;
+            let baselines = solo_strong_baselines(patcher, &table)?;
+            Some((cfg, table, baselines))
+        }
+        None => None,
+    };
+
+    let mut report = randomize_encounters_scoped(patcher, seed, mode, scope, unused_enemies)?;
+
+    if let Some((cfg, table, baselines)) = solo_ctx {
+        let (collapsed, zeroed, skipped) =
+            enforce_solo_strong_encounters(patcher, &table, &baselines, cfg)?;
+        report.solo_collapsed += collapsed;
+        report.ids_changed += zeroed;
+        for idx in skipped {
+            if !report.skipped.contains(&idx) {
+                report.skipped.push(idx);
             }
         }
     }
