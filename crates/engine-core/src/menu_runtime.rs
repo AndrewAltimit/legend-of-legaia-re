@@ -80,6 +80,13 @@ pub struct MenuRuntime {
     /// Active inn session. Set via [`MenuRuntime::open_inn`] before
     /// entering `InnConfirm`; cleared after the player confirms or cancels.
     pub inn_session: Option<InnSession>,
+    /// Active seru-trade session, opened when the player picks **Trade** in the
+    /// `ShopMenu` top picker (the randomizer's `--seru-trade` feature). Holds the
+    /// vendor's offers for the current two-hour window; cleared on shop exit.
+    pub trade_session: Option<crate::seru_trade::SeruTradeSession>,
+    /// Offer index selected at `ShopTrade`, applied at `ShopTradeConfirm` (the
+    /// `ShopTradeConfirm` cursor is the yes/no slot, not the offer).
+    trade_pending_offer: usize,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -100,6 +107,8 @@ impl MenuRuntime {
             selected_char: 0,
             shop_session: None,
             inn_session: None,
+            trade_session: None,
+            trade_pending_offer: 0,
             pending: None,
         }
     }
@@ -108,6 +117,17 @@ impl MenuRuntime {
     /// this when the field VM triggers a shop transition.
     pub fn open_shop(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+    }
+
+    /// Open a shop into its **top-level Buy / Sell / Trade picker**
+    /// ([`MenuState::ShopMenu`]) — the field-VM op-`0x49` merchant trigger path.
+    /// The Trade row appears only when the disc enabled seru trading; selecting
+    /// it opens this vendor's [`crate::seru_trade::SeruTradeSession`].
+    pub fn open_shop_menu(&mut self, session: ShopSession) {
+        self.shop_session = Some(session);
+        self.trade_session = None;
+        self.ctx.state = MenuState::ShopMenu.as_byte();
+        self.ctx.cursor = 0;
     }
 
     /// Open a shop directly into its **buy list** - the field-VM op-`0x49`
@@ -148,6 +168,14 @@ impl MenuRuntime {
         self.ctx.cursor
     }
 
+    /// The seru-trade offer currently being confirmed at `ShopTradeConfirm`
+    /// (the one picked in `ShopTrade`), for the host to label the prompt.
+    pub fn pending_trade_offer(&self) -> Option<legaia_asset::seru_trade::TradeOffer> {
+        self.trade_session
+            .as_ref()
+            .and_then(|t| t.offers.get(self.trade_pending_offer).copied())
+    }
+
     /// Per-frame tick. Drives the menu VM; on `SavePickSlot` / `LoadSlot`
     /// commit, runs disk I/O and emits a [`MenuTickEvent`].
     pub fn tick(&mut self, world: &mut World, input: MenuInput) -> MenuTickEvent {
@@ -158,6 +186,8 @@ impl MenuRuntime {
             selected_char: &mut self.selected_char,
             shop_session: &mut self.shop_session,
             inn_session: &mut self.inn_session,
+            trade_session: &mut self.trade_session,
+            trade_pending_offer: &mut self.trade_pending_offer,
         };
         step(&mut host, &mut self.ctx, input);
 
@@ -291,10 +321,13 @@ impl MenuRuntime {
             Some(MenuState::SaveDone) => "SAVED",
             Some(MenuState::LoadSlot) => "LOAD - PICK SLOT",
             Some(MenuState::LoadProgress) => "LOADING…",
+            Some(MenuState::ShopMenu) => "SHOP",
             Some(MenuState::ShopBuy) => "SHOP - BUY",
             Some(MenuState::ShopSell) => "SHOP - SELL",
             Some(MenuState::ShopQuantity) => "SHOP - HOW MANY?",
             Some(MenuState::ShopConfirm) => "SHOP - CONFIRM",
+            Some(MenuState::ShopTrade) => "SHOP - TRADE SERU",
+            Some(MenuState::ShopTradeConfirm) => "SHOP - TRADE?",
             Some(MenuState::ShopExit) => "SHOP - DONE",
             Some(MenuState::InnConfirm) => "INN - REST?",
             Some(MenuState::InnSleep) => "INN - RESTING",
@@ -309,6 +342,23 @@ impl MenuRuntime {
     }
 }
 
+/// The action each row of the [`MenuState::ShopMenu`] top picker commits to, in
+/// row order. The Trade row only exists when seru trading is enabled, so this is
+/// the single source of truth the cursor count, render, route, and commit all
+/// read (keeping the dynamic layout consistent).
+pub fn shop_menu_rows(trading: bool) -> &'static [MenuState] {
+    if trading {
+        &[
+            MenuState::ShopBuy,
+            MenuState::ShopSell,
+            MenuState::ShopTrade,
+            MenuState::ShopExit,
+        ]
+    } else {
+        &[MenuState::ShopBuy, MenuState::ShopSell, MenuState::ShopExit]
+    }
+}
+
 struct MenuRuntimeHost<'a> {
     world: &'a mut World,
     slot_count: u8,
@@ -316,6 +366,15 @@ struct MenuRuntimeHost<'a> {
     selected_char: &'a mut usize,
     shop_session: &'a mut Option<ShopSession>,
     inn_session: &'a mut Option<InnSession>,
+    trade_session: &'a mut Option<crate::seru_trade::SeruTradeSession>,
+    trade_pending_offer: &'a mut usize,
+}
+
+impl MenuRuntimeHost<'_> {
+    /// Row actions for the current `ShopMenu` (Trade present iff trading on).
+    fn shop_menu_rows(&self) -> &'static [MenuState] {
+        shop_menu_rows(self.world.seru_trade_enabled())
+    }
 }
 
 impl<'a> MenuHost for MenuRuntimeHost<'a> {
@@ -341,6 +400,13 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 .min(u8::MAX as usize) as u8,
             MenuState::ShopQuantity => 9, // quantities 1..=9 (cursor + 1)
             MenuState::ShopConfirm | MenuState::InnConfirm => 2, // slot 0 = yes, 1 = no/cancel
+            MenuState::ShopMenu => self.shop_menu_rows().len() as u8,
+            MenuState::ShopTrade => self
+                .trade_session
+                .as_ref()
+                .map(|t| t.offers.len().max(1).min(u8::MAX as usize) as u8)
+                .unwrap_or(1),
+            MenuState::ShopTradeConfirm => 2, // slot 0 = yes, 1 = no
             MenuState::StatusInventory => self
                 .world
                 .inventory
@@ -350,6 +416,15 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 .min(16) as u8,
             MenuState::StatusMagic | MenuState::StatusTacticalArts => 8,
             _ => 1,
+        }
+    }
+
+    fn commit_route_override(&self, state: MenuState, slot: u8) -> Option<MenuState> {
+        // The shop top picker's row layout is dynamic (Trade only when enabled),
+        // so resolve the committed slot against the live row list here.
+        match state {
+            MenuState::ShopMenu => self.shop_menu_rows().get(slot as usize).copied(),
+            _ => None,
         }
     }
 
@@ -403,6 +478,15 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 }
             }
             // --- Shop states ---
+            // Top picker: picking Trade opens this vendor's seru-trade session
+            // (keyed to the shop's vendor id) for the current play-time window.
+            // Buy / Sell / Exit are pure routes (handled by the route override).
+            MenuState::ShopMenu => {
+                if self.shop_menu_rows().get(slot as usize) == Some(&MenuState::ShopTrade) {
+                    let vendor = self.shop_session.as_ref().map(|s| s.vendor_id).unwrap_or(0);
+                    *self.trade_session = self.world.open_seru_trade(vendor);
+                }
+            }
             MenuState::ShopBuy => {
                 if let Some(session) = self.shop_session.as_mut() {
                     session.select_buy_item(slot as usize);
@@ -449,10 +533,37 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                     }
                 }
             }
+            // Seru trade: pick an offer (stash its index for the confirm).
+            MenuState::ShopTrade => {
+                let has_offer = self
+                    .trade_session
+                    .as_ref()
+                    .is_some_and(|t| (slot as usize) < t.offers.len());
+                if has_offer {
+                    *self.trade_pending_offer = slot as usize;
+                }
+            }
+            // Seru trade confirm: slot 0 = Yes applies the stashed offer to the
+            // owner's spell list, then refreshes the offer list (which may shrink
+            // and reseeds when the play-time bucket has advanced); slot 1 = No.
+            MenuState::ShopTradeConfirm if slot == 0 => {
+                let offer = self
+                    .trade_session
+                    .as_ref()
+                    .and_then(|t| t.offers.get(*self.trade_pending_offer).copied());
+                if let Some(offer) = offer {
+                    self.world.apply_seru_trade(&offer);
+                    let pt = self.world.play_time_seconds;
+                    if let Some(t) = self.trade_session.as_mut() {
+                        t.refresh(pt, &self.world.roster.members);
+                    }
+                }
+            }
             // Transient teardown screen reached by routing out of the shop
-            // list (Triangle) - clears the session as the menu closes.
+            // menu (Triangle) - clears the sessions as the menu closes.
             MenuState::ShopExit => {
                 *self.shop_session = None;
+                *self.trade_session = None;
             }
             // --- Inn states ---
             MenuState::InnConfirm => {
@@ -506,6 +617,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
     fn cancel(&mut self) {
         *self.shop_session = None;
         *self.inn_session = None;
+        *self.trade_session = None;
     }
 }
 
@@ -786,6 +898,88 @@ mod tests {
         }
     }
 
+    fn down() -> MenuInput {
+        MenuInput {
+            down: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn shop_menu_trade_row_drives_a_seru_swap() {
+        use crate::shop::{ShopInventory, ShopSession};
+
+        // A shop on a disc with seru trading enabled; the lead owns two seru.
+        let mut world = World::new();
+        world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+            enabled: true,
+            seed: 0xABCD,
+            max_offers: 4,
+        });
+        let mut lead = CharacterRecord::zeroed();
+        let mut list = SpellList::default();
+        list.ids[0] = 0x81;
+        list.ids[1] = 0x88;
+        list.count = 2;
+        lead.set_spell_list(list);
+        world.load_party(Party {
+            members: vec![lead],
+        });
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        let mut shop = ShopSession::new(ShopInventory::new(0, vec![]));
+        shop.vendor_id = 7;
+        runtime.open_shop_menu(shop);
+        assert_eq!(runtime.ctx.state, MenuState::ShopMenu.as_byte());
+
+        // Rows = [Buy, Sell, Trade, Exit]; move to Trade (idx 2) and commit.
+        runtime.tick(&mut world, down());
+        runtime.tick(&mut world, down());
+        assert_eq!(runtime.ctx.cursor, 2);
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopTrade.as_byte());
+        let offer = runtime
+            .trade_session
+            .as_ref()
+            .and_then(|t| t.offers.first().copied())
+            .expect("the vendor offers a trade");
+
+        // Pick the first offer, then confirm Yes.
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopTradeConfirm.as_byte());
+        runtime.tick(&mut world, cross());
+        assert_eq!(
+            runtime.ctx.state,
+            MenuState::ShopTrade.as_byte(),
+            "after a trade the menu returns to the offer list"
+        );
+
+        // The owner's spell list now holds the received seru, not the given one.
+        let list = world.roster.members[offer.give.owner_slot as usize].spell_list();
+        let ids = &list.ids[..list.count as usize];
+        assert!(ids.contains(&offer.receive_seru_id), "received seru added");
+        assert!(!ids.contains(&offer.give.seru_id), "given seru removed");
+    }
+
+    #[test]
+    fn shop_menu_hides_trade_row_when_trading_disabled() {
+        use crate::shop::{ShopInventory, ShopSession};
+
+        let mut world = World::default(); // no seru_trade_config -> disabled
+        world.load_party(Party {
+            members: vec![CharacterRecord::zeroed()],
+        });
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop_menu(ShopSession::new(ShopInventory::new(0, vec![])));
+
+        // Rows = [Buy, Sell, Exit] (no Trade). Slot 2 routes to ShopExit.
+        runtime.tick(&mut world, down());
+        runtime.tick(&mut world, down());
+        assert_eq!(runtime.ctx.cursor, 2);
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopExit.as_byte());
+    }
+
     #[test]
     fn shop_buy_flow_drives_through_tick_and_grants_item() {
         use crate::shop::{ShopInventory, ShopItem, ShopSession};
@@ -826,7 +1020,10 @@ mod tests {
         runtime.open_shop(ShopSession::new(ShopInventory::new(1, vec![])));
         runtime.ctx.state = MenuState::ShopBuy.as_byte();
 
-        // Triangle from the buy list -> ShopExit teardown screen.
+        // Triangle from the buy list backs up to the top shop menu, and a second
+        // Triangle leaves it via the ShopExit teardown screen.
+        runtime.tick(&mut world, triangle());
+        assert_eq!(runtime.ctx.state, MenuState::ShopMenu.as_byte());
         runtime.tick(&mut world, triangle());
         assert_eq!(runtime.ctx.state, MenuState::ShopExit.as_byte());
         // ShopExit fires its one-shot commit (clears the session) then holds.

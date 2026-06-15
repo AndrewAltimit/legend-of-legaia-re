@@ -70,10 +70,10 @@ cargo build --release
 ```
 
 In `play-window`, when the booted disc was randomized with `--seru-trade`,
-talking to a shop merchant (the field-VM op-`0x49` trigger) shows a
-`[T] Trade seru` hint; `T` opens that vendor's seru-trade overlay (arrows pick,
-`Z` trades, `X`/`T` close) — the clean-room UI for the randomizer's vendor
-seru-for-seru swaps, keyed to the shop you're standing in.
+talking to a shop merchant (the field-VM op-`0x49` trigger) shows a top-level
+**Buy / Sell / Trade / Exit** menu; the **Trade** row opens that vendor's
+seru-for-seru offers (pick an offer, confirm yes/no) — the clean-room UI for the
+randomizer's swaps, keyed to the shop you're standing in.
 
 ### Binary source layout
 

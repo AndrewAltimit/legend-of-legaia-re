@@ -479,14 +479,17 @@ guard. `apply::enable_seru_trades` performs the single same-size edit;
 boot; `World::open_seru_trade` builds a `SeruTradeSession` (the offer list +
 cursor + yes/no confirm) for the current party + play time, and
 `World::apply_seru_trade` rewrites the chosen owner's spell list (the player
-Seru-magic id block `0x81..=0x95`). Trading is reached **through a real field
-shop** (the op-`0x49` merchant): `World::try_arm_field_shop` captures a stable
-per-vendor id from the shop's identity (its name + stock, via
+Seru-magic id block `0x81..=0x95`). Trading is a **real row in the shop menu**:
+opening an op-`0x49` merchant shows a top-level **Buy / Sell / Trade / Exit**
+picker (`MenuState::ShopMenu`), with the Trade row present only when the disc
+enabled trading. `World::try_arm_field_shop` captures a stable per-vendor id from
+the shop's identity (its name + stock, via
 `legaia_asset::seru_trade::vendor_id_from_shop`) onto the `ShopSession`, so each
-merchant reseeds its own offers. In `play-window`, while a shop is open the HUD
-shows a `[T] Trade seru` hint; `T` opens that vendor's trade overlay (arrows
-pick, `Z` trades, `X`/`T` close), freezing the buy list underneath until it
-closes.
+merchant reseeds its own offers. Picking Trade opens the vendor's offer list
+(`MenuState::ShopTrade`) → a yes/no confirm (`MenuState::ShopTradeConfirm`) that
+applies the swap, exactly like the Buy → Quantity → Confirm flow. The menu state
+machine lives in `legaia_engine_vm::menu`; the host resolves the dynamic Trade
+row via the new `MenuHost::commit_route_override` hook.
 
 > Verified by the rando `seru_trade_real` config round-trip oracle (the blob
 > decodes back, same-size, byte-deterministic) **and** the engine

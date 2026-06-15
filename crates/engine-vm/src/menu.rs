@@ -94,6 +94,12 @@ pub enum MenuState {
     ItemApply = 0x21,
     /// Item-use - done.
     ItemDone = 0x22,
+    /// Shop - top-level Buy / Sell / Trade / Exit picker.
+    ShopMenu = 0x23,
+    /// Shop - seru-trade offer list (the randomizer's `--seru-trade` feature).
+    ShopTrade = 0x24,
+    /// Shop - seru-trade yes/no confirm over the highlighted offer.
+    ShopTradeConfirm = 0x25,
     /// Generic confirm yes/no.
     Confirm = 0x6E,
     /// Closing - fade-out animation.
@@ -140,6 +146,9 @@ impl MenuState {
             0x20 => Self::ItemPickTarget,
             0x21 => Self::ItemApply,
             0x22 => Self::ItemDone,
+            0x23 => Self::ShopMenu,
+            0x24 => Self::ShopTrade,
+            0x25 => Self::ShopTradeConfirm,
             0x6E => Self::Confirm,
             0x70 => Self::Closing,
             0x71 => Self::Deactivate,
@@ -165,6 +174,12 @@ pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
         MenuState::ShopBuy | MenuState::ShopSell => Some(MenuState::ShopQuantity),
         MenuState::ShopQuantity => Some(MenuState::ShopConfirm),
         MenuState::ShopConfirm => Some(MenuState::ShopBuy),
+        // Seru trade: pick an offer, confirm it, then return to the offer
+        // list to trade again (the confirm's apply happens in `commit`). The
+        // top-menu route is dynamic (the Trade row only exists when trading is
+        // enabled), so it's resolved by `commit_route_override`, not here.
+        MenuState::ShopTrade => Some(MenuState::ShopTradeConfirm),
+        MenuState::ShopTradeConfirm => Some(MenuState::ShopTrade),
         // Inn: "yes" (slot 0) plays the rest fade; "no" closes the prompt.
         MenuState::InnConfirm if slot == 0 => Some(MenuState::InnSleep),
         MenuState::InnConfirm => Some(MenuState::Closing),
@@ -184,9 +199,12 @@ pub fn back_route(state: MenuState) -> MenuState {
         // Shop: step back through the purchase flow.
         MenuState::ShopQuantity => MenuState::ShopBuy,
         MenuState::ShopConfirm => MenuState::ShopQuantity,
-        // Leaving the shop list runs the canonical teardown screen so the
+        // The buy / sell / trade sub-screens return to the top shop menu.
+        MenuState::ShopBuy | MenuState::ShopSell | MenuState::ShopTrade => MenuState::ShopMenu,
+        MenuState::ShopTradeConfirm => MenuState::ShopTrade,
+        // Leaving the top shop menu runs the canonical teardown screen so the
         // session always clears.
-        MenuState::ShopBuy | MenuState::ShopSell => MenuState::ShopExit,
+        MenuState::ShopMenu => MenuState::ShopExit,
         // Status sub-screens return to the status top-level.
         MenuState::StatusCharacter
         | MenuState::StatusEquipment
@@ -258,6 +276,16 @@ pub trait MenuHost {
     /// side effect (write save, deduct money, etc.) and the next [`step`]
     /// will route to the appropriate follow-up state.
     fn commit(&mut self, _state: MenuState, _selected_slot: u8) {}
+
+    /// Override the forward (Cross) route for screens whose next state depends
+    /// on runtime context the static [`commit_route`] can't see — chiefly the
+    /// shop top menu ([`MenuState::ShopMenu`]), whose row layout (and so which
+    /// slot is Buy / Sell / Trade / Exit) changes with whether seru trading is
+    /// enabled. Consulted *after* [`MenuHost::commit`] and *before*
+    /// [`commit_route`]; returning `None` falls back to the static route.
+    fn commit_route_override(&self, _state: MenuState, _slot: u8) -> Option<MenuState> {
+        None
+    }
 
     /// Called when [`step`] decides the menu should close (Triangle in
     /// most states). Default: no-op - the VM still transitions to
@@ -356,7 +384,10 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
             if input.cross {
                 ctx.selected_slot = ctx.cursor;
                 host.commit(s, ctx.cursor);
-                if let Some(next) = commit_route(s, ctx.cursor) {
+                let next = host
+                    .commit_route_override(s, ctx.cursor)
+                    .or_else(|| commit_route(s, ctx.cursor));
+                if let Some(next) = next {
                     ctx.state = next.as_byte();
                     ctx.frame = 0;
                     ctx.cursor = 0;
@@ -558,8 +589,8 @@ mod tests {
     #[test]
     fn shop_triangle_backs_one_screen_then_tears_down_via_exit() {
         // From ShopConfirm: Triangle backs to ShopQuantity, then ShopBuy,
-        // then the ShopExit teardown screen, which auto-advances to Closing
-        // after firing its one-shot commit.
+        // then the ShopMenu top picker, then the ShopExit teardown screen,
+        // which auto-advances to Closing after firing its one-shot commit.
         let mut ctx = MenuCtx {
             state: MenuState::ShopConfirm.as_byte(),
             ..Default::default()
@@ -573,6 +604,8 @@ mod tests {
         assert_eq!(ctx.state, MenuState::ShopQuantity.as_byte());
         step(&mut h, &mut ctx, tri);
         assert_eq!(ctx.state, MenuState::ShopBuy.as_byte());
+        step(&mut h, &mut ctx, tri);
+        assert_eq!(ctx.state, MenuState::ShopMenu.as_byte());
         step(&mut h, &mut ctx, tri);
         assert_eq!(ctx.state, MenuState::ShopExit.as_byte());
         // ShopExit is transient: fires its one-shot commit on entry, holds,

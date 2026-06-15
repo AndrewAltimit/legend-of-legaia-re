@@ -508,13 +508,8 @@ struct PlayWindowApp {
     /// and dropped when the world clears the request (the world owns dismissal
     /// via the field VM / overworld handler). `None` when no box is up.
     active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
-    /// Active seru-trade overlay (the randomizer's `--seru-trade` feature). `Some`
-    /// while the player has the demo trade menu open (toggled with `T` in a field
-    /// scene when the booted disc enables trading). Driven directly here rather
-    /// than through `menu_runtime`, since it's a self-contained demo overlay.
-    seru_trade_overlay: Option<legaia_engine_core::seru_trade::SeruTradeSession>,
-    /// Spell/seru display-name table, read once from the boot SCUS so the trade
-    /// overlay can label each offer ("Gimard (Vahn) -> Orb"). `None` on
+    /// Spell/seru display-name table, read once from the boot SCUS so the shop's
+    /// Trade screens can label each offer ("Gimard (Vahn) -> Orb"). `None` on
     /// disc-free runs or before the first lookup.
     seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
 }
@@ -3712,65 +3707,89 @@ impl PlayWindowApp {
             .and_then(legaia_asset::spell_names::SpellNameTable::from_scus);
     }
 
-    /// Drive the open seru-trade overlay from a key press. Mutates the
-    /// persistent roster (via [`World::apply_seru_trade`]) on a confirmed trade,
-    /// then refreshes the offers so the list reflects the new owned set.
-    fn handle_seru_trade_key(&mut self, code: KeyCode) {
-        let confirming = self
-            .seru_trade_overlay
-            .as_ref()
-            .map(|t| t.confirming)
-            .unwrap_or(false);
-        if confirming {
-            match code {
-                KeyCode::ArrowUp
-                | KeyCode::ArrowDown
-                | KeyCode::ArrowLeft
-                | KeyCode::ArrowRight => {
-                    if let Some(t) = self.seru_trade_overlay.as_mut() {
-                        t.toggle_confirm();
-                    }
-                }
-                KeyCode::KeyZ | KeyCode::Enter => {
-                    let offer = self
-                        .seru_trade_overlay
-                        .as_mut()
-                        .and_then(|t| t.take_confirmed());
-                    if let Some(offer) = offer {
-                        self.session.host.world.apply_seru_trade(&offer);
-                        let pt = self.session.host.world.play_time_seconds;
-                        if let Some(t) = self.seru_trade_overlay.as_mut() {
-                            t.refresh(pt, &self.session.host.world.roster.members);
+    /// Render the seru-trade screens of the shop menu: the offer list
+    /// (`ShopTrade`) or the yes/no confirm (`ShopTradeConfirm`). Each offer is
+    /// labelled "give (owner) -> receive" with names from the boot SCUS.
+    fn draw_shop_trade(&self, out: &mut Vec<TextDraw>, state: Option<MenuState>, cursor: usize) {
+        let name_of = |id: u8| -> String {
+            self.seru_names
+                .as_ref()
+                .and_then(|t| t.name(id))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("Seru {id:02X}"))
+        };
+        let owner_of = |slot: u8| -> String {
+            self.session
+                .host
+                .world
+                .roster
+                .members
+                .get(slot as usize)
+                .map(|m| m.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{slot}"))
+        };
+        match state {
+            Some(MenuState::ShopTrade) => {
+                let mut labels: Vec<String> = Vec::new();
+                match self.menu_runtime.trade_session.as_ref() {
+                    Some(t) if !t.offers.is_empty() => {
+                        for o in &t.offers {
+                            labels.push(format!(
+                                "{} ({}) -> {}",
+                                name_of(o.give.seru_id),
+                                owner_of(o.give.owner_slot),
+                                name_of(o.receive_seru_id),
+                            ));
                         }
                     }
+                    _ => labels.push("(no trades offered)".to_string()),
                 }
-                KeyCode::KeyX | KeyCode::Backspace => {
-                    if let Some(t) = self.seru_trade_overlay.as_mut() {
-                        t.cancel_confirm();
-                    }
-                }
-                _ => {}
+                let rows: Vec<ShopRow<'_>> = labels
+                    .iter()
+                    .map(|l| ShopRow {
+                        label: l.as_str(),
+                        price: None,
+                    })
+                    .collect();
+                out.extend(shop_draws_for(
+                    &self.font,
+                    "SHOP - TRADE SERU",
+                    &rows,
+                    cursor,
+                    None,
+                    (8, 140),
+                ));
             }
-        } else {
-            match code {
-                KeyCode::ArrowUp => {
-                    if let Some(t) = self.seru_trade_overlay.as_mut() {
-                        t.move_cursor(-1);
-                    }
-                }
-                KeyCode::ArrowDown => {
-                    if let Some(t) = self.seru_trade_overlay.as_mut() {
-                        t.move_cursor(1);
-                    }
-                }
-                KeyCode::KeyZ | KeyCode::Enter => {
-                    if let Some(t) = self.seru_trade_overlay.as_mut() {
-                        t.begin_confirm();
-                    }
-                }
-                KeyCode::KeyX | KeyCode::Backspace => self.seru_trade_overlay = None,
-                _ => {}
+            Some(MenuState::ShopTradeConfirm) => {
+                let title = match self.menu_runtime.pending_trade_offer() {
+                    Some(o) => format!(
+                        "Trade {} for {}?",
+                        name_of(o.give.seru_id),
+                        name_of(o.receive_seru_id),
+                    ),
+                    None => "Trade?".to_string(),
+                };
+                let rows = vec![
+                    ShopRow {
+                        label: "Yes",
+                        price: None,
+                    },
+                    ShopRow {
+                        label: "No",
+                        price: None,
+                    },
+                ];
+                out.extend(shop_draws_for(
+                    &self.font,
+                    &title,
+                    &rows,
+                    cursor,
+                    None,
+                    (8, 140),
+                ));
             }
+            _ => {}
         }
     }
 
@@ -4520,25 +4539,45 @@ impl PlayWindowApp {
             out.extend(text_draws_for(&layout3, (8, 44), white));
         }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
-        // runtime is in any shop, inn, or confirmation state. Suppressed while
-        // the seru-trade overlay (opened from within the shop) is up.
-        if self.menu_runtime.is_open() && self.seru_trade_overlay.is_none() {
-            // When this vendor's shop also offers seru trading, hint the `T` key.
-            if self.menu_runtime.shop_session.is_some()
-                && self.session.host.world.seru_trade_enabled()
-            {
-                out.extend(text_draws_for(
-                    &self.font.layout_ascii("[T] Trade seru"),
-                    (8, 126),
-                    [0.7f32, 0.95, 0.6, 1.0],
-                ));
-            }
+        // runtime is in any shop, inn, or confirmation state.
+        if self.menu_runtime.is_open() {
             let label = self.menu_runtime.current_label();
             if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;
                 let gold = self.session.host.world.money;
+                // The seru-trade screens carry dynamic, owned-string labels, so
+                // render them directly (the generic `(title, rows)` path below
+                // only handles `'static` labels).
+                let trade_state = matches!(
+                    state,
+                    Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
+                );
+                if trade_state {
+                    self.draw_shop_trade(&mut out, state, cursor);
+                }
                 let (title, rows, show_gold) = match state {
+                    _ if trade_state => (label, Vec::new(), None),
+                    // Top picker: Buy / Sell / (Trade) / Exit, matching the
+                    // runtime's dynamic row layout.
+                    Some(MenuState::ShopMenu) => {
+                        let rows: Vec<ShopRow<'_>> =
+                            legaia_engine_core::menu_runtime::shop_menu_rows(
+                                self.session.host.world.seru_trade_enabled(),
+                            )
+                            .iter()
+                            .map(|s| ShopRow {
+                                label: match s {
+                                    MenuState::ShopBuy => "Buy",
+                                    MenuState::ShopSell => "Sell",
+                                    MenuState::ShopTrade => "Trade Seru",
+                                    _ => "Exit",
+                                },
+                                price: None,
+                            })
+                            .collect();
+                        (label, rows, Some(gold))
+                    }
                     Some(MenuState::ShopBuy) => {
                         let rows: Vec<ShopRow<'_>> = shop
                             .inventory
@@ -4634,103 +4673,6 @@ impl PlayWindowApp {
                 let menu_label = format!("[{}]", label);
                 let ml_layout = self.font.layout_ascii(&menu_label);
                 out.extend(text_draws_for(&ml_layout, (8, 140), white));
-            }
-        }
-        // Seru-trade overlay (the randomizer's `--seru-trade` feature): a list of
-        // the trades the vendor offers this two-hour window, each "give (owner) ->
-        // receive", with a yes/no confirm over the highlighted one.
-        if let Some(trade) = &self.seru_trade_overlay {
-            // `white` / `dim` are bound at the top of `build_hud`.
-            let hi = [1.0f32, 0.95, 0.5, 1.0];
-            let name_of = |id: u8| -> String {
-                self.seru_names
-                    .as_ref()
-                    .and_then(|t| t.name(id))
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("Seru {id:02X}"))
-            };
-            let owner_of = |slot: u8| -> String {
-                let w = &self.session.host.world;
-                w.roster
-                    .members
-                    .get(slot as usize)
-                    .map(|m| m.name())
-                    .filter(|n| !n.is_empty())
-                    .unwrap_or_else(|| format!("P{slot}"))
-            };
-
-            let base_x = 8;
-            let mut y = 96;
-            let header = format!("SERU TRADE  (vendor #{})", trade.vendor_id);
-            out.extend(text_draws_for(
-                &self.font.layout_ascii(&header),
-                (base_x, y),
-                white,
-            ));
-            y += 14;
-            out.extend(text_draws_for(
-                &self
-                    .font
-                    .layout_ascii("arrows: pick   Z: trade   X/T: close"),
-                (base_x, y),
-                dim,
-            ));
-            y += 16;
-
-            if trade.is_empty() {
-                out.extend(text_draws_for(
-                    &self.font.layout_ascii("No trades offered right now."),
-                    (base_x, y),
-                    dim,
-                ));
-            } else {
-                for (i, offer) in trade.offers.iter().enumerate() {
-                    let marker = if i == trade.cursor { ">" } else { " " };
-                    let line = format!(
-                        "{marker} {} ({}) -> {}",
-                        name_of(offer.give.seru_id),
-                        owner_of(offer.give.owner_slot),
-                        name_of(offer.receive_seru_id),
-                    );
-                    let color = if i == trade.cursor { hi } else { white };
-                    out.extend(text_draws_for(
-                        &self.font.layout_ascii(&line),
-                        (base_x, y),
-                        color,
-                    ));
-                    y += 14;
-                }
-                if trade.confirming
-                    && let Some(offer) = trade.selected()
-                {
-                    y += 6;
-                    let prompt = format!(
-                        "Trade {} for {}?",
-                        name_of(offer.give.seru_id),
-                        name_of(offer.receive_seru_id),
-                    );
-                    out.extend(text_draws_for(
-                        &self.font.layout_ascii(&prompt),
-                        (base_x, y),
-                        white,
-                    ));
-                    y += 14;
-                    let (yes_c, no_c) = if trade.confirm_yes {
-                        (hi, dim)
-                    } else {
-                        (dim, hi)
-                    };
-                    out.extend(text_draws_for(
-                        &self.font.layout_ascii("Yes"),
-                        (base_x + 8, y),
-                        yes_c,
-                    ));
-                    out.extend(text_draws_for(
-                        &self.font.layout_ascii("No"),
-                        (base_x + 56, y),
-                        no_c,
-                    ));
-                }
             }
         }
         // Battle-event log: rendered along the right edge when non-empty.
@@ -5281,31 +5223,6 @@ impl ApplicationHandler for PlayWindowApp {
                     evl.exit();
                     return;
                 }
-                // `T`: open the seru-trade overlay (the randomizer's
-                // `--seru-trade` feature) for the vendor whose shop is currently
-                // open — trading is reached *through* a field shop (op `0x49`),
-                // keyed to that vendor, so each merchant trades independently.
-                // Closes if already open.
-                if matches!(code, KeyCode::KeyT)
-                    && state == ElementState::Pressed
-                    && !self.boot_ui.is_active()
-                {
-                    if self.seru_trade_overlay.is_some() {
-                        self.seru_trade_overlay = None;
-                    } else if self.session.host.world.seru_trade_enabled()
-                        && let Some(vendor) =
-                            self.menu_runtime.shop_session.as_ref().map(|s| s.vendor_id)
-                    {
-                        self.ensure_seru_names();
-                        self.seru_trade_overlay = self.session.host.world.open_seru_trade(vendor);
-                    }
-                    return;
-                }
-                // While the seru-trade overlay is up it captures all key input.
-                if self.seru_trade_overlay.is_some() && state == ElementState::Pressed {
-                    self.handle_seru_trade_key(code);
-                    return;
-                }
                 // Dev affordance: spawn a debug effect marker at the player so
                 // the effect-pool render bridge can be exercised by hand
                 // before the runtime effect catalog is wired into battle-enter.
@@ -5736,7 +5653,13 @@ impl ApplicationHandler for PlayWindowApp {
                     // player leaves, at which point `finish_field_shop` (below)
                     // lets it resume past the merchant op.
                     if let Some(shop) = self.session.host.world.take_pending_field_shop() {
-                        self.menu_runtime.open_shop_buy(shop);
+                        // Open the top-level Buy / Sell / Trade picker (Trade row
+                        // present only when the disc enabled seru trading). Names
+                        // for the trade rows come from the boot SCUS.
+                        if self.session.host.world.seru_trade_enabled() {
+                            self.ensure_seru_names();
+                        }
+                        self.menu_runtime.open_shop_menu(shop);
                     }
                     // Production cast-band trigger: a player Seru-magic cast
                     // (spell id 0x81..=0x8b) requests a summon spawn. The
@@ -5772,10 +5695,7 @@ impl ApplicationHandler for PlayWindowApp {
                     // Catch any path that re-uploaded VRAM over the battle
                     // texture this frame (and restore it).
                     self.check_battle_vram_residency();
-                    // The shop menu is frozen while the seru-trade overlay (opened
-                    // from within the shop) is up, so pad input drives the trade
-                    // list instead of the buy list underneath it.
-                    if self.menu_runtime.is_open() && self.seru_trade_overlay.is_none() {
+                    if self.menu_runtime.is_open() {
                         let p = self.pad;
                         let input = MenuInput {
                             cross: p & 0x4000 != 0,
@@ -7455,7 +7375,6 @@ fn cmd_play_window_with_record(
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         active_dialog: None,
-        seru_trade_overlay: None,
         seru_names: None,
     };
 
