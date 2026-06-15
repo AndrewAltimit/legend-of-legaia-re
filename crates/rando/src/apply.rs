@@ -227,6 +227,54 @@ pub fn inject_flee_exp(patcher: &mut DiscPatcher, pct: u8) -> Result<FleeExpRepo
     Ok(FleeExpReport { pct: plan.pct })
 }
 
+/// Outcome of enabling seru trading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeruTradeReport {
+    /// The config written to the disc (enabled flag, master seed, offer cap).
+    pub config: legaia_asset::seru_trade::SeruTradeConfig,
+}
+
+/// Enable **seru trading** (see [`crate::seru_trade`]): write a small config blob
+/// (enabled flag + master `seed` + per-vendor offer cap) into preserved
+/// `SCUS_942.54` rodata padding. The clean-room engine reads the blob and, at
+/// runtime, lets vendors offer to swap one of a character's seru for a different
+/// one — the offers reseeding every two in-game hours from the same seed.
+///
+/// A single same-size, in-place edit. Re-running with a new seed overwrites the
+/// prior blob. Fails (without touching the disc) if the build isn't the
+/// recognized layout (the target rodata region isn't dead space).
+pub fn enable_seru_trades(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    max_offers: u8,
+) -> Result<SeruTradeReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for seru-trade config")?;
+    let config = legaia_asset::seru_trade::SeruTradeConfig {
+        enabled: true,
+        seed,
+        max_offers: max_offers.max(1),
+    };
+    let plan = crate::seru_trade::SeruTradePlan::plan(&scus, config)?;
+    patcher
+        .patch_named_file(SCUS_NAME, plan.config_off as u64, &plan.blob)
+        .context("write seru-trade config blob")?;
+    Ok(SeruTradeReport {
+        config: plan.config,
+    })
+}
+
+/// Read back the seru-trade config currently on the disc (`None` if seru trading
+/// isn't enabled / no blob is present). Used by the read-only listing and the
+/// round-trip oracle.
+pub fn current_seru_trade(
+    patcher: &DiscPatcher,
+) -> Option<legaia_asset::seru_trade::SeruTradeConfig> {
+    let scus = patcher.read_named_file(SCUS_NAME)?;
+    legaia_asset::seru_trade::SeruTradeConfig::from_scus(&scus)
+}
+
 /// Outcome of randomizing monster combat stats.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MonsterStatsReport {

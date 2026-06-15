@@ -201,6 +201,15 @@ struct RandomizeArgs {
     /// (only with `--flee-exp`).
     #[arg(long, default_value_t = legaia_rando::flee_exp::DEFAULT_PCT)]
     flee_exp_pct: u8,
+    /// Let vendors offer to **trade** one of a character's seru for a different
+    /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
+    /// clean-room engine renders the trade UI and reseeds each vendor's offers
+    /// every two in-game hours. (Inert on real hardware — retail has no trade UI.)
+    #[arg(long, default_value_t = false)]
+    seru_trade: bool,
+    /// Maximum trades a single vendor offers at once (only with `--seru-trade`).
+    #[arg(long, default_value_t = legaia_asset::seru_trade::DEFAULT_MAX_OFFERS)]
+    seru_trade_offers: u8,
     /// How random-encounter formations are reassigned. The pool each scene draws
     /// from is set by `--encounter-scope`.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -1223,6 +1232,21 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("flee_exp_pct = {}", report.pct));
     } else {
         manifest.push("flee_exp = false".to_string());
+    }
+
+    // Seru trading: embed an enabled flag + the run's seed so the clean-room
+    // engine can offer vendor seru-for-seru swaps (offers reseed every two
+    // in-game hours from this seed). A plain data write; inert on real hardware.
+    if args.seru_trade {
+        let report = apply::enable_seru_trades(&mut patcher, seed, args.seru_trade_offers)?;
+        println!(
+            "seru-trade: vendor seru trading enabled (up to {} offers/vendor, reseeds every 2h)",
+            report.config.max_offers
+        );
+        manifest.push("seru_trade = true".to_string());
+        manifest.push(format!("seru_trade_offers = {}", report.config.max_offers));
+    } else {
+        manifest.push("seru_trade = false".to_string());
     }
 
     if let Some(enc_mode) = enc_mode {
