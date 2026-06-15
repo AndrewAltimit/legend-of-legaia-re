@@ -33,6 +33,44 @@ use crate::rng::SplitMix64;
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
 
+/// Per-monster **combat-power** lookup, keyed by the formation byte (a 1-based
+/// `battle_data` archive id — the same id space [`SceneEncounters`] writes into a
+/// formation slot). The metric the "limit strong fights to a solo enemy" option
+/// compares formations against: a single scalar per monster (its stat budget; see
+/// [`crate::monster_stats::combat_power`]), so a swapped-in monster can be judged
+/// against an area's native average without reading the archive twice.
+///
+/// An id with no record (slot `0`, the empty-slot sentinel, or any id the archive
+/// doesn't populate) reads as power `0`, so it never counts as a "strong" monster
+/// and never inflates a baseline.
+#[derive(Debug, Clone)]
+pub struct MonsterPowerTable {
+    /// `power[id]` for every byte id `0..=255`. Indexed directly by the formation
+    /// byte (1-based archive id), so no per-lookup offset math.
+    power: [u32; 256],
+}
+
+impl MonsterPowerTable {
+    /// Build from `(monster_id, power)` pairs, where `monster_id` is the 1-based
+    /// `battle_data` archive id (exactly the value a formation slot stores). Ids
+    /// outside `0..=255` are ignored (no retail monster id exceeds a byte).
+    pub fn from_powers(pairs: impl IntoIterator<Item = (u16, u32)>) -> Self {
+        let mut power = [0u32; 256];
+        for (id, p) in pairs {
+            if let Some(slot) = power.get_mut(id as usize) {
+                *slot = p;
+            }
+        }
+        Self { power }
+    }
+
+    /// The combat power of formation-slot id `id` (`0` for the empty slot or any
+    /// id with no record).
+    pub fn power_of(&self, id: u8) -> u32 {
+        self.power[id as usize]
+    }
+}
+
 /// Which formation indices a scene's **random-encounter** roll can produce.
 ///
 /// The encounter section holds a single formation array, but only some of those
@@ -385,6 +423,95 @@ impl SceneEncounters {
         changed
     }
 
+    /// The scene's native **combat-power baseline**: the mean
+    /// [`MonsterPowerTable::power_of`] across every monster currently in its
+    /// **random** formation slots. This is the area's intended enemy strength —
+    /// the stand-in for "what the party can handle here" the solo-strong option
+    /// compares a swapped-in monster against.
+    ///
+    /// Call this **before** randomizing, so the baseline reflects the area's
+    /// authored difficulty rather than the post-shuffle monsters (a uniformly
+    /// stronger scene would otherwise hide every outlier). `None` when the scene
+    /// has no random monster slots (nothing to compare against). Scripted/boss
+    /// formations are excluded, exactly as the rest of the randomizer treats them.
+    pub fn baseline_power(&self, table: &MonsterPowerTable) -> Option<u32> {
+        let ids = self.random_slot_ids();
+        if ids.is_empty() {
+            return None;
+        }
+        let sum: u64 = ids.iter().map(|&id| table.power_of(id) as u64).sum();
+        Some((sum / ids.len() as u64) as u32)
+    }
+
+    /// Force every **random** formation whose strongest monster is at least
+    /// `threshold_pct`% of `baseline` combat power down to a **solo** fight: keep
+    /// the single strongest monster (in slot 0) and drop the rest (`count := 1`,
+    /// trailing id bytes zeroed). This is what keeps a randomized run from ganging
+    /// up 2+ over-strong monsters on the party — an out-of-area heavy hitter is
+    /// faced alone, never in a pack.
+    ///
+    /// Only multi-monster (`count >= 2`) random formations are eligible; solo
+    /// formations are already solo and scripted/boss formations are never touched
+    /// (see [`Self::is_random_formation`]). A no-op when `baseline` or
+    /// `threshold_pct` is `0`, or no formation clears the bar.
+    ///
+    /// Same-size edit: the `count` byte and the dropped id bytes all live inside
+    /// the formation record's fixed stride, so the MAN's decompressed length is
+    /// unchanged and [`Self::repack`] applies. Returns `(formations_collapsed,
+    /// id_bytes_zeroed)`.
+    pub fn enforce_solo_strong(
+        &mut self,
+        table: &MonsterPowerTable,
+        baseline: u32,
+        threshold_pct: u16,
+    ) -> (usize, usize) {
+        if baseline == 0 || threshold_pct == 0 {
+            return (0, 0);
+        }
+        let threshold = (baseline as u64 * threshold_pct as u64) / 100;
+        let mut collapsed = 0;
+        let mut zeroed = 0;
+        for i in 0..self.formation_count {
+            if !self.is_random_formation(i) {
+                continue;
+            }
+            let (off, len) = self.id_span(i);
+            if len < 2 {
+                continue;
+            }
+            // Strongest member + whether any member clears the "strong" bar.
+            let mut best_slot = 0;
+            let mut best_power = 0u32;
+            let mut any_strong = false;
+            for s in 0..len {
+                let p = table.power_of(self.decoded[off + s]);
+                if p as u64 >= threshold {
+                    any_strong = true;
+                }
+                if p >= best_power {
+                    best_power = p;
+                    best_slot = s;
+                }
+            }
+            if !any_strong {
+                continue;
+            }
+            // Keep the strongest in slot 0, zero the rest, set count := 1.
+            let keep = self.decoded[off + best_slot];
+            self.decoded[off] = keep;
+            for s in 1..len {
+                if self.decoded[off + s] != 0 {
+                    zeroed += 1;
+                }
+                self.decoded[off + s] = 0;
+            }
+            let rec = self.formation_array_off + i * self.formation_stride;
+            self.decoded[rec + 3] = 1;
+            collapsed += 1;
+        }
+        (collapsed, zeroed)
+    }
+
     /// Recompress the (mutated) MAN. Returns the stream if it fits the original
     /// compressed footprint, or `None` if it would overflow (the rare case our
     /// re-packer is a byte or two looser than the retail packer).
@@ -658,5 +785,90 @@ mod tests {
         };
         assert_eq!(before, after, "cross-scene shuffle conserves the multiset");
         assert_eq!(scenes[0].formation_ids(1), vec![0x90], "scripted id stays");
+    }
+
+    /// A power table built from id->power pairs reads back, with absent ids 0.
+    #[test]
+    fn power_table_reads_back_and_zeros_absent() {
+        let t = MonsterPowerTable::from_powers([(10u16, 100u32), (20, 4000), (300, 9)]);
+        assert_eq!(t.power_of(10), 100);
+        assert_eq!(t.power_of(20), 4000);
+        assert_eq!(t.power_of(0), 0, "empty slot is power 0");
+        assert_eq!(t.power_of(99), 0, "unpopulated id is power 0");
+        // An id past a byte was dropped, not wrapped onto id 300&0xFF.
+        assert_eq!(t.power_of((300u16 & 0xFF) as u8), 0);
+    }
+
+    /// Baseline is the mean power across the scene's random slots (scripted slots
+    /// excluded), and `None` when there are no random slots.
+    #[test]
+    fn baseline_power_is_random_slot_mean() {
+        let t = MonsterPowerTable::from_powers([(1u16, 100u32), (2, 200), (9, 100_000)]);
+        // random [1,2], scripted [9 = a heavyweight]. Baseline ignores 9.
+        let se = make_scene(0, &[(&[1, 2], true), (&[9], false)]);
+        assert_eq!(se.baseline_power(&t), Some(150));
+        // No random slots -> None.
+        let only_scripted = make_scene(0, &[(&[9], false)]);
+        assert_eq!(only_scripted.baseline_power(&t), None);
+    }
+
+    /// A formation holding an over-strong monster collapses to that lone monster;
+    /// a balanced pack and a solo formation are left alone, and the scripted boss
+    /// pack is never touched.
+    #[test]
+    fn enforce_solo_strong_collapses_only_strong_packs() {
+        let t = MonsterPowerTable::from_powers([
+            (1u16, 100u32),
+            (2, 120),
+            (3, 110),
+            (7, 1000), // the heavy hitter (>= 2x the ~110 baseline)
+            (9, 5000), // a scripted boss
+        ]);
+        // formation 0: balanced pair [1,2]; 1: strong pair [3,7]; 2: solo strong
+        // [7]; 3: scripted boss pair [9,9].
+        let mut se = make_scene(
+            0,
+            &[
+                (&[1, 2], true),
+                (&[3, 7], true),
+                (&[7], true),
+                (&[9, 9], false),
+            ],
+        );
+        let baseline = se.baseline_power(&t).unwrap();
+        let (collapsed, zeroed) = se.enforce_solo_strong(&t, baseline, 200);
+        assert_eq!(collapsed, 1, "only the strong pair collapses");
+        assert_eq!(zeroed, 1, "one id byte dropped");
+        // Balanced pair untouched.
+        assert_eq!(se.formation_ids(0), vec![1, 2]);
+        // Strong pair is now the lone heavy hitter (the strongest member kept).
+        assert_eq!(se.formation_ids(1), vec![7]);
+        // Solo strong formation untouched (already a single enemy).
+        assert_eq!(se.formation_ids(2), vec![7]);
+        // Scripted boss pack is never collapsed.
+        assert_eq!(se.formation_ids(3), vec![9, 9]);
+    }
+
+    /// The strongest member is the survivor regardless of its slot, and a
+    /// zero/absent baseline or threshold is a no-op.
+    #[test]
+    fn enforce_solo_strong_keeps_strongest_and_guards() {
+        let t = MonsterPowerTable::from_powers([(1u16, 90u32), (2, 5000), (3, 80)]);
+        // The heavy hitter is in the middle slot.
+        let mut se = make_scene(0, &[(&[1, 2, 3], true)]);
+        let baseline = se.baseline_power(&t).unwrap();
+        let (collapsed, _) = se.enforce_solo_strong(&t, baseline, 200);
+        assert_eq!(collapsed, 1);
+        assert_eq!(
+            se.formation_ids(0),
+            vec![2],
+            "the strongest member survives"
+        );
+
+        // Guards: zero threshold / zero baseline never collapse.
+        let mut s2 = make_scene(0, &[(&[1, 2, 3], true)]);
+        assert_eq!(s2.enforce_solo_strong(&t, 100, 0), (0, 0));
+        assert_eq!(s2.enforce_solo_strong(&t, 0, 200), (0, 0));
+        assert_eq!(s2.formation_ids(0), vec![1, 2, 3], "no-op guards leave it");
     }
 }

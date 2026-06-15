@@ -204,6 +204,19 @@ struct RandomizeArgs {
     /// monster by id, so an out-of-area enemy still loads and renders.
     #[arg(long, value_enum, default_value_t = ScopeArg::Scene)]
     encounter_scope: ScopeArg,
+    /// Limit "strong" random fights to a single enemy: when a randomized
+    /// encounter would pit the party against a monster much stronger than the
+    /// area's natives, force that fight to just that one monster instead of a
+    /// pack of 2+. Only takes effect with `--encounters` set; the cut-off is
+    /// `--solo-strong-threshold`. (On by default in the web Balanced / Full Chaos
+    /// presets.)
+    #[arg(long)]
+    solo_strong_encounters: bool,
+    /// "Strong fight" cut-off for `--solo-strong-encounters`, as a percent of the
+    /// area's native average monster power (default 200 = twice as strong). A
+    /// random formation whose strongest monster clears this bar is forced solo.
+    #[arg(long, default_value_t = apply::DEFAULT_SOLO_STRONG_THRESHOLD_PCT)]
+    solo_strong_threshold: u16,
     /// How treasure-chest contents are reassigned (global; `random` draws from
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
@@ -1141,6 +1154,9 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     } else {
         &[]
     };
+    if args.solo_strong_encounters && enc_mode.is_none() {
+        println!("note: --solo-strong-encounters only takes effect with `--encounters` set");
+    }
 
     // Normal drop table first: reassign the monsters that already drop something.
     if let Some(mode) = mode {
@@ -1189,12 +1205,18 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     if let Some(enc_mode) = enc_mode {
         let scope = args.encounter_scope.scope();
-        let report = apply::randomize_encounters_scoped(
+        let solo = args
+            .solo_strong_encounters
+            .then_some(apply::SoloStrongConfig {
+                threshold_pct: args.solo_strong_threshold,
+            });
+        let report = apply::randomize_encounters_full(
             &mut patcher,
             seed,
             enc_mode,
             scope,
             unused_enemies,
+            solo,
         )?;
         println!(
             "encounters: {} scenes rewritten, {} ids changed ({} {})",
@@ -1203,6 +1225,21 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             args.encounter_scope.as_str(),
             mode_str(enc_mode)
         );
+        if solo.is_some() {
+            println!(
+                "  solo-strong: {} formation(s) forced to a lone enemy (>= {}% of area average)",
+                report.solo_collapsed, args.solo_strong_threshold
+            );
+            manifest.push("encounters_solo_strong = true".to_string());
+            manifest.push(format!(
+                "encounters_solo_strong_threshold = {}",
+                args.solo_strong_threshold
+            ));
+            manifest.push(format!(
+                "encounters_solo_collapsed = {}",
+                report.solo_collapsed
+            ));
+        }
         manifest.push(format!(
             "encounters_scope = {:?}",
             args.encounter_scope.as_str()

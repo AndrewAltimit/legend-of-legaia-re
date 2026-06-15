@@ -7,7 +7,8 @@
  * door_coupling, house_doors, starting_items, door_of_wind, incense,
  * speed_chain, chicken_heart, good_luck_bell, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
- * element_affinity, spell_cost, equip_bonus, weapon_specialty)
+ * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
+ * solo_strong_encounters)
  * -> { data, summary, seed }`
  * and `resolve_seed(str)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
@@ -72,7 +73,7 @@ function setSeg(name, value) {
 // Each preset is a full configuration: every control gets a value, so applying
 // one is unambiguous. Keys map to control names / element ids below.
 const PRESET_BASE = {
-  drops: 'none', encounters: 'none', encounter_scope: 'scene', chests: 'none',
+  drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false,
   startingItems: 0, doorOfWind: false, incense: false,
@@ -106,6 +107,7 @@ const PRESETS = {
   balanced: {
     ...PRESET_BASE,
     drops: 'shuffle', encounters: 'shuffle', encounter_scope: 'kingdom',
+    soloStrong: true,
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     monster_stats: 'shuffle', equip_bonus: 'shuffle', equipmentDrops: true,
     ...STARTING_BUNDLE,
@@ -113,6 +115,7 @@ const PRESETS = {
   chaos: {
     ...PRESET_BASE,
     drops: 'random', encounters: 'random', encounter_scope: 'world',
+    soloStrong: true,
     chests: 'random', shops: 'random', casino: 'random', steals: 'random',
     arts: 'random', doors: 'random', door_coupling: 'coupled',
     houseDoors: true, unusedEnemies: true, unusedItems: true,
@@ -136,6 +139,7 @@ function init() {
   const chickenHeartChk = $('rom-chicken-heart');
   const goodLuckBellChk = $('rom-good-luck-bell');
   const allWarpsChk = $('rom-all-warps');
+  const soloStrongChk = $('rom-solo-strong');
   const equipmentDropsChk = $('rom-equipment-drops');
   const weaponSpecialtyChk = $('rom-weapon-specialty');
   const houseDoorsChk = $('rom-house-doors');
@@ -165,6 +169,7 @@ function init() {
       setSeg(seg, cfg[seg]);
     }
     houseDoorsChk.checked = cfg.houseDoors;
+    soloStrongChk.checked = cfg.soloStrong;
     equipmentDropsChk.checked = cfg.equipmentDrops;
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
@@ -197,8 +202,11 @@ function init() {
     const doorsOn = segVal('doors', 'none') !== 'none';
     const scopeRow = $('rom-scope-row');
     const couplingRow = $('rom-coupling-row');
+    const soloRow = $('rom-solo-strong-row');
     if (scopeRow) scopeRow.classList.toggle('is-disabled', !encOn);
     if (couplingRow) couplingRow.classList.toggle('is-disabled', !doorsOn);
+    // Solo-strong only does anything while encounters are being randomized.
+    if (soloRow) soloRow.classList.toggle('is-disabled', !encOn);
     // Equipment drops are additive (an extra reward-routine grant), so the
     // Monster drops control stays fully live alongside them — nothing to grey.
   }
@@ -233,6 +241,7 @@ function init() {
     const drops = segVal('drops', 'none');
     const encounters = segVal('encounters', 'none');
     const encounterScope = segVal('encounter_scope', 'scene');
+    const soloStrong = soloStrongChk.checked;
     const chests = segVal('chests', 'none');
     const shops = segVal('shops', 'none');
     const casino = segVal('casino', 'none');
@@ -291,7 +300,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel);
+      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

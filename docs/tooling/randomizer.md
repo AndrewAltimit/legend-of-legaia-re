@@ -127,7 +127,7 @@ legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
 legaia-rando randomize --input DISC.bin --seed wild --encounters random \
     --unused-enemies --chests random --unused-items                  # bring back unused content
 legaia-rando randomize --input DISC.bin --seed chaos --encounters random \
-    --encounter-scope world                                          # late-game monsters anywhere
+    --encounter-scope world --solo-strong-encounters                 # late-game monsters anywhere, but solo if over-strong
 legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-check
 ```
 
@@ -148,7 +148,9 @@ grants one extra random equipment piece on a low per-battle chance
 (see [Equipment drops](#equipment-drops));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--encounter-scope` widens the monster pool an encounter roll draws
-from to `scene` (default), `kingdom`, or `world` (see
+from to `scene` (default), `kingdom`, or `world`, and
+`--solo-strong-encounters` (cut-off `--solo-strong-threshold N`, default 200%)
+forces an over-strong randomized fight down to a lone enemy (see
 [Random encounters](#random-encounters)); `--starting-items N` seeds the new game with `N` random consumables
 (0 = vanilla; the random fill shares a seven-slot capacity — five with
 `--all-warps` — with the convenience toggles, additively). `--door-of-wind [N]` adds
@@ -336,6 +338,34 @@ a monster. Every scope×mode combination is byte-deterministic for a fixed seed
 and validated on a real disc by `tests/encounter_scope_real.rs` (kingdom
 confinement, cross-kingdom mixing under `world`, per-scope multiset conservation,
 boss survival, EDC/ECC validity).
+
+**Solo strong fights (`--solo-strong-encounters`).** The wider scopes can drop a
+late-game heavy hitter into an early area; left as a pack of 2+ that is a
+soft-lock. `apply::randomize_encounters_full` adds an optional `SoloStrongConfig`
+pass that forces any such fight to a **single** enemy. It runs as a post-step over
+the already-randomized scenes, so it composes with every scope×mode without
+touching their multiset bookkeeping (and `solo == None` reproduces the prior
+output byte-for-byte — the archive isn't even read):
+
+- Each monster is scored by its **combat-stat budget**
+  (`monster_stats::combat_power` — the sum of every combat stat except MP, which
+  gates the AI spell economy rather than raw danger), built once into a
+  `MonsterPowerTable` keyed by the formation byte (the 1-based `battle_data` id).
+- Each scene's **native baseline** is the mean power of its *original* random
+  monsters (`SceneEncounters::baseline_power`, captured before randomizing) — the
+  area's authored difficulty, the stand-in for "how strong the party is here".
+- `SceneEncounters::enforce_solo_strong` collapses every multi-monster random
+  formation whose strongest member clears `threshold_pct`% of that baseline
+  (default `200` = twice the area's norm): keep the strongest monster in slot 0,
+  zero the rest, set `count := 1`. The count byte and dropped id bytes all live
+  inside the formation record's fixed stride, so it stays a same-size in-place
+  edit; a scene whose collapsed MAN no longer re-packs is skipped, like the rest.
+
+Scripted/boss formations are never eligible (same `is_random_formation` gate), so
+this only ever thins a *random* pack. Validated on a real disc by
+`tests/solo_strong_encounter_real.rs`: a World-scope random pass produces strong
+packs without the option and **zero** with it, non-vacuously, deterministically,
+and EDC/ECC-valid. On by default in the web Balanced / Full Chaos presets.
 
 ### Treasure chests
 

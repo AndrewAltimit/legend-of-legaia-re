@@ -166,6 +166,31 @@ Tetsu (reached only by rate-0 regions) are left byte-identical.
 `randomize_with_extra` unions extra ids (the unused enemies) into the Random pool
 — see [Unused content](#unused-content).
 
+### Solo strong fights
+
+`randomize_encounters_full` adds an optional **solo-strong** pass (a
+`SoloStrongConfig`): after the ids are assigned, any random formation whose
+strongest monster is much stronger than the area's natives is forced down to that
+lone enemy, so a wide-pool roll can't gang up 2+ over-strong monsters on the
+party.
+
+- Each monster is scored by `monster_stats::combat_power` (the sum of its combat
+  stats — every field except MP), built once into a `MonsterPowerTable`.
+- The baseline is each scene's **native** average power
+  (`SceneEncounters::baseline_power`, read *before* randomizing — the area's
+  authored difficulty, a stand-in for how strong the party is there).
+- `SceneEncounters::enforce_solo_strong` collapses every multi-monster random
+  formation whose strongest member clears `threshold_pct`% of that baseline
+  (default `200` = twice as strong): it keeps the strongest monster in slot 0,
+  zeroes the rest, and sets `count := 1` — a same-size edit inside the formation
+  record's fixed stride.
+
+The pass runs as a post-step over the already-randomized scenes, so it composes
+with every scope (Scene / Kingdom / World) and mode (Shuffle / Random) without
+disturbing their multiset bookkeeping; `solo == None` reproduces the prior output
+byte-for-byte (the archive isn't even read). It only takes effect when encounters
+are being randomized.
+
 ## Chests
 
 Treasure-chest / scripted item-gift randomizer (`chest` module).
@@ -533,7 +558,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Equipment drops | — | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance — additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
-| Encounters | — | `randomize_encounters` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). |
+| Encounters | — | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |
 | Chests | — | `randomize_chests` | treasure (global shuffle/random of chest item ids → `ChestApplyReport`); honors a `keep_static` id set — kept items never move and never enter the shuffle/random pool. |
 | Steals | `current_steals` | `randomize_steals` | the steal table (`StealApplyReport`). |
 | Arts | `current_arts` | `randomize_arts` | Tactical-Arts button combos (`ArtsApplyReport`; same-size `+8` pointer reassignment, input count + within-character uniqueness preserved). |
@@ -589,6 +614,11 @@ legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 # Shuffle chests but keep quest / key items static (the default protected set).
 # Override with --keep-static-items 0x9a,0x71,...  (or "" to randomize all).
 legaia-rando randomize --input DISC.bin --seed myrun --chests shuffle
+
+# Randomize encounters world-wide, but never face an over-strong monster in a
+# pack -- it appears solo instead.
+legaia-rando randomize --input DISC.bin --seed myrun --encounters random \
+    --encounter-scope world --solo-strong-encounters
 
 # Random drops + shuffled encounters + shuffled chests + shuffled steals + image.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
@@ -659,6 +689,12 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 - `--all-warps` presets the visited-towns story-flag bitmask so Door of Wind can
   teleport to any town from the start (both ride the same reclaimable seed region as
   the starting items).
+- `--solo-strong-encounters` forces any randomized formation holding a monster
+  much stronger than the area's natives down to that lone enemy (a strong monster
+  appears solo, never in a pack of 2+). Only takes effect with `--encounters`
+  set; `--solo-strong-threshold N` sets the cut-off as a percent of the area's
+  native average monster power (default 200 = twice as strong). On by default in
+  the web Balanced / Full Chaos presets.
 - `--unused-enemies` adds the unused "Comm" + Evil Bat enemies to the Random
   encounter pool (needs `--encounters random`).
 - `--unused-items` adds Something Good + the "Seru Bell" accessory to the Random
@@ -713,7 +749,11 @@ directory record moves.
   encounter shuffle that re-decodes every patched scene MAN off the disc and
   asserts counts + id multiset preserved, ids in-pool, sectors valid,
   deterministic, **and that scripted/boss formations (Tetsu, …) stay
-  byte-identical**; a whole-disc chest shuffle asserting give-item site offsets
+  byte-identical**; a whole-disc World-scope random pass that asserts the
+  solo-strong option collapses every strong pack (a multi-monster formation with
+  a monster ≥ 2× the area's native average) to a lone enemy — non-vacuous
+  (strong packs exist without it), sector-valid, and deterministic; a whole-disc
+  chest shuffle asserting give-item site offsets
   unchanged, the chest-item multiset preserved, sectors valid, and deterministic;
   the bonus-equipment-drop injection asserting the patched `SCUS_942.54` carries
   the `j routine` detour + the hand-assembled routine + the equipment-id table

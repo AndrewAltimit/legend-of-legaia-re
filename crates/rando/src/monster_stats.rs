@@ -101,6 +101,22 @@ pub struct StatAssignment {
     pub stats: [u16; FIELD_COUNT],
 }
 
+/// A monster's overall **combat power**: the sum of its damage-relevant combat
+/// stats — every [`STAT_FIELDS`] entry **except MP**
+/// (`hp + attack + defense_high + defense_low + agility + speed`). A single
+/// scalar standing in for a monster's whole stat budget, so a swapped-in monster
+/// can be compared against an area's native average (the
+/// solo-strong-encounter option). MP is excluded for the same reason Spirit is
+/// left out of the stat shuffle: it gates the enemy's spell economy, not raw
+/// danger. Saturating, so a degenerate record can never overflow.
+pub fn combat_power(stats: &[u16; FIELD_COUNT]) -> u32 {
+    // STAT_FIELDS order: hp, mp, attack, defense_high, defense_low, agility, speed.
+    let [hp, _mp, atk, dhi, dlo, agl, spd] = *stats;
+    [hp, atk, dhi, dlo, agl, spd]
+        .into_iter()
+        .fold(0u32, |acc, v| acc.saturating_add(v as u32))
+}
+
 /// Read the [`STAT_FIELDS`] halfwords out of a decoded monster block. Returns
 /// `None` if the block is too short to hold the last field.
 pub fn read_stats(block: &[u8]) -> Option<[u16; FIELD_COUNT]> {
