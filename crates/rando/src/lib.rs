@@ -71,6 +71,7 @@ pub mod monster_stats;
 pub mod move_power;
 pub mod ppf;
 pub mod rng;
+pub mod seru_overlay;
 pub mod seru_trade;
 pub mod shop;
 pub mod spell_cost;
