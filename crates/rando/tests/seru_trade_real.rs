@@ -116,29 +116,31 @@ fn overlay_slice_patches_pochi_slot_stub_and_detour() {
         "overlay written to slot head"
     );
 
-    // The detour at the hook now jumps to the stub; the stub references the host.
-    let scus = patcher
-        .read_named_file("SCUS_942.54")
-        .expect("SCUS present");
-    let off = |va: u32| legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
-    let word = |va: u32| {
-        let o = off(va);
-        u32::from_le_bytes(scus[o..o + 4].try_into().unwrap())
-    };
-    // detour: j STUB_VA
-    let detour = word(legaia_rando::bonus_drop::HOOK_VA);
+    // The detour lives in the field overlay (PROT 0897) at the op-0x49 arm edge,
+    // and jumps to the loader stub.
+    let overlay = patcher
+        .read_entry(seru_overlay::SHOP_OVERLAY_PROT_INDEX)
+        .expect("read field overlay");
+    let hook_off = (seru_overlay::SHOP_HOOK_VA - seru_overlay::SHOP_OVERLAY_BASE) as usize;
+    let detour = u32::from_le_bytes(overlay[hook_off..hook_off + 4].try_into().unwrap());
     assert_eq!(
         (detour & 0x03ff_ffff) << 2,
         seru_overlay::STUB_VA & 0x0fff_ffff,
-        "hook detours to the loader stub"
+        "op-0x49 arm edge detours to the loader stub"
     );
-    // stub: first word loads the sector count (addiu a0, zero, sectors;
-    // opcode 0x09, rt=a0=4 -> 0x2404_0000 | imm).
-    let stub0 = word(seru_overlay::STUB_VA);
+
+    // The stub lands in the SCUS rodata gap and gates on the sub-op
+    // (first word = lbu t3,0(s6); opcode 0x24, rt=t3=11, rs=s6=22).
+    let scus = patcher
+        .read_named_file("SCUS_942.54")
+        .expect("SCUS present");
+    let stub_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::STUB_VA).unwrap();
+    let stub0 = u32::from_le_bytes(scus[stub_off..stub_off + 4].try_into().unwrap());
     assert_eq!(
         stub0,
-        0x2404_0000 | report.sectors as u32,
-        "stub loads sector count"
+        0x9000_0000 | (22 << 21) | (11 << 16),
+        "stub gates on the op-0x49 sub-op (lbu t3,0(s6))"
     );
 
     // Determinism: a fresh apply yields a byte-identical image.

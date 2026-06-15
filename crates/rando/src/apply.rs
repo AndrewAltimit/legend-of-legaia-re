@@ -313,14 +313,14 @@ fn find_pochi_host(patcher: &DiscPatcher, need_bytes: usize) -> Option<usize> {
 }
 
 /// Inject the **custom-overlay vertical slice** (see [`crate::seru_overlay`]):
-/// proves the retail custom-overlay load path end to end. Overwrites a pochi
-/// slot with a tiny sentinel-writing overlay, bakes a gap loader stub with that
-/// slot's real disc LBA, and detours a known-good hook (the battle-reward join,
-/// reused from [`crate::bonus_drop`]) into the stub. After the hook fires the
-/// overlay streams in, runs, writes [`crate::seru_overlay::SENTINEL`] to
-/// [`crate::seru_overlay::SENTINEL_ADDR`], and the game continues — observable on
-/// an emulator. Mutually exclusive with `bonus_drop` (shares the hook site); this
-/// is an experimental proof, not a shipping toggle. No Sony bytes.
+/// proves the retail custom-overlay load path end to end, triggered by **opening
+/// a shop**. Overwrites a pochi slot with a tiny sentinel-writing overlay, bakes
+/// a gap loader stub with that slot's real disc LBA, and detours the field-VM
+/// op-0x49 arm edge (overlay 0897) into the stub. The stub gates on the sub-op
+/// (only a merchant, sub-op `0`), FlushCaches, runs the overlay (which writes
+/// [`crate::seru_overlay::SENTINEL`] to [`crate::seru_overlay::SENTINEL_ADDR`]),
+/// then resumes the field VM — so the load fires when the player opens a vendor.
+/// No Sony bytes.
 pub fn inject_overlay_slice(patcher: &mut DiscPatcher) -> Result<OverlaySliceReport> {
     use crate::seru_overlay as ov;
 
@@ -337,16 +337,11 @@ pub fn inject_overlay_slice(patcher: &mut DiscPatcher) -> Result<OverlaySliceRep
         .patch_prot_entry(pochi_index, 0, &overlay)
         .with_context(|| format!("write overlay into pochi slot {pochi_index}"))?;
 
-    // 2. Bake the loader stub (reuse the proven bonus_drop hook for the slice).
+    // 2. Bake the shop-gated loader stub into the preserved SCUS rodata gap.
     let scus = patcher
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for overlay-slice stub")?;
-    let stub = ov::words_to_bytes(&ov::assemble_loader_stub(
-        lba,
-        sectors,
-        crate::bonus_drop::DISPLACED,
-        crate::bonus_drop::RETURN_VA,
-    ));
+    let stub = ov::words_to_bytes(&ov::assemble_shop_loader_stub(lba, sectors));
     let stub_off = legaia_asset::item_names::file_offset_for_va(&scus, ov::STUB_VA)
         .ok_or_else(|| anyhow::anyhow!("can't resolve stub VA {:#x} in SCUS", ov::STUB_VA))?;
     if scus
@@ -355,28 +350,34 @@ pub fn inject_overlay_slice(patcher: &mut DiscPatcher) -> Result<OverlaySliceRep
     {
         anyhow::bail!("stub region {:#x} is not all-zero dead space", ov::STUB_VA);
     }
+    patcher
+        .patch_named_file(SCUS_NAME, stub_off as u64, &stub)
+        .context("write overlay-slice loader stub")?;
 
-    // 3. Guard the hook site holds the recognized vanilla pair, then detour it.
-    let hook_off = legaia_asset::item_names::file_offset_for_va(&scus, crate::bonus_drop::HOOK_VA)
-        .ok_or_else(|| anyhow::anyhow!("can't resolve hook VA in SCUS"))?;
-    let at_hook: Vec<u32> = scus[hook_off..hook_off + 8]
+    // 3. Detour the field-VM op-0x49 arm edge (overlay 0897, raw — maps linearly
+    //    from its base). Guard the displaced pair matches the recognized build.
+    let overlay_entry = patcher
+        .read_entry(ov::SHOP_OVERLAY_PROT_INDEX)
+        .with_context(|| format!("read field overlay PROT {}", ov::SHOP_OVERLAY_PROT_INDEX))?;
+    let hook_off = (ov::SHOP_HOOK_VA - ov::SHOP_OVERLAY_BASE) as usize;
+    let at_hook: Vec<u32> = overlay_entry
+        .get(hook_off..hook_off + 8)
+        .ok_or_else(|| anyhow::anyhow!("hook offset past end of overlay entry"))?
         .chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
         .collect();
-    if at_hook[..] != crate::bonus_drop::DISPLACED[..] {
-        anyhow::bail!("hook site does not match the recognized US build; refusing to patch");
+    if at_hook[..] != ov::SHOP_DISPLACED[..] {
+        anyhow::bail!(
+            "op-0x49 hook site does not match the recognized US build; refusing to patch"
+        );
     }
     let detour: Vec<u8> = ov::detour_words()
         .iter()
         .flat_map(|w| w.to_le_bytes())
         .collect();
-
     patcher
-        .patch_named_file(SCUS_NAME, stub_off as u64, &stub)
-        .context("write overlay-slice loader stub")?;
-    patcher
-        .patch_named_file(SCUS_NAME, hook_off as u64, &detour)
-        .context("write overlay-slice detour")?;
+        .patch_prot_entry(ov::SHOP_OVERLAY_PROT_INDEX, hook_off as u64, &detour)
+        .context("write op-0x49 shop detour into the field overlay")?;
 
     Ok(OverlaySliceReport {
         pochi_index,

@@ -53,6 +53,27 @@ pub const DEST: u32 = 0x801F_69D8;
 /// config blob at `0x8007AF00`), resident writable RAM we own.
 pub const SENTINEL_ADDR: u32 = 0x8007_AF20;
 
+// --- Shop-open trigger (field-VM op 0x49 arm edge, overlay 0897) -------------
+//
+// The merchant-open path is the field-VM op-0x49 "arm edge" in the field overlay
+// dispatcher `FUN_801DE840`. At `SHOP_HOOK_VA` it stashes the operand pointer
+// (`sw s6,-0x4bb0(s0)` = `_DAT_8007b450 = operand`) right after suspending; `s6`
+// is the operand pointer, whose first byte is the op-0x49 sub-op (`0` = shop,
+// `1` = name-entry, others = inn/save). A detour here fires once per open.
+
+/// PROT entry hosting the field overlay (raw; a VA maps to file offset
+/// `va - SHOP_OVERLAY_BASE`).
+pub const SHOP_OVERLAY_PROT_INDEX: usize = 897;
+/// Field overlay load base.
+pub const SHOP_OVERLAY_BASE: u32 = 0x801C_E818;
+/// Detour site: the op-0x49 arm-edge operand stash (`sw s6,-0x4bb0(s0)`).
+pub const SHOP_HOOK_VA: u32 = 0x801E_09A8;
+/// Where the detour returns (after the two displaced instructions).
+pub const SHOP_RETURN_VA: u32 = 0x801E_09B0;
+/// The two displaced instructions: `sw s6,-0x4bb0(s0)` then `lbu v0,0(s6)`
+/// (verified against the disc). Also the recognized-build fingerprint.
+pub const SHOP_DISPLACED: [u32; 2] = [0xAE16_B450, 0x92C2_0000];
+
 /// The value the slice overlay writes to [`SENTINEL_ADDR`] ("SERU" trade slice).
 pub const SENTINEL: u32 = 0x5E_2D_7A_DE;
 
@@ -67,6 +88,8 @@ const V1: u32 = 3;
 const T0: u32 = 8;
 const T1: u32 = 9;
 const T2: u32 = 10;
+const T3: u32 = 11;
+const S6: u32 = 22;
 const RA: u32 = 31;
 
 /// BIOS A-table dispatcher entry. Calling it with the function number in `$t1`
@@ -102,6 +125,12 @@ const fn jr(rs: u32) -> u32 {
 }
 const fn jalr(rs: u32) -> u32 {
     (rs << 21) | (RA << 11) | 0x09
+}
+const fn lbu(rt: u32, rs: u32, off: u16) -> u32 {
+    (0x24 << 26) | (rs << 21) | (rt << 16) | off as u32
+}
+const fn bne(rs: u32, rt: u32, off: i16) -> u32 {
+    (0x05 << 26) | (rs << 21) | (rt << 16) | (off as u16 as u32)
 }
 
 /// High 16 bits to `lui` so a following signed-`lo` access reaches `va`.
@@ -173,6 +202,42 @@ pub fn assemble_loader_stub(
     ]
 }
 
+/// Assemble the **shop-gated** loader stub for the op-0x49 arm-edge detour. It
+/// gates on the sub-op (`*s6 == 0` = a merchant; skips name-entry / inn / save),
+/// loads + FlushCaches + runs the overlay, then replays the two displaced
+/// instructions ([`SHOP_DISPLACED`]) and jumps back to [`SHOP_RETURN_VA`]. `s6`
+/// (the field VM's live operand pointer) and `s0`/`s1` are preserved by the
+/// callees, so the dispatcher continues correctly. Lives at [`STUB_VA`].
+pub fn assemble_shop_loader_stub(lba: u32, sectors: u16) -> Vec<u32> {
+    // Indices: the load block is 3..16, the replay block starts at 17.
+    const REPLAY: usize = 17;
+    let skip_off = (REPLAY as i32 - (1 + 1)) as i16; // bne at idx 1 -> REPLAY
+    vec![
+        lbu(T3, S6, 0),                   // 0:  t3 = *operand (op-0x49 sub-op)
+        bne(T3, ZERO, skip_off),          // 1:  if sub-op != 0 (not a shop) -> replay
+        nop(),                            // 2:  (delay)
+        addiu(A0, ZERO, sectors),         // 3:  a0 = sector_count
+        lui(A1, imm_hi(lba)),             // 4:  \ a1 = lba
+        ori(A1, A1, imm_lo(lba)),         // 5:  /
+        lui(A2, imm_hi(DEST)),            // 6:  \ a2 = dest
+        ori(A2, A2, imm_lo(DEST)),        // 7:  /
+        jal(LOADER_FN),                   // 8:  FUN_8005E4D4(sectors, lba, dest)
+        nop(),                            // 9:  (delay)
+        addiu(T2, ZERO, BIOS_DISPATCH_A), // 10: t2 = 0xA0
+        jalr(T2),                         // 11: FlushCache()
+        addiu(T1, ZERO, FLUSH_CACHE_FN),  // 12: (delay) t1 = 0x44
+        lui(T0, imm_hi(DEST)),            // 13: \ t0 = dest
+        ori(T0, T0, imm_lo(DEST)),        // 14: /
+        jalr(T0),                         // 15: run the loaded overlay
+        nop(),                            // 16: (delay)
+        // REPLAY (idx 17): the displaced arm-edge instructions, then return.
+        SHOP_DISPLACED[0], // 17: sw s6,-0x4bb0(s0)
+        SHOP_DISPLACED[1], // 18: lbu v0,0(s6)
+        j(SHOP_RETURN_VA), // 19: back to the dispatcher
+        nop(),             // 20: (delay)
+    ]
+}
+
 /// The two detour words written at the hook: `j STUB_VA` then `nop`.
 pub fn detour_words() -> [u32; 2] {
     [j(STUB_VA), nop()]
@@ -235,6 +300,37 @@ mod tests {
         assert_eq!(s[14], displaced[0]);
         assert_eq!(s[15], displaced[1]);
         assert_eq!((s[16] & 0x03ff_ffff) << 2, return_va & 0x0fff_ffff);
+    }
+
+    #[test]
+    fn shop_stub_gates_on_sub_op_and_replays() {
+        let s = assemble_shop_loader_stub(0x0004_2A17, 1);
+        assert_eq!(s.len(), 21);
+        // Gate: lbu t3,0(s6) ; bne t3,zero,->replay.
+        assert_eq!(s[0], lbu(T3, S6, 0));
+        assert_eq!(s[1] >> 26, 0x05, "bne opcode");
+        // bne target = replay block (idx 17): off (words) = 17 - (1+1) = 15.
+        let off = (s[1] & 0xffff) as i16;
+        let target = (1 + 1) + off as i32; // branch idx+1 + off
+        assert_eq!(target, 17, "bne skips to the replay block");
+        // loader call + FlushCache + overlay call present.
+        assert_eq!((s[8] & 0x03ff_ffff) << 2, LOADER_FN & 0x0fff_ffff);
+        assert_eq!(s[10], addiu(T2, ZERO, BIOS_DISPATCH_A));
+        assert_eq!(s[11], jalr(T2));
+        assert_eq!(s[15], jalr(T0));
+        // Replay the exact displaced pair, then jump back.
+        assert_eq!(s[17], SHOP_DISPLACED[0]);
+        assert_eq!(s[18], SHOP_DISPLACED[1]);
+        assert_eq!((s[19] & 0x03ff_ffff) << 2, SHOP_RETURN_VA & 0x0fff_ffff);
+        // Fits the gap window below the config blob.
+        assert!(STUB_VA + (s.len() as u32) * 4 <= 0x8007_AF00);
+    }
+
+    #[test]
+    fn shop_hook_file_offset_is_in_the_field_overlay() {
+        // The hook VA maps linearly from the overlay base.
+        assert_eq!(SHOP_HOOK_VA - SHOP_OVERLAY_BASE, 0x12190);
+        assert_eq!(SHOP_RETURN_VA, SHOP_HOOK_VA + 8);
     }
 
     #[test]
