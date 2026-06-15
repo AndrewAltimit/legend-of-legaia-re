@@ -8,6 +8,7 @@
 use legaia_asset::seru_trade::{DEFAULT_MAX_OFFERS, SeruTradeConfig};
 use legaia_rando::apply;
 use legaia_rando::disc::DiscPatcher;
+use legaia_rando::seru_overlay;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -80,4 +81,72 @@ fn seru_trade_config_round_trips_and_is_deterministic() {
         DiscPatcher::open(load_disc().expect("disc still readable")).expect("reopen baseline");
     apply::enable_seru_trades(&mut p1, seed, DEFAULT_MAX_OFFERS).expect("enable baseline");
     assert_eq!(p1.image(), p2.image(), "fixed seed is byte-deterministic");
+}
+
+#[test]
+fn overlay_slice_patches_pochi_slot_stub_and_detour() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+
+    let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+    let report = apply::inject_overlay_slice(&mut patcher).expect("inject overlay slice");
+
+    // Same-size, in-place.
+    assert_eq!(patcher.image().len(), disc.len(), "image size unchanged");
+
+    // The chosen host is a real pochi-filler slot and the baked LBA is its
+    // actual on-disc LBA.
+    let host = patcher
+        .read_entry(report.pochi_index)
+        .expect("read host slot");
+    assert!(report.sectors >= 1);
+    assert_eq!(
+        patcher.entry_disc_lba(report.pochi_index),
+        Some(report.lba),
+        "stub LBA matches the host slot's disc LBA"
+    );
+
+    // The overlay bytes landed at the head of the host slot.
+    let expected = seru_overlay::words_to_bytes(&seru_overlay::assemble_sentinel_overlay());
+    assert_eq!(
+        &host[..expected.len()],
+        &expected[..],
+        "overlay written to slot head"
+    );
+
+    // The detour at the hook now jumps to the stub; the stub references the host.
+    let scus = patcher
+        .read_named_file("SCUS_942.54")
+        .expect("SCUS present");
+    let off = |va: u32| legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
+    let word = |va: u32| {
+        let o = off(va);
+        u32::from_le_bytes(scus[o..o + 4].try_into().unwrap())
+    };
+    // detour: j STUB_VA
+    let detour = word(legaia_rando::bonus_drop::HOOK_VA);
+    assert_eq!(
+        (detour & 0x03ff_ffff) << 2,
+        seru_overlay::STUB_VA & 0x0fff_ffff,
+        "hook detours to the loader stub"
+    );
+    // stub: first word loads the sector count (addiu a0, zero, sectors;
+    // opcode 0x09, rt=a0=4 -> 0x2404_0000 | imm).
+    let stub0 = word(seru_overlay::STUB_VA);
+    assert_eq!(
+        stub0,
+        0x2404_0000 | report.sectors as u32,
+        "stub loads sector count"
+    );
+
+    // Determinism: a fresh apply yields a byte-identical image.
+    let mut p2 = DiscPatcher::open(disc).expect("reopen");
+    apply::inject_overlay_slice(&mut p2).expect("re-inject");
+    assert_eq!(
+        p2.image(),
+        patcher.image(),
+        "overlay-slice patch is deterministic"
+    );
 }
