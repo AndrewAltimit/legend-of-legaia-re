@@ -69,6 +69,10 @@ cargo build --release
 ./target/release/legaia-engine play-str MOV/MV1.STR --disc <bin>
 ```
 
+In `play-window`, when the booted disc was randomized with `--seru-trade`, the
+`T` key opens a demo seru-trade overlay (arrows pick, `Z` trades, `X`/`T`
+close) — the clean-room UI for the randomizer's vendor seru-for-seru swaps.
+
 ### Binary source layout
 
 The binary is split into modules under `src/bin/legaia-engine/` (the crate

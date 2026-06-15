@@ -295,6 +295,11 @@ struct SaveMenuAssets {
 }
 
 /// Windowed engine runner state. Owned by the winit event loop.
+/// Vendor id the play-window's seru-trade demo overlay uses. The full game
+/// would seed per-vendor (each town merchant reseeds independently); the dev
+/// harness exposes a single vendor reachable from any field scene with `T`.
+const DEMO_SERU_TRADE_VENDOR_ID: u16 = 1;
+
 struct PlayWindowApp {
     session: BootSession,
     font: Font,
@@ -508,6 +513,15 @@ struct PlayWindowApp {
     /// and dropped when the world clears the request (the world owns dismissal
     /// via the field VM / overworld handler). `None` when no box is up.
     active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
+    /// Active seru-trade overlay (the randomizer's `--seru-trade` feature). `Some`
+    /// while the player has the demo trade menu open (toggled with `T` in a field
+    /// scene when the booted disc enables trading). Driven directly here rather
+    /// than through `menu_runtime`, since it's a self-contained demo overlay.
+    seru_trade_overlay: Option<legaia_engine_core::seru_trade::SeruTradeSession>,
+    /// Spell/seru display-name table, read once from the boot SCUS so the trade
+    /// overlay can label each offer ("Gimard (Vahn) -> Orb"). `None` on
+    /// disc-free runs or before the first lookup.
+    seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -3679,6 +3693,92 @@ impl PlayWindowApp {
         }
     }
 
+    /// Lazily read the spell/seru display-name table from the boot SCUS so the
+    /// seru-trade overlay can label each offer. Cached after the first read;
+    /// a disc-free run leaves it `None` (offers fall back to "Seru NN").
+    fn ensure_seru_names(&mut self) {
+        if self.seru_names.is_some() {
+            return;
+        }
+        use legaia_engine_core::Vfs;
+        let scus = if let Some(root) = self.extracted_root.as_deref() {
+            legaia_engine_core::DirVfs::new(root)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else if let Some(disc) = self.disc_path.as_deref() {
+            legaia_engine_core::DiscVfs::open(disc)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else {
+            None
+        };
+        self.seru_names = scus
+            .as_deref()
+            .and_then(legaia_asset::spell_names::SpellNameTable::from_scus);
+    }
+
+    /// Drive the open seru-trade overlay from a key press. Mutates the
+    /// persistent roster (via [`World::apply_seru_trade`]) on a confirmed trade,
+    /// then refreshes the offers so the list reflects the new owned set.
+    fn handle_seru_trade_key(&mut self, code: KeyCode) {
+        let confirming = self
+            .seru_trade_overlay
+            .as_ref()
+            .map(|t| t.confirming)
+            .unwrap_or(false);
+        if confirming {
+            match code {
+                KeyCode::ArrowUp
+                | KeyCode::ArrowDown
+                | KeyCode::ArrowLeft
+                | KeyCode::ArrowRight => {
+                    if let Some(t) = self.seru_trade_overlay.as_mut() {
+                        t.toggle_confirm();
+                    }
+                }
+                KeyCode::KeyZ | KeyCode::Enter => {
+                    let offer = self
+                        .seru_trade_overlay
+                        .as_mut()
+                        .and_then(|t| t.take_confirmed());
+                    if let Some(offer) = offer {
+                        self.session.host.world.apply_seru_trade(&offer);
+                        let pt = self.session.host.world.play_time_seconds;
+                        if let Some(t) = self.seru_trade_overlay.as_mut() {
+                            t.refresh(pt, &self.session.host.world.roster.members);
+                        }
+                    }
+                }
+                KeyCode::KeyX | KeyCode::Backspace => {
+                    if let Some(t) = self.seru_trade_overlay.as_mut() {
+                        t.cancel_confirm();
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            match code {
+                KeyCode::ArrowUp => {
+                    if let Some(t) = self.seru_trade_overlay.as_mut() {
+                        t.move_cursor(-1);
+                    }
+                }
+                KeyCode::ArrowDown => {
+                    if let Some(t) = self.seru_trade_overlay.as_mut() {
+                        t.move_cursor(1);
+                    }
+                }
+                KeyCode::KeyZ | KeyCode::Enter => {
+                    if let Some(t) = self.seru_trade_overlay.as_mut() {
+                        t.begin_confirm();
+                    }
+                }
+                KeyCode::KeyX | KeyCode::Backspace => self.seru_trade_overlay = None,
+                _ => {}
+            }
+        }
+    }
+
     /// Per-tick battle facial animation: re-stamp each registered party
     /// member's current eye + mouth face frame onto the band's live face
     /// rows, exactly like the retail per-frame animator. The playing clip's
@@ -4530,6 +4630,103 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&ml_layout, (8, 140), white));
             }
         }
+        // Seru-trade overlay (the randomizer's `--seru-trade` feature): a list of
+        // the trades the vendor offers this two-hour window, each "give (owner) ->
+        // receive", with a yes/no confirm over the highlighted one.
+        if let Some(trade) = &self.seru_trade_overlay {
+            // `white` / `dim` are bound at the top of `build_hud`.
+            let hi = [1.0f32, 0.95, 0.5, 1.0];
+            let name_of = |id: u8| -> String {
+                self.seru_names
+                    .as_ref()
+                    .and_then(|t| t.name(id))
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("Seru {id:02X}"))
+            };
+            let owner_of = |slot: u8| -> String {
+                let w = &self.session.host.world;
+                w.roster
+                    .members
+                    .get(slot as usize)
+                    .map(|m| m.name())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| format!("P{slot}"))
+            };
+
+            let base_x = 8;
+            let mut y = 96;
+            let header = format!("SERU TRADE  (vendor #{})", trade.vendor_id);
+            out.extend(text_draws_for(
+                &self.font.layout_ascii(&header),
+                (base_x, y),
+                white,
+            ));
+            y += 14;
+            out.extend(text_draws_for(
+                &self
+                    .font
+                    .layout_ascii("arrows: pick   Z: trade   X/T: close"),
+                (base_x, y),
+                dim,
+            ));
+            y += 16;
+
+            if trade.is_empty() {
+                out.extend(text_draws_for(
+                    &self.font.layout_ascii("No trades offered right now."),
+                    (base_x, y),
+                    dim,
+                ));
+            } else {
+                for (i, offer) in trade.offers.iter().enumerate() {
+                    let marker = if i == trade.cursor { ">" } else { " " };
+                    let line = format!(
+                        "{marker} {} ({}) -> {}",
+                        name_of(offer.give.seru_id),
+                        owner_of(offer.give.owner_slot),
+                        name_of(offer.receive_seru_id),
+                    );
+                    let color = if i == trade.cursor { hi } else { white };
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii(&line),
+                        (base_x, y),
+                        color,
+                    ));
+                    y += 14;
+                }
+                if trade.confirming
+                    && let Some(offer) = trade.selected()
+                {
+                    y += 6;
+                    let prompt = format!(
+                        "Trade {} for {}?",
+                        name_of(offer.give.seru_id),
+                        name_of(offer.receive_seru_id),
+                    );
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii(&prompt),
+                        (base_x, y),
+                        white,
+                    ));
+                    y += 14;
+                    let (yes_c, no_c) = if trade.confirm_yes {
+                        (hi, dim)
+                    } else {
+                        (dim, hi)
+                    };
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii("Yes"),
+                        (base_x + 8, y),
+                        yes_c,
+                    ));
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii("No"),
+                        (base_x + 56, y),
+                        no_c,
+                    ));
+                }
+            }
+        }
         // Battle-event log: rendered along the right edge when non-empty.
         // Most recent at the bottom of the column.
         if !self.battle_event_log.is_empty() {
@@ -5076,6 +5273,27 @@ impl ApplicationHandler for PlayWindowApp {
                         log::error!("record: flush on Escape failed: {e:#}");
                     }
                     evl.exit();
+                    return;
+                }
+                // `T`: toggle the seru-trade overlay (the randomizer's
+                // `--seru-trade` feature). Opens only when the booted disc
+                // enabled trading; closes if already open. A single demo vendor.
+                if matches!(code, KeyCode::KeyT)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.seru_trade_overlay.is_some() {
+                        self.seru_trade_overlay = None;
+                    } else if self.session.host.world.seru_trade_enabled() {
+                        self.ensure_seru_names();
+                        let vendor = DEMO_SERU_TRADE_VENDOR_ID;
+                        self.seru_trade_overlay = self.session.host.world.open_seru_trade(vendor);
+                    }
+                    return;
+                }
+                // While the seru-trade overlay is up it captures all key input.
+                if self.seru_trade_overlay.is_some() && state == ElementState::Pressed {
+                    self.handle_seru_trade_key(code);
                     return;
                 }
                 // Dev affordance: spawn a debug effect marker at the player so
@@ -7224,6 +7442,8 @@ fn cmd_play_window_with_record(
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         active_dialog: None,
+        seru_trade_overlay: None,
+        seru_names: None,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

@@ -454,6 +454,11 @@ impl BootSession {
         // where no spell XP accrues. Persists across New Game.
         if let Some(scus) = read_scus(&source) {
             host.world.install_magic_xp_thresholds(&scus);
+            // Install the randomizer's seru-trade config (the `--seru-trade`
+            // blob in preserved rodata). No-op / disabled on a vanilla disc;
+            // when present, vendors offer seru-for-seru trades. Persists across
+            // New Game.
+            host.world.install_seru_trade_config(&scus);
         }
 
         // Install the gold-shop item data (per-id buy price + name mask) from the

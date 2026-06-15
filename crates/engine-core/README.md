@@ -141,6 +141,14 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   recognises an inline shop record on the op's bytes and stages it on
   `World::pending_field_shop` (Armed -> Done op-0x49 gating), so a host drains
   `take_pending_field_shop` -> drives the buy UI -> `finish_field_shop`.
+- `seru_trade` - the engine side of the randomizer's `--seru-trade` toggle:
+  vendors offer to swap one of a character's seru for a different one, reseeding
+  every two in-game hours. `World::install_seru_trade_config` reads the disc blob
+  at boot; `World::open_seru_trade` builds a `SeruTradeSession` (offer list +
+  cursor + yes/no confirm) for the current party + `play_time_seconds`, and
+  `World::apply_seru_trade` rewrites the chosen owner's spell list. Offers come
+  from the shared `legaia_asset::seru_trade` kernel, so the engine and the
+  randomizer preview always agree.
 - `battle_round` - per-round orchestrator. `BattleRound::begin` resets
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,
