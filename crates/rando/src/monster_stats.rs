@@ -77,6 +77,7 @@ pub const PROTECTED_MONSTER_IDS: &[u16] = &[
     19, 20, 21, // Red / Black / Blue Piura — the first wild enemies, deliberately weak.
     79, // Tetsu, the Rim Elm sparring partner (999/999, unwinnable by design).
     // Story bosses (all versions of each).
+    10, // Gimard — the early scripted Seru-boss fight (also guarded on the encounter side).
     73, 171, 172, // Caruban
     75,  // Zeto
     76, 136, 179, // Songi

@@ -23,6 +23,17 @@
 //! encounter) — are randomized; scripted formations are left exactly as
 //! authored, so a randomized run never replaces a boss (see
 //! `random_formation_mask` / [`SceneEncounters::is_random_formation`]).
+//!
+//! **An explicit id guard backs the heuristic.** The region-rate test classifies
+//! every story boss's formation as scripted except the early **Gimard** fight,
+//! whose formation sits at an index a rate>0 region's range happens to span — so
+//! the heuristic alone would treat it as random and could replace that tutorial
+//! boss (stranding a fresh save) or donate Gimard, a boss-tier enemy, into an
+//! ordinary early encounter. [`PROTECTED_FORMATION_IDS`] lists the ids that must
+//! never participate in a random encounter; any formation holding one is forced
+//! back to scripted in [`SceneEncounters::locate`], and such ids never enter a
+//! donor pool, so the fight ships exactly as authored regardless of the region
+//! layout.
 
 use legaia_asset::man_section::{self, EncounterSection};
 use legaia_asset::scene_asset_table;
@@ -32,6 +43,33 @@ use crate::rng::SplitMix64;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
+
+/// 1-based `battle_data` monster ids that must never take part in a **random**
+/// encounter — neither donated into one nor replaced out of an existing fight —
+/// *on top of* the formations [`random_formation_mask`] already marks scripted.
+///
+/// The region-rate heuristic correctly classifies every story boss's formation
+/// as scripted, with one exception: the early **Gimard** Seru-boss fight sits at
+/// a formation index a rate>0 region's range spans, so the heuristic alone would
+/// treat it as a random encounter. Left unguarded a randomized run could replace
+/// that mandatory tutorial fight (soft-locking a fresh save) or donate Gimard — a
+/// boss-tier enemy — into an ordinary early encounter the party can't yet beat.
+/// Listing its id forces every formation that holds it back to scripted (see
+/// [`SceneEncounters::locate`]) and keeps it out of every donor pool, so the
+/// fight is preserved no matter how the scene's regions are laid out — the same
+/// intent as the matching stat-side guard (`crate::monster_stats`).
+///
+/// The first wild Piura are deliberately **not** listed: they are genuine random
+/// encounters, and the heuristic already leaves their scripted appearances fixed.
+pub const PROTECTED_FORMATION_IDS: &[u8] = &[
+    10, // Gimard — the early scripted Seru-boss fight.
+];
+
+/// Whether `id` is a [`PROTECTED_FORMATION_IDS`] enemy (one that must never be a
+/// random encounter).
+pub fn is_protected_formation_id(id: u8) -> bool {
+    PROTECTED_FORMATION_IDS.contains(&id)
+}
 
 /// Per-monster **combat-power** lookup, keyed by the formation byte (a 1-based
 /// `battle_data` archive id — the same id space [`SceneEncounters`] writes into a
@@ -113,6 +151,35 @@ fn random_formation_mask(body: &[u8], sec: &EncounterSection) -> Vec<bool> {
     mask
 }
 
+/// Force any formation that holds a [`PROTECTED_FORMATION_IDS`] enemy back to
+/// non-random in `mask`. The explicit-id complement to the region-rate
+/// [`random_formation_mask`]: the heuristic misclassifies the early Gimard fight
+/// as random (a rate>0 region's range spans its formation index), so this pass
+/// re-marks every formation containing a protected id as scripted, keeping it out
+/// of every randomize / collapse / donor path (see the module docs). `decoded`
+/// is the parsed MAN, `formation_array_off` the absolute offset of the formation
+/// array within it, and `stride` the per-record stride.
+fn mask_out_protected_formations(
+    decoded: &[u8],
+    formation_array_off: usize,
+    stride: usize,
+    mask: &mut [bool],
+) {
+    for (i, m) in mask.iter_mut().enumerate() {
+        if !*m {
+            continue;
+        }
+        let rec = formation_array_off + i * stride;
+        let cnt = (decoded[rec + 3] as usize).min(4);
+        if decoded[rec + 4..rec + 4 + cnt]
+            .iter()
+            .any(|&id| is_protected_formation_id(id))
+        {
+            *m = false;
+        }
+    }
+}
+
 /// A scene's encounter data, located inside one PROT scene-bundle entry and
 /// decompressed so its formation ids can be rewritten.
 pub struct SceneEncounters {
@@ -169,7 +236,17 @@ impl SceneEncounters {
         if arr_end > decoded.len() {
             return None;
         }
-        let random_mask = random_formation_mask(sec_body, &sec);
+        let mut random_mask = random_formation_mask(sec_body, &sec);
+        // Explicit id guard on top of the region-rate heuristic: a formation that
+        // holds a protected enemy (an early scripted fight the heuristic can
+        // misclassify as random) is forced non-random so it is never replaced,
+        // collapsed, or donated, whatever the scene's region layout.
+        mask_out_protected_formations(
+            &decoded,
+            formation_array_off,
+            sec.formation_stride as usize,
+            &mut random_mask,
+        );
         Some(Self {
             entry_idx,
             man_offset,
@@ -306,7 +383,9 @@ impl SceneEncounters {
         let mut pool = self.monster_pool();
         if mode == DropMode::Random {
             for &id in extra {
-                if !pool.contains(&id) {
+                // A protected enemy (e.g. Gimard) is never a draw target, even if
+                // it is somehow passed as an extra/unused id.
+                if !pool.contains(&id) && !is_protected_formation_id(id) {
                     pool.push(id);
                 }
             }
@@ -605,6 +684,75 @@ mod tests {
         assert_eq!(se.formation_id_offset(1, 0), Some(8 + 4));
         assert!(se.formation_id_offset(1, 1).is_none(), "row 1 has one slot");
         assert!(se.formation_id_offset(2, 0).is_none(), "row 2 is empty");
+    }
+
+    #[test]
+    fn protected_ids_cover_gimard_only() {
+        assert!(is_protected_formation_id(10), "Gimard (id 10) is protected");
+        assert!(
+            !is_protected_formation_id(19),
+            "the first wild Piura are genuine random encounters, not protected"
+        );
+        assert!(
+            !is_protected_formation_id(0),
+            "the empty slot is not protected"
+        );
+        assert!(
+            !is_protected_formation_id(0x4F),
+            "an ordinary id is not protected"
+        );
+    }
+
+    #[test]
+    fn protected_formation_is_forced_scripted_and_never_randomized() {
+        // A scene whose region heuristic marks all three formations random:
+        // [5,10] (holds Gimard), [5], [9]. The id guard must demote the Gimard
+        // row to scripted so it is never replaced and never donates id 10.
+        let rows: &[(&[u8], bool)] = &[(&[5, 10], true), (&[5], true), (&[9], true)];
+        let mut se = make_scene(3, rows);
+        mask_out_protected_formations(
+            &se.decoded,
+            se.formation_array_off,
+            se.formation_stride,
+            &mut se.random_mask,
+        );
+        assert!(
+            !se.is_random_formation(0),
+            "the Gimard formation is demoted to scripted"
+        );
+        assert!(se.is_random_formation(1));
+        assert!(se.is_random_formation(2));
+        // Gimard never enters the donor pool.
+        assert_eq!(
+            se.monster_pool(),
+            vec![5, 9],
+            "Gimard (10) excluded from pool"
+        );
+
+        // Neither mode rewrites the Gimard formation, and 10 never leaks elsewhere.
+        for mode in [DropMode::Shuffle, DropMode::Random] {
+            let mut s = make_scene(3, rows);
+            mask_out_protected_formations(
+                &s.decoded,
+                s.formation_array_off,
+                s.formation_stride,
+                &mut s.random_mask,
+            );
+            s.randomize(7, mode);
+            assert_eq!(
+                s.formation_ids(0),
+                vec![5, 10],
+                "the Gimard formation must be byte-identical ({mode:?})"
+            );
+            for i in [1usize, 2] {
+                for &id in &s.formation_ids(i) {
+                    assert_ne!(
+                        id, 10,
+                        "Gimard must not leak into a random formation ({mode:?})"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
