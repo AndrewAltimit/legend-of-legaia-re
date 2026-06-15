@@ -62,6 +62,7 @@ pub mod scene_scripted_asset_table;
 pub mod scene_tmd_stream;
 pub mod scene_v12_table;
 pub mod scene_vab_stream;
+pub mod seru_trade;
 pub mod sfx_table;
 pub mod shop_stock;
 pub mod sound_pack;
