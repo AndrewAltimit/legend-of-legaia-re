@@ -166,6 +166,17 @@ Random-encounter randomizer (`encounter` module).
 (`random_formation_mask` / `is_random_formation`), so scripted/boss fights like
 Tetsu (reached only by rate-0 regions) are left byte-identical.
 
+**An explicit id guard backs that heuristic.** The region-rate test correctly
+marks every story boss's formation scripted except the early **Gimard**
+Seru-boss fight, whose formation sits at an index a rate>0 region's range spans —
+so the heuristic alone would treat it as random and a roll could replace that
+mandatory tutorial fight or donate the boss-tier enemy into an early encounter.
+`PROTECTED_FORMATION_IDS` (Gimard) lists the ids that must never be a random
+encounter; `locate` forces any formation holding one back to scripted and keeps
+it out of every donor pool, so the fight ships exactly as authored. (The first
+wild Piura are *not* listed — they are genuine random encounters.) Mirrors the
+stat-side `monster_stats::PROTECTED_MONSTER_IDS`, which also pins Gimard.
+
 `randomize_with_extra` unions extra ids (the unused enemies) into the Random pool
 — see [Unused content](#unused-content).
 
