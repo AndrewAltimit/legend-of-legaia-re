@@ -4,8 +4,10 @@ Randomizer / disc patcher for a user-supplied Legend of Legaia disc.
 
 Edits gameplay data on the user's own `.bin` and writes it back: monster item
 drops (plus an optional additive low-chance bonus equipment drop, injected into
-the battle-end reward routine), random-encounter formations, treasure-chest
-contents, steal items, Tactical-Arts button combos, doors, starting items,
+the battle-end reward routine), random-encounter formations (plus an optional
+experience reward on a successful escape, injected into the escape teardown),
+treasure-chest contents, steal items, Tactical-Arts button combos, doors,
+starting items,
 starting level, equipment passive stat bonuses, weapon specialty (which class
 each character favors), and a set of battle-tuning tables (monster combat stats,
 special-attack power, the element-affinity matrix, spell MP costs). It is
@@ -23,6 +25,7 @@ full design.
   - [Drops](#drops)
   - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
+  - [Run-away EXP](#run-away-exp)
   - [Chests](#chests)
   - [Steals](#steals)
   - [Monster stats](#monster-stats)
@@ -190,6 +193,40 @@ with every scope (Scene / Kingdom / World) and mode (Shuffle / Random) without
 disturbing their multiset bookkeeping; `solo == None` reproduces the prior output
 byte-for-byte (the archive isn't even read). It only takes effect when encounters
 are being randomized.
+
+## Run-away EXP
+
+A code hook that banks a slice of a fled fight's experience into the party on a
+**successful escape** (`flee_exp` module). Vanilla awards nothing for running.
+
+Like the [bonus equipment drop](#bonus-equipment-drop), the flee path never
+reaches an experience grant, so there is no value to edit — it is **additive by
+code injection**, not a data edit.
+
+- `flee_exp::FleeExpInjection::plan` / `assemble_routine` build the injection. The
+  per-actor battle state machine `FUN_801E295C` (battle-action overlay, base
+  `0x801CE818` = **PROT entry 898**) handles "Run" across states `0x64..0x66`;
+  state `0x66` is the **successful-escape teardown** (reached only when the run
+  roll succeeds — a failed run goes `0x65 → 0x50`). Its handler entry at
+  `0x801E5A10` (`lui v1,0x801d` / `addiu a0,v1,-0x6f90`) is overwritten with
+  `j <routine>` + `nop` — a same-size **raw** edit of the overlay PROT entry,
+  which maps linearly from its base (`file_off = va - 0x801CE818`).
+- The injected routine sums the formation's listed experience (each live enemy
+  record's EXP halfword at `+0x46`, via the table at `0x801C9348` for `actor[+1]`
+  entries), scales it to `pct`% (default `DEFAULT_PCT` = 5), and adds that to
+  **every** party member's cumulative-experience cell (`0x80084140 + (id-1)*0x414
+  + 0x5C8`, the slot→id map at `0x8007BD10`), clamped to `9,999,999`, then replays
+  the two displaced instructions and `j`s back. State `0x66` runs once per escape,
+  and party HP was floored to `≥ 1` a state earlier, so every member is alive at
+  the grant.
+- The routine lives in the same preserved rodata gap as the bonus-equipment / name
+  injections (`0x8007AB38`), at `0x8007AD00`, clear of the equipment routine + its
+  id table so both battle hooks coexist. Same guards as the equipment drop (known
+  build at the hook, all-zero dead space at the routine).
+
+The grant is **banked**, not an immediate level-up: it only writes the experience
+cell, so it shows in the status screen at once and applies as a level the next
+time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
 
 ## Chests
 
@@ -556,6 +593,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 |---|---|---|---|
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
 | Equipment drops | — | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance — additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
+| Run-away EXP | — | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape — vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
 | Encounters | — | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |
@@ -761,7 +799,11 @@ directory record moves.
   the `j routine` detour + the hand-assembled routine + the equipment-id table
   (replaying the two displaced instructions and returning), the edit is surgical,
   deterministic, and the build guard refuses a corrupted hook / non-dead routine
-  region; a town-shop + casino pass (Variety Store + its 10 ids
+  region; the run-away-EXP injection asserting the real disc's escape-teardown
+  hook site **is** the expected displaced pair, then that the overlay carries the
+  `j routine` detour and `SCUS_942.54` the hand-assembled routine, each edit is
+  surgical + EDC/ECC-valid + deterministic, and the build guard refuses an
+  unknown layout; a town-shop + casino pass (Variety Store + its 10 ids
   enumerate, shuffle preserves the multiset/counts, casino preserves the
   prize set); and the item-price edits (the 13 chest-equipment items get their
   reviewed values, the sellable pool excludes quest ids, and a shop `Random`
