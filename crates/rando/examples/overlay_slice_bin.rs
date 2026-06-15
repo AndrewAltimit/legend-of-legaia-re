@@ -29,6 +29,28 @@ fn main() -> Result<()> {
     let report = apply::inject_overlay_slice(&mut patcher).context("inject overlay slice")?;
 
     std::fs::write(&output, patcher.image()).with_context(|| format!("write {output}"))?;
+
+    // Emit a RAM-patch sidecar (`<output>.rampatch`): the detour + stub words at
+    // their RAM addresses, so the emulator validation probe can inject the
+    // patched code into a running sstate (whose RAM is otherwise vanilla) and
+    // FlushCache it coherent. Single source of truth = the Rust assemblers.
+    use legaia_rando::seru_overlay as ov;
+    let mut sidecar = String::new();
+    let detour = ov::detour_words();
+    for (i, w) in detour.iter().enumerate() {
+        sidecar += &format!("{:08X} {:08X}\n", ov::SHOP_HOOK_VA + (i as u32) * 4, w);
+    }
+    let stub = ov::assemble_shop_loader_stub(report.lba, report.sectors);
+    for (i, w) in stub.iter().enumerate() {
+        sidecar += &format!("{:08X} {:08X}\n", ov::STUB_VA + (i as u32) * 4, w);
+    }
+    let sidecar_path = format!("{output}.rampatch");
+    std::fs::write(&sidecar_path, &sidecar).with_context(|| format!("write {sidecar_path}"))?;
+
+    println!(
+        "  ram-patch sidecar -> {sidecar_path} ({} words)",
+        detour.len() + stub.len()
+    );
     println!(
         "overlay slice -> {output}\n  pochi host PROT entry: {}\n  baked disc LBA: {} ({} sector(s))\n  sentinel {:#010X} -> RAM {:#010X} when the battle-reward hook fires",
         report.pochi_index,
