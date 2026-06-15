@@ -615,10 +615,11 @@ legaia-rando randomize --input DISC.bin --seed myrun --drops shuffle
 # Override with --keep-static-items 0x9a,0x71,...  (or "" to randomize all).
 legaia-rando randomize --input DISC.bin --seed myrun --chests shuffle
 
-# Randomize encounters world-wide, but never face an over-strong monster in a
-# pack -- it appears solo instead.
+# Randomize encounters world-wide. The solo-strong pass is on by default, so an
+# over-strong monster appears alone, never in a pack (opt out with
+# --no-solo-strong-encounters).
 legaia-rando randomize --input DISC.bin --seed myrun --encounters random \
-    --encounter-scope world --solo-strong-encounters
+    --encounter-scope world
 
 # Random drops + shuffled encounters + shuffled chests + shuffled steals + image.
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
@@ -689,12 +690,13 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 - `--all-warps` presets the visited-towns story-flag bitmask so Door of Wind can
   teleport to any town from the start (both ride the same reclaimable seed region as
   the starting items).
-- `--solo-strong-encounters` forces any randomized formation holding a monster
-  much stronger than the area's natives down to that lone enemy (a strong monster
-  appears solo, never in a pack of 2+). Only takes effect with `--encounters`
-  set; `--solo-strong-threshold N` sets the cut-off as a percent of the area's
-  native average monster power (default 200 = twice as strong). On by default in
-  the web Balanced / Full Chaos presets.
+- The solo-strong pass is **on by default** whenever `--encounters` is set: any
+  randomized formation holding a monster much stronger than the area's natives is
+  forced down to that lone enemy (a strong monster appears solo, never in a pack
+  of 2+). `--solo-strong-threshold N` sets the cut-off as a percent of the area's
+  native average monster power (default 200 = twice as strong);
+  `--no-solo-strong-encounters` opts out (keep the over-strong packs). Likewise on
+  by default in the web Balanced / Full Chaos presets.
 - `--unused-enemies` adds the unused "Comm" + Evil Bat enemies to the Random
   encounter pool (needs `--encounters random`).
 - `--unused-items` adds Something Good + the "Seru Bell" accessory to the Random
