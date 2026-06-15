@@ -1889,6 +1889,12 @@ pub struct World {
     /// casts still accrue spell XP but never level the spell up.
     pub magic_xp_thresholds: Option<[u16; crate::magic_xp::THRESHOLD_STEPS]>,
 
+    /// Seru-trade config from the patched disc (the randomizer's `--seru-trade`
+    /// blob: enabled flag + master seed + offer cap). Installed at boot via
+    /// [`World::install_seru_trade_config`]; `None` (or `enabled == false`)
+    /// disables vendor seru trading. See [`crate::seru_trade`].
+    pub seru_trade_config: Option<legaia_asset::seru_trade::SeruTradeConfig>,
+
     /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
     /// new_level)` per event, in resolution order. The engine analogue of the
     /// retail level-up banner (the level-up check fires UI element `0x65` —
@@ -2375,6 +2381,7 @@ impl World {
             battle_buffs: Vec::new(),
             battle_captures: Vec::new(),
             magic_xp_thresholds: None,
+            seru_trade_config: None,
             magic_level_ups: Vec::new(),
             battle_escaped: false,
             character_max_mp: Vec::new(),

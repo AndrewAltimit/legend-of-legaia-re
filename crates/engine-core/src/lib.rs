@@ -72,6 +72,7 @@ pub mod scene_resources;
 pub mod screen_fx;
 pub mod seru_learning;
 pub mod seru_stats;
+pub mod seru_trade;
 pub mod shop;
 pub mod shop_catalog;
 pub mod spell_menu;

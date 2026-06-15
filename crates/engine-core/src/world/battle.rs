@@ -1324,6 +1324,46 @@ impl World {
         self.magic_xp_thresholds.is_some()
     }
 
+    /// Install the seru-trade config from `SCUS_942.54` bytes (the randomizer's
+    /// `--seru-trade` blob in preserved rodata). Boot wires this once from the
+    /// booted disc; returns whether an *enabled* config was found. When absent
+    /// or disabled, [`Self::open_seru_trade`] yields `None` and vendors don't
+    /// offer trades. See [`crate::seru_trade`].
+    pub fn install_seru_trade_config(&mut self, scus: &[u8]) -> bool {
+        self.seru_trade_config = legaia_asset::seru_trade::SeruTradeConfig::from_scus(scus);
+        self.seru_trade_config.is_some_and(|c| c.enabled)
+    }
+
+    /// `true` when seru trading is enabled on this disc.
+    pub fn seru_trade_enabled(&self) -> bool {
+        self.seru_trade_config.is_some_and(|c| c.enabled)
+    }
+
+    /// Open a seru-trade session at `vendor_id` for the current party + play
+    /// time. `None` when seru trading isn't enabled. The host renders the
+    /// returned [`crate::seru_trade::SeruTradeSession`] and applies a confirmed
+    /// trade via [`Self::apply_seru_trade`].
+    pub fn open_seru_trade(&self, vendor_id: u16) -> Option<crate::seru_trade::SeruTradeSession> {
+        let config = self.seru_trade_config.filter(|c| c.enabled)?;
+        Some(crate::seru_trade::SeruTradeSession::open(
+            config,
+            vendor_id,
+            self.play_time_seconds,
+            &self.roster.members,
+        ))
+    }
+
+    /// Apply a confirmed trade to the persistent roster (the spell list the next
+    /// battle loads). Returns the outcome; on success the caller should
+    /// [`crate::seru_trade::SeruTradeSession::refresh`] its open session so the
+    /// offer list reflects the new owned set.
+    pub fn apply_seru_trade(
+        &mut self,
+        offer: &legaia_asset::seru_trade::TradeOffer,
+    ) -> crate::seru_trade::TradeResult {
+        crate::seru_trade::apply_trade(&mut self.roster.members, offer)
+    }
+
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,
     /// new_level)`) resolved since the last drain — the engine analogue of
     /// the retail level-up banner (`FUN_801e70bc` fires UI element `0x65`).
