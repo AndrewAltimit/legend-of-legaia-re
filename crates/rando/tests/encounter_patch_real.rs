@@ -10,7 +10,7 @@ use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_rando::apply;
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::drops::DropMode;
-use legaia_rando::encounter::SceneEncounters;
+use legaia_rando::encounter::{self, SceneEncounters};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -157,6 +157,85 @@ fn shuffle_encounters_round_trips_on_disc() {
         report.ids_changed,
         verified,
         report.skipped.len()
+    );
+}
+
+/// Every formation slot across the whole corpus that currently holds a
+/// [`encounter::PROTECTED_FORMATION_IDS`] enemy, keyed by
+/// `(entry_idx, formation_index, slot_index) -> id`. Used to assert the protected
+/// fights are byte-identical before vs after a randomization, and that no new
+/// slot acquires a protected id (no donation).
+fn protected_slots(patcher: &DiscPatcher) -> std::collections::BTreeMap<(usize, usize, usize), u8> {
+    let mut map = std::collections::BTreeMap::new();
+    for idx in 0..patcher.entry_count() {
+        let Some(scene) = patcher
+            .read_entry(idx)
+            .ok()
+            .and_then(|e| SceneEncounters::locate(&e, idx))
+        else {
+            continue;
+        };
+        for f in 0..scene.formation_count() {
+            for (s, &id) in scene.formation_ids(f).iter().enumerate() {
+                if encounter::is_protected_formation_id(id) {
+                    map.insert((idx, f, s), id);
+                }
+            }
+        }
+    }
+    map
+}
+
+/// The early Gimard Seru-boss fight is protected by an explicit id guard on top
+/// of the region-rate heuristic (the heuristic alone classifies its formation as
+/// random because a rate>0 region's range spans its index). Across every
+/// encounter mode and scope — including the solo-strong post-pass — every
+/// formation holding a protected id (Gimard, id 10) must stay byte-identical, and
+/// no other formation may acquire a protected id (no donation). Confirms the
+/// protected population is non-trivial so the test isn't vacuous.
+#[test]
+fn protected_formations_survive_every_encounter_mode() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let seed = 0x6711_4A1D_0FF1_CE00;
+
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    let before = protected_slots(&base);
+    assert!(
+        !before.is_empty(),
+        "expected at least one protected (Gimard) formation in the corpus"
+    );
+    // Gimard (id 10) is the protected enemy we expect to find.
+    assert!(
+        before.values().any(|&id| id == 10),
+        "Gimard (id 10) should be among the protected formations"
+    );
+
+    // Each (mode, scope, solo) combination: protected slots unchanged, and the
+    // protected-slot map after equals the map before (so nothing new is donated).
+    let combos: &[(DropMode, apply::EncounterScope, bool)] = &[
+        (DropMode::Shuffle, apply::EncounterScope::Scene, false),
+        (DropMode::Random, apply::EncounterScope::Scene, false),
+        (DropMode::Shuffle, apply::EncounterScope::World, false),
+        (DropMode::Random, apply::EncounterScope::World, true),
+    ];
+    for &(mode, scope, solo) in combos {
+        let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+        let solo_cfg = solo.then_some(apply::SoloStrongConfig { threshold_pct: 200 });
+        apply::randomize_encounters_full(&mut patcher, seed, mode, scope, &[], solo_cfg)
+            .expect("randomize");
+        let after = protected_slots(&patcher);
+        assert_eq!(
+            after, before,
+            "protected formations must be identical after {mode:?}/{scope:?} (solo={solo}): \
+             no Gimard slot moved and no new slot acquired a protected id"
+        );
+    }
+    eprintln!(
+        "protected-formation guard: {} Gimard slot(s) preserved across every mode/scope",
+        before.len()
     );
 }
 

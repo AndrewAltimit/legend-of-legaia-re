@@ -312,6 +312,21 @@ formations 2..=4, but the only rate>0 regions reach 0..=2, so Tetsu at index 4 i
 correctly left alone. The candidate pool for `Random` is likewise the random
 formations' ids only, so a roll never drops a boss into an ordinary encounter.
 
+**An explicit id guard backs the heuristic.** The region-rate test classifies
+every story boss's formation as scripted with one exception: the early **Gimard**
+Seru-boss fight sits at a formation index a rate>0 region's range happens to span,
+so the heuristic alone would treat it as random — and a roll could then replace
+that mandatory tutorial fight (stranding a fresh save) or donate Gimard, a
+boss-tier enemy, into an ordinary early encounter. `encounter::PROTECTED_FORMATION_IDS`
+lists the ids that must never be a random encounter (Gimard, id 10); `locate`
+forces any formation holding one back to scripted, and such ids never enter a
+donor pool, so the fight ships exactly as authored regardless of the region
+layout. (The first wild Piura are deliberately not listed — they are genuine
+random encounters.) This mirrors the stat-side guard
+(`monster_stats::PROTECTED_MONSTER_IDS`, which also pins Gimard) and is validated
+on a real disc by `tests/encounter_patch_real.rs`
+(`protected_formations_survive_every_encounter_mode`).
+
 **Pool scope (`--encounter-scope`).** By default the pool is per scene, but
 `apply::randomize_encounters_scoped` widens it to one of three
 [`EncounterScope`] settings:
@@ -589,9 +604,9 @@ original stats and never donates them to another monster. Two kinds qualify. The
 **early tutorial enemies** (the Rim Elm sparring partner and the first wild
 Piura): the sparring fight is unwinnable by design and has no game-over branch,
 so a hard-hitting attack could one-shot the party and soft-lock a fresh game, and
-the early wild enemies are fragile by design. The **story bosses** (Caruban,
-Zeto, Songi, Berserker, Tetsu, Dohati, Xain, the three Delilas, Gaza, Zora,
-Jette, Cort — every version of each): their set-piece fights are tuned around
+the early wild enemies are fragile by design. The **story bosses** (Gimard,
+Caruban, Zeto, Songi, Berserker, Tetsu, Dohati, Xain, the three Delilas, Gaza,
+Zora, Jette, Cort — every version of each): their set-piece fights are tuned around
 scripted HP/phase triggers, so scrambling their stats can make a mandatory fight
 unwinnable, and leaking a boss's extreme stats onto a trash mob would wreck
 balance. This is the stat-side companion to the encounter randomizer already
