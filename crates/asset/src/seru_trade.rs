@@ -159,16 +159,52 @@ pub struct OwnedSeru {
     pub seru_id: u8,
     /// Roster slot of the owning character (0 = lead, etc.).
     pub owner_slot: u8,
+    /// The seru's current level in that character's spell list (parallel
+    /// `levels[]` array at record `+0x161`), shown in the trade UI as `LVL n`.
+    pub level: u8,
 }
 
 /// One trade a vendor offers this bucket: give [`give`](Self::give), receive a
-/// different seru.
+/// different seru. (Legacy per-instance model — see [`BucketOffer`] /
+/// [`expand_offers`] for the want-a-type / offer-a-partner model the trade UI
+/// renders.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TradeOffer {
     /// The owned seru the vendor wants (and which character it comes from).
     pub give: OwnedSeru,
     /// The seru id the vendor hands back.
     pub receive_seru_id: u8,
+}
+
+/// A vendor's standing preference for one time bucket, independent of who owns
+/// what. The vendor wants every instance of [`want_id`](Self::want_id) the party
+/// holds and hands back [`give_id`](Self::give_id) for each. Ownership-independent
+/// by design, so the whole bucket schedule can be precomputed at patch time (the
+/// randomizer writes [`BUCKET_*`](bucket_offers) bytes to the disc) and the retail
+/// handler only has to index it by `play_time / `[`SECONDS_PER_RESEED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BucketOffer {
+    /// Seru id the vendor wants (the party gives one up). `0` = no offer this
+    /// bucket (e.g. degenerate pool).
+    pub want_id: u8,
+    /// Seru id the vendor hands back (always `!= want_id` when `want_id != 0`).
+    pub give_id: u8,
+}
+
+/// One concrete, selectable trade line in the UI: a specific owner's instance of
+/// the bucket's wanted seru. Expanded from a [`BucketOffer`] against the live
+/// party by [`expand_offers`]; the UI renders it as
+/// `give_name <-> want_name (owner, LVL level)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnerTrade {
+    /// Roster slot whose spell list changes on confirm.
+    pub owner_slot: u8,
+    /// Seru id removed from that character (the vendor's want).
+    pub given_id: u8,
+    /// Seru id added to that character (the vendor's give-back).
+    pub received_id: u8,
+    /// The given seru's current level (for the `LVL n` display).
+    pub given_level: u8,
 }
 
 /// SplitMix64, duplicated here (instead of depending on the randomizer's copy)
@@ -274,6 +310,95 @@ pub fn offers_at(
     )
 }
 
+/// Number of time buckets in the precomputed schedule the randomizer writes to
+/// the disc. The retail handler indexes it with `(play_time / `[`SECONDS_PER_RESEED`]`)
+/// % BUCKET_COUNT`, so the vendor's preferences cycle every `BUCKET_COUNT * 2`
+/// in-game hours. A power of two so the runtime modulo is a single `andi`.
+pub const BUCKET_COUNT: usize = 64;
+
+/// Byte length of the serialized bucket schedule: `BUCKET_COUNT` entries of
+/// `[want_id, give_id]`.
+pub const BUCKET_TABLE_LEN: usize = BUCKET_COUNT * 2;
+
+/// Precompute the whole vendor schedule: for each bucket `0..count`, deterministically
+/// pick a `(want_id, give_id)` pair of distinct ids from `pool`. Ownership-independent
+/// — the live party is only consulted at render time (see [`expand_offers`]). The same
+/// `(seed, count, pool)` always yields the same schedule, so the randomizer's on-disc
+/// table and any engine preview agree. An empty / single-element `pool` yields all
+/// `(0, 0)` (no offer) entries.
+pub fn bucket_offers(seed: u64, count: usize, pool: &[u8]) -> Vec<BucketOffer> {
+    (0..count)
+        .map(|bucket| {
+            if pool.len() < 2 {
+                return BucketOffer {
+                    want_id: 0,
+                    give_id: 0,
+                };
+            }
+            // One RNG stream per bucket, mixed off the master seed (vendor id folded
+            // in as 0 — a single global trader; distinct vendors can reseed later).
+            let mut rng = Rng(mix(seed, 0, bucket as u32));
+            let want_id = pool[rng.below(pool.len())];
+            // give id distinct from want.
+            let viable: Vec<u8> = pool.iter().copied().filter(|&id| id != want_id).collect();
+            let give_id = viable[rng.below(viable.len())];
+            BucketOffer { want_id, give_id }
+        })
+        .collect()
+}
+
+/// Serialize a bucket schedule to the on-disc byte layout (`[want, give]` per
+/// entry). Truncated / zero-padded to [`BUCKET_TABLE_LEN`].
+pub fn bucket_table_to_bytes(buckets: &[BucketOffer]) -> [u8; BUCKET_TABLE_LEN] {
+    let mut out = [0u8; BUCKET_TABLE_LEN];
+    for (i, b) in buckets.iter().take(BUCKET_COUNT).enumerate() {
+        out[i * 2] = b.want_id;
+        out[i * 2 + 1] = b.give_id;
+    }
+    out
+}
+
+/// Parse a bucket schedule from the on-disc bytes written by
+/// [`bucket_table_to_bytes`].
+pub fn bucket_table_from_bytes(bytes: &[u8]) -> Vec<BucketOffer> {
+    bytes
+        .chunks_exact(2)
+        .take(BUCKET_COUNT)
+        .map(|c| BucketOffer {
+            want_id: c[0],
+            give_id: c[1],
+        })
+        .collect()
+}
+
+/// The bucket index a play-time falls in, wrapped to the precomputed schedule:
+/// `(play_time / `[`SECONDS_PER_RESEED`]`) % `[`BUCKET_COUNT`]. Mirrors the
+/// retail handler's `divu` + `andi`.
+pub fn bucket_index(play_time_seconds: u32) -> usize {
+    (time_bucket(play_time_seconds) as usize) % BUCKET_COUNT
+}
+
+/// Expand one bucket's `(want, give)` preference against the live party: one
+/// [`OwnerTrade`] per party member who currently owns the wanted seru, in party
+/// order. `owned` is the cross-party enumeration (e.g.
+/// `engine_core::seru_trade::party_owned_seru`). Empty when nobody owns the want
+/// or the bucket has no offer (`want_id == 0`).
+pub fn expand_offers(offer: BucketOffer, owned: &[OwnedSeru]) -> Vec<OwnerTrade> {
+    if offer.want_id == 0 {
+        return Vec::new();
+    }
+    owned
+        .iter()
+        .filter(|o| o.seru_id == offer.want_id)
+        .map(|o| OwnerTrade {
+            owner_slot: o.owner_slot,
+            given_id: offer.want_id,
+            received_id: offer.give_id,
+            given_level: o.level,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +408,7 @@ mod tests {
             .map(|&(seru_id, owner_slot)| OwnedSeru {
                 seru_id,
                 owner_slot,
+                level: 0,
             })
             .collect()
     }
@@ -376,5 +502,116 @@ mod tests {
         assert_eq!(time_bucket(SECONDS_PER_RESEED - 1), 0);
         assert_eq!(time_bucket(SECONDS_PER_RESEED), 1);
         assert_eq!(time_bucket(SECONDS_PER_RESEED * 3 + 5), 3);
+    }
+
+    // --- want-a-type / offer-a-partner (precomputed bucket) model ---
+
+    #[test]
+    fn bucket_schedule_is_deterministic_and_distinct_pairs() {
+        let pool = default_pool();
+        let a = bucket_offers(0xC0FFEE, BUCKET_COUNT, &pool);
+        let b = bucket_offers(0xC0FFEE, BUCKET_COUNT, &pool);
+        assert_eq!(a, b, "same seed => same schedule");
+        assert_eq!(a.len(), BUCKET_COUNT);
+        for o in &a {
+            assert_ne!(o.want_id, 0);
+            assert_ne!(o.want_id, o.give_id, "give must differ from want");
+            assert!(pool.contains(&o.want_id) && pool.contains(&o.give_id));
+        }
+        // Different seed shifts at least one bucket.
+        let c = bucket_offers(0xBADF00D, BUCKET_COUNT, &pool);
+        assert!(a != c, "a different seed should change the schedule");
+    }
+
+    #[test]
+    fn bucket_table_round_trips() {
+        let pool = default_pool();
+        let sched = bucket_offers(0x1234_5678, BUCKET_COUNT, &pool);
+        let bytes = bucket_table_to_bytes(&sched);
+        assert_eq!(bytes.len(), BUCKET_TABLE_LEN);
+        assert_eq!(bucket_table_from_bytes(&bytes), sched);
+    }
+
+    #[test]
+    fn degenerate_pool_yields_no_offer() {
+        assert!(bucket_offers(1, 4, &[]).iter().all(|o| o.want_id == 0));
+        assert!(bucket_offers(1, 4, &[0x81]).iter().all(|o| o.want_id == 0));
+    }
+
+    #[test]
+    fn expand_lists_one_line_per_owner_of_want() {
+        // Vahn (slot 0) and Noa (slot 1) both own 0x82; Gala (slot 2) owns 0x85.
+        let owned_set = vec![
+            OwnedSeru {
+                seru_id: 0x82,
+                owner_slot: 0,
+                level: 1,
+            },
+            OwnedSeru {
+                seru_id: 0x85,
+                owner_slot: 2,
+                level: 4,
+            },
+            OwnedSeru {
+                seru_id: 0x82,
+                owner_slot: 1,
+                level: 3,
+            },
+        ];
+        let offer = BucketOffer {
+            want_id: 0x82,
+            give_id: 0x81,
+        };
+        let lines = expand_offers(offer, &owned_set);
+        assert_eq!(lines.len(), 2, "both owners of 0x82 listed");
+        assert!(
+            lines
+                .iter()
+                .all(|t| t.given_id == 0x82 && t.received_id == 0x81)
+        );
+        // Owner + level carried through for the display.
+        assert!(
+            lines
+                .iter()
+                .any(|t| t.owner_slot == 0 && t.given_level == 1)
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|t| t.owner_slot == 1 && t.given_level == 3)
+        );
+        // Nobody owns the want -> no lines.
+        assert!(
+            expand_offers(
+                BucketOffer {
+                    want_id: 0x90,
+                    give_id: 0x81
+                },
+                &owned_set
+            )
+            .is_empty()
+        );
+        // No-offer bucket -> no lines.
+        assert!(
+            expand_offers(
+                BucketOffer {
+                    want_id: 0,
+                    give_id: 0
+                },
+                &owned_set
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn bucket_index_wraps_schedule() {
+        assert_eq!(bucket_index(0), 0);
+        assert_eq!(bucket_index(SECONDS_PER_RESEED), 1);
+        assert_eq!(
+            bucket_index(SECONDS_PER_RESEED * (BUCKET_COUNT as u32)),
+            0,
+            "wraps after BUCKET_COUNT buckets"
+        );
     }
 }

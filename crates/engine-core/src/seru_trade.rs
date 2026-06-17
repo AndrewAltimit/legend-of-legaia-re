@@ -32,11 +32,13 @@ pub fn party_owned_seru(party: &[CharacterRecord]) -> Vec<OwnedSeru> {
     let mut out = Vec::new();
     for (slot, ch) in party.iter().enumerate() {
         let list = ch.spell_list();
-        for &id in list.ids.iter().take(list.count as usize) {
+        for i in 0..list.count as usize {
+            let id = list.ids[i];
             if is_tradeable_seru(id) {
                 out.push(OwnedSeru {
                     seru_id: id,
                     owner_slot: slot as u8,
+                    level: list.levels[i],
                 });
             }
         }
@@ -264,15 +266,18 @@ mod tests {
             vec![
                 OwnedSeru {
                     seru_id: 0x81,
-                    owner_slot: 0
+                    owner_slot: 0,
+                    level: 1
                 },
                 OwnedSeru {
                     seru_id: 0x88,
-                    owner_slot: 0
+                    owner_slot: 0,
+                    level: 1
                 },
                 OwnedSeru {
                     seru_id: 0x90,
-                    owner_slot: 1
+                    owner_slot: 1,
+                    level: 1
                 },
             ]
         );
@@ -285,6 +290,7 @@ mod tests {
             give: OwnedSeru {
                 seru_id: 0x81,
                 owner_slot: 0,
+                level: 0,
             },
             receive_seru_id: 0x90,
         };
@@ -309,6 +315,7 @@ mod tests {
             give: OwnedSeru {
                 seru_id: 0x81,
                 owner_slot: 0,
+                level: 0,
             },
             receive_seru_id: 0x90, // already owned
         };
@@ -328,6 +335,7 @@ mod tests {
             give: OwnedSeru {
                 seru_id: 0x81,
                 owner_slot: 0,
+                level: 0,
             },
             receive_seru_id: 0x90,
         };
@@ -336,6 +344,7 @@ mod tests {
             give: OwnedSeru {
                 seru_id: 0x85,
                 owner_slot: 9,
+                level: 0,
             },
             receive_seru_id: 0x90,
         };
