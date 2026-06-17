@@ -52,7 +52,12 @@ fn main() -> Result<()> {
     let mut patcher = DiscPatcher::open(image).context("open disc image")?;
 
     if trade {
-        apply::inject_trade_full(&mut patcher).context("inject trade flow")?;
+        // Seed for the precomputed vendor schedule (override with LEGAIA_SLICE_SEED).
+        let seed = std::env::var("LEGAIA_SLICE_SEED")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0xC0FFEE);
+        apply::inject_trade_full(&mut patcher, seed).context("inject trade flow")?;
         std::fs::write(&output, patcher.image()).with_context(|| format!("write {output}"))?;
         let mut sidecar = String::new();
         let mut emit = |va: u32, words: &[u32]| {
@@ -75,6 +80,19 @@ fn main() -> Result<()> {
         emit(ov::ENTRY_VA, &ov::trade_entry_detour_words());
         emit(ov::ENTRY_STUB_VA, &ov::assemble_trade_entry_stub());
         emit(ov::TRADE_HANDLER_VA, &ov::assemble_trade_handler());
+        // The precomputed bucket schedule as resident data words (128 bytes).
+        let table = legaia_asset::seru_trade::bucket_table_to_bytes(
+            &legaia_asset::seru_trade::bucket_offers(
+                seed,
+                legaia_asset::seru_trade::BUCKET_COUNT,
+                &legaia_asset::seru_trade::default_pool(),
+            ),
+        );
+        let table_words: Vec<u32> = table
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        emit(ov::BUCKET_TABLE_VA, &table_words);
         let sidecar_path = format!("{output}.rampatch");
         std::fs::write(&sidecar_path, &sidecar).with_context(|| format!("write {sidecar_path}"))?;
         println!("  ram-patch sidecar -> {sidecar_path}");

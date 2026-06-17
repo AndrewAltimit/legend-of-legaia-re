@@ -5,6 +5,7 @@
 //! written, the write is same-size + sector-valid, a fixed seed is
 //! byte-deterministic, and the rest of the disc is untouched.
 
+use legaia_asset::seru_trade;
 use legaia_asset::seru_trade::{DEFAULT_MAX_OFFERS, SeruTradeConfig};
 use legaia_rando::apply;
 use legaia_rando::disc::DiscPatcher;
@@ -466,8 +467,9 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         return;
     };
 
+    let seed = 0xC0FFEEu64;
     let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
-    apply::inject_trade_full(&mut patcher).expect("inject trade flow");
+    apply::inject_trade_full(&mut patcher, seed).expect("inject trade flow");
     assert_eq!(patcher.image().len(), disc.len(), "image size unchanged");
 
     let mov = patcher
@@ -582,8 +584,33 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         "entry stub gates on the TRADE_ACTIVE flag"
     );
 
+    // The precomputed bucket schedule lands at its gap VA and decodes back to the
+    // same `(want, give)` pairs the shared kernel produces for this seed.
+    let table_bytes = seru_trade::bucket_table_to_bytes(&seru_trade::bucket_offers(
+        seed,
+        seru_trade::BUCKET_COUNT,
+        &seru_trade::default_pool(),
+    ));
+    gap(seru_overlay::BUCKET_TABLE_VA, &table_bytes);
+    let table_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::BUCKET_TABLE_VA).unwrap();
+    let decoded = seru_trade::bucket_table_from_bytes(
+        &scus[table_off..table_off + seru_overlay::BUCKET_TABLE_LEN],
+    );
+    assert_eq!(
+        decoded,
+        seru_trade::bucket_offers(seed, seru_trade::BUCKET_COUNT, &seru_trade::default_pool()),
+        "on-disc schedule round-trips to the kernel offers"
+    );
+    // The schedule sits in the gap tail, above the handler and below the row-4 stub.
+    assert!(seru_overlay::BUCKET_TABLE_VA >= seru_overlay::TRADE_HANDLER_VA + handler.len() as u32);
+    assert!(
+        seru_overlay::BUCKET_TABLE_VA + seru_overlay::BUCKET_TABLE_LEN as u32
+            <= seru_overlay::ROW4_STUB_VA
+    );
+
     // Determinism.
     let mut p2 = DiscPatcher::open(disc).expect("reopen");
-    apply::inject_trade_full(&mut p2).expect("re-inject");
+    apply::inject_trade_full(&mut p2, seed).expect("re-inject");
     assert_eq!(p2.image(), patcher.image(), "trade flow deterministic");
 }

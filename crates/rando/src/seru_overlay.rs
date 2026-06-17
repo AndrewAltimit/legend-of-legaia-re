@@ -92,11 +92,15 @@ const T1: u32 = 9;
 const T2: u32 = 10;
 const T3: u32 = 11;
 const T4: u32 = 12;
+const T5: u32 = 13;
 const T6: u32 = 14;
 const T7: u32 = 15;
 const S0: u32 = 16;
 const S1: u32 = 17;
 const S2: u32 = 18;
+const S3: u32 = 19;
+const S4: u32 = 20;
+const S5: u32 = 21;
 const S6: u32 = 22;
 const SP: u32 = 29;
 const RA: u32 = 31;
@@ -268,16 +272,16 @@ pub const SERU_NAME_PTRS: u32 = 0x8007_54D0;
 /// Max seru rows drawn in the window (fits the box; scrolling comes later).
 pub const SERU_MAX_ROWS: u16 = 6;
 
-/// TEMPORARY validation aid. When `> 0`, the handler draws this many demonstration
-/// rows pulled from the static spell-name table ([`SERU_NAME_PTRS`], ids
-/// [`SERU_DEMO_BASE_ID`]..) INSTEAD of the party lead's live learnable-seru list.
-/// This exists because the quick-warp test saves start a fresh new game where the
-/// lead has learned no seru yet (record `+0x13C` count == 0), so the live list is
-/// legitimately empty and can't validate the render path. Set back to `0` to draw
-/// the real list — the live read is kept intact behind the compile-time branch.
-pub const SERU_DEMO_ROWS: u16 = 4;
-/// First spell id used for the demo rows. `0x81..` is the player Seru-magic block
-/// (`0x81` = Gimard); each id has a real ASCII name in the static table.
+/// Validation aid for the per-owner handler. When `true` the handler forces the
+/// bucket's wanted seru to [`SERU_DEMO_BASE_ID`] (and the give-back to
+/// `SERU_DEMO_BASE_ID + 1`) instead of reading the precomputed [`BUCKET_TABLE_VA`],
+/// so a save where any party member owns that fixed id lists a trade line without
+/// having to align the play-time bucket. `false` = the live table-driven want.
+/// (It cannot conjure a line on a *fresh* save — the per-owner render is empty when
+/// nobody owns the want, which is correct behaviour, not a render bug.)
+pub const SERU_DEMO_FORCE_WANT: bool = false;
+/// The fixed want id used when [`SERU_DEMO_FORCE_WANT`]. `0x81` = Gimard, the first
+/// player Seru-magic id; `+1` (`0x82`) is the forced give-back.
 pub const SERU_DEMO_BASE_ID: u16 = 0x81;
 
 /// Native window/box-frame draw `FUN_8002C69C(a0=x, a1=y, a2=w, a3=h)` (POLY_FT4
@@ -458,11 +462,50 @@ pub const ENTRY_STUB_VA: u32 = 0x8007_AB38;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
 pub const TRADE_DISPATCH_STUB_VA: u32 = 0x8007_AB68;
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17). Its
-/// body grows downward from here; the [`TRADE_HANDLER_END`] cap keeps it clear of the
-/// flee-EXP routine window at `0x8007AD00`.
+/// body grows downward from here up to [`TRADE_HANDLER_END`] = [`BUCKET_TABLE_VA`].
+/// In the standalone in-shop trade build the bonus-drop / flee-EXP routines are off,
+/// so the whole window `0x8007ABB0..0x8007AE00` (past the flee-EXP slot at `0x8007AD00`)
+/// is free; the handler takes the lower 464 bytes and the bucket table the upper 128.
 pub const TRADE_HANDLER_VA: u32 = 0x8007_ABB0;
-/// Upper bound the handler body must stay below (the flee-EXP routine slot start).
-pub const TRADE_HANDLER_END: u32 = 0x8007_AD00;
+/// Upper bound the handler body must stay below — the precomputed [`BUCKET_TABLE_VA`].
+pub const TRADE_HANDLER_END: u32 = BUCKET_TABLE_VA;
+
+/// The randomizer's precomputed vendor schedule (one `[want_id, give_id]` pair per
+/// time bucket; see [`legaia_asset::seru_trade::bucket_offers`] /
+/// [`legaia_asset::seru_trade::bucket_table_to_bytes`]). 128 bytes
+/// ([`legaia_asset::seru_trade::BUCKET_TABLE_LEN`]) in the gap tail, abutting the
+/// row-4 stub at [`STUB_VA`] (`0x8007AE00`). The handler indexes it by
+/// `(play_time / `[`SECONDS_PER_RESEED`]`) & `[`BUCKET_INDEX_MASK`].
+pub const BUCKET_TABLE_VA: u32 = 0x8007_AD80;
+/// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
+pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
+
+/// Retail play-time counter `_DAT_80084570` (u32 game-time seconds). The handler
+/// reads it to pick the current bucket; the engine mirrors it as
+/// `World::play_time_seconds`.
+pub const PLAY_TIME_VA: u32 = 0x8008_4570;
+/// In-game seconds per offer reseed (two hours), mirrored from
+/// [`legaia_asset::seru_trade::SECONDS_PER_RESEED`]. Fits a 16-bit `addiu` immediate
+/// (`0x1C20`), so the handler divides by it directly.
+pub const SECONDS_PER_RESEED: u16 = legaia_asset::seru_trade::SECONDS_PER_RESEED as u16;
+/// Mask folding the raw bucket into the precomputed schedule
+/// (`BUCKET_COUNT - 1`; [`BUCKET_COUNT`](legaia_asset::seru_trade::BUCKET_COUNT) is a
+/// power of two, so the runtime modulo is a single `andi`).
+pub const BUCKET_INDEX_MASK: u16 = (legaia_asset::seru_trade::BUCKET_COUNT as u16) - 1;
+
+/// Character-record stride (`0x80084708 + slot*0x414`); mirrors
+/// `legaia_save::character`.
+pub const CHAR_RECORD_STRIDE: u16 = 0x414;
+/// Party roster slots the handler scans for owners of the wanted seru.
+pub const PARTY_SLOT_COUNT: i16 = 4;
+/// Seru-level array offset in the character record (`+0x161[36]`, parallel to the
+/// id array at [`SERU_IDS_VA`]); the `LVL n` shown per trade line.
+pub const SERU_LEVELS_OFFSET: u16 = 0x161;
+/// Display-name offset in the character record (`+0x2A7`); the owner name per line.
+pub const RECORD_NAME_OFFSET: u16 = 0x2A7;
+/// Native monospaced base-10 number formatter `FUN_80034b78(value, min_digits, x, y)`
+/// — draws the per-line `LVL` value. SCUS-resident; 4 register args.
+pub const NUMBER_FN: u32 = 0x8003_4B78;
 /// "SERU TRADE" title string for the handler. Relocated to the upper row-4 gap tail
 /// (past `@Trade` at [`TRADE_STR_VA`], below the config blob) to free the
 /// `0x8007ABB0..0x8007AD00` window for the grown handler body.
@@ -546,101 +589,163 @@ pub fn assemble_trade_entry_stub() -> Vec<u32> {
 
 /// In-shop trade-screen handler ([`TRADE_HANDLER_VA`]), invoked (via the entry
 /// detour) in place of `FUN_801dafd4` while the picker sub-state is the Trade
-/// sub-mode. Runs in mode 0x17 with the shop fully intact: refresh the pad, draw the
-/// title + the lead's learnable-seru list, then the native window box, and on ○
-/// return to the picker. Sets up its own frame and replicates `FUN_801dafd4`'s
-/// finalize tail, then `jr ra` back to the menu tick.
+/// sub-mode. Runs in mode 0x17 with the shop fully intact.
+///
+/// Renders the **want-a-type / offer-a-partner** offer (see
+/// [`legaia_asset::seru_trade`]): it reads the current `(want, give)` pair from the
+/// precomputed [`BUCKET_TABLE_VA`] indexed by `(play_time / `[`SECONDS_PER_RESEED`]`)
+/// & `[`BUCKET_INDEX_MASK`], draws the give-back seru as a reward header, then scans
+/// the four party records — for each member that owns the wanted seru it draws one
+/// selectable line `want_name  owner_name  LVL n` (so the same wanted type held by
+/// two members lists once per owner, matching `expand_offers`). Finally the native
+/// window box, and on ○ it clears the active flag to return to the picker.
 ///
 /// DRAW ORDER MATTERS: text is emitted FIRST, the opaque window box LAST. The native
 /// box (`FUN_8002C69C`) and the renderer's own pass both put a later-submitted prim
 /// at a DEEPER OT slot, so a box drawn after the text lands *behind* it — exactly the
-/// fix used for the in-body row-4 label. Drawing the box first (as an earlier version
-/// did) buries every glyph under the blue fill (verified: blank box in a VRAM dump).
+/// fix used for the in-body row-4 label. Drawing the box first buries every glyph
+/// under the blue fill (verified: blank box in a VRAM dump).
+///
+/// Register budget (all callee-saved, restored on exit): s0 = party slot, s1 = seru
+/// index within the owner, s2 = current row y, s3 = wanted id, s4 = current record
+/// base, s5 = that record's seru count. The native draw callees preserve s-regs, so
+/// loop state survives across them; the give id lives in a scratch reg only until the
+/// header draw (no call between reading it and using it).
 pub fn assemble_trade_handler() -> Vec<u32> {
-    // Absolute VA of word index `i` in this handler (for the list loop's `j .lloop`,
-    // since the handler lives at a fixed gap VA, not PC-relative).
+    // Absolute VA of word index `i` (the loops `j` to fixed gap VAs, not PC-relative).
     let va = |i: usize| TRADE_HANDLER_VA + (i as u32) * 4;
+    // Compute `id * 0xC` into T6 (the spell-name-table stride) from `id` in `src`.
+    let id_times_12 = |w: &mut Vec<u32>, src: u32| {
+        w.push(sll(T6, src, 2)); // id*4
+        w.push(sll(T7, T6, 1)); // id*8
+        w.push(addu(T6, T7, T6)); // id*12
+    };
 
-    // Prologue: 0x28 frame; save ra + the three callee-saved loop vars (s0=row i,
-    // s1=count, s2=row y) — the native FUN_80036888 calls preserve them, but the
-    // menu tick that calls us still expects them restored.
+    // Prologue: 0x38 frame. sp+0x10 is the native draw 5th-arg (y) build slot; saves
+    // ra + s0..s5 above it.
     let mut w: Vec<u32> = vec![
-        addiu(SP, SP, 0xFFD8), // sp -= 0x28
-        sw(RA, SP, 0x20),
+        addiu(SP, SP, 0xFFC8), // sp -= 0x38
+        sw(RA, SP, 0x2C),
         sw(S0, SP, 0x14),
         sw(S1, SP, 0x18),
         sw(S2, SP, 0x1C),
+        sw(S3, SP, 0x20),
+        sw(S4, SP, 0x24),
+        sw(S5, SP, 0x28),
         jal(PAD_POLL_FN), // refresh PAD_CUR
-        nop(),
-        // title text FIRST (in front of the box drawn later): FUN_80036888(
-        // "@SERU TRADE", 0, 0, x=0x38, y=0x30)
-        addiu(V0, ZERO, 0x30),
-        sw(V0, SP, 0x10), // y arg
-        lui(A0, hi(TITLE_STR_VA)),
-        addiu(A0, A0, lo(TITLE_STR_VA)),
-        addiu(A1, ZERO, 0),
-        addiu(A2, ZERO, 0),
-        addiu(A3, ZERO, 0x38),
-        jal(TEXT_DRAW_FN),
         nop(),
     ];
 
-    // --- learnable-seru list: for i in 0..min(count, MAX): draw name(ids[i]) ---
-    w.push(addiu(S0, ZERO, 0)); // s0 = i = 0
-    if SERU_DEMO_ROWS > 0 {
-        // DEMO: fixed row count (no live read).
-        w.push(addiu(S1, ZERO, SERU_DEMO_ROWS));
+    // --- current offer: want -> s3, give -> t5 ---
+    if SERU_DEMO_FORCE_WANT {
+        // DEV: force a fixed (want, give) so a save owning SERU_DEMO_BASE_ID lists.
+        w.push(addiu(S3, ZERO, SERU_DEMO_BASE_ID)); // want
+        w.push(addiu(T5, ZERO, SERU_DEMO_BASE_ID + 1)); // give
     } else {
-        w.push(lui(AT, hi(SERU_COUNT_VA)));
-        w.push(lbu(S1, AT, lo(SERU_COUNT_VA))); // s1 = count
-        w.push(nop()); // load-delay slot (slti below must not read stale s1)
-        w.push(slti(T0, S1, (SERU_MAX_ROWS + 1) as i16)); // count <= MAX ?
-        let capb = w.len();
-        w.push(0); // bne t0,zero,.capok (patched)
-        w.push(nop());
-        w.push(addiu(S1, ZERO, SERU_MAX_ROWS)); // else cap count at MAX
-        let capok = w.len();
-        w[capb] = bne(T0, ZERO, (capok as i32 - (capb as i32 + 1)) as i16);
+        // bucket = (play_time / SECONDS_PER_RESEED) & (BUCKET_COUNT-1); entry = *2.
+        w.push(lui(AT, hi(PLAY_TIME_VA)));
+        w.push(lw(T0, AT, lo(PLAY_TIME_VA)));
+        w.push(addiu(T1, ZERO, SECONDS_PER_RESEED)); // (fills the lw load-delay)
+        w.push(divu(T0, T1));
+        w.push(mflo(T0)); // t0 = bucket
+        w.push(andi(T0, T0, BUCKET_INDEX_MASK)); // % BUCKET_COUNT
+        w.push(sll(T0, T0, 1)); // * 2-byte stride
+        w.push(lui(T1, hi(BUCKET_TABLE_VA)));
+        w.push(addiu(T1, T1, lo(BUCKET_TABLE_VA)));
+        w.push(addu(T1, T1, T0));
+        w.push(lbu(S3, T1, 0)); // want
+        w.push(lbu(T5, T1, 1)); // give
+        w.push(nop()); // load-delay (t5 used by the header next)
     }
-    w.push(addiu(S2, ZERO, 0x44)); // s2 = first row y
-    let lloop = w.len();
-    w.push(slt(T0, S0, S1)); // i < count ?
-    let endb = w.len();
-    w.push(0); // beq t0,zero,.ldone (patched)
-    w.push(nop());
-    if SERU_DEMO_ROWS > 0 {
-        // DEMO: id = SERU_DEMO_BASE_ID + i (real static-table ids).
-        w.push(addiu(T4, S0, SERU_DEMO_BASE_ID));
-    } else {
-        w.push(lui(T1, hi(SERU_IDS_VA))); // id = ids[i]
-        w.push(addiu(T1, T1, lo(SERU_IDS_VA)));
-        w.push(addu(T1, T1, S0));
-        w.push(lbu(T4, T1, 0));
-        w.push(nop()); // load-delay slot (sll below must not read stale t4)
-    }
-    w.push(sll(T6, T4, 2)); // id*0xC = (id<<2)+(id<<3)
-    w.push(sll(T7, T6, 1));
-    w.push(addu(T6, T7, T6));
-    w.push(lui(T7, hi(SERU_NAME_PTRS))); // a0 = *(SERU_NAME_PTRS + id*0xC)
+
+    // --- reward header: the give-back seru name at (x=0x30, y=0x34) ---
+    id_times_12(&mut w, T5);
+    w.push(lui(T7, hi(SERU_NAME_PTRS))); // a0 = *(SERU_NAME_PTRS + give*0xC)
     w.push(addiu(T7, T7, lo(SERU_NAME_PTRS)));
     w.push(addu(T7, T7, T6));
     w.push(lw(A0, T7, 0));
-    w.push(sw(S2, SP, 0x10)); // y arg (also fills the lw load-delay slot before a0's use)
+    w.push(addiu(V0, ZERO, 0x34)); // y (fills the lw load-delay before a0's use)
+    w.push(sw(V0, SP, 0x10));
     w.push(addiu(A1, ZERO, 0));
     w.push(addiu(A2, ZERO, 0));
-    w.push(addiu(A3, ZERO, 0x48)); // x
+    w.push(addiu(A3, ZERO, 0x30)); // x
     w.push(jal(TEXT_DRAW_FN));
     w.push(nop());
-    w.push(addiu(S2, S2, 0xE)); // y += 0xe
-    w.push(addiu(S0, S0, 1)); // i++
-    w.push(j(va(lloop))); // j .lloop (absolute)
-    w.push(nop());
-    let ldone = w.len();
-    w[endb] = beq(T0, ZERO, (ldone as i32 - (endb as i32 + 1)) as i16);
 
-    // native window box LAST so it lands behind the title + list text:
-    // FUN_8002C69C(x=0x28, y=0x28, w=0xB0, h=0x80) — sized to hold the title + up to
-    // SERU_MAX_ROWS rows.
+    // --- per-owner lines: for slot in 0..4, for j in 0..count: if ids[j]==want ---
+    w.push(addiu(S0, ZERO, 0)); // slot = 0
+    w.push(addiu(S2, ZERO, 0x44)); // first row y
+    let slotloop = w.len();
+    w.push(slti(T0, S0, PARTY_SLOT_COUNT)); // slot < 4 ?
+    let done_b = w.len();
+    w.push(0); // beq t0,zero,.done (patched)
+    w.push(nop());
+    // record base s4 = CHAR_RECORD_BASE + slot*0x414
+    w.push(addiu(T1, ZERO, CHAR_RECORD_STRIDE));
+    w.push(multu(S0, T1));
+    w.push(mflo(T2));
+    w.push(lui(T3, hi(CHAR_RECORD_BASE)));
+    w.push(addiu(T3, T3, lo(CHAR_RECORD_BASE)));
+    w.push(addu(S4, T3, T2));
+    w.push(lbu(S5, S4, lo(SERU_COUNT_VA - CHAR_RECORD_BASE))); // s5 = count (+0x13C)
+    w.push(addiu(S1, ZERO, 0)); // j = 0 (fills the lbu load-delay)
+    let seruloop = w.len();
+    w.push(slt(T0, S1, S5)); // j < count ?
+    let nextslot_b = w.len();
+    w.push(0); // beq t0,zero,.nextslot (patched)
+    w.push(nop());
+    // id = *(s4 + 0x13D + j)
+    w.push(addu(T1, S4, S1));
+    w.push(lbu(T4, T1, lo(SERU_IDS_VA - CHAR_RECORD_BASE)));
+    w.push(sll(T6, S3, 2)); // (fills the lbu load-delay) want*4, reused by render (1)
+    let skip_b = w.len();
+    w.push(0); // bne t4,s3,.skip (patched)
+    w.push(nop());
+    // MATCH (1): want spell name at x=0x40 (t6 already = want*4 from the delay slot).
+    w.push(sll(T7, T6, 1)); // want*8
+    w.push(addu(T6, T7, T6)); // want*12
+    w.push(lui(T7, hi(SERU_NAME_PTRS)));
+    w.push(addiu(T7, T7, lo(SERU_NAME_PTRS)));
+    w.push(addu(T7, T7, T6));
+    w.push(lw(A0, T7, 0));
+    w.push(sw(S2, SP, 0x10)); // y (fills the lw load-delay)
+    w.push(addiu(A1, ZERO, 0));
+    w.push(addiu(A2, ZERO, 0));
+    w.push(addiu(A3, ZERO, 0x40)); // x
+    w.push(jal(TEXT_DRAW_FN));
+    w.push(nop());
+    // (2) owner name at x=0x80: a0 = s4 + record name offset (+0x2A7).
+    w.push(addiu(A0, S4, RECORD_NAME_OFFSET));
+    w.push(sw(S2, SP, 0x10));
+    w.push(addiu(A1, ZERO, 0));
+    w.push(addiu(A2, ZERO, 0));
+    w.push(addiu(A3, ZERO, 0x80));
+    w.push(jal(TEXT_DRAW_FN));
+    w.push(nop());
+    // (3) level number at x=0xB0: FUN_80034b78(*(s4+0x161+j), 1, 0xB0, y=s2).
+    w.push(addu(T1, S4, S1));
+    w.push(lbu(A0, T1, SERU_LEVELS_OFFSET)); // a0 = level value
+    w.push(addiu(A1, ZERO, 1)); // min_digits (fills the lbu load-delay)
+    w.push(addiu(A2, ZERO, 0xB0)); // x
+    w.push(addu(A3, ZERO, S2)); // y
+    w.push(jal(NUMBER_FN));
+    w.push(nop());
+    w.push(addiu(S2, S2, 0x0E)); // y += 0xe (advance the row)
+    let skip = w.len();
+    w.push(addiu(S1, S1, 1)); // j++
+    w.push(j(va(seruloop)));
+    w.push(nop());
+    let nextslot = w.len();
+    w.push(addiu(S0, S0, 1)); // slot++
+    w.push(j(va(slotloop)));
+    w.push(nop());
+    let done = w.len();
+    w[done_b] = beq(T0, ZERO, (done as i32 - (done_b as i32 + 1)) as i16);
+    w[nextslot_b] = beq(T0, ZERO, (nextslot as i32 - (nextslot_b as i32 + 1)) as i16);
+    w[skip_b] = bne(T4, S3, (skip as i32 - (skip_b as i32 + 1)) as i16);
+
+    // native window box LAST so it lands behind the header + lines:
+    // FUN_8002C69C(x=0x28, y=0x28, w=0xB0, h=0x80).
     w.push(addiu(A0, ZERO, 0x28));
     w.push(addiu(A1, ZERO, 0x28));
     w.push(addiu(A2, ZERO, 0xB0));
@@ -650,32 +755,34 @@ pub fn assemble_trade_handler() -> Vec<u32> {
 
     // exit on ○ (CANCEL): if (PAD_CUR & HANDLER_CANCEL_MASK) -> clear the flag (back
     // to picker). NOT ✕ — ✕ is CONFIRM (opens Trade), so a ✕-exit would fire on the
-    // still-held confirm press. The nop is the R3000 load-delay slot: `andi` must NOT
-    // use `t0` in the instruction right after the `lw` (else it reads the stale
-    // register and can spuriously detect ○).
+    // still-held confirm press. The `lui at,hi(TRADE_ACTIVE)` doubles as the R3000
+    // load-delay filler after the pad `lw` (andi must not read a stale t0) AND as the
+    // base for the flag clear (at survives the andi/beq/nop).
     w.push(lui(AT, hi(PAD_CUR_VA)));
     w.push(lw(T0, AT, lo(PAD_CUR_VA)));
-    w.push(nop());
+    w.push(lui(AT, hi(TRADE_ACTIVE_VA)));
     w.push(andi(T1, T0, HANDLER_CANCEL_MASK));
     let xb = w.len();
     w.push(0); // beq t1,zero,.noexit (patched)
     w.push(nop());
-    w.push(lui(AT, hi(TRADE_ACTIVE_VA)));
     w.push(sw(ZERO, AT, lo(TRADE_ACTIVE_VA))); // clear the flag -> picker resumes
     let noexit = w.len();
     w.push(jal(FINALIZE_FN)); // FUN_801dafd4's per-frame finalize tail
     w.push(nop());
-    w.push(lw(RA, SP, 0x20));
+    w.push(lw(RA, SP, 0x2C));
     w.push(lw(S0, SP, 0x14));
     w.push(lw(S1, SP, 0x18));
     w.push(lw(S2, SP, 0x1C));
-    w.push(addiu(SP, SP, 0x28));
+    w.push(lw(S3, SP, 0x20));
+    w.push(lw(S4, SP, 0x24));
+    w.push(lw(S5, SP, 0x28));
+    w.push(addiu(SP, SP, 0x38));
     w.push(jr(RA)); // return to the menu tick (FUN_801dc6b4)
     w.push(nop());
     w[xb] = beq(T1, ZERO, (noexit as i32 - (xb as i32 + 1)) as i16);
     debug_assert!(
         TRADE_HANDLER_VA + (w.len() as u32) * 4 <= TRADE_HANDLER_END,
-        "trade handler overruns into the flee-EXP routine window"
+        "trade handler overruns into the bucket-table window"
     );
     w
 }
@@ -894,6 +1001,15 @@ const fn sltiu(rt: u32, rs: u32, imm: u16) -> u32 {
 }
 const fn srl(rd: u32, rt: u32, sa: u32) -> u32 {
     (rt << 16) | (rd << 11) | (sa << 6) | 0x02
+}
+const fn multu(rs: u32, rt: u32) -> u32 {
+    (rs << 21) | (rt << 16) | 0x19
+}
+const fn divu(rs: u32, rt: u32) -> u32 {
+    (rs << 21) | (rt << 16) | 0x1b
+}
+const fn mflo(rd: u32) -> u32 {
+    (rd << 11) | 0x12
 }
 const fn xori(rt: u32, rs: u32, imm: u16) -> u32 {
     (0x0e << 26) | (rs << 21) | (rt << 16) | imm as u32
@@ -1613,6 +1729,70 @@ mod tests {
         assert!(
             r_sent.contains(&jal(MODE24_RETURN_FN)),
             "sentinel redirect keeps return-warp"
+        );
+    }
+
+    #[test]
+    fn trade_handler_renders_per_owner_offer() {
+        let h = assemble_trade_handler();
+        // Fits its gap window (handler below the bucket table at TRADE_HANDLER_END).
+        assert!(TRADE_HANDLER_VA + (h.len() as u32) * 4 <= TRADE_HANDLER_END);
+        assert_eq!(TRADE_HANDLER_END, BUCKET_TABLE_VA);
+        // Refreshes the pad, draws native text + the level number + the window box.
+        assert!(h.contains(&jal(PAD_POLL_FN)), "refreshes the pad");
+        assert!(h.contains(&jal(TEXT_DRAW_FN)), "draws native text");
+        assert!(h.contains(&jal(NUMBER_FN)), "draws the LVL number");
+        assert!(h.contains(&jal(BOX_FN)), "draws the window box (last)");
+        assert!(
+            h.contains(&jal(FINALIZE_FN)),
+            "replays the menu finalize tail"
+        );
+        // Indexes the precomputed bucket schedule (live build, demo off) and the
+        // spell-name pointer table.
+        if !SERU_DEMO_FORCE_WANT {
+            assert!(h.contains(&lw(T0, AT, lo(PLAY_TIME_VA))), "reads play-time");
+            assert!(h.contains(&divu(T0, T1)), "divides into a bucket");
+            assert!(
+                h.contains(&andi(T0, T0, BUCKET_INDEX_MASK)),
+                "wraps to BUCKET_COUNT"
+            );
+            assert!(
+                h.contains(&addiu(T1, T1, lo(BUCKET_TABLE_VA))),
+                "indexes the bucket table"
+            );
+        }
+        assert!(
+            h.contains(&lui(T7, hi(SERU_NAME_PTRS))),
+            "indexes the spell-name table"
+        );
+        // Scans the four party records: slot < 4, record stride 0x414, per-record
+        // seru count + id array.
+        assert!(
+            h.contains(&slti(T0, S0, PARTY_SLOT_COUNT)),
+            "loops party slots"
+        );
+        assert!(
+            h.contains(&addiu(T1, ZERO, CHAR_RECORD_STRIDE)),
+            "uses the record stride"
+        );
+        assert!(h.contains(&slt(T0, S1, S5)), "loops each owner's seru list");
+        // A bne on (rs=id reg T4, rt=want reg S3) skips non-matching ids (the branch
+        // displacement is patched, so match on opcode + register fields).
+        assert!(
+            h.iter()
+                .any(|&x| x >> 26 == 0x05 && (x >> 21) & 0x1f == T4 && (x >> 16) & 0x1f == S3),
+            "compares each owned id against the want"
+        );
+        // Owner name comes from the record name field (+0x2A7).
+        assert!(
+            h.contains(&addiu(A0, S4, RECORD_NAME_OFFSET)),
+            "draws the owner name from the record"
+        );
+        // ○ (CANCEL) exit clears the private active flag.
+        assert!(h.contains(&andi(T1, T0, HANDLER_CANCEL_MASK)), "○ exits");
+        assert!(
+            h.contains(&sw(ZERO, AT, lo(TRADE_ACTIVE_VA))),
+            "clears the flag"
         );
     }
 

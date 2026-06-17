@@ -852,8 +852,9 @@ pub fn inject_native_trade_row(patcher: &mut DiscPatcher) -> Result<()> {
 /// a picker SUB-MODE (no warp) that draws the trade screen inside mode 0x17 and
 /// returns to the picker on exit. Pure overlay-0899 + SCUS-gap edits; the shop is
 /// never torn down. All PROT-0899 sites are guarded against the recognized US build.
-pub fn inject_trade_full(patcher: &mut DiscPatcher) -> Result<()> {
+pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
     use crate::seru_overlay as ov;
+    use legaia_asset::seru_trade as st;
 
     let base = ov::SLOT_A_BASE;
     let menu = patcher
@@ -955,13 +956,21 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher) -> Result<()> {
     let entry = ov::words_to_bytes(&ov::assemble_trade_entry_stub());
     let disp = ov::words_to_bytes(&ov::assemble_trade_dispatch_stub());
     let handler = ov::words_to_bytes(&ov::assemble_trade_handler());
-    let blobs: [(u32, &[u8], &str); 6] = [
+    // The precomputed vendor schedule the handler indexes by play-time bucket: one
+    // `[want, give]` pair per bucket, derived deterministically from `seed`.
+    let bucket_table = st::bucket_table_to_bytes(&st::bucket_offers(
+        seed,
+        st::BUCKET_COUNT,
+        &st::default_pool(),
+    ));
+    let blobs: [(u32, &[u8], &str); 7] = [
         (ov::ROW4_STUB_VA, &row4, "row-4 draw stub"),
         (ov::TRADE_STR_VA, ov::TRADE_STR, "@Trade label"),
         (ov::ENTRY_STUB_VA, &entry, "entry stub"),
         (ov::TRADE_DISPATCH_STUB_VA, &disp, "dispatch stub"),
         (ov::TRADE_HANDLER_VA, &handler, "trade handler"),
         (ov::TITLE_STR_VA, ov::TITLE_STR, "title string"),
+        (ov::BUCKET_TABLE_VA, &bucket_table, "bucket schedule"),
     ];
     for (va, bytes, what) in blobs {
         let off = resolve_gap(va, bytes.len())?;
