@@ -310,12 +310,13 @@ pub const WINDOW_SKIN_STD: u16 = 0;
 // [`SLIDE_START_OFF`] (box fully off the left edge) and steps toward 0 by
 // [`SLIDE_STEP`] each frame; the offset is added to the box x and every text x.
 
-/// Box top-left x / y and size. Lowered (`y=0x48`) so it clears the gold + vendor-
-/// name boxes, and enlarged (`0xC8 × 0xA0`) to use the freed space.
+/// Box top-left x / y and size. `y=0x40` sits just below the gold + vendor-name
+/// boxes (no overlap, minimal black gap above); `0xC8 × 0x90` ends at y=0xD0 (208),
+/// inside the NTSC safe area, with headroom below the current rows to grow.
 pub const BOX_X: u16 = 0x28;
-pub const BOX_Y: u16 = 0x48;
+pub const BOX_Y: u16 = 0x40;
 pub const BOX_W: u16 = 0xC8;
-pub const BOX_H_PX: u16 = 0xA0;
+pub const BOX_H_PX: u16 = 0x90;
 /// Text columns (relative to screen, before the slide offset): reward header /
 /// per-owner want name / owner name / level number.
 pub const COL_HEADER_X: u16 = 0x30;
@@ -323,8 +324,9 @@ pub const COL_WANT_X: u16 = 0x40;
 pub const COL_OWNER_X: u16 = 0x80;
 pub const COL_LEVEL_X: u16 = 0xB0;
 /// Row baselines: reward header y, first per-owner row y, and per-row y advance.
-pub const ROW_HEADER_Y: u16 = 0x54;
-pub const ROW_FIRST_Y: u16 = 0x64;
+/// Tucked just inside the box top (`BOX_Y + 0xC`).
+pub const ROW_HEADER_Y: u16 = 0x4C;
+pub const ROW_FIRST_Y: u16 = 0x5C;
 pub const ROW_STEP_Y: u16 = 0x10;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
