@@ -820,30 +820,22 @@ pub fn inject_native_trade_row(patcher: &mut DiscPatcher) -> Result<()> {
         .patch_prot_entry(ov::PICKER_MENU_PROT_INDEX, row4_off as u64, &row4_detour)
         .context("write renderer row-4 detour")?;
 
-    // 3. Draw stub + "@Trade" label into the SCUS gap.
-    let scus = patcher
-        .read_named_file(SCUS_NAME)
-        .context("read SCUS_942.54 for native trade row")?;
+    // 3. Draw stub + "@Trade" label into 0899's run-C dead region (same host the
+    //    full trade build uses; keeps everything off the contended SCUS gap).
     let stub = ov::words_to_bytes(&ov::assemble_row4_draw_stub());
-    let resolve_gap = |va: u32, len: usize| -> Result<usize> {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
-            .ok_or_else(|| anyhow::anyhow!("can't resolve gap VA {va:#x} in SCUS"))?;
-        if scus
-            .get(off..off + len)
+    let write0899 = |p: &mut DiscPatcher, va: u32, bytes: &[u8], what: &str| -> Result<()> {
+        let off = (va - ov::SLOT_A_BASE) as usize;
+        if menu_entry
+            .get(off..off + bytes.len())
             .is_none_or(|r| r.iter().any(|&b| b != 0))
         {
-            anyhow::bail!("gap region {va:#x} is not all-zero dead space");
+            anyhow::bail!("0899 region {va:#x} ({what}) is not all-zero dead space");
         }
-        Ok(off)
+        p.patch_prot_entry(ov::PICKER_MENU_PROT_INDEX, off as u64, bytes)
+            .with_context(|| format!("write {what} into menu overlay 0899"))
     };
-    let stub_off = resolve_gap(ov::ROW4_STUB_VA, stub.len())?;
-    let str_off = resolve_gap(ov::TRADE_STR_VA, ov::TRADE_STR.len())?;
-    patcher
-        .patch_named_file(SCUS_NAME, stub_off as u64, &stub)
-        .context("write row-4 draw stub")?;
-    patcher
-        .patch_named_file(SCUS_NAME, str_off as u64, ov::TRADE_STR)
-        .context("write @Trade label")?;
+    write0899(patcher, ov::ROW4_STUB_VA, &stub, "row-4 draw stub")?;
+    write0899(patcher, ov::TRADE_STR_VA, ov::TRADE_STR, "@Trade label")?;
 
     Ok(())
 }
@@ -935,71 +927,28 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
         "FUN_801dafd4 entry detour",
     )?;
 
-    // --- SCUS gap routines + strings (all dead-space, verified all-zero) ---
-    let scus = patcher
-        .read_named_file(SCUS_NAME)
-        .context("read SCUS_942.54 for trade flow")?;
-    let resolve_gap = |va: u32, len: usize| -> Result<usize> {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
-            .ok_or_else(|| anyhow::anyhow!("can't resolve gap VA {va:#x} in SCUS"))?;
-        if scus
-            .get(off..off + len)
-            .is_none_or(|r| r.iter().any(|&b| b != 0))
-        {
-            anyhow::bail!("gap region {va:#x} is not all-zero dead space");
-        }
-        Ok(off)
-    };
-    // Each gap blob: (VA, bytes, label). Row-4 draws "@Quit" (reorder); the body's
-    // swapped row-2 draws "@Trade" from TRADE_STR_VA.
+    // --- All seru-trade code + data lives in 0899's resident run-C dead region
+    // (reference-free, all-zero, reloaded with the overlay). Nothing touches the SCUS
+    // rodata gap, so seru trading is compatible with every gap-based feature
+    // (bonus-equipment drops, flee-EXP, the Seru-Bell name). ---
     let row4 = ov::words_to_bytes(&ov::assemble_row4_draw_stub_str(ov::QUIT_STR_VA));
     let entry = ov::words_to_bytes(&ov::assemble_trade_entry_stub());
     let disp = ov::words_to_bytes(&ov::assemble_trade_dispatch_stub());
+    let handler = ov::words_to_bytes(&ov::assemble_trade_handler());
     // The precomputed vendor schedule the handler indexes by play-time bucket: one
-    // `[want, give]` pair per bucket, derived deterministically from `seed`.
+    // `[want, give, give_level]` per bucket, derived deterministically from `seed`.
     let bucket_table = st::bucket_table_to_bytes(&st::bucket_offers(
         seed,
         st::BUCKET_COUNT,
         &st::default_pool(),
     ));
-    let blobs: [(u32, &[u8], &str); 6] = [
-        (ov::ROW4_STUB_VA, &row4, "row-4 draw stub"),
-        (ov::TRADE_STR_VA, ov::TRADE_STR, "@Trade label"),
+    let blobs: [(u32, &[u8], &str); 10] = [
+        (ov::TRADE_HANDLER_VA, &handler, "trade handler"),
         (ov::ENTRY_STUB_VA, &entry, "entry stub"),
         (ov::TRADE_DISPATCH_STUB_VA, &disp, "dispatch stub"),
+        (ov::ROW4_STUB_VA, &row4, "row-4 draw stub"),
+        (ov::TRADE_STR_VA, ov::TRADE_STR, "@Trade label"),
         (ov::TITLE_STR_VA, ov::TITLE_STR, "title string"),
-        (ov::BUCKET_TABLE_VA, &bucket_table, "bucket schedule"),
-    ];
-    for (va, bytes, what) in blobs {
-        let off = resolve_gap(va, bytes.len())?;
-        patcher
-            .patch_named_file(SCUS_NAME, off as u64, bytes)
-            .with_context(|| format!("write {what}"))?;
-    }
-
-    // --- The trade handler: embedded in the menu overlay 0899's resident run-C dead
-    // region (reference-free, all-zero across the trade + slide states), so it stays
-    // resident through every shop with room to grow — no SCUS gap squeeze, no CD load.
-    let handler = ov::words_to_bytes(&ov::assemble_trade_handler());
-    let handler_off = (ov::TRADE_HANDLER_VA - base) as usize;
-    if ov::TRADE_HANDLER_VA + handler.len() as u32 > ov::TRADE_HANDLER_END {
-        anyhow::bail!("trade handler overruns the 0899 run-C dead region");
-    }
-    if menu
-        .get(handler_off..handler_off + handler.len())
-        .is_none_or(|r| r.iter().any(|&b| b != 0))
-    {
-        anyhow::bail!(
-            "0899 handler region {:#x} is not all-zero dead space",
-            ov::TRADE_HANDLER_VA
-        );
-    }
-    patcher
-        .patch_prot_entry(ov::HANDLER_OVL_PROT_INDEX, handler_off as u64, &handler)
-        .context("write trade handler into menu overlay 0899")?;
-
-    // --- Confirm-prompt strings, embedded in 0899 above the handler (resident). ---
-    let strings: [(u32, &[u8], &str); 3] = [
         (
             ov::CONFIRM_PROMPT_STR_VA,
             ov::CONFIRM_PROMPT_STR,
@@ -1007,14 +956,18 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
         ),
         (ov::CONFIRM_YES_STR_VA, ov::CONFIRM_YES_STR, "confirm Yes"),
         (ov::CONFIRM_NO_STR_VA, ov::CONFIRM_NO_STR, "confirm No"),
+        (ov::BUCKET_TABLE_VA, &bucket_table, "bucket schedule"),
     ];
-    for (va, bytes, what) in strings {
+    for (va, bytes, what) in blobs {
+        if va < base || va + bytes.len() as u32 > ov::TRADE_HANDLER_END {
+            anyhow::bail!("0899 blob {what} ({va:#x}) outside the run-C region");
+        }
         let off = (va - base) as usize;
         if menu
             .get(off..off + bytes.len())
             .is_none_or(|r| r.iter().any(|&b| b != 0))
         {
-            anyhow::bail!("0899 string region {va:#x} ({what}) is not all-zero dead space");
+            anyhow::bail!("0899 region {va:#x} ({what}) is not all-zero dead space");
         }
         patcher
             .patch_prot_entry(ov::HANDLER_OVL_PROT_INDEX, off as u64, bytes)

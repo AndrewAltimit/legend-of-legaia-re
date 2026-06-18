@@ -426,24 +426,20 @@ fn native_trade_row_patches_clamp_renderer_and_gap() {
         "renderer detour -> row-4 stub"
     );
 
-    let scus = patcher
-        .read_named_file("SCUS_942.54")
-        .expect("SCUS present");
-    let sb =
-        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::ROW4_STUB_VA).unwrap();
+    // Stub + "@Trade" label land in 0899's run-C dead region (not the SCUS gap).
+    let base = seru_overlay::SLOT_A_BASE;
+    let sb = (seru_overlay::ROW4_STUB_VA - base) as usize;
     let stub = seru_overlay::words_to_bytes(&seru_overlay::assemble_row4_draw_stub());
-    assert_eq!(&scus[sb..sb + stub.len()], &stub[..], "stub bytes in gap");
-    // The "@Trade" label sits past the stub, within the reserved window.
+    assert_eq!(&mov[sb..sb + stub.len()], &stub[..], "stub bytes in 0899");
     assert!(
         seru_overlay::TRADE_STR_VA >= seru_overlay::ROW4_STUB_VA + stub.len() as u32,
         "label does not overlap the stub"
     );
-    let lb =
-        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::TRADE_STR_VA).unwrap();
+    let lb = (seru_overlay::TRADE_STR_VA - base) as usize;
     assert_eq!(
-        &scus[lb..lb + seru_overlay::TRADE_STR.len()],
+        &mov[lb..lb + seru_overlay::TRADE_STR.len()],
         seru_overlay::TRADE_STR,
-        "@Trade label in gap"
+        "@Trade label in 0899"
     );
 
     // Determinism.
@@ -517,48 +513,48 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         "FUN_801dafd4 entry detour -> entry stub"
     );
 
-    let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
-    let gap = |va: u32, bytes: &[u8]| {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
-        assert_eq!(&scus[off..off + bytes.len()], bytes, "gap blob @ {va:#x}");
+    // Everything lives in the menu overlay 0899's run-C dead region (no SCUS gap):
+    // each blob lands at VA - SLOT_A_BASE and stays within run-C.
+    let menu = patcher
+        .read_entry(seru_overlay::HANDLER_OVL_PROT_INDEX)
+        .expect("menu overlay");
+    let base = seru_overlay::SLOT_A_BASE;
+    let at0899 = |va: u32, bytes: &[u8], what: &str| {
+        let off = (va - base) as usize;
+        assert!(
+            va >= seru_overlay::TRADE_HANDLER_VA
+                && va + bytes.len() as u32 <= seru_overlay::TRADE_HANDLER_END,
+            "{what} ({va:#x}) outside run-C"
+        );
+        assert_eq!(
+            &menu[off..off + bytes.len()],
+            bytes,
+            "0899 blob {what} @ {va:#x}"
+        );
     };
-    // Each gap routine + string lands at its VA.
     let row4 = seru_overlay::words_to_bytes(&seru_overlay::assemble_row4_draw_stub_str(
         seru_overlay::QUIT_STR_VA,
     ));
     let entry = seru_overlay::words_to_bytes(&seru_overlay::assemble_trade_entry_stub());
     let disp = seru_overlay::words_to_bytes(&seru_overlay::assemble_trade_dispatch_stub());
     let handler = seru_overlay::words_to_bytes(&seru_overlay::assemble_trade_handler());
-    gap(seru_overlay::ROW4_STUB_VA, &row4);
-    gap(seru_overlay::TRADE_STR_VA, seru_overlay::TRADE_STR);
-    gap(seru_overlay::ENTRY_STUB_VA, &entry);
-    gap(seru_overlay::TRADE_DISPATCH_STUB_VA, &disp);
-    gap(seru_overlay::TITLE_STR_VA, seru_overlay::TITLE_STR);
-
-    // The handler is embedded in the menu overlay 0899 (run-C dead region), not the
-    // SCUS gap: it lands at TRADE_HANDLER_VA - SLOT_A_BASE and stays within run-C.
-    let menu = patcher
-        .read_entry(seru_overlay::HANDLER_OVL_PROT_INDEX)
-        .expect("menu overlay");
-    let hoff = (seru_overlay::TRADE_HANDLER_VA - seru_overlay::SLOT_A_BASE) as usize;
-    assert_eq!(
-        &menu[hoff..hoff + handler.len()],
-        handler.as_slice(),
-        "handler embedded in 0899 at run-C"
+    at0899(seru_overlay::TRADE_HANDLER_VA, &handler, "handler");
+    at0899(seru_overlay::ENTRY_STUB_VA, &entry, "entry stub");
+    at0899(seru_overlay::TRADE_DISPATCH_STUB_VA, &disp, "dispatch stub");
+    at0899(seru_overlay::ROW4_STUB_VA, &row4, "row-4 stub");
+    at0899(
+        seru_overlay::TRADE_STR_VA,
+        seru_overlay::TRADE_STR,
+        "@Trade",
     );
-    assert!(
-        seru_overlay::TRADE_HANDLER_VA + handler.len() as u32 <= seru_overlay::TRADE_HANDLER_END,
-        "trade handler overruns the 0899 run-C dead region"
+    at0899(seru_overlay::TITLE_STR_VA, seru_overlay::TITLE_STR, "title");
+    at0899(
+        seru_overlay::CONFIRM_PROMPT_STR_VA,
+        seru_overlay::CONFIRM_PROMPT_STR,
+        "prompt",
     );
 
-    // The SCUS lower-gap stubs don't overlap and stay below the bucket table.
-    assert!(
-        seru_overlay::ENTRY_STUB_VA + entry.len() as u32 <= seru_overlay::TRADE_DISPATCH_STUB_VA
-    );
-    assert!(
-        seru_overlay::TRADE_DISPATCH_STUB_VA + disp.len() as u32 <= seru_overlay::BUCKET_TABLE_VA
-    );
-    // The entry stub contains a `j` to the 0899-hosted handler VA (the gating jump).
+    // The entry stub `j`s to the 0899-hosted handler and gates on the active flag.
     let entry_words: Vec<u32> = entry
         .chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
@@ -568,24 +564,6 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         entry_words.contains(&j_handler),
         "entry stub jumps to the 0899 handler VA"
     );
-    // Upper row-4 gap tail packs cleanly: row-4 stub < @Trade < title < flag, all
-    // below the config blob at 0x8007AF00.
-    assert!(seru_overlay::TRADE_STR_VA >= seru_overlay::ROW4_STUB_VA + row4.len() as u32);
-    let trade_str_len = seru_overlay::TRADE_STR.len() as u32;
-    let title_str_len = seru_overlay::TITLE_STR.len() as u32;
-    assert!(seru_overlay::TITLE_STR_VA >= seru_overlay::TRADE_STR_VA + trade_str_len);
-    assert!(seru_overlay::TRADE_ACTIVE_VA >= seru_overlay::TITLE_STR_VA + title_str_len);
-    // The private flag cell resolves to real (all-zero) gap space below the config blob.
-    let flag_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::TRADE_ACTIVE_VA).unwrap();
-    assert_eq!(
-        &scus[flag_off..flag_off + 4],
-        &[0u8; 4],
-        "flag cell is dead space"
-    );
-
-    // The dispatch stub raises the private TRADE_ACTIVE flag (lui at,hi(flag) + sw),
-    // and the entry stub / handler reference the same flag cell.
     let flag_lui = 0x3c01_0000 | (seru_overlay::TRADE_ACTIVE_VA.wrapping_add(0x8000) >> 16);
     let disp_words: Vec<u32> = disp
         .chunks_exact(4)
@@ -600,28 +578,28 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         "entry stub gates on the TRADE_ACTIVE flag"
     );
 
-    // The precomputed bucket schedule lands at its gap VA and decodes back to the
-    // same `(want, give)` pairs the shared kernel produces for this seed.
+    // The precomputed bucket schedule lands in 0899 and decodes back to the same
+    // offers the shared kernel produces for this seed.
     let table_bytes = seru_trade::bucket_table_to_bytes(&seru_trade::bucket_offers(
         seed,
         seru_trade::BUCKET_COUNT,
         &seru_trade::default_pool(),
     ));
-    gap(seru_overlay::BUCKET_TABLE_VA, &table_bytes);
-    let table_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::BUCKET_TABLE_VA).unwrap();
-    let decoded = seru_trade::bucket_table_from_bytes(
-        &scus[table_off..table_off + seru_overlay::BUCKET_TABLE_LEN],
-    );
+    at0899(seru_overlay::BUCKET_TABLE_VA, &table_bytes, "bucket table");
+    let toff = (seru_overlay::BUCKET_TABLE_VA - base) as usize;
+    let decoded = seru_trade::bucket_table_from_bytes(&menu[toff..toff + table_bytes.len()]);
     assert_eq!(
         decoded,
         seru_trade::bucket_offers(seed, seru_trade::BUCKET_COUNT, &seru_trade::default_pool()),
         "on-disc schedule round-trips to the kernel offers"
     );
-    // The schedule sits in the SCUS gap tail, below the row-4 stub.
-    assert!(
-        seru_overlay::BUCKET_TABLE_VA + seru_overlay::BUCKET_TABLE_LEN as u32
-            <= seru_overlay::ROW4_STUB_VA
+    // The SCUS rodata gap is UNTOUCHED by seru trading (compatible with gap features).
+    let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
+    let gap_off = legaia_asset::item_names::file_offset_for_va(&scus, 0x8007_AB80).unwrap();
+    assert_eq!(
+        &scus[gap_off..gap_off + 4],
+        &[0u8; 4],
+        "bonus-drop gap slot untouched by seru trading"
     );
 
     // Determinism.

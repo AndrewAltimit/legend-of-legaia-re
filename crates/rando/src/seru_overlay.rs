@@ -330,13 +330,13 @@ pub const ROW_FIRST_Y: u16 = 0x5C;
 pub const ROW_STEP_Y: u16 = 0x10;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
-pub const TRADE_SLIDE_DELTA_VA: u32 = 0x8007_AEC4;
+pub const TRADE_SLIDE_DELTA_VA: u32 = 0x801E_7E24;
 /// Cursor index over the per-owner trade lines (0 = first line). SCUS gap, resident;
 /// the handler nav-clamps it to `[0, line_count)` each frame.
-pub const TRADE_CURSOR_VA: u32 = 0x8007_AEC8;
+pub const TRADE_CURSOR_VA: u32 = 0x801E_7E28;
 /// Previous-frame pad mask, for D-pad edge detection (one step per press, not per
 /// held frame). SCUS gap, resident.
-pub const TRADE_PAD_PREV_VA: u32 = 0x8007_AECC;
+pub const TRADE_PAD_PREV_VA: u32 = 0x801E_7E2C;
 /// D-pad bits in [`PAD_CUR_VA`] (built by `FUN_8001822C`): Up / Down move the line
 /// cursor; Left / Right pick Yes / No in the confirm sub-state.
 pub const PAD_UP_MASK: u16 = 0x1000;
@@ -348,26 +348,26 @@ pub const PAD_CONFIRM_MASK: u16 = 0x0040;
 
 /// Confirm sub-state cell (0 = browsing the owner lines, 1 = the Yes/No prompt for
 /// the selected line). SCUS gap, resident.
-pub const TRADE_CONFIRM_VA: u32 = 0x8007_AED0;
+pub const TRADE_CONFIRM_VA: u32 = 0x801E_7E30;
 /// Yes/No selection in the confirm sub-state (0 = Yes, 1 = No). SCUS gap, resident.
-pub const TRADE_YESNO_VA: u32 = 0x8007_AED4;
+pub const TRADE_YESNO_VA: u32 = 0x801E_7E34;
 /// The current offer's give-back id, stashed by the offer compute so the per-owner
 /// loop can skip owners who already own it (a pointless trade). SCUS gap, resident.
-pub const TRADE_GIVE_ID_VA: u32 = 0x8007_AED8;
+pub const TRADE_GIVE_ID_VA: u32 = 0x801E_7E38;
 /// Selected owner's record base + want-index, stashed by the render loop when it
 /// draws the cursor's line, so the swap on ✕-Yes writes the right record without a
 /// re-scan. SCUS gap, resident.
-pub const TRADE_SEL_BASE_VA: u32 = 0x8007_AEDC;
-pub const TRADE_SEL_J_VA: u32 = 0x8007_AEE0;
+pub const TRADE_SEL_BASE_VA: u32 = 0x801E_7E3C;
+pub const TRADE_SEL_J_VA: u32 = 0x801E_7E40;
 
 /// Confirm-prompt strings, embedded in 0899 above the handler (resident in-shop).
 /// Drawn only in the confirm sub-state; the selected line + reward header already
 /// show *what* is being traded, so the prompt just needs the question + choices.
-pub const CONFIRM_PROMPT_STR_VA: u32 = 0x801E_7C00;
+pub const CONFIRM_PROMPT_STR_VA: u32 = 0x801E_7D40;
 pub const CONFIRM_PROMPT_STR: &[u8] = b"@Trade?\0";
-pub const CONFIRM_YES_STR_VA: u32 = 0x801E_7C10;
+pub const CONFIRM_YES_STR_VA: u32 = 0x801E_7D50;
 pub const CONFIRM_YES_STR: &[u8] = b"@Yes\0";
-pub const CONFIRM_NO_STR_VA: u32 = 0x801E_7C18;
+pub const CONFIRM_NO_STR_VA: u32 = 0x801E_7D58;
 pub const CONFIRM_NO_STR: &[u8] = b"@No\0";
 /// Confirm-prompt layout (inside the box, near its bottom): question row y, choices
 /// row y, and the Yes / No / cursor x columns.
@@ -575,16 +575,23 @@ pub const HANDLER_CANCEL_MASK: u16 = 0x0020;
 /// the entry detour gates on it, the handler clears it on exit. We DON'T reuse the
 /// picker sub-state `DAT_801e46ac`: the menu owns it — `FUN_801dc6b4` case 2 resets
 /// it (`DAT_801e46ac = 0`) whenever its draw-state shadow desyncs, wiping our value.
-/// Lives in the upper row-4 gap tail (past `@Trade`, below the config blob at
-/// `0x8007AF00`) so the handler body can grow downward from `0x8007ABB0` without
-/// stepping on it.
-pub const TRADE_ACTIVE_VA: u32 = 0x8007_AEC0;
+///
+/// ALL seru-trade pieces (this flag + the other cells, both stubs, the row-4 stub,
+/// the strings, and the bucket table) live in the 0899 run-C dead region alongside
+/// the handler — NOT the SCUS rodata gap. That gap is crowded by other randomizer
+/// features (the Seru-Bell name at `0x8007AB40`, the bonus-equipment-drop routine at
+/// `0x8007AB80`, the flee-EXP routine at `0x8007AD00`), so hosting in 0899 keeps
+/// seru trading compatible with all of them. 0899 is resident throughout the shop
+/// (the only time these run), and the region reloads with the overlay, so the cells
+/// reset to 0 on each load and are re-initialised by the dispatch stub on entry.
+pub const TRADE_ACTIVE_VA: u32 = 0x801E_7E20;
 
-/// Gap VAs (lower gap, free in the standalone build). Self-referential row-4 stub
-/// stays at [`ROW4_STUB_VA`] (0x8007AE00); the rest are position-independent.
-pub const ENTRY_STUB_VA: u32 = 0x8007_AB38;
+/// 0899 run-C VAs (all above the handler, below the run-C end; non-overlapping —
+/// asserted by `trade_0899_layout_is_disjoint`). Reached by `j` from the 0899
+/// detours / handler, so no SCUS gap is used.
+pub const ENTRY_STUB_VA: u32 = 0x801E_7B00;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
-pub const TRADE_DISPATCH_STUB_VA: u32 = 0x8007_AB68;
+pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7B60;
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
 ///
 /// HOSTED IN THE MENU OVERLAY 0899, not the tiny SCUS rodata gap: the gap only had
@@ -612,7 +619,7 @@ pub const HANDLER_OVL_PROT_INDEX: usize = PICKER_MENU_PROT_INDEX;
 /// above the dispatch stub and below the old handler end; resident always, so the
 /// 0899-hosted handler reads it by absolute address. The handler indexes it by
 /// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`]`, ×3`.
-pub const BUCKET_TABLE_VA: u32 = 0x8007_AC00;
+pub const BUCKET_TABLE_VA: u32 = 0x801E_7D60;
 /// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
 pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 
@@ -649,7 +656,7 @@ pub const NUMBER_FN: u32 = 0x8003_4B78;
 /// "SERU TRADE" title string for the handler. Relocated to the upper row-4 gap tail
 /// (past `@Trade` at [`TRADE_STR_VA`], below the config blob) to free the
 /// `0x8007ABB0..0x8007AD00` window for the grown handler body.
-pub const TITLE_STR_VA: u32 = 0x8007_AEB0;
+pub const TITLE_STR_VA: u32 = 0x801E_7D30;
 /// Title bytes ('@' format prefix like the menu strings + "SERU TRADE\0").
 pub const TITLE_STR: &[u8] = b"@SERU TRADE\0";
 
@@ -719,8 +726,8 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w[b_trade] = beq(A0, T0, (trade as i32 - (b_trade as i32 + 1)) as i16);
     w[b_quit] = beq(A0, T0, (quit as i32 - (b_quit as i32 + 1)) as i16);
     debug_assert!(
-        TRADE_DISPATCH_STUB_VA + (w.len() as u32) * 4 <= BUCKET_TABLE_VA,
-        "dispatch stub overruns the SCUS gap (into the bucket table)"
+        TRADE_DISPATCH_STUB_VA + (w.len() as u32) * 4 <= ROW4_STUB_VA,
+        "dispatch stub overruns into the row-4 stub (0899 run-C layout)"
     );
     w
 }
@@ -1230,12 +1237,8 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(jr(RA)); // return to the menu tick (FUN_801dc6b4)
     w.push(nop());
     debug_assert!(
-        TRADE_HANDLER_VA + (w.len() as u32) * 4 <= TRADE_HANDLER_END,
-        "trade handler overruns the 0899 run-C dead region"
-    );
-    debug_assert!(
-        TRADE_HANDLER_VA + (w.len() as u32) * 4 <= CONFIRM_PROMPT_STR_VA,
-        "trade handler collides with the confirm strings in 0899"
+        TRADE_HANDLER_VA + (w.len() as u32) * 4 <= ENTRY_STUB_VA,
+        "trade handler overruns into the entry stub (0899 run-C layout)"
     );
     w
 }
@@ -1244,11 +1247,12 @@ pub fn assemble_trade_handler() -> Vec<u32> {
 pub const CURSOR_VA: u32 = 0x801E_46BC;
 /// Cursor-highlight sprite `FUN_8002b994(slot, mode, x, y)`.
 pub const HIGHLIGHT_FN: u32 = 0x8002_B994;
-/// Gap VA of the row-4 draw stub (reused [`STUB_VA`]; the native-row build uses no
-/// trigger/redirect, so the gap is free).
-pub const ROW4_STUB_VA: u32 = STUB_VA;
-/// Gap VA of the "@Trade" label (past the stub; <= 0xA0 bytes reserved for code).
-pub const TRADE_STR_VA: u32 = STUB_VA + 0xA0;
+/// 0899 run-C VA of the row-4 draw stub (the in-shop trade build hosts everything in
+/// 0899; `<= 0x80` bytes reserved for code before the label). Reached by `j` from the
+/// renderer's row-4 detour.
+pub const ROW4_STUB_VA: u32 = 0x801E_7C20;
+/// 0899 run-C VA of the "@Trade" label (just past the row-4 stub's reserved window).
+pub const TRADE_STR_VA: u32 = 0x801E_7D20;
 /// The label bytes: '@' format prefix (as on "@Buy"/"@Sell"/"@Quit") + "Trade\0".
 pub const TRADE_STR: &[u8] = b"@Trade\0";
 
@@ -2310,6 +2314,63 @@ mod tests {
             d.contains(&addiu(A0, A0, lo(SLIDE_AWAY_SCRIPT_VA))),
             "confirm runs the Sell slide-away script"
         );
+    }
+
+    #[test]
+    fn trade_0899_layout_is_disjoint() {
+        // Every seru-trade piece lives in the 0899 run-C dead region; none touch the
+        // SCUS gap. Assert they are all inside run-C and pairwise non-overlapping.
+        let mut spans: Vec<(&str, u32, u32)> = vec![
+            (
+                "handler",
+                TRADE_HANDLER_VA,
+                (assemble_trade_handler().len() as u32) * 4,
+            ),
+            (
+                "entry",
+                ENTRY_STUB_VA,
+                (assemble_trade_entry_stub().len() as u32) * 4,
+            ),
+            (
+                "dispatch",
+                TRADE_DISPATCH_STUB_VA,
+                (assemble_trade_dispatch_stub().len() as u32) * 4,
+            ),
+            (
+                "row4",
+                ROW4_STUB_VA,
+                (assemble_row4_draw_stub_str(QUIT_STR_VA).len() as u32) * 4,
+            ),
+            ("@trade", TRADE_STR_VA, TRADE_STR.len() as u32),
+            ("title", TITLE_STR_VA, TITLE_STR.len() as u32),
+            (
+                "prompt",
+                CONFIRM_PROMPT_STR_VA,
+                CONFIRM_PROMPT_STR.len() as u32,
+            ),
+            ("yes", CONFIRM_YES_STR_VA, CONFIRM_YES_STR.len() as u32),
+            ("no", CONFIRM_NO_STR_VA, CONFIRM_NO_STR.len() as u32),
+            ("table", BUCKET_TABLE_VA, BUCKET_TABLE_LEN as u32),
+            ("cells", TRADE_ACTIVE_VA, 0x24),
+        ];
+        // All within run-C (handler base .. end), and entirely in 0899 (>= SLOT_A_BASE).
+        for &(name, va, len) in &spans {
+            assert!(va >= SLOT_A_BASE, "{name} not in 0899");
+            assert!(va >= TRADE_HANDLER_VA, "{name} below run-C");
+            assert!(va + len <= TRADE_HANDLER_END, "{name} past run-C end");
+        }
+        spans.sort_by_key(|s| s.1);
+        for w in spans.windows(2) {
+            assert!(
+                w[0].1 + w[0].2 <= w[1].1,
+                "0899 overlap: {} [{:#x}+{:#x}) vs {} [{:#x})",
+                w[0].0,
+                w[0].1,
+                w[0].2,
+                w[1].0,
+                w[1].1,
+            );
+        }
     }
 
     #[test]
