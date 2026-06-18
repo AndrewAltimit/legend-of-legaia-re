@@ -91,6 +91,19 @@ impl DiscPatcher {
         self.entries.len()
     }
 
+    /// Absolute disc sector (LBA) where PROT entry `index`'s content begins —
+    /// `prot_lba + start_lba[index]`. This is the value the game's CD reader
+    /// (`FUN_8005E4D4`) takes, so an injected loader stub can be given this LBA
+    /// as a literal to stream the entry in at runtime. `None` if out of range.
+    pub fn entry_disc_lba(&self, index: usize) -> Option<u32> {
+        self.entries.get(index).map(|e| self.prot_lba + e.start_lba)
+    }
+
+    /// PROT entry `index`'s on-disc footprint in bytes (what the loader reads).
+    pub fn entry_footprint(&self, index: usize) -> Option<u64> {
+        self.entries.get(index).map(|e| e.size_bytes)
+    }
+
     /// Read PROT entry `index`'s full on-disc footprint from the current
     /// (possibly already-patched) image, so reads after writes are correct.
     pub fn read_entry(&self, index: usize) -> Result<Vec<u8>> {

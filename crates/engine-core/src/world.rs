@@ -1889,6 +1889,12 @@ pub struct World {
     /// casts still accrue spell XP but never level the spell up.
     pub magic_xp_thresholds: Option<[u16; crate::magic_xp::THRESHOLD_STEPS]>,
 
+    /// Seru-trade config from the patched disc (the randomizer's `--seru-trade`
+    /// blob: enabled flag + master seed + offer cap). Installed at boot via
+    /// [`World::install_seru_trade_config`]; `None` (or `enabled == false`)
+    /// disables vendor seru trading. See [`crate::seru_trade`].
+    pub seru_trade_config: Option<legaia_asset::seru_trade::SeruTradeConfig>,
+
     /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
     /// new_level)` per event, in resolution order. The engine analogue of the
     /// retail level-up banner (the level-up check fires UI element `0x65` —
@@ -2375,6 +2381,7 @@ impl World {
             battle_buffs: Vec::new(),
             battle_captures: Vec::new(),
             magic_xp_thresholds: None,
+            seru_trade_config: None,
             magic_level_ups: Vec::new(),
             battle_escaped: false,
             character_max_mp: Vec::new(),
@@ -4414,17 +4421,25 @@ impl World {
         let Some(rec) = legaia_asset::shop_stock::parse_record(instr, 0, Some(&mask)) else {
             return false;
         };
-        let items = rec
+        let stock_ids: Vec<u8> = rec
             .id_offsets
             .iter()
             .filter_map(|&o| instr.get(o).copied())
-            .map(|id| crate::shop::ShopItem {
+            .collect();
+        let items = stock_ids
+            .iter()
+            .map(|&id| crate::shop::ShopItem {
                 item_id: id,
                 price: data.price(id) as u32,
             })
             .collect();
+        // Derive a stable per-vendor id from the shop's identity (name + stock)
+        // so this vendor's seru-trade offers reseed independently of every other.
+        let vendor_id = legaia_asset::seru_trade::vendor_id_from_shop(&rec.name, &stock_ids);
         let inv = crate::shop::ShopInventory::new(0, items);
-        self.pending_field_shop = Some(crate::shop::ShopSession::new(inv));
+        let mut session = crate::shop::ShopSession::new(inv);
+        session.vendor_id = vendor_id;
+        self.pending_field_shop = Some(session);
         self.field_shop_armed = true;
         self.field_shop_open = true;
         true

@@ -508,6 +508,10 @@ struct PlayWindowApp {
     /// and dropped when the world clears the request (the world owns dismissal
     /// via the field VM / overworld handler). `None` when no box is up.
     active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
+    /// Spell/seru display-name table, read once from the boot SCUS so the shop's
+    /// Trade screens can label each offer ("Gimard (Vahn) -> Orb"). `None` on
+    /// disc-free runs or before the first lookup.
+    seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -3679,6 +3683,116 @@ impl PlayWindowApp {
         }
     }
 
+    /// Lazily read the spell/seru display-name table from the boot SCUS so the
+    /// seru-trade overlay can label each offer. Cached after the first read;
+    /// a disc-free run leaves it `None` (offers fall back to "Seru NN").
+    fn ensure_seru_names(&mut self) {
+        if self.seru_names.is_some() {
+            return;
+        }
+        use legaia_engine_core::Vfs;
+        let scus = if let Some(root) = self.extracted_root.as_deref() {
+            legaia_engine_core::DirVfs::new(root)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else if let Some(disc) = self.disc_path.as_deref() {
+            legaia_engine_core::DiscVfs::open(disc)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else {
+            None
+        };
+        self.seru_names = scus
+            .as_deref()
+            .and_then(legaia_asset::spell_names::SpellNameTable::from_scus);
+    }
+
+    /// Render the seru-trade screens of the shop menu: the offer list
+    /// (`ShopTrade`) or the yes/no confirm (`ShopTradeConfirm`). Each offer is
+    /// labelled "give (owner) -> receive" with names from the boot SCUS.
+    fn draw_shop_trade(&self, out: &mut Vec<TextDraw>, state: Option<MenuState>, cursor: usize) {
+        let name_of = |id: u8| -> String {
+            self.seru_names
+                .as_ref()
+                .and_then(|t| t.name(id))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("Seru {id:02X}"))
+        };
+        let owner_of = |slot: u8| -> String {
+            self.session
+                .host
+                .world
+                .roster
+                .members
+                .get(slot as usize)
+                .map(|m| m.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{slot}"))
+        };
+        match state {
+            Some(MenuState::ShopTrade) => {
+                let mut labels: Vec<String> = Vec::new();
+                match self.menu_runtime.trade_session.as_ref() {
+                    Some(t) if !t.offers.is_empty() => {
+                        for o in &t.offers {
+                            labels.push(format!(
+                                "{} ({}) -> {}",
+                                name_of(o.give.seru_id),
+                                owner_of(o.give.owner_slot),
+                                name_of(o.receive_seru_id),
+                            ));
+                        }
+                    }
+                    _ => labels.push("(no trades offered)".to_string()),
+                }
+                let rows: Vec<ShopRow<'_>> = labels
+                    .iter()
+                    .map(|l| ShopRow {
+                        label: l.as_str(),
+                        price: None,
+                    })
+                    .collect();
+                out.extend(shop_draws_for(
+                    &self.font,
+                    "SHOP - TRADE SERU",
+                    &rows,
+                    cursor,
+                    None,
+                    (8, 140),
+                ));
+            }
+            Some(MenuState::ShopTradeConfirm) => {
+                let title = match self.menu_runtime.pending_trade_offer() {
+                    Some(o) => format!(
+                        "Trade {} for {}?",
+                        name_of(o.give.seru_id),
+                        name_of(o.receive_seru_id),
+                    ),
+                    None => "Trade?".to_string(),
+                };
+                let rows = vec![
+                    ShopRow {
+                        label: "Yes",
+                        price: None,
+                    },
+                    ShopRow {
+                        label: "No",
+                        price: None,
+                    },
+                ];
+                out.extend(shop_draws_for(
+                    &self.font,
+                    &title,
+                    &rows,
+                    cursor,
+                    None,
+                    (8, 140),
+                ));
+            }
+            _ => {}
+        }
+    }
+
     /// Per-tick battle facial animation: re-stamp each registered party
     /// member's current eye + mouth face frame onto the band's live face
     /// rows, exactly like the retail per-frame animator. The playing clip's
@@ -4432,7 +4546,38 @@ impl PlayWindowApp {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;
                 let gold = self.session.host.world.money;
+                // The seru-trade screens carry dynamic, owned-string labels, so
+                // render them directly (the generic `(title, rows)` path below
+                // only handles `'static` labels).
+                let trade_state = matches!(
+                    state,
+                    Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
+                );
+                if trade_state {
+                    self.draw_shop_trade(&mut out, state, cursor);
+                }
                 let (title, rows, show_gold) = match state {
+                    _ if trade_state => (label, Vec::new(), None),
+                    // Top picker: Buy / Sell / (Trade) / Exit, matching the
+                    // runtime's dynamic row layout.
+                    Some(MenuState::ShopMenu) => {
+                        let rows: Vec<ShopRow<'_>> =
+                            legaia_engine_core::menu_runtime::shop_menu_rows(
+                                self.session.host.world.seru_trade_enabled(),
+                            )
+                            .iter()
+                            .map(|s| ShopRow {
+                                label: match s {
+                                    MenuState::ShopBuy => "Buy",
+                                    MenuState::ShopSell => "Sell",
+                                    MenuState::ShopTrade => "Trade Seru",
+                                    _ => "Exit",
+                                },
+                                price: None,
+                            })
+                            .collect();
+                        (label, rows, Some(gold))
+                    }
                     Some(MenuState::ShopBuy) => {
                         let rows: Vec<ShopRow<'_>> = shop
                             .inventory
@@ -5508,7 +5653,13 @@ impl ApplicationHandler for PlayWindowApp {
                     // player leaves, at which point `finish_field_shop` (below)
                     // lets it resume past the merchant op.
                     if let Some(shop) = self.session.host.world.take_pending_field_shop() {
-                        self.menu_runtime.open_shop_buy(shop);
+                        // Open the top-level Buy / Sell / Trade picker (Trade row
+                        // present only when the disc enabled seru trading). Names
+                        // for the trade rows come from the boot SCUS.
+                        if self.session.host.world.seru_trade_enabled() {
+                            self.ensure_seru_names();
+                        }
+                        self.menu_runtime.open_shop_menu(shop);
                     }
                     // Production cast-band trigger: a player Seru-magic cast
                     // (spell id 0x81..=0x8b) requests a summon spawn. The
@@ -7224,6 +7375,7 @@ fn cmd_play_window_with_record(
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         active_dialog: None,
+        seru_names: None,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

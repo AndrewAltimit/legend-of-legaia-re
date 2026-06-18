@@ -69,6 +69,12 @@ cargo build --release
 ./target/release/legaia-engine play-str MOV/MV1.STR --disc <bin>
 ```
 
+In `play-window`, when the booted disc was randomized with `--seru-trade`,
+talking to a shop merchant (the field-VM op-`0x49` trigger) shows a top-level
+**Buy / Sell / Trade / Exit** menu; the **Trade** row opens that vendor's
+seru-for-seru offers (pick an offer, confirm yes/no) — the clean-room UI for the
+randomizer's swaps, keyed to the shop you're standing in.
+
 ### Binary source layout
 
 The binary is split into modules under `src/bin/legaia-engine/` (the crate

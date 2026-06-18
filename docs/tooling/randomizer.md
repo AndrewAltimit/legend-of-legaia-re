@@ -24,6 +24,7 @@ so CI runs without a disc.
   - [Keep-static items](#keep-static-items)
   - [Equipment drops](#equipment-drops)
   - [Random encounters](#random-encounters)
+  - [Seru trading](#seru-trading)
   - [Treasure chests](#treasure-chests)
   - [Town shops (what stores sell)](#town-shops-what-stores-sell)
   - [Casino prize exchange](#casino-prize-exchange)
@@ -121,6 +122,7 @@ legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
 legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
 legaia-rando randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
+legaia-rando randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -149,7 +151,10 @@ grants one extra random equipment piece on a low per-battle chance
 (see [Equipment drops](#equipment-drops)); `--flee-exp` injects a code hook into
 the battle-action escape teardown so a successful run banks `--flee-exp-pct`%
 (default 5) of the fled fight's experience into the party (see
-[Run-away EXP](#run-away-exp));
+[Run-away EXP](#run-away-exp)); `--seru-trade` embeds a config so the clean-room
+engine lets vendors swap one of a character's seru for another, reseeding every
+two in-game hours (`--seru-trade-offers N` caps offers per vendor; see
+[Seru trading](#seru-trading));
 `--door-coupling` is `coupled` (default, bidirectional) or `decoupled`
 (one-way); `--encounter-scope` widens the monster pool an encounter roll draws
 from to `scene` (default), `kingdom`, or `world`; the **solo-strong** pass
@@ -440,6 +445,60 @@ default in the web Balanced / Full Chaos presets.
 > displaced pair; the detour + routine decode as the hand-assembled code; each
 > edit is surgical and EDC/ECC-valid; the build guard refuses an unknown layout)
 > plus an emulator playtest.
+
+### Seru trading
+
+`--seru-trade` adds an **in-shop Seru-trading vendor** that runs **on real
+hardware**: every merchant grows a fourth **Buy / Sell / Trade / Quit** row, and
+picking Trade opens a screen where the player swaps a party member's learned
+Seru-magic for a different one. The offer is **time-bucketed** — it rotates as
+play continues — and fully **deterministic from the run's seed**, so a preview
+and the game always agree.
+
+**What an offer is (`legaia_asset::seru_trade`, the shared kernel).** Each time
+bucket has one `(want, give, give_level)` preference: the vendor wants a seru
+*type* and hands back a different one at a fixed level (`4..=9`, part of the
+trade's value, shown before you trade). The randomizer precomputes the whole
+64-bucket schedule from the seed (`bucket_offers` → `bucket_table_to_bytes`, 3
+bytes/entry) and embeds it. At runtime the handler indexes it by
+`(play_time / period) & 63`. Against the live party the bucket expands
+(`expand_offers`) to **one selectable line per member who owns the wanted seru** —
+so the same type held by two members lists once each — **excluding** any member
+who already owns the give-back (a pointless trade). The seru id space is the
+player Seru-magic block `0x81..=0x95`.
+
+**The retail build (`seru_overlay` + `apply::inject_trade_full`).** This is a
+hand-assembled MIPS feature, not a value edit. Two byte-verified edits to the
+menu overlay (PROT **0899**) turn the picker into Buy / Sell / Trade / Quit and
+route a confirmed Trade into an unused picker sub-mode; the trade screen itself —
+the per-owner render, the native window-slide in/out, the cursor, the explicit
+"Trade?" confirm, and the swap — is a routine hosted **entirely in 0899's own
+reference-free dead region** (a ~3.8 KB all-zero run inside the resident overlay
+image), reached by `j` from the in-overlay detours. Because nothing lands in the
+SCUS rodata gap, seru trading **composes with every gap-based feature**
+([equipment drops](#equipment-drops), [flee-EXP](#run-away-exp), the Seru-Bell
+[name](#name-injection)). The injector writes the handler + stubs + strings + the
+seed-derived bucket table via `patch_prot_entry(899, …)`, each guarded as
+all-zero dead space. The swap rewrites the chosen owner's spell list in place
+(id at `+0x13D`, level at `+0x161`), mirroring `engine_core::seru_trade::apply_trade`.
+
+> Cadence note: the play counter at `0x80084570` advances ~per-frame (≈60/s), not
+> per-second, so the retail handler divides by `RESEED_PERIOD_FRAMES` (≈9 minutes)
+> and the full schedule cycles in ~9.6 h. The kernel's seconds-based
+> `SECONDS_PER_RESEED` is the engine-facing constant.
+
+**Engine mirror (clean-room track).** The same kernel feeds the engine's own
+trade UI: `World::install_seru_trade_config` reads a 24-byte
+[`SeruTradeConfig`] blob (enabled + seed) that `apply::enable_seru_trades` can
+write, and `World::open_seru_trade` / `apply_seru_trade` render + apply the swap
+through `MenuState::ShopMenu`/`ShopTrade`/`ShopTradeConfirm`. (Engine and retail
+share the offer math; the engine UI's migration to the bucket+`give_level`
+schedule is in progress.)
+
+> Verified by the rando `seru_trade_real` disc oracle (every piece lands in 0899,
+> the schedule round-trips to the kernel offers, the SCUS gap is left untouched,
+> byte-deterministic) plus the kernel unit tests; the retail screen is
+> hardware-confirmed (render → slide → cursor → confirm → swap).
 
 ### Treasure chests
 
@@ -1145,6 +1204,8 @@ bit-for-bit.
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
+| `crates/rando` `seru_trade_real` | disc-gated | seru-trade config write: assert an unpatched disc reports no config, then off the patched image the embedded blob decodes back to the written `(enabled, seed, offer cap)`, the write is same-size + a tiny localized edit, re-running with a new seed overwrites the prior blob, and a fixed seed is byte-deterministic |
+| `crates/engine-core` `seru_trade_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch the seru-trade config onto the disc, re-decode it from the patched SCUS, install it into a `World` holding a known party, open a vendor session, confirm the first offer, assert the owner's spell list swaps give→receive, and that advancing past a two-in-game-hour boundary reseeds the offers (baseline: an unpatched disc reports trading disabled) |
 | `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
 | `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
 | `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |

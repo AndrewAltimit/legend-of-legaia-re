@@ -63,6 +63,12 @@ pub struct ShopSession {
     pub pending_quantity: u8,
     /// `true` = buy (from shop), `false` = sell (from player inventory).
     pub pending_is_buying: bool,
+    /// Stable identity of the vendor running this shop (the seru-trade offer
+    /// generator keys on it so each vendor trades independently). Derived from
+    /// the shop record at field-shop arm time via
+    /// [`legaia_asset::seru_trade::vendor_id_from_shop`]; `0` for sessions built
+    /// directly (tests / host-supplied stock).
+    pub vendor_id: u16,
 }
 
 impl ShopSession {
@@ -72,6 +78,7 @@ impl ShopSession {
             pending_item_id: None,
             pending_quantity: 1,
             pending_is_buying: true,
+            vendor_id: 0,
         }
     }
 

@@ -26,6 +26,7 @@ full design.
   - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
+  - [Seru trading](#seru-trading)
   - [Chests](#chests)
   - [Steals](#steals)
   - [Monster stats](#monster-stats)
@@ -238,6 +239,39 @@ code injection**, not a data edit.
 The grant is **banked**, not an immediate level-up: it only writes the experience
 cell, so it shows in the status screen at once and applies as a level the next
 time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
+
+## Seru trading
+
+Adds an **in-shop trading vendor** that runs on real hardware (`--seru-trade`;
+`seru_overlay` + `apply::inject_trade_full`). Every merchant grows a fourth
+**Buy / Sell / Trade / Quit** row; picking Trade slides a screen in where the
+player swaps a party member's learned Seru-magic for a different one, at a level
+shown up front. The offer is **time-bucketed** (rotates as play continues) and
+fully **deterministic from the seed**.
+
+- **Offer math (`legaia_asset::seru_trade`, shared with the engine).** Each of 64
+  buckets holds one `(want, give, give_level)` preference (`give_level` in
+  `4..=9`). `bucket_offers` derives the schedule from the seed;
+  `bucket_table_to_bytes` serializes it (3 bytes/entry). `expand_offers` maps a
+  bucket against the live party to **one line per member who owns the wanted
+  seru**, *excluding* members who already own the give-back (a pointless trade).
+  Id space is the player Seru-magic block `0x81..=0x95`.
+- **Where it lives.** All of it — the picker edits, both stubs, the trade
+  handler, the strings, the bucket table, and the runtime cells — is hosted in the
+  **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route
+  a confirm into an unused picker sub-mode, and everything else sits in 0899's
+  reference-free ~3.8 KB all-zero dead run (resident throughout the shop). Nothing
+  touches the SCUS rodata gap, so seru trading **composes with the
+  bonus-equipment-drop / flee-EXP / Seru-Bell-name gap features**.
+  `apply::inject_trade_full` writes each piece via `patch_prot_entry(899, …)`,
+  guarded as all-zero dead space.
+- **The swap** rewrites the chosen owner's spell list in place (id at `+0x13D`,
+  level at `+0x161` = the bucket's `give_level`), mirroring
+  `engine_core::seru_trade::apply_trade`.
+- Cadence: the `0x80084570` counter ticks ~per-frame, so the handler divides by
+  `RESEED_PERIOD_FRAMES` (≈9 min/bucket; full cycle ≈9.6 h). The engine track also
+  uses a `SeruTradeConfig` blob (`apply::enable_seru_trades`) for its own
+  clean-room trade UI off the same kernel.
 
 ## Chests
 
