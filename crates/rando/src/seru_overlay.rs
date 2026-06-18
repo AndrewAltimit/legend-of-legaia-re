@@ -102,6 +102,7 @@ const S3: u32 = 19;
 const S4: u32 = 20;
 const S5: u32 = 21;
 const S6: u32 = 22;
+const GP: u32 = 28;
 const SP: u32 = 29;
 const RA: u32 = 31;
 
@@ -287,6 +288,17 @@ pub const SERU_DEMO_BASE_ID: u16 = 0x81;
 /// Native window/box-frame draw `FUN_8002C69C(a0=x, a1=y, a2=w, a3=h)` (POLY_FT4
 /// / SPRT emitter — the dialog/menu window). SCUS-resident; 4 register args.
 pub const BOX_FN: u32 = 0x8002_C69C;
+/// Window-skin selector global `gp[+`[`WINDOW_SKIN_OFF`]`]` (set by `FUN_80034b6c`,
+/// read by [`BOX_FN`]): a skin index into the corner/edge table `DAT_800732a4`
+/// (12-byte stride). The per-frame finalize `FUN_80031d00` rewrites it from each
+/// drawn window's `+0x1d` skin byte, so it holds the *last* window's skin — which,
+/// once the blue picker windows slide away, is the brown name-plate's special skin
+/// (`0x31`), rendering our box as a brown name-plate. We force [`WINDOW_SKIN_STD`]
+/// (index 0 = the standard box; the blue fill is hardcoded regardless of index)
+/// right before our box draw via `sw zero, WINDOW_SKIN_OFF($gp)`.
+pub const WINDOW_SKIN_OFF: u16 = 0x14C;
+/// Standard menu-box skin index (`DAT_800732a4[0]`; indices 0/3/4 are identical).
+pub const WINDOW_SKIN_STD: u16 = 0;
 
 /// Per-frame button mask (1 = pressed), built by `FUN_8001822C`. Standard PSX
 /// bits: UP 0x10, DOWN 0x40, START 0x08, TRIANGLE 0x1000, CIRCLE 0x2000,
@@ -788,7 +800,12 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w[skip_b] = bne(T4, S3, (skip as i32 - (skip_b as i32 + 1)) as i16);
 
     // native window box LAST so it lands behind the header + lines:
-    // FUN_8002C69C(x=0x28, y=0x28, w=0xB0, h=0x80).
+    // FUN_8002C69C(x=0x28, y=0x28, w=0xB0, h=0x80). Force the standard box skin first
+    // (gp[+0x14c] = WINDOW_SKIN_STD = 0): once the blue picker windows slide away, the
+    // finalize pass leaves the skin on the brown name-plate, which would otherwise
+    // draw our box as a brown name-plate. The blue fill is hardcoded in BOX_FN.
+    w.push(addiu(T0, ZERO, WINDOW_SKIN_STD));
+    w.push(sw(T0, GP, WINDOW_SKIN_OFF)); // gp[+0x14c] = standard blue-box skin
     w.push(addiu(A0, ZERO, 0x28));
     w.push(addiu(A1, ZERO, 0x28));
     w.push(addiu(A2, ZERO, 0xB0));
