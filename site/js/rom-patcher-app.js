@@ -8,7 +8,7 @@
  * speed_chain, chicken_heart, good_luck_bell, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
- * solo_strong_encounters, flee_exp)
+ * solo_strong_encounters, flee_exp, seru_trade)
  * -> { data, summary, seed }`
  * and `resolve_seed(str)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
@@ -75,7 +75,7 @@ function setSeg(name, value) {
 const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
-  door_coupling: 'coupled', houseDoors: false, equipmentDrops: false,
+  door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -110,6 +110,7 @@ const PRESETS = {
     soloStrong: true, fleeExp: true,
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     monster_stats: 'shuffle', equip_bonus: 'shuffle', equipmentDrops: true,
+    seruTrade: true,
     ...STARTING_BUNDLE,
   },
   chaos: {
@@ -121,7 +122,7 @@ const PRESETS = {
     houseDoors: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
-    equipmentDrops: true,
+    equipmentDrops: true, seruTrade: true,
     ...STARTING_BUNDLE,
   },
 };
@@ -142,6 +143,7 @@ function init() {
   const soloStrongChk = $('rom-solo-strong');
   const fleeExpChk = $('rom-flee-exp');
   const equipmentDropsChk = $('rom-equipment-drops');
+  const seruTradeChk = $('rom-seru-trade');
   const weaponSpecialtyChk = $('rom-weapon-specialty');
   const houseDoorsChk = $('rom-house-doors');
   const unusedEnemiesChk = $('rom-unused-enemies');
@@ -173,6 +175,7 @@ function init() {
     soloStrongChk.checked = cfg.soloStrong;
     fleeExpChk.checked = cfg.fleeExp;
     equipmentDropsChk.checked = cfg.equipmentDrops;
+    seruTradeChk.checked = cfg.seruTrade;
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     startingLevelSel.value = String(cfg.startingLevel);
@@ -245,6 +248,7 @@ function init() {
     const encounterScope = segVal('encounter_scope', 'scene');
     const soloStrong = soloStrongChk.checked;
     const fleeExp = fleeExpChk.checked;
+    const seruTrade = seruTradeChk.checked;
     const chests = segVal('chests', 'none');
     const shops = segVal('shops', 'none');
     const casino = segVal('casino', 'none');
@@ -303,7 +307,7 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp);
+      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);

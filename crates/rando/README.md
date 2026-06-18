@@ -242,29 +242,36 @@ time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
 
 ## Seru trading
 
-Lets vendors offer to **trade** one of a character's seru for a different seru
-(`seru_trade` module; `--seru-trade`). Hovering a seru you own — e.g. "Gimard
-(Vahn)" — shows what the vendor would hand back for it; selecting it pops a
-yes/no confirm. Each vendor's preferences **reseed every two in-game hours**.
+Adds an **in-shop trading vendor** that runs on real hardware (`--seru-trade`;
+`seru_overlay` + `apply::inject_trade_full`). Every merchant grows a fourth
+**Buy / Sell / Trade / Quit** row; picking Trade slides a screen in where the
+player swaps a party member's learned Seru-magic for a different one, at a level
+shown up front. The offer is **time-bucketed** (rotates as play continues) and
+fully **deterministic from the seed**.
 
-The offers are *not* a static table — they're a deterministic function of
-`(master seed, vendor id, in-game-time bucket, the party's currently-owned
-seru)`, evaluated by the shared kernel `legaia_asset::seru_trade::vendor_offers`.
-The randomizer's only disc edit is therefore a tiny **config blob** (enabled flag
-+ the run's seed + the per-vendor offer cap), which the clean-room engine reads
-and recomputes the live offers from — reseeding as the retail play-time counter
-(`0x80084570`) crosses each two-hour boundary (`SECONDS_PER_RESEED = 7200`).
-
-- `apply::enable_seru_trades` writes the 24-byte blob
-  (`SeruTradeConfig::to_blob`) into the preserved rodata gap at `0x8007AB38`, at
-  `0x8007AF00` — above the bonus-equipment / flee-EXP routines, so all three
-  coexist. It is **plain data, not code**: retail has no trade UI and never reads
-  it, so on real hardware the patch is inert; the clean-room engine gives it
-  meaning. Same dead-space guard as the [item-name](#unused-content) injection
-  (refuses a non-zero, non-blob region), and re-running with a new seed overwrites
-  the prior blob.
-- The receive pool is the player Seru-magic id block (`0x81..=0x95`); each offer's
-  give and receive are guaranteed distinct.
+- **Offer math (`legaia_asset::seru_trade`, shared with the engine).** Each of 64
+  buckets holds one `(want, give, give_level)` preference (`give_level` in
+  `4..=9`). `bucket_offers` derives the schedule from the seed;
+  `bucket_table_to_bytes` serializes it (3 bytes/entry). `expand_offers` maps a
+  bucket against the live party to **one line per member who owns the wanted
+  seru**, *excluding* members who already own the give-back (a pointless trade).
+  Id space is the player Seru-magic block `0x81..=0x95`.
+- **Where it lives.** All of it — the picker edits, both stubs, the trade
+  handler, the strings, the bucket table, and the runtime cells — is hosted in the
+  **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route
+  a confirm into an unused picker sub-mode, and everything else sits in 0899's
+  reference-free ~3.8 KB all-zero dead run (resident throughout the shop). Nothing
+  touches the SCUS rodata gap, so seru trading **composes with the
+  bonus-equipment-drop / flee-EXP / Seru-Bell-name gap features**.
+  `apply::inject_trade_full` writes each piece via `patch_prot_entry(899, …)`,
+  guarded as all-zero dead space.
+- **The swap** rewrites the chosen owner's spell list in place (id at `+0x13D`,
+  level at `+0x161` = the bucket's `give_level`), mirroring
+  `engine_core::seru_trade::apply_trade`.
+- Cadence: the `0x80084570` counter ticks ~per-frame, so the handler divides by
+  `RESEED_PERIOD_FRAMES` (≈9 min/bucket; full cycle ≈9.6 h). The engine track also
+  uses a `SeruTradeConfig` blob (`apply::enable_seru_trades`) for its own
+  clean-room trade UI off the same kernel.
 
 ## Chests
 

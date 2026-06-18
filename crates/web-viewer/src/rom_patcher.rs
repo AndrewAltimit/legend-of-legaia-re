@@ -86,7 +86,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// lone enemy, so an over-strong monster is faced solo instead of in a pack.
 /// `flee_exp` injects a code hook into the battle-action escape teardown so that
 /// successfully running away banks a small slice of the fled fight's experience
-/// into the party (vanilla awards nothing for fleeing).
+/// into the party (vanilla awards nothing for fleeing). `seru_trade` adds an
+/// in-shop trading vendor (a fourth Buy/Sell/Trade/Quit row) that swaps a party
+/// member's learned Seru-magic for a different one at a fixed level, on a
+/// time-bucketed schedule derived from the seed; all of it is hosted in the menu
+/// overlay, so it composes with every other option here.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -127,6 +131,7 @@ pub fn patch_rom(
     starting_level: u8,
     solo_strong_encounters: bool,
     flee_exp: bool,
+    seru_trade: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -258,6 +263,17 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("flee-exp: untouched\n");
+    }
+
+    // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for
+    // a different one (time-bucketed, deterministic from the seed). All code + data is
+    // hosted in the menu overlay, so it composes with every other feature here.
+    if seru_trade {
+        apply::inject_trade_full(&mut patcher, seed_n)
+            .map_err(|e| err(format!("seru-trade: {e}")))?;
+        summary.push_str("seru-trade: in-shop Seru trading vendor enabled\n");
+    } else {
+        summary.push_str("seru-trade: untouched\n");
     }
 
     match chest_mode {

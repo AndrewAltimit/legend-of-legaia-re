@@ -448,54 +448,57 @@ default in the web Balanced / Full Chaos presets.
 
 ### Seru trading
 
-`--seru-trade` lets vendors offer to **swap one of a character's seru for a
-different seru**, with each vendor's preferences **reseeding every two in-game
-hours**. Unlike every other feature here, this one is **data + clean-room UI**:
-the randomizer embeds a tiny config on the disc, and the clean-room engine
-renders the interactive trade menu and performs the swap. (Retail has no trade
-UI, so on real hardware the patch is inert.)
+`--seru-trade` adds an **in-shop Seru-trading vendor** that runs **on real
+hardware**: every merchant grows a fourth **Buy / Sell / Trade / Quit** row, and
+picking Trade opens a screen where the player swaps a party member's learned
+Seru-magic for a different one. The offer is **time-bucketed** — it rotates as
+play continues — and fully **deterministic from the run's seed**, so a preview
+and the game always agree.
 
-**Why a config blob, not a table.** The offers aren't fixed — they're a
-deterministic function of `(master seed, vendor id, in-game-time bucket, the
-party's currently-owned seru)`, evaluated by the shared kernel
-[`legaia_asset::seru_trade::vendor_offers`]. So the only thing the randomizer
-writes is a 24-byte blob (`SeruTradeConfig::to_blob`: an *enabled* flag + the
-run's master seed + the per-vendor offer cap), and the engine recomputes the
-live offers — reseeding as the retail play-time counter (`0x80084570`) crosses
-each two-hour boundary (`SECONDS_PER_RESEED = 7200`). The randomizer's preview
-and the engine's UI therefore always agree.
+**What an offer is (`legaia_asset::seru_trade`, the shared kernel).** Each time
+bucket has one `(want, give, give_level)` preference: the vendor wants a seru
+*type* and hands back a different one at a fixed level (`4..=9`, part of the
+trade's value, shown before you trade). The randomizer precomputes the whole
+64-bucket schedule from the seed (`bucket_offers` → `bucket_table_to_bytes`, 3
+bytes/entry) and embeds it. At runtime the handler indexes it by
+`(play_time / period) & 63`. Against the live party the bucket expands
+(`expand_offers`) to **one selectable line per member who owns the wanted seru** —
+so the same type held by two members lists once each — **excluding** any member
+who already owns the give-back (a pointless trade). The seru id space is the
+player Seru-magic block `0x81..=0x95`.
 
-**The write (`seru_trade` module).** The blob goes into the same preserved
-1028-byte rodata zero gap as the [equipment-drop](#equipment-drops) /
-[flee-EXP](#run-away-exp) routines (`0x8007AB38`), at `0x8007AF00` — above both
-injected routines, so all three coexist. It is **plain data, not code**. The
-planner refuses to write unless the target region is all-zero dead space (or
-already holds a prior seru-trade blob, so re-running with a new seed is
-idempotent), exactly like the [name](#name-injection) injection's dead-space
-guard. `apply::enable_seru_trades` performs the single same-size edit;
-`apply::current_seru_trade` reads it back.
+**The retail build (`seru_overlay` + `apply::inject_trade_full`).** This is a
+hand-assembled MIPS feature, not a value edit. Two byte-verified edits to the
+menu overlay (PROT **0899**) turn the picker into Buy / Sell / Trade / Quit and
+route a confirmed Trade into an unused picker sub-mode; the trade screen itself —
+the per-owner render, the native window-slide in/out, the cursor, the explicit
+"Trade?" confirm, and the swap — is a routine hosted **entirely in 0899's own
+reference-free dead region** (a ~3.8 KB all-zero run inside the resident overlay
+image), reached by `j` from the in-overlay detours. Because nothing lands in the
+SCUS rodata gap, seru trading **composes with every gap-based feature**
+([equipment drops](#equipment-drops), [flee-EXP](#run-away-exp), the Seru-Bell
+[name](#name-injection)). The injector writes the handler + stubs + strings + the
+seed-derived bucket table via `patch_prot_entry(899, …)`, each guarded as
+all-zero dead space. The swap rewrites the chosen owner's spell list in place
+(id at `+0x13D`, level at `+0x161`), mirroring `engine_core::seru_trade::apply_trade`.
 
-**Engine side.** `World::install_seru_trade_config` reads the blob from SCUS at
-boot; `World::open_seru_trade` builds a `SeruTradeSession` (the offer list +
-cursor + yes/no confirm) for the current party + play time, and
-`World::apply_seru_trade` rewrites the chosen owner's spell list (the player
-Seru-magic id block `0x81..=0x95`). Trading is a **real row in the shop menu**:
-opening an op-`0x49` merchant shows a top-level **Buy / Sell / Trade / Exit**
-picker (`MenuState::ShopMenu`), with the Trade row present only when the disc
-enabled trading. `World::try_arm_field_shop` captures a stable per-vendor id from
-the shop's identity (its name + stock, via
-`legaia_asset::seru_trade::vendor_id_from_shop`) onto the `ShopSession`, so each
-merchant reseeds its own offers. Picking Trade opens the vendor's offer list
-(`MenuState::ShopTrade`) → a yes/no confirm (`MenuState::ShopTradeConfirm`) that
-applies the swap, exactly like the Buy → Quantity → Confirm flow. The menu state
-machine lives in `legaia_engine_vm::menu`; the host resolves the dynamic Trade
-row via the new `MenuHost::commit_route_override` hook.
+> Cadence note: the play counter at `0x80084570` advances ~per-frame (≈60/s), not
+> per-second, so the retail handler divides by `RESEED_PERIOD_FRAMES` (≈9 minutes)
+> and the full schedule cycles in ~9.6 h. The kernel's seconds-based
+> `SECONDS_PER_RESEED` is the engine-facing constant.
 
-> Verified by the rando `seru_trade_real` config round-trip oracle (the blob
-> decodes back, same-size, byte-deterministic) **and** the engine
-> `seru_trade_randomizer_runtime_e2e` oracle (patch the config onto the real
-> disc, install it, confirm a trade, assert the roster swap + the two-hour
-> reseed, with a non-vacuous disabled baseline).
+**Engine mirror (clean-room track).** The same kernel feeds the engine's own
+trade UI: `World::install_seru_trade_config` reads a 24-byte
+[`SeruTradeConfig`] blob (enabled + seed) that `apply::enable_seru_trades` can
+write, and `World::open_seru_trade` / `apply_seru_trade` render + apply the swap
+through `MenuState::ShopMenu`/`ShopTrade`/`ShopTradeConfirm`. (Engine and retail
+share the offer math; the engine UI's migration to the bucket+`give_level`
+schedule is in progress.)
+
+> Verified by the rando `seru_trade_real` disc oracle (every piece lands in 0899,
+> the schedule round-trips to the kernel offers, the SCUS gap is left untouched,
+> byte-deterministic) plus the kernel unit tests; the retail screen is
+> hardware-confirmed (render → slide → cursor → confirm → swap).
 
 ### Treasure chests
 
