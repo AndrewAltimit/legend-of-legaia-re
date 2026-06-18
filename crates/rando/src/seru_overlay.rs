@@ -354,6 +354,11 @@ pub const TRADE_YESNO_VA: u32 = 0x8007_AED4;
 /// The current offer's give-back id, stashed by the offer compute so the per-owner
 /// loop can skip owners who already own it (a pointless trade). SCUS gap, resident.
 pub const TRADE_GIVE_ID_VA: u32 = 0x8007_AED8;
+/// Selected owner's record base + want-index, stashed by the render loop when it
+/// draws the cursor's line, so the swap on ✕-Yes writes the right record without a
+/// re-scan. SCUS gap, resident.
+pub const TRADE_SEL_BASE_VA: u32 = 0x8007_AEDC;
+pub const TRADE_SEL_J_VA: u32 = 0x8007_AEE0;
 
 /// Confirm-prompt strings, embedded in 0899 above the handler (resident in-shop).
 /// Drawn only in the confirm sub-state; the selected line + reward header already
@@ -943,6 +948,21 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(addu(A3, ZERO, S2)); // y
     w.push(jal(NUMBER_FN));
     w.push(nop());
+    // stash (record base, want-index) when this is the selected line, so the swap on
+    // ✕-Yes writes the right owner without a re-scan. cur_line = (s2 - ROW_FIRST_Y)>>4
+    // compared to the (last-frame-clamped) cursor cell.
+    w.push(lui(AT, hi(TRADE_CURSOR_VA)));
+    w.push(lw(T0, AT, lo(TRADE_CURSOR_VA))); // t0 = cursor
+    w.push(addiu(T1, S2, (0u16).wrapping_sub(ROW_FIRST_Y))); // (fills t0 load-delay)
+    w.push(srl(T1, T1, 4)); // t1 = cur_line
+    let stash_b = w.len();
+    w.push(0); // bne t1,t0,.nostash (patched)
+    w.push(nop());
+    w.push(lui(AT, hi(TRADE_SEL_BASE_VA)));
+    w.push(sw(S4, AT, lo(TRADE_SEL_BASE_VA))); // selected owner record base
+    w.push(sw(S1, AT, lo(TRADE_SEL_J_VA))); // selected want-index (same gap page)
+    let nostash = w.len();
+    w[stash_b] = bne(T1, T0, (nostash as i32 - (stash_b as i32 + 1)) as i16);
     w.push(addiu(S2, S2, ROW_STEP_Y)); // advance the row
     let skip = w.len();
     w.push(addiu(S1, S1, 1)); // j++
@@ -1006,9 +1026,32 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         w.push(lui(AT, hi(TRADE_YESNO_VA)));
         w.push(sw(T6, AT, lo(TRADE_YESNO_VA))); // yesno = 1 (No)
     });
-    // ✕ resolves (Yes = perform the swap — TODO; for now both just leave), ○ cancels.
-    // Either way clear the confirm sub-state -> back to browsing.
+    // ✕ resolves: on Yes, perform the swap on the selected owner; ○ cancels. Either
+    // way clear the confirm sub-state -> back to browsing.
     edge(&mut w, PAD_CONFIRM_MASK, &|w| {
+        // skip the swap unless yesno == 0 (Yes)
+        w.push(lui(AT, hi(TRADE_YESNO_VA)));
+        w.push(lw(T4, AT, lo(TRADE_YESNO_VA)));
+        w.push(nop()); // load-delay
+        let noswap_b = w.len();
+        w.push(0); // bne t4,zero,.noswap (No)
+        w.push(nop());
+        // SWAP: on the stashed selected owner, replace the wanted seru with the
+        // give-back at give_level (s6). We already filtered owners who own the
+        // give-back, so this is always the in-place replace (count unchanged), matching
+        // engine apply_trade. ids[j] @ +0x13D, levels[j] @ +0x161 are bytes.
+        w.push(lui(AT, hi(TRADE_SEL_BASE_VA)));
+        w.push(lw(T4, AT, lo(TRADE_SEL_BASE_VA))); // t4 = owner record base
+        w.push(lui(AT, hi(TRADE_SEL_J_VA)));
+        w.push(lw(T5, AT, lo(TRADE_SEL_J_VA))); // t5 = want index
+        w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
+        w.push(lw(T6, AT, lo(TRADE_GIVE_ID_VA))); // t6 = give id
+        w.push(addu(T4, T4, T5)); // base + j
+        w.push(sb(T6, T4, lo(SERU_IDS_VA - CHAR_RECORD_BASE))); // ids[j] = give id (+0x13D)
+        w.push(sb(S6, T4, SERU_LEVELS_OFFSET)); // levels[j] = give_level (+0x161)
+        let noswap = w.len();
+        w[noswap_b] = bne(T4, ZERO, (noswap as i32 - (noswap_b as i32 + 1)) as i16);
+        // clear the confirm sub-state (both Yes and No return to browsing)
         w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
         w.push(sw(ZERO, AT, lo(TRADE_CONFIRM_VA)));
     });
@@ -1031,9 +1074,15 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         w.push(addiu(T1, T1, 1)); // cursor++
     });
     edge(&mut w, PAD_CONFIRM_MASK, &|w| {
+        // only enter confirm if there's a line to confirm (N > 0, kept in t0)
+        let sk = w.len();
+        w.push(0); // blez t0,.skipenter
+        w.push(nop());
         w.push(addiu(T6, ZERO, 1));
         w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
         w.push(sw(T6, AT, lo(TRADE_CONFIRM_VA))); // enter confirm
+        let done = w.len();
+        w[sk] = blez(T0, (done as i32 - (sk as i32 + 1)) as i16);
     });
     // ○ edge -> exit (jump to .do_exit, far ahead).
     w.push(andi(T5, T2, HANDLER_CANCEL_MASK));
@@ -1420,6 +1469,9 @@ const fn bgez(rs: u32, off: i16) -> u32 {
 }
 const fn blez(rs: u32, off: i16) -> u32 {
     (0x06 << 26) | (rs << 21) | (off as u16 as u32)
+}
+const fn sb(rt: u32, rs: u32, off: u16) -> u32 {
+    (0x28 << 26) | (rs << 21) | (rt << 16) | off as u32
 }
 const fn xori(rt: u32, rs: u32, imm: u16) -> u32 {
     (0x0e << 26) | (rs << 21) | (rt << 16) | imm as u32
@@ -2227,6 +2279,20 @@ mod tests {
         assert!(
             h.contains(&sw(ZERO, AT, lo(TRADE_CONFIRM_VA))),
             "✕/○ in confirm clears the sub-state"
+        );
+        // The give-filter scans the owner's list for the give-back id (skip if owned).
+        assert!(
+            h.contains(&lw(T0, AT, lo(TRADE_GIVE_ID_VA))),
+            "reads the give id for the filter/swap"
+        );
+        // The swap writes the spell list: sb to ids (+0x13D) and levels (+0x161).
+        assert!(
+            h.contains(&sb(T6, T4, lo(SERU_IDS_VA - CHAR_RECORD_BASE))),
+            "swap writes the give id into the id array"
+        );
+        assert!(
+            h.contains(&sb(S6, T4, SERU_LEVELS_OFFSET)),
+            "swap writes the give level into the level array"
         );
         // On exit it slides the picker windows back in via the widget VM.
         assert!(
