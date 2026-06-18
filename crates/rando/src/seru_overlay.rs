@@ -102,6 +102,7 @@ const S3: u32 = 19;
 const S4: u32 = 20;
 const S5: u32 = 21;
 const S6: u32 = 22;
+const S7: u32 = 23;
 const GP: u32 = 28;
 const SP: u32 = 29;
 const RA: u32 = 31;
@@ -299,6 +300,40 @@ pub const BOX_FN: u32 = 0x8002_C69C;
 pub const WINDOW_SKIN_OFF: u16 = 0x14C;
 /// Standard menu-box skin index (`DAT_800732a4[0]`; indices 0/3/4 are identical).
 pub const WINDOW_SKIN_STD: u16 = 0;
+
+// --- Trade box geometry + slide-in animation ----------------------------------
+//
+// The box + its text are positioned below the gold/name boxes (which sit at the top)
+// and animate in horizontally from the left, mirroring the shop's window slide. The
+// slide is self-driven (the window manager only animates its own windows, not our
+// raw box): a persistent signed x-offset in [`TRADE_SLIDE_DELTA_VA`] starts at
+// [`SLIDE_START_OFF`] (box fully off the left edge) and steps toward 0 by
+// [`SLIDE_STEP`] each frame; the offset is added to the box x and every text x.
+
+/// Box top-left x / y and size. Lowered (`y=0x48`) so it clears the gold + vendor-
+/// name boxes, and enlarged (`0xC8 × 0xA0`) to use the freed space.
+pub const BOX_X: u16 = 0x28;
+pub const BOX_Y: u16 = 0x48;
+pub const BOX_W: u16 = 0xC8;
+pub const BOX_H_PX: u16 = 0xA0;
+/// Text columns (relative to screen, before the slide offset): reward header /
+/// per-owner want name / owner name / level number.
+pub const COL_HEADER_X: u16 = 0x30;
+pub const COL_WANT_X: u16 = 0x40;
+pub const COL_OWNER_X: u16 = 0x80;
+pub const COL_LEVEL_X: u16 = 0xB0;
+/// Row baselines: reward header y, first per-owner row y, and per-row y advance.
+pub const ROW_HEADER_Y: u16 = 0x54;
+pub const ROW_FIRST_Y: u16 = 0x64;
+pub const ROW_STEP_Y: u16 = 0x10;
+/// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
+/// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
+pub const TRADE_SLIDE_DELTA_VA: u32 = 0x8007_AEC4;
+/// Initial slide offset: box fully off the left edge (`-(BOX_X + BOX_W)` rounded).
+pub const SLIDE_START_OFF: i16 = -0xF0;
+/// Per-frame slide step toward 0. Divides `SLIDE_START_OFF` evenly so the box lands
+/// exactly on 0 (no overshoot) — asserted in [`assemble_trade_handler`].
+pub const SLIDE_STEP: u16 = 0x18;
 
 /// Per-frame button mask (1 = pressed), built by `FUN_8001822C`. Standard PSX
 /// bits: UP 0x10, DOWN 0x40, START 0x08, TRIANGLE 0x1000, CIRCLE 0x2000,
@@ -602,6 +637,10 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w.push(nop());
     w.push(lw(RA, SP, 0));
     w.push(addiu(SP, SP, 8));
+    // Reset the slide offset so the trade box animates in from the left this entry.
+    w.push(addiu(T1, ZERO, SLIDE_START_OFF as u16)); // \ TRADE_SLIDE_DELTA = SLIDE_START_OFF
+    w.push(lui(AT, hi(TRADE_SLIDE_DELTA_VA))); //  |
+    w.push(sw(T1, AT, lo(TRADE_SLIDE_DELTA_VA))); //  /
     w.push(addiu(T1, ZERO, 1)); //  \ TRADE_ACTIVE = 1 (private flag, menu-safe)
     w.push(lui(AT, hi(TRADE_ACTIVE_VA))); //  |
     w.push(sw(T1, AT, lo(TRADE_ACTIVE_VA))); //  /
@@ -687,9 +726,27 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         sw(S3, SP, 0x20),
         sw(S4, SP, 0x24),
         sw(S5, SP, 0x28),
+        sw(S7, SP, 0x30), // s7 = slide x-offset (held across the frame)
         jal(PAD_POLL_FN), // refresh PAD_CUR
         nop(),
     ];
+
+    // --- slide-in: s7 = the box/text x-offset, stepped from SLIDE_START_OFF -> 0 ---
+    debug_assert!(
+        (-(SLIDE_START_OFF as i32)) % (SLIDE_STEP as i32) == 0,
+        "slide step must divide the start offset evenly (no overshoot past 0)"
+    );
+    w.push(lui(AT, hi(TRADE_SLIDE_DELTA_VA)));
+    w.push(lw(S7, AT, lo(TRADE_SLIDE_DELTA_VA)));
+    w.push(nop()); // load-delay before the branch reads s7
+    let slid_b = w.len();
+    w.push(0); // bgez s7,.slid (settled at >=0 -> skip stepping) (patched)
+    w.push(nop());
+    w.push(addiu(S7, S7, SLIDE_STEP)); // step toward 0
+    w.push(lui(AT, hi(TRADE_SLIDE_DELTA_VA)));
+    w.push(sw(S7, AT, lo(TRADE_SLIDE_DELTA_VA)));
+    let slid = w.len();
+    w[slid_b] = bgez(S7, (slid as i32 - (slid_b as i32 + 1)) as i16);
 
     // --- current offer: want -> s3, give -> t5 ---
     if SERU_DEMO_FORCE_WANT {
@@ -719,17 +776,17 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(addiu(T7, T7, lo(SERU_NAME_PTRS)));
     w.push(addu(T7, T7, T6));
     w.push(lw(A0, T7, 0));
-    w.push(addiu(V0, ZERO, 0x34)); // y (fills the lw load-delay before a0's use)
+    w.push(addiu(V0, ZERO, ROW_HEADER_Y)); // y (fills the lw load-delay before a0's use)
     w.push(sw(V0, SP, 0x10));
     w.push(addiu(A1, ZERO, 0));
     w.push(addiu(A2, ZERO, 0));
-    w.push(addiu(A3, ZERO, 0x30)); // x
+    w.push(addiu(A3, S7, COL_HEADER_X)); // x + slide offset
     w.push(jal(TEXT_DRAW_FN));
     w.push(nop());
 
     // --- per-owner lines: for slot in 0..4, for j in 0..count: if ids[j]==want ---
     w.push(addiu(S0, ZERO, 0)); // slot = 0
-    w.push(addiu(S2, ZERO, 0x44)); // first row y
+    w.push(addiu(S2, ZERO, ROW_FIRST_Y)); // first row y
     let slotloop = w.len();
     w.push(slti(T0, S0, PARTY_SLOT_COUNT)); // slot < 4 ?
     let done_b = w.len();
@@ -766,26 +823,26 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(sw(S2, SP, 0x10)); // y (fills the lw load-delay)
     w.push(addiu(A1, ZERO, 0));
     w.push(addiu(A2, ZERO, 0));
-    w.push(addiu(A3, ZERO, 0x40)); // x
+    w.push(addiu(A3, S7, COL_WANT_X)); // x + slide offset
     w.push(jal(TEXT_DRAW_FN));
     w.push(nop());
-    // (2) owner name at x=0x80: a0 = s4 + record name offset (+0x2A7).
+    // (2) owner name: a0 = s4 + record name offset (+0x2A7).
     w.push(addiu(A0, S4, RECORD_NAME_OFFSET));
     w.push(sw(S2, SP, 0x10));
     w.push(addiu(A1, ZERO, 0));
     w.push(addiu(A2, ZERO, 0));
-    w.push(addiu(A3, ZERO, 0x80));
+    w.push(addiu(A3, S7, COL_OWNER_X)); // x + slide offset
     w.push(jal(TEXT_DRAW_FN));
     w.push(nop());
-    // (3) level number at x=0xB0: FUN_80034b78(*(s4+0x161+j), 1, 0xB0, y=s2).
+    // (3) level number: FUN_80034b78(*(s4+0x161+j), 1, COL_LEVEL_X + slide, y=s2).
     w.push(addu(T1, S4, S1));
     w.push(lbu(A0, T1, SERU_LEVELS_OFFSET)); // a0 = level value
     w.push(addiu(A1, ZERO, 1)); // min_digits (fills the lbu load-delay)
-    w.push(addiu(A2, ZERO, 0xB0)); // x
+    w.push(addiu(A2, S7, COL_LEVEL_X)); // x + slide offset
     w.push(addu(A3, ZERO, S2)); // y
     w.push(jal(NUMBER_FN));
     w.push(nop());
-    w.push(addiu(S2, S2, 0x0E)); // y += 0xe (advance the row)
+    w.push(addiu(S2, S2, ROW_STEP_Y)); // advance the row
     let skip = w.len();
     w.push(addiu(S1, S1, 1)); // j++
     w.push(j(va(seruloop)));
@@ -806,10 +863,10 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     // draw our box as a brown name-plate. The blue fill is hardcoded in BOX_FN.
     w.push(addiu(T0, ZERO, WINDOW_SKIN_STD));
     w.push(sw(T0, GP, WINDOW_SKIN_OFF)); // gp[+0x14c] = standard blue-box skin
-    w.push(addiu(A0, ZERO, 0x28));
-    w.push(addiu(A1, ZERO, 0x28));
-    w.push(addiu(A2, ZERO, 0xB0));
-    w.push(addiu(A3, ZERO, 0x80));
+    w.push(addiu(A0, S7, BOX_X)); // x + slide offset
+    w.push(addiu(A1, ZERO, BOX_Y)); // y (lowered below the gold/name boxes)
+    w.push(addiu(A2, ZERO, BOX_W)); // w (enlarged)
+    w.push(addiu(A3, ZERO, BOX_H_PX)); // h (enlarged)
     w.push(jal(BOX_FN));
     w.push(nop());
 
@@ -842,6 +899,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(lw(S3, SP, 0x20));
     w.push(lw(S4, SP, 0x24));
     w.push(lw(S5, SP, 0x28));
+    w.push(lw(S7, SP, 0x30));
     w.push(addiu(SP, SP, 0x38));
     w.push(jr(RA)); // return to the menu tick (FUN_801dc6b4)
     w.push(nop());
@@ -1076,6 +1134,9 @@ const fn divu(rs: u32, rt: u32) -> u32 {
 }
 const fn mflo(rd: u32) -> u32 {
     (rd << 11) | 0x12
+}
+const fn bgez(rs: u32, off: i16) -> u32 {
+    (0x01 << 26) | (rs << 21) | (0x01 << 16) | (off as u16 as u32)
 }
 const fn xori(rt: u32, rs: u32, imm: u16) -> u32 {
     (0x0e << 26) | (rs << 21) | (rt << 16) | imm as u32
