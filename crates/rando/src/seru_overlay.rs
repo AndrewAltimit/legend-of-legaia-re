@@ -351,6 +351,9 @@ pub const PAD_CONFIRM_MASK: u16 = 0x0040;
 pub const TRADE_CONFIRM_VA: u32 = 0x8007_AED0;
 /// Yes/No selection in the confirm sub-state (0 = Yes, 1 = No). SCUS gap, resident.
 pub const TRADE_YESNO_VA: u32 = 0x8007_AED4;
+/// The current offer's give-back id, stashed by the offer compute so the per-owner
+/// loop can skip owners who already own it (a pointless trade). SCUS gap, resident.
+pub const TRADE_GIVE_ID_VA: u32 = 0x8007_AED8;
 
 /// Confirm-prompt strings, embedded in 0899 above the handler (resident in-shop).
 /// Drawn only in the confirm sub-state; the selected line + reward header already
@@ -828,6 +831,9 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         w.push(lbu(S6, T1, 2)); // give_level (fills the t5 load-delay)
         w.push(nop()); // load-delay (s6 used by the header level draw)
     }
+    // stash give id so the per-owner loop can skip owners who already own it
+    w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
+    w.push(sw(T5, AT, lo(TRADE_GIVE_ID_VA)));
 
     // --- reward header: the give-back seru name at (x=0x30, y=0x34) ---
     id_times_12(&mut w, T5);
@@ -881,6 +887,33 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     let skip_b = w.len();
     w.push(0); // bne t4,s3,.skip (patched)
     w.push(nop());
+    // MATCH: skip this owner if they ALREADY own the give-back seru (pointless trade).
+    // Scan k=0..count for the give id; if found, jump to .nextslot (no line drawn).
+    // Uses t0/t1/t2 only — t6 still holds want*4 from the bne delay slot for the render.
+    w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
+    w.push(lw(T0, AT, lo(TRADE_GIVE_ID_VA))); // t0 = give id
+    w.push(addiu(T1, ZERO, 0)); // t1 = k = 0 (fills the lw load-delay)
+    let gloop = w.len();
+    w.push(slt(T2, T1, S5)); // k < count ?
+    let gdone_b = w.len();
+    w.push(0); // beq t2,zero,.gnotfound (give not owned -> draw)
+    w.push(nop());
+    w.push(addu(T2, S4, T1));
+    w.push(lbu(T2, T2, lo(SERU_IDS_VA - CHAR_RECORD_BASE))); // ids[k]
+    w.push(nop()); // load-delay before the beq reads t2
+    let gskip_b = w.len();
+    w.push(0); // beq t2,t0,.gskip (owns give -> skip owner)
+    w.push(nop());
+    w.push(addiu(T1, T1, 1)); // k++
+    w.push(j(va(gloop)));
+    w.push(nop());
+    let gskip = w.len();
+    w.push(0); // j .nextslot (skip owner) — patched once nextslot is known
+    w.push(nop());
+    let gnotfound = w.len();
+    w[gdone_b] = beq(T2, ZERO, (gnotfound as i32 - (gdone_b as i32 + 1)) as i16);
+    w[gskip_b] = beq(T2, T0, (gskip as i32 - (gskip_b as i32 + 1)) as i16);
+    // .gnotfound: render the line.
     // MATCH (1): want spell name at x=0x40 (t6 already = want*4 from the delay slot).
     w.push(sll(T7, T6, 1)); // want*8
     w.push(addu(T6, T7, T6)); // want*12
@@ -919,6 +952,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(addiu(S0, S0, 1)); // slot++
     w.push(j(va(slotloop)));
     w.push(nop());
+    w[gskip] = j(va(nextslot)); // give-owned -> skip this owner
     let done = w.len();
     w[done_b] = beq(T0, ZERO, (done as i32 - (done_b as i32 + 1)) as i16);
     w[nextslot_b] = beq(T0, ZERO, (nextslot as i32 - (nextslot_b as i32 + 1)) as i16);

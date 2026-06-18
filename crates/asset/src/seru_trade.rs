@@ -408,6 +408,10 @@ pub fn bucket_index(play_time_seconds: u32) -> usize {
 /// order. `owned` is the cross-party enumeration (e.g.
 /// `engine_core::seru_trade::party_owned_seru`). Empty when nobody owns the want
 /// or the bucket has no offer (`want_id == 0`).
+///
+/// Owners who **already own the give-back seru** are filtered out — trading the
+/// wanted seru for one you already hold is pointless (and would duplicate it), so
+/// they aren't offered the trade.
 pub fn expand_offers(offer: BucketOffer, owned: &[OwnedSeru]) -> Vec<OwnerTrade> {
     if offer.want_id == 0 {
         return Vec::new();
@@ -415,6 +419,11 @@ pub fn expand_offers(offer: BucketOffer, owned: &[OwnedSeru]) -> Vec<OwnerTrade>
     owned
         .iter()
         .filter(|o| o.seru_id == offer.want_id)
+        .filter(|o| {
+            !owned
+                .iter()
+                .any(|x| x.owner_slot == o.owner_slot && x.seru_id == offer.give_id)
+        })
         .map(|o| OwnerTrade {
             owner_slot: o.owner_slot,
             given_id: offer.want_id,
@@ -635,6 +644,29 @@ mod tests {
             )
             .is_empty()
         );
+        // An owner who already owns the give-back is filtered out (pointless trade):
+        // Noa (slot 1) owns both 0x82 (want) and 0x81 (give) -> only Vahn (slot 0) is
+        // offered the 0x82 -> 0x81 trade.
+        let mut owns_give = owned_set.clone();
+        owns_give.push(OwnedSeru {
+            seru_id: 0x81,
+            owner_slot: 1,
+            level: 2,
+        });
+        let filtered = expand_offers(
+            BucketOffer {
+                want_id: 0x82,
+                give_id: 0x81,
+                give_level: 7,
+            },
+            &owns_give,
+        );
+        assert_eq!(
+            filtered.len(),
+            1,
+            "owner already holding the give-back is skipped"
+        );
+        assert_eq!(filtered[0].owner_slot, 0);
     }
 
     #[test]
