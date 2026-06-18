@@ -997,6 +997,29 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
     patcher
         .patch_prot_entry(ov::HANDLER_OVL_PROT_INDEX, handler_off as u64, &handler)
         .context("write trade handler into menu overlay 0899")?;
+
+    // --- Confirm-prompt strings, embedded in 0899 above the handler (resident). ---
+    let strings: [(u32, &[u8], &str); 3] = [
+        (
+            ov::CONFIRM_PROMPT_STR_VA,
+            ov::CONFIRM_PROMPT_STR,
+            "confirm prompt",
+        ),
+        (ov::CONFIRM_YES_STR_VA, ov::CONFIRM_YES_STR, "confirm Yes"),
+        (ov::CONFIRM_NO_STR_VA, ov::CONFIRM_NO_STR, "confirm No"),
+    ];
+    for (va, bytes, what) in strings {
+        let off = (va - base) as usize;
+        if menu
+            .get(off..off + bytes.len())
+            .is_none_or(|r| r.iter().any(|&b| b != 0))
+        {
+            anyhow::bail!("0899 string region {va:#x} ({what}) is not all-zero dead space");
+        }
+        patcher
+            .patch_prot_entry(ov::HANDLER_OVL_PROT_INDEX, off as u64, bytes)
+            .with_context(|| format!("write {what} into menu overlay 0899"))?;
+    }
     Ok(())
 }
 

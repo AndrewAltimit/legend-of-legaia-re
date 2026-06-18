@@ -337,9 +337,38 @@ pub const TRADE_CURSOR_VA: u32 = 0x8007_AEC8;
 /// Previous-frame pad mask, for D-pad edge detection (one step per press, not per
 /// held frame). SCUS gap, resident.
 pub const TRADE_PAD_PREV_VA: u32 = 0x8007_AECC;
-/// D-pad bits in [`PAD_CUR_VA`] (built by `FUN_8001822C`): Up / Down move the cursor.
+/// D-pad bits in [`PAD_CUR_VA`] (built by `FUN_8001822C`): Up / Down move the line
+/// cursor; Left / Right pick Yes / No in the confirm sub-state.
 pub const PAD_UP_MASK: u16 = 0x1000;
 pub const PAD_DOWN_MASK: u16 = 0x4000;
+pub const PAD_LEFT_MASK: u16 = 0x8000;
+pub const PAD_RIGHT_MASK: u16 = 0x2000;
+/// Face button ✕ (CONFIRM) in [`PAD_CUR_VA`] (the low byte; ○ = [`HANDLER_CANCEL_MASK`]).
+pub const PAD_CONFIRM_MASK: u16 = 0x0040;
+
+/// Confirm sub-state cell (0 = browsing the owner lines, 1 = the Yes/No prompt for
+/// the selected line). SCUS gap, resident.
+pub const TRADE_CONFIRM_VA: u32 = 0x8007_AED0;
+/// Yes/No selection in the confirm sub-state (0 = Yes, 1 = No). SCUS gap, resident.
+pub const TRADE_YESNO_VA: u32 = 0x8007_AED4;
+
+/// Confirm-prompt strings, embedded in 0899 above the handler (resident in-shop).
+/// Drawn only in the confirm sub-state; the selected line + reward header already
+/// show *what* is being traded, so the prompt just needs the question + choices.
+pub const CONFIRM_PROMPT_STR_VA: u32 = 0x801E_7C00;
+pub const CONFIRM_PROMPT_STR: &[u8] = b"@Trade?\0";
+pub const CONFIRM_YES_STR_VA: u32 = 0x801E_7C10;
+pub const CONFIRM_YES_STR: &[u8] = b"@Yes\0";
+pub const CONFIRM_NO_STR_VA: u32 = 0x801E_7C18;
+pub const CONFIRM_NO_STR: &[u8] = b"@No\0";
+/// Confirm-prompt layout (inside the box, near its bottom): question row y, choices
+/// row y, and the Yes / No / cursor x columns.
+pub const PROMPT_Y: u16 = 0xB4;
+pub const CHOICE_Y: u16 = 0xC4;
+pub const YES_X: u16 = 0x40;
+pub const NO_X: u16 = 0x80;
+/// Cursor x just left of a Yes/No choice (re-uses the line-cursor sprite).
+pub const CHOICE_CURSOR_DX: u16 = 0x10;
 /// Native animated cursor sprite `FUN_8002b994(slot, mode, x, y)` — a 16×16 bobbing
 /// cursor (slot 0 = the standard menu cursor; `mode = 1` animates). Drawn at the
 /// selected owner line. (Already used by the row-4 stub as [`HIGHLIGHT_FN`].)
@@ -661,13 +690,19 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w.push(nop());
     w.push(lw(RA, SP, 0));
     w.push(addiu(SP, SP, 8));
-    // Reset the slide offset so the trade box animates in from the left this entry.
-    w.push(addiu(T1, ZERO, SLIDE_START_OFF as u16)); // \ TRADE_SLIDE_DELTA = SLIDE_START_OFF
-    w.push(lui(AT, hi(TRADE_SLIDE_DELTA_VA))); //  |
-    w.push(sw(T1, AT, lo(TRADE_SLIDE_DELTA_VA))); //  /
-    w.push(addiu(T1, ZERO, 1)); //  \ TRADE_ACTIVE = 1 (private flag, menu-safe)
-    w.push(lui(AT, hi(TRADE_ACTIVE_VA))); //  |
-    w.push(sw(T1, AT, lo(TRADE_ACTIVE_VA))); //  /
+    // Reset the trade-screen state for this entry. All cells live in the same
+    // 0x8007AExx page, so one `lui at` covers them. pad-prev = all-ones so the ✕ held
+    // from confirming "Trade" in the picker isn't seen as a fresh press on frame 1.
+    w.push(lui(AT, hi(TRADE_ACTIVE_VA)));
+    w.push(addiu(T1, ZERO, SLIDE_START_OFF as u16));
+    w.push(sw(T1, AT, lo(TRADE_SLIDE_DELTA_VA))); // slide = off-screen start
+    w.push(sw(ZERO, AT, lo(TRADE_CURSOR_VA))); // line cursor = 0
+    w.push(sw(ZERO, AT, lo(TRADE_CONFIRM_VA))); // confirm sub-state = 0 (browsing)
+    w.push(sw(ZERO, AT, lo(TRADE_YESNO_VA))); // yes/no = 0 (Yes)
+    w.push(addiu(T1, ZERO, 0xFFFF));
+    w.push(sw(T1, AT, lo(TRADE_PAD_PREV_VA))); // pad prev = all-held (no frame-1 edges)
+    w.push(addiu(T1, ZERO, 1));
+    w.push(sw(T1, AT, lo(TRADE_ACTIVE_VA))); // TRADE_ACTIVE = 1
     w.push(j(TRADE_EXIT_VA)); // exit dispatcher; the entry detour catches the flag
     w.push(nop());
     let quit = w.len();
@@ -889,54 +924,108 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w[nextslot_b] = beq(T0, ZERO, (nextslot as i32 - (nextslot_b as i32 + 1)) as i16);
     w[skip_b] = bne(T4, S3, (skip as i32 - (skip_b as i32 + 1)) as i16);
 
-    // --- cursor over the per-owner lines (NOT the header): D-pad nav + draw ---
-    // line count N = (s2 - ROW_FIRST_Y) / ROW_STEP_Y (s2 ended one step past the last
-    // drawn line). srl 4 == / ROW_STEP_Y (guarded by the const asserts below).
-    w.push(addiu(T0, S2, (0u16).wrapping_sub(ROW_FIRST_Y))); // t0 = s2 - ROW_FIRST_Y
+    // --- input + cursor: browse the owner lines (NOT the header), or pick Yes/No ---
+    // line count N = (s2 - ROW_FIRST_Y) >> 4 (kept in t0); line cursor in t1.
+    w.push(addiu(T0, S2, (0u16).wrapping_sub(ROW_FIRST_Y)));
     w.push(srl(T0, T0, 4)); // t0 = N
     w.push(lui(AT, hi(TRADE_CURSOR_VA)));
-    w.push(lw(T1, AT, lo(TRADE_CURSOR_VA))); // t1 = cursor
+    w.push(lw(T1, AT, lo(TRADE_CURSOR_VA))); // t1 = line cursor
     w.push(lui(AT, hi(PAD_CUR_VA)));
-    w.push(lw(T2, AT, lo(PAD_CUR_VA))); // t2 = pad_cur
+    w.push(lw(T2, AT, lo(PAD_CUR_VA))); // t2 = pad cur
     w.push(lui(AT, hi(TRADE_PAD_PREV_VA)));
-    w.push(lw(T3, AT, lo(TRADE_PAD_PREV_VA))); // t3 = prev pad
+    w.push(lw(T3, AT, lo(TRADE_PAD_PREV_VA))); // t3 = pad prev (last frame)
     w.push(lui(AT, hi(TRADE_PAD_PREV_VA)));
-    w.push(sw(T2, AT, lo(TRADE_PAD_PREV_VA))); // prev = pad_cur (fills t3 load-delay)
-    // UP edge (held now, not last frame) -> cursor--
-    w.push(andi(T5, T2, PAD_UP_MASK));
-    let up_b = w.len();
-    w.push(0); // beq t5,zero,.notup
+    w.push(sw(T2, AT, lo(TRADE_PAD_PREV_VA))); // prev = cur (fills the t3 load-delay)
+
+    // Run `body` only on a fresh press of `mask` (held now in t2, not last frame in
+    // t3). Uses t5/t6 as scratch (free for `body` after the guard branches).
+    let edge = |w: &mut Vec<u32>, mask: u16, body: &dyn Fn(&mut Vec<u32>)| {
+        w.push(andi(T5, T2, mask));
+        let b1 = w.len();
+        w.push(0);
+        w.push(nop());
+        w.push(andi(T6, T3, mask));
+        let b2 = w.len();
+        w.push(0);
+        w.push(nop());
+        body(w);
+        let done = w.len();
+        w[b1] = beq(T5, ZERO, (done as i32 - (b1 as i32 + 1)) as i16);
+        w[b2] = bne(T6, ZERO, (done as i32 - (b2 as i32 + 1)) as i16);
+    };
+
+    // confirm sub-state -> t7; branch to .browse when 0.
+    w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
+    w.push(lw(T7, AT, lo(TRADE_CONFIRM_VA)));
     w.push(nop());
-    w.push(andi(T6, T3, PAD_UP_MASK));
-    let up_b2 = w.len();
-    w.push(0); // bne t6,zero,.notup
+    let browse_b = w.len();
+    w.push(0); // beq t7,zero,.browse (patched)
     w.push(nop());
-    w.push(addiu(T1, T1, 0xFFFF)); // cursor-- (-1)
-    let notup = w.len();
-    w[up_b] = beq(T5, ZERO, (notup as i32 - (up_b as i32 + 1)) as i16);
-    w[up_b2] = bne(T6, ZERO, (notup as i32 - (up_b2 as i32 + 1)) as i16);
-    // DOWN edge -> cursor++
-    w.push(andi(T5, T2, PAD_DOWN_MASK));
-    let dn_b = w.len();
-    w.push(0); // beq t5,zero,.notdown
+
+    // === CONFIRM input: Left=Yes(0) / Right=No(1); ✕ or ○ leaves the prompt ===
+    edge(&mut w, PAD_LEFT_MASK, &|w| {
+        w.push(lui(AT, hi(TRADE_YESNO_VA)));
+        w.push(sw(ZERO, AT, lo(TRADE_YESNO_VA))); // yesno = 0 (Yes)
+    });
+    edge(&mut w, PAD_RIGHT_MASK, &|w| {
+        w.push(addiu(T6, ZERO, 1));
+        w.push(lui(AT, hi(TRADE_YESNO_VA)));
+        w.push(sw(T6, AT, lo(TRADE_YESNO_VA))); // yesno = 1 (No)
+    });
+    // ✕ resolves (Yes = perform the swap — TODO; for now both just leave), ○ cancels.
+    // Either way clear the confirm sub-state -> back to browsing.
+    edge(&mut w, PAD_CONFIRM_MASK, &|w| {
+        w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
+        w.push(sw(ZERO, AT, lo(TRADE_CONFIRM_VA)));
+    });
+    edge(&mut w, HANDLER_CANCEL_MASK, &|w| {
+        w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
+        w.push(sw(ZERO, AT, lo(TRADE_CONFIRM_VA)));
+    });
+    let conf_done_b = w.len();
+    w.push(0); // j .after_input (patched, absolute)
     w.push(nop());
-    w.push(andi(T6, T3, PAD_DOWN_MASK));
-    let dn_b2 = w.len();
-    w.push(0); // bne t6,zero,.notdown
+
+    // === BROWSE input (.browse): Up/Down move the line cursor; ✕ enters confirm;
+    // ○ exits the trade screen ===
+    let browse = w.len();
+    w[browse_b] = beq(T7, ZERO, (browse as i32 - (browse_b as i32 + 1)) as i16);
+    edge(&mut w, PAD_UP_MASK, &|w| {
+        w.push(addiu(T1, T1, 0xFFFF)); // cursor-- (-1)
+    });
+    edge(&mut w, PAD_DOWN_MASK, &|w| {
+        w.push(addiu(T1, T1, 1)); // cursor++
+    });
+    edge(&mut w, PAD_CONFIRM_MASK, &|w| {
+        w.push(addiu(T6, ZERO, 1));
+        w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
+        w.push(sw(T6, AT, lo(TRADE_CONFIRM_VA))); // enter confirm
+    });
+    // ○ edge -> exit (jump to .do_exit, far ahead).
+    w.push(andi(T5, T2, HANDLER_CANCEL_MASK));
+    let ox_b = w.len();
+    w.push(0); // beq t5,zero,.noox
     w.push(nop());
-    w.push(addiu(T1, T1, 1)); // cursor++
-    let notdown = w.len();
-    w[dn_b] = beq(T5, ZERO, (notdown as i32 - (dn_b as i32 + 1)) as i16);
-    w[dn_b2] = bne(T6, ZERO, (notdown as i32 - (dn_b2 as i32 + 1)) as i16);
-    // clamp low: cursor < 0 -> 0
+    w.push(andi(T6, T3, HANDLER_CANCEL_MASK));
+    let ox_b2 = w.len();
+    w.push(0); // bne t6,zero,.noox
+    w.push(nop());
+    let exit_jb = w.len();
+    w.push(0); // j .do_exit (patched, absolute)
+    w.push(nop());
+    let noox = w.len();
+    w[ox_b] = beq(T5, ZERO, (noox as i32 - (ox_b as i32 + 1)) as i16);
+    w[ox_b2] = bne(T6, ZERO, (noox as i32 - (ox_b2 as i32 + 1)) as i16);
+
+    // .after_input: clamp the line cursor to [0, N) and store it.
+    let after_input = w.len();
+    w[conf_done_b] = j(va(after_input));
     let low_b = w.len();
     w.push(0); // bgez t1,.nolow
     w.push(nop());
     w.push(addu(T1, ZERO, ZERO)); // cursor = 0
     let nolow = w.len();
     w[low_b] = bgez(T1, (nolow as i32 - (low_b as i32 + 1)) as i16);
-    // clamp high: cursor >= N -> N-1 (when N==0 yields -1, harmless: highlight skipped
-    // below and it self-corrects to 0 next frame)
     w.push(slt(T5, T1, T0)); // cursor < N ?
     let high_b = w.len();
     w.push(0); // bne t5,zero,.nohigh
@@ -944,11 +1033,9 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(addiu(T1, T0, 0xFFFF)); // cursor = N-1
     let nohigh = w.len();
     w[high_b] = bne(T5, ZERO, (nohigh as i32 - (high_b as i32 + 1)) as i16);
-    // store the clamped cursor
     w.push(lui(AT, hi(TRADE_CURSOR_VA)));
     w.push(sw(T1, AT, lo(TRADE_CURSOR_VA)));
-    // draw the cursor sprite at the selected line (skip if no lines): FUN_8002b994(
-    // 0, 1, CURSOR_X + slide, ROW_FIRST_Y + cursor*ROW_STEP_Y).
+    // line cursor sprite at the selected line (skip if no lines).
     let hl_b = w.len();
     w.push(0); // blez t0,.nohl (N <= 0)
     w.push(nop());
@@ -963,41 +1050,89 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     let nohl = w.len();
     w[hl_b] = blez(T0, (nohl as i32 - (hl_b as i32 + 1)) as i16);
 
-    // native window box LAST so it lands behind the header + lines:
-    // FUN_8002C69C(x=0x28, y=0x28, w=0xB0, h=0x80). Force the standard box skin first
-    // (gp[+0x14c] = WINDOW_SKIN_STD = 0): once the blue picker windows slide away, the
-    // finalize pass leaves the skin on the brown name-plate, which would otherwise
-    // draw our box as a brown name-plate. The blue fill is hardcoded in BOX_FN.
+    // confirm prompt (only in the confirm sub-state): "@Trade?" + Yes / No + cursor.
+    w.push(lui(AT, hi(TRADE_CONFIRM_VA)));
+    w.push(lw(T7, AT, lo(TRADE_CONFIRM_VA))); // reload (it may have just changed)
+    w.push(nop());
+    let prompt_b = w.len();
+    w.push(0); // beq t7,zero,.noprompt (patched)
+    w.push(nop());
+    // "@Trade?" at (COL_HEADER_X + slide, PROMPT_Y)
+    w.push(lui(A0, hi(CONFIRM_PROMPT_STR_VA)));
+    w.push(addiu(A0, A0, lo(CONFIRM_PROMPT_STR_VA)));
+    w.push(addiu(V0, ZERO, PROMPT_Y));
+    w.push(sw(V0, SP, 0x10));
+    w.push(addiu(A1, ZERO, 0));
+    w.push(addiu(A2, ZERO, 0));
+    w.push(addiu(A3, S7, COL_HEADER_X));
+    w.push(jal(TEXT_DRAW_FN));
+    w.push(nop());
+    // "@Yes" at (YES_X + slide, CHOICE_Y)
+    w.push(lui(A0, hi(CONFIRM_YES_STR_VA)));
+    w.push(addiu(A0, A0, lo(CONFIRM_YES_STR_VA)));
+    w.push(addiu(V0, ZERO, CHOICE_Y));
+    w.push(sw(V0, SP, 0x10));
+    w.push(addiu(A1, ZERO, 0));
+    w.push(addiu(A2, ZERO, 0));
+    w.push(addiu(A3, S7, YES_X));
+    w.push(jal(TEXT_DRAW_FN));
+    w.push(nop());
+    // "@No" at (NO_X + slide, CHOICE_Y)
+    w.push(lui(A0, hi(CONFIRM_NO_STR_VA)));
+    w.push(addiu(A0, A0, lo(CONFIRM_NO_STR_VA)));
+    w.push(addiu(V0, ZERO, CHOICE_Y));
+    w.push(sw(V0, SP, 0x10));
+    w.push(addiu(A1, ZERO, 0));
+    w.push(addiu(A2, ZERO, 0));
+    w.push(addiu(A3, S7, NO_X));
+    w.push(jal(TEXT_DRAW_FN));
+    w.push(nop());
+    // yes/no cursor: x = (yesno ? NO_X : YES_X) - CHOICE_CURSOR_DX + slide.
+    w.push(lui(AT, hi(TRADE_YESNO_VA)));
+    w.push(lw(T4, AT, lo(TRADE_YESNO_VA)));
+    w.push(addiu(A2, S7, YES_X - CHOICE_CURSOR_DX)); // default Yes (fills load-delay)
+    let ynx_b = w.len();
+    w.push(0); // beq t4,zero,.yesx
+    w.push(nop());
+    w.push(addiu(A2, S7, NO_X - CHOICE_CURSOR_DX)); // No
+    let yesx = w.len();
+    w[ynx_b] = beq(T4, ZERO, (yesx as i32 - (ynx_b as i32 + 1)) as i16);
+    w.push(addiu(A0, ZERO, 0));
+    w.push(addiu(A1, ZERO, 1));
+    w.push(addiu(A3, ZERO, CHOICE_Y));
+    w.push(jal(CURSOR_DRAW_FN));
+    w.push(nop());
+    let noprompt = w.len();
+    w[prompt_b] = beq(T7, ZERO, (noprompt as i32 - (prompt_b as i32 + 1)) as i16);
+
+    // native window box LAST (behind the text). Force the standard skin first
+    // (gp[+0x14c]) so it doesn't inherit the brown name-plate skin after the slide.
     w.push(addiu(T0, ZERO, WINDOW_SKIN_STD));
-    w.push(sw(T0, GP, WINDOW_SKIN_OFF)); // gp[+0x14c] = standard blue-box skin
-    w.push(addiu(A0, S7, BOX_X)); // x + slide offset
-    w.push(addiu(A1, ZERO, BOX_Y)); // y (lowered below the gold/name boxes)
-    w.push(addiu(A2, ZERO, BOX_W)); // w (enlarged)
-    w.push(addiu(A3, ZERO, BOX_H_PX)); // h (enlarged)
+    w.push(sw(T0, GP, WINDOW_SKIN_OFF));
+    w.push(addiu(A0, S7, BOX_X)); // x + slide
+    w.push(addiu(A1, ZERO, BOX_Y));
+    w.push(addiu(A2, ZERO, BOX_W));
+    w.push(addiu(A3, ZERO, BOX_H_PX));
     w.push(jal(BOX_FN));
     w.push(nop());
-
-    // exit on ○ (CANCEL): if (PAD_CUR & HANDLER_CANCEL_MASK) -> clear the flag (back
-    // to picker). NOT ✕ — ✕ is CONFIRM (opens Trade), so a ✕-exit would fire on the
-    // still-held confirm press. The `lui at,hi(TRADE_ACTIVE)` doubles as the R3000
-    // load-delay filler after the pad `lw` (andi must not read a stale t0) AND as the
-    // base for the flag clear (at survives the andi/beq/nop).
-    w.push(lui(AT, hi(PAD_CUR_VA)));
-    w.push(lw(T0, AT, lo(PAD_CUR_VA)));
-    w.push(lui(AT, hi(TRADE_ACTIVE_VA)));
-    w.push(andi(T1, T0, HANDLER_CANCEL_MASK));
-    let xb = w.len();
-    w.push(0); // beq t1,zero,.noexit (patched)
+    let fin_jb = w.len();
+    w.push(0); // j .finalize (patched, absolute)
     w.push(nop());
-    w.push(sw(ZERO, AT, lo(TRADE_ACTIVE_VA))); // clear the flag -> picker resumes
-    // Slide the picker windows back in (reuse the open script). ra is reloaded in the
-    // epilogue, so clobbering it here is fine; WIDGET_VM_FN preserves s0..s5.
+
+    // .do_exit (○ in browse): clear TRADE_ACTIVE + slide the picker windows back in.
+    let do_exit = w.len();
+    w[exit_jb] = j(va(do_exit));
+    w.push(lui(AT, hi(TRADE_ACTIVE_VA)));
+    w.push(sw(ZERO, AT, lo(TRADE_ACTIVE_VA)));
     w.push(lui(A0, hi(SLIDE_OPEN_SCRIPT_VA)));
     w.push(addiu(A0, A0, lo(SLIDE_OPEN_SCRIPT_VA)));
     w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e38) — slide back in
     w.push(nop());
-    let noexit = w.len();
-    w.push(jal(FINALIZE_FN)); // FUN_801dafd4's per-frame finalize tail
+
+    // .finalize: per-frame finalize tail + epilogue.
+    let finalize = w.len();
+    w[fin_jb] = j(va(finalize));
+    w.push(jal(FINALIZE_FN));
     w.push(nop());
     w.push(lw(RA, SP, 0x2C));
     w.push(lw(S0, SP, 0x14));
@@ -1011,10 +1146,13 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(addiu(SP, SP, 0x38));
     w.push(jr(RA)); // return to the menu tick (FUN_801dc6b4)
     w.push(nop());
-    w[xb] = beq(T1, ZERO, (noexit as i32 - (xb as i32 + 1)) as i16);
     debug_assert!(
         TRADE_HANDLER_VA + (w.len() as u32) * 4 <= TRADE_HANDLER_END,
         "trade handler overruns the 0899 run-C dead region"
+    );
+    debug_assert!(
+        TRADE_HANDLER_VA + (w.len() as u32) * 4 <= CONFIRM_PROMPT_STR_VA,
+        "trade handler collides with the confirm strings in 0899"
     );
     w
 }
@@ -2027,11 +2165,34 @@ mod tests {
             h.contains(&addiu(A0, S4, RECORD_NAME_OFFSET)),
             "draws the owner name from the record"
         );
-        // ○ (CANCEL) exit clears the private active flag.
-        assert!(h.contains(&andi(T1, T0, HANDLER_CANCEL_MASK)), "○ exits");
+        // ○ (CANCEL) in browse exits: an andi against the cancel mask + the flag clear.
+        assert!(
+            h.iter()
+                .any(|&x| x >> 26 == 0x0c && (x & 0xffff) == HANDLER_CANCEL_MASK as u32),
+            "○ exit tests the cancel mask"
+        );
         assert!(
             h.contains(&sw(ZERO, AT, lo(TRADE_ACTIVE_VA))),
-            "clears the flag"
+            "clears the active flag"
+        );
+        // Confirm sub-state: enters on ✕, draws the prompt + Yes/No, navigates yes/no.
+        assert!(
+            h.iter()
+                .any(|&x| x >> 26 == 0x0c && (x & 0xffff) == PAD_CONFIRM_MASK as u32),
+            "✕ edge tested (enter/confirm)"
+        );
+        assert!(
+            h.contains(&addiu(A0, A0, lo(CONFIRM_PROMPT_STR_VA))),
+            "draws the @Trade? prompt"
+        );
+        assert!(
+            h.contains(&addiu(A0, A0, lo(CONFIRM_YES_STR_VA)))
+                && h.contains(&addiu(A0, A0, lo(CONFIRM_NO_STR_VA))),
+            "draws Yes + No"
+        );
+        assert!(
+            h.contains(&sw(ZERO, AT, lo(TRADE_CONFIRM_VA))),
+            "✕/○ in confirm clears the sub-state"
         );
         // On exit it slides the picker windows back in via the widget VM.
         assert!(
