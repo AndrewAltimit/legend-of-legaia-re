@@ -189,7 +189,17 @@ pub struct BucketOffer {
     pub want_id: u8,
     /// Seru id the vendor hands back (always `!= want_id` when `want_id != 0`).
     pub give_id: u8,
+    /// Level the handed-back seru comes at — part of the trade's value, shown to the
+    /// player before trading and applied to the received seru on confirm. Fixed per
+    /// bucket (rolled into [`GIVE_LEVEL_MIN`]`..=`[`GIVE_LEVEL_MAX`] from the same RNG
+    /// stream as the ids), so it's stable while the vendor shows this offer. `0` when
+    /// there's no offer (`want_id == 0`).
+    pub give_level: u8,
 }
+
+/// Inclusive level range the vendor's handed-back seru rolls within.
+pub const GIVE_LEVEL_MIN: u8 = 4;
+pub const GIVE_LEVEL_MAX: u8 = 9;
 
 /// One concrete, selectable trade line in the UI: a specific owner's instance of
 /// the bucket's wanted seru. Expanded from a [`BucketOffer`] against the live
@@ -205,6 +215,8 @@ pub struct OwnerTrade {
     pub received_id: u8,
     /// The given seru's current level (for the `LVL n` display).
     pub given_level: u8,
+    /// The level the received seru comes at (the bucket's fixed give level).
+    pub received_level: u8,
 }
 
 /// SplitMix64, duplicated here (instead of depending on the randomizer's copy)
@@ -317,8 +329,10 @@ pub fn offers_at(
 pub const BUCKET_COUNT: usize = 64;
 
 /// Byte length of the serialized bucket schedule: `BUCKET_COUNT` entries of
-/// `[want_id, give_id]`.
-pub const BUCKET_TABLE_LEN: usize = BUCKET_COUNT * 2;
+/// `[want_id, give_id, give_level]`.
+pub const BUCKET_TABLE_LEN: usize = BUCKET_COUNT * 3;
+/// On-disc bytes per bucket entry (`[want_id, give_id, give_level]`).
+pub const BUCKET_ENTRY_LEN: usize = 3;
 
 /// Precompute the whole vendor schedule: for each bucket `0..count`, deterministically
 /// pick a `(want_id, give_id)` pair of distinct ids from `pool`. Ownership-independent
@@ -333,6 +347,7 @@ pub fn bucket_offers(seed: u64, count: usize, pool: &[u8]) -> Vec<BucketOffer> {
                 return BucketOffer {
                     want_id: 0,
                     give_id: 0,
+                    give_level: 0,
                 };
             }
             // One RNG stream per bucket, mixed off the master seed (vendor id folded
@@ -342,18 +357,27 @@ pub fn bucket_offers(seed: u64, count: usize, pool: &[u8]) -> Vec<BucketOffer> {
             // give id distinct from want.
             let viable: Vec<u8> = pool.iter().copied().filter(|&id| id != want_id).collect();
             let give_id = viable[rng.below(viable.len())];
-            BucketOffer { want_id, give_id }
+            // give level, fixed per bucket: GIVE_LEVEL_MIN..=GIVE_LEVEL_MAX.
+            let span = (GIVE_LEVEL_MAX - GIVE_LEVEL_MIN + 1) as usize;
+            let give_level = GIVE_LEVEL_MIN + rng.below(span) as u8;
+            BucketOffer {
+                want_id,
+                give_id,
+                give_level,
+            }
         })
         .collect()
 }
 
-/// Serialize a bucket schedule to the on-disc byte layout (`[want, give]` per
-/// entry). Truncated / zero-padded to [`BUCKET_TABLE_LEN`].
+/// Serialize a bucket schedule to the on-disc byte layout
+/// (`[want, give, give_level]` per entry). Truncated / zero-padded to
+/// [`BUCKET_TABLE_LEN`].
 pub fn bucket_table_to_bytes(buckets: &[BucketOffer]) -> [u8; BUCKET_TABLE_LEN] {
     let mut out = [0u8; BUCKET_TABLE_LEN];
     for (i, b) in buckets.iter().take(BUCKET_COUNT).enumerate() {
-        out[i * 2] = b.want_id;
-        out[i * 2 + 1] = b.give_id;
+        out[i * BUCKET_ENTRY_LEN] = b.want_id;
+        out[i * BUCKET_ENTRY_LEN + 1] = b.give_id;
+        out[i * BUCKET_ENTRY_LEN + 2] = b.give_level;
     }
     out
 }
@@ -362,11 +386,12 @@ pub fn bucket_table_to_bytes(buckets: &[BucketOffer]) -> [u8; BUCKET_TABLE_LEN] 
 /// [`bucket_table_to_bytes`].
 pub fn bucket_table_from_bytes(bytes: &[u8]) -> Vec<BucketOffer> {
     bytes
-        .chunks_exact(2)
+        .chunks_exact(BUCKET_ENTRY_LEN)
         .take(BUCKET_COUNT)
         .map(|c| BucketOffer {
             want_id: c[0],
             give_id: c[1],
+            give_level: c[2],
         })
         .collect()
 }
@@ -395,6 +420,7 @@ pub fn expand_offers(offer: BucketOffer, owned: &[OwnedSeru]) -> Vec<OwnerTrade>
             given_id: offer.want_id,
             received_id: offer.give_id,
             given_level: o.level,
+            received_level: offer.give_level,
         })
         .collect()
 }
@@ -517,6 +543,10 @@ mod tests {
             assert_ne!(o.want_id, 0);
             assert_ne!(o.want_id, o.give_id, "give must differ from want");
             assert!(pool.contains(&o.want_id) && pool.contains(&o.give_id));
+            assert!(
+                (GIVE_LEVEL_MIN..=GIVE_LEVEL_MAX).contains(&o.give_level),
+                "give level in {GIVE_LEVEL_MIN}..={GIVE_LEVEL_MAX}"
+            );
         }
         // Different seed shifts at least one bucket.
         let c = bucket_offers(0xBADF00D, BUCKET_COUNT, &pool);
@@ -561,13 +591,14 @@ mod tests {
         let offer = BucketOffer {
             want_id: 0x82,
             give_id: 0x81,
+            give_level: 7,
         };
         let lines = expand_offers(offer, &owned_set);
         assert_eq!(lines.len(), 2, "both owners of 0x82 listed");
         assert!(
             lines
                 .iter()
-                .all(|t| t.given_id == 0x82 && t.received_id == 0x81)
+                .all(|t| t.given_id == 0x82 && t.received_id == 0x81 && t.received_level == 7)
         );
         // Owner + level carried through for the display.
         assert!(
@@ -585,7 +616,8 @@ mod tests {
             expand_offers(
                 BucketOffer {
                     want_id: 0x90,
-                    give_id: 0x81
+                    give_id: 0x81,
+                    give_level: 5,
                 },
                 &owned_set
             )
@@ -596,7 +628,8 @@ mod tests {
             expand_offers(
                 BucketOffer {
                     want_id: 0,
-                    give_id: 0
+                    give_id: 0,
+                    give_level: 0,
                 },
                 &owned_set
             )

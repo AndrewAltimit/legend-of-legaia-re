@@ -331,11 +331,32 @@ pub const ROW_STEP_Y: u16 = 0x10;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
 pub const TRADE_SLIDE_DELTA_VA: u32 = 0x8007_AEC4;
+/// Cursor index over the per-owner trade lines (0 = first line). SCUS gap, resident;
+/// the handler nav-clamps it to `[0, line_count)` each frame.
+pub const TRADE_CURSOR_VA: u32 = 0x8007_AEC8;
+/// Previous-frame pad mask, for D-pad edge detection (one step per press, not per
+/// held frame). SCUS gap, resident.
+pub const TRADE_PAD_PREV_VA: u32 = 0x8007_AECC;
+/// D-pad bits in [`PAD_CUR_VA`] (built by `FUN_8001822C`): Up / Down move the cursor.
+pub const PAD_UP_MASK: u16 = 0x1000;
+pub const PAD_DOWN_MASK: u16 = 0x4000;
+/// Native animated cursor sprite `FUN_8002b994(slot, mode, x, y)` — a 16×16 bobbing
+/// cursor (slot 0 = the standard menu cursor; `mode = 1` animates). Drawn at the
+/// selected owner line. (Already used by the row-4 stub as [`HIGHLIGHT_FN`].)
+pub const CURSOR_DRAW_FN: u32 = 0x8002_B994;
+/// Cursor sprite x: just left of the per-owner want column.
+pub const CURSOR_X: u16 = COL_WANT_X - 0x10;
 /// Initial slide offset: box fully off the left edge (`-(BOX_X + BOX_W)` rounded).
 pub const SLIDE_START_OFF: i16 = -0xF0;
 /// Per-frame slide step toward 0. Divides `SLIDE_START_OFF` evenly so the box lands
-/// exactly on 0 (no overshoot) — asserted in [`assemble_trade_handler`].
+/// exactly on 0 (no overshoot) — see the compile-time asserts below.
 pub const SLIDE_STEP: u16 = 0x18;
+
+// Compile-time invariants the hand-assembled handler relies on:
+// - the slide step divides the start offset evenly (the box lands exactly on 0);
+// - the row pitch is 0x10 so the cursor's line-count divide is a single `srl 4`.
+const _: () = assert!((-(SLIDE_START_OFF as i32)) % (SLIDE_STEP as i32) == 0);
+const _: () = assert!(ROW_STEP_Y == 0x10);
 
 /// Per-frame button mask (1 = pressed), built by `FUN_8001822C`. Standard PSX
 /// bits: UP 0x10, DOWN 0x40, START 0x08, TRIANGLE 0x1000, CIRCLE 0x2000,
@@ -548,12 +569,13 @@ pub const HANDLER_OVL_PROT_INDEX: usize = PICKER_MENU_PROT_INDEX;
 
 /// The randomizer's precomputed vendor schedule (one `[want_id, give_id]` pair per
 /// time bucket; see [`legaia_asset::seru_trade::bucket_offers`] /
-/// [`legaia_asset::seru_trade::bucket_table_to_bytes`]). 128 bytes
-/// ([`legaia_asset::seru_trade::BUCKET_TABLE_LEN`]) in the SCUS rodata gap tail,
-/// abutting the row-4 stub at [`STUB_VA`] (`0x8007AE00`); resident always, so the
+/// [`legaia_asset::seru_trade::bucket_table_to_bytes`]). `[want, give, give_level]`
+/// per entry = [`legaia_asset::seru_trade::BUCKET_TABLE_LEN`] (192) bytes, placed in
+/// the freed handler region of the SCUS rodata gap (the handler now lives in 0899),
+/// above the dispatch stub and below the old handler end; resident always, so the
 /// 0899-hosted handler reads it by absolute address. The handler indexes it by
-/// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`].
-pub const BUCKET_TABLE_VA: u32 = 0x8007_AD80;
+/// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`]`, ×3`.
+pub const BUCKET_TABLE_VA: u32 = 0x8007_AC00;
 /// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
 pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 
@@ -729,15 +751,12 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         sw(S4, SP, 0x24),
         sw(S5, SP, 0x28),
         sw(S7, SP, 0x30), // s7 = slide x-offset (held across the frame)
+        sw(S6, SP, 0x34), // s6 = give_level (header display + future swap)
         jal(PAD_POLL_FN), // refresh PAD_CUR
         nop(),
     ];
 
     // --- slide-in: s7 = the box/text x-offset, stepped from SLIDE_START_OFF -> 0 ---
-    debug_assert!(
-        (-(SLIDE_START_OFF as i32)) % (SLIDE_STEP as i32) == 0,
-        "slide step must divide the start offset evenly (no overshoot past 0)"
-    );
     w.push(lui(AT, hi(TRADE_SLIDE_DELTA_VA)));
     w.push(lw(S7, AT, lo(TRADE_SLIDE_DELTA_VA)));
     w.push(nop()); // load-delay before the branch reads s7
@@ -750,26 +769,29 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     let slid = w.len();
     w[slid_b] = bgez(S7, (slid as i32 - (slid_b as i32 + 1)) as i16);
 
-    // --- current offer: want -> s3, give -> t5 ---
+    // --- current offer: want -> s3, give -> t5, give_level -> s6 ---
     if SERU_DEMO_FORCE_WANT {
-        // DEV: force a fixed (want, give) so a save owning SERU_DEMO_BASE_ID lists.
+        // DEV: force a fixed (want, give, level) so a save owning SERU_DEMO_BASE_ID lists.
         w.push(addiu(S3, ZERO, SERU_DEMO_BASE_ID)); // want
         w.push(addiu(T5, ZERO, SERU_DEMO_BASE_ID + 1)); // give
+        w.push(addiu(S6, ZERO, 7)); // give_level (mid of 4..=9)
     } else {
-        // bucket = (play_time / RESEED_PERIOD_FRAMES) & (BUCKET_COUNT-1); entry = *2.
+        // bucket = (play_time / RESEED_PERIOD_FRAMES) & (BUCKET_COUNT-1); entry = bucket*3.
         w.push(lui(AT, hi(PLAY_TIME_VA)));
         w.push(lw(T0, AT, lo(PLAY_TIME_VA)));
         w.push(addiu(T1, ZERO, RESEED_PERIOD_FRAMES)); // (fills the lw load-delay)
         w.push(divu(T0, T1));
         w.push(mflo(T0)); // t0 = bucket
         w.push(andi(T0, T0, BUCKET_INDEX_MASK)); // % BUCKET_COUNT
-        w.push(sll(T0, T0, 1)); // * 2-byte stride
+        w.push(sll(T1, T0, 1)); // bucket*2
+        w.push(addu(T0, T1, T0)); // bucket*3 (3-byte entries: want,give,give_level)
         w.push(lui(T1, hi(BUCKET_TABLE_VA)));
         w.push(addiu(T1, T1, lo(BUCKET_TABLE_VA)));
         w.push(addu(T1, T1, T0));
         w.push(lbu(S3, T1, 0)); // want
         w.push(lbu(T5, T1, 1)); // give
-        w.push(nop()); // load-delay (t5 used by the header next)
+        w.push(lbu(S6, T1, 2)); // give_level (fills the t5 load-delay)
+        w.push(nop()); // load-delay (s6 used by the header level draw)
     }
 
     // --- reward header: the give-back seru name at (x=0x30, y=0x34) ---
@@ -784,6 +806,15 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(addiu(A2, ZERO, 0));
     w.push(addiu(A3, S7, COL_HEADER_X)); // x + slide offset
     w.push(jal(TEXT_DRAW_FN));
+    w.push(nop());
+    // reward level (the bucket's fixed give-back level, shown so the player sees the
+    // trade's value): FUN_80034b78(s6, 1, COL_LEVEL_X + slide, ROW_HEADER_Y) — aligns
+    // under the per-owner level column.
+    w.push(addu(A0, ZERO, S6)); // value = give_level
+    w.push(addiu(A1, ZERO, 1)); // min_digits
+    w.push(addiu(A2, S7, COL_LEVEL_X)); // x + slide offset
+    w.push(addiu(A3, ZERO, ROW_HEADER_Y)); // y
+    w.push(jal(NUMBER_FN));
     w.push(nop());
 
     // --- per-owner lines: for slot in 0..4, for j in 0..count: if ids[j]==want ---
@@ -858,6 +889,80 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w[nextslot_b] = beq(T0, ZERO, (nextslot as i32 - (nextslot_b as i32 + 1)) as i16);
     w[skip_b] = bne(T4, S3, (skip as i32 - (skip_b as i32 + 1)) as i16);
 
+    // --- cursor over the per-owner lines (NOT the header): D-pad nav + draw ---
+    // line count N = (s2 - ROW_FIRST_Y) / ROW_STEP_Y (s2 ended one step past the last
+    // drawn line). srl 4 == / ROW_STEP_Y (guarded by the const asserts below).
+    w.push(addiu(T0, S2, (0u16).wrapping_sub(ROW_FIRST_Y))); // t0 = s2 - ROW_FIRST_Y
+    w.push(srl(T0, T0, 4)); // t0 = N
+    w.push(lui(AT, hi(TRADE_CURSOR_VA)));
+    w.push(lw(T1, AT, lo(TRADE_CURSOR_VA))); // t1 = cursor
+    w.push(lui(AT, hi(PAD_CUR_VA)));
+    w.push(lw(T2, AT, lo(PAD_CUR_VA))); // t2 = pad_cur
+    w.push(lui(AT, hi(TRADE_PAD_PREV_VA)));
+    w.push(lw(T3, AT, lo(TRADE_PAD_PREV_VA))); // t3 = prev pad
+    w.push(lui(AT, hi(TRADE_PAD_PREV_VA)));
+    w.push(sw(T2, AT, lo(TRADE_PAD_PREV_VA))); // prev = pad_cur (fills t3 load-delay)
+    // UP edge (held now, not last frame) -> cursor--
+    w.push(andi(T5, T2, PAD_UP_MASK));
+    let up_b = w.len();
+    w.push(0); // beq t5,zero,.notup
+    w.push(nop());
+    w.push(andi(T6, T3, PAD_UP_MASK));
+    let up_b2 = w.len();
+    w.push(0); // bne t6,zero,.notup
+    w.push(nop());
+    w.push(addiu(T1, T1, 0xFFFF)); // cursor-- (-1)
+    let notup = w.len();
+    w[up_b] = beq(T5, ZERO, (notup as i32 - (up_b as i32 + 1)) as i16);
+    w[up_b2] = bne(T6, ZERO, (notup as i32 - (up_b2 as i32 + 1)) as i16);
+    // DOWN edge -> cursor++
+    w.push(andi(T5, T2, PAD_DOWN_MASK));
+    let dn_b = w.len();
+    w.push(0); // beq t5,zero,.notdown
+    w.push(nop());
+    w.push(andi(T6, T3, PAD_DOWN_MASK));
+    let dn_b2 = w.len();
+    w.push(0); // bne t6,zero,.notdown
+    w.push(nop());
+    w.push(addiu(T1, T1, 1)); // cursor++
+    let notdown = w.len();
+    w[dn_b] = beq(T5, ZERO, (notdown as i32 - (dn_b as i32 + 1)) as i16);
+    w[dn_b2] = bne(T6, ZERO, (notdown as i32 - (dn_b2 as i32 + 1)) as i16);
+    // clamp low: cursor < 0 -> 0
+    let low_b = w.len();
+    w.push(0); // bgez t1,.nolow
+    w.push(nop());
+    w.push(addu(T1, ZERO, ZERO)); // cursor = 0
+    let nolow = w.len();
+    w[low_b] = bgez(T1, (nolow as i32 - (low_b as i32 + 1)) as i16);
+    // clamp high: cursor >= N -> N-1 (when N==0 yields -1, harmless: highlight skipped
+    // below and it self-corrects to 0 next frame)
+    w.push(slt(T5, T1, T0)); // cursor < N ?
+    let high_b = w.len();
+    w.push(0); // bne t5,zero,.nohigh
+    w.push(nop());
+    w.push(addiu(T1, T0, 0xFFFF)); // cursor = N-1
+    let nohigh = w.len();
+    w[high_b] = bne(T5, ZERO, (nohigh as i32 - (high_b as i32 + 1)) as i16);
+    // store the clamped cursor
+    w.push(lui(AT, hi(TRADE_CURSOR_VA)));
+    w.push(sw(T1, AT, lo(TRADE_CURSOR_VA)));
+    // draw the cursor sprite at the selected line (skip if no lines): FUN_8002b994(
+    // 0, 1, CURSOR_X + slide, ROW_FIRST_Y + cursor*ROW_STEP_Y).
+    let hl_b = w.len();
+    w.push(0); // blez t0,.nohl (N <= 0)
+    w.push(nop());
+    w.push(sll(T5, T1, 4)); // cursor * ROW_STEP_Y
+    w.push(addiu(T5, T5, ROW_FIRST_Y)); // + first row y
+    w.push(addiu(A0, ZERO, 0)); // slot 0 (standard menu cursor)
+    w.push(addiu(A1, ZERO, 1)); // mode 1 (animated)
+    w.push(addiu(A2, S7, CURSOR_X)); // x + slide offset
+    w.push(addu(A3, ZERO, T5)); // y
+    w.push(jal(CURSOR_DRAW_FN));
+    w.push(nop());
+    let nohl = w.len();
+    w[hl_b] = blez(T0, (nohl as i32 - (hl_b as i32 + 1)) as i16);
+
     // native window box LAST so it lands behind the header + lines:
     // FUN_8002C69C(x=0x28, y=0x28, w=0xB0, h=0x80). Force the standard box skin first
     // (gp[+0x14c] = WINDOW_SKIN_STD = 0): once the blue picker windows slide away, the
@@ -902,6 +1007,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(lw(S4, SP, 0x24));
     w.push(lw(S5, SP, 0x28));
     w.push(lw(S7, SP, 0x30));
+    w.push(lw(S6, SP, 0x34));
     w.push(addiu(SP, SP, 0x38));
     w.push(jr(RA)); // return to the menu tick (FUN_801dc6b4)
     w.push(nop());
@@ -1139,6 +1245,9 @@ const fn mflo(rd: u32) -> u32 {
 }
 const fn bgez(rs: u32, off: i16) -> u32 {
     (0x01 << 26) | (rs << 21) | (0x01 << 16) | (off as u16 as u32)
+}
+const fn blez(rs: u32, off: i16) -> u32 {
+    (0x06 << 26) | (rs << 21) | (off as u16 as u32)
 }
 const fn xori(rt: u32, rs: u32, imm: u16) -> u32 {
     (0x0e << 26) | (rs << 21) | (rt << 16) | imm as u32
